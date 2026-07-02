@@ -44,13 +44,15 @@ class StoneClarity(StrictModel):
 class Stone(StrictModel):
     species: str
     cut: str
-    carat: Carat
+    carat: Carat  # per stone, when count > 1
     dimensions_mm: StoneDimensions
     color: StoneColor
     clarity: StoneClarity
     origin: str | None = None
     treatment: str | None = None
     phenomena: list[str] = Field(default_factory=list)
+    count: Annotated[int, Field(ge=1, le=64)] = 1
+    position: str | None = None  # e.g. "halo", "stations", "under_center"
 
 
 class Setting(StrictModel):
@@ -79,6 +81,21 @@ class RingSize(StrictModel):
     inner_diameter_mm: Mm | None = None
 
 
+class Bracelet(StrictModel):
+    """Oval bangle opening plus band cross-section."""
+
+    inner_length_mm: Annotated[float, Field(strict=True, ge=40, le=75)]
+    inner_width_mm: Annotated[float, Field(strict=True, ge=35, le=65)]
+    width_mm: Annotated[float, Field(strict=True, ge=3.0, le=12.0)]
+    thickness_mm: Annotated[float, Field(strict=True, ge=1.5, le=4.0)]
+
+
+class Pendant(StrictModel):
+    bail_inner_diameter_mm: Annotated[float, Field(strict=True, ge=1.5, le=10.0)]
+    bail_height_mm: Mm
+    drop_mm: Mm | None = None  # overall bail-top to lowest point; derived if absent
+
+
 class Spec(StrictModel):
     schema_version: Literal[1]
     design_id: str
@@ -93,5 +110,7 @@ class Spec(StrictModel):
     metal: Metal
     band: Band | None = None
     ring_size: RingSize | None = None
+    bracelet: Bracelet | None = None
+    pendant: Pendant | None = None
     side_stones: list[Stone] = Field(default_factory=list)
     notes_to_factory: str | None = None

@@ -1,0 +1,95 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 297 210" width="297mm" height="210mm" font-family="Georgia, 'Times New Roman', serif">
+<defs><pattern id="hatch" width="1.4" height="1.4" patternTransform="rotate(45)" patternUnits="userSpaceOnUse"><line x1="0" y1="0" x2="0" y2="1.4" stroke="#8a8a8a" stroke-width="0.12"/></pattern></defs>
+<rect x="0" y="0" width="297" height="210" fill="#fdfdfa"/>
+<rect x="8" y="8" width="281" height="194" fill="none" stroke="#3f3f3f" stroke-width="0.3"/>
+<text x="148.50" y="16.00" font-family="Georgia, 'Times New Roman', serif" font-size="4.6" fill="#3f3f3f" text-anchor="middle" letter-spacing="1.6">TECHNICAL SHEET — HALO RING</text>
+<rect x="79.00" y="74.53" width="6.00" height="60.93" fill="url(#hatch)" stroke="none"/>
+<line x1="79.00" y1="74.53" x2="79.00" y2="135.47" stroke="#3f3f3f" stroke-width="0.3"/>
+<line x1="85.00" y1="74.53" x2="85.00" y2="135.47" stroke="#3f3f3f" stroke-width="0.3"/>
+<line x1="79.00" y1="74.53" x2="85.00" y2="74.53" stroke="#3f3f3f" stroke-width="0.3"/>
+<line x1="79.00" y1="135.47" x2="85.00" y2="135.47" stroke="#3f3f3f" stroke-width="0.3"/>
+<ellipse cx="82.00" cy="105.00" rx="22.80" ry="26.10" fill="#ffffff" stroke="#3f3f3f" stroke-width="0.3"/>
+<circle cx="82.00" cy="85.05" r="6.15" fill="#ffffff" stroke="#3f3f3f" stroke-width="0.3"/>
+<circle cx="93.77" cy="90.89" r="6.15" fill="#ffffff" stroke="#3f3f3f" stroke-width="0.3"/>
+<circle cx="98.65" cy="105.00" r="6.15" fill="#ffffff" stroke="#3f3f3f" stroke-width="0.3"/>
+<circle cx="93.77" cy="119.11" r="6.15" fill="#ffffff" stroke="#3f3f3f" stroke-width="0.3"/>
+<circle cx="82.00" cy="124.95" r="6.15" fill="#ffffff" stroke="#3f3f3f" stroke-width="0.3"/>
+<circle cx="70.23" cy="119.11" r="6.15" fill="#ffffff" stroke="#3f3f3f" stroke-width="0.3"/>
+<circle cx="65.35" cy="105.00" r="6.15" fill="#ffffff" stroke="#3f3f3f" stroke-width="0.3"/>
+<circle cx="70.23" cy="90.89" r="6.15" fill="#ffffff" stroke="#3f3f3f" stroke-width="0.3"/>
+<ellipse cx="82.00" cy="105.00" rx="9.60" ry="12.90" fill="#ffffff" stroke="#3f3f3f" stroke-width="0.3"/>
+<line x1="82.00" y1="75.90" x2="82.00" y2="134.10" stroke="#8a8a8a" stroke-width="0.15" stroke-dasharray="3 1 0.5 1"/>
+<line x1="56.20" y1="105.00" x2="107.80" y2="105.00" stroke="#8a8a8a" stroke-width="0.15" stroke-dasharray="3 1 0.5 1"/>
+<line x1="72.40" y1="105.00" x2="72.40" y2="70.90" stroke="#8a8a8a" stroke-width="0.15" stroke-dasharray="0.8 0.8"/>
+<line x1="91.60" y1="105.00" x2="91.60" y2="70.90" stroke="#8a8a8a" stroke-width="0.15" stroke-dasharray="0.8 0.8"/>
+<line x1="72.40" y1="71.90" x2="91.60" y2="71.90" stroke="#8a8a8a" stroke-width="0.15"/>
+<line x1="71.50" y1="72.80" x2="73.30" y2="71.00" stroke="#3f3f3f" stroke-width="0.24"/>
+<line x1="90.70" y1="72.80" x2="92.50" y2="71.00" stroke="#3f3f3f" stroke-width="0.24"/>
+<text x="82.00" y="70.50" font-family="Georgia, 'Times New Roman', serif" font-size="3.2" fill="#3f3f3f" text-anchor="middle">6.4 mm</text>
+<line x1="59.20" y1="105.00" x2="59.20" y2="64.90" stroke="#8a8a8a" stroke-width="0.15" stroke-dasharray="0.8 0.8"/>
+<line x1="104.80" y1="105.00" x2="104.80" y2="64.90" stroke="#8a8a8a" stroke-width="0.15" stroke-dasharray="0.8 0.8"/>
+<line x1="59.20" y1="65.90" x2="104.80" y2="65.90" stroke="#8a8a8a" stroke-width="0.15"/>
+<line x1="58.30" y1="66.80" x2="60.10" y2="65.00" stroke="#3f3f3f" stroke-width="0.24"/>
+<line x1="103.90" y1="66.80" x2="105.70" y2="65.00" stroke="#3f3f3f" stroke-width="0.24"/>
+<text x="82.00" y="64.50" font-family="Georgia, 'Times New Roman', serif" font-size="3.2" fill="#3f3f3f" text-anchor="middle">15.2 mm halo</text>
+<line x1="82.00" y1="92.10" x2="113.80" y2="92.10" stroke="#8a8a8a" stroke-width="0.15" stroke-dasharray="0.8 0.8"/>
+<line x1="82.00" y1="117.90" x2="113.80" y2="117.90" stroke="#8a8a8a" stroke-width="0.15" stroke-dasharray="0.8 0.8"/>
+<line x1="112.80" y1="92.10" x2="112.80" y2="117.90" stroke="#8a8a8a" stroke-width="0.15"/>
+<line x1="111.90" y1="93.00" x2="113.70" y2="91.20" stroke="#3f3f3f" stroke-width="0.24"/>
+<line x1="111.90" y1="118.80" x2="113.70" y2="117.00" stroke="#3f3f3f" stroke-width="0.24"/>
+<text x="114.60" y="106.10" font-family="Georgia, 'Times New Roman', serif" font-size="3.2" fill="#3f3f3f" text-anchor="start">8.6 mm</text>
+<line x1="82.00" y1="78.90" x2="131.80" y2="78.90" stroke="#8a8a8a" stroke-width="0.15" stroke-dasharray="0.8 0.8"/>
+<line x1="82.00" y1="131.10" x2="131.80" y2="131.10" stroke="#8a8a8a" stroke-width="0.15" stroke-dasharray="0.8 0.8"/>
+<line x1="130.80" y1="78.90" x2="130.80" y2="131.10" stroke="#8a8a8a" stroke-width="0.15"/>
+<line x1="129.90" y1="79.80" x2="131.70" y2="78.00" stroke="#3f3f3f" stroke-width="0.24"/>
+<line x1="129.90" y1="132.00" x2="131.70" y2="130.20" stroke="#3f3f3f" stroke-width="0.24"/>
+<text x="132.60" y="106.10" font-family="Georgia, 'Times New Roman', serif" font-size="3.2" fill="#3f3f3f" text-anchor="start">17.4 mm halo</text>
+<line x1="79.00" y1="135.47" x2="79.00" y2="141.47" stroke="#8a8a8a" stroke-width="0.15" stroke-dasharray="0.8 0.8"/>
+<line x1="85.00" y1="135.47" x2="85.00" y2="141.47" stroke="#8a8a8a" stroke-width="0.15" stroke-dasharray="0.8 0.8"/>
+<line x1="79.00" y1="140.47" x2="85.00" y2="140.47" stroke="#8a8a8a" stroke-width="0.15"/>
+<line x1="78.10" y1="141.37" x2="79.90" y2="139.56" stroke="#3f3f3f" stroke-width="0.24"/>
+<line x1="84.10" y1="141.37" x2="85.90" y2="139.56" stroke="#3f3f3f" stroke-width="0.24"/>
+<text x="82.00" y="139.06" font-family="Georgia, 'Times New Roman', serif" font-size="3.2" fill="#3f3f3f" text-anchor="middle">2 mm</text>
+<text x="82.00" y="149.47" font-family="Georgia, 'Times New Roman', serif" font-size="3.6" fill="#3f3f3f" text-anchor="middle" letter-spacing="1.2">TOP VIEW</text>
+<text x="82.00" y="154.47" font-family="Georgia, 'Times New Roman', serif" font-size="2.8" fill="#8a8a8a" text-anchor="middle">8 × ⌀4.1 mm melee, 0.3 mm off center girdle</text>
+<circle cx="205.00" cy="108.75" r="30.47" fill="url(#hatch)" stroke="#3f3f3f" stroke-width="0.3"/>
+<circle cx="205.00" cy="108.75" r="25.37" fill="#ffffff" stroke="#3f3f3f" stroke-width="0.3"/>
+<line x1="196.47" y1="79.48" x2="192.10" y2="64.78" stroke="#3f3f3f" stroke-width="0.3"/>
+<line x1="213.53" y1="79.48" x2="217.90" y2="64.78" stroke="#3f3f3f" stroke-width="0.3"/>
+<polygon points="197.91,60.78 212.09,60.78 217.90,64.78 205.00,72.78 192.10,64.78" fill="#ffffff" stroke="#3f3f3f" stroke-width="0.3"/>
+<line x1="192.10" y1="64.78" x2="217.90" y2="64.78" stroke="#3f3f3f" stroke-width="0.3"/>
+<line x1="205.00" y1="57.78" x2="205.00" y2="142.22" stroke="#8a8a8a" stroke-width="0.15" stroke-dasharray="3 1 0.5 1"/>
+<line x1="191.42" y1="66.78" x2="191.42" y2="61.78" stroke="#3f3f3f" stroke-width="0.3"/>
+<circle cx="191.42" cy="61.78" r="1.35" fill="#ffffff" stroke="#3f3f3f" stroke-width="0.3"/>
+<line x1="218.58" y1="66.78" x2="218.58" y2="61.78" stroke="#3f3f3f" stroke-width="0.3"/>
+<circle cx="218.58" cy="61.78" r="1.35" fill="#ffffff" stroke="#3f3f3f" stroke-width="0.3"/>
+<line x1="179.63" y1="108.75" x2="230.37" y2="108.75" stroke="#8a8a8a" stroke-width="0.15"/>
+<line x1="178.73" y1="109.65" x2="180.53" y2="107.85" stroke="#3f3f3f" stroke-width="0.24"/>
+<line x1="229.47" y1="109.65" x2="231.27" y2="107.85" stroke="#3f3f3f" stroke-width="0.24"/>
+<text x="205.00" y="107.35" font-family="Georgia, 'Times New Roman', serif" font-size="3.2" fill="#3f3f3f" text-anchor="middle">⌀ 16.9 mm</text>
+<line x1="217.90" y1="64.78" x2="245.47" y2="64.78" stroke="#8a8a8a" stroke-width="0.15" stroke-dasharray="0.8 0.8"/>
+<line x1="213.53" y1="78.28" x2="245.47" y2="78.28" stroke="#8a8a8a" stroke-width="0.15" stroke-dasharray="0.8 0.8"/>
+<line x1="244.47" y1="64.78" x2="244.47" y2="78.28" stroke="#8a8a8a" stroke-width="0.15"/>
+<line x1="243.56" y1="65.69" x2="245.37" y2="63.88" stroke="#3f3f3f" stroke-width="0.24"/>
+<line x1="243.56" y1="79.19" x2="245.37" y2="77.38" stroke="#3f3f3f" stroke-width="0.24"/>
+<text x="246.27" y="72.63" font-family="Georgia, 'Times New Roman', serif" font-size="3.2" fill="#3f3f3f" text-anchor="start">4.5 mm gallery</text>
+<line x1="212.09" y1="60.78" x2="271.47" y2="60.78" stroke="#8a8a8a" stroke-width="0.15" stroke-dasharray="0.8 0.8"/>
+<line x1="205.00" y1="72.78" x2="271.47" y2="72.78" stroke="#8a8a8a" stroke-width="0.15" stroke-dasharray="0.8 0.8"/>
+<line x1="270.47" y1="60.78" x2="270.47" y2="72.78" stroke="#8a8a8a" stroke-width="0.15"/>
+<line x1="269.57" y1="61.68" x2="271.37" y2="59.88" stroke="#3f3f3f" stroke-width="0.24"/>
+<line x1="269.57" y1="73.69" x2="271.37" y2="71.88" stroke="#3f3f3f" stroke-width="0.24"/>
+<text x="272.27" y="67.88" font-family="Georgia, 'Times New Roman', serif" font-size="3.2" fill="#3f3f3f" text-anchor="start">4 mm</text>
+<text x="205.00" y="151.22" font-family="Georgia, 'Times New Roman', serif" font-size="3.6" fill="#3f3f3f" text-anchor="middle" letter-spacing="1.2">SIDE PROFILE</text>
+<circle cx="184.00" cy="64.78" r="6.15" fill="#ffffff" stroke="#3f3f3f" stroke-width="0.3"/>
+<circle cx="226.00" cy="64.78" r="6.15" fill="#ffffff" stroke="#3f3f3f" stroke-width="0.3"/>
+<rect x="189.00" y="162.00" width="100" height="40" fill="none" stroke="#3f3f3f" stroke-width="0.3"/>
+<line x1="189.00" y1="170.00" x2="289.00" y2="170.00" stroke="#3f3f3f" stroke-width="0.15"/>
+<text x="192.00" y="167.80" font-family="Georgia, 'Times New Roman', serif" font-size="4.0" fill="#3f3f3f" text-anchor="start" letter-spacing="2.0">FACETTA</text>
+<text x="192.00" y="175.60" font-family="Georgia, 'Times New Roman', serif" font-size="4.2" fill="#3f3f3f" text-anchor="start" font-weight="bold">dsn_halo  ·  v1</text>
+<text x="192.00" y="180.20" font-family="Georgia, 'Times New Roman', serif" font-size="3.2" fill="#3f3f3f" text-anchor="start">1.50 ct diamond, oval brilliant</text>
+<text x="192.00" y="184.80" font-family="Georgia, 'Times New Roman', serif" font-size="3.2" fill="#3f3f3f" text-anchor="start">18k white gold, high polish</text>
+<text x="192.00" y="189.40" font-family="Georgia, 'Times New Roman', serif" font-size="3.2" fill="#3f3f3f" text-anchor="start">D  ·  VS1</text>
+<text x="192.00" y="194.00" font-family="Georgia, 'Times New Roman', serif" font-size="3.0" fill="#3f3f3f" text-anchor="start">designer usr_ana  ·  2026-07-02</text>
+<text x="192.00" y="198.60" font-family="Georgia, 'Times New Roman', serif" font-size="3.0" fill="#3f3f3f" text-anchor="start">UNITS mm  ·  SCALE 3:1</text>
+<text x="12.00" y="198.00" font-family="Georgia, 'Times New Roman', serif" font-size="3.0" fill="#3f3f3f" text-anchor="start">NOTES: Shared prongs between halo melee; keep the gallery open.</text>
+</svg>

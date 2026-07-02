@@ -62,6 +62,27 @@ shape factors live in the vocabulary file (add `sg` per species: diamond 3.52,
 corundum 4.00, emerald 2.72, spinel 3.60, tourmaline 3.06, topaz 3.53, zircon 4.65,
 garnet 3.6–4.3 by variety, chrysoberyl 3.73, quartz 2.65).
 
+## Additive extensions (v1, multi-stone archetypes)
+
+All optional — existing specs are unaffected; `schema_version` stays 1.
+
+| Field | Meaning |
+|---|---|
+| `stone.count` (default 1) | Number of identical stones in the group; `carat` is per stone |
+| `stone.position` | Placement of a group: `"halo"`/`"surround"` (around the center), `"stations"` (spaced on a bangle), `"under_center"`/`"drop"` (below the cluster) |
+| `bracelet` | Oval bangle: `inner_length_mm`, `inner_width_mm`, `width_mm` ∈ [3, 12], `thickness_mm` ∈ [1.5, 4] |
+| `pendant` | `bail_inner_diameter_mm`, `bail_height_mm`, `drop_mm` (derived when absent: bail + 1 mm link + cluster + 1 mm link + drop stone) |
+
+Templates: `solitaire_prong` and `halo_prong` (rings — require `band` + `ring_size`),
+`love_bangle` (requires `bracelet`), `cluster_pendant` (requires `pendant`).
+
+### Physical-fit rules (422 with the feasible maximum)
+
+| Rule | Model |
+|---|---|
+| Surround/halo stones fit around the center | `count × (stone width + 0.2 mm gap) ≤ halo centerline perimeter` (Ramanujan ellipse approximation, 0.3 mm off the center girdle) |
+| Bangle stations fit on the band | `count × (stone width + 1 mm) ≤ band centerline perimeter`; stone width ≤ band width − 1 mm |
+
 ## Versioning
 | Action | Result |
 |---|---|

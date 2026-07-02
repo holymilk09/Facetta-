@@ -124,7 +124,8 @@ export function DesignsScreen({
           <Text style={styles.specSummary}>
             {spec.stone.carat} ct {spec.stone.species}, {spec.stone.cut.replace(/_/g, ' ')} ·{' '}
             {spec.stone.color.trade} · {spec.metal.karat ? `${spec.metal.karat}k ` : ''}
-            {spec.metal.color} {spec.metal.material} · US {spec.ring_size?.value}
+            {spec.metal.color} {spec.metal.material}
+            {spec.ring_size ? ` · US ${spec.ring_size.value}` : ''}
           </Text>
         )}
         <View style={styles.actions}>
