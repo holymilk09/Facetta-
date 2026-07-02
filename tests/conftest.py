@@ -183,9 +183,104 @@ PENDANT_SPEC = {
 }
 
 
+# Open cuff: 5 princess stations on the arc, 25 mm wrist gap
+CUFF_SPEC = copy.deepcopy(BANGLE_SPEC)
+CUFF_SPEC.update({"design_id": "dsn_cuff", "template": "cuff"})
+CUFF_SPEC["bracelet"] = {
+    "inner_length_mm": 58.0,
+    "inner_width_mm": 48.0,
+    "width_mm": 5.0,
+    "thickness_mm": 2.2,
+    "gap_width_mm": 25.0,
+}
+CUFF_SPEC["stone"] = {**copy.deepcopy(BANGLE_SPEC["stone"]), "count": 5}
+CUFF_SPEC["notes_to_factory"] = "Open cuff; ease the tips, no hinge."
+
+# Articulated link bracelet: 14 links, stones on alternating links
+LINK_SPEC = copy.deepcopy(BANGLE_SPEC)
+LINK_SPEC.update({"design_id": "dsn_link", "template": "link_bracelet"})
+LINK_SPEC["bracelet"] = {
+    "inner_length_mm": 56.0,
+    "inner_width_mm": 46.0,
+    "width_mm": 6.0,
+    "thickness_mm": 2.4,
+    "link_count": 14,
+}
+LINK_SPEC["stone"] = {**copy.deepcopy(BANGLE_SPEC["stone"]), "count": 7}
+LINK_SPEC["metal"]["color"] = "white"
+LINK_SPEC["notes_to_factory"] = "Articulated links, hinge pins between every link."
+
+# Pendant necklace: the cluster pendant on a cable chain
+NECKLACE_SPEC = copy.deepcopy(PENDANT_SPEC)
+NECKLACE_SPEC.update({"design_id": "dsn_necklace", "jewelry_type": "necklace"})
+NECKLACE_SPEC["chain"] = {"style": "cable", "length_mm": 450.0, "clasp": "lobster"}
+
+# Loose stone / Gem ID: 2 ct round diamond with lab-report proportions
+LOOSE_SPEC = {
+    "schema_version": 1,
+    "design_id": "dsn_gem",
+    "version": 1,
+    "created_by": "usr_ana",
+    "created_at": "2026-07-02T18:40:00Z",
+    "jewelry_type": "loose_stone",
+    "template": "loose_stone",
+    "mode": "pro",
+    "stone": {
+        "species": "diamond",
+        "cut": "round_brilliant",
+        "carat": 2.0,
+        "dimensions_mm": {"length": 8.1, "width": 8.1, "depth": 4.9},
+        "color": {"trade": "D", "gia": "colorless"},
+        "clarity": {"system": "gia_diamond", "grade": "VS1", "eye_clean": True},
+        "table_pct": 57.0,
+        "depth_pct": 60.5,
+        "girdle": "medium",
+        "inscription": "FCT-2141Z",
+        "phenomena": [],
+    },
+    "side_stones": [],
+    "notes_to_factory": None,
+}
+
+# A larger bangle the BANGLE_SPEC piece nests inside (stacking fixture)
+OUTER_BANGLE_SPEC = copy.deepcopy(BANGLE_SPEC)
+OUTER_BANGLE_SPEC["design_id"] = "dsn_outer_bangle"
+OUTER_BANGLE_SPEC["bracelet"] = {
+    "inner_length_mm": 66.0,
+    "inner_width_mm": 56.0,
+    "width_mm": 6.1,
+    "thickness_mm": 2.6,
+}
+
+
 @pytest.fixture
 def example_spec() -> dict:
     return copy.deepcopy(EXAMPLE_SPEC)
+
+
+@pytest.fixture
+def cuff_spec() -> dict:
+    return copy.deepcopy(CUFF_SPEC)
+
+
+@pytest.fixture
+def link_spec() -> dict:
+    return copy.deepcopy(LINK_SPEC)
+
+
+@pytest.fixture
+def necklace_spec() -> dict:
+    return copy.deepcopy(NECKLACE_SPEC)
+
+
+@pytest.fixture
+def loose_spec() -> dict:
+    return copy.deepcopy(LOOSE_SPEC)
+
+
+@pytest.fixture
+def outer_bangle_spec() -> dict:
+    return copy.deepcopy(OUTER_BANGLE_SPEC)
 
 
 @pytest.fixture

@@ -7,8 +7,8 @@ from pydantic import BaseModel, ConfigDict, Field
 from facetta import prose as prose_layer
 from facetta.db import utcnow
 from facetta.spec import Spec
-from facetta.svg_sheet import SheetUnsupported, render_sheet
-from facetta.validation import validate_spec
+from facetta.svg_sheet import SheetUnsupported, render_sheet, render_stack_sheet
+from facetta.validation import nesting_clearance, validate_spec
 from facetta.vocabulary import get_vocabulary
 
 router = APIRouter(prefix="/specs", tags=["specs"])
@@ -46,6 +46,48 @@ def sheet_preview(spec: Spec):
     except SheetUnsupported as exc:
         return JSONResponse(status_code=422, content={"detail": str(exc)})
     return Response(content=svg, media_type="image/svg+xml")
+
+
+class StackRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    spec_a: Spec
+    spec_b: Spec
+
+
+@router.post("/stack.svg")
+def stack_preview(request: StackRequest):
+    """Overlay two pieces on one sheet with their nesting clearance.
+
+    Two bangles/cuffs nest (per-axis clearance); two rings stack on the finger
+    (combined stack height). A pair that cannot nest is rejected with the
+    negative clearance numbers.
+    """
+    validated = []
+    for label, spec in (("spec_a", request.spec_a), ("spec_b", request.spec_b)):
+        result = validate_spec(spec, get_vocabulary())
+        if not result.ok:
+            return JSONResponse(
+                status_code=422,
+                content={"detail": [{**i.as_detail(), "piece": label} for i in result.issues]},
+            )
+        validated.append(result.spec)
+    spec_a, spec_b = validated
+    try:
+        clearance = nesting_clearance(spec_a, spec_b)
+    except ValueError as exc:
+        return JSONResponse(status_code=422, content={"detail": str(exc)})
+    if not clearance.nests:
+        return JSONResponse(
+            status_code=422,
+            content={
+                "detail": "these pieces do not nest — negative clearance",
+                "clearance": clearance.as_dict(),
+            },
+        )
+    svg = render_stack_sheet(spec_a, spec_b, clearance)
+    return Response(content=svg, media_type="image/svg+xml",
+                    headers={"X-Nesting-Clearance": str(clearance.as_dict())})
 
 
 class ProseRequest(BaseModel):

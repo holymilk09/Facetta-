@@ -94,6 +94,56 @@ class TestSheetGeometryIsSpecTrue:
         assert render_sheet(spec) == render_sheet(spec)
 
 
+class TestBlueprintAlignment:
+    """Witness lines snap to vector edges; views share one horizontal baseline."""
+
+    def _sheet(self, raw):
+        from facetta.validation import validate_spec
+        from facetta.vocabulary import get_vocabulary
+
+        result = validate_spec(Spec.model_validate(raw), get_vocabulary())
+        assert result.ok, [i.msg for i in result.issues]
+        return render_sheet(result.spec)
+
+    def test_witness_lines_snap_on_every_template(
+        self, example_spec, halo_spec, bangle_spec, pendant_spec,
+        cuff_spec, link_spec, necklace_spec, loose_spec,
+    ):
+        from support import assert_witness_lines_snap
+
+        for name, raw in [("solitaire", example_spec), ("halo", halo_spec),
+                          ("bangle", bangle_spec), ("pendant", pendant_spec),
+                          ("cuff", cuff_spec), ("link_bracelet", link_spec),
+                          ("necklace", necklace_spec), ("loose_stone", loose_spec)]:
+            count = assert_witness_lines_snap(self._sheet(raw), name)
+            assert count >= 6, f"{name}: expected a fully dimensioned sheet"
+
+    def test_witness_lines_snap_on_stack_sheets(self, bangle_spec, outer_bangle_spec):
+        from facetta.svg_sheet import render_stack_sheet
+        from facetta.validation import nesting_clearance
+        from support import assert_witness_lines_snap
+
+        a = Spec.model_validate(outer_bangle_spec)
+        b = Spec.model_validate(bangle_spec)
+        svg = render_stack_sheet(a, b, nesting_clearance(a, b))
+        assert_witness_lines_snap(svg, "stack_bangles")
+
+    def test_ring_views_share_the_baseline(self, example_spec):
+        from facetta.svg_sheet import BASELINE
+
+        svg = self._sheet(example_spec)
+        inner = example_spec["ring_size"]["inner_diameter_mm"] / 2 * SCALE
+        # the side-profile hoop center must sit exactly on the baseline
+        hoop = re.search(rf'<circle cx="[\d.]+" cy="([\d.]+)" r="{inner:.2f}"', svg)
+        assert hoop and float(hoop.group(1)) == BASELINE
+        # and the top view's stone ellipse is centered on the same baseline
+        stone = re.search(r'<ellipse cx="[\d.]+" cy="([\d.]+)"', svg)
+        assert stone and float(stone.group(1)) == BASELINE
+
+    def test_datum_line_is_drawn(self, example_spec):
+        assert 'stroke-dasharray="6 1.5 1 1.5"' in self._sheet(example_spec)
+
+
 class TestDensityBenchmarks:
     """The stones used in the halo ring, Love-style bangle, and cluster pendant."""
 

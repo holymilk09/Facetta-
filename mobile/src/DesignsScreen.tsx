@@ -11,12 +11,14 @@ export function DesignsScreen({
   focusDesignId,
   onEdit,
   onOpenShare,
+  isWide = false,
 }: {
   api: Api;
   designer: string;
   focusDesignId: string | null;
   onEdit: (designId: string, version: number, spec: any) => void;
   onOpenShare: (token: string) => void;
+  isWide?: boolean;
 }) {
   const [designs, setDesigns] = useState<any[]>([]);
   const [selected, setSelected] = useState<string | null>(focusDesignId);
@@ -109,8 +111,8 @@ export function DesignsScreen({
     );
   }
 
-  return (
-    <ScrollView contentContainerStyle={styles.content}>
+  const infoColumn = (
+    <>
       <Button title="← All designs" kind="ghost" onPress={() => { setSelected(null); setDetail(null); refreshList(); }} />
       <Section title={detail.design_id}>
         <ChipRow
@@ -123,8 +125,10 @@ export function DesignsScreen({
         {spec && (
           <Text style={styles.specSummary}>
             {spec.stone.carat} ct {spec.stone.species}, {spec.stone.cut.replace(/_/g, ' ')} ·{' '}
-            {spec.stone.color.trade} · {spec.metal.karat ? `${spec.metal.karat}k ` : ''}
-            {spec.metal.color} {spec.metal.material}
+            {spec.stone.color.trade}
+            {spec.metal
+              ? ` · ${spec.metal.karat ? `${spec.metal.karat}k ` : ''}${spec.metal.color} ${spec.metal.material}`
+              : ' · loose stone'}
             {spec.ring_size ? ` · US ${spec.ring_size.value}` : ''}
           </Text>
         )}
@@ -144,26 +148,6 @@ export function DesignsScreen({
         )}
       </Section>
 
-      {svg && (
-        <Section title="Technical sheet — tap to pin a comment">
-          <SheetView svg={svg} pins={pins} onPin={(x, y) => setPendingPin({ x, y })} />
-          {pendingPin && (
-            <View style={{ marginTop: 8 }}>
-              <Field
-                label={`Comment at ${pendingPin.x}%, ${pendingPin.y}%`}
-                value={commentBody}
-                onChange={setCommentBody}
-                multiline
-              />
-              <View style={styles.actions}>
-                <Button title="Pin comment" onPress={submitComment} disabled={!commentBody} />
-                <Button title="Cancel" kind="ghost" onPress={() => setPendingPin(null)} />
-              </View>
-            </View>
-          )}
-        </Section>
-      )}
-
       {comments.length > 0 && (
         <Section title="Comments">
           {comments.map((c, i) => (
@@ -178,6 +162,41 @@ export function DesignsScreen({
         </Section>
       )}
       {notice && <Notice kind="ok" text={notice} />}
+    </>
+  );
+
+  const sheetColumn = svg && (
+    <Section title="Technical sheet — tap to pin a comment">
+      <SheetView svg={svg} pins={pins} onPin={(x, y) => setPendingPin({ x, y })} />
+      {pendingPin && (
+        <View style={{ marginTop: 8 }}>
+          <Field
+            label={`Comment at ${pendingPin.x}%, ${pendingPin.y}%`}
+            value={commentBody}
+            onChange={setCommentBody}
+            multiline
+          />
+          <View style={styles.actions}>
+            <Button title="Pin comment" onPress={submitComment} disabled={!commentBody} />
+            <Button title="Cancel" kind="ghost" onPress={() => setPendingPin(null)} />
+          </View>
+        </View>
+      )}
+    </Section>
+  );
+
+  if (isWide) {
+    return (
+      <ScrollView contentContainerStyle={[styles.content, styles.wideRow]}>
+        <View style={styles.wideInfo}>{infoColumn}</View>
+        <View style={styles.wideSheet}>{sheetColumn}</View>
+      </ScrollView>
+    );
+  }
+  return (
+    <ScrollView contentContainerStyle={styles.content}>
+      {infoColumn}
+      {sheetColumn}
       <View style={{ height: 40 }} />
     </ScrollView>
   );
@@ -200,4 +219,7 @@ const styles = StyleSheet.create({
   comment: { fontSize: 13, color: theme.ink, marginBottom: 8 },
   commentNum: { fontWeight: 'bold', color: theme.danger },
   commentMeta: { fontSize: 11, color: theme.faint },
+  wideRow: { flexDirection: 'row', gap: 12, alignItems: 'flex-start' },
+  wideInfo: { flex: 0.9 },
+  wideSheet: { flex: 1.1 },
 });

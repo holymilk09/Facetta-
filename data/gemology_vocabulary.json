@@ -294,6 +294,33 @@
     "Peridot, Iolite, Kunzite/Hiddenite — single-color stones, no major trade-term layer needed beyond GIA hue/tone/sat."
   ],
 
+  "findings": {
+    "note": "Metalwork trade vocabulary for chains and clasps — extend here, never in code.",
+    "chain_styles": [
+      {"id": "cable", "display": "Cable", "note": "uniform round links, the everyday standard"},
+      {"id": "curb", "display": "Curb", "note": "twisted flattened links lying flat on the skin"},
+      {"id": "figaro", "display": "Figaro", "note": "curb pattern with alternating long links"},
+      {"id": "rope", "display": "Rope", "note": "twisted strands, strong sparkle"},
+      {"id": "box", "display": "Box", "note": "square links, holds pendants straight"},
+      {"id": "snake", "display": "Snake", "note": "smooth sleeve of plates, no visible links"},
+      {"id": "wheat", "display": "Wheat", "note": "braided oval links, very strong"},
+      {"id": "singapore", "display": "Singapore", "note": "twisted curb with liquid shimmer"}
+    ],
+    "clasp_types": [
+      {"id": "lobster", "display": "Lobster", "note": "spring-loaded claw, the secure default"},
+      {"id": "spring_ring", "display": "Spring ring", "note": "classic round clasp, light duty"},
+      {"id": "toggle", "display": "Toggle", "note": "bar through ring, decorative, easy one-handed"},
+      {"id": "box_insert", "display": "Box insert", "note": "tongue into box, often with safety eight"},
+      {"id": "magnetic", "display": "Magnetic", "note": "easiest to use, add a safety chain for weight"},
+      {"id": "hook_eye", "display": "Hook & eye", "note": "open hook, antique look, light pieces only"}
+    ]
+  },
+
+  "girdle_thickness_scale": [
+    "extremely_thin", "very_thin", "thin", "medium",
+    "slightly_thick", "thick", "very_thick", "extremely_thick"
+  ],
+
   "species": {
     "note": "Canonical species registry: sg (specific gravity) drives the carat-mm density check; clarity_systems, trade_color_keys, and allowed_phenomena point into the sections above. Jadeite deliberately absent — open item, needs a dedicated grading source.",
     "diamond": {"display": "Diamond", "sg": 3.52, "clarity_systems": ["gia_diamond"], "trade_color_keys": [], "allowed_phenomena": []},

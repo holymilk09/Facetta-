@@ -53,6 +53,11 @@ class Stone(StrictModel):
     phenomena: list[str] = Field(default_factory=list)
     count: Annotated[int, Field(ge=1, le=64)] = 1
     position: str | None = None  # e.g. "halo", "stations", "under_center"
+    # gem-ID proportions (loose stones / lab-report data)
+    table_pct: Annotated[float, Field(ge=40, le=80)] | None = None
+    depth_pct: Annotated[float, Field(ge=30, le=90)] | None = None
+    girdle: str | None = None  # vocabulary girdle_thickness_scale word
+    inscription: Annotated[str, Field(min_length=1, max_length=24)] | None = None
 
 
 class Setting(StrictModel):
@@ -82,12 +87,20 @@ class RingSize(StrictModel):
 
 
 class Bracelet(StrictModel):
-    """Oval bangle opening plus band cross-section."""
+    """Oval bangle/cuff opening plus band cross-section."""
 
     inner_length_mm: Annotated[float, Field(strict=True, ge=40, le=75)]
     inner_width_mm: Annotated[float, Field(strict=True, ge=35, le=65)]
     width_mm: Annotated[float, Field(strict=True, ge=3.0, le=12.0)]
     thickness_mm: Annotated[float, Field(strict=True, ge=1.5, le=4.0)]
+    gap_width_mm: Annotated[float, Field(strict=True, ge=15, le=40)] | None = None  # open cuff
+    link_count: Annotated[int, Field(ge=4, le=60)] | None = None  # articulated bracelet
+
+
+class Chain(StrictModel):
+    style: str  # vocabulary findings.chain_styles id
+    length_mm: Annotated[float, Field(strict=True, ge=300, le=900)]
+    clasp: str  # vocabulary findings.clasp_types id
 
 
 class Pendant(StrictModel):
@@ -106,11 +119,12 @@ class Spec(StrictModel):
     template: str
     mode: Literal["basic", "pro"]
     stone: Stone
-    setting: Setting
-    metal: Metal
+    setting: Setting | None = None  # loose stones carry no mount; required per-template
+    metal: Metal | None = None
     band: Band | None = None
     ring_size: RingSize | None = None
     bracelet: Bracelet | None = None
     pendant: Pendant | None = None
+    chain: Chain | None = None
     side_stones: list[Stone] = Field(default_factory=list)
     notes_to_factory: str | None = None

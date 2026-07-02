@@ -34,6 +34,7 @@ export function createApi(baseUrl: string) {
     health: () => call('/health'),
     stones: () => call('/vocabulary/stones'),
     stoneOptions: (id: string) => call(`/vocabulary/stones/${id}/options`),
+    findings: () => call('/vocabulary/findings'),
     validateSpec: (spec: unknown) => post('/specs/validate', spec),
     sheetPreview: (spec: unknown) => post('/specs/sheet.svg', spec),
     fromProse: (prose: string, created_by: string) =>

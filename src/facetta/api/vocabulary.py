@@ -26,6 +26,17 @@ def stones() -> dict:
     return {"stones": entries}
 
 
+@router.get("/findings")
+def findings() -> dict:
+    """Metalwork vocabulary (chains, clasps) and the girdle thickness scale."""
+    vocab = get_vocabulary()
+    return {
+        "chain_styles": vocab.chain_styles(),
+        "clasp_types": vocab.clasp_types(),
+        "girdle_thickness_scale": vocab.girdle_grades(),
+    }
+
+
 @router.get("/stones/{stone_id}/options")
 def stone_options(stone_id: str):
     vocab = get_vocabulary()

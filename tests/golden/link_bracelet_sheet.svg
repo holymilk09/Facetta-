@@ -1,0 +1,68 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 297 210" width="297mm" height="210mm" font-family="Georgia, 'Times New Roman', serif">
+<defs><pattern id="hatch" width="1.4" height="1.4" patternTransform="rotate(45)" patternUnits="userSpaceOnUse"><line x1="0" y1="0" x2="0" y2="1.4" stroke="#8a8a8a" stroke-width="0.12"/></pattern></defs>
+<rect x="0" y="0" width="297" height="210" fill="#fdfdfa"/>
+<rect x="8" y="8" width="281" height="194" fill="none" stroke="#3f3f3f" stroke-width="0.3"/>
+<text x="148.50" y="16.00" font-family="Georgia, 'Times New Roman', serif" font-size="4.6" fill="#3f3f3f" text-anchor="middle" letter-spacing="1.6">TECHNICAL SHEET — LINK BRACELET</text>
+<line x1="11.00" y1="105.00" x2="286.00" y2="105.00" stroke="#8a8a8a" stroke-width="0.15" stroke-dasharray="6 1.5 1 1.5"/>
+<ellipse cx="95.00" cy="105.00" rx="56.00" ry="46.00" fill="none" stroke="#8a8a8a" stroke-width="0.15"/>
+<rect x="85.15" y="50.60" width="19.70" height="12.00" rx="1.6" fill="#ffffff" stroke="#3f3f3f" stroke-width="0.3" transform="rotate(0.0 95.00 56.60)"/>
+<rect x="92.10" y="53.70" width="5.80" height="5.80" fill="#ffffff" stroke="#3f3f3f" stroke-width="0.3" transform="rotate(45.0 95.00 56.60)"/>
+<rect x="110.49" y="55.39" width="19.70" height="12.00" rx="1.6" fill="#ffffff" stroke="#3f3f3f" stroke-width="0.3" transform="rotate(21.8 120.34 61.39)"/>
+<rect x="130.81" y="68.82" width="19.70" height="12.00" rx="1.6" fill="#ffffff" stroke="#3f3f3f" stroke-width="0.3" transform="rotate(46.1 140.66 74.82)"/>
+<rect x="137.76" y="71.92" width="5.80" height="5.80" fill="#ffffff" stroke="#3f3f3f" stroke-width="0.3" transform="rotate(91.1 140.66 74.82)"/>
+<rect x="142.09" y="88.23" width="19.70" height="12.00" rx="1.6" fill="#ffffff" stroke="#3f3f3f" stroke-width="0.3" transform="rotate(74.6 151.94 94.23)"/>
+<rect x="142.09" y="109.77" width="19.70" height="12.00" rx="1.6" fill="#ffffff" stroke="#3f3f3f" stroke-width="0.3" transform="rotate(105.4 151.94 115.77)"/>
+<rect x="149.04" y="112.87" width="5.80" height="5.80" fill="#ffffff" stroke="#3f3f3f" stroke-width="0.3" transform="rotate(150.4 151.94 115.77)"/>
+<rect x="130.81" y="129.18" width="19.70" height="12.00" rx="1.6" fill="#ffffff" stroke="#3f3f3f" stroke-width="0.3" transform="rotate(133.9 140.66 135.18)"/>
+<rect x="110.49" y="142.61" width="19.70" height="12.00" rx="1.6" fill="#ffffff" stroke="#3f3f3f" stroke-width="0.3" transform="rotate(158.2 120.34 148.61)"/>
+<rect x="117.44" y="145.71" width="5.80" height="5.80" fill="#ffffff" stroke="#3f3f3f" stroke-width="0.3" transform="rotate(203.2 120.34 148.61)"/>
+<rect x="85.15" y="147.40" width="19.70" height="12.00" rx="1.6" fill="#ffffff" stroke="#3f3f3f" stroke-width="0.3" transform="rotate(180.0 95.00 153.40)"/>
+<rect x="59.81" y="142.61" width="19.70" height="12.00" rx="1.6" fill="#ffffff" stroke="#3f3f3f" stroke-width="0.3" transform="rotate(-158.2 69.66 148.61)"/>
+<rect x="66.76" y="145.71" width="5.80" height="5.80" fill="#ffffff" stroke="#3f3f3f" stroke-width="0.3" transform="rotate(-113.2 69.66 148.61)"/>
+<rect x="39.49" y="129.18" width="19.70" height="12.00" rx="1.6" fill="#ffffff" stroke="#3f3f3f" stroke-width="0.3" transform="rotate(-133.9 49.34 135.18)"/>
+<rect x="28.22" y="109.77" width="19.70" height="12.00" rx="1.6" fill="#ffffff" stroke="#3f3f3f" stroke-width="0.3" transform="rotate(-105.4 38.06 115.77)"/>
+<rect x="35.16" y="112.87" width="5.80" height="5.80" fill="#ffffff" stroke="#3f3f3f" stroke-width="0.3" transform="rotate(-60.4 38.06 115.77)"/>
+<rect x="28.22" y="88.23" width="19.70" height="12.00" rx="1.6" fill="#ffffff" stroke="#3f3f3f" stroke-width="0.3" transform="rotate(-74.6 38.06 94.23)"/>
+<rect x="39.49" y="68.82" width="19.70" height="12.00" rx="1.6" fill="#ffffff" stroke="#3f3f3f" stroke-width="0.3" transform="rotate(-46.1 49.34 74.82)"/>
+<rect x="46.44" y="71.92" width="5.80" height="5.80" fill="#ffffff" stroke="#3f3f3f" stroke-width="0.3" transform="rotate(-1.1 49.34 74.82)"/>
+<rect x="59.81" y="55.39" width="19.70" height="12.00" rx="1.6" fill="#ffffff" stroke="#3f3f3f" stroke-width="0.3" transform="rotate(-21.8 69.66 61.39)"/>
+<line x1="39.00" y1="105.00" x2="39.00" y2="120.00" stroke="#8a8a8a" stroke-width="0.15" stroke-dasharray="0.8 0.8"/>
+<line x1="151.00" y1="105.00" x2="151.00" y2="120.00" stroke="#8a8a8a" stroke-width="0.15" stroke-dasharray="0.8 0.8"/>
+<line x1="39.00" y1="119.00" x2="151.00" y2="119.00" stroke="#8a8a8a" stroke-width="0.15"/>
+<line x1="38.10" y1="119.90" x2="39.90" y2="118.10" stroke="#3f3f3f" stroke-width="0.24"/>
+<line x1="150.10" y1="119.90" x2="151.90" y2="118.10" stroke="#3f3f3f" stroke-width="0.24"/>
+<text x="95.00" y="117.60" font-family="Georgia, 'Times New Roman', serif" font-size="3.2" fill="#3f3f3f" text-anchor="middle">56 mm</text>
+<line x1="95.00" y1="59.00" x2="95.00" y2="151.00" stroke="#8a8a8a" stroke-width="0.15"/>
+<line x1="94.10" y1="59.90" x2="95.90" y2="58.10" stroke="#3f3f3f" stroke-width="0.24"/>
+<line x1="94.10" y1="151.90" x2="95.90" y2="150.10" stroke="#3f3f3f" stroke-width="0.24"/>
+<text x="96.80" y="106.10" font-family="Georgia, 'Times New Roman', serif" font-size="3.2" fill="#3f3f3f" text-anchor="start">46 mm</text>
+<text x="95.00" y="171.40" font-family="Georgia, 'Times New Roman', serif" font-size="3.6" fill="#3f3f3f" text-anchor="middle" letter-spacing="1.2">FACE VIEW</text>
+<text x="95.00" y="176.40" font-family="Georgia, 'Times New Roman', serif" font-size="2.8" fill="#8a8a8a" text-anchor="middle">14 articulated links · pitch 12.0 mm on the centerline</text>
+<rect x="195.97" y="87.00" width="59.09" height="36.00" rx="3" fill="#ffffff" stroke="#3f3f3f" stroke-width="0.3"/>
+<rect x="268.03" y="87.00" width="14.77" height="36.00" rx="3" fill="none" stroke="#8a8a8a" stroke-width="0.15" stroke-dasharray="1.2 1"/>
+<line x1="195.97" y1="87.00" x2="195.97" y2="80.00" stroke="#8a8a8a" stroke-width="0.15" stroke-dasharray="0.8 0.8"/>
+<line x1="268.03" y1="87.00" x2="268.03" y2="80.00" stroke="#8a8a8a" stroke-width="0.15" stroke-dasharray="0.8 0.8"/>
+<line x1="195.97" y1="81.00" x2="268.03" y2="81.00" stroke="#8a8a8a" stroke-width="0.15"/>
+<line x1="195.07" y1="81.90" x2="196.87" y2="80.10" stroke="#3f3f3f" stroke-width="0.24"/>
+<line x1="267.13" y1="81.90" x2="268.93" y2="80.10" stroke="#3f3f3f" stroke-width="0.24"/>
+<text x="232.00" y="79.60" font-family="Georgia, 'Times New Roman', serif" font-size="3.2" fill="#3f3f3f" text-anchor="middle">pitch 12.0 mm</text>
+<line x1="195.97" y1="87.00" x2="188.97" y2="87.00" stroke="#8a8a8a" stroke-width="0.15" stroke-dasharray="0.8 0.8"/>
+<line x1="195.97" y1="123.00" x2="188.97" y2="123.00" stroke="#8a8a8a" stroke-width="0.15" stroke-dasharray="0.8 0.8"/>
+<line x1="189.97" y1="87.00" x2="189.97" y2="123.00" stroke="#8a8a8a" stroke-width="0.15"/>
+<line x1="189.07" y1="87.90" x2="190.87" y2="86.10" stroke="#3f3f3f" stroke-width="0.24"/>
+<line x1="189.07" y1="123.90" x2="190.87" y2="122.10" stroke="#3f3f3f" stroke-width="0.24"/>
+<text x="191.77" y="106.10" font-family="Georgia, 'Times New Roman', serif" font-size="3.2" fill="#3f3f3f" text-anchor="start">6 mm</text>
+<rect x="216.82" y="96.30" width="17.40" height="17.40" fill="#ffffff" stroke="#3f3f3f" stroke-width="0.3" transform="rotate(45 225.52 105.00)"/>
+<text x="232.00" y="143.00" font-family="Georgia, 'Times New Roman', serif" font-size="2.8" fill="#8a8a8a" text-anchor="middle">2.9 mm princess seat, every 2 links</text>
+<text x="232.00" y="138.00" font-family="Georgia, 'Times New Roman', serif" font-size="3.6" fill="#3f3f3f" text-anchor="middle" letter-spacing="1.2">LINK DETAIL — 6:1</text>
+<rect x="189.00" y="162.00" width="100" height="40" fill="none" stroke="#3f3f3f" stroke-width="0.3"/>
+<line x1="189.00" y1="170.00" x2="289.00" y2="170.00" stroke="#3f3f3f" stroke-width="0.15"/>
+<text x="192.00" y="167.80" font-family="Georgia, 'Times New Roman', serif" font-size="4.0" fill="#3f3f3f" text-anchor="start" letter-spacing="2.0">FACETTA</text>
+<text x="192.00" y="175.60" font-family="Georgia, 'Times New Roman', serif" font-size="4.2" fill="#3f3f3f" text-anchor="start" font-weight="bold">dsn_link  ·  v1</text>
+<text x="192.00" y="180.20" font-family="Georgia, 'Times New Roman', serif" font-size="3.2" fill="#3f3f3f" text-anchor="start">0.14 ct diamond, princess</text>
+<text x="192.00" y="184.80" font-family="Georgia, 'Times New Roman', serif" font-size="3.2" fill="#3f3f3f" text-anchor="start">18k white gold, high polish</text>
+<text x="192.00" y="189.40" font-family="Georgia, 'Times New Roman', serif" font-size="3.2" fill="#3f3f3f" text-anchor="start">F  ·  VS1</text>
+<text x="192.00" y="194.00" font-family="Georgia, 'Times New Roman', serif" font-size="3.0" fill="#3f3f3f" text-anchor="start">designer usr_ana  ·  2026-07-02</text>
+<text x="192.00" y="198.60" font-family="Georgia, 'Times New Roman', serif" font-size="3.0" fill="#3f3f3f" text-anchor="start">UNITS mm  ·  SCALE 2:1</text>
+<text x="12.00" y="198.00" font-family="Georgia, 'Times New Roman', serif" font-size="3.0" fill="#3f3f3f" text-anchor="start">NOTES: Articulated links, hinge pins between every link.</text>
+</svg>

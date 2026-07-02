@@ -26,6 +26,8 @@ STONE_GAP_MM = 0.2     # minimum gap between adjacent surround stones
 STATION_GAP_MM = 1.0   # minimum metal between bangle station stones
 
 RING_TEMPLATES = ("solitaire_prong", "halo_prong")
+BRACELET_TEMPLATES = ("love_bangle", "cuff", "link_bracelet")
+UNMOUNTED_TEMPLATES = ("loose_stone",)  # no setting/metal — the stone is the piece
 
 
 def ellipse_perimeter_mm(a: float, b: float) -> float:
@@ -63,6 +65,58 @@ class ValidationResult:
 
 def expected_inner_diameter_mm(ring_size: RingSize) -> float:
     return round(US_SIZE_BASE_MM + US_SIZE_STEP_MM * ring_size.value, 2)
+
+
+@dataclass(frozen=True)
+class NestingClearance:
+    """How two pieces stack or nest, per docs/SPEC_SCHEMA.md stacking rules."""
+
+    kind: str                      # "bangle_in_bangle" | "ring_stack"
+    nests: bool
+    clearance_x_mm: float | None = None   # bangle-in-bangle, per side
+    clearance_y_mm: float | None = None
+    stack_height_mm: float | None = None  # ring stack: combined band width
+    diameter_delta_mm: float | None = None
+
+    def as_dict(self) -> dict:
+        return {k: v for k, v in self.__dict__.items() if v is not None}
+
+
+def nesting_clearance(spec_a: Spec, spec_b: Spec) -> NestingClearance:
+    """Clearance between two pieces worn together.
+
+    Bangle in bangle: outer envelope of the smaller vs inner opening of the
+    larger, per axis (negative = they do not nest). Ring on ring: they sit
+    adjacent on the finger — combined stack height and inner-diameter delta.
+    """
+    if spec_a.bracelet is not None and spec_b.bracelet is not None:
+        pair = sorted((spec_a.bracelet, spec_b.bracelet),
+                      key=lambda b: b.inner_length_mm + 2 * b.thickness_mm)
+        inner_piece, outer_piece = pair
+        cx = (outer_piece.inner_length_mm
+              - (inner_piece.inner_length_mm + 2 * inner_piece.thickness_mm)) / 2
+        cy = (outer_piece.inner_width_mm
+              - (inner_piece.inner_width_mm + 2 * inner_piece.thickness_mm)) / 2
+        return NestingClearance(
+            kind="bangle_in_bangle",
+            nests=cx > 0 and cy > 0,
+            clearance_x_mm=round(cx, 2),
+            clearance_y_mm=round(cy, 2),
+        )
+    if (spec_a.band is not None and spec_a.ring_size is not None
+            and spec_b.band is not None and spec_b.ring_size is not None):
+        d1 = spec_a.ring_size.inner_diameter_mm or expected_inner_diameter_mm(spec_a.ring_size)
+        d2 = spec_b.ring_size.inner_diameter_mm or expected_inner_diameter_mm(spec_b.ring_size)
+        return NestingClearance(
+            kind="ring_stack",
+            nests=True,
+            stack_height_mm=round(spec_a.band.width_mm + spec_b.band.width_mm, 2),
+            diameter_delta_mm=round(abs(d1 - d2), 2),
+        )
+    raise ValueError(
+        "stacking supports two bangles/cuffs (nesting) or two rings (finger stack); "
+        f"got templates '{spec_a.template}' and '{spec_b.template}'"
+    )
 
 
 PENDANT_LINK_GAP_MM = 1.0  # jump-ring gap between bail, cluster, and drop stone
@@ -138,6 +192,41 @@ def _validate_stone(stone: Stone, loc: tuple, vocab: Vocabulary, issues: list[Va
                 valid_options=list(species.allowed_phenomena),
             ))
 
+    if stone.girdle is not None and stone.girdle not in vocab.girdle_grades():
+        issues.append(ValidationIssue(
+            loc=(*loc, "girdle"),
+            msg=f"unknown girdle thickness '{stone.girdle}'",
+            type="vocabulary",
+            valid_options=vocab.girdle_grades(),
+        ))
+
+    if stone.depth_pct is not None:
+        computed = stone.dimensions_mm.depth / stone.dimensions_mm.width * 100
+        if abs(stone.depth_pct - computed) > 2.5:
+            issues.append(ValidationIssue(
+                loc=(*loc, "depth_pct"),
+                msg=(
+                    f"depth {stone.depth_pct}% contradicts the measurements: "
+                    f"{stone.dimensions_mm.depth} / {stone.dimensions_mm.width} mm "
+                    f"= {computed:.1f}%"
+                ),
+                type="proportions",
+                expected={"computed_depth_pct": round(computed, 1)},
+            ))
+
+    if stone.table_pct is not None and cut is not None:
+        low, high = (55, 75) if cut.category == "step" else (50, 70)
+        if not (low <= stone.table_pct <= high):
+            issues.append(ValidationIssue(
+                loc=(*loc, "table_pct"),
+                msg=(
+                    f"table {stone.table_pct}% is outside the workable range for a "
+                    f"{cut.category} cut ({low}–{high}%)"
+                ),
+                type="proportions",
+                expected={"min_pct": low, "max_pct": high},
+            ))
+
     if cut is not None:
         d = stone.dimensions_mm
         result = check_density(
@@ -175,8 +264,19 @@ def _surround_fit(center_span_a: float, center_span_b: float, stone: Stone,
     return int(perimeter // (w + gap)), perimeter
 
 
-def _validate_assembly(spec: Spec, issues: list[ValidationIssue]) -> None:
+def _validate_assembly(spec: Spec, vocab: Vocabulary, issues: list[ValidationIssue]) -> None:
     """Template section requirements and multi-stone physical fit."""
+    if spec.template not in UNMOUNTED_TEMPLATES:
+        if spec.setting is None:
+            issues.append(ValidationIssue(
+                loc=("setting",), type="template",
+                msg=f"template '{spec.template}' is a mounted piece and requires a setting section",
+            ))
+        if spec.metal is None:
+            issues.append(ValidationIssue(
+                loc=("metal",), type="template",
+                msg=f"template '{spec.template}' is a mounted piece and requires a metal section",
+            ))
     if spec.template in RING_TEMPLATES:
         if spec.band is None:
             issues.append(ValidationIssue(
@@ -188,16 +288,52 @@ def _validate_assembly(spec: Spec, issues: list[ValidationIssue]) -> None:
                 loc=("ring_size",), type="template",
                 msg=f"template '{spec.template}' is a ring and requires a ring_size section",
             ))
-    if spec.template == "love_bangle" and spec.bracelet is None:
+    if spec.template in BRACELET_TEMPLATES and spec.bracelet is None:
         issues.append(ValidationIssue(
             loc=("bracelet",), type="template",
-            msg="template 'love_bangle' requires a bracelet section",
+            msg=f"template '{spec.template}' requires a bracelet section",
         ))
+    if spec.bracelet is not None:
+        if spec.template == "cuff" and spec.bracelet.gap_width_mm is None:
+            issues.append(ValidationIssue(
+                loc=("bracelet", "gap_width_mm"), type="template",
+                msg="template 'cuff' requires bracelet.gap_width_mm (the wrist opening)",
+            ))
+        if spec.template == "link_bracelet" and spec.bracelet.link_count is None:
+            issues.append(ValidationIssue(
+                loc=("bracelet", "link_count"), type="template",
+                msg="template 'link_bracelet' requires bracelet.link_count",
+            ))
+        if (spec.bracelet.gap_width_mm is not None
+                and spec.bracelet.gap_width_mm >= spec.bracelet.inner_width_mm):
+            issues.append(ValidationIssue(
+                loc=("bracelet", "gap_width_mm"), type="fit",
+                msg=(
+                    f"a {spec.bracelet.gap_width_mm} mm gap in a "
+                    f"{spec.bracelet.inner_width_mm} mm opening is no longer a cuff"
+                ),
+                expected={"max_gap_mm": spec.bracelet.inner_width_mm - 1},
+            ))
     if spec.template == "cluster_pendant" and spec.pendant is None:
         issues.append(ValidationIssue(
             loc=("pendant",), type="template",
             msg="template 'cluster_pendant' requires a pendant section",
         ))
+    if spec.chain is not None:
+        if spec.chain.style not in vocab.chain_style_ids():
+            issues.append(ValidationIssue(
+                loc=("chain", "style"),
+                msg=f"unknown chain style '{spec.chain.style}'",
+                type="vocabulary",
+                valid_options=vocab.chain_style_ids(),
+            ))
+        if spec.chain.clasp not in vocab.clasp_type_ids():
+            issues.append(ValidationIssue(
+                loc=("chain", "clasp"),
+                msg=f"unknown clasp type '{spec.chain.clasp}'",
+                type="vocabulary",
+                valid_options=vocab.clasp_type_ids(),
+            ))
 
     # halo / surround stones must physically fit around the center stone
     center = spec.stone.dimensions_mm
@@ -230,6 +366,8 @@ def _validate_assembly(spec: Spec, issues: list[ValidationIssue]) -> None:
         a = (spec.bracelet.inner_length_mm + spec.bracelet.thickness_mm) / 2
         b = (spec.bracelet.inner_width_mm + spec.bracelet.thickness_mm) / 2
         perimeter = ellipse_perimeter_mm(a, b)
+        if spec.bracelet.gap_width_mm is not None:
+            perimeter -= spec.bracelet.gap_width_mm  # stones live on the arc only
         for loc, stone in stations:
             w = stone.dimensions_mm.width
             max_count = int(perimeter // (w + STATION_GAP_MM))
@@ -267,7 +405,7 @@ def validate_spec(spec: Spec, vocab: Vocabulary) -> ValidationResult:
     _validate_stone(spec.stone, ("stone",), vocab, issues)
     for i, stone in enumerate(spec.side_stones):
         _validate_stone(stone, ("side_stones", i), vocab, issues)
-    _validate_assembly(spec, issues)
+    _validate_assembly(spec, vocab, issues)
 
     if spec.pendant is not None and spec.pendant.drop_mm is None:
         spec = spec.model_copy(deep=True)

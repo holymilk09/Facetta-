@@ -1,6 +1,8 @@
 import { StatusBar } from 'expo-status-bar';
 import React, { useMemo, useState } from 'react';
-import { Pressable, SafeAreaView, StyleSheet, Text, TextInput, View } from 'react-native';
+import {
+  Pressable, SafeAreaView, StyleSheet, Text, TextInput, useWindowDimensions, View,
+} from 'react-native';
 import { createApi, DEFAULT_API_URL } from './src/api';
 import { BuilderScreen, EditingTarget } from './src/BuilderScreen';
 import { DesignsScreen } from './src/DesignsScreen';
@@ -19,6 +21,8 @@ export default function App() {
   const [shareToken, setShareToken] = useState<string | null>(null);
 
   const api = useMemo(() => createApi(apiUrl.replace(/\/$/, '')), [apiUrl]);
+  const { width } = useWindowDimensions();
+  const isWide = width >= 900; // tablet / desktop: two-pane layouts
 
   return (
     <SafeAreaView style={styles.root}>
@@ -59,6 +63,7 @@ export default function App() {
           designer={designer}
           editing={editing}
           initialSpec={initialSpec}
+          isWide={isWide}
           onSaved={(designId) => {
             setEditing(null);
             setInitialSpec(null);
@@ -71,6 +76,7 @@ export default function App() {
         <DesignsScreen
           api={api}
           designer={designer}
+          isWide={isWide}
           focusDesignId={focusDesignId}
           onEdit={(designId, version, spec) => {
             setEditing({ designId, version });

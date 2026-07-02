@@ -23,13 +23,16 @@ from __future__ import annotations
 import math
 
 from facetta.spec import Spec
+from facetta.validation import NestingClearance, ellipse_perimeter_mm, pendant_drop_mm
 
 SHEET_W, SHEET_H = 297.0, 210.0
 MARGIN = 8.0
 SCALE = 3.0
+BASELINE = 105.0  # shared horizontal datum: every view's centerline sits here
 
 INK = "#3f3f3f"
 FAINT = "#8a8a8a"
+ACCENT = "#7a5c2e"  # second piece on stacking sheets
 STROKE_MAIN = 0.3
 STROKE_DIM = 0.15
 FONT = "Georgia, 'Times New Roman', serif"
@@ -163,8 +166,8 @@ def _side_view(spec: Spec, cx: float, cy: float) -> list[str]:
     pavilion_h = depth - crown_h
     table_w = span * 0.55
 
-    # center the composition: hoop lower, stone above
-    ring_cy = cy + (gallery + depth) / 2 - depth / 3
+    # cy IS the hoop center — the view's datum, shared with the top view
+    ring_cy = cy
     ring_top = ring_cy - outer_r
     y_girdle = ring_top - gallery
     y_table = y_girdle - crown_h
@@ -211,7 +214,7 @@ def _side_view(spec: Spec, cx: float, cy: float) -> list[str]:
         *_dim_h(cx - inner_r, cx + inner_r, ring_cy, f"⌀ {dim_id} mm"),
         # gallery height on the near right, stone depth further out
         _ext(xr, y_girdle, x_dim + 1, y_girdle),
-        _ext(cx + outer_r * 0.28, ring_top, x_dim + 1, ring_top),
+        _ext(cx, ring_top, x_dim + 1, ring_top),  # anchored on the hoop's top point
         *_dim_v(x_dim, y_girdle, ring_top, f"{dim_g} mm gallery"),
         _ext(txr, y_table, x_dim2 + 1, y_table),
         _ext(cx, y_culet, x_dim2 + 1, y_culet),
@@ -226,12 +229,16 @@ def _title_block(spec: Spec, scale_label: str = "3:1") -> list[str]:
     y = SHEET_H - MARGIN - 40
     stone = spec.stone
     metal = spec.metal
-    karat = f"{metal.karat}k " if metal.karat else ""
-    finish = f", {metal.finish.replace('_', ' ')}" if metal.finish else ""
+    if metal is not None:
+        karat = f"{metal.karat}k " if metal.karat else ""
+        finish = f", {metal.finish.replace('_', ' ')}" if metal.finish else ""
+        metal_line = f"{karat}{metal.color} {metal.material}{finish}"
+    else:
+        metal_line = "loose stone — unmounted"
     lines = [
         (f"{spec.design_id}  ·  v{spec.version}", 4.2, True),
         (f"{stone.carat:.2f} ct {stone.species}, {stone.cut.replace('_', ' ')}", 3.2, False),
-        (f"{karat}{metal.color} {metal.material}{finish}", 3.2, False),
+        (metal_line, 3.2, False),
         (f"{stone.color.trade}  ·  {stone.clarity.grade}", 3.2, False),
         (f"designer {spec.created_by}  ·  {spec.created_at.date().isoformat()}", 3.0, False),
         (f"UNITS mm  ·  SCALE {scale_label}", 3.0, False),
@@ -250,8 +257,12 @@ def _title_block(spec: Spec, scale_label: str = "3:1") -> list[str]:
     return parts
 
 
-def _frame(spec: Spec, title: str, scale_label: str, body: list[str]) -> str:
-    """The shared sheet envelope: page, border, title, body views, title block."""
+def _frame(spec: Spec, title: str, scale_label: str, body: list[str],
+           datum_y: float | None = BASELINE) -> str:
+    """The shared sheet envelope: page, border, title, body views, title block.
+
+    datum_y draws the shared horizontal baseline every view is centered on.
+    """
     parts = [
         f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {SHEET_W:g} {SHEET_H:g}" '
         f'width="{SHEET_W:g}mm" height="{SHEET_H:g}mm" font-family="{FONT}">',
@@ -265,6 +276,9 @@ def _frame(spec: Spec, title: str, scale_label: str, body: list[str]) -> str:
         f'height="{SHEET_H - 2 * MARGIN:g}" fill="none" stroke="{INK}" stroke-width="{STROKE_MAIN}"/>',
         _text(SHEET_W / 2, MARGIN + 8, title, size=4.6, style=' letter-spacing="1.6"'),
     ]
+    if datum_y is not None:
+        parts.append(_line(MARGIN + 3, datum_y, SHEET_W - MARGIN - 3, datum_y,
+                           w=STROKE_DIM, color=FAINT, dash="6 1.5 1 1.5"))
     parts += body
     parts += _title_block(spec, scale_label)
     if spec.notes_to_factory:
@@ -285,7 +299,7 @@ def _render_solitaire(spec: Spec) -> str:
             f"cut '{spec.stone.cut}' not supported on sheets yet; supported: {list(SUPPORTED_CUTS)}"
         )
     _require_ring_sections(spec, "solitaire")
-    body = _top_view(spec, 82, 105) + _side_view(spec, 200, 100)
+    body = _top_view(spec, 82, BASELINE) + _side_view(spec, 200, BASELINE)
     return _frame(spec, "TECHNICAL SHEET — SOLITAIRE RING", "3:1", body)
 
 
@@ -377,9 +391,8 @@ def _halo_side_view(spec: Spec, melee, cx: float, cy: float) -> list[str]:
     inner_r = spec.ring_size.inner_diameter_mm * SCALE / 2
     outer_r = inner_r + spec.band.thickness_mm * SCALE
     gallery = (spec.setting.gallery_height_mm or 0.0) * SCALE
-    depth = stone.depth * SCALE
     span = stone.length * SCALE
-    ring_cy = cy + (gallery + depth) / 2 - depth / 3
+    ring_cy = cy  # datum: hoop center, matching _side_view
     y_girdle = ring_cy - outer_r - gallery
     prong_r = (spec.setting.prong_tip_mm or 0.9) * SCALE / 2
     mr = melee.dimensions_mm.width / 2 * SCALE
@@ -398,7 +411,7 @@ def _render_halo(spec: Spec) -> str:
     melee = _find_stone(spec, "halo", "surround")
     if melee is None:
         raise SheetUnsupported("halo_prong needs a side_stones entry with position 'halo'")
-    body = _halo_top_view(spec, melee, 82, 105) + _halo_side_view(spec, melee, 205, 100)
+    body = _halo_top_view(spec, melee, 82, BASELINE) + _halo_side_view(spec, melee, 205, BASELINE)
     return _frame(spec, "TECHNICAL SHEET — HALO RING", "3:1", body)
 
 
@@ -482,7 +495,7 @@ def _render_bangle(spec: Spec) -> str:
         raise SheetUnsupported(
             f"bangle stations must be a square cut; supported: {list(BANGLE_STATION_CUTS)}"
         )
-    body = _bangle_face_view(spec, 95, 103) + _bangle_section_view(spec, 232, 100)
+    body = _bangle_face_view(spec, 95, BASELINE) + _bangle_section_view(spec, 232, BASELINE)
     return _frame(spec, "TECHNICAL SHEET — OVAL STATION BANGLE", "2:1", body)
 
 
@@ -642,11 +655,345 @@ def _render_pendant(spec: Spec) -> str:
         )
     melee = _find_stone(spec, "halo", "surround")
     drop_stone = _find_stone(spec, "under_center", "drop")
+    # center the whole drop on the shared baseline
+    ty = BASELINE - pendant_drop_mm(spec) * SCALE / 2
     body = (
-        _pendant_front_view(spec, melee, drop_stone, 100, 48)
-        + _pendant_side_view(spec, melee, drop_stone, 225, 48)
+        _pendant_front_view(spec, melee, drop_stone, 100, ty)
+        + _pendant_side_view(spec, melee, drop_stone, 225, ty)
     )
-    return _frame(spec, "TECHNICAL SHEET — CLUSTER PENDANT", "3:1", body)
+    title = "TECHNICAL SHEET — CLUSTER PENDANT"
+    if spec.chain is not None:
+        title = "TECHNICAL SHEET — PENDANT NECKLACE"
+        body += _chain_callout(spec, 100, ty)
+    return _frame(spec, title, "3:1", body)
+
+
+def _chain_callout(spec: Spec, cx: float, bail_top_y: float) -> list[str]:
+    """Chain stubs leaving the bail plus the chain/clasp data block (the chain
+    itself is data, not drawn to scale)."""
+    chain = spec.chain
+    parts = []
+    for sign in (-1, 1):
+        for i in range(1, 4):  # three fading links up each side
+            r = 1.4 - i * 0.25
+            parts.append(_circle(cx + sign * i * 2.6, bail_top_y - 1.4 - i * 2.2, r))
+    parts += [
+        _text(MARGIN + 6, 26, "CHAIN", size=3.4, anchor="start", style=' letter-spacing="1.2"'),
+        _text(MARGIN + 6, 31,
+              f"{chain.style.replace('_', ' ')} · {_fmt(chain.length_mm)} mm · "
+              f"{chain.clasp.replace('_', ' ')} clasp",
+              size=3.0, anchor="start", color=FAINT),
+    ]
+    return parts
+
+
+# --- open cuff ----------------------------------------------------------------
+
+
+def _cuff_face_view(spec: Spec, cx: float, cy: float) -> list[str]:
+    br = spec.bracelet
+    s = BANGLE_SCALE
+    a_in, b_in = br.inner_length_mm / 2 * s, br.inner_width_mm / 2 * s
+    a_out, b_out = a_in + br.thickness_mm * s, b_in + br.thickness_mm * s
+    a_c = (br.inner_length_mm + br.thickness_mm) / 2 * s
+    b_c = (br.inner_width_mm + br.thickness_mm) / 2 * s
+
+    # gap centered at the bottom: tips at parameter pi/2 +/- delta
+    delta = math.asin(min(1.0, br.gap_width_mm * s / (2 * a_c)))
+    t1, t2 = math.pi / 2 + delta, math.pi / 2 - delta
+
+    def pt(a: float, b: float, t: float) -> tuple[float, float]:
+        return cx + a * math.cos(t), cy + b * math.sin(t)
+
+    o1, o2 = pt(a_out, b_out, t1), pt(a_out, b_out, t2)
+    i1, i2 = pt(a_in, b_in, t1), pt(a_in, b_in, t2)
+    c1, c2 = pt(a_c, b_c, t1), pt(a_c, b_c, t2)
+    path = (
+        f'<path d="M {o1[0]:.2f} {o1[1]:.2f} '
+        f'A {a_out:.2f} {b_out:.2f} 0 1 1 {o2[0]:.2f} {o2[1]:.2f} '
+        f'L {i2[0]:.2f} {i2[1]:.2f} '
+        f'A {a_in:.2f} {b_in:.2f} 0 1 0 {i1[0]:.2f} {i1[1]:.2f} Z" '
+        f'fill="url(#hatch)" stroke="{INK}" stroke-width="{STROKE_MAIN}"/>'
+    )
+    parts = [path]
+
+    stone = spec.stone
+    if stone.position == "stations":
+        side = stone.dimensions_mm.width * s
+        pad = delta + 0.35
+        t0, t_end = math.pi / 2 + pad, math.pi / 2 - pad + 2 * math.pi
+        for i in range(stone.count):
+            t = t0 + (t_end - t0) * i / max(1, stone.count - 1)
+            px, py = pt(a_c, b_c, t)
+            angle = math.degrees(math.atan2(b_c * math.cos(t), -a_c * math.sin(t)))
+            parts.append(
+                f'<rect x="{px - side / 2:.2f}" y="{py - side / 2:.2f}" '
+                f'width="{side:.2f}" height="{side:.2f}" fill="#ffffff" stroke="{INK}" '
+                f'stroke-width="{STROKE_MAIN}" transform="rotate({angle:.1f} {px:.2f} {py:.2f})"/>'
+            )
+
+    gap_y = max(o1[1], o2[1]) + 6
+    parts += [
+        _ext(cx - a_in, cy, cx - a_in, cy + 15),
+        _ext(cx + a_in, cy, cx + a_in, cy + 15),
+        *_dim_h(cx - a_in, cx + a_in, cy + 14, f"{_fmt(br.inner_length_mm)} mm"),
+        *_dim_v(cx, cy - b_in, cy + b_in, f"{_fmt(br.inner_width_mm)} mm"),
+        _ext(c1[0], c1[1], c1[0], gap_y + 1), _ext(c2[0], c2[1], c2[0], gap_y + 1),
+        *_dim_h(c1[0], c2[0], gap_y, f"{_fmt(br.gap_width_mm)} mm gap"),
+        _text(cx, cy + b_out + 16, "FACE VIEW", size=3.6, style=' letter-spacing="1.2"'),
+    ]
+    if stone.position == "stations":
+        parts.append(_text(cx, cy + b_out + 21,
+                           f"{stone.count} × {_fmt(stone.dimensions_mm.width)} mm "
+                           f"{stone.cut.replace('_', ' ')} on the arc",
+                           size=2.8, color=FAINT))
+    return parts
+
+
+def _render_cuff(spec: Spec) -> str:
+    if spec.bracelet is None or spec.bracelet.gap_width_mm is None:
+        raise SheetUnsupported("a cuff sheet needs a bracelet section with gap_width_mm")
+    if spec.stone.cut not in BANGLE_STATION_CUTS:
+        raise SheetUnsupported(
+            f"cuff stations must be a square cut; supported: {list(BANGLE_STATION_CUTS)}"
+        )
+    body = _cuff_face_view(spec, 95, BASELINE) + _bangle_section_view(spec, 232, BASELINE)
+    return _frame(spec, "TECHNICAL SHEET — OPEN CUFF", "2:1", body)
+
+
+# --- articulated link bracelet --------------------------------------------------
+
+
+def _link_face_view(spec: Spec, cx: float, cy: float) -> list[str]:
+    br = spec.bracelet
+    s = BANGLE_SCALE
+    a_in, b_in = br.inner_length_mm / 2 * s, br.inner_width_mm / 2 * s
+    a_c = (br.inner_length_mm + br.thickness_mm) / 2 * s
+    b_c = (br.inner_width_mm + br.thickness_mm) / 2 * s
+    n = br.link_count
+    pitch_mm = ellipse_perimeter_mm(a_c / s, b_c / s) / n
+    link_l, link_w = pitch_mm * 0.82 * s, br.width_mm * s
+
+    # the wrist opening the links articulate around — the boundary the
+    # inner-diameter dimensions anchor on
+    parts = [
+        f'<ellipse cx="{cx:.2f}" cy="{cy:.2f}" rx="{a_in:.2f}" ry="{b_in:.2f}" '
+        f'fill="none" stroke="{FAINT}" stroke-width="{STROKE_DIM}"/>',
+    ]
+    stone = spec.stone
+    stone_side = stone.dimensions_mm.width * s
+    stone_every = max(1, round(n / stone.count)) if stone.position == "stations" else 0
+    stones_drawn = 0
+    for i in range(n):
+        t = -math.pi / 2 + i * 2 * math.pi / n
+        px, py = cx + a_c * math.cos(t), cy + b_c * math.sin(t)
+        angle = math.degrees(math.atan2(b_c * math.cos(t), -a_c * math.sin(t)))
+        parts.append(
+            f'<rect x="{px - link_l / 2:.2f}" y="{py - link_w / 2:.2f}" '
+            f'width="{link_l:.2f}" height="{link_w:.2f}" rx="1.6" fill="#ffffff" '
+            f'stroke="{INK}" stroke-width="{STROKE_MAIN}" '
+            f'transform="rotate({angle:.1f} {px:.2f} {py:.2f})"/>'
+        )
+        if stone_every and i % stone_every == 0 and stones_drawn < stone.count:
+            stones_drawn += 1
+            parts.append(
+                f'<rect x="{px - stone_side / 2:.2f}" y="{py - stone_side / 2:.2f}" '
+                f'width="{stone_side:.2f}" height="{stone_side:.2f}" fill="#ffffff" '
+                f'stroke="{INK}" stroke-width="{STROKE_MAIN}" '
+                f'transform="rotate({angle + 45:.1f} {px:.2f} {py:.2f})"/>'
+            )
+    parts += [
+        _ext(cx - a_in, cy, cx - a_in, cy + 15),
+        _ext(cx + a_in, cy, cx + a_in, cy + 15),
+        *_dim_h(cx - a_in, cx + a_in, cy + 14, f"{_fmt(br.inner_length_mm)} mm"),
+        *_dim_v(cx, cy - b_in, cy + b_in, f"{_fmt(br.inner_width_mm)} mm"),
+        _text(cx, cy + b_c + link_w / 2 + 12, "FACE VIEW", size=3.6, style=' letter-spacing="1.2"'),
+        _text(cx, cy + b_c + link_w / 2 + 17,
+              f"{n} articulated links · pitch {pitch_mm:.1f} mm on the centerline",
+              size=2.8, color=FAINT),
+    ]
+    return parts
+
+
+def _link_detail_view(spec: Spec, cx: float, cy: float) -> list[str]:
+    """One link at 6:1 with its pitch, width, and stone seat."""
+    br = spec.bracelet
+    s = SECTION_SCALE
+    a_c = (br.inner_length_mm + br.thickness_mm) / 2
+    b_c = (br.inner_width_mm + br.thickness_mm) / 2
+    pitch_mm = ellipse_perimeter_mm(a_c, b_c) / br.link_count
+    link_l, link_w = pitch_mm * 0.82 * s, br.width_mm * s
+    x0 = cx - pitch_mm * s / 2
+    next_x0 = x0 + pitch_mm * s
+
+    parts = [
+        f'<rect x="{x0:.2f}" y="{cy - link_w / 2:.2f}" width="{link_l:.2f}" '
+        f'height="{link_w:.2f}" rx="3" fill="#ffffff" stroke="{INK}" '
+        f'stroke-width="{STROKE_MAIN}"/>',
+        # phantom start of the next link marks the pitch
+        f'<rect x="{next_x0:.2f}" y="{cy - link_w / 2:.2f}" width="{link_l * 0.25:.2f}" '
+        f'height="{link_w:.2f}" rx="3" fill="none" stroke="{FAINT}" '
+        f'stroke-width="{STROKE_DIM}" stroke-dasharray="1.2 1"/>',
+        _ext(x0, cy - link_w / 2, x0, cy - link_w / 2 - 7),
+        _ext(next_x0, cy - link_w / 2, next_x0, cy - link_w / 2 - 7),
+        *_dim_h(x0, next_x0, cy - link_w / 2 - 6, f"pitch {pitch_mm:.1f} mm"),
+        _ext(x0, cy - link_w / 2, x0 - 7, cy - link_w / 2),
+        _ext(x0, cy + link_w / 2, x0 - 7, cy + link_w / 2),
+        *_dim_v(x0 - 6, cy - link_w / 2, cy + link_w / 2, f"{_fmt(br.width_mm)} mm"),
+    ]
+    stone = spec.stone
+    if stone.position == "stations":
+        side = stone.dimensions_mm.width * s
+        sx, sy = x0 + link_l / 2, cy
+        parts += [
+            f'<rect x="{sx - side / 2:.2f}" y="{sy - side / 2:.2f}" width="{side:.2f}" '
+            f'height="{side:.2f}" fill="#ffffff" stroke="{INK}" '
+            f'stroke-width="{STROKE_MAIN}" transform="rotate(45 {sx:.2f} {sy:.2f})"/>',
+            _text(cx, cy + link_w / 2 + 20,
+                  f"{_fmt(stone.dimensions_mm.width)} mm {stone.cut.replace('_', ' ')} seat, "
+                  f"every {max(1, round(br.link_count / stone.count))} links",
+                  size=2.8, color=FAINT),
+        ]
+    parts.append(_text(cx, cy + link_w / 2 + 15, "LINK DETAIL — 6:1",
+                       size=3.6, style=' letter-spacing="1.2"'))
+    if spec.chain is not None:
+        parts.append(_text(cx, cy + link_w / 2 + 25,
+                           f"closure: {spec.chain.clasp.replace('_', ' ')} clasp",
+                           size=2.8, color=FAINT))
+    return parts
+
+
+def _render_link_bracelet(spec: Spec) -> str:
+    if spec.bracelet is None or spec.bracelet.link_count is None:
+        raise SheetUnsupported("a link-bracelet sheet needs a bracelet section with link_count")
+    body = _link_face_view(spec, 95, BASELINE) + _link_detail_view(spec, 232, BASELINE)
+    return _frame(spec, "TECHNICAL SHEET — LINK BRACELET", "2:1", body)
+
+
+# --- loose stone / gem ID -------------------------------------------------------
+
+GEM_SCALES = (10.0, 8.0, 6.0, 4.0, 3.0)
+
+
+def _gem_scale(spec: Spec) -> float:
+    d = spec.stone.dimensions_mm
+    for s in GEM_SCALES:
+        if max(d.length, d.width) * s <= 70 and d.depth * s <= 55:
+            return s
+    return GEM_SCALES[-1]
+
+
+def _gem_face_view(spec: Spec, cx: float, cy: float, s: float) -> list[str]:
+    stone = spec.stone
+    d = stone.dimensions_mm
+    hw, hl = d.width / 2 * s, d.length / 2 * s
+    table_ratio = (stone.table_pct or 57) / 100
+    is_step = spec.stone.cut in PENDANT_CENTER_CUTS
+    parts = []
+    if is_step:
+        cut_c = 0.18 * d.width * s
+        parts += [
+            _octagon(cx, cy, hw, hl, cut_c),
+            _octagon(cx, cy, hw * table_ratio, hl * table_ratio, cut_c * table_ratio),
+        ]
+        corners = [(-1, -1), (1, -1), (1, 1), (-1, 1)]
+        for sx, sy in corners:
+            parts.append(_line(cx + sx * (hw - cut_c / 2), cy + sy * (hl - cut_c / 2),
+                               cx + sx * hw * table_ratio, cy + sy * hl * table_ratio * 0.92,
+                               w=STROKE_DIM))
+    else:
+        parts += [_ellipse(cx, cy, hw, hl), _ellipse(cx, cy, hw * table_ratio, hl * table_ratio)]
+        for i in range(8):  # crown facet junctions
+            t = i * math.pi / 4
+            parts.append(_line(cx + hw * table_ratio * math.cos(t),
+                               cy + hl * table_ratio * math.sin(t),
+                               cx + hw * math.cos(t), cy + hl * math.sin(t), w=STROKE_DIM))
+    table_w_mm = d.width * table_ratio
+    y_dim = cy - hl - 7
+    parts += [
+        _line(cx, cy - hl - 3, cx, cy + hl + 3, w=STROKE_DIM, color=FAINT, dash="3 1 0.5 1"),
+        _line(cx - hw - 3, cy, cx + hw + 3, cy, w=STROKE_DIM, color=FAINT, dash="3 1 0.5 1"),
+        _ext(cx - hw * table_ratio, cy, cx - hw * table_ratio, y_dim - 1),
+        _ext(cx + hw * table_ratio, cy, cx + hw * table_ratio, y_dim - 1),
+        *_dim_h(cx - hw * table_ratio, cx + hw * table_ratio, y_dim,
+                f"table {_fmt(stone.table_pct or 57)}% = {table_w_mm:.2f} mm"),
+        _ext(cx - hw, cy, cx - hw, cy + hl + 7), _ext(cx + hw, cy, cx + hw, cy + hl + 7),
+        *_dim_h(cx - hw, cx + hw, cy + hl + 6, f"{_fmt(d.width)} mm"),
+        _ext(cx, cy - hl, cx + hw + 8, cy - hl), _ext(cx, cy + hl, cx + hw + 8, cy + hl),
+        *_dim_v(cx + hw + 7, cy - hl, cy + hl, f"{_fmt(d.length)} mm"),
+        _text(cx, cy + hl + 16, "FACE UP", size=3.6, style=' letter-spacing="1.2"'),
+    ]
+    return parts
+
+
+def _gem_profile_view(spec: Spec, cx: float, cy: float, s: float) -> list[str]:
+    stone = spec.stone
+    d = stone.dimensions_mm
+    span = d.width * s
+    depth = d.depth * s
+    girdle_t = max(0.6, 0.02 * d.width * s)  # drawn girdle band
+    crown_h = depth / 3 - girdle_t / 2
+    pavilion_h = depth - depth / 3 - girdle_t / 2
+    table_w = span * ((stone.table_pct or 57) / 100)
+
+    y_top = cy - depth / 2
+    y_g1 = y_top + crown_h
+    y_g2 = y_g1 + girdle_t
+    y_culet = y_g2 + pavilion_h
+    xl, xr = cx - span / 2, cx + span / 2
+    txl, txr = cx - table_w / 2, cx + table_w / 2
+    parts = [
+        f'<polygon points="{txl:.2f},{y_top:.2f} {txr:.2f},{y_top:.2f} '
+        f'{xr:.2f},{y_g1:.2f} {xl:.2f},{y_g1:.2f}" '
+        f'fill="#ffffff" stroke="{INK}" stroke-width="{STROKE_MAIN}"/>',
+        f'<rect x="{xl:.2f}" y="{y_g1:.2f}" width="{span:.2f}" height="{girdle_t:.2f}" '
+        f'fill="#ffffff" stroke="{INK}" stroke-width="{STROKE_MAIN}"/>',
+        f'<polygon points="{xl:.2f},{y_g2:.2f} {xr:.2f},{y_g2:.2f} {cx:.2f},{y_culet:.2f}" '
+        f'fill="#ffffff" stroke="{INK}" stroke-width="{STROKE_MAIN}"/>',
+        _line(cx, y_top - 3, cx, y_culet + 3, w=STROKE_DIM, color=FAINT, dash="3 1 0.5 1"),
+        _ext(txr, y_top, cx + span / 2 + 8, y_top),
+        _ext(cx, y_culet, cx + span / 2 + 8, y_culet),
+        *_dim_v(cx + span / 2 + 7, y_top, y_culet,
+                f"{_fmt(d.depth)} mm ({_fmt(stone.depth_pct or round(d.depth / d.width * 100, 1))}%)"),
+    ]
+    if stone.girdle:
+        parts += [
+            _ext(xl, (y_g1 + y_g2) / 2, xl - 6, (y_g1 + y_g2) / 2),
+            _text(xl - 7, (y_g1 + y_g2) / 2 + 1, f"girdle: {stone.girdle.replace('_', ' ')}",
+                  size=2.8, anchor="end", color=FAINT),
+        ]
+    if stone.inscription:
+        parts += [
+            _ext(xr, (y_g1 + y_g2) / 2, cx + span * 0.3, y_culet + 15.5),
+            _text(cx, y_culet + 17, f'laser inscription on girdle: "{stone.inscription}"',
+                  size=2.8),
+        ]
+    parts.append(_text(cx, y_culet + 12, "PROFILE", size=3.6, style=' letter-spacing="1.2"'))
+    return parts
+
+
+def _render_loose_stone(spec: Spec) -> str:
+    s = _gem_scale(spec)
+    stone = spec.stone
+    d = stone.dimensions_mm
+    data_lines = [
+        f"{_fmt(d.length)} × {_fmt(d.width)} × {_fmt(d.depth)} mm",
+        f"{stone.carat:.2f} ct {stone.species}, {stone.cut.replace('_', ' ')}",
+        f"table {_fmt(stone.table_pct)}%" if stone.table_pct else None,
+        f"depth {_fmt(stone.depth_pct)}%" if stone.depth_pct else None,
+        f"girdle {stone.girdle.replace('_', ' ')}" if stone.girdle else None,
+        f"clarity {stone.clarity.grade} ({stone.clarity.system})",
+        f"origin {stone.origin}" if stone.origin else None,
+    ]
+    parts = [_text(MARGIN + 6, 26, "GEM DATA", size=3.4, anchor="start",
+                   style=' letter-spacing="1.2"')]
+    y = 31
+    for line in data_lines:
+        if line:
+            parts.append(_text(MARGIN + 6, y, line, size=3.0, anchor="start", color=FAINT))
+            y += 4.6
+    body = parts + _gem_face_view(spec, 110, BASELINE, s) + _gem_profile_view(spec, 208, BASELINE, s)
+    return _frame(spec, "GEM IDENTIFICATION — LOOSE STONE", f"{s:g}:1", body)
 
 
 TEMPLATES = {
@@ -654,6 +1001,9 @@ TEMPLATES = {
     "halo_prong": _render_halo,
     "love_bangle": _render_bangle,
     "cluster_pendant": _render_pendant,
+    "cuff": _render_cuff,
+    "link_bracelet": _render_link_bracelet,
+    "loose_stone": _render_loose_stone,
 }
 
 
@@ -665,3 +1015,102 @@ def render_sheet(spec: Spec) -> str:
             f"template '{spec.template}' not supported yet; supported: {list(TEMPLATES)}"
         )
     return render(spec)
+
+
+# --- stacking overlay -----------------------------------------------------------
+
+
+def _stack_bangles(spec_a: Spec, spec_b: Spec, clearance: NestingClearance,
+                   cx: float, cy: float) -> list[str]:
+    s = BANGLE_SCALE
+    # draw the larger piece in ink, the nested piece in accent
+    outer, inner = sorted(
+        (spec_a, spec_b),
+        key=lambda sp: sp.bracelet.inner_length_mm + 2 * sp.bracelet.thickness_mm,
+        reverse=True,
+    )
+    parts = []
+    for sp, color in ((outer, INK), (inner, ACCENT)):
+        br = sp.bracelet
+        a_in, b_in = br.inner_length_mm / 2 * s, br.inner_width_mm / 2 * s
+        a_out, b_out = a_in + br.thickness_mm * s, b_in + br.thickness_mm * s
+        for a, b in ((a_out, b_out), (a_in, b_in)):
+            parts.append(
+                f'<ellipse cx="{cx:.2f}" cy="{cy:.2f}" rx="{a:.2f}" ry="{b:.2f}" '
+                f'fill="none" stroke="{color}" stroke-width="{STROKE_MAIN}"/>'
+            )
+    a_in_outer = outer.bracelet.inner_length_mm / 2 * s
+    b_in_outer = outer.bracelet.inner_width_mm / 2 * s
+    a_env_inner = (inner.bracelet.inner_length_mm / 2 + inner.bracelet.thickness_mm) * s
+    b_env_inner = (inner.bracelet.inner_width_mm / 2 + inner.bracelet.thickness_mm) * s
+    parts += [
+        # per-axis clearance between the outer piece's opening and the inner piece's envelope
+        _ext(cx + a_env_inner, cy, cx + a_env_inner, cy - 8),
+        _ext(cx + a_in_outer, cy, cx + a_in_outer, cy - 8),
+        *_dim_h(cx + a_env_inner, cx + a_in_outer, cy - 7,
+                f"{_fmt(clearance.clearance_x_mm)} mm"),
+        _ext(cx, cy - b_env_inner, cx + 8, cy - b_env_inner),
+        _ext(cx, cy - b_in_outer, cx + 8, cy - b_in_outer),
+        *_dim_v(cx + 7, cy - b_in_outer, cy - b_env_inner,
+                f"{_fmt(clearance.clearance_y_mm)} mm"),
+        _text(cx, cy + (outer.bracelet.inner_width_mm / 2 + outer.bracelet.thickness_mm) * s + 12,
+              "NESTED FACE VIEW", size=3.6, style=' letter-spacing="1.2"'),
+    ]
+    return parts
+
+
+def _stack_rings(spec_a: Spec, spec_b: Spec, clearance: NestingClearance,
+                 cx: float, cy: float) -> list[str]:
+    parts = []
+    radii = []
+    for sp, color in ((spec_a, INK), (spec_b, ACCENT)):
+        inner_r = sp.ring_size.inner_diameter_mm * SCALE / 2
+        outer_r = inner_r + sp.band.thickness_mm * SCALE
+        radii.append(outer_r)
+        for r in (inner_r, outer_r):
+            parts.append(
+                f'<circle cx="{cx:.2f}" cy="{cy:.2f}" r="{r:.2f}" '
+                f'fill="none" stroke="{color}" stroke-width="{STROKE_MAIN}"/>'
+            )
+    r_max = max(radii)
+    # stack section: the two band profiles side by side, as worn along the finger
+    sx = cx + r_max + 40
+    w_a, w_b = spec_a.band.width_mm * SECTION_SCALE, spec_b.band.width_mm * SECTION_SCALE
+    t_a, t_b = spec_a.band.thickness_mm * SECTION_SCALE, spec_b.band.thickness_mm * SECTION_SCALE
+    x_a = sx - (w_a + w_b) / 2
+    parts += [
+        f'<rect x="{x_a:.2f}" y="{cy - t_a / 2:.2f}" width="{w_a:.2f}" height="{t_a:.2f}" '
+        f'fill="url(#hatch)" stroke="{INK}" stroke-width="{STROKE_MAIN}"/>',
+        f'<rect x="{x_a + w_a:.2f}" y="{cy - t_b / 2:.2f}" width="{w_b:.2f}" height="{t_b:.2f}" '
+        f'fill="url(#hatch)" stroke="{ACCENT}" stroke-width="{STROKE_MAIN}"/>',
+        _ext(x_a, cy - max(t_a, t_b) / 2, x_a, cy - max(t_a, t_b) / 2 - 7),
+        _ext(x_a + w_a + w_b, cy - max(t_a, t_b) / 2, x_a + w_a + w_b, cy - max(t_a, t_b) / 2 - 7),
+        *_dim_h(x_a, x_a + w_a + w_b, cy - max(t_a, t_b) / 2 - 6,
+                f"stack {_fmt(clearance.stack_height_mm)} mm"),
+        _text(sx, cy + max(t_a, t_b) / 2 + 12, "STACK SECTION — 6:1",
+              size=3.6, style=' letter-spacing="1.2"'),
+        _text(cx, cy + r_max + 12, "ON-FINGER PROFILE", size=3.6, style=' letter-spacing="1.2"'),
+        _text(cx, cy + r_max + 17,
+              f"inner ⌀ {_fmt(spec_a.ring_size.inner_diameter_mm)} / "
+              f"{_fmt(spec_b.ring_size.inner_diameter_mm)} mm — "
+              f"Δ {_fmt(clearance.diameter_delta_mm)} mm", size=2.8, color=FAINT),
+    ]
+    return parts
+
+
+def render_stack_sheet(spec_a: Spec, spec_b: Spec, clearance: NestingClearance) -> str:
+    """Overlay two pieces on a shared axis with their nesting clearance."""
+    if clearance.kind == "bangle_in_bangle":
+        body = _stack_bangles(spec_a, spec_b, clearance, 118, BASELINE)
+        scale_label = "2:1"
+    else:
+        body = _stack_rings(spec_a, spec_b, clearance, 100, BASELINE)
+        scale_label = "3:1"
+    body += [
+        _text(MARGIN + 6, 26, "PIECES", size=3.4, anchor="start", style=' letter-spacing="1.2"'),
+        _text(MARGIN + 6, 31, f"A — {spec_a.design_id} v{spec_a.version}",
+              size=3.0, anchor="start"),
+        _text(MARGIN + 6, 35.6, f"B — {spec_b.design_id} v{spec_b.version}",
+              size=3.0, anchor="start", color=ACCENT),
+    ]
+    return _frame(spec_a, "STACKING SHEET — NESTING CLEARANCE", scale_label, body)

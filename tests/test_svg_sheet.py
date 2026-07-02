@@ -135,6 +135,42 @@ def test_bangle_requires_square_cut(bangle_spec):
         render_sheet(Spec.model_validate(bangle_spec))
 
 
+def test_cuff_sheet_matches_golden(cuff_spec):
+    svg = render_sheet(_validated(cuff_spec))
+    _assert_matches_golden(svg, "cuff_sheet.svg")
+    for text in (">58 mm<", ">48 mm<", ">25 mm gap<", ">5 mm<", ">2.2 mm<"):
+        assert text in svg, f"missing callout {text}"
+    assert "5 × 2.9 mm princess on the arc" in svg
+
+
+def test_link_bracelet_sheet_matches_golden(link_spec):
+    svg = render_sheet(_validated(link_spec))
+    _assert_matches_golden(svg, "link_bracelet_sheet.svg")
+    assert "14 articulated links" in svg
+    assert ">pitch 12.0 mm<" in svg
+    assert "LINK DETAIL — 6:1" in svg
+    assert svg.count("rx=\"1.6\"") == 14  # every link drawn
+
+
+def test_pendant_necklace_sheet_matches_golden(necklace_spec):
+    svg = render_sheet(_validated(necklace_spec))
+    _assert_matches_golden(svg, "pendant_necklace_sheet.svg")
+    assert "PENDANT NECKLACE" in svg
+    assert "cable · 450 mm · lobster clasp" in svg
+    assert ">27.2 mm drop<" in svg  # drop still measured from the bail top
+
+
+def test_loose_stone_sheet_matches_golden(loose_spec):
+    svg = render_sheet(_validated(loose_spec))
+    _assert_matches_golden(svg, "loose_stone_sheet.svg")
+    for text in (">table 57% = 4.62 mm<", ">4.9 mm (60.5%)<", ">8.1 mm<"):
+        assert text in svg, f"missing callout {text}"
+    assert "girdle: medium" in svg
+    assert 'laser inscription on girdle: "FCT-2141Z"' in svg
+    assert "SCALE 8:1" in svg  # single-focus scale ladder picked 8:1
+    assert "loose stone — unmounted" in svg
+
+
 def test_halo_requires_melee_entry(halo_spec):
     halo_spec["side_stones"] = []
     with pytest.raises(SheetUnsupported, match="position 'halo'"):

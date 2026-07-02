@@ -116,6 +116,23 @@ class Vocabulary:
     def phenomena_ids(self) -> list[str]:
         return [k for k, v in self.raw["phenomena"].items() if isinstance(v, dict) and "definition" in v]
 
+    # --- findings (metalwork) and gem-ID scales ---
+
+    def chain_styles(self) -> list[dict]:
+        return self.raw["findings"]["chain_styles"]
+
+    def chain_style_ids(self) -> list[str]:
+        return [c["id"] for c in self.chain_styles()]
+
+    def clasp_types(self) -> list[dict]:
+        return self.raw["findings"]["clasp_types"]
+
+    def clasp_type_ids(self) -> list[str]:
+        return [c["id"] for c in self.clasp_types()]
+
+    def girdle_grades(self) -> list[str]:
+        return self.raw["girdle_thickness_scale"]
+
     # --- organic / amorphous gems with their own parameter sets ---
 
     ORGANIC_PARAMETER_SETS = ("pearl", "opal")

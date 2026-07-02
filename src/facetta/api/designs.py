@@ -12,8 +12,8 @@ from sqlalchemy.orm import Session
 
 from facetta.db import Comment, Design, DesignVersion, get_db, new_id, utcnow
 from facetta.spec import Spec
-from facetta.svg_sheet import SheetUnsupported, render_sheet
-from facetta.validation import validate_spec
+from facetta.svg_sheet import SheetUnsupported, render_sheet, render_stack_sheet
+from facetta.validation import nesting_clearance, validate_spec
 from facetta.vocabulary import get_vocabulary
 
 router = APIRouter(prefix="/designs", tags=["designs"])
@@ -149,6 +149,26 @@ def get_sheet(design_id: str, version: int, db: DbSession):
     except SheetUnsupported as exc:
         return JSONResponse(status_code=422, content={"detail": str(exc)})
     return Response(content=svg, media_type="image/svg+xml")
+
+
+@router.get("/{design_id}/versions/{version}/stack/{other_id}/{other_version}/sheet.svg")
+def get_stack_sheet(design_id: str, version: int, other_id: str, other_version: int,
+                    db: DbSession):
+    """Overlay two stored versions with their nesting clearance — shareable
+    like any other sheet URL."""
+    spec_a = Spec.model_validate(_get_version(db, design_id, version).spec)
+    spec_b = Spec.model_validate(_get_version(db, other_id, other_version).spec)
+    try:
+        clearance = nesting_clearance(spec_a, spec_b)
+    except ValueError as exc:
+        return JSONResponse(status_code=422, content={"detail": str(exc)})
+    if not clearance.nests:
+        return JSONResponse(status_code=422, content={
+            "detail": "these pieces do not nest — negative clearance",
+            "clearance": clearance.as_dict(),
+        })
+    return Response(content=render_stack_sheet(spec_a, spec_b, clearance),
+                    media_type="image/svg+xml")
 
 
 @router.get("/{design_id}/versions/{version}/comments")

@@ -73,8 +73,33 @@ All optional — existing specs are unaffected; `schema_version` stays 1.
 | `bracelet` | Oval bangle: `inner_length_mm`, `inner_width_mm`, `width_mm` ∈ [3, 12], `thickness_mm` ∈ [1.5, 4] |
 | `pendant` | `bail_inner_diameter_mm`, `bail_height_mm`, `drop_mm` (derived when absent: bail + 1 mm link + cluster + 1 mm link + drop stone) |
 
+| `stone.table_pct` / `depth_pct` / `girdle` / `inscription` | Gem-ID data: table and depth percentages (depth% must match the mm within ±2.5), girdle word from the vocabulary scale, laser inscription text |
+| `bracelet.gap_width_mm` | Open-cuff wrist opening (its presence makes the piece a cuff; must stay smaller than the inner width) |
+| `bracelet.link_count` | Articulated bracelet; link pitch = band centerline perimeter / count (derived, dimensioned on the LINK DETAIL sub-view) |
+| `chain` | `style` and `clasp` from the vocabulary `findings` section, `length_mm` ∈ [300, 900] — its presence turns a pendant into a necklace |
+
+`setting` and `metal` are now optional at the schema level; every template except
+`loose_stone` requires them via validation (a loose stone has no mount).
+
 Templates: `solitaire_prong` and `halo_prong` (rings — require `band` + `ring_size`),
-`love_bangle` (requires `bracelet`), `cluster_pendant` (requires `pendant`).
+`love_bangle` / `cuff` / `link_bracelet` (require `bracelet`, plus gap or link count),
+`cluster_pendant` (requires `pendant`; accepts `chain`), `loose_stone` (stone only).
+
+### Stacking
+
+`nesting_clearance(spec_a, spec_b)`: two bangles/cuffs → per-axis clearance
+`(outer opening − inner envelope) / 2` (negative = does not nest); two rings →
+combined stack height (band widths) + inner-diameter delta. Exposed as
+`POST /specs/stack.svg` and
+`GET /designs/{id}/versions/{v}/stack/{id2}/{v2}/sheet.svg`, both rendering the
+overlay STACKING SHEET with clearance dims.
+
+### Blueprint alignment
+
+Every sheet draws its views centered on a shared horizontal datum (y = 105 on
+the A4 landscape page, drawn as a dash-dot line), and every dimension witness
+line must start exactly on a shape edge — enforced by
+`tests/support.py::assert_witness_lines_snap` across all templates.
 
 ### Physical-fit rules (422 with the feasible maximum)
 

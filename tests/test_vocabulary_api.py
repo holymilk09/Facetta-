@@ -50,6 +50,14 @@ def test_opal_returns_its_own_parameter_set():
     assert "patterns" in body
 
 
+def test_findings_endpoint_serves_metalwork_vocabulary():
+    body = client.get("/vocabulary/findings").json()
+    assert {c["id"] for c in body["chain_styles"]} >= {"cable", "curb", "rope", "box"}
+    assert {c["id"] for c in body["clasp_types"]} >= {"lobster", "toggle", "spring_ring"}
+    assert "medium" in body["girdle_thickness_scale"]
+    assert body["girdle_thickness_scale"][0] == "extremely_thin"  # ordered scale
+
+
 def test_unknown_stone_404s_with_valid_options():
     response = client.get("/vocabulary/stones/jadeite/options")
     assert response.status_code == 404

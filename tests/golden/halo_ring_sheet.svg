@@ -3,6 +3,7 @@
 <rect x="0" y="0" width="297" height="210" fill="#fdfdfa"/>
 <rect x="8" y="8" width="281" height="194" fill="none" stroke="#3f3f3f" stroke-width="0.3"/>
 <text x="148.50" y="16.00" font-family="Georgia, 'Times New Roman', serif" font-size="4.6" fill="#3f3f3f" text-anchor="middle" letter-spacing="1.6">TECHNICAL SHEET — HALO RING</text>
+<line x1="11.00" y1="105.00" x2="286.00" y2="105.00" stroke="#8a8a8a" stroke-width="0.15" stroke-dasharray="6 1.5 1 1.5"/>
 <rect x="79.00" y="74.53" width="6.00" height="60.93" fill="url(#hatch)" stroke="none"/>
 <line x1="79.00" y1="74.53" x2="79.00" y2="135.47" stroke="#3f3f3f" stroke-width="0.3"/>
 <line x1="85.00" y1="74.53" x2="85.00" y2="135.47" stroke="#3f3f3f" stroke-width="0.3"/>
@@ -52,36 +53,36 @@
 <text x="82.00" y="139.06" font-family="Georgia, 'Times New Roman', serif" font-size="3.2" fill="#3f3f3f" text-anchor="middle">2 mm</text>
 <text x="82.00" y="149.47" font-family="Georgia, 'Times New Roman', serif" font-size="3.6" fill="#3f3f3f" text-anchor="middle" letter-spacing="1.2">TOP VIEW</text>
 <text x="82.00" y="154.47" font-family="Georgia, 'Times New Roman', serif" font-size="2.8" fill="#8a8a8a" text-anchor="middle">8 × ⌀4.1 mm melee, 0.3 mm off center girdle</text>
-<circle cx="205.00" cy="108.75" r="30.47" fill="url(#hatch)" stroke="#3f3f3f" stroke-width="0.3"/>
-<circle cx="205.00" cy="108.75" r="25.37" fill="#ffffff" stroke="#3f3f3f" stroke-width="0.3"/>
-<line x1="196.47" y1="79.48" x2="192.10" y2="64.78" stroke="#3f3f3f" stroke-width="0.3"/>
-<line x1="213.53" y1="79.48" x2="217.90" y2="64.78" stroke="#3f3f3f" stroke-width="0.3"/>
-<polygon points="197.91,60.78 212.09,60.78 217.90,64.78 205.00,72.78 192.10,64.78" fill="#ffffff" stroke="#3f3f3f" stroke-width="0.3"/>
-<line x1="192.10" y1="64.78" x2="217.90" y2="64.78" stroke="#3f3f3f" stroke-width="0.3"/>
-<line x1="205.00" y1="57.78" x2="205.00" y2="142.22" stroke="#8a8a8a" stroke-width="0.15" stroke-dasharray="3 1 0.5 1"/>
-<line x1="191.42" y1="66.78" x2="191.42" y2="61.78" stroke="#3f3f3f" stroke-width="0.3"/>
-<circle cx="191.42" cy="61.78" r="1.35" fill="#ffffff" stroke="#3f3f3f" stroke-width="0.3"/>
-<line x1="218.58" y1="66.78" x2="218.58" y2="61.78" stroke="#3f3f3f" stroke-width="0.3"/>
-<circle cx="218.58" cy="61.78" r="1.35" fill="#ffffff" stroke="#3f3f3f" stroke-width="0.3"/>
-<line x1="179.63" y1="108.75" x2="230.37" y2="108.75" stroke="#8a8a8a" stroke-width="0.15"/>
-<line x1="178.73" y1="109.65" x2="180.53" y2="107.85" stroke="#3f3f3f" stroke-width="0.24"/>
-<line x1="229.47" y1="109.65" x2="231.27" y2="107.85" stroke="#3f3f3f" stroke-width="0.24"/>
-<text x="205.00" y="107.35" font-family="Georgia, 'Times New Roman', serif" font-size="3.2" fill="#3f3f3f" text-anchor="middle">⌀ 16.9 mm</text>
-<line x1="217.90" y1="64.78" x2="245.47" y2="64.78" stroke="#8a8a8a" stroke-width="0.15" stroke-dasharray="0.8 0.8"/>
-<line x1="213.53" y1="78.28" x2="245.47" y2="78.28" stroke="#8a8a8a" stroke-width="0.15" stroke-dasharray="0.8 0.8"/>
-<line x1="244.47" y1="64.78" x2="244.47" y2="78.28" stroke="#8a8a8a" stroke-width="0.15"/>
-<line x1="243.56" y1="65.69" x2="245.37" y2="63.88" stroke="#3f3f3f" stroke-width="0.24"/>
-<line x1="243.56" y1="79.19" x2="245.37" y2="77.38" stroke="#3f3f3f" stroke-width="0.24"/>
-<text x="246.27" y="72.63" font-family="Georgia, 'Times New Roman', serif" font-size="3.2" fill="#3f3f3f" text-anchor="start">4.5 mm gallery</text>
-<line x1="212.09" y1="60.78" x2="271.47" y2="60.78" stroke="#8a8a8a" stroke-width="0.15" stroke-dasharray="0.8 0.8"/>
-<line x1="205.00" y1="72.78" x2="271.47" y2="72.78" stroke="#8a8a8a" stroke-width="0.15" stroke-dasharray="0.8 0.8"/>
-<line x1="270.47" y1="60.78" x2="270.47" y2="72.78" stroke="#8a8a8a" stroke-width="0.15"/>
-<line x1="269.57" y1="61.68" x2="271.37" y2="59.88" stroke="#3f3f3f" stroke-width="0.24"/>
-<line x1="269.57" y1="73.69" x2="271.37" y2="71.88" stroke="#3f3f3f" stroke-width="0.24"/>
-<text x="272.27" y="67.88" font-family="Georgia, 'Times New Roman', serif" font-size="3.2" fill="#3f3f3f" text-anchor="start">4 mm</text>
-<text x="205.00" y="151.22" font-family="Georgia, 'Times New Roman', serif" font-size="3.6" fill="#3f3f3f" text-anchor="middle" letter-spacing="1.2">SIDE PROFILE</text>
-<circle cx="184.00" cy="64.78" r="6.15" fill="#ffffff" stroke="#3f3f3f" stroke-width="0.3"/>
-<circle cx="226.00" cy="64.78" r="6.15" fill="#ffffff" stroke="#3f3f3f" stroke-width="0.3"/>
+<circle cx="205.00" cy="105.00" r="30.47" fill="url(#hatch)" stroke="#3f3f3f" stroke-width="0.3"/>
+<circle cx="205.00" cy="105.00" r="25.37" fill="#ffffff" stroke="#3f3f3f" stroke-width="0.3"/>
+<line x1="196.47" y1="75.73" x2="192.10" y2="61.03" stroke="#3f3f3f" stroke-width="0.3"/>
+<line x1="213.53" y1="75.73" x2="217.90" y2="61.03" stroke="#3f3f3f" stroke-width="0.3"/>
+<polygon points="197.91,57.03 212.09,57.03 217.90,61.03 205.00,69.03 192.10,61.03" fill="#ffffff" stroke="#3f3f3f" stroke-width="0.3"/>
+<line x1="192.10" y1="61.03" x2="217.90" y2="61.03" stroke="#3f3f3f" stroke-width="0.3"/>
+<line x1="205.00" y1="54.03" x2="205.00" y2="138.47" stroke="#8a8a8a" stroke-width="0.15" stroke-dasharray="3 1 0.5 1"/>
+<line x1="191.42" y1="63.03" x2="191.42" y2="58.03" stroke="#3f3f3f" stroke-width="0.3"/>
+<circle cx="191.42" cy="58.03" r="1.35" fill="#ffffff" stroke="#3f3f3f" stroke-width="0.3"/>
+<line x1="218.58" y1="63.03" x2="218.58" y2="58.03" stroke="#3f3f3f" stroke-width="0.3"/>
+<circle cx="218.58" cy="58.03" r="1.35" fill="#ffffff" stroke="#3f3f3f" stroke-width="0.3"/>
+<line x1="179.63" y1="105.00" x2="230.37" y2="105.00" stroke="#8a8a8a" stroke-width="0.15"/>
+<line x1="178.73" y1="105.90" x2="180.53" y2="104.10" stroke="#3f3f3f" stroke-width="0.24"/>
+<line x1="229.47" y1="105.90" x2="231.27" y2="104.10" stroke="#3f3f3f" stroke-width="0.24"/>
+<text x="205.00" y="103.60" font-family="Georgia, 'Times New Roman', serif" font-size="3.2" fill="#3f3f3f" text-anchor="middle">⌀ 16.9 mm</text>
+<line x1="217.90" y1="61.03" x2="245.47" y2="61.03" stroke="#8a8a8a" stroke-width="0.15" stroke-dasharray="0.8 0.8"/>
+<line x1="205.00" y1="74.53" x2="245.47" y2="74.53" stroke="#8a8a8a" stroke-width="0.15" stroke-dasharray="0.8 0.8"/>
+<line x1="244.47" y1="61.03" x2="244.47" y2="74.53" stroke="#8a8a8a" stroke-width="0.15"/>
+<line x1="243.56" y1="61.93" x2="245.37" y2="60.13" stroke="#3f3f3f" stroke-width="0.24"/>
+<line x1="243.56" y1="75.44" x2="245.37" y2="73.63" stroke="#3f3f3f" stroke-width="0.24"/>
+<text x="246.27" y="68.88" font-family="Georgia, 'Times New Roman', serif" font-size="3.2" fill="#3f3f3f" text-anchor="start">4.5 mm gallery</text>
+<line x1="212.09" y1="57.03" x2="271.47" y2="57.03" stroke="#8a8a8a" stroke-width="0.15" stroke-dasharray="0.8 0.8"/>
+<line x1="205.00" y1="69.03" x2="271.47" y2="69.03" stroke="#8a8a8a" stroke-width="0.15" stroke-dasharray="0.8 0.8"/>
+<line x1="270.47" y1="57.03" x2="270.47" y2="69.03" stroke="#8a8a8a" stroke-width="0.15"/>
+<line x1="269.57" y1="57.93" x2="271.37" y2="56.13" stroke="#3f3f3f" stroke-width="0.24"/>
+<line x1="269.57" y1="69.94" x2="271.37" y2="68.13" stroke="#3f3f3f" stroke-width="0.24"/>
+<text x="272.27" y="64.13" font-family="Georgia, 'Times New Roman', serif" font-size="3.2" fill="#3f3f3f" text-anchor="start">4 mm</text>
+<text x="205.00" y="147.47" font-family="Georgia, 'Times New Roman', serif" font-size="3.6" fill="#3f3f3f" text-anchor="middle" letter-spacing="1.2">SIDE PROFILE</text>
+<circle cx="184.00" cy="61.03" r="6.15" fill="#ffffff" stroke="#3f3f3f" stroke-width="0.3"/>
+<circle cx="226.00" cy="61.03" r="6.15" fill="#ffffff" stroke="#3f3f3f" stroke-width="0.3"/>
 <rect x="189.00" y="162.00" width="100" height="40" fill="none" stroke="#3f3f3f" stroke-width="0.3"/>
 <line x1="189.00" y1="170.00" x2="289.00" y2="170.00" stroke="#3f3f3f" stroke-width="0.15"/>
 <text x="192.00" y="167.80" font-family="Georgia, 'Times New Roman', serif" font-size="4.0" fill="#3f3f3f" text-anchor="start" letter-spacing="2.0">FACETTA</text>

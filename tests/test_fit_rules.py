@@ -1,6 +1,7 @@
 """Physical-fit validation for multi-stone assemblies: a spec that describes
 stones that cannot coexist in metal fails loudly with the feasible maximum."""
 
+import pytest
 from fastapi.testclient import TestClient
 
 from facetta.main import app
@@ -75,6 +76,56 @@ def test_pendant_drop_is_derived(pendant_spec):
     assert response.status_code == 200
     # bail 5.5 + link 1.0 + cluster (9 + 2x(0.3+2.3)) + link 1.0 + sapphire 5.5
     assert response.json()["pendant"]["drop_mm"] == 27.2
+
+
+def test_cuff_gap_must_leave_a_cuff(cuff_spec):
+    cuff_spec["bracelet"]["gap_width_mm"] = 40.0  # opening 48 wide — nearly half gone
+    cuff_spec["bracelet"]["inner_width_mm"] = 39.0
+    response = client.post("/specs/validate", json=cuff_spec)
+    assert response.status_code == 422
+    issue = issue_for(response.json(), ["bracelet", "gap_width_mm"])
+    assert issue["type"] == "fit"
+
+
+def test_depth_pct_must_match_measurements(loose_spec):
+    loose_spec["stone"]["depth_pct"] = 70.0  # measurements say 60.5
+    response = client.post("/specs/validate", json=loose_spec)
+    assert response.status_code == 422
+    issue = issue_for(response.json(), ["stone", "depth_pct"])
+    assert issue["expected"]["computed_depth_pct"] == pytest.approx(60.5)
+
+
+def test_girdle_word_must_be_in_vocabulary(loose_spec):
+    loose_spec["stone"]["girdle"] = "chunky"
+    response = client.post("/specs/validate", json=loose_spec)
+    assert response.status_code == 422
+    issue = issue_for(response.json(), ["stone", "girdle"])
+    assert "medium" in issue["valid_options"]
+
+
+def test_chain_style_and_clasp_from_vocabulary(necklace_spec):
+    necklace_spec["chain"]["style"] = "spaghetti"
+    necklace_spec["chain"]["clasp"] = "velcro"
+    response = client.post("/specs/validate", json=necklace_spec)
+    assert response.status_code == 422
+    body = response.json()
+    assert "cable" in issue_for(body, ["chain", "style"])["valid_options"]
+    assert "lobster" in issue_for(body, ["chain", "clasp"])["valid_options"]
+
+
+def test_loose_stone_needs_no_mount(loose_spec):
+    response = client.post("/specs/validate", json=loose_spec)
+    assert response.status_code == 200, response.text
+
+
+def test_mounted_templates_require_setting_and_metal(example_spec):
+    del example_spec["setting"]
+    del example_spec["metal"]
+    response = client.post("/specs/validate", json=example_spec)
+    assert response.status_code == 422
+    body = response.json()
+    assert issue_for(body, ["setting"]) is not None
+    assert issue_for(body, ["metal"]) is not None
 
 
 def test_side_stones_still_density_checked(pendant_spec):
