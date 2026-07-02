@@ -108,6 +108,20 @@
       {"grade": "SI2", "meaning": "Very prominent unaided"},
       {"grade": "I1-I3", "meaning": "Prominent, affects durability"}
     ]
+,
+    "gia_diamond": [
+      {"grade": "FL", "meaning": "Flawless, no inclusions or blemishes visible at 10x"},
+      {"grade": "IF", "meaning": "Internally flawless, only surface blemishes at 10x"},
+      {"grade": "VVS1", "meaning": "Very very slightly included, extremely difficult to see at 10x"},
+      {"grade": "VVS2", "meaning": "Very very slightly included, very difficult to see at 10x"},
+      {"grade": "VS1", "meaning": "Very slightly included, difficult to see at 10x"},
+      {"grade": "VS2", "meaning": "Very slightly included, somewhat easy to see at 10x"},
+      {"grade": "SI1", "meaning": "Slightly included, easy to see at 10x"},
+      {"grade": "SI2", "meaning": "Slightly included, very easy to see at 10x, may be eye-visible"},
+      {"grade": "I1", "meaning": "Included, obvious at 10x, usually eye-visible"},
+      {"grade": "I2", "meaning": "Included, obvious, affects transparency"},
+      {"grade": "I3", "meaning": "Included, obvious, affects transparency and durability"}
+    ]
   },
 
   "trade_color_terms": {
@@ -258,19 +272,19 @@
   },
 
   "cuts_and_shapes": [
-    {"name": "Round Brilliant", "category": "brilliant", "meaning": "57-58 facets, maximum brilliance and fire", "typical_stones": ["Diamond", "White Sapphire"]},
-    {"name": "Oval Brilliant", "category": "brilliant", "meaning": "elongated, flattering, strong weight retention", "typical_stones": ["Sapphire", "Ruby", "Spinel"]},
-    {"name": "Pear", "category": "brilliant", "meaning": "teardrop, oval and marquise combined", "typical_stones": ["Aquamarine", "Ruby", "Diamond"]},
-    {"name": "Marquise", "category": "brilliant", "meaning": "pointed both ends, strong visual size", "typical_stones": ["Emerald", "Diamond"]},
-    {"name": "Princess", "category": "brilliant", "meaning": "square, sharp corners, needs corner protection", "typical_stones": ["Diamond", "Sapphire"]},
-    {"name": "Radiant", "category": "brilliant", "meaning": "step-cut crown, brilliant pavilion", "typical_stones": ["Fancy Yellow Diamond"]},
-    {"name": "Trillion", "category": "brilliant", "meaning": "triangular, high flash", "typical_stones": ["Tanzanite", "Morganite"]},
-    {"name": "Cushion", "category": "brilliant", "meaning": "rounded square or rectangle with large facets, a softer vintage look, sometimes called \"pillow cut\"", "typical_stones": ["Sapphire", "Morganite", "Diamond"]},
-    {"name": "Emerald Cut", "category": "step", "meaning": "rectangular, showcases color depth", "typical_stones": ["Emerald", "Aquamarine"]},
-    {"name": "Asscher", "category": "step", "meaning": "square step cut, deep geometric reflection", "typical_stones": ["Diamond"]},
-    {"name": "Baguette", "category": "step", "meaning": "elongated rectangular accent cut", "typical_stones": ["Diamond accents"]},
-    {"name": "Cabochon", "category": "non-faceted", "meaning": "smooth dome, required for chatoyancy and asterism to display", "typical_stones": ["Star Sapphire", "Cat's-eye Chrysoberyl", "Moonstone"]},
-    {"name": "Rose Cut", "category": "non-faceted", "meaning": "flat bottom, faceted dome, vintage glow", "typical_stones": ["Antique Diamond"]}
+    {"id": "round_brilliant", "name": "Round Brilliant", "category": "brilliant", "meaning": "57-58 facets, maximum brilliance and fire", "typical_stones": ["Diamond", "White Sapphire"]},
+    {"id": "oval_brilliant", "name": "Oval Brilliant", "category": "brilliant", "meaning": "elongated, flattering, strong weight retention", "typical_stones": ["Sapphire", "Ruby", "Spinel"]},
+    {"id": "pear", "name": "Pear", "category": "brilliant", "meaning": "teardrop, oval and marquise combined", "typical_stones": ["Aquamarine", "Ruby", "Diamond"]},
+    {"id": "marquise", "name": "Marquise", "category": "brilliant", "meaning": "pointed both ends, strong visual size", "typical_stones": ["Emerald", "Diamond"]},
+    {"id": "princess", "name": "Princess", "category": "brilliant", "meaning": "square, sharp corners, needs corner protection", "typical_stones": ["Diamond", "Sapphire"]},
+    {"id": "radiant", "name": "Radiant", "category": "brilliant", "meaning": "step-cut crown, brilliant pavilion", "typical_stones": ["Fancy Yellow Diamond"]},
+    {"id": "trillion", "name": "Trillion", "category": "brilliant", "meaning": "triangular, high flash", "typical_stones": ["Tanzanite", "Morganite"]},
+    {"id": "cushion", "name": "Cushion", "category": "brilliant", "meaning": "rounded square or rectangle with large facets, a softer vintage look, sometimes called \"pillow cut\"", "typical_stones": ["Sapphire", "Morganite", "Diamond"]},
+    {"id": "emerald_cut", "name": "Emerald Cut", "category": "step", "meaning": "rectangular, showcases color depth", "typical_stones": ["Emerald", "Aquamarine"]},
+    {"id": "asscher", "name": "Asscher", "category": "step", "meaning": "square step cut, deep geometric reflection", "typical_stones": ["Diamond"]},
+    {"id": "baguette", "name": "Baguette", "category": "step", "meaning": "elongated rectangular accent cut", "typical_stones": ["Diamond accents"]},
+    {"id": "cabochon", "name": "Cabochon", "category": "non-faceted", "meaning": "smooth dome, required for chatoyancy and asterism to display", "typical_stones": ["Star Sapphire", "Cat's-eye Chrysoberyl", "Moonstone"]},
+    {"id": "rose_cut", "name": "Rose Cut", "category": "non-faceted", "meaning": "flat bottom, faceted dome, vintage glow", "typical_stones": ["Antique Diamond"]}
   ],
 
   "gaps_to_fill": [
@@ -278,5 +292,51 @@
     "Crystal/Quartz trade names beyond what's covered (amethyst, citrine, ametrine) — low priority, decorative tier.",
     "Diamond D-to-Z and Fancy Color grades — already standardized, hardcode directly.",
     "Peridot, Iolite, Kunzite/Hiddenite — single-color stones, no major trade-term layer needed beyond GIA hue/tone/sat."
-  ]
+  ],
+
+  "species": {
+    "note": "Canonical species registry: sg (specific gravity) drives the carat-mm density check; clarity_systems, trade_color_keys, and allowed_phenomena point into the sections above. Jadeite deliberately absent — open item, needs a dedicated grading source.",
+    "diamond": {"display": "Diamond", "sg": 3.52, "clarity_systems": ["gia_diamond"], "trade_color_keys": [], "allowed_phenomena": []},
+    "ruby": {"display": "Ruby", "sg": 4.00, "clarity_systems": ["gia_type_ii"], "trade_color_keys": ["ruby"], "allowed_phenomena": ["asterism_star"]},
+    "sapphire": {"display": "Sapphire", "sg": 4.00, "clarity_systems": ["gia_type_ii"], "trade_color_keys": ["sapphire_blue", "sapphire_fancy"], "allowed_phenomena": ["asterism_star", "color_change"]},
+    "emerald": {"display": "Emerald", "sg": 2.72, "clarity_systems": ["gia_type_iii"], "trade_color_keys": ["emerald"], "allowed_phenomena": ["chatoyancy_cats_eye"]},
+    "aquamarine": {"display": "Aquamarine", "sg": 2.72, "clarity_systems": ["gia_type_i"], "trade_color_keys": ["aquamarine"], "allowed_phenomena": ["chatoyancy_cats_eye"]},
+    "morganite": {"display": "Morganite", "sg": 2.80, "clarity_systems": ["gia_type_i"], "trade_color_keys": ["beryl_other"], "allowed_phenomena": []},
+    "heliodor": {"display": "Heliodor", "sg": 2.72, "clarity_systems": ["gia_type_i"], "trade_color_keys": ["beryl_other"], "allowed_phenomena": []},
+    "goshenite": {"display": "Goshenite", "sg": 2.70, "clarity_systems": ["gia_type_i"], "trade_color_keys": ["beryl_other"], "allowed_phenomena": []},
+    "red_beryl": {"display": "Red Beryl (Bixbite)", "sg": 2.66, "clarity_systems": ["gia_type_iii"], "trade_color_keys": ["beryl_other"], "allowed_phenomena": []},
+    "spinel": {"display": "Spinel", "sg": 3.60, "clarity_systems": ["gia_type_ii"], "trade_color_keys": ["spinel"], "allowed_phenomena": ["chatoyancy_cats_eye"]},
+    "tourmaline": {"display": "Tourmaline", "sg": 3.06, "clarity_systems": ["gia_type_ii", "gia_type_iii"], "trade_color_keys": ["tourmaline"], "allowed_phenomena": ["chatoyancy_cats_eye"]},
+    "garnet": {"display": "Garnet", "sg": 3.90, "clarity_systems": ["gia_type_ii"], "trade_color_keys": ["garnet"], "allowed_phenomena": ["asterism_star", "color_change"]},
+    "chrysoberyl": {"display": "Chrysoberyl", "sg": 3.73, "clarity_systems": ["gia_type_i", "gia_type_ii"], "trade_color_keys": ["chrysoberyl"], "allowed_phenomena": ["chatoyancy_cats_eye", "color_change"]},
+    "tanzanite": {"display": "Tanzanite", "sg": 3.35, "clarity_systems": ["gia_type_i"], "trade_color_keys": ["tanzanite"], "allowed_phenomena": []},
+    "topaz": {"display": "Topaz", "sg": 3.53, "clarity_systems": ["gia_type_i", "gia_type_ii"], "trade_color_keys": ["topaz"], "allowed_phenomena": []},
+    "zircon": {"display": "Zircon", "sg": 4.65, "clarity_systems": ["gia_type_i", "gia_type_ii"], "trade_color_keys": ["zircon"], "allowed_phenomena": ["chatoyancy_cats_eye"]},
+    "peridot": {"display": "Peridot", "sg": 3.34, "clarity_systems": ["gia_type_ii"], "trade_color_keys": [], "allowed_phenomena": []},
+    "iolite": {"display": "Iolite", "sg": 2.61, "clarity_systems": ["gia_type_ii"], "trade_color_keys": [], "allowed_phenomena": []},
+    "amethyst": {"display": "Amethyst", "sg": 2.65, "clarity_systems": ["gia_type_ii"], "trade_color_keys": [], "allowed_phenomena": []},
+    "citrine": {"display": "Citrine", "sg": 2.65, "clarity_systems": ["gia_type_ii"], "trade_color_keys": [], "allowed_phenomena": []},
+    "smoky_quartz": {"display": "Smoky Quartz", "sg": 2.65, "clarity_systems": ["gia_type_i"], "trade_color_keys": [], "allowed_phenomena": []},
+    "kunzite": {"display": "Kunzite", "sg": 3.18, "clarity_systems": ["gia_type_i"], "trade_color_keys": [], "allowed_phenomena": []},
+    "sphene": {"display": "Sphene", "sg": 3.53, "clarity_systems": ["gia_type_iii"], "trade_color_keys": [], "allowed_phenomena": []}
+  },
+
+  "shape_factors": {
+    "note": "Fraction of the stone's L×W×D bounding box its volume occupies; carat = L × W × D × SG × factor / 200. These are the standard gemological weight-estimation factors ×200 (round brilliant 0.0018 → 0.36).",
+    "factors": {
+      "round_brilliant": 0.36,
+      "oval_brilliant": 0.40,
+      "pear": 0.35,
+      "marquise": 0.32,
+      "princess": 0.46,
+      "radiant": 0.46,
+      "trillion": 0.34,
+      "cushion": 0.44,
+      "emerald_cut": 0.50,
+      "asscher": 0.46,
+      "baguette": 0.50,
+      "cabochon": 0.54,
+      "rose_cut": 0.40
+    }
+  }
 }
