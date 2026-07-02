@@ -98,11 +98,14 @@ class Vocabulary:
 
     # --- clarity ---
 
-    def clarity_grades(self, system: str) -> list[str]:
-        """Grades for a spec-facing clarity system id, e.g. 'gia_type_ii' or 'gia_diamond'."""
+    def clarity_grade_entries(self, system: str) -> list[dict]:
+        """Grade + meaning entries for a spec-facing clarity system id,
+        e.g. 'gia_type_ii' or 'gia_diamond'."""
         key = system.removeprefix("gia_")
-        entries = self.raw["clarity_grades_by_type"].get(key) or self.raw["clarity_grades_by_type"].get(system, [])
-        return [e["grade"] for e in entries]
+        return self.raw["clarity_grades_by_type"].get(key) or self.raw["clarity_grades_by_type"].get(system, [])
+
+    def clarity_grades(self, system: str) -> list[str]:
+        return [e["grade"] for e in self.clarity_grade_entries(system)]
 
     def clarity_systems(self) -> list[str]:
         return ["gia_" + k for k in self.raw["clarity_grades_by_type"]
@@ -112,6 +115,22 @@ class Vocabulary:
 
     def phenomena_ids(self) -> list[str]:
         return [k for k, v in self.raw["phenomena"].items() if isinstance(v, dict) and "definition" in v]
+
+    # --- organic / amorphous gems with their own parameter sets ---
+
+    ORGANIC_PARAMETER_SETS = ("pearl", "opal")
+
+    def parameter_set(self, stone_id: str) -> dict | None:
+        """The dedicated parameter set for stones outside the crystalline
+        gemstone schema (pearls, opals)."""
+        if stone_id in self.ORGANIC_PARAMETER_SETS:
+            return self.raw[stone_id]
+        return None
+
+    def stone_ids(self) -> list[str]:
+        """Everything a designer can pick as a stone: crystalline species plus
+        the organic/amorphous gems that carry their own parameter sets."""
+        return self.species_ids() + list(self.ORGANIC_PARAMETER_SETS)
 
 
 @lru_cache(maxsize=1)
