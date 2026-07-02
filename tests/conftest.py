@@ -43,9 +43,27 @@ EXAMPLE_SPEC = {
 }
 
 
+# A 1.00 ct round-brilliant diamond variant of the example (the classic bench stone)
+ROUND_SPEC = copy.deepcopy(EXAMPLE_SPEC)
+ROUND_SPEC["stone"] = {
+    "species": "diamond",
+    "cut": "round_brilliant",
+    "carat": 1.0,
+    "dimensions_mm": {"length": 6.5, "width": 6.5, "depth": 3.9},
+    "color": {"trade": "D", "gia": "colorless"},
+    "clarity": {"system": "gia_diamond", "grade": "VS1", "eye_clean": True},
+    "phenomena": [],
+}
+
+
 @pytest.fixture
 def example_spec() -> dict:
     return copy.deepcopy(EXAMPLE_SPEC)
+
+
+@pytest.fixture
+def round_spec() -> dict:
+    return copy.deepcopy(ROUND_SPEC)
 
 
 @pytest.fixture(scope="session")
