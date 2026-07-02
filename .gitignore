@@ -7,3 +7,6 @@ build/
 .pytest_cache/
 .coverage
 .env
+facetta.db
+node_modules/
+mobile/.expo/

@@ -3,11 +3,19 @@
 from __future__ import annotations
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 
 from facetta import __version__
 from facetta.api import designs, share, specs, users, vocabulary
 
 app = FastAPI(title="Facetta", version=__version__)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # dev default; lock down before exposing publicly
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 app.include_router(vocabulary.router)
 app.include_router(specs.router)

@@ -88,6 +88,41 @@ reject a physically impossible stone with the computed expected carat and depth.
 `"trade": "Royal Blue"` to anything unknown to get back the list of valid sapphire trade
 terms.
 
+## Other endpoints
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /vocabulary/stones` · `GET /vocabulary/stones/{id}/options` | Cascading dropdown data: choosing a stone swaps its colors (trade+GIA), clarity system and grades, cuts, phenomena. Pearl and opal return their own parameter sets. |
+| `POST /specs/sheet.svg` | Stateless technical-sheet preview from a spec |
+| `POST /designs` · `POST /designs/{id}/versions` | Create a design / a new immutable version (there is no update — edits always become version+1) |
+| `GET /designs/{id}/versions/{v}/sheet.svg` | The stored version's dimensioned sheet |
+| `POST /designs/{id}/versions/{v}/share` → `GET /share/{token}` | Share links pinned to one exact version; `comment` scope lets a factory pin comments to a region of the sheet |
+| `POST /specs/from-prose` | Claude API: designer prose → validated spec (needs `ANTHROPIC_API_KEY`) |
+
+## Database
+
+SQLite (`./facetta.db`) out of the box for zero-setup dev. For PostgreSQL (spec objects
+stored as JSONB):
+
+```sh
+export DATABASE_URL="postgresql+psycopg://user@host:5432/facetta"
+```
+
+## Mobile app (Expo)
+
+`mobile/` contains the React Native app: the cascading-dropdown spec builder
+(Basic/Pro), validation with corrective errors, live sheet preview, immutable
+version history, and the factory share view with tap-to-pin comments.
+
+```sh
+cd mobile
+npm install
+npx expo start          # scan the QR with Expo Go, or press w for web
+```
+
+Point the API URL field at your running backend (defaults to
+`http://localhost:8000`; set `EXPO_PUBLIC_API_URL` to override).
+
 ## Layout
 
 | Path | Purpose |
@@ -97,4 +132,9 @@ terms.
 | `src/facetta/vocabulary.py` | Vocabulary loader + typed accessors |
 | `src/facetta/density.py` | Carat ↔ mm density model (`carat = L × W × D × SG × shape_factor / 200`) |
 | `src/facetta/validation.py` | Vocabulary + physical-consistency rules with structured issues |
-| `src/facetta/main.py` | FastAPI app: `GET /health`, `POST /specs/validate` |
+| `src/facetta/svg_sheet.py` | Deterministic pencil-style technical sheet renderer (byte-stable per spec) |
+| `src/facetta/db.py` | SQLAlchemy models: users, designs, immutable design_versions, comments, share_links |
+| `src/facetta/prose.py` | Claude API prose → spec layer |
+| `src/facetta/api/` | Routers: vocabulary, specs, designs, share, users |
+| `src/facetta/main.py` | FastAPI app wiring |
+| `mobile/` | Expo (React Native) app: builder, designs, share views |

@@ -62,7 +62,7 @@ def stone_options(stone_id: str):
         "colors": colors,
         "clarity": {"systems": list(species.clarity_systems), "grades": grades},
         "cuts": [
-            {"id": c.id, "name": c.name, "category": c.category}
+            {"id": c.id, "name": c.name, "category": c.category, "shape_factor": c.shape_factor}
             for cid in vocab.cut_ids()
             if (c := vocab.cut(cid))
         ],
