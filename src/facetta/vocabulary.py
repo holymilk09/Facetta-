@@ -1,0 +1,120 @@
+"""Loader and typed accessors for data/gemology_vocabulary.json.
+
+The vocabulary file is the single source of gemological truth. Extend it via
+data, never by special-casing in code.
+"""
+
+from __future__ import annotations
+
+import json
+from dataclasses import dataclass, field
+from functools import lru_cache
+from pathlib import Path
+
+VOCABULARY_PATH = Path(__file__).resolve().parents[2] / "data" / "gemology_vocabulary.json"
+
+
+@dataclass(frozen=True)
+class Species:
+    id: str
+    display: str
+    sg: float
+    clarity_systems: tuple[str, ...]
+    trade_color_keys: tuple[str, ...]
+    allowed_phenomena: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class Cut:
+    id: str
+    name: str
+    category: str
+    shape_factor: float
+
+
+@dataclass(frozen=True)
+class TradeColorTerm:
+    term: str
+    gia: str
+    meaning: str = ""
+    origin_tie: str = ""
+    notes: str = ""
+    extras: dict = field(default_factory=dict, compare=False)
+
+
+class Vocabulary:
+    def __init__(self, raw: dict):
+        self.raw = raw
+        self._species = {
+            sid: Species(
+                id=sid,
+                display=entry["display"],
+                sg=entry["sg"],
+                clarity_systems=tuple(entry["clarity_systems"]),
+                trade_color_keys=tuple(entry["trade_color_keys"]),
+                allowed_phenomena=tuple(entry["allowed_phenomena"]),
+            )
+            for sid, entry in raw["species"].items()
+            if sid != "note"
+        }
+        factors = raw["shape_factors"]["factors"]
+        self._cuts = {
+            c["id"]: Cut(id=c["id"], name=c["name"], category=c["category"], shape_factor=factors[c["id"]])
+            for c in raw["cuts_and_shapes"]
+        }
+
+    # --- species ---
+
+    def species_ids(self) -> list[str]:
+        return list(self._species)
+
+    def species(self, species_id: str) -> Species | None:
+        return self._species.get(species_id)
+
+    # --- cuts ---
+
+    def cut_ids(self) -> list[str]:
+        return list(self._cuts)
+
+    def cut(self, cut_id: str) -> Cut | None:
+        return self._cuts.get(cut_id)
+
+    # --- colors ---
+
+    def trade_color_terms(self, species_id: str) -> list[TradeColorTerm]:
+        sp = self._species.get(species_id)
+        if sp is None:
+            return []
+        terms = []
+        for key in sp.trade_color_keys:
+            for entry in self.raw["trade_color_terms"].get(key, []):
+                known = {k: entry[k] for k in ("term", "gia", "meaning", "origin_tie", "notes") if k in entry}
+                extras = {k: v for k, v in entry.items() if k not in known}
+                terms.append(TradeColorTerm(**known, extras=extras))
+        return terms
+
+    def trade_color_names(self, species_id: str) -> list[str]:
+        return [t.term for t in self.trade_color_terms(species_id)]
+
+    # --- clarity ---
+
+    def clarity_grades(self, system: str) -> list[str]:
+        """Grades for a spec-facing clarity system id, e.g. 'gia_type_ii' or 'gia_diamond'."""
+        key = system.removeprefix("gia_")
+        entries = self.raw["clarity_grades_by_type"].get(key) or self.raw["clarity_grades_by_type"].get(system, [])
+        return [e["grade"] for e in entries]
+
+    def clarity_systems(self) -> list[str]:
+        return ["gia_" + k for k in self.raw["clarity_grades_by_type"]
+                if not k.startswith("gia_")] + [k for k in self.raw["clarity_grades_by_type"] if k.startswith("gia_")]
+
+    # --- phenomena ---
+
+    def phenomena_ids(self) -> list[str]:
+        return [k for k, v in self.raw["phenomena"].items() if isinstance(v, dict) and "definition" in v]
+
+
+@lru_cache(maxsize=1)
+def get_vocabulary(path: Path = VOCABULARY_PATH) -> Vocabulary:
+    with open(path, encoding="utf-8") as f:
+        return Vocabulary(json.load(f))
