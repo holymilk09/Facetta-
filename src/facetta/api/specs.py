@@ -6,6 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from facetta import prose as prose_layer
 from facetta.db import utcnow
+from facetta.prototype import compile_render_prompt, render_color_preview
 from facetta.spec import Spec
 from facetta.svg_sheet import SheetUnsupported, render_sheet, render_stack_sheet
 from facetta.validation import nesting_clearance, validate_spec
@@ -46,6 +47,36 @@ def sheet_preview(spec: Spec):
     except SheetUnsupported as exc:
         return JSONResponse(status_code=422, content={"detail": str(exc)})
     return Response(content=svg, media_type="image/svg+xml")
+
+
+@router.post("/prototype.svg")
+def prototype_preview(spec: Spec):
+    """Deterministic colored prototype: vocabulary hues and metal tones over
+    the exact sheet geometry."""
+    result = validate_spec(spec, get_vocabulary())
+    if not result.ok:
+        return JSONResponse(
+            status_code=422,
+            content={"detail": [issue.as_detail() for issue in result.issues]},
+        )
+    try:
+        svg = render_color_preview(result.spec)
+    except ValueError as exc:
+        return JSONResponse(status_code=422, content={"detail": str(exc)})
+    return Response(content=svg, media_type="image/svg+xml")
+
+
+@router.post("/render-prompt")
+def render_prompt(spec: Spec):
+    """Compile the photoreal-render prompt for an external image model. The
+    prompt carries the numbers; a control image carries the geometry."""
+    result = validate_spec(spec, get_vocabulary())
+    if not result.ok:
+        return JSONResponse(
+            status_code=422,
+            content={"detail": [issue.as_detail() for issue in result.issues]},
+        )
+    return compile_render_prompt(result.spec)
 
 
 class StackRequest(BaseModel):

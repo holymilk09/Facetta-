@@ -151,6 +151,18 @@ def get_sheet(design_id: str, version: int, db: DbSession):
     return Response(content=svg, media_type="image/svg+xml")
 
 
+@router.get("/{design_id}/versions/{version}/prototype.svg")
+def get_prototype(design_id: str, version: int, db: DbSession):
+    from facetta.prototype import render_color_preview
+
+    row = _get_version(db, design_id, version)
+    try:
+        svg = render_color_preview(Spec.model_validate(row.spec))
+    except ValueError as exc:
+        return JSONResponse(status_code=422, content={"detail": str(exc)})
+    return Response(content=svg, media_type="image/svg+xml")
+
+
 @router.get("/{design_id}/versions/{version}/stack/{other_id}/{other_version}/sheet.svg")
 def get_stack_sheet(design_id: str, version: int, other_id: str, other_version: int,
                     db: DbSession):

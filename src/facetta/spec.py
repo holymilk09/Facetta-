@@ -47,7 +47,9 @@ class Stone(StrictModel):
     carat: Carat  # per stone, when count > 1
     dimensions_mm: StoneDimensions
     color: StoneColor
-    clarity: StoneClarity
+    # design-first workflow: pieces are designed before stones are sourced, so
+    # clarity is optional — absent means "best available, sourced on approval"
+    clarity: StoneClarity | None = None
     origin: str | None = None
     treatment: str | None = None
     phenomena: list[str] = Field(default_factory=list)

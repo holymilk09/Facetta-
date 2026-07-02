@@ -23,7 +23,9 @@ from __future__ import annotations
 import math
 
 from facetta.spec import Spec
-from facetta.validation import NestingClearance, ellipse_perimeter_mm, pendant_drop_mm
+from facetta.validation import (
+    NestingClearance, ellipse_perimeter_mm, estimate_metal_g, pendant_drop_mm,
+)
 
 SHEET_W, SHEET_H = 297.0, 210.0
 MARGIN = 8.0
@@ -117,9 +119,8 @@ def _top_view(spec: Spec, cx: float, cy: float) -> list[str]:
         _line(right_x, top, right_x, bottom),
         _line(left_x, top, right_x, top),
         _line(left_x, bottom, right_x, bottom),
-        # stone outline over the shank
-        f'<ellipse cx="{cx:.2f}" cy="{cy:.2f}" rx="{rx:.2f}" ry="{ry:.2f}" '
-        f'fill="#ffffff" stroke="{INK}" stroke-width="{STROKE_MAIN}"/>',
+        # stone with its standard face-up facet pattern
+        *_facet_face_up(cx, cy, stone.cut, 2 * rx, 2 * ry),
         # centerlines
         _line(cx, cy - ry - 3, cx, cy + ry + 3, w=STROKE_DIM, color=FAINT, dash="3 1 0.5 1"),
         _line(cx - rx - 3, cy, cx + rx + 3, cy, w=STROKE_DIM, color=FAINT, dash="3 1 0.5 1"),
@@ -239,9 +240,11 @@ def _title_block(spec: Spec, scale_label: str = "3:1") -> list[str]:
         (f"{spec.design_id}  ·  v{spec.version}", 4.2, True),
         (f"{stone.carat:.2f} ct {stone.species}, {stone.cut.replace('_', ' ')}", 3.2, False),
         (metal_line, 3.2, False),
-        (f"{stone.color.trade}  ·  {stone.clarity.grade}", 3.2, False),
+        (f"{stone.color.trade}  ·  {stone.clarity.grade}" if stone.clarity
+         else f"{stone.color.trade}  ·  finest available", 3.2, False),
         (f"designer {spec.created_by}  ·  {spec.created_at.date().isoformat()}", 3.0, False),
-        (f"UNITS mm  ·  SCALE {scale_label}", 3.0, False),
+        (f"UNITS mm  ·  SCALE {scale_label}"
+         + (f"  ·  EST. {weight} g" if (weight := estimate_metal_g(spec)) else ""), 3.0, False),
     ]
     parts = [
         f'<rect x="{x:.2f}" y="{y:.2f}" width="100" height="40" fill="none" '
@@ -288,6 +291,68 @@ def _frame(spec: Spec, title: str, scale_label: str, body: list[str],
     return "\n".join(parts) + "\n"
 
 
+def _front_view(spec: Spec, cx: float, cy: float, melee=None) -> list[str]:
+    """Third orthographic view for rings: the band edge-on with the setting's
+    rise above the shank — the view factories use to judge sit height."""
+    stone = spec.stone
+    inner_r = spec.ring_size.inner_diameter_mm * SCALE / 2
+    outer_r = inner_r + spec.band.thickness_mm * SCALE
+    band_w = spec.band.width_mm * SCALE
+    gallery = (spec.setting.gallery_height_mm or 0.0) * SCALE
+    depth = stone.dimensions_mm.depth * SCALE
+    span = stone.dimensions_mm.width * SCALE  # seen across the finger
+
+    crown_h = depth / 3
+    ring_cy = cy
+    ring_top = ring_cy - outer_r
+    y_girdle = ring_top - gallery
+    y_table = y_girdle - crown_h
+    y_culet = y_girdle + (depth - crown_h)
+    xl, xr = cx - span / 2, cx + span / 2
+    txl, txr = cx - span * 0.55 / 2, cx + span * 0.55 / 2
+
+    parts = [
+        # band edge-on: a hatched strip as tall as the hoop
+        f'<rect x="{cx - band_w / 2:.2f}" y="{ring_top:.2f}" width="{band_w:.2f}" '
+        f'height="{2 * outer_r:.2f}" fill="url(#hatch)" stroke="{INK}" '
+        f'stroke-width="{STROKE_MAIN}"/>',
+        # basket flare from the shank up to the girdle
+        _line(cx - band_w / 2, ring_top + 1.2, xl, y_girdle),
+        _line(cx + band_w / 2, ring_top + 1.2, xr, y_girdle),
+        # stone from the front
+        f'<polygon points="{txl:.2f},{y_table:.2f} {txr:.2f},{y_table:.2f} '
+        f'{xr:.2f},{y_girdle:.2f} {cx:.2f},{y_culet:.2f} {xl:.2f},{y_girdle:.2f}" '
+        f'fill="#ffffff" stroke="{INK}" stroke-width="{STROKE_MAIN}"/>',
+        _line(xl, y_girdle, xr, y_girdle),
+        _line(cx, y_table - 3, cx, ring_cy + outer_r + 3, w=STROKE_DIM, color=FAINT,
+              dash="3 1 0.5 1"),
+    ]
+    prong_r = (spec.setting.prong_tip_mm or 0.9) * SCALE / 2
+    for x in (xl - prong_r / 2, xr + prong_r / 2):
+        parts += [
+            _line(x, y_girdle + 2.0, x, y_table + 1.0),
+            _circle(x, y_table + 1.0, prong_r),
+        ]
+    if melee is not None:
+        mr = melee.dimensions_mm.width / 2 * SCALE
+        for sign in (-1, 1):
+            parts.append(_circle(cx + sign * (span / 2 + prong_r + 0.6 + mr), y_girdle, mr))
+
+    rise_mm = (spec.setting.gallery_height_mm or 0.0) + stone.dimensions_mm.depth / 3
+    x_dim = cx + max(span / 2, band_w / 2) + 9
+    parts += [
+        _ext(txr, y_table, x_dim + 1, y_table),
+        _ext(cx + band_w / 2, ring_top, x_dim + 1, ring_top),
+        *_dim_v(x_dim, y_table, ring_top, f"{_fmt(rise_mm)} mm rise"),
+        _ext(cx - band_w / 2, ring_cy + outer_r, cx - band_w / 2, ring_cy + outer_r + 7),
+        _ext(cx + band_w / 2, ring_cy + outer_r, cx + band_w / 2, ring_cy + outer_r + 7),
+        *_dim_h(cx - band_w / 2, cx + band_w / 2, ring_cy + outer_r + 6,
+                f"{_fmt(spec.band.width_mm)} mm"),
+        _text(cx, ring_cy + outer_r + 14, "FRONT VIEW", size=3.6, style=' letter-spacing="1.2"'),
+    ]
+    return parts
+
+
 def _require_ring_sections(spec: Spec, what: str) -> None:
     if spec.band is None or spec.ring_size is None or spec.ring_size.inner_diameter_mm is None:
         raise SheetUnsupported(f"a {what} sheet needs band and ring_size (with inner diameter)")
@@ -299,7 +364,11 @@ def _render_solitaire(spec: Spec) -> str:
             f"cut '{spec.stone.cut}' not supported on sheets yet; supported: {list(SUPPORTED_CUTS)}"
         )
     _require_ring_sections(spec, "solitaire")
-    body = _top_view(spec, 82, BASELINE) + _side_view(spec, 200, BASELINE)
+    body = (
+        _top_view(spec, 58, BASELINE)
+        + _front_view(spec, 138, BASELINE)
+        + _side_view(spec, 208, BASELINE)
+    )
     return _frame(spec, "TECHNICAL SHEET — SOLITAIRE RING", "3:1", body)
 
 
@@ -319,6 +388,96 @@ def _ellipse(cx: float, cy: float, rx: float, ry: float, fill: str = "#ffffff") 
         f'<ellipse cx="{cx:.2f}" cy="{cy:.2f}" rx="{rx:.2f}" ry="{ry:.2f}" '
         f'fill="{fill}" stroke="{INK}" stroke-width="{STROKE_MAIN}"/>'
     )
+
+
+# --- face-up facet patterns ----------------------------------------------------
+#
+# Standard facet diagrams per cut family, GIA-diagram style: brilliant cuts get
+# the 8-main / 8-star / 16-upper-girdle pattern, princess gets chevrons, step
+# cuts get concentric rows. Everything is parameterized on the stone's actual
+# outline so patterns stay true on ovals, pears, and marquises.
+
+BRILLIANT_CUTS = ("round_brilliant", "oval_brilliant", "pear", "marquise", "cushion", "trillion")
+STEP_CUTS = ("emerald_cut", "asscher", "radiant")
+
+
+def _pt(cx: float, cy: float, rx: float, ry: float, deg: float) -> tuple[float, float]:
+    return cx + rx * math.cos(math.radians(deg)), cy + ry * math.sin(math.radians(deg))
+
+
+def _poly(points: list[tuple[float, float]], fill: str, stroke: str, w: float) -> str:
+    pts = " ".join(f"{x:.2f},{y:.2f}" for x, y in points)
+    return f'<polygon points="{pts}" fill="{fill}" stroke="{stroke}" stroke-width="{w}"/>'
+
+
+def _facet_face_up(cx: float, cy: float, cut_id: str, w_pp: float, l_pp: float,
+                   table_ratio: float = 0.55, stroke: str = INK, fill: str = "#ffffff",
+                   facet_color: str | None = None, facet_w: float = STROKE_DIM) -> list[str]:
+    """Face-up outline + facet pattern; w_pp/l_pp are full paper-space extents."""
+    rx, ry = w_pp / 2, l_pp / 2
+    t = table_ratio
+    fc = facet_color or stroke
+    fline = lambda a, b: _line(a[0], a[1], b[0], b[1], w=facet_w, color=fc)  # noqa: E731
+
+    if cut_id in BRILLIANT_CUTS:
+        parts = [f'<ellipse cx="{cx:.2f}" cy="{cy:.2f}" rx="{rx:.2f}" ry="{ry:.2f}" '
+                 f'fill="{fill}" stroke="{stroke}" stroke-width="{STROKE_MAIN}"/>']
+        corners = [45 * k for k in range(8)]  # mains on the axes, GIA-diagram style
+        table_pts = [_pt(cx, cy, rx * t, ry * t, a) for a in corners]
+        parts.append(_poly(table_pts, "none", fc, facet_w))
+        r_star = t + 0.38 * (1 - t)
+        for k in range(8):
+            a, b = corners[k], corners[(k + 1) % 8]
+            mid = a + 22.5
+            c_a, c_b = table_pts[k], table_pts[(k + 1) % 8]
+            star = _pt(cx, cy, rx * r_star, ry * r_star, mid)
+            parts += [
+                fline(c_a, _pt(cx, cy, rx, ry, a)),   # bezel main
+                fline(c_a, star), fline(c_b, star),   # star facet
+                fline(star, _pt(cx, cy, rx, ry, mid)),  # upper girdle junction
+            ]
+        return parts
+
+    if cut_id == "princess":
+        outline = [(cx - rx, cy - ry), (cx + rx, cy - ry), (cx + rx, cy + ry), (cx - rx, cy + ry)]
+        table = [(cx - rx * t, cy - ry * t), (cx + rx * t, cy - ry * t),
+                 (cx + rx * t, cy + ry * t), (cx - rx * t, cy + ry * t)]
+        parts = [_poly(outline, fill, stroke, STROKE_MAIN), _poly(table, "none", fc, facet_w)]
+        for i in range(4):
+            parts.append(fline(outline[i], table[i]))  # corner mains
+        mids = [(cx, cy - ry), (cx + rx, cy), (cx, cy + ry), (cx - rx, cy)]
+        for i, m in enumerate(mids):  # chevrons from edge midpoints to table corners
+            parts += [fline(m, table[i - 1]), fline(m, table[i])]
+        return parts
+
+    if cut_id in STEP_CUTS or cut_id == "baguette":
+        cut_c = 0.18 * w_pp if cut_id != "baguette" else 0.0
+        rows = [1.0, t + 0.6 * (1 - t), t + 0.28 * (1 - t), t]
+
+        def octagon_pts(f: float) -> list[tuple[float, float]]:
+            hw, hl, c = rx * f, ry * f, cut_c * f
+            if c <= 0:
+                return [(cx - hw, cy - hl), (cx + hw, cy - hl), (cx + hw, cy + hl), (cx - hw, cy + hl)]
+            return [
+                (cx - hw + c, cy - hl), (cx + hw - c, cy - hl), (cx + hw, cy - hl + c),
+                (cx + hw, cy + hl - c), (cx + hw - c, cy + hl), (cx - hw + c, cy + hl),
+                (cx - hw, cy + hl - c), (cx - hw, cy - hl + c),
+            ]
+
+        rings = [octagon_pts(f) for f in rows]
+        parts = [_poly(rings[0], fill, stroke, STROKE_MAIN)]
+        parts += [_poly(r, "none", fc, facet_w) for r in rings[1:]]
+        for i in range(len(rings[0])):  # corner rays across the step rows
+            parts.append(fline(rings[0][i], rings[-1][i]))
+        return parts
+
+    # cabochon / rose cut / unknown: smooth dome with a highlight arc
+    parts = [f'<ellipse cx="{cx:.2f}" cy="{cy:.2f}" rx="{rx:.2f}" ry="{ry:.2f}" '
+             f'fill="{fill}" stroke="{stroke}" stroke-width="{STROKE_MAIN}"/>',
+             f'<path d="M {cx - rx * 0.55:.2f} {cy - ry * 0.25:.2f} '
+             f'A {rx * 0.6:.2f} {ry * 0.6:.2f} 0 0 1 {cx + rx * 0.25:.2f} {cy - ry * 0.55:.2f}" '
+             f'fill="none" stroke="{fc}" stroke-width="{facet_w}"/>']
+    return parts
 
 
 # --- halo ring ---------------------------------------------------------------
@@ -356,7 +515,7 @@ def _halo_top_view(spec: Spec, melee, cx: float, cy: float) -> list[str]:
         t = -math.pi / 2 + i * 2 * math.pi / melee.count
         parts.append(_circle(cx + ring_ax * math.cos(t), cy + ring_by * math.sin(t), mr))
     parts += [
-        _ellipse(cx, cy, rx, ry),  # center stone
+        *_facet_face_up(cx, cy, spec.stone.cut, 2 * rx, 2 * ry),  # center stone
         _line(cx, cy - oby - 3, cx, cy + oby + 3, w=STROKE_DIM, color=FAINT, dash="3 1 0.5 1"),
         _line(cx - oax - 3, cy, cx + oax + 3, cy, w=STROKE_DIM, color=FAINT, dash="3 1 0.5 1"),
     ]
@@ -411,7 +570,11 @@ def _render_halo(spec: Spec) -> str:
     melee = _find_stone(spec, "halo", "surround")
     if melee is None:
         raise SheetUnsupported("halo_prong needs a side_stones entry with position 'halo'")
-    body = _halo_top_view(spec, melee, 82, BASELINE) + _halo_side_view(spec, melee, 205, BASELINE)
+    body = (
+        _halo_top_view(spec, melee, 56, BASELINE)
+        + _front_view(spec, 140, BASELINE, melee=melee)
+        + _halo_side_view(spec, melee, 208, BASELINE)
+    )
     return _frame(spec, "TECHNICAL SHEET — HALO RING", "3:1", body)
 
 
@@ -504,19 +667,6 @@ def _render_bangle(spec: Spec) -> str:
 LINK_GAP_MM = 1.0  # jump-ring gap between bail, cluster, and drop stone
 
 
-def _octagon(cx: float, cy: float, hw: float, hl: float, cut: float) -> str:
-    points = (
-        f"{cx - hw + cut:.2f},{cy - hl:.2f} {cx + hw - cut:.2f},{cy - hl:.2f} "
-        f"{cx + hw:.2f},{cy - hl + cut:.2f} {cx + hw:.2f},{cy + hl - cut:.2f} "
-        f"{cx + hw - cut:.2f},{cy + hl:.2f} {cx - hw + cut:.2f},{cy + hl:.2f} "
-        f"{cx - hw:.2f},{cy + hl - cut:.2f} {cx - hw:.2f},{cy - hl + cut:.2f}"
-    )
-    return (
-        f'<polygon points="{points}" fill="#ffffff" stroke="{INK}" '
-        f'stroke-width="{STROKE_MAIN}"/>'
-    )
-
-
 def _pendant_front_view(spec: Spec, melee, drop_stone, cx: float, ty: float) -> list[str]:
     p = spec.pendant
     stone = spec.stone.dimensions_mm
@@ -542,11 +692,7 @@ def _pendant_front_view(spec: Spec, melee, drop_stone, cx: float, ty: float) -> 
             t = -math.pi / 2 + i * 2 * math.pi / melee.count
             parts.append(_circle(cx + ring_ax * math.cos(t), cluster_cy + ring_by * math.sin(t),
                                  mw / 2 * SCALE))
-    cut = 0.18 * stone.width * SCALE
-    parts += [
-        _octagon(cx, cluster_cy, hw, hl, cut),
-        _octagon(cx, cluster_cy, hw * 0.62, hl * 0.62, cut * 0.62),  # step-cut table
-    ]
+    parts += _facet_face_up(cx, cluster_cy, spec.stone.cut, 2 * hw, 2 * hl, table_ratio=0.62)
 
     bottom = cluster_bottom
     if drop_stone:
@@ -888,26 +1034,7 @@ def _gem_face_view(spec: Spec, cx: float, cy: float, s: float) -> list[str]:
     d = stone.dimensions_mm
     hw, hl = d.width / 2 * s, d.length / 2 * s
     table_ratio = (stone.table_pct or 57) / 100
-    is_step = spec.stone.cut in PENDANT_CENTER_CUTS
-    parts = []
-    if is_step:
-        cut_c = 0.18 * d.width * s
-        parts += [
-            _octagon(cx, cy, hw, hl, cut_c),
-            _octagon(cx, cy, hw * table_ratio, hl * table_ratio, cut_c * table_ratio),
-        ]
-        corners = [(-1, -1), (1, -1), (1, 1), (-1, 1)]
-        for sx, sy in corners:
-            parts.append(_line(cx + sx * (hw - cut_c / 2), cy + sy * (hl - cut_c / 2),
-                               cx + sx * hw * table_ratio, cy + sy * hl * table_ratio * 0.92,
-                               w=STROKE_DIM))
-    else:
-        parts += [_ellipse(cx, cy, hw, hl), _ellipse(cx, cy, hw * table_ratio, hl * table_ratio)]
-        for i in range(8):  # crown facet junctions
-            t = i * math.pi / 4
-            parts.append(_line(cx + hw * table_ratio * math.cos(t),
-                               cy + hl * table_ratio * math.sin(t),
-                               cx + hw * math.cos(t), cy + hl * math.sin(t), w=STROKE_DIM))
+    parts = _facet_face_up(cx, cy, stone.cut, 2 * hw, 2 * hl, table_ratio=table_ratio)
     table_w_mm = d.width * table_ratio
     y_dim = cy - hl - 7
     parts += [
@@ -932,8 +1059,9 @@ def _gem_profile_view(spec: Spec, cx: float, cy: float, s: float) -> list[str]:
     span = d.width * s
     depth = d.depth * s
     girdle_t = max(0.6, 0.02 * d.width * s)  # drawn girdle band
-    crown_h = depth / 3 - girdle_t / 2
-    pavilion_h = depth - depth / 3 - girdle_t / 2
+    # GIA-typical split: crown ~26% of total depth, pavilion the rest
+    crown_h = 0.26 * depth - girdle_t / 2
+    pavilion_h = depth - 0.26 * depth - girdle_t / 2
     table_w = span * ((stone.table_pct or 57) / 100)
 
     y_top = cy - depth / 2
@@ -955,6 +1083,17 @@ def _gem_profile_view(spec: Spec, cx: float, cy: float, s: float) -> list[str]:
         _ext(cx, y_culet, cx + span / 2 + 8, y_culet),
         *_dim_v(cx + span / 2 + 7, y_top, y_culet,
                 f"{_fmt(d.depth)} mm ({_fmt(stone.depth_pct or round(d.depth / d.width * 100, 1))}%)"),
+    ]
+    # GIA proportion callouts: crown and pavilion angles from the drawn geometry
+    crown_angle = math.degrees(math.atan2(crown_h, (span - table_w) / 2))
+    pavilion_angle = math.degrees(math.atan2(pavilion_h, span / 2))
+    parts += [
+        _ext((txr + xr) / 2, (y_top + y_g1) / 2, xr + 5, y_top - 4),
+        _text(xr + 5.6, y_top - 3, f"crown {crown_angle:.1f}°", size=2.8, anchor="start",
+              color=FAINT),
+        _ext((xr + cx) / 2, (y_g2 + y_culet) / 2, xl - 5, y_culet + 2),
+        _text(xl - 5.6, y_culet + 3, f"pavilion {pavilion_angle:.1f}°", size=2.8, anchor="end",
+              color=FAINT),
     ]
     if stone.girdle:
         parts += [
@@ -982,7 +1121,8 @@ def _render_loose_stone(spec: Spec) -> str:
         f"table {_fmt(stone.table_pct)}%" if stone.table_pct else None,
         f"depth {_fmt(stone.depth_pct)}%" if stone.depth_pct else None,
         f"girdle {stone.girdle.replace('_', ' ')}" if stone.girdle else None,
-        f"clarity {stone.clarity.grade} ({stone.clarity.system})",
+        "culet pointed",
+        f"clarity {stone.clarity.grade} ({stone.clarity.system})" if stone.clarity else None,
         f"origin {stone.origin}" if stone.origin else None,
     ]
     parts = [_text(MARGIN + 6, 26, "GEM DATA", size=3.4, anchor="start",

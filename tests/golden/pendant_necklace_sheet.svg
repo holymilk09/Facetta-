@@ -20,7 +20,17 @@
 <circle cx="87.14" cy="96.08" r="3.45" fill="#ffffff" stroke="#3f3f3f" stroke-width="0.3"/>
 <circle cx="92.57" cy="89.54" r="3.45" fill="#ffffff" stroke="#3f3f3f" stroke-width="0.3"/>
 <polygon points="93.28,91.50 106.72,91.50 110.50,95.28 110.50,114.72 106.72,118.50 93.28,118.50 89.50,114.72 89.50,95.28" fill="#ffffff" stroke="#3f3f3f" stroke-width="0.3"/>
-<polygon points="95.83,96.63 104.17,96.63 106.51,98.97 106.51,111.03 104.17,113.37 95.83,113.37 93.49,111.03 93.49,98.97" fill="#ffffff" stroke="#3f3f3f" stroke-width="0.3"/>
+<polygon points="94.30,93.55 105.70,93.55 108.90,96.76 108.90,113.24 105.70,116.45 94.30,116.45 91.10,113.24 91.10,96.76" fill="none" stroke="#3f3f3f" stroke-width="0.15"/>
+<polygon points="95.12,95.19 104.88,95.19 107.63,97.94 107.63,112.06 104.88,114.81 95.12,114.81 92.37,112.06 92.37,97.94" fill="none" stroke="#3f3f3f" stroke-width="0.15"/>
+<polygon points="95.83,96.63 104.17,96.63 106.51,98.97 106.51,111.03 104.17,113.37 95.83,113.37 93.49,111.03 93.49,98.97" fill="none" stroke="#3f3f3f" stroke-width="0.15"/>
+<line x1="93.28" y1="91.50" x2="95.83" y2="96.63" stroke="#3f3f3f" stroke-width="0.15"/>
+<line x1="106.72" y1="91.50" x2="104.17" y2="96.63" stroke="#3f3f3f" stroke-width="0.15"/>
+<line x1="110.50" y1="95.28" x2="106.51" y2="98.97" stroke="#3f3f3f" stroke-width="0.15"/>
+<line x1="110.50" y1="114.72" x2="106.51" y2="111.03" stroke="#3f3f3f" stroke-width="0.15"/>
+<line x1="106.72" y1="118.50" x2="104.17" y2="113.37" stroke="#3f3f3f" stroke-width="0.15"/>
+<line x1="93.28" y1="118.50" x2="95.83" y2="113.37" stroke="#3f3f3f" stroke-width="0.15"/>
+<line x1="89.50" y1="114.72" x2="93.49" y2="111.03" stroke="#3f3f3f" stroke-width="0.15"/>
+<line x1="89.50" y1="95.28" x2="93.49" y2="98.97" stroke="#3f3f3f" stroke-width="0.15"/>
 <circle cx="100.00" cy="127.80" r="1.50" fill="#ffffff" stroke="#3f3f3f" stroke-width="0.3"/>
 <circle cx="100.00" cy="137.55" r="8.25" fill="#ffffff" stroke="#3f3f3f" stroke-width="0.3"/>
 <circle cx="100.00" cy="137.55" r="4.54" fill="none" stroke="#8a8a8a" stroke-width="0.15" stroke-dasharray="1 0.8"/>

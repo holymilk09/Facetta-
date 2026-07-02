@@ -94,11 +94,14 @@ def test_halo_ring_sheet_matches_golden(halo_spec):
     _assert_matches_golden(svg, "halo_ring_sheet.svg")
     for text in (">6.4 mm<", ">8.6 mm<",             # center stone
                  ">15.2 mm halo<", ">17.4 mm halo<",  # halo outer envelope
-                 ">2 mm<", ">⌀ 16.9 mm<"):            # band width, inner diameter
+                 ">2 mm<", ">⌀ 16.9 mm<",             # band width, inner diameter
+                 ">5.8 mm rise<",                     # front view: setting height
+                 "FRONT VIEW"):
         assert text in svg, f"missing callout {text}"
     assert "8 × ⌀4.1 mm melee" in svg
-    # 8 melee in the top view + 2 flanking in the side profile = 10 melee circles
-    assert svg.count('r="6.15"') == 10
+    assert "EST. 3.1 g" in svg  # cast-weight estimate in the title block
+    # 8 melee top view + 2 side profile + 2 front view = 12 melee circles
+    assert svg.count('r="6.15"') == 12
 
 
 def test_love_bangle_sheet_matches_golden(bangle_spec):
@@ -169,6 +172,24 @@ def test_loose_stone_sheet_matches_golden(loose_spec):
     assert 'laser inscription on girdle: "FCT-2141Z"' in svg
     assert "SCALE 8:1" in svg  # single-focus scale ladder picked 8:1
     assert "loose stone — unmounted" in svg
+    # GIA proportion callouts derived from the drawn geometry
+    assert "crown " in svg and "pavilion " in svg and "°" in svg
+    assert "culet pointed" in svg
+
+
+def test_clarity_is_optional_finest_available(example_spec):
+    example_spec["stone"].pop("clarity")
+    svg = render_sheet(_validated(example_spec))
+    assert "finest available" in svg  # title block notes the sourcing default
+
+
+def test_facet_patterns_drawn_per_cut(example_spec, loose_spec, pendant_spec):
+    # oval brilliant: 8-main / 8-star pattern -> a table polygon + many facet lines
+    oval = render_sheet(_validated(example_spec))
+    assert oval.count("<polygon") >= 2  # stone profile + face-up table
+    # step cut: concentric rows
+    pendant = render_sheet(_validated(pendant_spec))
+    assert pendant.count("<polygon") >= 4  # outline + 3 step rows on the emerald
 
 
 def test_halo_requires_melee_entry(halo_spec):

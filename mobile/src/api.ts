@@ -37,6 +37,7 @@ export function createApi(baseUrl: string) {
     findings: () => call('/vocabulary/findings'),
     validateSpec: (spec: unknown) => post('/specs/validate', spec),
     sheetPreview: (spec: unknown) => post('/specs/sheet.svg', spec),
+    prototypePreview: (spec: unknown) => post('/specs/prototype.svg', spec),
     fromProse: (prose: string, created_by: string) =>
       post('/specs/from-prose', { prose, created_by }),
     createDesign: (created_by: string, spec: unknown) =>

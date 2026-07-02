@@ -119,6 +119,45 @@ def nesting_clearance(spec_a: Spec, spec_b: Spec) -> NestingClearance:
     )
 
 
+# alloy densities in g/cm^3 — factories quote castings from estimated weight
+GOLD_DENSITY = {9: 11.2, 14: 13.6, 18: 15.5, 22: 17.8, 24: 19.3}
+METAL_DENSITY = {"platinum": 21.45, "silver": 10.36}
+
+
+def estimate_metal_g(spec: Spec) -> float | None:
+    """Rough cast-weight estimate from the metal cross-sections (stones excluded).
+
+    Ring: hoop annulus x band width. Bangle/cuff/link: centerline perimeter x
+    band section (cuffs lose the gap share). Pendants vary too much to guess.
+    """
+    if spec.metal is None:
+        return None
+    if spec.metal.material == "gold":
+        density = GOLD_DENSITY.get(spec.metal.karat or 18, 15.5)
+    else:
+        density = METAL_DENSITY.get(spec.metal.material)
+    if density is None:
+        return None
+
+    volume_mm3 = None
+    if spec.band is not None and spec.ring_size is not None:
+        inner_d = spec.ring_size.inner_diameter_mm or expected_inner_diameter_mm(spec.ring_size)
+        r_i = inner_d / 2
+        r_o = r_i + spec.band.thickness_mm
+        volume_mm3 = math.pi * (r_o**2 - r_i**2) * spec.band.width_mm
+    elif spec.bracelet is not None:
+        br = spec.bracelet
+        a = (br.inner_length_mm + br.thickness_mm) / 2
+        b = (br.inner_width_mm + br.thickness_mm) / 2
+        length = ellipse_perimeter_mm(a, b)
+        if br.gap_width_mm is not None:
+            length -= br.gap_width_mm
+        volume_mm3 = length * br.width_mm * br.thickness_mm
+    if volume_mm3 is None:
+        return None
+    return round(volume_mm3 * density / 1000, 1)
+
+
 PENDANT_LINK_GAP_MM = 1.0  # jump-ring gap between bail, cluster, and drop stone
 
 
@@ -166,22 +205,23 @@ def _validate_stone(stone: Stone, loc: tuple, vocab: Vocabulary, issues: list[Va
             valid_options=trade_names,
         ))
 
-    if stone.clarity.system not in species.clarity_systems:
-        issues.append(ValidationIssue(
-            loc=(*loc, "clarity", "system"),
-            msg=f"clarity system '{stone.clarity.system}' does not apply to {species.display}",
-            type="vocabulary",
-            valid_options=list(species.clarity_systems),
-        ))
-    else:
-        grades = vocab.clarity_grades(stone.clarity.system)
-        if stone.clarity.grade not in grades:
+    if stone.clarity is not None:  # optional: absent = best available, sourced on approval
+        if stone.clarity.system not in species.clarity_systems:
             issues.append(ValidationIssue(
-                loc=(*loc, "clarity", "grade"),
-                msg=f"unknown grade '{stone.clarity.grade}' for clarity system '{stone.clarity.system}'",
+                loc=(*loc, "clarity", "system"),
+                msg=f"clarity system '{stone.clarity.system}' does not apply to {species.display}",
                 type="vocabulary",
-                valid_options=grades,
+                valid_options=list(species.clarity_systems),
             ))
+        else:
+            grades = vocab.clarity_grades(stone.clarity.system)
+            if stone.clarity.grade not in grades:
+                issues.append(ValidationIssue(
+                    loc=(*loc, "clarity", "grade"),
+                    msg=f"unknown grade '{stone.clarity.grade}' for clarity system '{stone.clarity.system}'",
+                    type="vocabulary",
+                    valid_options=grades,
+                ))
 
     for i, phenomenon in enumerate(stone.phenomena):
         if phenomenon not in species.allowed_phenomena:

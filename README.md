@@ -98,6 +98,10 @@ terms.
 | `GET /designs/{id}/versions/{v}/sheet.svg` | The stored version's dimensioned sheet |
 | `POST /designs/{id}/versions/{v}/share` → `GET /share/{token}` | Share links pinned to one exact version; `comment` scope lets a factory pin comments to a region of the sheet |
 | `POST /specs/from-prose` | Claude API: designer prose → validated spec (needs `ANTHROPIC_API_KEY`) |
+| `POST /specs/prototype.svg` · `GET /designs/{id}/versions/{v}/prototype.svg` | Deterministic colored prototype (vocabulary hues + metal tones) |
+| `POST /specs/render-prompt` | Compiled photoreal prompt + control-image hint for external image models |
+| `POST /specs/stack.svg` · `GET /designs/{id}/versions/{v}/stack/{id2}/{v2}/sheet.svg` | Overlay two pieces with computed nesting clearance |
+| `GET /vocabulary/findings` | Chain styles, clasp types, girdle thickness scale |
 
 ## Database
 

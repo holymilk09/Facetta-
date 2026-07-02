@@ -35,7 +35,9 @@ Hard rules:
   inner_diameter_mm if unsure — the server derives it.
 - Store BOTH the trade term and its GIA translation on the stone color, exactly as
   given in the vocabulary below.
-- The clarity system must be one listed for that species.
+- Clarity is OPTIONAL. Pieces are designed before stones are sourced — omit clarity
+  entirely unless the designer explicitly states a grade (finest available is assumed).
+  When given, the clarity system must be one listed for that species.
 - Use placeholders for identity fields: design_id "dsn_pending", version 1,
   created_by "usr_pending", created_at "1970-01-01T00:00:00Z" — the server assigns
   the real values.

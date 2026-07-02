@@ -4,85 +4,143 @@
 <rect x="8" y="8" width="281" height="194" fill="none" stroke="#3f3f3f" stroke-width="0.3"/>
 <text x="148.50" y="16.00" font-family="Georgia, 'Times New Roman', serif" font-size="4.6" fill="#3f3f3f" text-anchor="middle" letter-spacing="1.6">TECHNICAL SHEET — HALO RING</text>
 <line x1="11.00" y1="105.00" x2="286.00" y2="105.00" stroke="#8a8a8a" stroke-width="0.15" stroke-dasharray="6 1.5 1 1.5"/>
-<rect x="79.00" y="74.53" width="6.00" height="60.93" fill="url(#hatch)" stroke="none"/>
-<line x1="79.00" y1="74.53" x2="79.00" y2="135.47" stroke="#3f3f3f" stroke-width="0.3"/>
-<line x1="85.00" y1="74.53" x2="85.00" y2="135.47" stroke="#3f3f3f" stroke-width="0.3"/>
-<line x1="79.00" y1="74.53" x2="85.00" y2="74.53" stroke="#3f3f3f" stroke-width="0.3"/>
-<line x1="79.00" y1="135.47" x2="85.00" y2="135.47" stroke="#3f3f3f" stroke-width="0.3"/>
-<ellipse cx="82.00" cy="105.00" rx="22.80" ry="26.10" fill="#ffffff" stroke="#3f3f3f" stroke-width="0.3"/>
-<circle cx="82.00" cy="85.05" r="6.15" fill="#ffffff" stroke="#3f3f3f" stroke-width="0.3"/>
-<circle cx="93.77" cy="90.89" r="6.15" fill="#ffffff" stroke="#3f3f3f" stroke-width="0.3"/>
-<circle cx="98.65" cy="105.00" r="6.15" fill="#ffffff" stroke="#3f3f3f" stroke-width="0.3"/>
-<circle cx="93.77" cy="119.11" r="6.15" fill="#ffffff" stroke="#3f3f3f" stroke-width="0.3"/>
-<circle cx="82.00" cy="124.95" r="6.15" fill="#ffffff" stroke="#3f3f3f" stroke-width="0.3"/>
-<circle cx="70.23" cy="119.11" r="6.15" fill="#ffffff" stroke="#3f3f3f" stroke-width="0.3"/>
-<circle cx="65.35" cy="105.00" r="6.15" fill="#ffffff" stroke="#3f3f3f" stroke-width="0.3"/>
-<circle cx="70.23" cy="90.89" r="6.15" fill="#ffffff" stroke="#3f3f3f" stroke-width="0.3"/>
-<ellipse cx="82.00" cy="105.00" rx="9.60" ry="12.90" fill="#ffffff" stroke="#3f3f3f" stroke-width="0.3"/>
-<line x1="82.00" y1="75.90" x2="82.00" y2="134.10" stroke="#8a8a8a" stroke-width="0.15" stroke-dasharray="3 1 0.5 1"/>
-<line x1="56.20" y1="105.00" x2="107.80" y2="105.00" stroke="#8a8a8a" stroke-width="0.15" stroke-dasharray="3 1 0.5 1"/>
-<line x1="72.40" y1="105.00" x2="72.40" y2="70.90" stroke="#8a8a8a" stroke-width="0.15" stroke-dasharray="0.8 0.8"/>
-<line x1="91.60" y1="105.00" x2="91.60" y2="70.90" stroke="#8a8a8a" stroke-width="0.15" stroke-dasharray="0.8 0.8"/>
-<line x1="72.40" y1="71.90" x2="91.60" y2="71.90" stroke="#8a8a8a" stroke-width="0.15"/>
-<line x1="71.50" y1="72.80" x2="73.30" y2="71.00" stroke="#3f3f3f" stroke-width="0.24"/>
-<line x1="90.70" y1="72.80" x2="92.50" y2="71.00" stroke="#3f3f3f" stroke-width="0.24"/>
-<text x="82.00" y="70.50" font-family="Georgia, 'Times New Roman', serif" font-size="3.2" fill="#3f3f3f" text-anchor="middle">6.4 mm</text>
-<line x1="59.20" y1="105.00" x2="59.20" y2="64.90" stroke="#8a8a8a" stroke-width="0.15" stroke-dasharray="0.8 0.8"/>
-<line x1="104.80" y1="105.00" x2="104.80" y2="64.90" stroke="#8a8a8a" stroke-width="0.15" stroke-dasharray="0.8 0.8"/>
-<line x1="59.20" y1="65.90" x2="104.80" y2="65.90" stroke="#8a8a8a" stroke-width="0.15"/>
-<line x1="58.30" y1="66.80" x2="60.10" y2="65.00" stroke="#3f3f3f" stroke-width="0.24"/>
-<line x1="103.90" y1="66.80" x2="105.70" y2="65.00" stroke="#3f3f3f" stroke-width="0.24"/>
-<text x="82.00" y="64.50" font-family="Georgia, 'Times New Roman', serif" font-size="3.2" fill="#3f3f3f" text-anchor="middle">15.2 mm halo</text>
-<line x1="82.00" y1="92.10" x2="113.80" y2="92.10" stroke="#8a8a8a" stroke-width="0.15" stroke-dasharray="0.8 0.8"/>
-<line x1="82.00" y1="117.90" x2="113.80" y2="117.90" stroke="#8a8a8a" stroke-width="0.15" stroke-dasharray="0.8 0.8"/>
-<line x1="112.80" y1="92.10" x2="112.80" y2="117.90" stroke="#8a8a8a" stroke-width="0.15"/>
-<line x1="111.90" y1="93.00" x2="113.70" y2="91.20" stroke="#3f3f3f" stroke-width="0.24"/>
-<line x1="111.90" y1="118.80" x2="113.70" y2="117.00" stroke="#3f3f3f" stroke-width="0.24"/>
-<text x="114.60" y="106.10" font-family="Georgia, 'Times New Roman', serif" font-size="3.2" fill="#3f3f3f" text-anchor="start">8.6 mm</text>
-<line x1="82.00" y1="78.90" x2="131.80" y2="78.90" stroke="#8a8a8a" stroke-width="0.15" stroke-dasharray="0.8 0.8"/>
-<line x1="82.00" y1="131.10" x2="131.80" y2="131.10" stroke="#8a8a8a" stroke-width="0.15" stroke-dasharray="0.8 0.8"/>
-<line x1="130.80" y1="78.90" x2="130.80" y2="131.10" stroke="#8a8a8a" stroke-width="0.15"/>
-<line x1="129.90" y1="79.80" x2="131.70" y2="78.00" stroke="#3f3f3f" stroke-width="0.24"/>
-<line x1="129.90" y1="132.00" x2="131.70" y2="130.20" stroke="#3f3f3f" stroke-width="0.24"/>
-<text x="132.60" y="106.10" font-family="Georgia, 'Times New Roman', serif" font-size="3.2" fill="#3f3f3f" text-anchor="start">17.4 mm halo</text>
-<line x1="79.00" y1="135.47" x2="79.00" y2="141.47" stroke="#8a8a8a" stroke-width="0.15" stroke-dasharray="0.8 0.8"/>
-<line x1="85.00" y1="135.47" x2="85.00" y2="141.47" stroke="#8a8a8a" stroke-width="0.15" stroke-dasharray="0.8 0.8"/>
-<line x1="79.00" y1="140.47" x2="85.00" y2="140.47" stroke="#8a8a8a" stroke-width="0.15"/>
-<line x1="78.10" y1="141.37" x2="79.90" y2="139.56" stroke="#3f3f3f" stroke-width="0.24"/>
-<line x1="84.10" y1="141.37" x2="85.90" y2="139.56" stroke="#3f3f3f" stroke-width="0.24"/>
-<text x="82.00" y="139.06" font-family="Georgia, 'Times New Roman', serif" font-size="3.2" fill="#3f3f3f" text-anchor="middle">2 mm</text>
-<text x="82.00" y="149.47" font-family="Georgia, 'Times New Roman', serif" font-size="3.6" fill="#3f3f3f" text-anchor="middle" letter-spacing="1.2">TOP VIEW</text>
-<text x="82.00" y="154.47" font-family="Georgia, 'Times New Roman', serif" font-size="2.8" fill="#8a8a8a" text-anchor="middle">8 × ⌀4.1 mm melee, 0.3 mm off center girdle</text>
-<circle cx="205.00" cy="105.00" r="30.47" fill="url(#hatch)" stroke="#3f3f3f" stroke-width="0.3"/>
-<circle cx="205.00" cy="105.00" r="25.37" fill="#ffffff" stroke="#3f3f3f" stroke-width="0.3"/>
-<line x1="196.47" y1="75.73" x2="192.10" y2="61.03" stroke="#3f3f3f" stroke-width="0.3"/>
-<line x1="213.53" y1="75.73" x2="217.90" y2="61.03" stroke="#3f3f3f" stroke-width="0.3"/>
-<polygon points="197.91,57.03 212.09,57.03 217.90,61.03 205.00,69.03 192.10,61.03" fill="#ffffff" stroke="#3f3f3f" stroke-width="0.3"/>
-<line x1="192.10" y1="61.03" x2="217.90" y2="61.03" stroke="#3f3f3f" stroke-width="0.3"/>
-<line x1="205.00" y1="54.03" x2="205.00" y2="138.47" stroke="#8a8a8a" stroke-width="0.15" stroke-dasharray="3 1 0.5 1"/>
-<line x1="191.42" y1="63.03" x2="191.42" y2="58.03" stroke="#3f3f3f" stroke-width="0.3"/>
-<circle cx="191.42" cy="58.03" r="1.35" fill="#ffffff" stroke="#3f3f3f" stroke-width="0.3"/>
-<line x1="218.58" y1="63.03" x2="218.58" y2="58.03" stroke="#3f3f3f" stroke-width="0.3"/>
-<circle cx="218.58" cy="58.03" r="1.35" fill="#ffffff" stroke="#3f3f3f" stroke-width="0.3"/>
-<line x1="179.63" y1="105.00" x2="230.37" y2="105.00" stroke="#8a8a8a" stroke-width="0.15"/>
-<line x1="178.73" y1="105.90" x2="180.53" y2="104.10" stroke="#3f3f3f" stroke-width="0.24"/>
-<line x1="229.47" y1="105.90" x2="231.27" y2="104.10" stroke="#3f3f3f" stroke-width="0.24"/>
-<text x="205.00" y="103.60" font-family="Georgia, 'Times New Roman', serif" font-size="3.2" fill="#3f3f3f" text-anchor="middle">⌀ 16.9 mm</text>
-<line x1="217.90" y1="61.03" x2="245.47" y2="61.03" stroke="#8a8a8a" stroke-width="0.15" stroke-dasharray="0.8 0.8"/>
-<line x1="205.00" y1="74.53" x2="245.47" y2="74.53" stroke="#8a8a8a" stroke-width="0.15" stroke-dasharray="0.8 0.8"/>
-<line x1="244.47" y1="61.03" x2="244.47" y2="74.53" stroke="#8a8a8a" stroke-width="0.15"/>
-<line x1="243.56" y1="61.93" x2="245.37" y2="60.13" stroke="#3f3f3f" stroke-width="0.24"/>
-<line x1="243.56" y1="75.44" x2="245.37" y2="73.63" stroke="#3f3f3f" stroke-width="0.24"/>
-<text x="246.27" y="68.88" font-family="Georgia, 'Times New Roman', serif" font-size="3.2" fill="#3f3f3f" text-anchor="start">4.5 mm gallery</text>
-<line x1="212.09" y1="57.03" x2="271.47" y2="57.03" stroke="#8a8a8a" stroke-width="0.15" stroke-dasharray="0.8 0.8"/>
-<line x1="205.00" y1="69.03" x2="271.47" y2="69.03" stroke="#8a8a8a" stroke-width="0.15" stroke-dasharray="0.8 0.8"/>
-<line x1="270.47" y1="57.03" x2="270.47" y2="69.03" stroke="#8a8a8a" stroke-width="0.15"/>
-<line x1="269.57" y1="57.93" x2="271.37" y2="56.13" stroke="#3f3f3f" stroke-width="0.24"/>
-<line x1="269.57" y1="69.94" x2="271.37" y2="68.13" stroke="#3f3f3f" stroke-width="0.24"/>
-<text x="272.27" y="64.13" font-family="Georgia, 'Times New Roman', serif" font-size="3.2" fill="#3f3f3f" text-anchor="start">4 mm</text>
-<text x="205.00" y="147.47" font-family="Georgia, 'Times New Roman', serif" font-size="3.6" fill="#3f3f3f" text-anchor="middle" letter-spacing="1.2">SIDE PROFILE</text>
-<circle cx="184.00" cy="61.03" r="6.15" fill="#ffffff" stroke="#3f3f3f" stroke-width="0.3"/>
-<circle cx="226.00" cy="61.03" r="6.15" fill="#ffffff" stroke="#3f3f3f" stroke-width="0.3"/>
+<rect x="53.00" y="74.53" width="6.00" height="60.93" fill="url(#hatch)" stroke="none"/>
+<line x1="53.00" y1="74.53" x2="53.00" y2="135.47" stroke="#3f3f3f" stroke-width="0.3"/>
+<line x1="59.00" y1="74.53" x2="59.00" y2="135.47" stroke="#3f3f3f" stroke-width="0.3"/>
+<line x1="53.00" y1="74.53" x2="59.00" y2="74.53" stroke="#3f3f3f" stroke-width="0.3"/>
+<line x1="53.00" y1="135.47" x2="59.00" y2="135.47" stroke="#3f3f3f" stroke-width="0.3"/>
+<ellipse cx="56.00" cy="105.00" rx="22.80" ry="26.10" fill="#ffffff" stroke="#3f3f3f" stroke-width="0.3"/>
+<circle cx="56.00" cy="85.05" r="6.15" fill="#ffffff" stroke="#3f3f3f" stroke-width="0.3"/>
+<circle cx="67.77" cy="90.89" r="6.15" fill="#ffffff" stroke="#3f3f3f" stroke-width="0.3"/>
+<circle cx="72.65" cy="105.00" r="6.15" fill="#ffffff" stroke="#3f3f3f" stroke-width="0.3"/>
+<circle cx="67.77" cy="119.11" r="6.15" fill="#ffffff" stroke="#3f3f3f" stroke-width="0.3"/>
+<circle cx="56.00" cy="124.95" r="6.15" fill="#ffffff" stroke="#3f3f3f" stroke-width="0.3"/>
+<circle cx="44.23" cy="119.11" r="6.15" fill="#ffffff" stroke="#3f3f3f" stroke-width="0.3"/>
+<circle cx="39.35" cy="105.00" r="6.15" fill="#ffffff" stroke="#3f3f3f" stroke-width="0.3"/>
+<circle cx="44.23" cy="90.89" r="6.15" fill="#ffffff" stroke="#3f3f3f" stroke-width="0.3"/>
+<ellipse cx="56.00" cy="105.00" rx="9.60" ry="12.90" fill="#ffffff" stroke="#3f3f3f" stroke-width="0.3"/>
+<polygon points="61.28,105.00 59.73,110.02 56.00,112.09 52.27,110.02 50.72,105.00 52.27,99.98 56.00,97.91 59.73,99.98" fill="none" stroke="#3f3f3f" stroke-width="0.15"/>
+<line x1="61.28" y1="105.00" x2="65.60" y2="105.00" stroke="#3f3f3f" stroke-width="0.15"/>
+<line x1="61.28" y1="105.00" x2="62.39" y2="108.56" stroke="#3f3f3f" stroke-width="0.15"/>
+<line x1="59.73" y1="110.02" x2="62.39" y2="108.56" stroke="#3f3f3f" stroke-width="0.15"/>
+<line x1="62.39" y1="108.56" x2="64.87" y2="109.94" stroke="#3f3f3f" stroke-width="0.15"/>
+<line x1="59.73" y1="110.02" x2="62.79" y2="114.12" stroke="#3f3f3f" stroke-width="0.15"/>
+<line x1="59.73" y1="110.02" x2="58.65" y2="113.59" stroke="#3f3f3f" stroke-width="0.15"/>
+<line x1="56.00" y1="112.09" x2="58.65" y2="113.59" stroke="#3f3f3f" stroke-width="0.15"/>
+<line x1="58.65" y1="113.59" x2="59.67" y2="116.92" stroke="#3f3f3f" stroke-width="0.15"/>
+<line x1="56.00" y1="112.09" x2="56.00" y2="117.90" stroke="#3f3f3f" stroke-width="0.15"/>
+<line x1="56.00" y1="112.09" x2="53.35" y2="113.59" stroke="#3f3f3f" stroke-width="0.15"/>
+<line x1="52.27" y1="110.02" x2="53.35" y2="113.59" stroke="#3f3f3f" stroke-width="0.15"/>
+<line x1="53.35" y1="113.59" x2="52.33" y2="116.92" stroke="#3f3f3f" stroke-width="0.15"/>
+<line x1="52.27" y1="110.02" x2="49.21" y2="114.12" stroke="#3f3f3f" stroke-width="0.15"/>
+<line x1="52.27" y1="110.02" x2="49.61" y2="108.56" stroke="#3f3f3f" stroke-width="0.15"/>
+<line x1="50.72" y1="105.00" x2="49.61" y2="108.56" stroke="#3f3f3f" stroke-width="0.15"/>
+<line x1="49.61" y1="108.56" x2="47.13" y2="109.94" stroke="#3f3f3f" stroke-width="0.15"/>
+<line x1="50.72" y1="105.00" x2="46.40" y2="105.00" stroke="#3f3f3f" stroke-width="0.15"/>
+<line x1="50.72" y1="105.00" x2="49.61" y2="101.44" stroke="#3f3f3f" stroke-width="0.15"/>
+<line x1="52.27" y1="99.98" x2="49.61" y2="101.44" stroke="#3f3f3f" stroke-width="0.15"/>
+<line x1="49.61" y1="101.44" x2="47.13" y2="100.06" stroke="#3f3f3f" stroke-width="0.15"/>
+<line x1="52.27" y1="99.98" x2="49.21" y2="95.88" stroke="#3f3f3f" stroke-width="0.15"/>
+<line x1="52.27" y1="99.98" x2="53.35" y2="96.41" stroke="#3f3f3f" stroke-width="0.15"/>
+<line x1="56.00" y1="97.91" x2="53.35" y2="96.41" stroke="#3f3f3f" stroke-width="0.15"/>
+<line x1="53.35" y1="96.41" x2="52.33" y2="93.08" stroke="#3f3f3f" stroke-width="0.15"/>
+<line x1="56.00" y1="97.91" x2="56.00" y2="92.10" stroke="#3f3f3f" stroke-width="0.15"/>
+<line x1="56.00" y1="97.91" x2="58.65" y2="96.41" stroke="#3f3f3f" stroke-width="0.15"/>
+<line x1="59.73" y1="99.98" x2="58.65" y2="96.41" stroke="#3f3f3f" stroke-width="0.15"/>
+<line x1="58.65" y1="96.41" x2="59.67" y2="93.08" stroke="#3f3f3f" stroke-width="0.15"/>
+<line x1="59.73" y1="99.98" x2="62.79" y2="95.88" stroke="#3f3f3f" stroke-width="0.15"/>
+<line x1="59.73" y1="99.98" x2="62.39" y2="101.44" stroke="#3f3f3f" stroke-width="0.15"/>
+<line x1="61.28" y1="105.00" x2="62.39" y2="101.44" stroke="#3f3f3f" stroke-width="0.15"/>
+<line x1="62.39" y1="101.44" x2="64.87" y2="100.06" stroke="#3f3f3f" stroke-width="0.15"/>
+<line x1="56.00" y1="75.90" x2="56.00" y2="134.10" stroke="#8a8a8a" stroke-width="0.15" stroke-dasharray="3 1 0.5 1"/>
+<line x1="30.20" y1="105.00" x2="81.80" y2="105.00" stroke="#8a8a8a" stroke-width="0.15" stroke-dasharray="3 1 0.5 1"/>
+<line x1="46.40" y1="105.00" x2="46.40" y2="70.90" stroke="#8a8a8a" stroke-width="0.15" stroke-dasharray="0.8 0.8"/>
+<line x1="65.60" y1="105.00" x2="65.60" y2="70.90" stroke="#8a8a8a" stroke-width="0.15" stroke-dasharray="0.8 0.8"/>
+<line x1="46.40" y1="71.90" x2="65.60" y2="71.90" stroke="#8a8a8a" stroke-width="0.15"/>
+<line x1="45.50" y1="72.80" x2="47.30" y2="71.00" stroke="#3f3f3f" stroke-width="0.24"/>
+<line x1="64.70" y1="72.80" x2="66.50" y2="71.00" stroke="#3f3f3f" stroke-width="0.24"/>
+<text x="56.00" y="70.50" font-family="Georgia, 'Times New Roman', serif" font-size="3.2" fill="#3f3f3f" text-anchor="middle">6.4 mm</text>
+<line x1="33.20" y1="105.00" x2="33.20" y2="64.90" stroke="#8a8a8a" stroke-width="0.15" stroke-dasharray="0.8 0.8"/>
+<line x1="78.80" y1="105.00" x2="78.80" y2="64.90" stroke="#8a8a8a" stroke-width="0.15" stroke-dasharray="0.8 0.8"/>
+<line x1="33.20" y1="65.90" x2="78.80" y2="65.90" stroke="#8a8a8a" stroke-width="0.15"/>
+<line x1="32.30" y1="66.80" x2="34.10" y2="65.00" stroke="#3f3f3f" stroke-width="0.24"/>
+<line x1="77.90" y1="66.80" x2="79.70" y2="65.00" stroke="#3f3f3f" stroke-width="0.24"/>
+<text x="56.00" y="64.50" font-family="Georgia, 'Times New Roman', serif" font-size="3.2" fill="#3f3f3f" text-anchor="middle">15.2 mm halo</text>
+<line x1="56.00" y1="92.10" x2="87.80" y2="92.10" stroke="#8a8a8a" stroke-width="0.15" stroke-dasharray="0.8 0.8"/>
+<line x1="56.00" y1="117.90" x2="87.80" y2="117.90" stroke="#8a8a8a" stroke-width="0.15" stroke-dasharray="0.8 0.8"/>
+<line x1="86.80" y1="92.10" x2="86.80" y2="117.90" stroke="#8a8a8a" stroke-width="0.15"/>
+<line x1="85.90" y1="93.00" x2="87.70" y2="91.20" stroke="#3f3f3f" stroke-width="0.24"/>
+<line x1="85.90" y1="118.80" x2="87.70" y2="117.00" stroke="#3f3f3f" stroke-width="0.24"/>
+<text x="88.60" y="106.10" font-family="Georgia, 'Times New Roman', serif" font-size="3.2" fill="#3f3f3f" text-anchor="start">8.6 mm</text>
+<line x1="56.00" y1="78.90" x2="105.80" y2="78.90" stroke="#8a8a8a" stroke-width="0.15" stroke-dasharray="0.8 0.8"/>
+<line x1="56.00" y1="131.10" x2="105.80" y2="131.10" stroke="#8a8a8a" stroke-width="0.15" stroke-dasharray="0.8 0.8"/>
+<line x1="104.80" y1="78.90" x2="104.80" y2="131.10" stroke="#8a8a8a" stroke-width="0.15"/>
+<line x1="103.90" y1="79.80" x2="105.70" y2="78.00" stroke="#3f3f3f" stroke-width="0.24"/>
+<line x1="103.90" y1="132.00" x2="105.70" y2="130.20" stroke="#3f3f3f" stroke-width="0.24"/>
+<text x="106.60" y="106.10" font-family="Georgia, 'Times New Roman', serif" font-size="3.2" fill="#3f3f3f" text-anchor="start">17.4 mm halo</text>
+<line x1="53.00" y1="135.47" x2="53.00" y2="141.47" stroke="#8a8a8a" stroke-width="0.15" stroke-dasharray="0.8 0.8"/>
+<line x1="59.00" y1="135.47" x2="59.00" y2="141.47" stroke="#8a8a8a" stroke-width="0.15" stroke-dasharray="0.8 0.8"/>
+<line x1="53.00" y1="140.47" x2="59.00" y2="140.47" stroke="#8a8a8a" stroke-width="0.15"/>
+<line x1="52.10" y1="141.37" x2="53.90" y2="139.56" stroke="#3f3f3f" stroke-width="0.24"/>
+<line x1="58.10" y1="141.37" x2="59.90" y2="139.56" stroke="#3f3f3f" stroke-width="0.24"/>
+<text x="56.00" y="139.06" font-family="Georgia, 'Times New Roman', serif" font-size="3.2" fill="#3f3f3f" text-anchor="middle">2 mm</text>
+<text x="56.00" y="149.47" font-family="Georgia, 'Times New Roman', serif" font-size="3.6" fill="#3f3f3f" text-anchor="middle" letter-spacing="1.2">TOP VIEW</text>
+<text x="56.00" y="154.47" font-family="Georgia, 'Times New Roman', serif" font-size="2.8" fill="#8a8a8a" text-anchor="middle">8 × ⌀4.1 mm melee, 0.3 mm off center girdle</text>
+<rect x="137.00" y="74.53" width="6.00" height="60.93" fill="url(#hatch)" stroke="#3f3f3f" stroke-width="0.3"/>
+<line x1="137.00" y1="75.73" x2="130.40" y2="61.03" stroke="#3f3f3f" stroke-width="0.3"/>
+<line x1="143.00" y1="75.73" x2="149.60" y2="61.03" stroke="#3f3f3f" stroke-width="0.3"/>
+<polygon points="134.72,57.03 145.28,57.03 149.60,61.03 140.00,69.03 130.40,61.03" fill="#ffffff" stroke="#3f3f3f" stroke-width="0.3"/>
+<line x1="130.40" y1="61.03" x2="149.60" y2="61.03" stroke="#3f3f3f" stroke-width="0.3"/>
+<line x1="140.00" y1="54.03" x2="140.00" y2="138.47" stroke="#8a8a8a" stroke-width="0.15" stroke-dasharray="3 1 0.5 1"/>
+<line x1="129.72" y1="63.03" x2="129.72" y2="58.03" stroke="#3f3f3f" stroke-width="0.3"/>
+<circle cx="129.72" cy="58.03" r="1.35" fill="#ffffff" stroke="#3f3f3f" stroke-width="0.3"/>
+<line x1="150.28" y1="63.03" x2="150.28" y2="58.03" stroke="#3f3f3f" stroke-width="0.3"/>
+<circle cx="150.28" cy="58.03" r="1.35" fill="#ffffff" stroke="#3f3f3f" stroke-width="0.3"/>
+<circle cx="122.30" cy="61.03" r="6.15" fill="#ffffff" stroke="#3f3f3f" stroke-width="0.3"/>
+<circle cx="157.70" cy="61.03" r="6.15" fill="#ffffff" stroke="#3f3f3f" stroke-width="0.3"/>
+<line x1="145.28" y1="57.03" x2="159.60" y2="57.03" stroke="#8a8a8a" stroke-width="0.15" stroke-dasharray="0.8 0.8"/>
+<line x1="143.00" y1="74.53" x2="159.60" y2="74.53" stroke="#8a8a8a" stroke-width="0.15" stroke-dasharray="0.8 0.8"/>
+<line x1="158.60" y1="57.03" x2="158.60" y2="74.53" stroke="#8a8a8a" stroke-width="0.15"/>
+<line x1="157.70" y1="57.93" x2="159.50" y2="56.13" stroke="#3f3f3f" stroke-width="0.24"/>
+<line x1="157.70" y1="75.44" x2="159.50" y2="73.63" stroke="#3f3f3f" stroke-width="0.24"/>
+<text x="160.40" y="66.88" font-family="Georgia, 'Times New Roman', serif" font-size="3.2" fill="#3f3f3f" text-anchor="start">5.8 mm rise</text>
+<line x1="137.00" y1="135.47" x2="137.00" y2="142.47" stroke="#8a8a8a" stroke-width="0.15" stroke-dasharray="0.8 0.8"/>
+<line x1="143.00" y1="135.47" x2="143.00" y2="142.47" stroke="#8a8a8a" stroke-width="0.15" stroke-dasharray="0.8 0.8"/>
+<line x1="137.00" y1="141.47" x2="143.00" y2="141.47" stroke="#8a8a8a" stroke-width="0.15"/>
+<line x1="136.10" y1="142.37" x2="137.90" y2="140.56" stroke="#3f3f3f" stroke-width="0.24"/>
+<line x1="142.10" y1="142.37" x2="143.90" y2="140.56" stroke="#3f3f3f" stroke-width="0.24"/>
+<text x="140.00" y="140.06" font-family="Georgia, 'Times New Roman', serif" font-size="3.2" fill="#3f3f3f" text-anchor="middle">2 mm</text>
+<text x="140.00" y="149.47" font-family="Georgia, 'Times New Roman', serif" font-size="3.6" fill="#3f3f3f" text-anchor="middle" letter-spacing="1.2">FRONT VIEW</text>
+<circle cx="208.00" cy="105.00" r="30.47" fill="url(#hatch)" stroke="#3f3f3f" stroke-width="0.3"/>
+<circle cx="208.00" cy="105.00" r="25.37" fill="#ffffff" stroke="#3f3f3f" stroke-width="0.3"/>
+<line x1="199.47" y1="75.73" x2="195.10" y2="61.03" stroke="#3f3f3f" stroke-width="0.3"/>
+<line x1="216.53" y1="75.73" x2="220.90" y2="61.03" stroke="#3f3f3f" stroke-width="0.3"/>
+<polygon points="200.91,57.03 215.09,57.03 220.90,61.03 208.00,69.03 195.10,61.03" fill="#ffffff" stroke="#3f3f3f" stroke-width="0.3"/>
+<line x1="195.10" y1="61.03" x2="220.90" y2="61.03" stroke="#3f3f3f" stroke-width="0.3"/>
+<line x1="208.00" y1="54.03" x2="208.00" y2="138.47" stroke="#8a8a8a" stroke-width="0.15" stroke-dasharray="3 1 0.5 1"/>
+<line x1="194.42" y1="63.03" x2="194.42" y2="58.03" stroke="#3f3f3f" stroke-width="0.3"/>
+<circle cx="194.42" cy="58.03" r="1.35" fill="#ffffff" stroke="#3f3f3f" stroke-width="0.3"/>
+<line x1="221.58" y1="63.03" x2="221.58" y2="58.03" stroke="#3f3f3f" stroke-width="0.3"/>
+<circle cx="221.58" cy="58.03" r="1.35" fill="#ffffff" stroke="#3f3f3f" stroke-width="0.3"/>
+<line x1="182.63" y1="105.00" x2="233.37" y2="105.00" stroke="#8a8a8a" stroke-width="0.15"/>
+<line x1="181.73" y1="105.90" x2="183.53" y2="104.10" stroke="#3f3f3f" stroke-width="0.24"/>
+<line x1="232.47" y1="105.90" x2="234.27" y2="104.10" stroke="#3f3f3f" stroke-width="0.24"/>
+<text x="208.00" y="103.60" font-family="Georgia, 'Times New Roman', serif" font-size="3.2" fill="#3f3f3f" text-anchor="middle">⌀ 16.9 mm</text>
+<line x1="220.90" y1="61.03" x2="248.47" y2="61.03" stroke="#8a8a8a" stroke-width="0.15" stroke-dasharray="0.8 0.8"/>
+<line x1="208.00" y1="74.53" x2="248.47" y2="74.53" stroke="#8a8a8a" stroke-width="0.15" stroke-dasharray="0.8 0.8"/>
+<line x1="247.47" y1="61.03" x2="247.47" y2="74.53" stroke="#8a8a8a" stroke-width="0.15"/>
+<line x1="246.56" y1="61.93" x2="248.37" y2="60.13" stroke="#3f3f3f" stroke-width="0.24"/>
+<line x1="246.56" y1="75.44" x2="248.37" y2="73.63" stroke="#3f3f3f" stroke-width="0.24"/>
+<text x="249.27" y="68.88" font-family="Georgia, 'Times New Roman', serif" font-size="3.2" fill="#3f3f3f" text-anchor="start">4.5 mm gallery</text>
+<line x1="215.09" y1="57.03" x2="274.47" y2="57.03" stroke="#8a8a8a" stroke-width="0.15" stroke-dasharray="0.8 0.8"/>
+<line x1="208.00" y1="69.03" x2="274.47" y2="69.03" stroke="#8a8a8a" stroke-width="0.15" stroke-dasharray="0.8 0.8"/>
+<line x1="273.47" y1="57.03" x2="273.47" y2="69.03" stroke="#8a8a8a" stroke-width="0.15"/>
+<line x1="272.57" y1="57.93" x2="274.37" y2="56.13" stroke="#3f3f3f" stroke-width="0.24"/>
+<line x1="272.57" y1="69.94" x2="274.37" y2="68.13" stroke="#3f3f3f" stroke-width="0.24"/>
+<text x="275.27" y="64.13" font-family="Georgia, 'Times New Roman', serif" font-size="3.2" fill="#3f3f3f" text-anchor="start">4 mm</text>
+<text x="208.00" y="147.47" font-family="Georgia, 'Times New Roman', serif" font-size="3.6" fill="#3f3f3f" text-anchor="middle" letter-spacing="1.2">SIDE PROFILE</text>
+<circle cx="187.00" cy="61.03" r="6.15" fill="#ffffff" stroke="#3f3f3f" stroke-width="0.3"/>
+<circle cx="229.00" cy="61.03" r="6.15" fill="#ffffff" stroke="#3f3f3f" stroke-width="0.3"/>
 <rect x="189.00" y="162.00" width="100" height="40" fill="none" stroke="#3f3f3f" stroke-width="0.3"/>
 <line x1="189.00" y1="170.00" x2="289.00" y2="170.00" stroke="#3f3f3f" stroke-width="0.15"/>
 <text x="192.00" y="167.80" font-family="Georgia, 'Times New Roman', serif" font-size="4.0" fill="#3f3f3f" text-anchor="start" letter-spacing="2.0">FACETTA</text>
@@ -91,6 +149,6 @@
 <text x="192.00" y="184.80" font-family="Georgia, 'Times New Roman', serif" font-size="3.2" fill="#3f3f3f" text-anchor="start">18k white gold, high polish</text>
 <text x="192.00" y="189.40" font-family="Georgia, 'Times New Roman', serif" font-size="3.2" fill="#3f3f3f" text-anchor="start">D  ·  VS1</text>
 <text x="192.00" y="194.00" font-family="Georgia, 'Times New Roman', serif" font-size="3.0" fill="#3f3f3f" text-anchor="start">designer usr_ana  ·  2026-07-02</text>
-<text x="192.00" y="198.60" font-family="Georgia, 'Times New Roman', serif" font-size="3.0" fill="#3f3f3f" text-anchor="start">UNITS mm  ·  SCALE 3:1</text>
+<text x="192.00" y="198.60" font-family="Georgia, 'Times New Roman', serif" font-size="3.0" fill="#3f3f3f" text-anchor="start">UNITS mm  ·  SCALE 3:1  ·  EST. 3.1 g</text>
 <text x="12.00" y="198.00" font-family="Georgia, 'Times New Roman', serif" font-size="3.0" fill="#3f3f3f" text-anchor="start">NOTES: Shared prongs between halo melee; keep the gallery open.</text>
 </svg>

@@ -246,7 +246,8 @@ export function BuilderScreen({
       carat: parseFloat(carat),
       dimensions_mm: dimensions,
       color: { trade, gia: options?.colors.find((c: any) => c.term === trade)?.gia ?? '' },
-      clarity: { system: claritySystem, grade },
+      // design-first: clarity omitted means "finest available, sourced on approval"
+      clarity: grade ? { system: claritySystem, grade } : null,
       origin: mode === 'pro' && origin ? origin : null,
       phenomena: [],
     };
@@ -406,6 +407,15 @@ export function BuilderScreen({
       } else showIssues(r.body);
     });
 
+  const prototype = () =>
+    run(async () => {
+      const r = await api.prototypePreview(buildSpec());
+      if (r.ok) {
+        setSheetSvg(r.body);
+        setNotice({ kind: 'ok', text: 'Colored prototype — hues straight from the vocabulary.' });
+      } else showIssues(r.body);
+    });
+
   const save = () =>
     run(async () => {
       const spec = buildSpec();
@@ -432,7 +442,7 @@ export function BuilderScreen({
   const cuts = options
     ? options.cuts.filter((c: any) => !allowedCuts || allowedCuts.includes(c.id))
     : [];
-  const ready = !!(species && trade && grade);
+  const ready = !!(species && trade);
 
   const form = (
     <>
@@ -493,10 +503,10 @@ export function BuilderScreen({
               <Field label="Color (GIA description)" value={trade ?? ''} onChange={setTrade} />
             )}
             <ChipRow
-              label={`Clarity (${claritySystem ?? ''})`}
+              label={`Clarity — optional, blank = finest available (${claritySystem ?? ''})`}
               options={(options.clarity.grades[claritySystem ?? ''] ?? []).map((g: any) => g.grade)}
               value={grade}
-              onSelect={setGrade}
+              onSelect={(g) => setGrade(grade === g ? null : g)}
             />
             <Field label="Carat (per stone)" value={carat} onChange={setCarat} numeric />
             {mode === 'pro' && (
@@ -704,6 +714,7 @@ export function BuilderScreen({
       <View style={styles.actions}>
         <Button title="Validate" onPress={validate} disabled={busy || !ready} />
         <Button title="Preview sheet" onPress={preview} disabled={busy || !ready} />
+        <Button title="Color prototype" onPress={prototype} disabled={busy || !ready} />
         <Button title={editing ? 'Save new version' : 'Save design'} onPress={save} disabled={busy || !ready} />
       </View>
 
