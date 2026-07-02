@@ -1,11 +1,11 @@
 # First Sessions — Ordered Tasks
 
 ## Session 1 — Skeleton + spec truth
-- [ ] Scaffold FastAPI project (poetry or uv), /health route, pytest wired
-- [ ] Pydantic models for Spec Schema v1 (docs/SPEC_SCHEMA.md)
-- [ ] Vocabulary loader for data/gemology_vocabulary.json with typed accessors
-- [ ] Carat↔mm density validator + unit tests (use SG table in SPEC_SCHEMA.md)
-- [ ] POST /specs/validate — returns spec or structured 422 with valid options
+- [x] Scaffold FastAPI project (poetry or uv), /health route, pytest wired
+- [x] Pydantic models for Spec Schema v1 (docs/SPEC_SCHEMA.md)
+- [x] Vocabulary loader for data/gemology_vocabulary.json with typed accessors
+- [x] Carat↔mm density validator + unit tests (use SG table in SPEC_SCHEMA.md)
+- [x] POST /specs/validate — returns spec or structured 422 with valid options
 
 ## Session 2 — Cascading options API
 - [ ] GET /vocabulary/stones
