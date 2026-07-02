@@ -4,11 +4,7 @@
 <rect x="8" y="8" width="281" height="194" fill="none" stroke="#3f3f3f" stroke-width="0.3"/>
 <text x="148.50" y="16.00" font-family="Georgia, 'Times New Roman', serif" font-size="4.6" fill="#3f3f3f" text-anchor="middle" letter-spacing="1.6">TECHNICAL SHEET — SOLITAIRE RING</text>
 <line x1="11.00" y1="105.00" x2="286.00" y2="105.00" stroke="#8a8a8a" stroke-width="0.15" stroke-dasharray="6 1.5 1 1.5"/>
-<rect x="55.30" y="74.85" width="5.40" height="60.30" fill="url(#hatch)" stroke="none"/>
-<line x1="55.30" y1="74.85" x2="55.30" y2="135.15" stroke="#3f3f3f" stroke-width="0.3"/>
-<line x1="60.70" y1="74.85" x2="60.70" y2="135.15" stroke="#3f3f3f" stroke-width="0.3"/>
-<line x1="55.30" y1="74.85" x2="60.70" y2="74.85" stroke="#3f3f3f" stroke-width="0.3"/>
-<line x1="55.30" y1="135.15" x2="60.70" y2="135.15" stroke="#3f3f3f" stroke-width="0.3"/>
+<rect x="55.30" y="74.85" width="5.40" height="60.30" rx="2.70" fill="url(#hatch)" stroke="#3f3f3f" stroke-width="0.3"/>
 <ellipse cx="58.00" cy="105.00" rx="9.60" ry="12.90" fill="#ffffff" stroke="#3f3f3f" stroke-width="0.3"/>
 <polygon points="63.28,105.00 61.73,110.02 58.00,112.09 54.27,110.02 52.72,105.00 54.27,99.98 58.00,97.91 61.73,99.98" fill="none" stroke="#3f3f3f" stroke-width="0.15"/>
 <line x1="63.28" y1="105.00" x2="67.60" y2="105.00" stroke="#3f3f3f" stroke-width="0.15"/>
@@ -61,16 +57,16 @@
 <line x1="74.70" y1="93.00" x2="76.50" y2="91.20" stroke="#3f3f3f" stroke-width="0.24"/>
 <line x1="74.70" y1="118.80" x2="76.50" y2="117.00" stroke="#3f3f3f" stroke-width="0.24"/>
 <text x="77.40" y="106.10" font-family="Georgia, 'Times New Roman', serif" font-size="3.2" fill="#3f3f3f" text-anchor="start">8.6 mm</text>
-<line x1="55.30" y1="135.15" x2="55.30" y2="141.15" stroke="#8a8a8a" stroke-width="0.15" stroke-dasharray="0.8 0.8"/>
-<line x1="60.70" y1="135.15" x2="60.70" y2="141.15" stroke="#8a8a8a" stroke-width="0.15" stroke-dasharray="0.8 0.8"/>
+<line x1="55.30" y1="132.45" x2="55.30" y2="141.15" stroke="#8a8a8a" stroke-width="0.15" stroke-dasharray="0.8 0.8"/>
+<line x1="60.70" y1="132.45" x2="60.70" y2="141.15" stroke="#8a8a8a" stroke-width="0.15" stroke-dasharray="0.8 0.8"/>
 <line x1="55.30" y1="140.15" x2="60.70" y2="140.15" stroke="#8a8a8a" stroke-width="0.15"/>
 <line x1="54.40" y1="141.05" x2="56.20" y2="139.25" stroke="#3f3f3f" stroke-width="0.24"/>
 <line x1="59.80" y1="141.05" x2="61.60" y2="139.25" stroke="#3f3f3f" stroke-width="0.24"/>
 <text x="58.00" y="138.75" font-family="Georgia, 'Times New Roman', serif" font-size="3.2" fill="#3f3f3f" text-anchor="middle">1.8 mm</text>
 <text x="58.00" y="149.15" font-family="Georgia, 'Times New Roman', serif" font-size="3.6" fill="#3f3f3f" text-anchor="middle" letter-spacing="1.2">TOP VIEW</text>
-<rect x="135.30" y="74.85" width="5.40" height="60.30" fill="url(#hatch)" stroke="#3f3f3f" stroke-width="0.3"/>
-<line x1="135.30" y1="76.05" x2="128.40" y2="61.35" stroke="#3f3f3f" stroke-width="0.3"/>
-<line x1="140.70" y1="76.05" x2="147.60" y2="61.35" stroke="#3f3f3f" stroke-width="0.3"/>
+<rect x="135.30" y="74.85" width="5.40" height="60.30" rx="2.70" fill="url(#hatch)" stroke="#3f3f3f" stroke-width="0.3"/>
+<line x1="135.30" y1="77.55" x2="128.40" y2="61.35" stroke="#3f3f3f" stroke-width="0.3"/>
+<line x1="140.70" y1="77.55" x2="147.60" y2="61.35" stroke="#3f3f3f" stroke-width="0.3"/>
 <polygon points="132.72,57.25 143.28,57.25 147.60,61.35 138.00,69.55 128.40,61.35" fill="#ffffff" stroke="#3f3f3f" stroke-width="0.3"/>
 <line x1="128.40" y1="61.35" x2="147.60" y2="61.35" stroke="#3f3f3f" stroke-width="0.3"/>
 <line x1="138.00" y1="54.25" x2="138.00" y2="138.15" stroke="#8a8a8a" stroke-width="0.15" stroke-dasharray="3 1 0.5 1"/>
@@ -79,13 +75,13 @@
 <line x1="148.28" y1="63.35" x2="148.28" y2="58.25" stroke="#3f3f3f" stroke-width="0.3"/>
 <circle cx="148.28" cy="58.25" r="1.35" fill="#ffffff" stroke="#3f3f3f" stroke-width="0.3"/>
 <line x1="143.28" y1="57.25" x2="157.60" y2="57.25" stroke="#8a8a8a" stroke-width="0.15" stroke-dasharray="0.8 0.8"/>
-<line x1="140.70" y1="74.85" x2="157.60" y2="74.85" stroke="#8a8a8a" stroke-width="0.15" stroke-dasharray="0.8 0.8"/>
+<line x1="138.00" y1="74.85" x2="157.60" y2="74.85" stroke="#8a8a8a" stroke-width="0.15" stroke-dasharray="0.8 0.8"/>
 <line x1="156.60" y1="57.25" x2="156.60" y2="74.85" stroke="#8a8a8a" stroke-width="0.15"/>
 <line x1="155.70" y1="58.15" x2="157.50" y2="56.35" stroke="#3f3f3f" stroke-width="0.24"/>
 <line x1="155.70" y1="75.75" x2="157.50" y2="73.95" stroke="#3f3f3f" stroke-width="0.24"/>
 <text x="158.40" y="67.15" font-family="Georgia, 'Times New Roman', serif" font-size="3.2" fill="#3f3f3f" text-anchor="start">5.9 mm rise</text>
-<line x1="135.30" y1="135.15" x2="135.30" y2="142.15" stroke="#8a8a8a" stroke-width="0.15" stroke-dasharray="0.8 0.8"/>
-<line x1="140.70" y1="135.15" x2="140.70" y2="142.15" stroke="#8a8a8a" stroke-width="0.15" stroke-dasharray="0.8 0.8"/>
+<line x1="135.30" y1="132.45" x2="135.30" y2="142.15" stroke="#8a8a8a" stroke-width="0.15" stroke-dasharray="0.8 0.8"/>
+<line x1="140.70" y1="132.45" x2="140.70" y2="142.15" stroke="#8a8a8a" stroke-width="0.15" stroke-dasharray="0.8 0.8"/>
 <line x1="135.30" y1="141.15" x2="140.70" y2="141.15" stroke="#8a8a8a" stroke-width="0.15"/>
 <line x1="134.40" y1="142.05" x2="136.20" y2="140.25" stroke="#3f3f3f" stroke-width="0.24"/>
 <line x1="139.80" y1="142.05" x2="141.60" y2="140.25" stroke="#3f3f3f" stroke-width="0.24"/>

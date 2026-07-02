@@ -112,13 +112,10 @@ def _top_view(spec: Spec, cx: float, cy: float) -> list[str]:
     left_x, right_x = cx - band_w / 2, cx + band_w / 2
 
     parts = [
-        # shank strip, hatched metal
+        # shank strip, hatched metal — rounded ends, the hoop curving away
         f'<rect x="{left_x:.2f}" y="{top:.2f}" width="{band_w:.2f}" height="{strip_len:.2f}" '
-        f'fill="url(#hatch)" stroke="none"/>',
-        _line(left_x, top, left_x, bottom),
-        _line(right_x, top, right_x, bottom),
-        _line(left_x, top, right_x, top),
-        _line(left_x, bottom, right_x, bottom),
+        f'rx="{band_w / 2:.2f}" fill="url(#hatch)" stroke="{INK}" '
+        f'stroke-width="{STROKE_MAIN}"/>',
         # stone with its standard face-up facet pattern
         *_facet_face_up(cx, cy, stone.cut, 2 * rx, 2 * ry),
         # centerlines
@@ -148,7 +145,8 @@ def _top_view(spec: Spec, cx: float, cy: float) -> list[str]:
         *_dim_h(cx - rx, cx + rx, y_dim, f"{dim_w} mm"),
         _ext(cx, cy - ry, x_dim + 1, cy - ry), _ext(cx, cy + ry, x_dim + 1, cy + ry),
         *_dim_v(x_dim, cy - ry, cy + ry, f"{dim_l} mm"),
-        _ext(left_x, bottom, left_x, bottom + 6), _ext(right_x, bottom, right_x, bottom + 6),
+        _ext(left_x, bottom - band_w / 2, left_x, bottom + 6),
+        _ext(right_x, bottom - band_w / 2, right_x, bottom + 6),
         *_dim_h(left_x, right_x, bottom + 5, f"{dim_b} mm"),
         _text(cx, bottom + 14, "TOP VIEW", size=3.6, style=' letter-spacing="1.2"'),
     ]
@@ -312,13 +310,14 @@ def _front_view(spec: Spec, cx: float, cy: float, melee=None) -> list[str]:
     txl, txr = cx - span * 0.55 / 2, cx + span * 0.55 / 2
 
     parts = [
-        # band edge-on: a hatched strip as tall as the hoop
+        # band edge-on: a capsule as tall as the hoop — the bottom of a ring
+        # reads rounded from the front, never squared off
         f'<rect x="{cx - band_w / 2:.2f}" y="{ring_top:.2f}" width="{band_w:.2f}" '
-        f'height="{2 * outer_r:.2f}" fill="url(#hatch)" stroke="{INK}" '
+        f'height="{2 * outer_r:.2f}" rx="{band_w / 2:.2f}" fill="url(#hatch)" stroke="{INK}" '
         f'stroke-width="{STROKE_MAIN}"/>',
         # basket flare from the shank up to the girdle
-        _line(cx - band_w / 2, ring_top + 1.2, xl, y_girdle),
-        _line(cx + band_w / 2, ring_top + 1.2, xr, y_girdle),
+        _line(cx - band_w / 2, ring_top + band_w / 2, xl, y_girdle),
+        _line(cx + band_w / 2, ring_top + band_w / 2, xr, y_girdle),
         # stone from the front
         f'<polygon points="{txl:.2f},{y_table:.2f} {txr:.2f},{y_table:.2f} '
         f'{xr:.2f},{y_girdle:.2f} {cx:.2f},{y_culet:.2f} {xl:.2f},{y_girdle:.2f}" '
@@ -342,10 +341,10 @@ def _front_view(spec: Spec, cx: float, cy: float, melee=None) -> list[str]:
     x_dim = cx + max(span / 2, band_w / 2) + 9
     parts += [
         _ext(txr, y_table, x_dim + 1, y_table),
-        _ext(cx + band_w / 2, ring_top, x_dim + 1, ring_top),
+        _ext(cx, ring_top, x_dim + 1, ring_top),  # capsule apex
         *_dim_v(x_dim, y_table, ring_top, f"{_fmt(rise_mm)} mm rise"),
-        _ext(cx - band_w / 2, ring_cy + outer_r, cx - band_w / 2, ring_cy + outer_r + 7),
-        _ext(cx + band_w / 2, ring_cy + outer_r, cx + band_w / 2, ring_cy + outer_r + 7),
+        _ext(cx - band_w / 2, ring_cy + outer_r - band_w / 2, cx - band_w / 2, ring_cy + outer_r + 7),
+        _ext(cx + band_w / 2, ring_cy + outer_r - band_w / 2, cx + band_w / 2, ring_cy + outer_r + 7),
         *_dim_h(cx - band_w / 2, cx + band_w / 2, ring_cy + outer_r + 6,
                 f"{_fmt(spec.band.width_mm)} mm"),
         _text(cx, ring_cy + outer_r + 14, "FRONT VIEW", size=3.6, style=' letter-spacing="1.2"'),
@@ -410,10 +409,20 @@ def _poly(points: list[tuple[float, float]], fill: str, stroke: str, w: float) -
     return f'<polygon points="{pts}" fill="{fill}" stroke="{stroke}" stroke-width="{w}"/>'
 
 
+def _lit_poly(points: list[tuple[float, float]], fill: str, opacity: float) -> str:
+    pts = " ".join(f"{x:.2f},{y:.2f}" for x, y in points)
+    return f'<polygon points="{pts}" fill="{fill}" opacity="{opacity}" stroke="none"/>'
+
+
 def _facet_face_up(cx: float, cy: float, cut_id: str, w_pp: float, l_pp: float,
                    table_ratio: float = 0.55, stroke: str = INK, fill: str = "#ffffff",
-                   facet_color: str | None = None, facet_w: float = STROKE_DIM) -> list[str]:
-    """Face-up outline + facet pattern; w_pp/l_pp are full paper-space extents."""
+                   facet_color: str | None = None, facet_w: float = STROKE_DIM,
+                   lit: bool = False) -> list[str]:
+    """Face-up outline + facet pattern; w_pp/l_pp are full paper-space extents.
+
+    lit=True adds per-facet light-and-shade polygons (for color prototypes) —
+    the technical sheets stay pure linework.
+    """
     rx, ry = w_pp / 2, l_pp / 2
     t = table_ratio
     fc = facet_color or stroke
@@ -424,17 +433,34 @@ def _facet_face_up(cx: float, cy: float, cut_id: str, w_pp: float, l_pp: float,
                  f'fill="{fill}" stroke="{stroke}" stroke-width="{STROKE_MAIN}"/>']
         corners = [45 * k for k in range(8)]  # mains on the axes, GIA-diagram style
         table_pts = [_pt(cx, cy, rx * t, ry * t, a) for a in corners]
-        parts.append(_poly(table_pts, "none", fc, facet_w))
         r_star = t + 0.38 * (1 - t)
+        stars = [_pt(cx, cy, rx * r_star, ry * r_star, a + 22.5) for a in corners]
+        girdle = lambda a: _pt(cx, cy, rx, ry, a)  # noqa: E731
+
+        if lit:  # light from the upper left: alternating facets catch and shade
+            for k in range(8):
+                a, mid = corners[k], corners[k] + 22.5
+                parts += [
+                    _lit_poly([table_pts[k], table_pts[(k + 1) % 8], stars[k]],
+                              "#ffffff", 0.30),
+                    _lit_poly([table_pts[k], stars[k - 1], girdle(a), stars[k]],
+                              "#ffffff" if k % 2 == 0 else "#000000",
+                              0.14 if k % 2 == 0 else 0.08),
+                    _lit_poly([stars[k], girdle(a), girdle(mid)], "#ffffff", 0.08),
+                    _lit_poly([stars[k], girdle(mid), girdle(corners[(k + 1) % 8])],
+                              "#000000", 0.05),
+                ]
+            parts.append(_lit_poly([table_pts[4], table_pts[5], table_pts[6], (cx, cy)],
+                                   "#ffffff", 0.18))  # table sheen toward the light
+
+        parts.append(_poly(table_pts, "none", fc, facet_w))
         for k in range(8):
-            a, b = corners[k], corners[(k + 1) % 8]
-            mid = a + 22.5
+            a, mid = corners[k], corners[k] + 22.5
             c_a, c_b = table_pts[k], table_pts[(k + 1) % 8]
-            star = _pt(cx, cy, rx * r_star, ry * r_star, mid)
             parts += [
-                fline(c_a, _pt(cx, cy, rx, ry, a)),   # bezel main
-                fline(c_a, star), fline(c_b, star),   # star facet
-                fline(star, _pt(cx, cy, rx, ry, mid)),  # upper girdle junction
+                fline(c_a, girdle(a)),                        # bezel main
+                fline(c_a, stars[k]), fline(c_b, stars[k]),   # star facet
+                fline(stars[k], girdle(mid)),                 # upper girdle junction
             ]
         return parts
 
@@ -442,10 +468,17 @@ def _facet_face_up(cx: float, cy: float, cut_id: str, w_pp: float, l_pp: float,
         outline = [(cx - rx, cy - ry), (cx + rx, cy - ry), (cx + rx, cy + ry), (cx - rx, cy + ry)]
         table = [(cx - rx * t, cy - ry * t), (cx + rx * t, cy - ry * t),
                  (cx + rx * t, cy + ry * t), (cx - rx * t, cy + ry * t)]
-        parts = [_poly(outline, fill, stroke, STROKE_MAIN), _poly(table, "none", fc, facet_w)]
+        parts = [_poly(outline, fill, stroke, STROKE_MAIN)]
+        mids = [(cx, cy - ry), (cx + rx, cy), (cx, cy + ry), (cx - rx, cy)]
+        if lit:  # opposing chevron quadrants trade light and shade
+            for i in range(4):
+                shade = "#ffffff" if i in (0, 3) else "#000000"  # light upper-left
+                parts.append(_lit_poly([outline[i], outline[(i + 1) % 4], (cx, cy)],
+                                       shade, 0.12 if shade == "#ffffff" else 0.07))
+            parts.append(_lit_poly([table[3], table[0], (cx, cy)], "#ffffff", 0.18))
+        parts.append(_poly(table, "none", fc, facet_w))
         for i in range(4):
             parts.append(fline(outline[i], table[i]))  # corner mains
-        mids = [(cx, cy - ry), (cx + rx, cy), (cx, cy + ry), (cx - rx, cy)]
         for i, m in enumerate(mids):  # chevrons from edge midpoints to table corners
             parts += [fline(m, table[i - 1]), fline(m, table[i])]
         return parts
@@ -466,6 +499,12 @@ def _facet_face_up(cx: float, cy: float, cut_id: str, w_pp: float, l_pp: float,
 
         rings = [octagon_pts(f) for f in rows]
         parts = [_poly(rings[0], fill, stroke, STROKE_MAIN)]
+        if lit:  # step rows read as alternating bands under the light
+            parts += [
+                _lit_poly(rings[1], "#000000", 0.06),
+                _lit_poly(rings[2], "#ffffff", 0.10),
+                _lit_poly(rings[3], "#ffffff", 0.08),
+            ]
         parts += [_poly(r, "none", fc, facet_w) for r in rings[1:]]
         for i in range(len(rings[0])):  # corner rays across the step rows
             parts.append(fline(rings[0][i], rings[-1][i]))
@@ -504,11 +543,8 @@ def _halo_top_view(spec: Spec, melee, cx: float, cy: float) -> list[str]:
 
     parts = [
         f'<rect x="{left_x:.2f}" y="{top:.2f}" width="{band_w:.2f}" height="{strip_len:.2f}" '
-        f'fill="url(#hatch)" stroke="none"/>',
-        _line(left_x, top, left_x, bottom),
-        _line(right_x, top, right_x, bottom),
-        _line(left_x, top, right_x, top),
-        _line(left_x, bottom, right_x, bottom),
+        f'rx="{band_w / 2:.2f}" fill="url(#hatch)" stroke="{INK}" '
+        f'stroke-width="{STROKE_MAIN}"/>',
         _ellipse(cx, cy, oax, oby),  # halo outer edge
     ]
     for i in range(melee.count):
@@ -534,7 +570,8 @@ def _halo_top_view(spec: Spec, melee, cx: float, cy: float) -> list[str]:
         *_dim_v(x_dim, cy - ry, cy + ry, f"{_fmt(stone.length)} mm"),
         _ext(cx, cy - oby, x_dim2 + 1, cy - oby), _ext(cx, cy + oby, x_dim2 + 1, cy + oby),
         *_dim_v(x_dim2, cy - oby, cy + oby, f"{_fmt(halo_l_mm)} mm halo"),
-        _ext(left_x, bottom, left_x, bottom + 6), _ext(right_x, bottom, right_x, bottom + 6),
+        _ext(left_x, bottom - band_w / 2, left_x, bottom + 6),
+        _ext(right_x, bottom - band_w / 2, right_x, bottom + 6),
         *_dim_h(left_x, right_x, bottom + 5, f"{_fmt(spec.band.width_mm)} mm"),
         _text(cx, bottom + 14, "TOP VIEW", size=3.6, style=' letter-spacing="1.2"'),
         _text(cx, bottom + 19, f"{melee.count} × ⌀{_fmt(mw)} mm melee, 0.3 mm off center girdle",
