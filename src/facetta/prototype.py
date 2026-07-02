@@ -84,6 +84,13 @@ def _defs(spec: Spec, vocab: Vocabulary) -> str:
         '<stop offset="0.75" stop-color="#000000" stop-opacity="0.07"/>'
         '<stop offset="1" stop-color="#000000" stop-opacity="0.12"/>'
         "</linearGradient>"
+        # ground shadow: dense core melting to nothing at the rim
+        '<radialGradient id="ground" cx="0.5" cy="0.5" r="0.5">'
+        '<stop offset="0" stop-color="#3f3f3f" stop-opacity="0.22"/>'
+        '<stop offset="0.45" stop-color="#3f3f3f" stop-opacity="0.13"/>'
+        '<stop offset="0.75" stop-color="#3f3f3f" stop-opacity="0.05"/>'
+        '<stop offset="1" stop-color="#3f3f3f" stop-opacity="0"/>'
+        "</radialGradient>"
         '<filter id="blur1"><feGaussianBlur stdDeviation="1.1"/></filter>'
         '<filter id="lift" x="-20%" y="-20%" width="140%" height="140%">'
         '<feDropShadow dx="0" dy="1.6" stdDeviation="1.8" flood-color="#3f3f3f" '
@@ -93,9 +100,10 @@ def _defs(spec: Spec, vocab: Vocabulary) -> str:
 
 
 def _shadow(cx: float, cy: float, rx: float) -> str:
+    # widened so the gradient's penumbra has room to fade out
     return (
-        f'<ellipse cx="{cx:.2f}" cy="{cy:.2f}" rx="{rx:.2f}" ry="{rx * 0.16:.2f}" '
-        'fill="#3f3f3f" opacity="0.10"/>'
+        f'<ellipse cx="{cx:.2f}" cy="{cy:.2f}" rx="{rx * 1.35:.2f}" '
+        f'ry="{rx * 0.24:.2f}" fill="url(#ground)"/>'
     )
 
 

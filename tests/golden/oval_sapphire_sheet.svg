@@ -3,6 +3,7 @@
 <rect x="0" y="0" width="297" height="210" fill="#fdfdfa"/>
 <rect x="8" y="8" width="281" height="194" fill="none" stroke="#3f3f3f" stroke-width="0.3"/>
 <text x="148.50" y="16.00" font-family="Georgia, 'Times New Roman', serif" font-size="4.6" fill="#3f3f3f" text-anchor="middle" letter-spacing="1.6">TECHNICAL SHEET — SOLITAIRE RING</text>
+<line x1="11.00" y1="19.50" x2="286.00" y2="19.50" stroke="#8a8a8a" stroke-width="0.15"/>
 <line x1="11.00" y1="105.00" x2="286.00" y2="105.00" stroke="#8a8a8a" stroke-width="0.15" stroke-dasharray="6 1.5 1 1.5"/>
 <rect x="55.30" y="74.85" width="5.40" height="60.30" rx="2.70" fill="url(#hatch)" stroke="#3f3f3f" stroke-width="0.3"/>
 <polygon points="48.40,105.00 49.61,98.75 52.28,94.66 52.30,94.65 55.18,92.68 55.19,92.67 58.00,92.10 58.00,92.10 58.00,92.10 60.81,92.67 60.82,92.68 63.70,94.65 63.72,94.66 66.39,98.75 67.60,105.00 66.39,111.25 63.72,115.34 63.70,115.35 60.82,117.32 60.81,117.33 58.00,117.90 58.00,117.90 58.00,117.90 55.19,117.33 55.18,117.32 52.30,115.35 52.28,115.34 49.61,111.25" fill="#ffffff" stroke="#3f3f3f" stroke-width="0.3"/>
@@ -50,19 +51,19 @@
 <line x1="48.40" y1="85.10" x2="67.60" y2="85.10" stroke="#8a8a8a" stroke-width="0.15"/>
 <line x1="47.50" y1="86.00" x2="49.30" y2="84.20" stroke="#3f3f3f" stroke-width="0.24"/>
 <line x1="66.70" y1="86.00" x2="68.50" y2="84.20" stroke="#3f3f3f" stroke-width="0.24"/>
-<text x="58.00" y="83.70" font-family="Georgia, 'Times New Roman', serif" font-size="3.2" fill="#3f3f3f" text-anchor="middle">6.4 mm</text>
+<text x="58.00" y="83.70" font-family="Georgia, 'Times New Roman', serif" font-size="3.2" fill="#3f3f3f" text-anchor="middle" stroke="#fdfdfa" stroke-width="1.0" stroke-linejoin="round" paint-order="stroke">6.4 mm</text>
 <line x1="58.00" y1="92.10" x2="76.60" y2="92.10" stroke="#8a8a8a" stroke-width="0.15" stroke-dasharray="0.8 0.8"/>
 <line x1="58.00" y1="117.90" x2="76.60" y2="117.90" stroke="#8a8a8a" stroke-width="0.15" stroke-dasharray="0.8 0.8"/>
 <line x1="75.60" y1="92.10" x2="75.60" y2="117.90" stroke="#8a8a8a" stroke-width="0.15"/>
 <line x1="74.70" y1="93.00" x2="76.50" y2="91.20" stroke="#3f3f3f" stroke-width="0.24"/>
 <line x1="74.70" y1="118.80" x2="76.50" y2="117.00" stroke="#3f3f3f" stroke-width="0.24"/>
-<text x="77.40" y="106.10" font-family="Georgia, 'Times New Roman', serif" font-size="3.2" fill="#3f3f3f" text-anchor="start">8.6 mm</text>
+<text x="77.40" y="106.10" font-family="Georgia, 'Times New Roman', serif" font-size="3.2" fill="#3f3f3f" text-anchor="start" stroke="#fdfdfa" stroke-width="1.0" stroke-linejoin="round" paint-order="stroke">8.6 mm</text>
 <line x1="55.30" y1="132.45" x2="55.30" y2="141.15" stroke="#8a8a8a" stroke-width="0.15" stroke-dasharray="0.8 0.8"/>
 <line x1="60.70" y1="132.45" x2="60.70" y2="141.15" stroke="#8a8a8a" stroke-width="0.15" stroke-dasharray="0.8 0.8"/>
 <line x1="55.30" y1="140.15" x2="60.70" y2="140.15" stroke="#8a8a8a" stroke-width="0.15"/>
 <line x1="54.40" y1="141.05" x2="56.20" y2="139.25" stroke="#3f3f3f" stroke-width="0.24"/>
 <line x1="59.80" y1="141.05" x2="61.60" y2="139.25" stroke="#3f3f3f" stroke-width="0.24"/>
-<text x="58.00" y="138.75" font-family="Georgia, 'Times New Roman', serif" font-size="3.2" fill="#3f3f3f" text-anchor="middle">1.8 mm</text>
+<text x="58.00" y="138.75" font-family="Georgia, 'Times New Roman', serif" font-size="3.2" fill="#3f3f3f" text-anchor="middle" stroke="#fdfdfa" stroke-width="1.0" stroke-linejoin="round" paint-order="stroke">1.8 mm</text>
 <text x="58.00" y="149.15" font-family="Georgia, 'Times New Roman', serif" font-size="3.6" fill="#3f3f3f" text-anchor="middle" letter-spacing="1.2">TOP VIEW</text>
 <rect x="135.30" y="74.85" width="5.40" height="60.30" rx="2.70" fill="url(#hatch)" stroke="#3f3f3f" stroke-width="0.3"/>
 <line x1="135.30" y1="77.55" x2="128.40" y2="61.35" stroke="#3f3f3f" stroke-width="0.3"/>
@@ -79,13 +80,13 @@
 <line x1="156.60" y1="57.25" x2="156.60" y2="74.85" stroke="#8a8a8a" stroke-width="0.15"/>
 <line x1="155.70" y1="58.15" x2="157.50" y2="56.35" stroke="#3f3f3f" stroke-width="0.24"/>
 <line x1="155.70" y1="75.75" x2="157.50" y2="73.95" stroke="#3f3f3f" stroke-width="0.24"/>
-<text x="158.40" y="67.15" font-family="Georgia, 'Times New Roman', serif" font-size="3.2" fill="#3f3f3f" text-anchor="start">5.9 mm rise</text>
+<text x="158.40" y="67.15" font-family="Georgia, 'Times New Roman', serif" font-size="3.2" fill="#3f3f3f" text-anchor="start" stroke="#fdfdfa" stroke-width="1.0" stroke-linejoin="round" paint-order="stroke">5.9 mm rise</text>
 <line x1="135.30" y1="132.45" x2="135.30" y2="142.15" stroke="#8a8a8a" stroke-width="0.15" stroke-dasharray="0.8 0.8"/>
 <line x1="140.70" y1="132.45" x2="140.70" y2="142.15" stroke="#8a8a8a" stroke-width="0.15" stroke-dasharray="0.8 0.8"/>
 <line x1="135.30" y1="141.15" x2="140.70" y2="141.15" stroke="#8a8a8a" stroke-width="0.15"/>
 <line x1="134.40" y1="142.05" x2="136.20" y2="140.25" stroke="#3f3f3f" stroke-width="0.24"/>
 <line x1="139.80" y1="142.05" x2="141.60" y2="140.25" stroke="#3f3f3f" stroke-width="0.24"/>
-<text x="138.00" y="139.75" font-family="Georgia, 'Times New Roman', serif" font-size="3.2" fill="#3f3f3f" text-anchor="middle">1.8 mm</text>
+<text x="138.00" y="139.75" font-family="Georgia, 'Times New Roman', serif" font-size="3.2" fill="#3f3f3f" text-anchor="middle" stroke="#fdfdfa" stroke-width="1.0" stroke-linejoin="round" paint-order="stroke">1.8 mm</text>
 <text x="138.00" y="149.15" font-family="Georgia, 'Times New Roman', serif" font-size="3.6" fill="#3f3f3f" text-anchor="middle" letter-spacing="1.2">FRONT VIEW</text>
 <circle cx="208.00" cy="105.00" r="30.15" fill="url(#hatch)" stroke="#3f3f3f" stroke-width="0.3"/>
 <circle cx="208.00" cy="105.00" r="25.35" fill="#ffffff" stroke="#3f3f3f" stroke-width="0.3"/>
@@ -101,19 +102,19 @@
 <line x1="182.65" y1="105.00" x2="233.35" y2="105.00" stroke="#8a8a8a" stroke-width="0.15"/>
 <line x1="181.75" y1="105.90" x2="183.55" y2="104.10" stroke="#3f3f3f" stroke-width="0.24"/>
 <line x1="232.45" y1="105.90" x2="234.25" y2="104.10" stroke="#3f3f3f" stroke-width="0.24"/>
-<text x="208.00" y="103.60" font-family="Georgia, 'Times New Roman', serif" font-size="3.2" fill="#3f3f3f" text-anchor="middle">⌀ 16.9 mm</text>
+<text x="208.00" y="103.60" font-family="Georgia, 'Times New Roman', serif" font-size="3.2" fill="#3f3f3f" text-anchor="middle" stroke="#fdfdfa" stroke-width="1.0" stroke-linejoin="round" paint-order="stroke">⌀ 16.9 mm</text>
 <line x1="220.90" y1="61.35" x2="248.15" y2="61.35" stroke="#8a8a8a" stroke-width="0.15" stroke-dasharray="0.8 0.8"/>
 <line x1="208.00" y1="74.85" x2="248.15" y2="74.85" stroke="#8a8a8a" stroke-width="0.15" stroke-dasharray="0.8 0.8"/>
 <line x1="247.15" y1="61.35" x2="247.15" y2="74.85" stroke="#8a8a8a" stroke-width="0.15"/>
 <line x1="246.25" y1="62.25" x2="248.05" y2="60.45" stroke="#3f3f3f" stroke-width="0.24"/>
 <line x1="246.25" y1="75.75" x2="248.05" y2="73.95" stroke="#3f3f3f" stroke-width="0.24"/>
-<text x="248.95" y="69.20" font-family="Georgia, 'Times New Roman', serif" font-size="3.2" fill="#3f3f3f" text-anchor="start">4.5 mm gallery</text>
+<text x="248.95" y="69.20" font-family="Georgia, 'Times New Roman', serif" font-size="3.2" fill="#3f3f3f" text-anchor="start" stroke="#fdfdfa" stroke-width="1.0" stroke-linejoin="round" paint-order="stroke">4.5 mm gallery</text>
 <line x1="215.09" y1="57.25" x2="274.15" y2="57.25" stroke="#8a8a8a" stroke-width="0.15" stroke-dasharray="0.8 0.8"/>
 <line x1="208.00" y1="69.55" x2="274.15" y2="69.55" stroke="#8a8a8a" stroke-width="0.15" stroke-dasharray="0.8 0.8"/>
 <line x1="273.15" y1="57.25" x2="273.15" y2="69.55" stroke="#8a8a8a" stroke-width="0.15"/>
 <line x1="272.25" y1="58.15" x2="274.05" y2="56.35" stroke="#3f3f3f" stroke-width="0.24"/>
 <line x1="272.25" y1="70.45" x2="274.05" y2="68.65" stroke="#3f3f3f" stroke-width="0.24"/>
-<text x="274.95" y="64.50" font-family="Georgia, 'Times New Roman', serif" font-size="3.2" fill="#3f3f3f" text-anchor="start">4.1 mm</text>
+<text x="274.95" y="64.50" font-family="Georgia, 'Times New Roman', serif" font-size="3.2" fill="#3f3f3f" text-anchor="start" stroke="#fdfdfa" stroke-width="1.0" stroke-linejoin="round" paint-order="stroke">4.1 mm</text>
 <text x="208.00" y="147.15" font-family="Georgia, 'Times New Roman', serif" font-size="3.6" fill="#3f3f3f" text-anchor="middle" letter-spacing="1.2">SIDE PROFILE</text>
 <rect x="189.00" y="162.00" width="100" height="40" fill="none" stroke="#3f3f3f" stroke-width="0.3"/>
 <line x1="189.00" y1="170.00" x2="289.00" y2="170.00" stroke="#3f3f3f" stroke-width="0.15"/>
@@ -124,5 +125,16 @@
 <text x="192.00" y="189.40" font-family="Georgia, 'Times New Roman', serif" font-size="3.2" fill="#3f3f3f" text-anchor="start">Royal Blue  ·  VS</text>
 <text x="192.00" y="194.00" font-family="Georgia, 'Times New Roman', serif" font-size="3.0" fill="#3f3f3f" text-anchor="start">designer usr_ana  ·  2026-07-02</text>
 <text x="192.00" y="198.60" font-family="Georgia, 'Times New Roman', serif" font-size="3.0" fill="#3f3f3f" text-anchor="start">UNITS mm  ·  SCALE 3:1  ·  EST. 2.6 g</text>
-<text x="12.00" y="198.00" font-family="Georgia, 'Times New Roman', serif" font-size="3.0" fill="#3f3f3f" text-anchor="start">NOTES: Slightly higher gallery to clear a future wedding band.</text>
+<line x1="8.00" y1="194.00" x2="189.00" y2="194.00" stroke="#8a8a8a" stroke-width="0.15"/>
+<text x="12.00" y="199.00" font-family="Georgia, 'Times New Roman', serif" font-size="2.8" fill="#3f3f3f" text-anchor="start" letter-spacing="1.4">KEY</text>
+<line x1="26.00" y1="198.00" x2="34.00" y2="198.00" stroke="#3f3f3f" stroke-width="0.3"/>
+<text x="36.00" y="199.00" font-family="Georgia, 'Times New Roman', serif" font-size="2.6" fill="#8a8a8a" text-anchor="start">edge</text>
+<line x1="60.00" y1="198.00" x2="68.00" y2="198.00" stroke="#8a8a8a" stroke-width="0.15" stroke-dasharray="0.9 0.9"/>
+<text x="70.00" y="199.00" font-family="Georgia, 'Times New Roman', serif" font-size="2.6" fill="#8a8a8a" text-anchor="start">witness</text>
+<line x1="92.00" y1="198.00" x2="100.00" y2="198.00" stroke="#8a8a8a" stroke-width="0.15" stroke-dasharray="6 1.5 1 1.5"/>
+<text x="102.00" y="199.00" font-family="Georgia, 'Times New Roman', serif" font-size="2.6" fill="#8a8a8a" text-anchor="start">centerline</text>
+<rect x="122.00" y="196.50" width="8" height="3" fill="url(#hatch)" stroke="#3f3f3f" stroke-width="0.15"/>
+<text x="132.00" y="199.00" font-family="Georgia, 'Times New Roman', serif" font-size="2.6" fill="#8a8a8a" text-anchor="start">metal section</text>
+<text x="185.00" y="199.00" font-family="Georgia, 'Times New Roman', serif" font-size="2.6" fill="#8a8a8a" text-anchor="end">all dimensions in mm</text>
+<text x="12.00" y="191.50" font-family="Georgia, 'Times New Roman', serif" font-size="3.0" fill="#3f3f3f" text-anchor="start">NOTES: Slightly higher gallery to clear a future wedding band.</text>
 </svg>

@@ -49,6 +49,9 @@ class Design(Base):
     id: Mapped[str] = mapped_column(String(32), primary_key=True)
     created_by: Mapped[str] = mapped_column(String(32))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+    # grouping label ("Client — Sarah K", "My sketches"); container metadata,
+    # not part of any version, so renaming a group never touches a spec
+    collection: Mapped[str | None] = mapped_column(String(80), nullable=True)
 
 
 class DesignVersion(Base):
@@ -85,12 +88,24 @@ class ShareLink(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+def _apply_additive_migrations(engine) -> None:
+    """Add columns that newer schema versions introduced (additive only)."""
+    from sqlalchemy import inspect, text
+
+    inspector = inspect(engine)
+    existing = {c["name"] for c in inspector.get_columns("designs")}
+    if "collection" not in existing:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE designs ADD COLUMN collection VARCHAR(80)"))
+
+
 @lru_cache(maxsize=1)
 def get_engine():
     url = os.environ.get("DATABASE_URL", DEFAULT_DATABASE_URL)
     connect_args = {"check_same_thread": False} if url.startswith("sqlite") else {}
     engine = create_engine(url, connect_args=connect_args)
     Base.metadata.create_all(engine)
+    _apply_additive_migrations(engine)
     return engine
 
 

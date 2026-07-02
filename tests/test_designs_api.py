@@ -154,3 +154,23 @@ def test_users_roundtrip(client):
     assert created.status_code == 201
     assert created.json()["id"].startswith("usr_")
     assert client.get("/users").json()["users"][0]["name"] == "Ana"
+
+
+def test_collections_group_and_filter(client, example_spec):
+    client.post("/designs", json={"created_by": "usr_ana", "spec": example_spec,
+                                  "collection": "Client — Sarah K"})
+    solo = _create(client, example_spec)  # no collection
+
+    listing = client.get("/designs").json()["designs"]
+    assert {d["collection"] for d in listing} == {"Client — Sarah K", None}
+
+    filtered = client.get("/designs", params={"collection": "Client — Sarah K"}).json()["designs"]
+    assert len(filtered) == 1 and filtered[0]["collection"] == "Client — Sarah K"
+
+    # a later version may regroup the container; the versions stay immutable
+    moved = client.post(f"/designs/{solo['design_id']}/versions",
+                        json={"created_by": "usr_ana", "spec": example_spec,
+                              "collection": "My sketches"})
+    assert moved.status_code == 201
+    listing = client.get("/designs", params={"collection": "My sketches"}).json()["designs"]
+    assert [d["design_id"] for d in listing] == [solo["design_id"]]

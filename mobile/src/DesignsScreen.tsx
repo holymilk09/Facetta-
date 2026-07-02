@@ -93,17 +93,32 @@ export function DesignsScreen({
   if (pendingPin) pins.push({ x_pct: pendingPin.x, y_pct: pendingPin.y, label: '+' });
 
   if (!selected || !detail) {
+    // group by collection: named groups first (alphabetical), then loose saves
+    const groups = new Map<string, any[]>();
+    for (const d of designs) {
+      const key = d.collection ?? '';
+      if (!groups.has(key)) groups.set(key, []);
+      groups.get(key)!.push(d);
+    }
+    const ordered = [...groups.entries()].sort(([a], [b]) =>
+      a === '' ? 1 : b === '' ? -1 : a.localeCompare(b),
+    );
     return (
       <ScrollView contentContainerStyle={styles.content}>
         <Section title="Designs">
           {designs.length === 0 && <Text style={styles.hint}>No designs yet — build one in the Builder tab.</Text>}
-          {designs.map((d) => (
-            <Pressable key={d.design_id} style={styles.designRow} onPress={() => openDesign(d.design_id)}>
-              <Text style={styles.designId}>{d.design_id}</Text>
-              <Text style={styles.designMeta}>
-                v{d.latest_version} · {d.created_by}
-              </Text>
-            </Pressable>
+          {ordered.map(([name, group]) => (
+            <React.Fragment key={name || '(none)'}>
+              <Text style={styles.collectionHeader}>{name || 'No collection'}</Text>
+              {group.map((d) => (
+                <Pressable key={d.design_id} style={styles.designRow} onPress={() => openDesign(d.design_id)}>
+                  <Text style={styles.designId}>{d.design_id}</Text>
+                  <Text style={styles.designMeta}>
+                    v{d.latest_version} · {d.created_by}
+                  </Text>
+                </Pressable>
+              ))}
+            </React.Fragment>
           ))}
           <Button title="Refresh" kind="ghost" onPress={refreshList} />
         </Section>
@@ -213,6 +228,14 @@ const styles = StyleSheet.create({
   },
   designId: { fontFamily: theme.serif, fontSize: 15, color: theme.ink },
   designMeta: { fontSize: 13, color: theme.faint },
+  collectionHeader: {
+    fontSize: 12,
+    color: theme.faint,
+    letterSpacing: 1.2,
+    textTransform: 'uppercase',
+    marginTop: 10,
+    marginBottom: 2,
+  },
   specSummary: { fontSize: 13, color: theme.ink, marginBottom: 8 },
   actions: { flexDirection: 'row', flexWrap: 'wrap' },
   hint: { fontSize: 13, color: theme.faint, fontStyle: 'italic', marginBottom: 8 },

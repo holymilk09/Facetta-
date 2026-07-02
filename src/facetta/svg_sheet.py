@@ -35,6 +35,7 @@ BASELINE = 105.0  # shared horizontal datum: every view's centerline sits here
 
 INK = "#3f3f3f"
 FAINT = "#8a8a8a"
+PAPER = "#fdfdfa"
 ACCENT = "#7a5c2e"  # second piece on stacking sheets
 STROKE_MAIN = 0.3
 STROKE_DIM = 0.15
@@ -54,10 +55,14 @@ def _fmt(value: float) -> str:
 
 
 def _text(x: float, y: float, s: str, *, size: float = 3.2, anchor: str = "middle",
-          color: str = INK, style: str = "") -> str:
+          color: str = INK, style: str = "", halo: bool = False) -> str:
+    # halo paints the paper color behind the glyphs so a label crossing
+    # linework stays readable without hiding the geometry beneath it
+    h = (f' stroke="{PAPER}" stroke-width="1.0" stroke-linejoin="round" '
+         'paint-order="stroke"') if halo else ""
     return (
         f'<text x="{x:.2f}" y="{y:.2f}" font-family="{FONT}" font-size="{size}" '
-        f'fill="{color}" text-anchor="{anchor}"{style}>{s}</text>'
+        f'fill="{color}" text-anchor="{anchor}"{h}{style}>{s}</text>'
     )
 
 
@@ -80,7 +85,7 @@ def _dim_h(x1: float, x2: float, y: float, label: str) -> list[str]:
     return [
         _line(x1, y, x2, y, w=STROKE_DIM, color=FAINT),
         _tick(x1, y), _tick(x2, y),
-        _text((x1 + x2) / 2, y - 1.4, label),
+        _text((x1 + x2) / 2, y - 1.4, label, halo=True),
     ]
 
 
@@ -89,7 +94,7 @@ def _dim_v(x: float, y1: float, y2: float, label: str) -> list[str]:
     return [
         _line(x, y1, x, y2, w=STROKE_DIM, color=FAINT),
         _tick(x, y1), _tick(x, y2),
-        _text(x + 1.8, (y1 + y2) / 2 + 1.1, label, anchor="start"),
+        _text(x + 1.8, (y1 + y2) / 2 + 1.1, label, anchor="start", halo=True),
     ]
 
 
@@ -259,6 +264,37 @@ def _title_block(spec: Spec, scale_label: str = "3:1") -> list[str]:
     return parts
 
 
+def _footer_key() -> list[str]:
+    """Footer legend strip: what each line style on the sheet means."""
+    top = SHEET_H - MARGIN - 8
+    y = top + 4  # sample-line y inside the strip
+    ty = y + 1.0  # label baseline
+
+    def sample(x: float, label: str, dash: str = "") -> list[str]:
+        return [
+            _line(x, y, x + 8, y, w=STROKE_DIM if dash else STROKE_MAIN,
+                  color=FAINT if dash else INK, dash=dash),
+            _text(x + 10, ty, label, size=2.6, anchor="start", color=FAINT),
+        ]
+
+    parts = [
+        _line(MARGIN, top, SHEET_W - MARGIN - 100, top, w=STROKE_DIM, color=FAINT),
+        _text(MARGIN + 4, ty, "KEY", size=2.8, anchor="start",
+              style=' letter-spacing="1.4"'),
+        *sample(MARGIN + 18, "edge"),
+        # 0.9 0.9 dashing: reads identically but is a depiction, not a live
+        # witness line, so the snap audit doesn't try to anchor it
+        *sample(MARGIN + 52, "witness", dash="0.9 0.9"),
+        *sample(MARGIN + 84, "centerline", dash="6 1.5 1 1.5"),
+        f'<rect x="{MARGIN + 114:.2f}" y="{y - 1.5:.2f}" width="8" height="3" '
+        f'fill="url(#hatch)" stroke="{INK}" stroke-width="{STROKE_DIM}"/>',
+        _text(MARGIN + 124, ty, "metal section", size=2.6, anchor="start", color=FAINT),
+        _text(SHEET_W - MARGIN - 104, ty, "all dimensions in mm", size=2.6,
+              anchor="end", color=FAINT),
+    ]
+    return parts
+
+
 def _frame(spec: Spec, title: str, scale_label: str, body: list[str],
            datum_y: float | None = BASELINE) -> str:
     """The shared sheet envelope: page, border, title, body views, title block.
@@ -273,18 +309,21 @@ def _frame(spec: Spec, title: str, scale_label: str, body: list[str],
         f'<line x1="0" y1="0" x2="0" y2="1.4" stroke="{FAINT}" stroke-width="0.12"/>'
         "</pattern>"
         "</defs>",
-        f'<rect x="0" y="0" width="{SHEET_W:g}" height="{SHEET_H:g}" fill="#fdfdfa"/>',
+        f'<rect x="0" y="0" width="{SHEET_W:g}" height="{SHEET_H:g}" fill="{PAPER}"/>',
         f'<rect x="{MARGIN:g}" y="{MARGIN:g}" width="{SHEET_W - 2 * MARGIN:g}" '
         f'height="{SHEET_H - 2 * MARGIN:g}" fill="none" stroke="{INK}" stroke-width="{STROKE_MAIN}"/>',
         _text(SHEET_W / 2, MARGIN + 8, title, size=4.6, style=' letter-spacing="1.6"'),
+        _line(MARGIN + 3, MARGIN + 11.5, SHEET_W - MARGIN - 3, MARGIN + 11.5,
+              w=STROKE_DIM, color=FAINT),  # header rule under the sheet title
     ]
     if datum_y is not None:
         parts.append(_line(MARGIN + 3, datum_y, SHEET_W - MARGIN - 3, datum_y,
                            w=STROKE_DIM, color=FAINT, dash="6 1.5 1 1.5"))
     parts += body
     parts += _title_block(spec, scale_label)
+    parts += _footer_key()
     if spec.notes_to_factory:
-        parts.append(_text(MARGIN + 4, SHEET_H - MARGIN - 4,
+        parts.append(_text(MARGIN + 4, SHEET_H - MARGIN - 10.5,
                            f"NOTES: {spec.notes_to_factory}", size=3.0, anchor="start"))
     parts.append("</svg>")
     return "\n".join(parts) + "\n"

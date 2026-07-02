@@ -26,6 +26,7 @@ class DesignSubmission(BaseModel):
 
     created_by: str
     spec: Spec
+    collection: Annotated[str, Field(min_length=1, max_length=80)] | None = None
 
 
 class CommentCreate(BaseModel):
@@ -75,7 +76,8 @@ def create_design(submission: DesignSubmission, db: DbSession):
     spec, error = _validated_or_response(submission.spec)
     if error:
         return error
-    design = Design(id=new_id("dsn"), created_by=submission.created_by)
+    design = Design(id=new_id("dsn"), created_by=submission.created_by,
+                    collection=submission.collection)
     db.add(design)
     return _store_version(db, design, spec, version=1, created_by=submission.created_by)
 
@@ -88,6 +90,9 @@ def create_version(design_id: str, submission: DesignSubmission, db: DbSession):
     spec, error = _validated_or_response(submission.spec)
     if error:
         return error
+    if submission.collection is not None:
+        design.collection = submission.collection  # regroup the container;
+        # versions themselves stay immutable
     latest = db.scalar(
         select(func.max(DesignVersion.version)).where(DesignVersion.design_id == design_id)
     ) or 0
@@ -95,13 +100,16 @@ def create_version(design_id: str, submission: DesignSubmission, db: DbSession):
 
 
 @router.get("")
-def list_designs(db: DbSession):
-    rows = db.execute(
+def list_designs(db: DbSession, collection: str | None = None):
+    query = (
         select(Design, func.max(DesignVersion.version))
         .join(DesignVersion, DesignVersion.design_id == Design.id)
         .group_by(Design.id)
         .order_by(Design.created_at)
-    ).all()
+    )
+    if collection is not None:
+        query = query.where(Design.collection == collection)
+    rows = db.execute(query).all()
     return {
         "designs": [
             {
@@ -109,6 +117,7 @@ def list_designs(db: DbSession):
                 "created_by": design.created_by,
                 "created_at": design.created_at,
                 "latest_version": latest,
+                "collection": design.collection,
             }
             for design, latest in rows
         ]

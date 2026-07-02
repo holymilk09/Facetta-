@@ -3,6 +3,7 @@
 <rect x="0" y="0" width="297" height="210" fill="#fdfdfa"/>
 <rect x="8" y="8" width="281" height="194" fill="none" stroke="#3f3f3f" stroke-width="0.3"/>
 <text x="148.50" y="16.00" font-family="Georgia, 'Times New Roman', serif" font-size="4.6" fill="#3f3f3f" text-anchor="middle" letter-spacing="1.6">TECHNICAL SHEET — LINK BRACELET</text>
+<line x1="11.00" y1="19.50" x2="286.00" y2="19.50" stroke="#8a8a8a" stroke-width="0.15"/>
 <line x1="11.00" y1="105.00" x2="286.00" y2="105.00" stroke="#8a8a8a" stroke-width="0.15" stroke-dasharray="6 1.5 1 1.5"/>
 <ellipse cx="95.00" cy="105.00" rx="56.00" ry="46.00" fill="none" stroke="#8a8a8a" stroke-width="0.15"/>
 <rect x="85.15" y="50.60" width="19.70" height="12.00" rx="1.6" fill="#ffffff" stroke="#3f3f3f" stroke-width="0.3" transform="rotate(0.0 95.00 56.60)"/>
@@ -31,11 +32,11 @@
 <line x1="39.00" y1="119.00" x2="151.00" y2="119.00" stroke="#8a8a8a" stroke-width="0.15"/>
 <line x1="38.10" y1="119.90" x2="39.90" y2="118.10" stroke="#3f3f3f" stroke-width="0.24"/>
 <line x1="150.10" y1="119.90" x2="151.90" y2="118.10" stroke="#3f3f3f" stroke-width="0.24"/>
-<text x="95.00" y="117.60" font-family="Georgia, 'Times New Roman', serif" font-size="3.2" fill="#3f3f3f" text-anchor="middle">56 mm</text>
+<text x="95.00" y="117.60" font-family="Georgia, 'Times New Roman', serif" font-size="3.2" fill="#3f3f3f" text-anchor="middle" stroke="#fdfdfa" stroke-width="1.0" stroke-linejoin="round" paint-order="stroke">56 mm</text>
 <line x1="95.00" y1="59.00" x2="95.00" y2="151.00" stroke="#8a8a8a" stroke-width="0.15"/>
 <line x1="94.10" y1="59.90" x2="95.90" y2="58.10" stroke="#3f3f3f" stroke-width="0.24"/>
 <line x1="94.10" y1="151.90" x2="95.90" y2="150.10" stroke="#3f3f3f" stroke-width="0.24"/>
-<text x="96.80" y="106.10" font-family="Georgia, 'Times New Roman', serif" font-size="3.2" fill="#3f3f3f" text-anchor="start">46 mm</text>
+<text x="96.80" y="106.10" font-family="Georgia, 'Times New Roman', serif" font-size="3.2" fill="#3f3f3f" text-anchor="start" stroke="#fdfdfa" stroke-width="1.0" stroke-linejoin="round" paint-order="stroke">46 mm</text>
 <text x="95.00" y="171.40" font-family="Georgia, 'Times New Roman', serif" font-size="3.6" fill="#3f3f3f" text-anchor="middle" letter-spacing="1.2">FACE VIEW</text>
 <text x="95.00" y="176.40" font-family="Georgia, 'Times New Roman', serif" font-size="2.8" fill="#8a8a8a" text-anchor="middle">14 articulated links · pitch 12.0 mm on the centerline</text>
 <rect x="195.97" y="87.00" width="59.09" height="36.00" rx="3" fill="#ffffff" stroke="#3f3f3f" stroke-width="0.3"/>
@@ -45,13 +46,13 @@
 <line x1="195.97" y1="81.00" x2="268.03" y2="81.00" stroke="#8a8a8a" stroke-width="0.15"/>
 <line x1="195.07" y1="81.90" x2="196.87" y2="80.10" stroke="#3f3f3f" stroke-width="0.24"/>
 <line x1="267.13" y1="81.90" x2="268.93" y2="80.10" stroke="#3f3f3f" stroke-width="0.24"/>
-<text x="232.00" y="79.60" font-family="Georgia, 'Times New Roman', serif" font-size="3.2" fill="#3f3f3f" text-anchor="middle">pitch 12.0 mm</text>
+<text x="232.00" y="79.60" font-family="Georgia, 'Times New Roman', serif" font-size="3.2" fill="#3f3f3f" text-anchor="middle" stroke="#fdfdfa" stroke-width="1.0" stroke-linejoin="round" paint-order="stroke">pitch 12.0 mm</text>
 <line x1="195.97" y1="87.00" x2="188.97" y2="87.00" stroke="#8a8a8a" stroke-width="0.15" stroke-dasharray="0.8 0.8"/>
 <line x1="195.97" y1="123.00" x2="188.97" y2="123.00" stroke="#8a8a8a" stroke-width="0.15" stroke-dasharray="0.8 0.8"/>
 <line x1="189.97" y1="87.00" x2="189.97" y2="123.00" stroke="#8a8a8a" stroke-width="0.15"/>
 <line x1="189.07" y1="87.90" x2="190.87" y2="86.10" stroke="#3f3f3f" stroke-width="0.24"/>
 <line x1="189.07" y1="123.90" x2="190.87" y2="122.10" stroke="#3f3f3f" stroke-width="0.24"/>
-<text x="191.77" y="106.10" font-family="Georgia, 'Times New Roman', serif" font-size="3.2" fill="#3f3f3f" text-anchor="start">6 mm</text>
+<text x="191.77" y="106.10" font-family="Georgia, 'Times New Roman', serif" font-size="3.2" fill="#3f3f3f" text-anchor="start" stroke="#fdfdfa" stroke-width="1.0" stroke-linejoin="round" paint-order="stroke">6 mm</text>
 <rect x="216.82" y="96.30" width="17.40" height="17.40" fill="#ffffff" stroke="#3f3f3f" stroke-width="0.3" transform="rotate(45 225.52 105.00)"/>
 <text x="232.00" y="143.00" font-family="Georgia, 'Times New Roman', serif" font-size="2.8" fill="#8a8a8a" text-anchor="middle">2.9 mm princess seat, every 2 links</text>
 <text x="232.00" y="138.00" font-family="Georgia, 'Times New Roman', serif" font-size="3.6" fill="#3f3f3f" text-anchor="middle" letter-spacing="1.2">LINK DETAIL — 6:1</text>
@@ -64,5 +65,16 @@
 <text x="192.00" y="189.40" font-family="Georgia, 'Times New Roman', serif" font-size="3.2" fill="#3f3f3f" text-anchor="start">F  ·  VS1</text>
 <text x="192.00" y="194.00" font-family="Georgia, 'Times New Roman', serif" font-size="3.0" fill="#3f3f3f" text-anchor="start">designer usr_ana  ·  2026-07-02</text>
 <text x="192.00" y="198.60" font-family="Georgia, 'Times New Roman', serif" font-size="3.0" fill="#3f3f3f" text-anchor="start">UNITS mm  ·  SCALE 2:1  ·  EST. 37.5 g</text>
-<text x="12.00" y="198.00" font-family="Georgia, 'Times New Roman', serif" font-size="3.0" fill="#3f3f3f" text-anchor="start">NOTES: Articulated links, hinge pins between every link.</text>
+<line x1="8.00" y1="194.00" x2="189.00" y2="194.00" stroke="#8a8a8a" stroke-width="0.15"/>
+<text x="12.00" y="199.00" font-family="Georgia, 'Times New Roman', serif" font-size="2.8" fill="#3f3f3f" text-anchor="start" letter-spacing="1.4">KEY</text>
+<line x1="26.00" y1="198.00" x2="34.00" y2="198.00" stroke="#3f3f3f" stroke-width="0.3"/>
+<text x="36.00" y="199.00" font-family="Georgia, 'Times New Roman', serif" font-size="2.6" fill="#8a8a8a" text-anchor="start">edge</text>
+<line x1="60.00" y1="198.00" x2="68.00" y2="198.00" stroke="#8a8a8a" stroke-width="0.15" stroke-dasharray="0.9 0.9"/>
+<text x="70.00" y="199.00" font-family="Georgia, 'Times New Roman', serif" font-size="2.6" fill="#8a8a8a" text-anchor="start">witness</text>
+<line x1="92.00" y1="198.00" x2="100.00" y2="198.00" stroke="#8a8a8a" stroke-width="0.15" stroke-dasharray="6 1.5 1 1.5"/>
+<text x="102.00" y="199.00" font-family="Georgia, 'Times New Roman', serif" font-size="2.6" fill="#8a8a8a" text-anchor="start">centerline</text>
+<rect x="122.00" y="196.50" width="8" height="3" fill="url(#hatch)" stroke="#3f3f3f" stroke-width="0.15"/>
+<text x="132.00" y="199.00" font-family="Georgia, 'Times New Roman', serif" font-size="2.6" fill="#8a8a8a" text-anchor="start">metal section</text>
+<text x="185.00" y="199.00" font-family="Georgia, 'Times New Roman', serif" font-size="2.6" fill="#8a8a8a" text-anchor="end">all dimensions in mm</text>
+<text x="12.00" y="191.50" font-family="Georgia, 'Times New Roman', serif" font-size="3.0" fill="#3f3f3f" text-anchor="start">NOTES: Articulated links, hinge pins between every link.</text>
 </svg>

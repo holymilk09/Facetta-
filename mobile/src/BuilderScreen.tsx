@@ -110,6 +110,8 @@ export function BuilderScreen({
   const [inscription, setInscription] = useState('');
 
   const [notes, setNotes] = useState('');
+  const [collection, setCollection] = useState('');
+  const [ratioLock, setRatioLock] = useState(true);
   const [prose, setProse] = useState('');
   const [notice, setNotice] = useState<{ kind: 'ok' | 'error' | 'info'; text: string } | null>(null);
   const [issues, setIssues] = useState<any[]>([]);
@@ -234,6 +236,33 @@ export function BuilderScreen({
   };
 
   const deriveDims = () => deriveDimsFor(cut, parseFloat(carat));
+
+  // proportional resize: edit any one dimension and the other two follow the
+  // cut's aspect ratios; the carat re-estimates from the density model, so a
+  // resize is one edit, never a rebuild
+  const onDimChange = (key: 'length' | 'width' | 'depth', v: string) => {
+    const n = parseFloat(v);
+    if (!ratioLock || !isFinite(n) || n <= 0) {
+      setDims({ ...dims, [key]: v });
+      return;
+    }
+    const { lw, dw } = CUT_RATIOS[cut ?? ''] ?? { lw: 1.3, dw: 0.64 };
+    const width = key === 'length' ? n / lw : key === 'width' ? n : n / dw;
+    const r = (x: number) => String(Math.round(x * 100) / 100);
+    const scaled = {
+      length: key === 'length' ? v : r(width * lw),
+      width: key === 'width' ? v : r(width),
+      depth: key === 'depth' ? v : r(width * dw),
+    };
+    setDims(scaled);
+    const cutInfo = options?.cuts.find((c: any) => c.id === cut);
+    if (cutInfo && options?.sg) {
+      const ct =
+        (parseFloat(scaled.length) * parseFloat(scaled.width) * parseFloat(scaled.depth) *
+          options.sg * cutInfo.shape_factor) / 200;
+      if (isFinite(ct) && ct > 0) setCarat(String(Math.round(ct * 100) / 100));
+    }
+  };
 
   const buildStone = () => {
     const dimensions =
@@ -420,8 +449,8 @@ export function BuilderScreen({
     run(async () => {
       const spec = buildSpec();
       const r = editing
-        ? await api.createVersion(editing.designId, designer, spec)
-        : await api.createDesign(designer, spec);
+        ? await api.createVersion(editing.designId, designer, spec, collection.trim() || undefined)
+        : await api.createDesign(designer, spec, collection.trim() || undefined);
       if (r.ok) {
         setNotice({ kind: 'ok', text: `Saved ${r.body.design_id} v${r.body.version} (immutable).` });
         onSaved(r.body.design_id);
@@ -511,15 +540,24 @@ export function BuilderScreen({
             <Field label="Carat (per stone)" value={carat} onChange={setCarat} numeric />
             {mode === 'pro' && (
               <>
+                <ChipRow
+                  label="Resize"
+                  options={['proportional', 'free'] as const}
+                  value={ratioLock ? 'proportional' : 'free'}
+                  onSelect={(v) => setRatioLock(v === 'proportional')}
+                  render={(v) =>
+                    v === 'proportional' ? 'Proportional — carat follows' : 'Free — each axis alone'
+                  }
+                />
                 <View style={styles.row}>
                   <View style={styles.rowItem}>
-                    <Field label="Length mm" value={dims.length} onChange={(v) => setDims({ ...dims, length: v })} numeric />
+                    <Field label="Length mm" value={dims.length} onChange={(v) => onDimChange('length', v)} numeric />
                   </View>
                   <View style={styles.rowItem}>
-                    <Field label="Width mm" value={dims.width} onChange={(v) => setDims({ ...dims, width: v })} numeric />
+                    <Field label="Width mm" value={dims.width} onChange={(v) => onDimChange('width', v)} numeric />
                   </View>
                   <View style={styles.rowItem}>
-                    <Field label="Depth mm" value={dims.depth} onChange={(v) => setDims({ ...dims, depth: v })} numeric />
+                    <Field label="Depth mm" value={dims.depth} onChange={(v) => onDimChange('depth', v)} numeric />
                   </View>
                 </View>
                 <Button
@@ -710,6 +748,13 @@ export function BuilderScreen({
       </Section>
 
       <ChipRow options={['basic', 'pro'] as const} value={mode} onSelect={setMode} render={(m) => (m === 'basic' ? 'Basic mode' : 'Pro mode')} />
+
+      <Field
+        label="Collection — group saves for yourself or per client (optional)"
+        value={collection}
+        onChange={setCollection}
+        placeholder="e.g. Client — Sarah K"
+      />
 
       <View style={styles.actions}>
         <Button title="Validate" onPress={validate} disabled={busy || !ready} />

@@ -118,8 +118,8 @@ const styles = StyleSheet.create({
     backgroundColor: theme.card,
     borderColor: theme.line,
     borderWidth: 1,
-    borderRadius: 6,
-    padding: 12,
+    borderRadius: 16,
+    padding: 14,
     marginBottom: 12,
   },
   sectionTitle: {
@@ -147,8 +147,8 @@ const styles = StyleSheet.create({
   input: {
     borderWidth: 1,
     borderColor: theme.line,
-    borderRadius: 4,
-    paddingHorizontal: 8,
+    borderRadius: 10,
+    paddingHorizontal: 10,
     paddingVertical: 6,
     fontSize: 14,
     color: theme.ink,
@@ -157,7 +157,7 @@ const styles = StyleSheet.create({
   inputMultiline: { minHeight: 60, textAlignVertical: 'top' },
   button: {
     backgroundColor: theme.ink,
-    borderRadius: 4,
+    borderRadius: 10,
     paddingHorizontal: 14,
     paddingVertical: 9,
     alignItems: 'center',
@@ -169,7 +169,7 @@ const styles = StyleSheet.create({
   buttonTextGhost: { color: theme.ink },
   notice: {
     borderWidth: 1,
-    borderRadius: 4,
+    borderRadius: 10,
     padding: 8,
     marginBottom: 8,
     backgroundColor: theme.paper,

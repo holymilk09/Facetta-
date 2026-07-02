@@ -40,10 +40,10 @@ export function createApi(baseUrl: string) {
     prototypePreview: (spec: unknown) => post('/specs/prototype.svg', spec),
     fromProse: (prose: string, created_by: string) =>
       post('/specs/from-prose', { prose, created_by }),
-    createDesign: (created_by: string, spec: unknown) =>
-      post('/designs', { created_by, spec }),
-    createVersion: (designId: string, created_by: string, spec: unknown) =>
-      post(`/designs/${designId}/versions`, { created_by, spec }),
+    createDesign: (created_by: string, spec: unknown, collection?: string) =>
+      post('/designs', { created_by, spec, collection: collection || null }),
+    createVersion: (designId: string, created_by: string, spec: unknown, collection?: string) =>
+      post(`/designs/${designId}/versions`, { created_by, spec, collection: collection || null }),
     listDesigns: () => call('/designs'),
     getDesign: (id: string) => call(`/designs/${id}`),
     getVersionSpec: (id: string, v: number) => call(`/designs/${id}/versions/${v}`),
