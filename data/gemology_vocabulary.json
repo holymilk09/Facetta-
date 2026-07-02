@@ -1,0 +1,282 @@
+{
+  "meta": {
+    "purpose": "Controlled vocabulary for jewelry design app parameter dropdowns and AI prompt compiler.",
+    "source": "GIA colored gemstone color/clarity standards, extracted and paraphrased from user-provided reference document plus web research for stone families not in that source.",
+    "note": "Diamond D-to-Z scale is already a standard linear system and does not require extraction here."
+  },
+
+  "gia_hue_scale": [
+    {"code": "R", "name": "Red", "hex": "#FA0303"},
+    {"code": "oR", "name": "Orangy Red", "hex": "#EE2102"},
+    {"code": "RO/OR", "name": "Red-Orange", "hex": "#FB3E00"},
+    {"code": "rO", "name": "Reddish Orange", "hex": "#FE6000"},
+    {"code": "O", "name": "Orange", "hex": "#F87B00"},
+    {"code": "yO", "name": "Yellowish Orange", "hex": "#F6A400"},
+    {"code": "oY", "name": "Orangy Yellow", "hex": "#F7CD00"},
+    {"code": "Y", "name": "Yellow", "hex": "#F8F800"},
+    {"code": "gY", "name": "Greenish Yellow", "hex": "#CEE600"},
+    {"code": "YG/GY", "name": "Yellow-Green", "hex": "#B0DD00"},
+    {"code": "styG", "name": "Strongly Yellowish Green", "hex": "#7BCE00"},
+    {"code": "yG", "name": "Yellowish Green", "hex": "#4DC100"},
+    {"code": "slyG", "name": "Slightly Yellowish Green", "hex": "#26C200"},
+    {"code": "G", "name": "Green", "hex": "#00C000"},
+    {"code": "vslbG", "name": "Very Slightly Bluish Green", "hex": "#00BE26"},
+    {"code": "bG", "name": "Bluish Green", "hex": "#00BA4A"},
+    {"code": "vstbG", "name": "Very Strongly Bluish Green", "hex": "#00B96F"},
+    {"code": "GB/BG", "name": "Green-Blue", "hex": "#00B893"},
+    {"code": "vstgB", "name": "Very Strongly Greenish Blue", "hex": "#09B4B4"},
+    {"code": "vslgB", "name": "Very Slightly Greenish Blue", "hex": "#0A59AA"},
+    {"code": "B", "name": "Blue", "hex": "#0916A5"},
+    {"code": "vB", "name": "Violetish Blue", "hex": "#0808A0"},
+    {"code": "bV", "name": "Bluish Violet", "hex": "#7B0AB4"},
+    {"code": "V", "name": "Violet", "hex": "#7B0AB4"},
+    {"code": "bP", "name": "Bluish Purple", "hex": "#C70BC7"},
+    {"code": "P", "name": "Purple", "hex": "#D40CB1"},
+    {"code": "rP", "name": "Reddish Purple", "hex": "#E90A9E"},
+    {"code": "RP/PR", "name": "Red-Purple", "hex": "#F50E80"},
+    {"code": "stpR", "name": "Strongly Purplish Red", "hex": "#F80E5C"},
+    {"code": "slpR", "name": "Slightly Purplish Red", "hex": "#F20E33"},
+    {"code": "Pk", "name": "Pink (exception hue)", "hex": "#FFDFDF"},
+    {"code": "Brn", "name": "Brown (exception hue)", "hex": "#B7770D"}
+  ],
+
+  "gia_tone_scale": [
+    {"level": 0, "code": "c", "name": "Colorless / White", "hex": "#FFFFFF"},
+    {"level": 1, "code": "ex1", "name": "Extremely Light", "hex": "#F8F8F8"},
+    {"level": 2, "code": "v1", "name": "Very Light", "hex": "#F0F0F0"},
+    {"level": 3, "code": "l", "name": "Light", "hex": "#E8E8E8"},
+    {"level": 4, "code": "ml", "name": "Medium Light", "hex": "#D6D6D6"},
+    {"level": 5, "code": "m", "name": "Medium", "hex": "#C5C5C5"},
+    {"level": 6, "code": "md", "name": "Medium Dark", "hex": "#A3A3A3"},
+    {"level": 7, "code": "d", "name": "Dark", "hex": "#888888"},
+    {"level": 8, "code": "vd", "name": "Very Dark", "hex": "#646464"},
+    {"level": 9, "code": "exd", "name": "Extremely Dark", "hex": "#424242"},
+    {"level": 10, "code": "bl", "name": "Black", "hex": "#000000"}
+  ],
+
+  "gia_saturation_scale": [
+    {"level": 1, "cool": "Grayish", "warm": "Brownish"},
+    {"level": 2, "cool": "Slightly Grayish", "warm": "Slightly Brownish"},
+    {"level": 3, "cool": "Very Slightly Grayish", "warm": "Very Slightly Brownish"},
+    {"level": 4, "cool": "Moderately Strong", "warm": "Moderately Strong"},
+    {"level": 5, "cool": "Strong", "warm": "Strong"},
+    {"level": 6, "cool": "Vivid", "warm": "Vivid"}
+  ],
+
+  "clarity_types": {
+    "type_i": {
+      "label": "Normally clean",
+      "market_expectation": "Eye-clean is the baseline",
+      "stones": ["Aquamarine", "Morganite", "Heliodor", "Goshenite", "Green Tourmaline", "Chrome Tourmaline", "Tanzanite", "Chrysoberyl (yellow/green)", "Blue Zircon (Starlite)", "Blue Topaz (Sky/Swiss/London)", "Smoky Quartz", "Kunzite/Hiddenite"]
+    },
+    "type_ii": {
+      "label": "Usually included",
+      "market_expectation": "Minor eye-visible inclusions are common and accepted",
+      "stones": ["Ruby", "Sapphire (all colors)", "Alexandrite", "Chrysoberyl Cat's-Eye", "Spinel (all colors)", "Garnet", "Amethyst", "Citrine", "Peridot", "Iolite", "Zircon (non-blue)", "Topaz (Imperial, other colors)", "Tourmaline (indicolite, canary, Paraiba-type, bi-color)"]
+    },
+    "type_iii": {
+      "label": "Almost always included",
+      "market_expectation": "Visible inclusions (\"jardin\") accepted; color outweighs clarity",
+      "stones": ["Emerald", "Red Beryl", "Rubellite", "Watermelon Tourmaline", "Sphene"]
+    },
+    "non_applicable": {
+      "label": "Organic or amorphous gems — graded by an entirely different model, see the pearl and opal sections",
+      "market_expectation": "Valued on luster, surface, or play-of-color, not internal clarity",
+      "stones": ["Pearl", "Opal", "Coral", "Amber", "Jet", "Mother-of-Pearl"]
+    }
+  },
+
+  "clarity_grades_by_type": {
+    "type_i": [
+      {"grade": "VVS", "meaning": "Eye-clean, not detectable under 10x"},
+      {"grade": "VS", "meaning": "Minor, usually eye-clean"},
+      {"grade": "SI1", "meaning": "Slightly visible unaided"},
+      {"grade": "SI2", "meaning": "Easily visible unaided"},
+      {"grade": "I1-I3", "meaning": "Prominent, affects durability"}
+    ],
+    "type_ii": [
+      {"grade": "VVS", "meaning": "Usually eye-clean"},
+      {"grade": "VS", "meaning": "May be eye-visible"},
+      {"grade": "SI1", "meaning": "Apparent unaided"},
+      {"grade": "SI2", "meaning": "Very apparent unaided"},
+      {"grade": "I1-I3", "meaning": "Prominent, affects durability"}
+    ],
+    "type_iii": [
+      {"grade": "VVS", "meaning": "Usually still eye-clean"},
+      {"grade": "VS", "meaning": "May be eye-visible"},
+      {"grade": "SI1", "meaning": "Prominent, visible unaided"},
+      {"grade": "SI2", "meaning": "Very prominent unaided"},
+      {"grade": "I1-I3", "meaning": "Prominent, affects durability"}
+    ]
+  },
+
+  "trade_color_terms": {
+    "ruby": [
+      {"term": "Pigeon's Blood", "gia": "vivid red, slightly purplish, tone 5-6", "meaning": "top-grade ruby red, glows under UV", "origin_tie": "named for the Mogok, Burma benchmark", "notes": "strong red fluorescence"},
+      {"term": "Royal Red (Rabbit's Blood)", "gia": "pure red, darker tone, vivid", "meaning": "deeper red, no glow, still top-tier", "origin_tie": "typically Mozambique, Madagascar, Thailand stones", "notes": "little to no fluorescence"}
+    ],
+    "sapphire_blue": [
+      {"term": "Royal Blue", "gia": "vivid deep blue, slight violet, tone 6-7", "meaning": "deepest, most saturated blue sapphire grade", "origin_tie": "named for the Mogok, Burma benchmark"},
+      {"term": "Cornflower Blue", "gia": "medium tone, vivid, slight violet", "meaning": "soft, bright blue, named after the flower", "origin_tie": "associated with Sri Lanka, Madagascar stones"},
+      {"term": "Peacock Blue", "gia": "electric, highly saturated", "meaning": "vivid reflective blue between Cornflower and Royal", "origin_tie": "associated with Sri Lanka"},
+      {"term": "Velvet Blue", "gia": "intense blue, soft glowing texture", "meaning": "silk inclusions scatter light for a velvety look", "origin_tie": "the hallmark of legendary Kashmir sapphires"},
+      {"term": "Indigo", "gia": "dark tone, lower saturation, gray cast", "meaning": "denim-blue, lower trade value than metamorphic blues", "origin_tie": "basalt-hosted stones from Australia, Thailand, Nigeria"}
+    ],
+    "sapphire_fancy": [
+      {"term": "Padparadscha", "gia": "pinkish orange to orangey pink, pastel, low-med saturation", "meaning": "rarest fancy sapphire color, named after the lotus flower", "origin_tie": "classically Sri Lanka", "notes": "watch for tenebrescence — some pink sapphires fake this color temporarily under UV"}
+    ],
+    "emerald": [
+      {"term": "Muzo Green", "gia": "vivid, warm, slightly yellowish green", "meaning": "the benchmark fine-emerald color", "origin_tie": "named for Muzo, Colombia"},
+      {"term": "Chivor", "gia": "cooler, slightly bluish green", "meaning": "distinct blue overtone, equally prized", "origin_tie": "named for Chivor, Colombia"},
+      {"term": "Sandawana", "gia": "highly saturated deep green, yellowish nuance", "meaning": "vivid color even in small sizes", "origin_tie": "named for the Sandawana mines, Zimbabwe"}
+    ],
+    "aquamarine": [
+      {"term": "Santa Maria", "gia": "intensely saturated deep blue, no green/gray cast", "meaning": "the finest aquamarine color benchmark", "origin_tie": "named for the Santa Maria mine, Brazil — now used by color match anywhere"},
+      {"term": "Santa Maria Afrique", "gia": "same deep blue profile as Santa Maria", "meaning": "African stones matching the Brazilian benchmark", "origin_tie": "named for African (Mozambique) source, referencing the original Brazil color"}
+    ],
+    "spinel": [
+      {"term": "Jedi Spinel", "gia": "highly saturated neon pink to hot, slightly orangey red", "meaning": "glows under both UV and daylight, always untreated", "origin_tie": "sourced from Man Sin and Namya, Burma", "notes": "strong red/pink fluorescence"},
+      {"term": "Cobalt Spinel", "gia": "vivid blue to electric royal blue", "meaning": "colored by cobalt, stays bright rather than dark/grayish", "origin_tie": "Luc Yen, Vietnam and Mahenge, Tanzania", "notes": "cobalt-diffused treated fakes exist at steep discount"}
+    ],
+    "tourmaline": [
+      {"term": "Paraiba", "gia": "vivid violetish blue to bluish green, neon, medium-high saturation", "meaning": "the most valuable tourmaline color, glows with a neon quality", "origin_tie": "named for Paraiba, Brazil — copper-bearing material from Mozambique and Nigeria now trades under the same name", "clarity_type": "II", "notes": "colored by copper + manganese; this is what separates it from iron-colored blue/green tourmaline"},
+      {"term": "Lagoon", "gia": "blue-green to green-blue, medium to vivid saturation", "meaning": "tropical lagoon color, a lower-cost look-alike to Paraiba", "origin_tie": null, "clarity_type": "II", "notes": "colored by iron, not copper — the key distinction from true Paraiba despite the similar color; finest material from Namibia"},
+      {"term": "Canary", "gia": "vivid yellow, sometimes slightly greenish", "meaning": "bright, saturated yellow tourmaline", "origin_tie": "named for its canary-bird color; also the name of a key mining concession in Zambia", "clarity_type": "II", "notes": "usually heat-treated from brownish rough to reach vivid yellow"},
+      {"term": "Rubellite", "gia": "pink to red, purplish red, must hold color under multiple light sources", "meaning": "the red/hot-pink grade — must stay red in daylight, LED, and incandescent light, or it's just \"pink tourmaline\"", "origin_tie": null, "clarity_type": "III", "notes": "sourced from Brazil, Nigeria, Mozambique, Madagascar"},
+      {"term": "Indicolite", "gia": "dark violetish blue, blue, or greenish blue", "meaning": "the classic blue tourmaline grade", "origin_tie": null, "clarity_type": "II", "notes": "colored by iron, not copper"},
+      {"term": "Chrome Tourmaline", "gia": "intense, highly saturated green", "meaning": "the deepest tourmaline green, priced as a tsavorite alternative", "origin_tie": null, "clarity_type": "I", "notes": "colored by vanadium and/or chromium; shows red under a Chelsea filter, unlike ordinary iron-colored green tourmaline"},
+      {"term": "Watermelon", "gia": "pink core, green rind — bi-color zoning", "meaning": "the classic bi-color tourmaline, cut in slices to show the pattern", "origin_tie": null, "clarity_type": "III", "notes": "natural color zoning, not a treatment; usually cut as polished slices rather than faceted"}
+    ],
+    "garnet": [
+      {"term": "Tsavorite", "gia": "vivid green, medium tone, high saturation", "meaning": "the finest, most brilliant green garnet — an emerald alternative with more fire", "origin_tie": "named for Tsavo National Park, Kenya, where it was first mined commercially", "notes": "colored by vanadium/chromium; never treated; rare over 2ct"},
+      {"term": "Demantoid", "gia": "olive to emerald green, very high dispersion", "meaning": "the antique garnet grade — more fire than a diamond", "origin_tie": null, "notes": "wispy \"horsetail\" inclusions are a prized authenticity marker, not a flaw, especially in Russian material; colored by chromium"},
+      {"term": "Rhodolite", "gia": "purplish red to violet-red, medium-light tone", "meaning": "the soft rose-violet red garnet grade", "origin_tie": null, "notes": "pyrope-almandine mix; typically eye-clean, unlike most Type II garnets"},
+      {"term": "Mandarin Garnet", "gia": "vivid orange, high saturation", "meaning": "the finest vivid orange spessartite grade", "origin_tie": "trade name born from a famous 1990s Kunene River, Namibia find", "notes": "brighter, purer orange than hessonite; less pink than malaya"},
+      {"term": "Malaya (Malaia)", "gia": "peachy pink-orange, medium tone", "meaning": "warm peach-orange, between rhodolite and spessartite in color", "origin_tie": "closely tied to the Umba Valley, Tanzania, its original source", "notes": "name means \"outcast\" in Swahili — miners rejected it at first for not fitting known categories"},
+      {"term": "Hessonite (Cinnamon Stone)", "gia": "honey to reddish-brown orange", "meaning": "warm cinnamon-orange, softer than mandarin garnet", "origin_tie": null, "notes": "classic swirly \"heat-wave\" internal texture; long history in Vedic astrology as \"Gomed\""},
+      {"term": "Merelani Mint", "gia": "light mint green, low-medium saturation", "meaning": "pastel mint-green grossular, a lighter cousin to tsavorite", "origin_tie": "named for the Merelani Hills, Tanzania — the same source as tanzanite", "notes": null},
+      {"term": "Color-Change Garnet", "gia": "blue-green in daylight, shifts to purplish red in incandescent light", "meaning": "the alexandrite-effect garnet", "origin_tie": null, "notes": "rare; primarily from Madagascar"}
+    ],
+    "chrysoberyl": [
+      {"term": "Alexandrite", "gia": "green to bluish-green in daylight, red to purplish-red in incandescent light", "meaning": "the definitive color-change stone — \"emerald by day, ruby by night\"", "origin_tie": null, "clarity_type": "II", "notes": "graded by percentage of color shift (5-100%); Russia (Ural Mtns) and Brazil (Hematita mine) are the premium origins; rare cat's-eye alexandrite shows both phenomena at once"},
+      {"term": "Cat's-Eye (unqualified)", "gia": "honey-yellow to greenish-yellow body color", "meaning": "when the trade says \"cat's-eye\" with no other name attached, it always means chrysoberyl — the finest chatoyant gem", "origin_tie": "Sri Lanka is the benchmark source", "clarity_type": "II", "notes": "graded on eye sharpness, centering, and the \"milk-and-honey\" effect — one half of the dome reads milky, the other honey-gold"}
+    ],
+    "tanzanite": [
+      {"term": "Tanzanite", "gia": "violetish blue to bluish violet, best graded vB 6/6", "meaning": "the trichroic blue-violet zoisite", "origin_tie": "named for Tanzania — its only commercial source worldwide, an 8-square-mile deposit", "clarity_type": "I", "notes": "over 95% of material is heat-treated to remove a brownish veil, which is standard and accepted; AAA-AAAA grading is informal trade shorthand with no lab standard behind it — treat retailer grade claims with caution"}
+    ],
+    "topaz": [
+      {"term": "Imperial Topaz", "gia": "golden-orange to reddish-orange to pinkish-red", "meaning": "the rarest, most valuable topaz color, prized for a reddish pleochroic flash", "origin_tie": "Ouro Preto, Brazil is the primary and historic source", "clarity_type": "II", "notes": "pink/red comes from chromium and is natural; yellow/orange base tones are sometimes heat-enhanced"},
+      {"term": "Sherry Topaz", "gia": "brownish-yellow to orange", "meaning": "named for the color of sherry wine, a step below Imperial in rarity", "origin_tie": null, "clarity_type": "II"},
+      {"term": "London Blue", "gia": "deep, inky, medium-to-dark grey-toned blue", "meaning": "the darkest of the three blue topaz trade grades", "origin_tie": "named for the city, not a source location", "clarity_type": "I", "notes": "virtually 100% irradiation-treated; this is industry-standard and disclosed, not a red flag"},
+      {"term": "Swiss Blue", "gia": "medium, bright, electric blue, no grey", "meaning": "the mid-tone blue topaz grade, most common in commercial jewelry", "origin_tie": null, "clarity_type": "I", "notes": "irradiation-treated"},
+      {"term": "Sky Blue", "gia": "pale, pastel blue", "meaning": "the lightest blue topaz grade — the only shade with a natural, untreated counterpart, though most on the market is still treated for consistent supply", "origin_tie": null, "clarity_type": "I"},
+      {"term": "Mystic Topaz", "gia": "not a color grade — a rainbow iridescent coating", "meaning": "colorless topaz coated with a thin metallic film", "origin_tie": null, "notes": "a surface treatment, not a natural color; flag separately from hue/tone/saturation parameters since the coating can wear"}
+    ],
+    "zircon": [
+      {"term": "Starlite (Blue Zircon)", "gia": "vivid blue, sometimes with a greenish secondary hue", "meaning": "the most popular zircon color, valued for diamond-like fire and dispersion", "origin_tie": "virtually all commercial material comes from Ratanakiri Province, Cambodia", "clarity_type": "I", "notes": "rough is brown; heat treatment at 900-1000°C produces the blue; untreated blue zircon essentially does not exist in the trade and needs no special disclosure"}
+    ],
+    "beryl_other": [
+      {"term": "Morganite", "gia": "light pink to rose to peach", "meaning": "pink beryl, named for financier J.P. Morgan", "origin_tie": null, "clarity_type": "I", "notes": "manganese-colored; often heat-treated to remove yellow patches"},
+      {"term": "Heliodor", "gia": "yellow to greenish-yellow to golden", "meaning": "golden beryl, Greek for \"gift of the sun\"", "origin_tie": null, "clarity_type": "I"},
+      {"term": "Goshenite", "gia": "colorless", "meaning": "the clear beryl — mainly a collector's stone, rarely used in fine jewelry since white sapphire and diamond outperform it optically", "origin_tie": "named for Goshen, Massachusetts, its original find site", "clarity_type": "I"},
+      {"term": "Red Beryl (Bixbite)", "gia": "raspberry red to pinkish red", "meaning": "the rarest gem-quality beryl — rarer than diamond", "origin_tie": "the only commercial source on Earth is the Wah Wah Mountains, Utah", "clarity_type": "III", "notes": "\"Bixbite\" is discouraged by trade bodies since it's easily confused with the unrelated mineral bixbyite — prefer \"Red Beryl\" in customer-facing copy"}
+    ]
+  },
+
+  "pearl": {
+    "note": "Pearls are organic, not crystalline — they carry no hue/tone/saturation code and no GIA Type I/II/III clarity. This needs its own parameter set, not the gemstone schema above.",
+    "gia_value_factors": ["Size", "Shape", "Color", "Luster", "Surface", "Nacre", "Matching"],
+    "trade_grading_scales": [
+      {"scale": "AAA-A (Japanese/Akoya system)", "used_for": "Akoya, freshwater, and often applied loosely to any pearl type", "notes": "AAA is the top common commercial grade; special grades Hanadama and Tennyo sit above AAA for the finest akoya strands"},
+      {"scale": "A-D (Tahitian/South Sea system)", "used_for": "Tahitian and South Sea pearls specifically", "notes": "A is finest (few surface marks, sharp luster), D is lowest; often cross-converted to AAA-A for retail customers"}
+    ],
+    "types": [
+      {"term": "Akoya", "origin_tie": "Japan and China", "meaning": "the classic white pearl — round, mirror-like luster", "size_range_mm": "2-10"},
+      {"term": "South Sea (White)", "origin_tie": "Australia, Indonesia, Philippines", "meaning": "large, soft satin luster, white to silver", "size_range_mm": "8-20"},
+      {"term": "South Sea (Golden)", "origin_tie": "Philippines, Indonesia", "meaning": "natural champagne to deep 24k-gold color, never dyed", "size_range_mm": "8-20"},
+      {"term": "Tahitian", "origin_tie": "French Polynesia", "meaning": "the \"black pearl\" — actually shows peacock, green, blue, and aubergine overtones, never dyed", "size_range_mm": "8-16"},
+      {"term": "Freshwater", "origin_tie": "primarily China", "meaning": "widest range of shapes and natural colors, most affordable", "size_range_mm": "varies widely"},
+      {"term": "Keshi", "origin_tie": null, "meaning": "small, non-nucleated, all-nacre pearls formed as a byproduct of culturing — irregular baroque shapes, exceptionally high luster since there's no bead core"}
+    ]
+  },
+
+  "opal": {
+    "note": "Opals are amorphous silica, not crystalline — graded by body tone and play-of-color, not hue/tone/saturation. Needs its own parameter set.",
+    "body_tone_scale": "N1 (jet black) to N9 (white) — N1-N4 is called black opal, N5-N6 dark opal, N7-N9 white/light opal",
+    "types": [
+      {"term": "Black Opal", "gia": "N1-N4 body tone", "meaning": "the most valuable opal type — the dark background makes play-of-color pop", "origin_tie": "Lightning Ridge, Australia is the benchmark source, sometimes called \"Lightning Ridge opal\" in the trade", "notes": "red play-of-color on a black body tone is the rarest, most valuable combination"},
+      {"term": "White / Light Opal", "gia": "N7-N9 body tone", "meaning": "the most common opal type, softer pastel play-of-color", "origin_tie": "Coober Pedy, Australia is the largest source"},
+      {"term": "Crystal Opal", "gia": "transparent to semi-transparent, any body tone", "meaning": "defined by clarity, not color — shows the most vivid, sharp play-of-color of any type", "origin_tie": null, "notes": "can occur as black crystal or white crystal depending on body tone"},
+      {"term": "Boulder Opal", "gia": null, "meaning": "thin veins of precious opal left attached to their natural ironstone host rock", "origin_tie": "Queensland, Australia", "notes": "still classed as solid natural opal since the ironstone backing occurs naturally, not as an applied treatment"},
+      {"term": "Fire Opal", "gia": "transparent to translucent, yellow/orange/red bodycolor", "meaning": "valued for vivid bodycolor, with or without play-of-color", "origin_tie": "also called \"Mexican Opal\" or \"Mexican Fire Opal\" in the trade"},
+      {"term": "Welo / Ethiopian Opal", "gia": null, "meaning": "a newer crystal-type opal source", "origin_tie": "Welo Province, Ethiopia", "notes": "hydrophane — absorbs water and can temporarily change appearance; trades at a discount to comparable Australian material for this instability"},
+      {"term": "Common Opal (Potch)", "gia": null, "meaning": "opal with no play-of-color at all", "origin_tie": null, "notes": "usually the base material black or boulder opal forms within; not gem-grade on its own"}
+    ],
+    "patterns": ["Harlequin (rare, most prized mosaic pattern)", "Rolling flash", "Pinfire", "Straw/ribbon"]
+  },
+
+  "phenomena": {
+    "note": "Optical effects that cut across many stone families. When present, these should layer on top of the stone's normal color parameters, not replace them.",
+    "chatoyancy_cats_eye": {
+      "definition": "a single band of light gliding across a cabochon, caused by parallel needle-like inclusions",
+      "trade_convention": "\"Cat's-eye\" with no qualifier always means chrysoberyl (cymophane) — the finest example. Every other stone must be named explicitly, e.g. \"tourmaline cat's-eye.\"",
+      "stones": [
+        {"stone": "Chrysoberyl (Cymophane)", "quality_marker": "milk-and-honey effect, sharp centered eye — the gold standard"},
+        {"stone": "Tourmaline", "quality_marker": "coarser, less sharp eye than chrysoberyl"},
+        {"stone": "Quartz (including Tiger's Eye)", "quality_marker": "most common and affordable cat's-eye material"},
+        {"stone": "Moonstone", "quality_marker": "often paired with adularescence"},
+        {"stone": "Alexandrite", "quality_marker": "extremely rare when combined with color-change — a double phenomenon, major value premium"},
+        {"stone": "Aquamarine, Emerald, Spinel, Zircon", "quality_marker": "occasional, mainly collector-grade"}
+      ]
+    },
+    "asterism_star": {
+      "definition": "a 4, 6, or rarely 12-rayed star from intersecting sets of needle inclusions, always cut en cabochon",
+      "trade_convention": "more rays generally means more value; a sharp, centered, mobile star outranks a faint or off-center one",
+      "stones": [
+        {"stone": "Star Sapphire", "rays": "6, rarely 12", "quality_marker": "the most famous star stone; Sri Lanka and Myanmar are top sources"},
+        {"stone": "Star Ruby", "rays": "6", "quality_marker": "rarer and generally more valuable than star sapphire"},
+        {"stone": "Star Garnet", "rays": "4 or 6", "quality_marker": "only found in India and the Idaho Panhandle, USA"},
+        {"stone": "Star Diopside", "rays": "4", "quality_marker": "dark green to black body color"},
+        {"stone": "Star Rose Quartz", "rays": "6", "quality_marker": "soft, subtle star, entry-level price point"}
+      ]
+    },
+    "color_change": {
+      "definition": "a shift in body color between daylight and incandescent light, from selective light absorption",
+      "stones": [
+        {"stone": "Alexandrite", "shift": "green/bluish-green to red/purplish-red", "quality_marker": "the definitive color-change stone; graded by percentage of shift, 5% to 100%"},
+        {"stone": "Color-Change Garnet", "shift": "blue-green to purplish red", "quality_marker": "rare, mainly Madagascar — see garnet section above"},
+        {"stone": "Color-Change Sapphire", "shift": "blue to violet/purple", "quality_marker": "a less dramatic shift than alexandrite"}
+      ]
+    },
+    "adularescence_labradorescence": {
+      "definition": "a floating sheen or flash of light from thin-layer light interference within the stone, distinct from chatoyancy and asterism",
+      "stones": [
+        {"stone": "Moonstone", "effect_name": "adularescence", "quality_marker": "a blue sheen on a colorless base is the finest grade, classically from Sri Lanka"},
+        {"stone": "Labradorite", "effect_name": "labradorescence", "quality_marker": "broad flashes of blue, green, and gold; the finest material is called Spectrolite, from Finland"}
+      ]
+    }
+  },
+
+  "cuts_and_shapes": [
+    {"name": "Round Brilliant", "category": "brilliant", "meaning": "57-58 facets, maximum brilliance and fire", "typical_stones": ["Diamond", "White Sapphire"]},
+    {"name": "Oval Brilliant", "category": "brilliant", "meaning": "elongated, flattering, strong weight retention", "typical_stones": ["Sapphire", "Ruby", "Spinel"]},
+    {"name": "Pear", "category": "brilliant", "meaning": "teardrop, oval and marquise combined", "typical_stones": ["Aquamarine", "Ruby", "Diamond"]},
+    {"name": "Marquise", "category": "brilliant", "meaning": "pointed both ends, strong visual size", "typical_stones": ["Emerald", "Diamond"]},
+    {"name": "Princess", "category": "brilliant", "meaning": "square, sharp corners, needs corner protection", "typical_stones": ["Diamond", "Sapphire"]},
+    {"name": "Radiant", "category": "brilliant", "meaning": "step-cut crown, brilliant pavilion", "typical_stones": ["Fancy Yellow Diamond"]},
+    {"name": "Trillion", "category": "brilliant", "meaning": "triangular, high flash", "typical_stones": ["Tanzanite", "Morganite"]},
+    {"name": "Cushion", "category": "brilliant", "meaning": "rounded square or rectangle with large facets, a softer vintage look, sometimes called \"pillow cut\"", "typical_stones": ["Sapphire", "Morganite", "Diamond"]},
+    {"name": "Emerald Cut", "category": "step", "meaning": "rectangular, showcases color depth", "typical_stones": ["Emerald", "Aquamarine"]},
+    {"name": "Asscher", "category": "step", "meaning": "square step cut, deep geometric reflection", "typical_stones": ["Diamond"]},
+    {"name": "Baguette", "category": "step", "meaning": "elongated rectangular accent cut", "typical_stones": ["Diamond accents"]},
+    {"name": "Cabochon", "category": "non-faceted", "meaning": "smooth dome, required for chatoyancy and asterism to display", "typical_stones": ["Star Sapphire", "Cat's-eye Chrysoberyl", "Moonstone"]},
+    {"name": "Rose Cut", "category": "non-faceted", "meaning": "flat bottom, faceted dome, vintage glow", "typical_stones": ["Antique Diamond"]}
+  ],
+
+  "gaps_to_fill": [
+    "Jadeite (Jade) — different grading system entirely (translucency, texture, Type A/B/C treatment), needs a dedicated source.",
+    "Crystal/Quartz trade names beyond what's covered (amethyst, citrine, ametrine) — low priority, decorative tier.",
+    "Diamond D-to-Z and Fancy Color grades — already standardized, hardcode directly.",
+    "Peridot, Iolite, Kunzite/Hiddenite — single-color stones, no major trade-term layer needed beyond GIA hue/tone/sat."
+  ]
+}
