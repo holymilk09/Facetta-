@@ -12,40 +12,40 @@
 <text x="14.00" y="49.40" font-family="Georgia, 'Times New Roman', serif" font-size="3.0" fill="#8a8a8a" text-anchor="start">girdle medium</text>
 <text x="14.00" y="54.00" font-family="Georgia, 'Times New Roman', serif" font-size="3.0" fill="#8a8a8a" text-anchor="start">culet pointed</text>
 <text x="14.00" y="58.60" font-family="Georgia, 'Times New Roman', serif" font-size="3.0" fill="#8a8a8a" text-anchor="start">clarity VS1 (gia_diamond)</text>
-<ellipse cx="110.00" cy="105.00" rx="32.40" ry="32.40" fill="#ffffff" stroke="#3f3f3f" stroke-width="0.3"/>
-<polygon points="128.47,105.00 123.06,118.06 110.00,123.47 96.94,118.06 91.53,105.00 96.94,91.94 110.00,86.53 123.06,91.94" fill="none" stroke="#3f3f3f" stroke-width="0.15"/>
-<line x1="128.47" y1="105.00" x2="142.40" y2="105.00" stroke="#3f3f3f" stroke-width="0.15"/>
-<line x1="128.47" y1="105.00" x2="131.95" y2="114.09" stroke="#3f3f3f" stroke-width="0.15"/>
-<line x1="123.06" y1="118.06" x2="131.95" y2="114.09" stroke="#3f3f3f" stroke-width="0.15"/>
-<line x1="131.95" y1="114.09" x2="139.93" y2="117.40" stroke="#3f3f3f" stroke-width="0.15"/>
-<line x1="123.06" y1="118.06" x2="132.91" y2="127.91" stroke="#3f3f3f" stroke-width="0.15"/>
-<line x1="123.06" y1="118.06" x2="119.09" y2="126.95" stroke="#3f3f3f" stroke-width="0.15"/>
-<line x1="110.00" y1="123.47" x2="119.09" y2="126.95" stroke="#3f3f3f" stroke-width="0.15"/>
-<line x1="119.09" y1="126.95" x2="122.40" y2="134.93" stroke="#3f3f3f" stroke-width="0.15"/>
-<line x1="110.00" y1="123.47" x2="110.00" y2="137.40" stroke="#3f3f3f" stroke-width="0.15"/>
-<line x1="110.00" y1="123.47" x2="100.91" y2="126.95" stroke="#3f3f3f" stroke-width="0.15"/>
-<line x1="96.94" y1="118.06" x2="100.91" y2="126.95" stroke="#3f3f3f" stroke-width="0.15"/>
-<line x1="100.91" y1="126.95" x2="97.60" y2="134.93" stroke="#3f3f3f" stroke-width="0.15"/>
-<line x1="96.94" y1="118.06" x2="87.09" y2="127.91" stroke="#3f3f3f" stroke-width="0.15"/>
-<line x1="96.94" y1="118.06" x2="88.05" y2="114.09" stroke="#3f3f3f" stroke-width="0.15"/>
-<line x1="91.53" y1="105.00" x2="88.05" y2="114.09" stroke="#3f3f3f" stroke-width="0.15"/>
-<line x1="88.05" y1="114.09" x2="80.07" y2="117.40" stroke="#3f3f3f" stroke-width="0.15"/>
-<line x1="91.53" y1="105.00" x2="77.60" y2="105.00" stroke="#3f3f3f" stroke-width="0.15"/>
-<line x1="91.53" y1="105.00" x2="88.05" y2="95.91" stroke="#3f3f3f" stroke-width="0.15"/>
-<line x1="96.94" y1="91.94" x2="88.05" y2="95.91" stroke="#3f3f3f" stroke-width="0.15"/>
-<line x1="88.05" y1="95.91" x2="80.07" y2="92.60" stroke="#3f3f3f" stroke-width="0.15"/>
-<line x1="96.94" y1="91.94" x2="87.09" y2="82.09" stroke="#3f3f3f" stroke-width="0.15"/>
-<line x1="96.94" y1="91.94" x2="100.91" y2="83.05" stroke="#3f3f3f" stroke-width="0.15"/>
-<line x1="110.00" y1="86.53" x2="100.91" y2="83.05" stroke="#3f3f3f" stroke-width="0.15"/>
-<line x1="100.91" y1="83.05" x2="97.60" y2="75.07" stroke="#3f3f3f" stroke-width="0.15"/>
-<line x1="110.00" y1="86.53" x2="110.00" y2="72.60" stroke="#3f3f3f" stroke-width="0.15"/>
-<line x1="110.00" y1="86.53" x2="119.09" y2="83.05" stroke="#3f3f3f" stroke-width="0.15"/>
-<line x1="123.06" y1="91.94" x2="119.09" y2="83.05" stroke="#3f3f3f" stroke-width="0.15"/>
-<line x1="119.09" y1="83.05" x2="122.40" y2="75.07" stroke="#3f3f3f" stroke-width="0.15"/>
-<line x1="123.06" y1="91.94" x2="132.91" y2="82.09" stroke="#3f3f3f" stroke-width="0.15"/>
-<line x1="123.06" y1="91.94" x2="131.95" y2="95.91" stroke="#3f3f3f" stroke-width="0.15"/>
-<line x1="128.47" y1="105.00" x2="131.95" y2="95.91" stroke="#3f3f3f" stroke-width="0.15"/>
-<line x1="131.95" y1="95.91" x2="139.93" y2="92.60" stroke="#3f3f3f" stroke-width="0.15"/>
+<polygon points="77.60,105.00 77.60,105.00 77.60,104.99 80.07,92.60 87.09,82.09 97.60,75.07 109.99,72.60 110.00,72.60 110.00,72.60 110.00,72.60 110.01,72.60 122.40,75.07 132.91,82.09 139.93,92.60 142.40,104.99 142.40,105.00 142.40,105.00 142.40,105.00 142.40,105.01 139.93,117.40 132.91,127.91 122.40,134.93 110.01,137.40 110.00,137.40 110.00,137.40 110.00,137.40 109.99,137.40 97.60,134.93 87.09,127.91 80.07,117.40 77.60,105.01 77.60,105.00" fill="#ffffff" stroke="#3f3f3f" stroke-width="0.3"/>
+<polygon points="89.69,113.41 87.10,114.49 87.10,114.49 77.60,105.00 77.60,105.00 77.60,105.00 87.10,95.51 89.69,96.59 91.53,105.00 91.53,105.00" fill="none" stroke="#3f3f3f" stroke-width="0.15"/>
+<polygon points="100.51,82.10 101.59,84.69 96.94,91.94 96.94,91.94 89.69,96.59 87.10,95.51 87.10,95.51 87.09,82.09 87.09,82.09 87.09,82.09" fill="none" stroke="#3f3f3f" stroke-width="0.15"/>
+<polygon points="101.59,125.31 100.51,127.90 100.51,127.90 87.09,127.91 87.09,127.91 87.09,127.91 87.10,114.49 89.69,113.41 96.94,118.06 96.94,118.06" fill="none" stroke="#3f3f3f" stroke-width="0.15"/>
+<polygon points="119.49,82.10 118.41,84.69 110.00,86.53 110.00,86.53 101.59,84.69 100.51,82.10 100.51,82.10 110.00,72.60 110.00,72.60 110.00,72.60" fill="none" stroke="#3f3f3f" stroke-width="0.15"/>
+<polygon points="118.41,125.31 119.49,127.90 119.49,127.90 110.00,137.40 110.00,137.40 110.00,137.40 100.51,127.90 101.59,125.31 110.00,123.47 110.00,123.47" fill="none" stroke="#3f3f3f" stroke-width="0.15"/>
+<polygon points="132.91,82.09 132.91,82.09 132.90,95.51 130.31,96.59 123.06,91.94 123.06,91.94 118.41,84.69 119.49,82.10 119.49,82.10 132.91,82.09" fill="none" stroke="#3f3f3f" stroke-width="0.15"/>
+<polygon points="132.91,127.91 132.91,127.91 132.91,127.91 119.49,127.90 118.41,125.31 123.06,118.06 123.06,118.06 130.31,113.41 132.90,114.49 132.90,114.49" fill="none" stroke="#3f3f3f" stroke-width="0.15"/>
+<polygon points="142.40,105.00 142.40,105.00 142.40,105.00 132.90,114.49 130.31,113.41 128.47,105.00 128.47,105.00 130.31,96.59 132.90,95.51 132.90,95.51" fill="none" stroke="#3f3f3f" stroke-width="0.15"/>
+<polygon points="87.10,95.51 87.10,95.51 77.60,105.00 80.07,92.60 80.07,92.60" fill="none" stroke="#3f3f3f" stroke-width="0.15"/>
+<polygon points="87.10,114.49 87.09,127.91 80.07,117.40 80.07,117.40 87.10,114.49" fill="none" stroke="#3f3f3f" stroke-width="0.15"/>
+<polygon points="87.10,114.49 80.07,117.40 77.60,105.00" fill="none" stroke="#3f3f3f" stroke-width="0.15"/>
+<polygon points="87.09,82.09 87.10,95.51 80.07,92.60" fill="none" stroke="#3f3f3f" stroke-width="0.15"/>
+<polygon points="97.60,75.07 97.60,75.07 100.51,82.10 100.51,82.10 87.09,82.09" fill="none" stroke="#3f3f3f" stroke-width="0.15"/>
+<polygon points="100.51,127.90 97.60,134.93 87.09,127.91" fill="none" stroke="#3f3f3f" stroke-width="0.15"/>
+<polygon points="110.00,137.40 97.60,134.93 97.60,134.93 100.51,127.90 100.51,127.90" fill="none" stroke="#3f3f3f" stroke-width="0.15"/>
+<polygon points="110.00,72.60 100.51,82.10 97.60,75.07" fill="none" stroke="#3f3f3f" stroke-width="0.15"/>
+<polygon points="119.49,127.90 122.40,134.93 110.00,137.40" fill="none" stroke="#3f3f3f" stroke-width="0.15"/>
+<polygon points="122.40,75.07 122.40,75.07 119.49,82.10 119.49,82.10 110.00,72.60" fill="none" stroke="#3f3f3f" stroke-width="0.15"/>
+<polygon points="132.91,82.09 119.49,82.10 122.40,75.07" fill="none" stroke="#3f3f3f" stroke-width="0.15"/>
+<polygon points="132.91,127.91 122.40,134.93 122.40,134.93 119.49,127.90 119.49,127.90" fill="none" stroke="#3f3f3f" stroke-width="0.15"/>
+<polygon points="139.93,117.40 132.91,127.91 132.90,114.49" fill="none" stroke="#3f3f3f" stroke-width="0.15"/>
+<polygon points="139.93,92.60 142.40,105.00 132.90,95.51" fill="none" stroke="#3f3f3f" stroke-width="0.15"/>
+<polygon points="139.93,92.60 139.93,92.60 132.90,95.51 132.90,95.51 132.91,82.09" fill="none" stroke="#3f3f3f" stroke-width="0.15"/>
+<polygon points="142.40,105.00 139.93,117.40 139.93,117.40 132.90,114.49 132.90,114.49" fill="none" stroke="#3f3f3f" stroke-width="0.15"/>
+<polygon points="91.53,105.00 89.69,96.59 96.94,91.94" fill="none" stroke="#3f3f3f" stroke-width="0.15"/>
+<polygon points="96.94,118.06 89.69,113.41 91.53,105.00" fill="none" stroke="#3f3f3f" stroke-width="0.15"/>
+<polygon points="96.94,91.94 101.59,84.69 110.00,86.53" fill="none" stroke="#3f3f3f" stroke-width="0.15"/>
+<polygon points="110.00,123.47 101.59,125.31 96.94,118.06" fill="none" stroke="#3f3f3f" stroke-width="0.15"/>
+<polygon points="118.41,84.69 123.06,91.94 110.00,86.53" fill="none" stroke="#3f3f3f" stroke-width="0.15"/>
+<polygon points="123.06,118.06 118.41,125.31 110.00,123.47" fill="none" stroke="#3f3f3f" stroke-width="0.15"/>
+<polygon points="123.06,91.94 130.31,96.59 128.47,105.00" fill="none" stroke="#3f3f3f" stroke-width="0.15"/>
+<polygon points="128.47,105.00 130.31,113.41 123.06,118.06" fill="none" stroke="#3f3f3f" stroke-width="0.15"/>
+<polygon points="110.00,86.53 123.06,91.94 123.06,91.94 128.47,105.00 128.47,105.00 123.06,118.06 123.06,118.06 110.00,123.47 110.00,123.47 96.94,118.06 96.94,118.06 91.53,105.00 91.53,105.00 96.94,91.94 96.94,91.94 110.00,86.53" fill="none" stroke="#3f3f3f" stroke-width="0.15"/>
 <line x1="110.00" y1="69.60" x2="110.00" y2="140.40" stroke="#8a8a8a" stroke-width="0.15" stroke-dasharray="3 1 0.5 1"/>
 <line x1="74.60" y1="105.00" x2="145.40" y2="105.00" stroke="#8a8a8a" stroke-width="0.15" stroke-dasharray="3 1 0.5 1"/>
 <line x1="91.53" y1="105.00" x2="91.53" y2="64.60" stroke="#8a8a8a" stroke-width="0.15" stroke-dasharray="0.8 0.8"/>

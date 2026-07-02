@@ -50,12 +50,18 @@ class TestSheetGeometryIsSpecTrue:
 
     def test_stone_outline_scales_exactly(self, svg, example_spec):
         stone = example_spec["stone"]["dimensions_mm"]
-        # top view stone ellipse: rx = width/2 * SCALE, ry = length/2 * SCALE
-        match = re.search(r'<ellipse cx="[\d.]+" cy="[\d.]+" rx="([\d.]+)" ry="([\d.]+)"', svg)
-        assert match, "stone ellipse missing"
-        rx, ry = float(match.group(1)), float(match.group(2))
-        assert rx == pytest.approx(stone["width"] / 2 * SCALE, abs=0.01)
-        assert ry == pytest.approx(stone["length"] / 2 * SCALE, abs=0.01)
+        # top view stone outline (facet-diagram girdle polygon): its extents
+        # must equal width x length, in mm x SCALE, exactly
+        target_w = stone["width"] * SCALE
+        target_l = stone["length"] * SCALE
+        for match in re.finditer(r'<polygon points="([^"]+)"', svg):
+            nums = [float(n) for n in re.findall(r"[-\d.]+", match.group(1))]
+            xs, ys = nums[::2], nums[1::2]
+            if (max(xs) - min(xs) == pytest.approx(target_w, abs=0.02)
+                    and max(ys) - min(ys) == pytest.approx(target_l, abs=0.02)):
+                break
+        else:
+            raise AssertionError("no stone outline polygon with spec extents")
 
     def test_hoop_inner_circle_scales_exactly(self, svg, example_spec):
         inner = example_spec["ring_size"]["inner_diameter_mm"]
@@ -136,9 +142,16 @@ class TestBlueprintAlignment:
         # the side-profile hoop center must sit exactly on the baseline
         hoop = re.search(rf'<circle cx="[\d.]+" cy="([\d.]+)" r="{inner:.2f}"', svg)
         assert hoop and float(hoop.group(1)) == BASELINE
-        # and the top view's stone ellipse is centered on the same baseline
-        stone = re.search(r'<ellipse cx="[\d.]+" cy="([\d.]+)"', svg)
-        assert stone and float(stone.group(1)) == BASELINE
+        # and the top view's stone outline is centered on the same baseline
+        stone_w = example_spec["stone"]["dimensions_mm"]["width"] * SCALE
+        for match in re.finditer(r'<polygon points="([^"]+)"', svg):
+            nums = [float(n) for n in re.findall(r"[-\d.]+", match.group(1))]
+            xs, ys = nums[::2], nums[1::2]
+            if max(xs) - min(xs) == pytest.approx(stone_w, abs=0.02):
+                assert (min(ys) + max(ys)) / 2 == pytest.approx(BASELINE, abs=0.01)
+                break
+        else:
+            raise AssertionError("stone outline polygon not found")
 
     def test_datum_line_is_drawn(self, example_spec):
         assert 'stroke-dasharray="6 1.5 1 1.5"' in self._sheet(example_spec)

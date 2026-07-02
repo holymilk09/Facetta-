@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import math
 
+from facetta import gemcad
 from facetta.spec import Spec
 from facetta.validation import (
     NestingClearance, ellipse_perimeter_mm, estimate_metal_g, pendant_drop_mm,
@@ -414,18 +415,50 @@ def _lit_poly(points: list[tuple[float, float]], fill: str, opacity: float) -> s
     return f'<polygon points="{pts}" fill="{fill}" opacity="{opacity}" stroke="none"/>'
 
 
+_LIGHT = (-0.445, -0.544, 0.712)  # unit vector, studio light from the upper left
+
+
+def _diagram_face_up(cx: float, cy: float, layout, w_pp: float, l_pp: float,
+                     stroke: str, fill: str, fc: str, facet_w: float,
+                     lit: bool) -> list[str]:
+    """Draw a GemCad facet diagram's exact face-up projection at w_pp × l_pp."""
+    def pp(pt):
+        return (cx + pt[0] * w_pp, cy + pt[1] * l_pp)
+
+    parts = [_poly([pp(p) for p in layout.outline], fill, stroke, STROKE_MAIN)]
+    if lit:  # true per-facet shading: brightness from the real facet normal
+        for fct in layout.facets:
+            b = sum(n * l for n, l in zip(fct.normal, _LIGHT))
+            if b > 0.60:
+                parts.append(_lit_poly([pp(p) for p in fct.points], "#ffffff",
+                                       round(min((b - 0.60) * 0.55, 0.30), 3)))
+            elif b < 0.55:
+                parts.append(_lit_poly([pp(p) for p in fct.points], "#000000",
+                                       round(min((0.55 - b) * 0.45, 0.22), 3)))
+    for fct in layout.facets:
+        parts.append(_poly([pp(p) for p in fct.points], "none", fc, facet_w))
+    return parts
+
+
 def _facet_face_up(cx: float, cy: float, cut_id: str, w_pp: float, l_pp: float,
-                   table_ratio: float = 0.55, stroke: str = INK, fill: str = "#ffffff",
-                   facet_color: str | None = None, facet_w: float = STROKE_DIM,
-                   lit: bool = False) -> list[str]:
+                   table_ratio: float | None = None, stroke: str = INK,
+                   fill: str = "#ffffff", facet_color: str | None = None,
+                   facet_w: float = STROKE_DIM, lit: bool = False) -> list[str]:
     """Face-up outline + facet pattern; w_pp/l_pp are full paper-space extents.
 
-    lit=True adds per-facet light-and-shade polygons (for color prototypes) —
-    the technical sheets stay pure linework.
+    Cuts with a cached GemCad diagram (data/facet_diagrams/) draw the
+    diagram's exact projected geometry — remapped so the drawn table matches
+    the spec's table % when one is given. Other cuts use the procedural
+    pattern. lit=True adds per-facet light-and-shade polygons (for color
+    prototypes) — the technical sheets stay pure linework.
     """
     rx, ry = w_pp / 2, l_pp / 2
-    t = table_ratio
     fc = facet_color or stroke
+    layout = gemcad.remapped_layout(cut_id, table_ratio)
+    if layout is not None:
+        return _diagram_face_up(cx, cy, layout, w_pp, l_pp, stroke, fill, fc,
+                                facet_w, lit)
+    t = 0.55 if table_ratio is None else table_ratio
     fline = lambda a, b: _line(a[0], a[1], b[0], b[1], w=facet_w, color=fc)  # noqa: E731
 
     if cut_id in BRILLIANT_CUTS:

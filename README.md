@@ -103,6 +103,22 @@ terms.
 | `POST /specs/stack.svg` · `GET /designs/{id}/versions/{v}/stack/{id2}/{v2}/sheet.svg` | Overlay two pieces with computed nesting clearance |
 | `GET /vocabulary/findings` | Chain styles, clasp types, girdle thickness scale |
 
+## Facet diagrams (GemCad .ASC)
+
+Face-up stone drawings are not sketches: `src/facetta/gemcad.py` parses GemCad
+`.ASC` faceting blueprints — the open format used by FacetDiagrams.org, the
+USFG design directory and The Gemology Project — reconstructs the cut stone as
+the intersection of its facet planes, and projects the crown straight down.
+The bundled designs in `data/facet_diagrams/` (standard round brilliant, oval,
+cushion, princess, emerald cut, asscher) were authored with meetpoint-exact
+math from published proportions by `scripts/author_facet_diagrams.py`.
+
+To use a downloaded design, drop its `.asc` file into `data/facet_diagrams/`
+named after the cut id (e.g. `pear.asc`) — sheets and color prototypes pick it
+up automatically; when a spec carries a `table_pct`, the drawn table is
+remapped to the spec's number. Cuts without a diagram fall back to a
+procedural pattern.
+
 ## Database
 
 SQLite (`./facetta.db`) out of the box for zero-setup dev. For PostgreSQL (spec objects
@@ -132,6 +148,9 @@ Point the API URL field at your running backend (defaults to
 | Path | Purpose |
 |---|---|
 | `data/gemology_vocabulary.json` | Controlled vocabulary — the single source of gemological truth |
+| `data/facet_diagrams/` | Cached GemCad .ASC faceting blueprints, keyed by cut id |
+| `src/facetta/gemcad.py` | .ASC parser + 3D reconstruction + exact face-up projection |
+| `scripts/author_facet_diagrams.py` | Authors the bundled diagrams from published proportions |
 | `src/facetta/spec.py` | Pydantic models for Spec Schema v1 |
 | `src/facetta/vocabulary.py` | Vocabulary loader + typed accessors |
 | `src/facetta/density.py` | Carat ↔ mm density model (`carat = L × W × D × SG × shape_factor / 200`) |
