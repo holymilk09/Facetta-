@@ -342,24 +342,31 @@ class ProfileLayout:
 
 
 @lru_cache(maxsize=None)
-def profile_layout(cut_id: str) -> ProfileLayout | None:
-    """The cut's true side elevation, viewed along the length axis."""
+def profile_layout(cut_id: str, axis: str = "length") -> ProfileLayout | None:
+    """The cut's true side elevation.
+
+    axis="length": viewed along the length axis (span = width) — the Gem ID
+    profile. axis="width": viewed along the width axis (span = length) — a
+    stone seen edge-on in an assembly side view.
+    """
     path = DIAGRAM_DIR / f"{cut_id}.asc"
     if not path.exists():
         return None
     diagram = parse_asc(path.read_text())
     faces = build_faces(diagram)
+    keep, cull = (0, 1) if axis == "length" else (1, 0)
     all_pts = [p for pts, _ in faces for p in pts]
-    xmin, xmax = min(p[0] for p in all_pts), max(p[0] for p in all_pts)
-    center, width = (xmin + xmax) / 2, xmax - xmin
+    lo = min(p[keep] for p in all_pts)
+    hi = max(p[keep] for p in all_pts)
+    center, span = (lo + hi) / 2, hi - lo
 
     crown: list[tuple] = []
     pavilion: list[tuple] = []
     for pts, (t_i, n) in faces:
         side = diagram.tiers[t_i].side
-        if side not in ("crown", "pavilion") or n[1] > -1e-6:
+        if side not in ("crown", "pavilion") or n[cull] > -1e-6:
             continue  # back-facing or girdle/table — not visible from the front
-        poly = tuple(((p[0] - center) / width, p[2]) for p in pts)
+        poly = tuple(((p[keep] - center) / span, p[2]) for p in pts)
         (crown if side == "crown" else pavilion).append(poly)
     if not crown or not pavilion:
         return None

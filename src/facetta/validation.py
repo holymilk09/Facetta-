@@ -192,7 +192,8 @@ PENDANT_LINK_GAP_MM = 1.0  # jump-ring gap between bail, cluster, and drop stone
 def pendant_drop_mm(spec: Spec) -> float:
     """Overall pendant drop (bail top to lowest point), derived from the parts."""
     assert spec.pendant is not None
-    melee = next((s for s in spec.side_stones if s.position in ("halo", "surround")), None)
+    surround_stones = [s for s in spec.side_stones if s.position in ("halo", "surround")]
+    melee = max(surround_stones, key=lambda s: s.dimensions_mm.width) if surround_stones else None
     surround = HALO_MARGIN_MM + melee.dimensions_mm.width if melee else 0.0
     cluster_l = spec.stone.dimensions_mm.length + 2 * surround
     drop = spec.pendant.bail_height_mm + PENDANT_LINK_GAP_MM + cluster_l
@@ -501,6 +502,29 @@ def _validate_assembly(spec: Spec, vocab: Vocabulary, issues: list[ValidationIss
                     f"at most {max_count} fit"
                 ),
                 expected={"max_count": max_count, "halo_perimeter_mm": round(perimeter, 1)},
+            ))
+
+    # alternating surrounds share one ring: their combined arc must also fit
+    surround_groups = [s for s in spec.side_stones
+                       if s.position in ("halo", "surround")]
+    if len(surround_groups) > 1:
+        widest = max(surround_groups, key=lambda s: s.dimensions_mm.width)
+        _, perimeter = _surround_fit(
+            center.width / 2, center.length / 2, widest, STONE_GAP_MM, HALO_MARGIN_MM
+        )
+        needed = sum(s.count * (s.dimensions_mm.width + STONE_GAP_MM)
+                     for s in surround_groups)
+        if needed > perimeter:
+            issues.append(ValidationIssue(
+                loc=("side_stones",),
+                type="fit",
+                msg=(
+                    f"the combined surround needs {needed:.1f} mm of ring but only "
+                    f"{perimeter:.1f} mm exists around the center — reduce counts "
+                    f"or stone sizes"
+                ),
+                expected={"ring_perimeter_mm": round(perimeter, 1),
+                          "needed_mm": round(needed, 1)},
             ))
 
     # bangle stations must fit on the band centerline

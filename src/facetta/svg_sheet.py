@@ -783,6 +783,21 @@ def _render_bangle(spec: Spec) -> str:
 LINK_GAP_MM = 1.0  # jump-ring gap between bail, cluster, and drop stone
 
 
+def _surround_sequence(spec: Spec) -> list:
+    """All surround stones, interleaved round-robin across groups — two
+    species alternate around the ring, deterministic order."""
+    groups = [s for s in spec.side_stones if s.position in ("halo", "surround")]
+    pools = [[g] * g.count for g in groups]
+    order = []
+    idx = 0
+    while any(pools):
+        pool = pools[idx % len(pools)]
+        if pool:
+            order.append(pool.pop())
+        idx += 1
+    return order
+
+
 def _pendant_front_view(spec: Spec, melee, drop_stone, cx: float, ty: float) -> list[str]:
     p = spec.pendant
     stone = spec.stone.dimensions_mm
@@ -804,10 +819,11 @@ def _pendant_front_view(spec: Spec, melee, drop_stone, cx: float, ty: float) -> 
     if melee:
         ring_ax = hw + 0.3 * SCALE + mw / 2 * SCALE
         ring_by = hl + 0.3 * SCALE + mw / 2 * SCALE
-        for i in range(melee.count):
-            t = -math.pi / 2 + i * 2 * math.pi / melee.count
+        sequence = _surround_sequence(spec)
+        for i, s in enumerate(sequence):
+            t = -math.pi / 2 + i * 2 * math.pi / len(sequence)
             parts.append(_circle(cx + ring_ax * math.cos(t), cluster_cy + ring_by * math.sin(t),
-                                 mw / 2 * SCALE))
+                                 s.dimensions_mm.width / 2 * SCALE))
     parts += _facet_face_up(cx, cluster_cy, spec.stone.cut, 2 * hw, 2 * hl, table_ratio=0.62)
 
     bottom = cluster_bottom
@@ -842,8 +858,11 @@ def _pendant_front_view(spec: Spec, melee, drop_stone, cx: float, ty: float) -> 
         _text(cx, bottom + 12, "FRONT VIEW", size=3.6, style=' letter-spacing="1.2"'),
     ]
     if melee:
-        parts.append(_text(cx, bottom + 17,
-                           f"{melee.count} × ⌀{_fmt(mw)} mm melee around center",
+        groups = [s for s in spec.side_stones if s.position in ("halo", "surround")]
+        note = " + ".join(f"{s.count} × ⌀{_fmt(s.dimensions_mm.width)} mm {s.species}"
+                          for s in groups)
+        style = "alternating, " if len(groups) > 1 else ""
+        parts.append(_text(cx, bottom + 17, f"{style}{note} around center",
                            size=2.8, color=FAINT))
     if drop_stone:
         sw_mm = drop_stone.dimensions_mm.width
@@ -859,51 +878,105 @@ def _pendant_front_view(spec: Spec, melee, drop_stone, cx: float, ty: float) -> 
     return parts
 
 
+def _stone_side_profile(cut_id: str, cx: float, cy: float, depth_pp: float,
+                        length_pp: float, table_frac: float = 0.57) -> list[str]:
+    """A stone seen edge-on, table facing front (left), culet to the back.
+
+    Real profile geometry: vertical table line, crown slopes, girdle band,
+    pavilion converging to the culet — with the cut's actual facet junctions
+    projected from the reconstructed 3D stone (viewed along the width axis).
+    """
+    g = max(0.5, 0.03 * depth_pp)  # drawn girdle band
+    crown_w = 0.26 * depth_pp - g / 2
+    x_t = cx - depth_pp / 2                # table plane (front)
+    x_g1 = x_t + crown_w                   # crown-side girdle
+    x_g2 = x_g1 + g                        # pavilion-side girdle
+    x_culet = cx + depth_pp / 2
+    hl = length_pp / 2
+    t_hl = hl * table_frac
+    parts = [
+        f'<polygon points="{x_t:.2f},{cy - t_hl:.2f} {x_g1:.2f},{cy - hl:.2f} '
+        f'{x_g1:.2f},{cy + hl:.2f} {x_t:.2f},{cy + t_hl:.2f}" '
+        f'fill="#ffffff" stroke="{INK}" stroke-width="{STROKE_MAIN}"/>',
+        f'<rect x="{x_g1:.2f}" y="{cy - hl:.2f}" width="{g:.2f}" height="{length_pp:.2f}" '
+        f'fill="#ffffff" stroke="{INK}" stroke-width="{STROKE_MAIN}"/>',
+        f'<polygon points="{x_g2:.2f},{cy - hl:.2f} {x_culet:.2f},{cy:.2f} '
+        f'{x_g2:.2f},{cy + hl:.2f}" '
+        f'fill="#ffffff" stroke="{INK}" stroke-width="{STROKE_MAIN}"/>',
+    ]
+    prof = gemcad.profile_layout(cut_id, "width")
+    if prof is not None:
+        crown_span = prof.z_table - prof.z_crown_base or 1.0
+        pav_span = prof.z_pav_top - prof.z_culet or 1.0
+        for polys, x_base, x_far, z_base, z_span in (
+            (prof.crown, x_g1, x_t, prof.z_crown_base, crown_span),
+            (prof.pavilion, x_g2, x_culet, prof.z_pav_top, -pav_span),
+        ):
+            for poly in polys:
+                pts = [(x_base + (z - z_base) / z_span * (x_far - x_base),
+                        cy + yn * length_pp) for yn, z in poly]
+                parts.append(_poly(pts, "none", FAINT, STROKE_DIM))
+    return parts
+
+
 def _pendant_side_view(spec: Spec, melee, drop_stone, cx: float, ty: float) -> list[str]:
-    """Side silhouettes at the same heights as the front view, with depth dims."""
+    """Side elevation at the same heights as the front view: real stone
+    profiles (crown, girdle, pavilion, facet junctions), the bail edge-on,
+    jump-ring connections, and depth dims."""
     p = spec.pendant
     stone = spec.stone.dimensions_mm
     mw = melee.dimensions_mm.width if melee else 0.0
     surround = (0.3 + mw) if melee else 0.0
     cluster_by = (stone.length / 2 + surround) * SCALE
     bail_w = 1.2 * SCALE
+    bail_h = p.bail_height_mm * SCALE
     parts = [
+        # the round bail seen edge-on: a narrow capsule
         f'<rect x="{cx - bail_w / 2:.2f}" y="{ty:.2f}" width="{bail_w:.2f}" '
-        f'height="{p.bail_height_mm * SCALE:.2f}" fill="#ffffff" stroke="{INK}" '
-        f'stroke-width="{STROKE_MAIN}"/>',
+        f'height="{bail_h:.2f}" rx="{bail_w / 2:.2f}" fill="url(#hatch)" '
+        f'stroke="{INK}" stroke-width="{STROKE_MAIN}"/>',
+        _circle(cx, ty + bail_h + LINK_GAP_MM / 2 * SCALE, LINK_GAP_MM / 2 * SCALE),
     ]
     cluster_cy = ty + (p.bail_height_mm + LINK_GAP_MM) * SCALE + cluster_by
     d = stone.depth * SCALE
     hl = stone.length / 2 * SCALE
-    girdle_x = cx - d / 2 + 0.3 * d  # table faces front (left)
+    table_frac = (spec.stone.table_pct or 57) / 100
+    parts += _stone_side_profile(spec.stone.cut, cx, cluster_cy, d, 2 * hl,
+                                 table_frac)
+    if melee:
+        # the surround stones at 12 and 6 o'clock, seen edge-on
+        md = melee.dimensions_mm.depth * SCALE
+        ml = melee.dimensions_mm.width * SCALE
+        for m_cy in (cluster_cy - hl - (0.3 * SCALE) - ml / 2,
+                     cluster_cy + hl + (0.3 * SCALE) + ml / 2):
+            parts += _stone_side_profile(melee.cut, cx, m_cy, md, ml)
     parts += [
-        f'<rect x="{cx - d / 2:.2f}" y="{cluster_cy - hl:.2f}" width="{d:.2f}" '
-        f'height="{2 * hl:.2f}" fill="#ffffff" stroke="{INK}" stroke-width="{STROKE_MAIN}"/>',
-        _line(girdle_x, cluster_cy - hl, girdle_x, cluster_cy + hl, w=STROKE_DIM, color=FAINT),
-        _ext(cx - d / 2, cluster_cy + hl, cx - d / 2, cluster_cy + hl + 6),
-        _ext(cx + d / 2, cluster_cy + hl, cx + d / 2, cluster_cy + hl + 6),
-        *_dim_h(cx - d / 2, cx + d / 2, cluster_cy + hl + 5, f"{_fmt(stone.depth)} mm"),
+        # anchor on the profile's real corners: table-edge corner and culet
+        _ext(cx - d / 2, cluster_cy + hl * table_frac,
+             cx - d / 2, cluster_cy + cluster_by + 6),
+        _ext(cx + d / 2, cluster_cy, cx + d / 2, cluster_cy + cluster_by + 6),
+        *_dim_h(cx - d / 2, cx + d / 2, cluster_cy + cluster_by + 5,
+                f"{_fmt(stone.depth)} mm"),
     ]
     bottom = cluster_cy + cluster_by
     if drop_stone:
         sd = drop_stone.dimensions_mm.depth * SCALE
         sl = drop_stone.dimensions_mm.length * SCALE  # hangs point-down
         sap_cy = bottom + LINK_GAP_MM * SCALE + sl / 2
-        sap_girdle_x = cx - sd / 2 + 0.35 * sd
         parts += [
-            f'<rect x="{cx - sd / 2:.2f}" y="{sap_cy - sl / 2:.2f}" width="{sd:.2f}" '
-            f'height="{sl:.2f}" fill="#ffffff" stroke="{INK}" stroke-width="{STROKE_MAIN}"/>',
-            _line(sap_girdle_x, sap_cy - sl / 2, sap_girdle_x, sap_cy + sl / 2,
-                  w=STROKE_DIM, color=FAINT),
-            _ext(cx - sd / 2, sap_cy + sl / 2, cx - sd / 2, sap_cy + sl / 2 + 6),
-            _ext(cx + sd / 2, sap_cy + sl / 2, cx + sd / 2, sap_cy + sl / 2 + 6),
+            _circle(cx, bottom + LINK_GAP_MM / 2 * SCALE, LINK_GAP_MM / 2 * SCALE),
+            *_stone_side_profile(drop_stone.cut, cx, sap_cy, sd, sl),
+            _ext(cx - sd / 2, sap_cy + sl / 2 * 0.57, cx - sd / 2, sap_cy + sl / 2 + 6),
+            _ext(cx + sd / 2, sap_cy, cx + sd / 2, sap_cy + sl / 2 + 6),
             *_dim_h(cx - sd / 2, cx + sd / 2, sap_cy + sl / 2 + 5,
                     f"{_fmt(drop_stone.dimensions_mm.depth)} mm"),
         ]
         bottom = sap_cy + sl / 2
     parts += [
         _line(cx, ty - 3, cx, bottom + 3, w=STROKE_DIM, color=FAINT, dash="3 1 0.5 1"),
-        _text(cx, bottom + 12, "SIDE PROFILE", size=3.6, style=' letter-spacing="1.2"'),
+        # tall drops must not push the caption into the title block
+        _text(cx, min(bottom + 12, SHEET_H - MARGIN - 44), "SIDE PROFILE",
+              size=3.6, style=' letter-spacing="1.2"'),
     ]
     return parts
 
@@ -911,7 +984,9 @@ def _pendant_side_view(spec: Spec, melee, drop_stone, cx: float, ty: float) -> l
 def _render_pendant(spec: Spec) -> str:
     if spec.pendant is None:
         raise SheetUnsupported("a pendant sheet needs a pendant section")
-    melee = _find_stone(spec, "halo", "surround")
+    surround_groups = [s for s in spec.side_stones if s.position in ("halo", "surround")]
+    melee = (max(surround_groups, key=lambda s: s.dimensions_mm.width)
+             if surround_groups else None)  # widest sets the cluster envelope
     drop_stone = _find_stone(spec, "under_center", "drop")
     # center the whole drop on the shared baseline
     ty = BASELINE - pendant_drop_mm(spec) * SCALE / 2

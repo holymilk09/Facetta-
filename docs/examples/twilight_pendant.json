@@ -1,0 +1,111 @@
+{
+  "schema_version": 1,
+  "design_id": "dsn_twilight",
+  "version": 1,
+  "created_by": "usr_ana",
+  "created_at": "2026-07-03T18:00:00Z",
+  "jewelry_type": "necklace",
+  "template": "cluster_pendant",
+  "mode": "pro",
+  "stone": {
+    "species": "tanzanite",
+    "cut": "marquise",
+    "carat": 1.54,
+    "dimensions_mm": {
+      "length": 12.0,
+      "width": 6.0,
+      "depth": 4.0
+    },
+    "color": {
+      "trade": "Tanzanite",
+      "gia": "violetish blue to bluish violet, best graded vB 6/6",
+      "hue_code": null,
+      "tone": null,
+      "saturation": null
+    },
+    "origin": "Merelani, Tanzania",
+    "treatment": "heated",
+    "phenomena": []
+  },
+  "side_stones": [
+    {
+      "species": "diamond",
+      "cut": "round_brilliant",
+      "carat": 0.05,
+      "dimensions_mm": {
+        "length": 2.3,
+        "width": 2.3,
+        "depth": 1.49
+      },
+      "color": {
+        "trade": "F",
+        "gia": "colorless"
+      },
+      "count": 7,
+      "position": "surround",
+      "phenomena": []
+    },
+    {
+      "species": "spinel",
+      "cut": "round_brilliant",
+      "carat": 0.05,
+      "dimensions_mm": {
+        "length": 2.3,
+        "width": 2.3,
+        "depth": 1.49
+      },
+      "color": {
+        "trade": "Jedi Spinel",
+        "gia": "highly saturated neon pink to hot, slightly orangey red",
+        "hue_code": null,
+        "tone": null,
+        "saturation": null
+      },
+      "count": 7,
+      "position": "surround",
+      "phenomena": []
+    },
+    {
+      "species": "topaz",
+      "cut": "pear",
+      "carat": 0.56,
+      "dimensions_mm": {
+        "length": 7.0,
+        "width": 4.5,
+        "depth": 2.9
+      },
+      "color": {
+        "trade": "Imperial Topaz",
+        "gia": "golden-orange to reddish-orange to pinkish-red",
+        "hue_code": null,
+        "tone": null,
+        "saturation": null
+      },
+      "count": 1,
+      "position": "drop",
+      "phenomena": []
+    }
+  ],
+  "setting": {
+    "style": "4_prong_basket",
+    "prong_count": 4,
+    "prong_tip_mm": 0.9,
+    "gallery_height_mm": null
+  },
+  "metal": {
+    "material": "gold",
+    "karat": 18,
+    "color": "yellow",
+    "finish": "high_polish"
+  },
+  "pendant": {
+    "bail_inner_diameter_mm": 4.0,
+    "bail_height_mm": 6.0
+  },
+  "chain": {
+    "style": "snake",
+    "length_mm": 420,
+    "clasp": "box_insert"
+  },
+  "notes_to_factory": "Alternate the diamond and spinel melee strictly; topaz drop point-down on a jump ring."
+}

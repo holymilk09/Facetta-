@@ -122,7 +122,7 @@ def test_cluster_pendant_sheet_matches_golden(pendant_spec):
                  ">27.2 mm drop<",         # derived overall drop
                  ">4.5 mm<", ">3.4 mm<"):  # depths in side profile
         assert text in svg, f"missing callout {text}"
-    assert "12 × ⌀2.3 mm melee" in svg
+    assert "12 × ⌀2.3 mm diamond" in svg
     assert "bail ⌀3.5 mm inside" in svg
 
 

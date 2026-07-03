@@ -255,7 +255,9 @@ def _pendant_proto(spec: Spec, vocab: Vocabulary) -> list[str]:
     cx = SHEET_W / 2
     stone = spec.stone.dimensions_mm
     hw, hl = stone.width / 2 * s, stone.length / 2 * s
-    melee = _find_stone(spec, "halo", "surround")
+    surround_groups = [s for s in spec.side_stones if s.position in ("halo", "surround")]
+    melee = (max(surround_groups, key=lambda s: s.dimensions_mm.width)
+             if surround_groups else None)
     drop = _find_stone(spec, "under_center", "drop")
     total = pendant_drop_mm(spec) * s
     ty = BASELINE - total / 2
@@ -276,15 +278,18 @@ def _pendant_proto(spec: Spec, vocab: Vocabulary) -> list[str]:
     # the bail hangs the cluster on the 1 mm jump ring the spec's drop math uses
     parts += _link_ring(cx, ty + p.bail_height_mm * s + 0.5 * s, 0.45 * s)
     if melee:
+        from facetta.svg_sheet import _surround_sequence
         mw = melee.dimensions_mm.width
         mr = mw / 2 * s
         ring_ax = hw + 0.3 * s + mr
         ring_by = hl + 0.3 * s + mr
-        for i in range(melee.count):
-            t = -math.pi / 2 + i * 2 * math.pi / melee.count
+        sequence = _surround_sequence(spec)
+        for i, side in enumerate(sequence):
+            t = -math.pi / 2 + i * 2 * math.pi / len(sequence)
+            r_i = side.dimensions_mm.width / 2 * s
             parts += _stone_visual(cx + ring_ax * math.cos(t),
-                                   cluster_cy + ring_by * math.sin(t), melee,
-                                   2 * mr, 2 * mr, vocab)
+                                   cluster_cy + ring_by * math.sin(t), side,
+                                   2 * r_i, 2 * r_i, vocab)
     parts += _stone_visual(cx, cluster_cy, spec.stone, 2 * hw, 2 * hl, vocab,
                            table_ratio=0.62, fill="url(#stone)")
     if drop:
