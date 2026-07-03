@@ -394,9 +394,17 @@ def prompt_core(spec: Spec) -> tuple[str, list[str]]:
         where = {"halo": "in a halo around the center", "surround": "surrounding the center",
                  "stations": "evenly spaced stations", "under_center": "hanging below the center",
                  "drop": "hanging below the center"}.get(side.position or "", "as accents")
+        # phrasing proven against live image models: EXACTLY + relative scale
+        # holds counts and stops accents inflating into feature stones
+        w = side.dimensions_mm.width
+        rel = w / d.width if d.width else 0
+        faceted = "" if side.cut == "cabochon" else "faceted "
+        scale_note = (f", small accent points at {rel:.0%} of the center's width, "
+                      "not feature stones" if 0 < rel < 0.45 else "")
         details.append(
-            f"{side.count} x {_fmt(side.dimensions_mm.width)} mm "
-            f"{side.cut.replace('_', ' ')} {side.color.trade} {side.species} {where}"
+            f"EXACTLY {side.count} x {_fmt(w)} mm "
+            f"{faceted}{side.cut.replace('_', ' ')} {side.color.trade} "
+            f"{side.species} {where}{scale_note}"
         )
     if spec.bracelet:
         details.append(
