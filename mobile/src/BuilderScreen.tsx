@@ -455,6 +455,18 @@ export function BuilderScreen({
       } else showIssues(r.body);
     });
 
+  const trueSize = () =>
+    run(async () => {
+      const r = await api.trueSizePreview(buildSpec());
+      if (r.ok) {
+        setSheetSvg(r.body);
+        setNotice({
+          kind: 'ok',
+          text: 'True-size sheet (1:1) — print at 100%, check the 100 mm rule, then lay the piece on the outlines.',
+        });
+      } else showIssues(r.body);
+    });
+
   const save = () =>
     run(async () => {
       const spec = buildSpec();
@@ -890,6 +902,7 @@ export function BuilderScreen({
         <Button title="Save stone to library" kind="ghost" onPress={saveStoneToLibrary} disabled={busy || !ready} />
         <Button title="Preview sheet" onPress={preview} disabled={busy || !ready} />
         <Button title="Color prototype" onPress={prototype} disabled={busy || !ready} />
+        <Button title="True size (print 1:1)" kind="ghost" onPress={trueSize} disabled={busy || !ready} />
         <Button title={editing ? 'Save new version' : 'Save design'} onPress={save} disabled={busy || !ready} />
       </View>
 

@@ -1374,6 +1374,308 @@ def render_sheet(spec: Spec) -> str:
     return render(spec)
 
 
+# --- true-size print sheet -------------------------------------------------------
+#
+# The sheet root already declares 1 SVG user unit = 1 mm of paper, so a shape
+# drawn from raw spec millimeters prints at the piece's exact physical size —
+# the designer lays the finished piece directly on the outlines. The scaled
+# technical views stay on the regular sheet; this page exists only to be
+# printed at 100% and overlaid.
+
+
+def _print_check_rule(x: float, y: float) -> list[str]:
+    """A 100 mm calibration rule: on a correct 100% print this bar measures
+    exactly 100 mm — the designer's proof the printer didn't fit-to-page."""
+    parts = [_line(x, y, x + 100, y, w=STROKE_MAIN)]
+    for i in range(0, 101, 10):
+        parts.append(_line(x + i, y, x + i, y - (3.0 if i % 50 == 0 else 1.8),
+                           w=STROKE_DIM))
+    parts += [
+        _text(x, y + 3.4, "0", size=2.6, color=FAINT),
+        _text(x + 50, y + 3.4, "50", size=2.6, color=FAINT),
+        _text(x + 100, y + 3.4, "100 mm", size=2.6, color=FAINT),
+        _text(x + 50, y - 5,
+              "PRINT CHECK — this rule must measure exactly 100 mm",
+              size=2.6, color=FAINT),
+    ]
+    return parts
+
+
+def _true_ring(spec: Spec) -> list[str]:
+    _require_ring_sections(spec, "true-size")
+    inner_r = spec.ring_size.inner_diameter_mm / 2
+    outer_r = inner_r + spec.band.thickness_mm
+    cx, cy = 95.0, BASELINE
+    stone = spec.stone.dimensions_mm
+    parts = [
+        _circle(cx, cy, outer_r, fill="url(#hatch)"),
+        _circle(cx, cy, inner_r),
+        _text(cx, cy + outer_r + 8,
+              f"hoop — inside ⌀ {_fmt(spec.ring_size.inner_diameter_mm)} mm",
+              size=3.0, color=FAINT),
+        _text(cx, cy + outer_r + 12.5, "lay the finished ring flat on this circle",
+              size=2.8, color=FAINT),
+    ]
+    hx = cx + outer_r + 55
+    melee = _find_stone(spec, "halo", "surround")
+    if melee is not None:
+        mw = melee.dimensions_mm.width
+        mr = mw / 2
+        ring_ax = stone.width / 2 + 0.3 + mr
+        ring_by = stone.length / 2 + 0.3 + mr
+        for i in range(melee.count):
+            t = -math.pi / 2 + i * 2 * math.pi / melee.count
+            parts.append(_circle(hx + ring_ax * math.cos(t),
+                                 cy + ring_by * math.sin(t), mr))
+        head_by = ring_by + mr
+        head_note = (f"head with halo — {_fmt(stone.width + 2 * (0.3 + mw))} × "
+                     f"{_fmt(stone.length + 2 * (0.3 + mw))} mm overall")
+    else:
+        head_by = stone.length / 2
+        head_note = f"center stone — {_fmt(stone.width)} × {_fmt(stone.length)} mm"
+    parts += _facet_face_up(hx, cy, spec.stone.cut, stone.width, stone.length,
+                            table_ratio=(spec.stone.table_pct or 57) / 100)
+    parts += [
+        _text(hx, cy + head_by + 8, head_note, size=3.0, color=FAINT),
+        _text(hx, cy + head_by + 12.5, "the head face up, seen from above",
+              size=2.8, color=FAINT),
+    ]
+    return parts
+
+
+def _true_bangle_stations(spec: Spec, cx: float, cy: float,
+                          a_c: float, b_c: float,
+                          t0: float = -math.pi / 2, sweep: float | None = None,
+                          ) -> list[str]:
+    """Station stones on the band centerline at 1:1 (full loop or cuff arc)."""
+    stone = spec.stone
+    side = stone.dimensions_mm.width
+    parts = []
+    for i in range(stone.count):
+        if sweep is None:  # closed loop, evenly spaced
+            t = t0 + i * 2 * math.pi / stone.count
+        else:  # open arc between the cuff tips
+            t = t0 + sweep * i / max(1, stone.count - 1)
+        px, py = cx + a_c * math.cos(t), cy + b_c * math.sin(t)
+        angle = math.degrees(math.atan2(b_c * math.cos(t), -a_c * math.sin(t)))
+        parts.append(
+            f'<rect x="{px - side / 2:.2f}" y="{py - side / 2:.2f}" '
+            f'width="{side:.2f}" height="{side:.2f}" fill="#ffffff" stroke="{INK}" '
+            f'stroke-width="{STROKE_MAIN}" transform="rotate({angle:.1f} {px:.2f} {py:.2f})"/>'
+        )
+    return parts
+
+
+def _true_bangle(spec: Spec) -> list[str]:
+    br = spec.bracelet
+    cx, cy = SHEET_W / 2, BASELINE
+    a_in, b_in = br.inner_length_mm / 2, br.inner_width_mm / 2
+    a_out, b_out = a_in + br.thickness_mm, b_in + br.thickness_mm
+    parts = [
+        _ellipse(cx, cy, a_out, b_out, fill="url(#hatch)"),
+        _ellipse(cx, cy, a_in, b_in),
+        *_true_bangle_stations(spec, cx, cy,
+                               (br.inner_length_mm + br.thickness_mm) / 2,
+                               (br.inner_width_mm + br.thickness_mm) / 2),
+        _text(cx, cy + b_out + 8,
+              f"opening {_fmt(br.inner_length_mm)} × {_fmt(br.inner_width_mm)} mm",
+              size=3.0, color=FAINT),
+        _text(cx, cy + b_out + 12.5, "lay the finished bangle on this outline",
+              size=2.8, color=FAINT),
+    ]
+    return parts
+
+
+def _true_cuff(spec: Spec) -> list[str]:
+    br = spec.bracelet
+    cx, cy = SHEET_W / 2, BASELINE
+    a_in, b_in = br.inner_length_mm / 2, br.inner_width_mm / 2
+    a_out, b_out = a_in + br.thickness_mm, b_in + br.thickness_mm
+    a_c = (br.inner_length_mm + br.thickness_mm) / 2
+    b_c = (br.inner_width_mm + br.thickness_mm) / 2
+    delta = math.asin(min(1.0, br.gap_width_mm / (2 * a_c)))
+    t1, t2 = math.pi / 2 + delta, math.pi / 2 - delta
+
+    def pt(a: float, b: float, t: float) -> tuple[float, float]:
+        return cx + a * math.cos(t), cy + b * math.sin(t)
+
+    o1, o2 = pt(a_out, b_out, t1), pt(a_out, b_out, t2)
+    i1, i2 = pt(a_in, b_in, t1), pt(a_in, b_in, t2)
+    pad = delta + 0.35
+    parts = [
+        f'<path d="M {o1[0]:.2f} {o1[1]:.2f} '
+        f'A {a_out:.2f} {b_out:.2f} 0 1 1 {o2[0]:.2f} {o2[1]:.2f} '
+        f'L {i2[0]:.2f} {i2[1]:.2f} '
+        f'A {a_in:.2f} {b_in:.2f} 0 1 0 {i1[0]:.2f} {i1[1]:.2f} Z" '
+        f'fill="url(#hatch)" stroke="{INK}" stroke-width="{STROKE_MAIN}"/>',
+    ]
+    if spec.stone.position == "stations":
+        parts += _true_bangle_stations(spec, cx, cy, a_c, b_c,
+                                       t0=math.pi / 2 + pad,
+                                       sweep=2 * math.pi - 2 * pad)
+    parts += [
+        _text(cx, cy + b_out + 8,
+              f"opening {_fmt(br.inner_length_mm)} × {_fmt(br.inner_width_mm)} mm · "
+              f"gap {_fmt(br.gap_width_mm)} mm",
+              size=3.0, color=FAINT),
+        _text(cx, cy + b_out + 12.5, "lay the finished cuff on this outline",
+              size=2.8, color=FAINT),
+    ]
+    return parts
+
+
+def _true_link_bracelet(spec: Spec) -> list[str]:
+    br = spec.bracelet
+    cx, cy = SHEET_W / 2, BASELINE
+    a_in, b_in = br.inner_length_mm / 2, br.inner_width_mm / 2
+    a_c = (br.inner_length_mm + br.thickness_mm) / 2
+    b_c = (br.inner_width_mm + br.thickness_mm) / 2
+    n = br.link_count
+    pitch = ellipse_perimeter_mm(a_c, b_c) / n
+    link_l, link_w = pitch * 0.82, br.width_mm
+    parts = [
+        f'<ellipse cx="{cx:.2f}" cy="{cy:.2f}" rx="{a_in:.2f}" ry="{b_in:.2f}" '
+        f'fill="none" stroke="{FAINT}" stroke-width="{STROKE_DIM}"/>',
+    ]
+    stone = spec.stone
+    stone_side = stone.dimensions_mm.width
+    stone_every = max(1, round(n / stone.count)) if stone.position == "stations" else 0
+    stones_drawn = 0
+    for i in range(n):
+        t = -math.pi / 2 + i * 2 * math.pi / n
+        px, py = cx + a_c * math.cos(t), cy + b_c * math.sin(t)
+        angle = math.degrees(math.atan2(b_c * math.cos(t), -a_c * math.sin(t)))
+        parts.append(
+            f'<rect x="{px - link_l / 2:.2f}" y="{py - link_w / 2:.2f}" '
+            f'width="{link_l:.2f}" height="{link_w:.2f}" rx="0.8" fill="#ffffff" '
+            f'stroke="{INK}" stroke-width="{STROKE_MAIN}" '
+            f'transform="rotate({angle:.1f} {px:.2f} {py:.2f})"/>'
+        )
+        if stone_every and i % stone_every == 0 and stones_drawn < stone.count:
+            stones_drawn += 1
+            parts.append(
+                f'<rect x="{px - stone_side / 2:.2f}" y="{py - stone_side / 2:.2f}" '
+                f'width="{stone_side:.2f}" height="{stone_side:.2f}" fill="#ffffff" '
+                f'stroke="{INK}" stroke-width="{STROKE_MAIN}" '
+                f'transform="rotate({angle + 45:.1f} {px:.2f} {py:.2f})"/>'
+            )
+    parts += [
+        _text(cx, cy + b_c + link_w / 2 + 8,
+              f"opening {_fmt(br.inner_length_mm)} × {_fmt(br.inner_width_mm)} mm · "
+              f"{n} links, pitch {pitch:.1f} mm",
+              size=3.0, color=FAINT),
+        _text(cx, cy + b_c + link_w / 2 + 12.5,
+              "lay the finished bracelet on this outline", size=2.8, color=FAINT),
+    ]
+    return parts
+
+
+def _true_pendant(spec: Spec) -> list[str]:
+    p = spec.pendant
+    stone = spec.stone.dimensions_mm
+    surround_groups = [s for s in spec.side_stones if s.position in ("halo", "surround")]
+    melee = (max(surround_groups, key=lambda s: s.dimensions_mm.width)
+             if surround_groups else None)
+    drop_stone = _find_stone(spec, "under_center", "drop")
+    mw = melee.dimensions_mm.width if melee else 0.0
+    surround = (0.3 + mw) if melee else 0.0
+    cluster_ax = stone.width / 2 + surround
+    cluster_by = stone.length / 2 + surround
+
+    cx = 130.0
+    ty = BASELINE - pendant_drop_mm(spec) / 2
+    bail_r = p.bail_height_mm / 2
+    parts = [
+        _circle(cx, ty + bail_r, bail_r),
+        _circle(cx, ty + bail_r, p.bail_inner_diameter_mm / 2),
+        _circle(cx, ty + p.bail_height_mm + LINK_GAP_MM / 2, LINK_GAP_MM / 2),
+    ]
+    cluster_cy = ty + p.bail_height_mm + LINK_GAP_MM + cluster_by
+    if melee:
+        ring_ax = stone.width / 2 + 0.3 + mw / 2
+        ring_by = stone.length / 2 + 0.3 + mw / 2
+        sequence = _surround_sequence(spec)
+        for i, s in enumerate(sequence):
+            t = -math.pi / 2 + i * 2 * math.pi / len(sequence)
+            parts.append(_circle(cx + ring_ax * math.cos(t),
+                                 cluster_cy + ring_by * math.sin(t),
+                                 s.dimensions_mm.width / 2))
+    parts += _facet_face_up(cx, cluster_cy, spec.stone.cut, stone.width,
+                            stone.length,
+                            table_ratio=(spec.stone.table_pct or 62) / 100)
+    bottom = cluster_cy + cluster_by
+    if drop_stone:
+        sw = drop_stone.dimensions_mm.width
+        sl = drop_stone.dimensions_mm.length  # hangs point-down
+        sap_cy = bottom + LINK_GAP_MM + sl / 2
+        parts += [
+            _circle(cx, bottom + LINK_GAP_MM / 2, LINK_GAP_MM / 2),
+            *_facet_face_up(cx, sap_cy, drop_stone.cut, sw, sl),
+        ]
+        bottom = sap_cy + sl / 2
+    drop_mm = p.drop_mm if p.drop_mm is not None else bottom - ty
+    x_dim = cx + max(cluster_ax, bail_r) + 12
+    parts += [
+        _ext(cx, ty, x_dim + 1, ty), _ext(cx, bottom, x_dim + 1, bottom),
+        *_dim_v(x_dim, ty, bottom, f"{_fmt(drop_mm)} mm drop, as printed"),
+        _text(cx, bottom + 9, "lay the finished pendant on this outline",
+              size=2.8, color=FAINT),
+    ]
+    return parts
+
+
+def _true_loose_stone(spec: Spec) -> list[str]:
+    stone = spec.stone
+    d = stone.dimensions_mm
+    cx, cy = 125.0, BASELINE
+    table_frac = (stone.table_pct or 57) / 100
+    parts = _facet_face_up(cx, cy, stone.cut, d.width, d.length,
+                           table_ratio=table_frac)
+    px = cx + d.width / 2 + 45
+    parts += _stone_side_profile(stone.cut, px, cy, d.depth, d.length, table_frac)
+    by = max(d.length / 2, 6.0)
+    parts += [
+        _text(cx, cy + by + 8, "FACE UP", size=2.8, color=FAINT),
+        _text(px, cy + by + 8, "PROFILE", size=2.8, color=FAINT),
+        _text((cx + px) / 2, cy + by + 14,
+              f"{_fmt(d.length)} × {_fmt(d.width)} × {_fmt(d.depth)} mm — "
+              "lay the loose stone on these outlines",
+              size=3.0, color=FAINT),
+    ]
+    return parts
+
+
+TRUE_SIZE_TEMPLATES = {
+    "solitaire_prong": _true_ring,
+    "halo_prong": _true_ring,
+    "love_bangle": _true_bangle,
+    "cuff": _true_cuff,
+    "link_bracelet": _true_link_bracelet,
+    "cluster_pendant": _true_pendant,
+    "loose_stone": _true_loose_stone,
+}
+
+
+def render_true_size_sheet(spec: Spec) -> str:
+    """The 1:1 overlay page: every outline drawn from raw spec millimeters, so
+    a 100% print matches the physical piece exactly."""
+    render = TRUE_SIZE_TEMPLATES.get(spec.template)
+    if render is None:
+        raise SheetUnsupported(
+            f"template '{spec.template}' has no true-size sheet yet; "
+            f"supported: {list(TRUE_SIZE_TEMPLATES)}"
+        )
+    body = [
+        _text(SHEET_W / 2, MARGIN + 17,
+              "print at 100% (actual size) — never “fit to page” — "
+              "then lay the finished piece on the outlines",
+              size=3.0, color=FAINT),
+    ]
+    body += render(spec)
+    body += _print_check_rule(MARGIN + 12, SHEET_H - MARGIN - 24)
+    return _frame(spec, "TRUE SIZE — 1:1 OVERLAY SHEET", "1:1", body, datum_y=None)
+
+
 # --- stacking overlay -----------------------------------------------------------
 
 

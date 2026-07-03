@@ -12,7 +12,9 @@ from facetta.mockup import (
 )
 from facetta.prototype import compile_render_prompt, render_color_preview
 from facetta.spec import Spec
-from facetta.svg_sheet import SheetUnsupported, render_sheet, render_stack_sheet
+from facetta.svg_sheet import (
+    SheetUnsupported, render_sheet, render_stack_sheet, render_true_size_sheet,
+)
 from facetta.validation import nesting_clearance, validate_spec
 from facetta.vocabulary import get_vocabulary
 
@@ -48,6 +50,24 @@ def sheet_preview(spec: Spec):
         )
     try:
         svg = render_sheet(result.spec)
+    except SheetUnsupported as exc:
+        return JSONResponse(status_code=422, content={"detail": str(exc)})
+    return Response(content=svg, media_type="image/svg+xml")
+
+
+@router.post("/true-size.svg")
+def true_size_preview(spec: Spec):
+    """The 1:1 overlay page: outlines at exact physical size for printing at
+    100% and laying the finished piece on the paper. The sheet carries a
+    100 mm calibration rule so the designer can verify the print scale."""
+    result = validate_spec(spec, get_vocabulary())
+    if not result.ok:
+        return JSONResponse(
+            status_code=422,
+            content={"detail": [issue.as_detail() for issue in result.issues]},
+        )
+    try:
+        svg = render_true_size_sheet(result.spec)
     except SheetUnsupported as exc:
         return JSONResponse(status_code=422, content={"detail": str(exc)})
     return Response(content=svg, media_type="image/svg+xml")

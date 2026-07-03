@@ -15,7 +15,9 @@ from facetta.db import (
 )
 from facetta.dxf import svg_to_dxf
 from facetta.spec import Spec
-from facetta.svg_sheet import SheetUnsupported, render_sheet, render_stack_sheet
+from facetta.svg_sheet import (
+    SheetUnsupported, render_sheet, render_stack_sheet, render_true_size_sheet,
+)
 from facetta.validation import nesting_clearance, validate_spec
 from facetta.vocabulary import get_vocabulary
 
@@ -163,6 +165,18 @@ def get_sheet(design_id: str, version: int, db: DbSession):
     row = _get_version(db, design_id, version)
     try:
         svg = render_sheet(Spec.model_validate(row.spec))
+    except SheetUnsupported as exc:
+        return JSONResponse(status_code=422, content={"detail": str(exc)})
+    return Response(content=svg, media_type="image/svg+xml")
+
+
+@router.get("/{design_id}/versions/{version}/true_size.svg")
+def get_true_size(design_id: str, version: int, db: DbSession):
+    """The stored version's 1:1 overlay page — print at 100% and lay the
+    finished piece on the outlines."""
+    row = _get_version(db, design_id, version)
+    try:
+        svg = render_true_size_sheet(Spec.model_validate(row.spec))
     except SheetUnsupported as exc:
         return JSONResponse(status_code=422, content={"detail": str(exc)})
     return Response(content=svg, media_type="image/svg+xml")

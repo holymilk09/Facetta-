@@ -38,6 +38,7 @@ export function createApi(baseUrl: string) {
     validateSpec: (spec: unknown) => post('/specs/validate', spec),
     sheetPreview: (spec: unknown) => post('/specs/sheet.svg', spec),
     prototypePreview: (spec: unknown) => post('/specs/prototype.svg', spec),
+    trueSizePreview: (spec: unknown) => post('/specs/true-size.svg', spec),
     fromProse: (prose: string, created_by: string) =>
       post('/specs/from-prose', { prose, created_by }),
     renderRequest: (spec: unknown, lighting: string, worn_on: string, style: string) =>
