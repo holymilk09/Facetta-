@@ -91,7 +91,8 @@ def _defs(spec: Spec, vocab: Vocabulary) -> str:
         '<stop offset="0.75" stop-color="#3f3f3f" stop-opacity="0.05"/>'
         '<stop offset="1" stop-color="#3f3f3f" stop-opacity="0"/>'
         "</radialGradient>"
-        '<filter id="blur1"><feGaussianBlur stdDeviation="1.1"/></filter>'
+        '<filter id="blur1" x="-60%" y="-60%" width="220%" height="220%">'
+        '<feGaussianBlur stdDeviation="1.1"/></filter>'
         '<filter id="lift" x="-20%" y="-20%" width="140%" height="140%">'
         '<feDropShadow dx="0" dy="1.6" stdDeviation="1.8" flood-color="#3f3f3f" '
         'flood-opacity="0.22"/></filter>'
@@ -165,6 +166,53 @@ def _stone_visual(cx, cy, stone, w_pp, l_pp, vocab, table_ratio=0.57,
                           tone=hexval, fill=fill or _mix(hexval, "#FFFFFF", 0.22))
 
 
+def _arc_points(cx, cy, rx, ry, deg0, deg1, n=48) -> str:
+    """Sampled elliptical arc as a polyline points string (screen angles)."""
+    import math
+    pts = []
+    for k in range(n + 1):
+        a = math.radians(deg0 + (deg1 - deg0) * k / n)
+        pts.append(f"{cx + rx * math.cos(a):.2f},{cy + ry * math.sin(a):.2f}")
+    return " ".join(pts)
+
+
+def _annulus_lighting(cx, cy, a_in, b_in, a_out, b_out, m1, m2) -> list[str]:
+    """Light that follows the ring's own geometry, not the page.
+
+    A metal annulus under a single upper-left source: a broad rim highlight
+    sweeping the upper-left arc of the band centerline, a shade arc opposite,
+    ambient occlusion hugging the inner edge, and a crisp rim light on the
+    outer edge — every stroke traced along the actual ellipses, so any
+    bangle dimensions shade correctly."""
+    a_c, b_c = (a_in + a_out) / 2, (b_in + b_out) / 2
+    band = max(1.0, min(a_out - a_in, b_out - b_in))
+    cid = f"ann{cx:.0f}x{cy:.0f}x{a_out:.0f}"  # deterministic per ring
+    return [
+        f'<clipPath id="{cid}"><ellipse cx="{cx:.2f}" cy="{cy:.2f}" '
+        f'rx="{a_out:.2f}" ry="{b_out:.2f}"/></clipPath>',
+        f'<g clip-path="url(#{cid})">',
+        # broad highlight along the upper-left of the band
+        f'<polyline points="{_arc_points(cx, cy, a_c, b_c, 155, 275)}" fill="none" '
+        f'stroke="{_mix(m1, "#FFFFFF", 0.65)}" stroke-width="{band * 0.72:.2f}" '
+        f'stroke-linecap="round" opacity="0.65" filter="url(#blur1)"/>',
+        f'<polyline points="{_arc_points(cx, cy, a_c, b_c, 185, 245)}" fill="none" '
+        f'stroke="#ffffff" stroke-width="{band * 0.3:.2f}" '
+        f'stroke-linecap="round" opacity="0.5" filter="url(#blur1)"/>',
+        # deep tone along the lower-right
+        f'<polyline points="{_arc_points(cx, cy, a_c, b_c, -15, 105)}" fill="none" '
+        f'stroke="{_mix(m2, "#000000", 0.35)}" stroke-width="{band * 0.6:.2f}" '
+        f'stroke-linecap="round" opacity="0.45" filter="url(#blur1)"/>',
+        # ambient occlusion hugging the inner opening
+        f'<ellipse cx="{cx:.2f}" cy="{cy:.2f}" rx="{a_in + band * 0.12:.2f}" '
+        f'ry="{b_in + band * 0.12:.2f}" fill="none" stroke="#000000" '
+        f'stroke-width="{band * 0.22:.2f}" opacity="0.18" filter="url(#blur1)"/>',
+        # crisp rim light where the outer edge turns away from the source
+        f'<polyline points="{_arc_points(cx, cy, a_out - 0.25, b_out - 0.25, 165, 265)}" '
+        f'fill="none" stroke="#ffffff" stroke-width="0.6" opacity="0.7"/>',
+        "</g>",
+    ]
+
+
 def _link_ring(cx, cy, r) -> list[str]:
     """A small metal jump ring — components must visibly connect."""
     return [
@@ -200,10 +248,14 @@ def _ring_proto(spec: Spec, vocab: Vocabulary) -> list[str]:
         mr = mw / 2 * s
         ring_ax = rx + 0.3 * s + mr
         ring_by = ry + 0.3 * s + mr
+        m1, m2 = _metal_stops(spec)
         halo = f'cx="{cx:.2f}" cy="{cy:.2f}" rx="{ring_ax + mr:.2f}" ry="{ring_by + mr:.2f}"'
         parts += [
-            f'<ellipse {halo} fill="url(#metal)" stroke="#00000022" stroke-width="0.3"/>',
-            f'<ellipse {halo} fill="url(#sheen)"/>',
+            f'<ellipse {halo} fill="{_mix(m1, m2, 0.45)}" stroke="#00000022" stroke-width="0.3"/>',
+            *_annulus_lighting(cx, cy, ring_ax - mr, ring_by - mr,
+                               ring_ax + mr, ring_by + mr, m1, m2),
+            f'<ellipse cx="{cx:.2f}" cy="{cy:.2f}" rx="{ring_ax - mr:.2f}" '
+            f'ry="{ring_by - mr:.2f}" fill="#fdfdfa"/>',
         ]
         for i in range(melee.count):
             t = -math.pi / 2 + i * 2 * math.pi / melee.count
@@ -223,12 +275,15 @@ def _bracelet_proto(spec: Spec, vocab: Vocabulary) -> list[str]:
     br = spec.bracelet
     a_in, b_in = br.inner_length_mm / 2 * s, br.inner_width_mm / 2 * s
     a_out, b_out = a_in + br.thickness_mm * s * 1.6, b_in + br.thickness_mm * s * 1.6
+    m1, m2 = _metal_stops(spec)
     parts = [
         _shadow(cx, cy + b_out + 8, a_out * 0.8),
         f'<ellipse cx="{cx:.2f}" cy="{cy:.2f}" rx="{a_out:.2f}" ry="{b_out:.2f}" '
-        f'fill="url(#metal)" stroke="#00000022" stroke-width="0.3"/>',
-        f'<ellipse cx="{cx:.2f}" cy="{cy:.2f}" rx="{a_out:.2f}" ry="{b_out:.2f}" '
-        f'fill="url(#sheen)"/>',
+        f'fill="{_mix(m1, m2, 0.45)}" stroke="#00000022" stroke-width="0.3"/>',
+        f'<ellipse cx="{cx:.2f}" cy="{cy:.2f}" rx="{a_in:.2f}" ry="{b_in:.2f}" '
+        f'fill="#fdfdfa"/>',
+        # light traced along the ring's own curvature, not the page
+        *_annulus_lighting(cx, cy, a_in, b_in, a_out, b_out, m1, m2),
         f'<ellipse cx="{cx:.2f}" cy="{cy:.2f}" rx="{a_in:.2f}" ry="{b_in:.2f}" '
         f'fill="#fdfdfa"/>',
     ]
@@ -239,6 +294,7 @@ def _bracelet_proto(spec: Spec, vocab: Vocabulary) -> list[str]:
         hexval = stone_hex(stone, vocab)  # stations wear their own color
         fill = _mix(hexval, "#FFFFFF", 0.22)
         edge = _mix(hexval, "#20242c", 0.5)
+        seat = side * 1.22  # the flush bezel frame holding each station
         for i in range(stone.count):
             t = -math.pi / 2 + i * 2 * math.pi / stone.count
             px, py = cx + a_c * math.cos(t), cy + b_c * math.sin(t)
@@ -246,6 +302,11 @@ def _bracelet_proto(spec: Spec, vocab: Vocabulary) -> list[str]:
             inset = side * 0.32
             parts.append(
                 f'<g transform="rotate({angle:.1f} {px:.2f} {py:.2f})">'
+                f'<rect x="{px - seat / 2:.2f}" y="{py - seat / 2:.2f}" width="{seat:.2f}" '
+                f'height="{seat:.2f}" rx="{seat * 0.12:.2f}" fill="{_mix(m2, "#000000", 0.12)}"/>'
+                f'<rect x="{px - seat / 2:.2f}" y="{py - seat / 2:.2f}" width="{seat:.2f}" '
+                f'height="{seat:.2f}" rx="{seat * 0.12:.2f}" fill="none" '
+                f'stroke="{_mix(m1, "#FFFFFF", 0.4)}" stroke-width="0.35"/>'
                 f'<rect x="{px - side / 2:.2f}" y="{py - side / 2:.2f}" width="{side:.2f}" '
                 f'height="{side:.2f}" fill="{fill}" stroke="{edge}" stroke-width="0.3"/>'
                 f'<rect x="{px - side / 2 + inset:.2f}" y="{py - side / 2 + inset:.2f}" '
