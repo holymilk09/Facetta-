@@ -107,16 +107,28 @@ def _shadow(cx: float, cy: float, rx: float) -> str:
     )
 
 
+def _luminance(hex_color: str) -> float:
+    r, g, b = (int(hex_color[i:i + 2], 16) / 255 for i in (1, 3, 5))
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b
+
+
 def _stone_faceted(cx, cy, cut, w_pp, l_pp, table_ratio=0.57, fill="url(#stone)",
-                   edge=None) -> list[str]:
+                   edge=None, tone=None) -> list[str]:
+    # light stones (D-color diamond) show structure through crisp facet lines
+    # in a darker tone of their own color; dark stones through light-and-shade
+    lum = _luminance(tone) if tone else 0.5
+    facet_line = _mix(tone, "#343a44", 0.42) if tone else "#ffffffaa"
+    shade = max(0.15, 1.0 - lum)
     parts = [
         # ambient occlusion where the stone meets the metal
         f'<ellipse cx="{cx + 0.6:.2f}" cy="{cy + 1.0:.2f}" rx="{w_pp / 2 + 0.6:.2f}" '
         f'ry="{l_pp / 2 + 0.6:.2f}" fill="#000000" opacity="0.18" filter="url(#blur1)"/>',
     ]
     parts += _facet_face_up(cx, cy, cut, w_pp, l_pp, table_ratio=table_ratio,
-                            stroke=edge or "#00000055", fill=fill,
-                            facet_color="#ffffffaa", facet_w=0.35, lit=True)
+                            stroke=edge or (_mix(tone, "#20242c", 0.5) if tone
+                                            else "#00000055"),
+                            fill=fill, facet_color=facet_line, facet_w=0.3,
+                            lit=True, shade_scale=shade)
     # specular catch-light toward the source
     parts.append(
         f'<ellipse cx="{cx - w_pp * 0.16:.2f}" cy="{cy - l_pp * 0.20:.2f}" '
@@ -171,7 +183,8 @@ def _ring_proto(spec: Spec, vocab: Vocabulary) -> list[str]:
         for i in range(melee.count):
             t = -math.pi / 2 + i * 2 * math.pi / melee.count
             parts.append(_melee_circle(cx + ring_ax * math.cos(t), cy + ring_by * math.sin(t), mr))
-    parts += _stone_faceted(cx, cy, spec.stone.cut, 2 * rx, 2 * ry)
+    parts += _stone_faceted(cx, cy, spec.stone.cut, 2 * rx, 2 * ry,
+                            tone=stone_hex(spec.stone, vocab))
     return parts
 
 
@@ -242,7 +255,8 @@ def _pendant_proto(spec: Spec, vocab: Vocabulary) -> list[str]:
             t = -math.pi / 2 + i * 2 * math.pi / melee.count
             parts.append(_melee_circle(cx + ring_ax * math.cos(t),
                                        cluster_cy + ring_by * math.sin(t), mr))
-    parts += _stone_faceted(cx, cluster_cy, spec.stone.cut, 2 * hw, 2 * hl, table_ratio=0.62)
+    parts += _stone_faceted(cx, cluster_cy, spec.stone.cut, 2 * hw, 2 * hl, table_ratio=0.62,
+                            tone=stone_hex(spec.stone, vocab))
     if drop:
         dw = drop.dimensions_mm.width * s
         sap_cy = cluster_cy + cluster_by + 1.0 * s + dw / 2
@@ -266,7 +280,8 @@ def _loose_proto(spec: Spec, vocab: Vocabulary) -> list[str]:
     table = (spec.stone.table_pct or 57) / 100
     return [
         _shadow(cx, cy + hl + 8, hw * 1.1),
-        *_stone_faceted(cx, cy, spec.stone.cut, 2 * hw, 2 * hl, table_ratio=table),
+        *_stone_faceted(cx, cy, spec.stone.cut, 2 * hw, 2 * hl, table_ratio=table,
+                        tone=stone_hex(spec.stone, vocab)),
     ]
 
 

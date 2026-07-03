@@ -459,8 +459,13 @@ _LIGHT = (-0.445, -0.544, 0.712)  # unit vector, studio light from the upper lef
 
 def _diagram_face_up(cx: float, cy: float, layout, w_pp: float, l_pp: float,
                      stroke: str, fill: str, fc: str, facet_w: float,
-                     lit: bool) -> list[str]:
-    """Draw a GemCad facet diagram's exact face-up projection at w_pp × l_pp."""
+                     lit: bool, shade_scale: float = 1.0) -> list[str]:
+    """Draw a GemCad facet diagram's exact face-up projection at w_pp × l_pp.
+
+    shade_scale tempers the dark facet shading: near-white stones carry their
+    structure in crisp facet lines, not gray washes — full-strength black
+    overlays on a D-color diamond read as mush, not brilliance.
+    """
     def pp(pt):
         return (cx + pt[0] * w_pp, cy + pt[1] * l_pp)
 
@@ -472,8 +477,10 @@ def _diagram_face_up(cx: float, cy: float, layout, w_pp: float, l_pp: float,
                 parts.append(_lit_poly([pp(p) for p in fct.points], "#ffffff",
                                        round(min((b - 0.60) * 0.55, 0.30), 3)))
             elif b < 0.55:
-                parts.append(_lit_poly([pp(p) for p in fct.points], "#000000",
-                                       round(min((0.55 - b) * 0.45, 0.22), 3)))
+                opacity = min((0.55 - b) * 0.45, 0.22) * shade_scale
+                if opacity >= 0.01:
+                    parts.append(_lit_poly([pp(p) for p in fct.points],
+                                           "#000000", round(opacity, 3)))
     for fct in layout.facets:
         parts.append(_poly([pp(p) for p in fct.points], "none", fc, facet_w))
     return parts
@@ -482,7 +489,8 @@ def _diagram_face_up(cx: float, cy: float, layout, w_pp: float, l_pp: float,
 def _facet_face_up(cx: float, cy: float, cut_id: str, w_pp: float, l_pp: float,
                    table_ratio: float | None = None, stroke: str = INK,
                    fill: str = "#ffffff", facet_color: str | None = None,
-                   facet_w: float = STROKE_DIM, lit: bool = False) -> list[str]:
+                   facet_w: float = STROKE_DIM, lit: bool = False,
+                   shade_scale: float = 1.0) -> list[str]:
     """Face-up outline + facet pattern; w_pp/l_pp are full paper-space extents.
 
     Cuts with a cached GemCad diagram (data/facet_diagrams/) draw the
@@ -496,7 +504,7 @@ def _facet_face_up(cx: float, cy: float, cut_id: str, w_pp: float, l_pp: float,
     layout = gemcad.remapped_layout(cut_id, table_ratio)
     if layout is not None:
         return _diagram_face_up(cx, cy, layout, w_pp, l_pp, stroke, fill, fc,
-                                facet_w, lit)
+                                facet_w, lit, shade_scale)
     t = 0.55 if table_ratio is None else table_ratio
     fline = lambda a, b: _line(a[0], a[1], b[0], b[1], w=facet_w, color=fc)  # noqa: E731
 
@@ -1162,6 +1170,31 @@ def _gem_face_view(spec: Spec, cx: float, cy: float, s: float) -> list[str]:
     return parts
 
 
+def _profile_facets(cut_id: str, cx: float, span: float, y_top: float,
+                    y_g1: float, y_g2: float, y_culet: float) -> list[str]:
+    """Faint facet-junction lines inside the profile outline (Gem ID sheets).
+
+    The diagram's crown heights map onto the drawn crown band and pavilion
+    heights onto the drawn pavilion band, so the junctions stay honest to the
+    spec's proportions even when the design's native split differs."""
+    prof = gemcad.profile_layout(cut_id)
+    if prof is None:
+        return []
+    parts = []
+    crown_span = prof.z_table - prof.z_crown_base or 1.0
+    pav_span = prof.z_pav_top - prof.z_culet or 1.0
+    for polys, y_base, y_far, z_base, z_span in (
+        (prof.crown, y_g1, y_top, prof.z_crown_base, crown_span),
+        (prof.pavilion, y_g2, y_culet, prof.z_pav_top, -pav_span),
+    ):
+        for poly in polys:
+            pts = [(cx + xn * span,
+                    y_base + (z - z_base) / z_span * (y_far - y_base))
+                   for xn, z in poly]
+            parts.append(_poly(pts, "none", FAINT, STROKE_DIM))
+    return parts
+
+
 def _gem_profile_view(spec: Spec, cx: float, cy: float, s: float) -> list[str]:
     stone = spec.stone
     d = stone.dimensions_mm
@@ -1187,6 +1220,9 @@ def _gem_profile_view(spec: Spec, cx: float, cy: float, s: float) -> list[str]:
         f'fill="#ffffff" stroke="{INK}" stroke-width="{STROKE_MAIN}"/>',
         f'<polygon points="{xl:.2f},{y_g2:.2f} {xr:.2f},{y_g2:.2f} {cx:.2f},{y_culet:.2f}" '
         f'fill="#ffffff" stroke="{INK}" stroke-width="{STROKE_MAIN}"/>',
+        # true facet junctions from the cut's diagram, seen in side elevation —
+        # remapped so they land inside the spec-true crown and pavilion bands
+        *_profile_facets(stone.cut, cx, span, y_top, y_g1, y_g2, y_culet),
         _line(cx, y_top - 3, cx, y_culet + 3, w=STROKE_DIM, color=FAINT, dash="3 1 0.5 1"),
         _ext(txr, y_top, cx + span / 2 + 8, y_top),
         _ext(cx, y_culet, cx + span / 2 + 8, y_culet),

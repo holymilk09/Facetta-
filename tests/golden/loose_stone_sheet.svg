@@ -71,6 +71,32 @@
 <polygon points="189.53,85.40 226.47,85.40 240.40,94.94 175.60,94.94" fill="#ffffff" stroke="#3f3f3f" stroke-width="0.3"/>
 <rect x="175.60" y="94.94" width="64.80" height="1.30" fill="#ffffff" stroke="#3f3f3f" stroke-width="0.3"/>
 <polygon points="175.60,96.24 240.40,96.24 208.00,124.60" fill="#ffffff" stroke="#3f3f3f" stroke-width="0.3"/>
+<polygon points="217.42,88.48 216.32,86.70 208.00,85.40 208.00,85.40 199.68,86.70 198.58,88.48 198.58,88.48 208.00,94.94 208.00,94.94 208.00,94.94" fill="none" stroke="#8a8a8a" stroke-width="0.15"/>
+<polygon points="230.91,94.94 230.91,94.94 230.74,88.48 228.08,86.70 220.83,85.40 220.83,85.40 216.32,86.70 217.42,88.48 217.42,88.48 230.91,94.94" fill="none" stroke="#8a8a8a" stroke-width="0.15"/>
+<polygon points="198.58,88.48 199.68,86.70 195.17,85.40 195.17,85.40 187.92,86.70 185.26,88.48 185.26,88.48 185.09,94.94 185.09,94.94 185.09,94.94" fill="none" stroke="#8a8a8a" stroke-width="0.15"/>
+<polygon points="220.40,94.94 220.40,94.94 217.42,88.48 217.42,88.48 208.00,94.94" fill="none" stroke="#8a8a8a" stroke-width="0.15"/>
+<polygon points="230.91,94.94 217.42,88.48 220.40,94.94" fill="none" stroke="#8a8a8a" stroke-width="0.15"/>
+<polygon points="237.93,94.94 237.93,94.94 230.74,88.48 230.74,88.48 230.91,94.94" fill="none" stroke="#8a8a8a" stroke-width="0.15"/>
+<polygon points="237.93,94.94 240.40,94.94 230.74,88.48" fill="none" stroke="#8a8a8a" stroke-width="0.15"/>
+<polygon points="185.26,88.48 185.26,88.48 175.60,94.94 178.07,94.94 178.07,94.94" fill="none" stroke="#8a8a8a" stroke-width="0.15"/>
+<polygon points="185.09,94.94 185.26,88.48 178.07,94.94" fill="none" stroke="#8a8a8a" stroke-width="0.15"/>
+<polygon points="195.60,94.94 195.60,94.94 198.58,88.48 198.58,88.48 185.09,94.94" fill="none" stroke="#8a8a8a" stroke-width="0.15"/>
+<polygon points="208.00,94.94 198.58,88.48 195.60,94.94" fill="none" stroke="#8a8a8a" stroke-width="0.15"/>
+<polygon points="216.32,86.70 220.83,85.40 208.00,85.40" fill="none" stroke="#8a8a8a" stroke-width="0.15"/>
+<polygon points="220.83,85.40 228.08,86.70 226.14,85.40" fill="none" stroke="#8a8a8a" stroke-width="0.15"/>
+<polygon points="189.86,85.40 187.92,86.70 195.17,85.40" fill="none" stroke="#8a8a8a" stroke-width="0.15"/>
+<polygon points="195.17,85.40 199.68,86.70 208.00,85.40" fill="none" stroke="#8a8a8a" stroke-width="0.15"/>
+<polygon points="204.17,116.50 204.17,116.50 208.00,124.60 208.00,124.60 208.00,124.60 208.00,124.60 208.00,124.60 208.00,124.60 211.83,116.50 208.01,96.24 208.00,96.24 207.99,96.24" fill="none" stroke="#8a8a8a" stroke-width="0.15"/>
+<polygon points="230.90,96.24 211.83,116.50 211.83,116.50 208.00,124.60 217.25,116.50 230.92,96.24 230.91,96.24" fill="none" stroke="#8a8a8a" stroke-width="0.15"/>
+<polygon points="208.00,124.60 204.17,116.50 185.10,96.24 185.09,96.24 185.08,96.24 198.75,116.50 198.75,116.50" fill="none" stroke="#8a8a8a" stroke-width="0.15"/>
+<polygon points="208.01,96.24 211.83,116.50 211.83,116.50 220.40,96.24" fill="none" stroke="#8a8a8a" stroke-width="0.15"/>
+<polygon points="220.40,96.24 211.83,116.50 230.90,96.24 220.40,96.24" fill="none" stroke="#8a8a8a" stroke-width="0.15"/>
+<polygon points="230.92,96.24 217.25,116.50 217.25,116.50 237.93,96.24" fill="none" stroke="#8a8a8a" stroke-width="0.15"/>
+<polygon points="237.93,96.24 217.25,116.50 240.40,96.24 237.93,96.24" fill="none" stroke="#8a8a8a" stroke-width="0.15"/>
+<polygon points="175.60,96.24 198.75,116.50 198.75,116.50 178.07,96.24" fill="none" stroke="#8a8a8a" stroke-width="0.15"/>
+<polygon points="198.75,116.50 185.08,96.24 178.07,96.24 178.07,96.24" fill="none" stroke="#8a8a8a" stroke-width="0.15"/>
+<polygon points="185.10,96.24 204.17,116.50 204.17,116.50 195.60,96.24" fill="none" stroke="#8a8a8a" stroke-width="0.15"/>
+<polygon points="204.17,116.50 207.99,96.24 195.60,96.24 195.60,96.24" fill="none" stroke="#8a8a8a" stroke-width="0.15"/>
 <line x1="208.00" y1="82.40" x2="208.00" y2="127.60" stroke="#8a8a8a" stroke-width="0.15" stroke-dasharray="3 1 0.5 1"/>
 <line x1="226.47" y1="85.40" x2="248.40" y2="85.40" stroke="#8a8a8a" stroke-width="0.15" stroke-dasharray="0.8 0.8"/>
 <line x1="208.00" y1="124.60" x2="248.40" y2="124.60" stroke="#8a8a8a" stroke-width="0.15" stroke-dasharray="0.8 0.8"/>

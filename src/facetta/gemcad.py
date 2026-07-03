@@ -321,6 +321,57 @@ def face_up_layout(diagram: Diagram) -> FaceUpLayout:
                         table_fraction=2 * table_extent, header=diagram.header)
 
 
+# --- side elevation (profile) -------------------------------------------------
+
+
+@dataclass(frozen=True)
+class ProfileLayout:
+    """Front-facing facet polygons seen from the side, as (x_norm, z) pairs.
+
+    x_norm is centered and normalized by the stone's width; z is the raw
+    design height. The renderer remaps crown z to its drawn crown band and
+    pavilion z to its drawn pavilion band, so the facet junctions land inside
+    the spec-true profile outline whatever the spec's depth split is."""
+
+    crown: tuple[tuple[tuple[float, float], ...], ...]
+    pavilion: tuple[tuple[tuple[float, float], ...], ...]
+    z_table: float
+    z_crown_base: float
+    z_pav_top: float
+    z_culet: float
+
+
+@lru_cache(maxsize=None)
+def profile_layout(cut_id: str) -> ProfileLayout | None:
+    """The cut's true side elevation, viewed along the length axis."""
+    path = DIAGRAM_DIR / f"{cut_id}.asc"
+    if not path.exists():
+        return None
+    diagram = parse_asc(path.read_text())
+    faces = build_faces(diagram)
+    all_pts = [p for pts, _ in faces for p in pts]
+    xmin, xmax = min(p[0] for p in all_pts), max(p[0] for p in all_pts)
+    center, width = (xmin + xmax) / 2, xmax - xmin
+
+    crown: list[tuple] = []
+    pavilion: list[tuple] = []
+    for pts, (t_i, n) in faces:
+        side = diagram.tiers[t_i].side
+        if side not in ("crown", "pavilion") or n[1] > -1e-6:
+            continue  # back-facing or girdle/table — not visible from the front
+        poly = tuple(((p[0] - center) / width, p[2]) for p in pts)
+        (crown if side == "crown" else pavilion).append(poly)
+    if not crown or not pavilion:
+        return None
+    return ProfileLayout(
+        crown=tuple(crown), pavilion=tuple(pavilion),
+        z_table=max(z for f in crown for _, z in f),
+        z_crown_base=min(z for f in crown for _, z in f),
+        z_pav_top=max(z for f in pavilion for _, z in f),
+        z_culet=min(z for f in pavilion for _, z in f),
+    )
+
+
 # --- spec-true table remap ----------------------------------------------------
 
 

@@ -110,3 +110,15 @@ def test_real_gemcad_export_conventions():
     faces = gemcad.build_faces(diagram)
     crown = [1 for _, (t, _) in faces if diagram.tiers[t].side == "crown"]
     assert len(crown) == 32
+
+
+def test_profile_layout_projects_the_side_elevation():
+    prof = gemcad.profile_layout("round_brilliant")
+    assert prof is not None
+    assert len(prof.crown) >= 8 and len(prof.pavilion) >= 8
+    assert prof.z_table > prof.z_crown_base >= 0 >= prof.z_pav_top > prof.z_culet or (
+        prof.z_table > prof.z_crown_base and prof.z_pav_top > prof.z_culet)
+    xs = [x for f in prof.crown + prof.pavilion for x, _ in f]
+    assert -0.51 <= min(xs) and max(xs) <= 0.51  # normalized by width
+    assert gemcad.profile_layout("cabochon") is None
+    assert gemcad.profile_layout("round_brilliant") == prof  # cached + stable
