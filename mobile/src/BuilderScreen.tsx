@@ -114,6 +114,7 @@ export function BuilderScreen({
   const [ratioLock, setRatioLock] = useState(true);
   const [lighting, setLighting] = useState('studio');
   const [wornOn, setWornOn] = useState('product');
+  const [renderStyle, setRenderStyle] = useState('photo');
   const [mockup, setMockup] = useState<any | null>(null);
   const [prose, setProse] = useState('');
   const [notice, setNotice] = useState<{ kind: 'ok' | 'error' | 'info'; text: string } | null>(null);
@@ -466,7 +467,7 @@ export function BuilderScreen({
 
   const compileMockup = () =>
     run(async () => {
-      const r = await api.renderRequest(buildSpec(), lighting, wornOn);
+      const r = await api.renderRequest(buildSpec(), lighting, wornOn, renderStyle);
       if (r.ok) {
         setMockup(r.body);
         setNotice({
@@ -774,10 +775,22 @@ export function BuilderScreen({
 
       <Section title="Mockup — bring it to life">
         <ChipRow
+          label="Style"
+          options={['photo', 'atelier_sketch'] as const}
+          value={renderStyle}
+          onSelect={(s) => {
+            setRenderStyle(s);
+            if (s === 'atelier_sketch') setWornOn('product');
+          }}
+          render={(s) => (s === 'photo' ? 'Photoreal' : 'Atelier sketch')}
+        />
+        <ChipRow
           label="Lighting"
           options={['studio', 'natural', 'outdoor', 'editorial'] as const}
           value={lighting}
           onSelect={setLighting}
+          disabled={renderStyle === 'atelier_sketch'}
+          disabledNote="sketches carry their own paper-and-pencil look"
         />
         <ChipRow
           label="Worn on"

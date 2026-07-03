@@ -86,6 +86,7 @@ class RenderRequestBody(BaseModel):
     spec: Spec
     lighting: str = "studio"
     worn_on: str = "product"
+    style: str = "photo"  # "photo" | "atelier_sketch"
 
 
 @router.post("/render-request")
@@ -100,7 +101,8 @@ def render_request(body: RenderRequestBody):
             content={"detail": [issue.as_detail() for issue in result.issues]},
         )
     try:
-        return compile_render_request(result.spec, body.lighting, body.worn_on)
+        return compile_render_request(result.spec, body.lighting, body.worn_on,
+                                      body.style)
     except SceneUnsupported as exc:
         return JSONResponse(
             status_code=422,

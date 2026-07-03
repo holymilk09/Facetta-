@@ -82,3 +82,25 @@ def test_render_request_endpoint(example_spec):
                       json={"spec": example_spec, "worn_on": "wrist"})
     assert bad.status_code == 422
     assert bad.json()["valid_options"] == ["product", "finger"]
+
+
+def test_atelier_sketch_style(example_spec):
+    spec = _validated(example_spec)
+    sketch = compile_render_request(spec, style="atelier_sketch")
+    assert "colored pencil" in sketch["prompt"]
+    assert "three views" in sketch["prompt"]
+    negatives = sketch["negative_prompt"].split(", ")
+    assert "handwriting" in negatives and "signature" in negatives
+    assert "brand names" in negatives  # inspiration stays internal, always
+
+    # same design, same seed across styles — one composition, two renderings
+    photo = compile_render_request(spec, style="photo")
+    assert sketch["seed"] == photo["seed"]
+
+    # sketch pages present the piece, never a model
+    with pytest.raises(SceneUnsupported) as err:
+        compile_render_request(spec, worn_on="finger", style="atelier_sketch")
+    assert err.value.valid == ["product"]
+
+    with pytest.raises(SceneUnsupported):
+        compile_render_request(spec, style="oil_painting")

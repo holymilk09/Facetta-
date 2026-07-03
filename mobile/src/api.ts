@@ -40,8 +40,8 @@ export function createApi(baseUrl: string) {
     prototypePreview: (spec: unknown) => post('/specs/prototype.svg', spec),
     fromProse: (prose: string, created_by: string) =>
       post('/specs/from-prose', { prose, created_by }),
-    renderRequest: (spec: unknown, lighting: string, worn_on: string) =>
-      post('/specs/render-request', { spec, lighting, worn_on }),
+    renderRequest: (spec: unknown, lighting: string, worn_on: string, style: string) =>
+      post('/specs/render-request', { spec, lighting, worn_on, style }),
     createDesign: (created_by: string, spec: unknown, collection?: string) =>
       post('/designs', { created_by, spec, collection: collection || null }),
     createVersion: (designId: string, created_by: string, spec: unknown, collection?: string) =>

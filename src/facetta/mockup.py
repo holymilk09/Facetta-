@@ -30,6 +30,20 @@ LIGHTING = {
     "editorial": "dramatic single-source editorial lighting, deep charcoal backdrop",
 }
 
+# atelier sketch: the hand-drawn presentation style high-jewelry houses show
+# clients — distilled from reference boards (colored pencil on ivory paper,
+# several views per page, hatched drop shadows, faint construction lines)
+STYLES = {
+    "photo": None,  # photoreal, composed from the lighting/worn-on scene
+    "atelier_sketch": (
+        "hand-drawn atelier jewelry design sketch, colored pencil and graphite "
+        "on warm ivory sketchbook paper, presented in three views on one page "
+        "(face-on, three-quarter, and profile), faint construction lines, "
+        "hatched graphite drop shadow under each view, gouache-like highlights "
+        "on the stones, refined couture presentation"
+    ),
+}
+
 WORN_ON = {
     "product": None,  # product-only hero shot, no model
     "finger": ("worn on a model's ring finger, elegant natural hand, "
@@ -91,35 +105,53 @@ def geometry_fingerprint(spec: Spec) -> str:
 
 
 def compile_render_request(spec: Spec, lighting: str = "studio",
-                           worn_on: str = "product") -> dict:
+                           worn_on: str = "product",
+                           style: str = "photo") -> dict:
     """Everything an image provider needs to render this design consistently."""
+    if style not in STYLES:
+        raise SceneUnsupported(f"unknown style '{style}'", sorted(STYLES))
     if lighting not in LIGHTING:
         raise SceneUnsupported(f"unknown lighting '{lighting}'", sorted(LIGHTING))
     allowed = WORN_FOR_TYPE.get(spec.jewelry_type, ("product",))
+    if style == "atelier_sketch":
+        allowed = ("product",)  # sketch pages present the piece, not a model
     if worn_on not in allowed:
         raise SceneUnsupported(
-            f"'{worn_on}' does not fit a {spec.jewelry_type}", list(allowed))
+            f"'{worn_on}' does not fit a {spec.jewelry_type}"
+            + (" in atelier-sketch style" if style == "atelier_sketch" else ""),
+            list(allowed))
 
     piece, details = prompt_core(spec)
-    scene_bits = [LIGHTING[lighting]]
-    if WORN_ON[worn_on]:
-        scene_bits.append(WORN_ON[worn_on])
-    shot = "photograph" if worn_on == "product" else "lifestyle photograph"
-    prompt = (
-        f"Ultra-realistic {shot} of a {piece}: "
-        + "; ".join(details)
-        + ". " + ", ".join(scene_bits)
-        + ", sharp focus on the piece, physically accurate proportions exactly "
-        "as specified, no exaggeration of stone size."
-    )
-
-    negative = ["wrong number of stones", "extra prongs", "deformed metal",
-                "text", "watermark", "blurry", "cartoon", "painting",
-                "exaggerated sparkle"]
-    if worn_on == "product":
-        negative += ["hands", "skin"]
+    if style == "atelier_sketch":
+        prompt = (
+            f"{STYLES['atelier_sketch']}, depicting a {piece}: "
+            + "; ".join(details)
+            + ". Physically accurate proportions exactly as specified, "
+            "no exaggeration of stone size."
+        )
+        negative = ["wrong number of stones", "extra prongs", "photorealistic",
+                    "photograph", "3d render", "text", "handwriting",
+                    "signature", "watermark", "brand names", "logos",
+                    "hands", "skin"]
     else:
-        negative += ["extra fingers", "deformed hands", "second piece of jewelry"]
+        scene_bits = [LIGHTING[lighting]]
+        if WORN_ON[worn_on]:
+            scene_bits.append(WORN_ON[worn_on])
+        shot = "photograph" if worn_on == "product" else "lifestyle photograph"
+        prompt = (
+            f"Ultra-realistic {shot} of a {piece}: "
+            + "; ".join(details)
+            + ". " + ", ".join(scene_bits)
+            + ", sharp focus on the piece, physically accurate proportions exactly "
+            "as specified, no exaggeration of stone size."
+        )
+        negative = ["wrong number of stones", "extra prongs", "deformed metal",
+                    "text", "watermark", "blurry", "cartoon", "painting",
+                    "exaggerated sparkle"]
+        if worn_on == "product":
+            negative += ["hands", "skin"]
+        else:
+            negative += ["extra fingers", "deformed hands", "second piece of jewelry"]
 
     fingerprint = geometry_fingerprint(spec)
     seed = int(fingerprint[:8], 16)
@@ -128,7 +160,7 @@ def compile_render_request(spec: Spec, lighting: str = "studio",
         "negative_prompt": ", ".join(negative),
         "seed": seed,
         "geometry_fingerprint": fingerprint,
-        "scene": {"lighting": lighting, "worn_on": worn_on},
+        "scene": {"lighting": lighting, "worn_on": worn_on, "style": style},
         "control": {
             "image": "rasterize this spec's /specs/prototype.svg (or sheet.svg) to PNG",
             "mode": "canny",
