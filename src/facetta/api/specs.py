@@ -56,10 +56,12 @@ def sheet_preview(spec: Spec):
 
 
 @router.post("/true-size.svg")
-def true_size_preview(spec: Spec):
+def true_size_preview(spec: Spec, instructions: bool = True):
     """The 1:1 overlay page: outlines at exact physical size for printing at
     100% and laying the finished piece on the paper. The sheet carries a
-    100 mm calibration rule so the designer can verify the print scale."""
+    100 mm calibration rule so the designer can verify the print scale.
+    ?instructions=false renders outlines and rule only — a clean page for
+    photographing the piece on the printout."""
     result = validate_spec(spec, get_vocabulary())
     if not result.ok:
         return JSONResponse(
@@ -67,7 +69,7 @@ def true_size_preview(spec: Spec):
             content={"detail": [issue.as_detail() for issue in result.issues]},
         )
     try:
-        svg = render_true_size_sheet(result.spec)
+        svg = render_true_size_sheet(result.spec, instructions=instructions)
     except SheetUnsupported as exc:
         return JSONResponse(status_code=422, content={"detail": str(exc)})
     return Response(content=svg, media_type="image/svg+xml")

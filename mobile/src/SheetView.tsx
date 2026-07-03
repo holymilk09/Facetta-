@@ -1,5 +1,5 @@
-import React, { useRef } from 'react';
-import { Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import React, { useRef, useState } from 'react';
+import { Platform, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { theme } from './theme';
 
 export interface Pin {
@@ -10,6 +10,11 @@ export interface Pin {
 
 // The sheet is A4 landscape: 297 x 210.
 const ASPECT = 297 / 210;
+
+// Zoom steps. The sheet is vector SVG, so every step re-renders at the
+// screen's native resolution — enlarging never costs pixels. On paper the
+// sheet stays true: zoom only changes what the screen shows.
+const ZOOMS = [1, 1.5, 2, 3, 4, 6];
 
 /** Renders a sheet SVG cross-platform and reports taps as (x%, y%) pins. */
 export function SheetView({
@@ -22,6 +27,8 @@ export function SheetView({
   onPin?: (xPct: number, yPct: number) => void;
 }) {
   const containerRef = useRef<View>(null);
+  const [zoom, setZoom] = useState(1);
+  const [outerW, setOuterW] = useState(0);
   const responsive = svg.replace(/width="297mm" height="210mm"/, 'width="100%"');
 
   const handlePress = (e: any) => {
@@ -56,8 +63,10 @@ export function SheetView({
     );
   }
 
-  return (
-    <View ref={containerRef} style={styles.container}>
+  // Pins live inside the (possibly enlarged) sheet surface, so their
+  // percentage positions stay correct at every zoom level.
+  const sheet = (
+    <View ref={containerRef}>
       <Pressable onPress={handlePress} disabled={!onPin}>
         {surface}
         {pins.map((pin, i) => (
@@ -69,6 +78,43 @@ export function SheetView({
           </View>
         ))}
       </Pressable>
+    </View>
+  );
+
+  const step = (dir: 1 | -1) => {
+    const i = ZOOMS.indexOf(zoom);
+    setZoom(ZOOMS[Math.min(ZOOMS.length - 1, Math.max(0, i + dir))]);
+  };
+
+  return (
+    <View
+      style={styles.container}
+      onLayout={(e) => setOuterW(e.nativeEvent.layout.width)}>
+      {zoom === 1 ? (
+        sheet
+      ) : (
+        <View style={{ height: outerW / ASPECT }}>
+          <ScrollView horizontal bounces={false}>
+            <ScrollView bounces={false}>
+              <View style={{ width: outerW * zoom }}>{sheet}</View>
+            </ScrollView>
+          </ScrollView>
+        </View>
+      )}
+      <View style={styles.zoomBar} pointerEvents="box-none">
+        <Pressable style={styles.zoomBtn} onPress={() => step(-1)} disabled={zoom === ZOOMS[0]}>
+          <Text style={styles.zoomBtnText}>−</Text>
+        </Pressable>
+        <Pressable style={styles.zoomLabelBtn} onPress={() => setZoom(1)}>
+          <Text style={styles.zoomLabel}>{zoom}×</Text>
+        </Pressable>
+        <Pressable
+          style={styles.zoomBtn}
+          onPress={() => step(1)}
+          disabled={zoom === ZOOMS[ZOOMS.length - 1]}>
+          <Text style={styles.zoomBtnText}>+</Text>
+        </Pressable>
+      </View>
     </View>
   );
 }
@@ -94,4 +140,26 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   pinText: { color: '#fff', fontSize: 10, fontWeight: 'bold' },
+  zoomBar: {
+    position: 'absolute',
+    top: 6,
+    right: 6,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(253, 253, 250, 0.92)',
+    borderWidth: 1,
+    borderColor: theme.line,
+    borderRadius: 14,
+    paddingHorizontal: 4,
+    paddingVertical: 2,
+  },
+  zoomBtn: {
+    width: 24,
+    height: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  zoomBtnText: { fontSize: 16, color: theme.ink, lineHeight: 20 },
+  zoomLabelBtn: { paddingHorizontal: 4 },
+  zoomLabel: { fontSize: 11, color: theme.faint ?? '#8a8a8a' },
 });

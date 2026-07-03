@@ -103,8 +103,31 @@ def test_true_size_covers_every_template(example_spec, halo_spec, bangle_spec,
         assert "TRUE SIZE" in svg
 
 
+def test_instructions_live_in_the_corner_not_on_the_piece(example_spec):
+    result = validate_spec(Spec.model_validate(example_spec), get_vocabulary())
+    svg = render_true_size_sheet(result.spec)
+    assert "OVERLAY GUIDE" in svg
+    # every guide line is anchored at the left margin, x=14 — the outlines sit
+    # at the sheet's center and right, so photos of the overlay carry no words
+    guide_xs = [float(x) for x in re.findall(
+        r'<text x="([\d.]+)"[^>]*>(?:OVERLAY GUIDE|[123]\.\s)', svg)]
+    assert guide_xs and all(x == 14.0 for x in guide_xs)
+
+
+def test_clean_sheet_for_photos(example_spec):
+    result = validate_spec(Spec.model_validate(example_spec), get_vocabulary())
+    clean = render_true_size_sheet(result.spec, instructions=False)
+    assert "OVERLAY GUIDE" not in clean
+    assert "lay the finished" not in clean
+    assert "PRINT CHECK" in clean  # the calibration rule always stays
+
+
 def test_true_size_endpoint(example_spec):
     response = client.post("/specs/true-size.svg", json=example_spec)
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("image/svg+xml")
-    assert "PRINT CHECK" in response.text
+    assert "PRINT CHECK" in response.text and "OVERLAY GUIDE" in response.text
+
+    clean = client.post("/specs/true-size.svg?instructions=false", json=example_spec)
+    assert clean.status_code == 200
+    assert "OVERLAY GUIDE" not in clean.text and "PRINT CHECK" in clean.text

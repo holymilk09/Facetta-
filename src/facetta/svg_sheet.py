@@ -1410,11 +1410,6 @@ def _true_ring(spec: Spec) -> list[str]:
     parts = [
         _circle(cx, cy, outer_r, fill="url(#hatch)"),
         _circle(cx, cy, inner_r),
-        _text(cx, cy + outer_r + 8,
-              f"hoop — inside ⌀ {_fmt(spec.ring_size.inner_diameter_mm)} mm",
-              size=3.0, color=FAINT),
-        _text(cx, cy + outer_r + 12.5, "lay the finished ring flat on this circle",
-              size=2.8, color=FAINT),
     ]
     hx = cx + outer_r + 55
     melee = _find_stone(spec, "halo", "surround")
@@ -1427,20 +1422,17 @@ def _true_ring(spec: Spec) -> list[str]:
             t = -math.pi / 2 + i * 2 * math.pi / melee.count
             parts.append(_circle(hx + ring_ax * math.cos(t),
                                  cy + ring_by * math.sin(t), mr))
-        head_by = ring_by + mr
-        head_note = (f"head with halo — {_fmt(stone.width + 2 * (0.3 + mw))} × "
+        head_note = (f"head with halo, {_fmt(stone.width + 2 * (0.3 + mw))} × "
                      f"{_fmt(stone.length + 2 * (0.3 + mw))} mm overall")
     else:
-        head_by = stone.length / 2
-        head_note = f"center stone — {_fmt(stone.width)} × {_fmt(stone.length)} mm"
+        head_note = f"center stone, {_fmt(stone.width)} × {_fmt(stone.length)} mm"
     parts += _facet_face_up(hx, cy, spec.stone.cut, stone.width, stone.length,
                             table_ratio=(spec.stone.table_pct or 57) / 100)
-    parts += [
-        _text(hx, cy + head_by + 8, head_note, size=3.0, color=FAINT),
-        _text(hx, cy + head_by + 12.5, "the head face up, seen from above",
-              size=2.8, color=FAINT),
+    return parts, [
+        f"left outline — the hoop, inside ⌀ {_fmt(spec.ring_size.inner_diameter_mm)} mm;",
+        "lay the finished ring flat on the circle",
+        f"right outline — the {head_note}, face up",
     ]
-    return parts
 
 
 def _true_bangle_stations(spec: Spec, cx: float, cy: float,
@@ -1477,13 +1469,12 @@ def _true_bangle(spec: Spec) -> list[str]:
         *_true_bangle_stations(spec, cx, cy,
                                (br.inner_length_mm + br.thickness_mm) / 2,
                                (br.inner_width_mm + br.thickness_mm) / 2),
-        _text(cx, cy + b_out + 8,
-              f"opening {_fmt(br.inner_length_mm)} × {_fmt(br.inner_width_mm)} mm",
-              size=3.0, color=FAINT),
-        _text(cx, cy + b_out + 12.5, "lay the finished bangle on this outline",
-              size=2.8, color=FAINT),
     ]
-    return parts
+    return parts, [
+        f"the bangle face on — opening {_fmt(br.inner_length_mm)} × "
+        f"{_fmt(br.inner_width_mm)} mm,",
+        f"{spec.stone.count} stations on the band centerline",
+    ]
 
 
 def _true_cuff(spec: Spec) -> list[str]:
@@ -1513,15 +1504,11 @@ def _true_cuff(spec: Spec) -> list[str]:
         parts += _true_bangle_stations(spec, cx, cy, a_c, b_c,
                                        t0=math.pi / 2 + pad,
                                        sweep=2 * math.pi - 2 * pad)
-    parts += [
-        _text(cx, cy + b_out + 8,
-              f"opening {_fmt(br.inner_length_mm)} × {_fmt(br.inner_width_mm)} mm · "
-              f"gap {_fmt(br.gap_width_mm)} mm",
-              size=3.0, color=FAINT),
-        _text(cx, cy + b_out + 12.5, "lay the finished cuff on this outline",
-              size=2.8, color=FAINT),
+    return parts, [
+        f"the cuff face on — opening {_fmt(br.inner_length_mm)} × "
+        f"{_fmt(br.inner_width_mm)} mm,",
+        f"{_fmt(br.gap_width_mm)} mm gap at the bottom",
     ]
-    return parts
 
 
 def _true_link_bracelet(spec: Spec) -> list[str]:
@@ -1559,15 +1546,11 @@ def _true_link_bracelet(spec: Spec) -> list[str]:
                 f'stroke="{INK}" stroke-width="{STROKE_MAIN}" '
                 f'transform="rotate({angle + 45:.1f} {px:.2f} {py:.2f})"/>'
             )
-    parts += [
-        _text(cx, cy + b_c + link_w / 2 + 8,
-              f"opening {_fmt(br.inner_length_mm)} × {_fmt(br.inner_width_mm)} mm · "
-              f"{n} links, pitch {pitch:.1f} mm",
-              size=3.0, color=FAINT),
-        _text(cx, cy + b_c + link_w / 2 + 12.5,
-              "lay the finished bracelet on this outline", size=2.8, color=FAINT),
+    return parts, [
+        f"the bracelet face on — opening {_fmt(br.inner_length_mm)} × "
+        f"{_fmt(br.inner_width_mm)} mm,",
+        f"{n} links at {pitch:.1f} mm pitch on the centerline",
     ]
-    return parts
 
 
 def _true_pendant(spec: Spec) -> list[str]:
@@ -1617,11 +1600,12 @@ def _true_pendant(spec: Spec) -> list[str]:
     x_dim = cx + max(cluster_ax, bail_r) + 12
     parts += [
         _ext(cx, ty, x_dim + 1, ty), _ext(cx, bottom, x_dim + 1, bottom),
-        *_dim_v(x_dim, ty, bottom, f"{_fmt(drop_mm)} mm drop, as printed"),
-        _text(cx, bottom + 9, "lay the finished pendant on this outline",
-              size=2.8, color=FAINT),
+        *_dim_v(x_dim, ty, bottom, f"{_fmt(drop_mm)} mm drop"),
     ]
-    return parts
+    return parts, [
+        f"the pendant face on — {_fmt(drop_mm)} mm from bail top",
+        "to the lowest point, hanging as worn",
+    ]
 
 
 def _true_loose_stone(spec: Spec) -> list[str]:
@@ -1633,16 +1617,10 @@ def _true_loose_stone(spec: Spec) -> list[str]:
                            table_ratio=table_frac)
     px = cx + d.width / 2 + 45
     parts += _stone_side_profile(stone.cut, px, cy, d.depth, d.length, table_frac)
-    by = max(d.length / 2, 6.0)
-    parts += [
-        _text(cx, cy + by + 8, "FACE UP", size=2.8, color=FAINT),
-        _text(px, cy + by + 8, "PROFILE", size=2.8, color=FAINT),
-        _text((cx + px) / 2, cy + by + 14,
-              f"{_fmt(d.length)} × {_fmt(d.width)} × {_fmt(d.depth)} mm — "
-              "lay the loose stone on these outlines",
-              size=3.0, color=FAINT),
+    return parts, [
+        f"the stone at {_fmt(d.length)} × {_fmt(d.width)} × {_fmt(d.depth)} mm —",
+        "face up on the left, profile on the right",
     ]
-    return parts
 
 
 TRUE_SIZE_TEMPLATES = {
@@ -1656,22 +1634,41 @@ TRUE_SIZE_TEMPLATES = {
 }
 
 
-def render_true_size_sheet(spec: Spec) -> str:
+def _overlay_guide(piece_lines: list[str]) -> list[str]:
+    """The instruction block, kept in the top-left corner — outlines sit at
+    the sheet's center and right, so a photo of the piece lying on the paper
+    carries no wording next to it."""
+    steps = [
+        "1.  print this page at 100% / actual size",
+        "     — never “fit to page”",
+        "2.  check the rule below the drawing:",
+        "     it must measure exactly 100 mm",
+        "3.  lay the finished piece on the outlines:",
+    ] + [f"     {line}" for line in piece_lines]
+    parts = [_text(MARGIN + 6, 26, "OVERLAY GUIDE", size=3.4, anchor="start",
+                   style=' letter-spacing="1.2"')]
+    y = 31.5
+    for line in steps:
+        parts.append(_text(MARGIN + 6, y, line, size=2.9, anchor="start", color=FAINT))
+        y += 4.4
+    return parts
+
+
+def render_true_size_sheet(spec: Spec, instructions: bool = True) -> str:
     """The 1:1 overlay page: every outline drawn from raw spec millimeters, so
-    a 100% print matches the physical piece exactly."""
+    a 100% print matches the physical piece exactly.
+
+    instructions=False renders a clean page — outlines and calibration rule
+    only — for designers who photograph the piece lying on the printout."""
     render = TRUE_SIZE_TEMPLATES.get(spec.template)
     if render is None:
         raise SheetUnsupported(
             f"template '{spec.template}' has no true-size sheet yet; "
             f"supported: {list(TRUE_SIZE_TEMPLATES)}"
         )
-    body = [
-        _text(SHEET_W / 2, MARGIN + 17,
-              "print at 100% (actual size) — never “fit to page” — "
-              "then lay the finished piece on the outlines",
-              size=3.0, color=FAINT),
-    ]
-    body += render(spec)
+    body, piece_lines = render(spec)
+    if instructions:
+        body += _overlay_guide(piece_lines)
     body += _print_check_rule(MARGIN + 12, SHEET_H - MARGIN - 24)
     return _frame(spec, "TRUE SIZE — 1:1 OVERLAY SHEET", "1:1", body, datum_y=None)
 

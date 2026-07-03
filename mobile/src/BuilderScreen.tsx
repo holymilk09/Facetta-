@@ -116,6 +116,7 @@ export function BuilderScreen({
   const [lighting, setLighting] = useState('studio');
   const [wornOn, setWornOn] = useState('product');
   const [renderStyle, setRenderStyle] = useState('photo');
+  const [printGuide, setPrintGuide] = useState<'with guide' | 'clean (for photos)'>('with guide');
   const [mockup, setMockup] = useState<any | null>(null);
   const [prose, setProse] = useState('');
   const [notice, setNotice] = useState<{ kind: 'ok' | 'error' | 'info'; text: string } | null>(null);
@@ -457,12 +458,17 @@ export function BuilderScreen({
 
   const trueSize = () =>
     run(async () => {
-      const r = await api.trueSizePreview(buildSpec());
+      const r = await api.trueSizePreview(buildSpec(), printGuide === 'with guide');
       if (r.ok) {
         setSheetSvg(r.body);
         setNotice({
           kind: 'ok',
-          text: 'True-size sheet (1:1) — print at 100%, check the 100 mm rule, then lay the piece on the outlines.',
+          text:
+            'True-size sheet (1:1) — looks tiny on screen because it IS the real size. ' +
+            'Print at 100%, check the 100 mm rule, then lay the piece on the outlines.' +
+            (printGuide === 'clean (for photos)'
+              ? ' Clean page: no wording near the piece.'
+              : ''),
         });
       } else showIssues(r.body);
     });
@@ -895,6 +901,13 @@ export function BuilderScreen({
         value={collection}
         onChange={setCollection}
         placeholder="e.g. Client — Sarah K"
+      />
+
+      <ChipRow
+        label="1:1 print sheet — on screen everything stays enlarged; printed at 100% it is true to size"
+        options={['with guide', 'clean (for photos)'] as const}
+        value={printGuide}
+        onSelect={setPrintGuide}
       />
 
       <View style={styles.actions}>
