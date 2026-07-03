@@ -51,6 +51,9 @@ export function createApi(baseUrl: string) {
     getVersionSpec: (id: string, v: number) => call(`/designs/${id}/versions/${v}`),
     getSheet: (id: string, v: number) => call(`/designs/${id}/versions/${v}/sheet.svg`),
     listComments: (id: string, v: number) => call(`/designs/${id}/versions/${v}/comments`),
+    listMessages: (id: string) => call(`/designs/${id}/messages`),
+    sendMessage: (id: string, author: string, body: string, author_label?: string) =>
+      post(`/designs/${id}/messages`, { author, body, author_label: author_label || null }),
     addComment: (id: string, v: number, comment: unknown) =>
       post(`/designs/${id}/versions/${v}/comments`, comment),
     createShare: (id: string, v: number, scope: 'view' | 'comment') =>

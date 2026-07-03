@@ -71,6 +71,44 @@ class SceneUnsupported(ValueError):
         self.valid = valid
 
 
+def compile_restage_request(jewelry_type: str = "ring", lighting: str = "studio",
+                            worn_on: str = "product") -> dict:
+    """Re-stage a photograph of a FINISHED piece into a new scene.
+
+    No spec required: the uploaded photo IS the geometry. The instruction is
+    written for an image-editing model (FLUX Kontext class) that preserves the
+    pictured piece exactly and only changes the setting around it.
+    """
+    if lighting not in LIGHTING:
+        raise SceneUnsupported(f"unknown lighting '{lighting}'", sorted(LIGHTING))
+    allowed = WORN_FOR_TYPE.get(jewelry_type, ("product",))
+    if worn_on not in allowed:
+        raise SceneUnsupported(
+            f"'{worn_on}' does not fit a {jewelry_type}", list(allowed))
+
+    scene_bits = [LIGHTING[lighting]]
+    if WORN_ON[worn_on]:
+        scene_bits.append(WORN_ON[worn_on])
+    instruction = (
+        "Keep the pictured piece of jewelry EXACTLY as it is — identical stones, "
+        "stone count, metal color, proportions and construction; do not redesign, "
+        "add or remove any element. Re-stage it: " + ", ".join(scene_bits) + "."
+    )
+    return {
+        "instruction": instruction,
+        "scene": {"lighting": lighting, "worn_on": worn_on},
+        "provider_payload": {  # drop-in for an instruction-editing endpoint
+            "guidance_scale": 2.5,
+            "num_inference_steps": 28,
+        },
+        "control": {"image": "the uploaded photograph, sent as the edit input"},
+        "consistency": (
+            "image-editing models preserve the input piece; only the scene "
+            "described in the instruction changes between renders"
+        ),
+    }
+
+
 def geometry_fingerprint(spec: Spec) -> str:
     """Canonical hash of the spec's shape — everything that affects WHERE metal
     and stones sit, nothing that only affects what they look like (species,

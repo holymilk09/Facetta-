@@ -100,7 +100,11 @@ terms.
 | `POST /specs/from-prose` | Claude API: designer prose → validated spec (needs `ANTHROPIC_API_KEY`) |
 | `POST /specs/prototype.svg` · `GET /designs/{id}/versions/{v}/prototype.svg` | Deterministic colored prototype (vocabulary hues + metal tones) |
 | `POST /specs/render-prompt` | Compiled photoreal prompt + control-image hint for external image models |
-| `POST /specs/render-request` | Scene-controlled mockup request (lighting, worn-on) with a geometry-locked seed: swap stone color or metal and the composition holds; change a dimension and it reseeds |
+| `POST /specs/render-request` | Scene-controlled mockup request (lighting, worn-on, photo/atelier-sketch style) with a geometry-locked seed: swap stone color or metal and the composition holds; change a dimension and it reseeds |
+| `POST /specs/sheet.dxf` · `GET /designs/{id}/versions/{v}/sheet.dxf` | The sheet as a DXF R12 drawing — the 2D underlay jewelry CAD (Rhino, MatrixGold) imports natively |
+| `POST /specs/from-photo` | Claude vision: photo of a finished piece → draft spec (designer corrects dims; same validation gate) |
+| `POST /specs/restage-request` | Scene instruction for re-staging a photo of a finished piece via an image-editing model |
+| `GET/POST /designs/{id}/messages` | Designer ↔ factory discussion thread on a design (distinct from pinned sheet comments) |
 | `POST /specs/stack.svg` · `GET /designs/{id}/versions/{v}/stack/{id2}/{v2}/sheet.svg` | Overlay two pieces with computed nesting clearance |
 | `GET /vocabulary/findings` | Chain styles, clasp types, girdle thickness scale |
 

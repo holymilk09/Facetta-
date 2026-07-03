@@ -31,6 +31,10 @@ export function DesignsScreen({
   const [pendingPin, setPendingPin] = useState<{ x: number; y: number } | null>(null);
   const [commentBody, setCommentBody] = useState('');
   const [notice, setNotice] = useState<string | null>(null);
+  const [search, setSearch] = useState('');
+  const [typeFilter, setTypeFilter] = useState<string>('all');
+  const [messages, setMessages] = useState<any[]>([]);
+  const [messageBody, setMessageBody] = useState('');
 
   const refreshList = () => api.listDesigns().then((r) => r.ok && setDesigns(r.body.designs));
 
@@ -49,8 +53,18 @@ export function DesignsScreen({
     const r = await api.getDesign(id);
     if (!r.ok) return;
     setDetail(r.body);
+    api.listMessages(id).then((m) => m.ok && setMessages(m.body.messages));
     const latest = r.body.versions[r.body.versions.length - 1].version;
     openVersion(id, latest);
+  };
+
+  const sendMessage = async () => {
+    if (!selected || !messageBody.trim()) return;
+    const r = await api.sendMessage(selected, designer, messageBody.trim());
+    if (r.ok) {
+      setMessages([...messages, r.body]);
+      setMessageBody('');
+    }
   };
 
   const openVersion = async (id: string, v: number) => {
@@ -93,9 +107,17 @@ export function DesignsScreen({
   if (pendingPin) pins.push({ x_pct: pendingPin.x, y_pct: pendingPin.y, label: '+' });
 
   if (!selected || !detail) {
+    // search over id, collection, summary and type; then filter by category
+    const q = search.trim().toLowerCase();
+    const visible = designs.filter((d) => {
+      if (typeFilter !== 'all' && d.jewelry_type !== typeFilter) return false;
+      if (!q) return true;
+      return [d.design_id, d.collection, d.summary, d.jewelry_type, d.template]
+        .some((f) => f && String(f).toLowerCase().includes(q));
+    });
     // group by collection: named groups first (alphabetical), then loose saves
     const groups = new Map<string, any[]>();
-    for (const d of designs) {
+    for (const d of visible) {
       const key = d.collection ?? '';
       if (!groups.has(key)) groups.set(key, []);
       groups.get(key)!.push(d);
@@ -106,15 +128,29 @@ export function DesignsScreen({
     return (
       <ScrollView contentContainerStyle={styles.content}>
         <Section title="Designs">
+          <Field label="Search" value={search} onChange={setSearch}
+                 placeholder="id, client, stone, template…" />
+          <ChipRow
+            options={['all', 'ring', 'bracelet', 'pendant', 'necklace', 'loose_stone'] as const}
+            value={typeFilter}
+            onSelect={setTypeFilter}
+            render={(t) => (t === 'all' ? 'All' : t === 'loose_stone' ? 'loose stones' : `${t}s`)}
+          />
           {designs.length === 0 && <Text style={styles.hint}>No designs yet — build one in the Builder tab.</Text>}
+          {designs.length > 0 && visible.length === 0 && (
+            <Text style={styles.hint}>Nothing matches that search.</Text>
+          )}
           {ordered.map(([name, group]) => (
             <React.Fragment key={name || '(none)'}>
               <Text style={styles.collectionHeader}>{name || 'No collection'}</Text>
               {group.map((d) => (
                 <Pressable key={d.design_id} style={styles.designRow} onPress={() => openDesign(d.design_id)}>
-                  <Text style={styles.designId}>{d.design_id}</Text>
+                  <View>
+                    <Text style={styles.designId}>{d.design_id}</Text>
+                    {!!d.summary && <Text style={styles.designMeta}>{d.summary}</Text>}
+                  </View>
                   <Text style={styles.designMeta}>
-                    v{d.latest_version} · {d.created_by}
+                    {d.jewelry_type ? `${d.jewelry_type} · ` : ''}v{d.latest_version} · {d.created_by}
                   </Text>
                 </Pressable>
               ))}
@@ -142,9 +178,9 @@ export function DesignsScreen({
             {spec.stone.carat} ct {spec.stone.species}, {spec.stone.cut.replace(/_/g, ' ')} ·{' '}
             {spec.stone.color.trade}
             {spec.metal
-              ? ` · ${spec.metal.karat ? `${spec.metal.karat}k ` : ''}${spec.metal.color} ${spec.metal.material}`
+              ? ` · ${spec.metal.karat ? `${spec.metal.karat}k ` : ''}${spec.metal.color ? `${spec.metal.color} ` : ''}${spec.metal.material}`
               : ' · loose stone'}
-            {spec.ring_size ? ` · US ${spec.ring_size.value}` : ''}
+            {spec.ring_size ? ` · ${spec.ring_size.system} ${spec.ring_size.value}` : ''}
           </Text>
         )}
         <View style={styles.actions}>
@@ -176,6 +212,20 @@ export function DesignsScreen({
           ))}
         </Section>
       )}
+      <Section title="Discussion — designer ↔ factory">
+        {messages.length === 0 && (
+          <Text style={styles.hint}>No messages yet. Adjustments, questions and approvals live here.</Text>
+        )}
+        {messages.map((m) => (
+          <Text key={m.id} style={styles.comment}>
+            <Text style={styles.commentNum}>{m.author}{m.author_label ? ` (${m.author_label})` : ''}:</Text> {m.body}
+            {m.version ? <Text style={styles.commentMeta}> · re v{m.version}</Text> : null}
+          </Text>
+        ))}
+        <Field label="Message" value={messageBody} onChange={setMessageBody} multiline
+               placeholder="e.g. Can the gallery come down 0.5 mm?" />
+        <Button title="Send" onPress={sendMessage} disabled={!messageBody.trim()} />
+      </Section>
       {notice && <Notice kind="ok" text={notice} />}
     </>
   );

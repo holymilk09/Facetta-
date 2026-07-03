@@ -6,7 +6,10 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from facetta import prose as prose_layer
 from facetta.db import utcnow
-from facetta.mockup import SceneUnsupported, compile_render_request
+from facetta.dxf import svg_to_dxf
+from facetta.mockup import (
+    SceneUnsupported, compile_render_request, compile_restage_request,
+)
 from facetta.prototype import compile_render_prompt, render_color_preview
 from facetta.spec import Spec
 from facetta.svg_sheet import SheetUnsupported, render_sheet, render_stack_sheet
@@ -188,3 +191,86 @@ def from_prose(request: ProseRequest):
             },
         )
     return result.spec
+
+
+class PhotoRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    image_base64: Annotated[str, Field(min_length=1, max_length=14_000_000)]
+    media_type: Annotated[str, Field(pattern=r"^image/(jpeg|png|webp)$")] = "image/jpeg"
+    notes: Annotated[str, Field(max_length=2000)] = ""
+    created_by: str = "usr_pending"
+
+
+@router.post("/from-photo")
+def from_photo(request: PhotoRequest):
+    """Reverse-engineer a photograph of a finished piece into a DRAFT spec.
+
+    Vision proposes the parameters; a photo can never give exact millimeters,
+    so the designer reviews and corrects dimensions in the builder before
+    saving. The same validation gate applies as everywhere else.
+    """
+    try:
+        spec = prose_layer.generate_spec_from_photo(
+            request.image_base64, request.media_type, request.notes)
+    except prose_layer.ProseUnavailable as exc:
+        return JSONResponse(status_code=503, content={"detail": str(exc)})
+
+    spec = spec.model_copy(update={
+        "created_by": request.created_by,
+        "created_at": utcnow(),
+        "version": 1,
+    })
+    result = validate_spec(spec, get_vocabulary())
+    if not result.ok:
+        return JSONResponse(
+            status_code=502,
+            content={
+                "detail": "vision output failed spec validation; add notes with "
+                          "measurements or adjust the draft by hand",
+                "issues": [issue.as_detail() for issue in result.issues],
+            },
+        )
+    return result.spec
+
+
+class RestageRequestBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    jewelry_type: str = "ring"
+    lighting: str = "studio"
+    worn_on: str = "product"
+
+
+@router.post("/restage-request")
+def restage_request(body: RestageRequestBody):
+    """Scene instruction for re-staging a PHOTO of a finished piece — the
+    uploaded photograph is the geometry; only the scene changes."""
+    try:
+        return compile_restage_request(body.jewelry_type, body.lighting,
+                                       body.worn_on)
+    except SceneUnsupported as exc:
+        return JSONResponse(
+            status_code=422,
+            content={"detail": str(exc), "valid_options": exc.valid},
+        )
+
+
+@router.post("/sheet.dxf")
+def sheet_dxf(spec: Spec):
+    """The technical sheet as a DXF R12 drawing — the 2D underlay format
+    jewelry CAD packages (Rhino, MatrixGold) import natively."""
+    result = validate_spec(spec, get_vocabulary())
+    if not result.ok:
+        return JSONResponse(
+            status_code=422,
+            content={"detail": [issue.as_detail() for issue in result.issues]},
+        )
+    try:
+        svg = render_sheet(result.spec)
+    except SheetUnsupported as exc:
+        return JSONResponse(status_code=422, content={"detail": str(exc)})
+    return Response(
+        content=svg_to_dxf(svg), media_type="application/dxf",
+        headers={"Content-Disposition":
+                 f'attachment; filename="{result.spec.design_id}_v{result.spec.version}.dxf"'})

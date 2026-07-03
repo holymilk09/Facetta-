@@ -64,6 +64,24 @@ class DesignVersion(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class DesignMessage(Base):
+    """Free-form discussion between designer and factory on a design.
+
+    Distinct from Comment (which pins to an x/y region of one version's
+    sheet): messages are the running conversation — adjustments, questions,
+    approvals — optionally referencing a version number."""
+
+    __tablename__ = "design_messages"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    design_id: Mapped[str] = mapped_column(String(32), index=True)
+    version: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    author: Mapped[str] = mapped_column(String(120))
+    author_label: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    body: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
 class Comment(Base):
     __tablename__ = "comments"
 

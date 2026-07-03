@@ -10,7 +10,10 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from facetta.db import Comment, Design, DesignVersion, get_db, new_id, utcnow
+from facetta.db import (
+    Comment, Design, DesignMessage, DesignVersion, get_db, new_id, utcnow,
+)
+from facetta.dxf import svg_to_dxf
 from facetta.spec import Spec
 from facetta.svg_sheet import SheetUnsupported, render_sheet, render_stack_sheet
 from facetta.validation import nesting_clearance, validate_spec
@@ -110,18 +113,23 @@ def list_designs(db: DbSession, collection: str | None = None):
     if collection is not None:
         query = query.where(Design.collection == collection)
     rows = db.execute(query).all()
-    return {
-        "designs": [
-            {
-                "design_id": design.id,
-                "created_by": design.created_by,
-                "created_at": design.created_at,
-                "latest_version": latest,
-                "collection": design.collection,
-            }
-            for design, latest in rows
-        ]
-    }
+    designs = []
+    for design, latest in rows:
+        row = db.get(DesignVersion, (design.id, latest))
+        spec = row.spec if row else {}
+        stone = spec.get("stone") or {}
+        designs.append({
+            "design_id": design.id,
+            "created_by": design.created_by,
+            "created_at": design.created_at,
+            "latest_version": latest,
+            "collection": design.collection,
+            "jewelry_type": spec.get("jewelry_type"),
+            "template": spec.get("template"),
+            "summary": (f"{stone.get('carat', '?')} ct {stone.get('species', '')} "
+                        f"{(stone.get('cut') or '').replace('_', ' ')}").strip(),
+        })
+    return {"designs": designs}
 
 
 @router.get("/{design_id}")
@@ -234,3 +242,62 @@ def add_comment(db: Session, design_id: str, version: int, comment: CommentCreat
     db.commit()
     db.refresh(row)
     return _comment_json(row)
+
+
+# --- factory handoff and discussion -------------------------------------------
+
+
+@router.get("/{design_id}/versions/{version}/sheet.dxf")
+def get_sheet_dxf(design_id: str, version: int, db: DbSession):
+    """The stored version's sheet as a DXF R12 drawing for CAD import."""
+    row = _get_version(db, design_id, version)
+    try:
+        svg = render_sheet(Spec.model_validate(row.spec))
+    except SheetUnsupported as exc:
+        return JSONResponse(status_code=422, content={"detail": str(exc)})
+    return Response(
+        content=svg_to_dxf(svg), media_type="application/dxf",
+        headers={"Content-Disposition":
+                 f'attachment; filename="{design_id}_v{version}.dxf"'})
+
+
+class MessageCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    author: Annotated[str, Field(min_length=1, max_length=120)]
+    body: Annotated[str, Field(min_length=1, max_length=4000)]
+    author_label: Annotated[str, Field(min_length=1, max_length=120)] | None = None
+    version: int | None = None
+
+
+def _message_json(m: DesignMessage) -> dict:
+    return {
+        "id": m.id, "design_id": m.design_id, "version": m.version,
+        "author": m.author, "author_label": m.author_label,
+        "body": m.body, "created_at": m.created_at,
+    }
+
+
+@router.get("/{design_id}/messages")
+def list_messages(design_id: str, db: DbSession):
+    """The running designer/factory conversation on a design."""
+    if db.get(Design, design_id) is None:
+        raise HTTPException(status_code=404, detail=f"unknown design '{design_id}'")
+    rows = db.execute(
+        select(DesignMessage).where(DesignMessage.design_id == design_id)
+        .order_by(DesignMessage.created_at, DesignMessage.id)
+    ).scalars().all()
+    return {"messages": [_message_json(m) for m in rows]}
+
+
+@router.post("/{design_id}/messages", status_code=201)
+def create_message(design_id: str, message: MessageCreate, db: DbSession):
+    if db.get(Design, design_id) is None:
+        raise HTTPException(status_code=404, detail=f"unknown design '{design_id}'")
+    row = DesignMessage(design_id=design_id, version=message.version,
+                        author=message.author, author_label=message.author_label,
+                        body=message.body)
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return _message_json(row)
