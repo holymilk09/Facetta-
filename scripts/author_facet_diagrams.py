@@ -76,7 +76,10 @@ class Asc:
     def tier(self, side, angle, distance, azimuths, name):
         indices = " ".join(str(idx(a)) for a in azimuths)
         a = 0.0 if side == "table" else (90.0 if side == "girdle" else angle)
-        self.lines.append(f"a {a:.2f} {distance:.5f} {indices} {name}")
+        # GemCad names are single tokens after an ``n`` marker — bare integers
+        # anywhere else on the line are gear indices, so never leave them loose
+        slug = name.replace(" ", "-")
+        self.lines.append(f"a {a:.2f} {distance:.5f} {indices} n {slug}")
 
     def write(self, path: Path):
         path.write_text("\n".join(self.lines) + "\n")
@@ -463,9 +466,9 @@ def trillion():
 def main():
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     round_brilliant()
-    curved_brilliant("Facetta oval brilliant - 8 mains, stars, halves",
-                     "oval_brilliant.asc", ellipse_support(0.744, 1.0),
-                     "authored from conventional oval brilliant layouts")
+    # oval_brilliant.asc is NOT authored here: it carries a genuine published
+    # design (Robert H. Long, PC 02.113A "Milli", Datavue2 1991) — never
+    # overwrite real diagram data with a synthetic one.
     curved_brilliant("Facetta cushion brilliant - pillow girdle",
                      "cushion.asc", superellipse_support(0.85, 1.0, 2.6),
                      "authored from conventional cushion brilliant layouts")

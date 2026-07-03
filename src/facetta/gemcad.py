@@ -69,16 +69,17 @@ def _is_float(token: str) -> bool:
 def parse_asc(text: str) -> Diagram:
     """Parse a GemCad .ASC file into tiers of facet planes.
 
-    Facets written before the first 90-degree (girdle) tier are the pavilion,
-    facets after it are the crown — the file order is the cutting order.
-    A 0-degree tier is the table. Each tier must carry its plane distance
-    (GemCad writes it after the angle); index positions are integers on the
-    stated gear.
+    Two crown/pavilion conventions are supported: GemCad exports carry signed
+    angles (negative = pavilion, positive = crown, the sign wins regardless of
+    line order); sign-free files split at the first 90-degree girdle tier —
+    the file order is the cutting order. A 0-degree tier is the table. Each
+    tier must carry its plane distance after the angle; index positions are
+    integers on the stated gear (0 means the gear's top index), and facet
+    names may be interleaved between indices as ``n <name>`` pairs.
     """
     gear = 96
     header_lines: list[str] = []
-    tiers: list[Tier] = []
-    girdle_seen = False
+    raw_tiers: list[tuple[float, float, tuple[int, ...], str]] = []
 
     for raw in text.splitlines():
         line = raw.strip()
@@ -103,27 +104,45 @@ def parse_asc(text: str) -> Diagram:
                 )
             distance = float(rest[0])
             indices: list[int] = []
-            name_parts: list[str] = []
-            for token in rest[1:]:
-                if _is_int(token) and not name_parts:
+            names: list[str] = []
+            i = 1
+            while i < len(rest):
+                token = rest[i]
+                if _is_int(token):
                     indices.append(int(token))
+                    i += 1
+                elif token == "n":  # per-facet name follows, indices continue
+                    if i + 1 < len(rest):
+                        names.append(rest[i + 1])
+                    i += 2
+                elif token.startswith("G"):  # GemCad UI metadata
+                    i += 1
                 else:
-                    name_parts.append(token)
+                    names.append(token)
+                    i += 1
             if not indices:
                 raise AscUnsupported(f"facet line has no gear indices: {line!r}")
-            if abs(angle - 90.0) < 1e-6:
-                side = "girdle"
-                girdle_seen = True
-            elif abs(angle) < 1e-6:
-                side = "table"
-            else:
-                side = "crown" if girdle_seen else "pavilion"
-            tiers.append(Tier(side, abs(angle), distance, tuple(indices),
-                              " ".join(name_parts)))
-        # I (refractive index), e, x, U/V/W print blocks: metadata — ignored.
+            raw_tiers.append((angle, distance, tuple(indices), " ".join(names)))
+        # I (refractive index), y, e, x, U/V/W print blocks: metadata — ignored.
 
-    if not tiers:
+    if not raw_tiers:
         raise AscUnsupported("no facet lines found")
+
+    signed = any(angle < 0 for angle, *_ in raw_tiers)
+    tiers: list[Tier] = []
+    girdle_seen = False
+    for angle, distance, indices, name in raw_tiers:
+        if abs(abs(angle) - 90.0) < 1e-6:
+            side = "girdle"
+            girdle_seen = True
+        elif abs(angle) < 1e-6:
+            side = "table"
+        elif signed:
+            side = "pavilion" if angle < 0 else "crown"
+        else:
+            side = "crown" if girdle_seen else "pavilion"
+        tiers.append(Tier(side, abs(angle), distance, indices, name))
+
     if not girdle_seen:
         raise AscUnsupported("no 90-degree girdle tier — cannot split crown/pavilion")
     return Diagram(gear=gear, header=" · ".join(header_lines), tiers=tuple(tiers))

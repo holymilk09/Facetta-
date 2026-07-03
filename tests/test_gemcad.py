@@ -87,3 +87,26 @@ def test_sheet_uses_diagram_geometry(round_spec):
     # the real SRB face-up carries far more facet polygons than the old
     # procedural pattern (32 crown facets + table + outline)
     assert svg.count("<polygon") >= 34
+
+
+def test_real_gemcad_export_conventions():
+    """oval_brilliant.asc is a genuine Robert H. Long design (Datavue2 1991):
+    signed angles (negative = pavilion, even after crown lines), facet names
+    interleaved between indices as `n <name>`, and index 0 meaning the gear
+    top. The meetpoint proof: crown main A crosses the girdle plane exactly
+    at its girdle facet's distance."""
+    import math
+
+    diagram = gemcad.parse_asc(
+        (gemcad.DIAGRAM_DIR / "oval_brilliant.asc").read_text())
+    assert "Long, Robert H" in diagram.header
+    assert diagram.tiers[-1].side == "pavilion"      # trailing negative line
+    a_tier = next(t for t in diagram.tiers if t.name == "A")
+    assert a_tier.indices == (2, 46, 50, 94)          # names between indices
+    girdle_a = next(t for t in diagram.tiers
+                    if t.side == "girdle" and 2 in t.indices)
+    crossing = a_tier.distance / math.sin(math.radians(a_tier.angle_deg))
+    assert math.isclose(crossing, girdle_a.distance, abs_tol=2e-5)
+    faces = gemcad.build_faces(diagram)
+    crown = [1 for _, (t, _) in faces if diagram.tiers[t].side == "crown"]
+    assert len(crown) == 32
