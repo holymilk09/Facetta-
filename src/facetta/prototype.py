@@ -378,9 +378,11 @@ def prompt_core(spec: Spec) -> tuple[str, list[str]]:
         "loose_stone": "loose gemstone, unmounted",
     }.get(spec.template, spec.template)
 
+    cut_name = stone.cut.replace("_", " ")
+    cut_phrase = cut_name if cut_name.endswith("cut") else f"{cut_name} cut"
     details = [
         f"a {stone.carat:.2f} carat {stone.color.trade} {stone.species} "
-        f"({stone.color.gia}), {stone.cut.replace('_', ' ')} cut, "
+        f"({stone.color.gia}), {cut_phrase}, "
         f"{_fmt(d.length)} x {_fmt(d.width)} x {_fmt(d.depth)} mm",
     ]
     if spec.metal:

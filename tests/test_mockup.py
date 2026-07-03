@@ -104,3 +104,12 @@ def test_atelier_sketch_style(example_spec):
 
     with pytest.raises(SceneUnsupported):
         compile_render_request(spec, style="oil_painting")
+
+
+def test_fidelity_checklist_flags_the_drift_points(pendant_spec):
+    body = compile_render_request(_validated(pendant_spec))
+    checks = " | ".join(body["fidelity_checklist"])
+    assert "EXACTLY 12" in checks           # surround count
+    assert "FACETED" in checks              # the drop must not become a cabochon
+    assert "NO chain" in checks             # spec has none; renders love adding one
+    assert "no text" in checks

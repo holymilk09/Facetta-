@@ -109,6 +109,37 @@ def compile_restage_request(jewelry_type: str = "ring", lighting: str = "studio"
     }
 
 
+def fidelity_checklist(spec: Spec) -> list[str]:
+    """Ten-second grading list for a generated image — the exact points image
+    models drift on: stone counts, relative melee scale, cut identity,
+    invented components. Every item is checkable by eye against the render."""
+    stone = spec.stone
+    d = stone.dimensions_mm
+    checks = [
+        f"center stone is a {stone.cut.replace('_', ' ')} "
+        f"({d.length} x {d.width} mm) — verify the cut, not just the color",
+    ]
+    for side in spec.side_stones:
+        w = side.dimensions_mm.width
+        rel = w / d.width
+        checks.append(
+            f"EXACTLY {side.count} {side.species} stones at {side.position or 'accent'} "
+            f"— each {w} mm (about {rel:.0%} of the center's width"
+            + ("; small accent points, not feature stones)" if rel < 0.45 else ")"))
+        if side.cut != "cabochon":
+            checks.append(
+                f"the {side.position or 'accent'} {side.species} is FACETED "
+                f"({side.cut.replace('_', ' ')}) — reject smooth domes")
+    if spec.chain is None and spec.jewelry_type in ("pendant", "necklace"):
+        checks.append("NO chain — the spec has none; reject renders that add one")
+    if spec.metal:
+        karat = f"{spec.metal.karat}k " if spec.metal.karat else ""
+        color = f"{spec.metal.color} " if spec.metal.color else ""
+        checks.append(f"metal reads as {karat}{color}{spec.metal.material}")
+    checks.append("no text, hallmark letters, or logos anywhere on the metal")
+    return checks
+
+
 def geometry_fingerprint(spec: Spec) -> str:
     """Canonical hash of the spec's shape — everything that affects WHERE metal
     and stones sit, nothing that only affects what they look like (species,
@@ -199,6 +230,7 @@ def compile_render_request(spec: Spec, lighting: str = "studio",
         "seed": seed,
         "geometry_fingerprint": fingerprint,
         "scene": {"lighting": lighting, "worn_on": worn_on, "style": style},
+        "fidelity_checklist": fidelity_checklist(spec),
         "control": {
             "image": "rasterize this spec's /specs/prototype.svg (or sheet.svg) to PNG",
             "mode": "canny",
