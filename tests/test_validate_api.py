@@ -88,3 +88,38 @@ def test_malformed_spec_still_gets_structured_422(example_spec):
     response = client.post("/specs/validate", json=example_spec)
     assert response.status_code == 422
     assert any("length" in str(d["loc"]) for d in response.json()["detail"])
+
+
+def test_silver_cannot_carry_a_color_or_karat(example_spec):
+    example_spec["metal"] = {"material": "silver", "karat": 18, "color": "yellow",
+                             "finish": "high_polish"}
+    response = client.post("/specs/validate", json=example_spec)
+    assert response.status_code == 422
+    details = response.json()["detail"]
+    messages = " · ".join(d["msg"] for d in details)
+    assert "single natural color" in messages
+    assert "not karated" in messages
+
+
+def test_gold_requires_karat_and_color_with_options(example_spec):
+    example_spec["metal"] = {"material": "gold", "finish": "high_polish"}
+    response = client.post("/specs/validate", json=example_spec)
+    assert response.status_code == 422
+    by_loc = {tuple(d["loc"]): d for d in response.json()["detail"]}
+    assert by_loc[("metal", "karat")]["valid_options"] == ["9", "14", "18", "22", "24"]
+    assert by_loc[("metal", "color")]["valid_options"] == ["yellow", "white", "rose"]
+
+
+def test_plain_silver_and_platinum_validate(example_spec):
+    for material in ("silver", "platinum"):
+        example_spec["metal"] = {"material": material, "finish": "high_polish"}
+        response = client.post("/specs/validate", json=example_spec)
+        assert response.status_code == 200, response.text
+
+
+def test_findings_include_metal_rules():
+    body = client.get("/vocabulary/findings").json()
+    gold = next(m for m in body["metals"] if m["id"] == "gold")
+    silver = next(m for m in body["metals"] if m["id"] == "silver")
+    assert gold["colors"] == ["yellow", "white", "rose"]
+    assert silver["colors"] == [] and silver["karats"] == []

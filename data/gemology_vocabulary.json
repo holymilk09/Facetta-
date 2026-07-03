@@ -365,5 +365,14 @@
       "cabochon": 0.54,
       "rose_cut": 0.40
     }
+  },
+
+  "metals": {
+    "note": "Alloy logic for the builder and validator: karats/colors list the only legal choices; an empty list means the parameter does not apply to that metal (silver and platinum each have a single natural color and no karating in fine jewelry).",
+    "materials": [
+      {"id": "gold", "display": "Gold", "karats": [9, 14, 18, 22, 24], "colors": ["yellow", "white", "rose"]},
+      {"id": "platinum", "display": "Platinum", "karats": [], "colors": []},
+      {"id": "silver", "display": "Silver", "karats": [], "colors": []}
+    ]
   }
 }

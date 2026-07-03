@@ -6,6 +6,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from facetta import prose as prose_layer
 from facetta.db import utcnow
+from facetta.mockup import SceneUnsupported, compile_render_request
 from facetta.prototype import compile_render_prompt, render_color_preview
 from facetta.spec import Spec
 from facetta.svg_sheet import SheetUnsupported, render_sheet, render_stack_sheet
@@ -77,6 +78,34 @@ def render_prompt(spec: Spec):
             content={"detail": [issue.as_detail() for issue in result.issues]},
         )
     return compile_render_prompt(result.spec)
+
+
+class RenderRequestBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    spec: Spec
+    lighting: str = "studio"
+    worn_on: str = "product"
+
+
+@router.post("/render-request")
+def render_request(body: RenderRequestBody):
+    """Scene-controlled, geometry-locked mockup request: the same design renders
+    the same composition every time — edit one spec parameter and only that
+    parameter moves. Feed the payload to any ControlNet-capable image provider."""
+    result = validate_spec(body.spec, get_vocabulary())
+    if not result.ok:
+        return JSONResponse(
+            status_code=422,
+            content={"detail": [issue.as_detail() for issue in result.issues]},
+        )
+    try:
+        return compile_render_request(result.spec, body.lighting, body.worn_on)
+    except SceneUnsupported as exc:
+        return JSONResponse(
+            status_code=422,
+            content={"detail": str(exc), "valid_options": exc.valid},
+        )
 
 
 class StackRequest(BaseModel):

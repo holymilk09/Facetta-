@@ -34,6 +34,7 @@ def findings() -> dict:
         "chain_styles": vocab.chain_styles(),
         "clasp_types": vocab.clasp_types(),
         "girdle_thickness_scale": vocab.girdle_grades(),
+        "metals": vocab.metals(),
     }
 
 

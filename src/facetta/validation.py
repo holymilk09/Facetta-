@@ -304,6 +304,44 @@ def _surround_fit(center_span_a: float, center_span_b: float, stone: Stone,
     return int(perimeter // (w + gap)), perimeter
 
 
+def _validate_metal(metal, vocab: Vocabulary, issues: list[ValidationIssue]) -> None:
+    """Alloy logic from the metals vocabulary: parameters that don't apply to a
+    material must be absent (silver has one color; platinum isn't karated), so
+    an illogical combination can never reach a sheet or an image-gen prompt."""
+    rules = vocab.metal(metal.material)
+    if rules is None:
+        issues.append(ValidationIssue(
+            loc=("metal", "material"), type="vocabulary",
+            msg=f"unknown metal '{metal.material}'",
+            valid_options=[m["id"] for m in vocab.metals()],
+        ))
+        return
+    if rules["karats"]:
+        if metal.karat is None or metal.karat not in rules["karats"]:
+            issues.append(ValidationIssue(
+                loc=("metal", "karat"), type="vocabulary",
+                msg=f"{metal.material} requires a karat",
+                valid_options=[str(k) for k in rules["karats"]],
+            ))
+    elif metal.karat is not None:
+        issues.append(ValidationIssue(
+            loc=("metal", "karat"), type="vocabulary",
+            msg=f"{metal.material} is not karated — omit karat",
+        ))
+    if rules["colors"]:
+        if metal.color is None or metal.color not in rules["colors"]:
+            issues.append(ValidationIssue(
+                loc=("metal", "color"), type="vocabulary",
+                msg=f"{metal.material} requires an alloy color",
+                valid_options=rules["colors"],
+            ))
+    elif metal.color is not None:
+        issues.append(ValidationIssue(
+            loc=("metal", "color"), type="vocabulary",
+            msg=f"{metal.material} has a single natural color — omit color",
+        ))
+
+
 def _validate_assembly(spec: Spec, vocab: Vocabulary, issues: list[ValidationIssue]) -> None:
     """Template section requirements and multi-stone physical fit."""
     if spec.template not in UNMOUNTED_TEMPLATES:
@@ -317,6 +355,8 @@ def _validate_assembly(spec: Spec, vocab: Vocabulary, issues: list[ValidationIss
                 loc=("metal",), type="template",
                 msg=f"template '{spec.template}' is a mounted piece and requires a metal section",
             ))
+    if spec.metal is not None:
+        _validate_metal(spec.metal, vocab, issues)
     if spec.template in RING_TEMPLATES:
         if spec.band is None:
             issues.append(ValidationIssue(

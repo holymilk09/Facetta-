@@ -100,6 +100,7 @@ terms.
 | `POST /specs/from-prose` | Claude API: designer prose → validated spec (needs `ANTHROPIC_API_KEY`) |
 | `POST /specs/prototype.svg` · `GET /designs/{id}/versions/{v}/prototype.svg` | Deterministic colored prototype (vocabulary hues + metal tones) |
 | `POST /specs/render-prompt` | Compiled photoreal prompt + control-image hint for external image models |
+| `POST /specs/render-request` | Scene-controlled mockup request (lighting, worn-on) with a geometry-locked seed: swap stone color or metal and the composition holds; change a dimension and it reseeds |
 | `POST /specs/stack.svg` · `GET /designs/{id}/versions/{v}/stack/{id2}/{v2}/sheet.svg` | Overlay two pieces with computed nesting clearance |
 | `GET /vocabulary/findings` | Chain styles, clasp types, girdle thickness scale |
 

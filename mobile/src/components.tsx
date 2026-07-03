@@ -17,24 +17,34 @@ export function ChipRow<T extends string | number>({
   value,
   onSelect,
   render,
+  disabled,
+  disabledNote,
 }: {
   label?: string;
   options: readonly T[];
   value: T | null;
   onSelect: (v: T) => void;
   render?: (v: T) => string;
+  disabled?: boolean;
+  disabledNote?: string;
 }) {
   return (
     <View style={styles.chipBlock}>
-      {label ? <Text style={styles.fieldLabel}>{label}</Text> : null}
+      {label ? (
+        <Text style={styles.fieldLabel}>
+          {label}
+          {disabled && disabledNote ? ` — ${disabledNote}` : ''}
+        </Text>
+      ) : null}
       <View style={styles.chipRow}>
         {options.map((opt) => {
-          const selected = opt === value;
+          const selected = !disabled && opt === value;
           return (
             <Pressable
               key={String(opt)}
+              disabled={disabled}
               onPress={() => onSelect(opt)}
-              style={[styles.chip, selected && styles.chipSelected]}>
+              style={[styles.chip, selected && styles.chipSelected, disabled && styles.chipDisabled]}>
               <Text style={[styles.chipText, selected && styles.chipTextSelected]}>
                 {render ? render(opt) : String(opt)}
               </Text>
@@ -142,6 +152,7 @@ const styles = StyleSheet.create({
     backgroundColor: theme.paper,
   },
   chipSelected: { borderColor: theme.ink, backgroundColor: theme.ink },
+  chipDisabled: { opacity: 0.3 },
   chipText: { fontSize: 13, color: theme.ink },
   chipTextSelected: { color: theme.paper },
   input: {

@@ -133,6 +133,12 @@ class Vocabulary:
     def girdle_grades(self) -> list[str]:
         return self.raw["girdle_thickness_scale"]
 
+    def metals(self) -> list[dict]:
+        return self.raw["metals"]["materials"]
+
+    def metal(self, material: str) -> dict | None:
+        return next((m for m in self.metals() if m["id"] == material), None)
+
     # --- organic / amorphous gems with their own parameter sets ---
 
     ORGANIC_PARAMETER_SETS = ("pearl", "opal")

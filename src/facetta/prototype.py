@@ -313,9 +313,9 @@ def render_color_preview(spec: Spec) -> str:
     return "\n".join(parts) + "\n"
 
 
-def compile_render_prompt(spec: Spec) -> dict:
-    """Spec -> photoreal prompt for an external image model. Dimensional truth
-    travels with the prompt; the control image carries the geometry."""
+def prompt_core(spec: Spec) -> tuple[str, list[str]]:
+    """The piece name and its spec-true detail phrases — shared by the plain
+    render prompt and the scene-controlled mockup requests."""
     stone = spec.stone
     d = stone.dimensions_mm
     piece = {
@@ -335,8 +335,9 @@ def compile_render_prompt(spec: Spec) -> dict:
     ]
     if spec.metal:
         karat = f"{spec.metal.karat} karat " if spec.metal.karat else ""
+        color = f"{spec.metal.color} " if spec.metal.color else ""
         finish = (spec.metal.finish or "high_polish").replace("_", " ")
-        details.append(f"set in {karat}{spec.metal.color} {spec.metal.material}, {finish} finish")
+        details.append(f"set in {karat}{color}{spec.metal.material}, {finish} finish")
     for side in spec.side_stones:
         where = {"halo": "in a halo around the center", "surround": "surrounding the center",
                  "stations": "evenly spaced stations", "under_center": "hanging below the center",
@@ -360,7 +361,13 @@ def compile_render_prompt(spec: Spec) -> dict:
     weight = estimate_metal_g(spec)
     if weight:
         details.append(f"approximately {weight} g of metal")
+    return piece, details
 
+
+def compile_render_prompt(spec: Spec) -> dict:
+    """Spec -> photoreal prompt for an external image model. Dimensional truth
+    travels with the prompt; the control image carries the geometry."""
+    piece, details = prompt_core(spec)
     prompt = (
         f"Ultra-realistic studio product photograph of a {piece}: "
         + "; ".join(details)

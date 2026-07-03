@@ -112,6 +112,9 @@ export function BuilderScreen({
   const [notes, setNotes] = useState('');
   const [collection, setCollection] = useState('');
   const [ratioLock, setRatioLock] = useState(true);
+  const [lighting, setLighting] = useState('studio');
+  const [wornOn, setWornOn] = useState('product');
+  const [mockup, setMockup] = useState<any | null>(null);
   const [prose, setProse] = useState('');
   const [notice, setNotice] = useState<{ kind: 'ok' | 'error' | 'info'; text: string } | null>(null);
   const [issues, setIssues] = useState<any[]>([]);
@@ -133,6 +136,8 @@ export function BuilderScreen({
     setSheetSvg(null);
     setIssues([]);
     setNotice(null);
+    setWornOn('product'); // placements are per-type; never carry one across
+    setMockup(null);
     const d = DEFAULTS[c];
     setCarat(d.carat);
     setCut(d.cut);
@@ -322,10 +327,12 @@ export function BuilderScreen({
       side_stones: [],
       notes_to_factory: notes || null,
     };
+    // alloy logic: parameters that don't apply to a metal are omitted, never
+    // defaulted — silver/platinum carry no karat and no color choice
     const metalSection = {
       material: metal,
-      karat: metal === 'gold' ? karat : null,
-      color: metal === 'gold' ? metalColor : 'white',
+      karat: metalRules.karats.length ? karat : null,
+      color: metalRules.colors.length ? metalColor : null,
       finish,
     };
     if (category === 'ring') {
@@ -457,6 +464,18 @@ export function BuilderScreen({
       } else showIssues(r.body);
     });
 
+  const compileMockup = () =>
+    run(async () => {
+      const r = await api.renderRequest(buildSpec(), lighting, wornOn);
+      if (r.ok) {
+        setMockup(r.body);
+        setNotice({
+          kind: 'ok',
+          text: `Mockup request compiled — seed ${r.body.seed} is locked to this geometry; re-run after any color/metal change and the composition stays identical.`,
+        });
+      } else showIssues(r.body);
+    });
+
   const compileProse = () =>
     run(async () => {
       const r = await api.fromProse(prose, designer);
@@ -465,6 +484,12 @@ export function BuilderScreen({
         setNotice({ kind: 'ok', text: 'Prose compiled into a validated spec — review and save.' });
       } else showIssues(r.body);
     });
+
+  // alloy rules from the metals vocabulary (empty list = parameter not applicable)
+  const metalRules = findings?.metals?.find((m: any) => m.id === metal) ?? {
+    karats: metal === 'gold' ? [9, 14, 18, 22, 24] : [],
+    colors: metal === 'gold' ? ['yellow', 'white', 'rose'] : [],
+  };
 
   const gemstoneStones = stones.filter((s) => s.parameter_set === 'gemstone');
   const allowedCuts = CATEGORY_CUTS[category];
@@ -723,18 +748,66 @@ export function BuilderScreen({
       {category !== 'loose' && (
         <Section title="Metal">
           <ChipRow label="Metal" options={METALS as unknown as string[]} value={metal} onSelect={setMetal} />
-          {metal === 'gold' && (
-            <>
-              <ChipRow label="Karat" options={KARATS as unknown as number[]} value={karat} onSelect={setKarat} render={(k) => `${k}k`} />
-              <ChipRow label="Color" options={METAL_COLORS as unknown as string[]} value={metalColor} onSelect={setMetalColor} />
-            </>
-          )}
+          <ChipRow
+            label="Karat"
+            options={KARATS as unknown as number[]}
+            value={karat}
+            onSelect={setKarat}
+            render={(k) => `${k}k`}
+            disabled={!metalRules.karats.length}
+            disabledNote={`${metal} is not karated`}
+          />
+          <ChipRow
+            label="Color"
+            options={METAL_COLORS as unknown as string[]}
+            value={metalColor}
+            onSelect={setMetalColor}
+            disabled={!metalRules.colors.length}
+            disabledNote={`${metal} has one natural color`}
+          />
           {mode === 'pro' && (
             <ChipRow label="Finish" options={FINISHES as unknown as string[]} value={finish} onSelect={setFinish} render={(f) => f.replace(/_/g, ' ')} />
           )}
           {mode === 'pro' && <Field label="Notes to factory" value={notes} onChange={setNotes} multiline />}
         </Section>
       )}
+
+      <Section title="Mockup — bring it to life">
+        <ChipRow
+          label="Lighting"
+          options={['studio', 'natural', 'outdoor', 'editorial'] as const}
+          value={lighting}
+          onSelect={setLighting}
+        />
+        <ChipRow
+          label="Worn on"
+          options={
+            (category === 'ring'
+              ? ['product', 'finger']
+              : category === 'bracelet'
+                ? ['product', 'wrist']
+                : category === 'pendant'
+                  ? ['product', 'neck']
+                  : ['product']) as string[]
+          }
+          value={wornOn}
+          onSelect={setWornOn}
+          render={(w) => (w === 'product' ? 'product only' : `on a ${w}`)}
+        />
+        <Button
+          title="Compile mockup request"
+          kind="ghost"
+          onPress={compileMockup}
+          disabled={busy || !ready}
+        />
+        {mockup && (
+          <Text style={styles.mockupText}>
+            seed {mockup.seed} · {mockup.scene.lighting} · {mockup.scene.worn_on}
+            {'\n\n'}
+            {mockup.prompt}
+          </Text>
+        )}
+      </Section>
 
       <Section title="Describe it instead (Claude)">
         <Field
@@ -803,6 +876,7 @@ const styles = StyleSheet.create({
   rowItem: { flex: 1 },
   actions: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 4 },
   hint: { fontSize: 11, color: theme.faint, marginBottom: 8, fontStyle: 'italic' },
+  mockupText: { fontSize: 12, color: theme.ink, marginTop: 8, lineHeight: 17 },
   wide: { flex: 1, flexDirection: 'row' },
   wideForm: { flex: 1.05, borderRightWidth: 1, borderRightColor: theme.line },
   widePreview: { flex: 1, padding: 14 },
