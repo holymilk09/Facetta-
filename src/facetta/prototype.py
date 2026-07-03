@@ -289,10 +289,11 @@ def _pendant_proto(spec: Spec, vocab: Vocabulary) -> list[str]:
                            table_ratio=0.62, fill="url(#stone)")
     if drop:
         dw = drop.dimensions_mm.width * s
-        sap_cy = cluster_cy + cluster_by + 1.0 * s + dw / 2
+        dl = drop.dimensions_mm.length * s  # hangs point-down
+        sap_cy = cluster_cy + cluster_by + 1.0 * s + dl / 2
         # articulated drop: its jump ring bridges the cluster and the stone
         parts += _link_ring(cx, cluster_cy + cluster_by + 0.5 * s, 0.45 * s)
-        parts += _stone_visual(cx, sap_cy, drop, dw, dw, vocab)
+        parts += _stone_visual(cx, sap_cy, drop, dw, dl, vocab)
     return parts
 
 

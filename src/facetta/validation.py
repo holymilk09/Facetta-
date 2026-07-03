@@ -198,7 +198,9 @@ def pendant_drop_mm(spec: Spec) -> float:
     drop = spec.pendant.bail_height_mm + PENDANT_LINK_GAP_MM + cluster_l
     drop_stone = next((s for s in spec.side_stones if s.position in ("under_center", "drop")), None)
     if drop_stone is not None:
-        drop += PENDANT_LINK_GAP_MM + drop_stone.dimensions_mm.width
+        # the drop stone hangs point-down: its LENGTH is the vertical extent
+        # (identical to width for rounds, longer for pears and ovals)
+        drop += PENDANT_LINK_GAP_MM + drop_stone.dimensions_mm.length
     return round(drop, 2)
 
 

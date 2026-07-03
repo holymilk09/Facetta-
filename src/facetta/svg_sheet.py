@@ -43,7 +43,6 @@ FONT = "Georgia, 'Times New Roman', serif"
 
 SUPPORTED_CUTS = ("round_brilliant", "oval_brilliant")  # solitaire / halo center cuts
 BANGLE_STATION_CUTS = ("princess", "asscher")
-PENDANT_CENTER_CUTS = ("emerald_cut", "asscher", "radiant")
 
 
 class SheetUnsupported(Exception):
@@ -814,14 +813,13 @@ def _pendant_front_view(spec: Spec, melee, drop_stone, cx: float, ty: float) -> 
     bottom = cluster_bottom
     if drop_stone:
         sw = drop_stone.dimensions_mm.width * SCALE
-        sap_cy = cluster_bottom + LINK_GAP_MM * SCALE + sw / 2
+        sl = drop_stone.dimensions_mm.length * SCALE  # hangs point-down
+        sap_cy = cluster_bottom + LINK_GAP_MM * SCALE + sl / 2
         parts += [
             _circle(cx, cluster_bottom + LINK_GAP_MM / 2 * SCALE, LINK_GAP_MM / 2 * SCALE),
-            _circle(cx, sap_cy, sw / 2),
-            f'<circle cx="{cx:.2f}" cy="{sap_cy:.2f}" r="{sw / 2 * 0.55:.2f}" fill="none" '
-            f'stroke="{FAINT}" stroke-width="{STROKE_DIM}" stroke-dasharray="1 0.8"/>',
+            *_facet_face_up(cx, sap_cy, drop_stone.cut, sw, sl),
         ]
-        bottom = sap_cy + sw / 2
+        bottom = sap_cy + sl / 2
 
     drop_mm = p.drop_mm if p.drop_mm is not None else (bottom - ty) / SCALE
     x_dim = cx + max(cluster_ax, bail_r) + 10
@@ -849,12 +847,14 @@ def _pendant_front_view(spec: Spec, melee, drop_stone, cx: float, ty: float) -> 
                            size=2.8, color=FAINT))
     if drop_stone:
         sw_mm = drop_stone.dimensions_mm.width
-        sap_cy = cluster_bottom + LINK_GAP_MM * SCALE + sw_mm * SCALE / 2
+        sl_mm = drop_stone.dimensions_mm.length
+        sap_cy = cluster_bottom + LINK_GAP_MM * SCALE + sl_mm * SCALE / 2
+        label = (f"⌀ {_fmt(sw_mm)} mm" if sw_mm == sl_mm
+                 else f"{_fmt(sw_mm)} × {_fmt(sl_mm)} mm")
         parts += [
             _ext(cx - sw_mm / 2 * SCALE, sap_cy, cx - sw_mm / 2 * SCALE, bottom + 6),
             _ext(cx + sw_mm / 2 * SCALE, sap_cy, cx + sw_mm / 2 * SCALE, bottom + 6),
-            *_dim_h(cx - sw_mm / 2 * SCALE, cx + sw_mm / 2 * SCALE, bottom + 5,
-                    f"⌀ {_fmt(sw_mm)} mm"),
+            *_dim_h(cx - sw_mm / 2 * SCALE, cx + sw_mm / 2 * SCALE, bottom + 5, label),
         ]
     return parts
 
@@ -887,20 +887,20 @@ def _pendant_side_view(spec: Spec, melee, drop_stone, cx: float, ty: float) -> l
     bottom = cluster_cy + cluster_by
     if drop_stone:
         sd = drop_stone.dimensions_mm.depth * SCALE
-        sw = drop_stone.dimensions_mm.width * SCALE
-        sap_cy = bottom + LINK_GAP_MM * SCALE + sw / 2
+        sl = drop_stone.dimensions_mm.length * SCALE  # hangs point-down
+        sap_cy = bottom + LINK_GAP_MM * SCALE + sl / 2
         sap_girdle_x = cx - sd / 2 + 0.35 * sd
         parts += [
-            f'<rect x="{cx - sd / 2:.2f}" y="{sap_cy - sw / 2:.2f}" width="{sd:.2f}" '
-            f'height="{sw:.2f}" fill="#ffffff" stroke="{INK}" stroke-width="{STROKE_MAIN}"/>',
-            _line(sap_girdle_x, sap_cy - sw / 2, sap_girdle_x, sap_cy + sw / 2,
+            f'<rect x="{cx - sd / 2:.2f}" y="{sap_cy - sl / 2:.2f}" width="{sd:.2f}" '
+            f'height="{sl:.2f}" fill="#ffffff" stroke="{INK}" stroke-width="{STROKE_MAIN}"/>',
+            _line(sap_girdle_x, sap_cy - sl / 2, sap_girdle_x, sap_cy + sl / 2,
                   w=STROKE_DIM, color=FAINT),
-            _ext(cx - sd / 2, sap_cy + sw / 2, cx - sd / 2, sap_cy + sw / 2 + 6),
-            _ext(cx + sd / 2, sap_cy + sw / 2, cx + sd / 2, sap_cy + sw / 2 + 6),
-            *_dim_h(cx - sd / 2, cx + sd / 2, sap_cy + sw / 2 + 5,
+            _ext(cx - sd / 2, sap_cy + sl / 2, cx - sd / 2, sap_cy + sl / 2 + 6),
+            _ext(cx + sd / 2, sap_cy + sl / 2, cx + sd / 2, sap_cy + sl / 2 + 6),
+            *_dim_h(cx - sd / 2, cx + sd / 2, sap_cy + sl / 2 + 5,
                     f"{_fmt(drop_stone.dimensions_mm.depth)} mm"),
         ]
-        bottom = sap_cy + sw / 2
+        bottom = sap_cy + sl / 2
     parts += [
         _line(cx, ty - 3, cx, bottom + 3, w=STROKE_DIM, color=FAINT, dash="3 1 0.5 1"),
         _text(cx, bottom + 12, "SIDE PROFILE", size=3.6, style=' letter-spacing="1.2"'),
@@ -911,11 +911,6 @@ def _pendant_side_view(spec: Spec, melee, drop_stone, cx: float, ty: float) -> l
 def _render_pendant(spec: Spec) -> str:
     if spec.pendant is None:
         raise SheetUnsupported("a pendant sheet needs a pendant section")
-    if spec.stone.cut not in PENDANT_CENTER_CUTS:
-        raise SheetUnsupported(
-            f"pendant center cut '{spec.stone.cut}' not supported; "
-            f"supported: {list(PENDANT_CENTER_CUTS)}"
-        )
     melee = _find_stone(spec, "halo", "surround")
     drop_stone = _find_stone(spec, "under_center", "drop")
     # center the whole drop on the shared baseline
