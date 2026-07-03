@@ -1,0 +1,17 @@
+Grade Type,Rating Name,Abbreviation,Metric Target Percentage,Visual Appearance,Light Performance Loss
+Culet,None (Pointed),None,0.000,Perfect pointed junction; completely invisible,0.012
+Culet,Very Small,VS,0.0075,Barely visible as a tiny point or micro-facet,0.018
+Culet,Small,S,0.020,Visible under magnification as a tiny reflective dot,0.032
+Culet,Medium,M,0.035,Noticeable under magnification; occasionally seen with naked eye,0.059
+Culet,Slightly Large,SL,0.045,Visible naked-eye as a small dark circle in the center,0.097
+Culet,Large,L,0.055,Clearly visible face-up without magnification,0.148
+Culet,Very Large,VL,0.070,Prominent dark circle that interrupts the face-up pattern,0.214
+Culet,Extremely Large,EL,0.100,Obvious distracting polygon that ruins light reflection,0.250
+Girdle,Extremely Thin,ETN,0.015,Appears as a sharp reflective knife-edge with zero flat band,0.0
+Girdle,Very Thin,VTN,0.020,Extremely narrow uniform flat band visible in profile,0.0
+Girdle,Thin,THN,0.025,Fine clean flat band; ideal for minimizing setting weights,0.0
+Girdle,Medium,MED,0.0325,Standard target; optimal protection with minimal weight,0.0
+Girdle,Slightly Thick,STK,0.0425,Noticeable flat band; highly durable against setting pressure,0.0
+Girdle,Thick,THK,0.055,Heavy frosted rim; adds dead weight that doesn't increase face size,0.0
+Girdle,Very Thick,VTK,0.0725,Extremely heavy rim; clearly visible as a thick gray band in profile,0.0
+Girdle,Extremely Thick,ETK,0.090,Excessively thick wall; severely impacts light refraction and proportions,0.0

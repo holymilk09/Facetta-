@@ -123,3 +123,48 @@ def test_findings_include_metal_rules():
     silver = next(m for m in body["metals"] if m["id"] == "silver")
     assert gold["colors"] == ["yellow", "white", "rose"]
     assert silver["colors"] == [] and silver["karats"] == []
+
+
+def test_culet_grade_must_be_in_vocabulary(loose_spec):
+    loose_spec["stone"]["culet"] = "gigantic"
+    response = client.post("/specs/validate", json=loose_spec)
+    assert response.status_code == 422
+    detail = next(d for d in response.json()["detail"] if d["loc"][-1] == "culet")
+    assert "pointed" in detail["valid_options"]
+    loose_spec["stone"]["culet"] = "very_small"
+    assert client.post("/specs/validate", json=loose_spec).status_code == 200
+
+
+def test_international_ring_sizes_derive_diameter(example_spec):
+    example_spec["ring_size"] = {"system": "EU", "value": 53}
+    body = client.post("/specs/validate", json=example_spec).json()
+    assert body["ring_size"]["inner_diameter_mm"] == 16.9  # same finger as US 6.5
+
+    example_spec["ring_size"] = {"system": "UK", "value": "M 1/2"}
+    body = client.post("/specs/validate", json=example_spec).json()
+    assert body["ring_size"]["inner_diameter_mm"] == 16.9
+
+    example_spec["ring_size"] = {"system": "JP", "value": 99}
+    response = client.post("/specs/validate", json=example_spec)
+    assert response.status_code == 422
+    detail = next(d for d in response.json()["detail"] if d["loc"] == ["ring_size", "value"])
+    assert "12" in detail["valid_options"]
+
+
+def test_thick_girdle_raises_expected_carat(loose_spec):
+    # 2.00 ct sits within tolerance of the base model; an extremely thick
+    # girdle raises the expected weight by 9% for a round brilliant
+    loose_spec["stone"]["girdle"] = "extremely_thick"
+    loose_spec["stone"]["carat"] = 2.18  # base model would reject this as high
+    response = client.post("/specs/validate", json=loose_spec)
+    assert response.status_code == 200, response.text
+
+
+def test_gallery_too_low_for_culet_clearance(example_spec):
+    example_spec["setting"]["gallery_height_mm"] = 2.0  # pavilion needs ~3.4
+    response = client.post("/specs/validate", json=example_spec)
+    assert response.status_code == 422
+    detail = next(d for d in response.json()["detail"]
+                  if d["loc"] == ["setting", "gallery_height_mm"])
+    assert "finger rail" in detail["msg"]
+    assert detail["expected"]["min_gallery_height_mm"] > 2.0

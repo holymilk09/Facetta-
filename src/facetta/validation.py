@@ -63,8 +63,32 @@ class ValidationResult:
         return not self.issues
 
 
-def expected_inner_diameter_mm(ring_size: RingSize) -> float:
-    return round(US_SIZE_BASE_MM + US_SIZE_STEP_MM * ring_size.value, 2)
+def expected_inner_diameter_mm(ring_size: RingSize, vocab: Vocabulary | None = None) -> float | None:
+    """Inner diameter for a ring size in any supported system.
+
+    US follows the linear formula; UK/EU/JP/HK look up the vocabulary's
+    international conversion table (diameter_mm is the canonical column).
+    Returns None when the size value isn't a listed one for its system.
+    """
+    if ring_size.system == "US" and not isinstance(ring_size.value, str):
+        return round(US_SIZE_BASE_MM + US_SIZE_STEP_MM * ring_size.value, 2)
+    if vocab is None:
+        from facetta.vocabulary import get_vocabulary
+        vocab = get_vocabulary()
+    key = ring_size.system.lower()
+    for row in vocab.ring_size_rows():
+        listed = row[key]
+        if isinstance(ring_size.value, str):
+            if str(listed).replace(" ", "").upper() == ring_size.value.replace(" ", "").upper():
+                return row["diameter_mm"]
+        elif isinstance(listed, (int, float)) and float(listed) == float(ring_size.value):
+            return row["diameter_mm"]
+    return None
+
+
+def ring_size_options(system: str, vocab: Vocabulary) -> list[str]:
+    key = system.lower()
+    return [str(row[key]) for row in vocab.ring_size_rows()]
 
 
 @dataclass(frozen=True)
@@ -107,6 +131,8 @@ def nesting_clearance(spec_a: Spec, spec_b: Spec) -> NestingClearance:
             and spec_b.band is not None and spec_b.ring_size is not None):
         d1 = spec_a.ring_size.inner_diameter_mm or expected_inner_diameter_mm(spec_a.ring_size)
         d2 = spec_b.ring_size.inner_diameter_mm or expected_inner_diameter_mm(spec_b.ring_size)
+        if d1 is None or d2 is None:
+            raise ValueError("ring sizes must resolve to inner diameters before stacking")
         return NestingClearance(
             kind="ring_stack",
             nests=True,
@@ -142,6 +168,8 @@ def estimate_metal_g(spec: Spec) -> float | None:
     volume_mm3 = None
     if spec.band is not None and spec.ring_size is not None:
         inner_d = spec.ring_size.inner_diameter_mm or expected_inner_diameter_mm(spec.ring_size)
+        if inner_d is None:
+            return None
         r_i = inner_d / 2
         r_o = r_i + spec.band.thickness_mm
         volume_mm3 = math.pi * (r_o**2 - r_i**2) * spec.band.width_mm
@@ -232,6 +260,14 @@ def _validate_stone(stone: Stone, loc: tuple, vocab: Vocabulary, issues: list[Va
                 valid_options=list(species.allowed_phenomena),
             ))
 
+    if stone.culet is not None and stone.culet not in vocab.culet_grade_ids():
+        issues.append(ValidationIssue(
+            loc=(*loc, "culet"),
+            msg=f"unknown culet size '{stone.culet}'",
+            type="vocabulary",
+            valid_options=vocab.culet_grade_ids(),
+        ))
+
     if stone.girdle is not None and stone.girdle not in vocab.girdle_grades():
         issues.append(ValidationIssue(
             loc=(*loc, "girdle"),
@@ -269,9 +305,13 @@ def _validate_stone(stone: Stone, loc: tuple, vocab: Vocabulary, issues: list[Va
 
     if cut is not None:
         d = stone.dimensions_mm
+        # a thick girdle hides real weight: the appraisal girdle-correction
+        # multiplier scales the expected carat (and its depth inverse)
+        gc = (vocab.girdle_weight_correction(stone.cut, stone.girdle)
+              if stone.girdle else 1.0)
         result = check_density(
             sg=species.sg,
-            shape_factor=cut.shape_factor,
+            shape_factor=cut.shape_factor * gc,
             length_mm=d.length,
             width_mm=d.width,
             depth_mm=d.depth,
@@ -357,6 +397,23 @@ def _validate_assembly(spec: Spec, vocab: Vocabulary, issues: list[ValidationIss
             ))
     if spec.metal is not None:
         _validate_metal(spec.metal, vocab, issues)
+    if (spec.template in RING_TEMPLATES and spec.setting is not None
+            and spec.setting.gallery_height_mm is not None):
+        # factory rule: the culet must clear the finger rail (skin) — pavilion
+        # is ~71% of stone depth under our 26% crown / thin girdle split
+        min_rail = vocab.manufacturing_tolerances()["culet_to_finger_rail_mm"]
+        required = round(0.71 * spec.stone.dimensions_mm.depth + min_rail, 2)
+        if spec.setting.gallery_height_mm < required:
+            issues.append(ValidationIssue(
+                loc=("setting", "gallery_height_mm"),
+                msg=(
+                    f"gallery {spec.setting.gallery_height_mm} mm sits the culet "
+                    f"closer than {min_rail} mm to the finger rail — casting "
+                    f"workshops reject this for skin comfort"
+                ),
+                type="manufacturing",
+                expected={"min_gallery_height_mm": required},
+            ))
     if spec.template in RING_TEMPLATES:
         if spec.band is None:
             issues.append(ValidationIssue(
@@ -492,8 +549,16 @@ def validate_spec(spec: Spec, vocab: Vocabulary) -> ValidationResult:
         spec.pendant.drop_mm = pendant_drop_mm(spec)
 
     if spec.ring_size is not None:
-        expected = expected_inner_diameter_mm(spec.ring_size)
-        if spec.ring_size.inner_diameter_mm is None:
+        expected = expected_inner_diameter_mm(spec.ring_size, vocab)
+        if expected is None:
+            issues.append(ValidationIssue(
+                loc=("ring_size", "value"),
+                msg=(f"'{spec.ring_size.value}' is not a listed "
+                     f"{spec.ring_size.system} ring size"),
+                type="ring_size",
+                valid_options=ring_size_options(spec.ring_size.system, vocab),
+            ))
+        elif spec.ring_size.inner_diameter_mm is None:
             spec = spec.model_copy(deep=True)
             spec.ring_size.inner_diameter_mm = expected
         elif abs(spec.ring_size.inner_diameter_mm - expected) > RING_DIAMETER_TOLERANCE_MM:

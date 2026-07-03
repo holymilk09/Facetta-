@@ -374,5 +374,79 @@
       {"id": "platinum", "display": "Platinum", "karats": [], "colors": []},
       {"id": "silver", "display": "Silver", "karats": [], "colors": []}
     ]
+  },
+
+  "culet_size_scale": {
+    "note": "GIA culet grades; pct_of_diameter is the culet facet width as a fraction of average girdle diameter, light_loss is the direct face-up light leakage fraction (data/reference/mounted_gem_grading.csv).",
+    "grades": [
+      {"id": "pointed", "display": "None (Pointed)", "abbr": "None", "pct_of_diameter": 0.0, "light_loss": 0.012, "appearance": "perfect pointed junction; completely invisible"},
+      {"id": "very_small", "display": "Very Small", "abbr": "VS", "pct_of_diameter": 0.0075, "light_loss": 0.018, "appearance": "barely visible as a tiny point or micro-facet"},
+      {"id": "small", "display": "Small", "abbr": "S", "pct_of_diameter": 0.02, "light_loss": 0.032, "appearance": "visible under magnification as a tiny reflective dot"},
+      {"id": "medium", "display": "Medium", "abbr": "M", "pct_of_diameter": 0.035, "light_loss": 0.059, "appearance": "noticeable under magnification; occasionally seen with the naked eye"},
+      {"id": "slightly_large", "display": "Slightly Large", "abbr": "SL", "pct_of_diameter": 0.045, "light_loss": 0.097, "appearance": "visible naked-eye as a small dark circle in the center"},
+      {"id": "large", "display": "Large", "abbr": "L", "pct_of_diameter": 0.055, "light_loss": 0.148, "appearance": "clearly visible face-up without magnification"},
+      {"id": "very_large", "display": "Very Large", "abbr": "VL", "pct_of_diameter": 0.07, "light_loss": 0.214, "appearance": "prominent dark circle that interrupts the face-up pattern"},
+      {"id": "extremely_large", "display": "Extremely Large", "abbr": "EL", "pct_of_diameter": 0.1, "light_loss": 0.25, "appearance": "obvious, distracting polygon that ruins light reflection"}
+    ]
+  },
+
+  "girdle_thickness_detail": {
+    "note": "Enrichment of girdle_thickness_scale (same ids): abbreviation, thickness as a fraction of average diameter, and the profile appearance (data/reference/mounted_gem_grading.csv).",
+    "extremely_thin": {"abbr": "ETN", "pct_of_diameter": 0.015, "appearance": "sharp, reflective knife-edge with zero flat band"},
+    "very_thin": {"abbr": "VTN", "pct_of_diameter": 0.02, "appearance": "extremely narrow, uniform flat band visible in profile"},
+    "thin": {"abbr": "THN", "pct_of_diameter": 0.025, "appearance": "fine, clean flat band; ideal for minimizing setting weight"},
+    "medium": {"abbr": "MED", "pct_of_diameter": 0.0325, "appearance": "standard target; optimal protection with minimal weight"},
+    "slightly_thick": {"abbr": "STK", "pct_of_diameter": 0.0425, "appearance": "noticeable flat band; highly durable against setting pressure"},
+    "thick": {"abbr": "THK", "pct_of_diameter": 0.055, "appearance": "heavy, frosted rim; adds dead weight without face size"},
+    "very_thick": {"abbr": "VTK", "pct_of_diameter": 0.0725, "appearance": "extremely heavy rim; a thick gray band in profile"},
+    "extremely_thick": {"abbr": "ETK", "pct_of_diameter": 0.09, "appearance": "excessively thick wall; severely impacts light and proportions"}
+  },
+
+  "girdle_weight_correction": {
+    "note": "Multipliers applied to the expected carat in the density check when the girdle runs thick — a thick girdle hides real weight (data/reference/weight_formulas.csv). round_brilliant has its own gentler row; every other cut uses default.",
+    "round_brilliant": {"slightly_thick": 1.02, "thick": 1.03, "very_thick": 1.06, "extremely_thick": 1.09},
+    "default": {"slightly_thick": 1.035, "thick": 1.06, "very_thick": 1.095, "extremely_thick": 1.11}
+  },
+
+  "ring_size_conversion": {
+    "note": "International sizing matrix (data/reference/ring_sizing.csv). diameter_mm is canonical; US additionally follows the linear formula 11.63 + 0.8128 x size, which this table matches within a fraction of a size.",
+    "rows": [
+      {"diameter_mm": 13.8, "us": 2.75, "uk": "E 1/2", "eu": 43, "jp": 3, "hk": 5},
+      {"diameter_mm": 14.1, "us": 3.0, "uk": "F 1/2", "eu": 44, "jp": 4, "hk": 6},
+      {"diameter_mm": 14.5, "us": 3.5, "uk": "H", "eu": 46, "jp": 5, "hk": 7},
+      {"diameter_mm": 14.8, "us": 3.75, "uk": "H 1/2", "eu": 47, "jp": 6, "hk": 8},
+      {"diameter_mm": 15.2, "us": 4.25, "uk": "I 1/2", "eu": 48, "jp": 7, "hk": 9},
+      {"diameter_mm": 15.5, "us": 4.75, "uk": "J 1/2", "eu": 49, "jp": 8, "hk": 10},
+      {"diameter_mm": 15.9, "us": 5.25, "uk": "K", "eu": 50, "jp": 9, "hk": 11},
+      {"diameter_mm": 16.2, "us": 5.5, "uk": "L", "eu": 51, "jp": 10, "hk": 12},
+      {"diameter_mm": 16.6, "us": 6.0, "uk": "L 1/2", "eu": 52, "jp": 11, "hk": 13},
+      {"diameter_mm": 16.9, "us": 6.5, "uk": "M 1/2", "eu": 53, "jp": 12, "hk": 14},
+      {"diameter_mm": 17.3, "us": 7.0, "uk": "N 1/2", "eu": 54, "jp": 13.5, "hk": 15},
+      {"diameter_mm": 17.7, "us": 7.5, "uk": "P", "eu": 56, "jp": 14.5, "hk": 16},
+      {"diameter_mm": 18.0, "us": 7.75, "uk": "P 1/2", "eu": 57, "jp": 15.5, "hk": 17},
+      {"diameter_mm": 18.3, "us": 8.25, "uk": "Q 1/2", "eu": 58, "jp": 16.5, "hk": 18},
+      {"diameter_mm": 18.7, "us": 8.75, "uk": "R", "eu": 59, "jp": 17.5, "hk": 19},
+      {"diameter_mm": 19.0, "us": 9.0, "uk": "S", "eu": 60, "jp": 18.5, "hk": 20},
+      {"diameter_mm": 19.4, "us": 9.5, "uk": "S 1/2", "eu": 61, "jp": 19.5, "hk": 21},
+      {"diameter_mm": 19.7, "us": 10.0, "uk": "T 1/2", "eu": 62, "jp": 20.5, "hk": 22},
+      {"diameter_mm": 20.1, "us": 10.25, "uk": "U 1/2", "eu": 63, "jp": 22, "hk": 23},
+      {"diameter_mm": 20.4, "us": 10.75, "uk": "V", "eu": 64, "jp": 23, "hk": 24},
+      {"diameter_mm": 20.8, "us": 11.25, "uk": "W", "eu": 65, "jp": 24, "hk": 25},
+      {"diameter_mm": 21.1, "us": 11.5, "uk": "W 1/2", "eu": 66, "jp": 25, "hk": 26},
+      {"diameter_mm": 21.5, "us": 12.0, "uk": "Z", "eu": 68, "jp": 26, "hk": 27},
+      {"diameter_mm": 21.8, "us": 12.5, "uk": "Z 1/2", "eu": 69, "jp": 27, "hk": 28},
+      {"diameter_mm": 22.2, "us": 12.75, "uk": "Z+1", "eu": 70, "jp": 28, "hk": 29},
+      {"diameter_mm": 22.5, "us": 13.25, "uk": "Z+2", "eu": 71, "jp": 31, "hk": 30}
+    ]
+  },
+
+  "manufacturing_tolerances": {
+    "note": "Casting-workshop CAD boundaries (data/reference/manufacturing_tolerances.csv). culet_to_finger_rail_mm is enforced by validation; the rest inform future detailing features (milgrain, engraving).",
+    "culet_to_finger_rail_mm": 0.5,
+    "milgrain": {"min_bead_diameter_mm": 0.5, "inter_bead_spacing_mm": 0.02, "distance_to_edge_mm": 0.2, "height_above_rail_mm": 0.3},
+    "gallery_rail": {"min_bar_thickness_mm": 0.4, "inner_joint_opening_mm": 0.4},
+    "prong": {"max_seat_cut_fraction": 0.25},
+    "raised_text": {"min_stroke_mm": 0.3, "max_height_mm": 0.6, "min_spacing_mm": 0.3},
+    "recessed_text": {"min_stroke_mm": 0.3, "max_depth_mm": 0.6}
   }
 }

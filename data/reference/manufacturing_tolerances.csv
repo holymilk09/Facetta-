@@ -1,0 +1,14 @@
+Element,Parameter,Standard Value (mm),Rule
+Milgrain,Bead Diameter (Minimum),0.50,Standard CAD detail limit to survive final polishing
+Milgrain,Inter-bead Spacing,0.02,Clearance distance; beads must never overlap in CAD
+Milgrain,Distance to Edge,0.20,Protective border margin to survive polishing degradation
+Milgrain,Height above Finger Rail,0.30,Minimum elevation from structural contact point
+Gallery Rail,Minimum Bar Thickness,0.40,Wall thickness on horizontal stabilizer wires
+Gallery Rail,Inner Joint Opening,0.40,Clearance between dual horizontal stabilizer rails
+Gallery Rail,Culet to Finger Rail,0.50,Minimum distance; prevents skin irritation
+Prong Settings,Maximum Seat Cut Depth,25% of prong diameter,Seating incision limit on standard holding wire
+Raised Text,Minimum Stroke Width,0.30,Ensure characters survive casting fill-in
+Raised Text,Maximum Height,0.50-0.60,Absolute limit for wearer skin comfort
+Raised Text,Minimum Spacing,0.30,Character separation to prevent merging
+Recessed Text,Minimum Stroke Width,0.30,Limit to maintain high readability
+Recessed Text,Maximum Engraving Depth,0.60,Depth must not exceed double the font width

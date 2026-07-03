@@ -59,6 +59,7 @@ class Stone(StrictModel):
     table_pct: Annotated[float, Field(ge=40, le=80)] | None = None
     depth_pct: Annotated[float, Field(ge=30, le=90)] | None = None
     girdle: str | None = None  # vocabulary girdle_thickness_scale word
+    culet: str | None = None   # vocabulary culet_size_scale grade
     inscription: Annotated[str, Field(min_length=1, max_length=24)] | None = None
 
 
@@ -83,8 +84,9 @@ class Band(StrictModel):
 
 
 class RingSize(StrictModel):
-    system: Literal["US"]
-    value: Annotated[float, Field(gt=0)]
+    system: Literal["US", "UK", "EU", "JP", "HK"]
+    # UK sizes are letters ("M 1/2"); the other systems are numeric
+    value: Annotated[float, Field(gt=0)] | Annotated[str, Field(min_length=1, max_length=8)]
     inner_diameter_mm: Mm | None = None
 
 

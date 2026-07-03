@@ -1,0 +1,35 @@
+Shape,Tier Name,Angle,Index Settings,Meetpoint Instructions
+Pear,Pavilion Tier 1 (P1),42.18,"96, 06, 12, 18, 24, 72, 78, 84, 90",Cut to form a permanent stable center point.
+Pear,Pavilion Tier 2 (P2),41.68,"26, 70",Intersect and meet the permanent center point.
+Pear,Girdle Tier 3 (G3),90.00,"96, 06, 12, 18, 24, 72, 78, 84, 90",Establish the primary vertical stone outline.
+Pear,Girdle Tier 4 (G4),90.00,"28, 68",Meet the intersection of facet P2 and girdle G3.
+Pear,Crown Tier A (C_A),29.77,"35, 61",Initialize the upper crown break facets.
+Pear,Crown Tier B (C_B),34.30,"31, 65",Cut to establish the bezel meets.
+Pear,Crown Tier E (C_E),36.74,"06, 90",Align crown break facets along the main axis.
+Pear,Crown Tier G (C_G),40.07,96,Meet the intersection points of tiers E and F.
+Marquise,Girdle 1 (G1),90.00,"02, 46, 50, 94",Establish the outer end-point boundaries.
+Marquise,Girdle 2 (G2),90.00,"06, 42, 54, 90",Define the soft secondary curves of the wings.
+Marquise,Girdle 3 (G3),90.00,"08, 40, 56, 88",Establish the mid-belly outline of the stone.
+Marquise,Girdle 4 (G4),90.00,"12, 36, 60, 84",Define the central wide width of the girdle.
+Marquise,Pavilion Mains (P1),52.00,"02, 46, 50, 94",Primary pavilion mains; establish end-tip depth.
+Marquise,Pavilion Mains (P2),49.25,"04, 44, 52, 92",Transition mains; step down toward the belly.
+Marquise,Pavilion Mains (P3),43.00,"10, 38, 58, 86",Middle mains; meet central culet line.
+Marquise,Pavilion Mains (P4),49.00,"06, 42, 54, 90",Mid-wing mains; align with girdle G2.
+Marquise,Pavilion Mains (P5),46.82,"08, 40, 56, 88",Inner-wing mains; align with girdle G3.
+Marquise,Pavilion Mains (P6),42.00,"12, 36, 60, 84",Central belly mains; meet girdle G4.
+Marquise,Crown Facets (a),52.00,"02, 46, 50, 94",Crown break facets; set initial end-point height.
+Marquise,Crown Facets (b),45.66,"06, 42, 54, 90",Wing crown facets; establish side bezel heights.
+Marquise,Crown Facets (i),24.76,"12, 36, 60, 84",Central star facets; meet the table boundary.
+Trillion,CAM Preform G1,34.20,"20, 28, 68, 76",Initial preforming cuts; establish end corner depth.
+Trillion,CAM Preform G2,36.30,"13, 35, 61, 83",Secondary preforming cuts; meet common culet point.
+Trillion,Vertical Girdle,90.00,"08, 24, 40, 56, 72, 88",Link one girdle facet to the next to form the outline.
+Trillion,Pavilion Mains,41.00,"96, 32, 64",Main pavilion faces; meet at the central culet point.
+Trillion,Crown Breaks,37.00,"08, 16, 24, 32, 40, 48, 56, 64, 72, 80, 88, 96",Establish upper crown perimeter and girdle line.
+Trillion,Crown Stars,17.35,"16, 48, 80",Draw triangular star facets inward to the table.
+Radiant,Girdle Mains (G1),90.00,"96, 24, 48, 72",Form the primary vertical side walls.
+Radiant,Girdle Corners (G2),90.00,"12, 36, 60, 84",Form the cropped corner facets.
+Radiant,Pavilion Tier 1 (P1),58.00,"96, 24, 48, 72",Steep step-cut pavilion mains adjacent to the girdle.
+Radiant,Pavilion Tier 2 (P2),41.00,"03, 21, 27, 45, 51, 69, 75, 93",Brilliant-style pavilion halves; meet at central culet.
+Radiant,Crown Step 1 (C1),42.00,"96, 24, 48, 72",Initialize the steep lower step of the crown.
+Radiant,Crown Step 2 (C2),35.00,"96, 24, 48, 72",Middle crown step; establish transition plane.
+Radiant,Crown Step 3 (C3),22.00,"12, 36, 60, 84",Corner star steps; establish corner table lines.

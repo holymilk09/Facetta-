@@ -139,6 +139,26 @@ class Vocabulary:
     def metal(self, material: str) -> dict | None:
         return next((m for m in self.metals() if m["id"] == material), None)
 
+    def culet_grades(self) -> list[dict]:
+        return self.raw["culet_size_scale"]["grades"]
+
+    def culet_grade_ids(self) -> list[str]:
+        return [g["id"] for g in self.culet_grades()]
+
+    def girdle_detail(self, grade: str) -> dict | None:
+        return self.raw["girdle_thickness_detail"].get(grade)
+
+    def girdle_weight_correction(self, cut: str, grade: str) -> float:
+        table = self.raw["girdle_weight_correction"]
+        row = table.get(cut, table["default"])
+        return row.get(grade, 1.0)
+
+    def ring_size_rows(self) -> list[dict]:
+        return self.raw["ring_size_conversion"]["rows"]
+
+    def manufacturing_tolerances(self) -> dict:
+        return self.raw["manufacturing_tolerances"]
+
     # --- organic / amorphous gems with their own parameter sets ---
 
     ORGANIC_PARAMETER_SETS = ("pearl", "opal")

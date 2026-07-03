@@ -1230,7 +1230,7 @@ def _render_loose_stone(spec: Spec) -> str:
         f"table {_fmt(stone.table_pct)}%" if stone.table_pct else None,
         f"depth {_fmt(stone.depth_pct)}%" if stone.depth_pct else None,
         f"girdle {stone.girdle.replace('_', ' ')}" if stone.girdle else None,
-        "culet pointed",
+        f"culet {(stone.culet or 'pointed').replace('_', ' ')}",
         f"clarity {stone.clarity.grade} ({stone.clarity.system})" if stone.clarity else None,
         f"origin {stone.origin}" if stone.origin else None,
     ]

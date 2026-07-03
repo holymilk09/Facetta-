@@ -302,6 +302,164 @@ def princess():
     asc.write(OUT_DIR / "princess.asc")
 
 
+# --- freeform brilliants: pear / marquise / trillion --------------------------
+# Tier angles come from data/reference/facet_blueprints.csv (research-sourced
+# 96-index layouts); the published index lists are partial, so the outline is
+# completed with a support curve and every filled azimuth borrows the nearest
+# published angle. Distances are meetpoint-solved as everywhere else.
+
+
+def nearest_angle(table: dict[float, float]):
+    def angle(az: float) -> float:
+        az %= 360
+        return table[min(table, key=lambda a: min(abs(a - az), 360 - abs(a - az)))]
+    return angle
+
+
+def freeform_brilliant(name: str, filename: str, support, girdle_az, pav_planes,
+                       crown_angle, star_az, star_angle, table: float,
+                       ref_az: float, note: str):
+    """Brilliant on an arbitrary convex outline.
+
+    girdle_az: tangent-plane azimuths; pav_planes: (az, angle) pavilion tiers
+    through the outline tangent at z=0; crown_angle(az): break angle per
+    azimuth, anchored on the girdle top edge; stars anchor where their two
+    nearest breaks cross the table plane. ref_az fixes the table height.
+    """
+    g = 0.05
+    asc = Asc(name, note)
+    d_g = {az: support(u_vec(az)) for az in girdle_az}
+
+    for az, a in pav_planes:
+        asc.tier("pavilion", a, math.sin(math.radians(a)) * support(u_vec(az)),
+                 [az], f"n1 pav {int(az * 100)}")
+    for az in girdle_az:
+        asc.tier("girdle", 90.0, d_g[az], [az], "girdle")
+
+    a_ref = crown_angle(ref_az) if crown_angle else 36.0
+    z_t = g + math.tan(math.radians(a_ref)) * d_g[ref_az] * (1 - table)
+    breaks: dict[float, tuple[float, float]] = {}
+    for az in girdle_az:
+        if crown_angle:
+            a = crown_angle(az)
+        else:
+            # table-coherent break: its table trace lands at table*support
+            # along its own azimuth, so the table closes as one clean polygon
+            a = math.degrees(math.atan((z_t - g) / (d_g[az] * (1 - table))))
+        d = math.sin(math.radians(a)) * d_g[az] + math.cos(math.radians(a)) * g
+        breaks[az] = (a, d)
+        asc.tier("crown", a, d, [az], f"n2 break {int(az * 100)}")
+    for az_s in star_az:
+        near = sorted(girdle_az, key=lambda a: min(abs(a - az_s), 360 - abs(a - az_s)))[:2]
+        a_s = star_angle if star_angle else max(12.0, min(breaks[m][0] for m in near) - 19.0)
+        d_s = None
+        for m in near:
+            a_m, d_m = breaks[m]
+            r_m = (d_m - math.cos(math.radians(a_m)) * z_t) / math.sin(math.radians(a_m))
+            p = (*(x * r_m for x in u_vec(m)), z_t)
+            d_here = dot(normal("crown", a_s, az_s), p)
+            d_s = d_here if d_s is None else min(d_s, d_here)
+        asc.tier("crown", a_s, d_s, [az_s], f"n3 star {int(az_s * 100)}")
+    asc.tier("table", 0.0, z_t, [0.0], "T table")
+    asc.write(OUT_DIR / filename)
+
+
+def sampled_support(points):
+    def support(u):
+        return max(u[0] * x + u[1] * y for x, y in points)
+    return support
+
+
+def pear_outline(a: float = 0.62, sharpen: float = 0.28):
+    """Egg curve, round head, pointed tip at azimuth 0 (12 o'clock)."""
+    pts = []
+    for k in range(1, 1440):
+        y = math.cos(math.pi * k / 720)  # -1 head .. +1 tip (screen y is down)
+        w = a * math.sqrt(max(0.0, 1 - y * y)) * ((1 - y) / 2) ** sharpen
+        pts.append((w, y))
+        pts.append((-w, y))
+    pts.append((0.0, -1.0))
+    pts.append((0.0, 1.0))
+    # tip points up on screen: flip so the sharp end faces azimuth 0
+    return [(x, -y) for x, y in pts]
+
+
+def marquise_outline(a: float = 0.48):
+    """Lens of two circular arcs, points at azimuths 0 and 180."""
+    c = (1 - a * a) / (2 * a)  # arc center offset so the arcs meet at (0, ±1)
+    r = a + c
+    half = math.asin(1 / r)
+    pts = []
+    for k in range(-720, 721):
+        t = half * k / 720  # arc centered at (-c, 0) bulging toward +x
+        pts.append((r * math.cos(t) - c, r * math.sin(t)))
+    pts += [(-x, y) for x, y in pts]
+    return pts
+
+
+def trillion_outline(bulge: float = 0.16):
+    """Rounded triangle, one point at azimuth 0, convex sides."""
+    pts = []
+    for k in range(1440):
+        th = 2 * math.pi * k / 1440
+        r = 1 + bulge * math.cos(3 * th)
+        pts.append((r * math.sin(th), -r * math.cos(th)))
+    return pts
+
+
+def pear():
+    girdle_az = [0.0, 22.5, 45.0, 67.5, 90.0, 105.0, 127.5, 150.0, 180.0,
+                 210.0, 232.5, 255.0, 270.0, 292.5, 315.0, 337.5]
+    pav = nearest_angle({0.0: 42.18, 90.0: 42.18, 270.0: 42.18,
+                         105.0: 41.68, 255.0: 41.68, 180.0: 41.68})
+    stars = [11.25, 33.75, 78.75, 116.25, 165.0, 195.0, 243.75, 281.25,
+             326.25, 348.75]
+    freeform_brilliant(
+        "Facetta pear brilliant - egg girdle, pointed tip", "pear.asc",
+        sampled_support(pear_outline()), girdle_az,
+        [(az, pav(az)) for az in girdle_az], None, stars, None,
+        table=0.58, ref_az=90.0,
+        note="pavilion angles from data/reference/facet_blueprints.csv "
+             "(pear rows); crown solved table-coherent on a flat girdle plane")
+
+
+def marquise():
+    girdle_az = [0.0, 7.5, 22.5, 30.0, 45.0, 90.0, 135.0, 150.0, 157.5,
+                 172.5, 180.0, 187.5, 202.5, 210.0, 225.0, 270.0, 315.0,
+                 330.0, 337.5, 352.5]
+    pav_table = {7.5: 52.0, 352.5: 52.0, 172.5: 52.0, 187.5: 52.0,
+                 15.0: 49.25, 345.0: 49.25, 165.0: 49.25, 195.0: 49.25,
+                 37.5: 43.0, 322.5: 43.0, 142.5: 43.0, 217.5: 43.0,
+                 22.5: 49.0, 337.5: 49.0, 157.5: 49.0, 202.5: 49.0,
+                 30.0: 46.82, 330.0: 46.82, 150.0: 46.82, 210.0: 46.82,
+                 45.0: 42.0, 315.0: 42.0, 135.0: 42.0, 225.0: 42.0,
+                 90.0: 42.0, 270.0: 42.0, 0.0: 52.0, 180.0: 52.0}
+    stars = [45.0, 135.0, 225.0, 315.0, 67.5, 112.5, 247.5, 292.5]
+    freeform_brilliant(
+        "Facetta marquise brilliant - lens girdle, pointed ends", "marquise.asc",
+        sampled_support(marquise_outline()), girdle_az,
+        sorted(pav_table.items()), None, stars, 24.76,
+        table=0.55, ref_az=90.0,
+        note="pavilion angles from data/reference/facet_blueprints.csv "
+             "(marquise rows); crown solved table-coherent on a flat girdle plane")
+
+
+def trillion():
+    girdle_az = [0.0, 30.0, 90.0, 120.0, 150.0, 210.0, 240.0, 270.0, 330.0]
+    pav_planes = ([(az, 41.0) for az in (0.0, 120.0, 240.0)]
+                  + [(az, 36.3) for az in (48.75, 131.25, 228.75, 311.25)]
+                  + [(az, 34.2) for az in (75.0, 105.0, 255.0, 285.0)]
+                  + [(az, 38.0) for az in (30.0, 90.0, 150.0, 210.0, 270.0, 330.0)])
+    crown = nearest_angle({0.0: 37.0})  # dataset: 37 deg on every break index
+    stars = [60.0, 180.0, 300.0]
+    freeform_brilliant(
+        "Facetta trillion brilliant - rounded triangle", "trillion.asc",
+        sampled_support(trillion_outline()), girdle_az,
+        pav_planes, crown, stars, 17.35,
+        table=0.55, ref_az=30.0,
+        note="tier angles from data/reference/facet_blueprints.csv (trillion rows)")
+
+
 def main():
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     round_brilliant()
@@ -318,6 +476,13 @@ def main():
     step_cut("Facetta asscher - square step cut", "asscher.asc",
              a=1.0, b=1.0, cut_frac=0.42,
              note="authored from conventional asscher proportions")
+    step_cut("Facetta radiant - cropped corners, stepped crown", "radiant.asc",
+             a=0.82, b=1.0, cut_frac=0.35, rows=(42.0, 35.0, 24.0),
+             note="crown step angles from data/reference/facet_blueprints.csv "
+                  "(radiant rows)")
+    pear()
+    marquise()
+    trillion()
     return 0
 
 

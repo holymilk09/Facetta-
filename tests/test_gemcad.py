@@ -33,7 +33,8 @@ def test_round_brilliant_is_the_57_facet_standard():
 
 
 @pytest.mark.parametrize("cut", ["round_brilliant", "oval_brilliant", "cushion",
-                                 "princess", "emerald_cut", "asscher"])
+                                 "princess", "emerald_cut", "asscher",
+                                 "pear", "marquise", "trillion", "radiant"])
 def test_bundled_diagrams_reconstruct_and_normalize(cut):
     layout = gemcad.layout_for_cut(cut)
     assert layout is not None
@@ -65,7 +66,7 @@ def test_table_remap_hits_spec_percentage():
 
 
 def test_unknown_cut_falls_back():
-    assert gemcad.layout_for_cut("pear") is None
+    assert gemcad.layout_for_cut("cabochon") is None  # non-faceted, no diagram
 
 
 def test_asc_without_distances_fails_loudly():

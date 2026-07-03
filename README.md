@@ -150,6 +150,7 @@ Point the API URL field at your running backend (defaults to
 |---|---|
 | `data/gemology_vocabulary.json` | Controlled vocabulary — the single source of gemological truth |
 | `data/facet_diagrams/` | Cached GemCad .ASC faceting blueprints, keyed by cut id |
+| `data/reference/` | Research datasets as Excel-ready CSVs (facet blueprints, culet/girdle grading, weight formulas, international ring sizes, factory tolerances) |
 | `src/facetta/gemcad.py` | .ASC parser + 3D reconstruction + exact face-up projection |
 | `scripts/author_facet_diagrams.py` | Authors the bundled diagrams from published proportions |
 | `src/facetta/spec.py` | Pydantic models for Spec Schema v1 |
