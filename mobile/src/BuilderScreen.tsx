@@ -111,6 +111,8 @@ export function BuilderScreen({
 
   const [notes, setNotes] = useState('');
   const [collection, setCollection] = useState('');
+  const [collections, setCollections] = useState<string[]>([]);
+  const [newCollection, setNewCollection] = useState(false);
   const [ratioLock, setRatioLock] = useState(true);
   const [savedStones, setSavedStones] = useState<any[]>([]);
   const [lighting, setLighting] = useState('studio');
@@ -128,8 +130,18 @@ export function BuilderScreen({
     api.stones().then((r) => r.ok && setStones(r.body.stones));
     api.findings().then((r) => r.ok && setFindings(r.body));
     api.listStones(designer).then((r) => r.ok && setSavedStones(r.body.stones));
+    refreshCollections();
     selectSpecies(DEFAULTS[category].species);
   }, [api.baseUrl, designer]);
+
+  const refreshCollections = () =>
+    api.listDesigns().then((r) => {
+      if (!r.ok) return;
+      const names = r.body.designs
+        .map((d: any) => d.collection)
+        .filter(Boolean) as string[];
+      setCollections([...new Set(names)].sort((a, b) => a.localeCompare(b)));
+    });
 
   useEffect(() => {
     if (initialSpec) applySpec(initialSpec);
@@ -481,6 +493,8 @@ export function BuilderScreen({
         : await api.createDesign(designer, spec, collection.trim() || undefined);
       if (r.ok) {
         setNotice({ kind: 'ok', text: `Saved ${r.body.design_id} v${r.body.version} (immutable).` });
+        setNewCollection(false);
+        refreshCollections(); // a freshly named collection becomes a chip
         onSaved(r.body.design_id);
       } else showIssues(r.body);
     });
@@ -896,12 +910,38 @@ export function BuilderScreen({
 
       <ChipRow options={['basic', 'pro'] as const} value={mode} onSelect={setMode} render={(m) => (m === 'basic' ? 'Basic mode' : 'Pro mode')} />
 
-      <Field
-        label="Collection — group saves for yourself or per client (optional)"
-        value={collection}
-        onChange={setCollection}
-        placeholder="e.g. Client — Sarah K"
-      />
+      {collections.length > 0 && !newCollection ? (
+        <ChipRow
+          label="Collection — group saves for yourself or per client (optional)"
+          options={['none', ...collections, '+ new']}
+          value={collection || 'none'}
+          onSelect={(v) => {
+            if (v === '+ new') {
+              setCollection('');
+              setNewCollection(true);
+            } else setCollection(v === 'none' ? '' : v);
+          }}
+        />
+      ) : (
+        <>
+          <Field
+            label="Collection — group saves for yourself or per client (optional)"
+            value={collection}
+            onChange={setCollection}
+            placeholder="e.g. Client — Sarah K"
+          />
+          {collections.length > 0 && (
+            <Button
+              title="Pick an existing collection instead"
+              kind="ghost"
+              onPress={() => {
+                setCollection('');
+                setNewCollection(false);
+              }}
+            />
+          )}
+        </>
+      )}
 
       <ChipRow
         label="1:1 print sheet — on screen everything stays enlarged; printed at 100% it is true to size"
