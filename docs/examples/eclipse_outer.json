@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "design_id": "dsn_eclipse_outer",
+  "version": 1,
+  "created_by": "usr_ana",
+  "created_at": "2026-07-03T20:00:00Z",
+  "jewelry_type": "bracelet",
+  "template": "love_bangle",
+  "mode": "pro",
+  "stone": {
+    "species": "spinel",
+    "cut": "asscher",
+    "carat": 0.15,
+    "dimensions_mm": {
+      "length": 3.0,
+      "width": 3.0,
+      "depth": 1.95
+    },
+    "color": {
+      "trade": "Cobalt Spinel",
+      "gia": "vivid blue to electric royal blue",
+      "hue_code": "B"
+    },
+    "origin": "Luc Yen, Vietnam",
+    "phenomena": [],
+    "count": 9,
+    "position": "stations"
+  },
+  "side_stones": [],
+  "setting": {
+    "style": "flush",
+    "prong_count": null,
+    "prong_tip_mm": null,
+    "gallery_height_mm": null
+  },
+  "metal": {
+    "material": "gold",
+    "karat": 18,
+    "color": "yellow",
+    "finish": "high_polish"
+  },
+  "bracelet": {
+    "inner_length_mm": 58,
+    "inner_width_mm": 48,
+    "width_mm": 6.5,
+    "thickness_mm": 2.8
+  },
+  "notes_to_factory": null
+}

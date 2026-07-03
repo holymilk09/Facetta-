@@ -236,14 +236,23 @@ def _bracelet_proto(spec: Spec, vocab: Vocabulary) -> list[str]:
     if stone.position == "stations":
         side = stone.dimensions_mm.width * s * 1.4
         a_c, b_c = (a_in + a_out) / 2, (b_in + b_out) / 2
+        hexval = stone_hex(stone, vocab)  # stations wear their own color
+        fill = _mix(hexval, "#FFFFFF", 0.22)
+        edge = _mix(hexval, "#20242c", 0.5)
         for i in range(stone.count):
             t = -math.pi / 2 + i * 2 * math.pi / stone.count
             px, py = cx + a_c * math.cos(t), cy + b_c * math.sin(t)
             angle = math.degrees(math.atan2(b_c * math.cos(t), -a_c * math.sin(t)))
+            inset = side * 0.32
             parts.append(
+                f'<g transform="rotate({angle:.1f} {px:.2f} {py:.2f})">'
                 f'<rect x="{px - side / 2:.2f}" y="{py - side / 2:.2f}" width="{side:.2f}" '
-                f'height="{side:.2f}" fill="url(#melee)" stroke="#00000033" stroke-width="0.25" '
-                f'transform="rotate({angle:.1f} {px:.2f} {py:.2f})"/>'
+                f'height="{side:.2f}" fill="{fill}" stroke="{edge}" stroke-width="0.3"/>'
+                f'<rect x="{px - side / 2 + inset:.2f}" y="{py - side / 2 + inset:.2f}" '
+                f'width="{side - 2 * inset:.2f}" height="{side - 2 * inset:.2f}" '
+                f'fill="none" stroke="{edge}" stroke-width="0.25"/>'
+                f'<circle cx="{px - side * 0.18:.2f}" cy="{py - side * 0.18:.2f}" '
+                f'r="{side * 0.1:.2f}" fill="#ffffff" opacity="0.8"/></g>'
             )
     return parts
 
@@ -386,11 +395,18 @@ def prompt_core(spec: Spec) -> tuple[str, list[str]]:
 
     cut_name = stone.cut.replace("_", " ")
     cut_phrase = cut_name if cut_name.endswith("cut") else f"{cut_name} cut"
-    details = [
-        f"a {stone.carat:.2f} carat {stone.color.trade} {stone.species} "
-        f"({stone.color.gia}), {cut_phrase}, "
-        f"{_fmt(d.length)} x {_fmt(d.width)} x {_fmt(d.depth)} mm",
-    ]
+    if stone.count > 1:  # station pieces: the count is the design
+        details = [
+            f"EXACTLY {stone.count} evenly spaced {stone.color.trade} "
+            f"{stone.species} stations ({stone.color.gia}), {cut_phrase}, "
+            f"each {_fmt(d.length)} x {_fmt(d.width)} mm and {stone.carat:.2f} carat",
+        ]
+    else:
+        details = [
+            f"a {stone.carat:.2f} carat {stone.color.trade} {stone.species} "
+            f"({stone.color.gia}), {cut_phrase}, "
+            f"{_fmt(d.length)} x {_fmt(d.width)} x {_fmt(d.depth)} mm",
+        ]
     if spec.metal:
         karat = f"{spec.metal.karat} karat " if spec.metal.karat else ""
         color = f"{spec.metal.color} " if spec.metal.color else ""
