@@ -1247,9 +1247,11 @@ def _gem_profile_view(spec: Spec, cx: float, cy: float, s: float) -> list[str]:
                   size=2.8, anchor="end", color=FAINT),
         ]
     if stone.inscription:
+        lab = f"{stone.lab} " if stone.lab else ""
         parts += [
             _ext(xr, (y_g1 + y_g2) / 2, cx + span * 0.3, y_culet + 15.5),
-            _text(cx, y_culet + 17, f'laser inscription on girdle: "{stone.inscription}"',
+            _text(cx, y_culet + 17,
+                  f'laser inscription on girdle: {lab}"{stone.inscription}"',
                   size=2.8),
         ]
     parts.append(_text(cx, y_culet + 12, "PROFILE", size=3.6, style=' letter-spacing="1.2"'))

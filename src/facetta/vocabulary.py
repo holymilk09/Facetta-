@@ -159,6 +159,9 @@ class Vocabulary:
     def manufacturing_tolerances(self) -> dict:
         return self.raw["manufacturing_tolerances"]
 
+    def grading_labs(self) -> list[str]:
+        return self.raw["grading_labs"]["labs"]
+
     # --- organic / amorphous gems with their own parameter sets ---
 
     ORGANIC_PARAMETER_SETS = ("pearl", "opal")

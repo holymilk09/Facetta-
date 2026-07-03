@@ -60,6 +60,7 @@ class Stone(StrictModel):
     depth_pct: Annotated[float, Field(ge=30, le=90)] | None = None
     girdle: str | None = None  # vocabulary girdle_thickness_scale word
     culet: str | None = None   # vocabulary culet_size_scale grade
+    lab: str | None = None     # grading lab for the inscription (GIA, IGI, ...)
     inscription: Annotated[str, Field(min_length=1, max_length=24)] | None = None
 
 

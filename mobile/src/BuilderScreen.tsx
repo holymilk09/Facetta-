@@ -112,6 +112,7 @@ export function BuilderScreen({
   const [notes, setNotes] = useState('');
   const [collection, setCollection] = useState('');
   const [ratioLock, setRatioLock] = useState(true);
+  const [savedStones, setSavedStones] = useState<any[]>([]);
   const [lighting, setLighting] = useState('studio');
   const [wornOn, setWornOn] = useState('product');
   const [renderStyle, setRenderStyle] = useState('photo');
@@ -125,8 +126,9 @@ export function BuilderScreen({
   useEffect(() => {
     api.stones().then((r) => r.ok && setStones(r.body.stones));
     api.findings().then((r) => r.ok && setFindings(r.body));
+    api.listStones(designer).then((r) => r.ok && setSavedStones(r.body.stones));
     selectSpecies(DEFAULTS[category].species);
-  }, [api.baseUrl]);
+  }, [api.baseUrl, designer]);
 
   useEffect(() => {
     if (initialSpec) applySpec(initialSpec);
@@ -465,6 +467,38 @@ export function BuilderScreen({
       } else showIssues(r.body);
     });
 
+  const refreshStones = () =>
+    api.listStones(designer).then((r) => r.ok && setSavedStones(r.body.stones));
+
+  const saveStoneToLibrary = () =>
+    run(async () => {
+      const stone = buildStone();
+      const label = `${stone.carat} ct ${stone.species}, ${String(stone.cut).replace(/_/g, ' ')}`;
+      const r = await api.saveStone(designer, label, stone);
+      if (r.ok) {
+        setNotice({ kind: 'ok', text: `Stone filed in your library as "${label}".` });
+        refreshStones();
+      } else showIssues(r.body);
+    });
+
+  const applySavedStone = (stoneId: string) => {
+    const row = savedStones.find((s) => s.stone_id === stoneId);
+    if (!row) return;
+    const st = row.stone;
+    if (st.species !== species) selectSpecies(st.species);
+    setCut(st.cut);
+    setCarat(String(st.carat));
+    if (st.dimensions_mm) {
+      setDims({
+        length: String(st.dimensions_mm.length),
+        width: String(st.dimensions_mm.width),
+        depth: String(st.dimensions_mm.depth),
+      });
+    }
+    if (st.color?.trade) setTrade(st.color.trade);
+    setNotice({ kind: 'info', text: `Using "${row.label}" — only the mounting will adapt; the piece stays as designed.` });
+  };
+
   const compileMockup = () =>
     run(async () => {
       const r = await api.renderRequest(buildSpec(), lighting, wornOn, renderStyle);
@@ -531,6 +565,15 @@ export function BuilderScreen({
       )}
 
       <Section title={category === 'bracelet' ? 'Station stone' : 'Stone'}>
+        {savedStones.length > 0 && (
+          <ChipRow
+            label="From your stone library — mounting adapts, the piece never rescales"
+            options={savedStones.map((s: any) => s.stone_id) as string[]}
+            value={null}
+            onSelect={applySavedStone}
+            render={(id) => savedStones.find((s: any) => s.stone_id === id)?.label ?? String(id)}
+          />
+        )}
         <ChipRow
           label="Species"
           options={gemstoneStones.map((s) => s.id)}
@@ -844,6 +887,7 @@ export function BuilderScreen({
 
       <View style={styles.actions}>
         <Button title="Validate" onPress={validate} disabled={busy || !ready} />
+        <Button title="Save stone to library" kind="ghost" onPress={saveStoneToLibrary} disabled={busy || !ready} />
         <Button title="Preview sheet" onPress={preview} disabled={busy || !ready} />
         <Button title="Color prototype" onPress={prototype} disabled={busy || !ready} />
         <Button title={editing ? 'Save new version' : 'Save design'} onPress={save} disabled={busy || !ready} />

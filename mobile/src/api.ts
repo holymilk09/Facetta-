@@ -52,6 +52,9 @@ export function createApi(baseUrl: string) {
     getSheet: (id: string, v: number) => call(`/designs/${id}/versions/${v}/sheet.svg`),
     listComments: (id: string, v: number) => call(`/designs/${id}/versions/${v}/comments`),
     listMessages: (id: string) => call(`/designs/${id}/messages`),
+    saveStone: (created_by: string, label: string, stone: unknown) =>
+      post('/stones', { created_by, label, stone }),
+    listStones: (created_by: string) => call(`/stones?created_by=${encodeURIComponent(created_by)}`),
     sendMessage: (id: string, author: string, body: string, author_label?: string) =>
       post(`/designs/${id}/messages`, { author, body, author_label: author_label || null }),
     addComment: (id: string, v: number, comment: unknown) =>

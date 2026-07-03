@@ -64,6 +64,20 @@ class DesignVersion(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class SavedStone(Base):
+    """The user's curated stone library: real stones on file (often with lab
+    reports) that get tried in different designs. Swapping a saved stone into
+    a design changes only the stone and its mounting — never the piece."""
+
+    __tablename__ = "saved_stones"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    created_by: Mapped[str] = mapped_column(String(32), index=True)
+    label: Mapped[str] = mapped_column(String(120))
+    stone: Mapped[dict] = mapped_column(SpecJSON)  # a Spec Stone object
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
 class DesignMessage(Base):
     """Free-form discussion between designer and factory on a design.
 

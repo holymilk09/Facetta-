@@ -138,16 +138,41 @@ def _stone_faceted(cx, cy, cut, w_pp, l_pp, table_ratio=0.57, fill="url(#stone)"
     return parts
 
 
-def _melee_circle(cx, cy, r) -> str:
+def _pearl_dome(cx, cy, r, body_hex) -> str:
+    """Pearls ARE smooth spheres — nacre luster, not facets."""
+    light = _mix(body_hex, "#FFFFFF", 0.75)
     return (
-        # seat shadow, stone, and a pinpoint catch-light
         f'<circle cx="{cx + 0.4:.2f}" cy="{cy + 0.7:.2f}" r="{r:.2f}" fill="#000000" '
         f'opacity="0.16" filter="url(#blur1)"/>'
-        f'<circle cx="{cx:.2f}" cy="{cy:.2f}" r="{r:.2f}" fill="url(#melee)" '
+        f'<circle cx="{cx:.2f}" cy="{cy:.2f}" r="{r:.2f}" fill="{body_hex}" '
         f'stroke="#00000033" stroke-width="0.25"/>'
-        f'<circle cx="{cx - r * 0.3:.2f}" cy="{cy - r * 0.35:.2f}" r="{r * 0.18:.2f}" '
-        f'fill="#ffffff" opacity="0.85"/>'
+        f'<circle cx="{cx - r * 0.28:.2f}" cy="{cy - r * 0.32:.2f}" r="{r * 0.55:.2f}" '
+        f'fill="{light}" opacity="0.6" filter="url(#blur1)"/>'
+        f'<circle cx="{cx - r * 0.3:.2f}" cy="{cy - r * 0.35:.2f}" r="{r * 0.16:.2f}" '
+        f'fill="#ffffff" opacity="0.9"/>'
     )
+
+
+def _stone_visual(cx, cy, stone, w_pp, l_pp, vocab, table_ratio=0.57,
+                  fill=None) -> list[str]:
+    """A stone drawn as what it IS: pearls as lustrous spheres, everything
+    faceted with its real cut and ITS OWN color — a diamond melee must never
+    read as a pearl, and a sapphire drop must never borrow the center's hue."""
+    hexval = stone_hex(stone, vocab)
+    if stone.species == "pearl":
+        return [_pearl_dome(cx, cy, max(w_pp, l_pp) / 2, hexval)]
+    return _stone_faceted(cx, cy, stone.cut, w_pp, l_pp, table_ratio=table_ratio,
+                          tone=hexval, fill=fill or _mix(hexval, "#FFFFFF", 0.22))
+
+
+def _link_ring(cx, cy, r) -> list[str]:
+    """A small metal jump ring — components must visibly connect."""
+    return [
+        f'<circle cx="{cx:.2f}" cy="{cy:.2f}" r="{r:.2f}" fill="none" '
+        f'stroke="url(#metal)" stroke-width="{r * 0.55:.2f}"/>',
+        f'<circle cx="{cx:.2f}" cy="{cy:.2f}" r="{r:.2f}" fill="none" '
+        f'stroke="url(#sheen)" stroke-width="{r * 0.55:.2f}"/>',
+    ]
 
 
 def _ring_proto(spec: Spec, vocab: Vocabulary) -> list[str]:
@@ -182,9 +207,11 @@ def _ring_proto(spec: Spec, vocab: Vocabulary) -> list[str]:
         ]
         for i in range(melee.count):
             t = -math.pi / 2 + i * 2 * math.pi / melee.count
-            parts.append(_melee_circle(cx + ring_ax * math.cos(t), cy + ring_by * math.sin(t), mr))
-    parts += _stone_faceted(cx, cy, spec.stone.cut, 2 * rx, 2 * ry,
-                            tone=stone_hex(spec.stone, vocab))
+            parts += _stone_visual(cx + ring_ax * math.cos(t),
+                                   cy + ring_by * math.sin(t), melee,
+                                   2 * mr, 2 * mr, vocab)
+    parts += _stone_visual(cx, cy, spec.stone, 2 * rx, 2 * ry, vocab,
+                           fill="url(#stone)")
     return parts
 
 
@@ -246,6 +273,8 @@ def _pendant_proto(spec: Spec, vocab: Vocabulary) -> list[str]:
     surround = (0.3 + (melee.dimensions_mm.width if melee else 0.0)) if melee else 0.0
     cluster_by = (stone.length / 2 + surround) * s
     cluster_cy = ty + (p.bail_height_mm + 1.0) * s + cluster_by
+    # the bail hangs the cluster on the 1 mm jump ring the spec's drop math uses
+    parts += _link_ring(cx, ty + p.bail_height_mm * s + 0.5 * s, 0.45 * s)
     if melee:
         mw = melee.dimensions_mm.width
         mr = mw / 2 * s
@@ -253,22 +282,17 @@ def _pendant_proto(spec: Spec, vocab: Vocabulary) -> list[str]:
         ring_by = hl + 0.3 * s + mr
         for i in range(melee.count):
             t = -math.pi / 2 + i * 2 * math.pi / melee.count
-            parts.append(_melee_circle(cx + ring_ax * math.cos(t),
-                                       cluster_cy + ring_by * math.sin(t), mr))
-    parts += _stone_faceted(cx, cluster_cy, spec.stone.cut, 2 * hw, 2 * hl, table_ratio=0.62,
-                            tone=stone_hex(spec.stone, vocab))
+            parts += _stone_visual(cx + ring_ax * math.cos(t),
+                                   cluster_cy + ring_by * math.sin(t), melee,
+                                   2 * mr, 2 * mr, vocab)
+    parts += _stone_visual(cx, cluster_cy, spec.stone, 2 * hw, 2 * hl, vocab,
+                           table_ratio=0.62, fill="url(#stone)")
     if drop:
         dw = drop.dimensions_mm.width * s
         sap_cy = cluster_cy + cluster_by + 1.0 * s + dw / 2
-        sap_hex = stone_hex(drop, vocab)
-        parts.append(
-            f'<circle cx="{cx:.2f}" cy="{sap_cy:.2f}" r="{dw / 2:.2f}" fill="{sap_hex}" '
-            f'stroke="#00000033" stroke-width="0.3"/>'
-        )
-        parts.append(
-            f'<circle cx="{cx - dw * 0.12:.2f}" cy="{sap_cy - dw * 0.14:.2f}" r="{dw * 0.16:.2f}" '
-            f'fill="#ffffff" opacity="0.5"/>'
-        )
+        # articulated drop: its jump ring bridges the cluster and the stone
+        parts += _link_ring(cx, cluster_cy + cluster_by + 0.5 * s, 0.45 * s)
+        parts += _stone_visual(cx, sap_cy, drop, dw, dw, vocab)
     return parts
 
 
@@ -280,8 +304,8 @@ def _loose_proto(spec: Spec, vocab: Vocabulary) -> list[str]:
     table = (spec.stone.table_pct or 57) / 100
     return [
         _shadow(cx, cy + hl + 8, hw * 1.1),
-        *_stone_faceted(cx, cy, spec.stone.cut, 2 * hw, 2 * hl, table_ratio=table,
-                        tone=stone_hex(spec.stone, vocab)),
+        *_stone_visual(cx, cy, spec.stone, 2 * hw, 2 * hl, vocab,
+                       table_ratio=table, fill="url(#stone)"),
     ]
 
 
@@ -300,15 +324,25 @@ def render_color_preview(spec: Spec) -> str:
     else:
         raise ValueError(f"no prototype view for template '{spec.template}'")
 
+    # full stone manifest: every stone group on the piece, then the metal —
+    # a client must be able to read exactly what they are looking at
     stone = spec.stone
-    metal_text = ""
+    manifest = [f"{stone.carat:.2f} ct {stone.color.trade} {stone.species}, "
+                f"{stone.cut.replace('_', ' ')}"]
+    position_word = {"halo": "halo", "surround": "surround",
+                     "stations": "stations", "under_center": "drop",
+                     "drop": "drop"}
+    for side in spec.side_stones:
+        where = position_word.get(side.position or "", "accent")
+        manifest.append(
+            f"{side.count} × {side.carat:.2f} ct {side.color.trade} "
+            f"{side.species} {where}" if side.count > 1 else
+            f"{side.carat:.2f} ct {side.color.trade} {side.species} {where}")
     if spec.metal:
         karat = f"{spec.metal.karat}k " if spec.metal.karat else ""
-        metal_text = f" · {karat}{spec.metal.color} {spec.metal.material}"
-    caption = (
-        f"{stone.carat:.2f} ct {stone.color.trade} {stone.species}, "
-        f"{stone.cut.replace('_', ' ')}{metal_text}"
-    )
+        color = f"{spec.metal.color} " if spec.metal.color else ""
+        manifest.append(f"{karat}{color}{spec.metal.material}")
+    caption = "  ·  ".join(manifest)
     parts = [
         f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {SHEET_W:g} {SHEET_H:g}" '
         f'width="{SHEET_W:g}mm" height="{SHEET_H:g}mm" font-family="{FONT}">',
@@ -322,7 +356,8 @@ def render_color_preview(spec: Spec) -> str:
         '<g filter="url(#lift)">',
         *body,
         "</g>",
-        _text(SHEET_W / 2, SHEET_H - MARGIN - 6, caption, size=3.4),
+        _text(SHEET_W / 2, SHEET_H - MARGIN - 6, caption,
+              size=3.4 if len(caption) <= 105 else 2.8),
         "</svg>",
     ]
     return "\n".join(parts) + "\n"

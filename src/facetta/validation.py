@@ -260,6 +260,14 @@ def _validate_stone(stone: Stone, loc: tuple, vocab: Vocabulary, issues: list[Va
                 valid_options=list(species.allowed_phenomena),
             ))
 
+    if stone.lab is not None and stone.lab not in vocab.grading_labs():
+        issues.append(ValidationIssue(
+            loc=(*loc, "lab"),
+            msg=f"unknown grading lab '{stone.lab}'",
+            type="vocabulary",
+            valid_options=vocab.grading_labs(),
+        ))
+
     if stone.culet is not None and stone.culet not in vocab.culet_grade_ids():
         issues.append(ValidationIssue(
             loc=(*loc, "culet"),

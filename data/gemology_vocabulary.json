@@ -448,5 +448,10 @@
     "prong": {"max_seat_cut_fraction": 0.25},
     "raised_text": {"min_stroke_mm": 0.3, "max_height_mm": 0.6, "min_spacing_mm": 0.3},
     "recessed_text": {"min_stroke_mm": 0.3, "max_depth_mm": 0.6}
+  },
+
+  "grading_labs": {
+    "note": "Laboratories whose girdle inscriptions and report numbers we record on Gem ID sheets. Each lab inscribes its own prefix format.",
+    "labs": ["GIA", "IGI", "HRD", "AGS", "SSEF", "Gubelin", "GRS", "AGL"]
   }
 }
