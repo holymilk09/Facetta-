@@ -162,6 +162,13 @@ class Vocabulary:
     def grading_labs(self) -> list[str]:
         return self.raw["grading_labs"]["labs"]
 
+    def setting_techniques(self) -> list[dict]:
+        return self.raw["setting_techniques"]["techniques"]
+
+    def setting_technique(self, technique_id: str) -> dict | None:
+        return next((t for t in self.setting_techniques()
+                     if t["id"] == technique_id), None)
+
     # --- organic / amorphous gems with their own parameter sets ---
 
     ORGANIC_PARAMETER_SETS = ("pearl", "opal")

@@ -94,10 +94,11 @@ def prototype_preview(spec: Spec):
 
 
 @router.post("/plate.svg")
-def plate_preview(spec: Spec):
+def plate_preview(spec: Spec, paper: str = "ivory"):
     """The presentation plate: atelier-sketch styling over the engine's exact
     geometry — station counts and measurements are always true because code
-    draws them; only the aesthetic is hand-drawn."""
+    draws them; only the aesthetic is hand-drawn. ?paper= picks the rendering
+    ground: ivory, white, grey (the gouache tradition), midnight, black, blush."""
     result = validate_spec(spec, get_vocabulary())
     if not result.ok:
         return JSONResponse(
@@ -105,7 +106,7 @@ def plate_preview(spec: Spec):
             content={"detail": [issue.as_detail() for issue in result.issues]},
         )
     try:
-        svg = render_presentation_plate(result.spec)
+        svg = render_presentation_plate(result.spec, paper=paper)
     except ValueError as exc:
         return JSONResponse(status_code=422, content={"detail": str(exc)})
     return Response(content=svg, media_type="image/svg+xml")

@@ -28,6 +28,18 @@ INK = "#4a4238"     # warm graphite-sepia, the pencil's own color
 FAINT = "#8d8272"
 PLATE_FONT = "Georgia, 'Times New Roman', serif"
 
+# Plate papers — what jewelry renderers actually paint on. Mid-grey is the
+# haute-joaillerie gouache standard; black/midnight carry diamond and white
+# metal renders; ivory is the classic sketchbook; blush suits bridal work.
+PAPERS = {
+    "ivory":    {"paper": "#f2ebd8", "ink": "#4a4238", "faint": "#8d8272"},
+    "white":    {"paper": "#fbfaf7", "ink": "#3f3f3f", "faint": "#8a8a8a"},
+    "grey":     {"paper": "#b7b3ab", "ink": "#2b2723", "faint": "#524d46"},
+    "midnight": {"paper": "#242a38", "ink": "#e7e3d8", "faint": "#a5a196"},
+    "black":    {"paper": "#1c1b18", "ink": "#eae6db", "faint": "#a5a196"},
+    "blush":    {"paper": "#f4e3dd", "ink": "#4a3a38", "faint": "#93807c"},
+}
+
 TITLES = {
     "solitaire_prong": "Solitaire Ring",
     "halo_prong": "Halo Ring",
@@ -85,8 +97,10 @@ def _leader(x1: float, y1: float, x2: float, y2: float, label: str,
     ]
 
 
-def _plate_defs() -> str:
-    """Sketch styling: fixed seeds keep the plate byte-identical per spec."""
+def _plate_defs(ink: str) -> str:
+    """Sketch styling: fixed seeds keep the plate byte-identical per spec.
+    The grain speckles in the paper's own ink so every paper keeps tooth."""
+    r, g, b = (int(ink[i:i + 2], 16) / 255 for i in (1, 3, 5))
     return (
         "<defs>"
         # hand wobble: linework drifts like a confident pencil stroke
@@ -99,12 +113,13 @@ def _plate_defs() -> str:
         # paper grain: fine tooth over the whole sheet
         '<filter id="grain">'
         '<feTurbulence type="fractalNoise" baseFrequency="0.55" numOctaves="2" seed="11"/>'
-        '<feColorMatrix values="0 0 0 0 0.28  0 0 0 0 0.24  0 0 0 0 0.18  0 0 0 0.055 0"/>'
+        f'<feColorMatrix values="0 0 0 0 {r:.2f}  0 0 0 0 {g:.2f}  '
+        f'0 0 0 0 {b:.2f}  0 0 0 0.055 0"/>'
         "</filter>"
         # diagonal pencil hatching for the drop shadows
         '<pattern id="hatchsh" width="2.2" height="2.2" patternTransform="rotate(45)" '
         'patternUnits="userSpaceOnUse">'
-        f'<line x1="0" y1="0" x2="0" y2="2.2" stroke="{INK}" stroke-width="0.45"/>'
+        f'<line x1="0" y1="0" x2="0" y2="2.2" stroke="{ink}" stroke-width="0.45"/>'
         "</pattern>"
         "</defs>"
     )
@@ -208,8 +223,15 @@ def _loose_dims(spec: Spec) -> list[str]:
     return parts
 
 
-def render_presentation_plate(spec: Spec) -> str:
-    """The client-facing designer plate: sketch warmth, engineering truth."""
+def render_presentation_plate(spec: Spec, paper: str = "ivory") -> str:
+    """The client-facing designer plate: sketch warmth, engineering truth.
+
+    paper picks the rendering ground — ivory sketchbook, bright white,
+    atelier grey (the gouache tradition), midnight, black, or blush."""
+    if paper not in PAPERS:
+        raise ValueError(
+            f"unknown plate paper '{paper}'; options: {list(PAPERS)}")
+    p = PAPERS[paper]
     vocab = get_vocabulary()
     if spec.template in ("solitaire_prong", "halo_prong"):
         body, dims = _ring_proto(spec, vocab, paper=IVORY), _ring_dims(spec)
@@ -247,7 +269,7 @@ def render_presentation_plate(spec: Spec) -> str:
         f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {SHEET_W:g} {SHEET_H:g}" '
         f'width="{SHEET_W:g}mm" height="{SHEET_H:g}mm" font-family="{PLATE_FONT}">',
         _defs(spec, vocab),
-        _plate_defs(),
+        _plate_defs(p["ink"]),
         f'<rect x="0" y="0" width="{SHEET_W:g}" height="{SHEET_H:g}" fill="{IVORY}"/>',
         f'<rect x="0" y="0" width="{SHEET_W:g}" height="{SHEET_H:g}" filter="url(#grain)"/>',
         f'<rect x="{MARGIN:g}" y="{MARGIN:g}" width="{SHEET_W - 2 * MARGIN:g}" '
@@ -272,4 +294,11 @@ def render_presentation_plate(spec: Spec) -> str:
            italic=False, ls="2.4", color=FAINT),
         "</svg>",
     ]
-    return "\n".join(parts) + "\n"
+    svg = "\n".join(parts) + "\n"
+    if paper != "ivory":
+        # the plate is authored in the ivory palette; other papers re-ink it —
+        # a pure substitution, so geometry and lettering stay byte-stable
+        svg = (svg.replace(IVORY, p["paper"])
+                  .replace(INK, p["ink"])
+                  .replace(FAINT, p["faint"]))
+    return svg

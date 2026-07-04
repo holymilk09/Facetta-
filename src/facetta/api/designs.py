@@ -185,13 +185,13 @@ def get_true_size(design_id: str, version: int, db: DbSession,
 
 
 @router.get("/{design_id}/versions/{version}/plate.svg")
-def get_plate(design_id: str, version: int, db: DbSession):
+def get_plate(design_id: str, version: int, db: DbSession, paper: str = "ivory"):
     """The stored version's presentation plate — the client-facing page."""
     from facetta.plate import render_presentation_plate
 
     row = _get_version(db, design_id, version)
     try:
-        svg = render_presentation_plate(Spec.model_validate(row.spec))
+        svg = render_presentation_plate(Spec.model_validate(row.spec), paper=paper)
     except ValueError as exc:
         return JSONResponse(status_code=422, content={"detail": str(exc)})
     return Response(content=svg, media_type="image/svg+xml")

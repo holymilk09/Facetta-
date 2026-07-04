@@ -271,6 +271,41 @@ def _validate_stone(stone: Stone, loc: tuple, vocab: Vocabulary, issues: list[Va
             valid_options=vocab.grading_labs(),
         ))
 
+    if stone.mount is not None:
+        technique = vocab.setting_technique(stone.mount)
+        if technique is None:
+            issues.append(ValidationIssue(
+                loc=(*loc, "mount"),
+                msg=f"unknown setting technique '{stone.mount}'",
+                type="vocabulary",
+                valid_options=[t["id"] for t in vocab.setting_techniques()],
+            ))
+        else:
+            role = {"halo": "side", "surround": "side", "stations": "station",
+                    "under_center": "drop", "drop": "drop"}.get(
+                        stone.position or "", "center")
+            if role not in technique["holds"]:
+                issues.append(ValidationIssue(
+                    loc=(*loc, "mount"),
+                    msg=(f"{technique['display']} cannot hold a {role} stone — "
+                         f"it holds: {', '.join(technique['holds'])}"),
+                    type="mount",
+                    valid_options=[t["id"] for t in vocab.setting_techniques()
+                                   if role in t["holds"]],
+                ))
+            width = stone.dimensions_mm.width
+            lo = technique.get("min_stone_mm")
+            hi = technique.get("max_stone_mm")
+            if (lo is not None and width < lo) or (hi is not None and width > hi):
+                bounds = f"{lo}–{hi or '∞'} mm"
+                issues.append(ValidationIssue(
+                    loc=(*loc, "mount"),
+                    msg=(f"a {width} mm stone is outside {technique['display']}'s "
+                         f"workable range ({bounds})"),
+                    type="mount",
+                    expected={"min_stone_mm": lo, "max_stone_mm": hi},
+                ))
+
     if stone.culet is not None and stone.culet not in vocab.culet_grade_ids():
         issues.append(ValidationIssue(
             loc=(*loc, "culet"),

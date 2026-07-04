@@ -119,6 +119,11 @@ export function BuilderScreen({
   const [wornOn, setWornOn] = useState('product');
   const [renderStyle, setRenderStyle] = useState('photo');
   const [printGuide, setPrintGuide] = useState<'with guide' | 'clean (for photos)'>('with guide');
+  const [platePaper, setPlatePaper] = useState('ivory');
+  const [centerMount, setCenterMount] = useState('default');
+  const [surroundMount, setSurroundMount] = useState('default');
+  const [dropMount, setDropMount] = useState('default');
+  const [stationMount, setStationMount] = useState('default');
   const [mockup, setMockup] = useState<any | null>(null);
   const [prose, setProse] = useState('');
   const [notice, setNotice] = useState<{ kind: 'ok' | 'error' | 'info'; text: string } | null>(null);
@@ -310,6 +315,9 @@ export function BuilderScreen({
     if (category === 'bracelet') {
       stone.count = parseInt(stationCount || '1', 10);
       stone.position = 'stations';
+      if (stationMount !== 'default') stone.mount = stationMount;
+    } else if (category !== 'loose' && centerMount !== 'default') {
+      stone.mount = centerMount;
     }
     return stone;
   };
@@ -328,6 +336,7 @@ export function BuilderScreen({
       count,
       position,
       phenomena: [],
+      ...(surroundMount !== 'default' ? { mount: surroundMount } : {}),
     };
   };
 
@@ -409,6 +418,7 @@ export function BuilderScreen({
           count: 1,
           position: 'under_center',
           phenomena: [],
+          ...(dropMount !== 'default' ? { mount: dropMount } : {}),
         });
       }
       if (chainOn) {
@@ -487,7 +497,7 @@ export function BuilderScreen({
 
   const plate = () =>
     run(async () => {
-      const r = await api.platePreview(buildSpec());
+      const r = await api.platePreview(buildSpec(), platePaper);
       if (r.ok) {
         setSheetSvg(r.body);
         setNotice({
@@ -576,6 +586,14 @@ export function BuilderScreen({
     ? options.cuts.filter((c: any) => !allowedCuts || allowedCuts.includes(c.id))
     : [];
   const ready = !!(species && trade);
+
+  // mounts that can physically hold a stone in this role, from the vocabulary
+  const mountOptions = (role: string) => [
+    'default',
+    ...((findings?.setting_techniques ?? [])
+      .filter((t: any) => t.holds.includes(role))
+      .map((t: any) => t.id)),
+  ];
 
   const form = (
     <>
@@ -954,6 +972,50 @@ export function BuilderScreen({
           )}
         </>
       )}
+
+      {category !== 'loose' && findings?.setting_techniques && (
+        <>
+          {(category === 'ring' || category === 'pendant') && (
+            <ChipRow
+              label="Center stone mount"
+              options={mountOptions('center')}
+              value={centerMount}
+              onSelect={setCenterMount}
+            />
+          )}
+          {(category === 'pendant' || (category === 'ring' && ringTemplate === 'halo_prong')) && (
+            <ChipRow
+              label="Surround / halo mount"
+              options={mountOptions('side')}
+              value={surroundMount}
+              onSelect={setSurroundMount}
+            />
+          )}
+          {category === 'pendant' && dropStone && (
+            <ChipRow
+              label="Drop mount"
+              options={mountOptions('drop')}
+              value={dropMount}
+              onSelect={setDropMount}
+            />
+          )}
+          {category === 'bracelet' && (
+            <ChipRow
+              label="Station mount"
+              options={mountOptions('station')}
+              value={stationMount}
+              onSelect={setStationMount}
+            />
+          )}
+        </>
+      )}
+
+      <ChipRow
+        label="Plate paper — what the presentation plate is drawn on"
+        options={['ivory', 'white', 'grey', 'midnight', 'black', 'blush']}
+        value={platePaper}
+        onSelect={setPlatePaper}
+      />
 
       <ChipRow
         label="1:1 print sheet — on screen everything stays enlarged; printed at 100% it is true to size"

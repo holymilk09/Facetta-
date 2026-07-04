@@ -453,5 +453,25 @@
   "grading_labs": {
     "note": "Laboratories whose girdle inscriptions and report numbers we record on Gem ID sheets. Each lab inscribes its own prefix format.",
     "labs": ["GIA", "IGI", "HRD", "AGS", "SSEF", "Gubelin", "GRS", "AGL"]
+  },
+
+  "setting_techniques": {
+    "note": "How stones are mounted. 'holds' says which role a technique can secure (center stone, side/melee, band station, articulated drop). Size bounds in mm across the stone; null = open-ended. Renderers draw these; the validator rejects a mount that cannot hold its stone.",
+    "techniques": [
+      {"id": "prong_4", "display": "4-prong (claw)", "holds": ["center", "side"], "min_stone_mm": 2.5, "max_stone_mm": null, "security": "medium", "light_return": "maximum", "note": "four claws at the compass points; the default for brilliant centers - maximum light, girdle exposed"},
+      {"id": "prong_6", "display": "6-prong", "holds": ["center"], "min_stone_mm": 4.0, "max_stone_mm": null, "security": "high", "light_return": "maximum", "note": "six claws; rounder look and safer for larger centers - the classic solitaire crown"},
+      {"id": "v_prong", "display": "V-prong (point protector)", "holds": ["center", "drop"], "min_stone_mm": 3.0, "max_stone_mm": null, "security": "high", "light_return": "high", "note": "folded claws that cradle pointed tips - pear, marquise, and princess corners chip without them"},
+      {"id": "bezel", "display": "full bezel", "holds": ["center", "side", "station", "drop"], "min_stone_mm": 1.5, "max_stone_mm": null, "security": "highest", "light_return": "medium", "note": "a continuous metal rim over the girdle; protects brittle or soft stones (emerald, opal, pearl) and suits everyday wear"},
+      {"id": "semi_bezel", "display": "semi-bezel", "holds": ["center", "side"], "min_stone_mm": 2.5, "max_stone_mm": null, "security": "high", "light_return": "high", "note": "the rim opens on two sides - bezel security with more light and a view of the girdle"},
+      {"id": "shared_prong", "display": "shared prong", "holds": ["side"], "min_stone_mm": 1.5, "max_stone_mm": 4.0, "security": "medium", "light_return": "maximum", "note": "adjacent stones share claws - the standard for halos, surrounds, and eternity rows; minimal metal between stones"},
+      {"id": "pave", "display": "pave (bead-set)", "holds": ["side"], "min_stone_mm": 1.0, "max_stone_mm": 2.0, "security": "medium", "light_return": "high", "note": "tiny raised beads hold fields of melee; paves a surface in continuous sparkle"},
+      {"id": "micro_pave", "display": "micro-pave", "holds": ["side"], "min_stone_mm": 0.5, "max_stone_mm": 1.2, "security": "delicate", "light_return": "high", "note": "pave under a loupe - stones under 1.2 mm; couture surfaces, needs a skilled setter"},
+      {"id": "channel", "display": "channel", "holds": ["side", "station"], "min_stone_mm": 1.5, "max_stone_mm": 3.5, "security": "high", "light_return": "medium", "note": "a row of stones held girdle-to-girdle between two rails; flush, snag-free - bands and bracelets"},
+      {"id": "bar", "display": "bar-set", "holds": ["side", "station"], "min_stone_mm": 2.0, "max_stone_mm": 4.0, "security": "high", "light_return": "high", "note": "vertical metal bars between stones; more light than channel, architectural rhythm"},
+      {"id": "flush", "display": "flush (gypsy)", "holds": ["side", "station"], "min_stone_mm": 1.0, "max_stone_mm": 3.5, "security": "highest", "light_return": "medium", "note": "the stone is burnished into a drilled seat, sitting level with the metal - bangles, stations, pieces that take knocks"},
+      {"id": "tension", "display": "tension", "holds": ["center"], "min_stone_mm": 3.0, "max_stone_mm": null, "security": "medium", "light_return": "maximum", "note": "the band's spring pressure grips the girdle; hard stones only (diamond, corundum) - never brittle or soft species"},
+      {"id": "invisible", "display": "invisible (mystery)", "holds": ["side"], "min_stone_mm": 1.5, "max_stone_mm": 3.0, "security": "delicate", "light_return": "high", "note": "square-cut stones grooved below the girdle slide onto hidden rails - an unbroken gem surface with no visible metal"},
+      {"id": "drop_cap", "display": "drop cap & pin", "holds": ["drop"], "min_stone_mm": 2.0, "max_stone_mm": null, "security": "medium", "light_return": "maximum", "note": "a small metal cap glued-and-pinned over the drop's tip, hung from a jump ring - how briolettes and articulated drops dangle"}
+    ]
   }
 }

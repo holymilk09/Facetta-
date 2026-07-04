@@ -62,6 +62,9 @@ class Stone(StrictModel):
     culet: str | None = None   # vocabulary culet_size_scale grade
     lab: str | None = None     # grading lab for the inscription (GIA, IGI, ...)
     inscription: Annotated[str, Field(min_length=1, max_length=24)] | None = None
+    # vocabulary setting_techniques id; absent = the position's default mount
+    # (center → prongs, surround → shared prong, stations → flush, drop → cap)
+    mount: str | None = None
 
 
 class Setting(StrictModel):

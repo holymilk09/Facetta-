@@ -213,6 +213,109 @@ def _annulus_lighting(cx, cy, a_in, b_in, a_out, b_out, m1, m2) -> list[str]:
     ]
 
 
+def _center_default_mount(spec: Spec) -> str:
+    """The center stone's mount when unspecified, read from the setting style."""
+    style = (spec.setting.style if spec.setting else "") or ""
+    if "bezel" in style:
+        return "bezel"
+    if "6" in style or (spec.setting and spec.setting.prong_count == 6):
+        return "prong_6"
+    return "prong_4"
+
+
+DEFAULT_MOUNTS = {"halo": "shared_prong", "surround": "shared_prong",
+                  "stations": "flush", "under_center": "drop_cap",
+                  "drop": "drop_cap"}
+
+
+def _prong_marks(cx, cy, w_pp, l_pp, n, m1, m2, start_deg=45.0) -> list[str]:
+    """n claws gripping the stone's rim — gold beads with a catch-light."""
+    import math
+    r = max(1.0, w_pp * 0.075)
+    parts = []
+    for i in range(n):
+        a = math.radians(start_deg + i * 360 / n)
+        px = cx + w_pp / 2 * math.cos(a)
+        py = cy + l_pp / 2 * math.sin(a)
+        parts.append(
+            f'<circle cx="{px:.2f}" cy="{py:.2f}" r="{r:.2f}" fill="{m1}" '
+            f'stroke="{_mix(m2, "#000000", 0.35)}" stroke-width="0.3"/>'
+            f'<circle cx="{px - r * 0.3:.2f}" cy="{py - r * 0.3:.2f}" '
+            f'r="{r * 0.35:.2f}" fill="#ffffff" opacity="0.75"/>'
+        )
+    return parts
+
+
+def _v_prong_marks(cx, cy, w_pp, l_pp, m1, m2) -> list[str]:
+    """Folded claws cradling the stone's points (length-axis tips)."""
+    s = max(1.2, w_pp * 0.11)
+    parts = []
+    for sign in (-1, 1):
+        ty = cy + sign * l_pp / 2
+        parts.append(
+            f'<path d="M {cx - s:.2f} {ty - sign * s * 0.9:.2f} '
+            f'L {cx:.2f} {ty + sign * s * 0.55:.2f} '
+            f'L {cx + s:.2f} {ty - sign * s * 0.9:.2f}" fill="none" '
+            f'stroke="{m1}" stroke-width="{s * 0.55:.2f}" stroke-linecap="round" '
+            f'stroke-linejoin="round"/>'
+        )
+    return parts
+
+
+def _bezel_rim(cx, cy, w_pp, l_pp, m1, m2, semi=False) -> list[str]:
+    """A metal rim over the girdle; semi leaves two windows open."""
+    rim = max(0.7, w_pp * 0.09)
+    rx, ry = w_pp / 2 + rim / 2, l_pp / 2 + rim / 2
+    if semi:
+        return [
+            f'<polyline points="{_arc_points(cx, cy, rx, ry, 120, 240)}" fill="none" '
+            f'stroke="{m1}" stroke-width="{rim:.2f}" stroke-linecap="round"/>',
+            f'<polyline points="{_arc_points(cx, cy, rx, ry, -60, 60)}" fill="none" '
+            f'stroke="{m1}" stroke-width="{rim:.2f}" stroke-linecap="round"/>',
+        ]
+    return [
+        f'<ellipse cx="{cx:.2f}" cy="{cy:.2f}" rx="{rx:.2f}" ry="{ry:.2f}" '
+        f'fill="none" stroke="{m1}" stroke-width="{rim:.2f}"/>',
+        f'<polyline points="{_arc_points(cx, cy, rx, ry, 160, 260)}" fill="none" '
+        f'stroke="#ffffff" stroke-width="{rim * 0.35:.2f}" opacity="0.7"/>',
+    ]
+
+
+def _drop_cap(cx, stone_top, w_pp, m1, m2) -> list[str]:
+    """The cap-and-pin a drop actually hangs from — over the stone's tip."""
+    cap_w = max(2.0, w_pp * 0.40)
+    cap_h = cap_w * 0.75
+    y0 = stone_top - cap_h * 0.55
+    return [
+        f'<path d="M {cx - cap_w / 2:.2f} {y0 + cap_h:.2f} '
+        f'Q {cx - cap_w / 2:.2f} {y0:.2f} {cx:.2f} {y0:.2f} '
+        f'Q {cx + cap_w / 2:.2f} {y0:.2f} {cx + cap_w / 2:.2f} {y0 + cap_h:.2f} Z" '
+        f'fill="{m1}" stroke="{_mix(m2, "#000000", 0.3)}" stroke-width="0.3"/>',
+        f'<circle cx="{cx - cap_w * 0.18:.2f}" cy="{y0 + cap_h * 0.3:.2f}" '
+        f'r="{cap_w * 0.14:.2f}" fill="#ffffff" opacity="0.7"/>',
+    ]
+
+
+def _mount_visual(cx, cy, mount_id, w_pp, l_pp, m1, m2) -> list[str]:
+    """Draw a vocabulary setting technique on a placed stone. Tension and
+    invisible settings show no metal by definition — that IS their look."""
+    if mount_id == "prong_4":
+        return _prong_marks(cx, cy, w_pp, l_pp, 4, m1, m2)
+    if mount_id == "prong_6":
+        return _prong_marks(cx, cy, w_pp, l_pp, 6, m1, m2, start_deg=30)
+    if mount_id == "v_prong":
+        return _v_prong_marks(cx, cy, w_pp, l_pp, m1, m2)
+    if mount_id == "bezel":
+        return _bezel_rim(cx, cy, w_pp, l_pp, m1, m2)
+    if mount_id == "semi_bezel":
+        return _bezel_rim(cx, cy, w_pp, l_pp, m1, m2, semi=True)
+    if mount_id in ("pave", "micro_pave"):
+        return _prong_marks(cx, cy, w_pp, l_pp, 4, m1, m2, start_deg=0)
+    if mount_id == "drop_cap":
+        return _drop_cap(cx, cy - l_pp / 2, w_pp, m1, m2)
+    return []
+
+
 def _link_ring(cx, cy, r) -> list[str]:
     """A small metal jump ring — components must visibly connect."""
     return [
@@ -243,12 +346,12 @@ def _ring_proto(spec: Spec, vocab: Vocabulary, paper: str = "#fdfdfa") -> list[s
         f'<rect {band_rect} fill="url(#metal)" stroke="#00000022" stroke-width="0.3"/>',
         f'<rect {band_rect} fill="url(#sheen)"/>',
     ]
+    m1, m2 = _metal_stops(spec)
     if melee is not None:
         mw = melee.dimensions_mm.width
         mr = mw / 2 * s
         ring_ax = rx + 0.3 * s + mr
         ring_by = ry + 0.3 * s + mr
-        m1, m2 = _metal_stops(spec)
         halo = f'cx="{cx:.2f}" cy="{cy:.2f}" rx="{ring_ax + mr:.2f}" ry="{ring_by + mr:.2f}"'
         parts += [
             f'<ellipse {halo} fill="{_mix(m1, m2, 0.45)}" stroke="#00000022" stroke-width="0.3"/>',
@@ -257,13 +360,30 @@ def _ring_proto(spec: Spec, vocab: Vocabulary, paper: str = "#fdfdfa") -> list[s
             f'<ellipse cx="{cx:.2f}" cy="{cy:.2f}" rx="{ring_ax - mr:.2f}" '
             f'ry="{ring_by - mr:.2f}" fill="{paper}"/>',
         ]
+        mount = melee.mount or "shared_prong"
         for i in range(melee.count):
             t = -math.pi / 2 + i * 2 * math.pi / melee.count
-            parts += _stone_visual(cx + ring_ax * math.cos(t),
-                                   cy + ring_by * math.sin(t), melee,
-                                   2 * mr, 2 * mr, vocab)
+            sx, sy = cx + ring_ax * math.cos(t), cy + ring_by * math.sin(t)
+            parts += _stone_visual(sx, sy, melee, 2 * mr, 2 * mr, vocab)
+            if mount == "shared_prong":
+                tm = t + math.pi / melee.count
+                bx = cx + ring_ax * math.cos(tm)
+                by = cy + ring_by * math.sin(tm)
+                br = max(0.8, mr * 0.34)
+                parts.append(
+                    f'<circle cx="{bx:.2f}" cy="{by:.2f}" r="{br:.2f}" '
+                    f'fill="{m1}" stroke="{_mix(m2, "#000000", 0.35)}" '
+                    f'stroke-width="0.25"/>'
+                    f'<circle cx="{bx - br * 0.3:.2f}" cy="{by - br * 0.3:.2f}" '
+                    f'r="{br * 0.35:.2f}" fill="#ffffff" opacity="0.75"/>'
+                )
+            else:
+                parts += _mount_visual(sx, sy, mount, 2 * mr, 2 * mr, m1, m2)
     parts += _stone_visual(cx, cy, spec.stone, 2 * rx, 2 * ry, vocab,
                            fill="url(#stone)")
+    parts += _mount_visual(cx, cy,
+                           spec.stone.mount or _center_default_mount(spec),
+                           2 * rx, 2 * ry, m1, m2)
     return parts
 
 
@@ -295,26 +415,52 @@ def _bracelet_proto(spec: Spec, vocab: Vocabulary, paper: str = "#fdfdfa") -> li
         fill = _mix(hexval, "#FFFFFF", 0.22)
         edge = _mix(hexval, "#20242c", 0.5)
         seat = side * 1.22  # the flush bezel frame holding each station
+        mount = stone.mount or DEFAULT_MOUNTS.get("stations", "flush")
+        if mount == "channel":
+            # two rails the stones sit between, girdle to girdle
+            for off in (side / 2 + 0.8, -(side / 2 + 0.8)):
+                parts.append(
+                    f'<ellipse cx="{cx:.2f}" cy="{cy:.2f}" rx="{a_c + off:.2f}" '
+                    f'ry="{b_c + off:.2f}" fill="none" stroke="{m1}" '
+                    f'stroke-width="0.9" opacity="0.9"/>'
+                )
         for i in range(stone.count):
             t = -math.pi / 2 + i * 2 * math.pi / stone.count
             px, py = cx + a_c * math.cos(t), cy + b_c * math.sin(t)
             angle = math.degrees(math.atan2(b_c * math.cos(t), -a_c * math.sin(t)))
             inset = side * 0.32
-            parts.append(
-                f'<g transform="rotate({angle:.1f} {px:.2f} {py:.2f})">'
-                f'<rect x="{px - seat / 2:.2f}" y="{py - seat / 2:.2f}" width="{seat:.2f}" '
-                f'height="{seat:.2f}" rx="{seat * 0.12:.2f}" fill="{_mix(m2, "#000000", 0.12)}"/>'
-                f'<rect x="{px - seat / 2:.2f}" y="{py - seat / 2:.2f}" width="{seat:.2f}" '
-                f'height="{seat:.2f}" rx="{seat * 0.12:.2f}" fill="none" '
-                f'stroke="{_mix(m1, "#FFFFFF", 0.4)}" stroke-width="0.35"/>'
+            group = f'<g transform="rotate({angle:.1f} {px:.2f} {py:.2f})">'
+            if mount in ("flush", "bezel"):
+                group += (
+                    f'<rect x="{px - seat / 2:.2f}" y="{py - seat / 2:.2f}" width="{seat:.2f}" '
+                    f'height="{seat:.2f}" rx="{seat * 0.12:.2f}" fill="{_mix(m2, "#000000", 0.12)}"/>'
+                    f'<rect x="{px - seat / 2:.2f}" y="{py - seat / 2:.2f}" width="{seat:.2f}" '
+                    f'height="{seat:.2f}" rx="{seat * 0.12:.2f}" fill="none" '
+                    f'stroke="{_mix(m1, "#FFFFFF", 0.4)}" stroke-width="0.35"/>'
+                )
+            elif mount == "bar":
+                bar_w = side * 0.34
+                group += (
+                    f'<rect x="{px - side / 2 - bar_w - 0.5:.2f}" y="{py - seat / 2:.2f}" '
+                    f'width="{bar_w:.2f}" height="{seat:.2f}" fill="{m1}" '
+                    f'stroke="{_mix(m2, "#000000", 0.3)}" stroke-width="0.25"/>'
+                    f'<rect x="{px + side / 2 + 0.5:.2f}" y="{py - seat / 2:.2f}" '
+                    f'width="{bar_w:.2f}" height="{seat:.2f}" fill="{m1}" '
+                    f'stroke="{_mix(m2, "#000000", 0.3)}" stroke-width="0.25"/>'
+                )
+            group += (
                 f'<rect x="{px - side / 2:.2f}" y="{py - side / 2:.2f}" width="{side:.2f}" '
                 f'height="{side:.2f}" fill="{fill}" stroke="{edge}" stroke-width="0.3"/>'
                 f'<rect x="{px - side / 2 + inset:.2f}" y="{py - side / 2 + inset:.2f}" '
                 f'width="{side - 2 * inset:.2f}" height="{side - 2 * inset:.2f}" '
                 f'fill="none" stroke="{edge}" stroke-width="0.25"/>'
                 f'<circle cx="{px - side * 0.18:.2f}" cy="{py - side * 0.18:.2f}" '
-                f'r="{side * 0.1:.2f}" fill="#ffffff" opacity="0.8"/></g>'
+                f'r="{side * 0.1:.2f}" fill="#ffffff" opacity="0.8"/>'
             )
+            if mount == "prong_4":
+                group += "".join(_prong_marks(px, py, side, side, 4, m1, m2))
+            group += "</g>"
+            parts.append(group)
     return parts
 
 
@@ -335,6 +481,7 @@ def _pendant_proto(spec: Spec, vocab: Vocabulary) -> list[str]:
 
     bail_r = p.bail_height_mm / 2 * s
     bail_w = (p.bail_height_mm - p.bail_inner_diameter_mm) / 2 * s
+    m1, m2 = _metal_stops(spec)
     parts = [
         _shadow(cx, ty + total + 10, total / 4),
         f'<circle cx="{cx:.2f}" cy="{ty + bail_r:.2f}" r="{bail_r:.2f}" fill="none" '
@@ -354,14 +501,35 @@ def _pendant_proto(spec: Spec, vocab: Vocabulary) -> list[str]:
         ring_ax = hw + 0.3 * s + mr
         ring_by = hl + 0.3 * s + mr
         sequence = _surround_sequence(spec)
+        n = len(sequence)
         for i, side in enumerate(sequence):
-            t = -math.pi / 2 + i * 2 * math.pi / len(sequence)
+            t = -math.pi / 2 + i * 2 * math.pi / n
             r_i = side.dimensions_mm.width / 2 * s
-            parts += _stone_visual(cx + ring_ax * math.cos(t),
-                                   cluster_cy + ring_by * math.sin(t), side,
-                                   2 * r_i, 2 * r_i, vocab)
+            sx = cx + ring_ax * math.cos(t)
+            sy = cluster_cy + ring_by * math.sin(t)
+            parts += _stone_visual(sx, sy, side, 2 * r_i, 2 * r_i, vocab)
+            mount = side.mount or DEFAULT_MOUNTS.get(side.position or "",
+                                                     "shared_prong")
+            if mount == "shared_prong":
+                # neighbours share a claw: one bead at each midpoint angle
+                tm = t + math.pi / n
+                bx = cx + ring_ax * math.cos(tm)
+                by = cluster_cy + ring_by * math.sin(tm)
+                br = max(0.9, r_i * 0.34)
+                parts.append(
+                    f'<circle cx="{bx:.2f}" cy="{by:.2f}" r="{br:.2f}" '
+                    f'fill="{m1}" stroke="{_mix(m2, "#000000", 0.35)}" '
+                    f'stroke-width="0.25"/>'
+                    f'<circle cx="{bx - br * 0.3:.2f}" cy="{by - br * 0.3:.2f}" '
+                    f'r="{br * 0.35:.2f}" fill="#ffffff" opacity="0.75"/>'
+                )
+            else:
+                parts += _mount_visual(sx, sy, mount, 2 * r_i, 2 * r_i, m1, m2)
     parts += _stone_visual(cx, cluster_cy, spec.stone, 2 * hw, 2 * hl, vocab,
                            table_ratio=0.62, fill="url(#stone)")
+    parts += _mount_visual(cx, cluster_cy,
+                           spec.stone.mount or _center_default_mount(spec),
+                           2 * hw, 2 * hl, m1, m2)
     if drop:
         dw = drop.dimensions_mm.width * s
         dl = drop.dimensions_mm.length * s  # hangs point-down
@@ -369,6 +537,8 @@ def _pendant_proto(spec: Spec, vocab: Vocabulary) -> list[str]:
         # articulated drop: its jump ring bridges the cluster and the stone
         parts += _link_ring(cx, cluster_cy + cluster_by + 0.5 * s, 0.45 * s)
         parts += _stone_visual(cx, sap_cy, drop, dw, dl, vocab)
+        parts += _mount_visual(cx, sap_cy, drop.mount or "drop_cap",
+                               dw, dl, m1, m2)
     return parts
 
 
