@@ -15,8 +15,9 @@ from __future__ import annotations
 import re
 
 from facetta.prototype import (
-    _bracelet_proto, _center_default_mount, _defs, _loose_proto, _metal_stops,
-    _mix, _pendant_proto, _ring_proto, stone_hex, stone_manifest,
+    _bracelet_proto, _center_default_mount, _defs, _ellipse_arc_angles,
+    _loose_proto, _metal_stops, _mix, _pendant_proto, _ring_proto, stone_hex,
+    stone_manifest,
 )
 from facetta.spec import Spec
 from facetta.svg_sheet import BASELINE, MARGIN, SHEET_H, SHEET_W
@@ -318,12 +319,49 @@ def _pendant_profile_plate(spec: Spec, vocab) -> list[str]:
         spec.stone.mount or _center_default_mount(spec),
         x_t, x_g1, x_g1 + g, cx + d_pp / 2, cluster_cy, hl, m1, m2)
     if melee:
-        md = melee.dimensions_mm.depth * s
-        ml = melee.dimensions_mm.width * s
-        mhex = stone_hex(melee, vocab)
-        for m_cy in (cluster_cy - hl - 0.3 * s - ml / 2,
-                     cluster_cy + hl + 0.3 * s + ml / 2):
-            parts += _stone_profile_color(cx, m_cy, md, ml, mhex)
+        # the surround ring seen edge-on: every stone on the viewer's half
+        # projects onto the girdle plane at its TRUE height — the same
+        # arc-length angles as the face-on view, so the two views correlate
+        # stone for stone. A gallery rail with claws carries the column.
+        import math
+        from facetta.svg_sheet import _surround_sequence
+        mw_pp = melee.dimensions_mm.width * s
+        mr = mw_pp / 2
+        ring_ax = stone.width / 2 * s + 0.3 * s + mr
+        ring_by = hl + 0.3 * s + mr
+        sequence = _surround_sequence(spec)
+        n = len(sequence)
+        gx = x_g1 + g / 2  # the girdle plane the surround sits on
+        near = []
+        for t, side in zip(_ellipse_arc_angles(ring_ax, ring_by, n), sequence):
+            if math.cos(t) >= -0.05:  # the far half hides behind the center
+                near.append((math.cos(t), cluster_cy + ring_by * math.sin(t),
+                             side))
+        ys = [y for _, y, _ in near]
+        rail_x = gx + mr * 0.9
+        parts += [
+            # the gallery rail the shared claws rise from
+            f'<line x1="{rail_x:.2f}" y1="{min(ys) - mr * 0.4:.2f}" '
+            f'x2="{rail_x:.2f}" y2="{max(ys) + mr * 0.4:.2f}" '
+            f'stroke="{m1}" stroke-width="{mr * 0.42:.2f}" '
+            f'stroke-linecap="round"/>',
+            f'<line x1="{rail_x:.2f}" y1="{min(ys) - mr * 0.4:.2f}" '
+            f'x2="{rail_x:.2f}" y2="{max(ys) + mr * 0.4:.2f}" '
+            f'stroke="{_mix(m2, "#000000", 0.3)}" stroke-width="0.25" '
+            f'opacity="0.6"/>',
+        ]
+        # claw hooks from the rail toward each stone seat
+        for _, y, _ in near:
+            parts.append(
+                f'<line x1="{rail_x:.2f}" y1="{y:.2f}" '
+                f'x2="{gx - mr * 0.3:.2f}" y2="{y:.2f}" stroke="{m1}" '
+                f'stroke-width="{mr * 0.28:.2f}" stroke-linecap="round"/>')
+        # farthest first, nearest last — projection occlusion drawn honestly
+        for _, y, side in sorted(near, key=lambda p: p[0]):
+            md = side.dimensions_mm.depth * s
+            ml = side.dimensions_mm.width * s
+            parts += _stone_profile_color(gx, y, md, ml,
+                                          stone_hex(side, vocab))
     bottom = cluster_cy + cluster_by
     if drop:
         dd = drop.dimensions_mm.depth * s
