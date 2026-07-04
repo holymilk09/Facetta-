@@ -10,6 +10,7 @@ from facetta.dxf import svg_to_dxf
 from facetta.mockup import (
     SceneUnsupported, compile_render_request, compile_restage_request,
 )
+from facetta.plate import render_presentation_plate
 from facetta.prototype import compile_render_prompt, render_color_preview
 from facetta.spec import Spec
 from facetta.svg_sheet import (
@@ -87,6 +88,24 @@ def prototype_preview(spec: Spec):
         )
     try:
         svg = render_color_preview(result.spec)
+    except ValueError as exc:
+        return JSONResponse(status_code=422, content={"detail": str(exc)})
+    return Response(content=svg, media_type="image/svg+xml")
+
+
+@router.post("/plate.svg")
+def plate_preview(spec: Spec):
+    """The presentation plate: atelier-sketch styling over the engine's exact
+    geometry — station counts and measurements are always true because code
+    draws them; only the aesthetic is hand-drawn."""
+    result = validate_spec(spec, get_vocabulary())
+    if not result.ok:
+        return JSONResponse(
+            status_code=422,
+            content={"detail": [issue.as_detail() for issue in result.issues]},
+        )
+    try:
+        svg = render_presentation_plate(result.spec)
     except ValueError as exc:
         return JSONResponse(status_code=422, content={"detail": str(exc)})
     return Response(content=svg, media_type="image/svg+xml")

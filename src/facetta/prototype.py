@@ -223,7 +223,7 @@ def _link_ring(cx, cy, r) -> list[str]:
     ]
 
 
-def _ring_proto(spec: Spec, vocab: Vocabulary) -> list[str]:
+def _ring_proto(spec: Spec, vocab: Vocabulary, paper: str = "#fdfdfa") -> list[str]:
     import math
 
     s = 5.0
@@ -255,7 +255,7 @@ def _ring_proto(spec: Spec, vocab: Vocabulary) -> list[str]:
             *_annulus_lighting(cx, cy, ring_ax - mr, ring_by - mr,
                                ring_ax + mr, ring_by + mr, m1, m2),
             f'<ellipse cx="{cx:.2f}" cy="{cy:.2f}" rx="{ring_ax - mr:.2f}" '
-            f'ry="{ring_by - mr:.2f}" fill="#fdfdfa"/>',
+            f'ry="{ring_by - mr:.2f}" fill="{paper}"/>',
         ]
         for i in range(melee.count):
             t = -math.pi / 2 + i * 2 * math.pi / melee.count
@@ -267,7 +267,7 @@ def _ring_proto(spec: Spec, vocab: Vocabulary) -> list[str]:
     return parts
 
 
-def _bracelet_proto(spec: Spec, vocab: Vocabulary) -> list[str]:
+def _bracelet_proto(spec: Spec, vocab: Vocabulary, paper: str = "#fdfdfa") -> list[str]:
     import math
 
     s = 2.6
@@ -281,11 +281,11 @@ def _bracelet_proto(spec: Spec, vocab: Vocabulary) -> list[str]:
         f'<ellipse cx="{cx:.2f}" cy="{cy:.2f}" rx="{a_out:.2f}" ry="{b_out:.2f}" '
         f'fill="{_mix(m1, m2, 0.45)}" stroke="#00000022" stroke-width="0.3"/>',
         f'<ellipse cx="{cx:.2f}" cy="{cy:.2f}" rx="{a_in:.2f}" ry="{b_in:.2f}" '
-        f'fill="#fdfdfa"/>',
+        f'fill="{paper}"/>',
         # light traced along the ring's own curvature, not the page
         *_annulus_lighting(cx, cy, a_in, b_in, a_out, b_out, m1, m2),
         f'<ellipse cx="{cx:.2f}" cy="{cy:.2f}" rx="{a_in:.2f}" ry="{b_in:.2f}" '
-        f'fill="#fdfdfa"/>',
+        f'fill="{paper}"/>',
     ]
     stone = spec.stone
     if stone.position == "stations":
@@ -385,6 +385,35 @@ def _loose_proto(spec: Spec, vocab: Vocabulary) -> list[str]:
     ]
 
 
+def stone_manifest(spec: Spec) -> list[str]:
+    """Every stone group on the piece, then the metal — a client must be able
+    to read exactly what they are looking at."""
+    def name(s) -> str:
+        # "Cobalt Spinel" already says spinel — never "Cobalt Spinel spinel"
+        if s.species.lower() in s.color.trade.lower():
+            return s.color.trade
+        return f"{s.color.trade} {s.species}"
+
+    stone = spec.stone
+    lead = f"{stone.count} × " if stone.count > 1 else ""
+    manifest = [f"{lead}{stone.carat:.2f} ct {name(stone)}, "
+                f"{stone.cut.replace('_', ' ')}"]
+    position_word = {"halo": "halo", "surround": "surround",
+                     "stations": "stations", "under_center": "drop",
+                     "drop": "drop"}
+    for side in spec.side_stones:
+        where = position_word.get(side.position or "", "accent")
+        manifest.append(
+            f"{side.count} × {side.carat:.2f} ct {name(side)} {where}"
+            if side.count > 1 else
+            f"{side.carat:.2f} ct {name(side)} {where}")
+    if spec.metal:
+        karat = f"{spec.metal.karat}k " if spec.metal.karat else ""
+        color = f"{spec.metal.color} " if spec.metal.color else ""
+        manifest.append(f"{karat}{color}{spec.metal.material}")
+    return manifest
+
+
 def render_color_preview(spec: Spec) -> str:
     """Deterministic colored prototype: vocabulary hues + metal tones, same
     geometry as the technical sheet."""
@@ -400,25 +429,7 @@ def render_color_preview(spec: Spec) -> str:
     else:
         raise ValueError(f"no prototype view for template '{spec.template}'")
 
-    # full stone manifest: every stone group on the piece, then the metal —
-    # a client must be able to read exactly what they are looking at
-    stone = spec.stone
-    manifest = [f"{stone.carat:.2f} ct {stone.color.trade} {stone.species}, "
-                f"{stone.cut.replace('_', ' ')}"]
-    position_word = {"halo": "halo", "surround": "surround",
-                     "stations": "stations", "under_center": "drop",
-                     "drop": "drop"}
-    for side in spec.side_stones:
-        where = position_word.get(side.position or "", "accent")
-        manifest.append(
-            f"{side.count} × {side.carat:.2f} ct {side.color.trade} "
-            f"{side.species} {where}" if side.count > 1 else
-            f"{side.carat:.2f} ct {side.color.trade} {side.species} {where}")
-    if spec.metal:
-        karat = f"{spec.metal.karat}k " if spec.metal.karat else ""
-        color = f"{spec.metal.color} " if spec.metal.color else ""
-        manifest.append(f"{karat}{color}{spec.metal.material}")
-    caption = "  ·  ".join(manifest)
+    caption = "  ·  ".join(stone_manifest(spec))
     parts = [
         f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {SHEET_W:g} {SHEET_H:g}" '
         f'width="{SHEET_W:g}mm" height="{SHEET_H:g}mm" font-family="{FONT}">',

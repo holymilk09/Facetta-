@@ -485,6 +485,18 @@ export function BuilderScreen({
       } else showIssues(r.body);
     });
 
+  const plate = () =>
+    run(async () => {
+      const r = await api.platePreview(buildSpec());
+      if (r.ok) {
+        setSheetSvg(r.body);
+        setNotice({
+          kind: 'ok',
+          text: 'Presentation plate — the sketch look, but every count and measurement drawn from the spec.',
+        });
+      } else showIssues(r.body);
+    });
+
   const save = () =>
     run(async () => {
       const spec = buildSpec();
@@ -956,6 +968,7 @@ export function BuilderScreen({
         <Button title="Preview sheet" onPress={preview} disabled={busy || !ready} />
         <Button title="Color prototype" onPress={prototype} disabled={busy || !ready} />
         <Button title="True size (print 1:1)" kind="ghost" onPress={trueSize} disabled={busy || !ready} />
+        <Button title="Presentation plate" kind="ghost" onPress={plate} disabled={busy || !ready} />
         <Button title={editing ? 'Save new version' : 'Save design'} onPress={save} disabled={busy || !ready} />
       </View>
 
