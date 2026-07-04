@@ -36,11 +36,16 @@ LIGHTING = {
 STYLES = {
     "photo": None,  # photoreal, composed from the lighting/worn-on scene
     "atelier_sketch": (
-        "hand-drawn atelier jewelry design sketch, colored pencil and graphite "
-        "on warm ivory sketchbook paper, presented in three views on one page "
-        "(face-on, three-quarter, and profile), faint construction lines, "
-        "hatched graphite drop shadow under each view, gouache-like highlights "
-        "on the stones, refined couture presentation"
+        "an haute joaillerie designer's presentation sketch, hand-drawn in "
+        "colored pencil, soft graphite and fine white gouache on warm ivory "
+        "paper; confident varied line weight — loose expressive strokes for "
+        "the metal, precise rendering of every stone facet; composed like a "
+        "couture atelier plate with three views on one page (face-on large, "
+        "three-quarter, and profile smaller beside it); translucent "
+        "watercolor wash giving each gem its color and inner glow, hatched "
+        "graphite shadow anchoring each view to the paper, faint construction "
+        "and symmetry lines left visible around the drawing, generous empty "
+        "margins, refined gallery-quality presentation"
     ),
 }
 
