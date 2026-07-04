@@ -8,9 +8,10 @@ from facetta import prose as prose_layer
 from facetta.db import utcnow
 from facetta.dxf import svg_to_dxf
 from facetta.mockup import (
-    SceneUnsupported, compile_render_request, compile_restage_request,
+    SceneUnsupported, compile_finish_request, compile_render_request,
+    compile_restage_request,
 )
-from facetta.plate import render_presentation_plate
+from facetta.plate import render_control_image, render_presentation_plate
 from facetta.prototype import compile_render_prompt, render_color_preview
 from facetta.spec import Spec
 from facetta.svg_sheet import (
@@ -110,6 +111,51 @@ def plate_preview(spec: Spec, paper: str = "ivory"):
     except ValueError as exc:
         return JSONResponse(status_code=422, content={"detail": str(exc)})
     return Response(content=svg, media_type="image/svg+xml")
+
+
+@router.post("/control-image.svg")
+def control_image(spec: Spec):
+    """The geometry scaffold for image-model finishing: exact positions and
+    hardware, zero lettering. Rasterize it and send it as the edit input
+    with the /specs/finish-request instruction."""
+    result = validate_spec(spec, get_vocabulary())
+    if not result.ok:
+        return JSONResponse(
+            status_code=422,
+            content={"detail": [issue.as_detail() for issue in result.issues]},
+        )
+    try:
+        svg = render_control_image(result.spec)
+    except ValueError as exc:
+        return JSONResponse(status_code=422, content={"detail": str(exc)})
+    return Response(content=svg, media_type="image/svg+xml")
+
+
+class FinishRequestBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    spec: Spec
+    style: str = "photo"  # "photo" | "atelier_sketch"
+    lighting: str = "studio"
+
+
+@router.post("/finish-request")
+def finish_request(body: FinishRequestBody):
+    """The instruction that pairs with the control image: the image model
+    paints realism over our exact geometry — trace, don't redesign."""
+    result = validate_spec(body.spec, get_vocabulary())
+    if not result.ok:
+        return JSONResponse(
+            status_code=422,
+            content={"detail": [issue.as_detail() for issue in result.issues]},
+        )
+    try:
+        return compile_finish_request(result.spec, body.style, body.lighting)
+    except SceneUnsupported as exc:
+        return JSONResponse(
+            status_code=422,
+            content={"detail": str(exc), "valid_options": exc.valid},
+        )
 
 
 @router.post("/render-prompt")

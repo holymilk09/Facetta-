@@ -275,7 +275,7 @@ def _profile_mount_marks(mount, x_t, x_g1, x_g2, x_culet, cy, hl,
     return []
 
 
-def _pendant_profile_plate(spec: Spec, vocab) -> list[str]:
+def _pendant_profile_plate(spec: Spec, vocab, dims: bool = True) -> list[str]:
     """Side elevation at the same scale and heights as the face-on view, so
     the two correlate stone for stone AND mount for mount."""
     import math  # noqa: F401  (kept parallel with the proto helpers)
@@ -393,16 +393,17 @@ def _pendant_profile_plate(spec: Spec, vocab) -> list[str]:
             parts += _profile_mount_marks(d_mount, dx_t, dx_g1, dx_g1 + dg,
                                           cx + dd / 2, sap_cy, dl / 2, m1, m2)
         bottom = sap_cy + dl / 2
-    # the depth dimension the face-on view cannot carry
-    y = min(bottom + 10, SHEET_H - MARGIN - 16)
-    x1, x2 = cx - d_pp / 2, cx + d_pp / 2
-    parts += [
-        f'<line x1="{x1:.2f}" y1="{y:.2f}" x2="{x2:.2f}" y2="{y:.2f}" '
-        f'stroke="{INK}" stroke-width="0.3"/>',
-        _tick(x1, y), _tick(x2, y),
-        _t((x1 + x2) / 2, y + 5.2, f"{_fmt(stone.depth)} mm deep", size=4.4),
-        _t(cx, ty - 4, "profile", size=3.6, color=FAINT),
-    ]
+    if dims:
+        # the depth dimension the face-on view cannot carry
+        y = min(bottom + 10, SHEET_H - MARGIN - 16)
+        x1, x2 = cx - d_pp / 2, cx + d_pp / 2
+        parts += [
+            f'<line x1="{x1:.2f}" y1="{y:.2f}" x2="{x2:.2f}" y2="{y:.2f}" '
+            f'stroke="{INK}" stroke-width="0.3"/>',
+            _tick(x1, y), _tick(x2, y),
+            _t((x1 + x2) / 2, y + 5.2, f"{_fmt(stone.depth)} mm deep", size=4.4),
+            _t(cx, ty - 4, "profile", size=3.6, color=FAINT),
+        ]
     return parts
 
 
@@ -416,6 +417,34 @@ def _loose_dims(spec: Spec) -> list[str]:
     parts += _leader(cx + hw * 0.5, cy + hl * 0.87, cx + hw + 18, cy + hl + 10,
                      f"depth {_fmt(d.depth)} mm")
     return parts
+
+
+def render_control_image(spec: Spec) -> str:
+    """The geometry scaffold an image model paints over: every stone, mount,
+    and silhouette at its exact position — and nothing else. No lettering
+    (models hallucinate text into artwork), no wobble, no dims, no grain;
+    plain ground. Beauty is the image model's job; being right is ours."""
+    vocab = get_vocabulary()
+    if spec.template in ("solitaire_prong", "halo_prong"):
+        body = _ring_proto(spec, vocab, paper="#ffffff")
+    elif spec.template in ("love_bangle", "cuff", "link_bracelet"):
+        body = _bracelet_proto(spec, vocab, paper="#ffffff")
+    elif spec.template == "cluster_pendant":
+        body = (_pendant_proto(spec, vocab, cx=PENDANT_FRONT_CX)
+                + _pendant_profile_plate(spec, vocab, dims=False))
+    elif spec.template == "loose_stone":
+        body = _loose_proto(spec, vocab)
+    else:
+        raise ValueError(f"no control image for template '{spec.template}'")
+    parts = [
+        f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {SHEET_W:g} {SHEET_H:g}" '
+        f'width="{SHEET_W:g}mm" height="{SHEET_H:g}mm">',
+        _defs(spec, vocab),
+        f'<rect x="0" y="0" width="{SHEET_W:g}" height="{SHEET_H:g}" fill="#ffffff"/>',
+        *body,
+        "</svg>",
+    ]
+    return "\n".join(parts) + "\n"
 
 
 def render_presentation_plate(spec: Spec, paper: str = "ivory") -> str:

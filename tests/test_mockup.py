@@ -113,3 +113,30 @@ def test_fidelity_checklist_flags_the_drift_points(pendant_spec):
     assert "FACETED" in checks              # the drop must not become a cabochon
     assert "NO chain" in checks             # spec has none; renders love adding one
     assert "no text" in checks
+
+def test_finish_request_pairs_with_a_clean_control_image(pendant_spec):
+    from facetta.mockup import compile_finish_request
+    from facetta.plate import render_control_image
+
+    spec = _validated(pendant_spec)
+    control = render_control_image(spec)
+    assert "<text" not in control          # models hallucinate lettering: none
+    assert 'filter="url(#wobble)"' not in control  # crisp scaffold, no sketch
+    body = compile_finish_request(spec, style="photo", lighting="studio")
+    assert "MUST be preserved exactly" in body["instruction"]
+    assert "Do NOT add, remove, move, or resize" in body["instruction"]
+    assert "EXACTLY 12" in " | ".join(body["fidelity_checklist"])
+    negatives = body["negative_prompt"].split(", ")
+    assert "extra stones" in negatives and "text" in negatives
+
+    sketch = compile_finish_request(spec, style="atelier_sketch")
+    assert "colored pencil" in sketch["instruction"]
+
+
+def test_finish_request_endpoint(example_spec):
+    r = client.post("/specs/finish-request",
+                    json={"spec": example_spec, "style": "photo"})
+    assert r.status_code == 200
+    assert "control drawing" in r.json()["instruction"]
+    c = client.post("/specs/control-image.svg", json=example_spec)
+    assert c.status_code == 200 and "<text" not in c.text

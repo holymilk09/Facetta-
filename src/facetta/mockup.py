@@ -76,6 +76,59 @@ class SceneUnsupported(ValueError):
         self.valid = valid
 
 
+def compile_finish_request(spec, style: str = "photo",
+                           lighting: str = "studio") -> dict:
+    """Have an image model FINISH our control image, not imagine a piece.
+
+    The division of labor the product is built on: deterministic code draws
+    the control image — every stone position, count, mount and silhouette
+    exact — and the image model paints realism over that scaffold. The
+    instruction is written for an image-editing model (Grok Imagine's edit
+    mode, FLUX Kontext class): trace, don't redesign."""
+    from facetta.prototype import stone_manifest
+
+    if style not in STYLES:
+        raise SceneUnsupported(f"unknown style '{style}'", sorted(STYLES))
+    if lighting not in LIGHTING:
+        raise SceneUnsupported(f"unknown lighting '{lighting}'", sorted(LIGHTING))
+
+    piece, _ = prompt_core(spec)
+    manifest = "; ".join(stone_manifest(spec))
+    if style == "atelier_sketch":
+        look = ("repaint it as " + STYLES["atelier_sketch"])
+    else:
+        look = ("repaint it as an ultra-realistic studio product photograph, "
+                + LIGHTING[lighting] + ", polished metal with true "
+                "reflections, gems with real depth, fire and internal light")
+    instruction = (
+        f"The attached image is an exact engineering control drawing of a "
+        f"{piece} ({manifest}). Every stone's position, size, count, and "
+        f"silhouette, and every piece of metal hardware — claws, beads, "
+        f"bezel rims, gallery rails, caps, jump rings — is drawn where it "
+        f"truly belongs and MUST be preserved exactly. {look}. Render the "
+        f"metalwork as real three-dimensional goldsmithing following the "
+        f"drawn hardware precisely. Do NOT add, remove, move, or resize any "
+        f"stone or component; do not change the viewpoint or composition of "
+        f"either view; no text, numbers, watermarks, or signatures anywhere."
+    )
+    return {
+        "instruction": instruction,
+        "negative_prompt": ", ".join(
+            ["extra stones", "missing stones", "moved stones",
+             "different proportions", "text", "handwriting", "numbers",
+             "watermark", "logo", "brand names", "hands", "skin"]),
+        "control": {
+            "image": "POST /specs/control-image.svg, rasterized — the edit input",
+            "role": "geometry scaffold: the model paints over it, never redraws it",
+        },
+        "provider_payload": {  # instruction-editing model defaults
+            "guidance_scale": 3.0,
+            "num_inference_steps": 28,
+        },
+        "fidelity_checklist": fidelity_checklist(spec),
+    }
+
+
 def compile_restage_request(jewelry_type: str = "ring", lighting: str = "studio",
                             worn_on: str = "product") -> dict:
     """Re-stage a photograph of a FINISHED piece into a new scene.
