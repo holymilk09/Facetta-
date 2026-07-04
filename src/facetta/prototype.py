@@ -229,19 +229,86 @@ DEFAULT_MOUNTS = {"halo": "shared_prong", "surround": "shared_prong",
 
 
 def _prong_marks(cx, cy, w_pp, l_pp, n, m1, m2, start_deg=45.0) -> list[str]:
-    """n claws gripping the stone's rim — gold beads with a catch-light."""
+    """n claws gripping the stone's rim — radial talons, not dots: each is an
+    oval aligned to its radius, half over the girdle, so the grip reads."""
     import math
-    r = max(1.0, w_pp * 0.075)
+    claw_l = max(1.7, w_pp * 0.105)   # along the radius
+    claw_w = max(1.0, w_pp * 0.062)   # across it
     parts = []
     for i in range(n):
         a = math.radians(start_deg + i * 360 / n)
         px = cx + w_pp / 2 * math.cos(a)
         py = cy + l_pp / 2 * math.sin(a)
+        deg = math.degrees(a) + 90  # oval's long axis points at the center
         parts.append(
-            f'<circle cx="{px:.2f}" cy="{py:.2f}" r="{r:.2f}" fill="{m1}" '
-            f'stroke="{_mix(m2, "#000000", 0.35)}" stroke-width="0.3"/>'
-            f'<circle cx="{px - r * 0.3:.2f}" cy="{py - r * 0.3:.2f}" '
-            f'r="{r * 0.35:.2f}" fill="#ffffff" opacity="0.75"/>'
+            f'<g transform="rotate({deg:.1f} {px:.2f} {py:.2f})">'
+            f'<ellipse cx="{px:.2f}" cy="{py:.2f}" rx="{claw_w:.2f}" '
+            f'ry="{claw_l:.2f}" fill="{m1}" '
+            f'stroke="{_mix(m2, "#000000", 0.4)}" stroke-width="0.3"/>'
+            f'<ellipse cx="{px - claw_w * 0.22:.2f}" cy="{py - claw_l * 0.28:.2f}" '
+            f'rx="{claw_w * 0.34:.2f}" ry="{claw_l * 0.34:.2f}" '
+            f'fill="#ffffff" opacity="0.75"/>'
+            f'</g>'
+        )
+    return parts
+
+
+def _ellipse_arc_angles(a: float, b: float, n: int,
+                        start: float = -1.5707963267948966) -> list[float]:
+    """n parameter angles spaced by EQUAL ARC LENGTH around an ellipse.
+
+    Equal-angle steps crowd stones near an ellipse's flat ends (that is where
+    a degree covers the least distance), which is exactly where surrounds
+    pancake. Sampling the perimeter and inverting the cumulative arc length
+    gives uniform physical spacing — deterministic, no eyeballing."""
+    import math
+    m = 1440
+    ts = [start + k * 2 * math.pi / m for k in range(m + 1)]
+    pts = [(a * math.cos(t), b * math.sin(t)) for t in ts]
+    cum = [0.0]
+    for i in range(1, m + 1):
+        cum.append(cum[-1] + math.hypot(pts[i][0] - pts[i - 1][0],
+                                        pts[i][1] - pts[i - 1][1]))
+    total = cum[-1]
+    angles, j = [], 0
+    for k in range(n):
+        target = k * total / n
+        while cum[j] < target:
+            j += 1
+        angles.append(ts[j])
+    return angles
+
+
+def _shared_claws(x1, y1, r1, x2, y2, r2, ocx, ocy, m1, m2) -> list[str]:
+    """The claw pair at the junction of two neighbouring stones — placed on
+    the STATIC no-overlap solution, not by eye.
+
+    A claw center sits at the junction midpoint, pushed radially in/out of
+    the ring (real shared prongs grip the girdles from both sides). Its
+    radius is then clamped to the actual clearance to the nearer stone:
+    r_claw = min(desired, distance_to_stone_center − r_stone − margin).
+    Equal-angle spacing crowds an ellipse near its flat ends, so this is
+    computed per junction from true coordinates — a claw can shrink to the
+    real gap or vanish entirely, but it can never sit on a stone."""
+    import math
+    mx, my = (x1 + x2) / 2, (y1 + y2) / 2
+    ux, uy = mx - ocx, my - ocy
+    norm = math.hypot(ux, uy) or 1.0
+    ux, uy = ux / norm, uy / norm
+    r_avg = (r1 + r2) / 2
+    parts = []
+    for sgn in (1, -1):  # a claw outside the ring line, and one inside
+        px, py = mx + ux * sgn * r_avg * 0.62, my + uy * sgn * r_avg * 0.62
+        clearance = min(math.hypot(px - x1, py - y1) - r1,
+                        math.hypot(px - x2, py - y2) - r2)
+        br = min(r_avg * 0.36, clearance - 0.15)
+        if br < 0.3:
+            continue  # girdles truly touch here: no metal fits, none is drawn
+        parts.append(
+            f'<circle cx="{px:.2f}" cy="{py:.2f}" r="{br:.2f}" fill="{m1}" '
+            f'stroke="{_mix(m2, "#000000", 0.35)}" stroke-width="0.25"/>'
+            f'<circle cx="{px - br * 0.3:.2f}" cy="{py - br * 0.3:.2f}" '
+            f'r="{br * 0.35:.2f}" fill="#ffffff" opacity="0.75"/>'
         )
     return parts
 
@@ -361,24 +428,17 @@ def _ring_proto(spec: Spec, vocab: Vocabulary, paper: str = "#fdfdfa") -> list[s
             f'ry="{ring_by - mr:.2f}" fill="{paper}"/>',
         ]
         mount = melee.mount or "shared_prong"
-        for i in range(melee.count):
-            t = -math.pi / 2 + i * 2 * math.pi / melee.count
-            sx, sy = cx + ring_ax * math.cos(t), cy + ring_by * math.sin(t)
-            parts += _stone_visual(sx, sy, melee, 2 * mr, 2 * mr, vocab)
+        placed = [(cx + ring_ax * math.cos(t), cy + ring_by * math.sin(t), mr)
+                  for t in _ellipse_arc_angles(ring_ax, ring_by, melee.count)]
+        claws, stones, mounts = [], [], []
+        for i, (sx, sy, r_i) in enumerate(placed):
+            stones += _stone_visual(sx, sy, melee, 2 * mr, 2 * mr, vocab)
             if mount == "shared_prong":
-                tm = t + math.pi / melee.count
-                bx = cx + ring_ax * math.cos(tm)
-                by = cy + ring_by * math.sin(tm)
-                br = max(0.8, mr * 0.34)
-                parts.append(
-                    f'<circle cx="{bx:.2f}" cy="{by:.2f}" r="{br:.2f}" '
-                    f'fill="{m1}" stroke="{_mix(m2, "#000000", 0.35)}" '
-                    f'stroke-width="0.25"/>'
-                    f'<circle cx="{bx - br * 0.3:.2f}" cy="{by - br * 0.3:.2f}" '
-                    f'r="{br * 0.35:.2f}" fill="#ffffff" opacity="0.75"/>'
-                )
+                nx, ny, r_n = placed[(i + 1) % melee.count]
+                claws += _shared_claws(sx, sy, r_i, nx, ny, r_n, cx, cy, m1, m2)
             else:
-                parts += _mount_visual(sx, sy, mount, 2 * mr, 2 * mr, m1, m2)
+                mounts += _mount_visual(sx, sy, mount, 2 * mr, 2 * mr, m1, m2)
+        parts += claws + stones + mounts
     parts += _stone_visual(cx, cy, spec.stone, 2 * rx, 2 * ry, vocab,
                            fill="url(#stone)")
     parts += _mount_visual(cx, cy,
@@ -464,11 +524,11 @@ def _bracelet_proto(spec: Spec, vocab: Vocabulary, paper: str = "#fdfdfa") -> li
     return parts
 
 
-def _pendant_proto(spec: Spec, vocab: Vocabulary) -> list[str]:
+def _pendant_proto(spec: Spec, vocab: Vocabulary,
+                   cx: float = SHEET_W / 2) -> list[str]:
     import math
 
     s = 5.0
-    cx = SHEET_W / 2
     stone = spec.stone.dimensions_mm
     hw, hl = stone.width / 2 * s, stone.length / 2 * s
     surround_groups = [s for s in spec.side_stones if s.position in ("halo", "surround")]
@@ -502,29 +562,24 @@ def _pendant_proto(spec: Spec, vocab: Vocabulary) -> list[str]:
         ring_by = hl + 0.3 * s + mr
         sequence = _surround_sequence(spec)
         n = len(sequence)
-        for i, side in enumerate(sequence):
-            t = -math.pi / 2 + i * 2 * math.pi / n
+        placed = []
+        for t, side in zip(_ellipse_arc_angles(ring_ax, ring_by, n), sequence):
             r_i = side.dimensions_mm.width / 2 * s
-            sx = cx + ring_ax * math.cos(t)
-            sy = cluster_cy + ring_by * math.sin(t)
-            parts += _stone_visual(sx, sy, side, 2 * r_i, 2 * r_i, vocab)
+            placed.append((cx + ring_ax * math.cos(t),
+                           cluster_cy + ring_by * math.sin(t), r_i, side))
+        # claws first (they grip from behind), stones on top, other mounts last
+        claws, stones, mounts = [], [], []
+        for i, (sx, sy, r_i, side) in enumerate(placed):
+            stones += _stone_visual(sx, sy, side, 2 * r_i, 2 * r_i, vocab)
             mount = side.mount or DEFAULT_MOUNTS.get(side.position or "",
                                                      "shared_prong")
             if mount == "shared_prong":
-                # neighbours share a claw: one bead at each midpoint angle
-                tm = t + math.pi / n
-                bx = cx + ring_ax * math.cos(tm)
-                by = cluster_cy + ring_by * math.sin(tm)
-                br = max(0.9, r_i * 0.34)
-                parts.append(
-                    f'<circle cx="{bx:.2f}" cy="{by:.2f}" r="{br:.2f}" '
-                    f'fill="{m1}" stroke="{_mix(m2, "#000000", 0.35)}" '
-                    f'stroke-width="0.25"/>'
-                    f'<circle cx="{bx - br * 0.3:.2f}" cy="{by - br * 0.3:.2f}" '
-                    f'r="{br * 0.35:.2f}" fill="#ffffff" opacity="0.75"/>'
-                )
+                nx, ny, r_n, _ = placed[(i + 1) % n]
+                claws += _shared_claws(sx, sy, r_i, nx, ny, r_n,
+                                       cx, cluster_cy, m1, m2)
             else:
-                parts += _mount_visual(sx, sy, mount, 2 * r_i, 2 * r_i, m1, m2)
+                mounts += _mount_visual(sx, sy, mount, 2 * r_i, 2 * r_i, m1, m2)
+        parts += claws + stones + mounts
     parts += _stone_visual(cx, cluster_cy, spec.stone, 2 * hw, 2 * hl, vocab,
                            table_ratio=0.62, fill="url(#stone)")
     parts += _mount_visual(cx, cluster_cy,
