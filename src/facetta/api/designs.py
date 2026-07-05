@@ -197,6 +197,24 @@ def get_plate(design_id: str, version: int, db: DbSession, paper: str = "ivory")
     return Response(content=svg, media_type="image/svg+xml")
 
 
+@router.get("/{design_id}/versions/{version}/render.png")
+def get_render(design_id: str, version: int, db: DbSession,
+               style: str = "photo", lighting: str = "studio"):
+    """The stored version's photoreal render — cached by content, so a
+    share link serves the identical image every time."""
+    from facetta.render import RenderUnavailable, render_finished_image
+
+    row = _get_version(db, design_id, version)
+    try:
+        png, cached = render_finished_image(Spec.model_validate(row.spec),
+                                            style, lighting)
+    except RenderUnavailable as exc:
+        status = 503 if "FAL_KEY" in str(exc) else 502
+        return JSONResponse(status_code=status, content={"detail": str(exc)})
+    return Response(content=png, media_type="image/png",
+                    headers={"X-Render-Cache": "hit" if cached else "miss"})
+
+
 @router.get("/{design_id}/versions/{version}/prototype.svg")
 def get_prototype(design_id: str, version: int, db: DbSession):
     from facetta.prototype import render_color_preview

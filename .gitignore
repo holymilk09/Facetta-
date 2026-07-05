@@ -10,3 +10,4 @@ build/
 facetta.db
 node_modules/
 mobile/.expo/
+data/render_cache/

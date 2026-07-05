@@ -5,6 +5,7 @@ description = "Design-to-manufacturing platform for the jewelry industry: struct
 requires-python = ">=3.11"
 dependencies = [
     "anthropic>=0.115.1",
+    "cairosvg>=2.9.0",
     "fastapi>=0.115",
     "psycopg[binary]>=3.1",
     "pydantic>=2.7",

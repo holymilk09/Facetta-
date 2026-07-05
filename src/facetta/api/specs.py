@@ -12,6 +12,7 @@ from facetta.mockup import (
     compile_restage_request,
 )
 from facetta.plate import render_control_image, render_presentation_plate
+from facetta.render import RenderUnavailable, render_finished_image
 from facetta.prototype import compile_render_prompt, render_color_preview
 from facetta.spec import Spec
 from facetta.svg_sheet import (
@@ -156,6 +157,30 @@ def finish_request(body: FinishRequestBody):
             status_code=422,
             content={"detail": str(exc), "valid_options": exc.valid},
         )
+
+
+@router.post("/render.png")
+def render_png(body: FinishRequestBody):
+    """The one-button photoreal render: control image + finish instruction
+    sent to the image provider, result cached by content — an unchanged
+    design renders once, ever."""
+    result = validate_spec(body.spec, get_vocabulary())
+    if not result.ok:
+        return JSONResponse(
+            status_code=422,
+            content={"detail": [issue.as_detail() for issue in result.issues]},
+        )
+    try:
+        png, cached = render_finished_image(result.spec, body.style,
+                                            body.lighting)
+    except SceneUnsupported as exc:
+        return JSONResponse(status_code=422,
+                            content={"detail": str(exc), "valid_options": exc.valid})
+    except RenderUnavailable as exc:
+        status = 503 if "FAL_KEY" in str(exc) else 502
+        return JSONResponse(status_code=status, content={"detail": str(exc)})
+    return Response(content=png, media_type="image/png",
+                    headers={"X-Render-Cache": "hit" if cached else "miss"})
 
 
 @router.post("/render-prompt")
