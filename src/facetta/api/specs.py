@@ -163,8 +163,8 @@ def finish_request(body: FinishRequestBody):
 def render_png(body: FinishRequestBody, model: str = "flux_kontext"):
     """The one-button photoreal render: control image + finish instruction
     sent to the image provider, result cached by content — an unchanged
-    design renders once, ever. ?model= picks the engine (flux_kontext or
-    grok_imagine — both run on the same fal key)."""
+    design renders once, ever. ?model= picks the engine: flux_kontext or
+    grok_imagine (fal key), or grok_direct (xAI key)."""
     result = validate_spec(body.spec, get_vocabulary())
     if not result.ok:
         return JSONResponse(
@@ -178,7 +178,7 @@ def render_png(body: FinishRequestBody, model: str = "flux_kontext"):
         return JSONResponse(status_code=422,
                             content={"detail": str(exc), "valid_options": exc.valid})
     except RenderUnavailable as exc:
-        status = 503 if "FAL_KEY" in str(exc) else 502
+        status = 503 if "_KEY" in str(exc) else 502
         return JSONResponse(status_code=status, content={"detail": str(exc)})
     return Response(content=png, media_type="image/png",
                     headers={"X-Render-Cache": "hit" if cached else "miss"})

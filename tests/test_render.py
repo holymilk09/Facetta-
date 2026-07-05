@@ -46,17 +46,17 @@ def test_cache_key_tracks_content(example_spec):
 
 
 def test_no_key_means_503_not_crash(example_spec, monkeypatch):
-    monkeypatch.setattr(render_mod, "_fal_key", lambda: None)
+    monkeypatch.setattr(render_mod, "_provider_key", lambda env: None)
     response = client.post("/specs/render.png",
                            json={"spec": example_spec, "style": "photo"})
     assert response.status_code == 503
-    assert "FAL_KEY" in response.json()["detail"]
+    assert "FAL_KEY" in response.json()["detail"]  # names the missing key
 
 
 def test_render_calls_provider_once_then_serves_cache(example_spec,
                                                       monkeypatch, tmp_path):
     monkeypatch.setattr(render_mod, "CACHE_DIR", tmp_path)
-    monkeypatch.setattr(render_mod, "_fal_key", lambda: "test:key")
+    monkeypatch.setattr(render_mod, "_provider_key", lambda env: "test:key")
     calls = []
 
     class FakeResponse:
@@ -88,7 +88,7 @@ def test_render_calls_provider_once_then_serves_cache(example_spec,
 
 def test_provider_failure_is_502(example_spec, monkeypatch, tmp_path):
     monkeypatch.setattr(render_mod, "CACHE_DIR", tmp_path)
-    monkeypatch.setattr(render_mod, "_fal_key", lambda: "test:key")
+    monkeypatch.setattr(render_mod, "_provider_key", lambda env: "test:key")
     import httpx
 
     def explode(url, **kwargs):

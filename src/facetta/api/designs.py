@@ -209,7 +209,7 @@ def get_render(design_id: str, version: int, db: DbSession,
         png, cached = render_finished_image(Spec.model_validate(row.spec),
                                             style, lighting)
     except RenderUnavailable as exc:
-        status = 503 if "FAL_KEY" in str(exc) else 502
+        status = 503 if "_KEY" in str(exc) else 502
         return JSONResponse(status_code=status, content={"detail": str(exc)})
     return Response(content=png, media_type="image/png",
                     headers={"X-Render-Cache": "hit" if cached else "miss"})

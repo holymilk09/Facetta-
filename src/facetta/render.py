@@ -24,21 +24,38 @@ from facetta.spec import Spec
 CACHE_DIR = Path(os.environ.get("FACETTA_RENDER_CACHE", "data/render_cache"))
 PIPELINE_VERSION = "1"  # bump to invalidate every cached render
 
-# Both engines run behind the same fal key. Payload shapes differ; each
-# entry knows how to wrap our (instruction, control image) pair.
+# Three routes to two engines. Each entry knows its key, auth scheme, how
+# to wrap our (instruction, control image) pair, and how to find the image
+# in the response — the pipeline around them never changes.
 MODELS = {
-    "flux_kontext": {
+    "flux_kontext": {  # FLUX Kontext via fal
         "endpoint": "https://fal.run/fal-ai/flux-pro/kontext",
+        "key_env": "FAL_KEY", "auth": "Key",
         "payload": lambda prompt, image, extra: {
             "prompt": prompt, "image_url": image,
             "num_images": 1, "output_format": "png", **extra,
         },
+        "parse": lambda data: data["images"][0]["url"],
     },
-    "grok_imagine": {
+    "grok_imagine": {  # Grok Imagine edit via fal's marketplace
         "endpoint": "https://fal.run/xai/grok-imagine-image/edit",
+        "key_env": "FAL_KEY", "auth": "Key",
         "payload": lambda prompt, image, extra: {
             "prompt": prompt, "image_urls": [image],
         },
+        "parse": lambda data: data["images"][0]["url"],
+    },
+    "grok_direct": {  # Grok Imagine edit straight from xAI
+        "endpoint": "https://api.x.ai/v1/images/edits",
+        "key_env": "XAI_KEY", "auth": "Bearer",
+        "payload": lambda prompt, image, extra: {
+            "model": "grok-imagine-image-quality",
+            "prompt": prompt,
+            "image": {"url": image, "type": "image_url"},
+        },
+        "parse": lambda data: (
+            data["data"][0]["url"] if data["data"][0].get("url")
+            else "data:image/png;base64," + data["data"][0]["b64_json"]),
     },
 }
 
@@ -47,13 +64,13 @@ class RenderUnavailable(Exception):
     """No key, or the provider cannot be reached."""
 
 
-def _fal_key() -> str | None:
-    if os.environ.get("FAL_KEY"):
-        return os.environ["FAL_KEY"]
+def _provider_key(key_env: str) -> str | None:
+    if os.environ.get(key_env):
+        return os.environ[key_env]
     env_file = Path(".env")
     if env_file.exists():
         for line in env_file.read_text().splitlines():
-            if line.startswith("FAL_KEY="):
+            if line.startswith(f"{key_env}="):
                 return line.split("=", 1)[1].strip()
     return None
 
@@ -83,10 +100,12 @@ def render_finished_image(spec: Spec, style: str = "photo",
     if cached.exists():
         return cached.read_bytes(), True
 
-    fal_key = _fal_key()
-    if not fal_key:
+    engine_cfg = MODELS[model]
+    provider_key = _provider_key(engine_cfg["key_env"])
+    if not provider_key:
         raise RenderUnavailable(
-            "no FAL_KEY configured — set it in the environment or .env")
+            f"no {engine_cfg['key_env']} configured — set it in the "
+            "environment or .env")
 
     import cairosvg  # deferred: rasterizer needs system cairo
     import httpx
@@ -96,17 +115,16 @@ def render_finished_image(spec: Spec, style: str = "photo",
     control_png = cairosvg.svg2png(
         bytestring=render_control_image(spec).encode(), output_width=1485)
     body = compile_finish_request(spec, style, lighting)
-    engine = MODELS[model]
-    payload = engine["payload"](
+    payload = engine_cfg["payload"](
         body["instruction"],
         "data:image/png;base64," + base64.b64encode(control_png).decode(),
         body["provider_payload"])
     try:
         response = httpx.post(
-            engine["endpoint"], json=payload, timeout=180.0,
-            headers={"Authorization": f"Key {fal_key}"})
+            engine_cfg["endpoint"], json=payload, timeout=180.0,
+            headers={"Authorization": f"{engine_cfg['auth']} {provider_key}"})
         response.raise_for_status()
-        image_url = response.json()["images"][0]["url"]
+        image_url = engine_cfg["parse"](response.json())
         if image_url.startswith("data:"):
             png = base64.b64decode(image_url.split(",", 1)[1])
         else:
