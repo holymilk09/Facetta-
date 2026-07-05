@@ -160,10 +160,11 @@ def finish_request(body: FinishRequestBody):
 
 
 @router.post("/render.png")
-def render_png(body: FinishRequestBody):
+def render_png(body: FinishRequestBody, model: str = "flux_kontext"):
     """The one-button photoreal render: control image + finish instruction
     sent to the image provider, result cached by content — an unchanged
-    design renders once, ever."""
+    design renders once, ever. ?model= picks the engine (flux_kontext or
+    grok_imagine — both run on the same fal key)."""
     result = validate_spec(body.spec, get_vocabulary())
     if not result.ok:
         return JSONResponse(
@@ -172,7 +173,7 @@ def render_png(body: FinishRequestBody):
         )
     try:
         png, cached = render_finished_image(result.spec, body.style,
-                                            body.lighting)
+                                            body.lighting, model)
     except SceneUnsupported as exc:
         return JSONResponse(status_code=422,
                             content={"detail": str(exc), "valid_options": exc.valid})

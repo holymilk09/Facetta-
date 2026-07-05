@@ -97,3 +97,15 @@ def test_provider_failure_is_502(example_spec, monkeypatch, tmp_path):
     monkeypatch.setattr(httpx, "post", explode)
     with pytest.raises(render_mod.RenderUnavailable):
         render_finished_image(_validated(example_spec), "photo", "studio")
+
+
+def test_model_choice_is_part_of_the_cache_key(example_spec):
+    spec = _validated(example_spec)
+    assert render_cache_key(spec, "photo", "studio", "flux_kontext") != \
+        render_cache_key(spec, "photo", "studio", "grok_imagine")
+
+
+def test_unknown_model_fails_loudly(example_spec):
+    with pytest.raises(render_mod.RenderUnavailable) as err:
+        render_finished_image(_validated(example_spec), model="dalle_1999")
+    assert "flux_kontext" in str(err.value)
