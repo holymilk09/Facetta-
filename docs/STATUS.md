@@ -66,3 +66,12 @@ First action once network is open: render docs/examples/twilight_pendant.json
 through all three models, compare against the fidelity checklist (14 surround
 stones alternating, claws/cap as drawn, no invented text), send images to the
 founder.
+
+2026-07-05 update — first live renders done, all three engines. Providers now
+return images inline (fal `sync_mode`, xAI `response_format: b64_json`) so no
+CDN hosts (v3.fal.media, imgen.x.ai) need network allowances — only fal.run
+and api.x.ai. Checklist results: grok_direct and grok_imagine pass (both drift
+the tanzanite bluer than vB 6/6); flux_kontext keeps the 14-stone surround but
+painted the topaz drop as solid metal, duplicated the front view in place of
+the side view, and invented a chain. Note: xAI returns JPEG bytes even though
+the endpoint is named render.png.
