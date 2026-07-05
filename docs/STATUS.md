@@ -54,3 +54,15 @@ DONE beyond the original TASKS.md build order, and what is next.
 - Every geometry function gets a spec-X-gives-dimension-Y test.
 - Never put model identifiers in committed artifacts.
 - Do not reorder or skip validation: spec -> validate -> render, always.
+
+## Render pipeline — ready, awaiting network (2026-07-05)
+
+Everything for photoreal rendering is built and tested (203 tests):
+`POST /specs/render.png` with `?model=flux_kontext | grok_imagine | grok_direct`.
+Keys are expected as env vars `FAL_KEY` and `XAI_KEY` (or a local gitignored
+`.env`). The workspace network policy must allow: fal.run, fal.media, api.x.ai.
+
+First action once network is open: render docs/examples/twilight_pendant.json
+through all three models, compare against the fidelity checklist (14 surround
+stones alternating, claws/cap as drawn, no invented text), send images to the
+founder.
