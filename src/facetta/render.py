@@ -22,7 +22,9 @@ from facetta.mockup import compile_finish_request, geometry_fingerprint
 from facetta.spec import Spec
 
 CACHE_DIR = Path(os.environ.get("FACETTA_RENDER_CACHE", "data/render_cache"))
-PIPELINE_VERSION = "1"  # bump to invalidate every cached render
+PIPELINE_VERSION = "2"  # bump to invalidate every cached render
+# v2: pendant profile gained real construction (gallery frame, basket,
+# built depth) — control images changed, so cached v1 renders retired
 
 # Three routes to two engines. Each entry knows its key, auth scheme, how
 # to wrap our (instruction, control image) pair, and how to find the image

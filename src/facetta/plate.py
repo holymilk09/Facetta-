@@ -310,11 +310,33 @@ def _pendant_profile_plate(spec: Spec, vocab, dims: bool = True) -> list[str]:
     hl = stone.length / 2 * s
     table_frac = (spec.stone.table_pct or 57) / 100
     hexval = stone_hex(spec.stone, vocab)
-    parts += _stone_profile_color(cx, cluster_cy, d_pp, 2 * hl, hexval,
-                                  table_frac)
     g = max(0.6, 0.03 * d_pp)
     x_t = cx - d_pp / 2
     x_g1 = x_t + (0.26 * d_pp - g / 2)
+    # jewelry has a back: the gallery frame sits behind the stones, giving
+    # the piece its true built depth — nothing is ever paper-flat
+    frame_mm = 1.6
+    back_x = cx + d_pp / 2 + frame_mm * s
+    dark = _mix(m2, "#000000", 0.3)
+    # basket bridging the center to the frame: two swept wires + back rail
+    parts += [
+        f'<path d="M {x_g1 + g:.2f} {cluster_cy - hl * 0.8:.2f} '
+        f'Q {back_x:.2f} {cluster_cy - hl * 0.75:.2f} '
+        f'{back_x:.2f} {cluster_cy - hl * 0.35:.2f}" fill="none" '
+        f'stroke="{m1}" stroke-width="{0.28 * s:.2f}" stroke-linecap="round"/>',
+        f'<path d="M {x_g1 + g:.2f} {cluster_cy + hl * 0.8:.2f} '
+        f'Q {back_x:.2f} {cluster_cy + hl * 0.75:.2f} '
+        f'{back_x:.2f} {cluster_cy + hl * 0.35:.2f}" fill="none" '
+        f'stroke="{m1}" stroke-width="{0.28 * s:.2f}" stroke-linecap="round"/>',
+        f'<line x1="{back_x:.2f}" y1="{cluster_cy - hl * 0.38:.2f}" '
+        f'x2="{back_x:.2f}" y2="{cluster_cy + hl * 0.38:.2f}" '
+        f'stroke="{m1}" stroke-width="{0.3 * s:.2f}" stroke-linecap="round"/>',
+        f'<line x1="{back_x:.2f}" y1="{cluster_cy - hl * 0.38:.2f}" '
+        f'x2="{back_x:.2f}" y2="{cluster_cy + hl * 0.38:.2f}" '
+        f'stroke="{dark}" stroke-width="0.25" opacity="0.5"/>',
+    ]
+    parts += _stone_profile_color(cx, cluster_cy, d_pp, 2 * hl, hexval,
+                                  table_frac)
     parts += _profile_mount_marks(
         spec.stone.mount or _center_default_mount(spec),
         x_t, x_g1, x_g1 + g, cx + d_pp / 2, cluster_cy, hl, m1, m2)
@@ -350,7 +372,14 @@ def _pendant_profile_plate(spec: Spec, vocab, dims: bool = True) -> list[str]:
             f'stroke="{_mix(m2, "#000000", 0.3)}" stroke-width="0.25" '
             f'opacity="0.6"/>',
         ]
-        # claw hooks from the rail toward each stone seat
+        # every melee seat is carried back to the frame: post to the back
+        # rail, then the claw hook forward to the stone
+        for _, y, _ in near:
+            parts.append(
+                f'<line x1="{rail_x:.2f}" y1="{y:.2f}" '
+                f'x2="{back_x:.2f}" y2="{y:.2f}" stroke="{m1}" '
+                f'stroke-width="{mr * 0.24:.2f}" stroke-linecap="round" '
+                f'opacity="0.95"/>')
         for _, y, _ in near:
             parts.append(
                 f'<line x1="{rail_x:.2f}" y1="{y:.2f}" '
@@ -394,14 +423,16 @@ def _pendant_profile_plate(spec: Spec, vocab, dims: bool = True) -> list[str]:
                                           cx + dd / 2, sap_cy, dl / 2, m1, m2)
         bottom = sap_cy + dl / 2
     if dims:
-        # the depth dimension the face-on view cannot carry
+        # the depth dimension the face-on view cannot carry: stone depth
+        # plus the gallery frame behind it — the piece as actually built
         y = min(bottom + 10, SHEET_H - MARGIN - 16)
-        x1, x2 = cx - d_pp / 2, cx + d_pp / 2
+        x1, x2 = cx - d_pp / 2, back_x
         parts += [
             f'<line x1="{x1:.2f}" y1="{y:.2f}" x2="{x2:.2f}" y2="{y:.2f}" '
             f'stroke="{INK}" stroke-width="0.3"/>',
             _tick(x1, y), _tick(x2, y),
-            _t((x1 + x2) / 2, y + 5.2, f"{_fmt(stone.depth)} mm deep", size=4.4),
+            _t((x1 + x2) / 2, y + 5.2,
+               f"{_fmt(stone.depth + frame_mm)} mm built", size=4.4),
             _t(cx, ty - 4, "profile", size=3.6, color=FAINT),
         ]
     return parts
