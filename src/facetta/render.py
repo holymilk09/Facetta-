@@ -31,8 +31,10 @@ MODELS = {
     "flux_kontext": {  # FLUX Kontext via fal
         "endpoint": "https://fal.run/fal-ai/flux-pro/kontext",
         "key_env": "FAL_KEY", "auth": "Key",
+        # sync_mode returns the image inline as a data URI, so the result
+        # never depends on network access to fal's media hosts
         "payload": lambda prompt, image, extra: {
-            "prompt": prompt, "image_url": image,
+            "prompt": prompt, "image_url": image, "sync_mode": True,
             "num_images": 1, "output_format": "png", **extra,
         },
         "parse": lambda data: data["images"][0]["url"],
@@ -41,10 +43,13 @@ MODELS = {
         "endpoint": "https://fal.run/xai/grok-imagine-image/edit",
         "key_env": "FAL_KEY", "auth": "Key",
         "payload": lambda prompt, image, extra: {
-            "prompt": prompt, "image_urls": [image],
+            "prompt": prompt, "image_urls": [image], "sync_mode": True,
         },
         "parse": lambda data: data["images"][0]["url"],
     },
+    # NOTE: xAI's edits endpoint accepts public image URLs but rejects our
+    # inline data-URI control image (403). Until Facetta hosts control
+    # images publicly, use grok_imagine (same engine, via fal, inline OK).
     "grok_direct": {  # Grok Imagine edit straight from xAI
         "endpoint": "https://api.x.ai/v1/images/edits",
         "key_env": "XAI_KEY", "auth": "Bearer",
