@@ -47,20 +47,19 @@ MODELS = {
         },
         "parse": lambda data: data["images"][0]["url"],
     },
-    # NOTE: xAI's edits endpoint accepts public image URLs but rejects our
-    # inline data-URI control image (403). Until Facetta hosts control
-    # images publicly, use grok_imagine (same engine, via fal, inline OK).
     "grok_direct": {  # Grok Imagine edit straight from xAI
         "endpoint": "https://api.x.ai/v1/images/edits",
         "key_env": "XAI_KEY", "auth": "Bearer",
+        # b64_json keeps the result inline — no dependency on imgen.x.ai
         "payload": lambda prompt, image, extra: {
             "model": "grok-imagine-image-quality",
             "prompt": prompt,
             "image": {"url": image, "type": "image_url"},
+            "response_format": "b64_json",
         },
         "parse": lambda data: (
-            data["data"][0]["url"] if data["data"][0].get("url")
-            else "data:image/png;base64," + data["data"][0]["b64_json"]),
+            "data:image/png;base64," + data["data"][0]["b64_json"]
+            if data["data"][0].get("b64_json") else data["data"][0]["url"]),
     },
 }
 
