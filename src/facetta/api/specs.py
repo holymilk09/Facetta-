@@ -74,6 +74,35 @@ def sheet_preview(spec: Spec, house: str | None = None,
     return Response(content=svg, media_type="image/svg+xml")
 
 
+class AssistRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    message: Annotated[str, Field(min_length=1, max_length=2000)]
+    history: list[dict] = Field(default_factory=list)
+    name: str = "Atelier"          # the designer can rename their assistant
+
+
+@router.post("/assist")
+def assist_endpoint(request: AssistRequest):
+    """The from-scratch design assistant. The designer describes a piece; the
+    assistant asks grounded clarifying questions until it knows enough, then
+    returns a compiled brief plus the chosen output mode (render / sheet / both).
+    Feed that brief to /specs/from-concept to build the piece."""
+    from facetta.assistant import Turn, assist
+
+    try:
+        history = [Turn.model_validate(t) for t in request.history]
+    except Exception as exc:
+        return JSONResponse(status_code=422, content={
+            "detail": f"bad history: {exc}"})
+    try:
+        reply = assist(history, request.message, name=request.name)
+    except RenderUnavailable as exc:
+        status = 503 if "_KEY" in str(exc) else 502
+        return JSONResponse(status_code=status, content={"detail": str(exc)})
+    return reply.model_dump()
+
+
 class ConceptRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

@@ -1,0 +1,123 @@
+{
+  "meta": {
+    "note": "Design vocabulary for the from-scratch assistant: eras (historical style periods with their hallmarks) and types (jewelry archetypes the platform can draw). This is a data library, extended by editing this file — never by special-casing in code. Every id here is a hint the assistant uses to ask good questions and compile a brief; the controlled gemological vocabulary (data/gemology_vocabulary.json) remains the only source of stone/metal truth."
+  },
+  "eras": [
+    {
+      "id": "georgian",
+      "label": "Georgian",
+      "years": "1714-1837",
+      "hallmarks": ["hand-fabricated", "foiled closed-back settings", "rose cuts", "repoussé metalwork", "nature motifs"],
+      "typical_cuts": ["rose_cut", "old_mine"],
+      "typical_settings": ["bezel"],
+      "typical_metals": ["gold", "silver"]
+    },
+    {
+      "id": "victorian",
+      "label": "Victorian",
+      "years": "1837-1901",
+      "hallmarks": ["sentimental motifs", "snakes and hearts", "seed pearls", "black enamel mourning", "old mine cuts"],
+      "typical_cuts": ["old_mine", "rose_cut", "cushion"],
+      "typical_settings": ["bezel", "prong_4"],
+      "typical_metals": ["gold"]
+    },
+    {
+      "id": "edwardian",
+      "label": "Edwardian / Belle Époque",
+      "years": "1901-1915",
+      "hallmarks": ["platinum lace filigree", "milgrain edges", "garland and bow motifs", "diamonds and pearls", "airy openwork"],
+      "typical_cuts": ["old_european", "rose_cut", "marquise"],
+      "typical_settings": ["prong_6", "bezel", "milgrain"],
+      "typical_metals": ["platinum"]
+    },
+    {
+      "id": "art_nouveau",
+      "label": "Art Nouveau",
+      "years": "1890-1910",
+      "hallmarks": ["flowing organic lines", "plique-à-jour enamel", "insects and florals", "the female form", "asymmetry"],
+      "typical_cuts": ["cabochon", "old_european"],
+      "typical_settings": ["bezel"],
+      "typical_metals": ["gold"]
+    },
+    {
+      "id": "art_deco",
+      "label": "Art Deco",
+      "years": "1920-1935",
+      "hallmarks": ["geometric symmetry", "calibré-cut colored accents", "milgrain and engraving", "baguette and step-cut halos", "high contrast"],
+      "typical_cuts": ["emerald_cut", "asscher", "baguette", "old_european"],
+      "typical_settings": ["bezel", "channel", "prong_4"],
+      "typical_metals": ["platinum"]
+    },
+    {
+      "id": "retro",
+      "label": "Retro",
+      "years": "1935-1950",
+      "hallmarks": ["bold sculptural volume", "rose and yellow gold", "scrolls and ribbons", "large colored stones", "tank-track motifs"],
+      "typical_cuts": ["round_brilliant", "emerald_cut", "cushion"],
+      "typical_settings": ["prong_4", "bezel"],
+      "typical_metals": ["gold"]
+    },
+    {
+      "id": "mid_century",
+      "label": "Mid-Century / Modernist",
+      "years": "1945-1970",
+      "hallmarks": ["clean asymmetry", "textured gold", "abstract organic forms", "restrained stone use"],
+      "typical_cuts": ["round_brilliant", "marquise", "oval_brilliant"],
+      "typical_settings": ["prong_4", "tension", "bezel"],
+      "typical_metals": ["gold", "platinum"]
+    },
+    {
+      "id": "contemporary",
+      "label": "Contemporary",
+      "years": "1990-present",
+      "hallmarks": ["minimal solitaires", "hidden halos", "mixed metals", "precision pavé", "clean lines"],
+      "typical_cuts": ["round_brilliant", "oval_brilliant", "emerald_cut", "cushion"],
+      "typical_settings": ["prong_6", "prong_4", "bezel", "pave"],
+      "typical_metals": ["platinum", "gold"]
+    }
+  ],
+  "types": [
+    {
+      "id": "solitaire",
+      "label": "Solitaire ring",
+      "template": "solitaire_prong",
+      "description": "a single centre stone on a plain or tapered band",
+      "needs": ["centre stone species", "cut", "approx size", "metal", "setting"]
+    },
+    {
+      "id": "halo",
+      "label": "Halo ring",
+      "template": "halo_prong",
+      "description": "a centre stone encircled by a ring of small accent stones",
+      "needs": ["centre stone species", "cut", "approx size", "metal", "halo stone", "setting"]
+    },
+    {
+      "id": "three_stone",
+      "label": "Three-stone ring",
+      "template": "solitaire_prong",
+      "description": "a centre stone flanked by two side stones (past, present, future)",
+      "needs": ["centre stone", "side stone species and size", "metal", "setting"]
+    },
+    {
+      "id": "cocktail",
+      "label": "Cocktail ring",
+      "template": "halo_prong",
+      "description": "a large statement centre, often colored, with decorative surround",
+      "needs": ["centre stone species and size", "cut", "metal", "surround style"]
+    },
+    {
+      "id": "pendant",
+      "label": "Pendant",
+      "template": "pendant",
+      "description": "a stone or cluster suspended from a chain",
+      "needs": ["stone species", "cut", "size", "metal", "chain"]
+    },
+    {
+      "id": "stud_earring",
+      "label": "Stud earrings",
+      "template": "solitaire_prong",
+      "description": "a matched pair of single-stone studs",
+      "needs": ["stone species", "cut", "size", "metal", "setting"]
+    }
+  ]
+}

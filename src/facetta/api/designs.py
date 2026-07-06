@@ -162,6 +162,77 @@ def edit_design(design_id: str, body: EditRequest, db: DbSession):
     }
 
 
+class AnnotateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    instruction: Annotated[str, Field(min_length=1, max_length=2000)]
+    ref: str | None = None       # schedule letter tapped on the sheet (A, B, …)
+    section: str | None = None   # or a named section (stone/metal/band/setting…)
+    index: int | None = None     # which side-stone group, when the section is one
+    view: str | None = None      # top/side/front — where the mark sat (audit)
+    x_pct: float | None = None
+    y_pct: float | None = None
+    created_by: str = "usr_pending"
+
+
+@router.post("/{design_id}/annotate")
+def annotate_design(design_id: str, body: AnnotateRequest, db: DbSession):
+    """A surgical edit from a mark on the spec sheet. The annotation points at
+    ONE element (a stone-schedule ref or a named section); the agent proposes a
+    change and the scope guard forces it to touch that element and NOTHING else
+    — any other change the model tried is discarded and reported as ignored. The
+    validator then gates the scoped result: if that one change alone is
+    physically impossible, no version is saved and the correction comes back, so
+    a broader change only happens when the designer directs it."""
+    from facetta.agent import (
+        Annotation, AnnotationUnresolved, plan_scoped_edit,
+    )
+    from facetta.prose import ProseUnavailable
+
+    design = db.get(Design, design_id)
+    if design is None:
+        raise HTTPException(status_code=404, detail=f"unknown design '{design_id}'")
+    latest = db.scalar(
+        select(func.max(DesignVersion.version)).where(
+            DesignVersion.design_id == design_id))
+    if latest is None:
+        raise HTTPException(status_code=404, detail=f"design '{design_id}' has no versions")
+    current = Spec.model_validate(_get_version(db, design_id, latest).spec)
+
+    annotation = Annotation(
+        instruction=body.instruction, ref=body.ref, section=body.section,
+        index=body.index, view=body.view, x_pct=body.x_pct, y_pct=body.y_pct)
+    try:
+        result = plan_scoped_edit(annotation, current)
+    except AnnotationUnresolved as exc:
+        return JSONResponse(status_code=422, content={"detail": str(exc)})
+    except ProseUnavailable as exc:
+        return JSONResponse(status_code=503, content={"detail": str(exc)})
+
+    validated = validate_spec(result.spec, get_vocabulary())
+    if not validated.ok:
+        # the scoped change alone is impossible — surface it, change nothing
+        return JSONResponse(status_code=422, content={
+            "detail": [issue.as_detail() for issue in validated.issues],
+            "message": result.message,
+            "target": result.target,
+            "changed_fields": result.changed_fields,
+            "note": ("this edit to " + result.target + " is not physically "
+                     "possible on its own; direct any further change explicitly"),
+            "rejected": True,
+        })
+    stored = _store_version(db, design, validated.spec, latest + 1, body.created_by)
+    return {
+        "new_version": latest + 1,
+        "target": result.target,
+        "isolate_ref": result.isolate_ref,
+        "changed_fields": result.changed_fields,
+        "ignored_fields": result.ignored_fields,  # out-of-scope, deliberately dropped
+        "message": result.message,
+        "spec": stored,
+    }
+
+
 @router.get("")
 def list_designs(db: DbSession, collection: str | None = None):
     query = (
