@@ -192,13 +192,24 @@ class TestAnnotatedOverlay:
         assert "±0.1" in svg                 # vocabulary tolerance, not code
         assert "STONE SCHEDULE" in svg
 
-    def test_cluster_count_mismatch_refuses(self, spray_spec):
+    def test_cluster_count_mismatch_strict_refuses(self, spray_spec):
         from facetta.overlay import OverlayUnsupported, render_annotated_artwork
 
         spec = validate_spec(Spec.model_validate(spray_spec),
                              get_vocabulary()).spec  # 6 clusters vs 5 traced
+        page = _png_bytes(_synthetic_page())
+        # an explicit anchor image asserts traceability: mismatch refuses
         with pytest.raises(OverlayUnsupported, match="lettered honestly"):
-            render_annotated_artwork(spec, _png_bytes(_synthetic_page()))
+            render_annotated_artwork(spec, page, anchor_image_bytes=page)
+
+    def test_cluster_count_mismatch_degrades_without_anchor(self, spray_spec):
+        from facetta.overlay import render_annotated_artwork
+
+        spec = validate_spec(Spec.model_validate(spray_spec),
+                             get_vocabulary()).spec
+        svg = render_annotated_artwork(spec, _png_bytes(_synthetic_page()))
+        assert "callouts omitted" in svg
+        assert "STONE SCHEDULE" in svg  # the numbers always letter
 
     def test_endpoint_round_trip(self, spray_spec):
         from fastapi.testclient import TestClient
@@ -218,3 +229,62 @@ class TestAnnotatedOverlay:
             "image_base64": "not-base64!!",
         })
         assert bad.status_code == 422
+
+
+class TestGenericOverlay:
+    def _drop_image(self) -> bytes:
+        """A deco-drop-like render: a blue rectangle center, green rounds
+        above (graduated line) and below (crescent)."""
+        im = Image.new("RGB", (500, 900), (120, 120, 120))
+        d = ImageDraw.Draw(im)
+        for cy, r in ((120, 30), (200, 16), (250, 16)):  # line, graduated
+            d.ellipse((250 - r, cy - r, 250 + r, cy + r), fill=(0, 150, 60))
+        d.rectangle((175, 320, 325, 560), fill=(185, 220, 235))  # aquamarine
+        for cx in (200, 300):  # crescent pair
+            d.ellipse((cx - 18, 610, cx + 18, 646), fill=(0, 150, 60))
+        return _png_bytes(im)
+
+    def _drop_spec(self) -> Spec:
+        import json
+        from pathlib import Path
+
+        path = Path(__file__).parent.parent / "docs" / "examples" / "deco_drop_earring.json"
+        raw = json.loads(path.read_text())
+        # match the synthetic image: 1 + 2 line stones, 2 crescent stones
+        raw["side_stones"][1]["count"] = 2
+        raw["side_stones"][3]["count"] = 2
+        del raw["side_stones"][2]  # no crescent center in the synthetic
+        result = validate_spec(Spec.model_validate(raw), get_vocabulary())
+        assert result.ok, [i.msg for i in result.issues]
+        return result.spec
+
+    def test_masthead_brands_the_sheet(self):
+        from facetta.overlay import render_annotated_artwork
+
+        svg = render_annotated_artwork(self._drop_spec(), self._drop_image())
+        assert "FACETTA" in svg and "FACTORY SHEET" in svg
+
+    def test_trace_stones_classes_and_order(self, tmp_path):
+        from facetta.trace import trace_stones
+
+        anchors = trace_stones(io.BytesIO(self._drop_image()))
+        assert [a.color_class for a in anchors] == \
+            ["green", "green", "green", "blue", "green", "green"]
+        assert [a.y for a in anchors] == sorted(a.y for a in anchors)
+
+    def test_generic_callouts_letter_real_numbers(self):
+        from facetta.overlay import render_annotated_artwork
+
+        svg = render_annotated_artwork(self._drop_spec(), self._drop_image())
+        assert "A — 16 × 12" in svg      # the aquamarine, spec truth
+        assert "B — ⌀ 4.7" in svg        # the big line stone
+        assert "center stone 16 × 12 × 8" in svg
+        assert "pending designer" in svg  # no overall section: says so
+        assert "±0.1" in svg
+
+    def test_untraceable_image_degrades(self):
+        from facetta.overlay import render_annotated_artwork
+
+        blank = Image.new("RGB", (400, 400), (128, 128, 128))
+        svg = render_annotated_artwork(self._drop_spec(), _png_bytes(blank))
+        assert "callouts omitted" in svg and "STONE SCHEDULE" in svg

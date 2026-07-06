@@ -67,6 +67,21 @@ through all three models, compare against the fidelity checklist (14 surround
 stones alternating, claws/cap as drawn, no invented text), send images to the
 founder.
 
+2026-07-06 v5 — BRANDED FACTORY SHEET FROM ANY RENDER (founder test:
+deco drop earring, docs/examples/deco_drop_earring.json). The annotated
+sheet is now template-agnostic with a FACETTA masthead: generic stone
+tracer (trace.trace_stones — green/blue color classes, fragment
+containment filter), callouts matched per schedule entry by traced size
+scaled through the center stone, side-exiting labels, dimensions box
+driven by whatever sections the spec carries ("pending designer" when
+none), graceful degrade when an image can't be traced (strict only when
+an anchor image is explicitly supplied). Mount validator earned its keep:
+rejected pavé for 2.2–3.1 mm stones. NOTE the founder's Grok "JEWELRY-OS
+agent" proposal: adopt the EDIT-LOOP idea (isolate + adjust + re-render
+with the prior render as edit input) — but never LLM-generated spec
+sheets or model-lettered dimensions; that is the exact failure the
+overlay exists to prevent.
+
 2026-07-06 v4 — ARTWORK-FIRST RENDERING. Founder benchmark: Grok Imagine
 CHAT restyled the artwork page more faithfully than our pipeline — because
 chat restyles IN PLACE (no re-composition), while its annotations are pure

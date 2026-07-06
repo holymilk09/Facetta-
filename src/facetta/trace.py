@@ -101,6 +101,63 @@ def _group_into_clusters(blobs: list[list[tuple[int, int]]],
     return clusters
 
 
+def _blue_mask(im: Image.Image) -> list[list[bool]]:
+    """Pale blue stones (aquamarine class): blue leading red, bright body."""
+    w, h = im.size
+    px = im.load()
+    mask = [[False] * w for _ in range(h)]
+    for y in range(h):
+        for x in range(w):
+            r, g, b = px[x, y][:3]
+            if b > 140 and b > r * 1.08 and g > r * 1.02 and b >= g:
+                mask[y][x] = True
+    return mask
+
+
+@dataclass(frozen=True)
+class StoneAnchor:
+    """One drawn/rendered stone: center, circumscribed radius (original-image
+    px), and its color class ('green' | 'blue')."""
+
+    x: float
+    y: float
+    radius: float
+    color_class: str
+
+
+def trace_stones(image) -> list[StoneAnchor]:
+    """Generic stone anchors for ANY piece: color-segment the visibly set
+    stones (green and pale-blue classes) and return one anchor per stone,
+    sorted top-to-bottom, in the ORIGINAL image's pixels. No chain-walking,
+    no archetype assumptions — that intelligence stays with the archetype
+    tracers. Same image in, same anchors out."""
+    im = Image.open(image).convert("RGB")
+    scale = TRACE_MAX_SIDE / max(im.size)
+    if scale < 1:
+        im = im.resize((round(im.width * scale), round(im.height * scale)))
+    else:
+        scale = 1.0
+    min_area = max(20, im.width * im.height // 8000)
+    anchors = []
+    for color_class, mask in (("green", _green_mask(im)),
+                              ("blue", _blue_mask(im))):
+        for blob in _components(mask, min_area):
+            cx = sum(p[0] for p in blob) / len(blob)
+            cy = sum(p[1] for p in blob) / len(blob)
+            r = max(((p[0] - cx) ** 2 + (p[1] - cy) ** 2) ** 0.5 for p in blob)
+            anchors.append(StoneAnchor(cx / scale, cy / scale, r / scale,
+                                       color_class))
+    # facet highlights segment as slivers inside their own stone: drop any
+    # anchor whose center sits inside a larger anchor of the same class
+    anchors = [a for a in anchors
+               if not any(b is not a and b.color_class == a.color_class
+                          and b.radius > a.radius
+                          and ((a.x - b.x) ** 2 + (a.y - b.y) ** 2) ** 0.5
+                          < b.radius
+                          for b in anchors)]
+    return sorted(anchors, key=lambda a: a.y)
+
+
 def _gold_mask(im: Image.Image) -> list[list[bool]]:
     """Gold ink: warm tones, red leading green leading blue, darker than paper."""
     w, h = im.size
