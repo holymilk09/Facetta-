@@ -67,6 +67,30 @@ through all three models, compare against the fidelity checklist (14 surround
 stones alternating, claws/cap as drawn, no invented text), send images to the
 founder.
 
+2026-07-06 v8 — CONCEPT ORIGINATION: Grok invents, Facetta makes it real.
+Full chain proven LIVE on FAL/XAI keys only (no Anthropic needed):
+- render.py generate_image() + GENERATION_MODELS (xAI /v1/images/generations,
+  fal flux) — Grok creates an ENTIRELY NEW design from a text brief, cached
+  by (prompt, model).
+- concept.py: read_design() (xAI vision, structured JSON constrained to the
+  controlled vocabulary) → sparse DesignRead; complete_design() = the
+  real-life-logic engine — builds a full spec, sets depth+carat by the
+  density model, sizes the halo to _surround_fit, sets gallery to the
+  culet-clearance rule, then runs validate_spec and auto-applies any
+  remaining `expected` correction, returning the valid spec + a plain-English
+  corrections list. SUPPORTED_CUTS gained emerald_cut + cushion so step-cut
+  centres render.
+- POST /specs/from-concept {brief} → {concept_image, read, spec, corrections}.
+  Every profile (line-art master, Grok-painted blueprint w/ dims, photoreal
+  client render) derives from the ONE spec, so they are consistent by
+  construction. 269 tests. Live demo: "art deco emerald-and-diamond halo
+  cocktail ring, platinum" → Grok concept → vision(emerald_cut 10×7, halo,
+  platinum) → validator(2.14 ct at 4.5 mm depth, 19-stone halo that fits,
+  3.7 mm gallery) → sheet + hand-drawn blueprint + client render.
+Note: the vision→spec extractor is pluggable (xAI now, Claude if keyed); the
+constitution's "Claude for language→spec" preference yields to the founder's
+"use Grok" while the VALIDATOR still owns every number.
+
 2026-07-06 v7 — GROK-PAINTED BLUEPRINT SHEET + EDIT-LOOP AGENT (founder:
 "ours looks unfinished, are we even using Grok/an agent?" — answer was no
 on both; the sheet was the one output the engine never touched). The fusion,

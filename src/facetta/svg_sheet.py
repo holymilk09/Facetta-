@@ -41,7 +41,7 @@ STROKE_MAIN = 0.3
 STROKE_DIM = 0.15
 FONT = "Georgia, 'Times New Roman', serif"
 
-SUPPORTED_CUTS = ("round_brilliant", "oval_brilliant")  # solitaire / halo center cuts
+SUPPORTED_CUTS = ("round_brilliant", "oval_brilliant", "emerald_cut", "cushion")  # solitaire / halo center cuts
 BANGLE_STATION_CUTS = ("princess", "asscher")
 ISOLATE_RED = "#c0392b"  # the edit agent's "isolate this stone" highlight
 

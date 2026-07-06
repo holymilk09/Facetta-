@@ -66,6 +66,30 @@ MODELS = {
 }
 
 
+# Text-to-image generation — Grok invents a NEW design from a brief. Separate
+# from MODELS (edit endpoints): these take a prompt and no input image.
+GENERATION_MODELS = {
+    "grok_direct": {
+        "endpoint": "https://api.x.ai/v1/images/generations",
+        "key_env": "XAI_KEY", "auth": "Bearer",
+        "payload": lambda prompt: {
+            "model": "grok-imagine-image-quality", "prompt": prompt,
+            "n": 1, "response_format": "b64_json"},
+        "parse": lambda data: (
+            "data:image/png;base64," + data["data"][0]["b64_json"]
+            if data["data"][0].get("b64_json") else data["data"][0]["url"]),
+    },
+    "flux": {
+        "endpoint": "https://fal.run/fal-ai/flux-pro/v1.1",
+        "key_env": "FAL_KEY", "auth": "Key",
+        "payload": lambda prompt: {
+            "prompt": prompt, "num_images": 1, "output_format": "png",
+            "sync_mode": True},
+        "parse": lambda data: data["images"][0]["url"],
+    },
+}
+
+
 class RenderUnavailable(Exception):
     """No key, or the provider cannot be reached."""
 
@@ -107,6 +131,48 @@ def _call_engine(model: str, instruction: str, image_data_uri: str,
         return image.content
     except Exception as exc:  # network, auth, schema — all one story upstream
         raise RenderUnavailable(f"render provider failed: {exc}") from exc
+
+
+def generate_image(prompt: str, model: str = "grok_direct") -> tuple[bytes, bool]:
+    """Grok invents a NEW design image from a text brief. Content-addressed by
+    (prompt, model), so the same brief returns the same concept from disk.
+    Returns (bytes, was_cached)."""
+    if model not in GENERATION_MODELS:
+        raise RenderUnavailable(
+            f"unknown generation model '{model}'; options: {list(GENERATION_MODELS)}")
+    key = hashlib.sha256(
+        (PIPELINE_VERSION + ":generate:" + model + ":" + prompt).encode()
+    ).hexdigest()[:32]
+    CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    cached = CACHE_DIR / f"{key}.png"
+    if cached.exists():
+        return cached.read_bytes(), True
+
+    engine = GENERATION_MODELS[model]
+    provider_key = _provider_key(engine["key_env"])
+    if not provider_key:
+        raise RenderUnavailable(
+            f"no {engine['key_env']} configured — set it in the environment or .env")
+
+    import httpx
+
+    try:
+        response = httpx.post(
+            engine["endpoint"], json=engine["payload"](prompt), timeout=180.0,
+            headers={"Authorization": f"{engine['auth']} {provider_key}"})
+        response.raise_for_status()
+        url = engine["parse"](response.json())
+        if url.startswith("data:"):
+            image = base64.b64decode(url.split(",", 1)[1])
+        else:
+            got = httpx.get(url, timeout=120.0)
+            got.raise_for_status()
+            image = got.content
+    except Exception as exc:
+        raise RenderUnavailable(f"generation provider failed: {exc}") from exc
+
+    cached.write_bytes(image)
+    return image, False
 
 
 def artwork_cache_key(image_bytes: bytes, style: str,

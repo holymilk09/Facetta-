@@ -1,0 +1,100 @@
+{
+  "schema_version": 1,
+  "design_id": "dsn_concept",
+  "version": 1,
+  "created_by": "usr_pending",
+  "created_at": "1970-01-01T00:00:00Z",
+  "jewelry_type": "ring",
+  "template": "halo_prong",
+  "mode": "pro",
+  "stone": {
+    "species": "emerald",
+    "cut": "emerald_cut",
+    "carat": 5.746,
+    "dimensions_mm": {
+      "length": 13.0,
+      "width": 10.0,
+      "depth": 6.5
+    },
+    "color": {
+      "trade": "Muzo Green",
+      "gia": "vivid, warm, slightly yellowish green",
+      "hue_code": null,
+      "tone": null,
+      "saturation": null
+    },
+    "clarity": null,
+    "origin": null,
+    "treatment": null,
+    "phenomena": [],
+    "count": 1,
+    "position": "center",
+    "table_pct": null,
+    "depth_pct": null,
+    "girdle": null,
+    "culet": null,
+    "lab": null,
+    "inscription": null,
+    "mount": null
+  },
+  "setting": {
+    "style": "4_prong_basket",
+    "prong_count": 4,
+    "prong_tip_mm": 0.9,
+    "gallery_height_mm": 5.2
+  },
+  "metal": {
+    "material": "platinum",
+    "karat": null,
+    "color": null,
+    "finish": "high_polish"
+  },
+  "band": {
+    "profile": "comfort_fit",
+    "width_mm": 2.2,
+    "thickness_mm": 1.6
+  },
+  "ring_size": {
+    "system": "US",
+    "value": 6.5,
+    "inner_diameter_mm": 16.91
+  },
+  "bracelet": null,
+  "pendant": null,
+  "chain": null,
+  "brooch": null,
+  "composition": null,
+  "side_stones": [
+    {
+      "species": "diamond",
+      "cut": "round_brilliant",
+      "carat": 0.041,
+      "dimensions_mm": {
+        "length": 2.2,
+        "width": 2.2,
+        "depth": 1.34
+      },
+      "color": {
+        "trade": "F",
+        "gia": "colorless",
+        "hue_code": null,
+        "tone": null,
+        "saturation": null
+      },
+      "clarity": null,
+      "origin": null,
+      "treatment": null,
+      "phenomena": [],
+      "count": 18,
+      "position": "halo",
+      "table_pct": null,
+      "depth_pct": null,
+      "girdle": null,
+      "culet": null,
+      "lab": null,
+      "inscription": null,
+      "mount": null
+    }
+  ],
+  "notes_to_factory": "Concept originated by image generation from the brief: “art deco emerald halo cocktail ring”. All dimensions are density-consistent DRAFT proposals scaled from a vision estimate of the centre stone — the designer confirms exact millimetres before production."
+}

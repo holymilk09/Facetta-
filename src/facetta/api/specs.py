@@ -62,6 +62,48 @@ def sheet_preview(spec: Spec):
     return Response(content=svg, media_type="image/svg+xml")
 
 
+class ConceptRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    brief: Annotated[str, Field(min_length=3, max_length=600)]
+    model: str = "grok_direct"
+
+
+@router.post("/from-concept")
+def from_concept(request: ConceptRequest):
+    """Grok invents an entirely new design from the brief; the platform reads
+    it, applies real millimetres and metal in the proper places, and returns a
+    spec that PASSES every jewelry rule — plus the corrections it had to make.
+    The factory pack (sheet, blueprint, client render) then comes from the
+    existing endpoints on the returned spec."""
+    import base64
+
+    from facetta.concept import complete_design, generate_concept, read_design
+
+    try:
+        image, _ = generate_concept(request.brief, request.model)
+        read = read_design(image, request.brief)
+    except RenderUnavailable as exc:
+        status = 503 if "_KEY" in str(exc) else 502
+        return JSONResponse(status_code=status, content={"detail": str(exc)})
+
+    spec, corrections = complete_design(read, request.brief)
+    result = validate_spec(spec, get_vocabulary())
+    if not result.ok:
+        return JSONResponse(status_code=422, content={
+            "detail": [issue.as_detail() for issue in result.issues],
+            "corrections": corrections,
+            "note": "the generated concept could not be made physically real",
+        })
+    return {
+        "concept_image_b64": base64.b64encode(image).decode(),
+        "media_type": _sniff_media_type(image),
+        "read": read.model_dump(),
+        "spec": result.spec.model_dump(mode="json"),
+        "corrections": corrections,
+    }
+
+
 @router.post("/blueprint-sheet.svg")
 def blueprint_sheet(spec: Spec, model: str = "grok_imagine"):
     """The presentation twin of the technical sheet: an image model paints the
