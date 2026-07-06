@@ -170,6 +170,26 @@ def get_sheet(design_id: str, version: int, db: DbSession):
     return Response(content=svg, media_type="image/svg+xml")
 
 
+@router.get("/{design_id}/versions/{version}/blueprint-sheet.svg")
+def get_blueprint_sheet(design_id: str, version: int, db: DbSession,
+                        model: str = "grok_imagine"):
+    """The stored version's presentation blueprint: painted views, code-drawn
+    numbers. The crisp master stays at .../sheet.svg."""
+    from facetta.blueprint import render_blueprint_sheet
+    from facetta.render import RenderUnavailable
+
+    row = _get_version(db, design_id, version)
+    try:
+        svg, cached = render_blueprint_sheet(Spec.model_validate(row.spec), model)
+    except SheetUnsupported as exc:
+        return JSONResponse(status_code=422, content={"detail": str(exc)})
+    except RenderUnavailable as exc:
+        status = 503 if "_KEY" in str(exc) else 502
+        return JSONResponse(status_code=status, content={"detail": str(exc)})
+    return Response(content=svg, media_type="image/svg+xml",
+                    headers={"X-Render-Cache": "hit" if cached else "miss"})
+
+
 @router.get("/{design_id}/versions/{version}/true_size.svg")
 def get_true_size(design_id: str, version: int, db: DbSession,
                   instructions: bool = True):

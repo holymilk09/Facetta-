@@ -87,6 +87,13 @@ ARTWORK_STYLES = {
         "redraw every study as clean uncolored technical line art — fine "
         "uniform black ink contours on white, closed precise outlines, no "
         "shading, no color, no wash, no hatching"),
+    "blueprint": (
+        "redraw as a master jeweler's graphite technical illustration on pale "
+        "drafting paper — shade the metal with real three-dimensional volume "
+        "and soft highlights, give every gemstone crisp cut facets and "
+        "sparkle, confident hand-drawn line weight that varies with the form; "
+        "a precise pencil rendering an experienced bench jeweler would draw, "
+        "each view still perfectly readable as an engineering projection"),
 }
 
 

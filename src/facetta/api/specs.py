@@ -62,6 +62,30 @@ def sheet_preview(spec: Spec):
     return Response(content=svg, media_type="image/svg+xml")
 
 
+@router.post("/blueprint-sheet.svg")
+def blueprint_sheet(spec: Spec, model: str = "grok_imagine"):
+    """The presentation twin of the technical sheet: an image model paints the
+    views into a graphite blueprint, code letters every dimension on top. The
+    crisp master stays at /sheet.svg. Rings only for now."""
+    from facetta.blueprint import render_blueprint_sheet
+
+    result = validate_spec(spec, get_vocabulary())
+    if not result.ok:
+        return JSONResponse(
+            status_code=422,
+            content={"detail": [issue.as_detail() for issue in result.issues]},
+        )
+    try:
+        svg, cached = render_blueprint_sheet(result.spec, model)
+    except SheetUnsupported as exc:
+        return JSONResponse(status_code=422, content={"detail": str(exc)})
+    except RenderUnavailable as exc:
+        status = 503 if "_KEY" in str(exc) else 502
+        return JSONResponse(status_code=status, content={"detail": str(exc)})
+    return Response(content=svg, media_type="image/svg+xml",
+                    headers={"X-Render-Cache": "hit" if cached else "miss"})
+
+
 @router.post("/true-size.svg")
 def true_size_preview(spec: Spec, instructions: bool = True):
     """The 1:1 overlay page: outlines at exact physical size for printing at
