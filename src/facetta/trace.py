@@ -114,10 +114,23 @@ def _blue_mask(im: Image.Image) -> list[list[bool]]:
     return mask
 
 
+def _red_mask(im: Image.Image) -> list[list[bool]]:
+    """Red stones (ruby class): red strongly leading both green and blue."""
+    w, h = im.size
+    px = im.load()
+    mask = [[False] * w for _ in range(h)]
+    for y in range(h):
+        for x in range(w):
+            r, g, b = px[x, y][:3]
+            if r > 110 and r > g * 1.6 and r > b * 1.6:
+                mask[y][x] = True
+    return mask
+
+
 @dataclass(frozen=True)
 class StoneAnchor:
     """One drawn/rendered stone: center, circumscribed radius (original-image
-    px), and its color class ('green' | 'blue')."""
+    px), and its color class ('green' | 'blue' | 'red')."""
 
     x: float
     y: float
@@ -140,7 +153,8 @@ def trace_stones(image) -> list[StoneAnchor]:
     min_area = max(20, im.width * im.height // 8000)
     anchors = []
     for color_class, mask in (("green", _green_mask(im)),
-                              ("blue", _blue_mask(im))):
+                              ("blue", _blue_mask(im)),
+                              ("red", _red_mask(im))):
         for blob in _components(mask, min_area):
             cx = sum(p[0] for p in blob) / len(blob)
             cy = sum(p[1] for p in blob) / len(blob)

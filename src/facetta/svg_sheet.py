@@ -235,8 +235,9 @@ def _title_block(spec: Spec, scale_label: str = "3:1") -> list[str]:
     metal = spec.metal
     if metal is not None:
         karat = f"{metal.karat}k " if metal.karat else ""
+        color = f"{metal.color} " if metal.color else ""
         finish = f", {metal.finish.replace('_', ' ')}" if metal.finish else ""
-        metal_line = f"{karat}{metal.color} {metal.material}{finish}"
+        metal_line = f"{karat}{color}{metal.material}{finish}"
     else:
         metal_line = "loose stone — unmounted"
     lines = [
@@ -323,7 +324,10 @@ def _frame(spec: Spec, title: str, scale_label: str, body: list[str],
     parts += _footer_key()
     if spec.notes_to_factory:
         parts.append(_text(MARGIN + 4, SHEET_H - MARGIN - 10.5,
-                           f"NOTES: {spec.notes_to_factory}", size=3.0, anchor="start"))
+                           "NOTES: " + (spec.notes_to_factory[:110] + "…"
+                                        if len(spec.notes_to_factory) > 110
+                                        else spec.notes_to_factory),
+                           size=3.0, anchor="start"))
     parts.append("</svg>")
     return "\n".join(parts) + "\n"
 

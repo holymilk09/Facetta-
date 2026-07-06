@@ -44,6 +44,7 @@ COLOR_CLASS = {
     "tourmaline": "green", "tsavorite": "green",
     "aquamarine": "blue", "sapphire": "blue", "topaz": "blue",
     "tanzanite": "blue", "iolite": "blue", "zircon": "blue",
+    "ruby": "red", "spinel": "red", "red_beryl": "red",
 }
 
 
@@ -107,7 +108,9 @@ def _generic_callouts(spec: Spec, anchor_bytes: bytes) -> list[tuple]:
     out = []
     for i, stone in enumerate(stones):
         cls = COLOR_CLASS.get(stone.species)
-        pool = [a for a in unused if cls is None or a.color_class == cls]
+        if cls is None:
+            continue  # colorless stones aren't traceable: no anchor is claimed
+        pool = [a for a in unused if a.color_class == cls]
         if not pool:
             continue
         expected = _stone_diag_mm(stone) * scale
@@ -207,6 +210,17 @@ def render_annotated_artwork(spec: Spec, image_bytes: bytes,
     if spec.brooch is not None:
         dim_lines.append((f"overall {_fmt(spec.brooch.length_mm)} × "
                           f"{_fmt(spec.brooch.width_mm)}", False))
+    elif spec.ring_size is not None:
+        rs = spec.ring_size
+        inner = (f", inner ⌀ {_fmt(rs.inner_diameter_mm)}"
+                 if rs.inner_diameter_mm else "")
+        dim_lines.append((f"ring size {rs.system} {rs.value}{inner}", False))
+        if spec.band is not None:
+            dim_lines.append((f"band {_fmt(spec.band.width_mm)} wide × "
+                              f"{_fmt(spec.band.thickness_mm)} thick", False))
+        if spec.setting is not None and spec.setting.gallery_height_mm:
+            dim_lines.append((f"gallery {_fmt(spec.setting.gallery_height_mm)} "
+                              "under center", False))
     else:
         dim_lines.append(("overall extent — pending designer", False))
     if spec.template == "leaf_spray_brooch":
@@ -229,9 +243,13 @@ def render_annotated_artwork(spec: Spec, image_bytes: bytes,
 
     # title block: the spec speaks, the model never letters
     metal = spec.metal
-    metal_line = (f"{metal.karat}k {metal.color} {metal.material}, "
-                  f"{(metal.finish or 'polished').replace('_', ' ')}"
-                  if metal else "metal TBD")
+    if metal:
+        bits = [f"{metal.karat}k" if metal.karat else "",
+                metal.color or "", metal.material]
+        metal_line = (" ".join(b for b in bits if b)
+                      + f", {(metal.finish or 'polished').replace('_', ' ')}")
+    else:
+        metal_line = "metal TBD"
     piece = spec.template.replace("_", " ").upper()
     ty = SHEET_H - MARGIN - 14
     parts += [

@@ -1,0 +1,101 @@
+{
+  "schema_version": 1,
+  "design_id": "dsn_ruby_sunburst",
+  "version": 1,
+  "created_by": "usr_ana",
+  "created_at": "2026-07-06T20:00:00Z",
+  "jewelry_type": "ring",
+  "template": "halo_prong",
+  "mode": "pro",
+  "stone": {
+    "species": "ruby",
+    "cut": "oval_brilliant",
+    "carat": 4.032,
+    "dimensions_mm": {
+      "length": 10.0,
+      "width": 8.0,
+      "depth": 6.3
+    },
+    "color": {
+      "trade": "Pigeon's Blood",
+      "gia": "vivid red, slightly purplish, tone 5-6"
+    },
+    "count": 1,
+    "position": "center",
+    "phenomena": []
+  },
+  "side_stones": [
+    {
+      "species": "diamond",
+      "cut": "marquise",
+      "carat": 0.082,
+      "dimensions_mm": {
+        "length": 4.5,
+        "width": 2.25,
+        "depth": 1.44
+      },
+      "color": {
+        "trade": "F",
+        "gia": "colorless"
+      },
+      "count": 8,
+      "position": "halo",
+      "phenomena": []
+    },
+    {
+      "species": "diamond",
+      "cut": "round_brilliant",
+      "carat": 0.059,
+      "dimensions_mm": {
+        "length": 2.5,
+        "width": 2.5,
+        "depth": 1.5
+      },
+      "color": {
+        "trade": "F",
+        "gia": "colorless"
+      },
+      "count": 8,
+      "position": "halo_outer",
+      "phenomena": []
+    },
+    {
+      "species": "diamond",
+      "cut": "round_brilliant",
+      "carat": 0.006,
+      "dimensions_mm": {
+        "length": 1.15,
+        "width": 1.15,
+        "depth": 0.7
+      },
+      "color": {
+        "trade": "F",
+        "gia": "colorless"
+      },
+      "count": 28,
+      "position": "shoulder_pave",
+      "phenomena": []
+    }
+  ],
+  "metal": {
+    "material": "platinum",
+    "finish": "high_polish"
+  },
+  "setting": {
+    "style": "4_prong_basket",
+    "prong_count": 4,
+    "prong_tip_mm": 0.9,
+    "gallery_height_mm": 5.0
+  },
+  "band": {
+    "profile": "comfort_fit",
+    "width_mm": 2.0,
+    "thickness_mm": 1.6
+  },
+  "ring_size": {
+    "system": "US",
+    "value": 6.5,
+    "inner_diameter_mm": 16.91
+  },
+  "notes_to_factory": "Band tapers 2.8 mm at the shoulders to 2.0 mm at base. Shoulder pave runs ~7 mm per side from the halo. Marquise petals radiate; rounds sit between petals on the outer row. Corrections vs the proposal: marquise are 0.08 ct each (0.20 ct impossible at 4.5x2.25) and the gallery is 5.0 mm (4.5 puts the culet closer than 0.5 mm to the finger)."
+}
