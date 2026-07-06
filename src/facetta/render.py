@@ -133,15 +133,23 @@ def _call_engine(model: str, instruction: str, image_data_uri: str,
         raise RenderUnavailable(f"render provider failed: {exc}") from exc
 
 
-def generate_image(prompt: str, model: str = "grok_direct") -> tuple[bytes, bool]:
+def generate_image(prompt: str, model: str = "grok_direct",
+                   variant: int = 0) -> tuple[bytes, bool]:
     """Grok invents a NEW design image from a text brief. Content-addressed by
-    (prompt, model), so the same brief returns the same concept from disk.
-    Returns (bytes, was_cached)."""
+    (prompt, model, variant). Returns (bytes, was_cached).
+
+    Generation is CREATIVE, not deterministic — the same brief can yield a
+    different piece each call. Caching by prompt alone froze that: once a brief
+    was rendered, every later 'generate again' served the first image forever,
+    so a design the designer had since moved past kept coming back. `variant`
+    bumps the key, so the app can ask for a genuinely fresh take (variant=1, 2,
+    …) without ever colliding with a stale concept from an earlier session."""
     if model not in GENERATION_MODELS:
         raise RenderUnavailable(
             f"unknown generation model '{model}'; options: {list(GENERATION_MODELS)}")
+    suffix = f":v{variant}" if variant else ""
     key = hashlib.sha256(
-        (PIPELINE_VERSION + ":generate:" + model + ":" + prompt).encode()
+        (PIPELINE_VERSION + ":generate:" + model + ":" + prompt + suffix).encode()
     ).hexdigest()[:32]
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
     cached = CACHE_DIR / f"{key}.png"

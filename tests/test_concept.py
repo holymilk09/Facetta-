@@ -68,6 +68,24 @@ class TestCompleteDesign:
         assert spec.stone.cut == "oval_brilliant"
         assert any("oval_brilliant" in c for c in corrections)
 
+    def test_bezel_setting_reaches_the_spec(self):
+        # the founder's bug: a bezel design was always flattened to 4 prongs
+        read = DesignRead(species="diamond", cut="round", center_length_mm=7,
+                          center_width_mm=7, metal_material="platinum",
+                          setting_style="bezel")
+        spec, corrections = complete_design(read, "bezel-set diamond")
+        assert _valid(spec)
+        assert spec.setting.style == "bezel"
+        assert spec.setting.prong_count is None   # a bezel has no claws
+        assert any("bezel" in c for c in corrections)
+
+    def test_default_setting_is_a_prong_basket(self):
+        read = DesignRead(species="diamond", cut="round", center_length_mm=6.5,
+                          center_width_mm=6.5, metal_material="platinum")
+        spec, _ = complete_design(read, "plain solitaire")
+        assert spec.setting.style == "4_prong_basket"
+        assert spec.setting.prong_count == 4
+
 
 class TestConceptEndpoint:
     def test_from_concept_returns_image_spec_corrections(self, monkeypatch):
@@ -78,7 +96,7 @@ class TestConceptEndpoint:
 
         fake_png = b"\x89PNG\r\n\x1a\nconcept"
         monkeypatch.setattr(concept_mod, "generate_concept",
-                            lambda brief, model="grok_direct": (fake_png, False))
+                            lambda brief, model="grok_direct", variant=0: (fake_png, False))
         monkeypatch.setattr(concept_mod, "read_design",
                             lambda image, brief: DesignRead(
                                 halo=True, species="emerald", cut="emerald",
@@ -102,7 +120,7 @@ class TestConceptEndpoint:
         from facetta.main import app
         from facetta.render import RenderUnavailable
 
-        def boom(brief, model="grok_direct"):
+        def boom(brief, model="grok_direct", variant=0):
             raise RenderUnavailable("no XAI_KEY configured — set it")
 
         monkeypatch.setattr(concept_mod, "generate_concept", boom)

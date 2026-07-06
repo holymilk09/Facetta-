@@ -16,12 +16,19 @@ from facetta.db import (
 from facetta.dxf import svg_to_dxf
 from facetta.spec import Spec
 from facetta.svg_sheet import (
-    SheetUnsupported, render_sheet, render_stack_sheet, render_true_size_sheet,
+    Branding, SheetUnsupported, render_sheet, render_stack_sheet,
+    render_true_size_sheet,
 )
 from facetta.validation import nesting_clearance, validate_spec
 from facetta.vocabulary import get_vocabulary
 
 router = APIRouter(prefix="/designs", tags=["designs"])
+
+
+def _branding(house: str | None, signature: str | None) -> Branding | None:
+    """A designer's studio mark for a sheet — presentation only, never stored
+    on the immutable version. None when unbranded."""
+    return Branding(house=house, signature=signature) if (house or signature) else None
 
 DbSession = Annotated[Session, Depends(get_db)]
 
@@ -213,11 +220,14 @@ def get_version(design_id: str, version: int, db: DbSession):
 
 @router.get("/{design_id}/versions/{version}/sheet.svg")
 def get_sheet(design_id: str, version: int, db: DbSession,
-              highlight: str | None = None):
-    """?highlight=A rings that stone in red — the edit agent's isolate mark."""
+              highlight: str | None = None, house: str | None = None,
+              signature: str | None = None):
+    """?highlight=A rings that stone in red — the edit agent's isolate mark.
+    ?house=/?signature= stamp the designer's studio mark (presentation only)."""
     row = _get_version(db, design_id, version)
     try:
-        svg = render_sheet(Spec.model_validate(row.spec), highlight_ref=highlight)
+        svg = render_sheet(Spec.model_validate(row.spec), highlight_ref=highlight,
+                           branding=_branding(house, signature))
     except SheetUnsupported as exc:
         return JSONResponse(status_code=422, content={"detail": str(exc)})
     return Response(content=svg, media_type="image/svg+xml")
@@ -225,15 +235,19 @@ def get_sheet(design_id: str, version: int, db: DbSession,
 
 @router.get("/{design_id}/versions/{version}/blueprint-sheet.svg")
 def get_blueprint_sheet(design_id: str, version: int, db: DbSession,
-                        model: str = "grok_imagine"):
+                        model: str = "grok_imagine", house: str | None = None,
+                        signature: str | None = None):
     """The stored version's presentation blueprint: painted views, code-drawn
-    numbers. The crisp master stays at .../sheet.svg."""
+    numbers. The crisp master stays at .../sheet.svg. ?house=/?signature= stamp
+    the designer's studio mark (presentation only)."""
     from facetta.blueprint import render_blueprint_sheet
     from facetta.render import RenderUnavailable
 
     row = _get_version(db, design_id, version)
     try:
-        svg, cached = render_blueprint_sheet(Spec.model_validate(row.spec), model)
+        svg, cached = render_blueprint_sheet(
+            Spec.model_validate(row.spec), model,
+            branding=_branding(house, signature))
     except SheetUnsupported as exc:
         return JSONResponse(status_code=422, content={"detail": str(exc)})
     except RenderUnavailable as exc:

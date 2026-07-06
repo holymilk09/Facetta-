@@ -22,13 +22,14 @@ from facetta.mockup import compile_artwork_restyle_request  # noqa: F401 (style 
 from facetta.render import RenderUnavailable, _sniff_media_type, restyle_artwork
 from facetta.spec import Spec
 from facetta.svg_sheet import (
-    SHEET_H, SHEET_W, render_blueprint_frame, render_sheet_geometry,
+    SHEET_H, SHEET_W, Branding, render_blueprint_frame, render_sheet_geometry,
 )
 
 BLUEPRINT_RASTER_WIDTH = 1485  # matches the control-image rasterization
 
 
-def render_blueprint_sheet(spec: Spec, model: str = "grok_imagine") -> tuple[str, bool]:
+def render_blueprint_sheet(spec: Spec, model: str = "grok_imagine",
+                           branding: Branding | None = None) -> tuple[str, bool]:
     """Return (svg, was_cached). Raises RenderUnavailable without a key or
     when the provider fails — callers translate to 503/502, exactly like the
     photoreal render."""
@@ -46,4 +47,4 @@ def render_blueprint_sheet(spec: Spec, model: str = "grok_imagine") -> tuple[str
         f'<image x="0" y="0" width="{SHEET_W:g}" height="{SHEET_H:g}" '
         f'preserveAspectRatio="none" '
         f'href="data:{media_type};base64,{base64.b64encode(painted).decode()}"/>')
-    return render_blueprint_frame(spec, image_tag), cached
+    return render_blueprint_frame(spec, image_tag, branding=branding), cached

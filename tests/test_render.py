@@ -109,3 +109,38 @@ def test_unknown_model_fails_loudly(example_spec):
     with pytest.raises(render_mod.RenderUnavailable) as err:
         render_finished_image(_validated(example_spec), model="dalle_1999")
     assert "flux_kontext" in str(err.value)
+
+
+def test_generation_variant_makes_a_fresh_image(monkeypatch, tmp_path):
+    """The founder's stale-concept bug: the same brief must be able to
+    regenerate instead of serving the first-ever image forever."""
+    from facetta.render import generate_image
+
+    monkeypatch.setattr(render_mod, "CACHE_DIR", tmp_path)
+    monkeypatch.setattr(render_mod, "_provider_key", lambda env: "test:key")
+    calls = []
+
+    class FakeResponse:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            # a distinct 1px payload per call so we can see cache vs fresh
+            return {"data": [{"b64_json": base64.b64encode(
+                b"png-" + str(len(calls)).encode()).decode()}]}
+
+    import httpx
+
+    def fake_post(url, **kwargs):
+        calls.append(url)
+        return FakeResponse()
+
+    monkeypatch.setattr(httpx, "post", fake_post)
+
+    a, cached_a = generate_image("art deco emerald ring")
+    a2, cached_a2 = generate_image("art deco emerald ring")   # same brief, cached
+    b, cached_b = generate_image("art deco emerald ring", variant=1)  # regenerate
+
+    assert (cached_a, cached_a2, cached_b) == (False, True, False)
+    assert a == a2 and a != b            # variant busts the cache, same brief
+    assert len(calls) == 2               # only the two live generations paid

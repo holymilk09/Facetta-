@@ -46,6 +46,26 @@ _CUT_MAP = {
 _DEPTH_FRAC = {"round_brilliant": 0.61, "oval_brilliant": 0.64,
                "emerald_cut": 0.65, "cushion": 0.66}
 
+# how a vision-read mount maps to a spec setting the sheet can DRAW. The value
+# is (spec style, prong_count) — prong_count is None for continuous-metal
+# mounts (bezels), which the sheet renders as a collar, not claws. Keeping this
+# a lookup means "this ring had a diamond bezel" actually reaches the drawing
+# instead of being flattened to a default 4-prong basket.
+_SETTING_MAP = {
+    "bezel": ("bezel", None),
+    "semi_bezel": ("semi_bezel", None),
+    "half_bezel": ("semi_bezel", None),
+    "tension": ("bezel", None),          # nearest drawable continuous mount
+    "prong": ("4_prong_basket", 4),
+    "prong_4": ("4_prong_basket", 4),
+    "4_prong": ("4_prong_basket", 4),
+    "4_prong_basket": ("4_prong_basket", 4),
+    "prong_6": ("6_prong_basket", 6),
+    "6_prong": ("6_prong_basket", 6),
+    "6_prong_basket": ("6_prong_basket", 6),
+    "v_prong": ("4_prong_basket", 4),
+}
+
 
 class DesignRead(BaseModel):
     """What a vision model can honestly report from a concept image — sparse,
@@ -61,6 +81,7 @@ class DesignRead(BaseModel):
     center_width_mm: float = 6.0
     metal_material: str = "platinum"
     metal_color: str | None = None
+    setting_style: str = "prong"     # how the centre is held (see _SETTING_MAP)
 
 
 def concept_prompt(brief: str) -> str:
@@ -72,9 +93,12 @@ def concept_prompt(brief: str) -> str:
     )
 
 
-def generate_concept(brief: str, model: str = "grok_direct") -> tuple[bytes, bool]:
-    """Grok invents a brand-new design from the brief. Returns (bytes, cached)."""
-    return generate_image(concept_prompt(brief), model=model)
+def generate_concept(brief: str, model: str = "grok_direct",
+                     variant: int = 0) -> tuple[bytes, bool]:
+    """Grok invents a brand-new design from the brief. Returns (bytes, cached).
+    variant>0 asks for a fresh take when the designer wants to regenerate rather
+    than re-see the first concept for this brief."""
+    return generate_image(concept_prompt(brief), model=model, variant=variant)
 
 
 _READ_SYSTEM = """\
@@ -84,16 +108,21 @@ Report ONLY what you can see, using these controlled-vocabulary ids:
 species (pick one): {species}
 cut (pick one): {cuts}
 metal_material (pick one): {metals}
+setting_style (pick one): bezel, semi_bezel, prong_4, prong_6, v_prong, tension
 
 Return a JSON object exactly matching:
 {{"jewelry_type": "ring"|"pendant"|"earring", "halo": true|false,
   "species": id, "cut": id, "center_length_mm": number, "center_width_mm": number,
-  "metal_material": id, "metal_color": "yellow"|"white"|"rose"|null}}
+  "metal_material": id, "metal_color": "yellow"|"white"|"rose"|null,
+  "setting_style": id}}
 
 center_length_mm/center_width_mm are your best estimate of the main stone in
 millimetres (a typical cocktail-ring centre is 8-13 mm). halo=true only if a
-ring of small stones encircles the centre. metal_color is null for platinum or
-silver. Output ONLY the JSON."""
+ring of small stones encircles the centre. setting_style is how the centre
+stone is held: 'bezel' if a continuous metal rim wraps the whole girdle,
+'semi_bezel' if metal wraps only two sides, otherwise the claw count you see
+(prong_4 / prong_6). metal_color is null for platinum or silver. Output ONLY
+the JSON."""
 
 
 def read_design(image_bytes: bytes, brief: str = "",
@@ -218,10 +247,23 @@ def complete_design(read: DesignRead, brief: str = "",
     else:
         metal = Metal(material=material, finish="high_polish")
 
+    # how the centre is held — read from the design, not assumed. A bezel stays
+    # a bezel all the way to the sheet; only an unrecognised mount falls back to
+    # a 4-prong basket, and that fallback is recorded like any other correction.
+    style, prong_count = _SETTING_MAP.get(read.setting_style, (None, None))
+    if style is None:
+        style, prong_count = "4_prong_basket", 4
+        corrections.append(
+            f"setting '{read.setting_style}' not drawable yet — shown as a "
+            "4-prong basket; confirm the mount with the designer")
+    elif style != "4_prong_basket":
+        corrections.append(f"centre held in a {style.replace('_', ' ')} setting")
+
     # gallery must clear the culet from the finger — the factory rule, up front
     min_rail = vocab.manufacturing_tolerances()["culet_to_finger_rail_mm"]
     gallery = round(0.71 * depth + min_rail + 0.05, 1)
-    setting = Setting(style="4_prong_basket", prong_count=4, prong_tip_mm=0.9,
+    setting = Setting(style=style, prong_count=prong_count,
+                      prong_tip_mm=0.9 if prong_count else None,
                       gallery_height_mm=gallery)
     band = Band(profile="comfort_fit", width_mm=2.2, thickness_mm=1.6)
     ring_size = RingSize(system="US", value=6.5, inner_diameter_mm=16.91)

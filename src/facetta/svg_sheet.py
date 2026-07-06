@@ -21,6 +21,7 @@ cross-sections, architectural tick dimension lines, and a title block.
 from __future__ import annotations
 
 import math
+from dataclasses import dataclass
 
 from facetta import gemcad
 from facetta.spec import Spec
@@ -45,9 +46,77 @@ SUPPORTED_CUTS = ("round_brilliant", "oval_brilliant", "emerald_cut", "cushion")
 BANGLE_STATION_CUTS = ("princess", "asscher")
 ISOLATE_RED = "#c0392b"  # the edit agent's "isolate this stone" highlight
 
+# continuous-metal centre mounts: the sheet draws a collar hugging the girdle
+# instead of individual claws, so a bezel reads as a bezel — not four dots.
+BEZEL_STYLES = ("bezel", "semi_bezel")
+BEZEL_WALL_MM = 0.8  # metal wall thickness around the girdle
+
 
 class SheetUnsupported(Exception):
     """The sheet renderer does not cover this template/cut yet."""
+
+
+@dataclass(frozen=True)
+class Branding:
+    """The designer's own mark on a sheet, for pieces they send to clients and
+    factories under their studio's name. This is PRESENTATION, never part of the
+    immutable spec — two designers can brand the same version differently, and
+    the dimensions never change. Facetta keeps a small maker's mark regardless.
+    """
+    house: str | None = None       # studio / maison name, leads the title block
+    signature: str | None = None   # the designer's name, drawn as a signature
+
+    def _clip(self, s: str | None, n: int) -> str | None:
+        if not s:
+            return None
+        s = " ".join(s.split())
+        return s if len(s) <= n else s[: n - 1].rstrip() + "…"
+
+    @property
+    def house_line(self) -> str | None:
+        return self._clip(self.house, 24)
+
+    @property
+    def signature_line(self) -> str | None:
+        return self._clip(self.signature, 26)
+
+
+def _setting_is_bezel(spec: Spec) -> bool:
+    return spec.setting is not None and spec.setting.style in BEZEL_STYLES
+
+
+def _bezel_collar_top(cx: float, cy: float, rx: float, ry: float) -> str:
+    """A metal collar seen from above: a hatched annulus hugging the girdle,
+    crisp inner and outer edges. The stone (drawn earlier) shows through the
+    hole, so it reads as a rim of metal wrapping the stone."""
+    wall = BEZEL_WALL_MM * SCALE
+    orx, ory = rx + wall, ry + wall
+    return (
+        f'<path d="M {cx - orx:.2f} {cy:.2f} '
+        f'A {orx:.2f} {ory:.2f} 0 1 0 {cx + orx:.2f} {cy:.2f} '
+        f'A {orx:.2f} {ory:.2f} 0 1 0 {cx - orx:.2f} {cy:.2f} Z '
+        f'M {cx - rx:.2f} {cy:.2f} '
+        f'A {rx:.2f} {ry:.2f} 0 1 1 {cx + rx:.2f} {cy:.2f} '
+        f'A {rx:.2f} {ry:.2f} 0 1 1 {cx - rx:.2f} {cy:.2f} Z" '
+        f'fill="url(#hatch)" fill-rule="evenodd" stroke="{INK}" '
+        f'stroke-width="{STROKE_MAIN}"/>')
+
+
+def _bezel_collar_side(xl: float, xr: float, y_girdle: float,
+                       y_table: float) -> list[str]:
+    """The collar in elevation: two metal walls at the girdle edges, rising most
+    of the way up the crown — the profile factories read as a bezel seat."""
+    wall = BEZEL_WALL_MM * SCALE
+    lip_top = y_table + (y_girdle - y_table) * 0.35  # up ~65% of the crown
+    h = y_girdle - lip_top + wall * 0.5
+    return [
+        f'<rect x="{xl - wall:.2f}" y="{lip_top:.2f}" width="{wall:.2f}" '
+        f'height="{h:.2f}" fill="url(#hatch)" stroke="{INK}" '
+        f'stroke-width="{STROKE_MAIN}"/>',
+        f'<rect x="{xr:.2f}" y="{lip_top:.2f}" width="{wall:.2f}" '
+        f'height="{h:.2f}" fill="url(#hatch)" stroke="{INK}" '
+        f'stroke-width="{STROKE_MAIN}"/>',
+    ]
 
 
 def _fmt(value: float) -> str:
@@ -182,7 +251,9 @@ def _top_view(spec: Spec, cx: float, cy: float, *, mode: str = "full",
             _line(cx - rx - 3, cy, cx + rx + 3, cy, w=STROKE_DIM, color=FAINT, dash="3 1 0.5 1"),
         ]
 
-    if geo:
+    if geo and _setting_is_bezel(spec):
+        parts.append(_bezel_collar_top(cx, cy, rx, ry))
+    elif geo:
         prong_r = (spec.setting.prong_tip_mm or 0.9) * SCALE / 2
         count = spec.setting.prong_count or 4
         for i in range(count):
@@ -262,7 +333,9 @@ def _side_view(spec: Spec, cx: float, cy: float, *, mode: str = "full") -> list[
         parts.append(_line(cx, ring_top - gallery - crown_h - 3, cx, ring_cy + outer_r + 3,
                            w=STROKE_DIM, color=FAINT, dash="3 1 0.5 1"))
 
-    if geo:
+    if geo and _setting_is_bezel(spec):
+        parts += _bezel_collar_side(xl, xr, y_girdle, y_table)
+    elif geo:
         prong_r = (spec.setting.prong_tip_mm or 0.9) * SCALE / 2
         for x in (xl - prong_r / 2, xr + prong_r / 2):
             parts += [
@@ -319,39 +392,118 @@ def _side_view(spec: Spec, cx: float, cy: float, *, mode: str = "full") -> list[
     return parts
 
 
-def _title_block(spec: Spec, scale_label: str = "3:1") -> list[str]:
+def _metal_line(metal) -> str:
+    """Clean, title-cased mount description: '18k Yellow Gold · high polish'."""
+    if metal is None:
+        return "Loose stone — unmounted"
+    karat = f"{metal.karat}k " if metal.karat else ""
+    color = f"{metal.color.title()} " if metal.color else ""
+    material = metal.material.replace("_", " ").title()
+    finish = f"  ·  {metal.finish.replace('_', ' ')}" if metal.finish else ""
+    return f"{karat}{color}{material}{finish}"
+
+
+def _title_block(spec: Spec, scale_label: str = "3:1",
+                 branding: Branding | None = None) -> list[str]:
     x = SHEET_W - MARGIN - 100
     y = SHEET_H - MARGIN - 40
+    w = 100.0
     stone = spec.stone
-    metal = spec.metal
-    if metal is not None:
-        karat = f"{metal.karat}k " if metal.karat else ""
-        color = f"{metal.color} " if metal.color else ""
-        finish = f", {metal.finish.replace('_', ' ')}" if metal.finish else ""
-        metal_line = f"{karat}{color}{metal.material}{finish}"
-    else:
-        metal_line = "loose stone — unmounted"
-    lines = [
-        (f"{spec.design_id}  ·  v{spec.version}", 4.2, True),
-        (f"{stone.carat:.2f} ct {stone.species}, {stone.cut.replace('_', ' ')}", 3.2, False),
-        (metal_line, 3.2, False),
-        (f"{stone.color.trade}  ·  {stone.clarity.grade}" if stone.clarity
-         else f"{stone.color.trade}  ·  finest available", 3.2, False),
-        (f"designer {spec.created_by}  ·  {spec.created_at.date().isoformat()}", 3.0, False),
-        (f"UNITS mm  ·  SCALE {scale_label}"
-         + (f"  ·  EST. {weight} g" if (weight := estimate_metal_g(spec)) else ""), 3.0, False),
-    ]
+
+    house = branding.house_line if branding else None
+    signature = branding.signature_line if branding else None
+    masthead = house or "FACETTA"
+
+    # spec body — a tidy, scannable hierarchy: identity, stone, mount, colour,
+    # then a faint meta line. Consistent middle-dot separators, title case.
+    color_line = (f"{stone.color.trade}  ·  {stone.clarity.grade}" if stone.clarity
+                  else f"{stone.color.trade}  ·  finest available")
+    weight = estimate_metal_g(spec)
+    meta = (f"UNITS mm  ·  SCALE {scale_label}"
+            + (f"  ·  EST. {weight} g" if weight else "")
+            + f"  ·  {spec.created_by}")
+
     parts = [
-        f'<rect x="{x:.2f}" y="{y:.2f}" width="100" height="40" fill="none" '
+        f'<rect x="{x:.2f}" y="{y:.2f}" width="{w:g}" height="40" fill="{PAPER}" '
         f'stroke="{INK}" stroke-width="{STROKE_MAIN}"/>',
-        _line(x, y + 8, x + 100, y + 8, w=STROKE_DIM),
-        _text(x + 3, y + 5.8, "FACETTA", size=4.0, anchor="start", style=' letter-spacing="2.0"'),
+        # masthead band
+        _line(x, y + 8, x + w, y + 8, w=STROKE_DIM),
+        _text(x + 3, y + 5.8, masthead, size=4.0, anchor="start",
+              style=' letter-spacing="1.6"'),
     ]
+    # keep Facetta as the maker's mark even under a designer's house name
+    if house:
+        parts.append(_text(x + w - 3, y + 5.6, "made with FACETTA", size=2.2,
+                           anchor="end", color=FAINT, style=' letter-spacing="0.6"'))
+
     ty = y + 8
-    for s, size, bold in lines:
-        ty += 4.6 if not bold else 5.6
-        weight = ' font-weight="bold"' if bold else ""
-        parts.append(_text(x + 3, ty, s, size=size, anchor="start", style=weight))
+    body = [
+        (f"{spec.design_id}  ·  v{spec.version}", 3.8, True),
+        (f"{stone.carat:.2f} ct {stone.species.title()}  ·  "
+         f"{stone.cut.replace('_', ' ')}", 3.1, False),
+        (_metal_line(spec.metal), 3.1, False),
+        (color_line, 3.1, False),
+    ]
+    for s, size, bold in body:
+        ty += 5.4 if bold else 4.4
+        parts.append(_text(x + 3, ty, s, size=size, anchor="start",
+                           style=' font-weight="bold"' if bold else ""))
+    parts.append(_text(x + 3, ty + 4.0, meta, size=2.7, anchor="start", color=FAINT))
+
+    # signature block: a designer's hand, only when they've supplied a mark.
+    # A ruled line with an italic signature above it — the same gesture as
+    # signing a physical work order sent to a factory.
+    sy = y + 40 - 3.2
+    if signature:
+        parts += [
+            _line(x + 3, sy - 1.5, x + 42, sy - 1.5, w=STROKE_DIM, color=FAINT),
+            _text(x + 3, sy - 2.6, signature, size=3.6, anchor="start",
+                  style=' font-style="italic"'),
+            _text(x + 3, sy + 1.4, "SIGNED", size=2.1, anchor="start", color=FAINT,
+                  style=' letter-spacing="1.0"'),
+        ]
+    parts.append(_text(x + w - 3, sy, spec.created_at.date().isoformat(),
+                       size=2.7, anchor="end", color=FAINT))
+    return parts
+
+
+def _wrap(text: str, width: int, lines: int) -> list[str]:
+    """Word-wrap into at most `lines` rows of ~`width` chars, ellipsizing the
+    tail if it overruns — a clean paragraph instead of a hard mid-word cut."""
+    words = " ".join(text.split()).split(" ")
+    rows: list[str] = []
+    cur = ""
+    i = 0
+    while i < len(words):
+        trial = f"{cur} {words[i]}".strip()
+        if len(trial) <= width or not cur:
+            cur, i = trial, i + 1
+        elif len(rows) < lines - 1:
+            rows.append(cur)
+            cur = ""
+        else:
+            break  # last row is full; whatever remains overruns
+    if cur and len(rows) < lines:
+        rows.append(cur)
+        cur = ""
+    if i < len(words) or cur:  # words left unplaced — mark the tail continued
+        if rows:
+            rows[-1] = rows[-1][: width - 1].rstrip() + "…"
+    return rows
+
+
+def _notes_block(notes: str) -> list[str]:
+    """Notes to factory, set as a titled two-line paragraph — professional,
+    readable, never a hard-truncated run-on."""
+    label_y = SHEET_H - MARGIN - 18.5
+    rows = _wrap(notes, 112, 2)
+    parts = [
+        _text(MARGIN + 4, label_y, "NOTES TO FACTORY", size=2.6, anchor="start",
+              color=FAINT, style=' letter-spacing="1.2"'),
+    ]
+    for i, row in enumerate(rows):
+        parts.append(_text(MARGIN + 4, label_y + 3.8 + i * 3.6, row, size=3.0,
+                           anchor="start"))
     return parts
 
 
@@ -388,7 +540,8 @@ def _footer_key() -> list[str]:
 
 
 def _frame(spec: Spec, title: str, scale_label: str, body: list[str],
-           datum_y: float | None = BASELINE, background: str | None = None) -> str:
+           datum_y: float | None = BASELINE, background: str | None = None,
+           branding: Branding | None = None) -> str:
     """The shared sheet envelope: page, border, title, body views, title block.
 
     datum_y draws the shared horizontal baseline every view is centered on.
@@ -425,14 +578,10 @@ def _frame(spec: Spec, title: str, scale_label: str, body: list[str],
         parts.append(_line(MARGIN + 3, datum_y, SHEET_W - MARGIN - 3, datum_y,
                            w=STROKE_DIM, color=FAINT, dash="6 1.5 1 1.5"))
     parts += body
-    parts += _title_block(spec, scale_label)
+    parts += _title_block(spec, scale_label, branding)
     parts += _footer_key()
     if spec.notes_to_factory:
-        parts.append(_text(MARGIN + 4, SHEET_H - MARGIN - 10.5,
-                           "NOTES: " + (spec.notes_to_factory[:110] + "…"
-                                        if len(spec.notes_to_factory) > 110
-                                        else spec.notes_to_factory),
-                           size=3.0, anchor="start"))
+        parts += _notes_block(spec.notes_to_factory)
     parts.append(_text(SHEET_W - MARGIN, SHEET_H - 3.2,
                        "CONFIDENTIAL — FACTORY PRODUCTION ONLY", size=2.8,
                        anchor="end", color=FAINT, style=' letter-spacing="1.2"'))
@@ -485,15 +634,20 @@ def _front_view(spec: Spec, cx: float, cy: float, melee=None, *,
                            color=FAINT, dash="3 1 0.5 1"))
     if geo:
         prong_r = (spec.setting.prong_tip_mm or 0.9) * SCALE / 2
-        for x in (xl - prong_r / 2, xr + prong_r / 2):
-            parts += [
-                _line(x, y_girdle + 2.0, x, y_table + 1.0),
-                _circle(x, y_table + 1.0, prong_r),
-            ]
+        if _setting_is_bezel(spec):
+            parts += _bezel_collar_side(xl, xr, y_girdle, y_table)
+            edge = BEZEL_WALL_MM * SCALE  # melee seat outside the collar
+        else:
+            for x in (xl - prong_r / 2, xr + prong_r / 2):
+                parts += [
+                    _line(x, y_girdle + 2.0, x, y_table + 1.0),
+                    _circle(x, y_table + 1.0, prong_r),
+                ]
+            edge = prong_r
         if melee is not None:
             mr = melee.dimensions_mm.width / 2 * SCALE
             for sign in (-1, 1):
-                parts.append(_circle(cx + sign * (span / 2 + prong_r + 0.6 + mr), y_girdle, mr))
+                parts.append(_circle(cx + sign * (span / 2 + edge + 0.6 + mr), y_girdle, mr))
 
     # shoulder pavé: the shank's own stones, drawn true-size down the band
     pave = _find_stone(spec, "shoulder_pave", "pave_shoulders")
@@ -534,7 +688,8 @@ def _require_ring_sections(spec: Spec, what: str) -> None:
         raise SheetUnsupported(f"a {what} sheet needs band and ring_size (with inner diameter)")
 
 
-def _render_solitaire(spec: Spec, highlight_ref: str | None = None) -> str:
+def _render_solitaire(spec: Spec, highlight_ref: str | None = None,
+                      branding: Branding | None = None) -> str:
     if spec.stone.cut not in SUPPORTED_CUTS:
         raise SheetUnsupported(
             f"cut '{spec.stone.cut}' not supported on sheets yet; supported: {list(SUPPORTED_CUTS)}"
@@ -544,7 +699,8 @@ def _render_solitaire(spec: Spec, highlight_ref: str | None = None) -> str:
         _ring_body(spec, "full", highlight_ref)
         + _stone_schedule(spec, MARGIN + 4, 158, circled=True, totals=True)
     )
-    return _frame(spec, "TECHNICAL SHEET — SOLITAIRE RING", "3:1", body)
+    return _frame(spec, "TECHNICAL SHEET — SOLITAIRE RING", "3:1", body,
+                  branding=branding)
 
 
 def _find_stone(spec: Spec, *positions: str):
@@ -814,6 +970,8 @@ def _halo_top_view(spec: Spec, melee, cx: float, cy: float, *,
             parts += _circled_ref(fx + sign * 2.6, fy, _ref_letter(spec, s))
     if geo:
         parts += _facet_face_up(cx, cy, spec.stone.cut, 2 * rx, 2 * ry)  # center stone
+        if _setting_is_bezel(spec):
+            parts.append(_bezel_collar_top(cx, cy, rx, ry))
     if ann:
         parts += [
             _line(cx, cy - oby - 3, cx, cy + oby + 3, w=STROKE_DIM, color=FAINT, dash="3 1 0.5 1"),
@@ -895,7 +1053,8 @@ def _ring_body(spec: Spec, mode: str = "full",
     )
 
 
-def _render_halo(spec: Spec, highlight_ref: str | None = None) -> str:
+def _render_halo(spec: Spec, highlight_ref: str | None = None,
+                 branding: Branding | None = None) -> str:
     if spec.stone.cut not in SUPPORTED_CUTS:
         raise SheetUnsupported(
             f"halo center cut '{spec.stone.cut}' not supported; supported: {list(SUPPORTED_CUTS)}"
@@ -908,7 +1067,8 @@ def _render_halo(spec: Spec, highlight_ref: str | None = None) -> str:
         _ring_body(spec, "full", highlight_ref)
         + _stone_schedule(spec, MARGIN + 4, 158, circled=True, totals=True)
     )
-    return _frame(spec, "TECHNICAL SHEET — HALO RING", "3:1", body)
+    return _frame(spec, "TECHNICAL SHEET — HALO RING", "3:1", body,
+                  branding=branding)
 
 
 # --- oval station bangle ------------------------------------------------------
@@ -2054,19 +2214,24 @@ TEMPLATES = {
 }
 
 
-def render_sheet(spec: Spec, highlight_ref: str | None = None) -> str:
+def render_sheet(spec: Spec, highlight_ref: str | None = None,
+                 branding: Branding | None = None) -> str:
     """Render the annotated technical sheet for a validated spec.
 
     highlight_ref (a stone-schedule letter) rings that stone in red — the edit
     agent's 'isolate this change' mark. Only the ring templates honor it; it is
-    ignored elsewhere, and defaults off so the master sheet is unchanged."""
+    ignored elsewhere, and defaults off so the master sheet is unchanged.
+
+    branding stamps the designer's house name and signature in the title block
+    for pieces sent to clients and factories under their studio — presentation
+    only, never the spec. Also ring-only, and off by default."""
     render = TEMPLATES.get(spec.template)
     if render is None:
         raise SheetUnsupported(
             f"template '{spec.template}' not supported yet; supported: {list(TEMPLATES)}"
         )
-    if highlight_ref and spec.template in ("solitaire_prong", "halo_prong"):
-        return render(spec, highlight_ref)
+    if spec.template in ("solitaire_prong", "halo_prong"):
+        return render(spec, highlight_ref, branding)
     return render(spec)
 
 
@@ -2107,7 +2272,8 @@ def render_sheet_geometry(spec: Spec) -> str:
     return "\n".join(parts) + "\n"
 
 
-def render_blueprint_frame(spec: Spec, background_image: str) -> str:
+def render_blueprint_frame(spec: Spec, background_image: str,
+                           branding: Branding | None = None) -> str:
     """The blueprint sheet: the painted views (background_image, a full-bleed
     <image>) with EVERY number drawn by code on top — dims, gemstone key,
     title block. The engine paints; the record letters."""
@@ -2115,7 +2281,8 @@ def render_blueprint_frame(spec: Spec, background_image: str) -> str:
     body = _ring_body(spec, "annotation") + _stone_schedule(
         spec, MARGIN + 4, 158, circled=True, totals=True)
     title = _SHEET_TITLE.get(spec.template, "TECHNICAL SHEET")
-    return _frame(spec, title, "3:1", body, background=background_image)
+    return _frame(spec, title, "3:1", body, background=background_image,
+                  branding=branding)
 
 
 # --- true-size print sheet -------------------------------------------------------

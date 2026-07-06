@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 
 import pytest
@@ -10,6 +11,9 @@ GOLDEN_DIR = Path(__file__).parent / "golden"
 
 def _assert_matches_golden(svg: str, name: str):
     golden = GOLDEN_DIR / name
+    if os.environ.get("FACETTA_REGEN_GOLDEN"):  # intentional visual change
+        golden.write_text(svg)
+        return
     assert golden.exists(), f"golden file missing: {golden}"
     assert svg == golden.read_text(), (
         f"sheet no longer matches {name} — if the change is intentional, "
@@ -45,9 +49,37 @@ def test_exact_dimension_callouts_present(example_spec):
 def test_title_block_contents(example_spec):
     svg = render_sheet(Spec.model_validate(example_spec))
     assert "dsn_8Kx2" in svg and "v3" in svg
-    assert "2.00 ct sapphire, oval brilliant" in svg
+    assert "2.00 ct Sapphire" in svg and "oval brilliant" in svg
     assert "usr_ana" in svg and "2026-07-02" in svg
     assert "SCALE 3:1" in svg
+    assert "FACETTA" in svg  # maker's mark present with no designer branding
+
+
+def test_branding_stamps_house_and_signature(example_spec):
+    from facetta.svg_sheet import Branding
+
+    svg = render_sheet(Spec.model_validate(example_spec),
+                       branding=Branding(house="Maison Verre",
+                                         signature="A. Rossi"))
+    assert "Maison Verre" in svg          # the designer's house leads
+    assert "A. Rossi" in svg and "SIGNED" in svg
+    assert "made with FACETTA" in svg     # platform mark kept, subordinate
+
+
+def test_bezel_setting_draws_a_collar_not_prongs():
+    from facetta.concept import DesignRead, complete_design
+
+    read = DesignRead(species="diamond", cut="round", center_length_mm=7,
+                      center_width_mm=7, metal_material="platinum",
+                      setting_style="bezel")
+    bezel_spec, _ = complete_design(read, "bezel-set solitaire")
+    svg = render_sheet(bezel_spec)
+    assert 'fill-rule="evenodd"' in svg  # the collar annulus, top view
+
+    prong_read = DesignRead(species="diamond", cut="round", center_length_mm=7,
+                            center_width_mm=7, metal_material="platinum")
+    prong_spec, _ = complete_design(prong_read, "prong solitaire")
+    assert 'fill-rule="evenodd"' not in render_sheet(prong_spec)
 
 
 def test_unsupported_cut_fails_loudly(example_spec):
@@ -175,7 +207,7 @@ def test_loose_stone_sheet_matches_golden(loose_spec):
     assert "girdle: medium" in svg
     assert 'laser inscription on girdle: "FCT-2141Z"' in svg
     assert "SCALE 8:1" in svg  # single-focus scale ladder picked 8:1
-    assert "loose stone — unmounted" in svg
+    assert "Loose stone — unmounted" in svg
     # GIA proportion callouts derived from the drawn geometry
     assert "crown " in svg and "pavilion " in svg and "°" in svg
     assert "culet pointed" in svg

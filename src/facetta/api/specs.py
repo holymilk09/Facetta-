@@ -20,12 +20,19 @@ from facetta.render import (
 from facetta.prototype import compile_render_prompt, render_color_preview
 from facetta.spec import Spec
 from facetta.svg_sheet import (
-    SheetUnsupported, render_sheet, render_stack_sheet, render_true_size_sheet,
+    Branding, SheetUnsupported, render_sheet, render_stack_sheet,
+    render_true_size_sheet,
 )
 from facetta.validation import nesting_clearance, validate_spec
 from facetta.vocabulary import get_vocabulary
 
 router = APIRouter(prefix="/specs", tags=["specs"])
+
+
+def _branding(house: str | None, signature: str | None) -> Branding | None:
+    """A designer's studio mark for a sheet — presentation only, never the
+    spec. None when neither field is given, so unbranded sheets are unchanged."""
+    return Branding(house=house, signature=signature) if (house or signature) else None
 
 
 @router.post("/validate")
@@ -46,9 +53,14 @@ def validate(spec: Spec):
 
 
 @router.post("/sheet.svg")
-def sheet_preview(spec: Spec):
+def sheet_preview(spec: Spec, house: str | None = None,
+                  signature: str | None = None):
     """Stateless sheet preview: validate the spec, then render it. The saved,
-    versioned sheet lives under /designs/{id}/versions/{v}/sheet.svg."""
+    versioned sheet lives under /designs/{id}/versions/{v}/sheet.svg.
+
+    ?house= and ?signature= stamp the designer's studio name and signature in
+    the title block for pieces sent to clients and factories under their own
+    brand — presentation only; the dimensions are untouched."""
     result = validate_spec(spec, get_vocabulary())
     if not result.ok:
         return JSONResponse(
@@ -56,7 +68,7 @@ def sheet_preview(spec: Spec):
             content={"detail": [issue.as_detail() for issue in result.issues]},
         )
     try:
-        svg = render_sheet(result.spec)
+        svg = render_sheet(result.spec, branding=_branding(house, signature))
     except SheetUnsupported as exc:
         return JSONResponse(status_code=422, content={"detail": str(exc)})
     return Response(content=svg, media_type="image/svg+xml")
@@ -67,6 +79,7 @@ class ConceptRequest(BaseModel):
 
     brief: Annotated[str, Field(min_length=3, max_length=600)]
     model: str = "grok_direct"
+    variant: int = 0  # >0 asks Grok for a fresh take instead of the cached concept
 
 
 @router.post("/from-concept")
@@ -81,7 +94,7 @@ def from_concept(request: ConceptRequest):
     from facetta.concept import complete_design, generate_concept, read_design
 
     try:
-        image, _ = generate_concept(request.brief, request.model)
+        image, _ = generate_concept(request.brief, request.model, request.variant)
         read = read_design(image, request.brief)
     except RenderUnavailable as exc:
         status = 503 if "_KEY" in str(exc) else 502
@@ -105,10 +118,12 @@ def from_concept(request: ConceptRequest):
 
 
 @router.post("/blueprint-sheet.svg")
-def blueprint_sheet(spec: Spec, model: str = "grok_imagine"):
+def blueprint_sheet(spec: Spec, model: str = "grok_imagine",
+                    house: str | None = None, signature: str | None = None):
     """The presentation twin of the technical sheet: an image model paints the
     views into a graphite blueprint, code letters every dimension on top. The
-    crisp master stays at /sheet.svg. Rings only for now."""
+    crisp master stays at /sheet.svg. Rings only for now. ?house=/?signature=
+    stamp the designer's studio mark (presentation only)."""
     from facetta.blueprint import render_blueprint_sheet
 
     result = validate_spec(spec, get_vocabulary())
@@ -118,7 +133,8 @@ def blueprint_sheet(spec: Spec, model: str = "grok_imagine"):
             content={"detail": [issue.as_detail() for issue in result.issues]},
         )
     try:
-        svg, cached = render_blueprint_sheet(result.spec, model)
+        svg, cached = render_blueprint_sheet(
+            result.spec, model, branding=_branding(house, signature))
     except SheetUnsupported as exc:
         return JSONResponse(status_code=422, content={"detail": str(exc)})
     except RenderUnavailable as exc:

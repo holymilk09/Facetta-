@@ -7,6 +7,7 @@ composition anchors traced from the artwork itself (facetta.trace).
 """
 
 import math
+import os
 from pathlib import Path
 
 import pytest
@@ -112,6 +113,9 @@ class TestSprayGeometry:
     def test_sheet_matches_golden(self, spray_spec):
         svg = render_sheet(_validated(spray_spec))
         golden = GOLDEN_DIR / "leaf_spray_sheet.svg"
+        if os.environ.get("FACETTA_REGEN_GOLDEN"):  # intentional visual change
+            golden.write_text(svg)
+            return
         assert golden.exists(), f"golden file missing: {golden}"
         assert svg == golden.read_text(), (
             "sheet no longer matches leaf_spray_sheet.svg — if the change is "
