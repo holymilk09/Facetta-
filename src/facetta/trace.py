@@ -114,22 +114,46 @@ def _gold_mask(im: Image.Image) -> list[list[bool]]:
     return mask
 
 
-def trace_spray(image_path: str) -> dict:
-    """Trace a leaf-spray artwork into normalized composition anchors.
+@dataclass(frozen=True)
+class TraceResult:
+    """One trace, both coordinate systems: normalized anchors for the spec's
+    composition section, original-image pixel anchors for overlays that must
+    point at the drawing itself."""
+
+    clusters: list[list[float]]                     # normalized [x, y, r]
+    vein: list[list[float]]                         # normalized [x, y]
+    clusters_px: list[tuple[float, float, float]]   # original-image px
+    vein_px: list[tuple[float, float]]
+    image_size: tuple[int, int]                     # original (w, h)
+    span_px: float                                  # full drawn reach, px
+
+
+def trace_spray(image_path) -> dict:
+    """Normalized composition anchors — see trace_spray_detailed."""
+    t = trace_spray_detailed(image_path)
+    return {"clusters": t.clusters, "vein": t.vein}
+
+
+def trace_spray_detailed(image) -> TraceResult:
+    """Trace a leaf-spray artwork into composition anchors.
 
     Finds the master study (the largest-drawn chain of green quatrefoils),
     walks it terminal-first, infers the slot of a drawn-but-not-green cluster
     (the diamond quatrefoil) from its double-width gap, and measures the
     piece's full reach from the gold foliage beyond the last cluster.
 
-    Returns {"clusters": [[x, y, r], ...], "vein": [[x, y], ...]} — all
-    normalized so the tip-most cluster center is (0, 0) and the piece's full
-    drawn reach is 1.0: scale by the spec's usable reach and the drawing's
-    own proportions come back in mm. Same image in, same anchors out."""
-    im = Image.open(image_path).convert("RGB")
+    Normalized anchors put the tip-most cluster center at (0, 0) with the
+    piece's full drawn reach = 1.0: scale by the spec's usable reach and the
+    drawing's own proportions come back in mm. Pixel anchors are in the
+    ORIGINAL image's coordinates, for annotating the artwork itself.
+    Same image in, same anchors out. Accepts a path or a binary file-like."""
+    im = Image.open(image).convert("RGB")
+    orig_size = im.size
     scale = TRACE_MAX_SIDE / max(im.size)
     if scale < 1:
         im = im.resize((round(im.width * scale), round(im.height * scale)))
+    else:
+        scale = 1.0
     blobs = _components(_green_mask(im), min_area=max(24, im.width * im.height // 20000))
     clusters = _group_into_clusters(blobs, join_px=im.width * 0.055)
     if len(clusters) < 3:
@@ -192,4 +216,9 @@ def trace_spray(image_path: str) -> dict:
     norm = [[x, y, r] for x, y, r in norm]
     # the vein hugs the chain from its convex side
     vein = [[round(x, 4), round(y - r * 0.9, 4)] for x, y, r in norm]
-    return {"clusters": norm, "vein": vein}
+    # pixel anchors back-projected from the segmentation scale to the original
+    clusters_px = [(x / scale, y / scale, r / scale) for x, y, r in slots]
+    vein_px = [(x / scale, (y - r * 0.9) / scale) for x, y, r in slots]
+    return TraceResult(clusters=norm, vein=vein, clusters_px=clusters_px,
+                       vein_px=vein_px, image_size=orig_size,
+                       span_px=span / scale)

@@ -70,6 +70,85 @@ class RenderUnavailable(Exception):
     """No key, or the provider cannot be reached."""
 
 
+def _sniff_media_type(image: bytes) -> str:
+    """Engines answer JPEG under .png names — trust magic bytes, not names."""
+    if image[:3] == b"\xff\xd8\xff":
+        return "image/jpeg"
+    if image[:8] == b"\x89PNG\r\n\x1a\n":
+        return "image/png"
+    if image[:4] == b"RIFF" and image[8:12] == b"WEBP":
+        return "image/webp"
+    return "image/png"
+
+
+def _call_engine(model: str, instruction: str, image_data_uri: str,
+                 extra: dict) -> bytes:
+    """One instruction + one edit-input image through a configured engine."""
+    engine_cfg = MODELS[model]
+    provider_key = _provider_key(engine_cfg["key_env"])
+    if not provider_key:
+        raise RenderUnavailable(
+            f"no {engine_cfg['key_env']} configured — set it in the "
+            "environment or .env")
+
+    import httpx
+
+    payload = engine_cfg["payload"](instruction, image_data_uri, extra)
+    try:
+        response = httpx.post(
+            engine_cfg["endpoint"], json=payload, timeout=180.0,
+            headers={"Authorization": f"{engine_cfg['auth']} {provider_key}"})
+        response.raise_for_status()
+        image_url = engine_cfg["parse"](response.json())
+        if image_url.startswith("data:"):
+            return base64.b64decode(image_url.split(",", 1)[1])
+        image = httpx.get(image_url, timeout=120.0)
+        image.raise_for_status()
+        return image.content
+    except Exception as exc:  # network, auth, schema — all one story upstream
+        raise RenderUnavailable(f"render provider failed: {exc}") from exc
+
+
+def artwork_cache_key(image_bytes: bytes, style: str,
+                      model: str = "grok_imagine") -> str:
+    """Content-addressed like spec renders: the artwork's bytes pin the
+    composition, the instruction carries the style — either changing means
+    a genuinely new image. ':artwork:' namespaces these away from spec keys."""
+    from facetta.mockup import compile_artwork_restyle_request
+
+    body = compile_artwork_restyle_request(style)
+    return hashlib.sha256(
+        (PIPELINE_VERSION + ":artwork:" + model + ":"
+         + hashlib.sha256(image_bytes).hexdigest()
+         + ":" + body["instruction"]).encode()
+    ).hexdigest()[:32]
+
+
+def restyle_artwork(image_bytes: bytes, media_type: str = "image/jpeg",
+                    style: str = "rendered_color",
+                    model: str = "grok_imagine") -> tuple[bytes, bool]:
+    """Restyle the designer's artwork page IN PLACE — the page IS the
+    composition, so there is no control image and no spec: the engine only
+    changes the rendering style, never the layout. Returns (bytes, cached)."""
+    from facetta.mockup import compile_artwork_restyle_request
+
+    if model not in MODELS:
+        raise RenderUnavailable(
+            f"unknown render model '{model}'; options: {list(MODELS)}")
+    body = compile_artwork_restyle_request(style)  # validates the style first
+    key = artwork_cache_key(image_bytes, style, model)
+    CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    cached = CACHE_DIR / f"{key}.png"
+    if cached.exists():
+        return cached.read_bytes(), True
+    data_uri = (f"data:{media_type};base64,"
+                + base64.b64encode(image_bytes).decode())
+    image = _call_engine(model, body["instruction"], data_uri,
+                         body["provider_payload"])
+    cached.write_bytes(image)
+    return image, False
+
+
 def _provider_key(key_env: str) -> str | None:
     if os.environ.get(key_env):
         return os.environ[key_env]
@@ -106,39 +185,16 @@ def render_finished_image(spec: Spec, style: str = "photo",
     if cached.exists():
         return cached.read_bytes(), True
 
-    engine_cfg = MODELS[model]
-    provider_key = _provider_key(engine_cfg["key_env"])
-    if not provider_key:
-        raise RenderUnavailable(
-            f"no {engine_cfg['key_env']} configured — set it in the "
-            "environment or .env")
-
     import cairosvg  # deferred: rasterizer needs system cairo
-    import httpx
 
     from facetta.plate import render_control_image
 
     control_png = cairosvg.svg2png(
         bytestring=render_control_image(spec).encode(), output_width=1485)
     body = compile_finish_request(spec, style, lighting)
-    payload = engine_cfg["payload"](
-        body["instruction"],
+    png = _call_engine(
+        model, body["instruction"],
         "data:image/png;base64," + base64.b64encode(control_png).decode(),
         body["provider_payload"])
-    try:
-        response = httpx.post(
-            engine_cfg["endpoint"], json=payload, timeout=180.0,
-            headers={"Authorization": f"{engine_cfg['auth']} {provider_key}"})
-        response.raise_for_status()
-        image_url = engine_cfg["parse"](response.json())
-        if image_url.startswith("data:"):
-            png = base64.b64decode(image_url.split(",", 1)[1])
-        else:
-            image = httpx.get(image_url, timeout=120.0)
-            image.raise_for_status()
-            png = image.content
-    except Exception as exc:  # network, auth, schema — all one story upstream
-        raise RenderUnavailable(f"render provider failed: {exc}") from exc
-
     cached.write_bytes(png)
     return png, False

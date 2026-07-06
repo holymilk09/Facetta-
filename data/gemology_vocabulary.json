@@ -443,6 +443,7 @@
   "manufacturing_tolerances": {
     "note": "Casting-workshop CAD boundaries (data/reference/manufacturing_tolerances.csv). culet_to_finger_rail_mm is enforced by validation; the rest inform future detailing features (milgrain, engraving).",
     "culet_to_finger_rail_mm": 0.5,
+    "general_linear_tolerance_mm": 0.1,
     "milgrain": {"min_bead_diameter_mm": 0.5, "inter_bead_spacing_mm": 0.02, "distance_to_edge_mm": 0.2, "height_above_rail_mm": 0.3},
     "gallery_rail": {"min_bar_thickness_mm": 0.4, "inner_joint_opening_mm": 0.4},
     "prong": {"max_seat_cut_fraction": 0.25},

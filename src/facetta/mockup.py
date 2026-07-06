@@ -76,6 +76,73 @@ class SceneUnsupported(ValueError):
         self.valid = valid
 
 
+# how a restyled artwork page may look — the composition NEVER changes
+ARTWORK_STYLES = {
+    "rendered_color": (
+        "repaint every study as polished photoreal jewelry — real metal with "
+        "true reflections, gems with genuine depth, fire and inner light, "
+        "reading as finished goldsmithing photographed for a factory "
+        "presentation sheet"),
+    "ink_lineart": (
+        "redraw every study as clean uncolored technical line art — fine "
+        "uniform black ink contours on white, closed precise outlines, no "
+        "shading, no color, no wash, no hatching"),
+}
+
+
+def compile_artwork_restyle_request(style: str = "rendered_color") -> dict:
+    """Restyle the designer's artwork page IN PLACE.
+
+    The Grok-chat experiment proved both halves of this design: an
+    image-editing model restyles a page with near-perfect compositional
+    fidelity when asked to change NOTHING about the layout — and letters
+    pure fiction the moment it is allowed to annotate. So the instruction
+    forbids re-composition and all text; every number a factory reads is
+    drawn by code afterwards (facetta.overlay)."""
+    if style not in ARTWORK_STYLES:
+        raise SceneUnsupported(f"unknown artwork style '{style}'",
+                               sorted(ARTWORK_STYLES))
+    instruction = (
+        "The attached image is a jewelry designer's hand-drawn artwork sheet "
+        "containing several studies of one piece. Restyle it IN PLACE, "
+        "preserving the page composition EXACTLY as drawn: every study stays "
+        "at its own position, scale, and orientation; every cluster, stone, "
+        "leaf, and stroke stays where the designer put it. Do NOT add, "
+        "remove, move, resize, mirror, or merge any study, cluster, stone, "
+        "or leaf; do NOT render the piece only once or recompose the page; "
+        "do NOT crop, rotate, or reframe. "
+        + ARTWORK_STYLES[style] + ". Reproduce only the drawn jewelry "
+        "geometry: add NO text, letters, numbers, dimensions, arrows, "
+        "callouts, labels, title blocks, stamps, or annotations of any "
+        "kind, and omit any handwriting present in the original."
+    )
+    return {
+        "instruction": instruction,
+        "negative_prompt": ", ".join([
+            "text", "letters", "numbers", "handwriting", "dimensions",
+            "measurements", "arrows", "labels", "callouts", "title block",
+            "stamps", "watermark", "logo", "signature", "brand names",
+            "extra clusters", "missing clusters", "extra studies",
+            "missing studies", "moved elements", "merged studies",
+            "single centered piece", "recomposed page", "cropped",
+            "hands", "skin"]),
+        "style": style,
+        "control": {
+            "image": "the uploaded artwork page, sent as the edit input",
+            "role": "the page IS the composition: restyle in place, never recompose",
+        },
+        "provider_payload": {
+            "guidance_scale": 2.5,
+            "num_inference_steps": 28,
+        },
+        "fidelity_checklist": [
+            "same number of studies as the source page",
+            "every cluster count per study unchanged",
+            "zero lettering anywhere — reject and re-run if any text appears",
+        ],
+    }
+
+
 def compile_finish_request(spec, style: str = "photo",
                            lighting: str = "studio") -> dict:
     """Have an image model FINISH our control image, not imagine a piece.

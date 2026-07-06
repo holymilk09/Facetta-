@@ -67,6 +67,26 @@ through all three models, compare against the fidelity checklist (14 surround
 stones alternating, claws/cap as drawn, no invented text), send images to the
 founder.
 
+2026-07-06 v4 — ARTWORK-FIRST RENDERING. Founder benchmark: Grok Imagine
+CHAT restyled the artwork page more faithfully than our pipeline — because
+chat restyles IN PLACE (no re-composition), while its annotations are pure
+fiction (garbled words, invented mm, wrong gemology). New split, per the
+constitution: engines restyle pixels in place; code letters every number.
+- POST /specs/artwork-restyle.png (+ /artwork-restyle-request):
+  ARTWORK_STYLES = rendered_color | ink_lineart; instruction forbids
+  re-composition and ALL lettering; cached by (image bytes, instruction,
+  model). Verified live on the designer's sheet: all three studies in
+  place, counts intact, zero text, both styles, both Grok routes.
+- POST /specs/annotated-artwork.svg: facetta/overlay.py embeds the artwork
+  (or its restyle) and letters it from the VALIDATED SPEC — schedule refs
+  shared with the technical sheet, cluster callouts on traced pixel
+  anchors (trace_spray_detailed), dimensions box, tolerance from the new
+  vocabulary key general_linear_tolerance_mm. Cluster-count mismatch
+  refuses to letter ("cannot be lettered honestly").
+- render.py: _call_engine extracted; restyle path reuses the engine table.
+Note for ink_lineart annotation: pass the ORIGINAL artwork as
+anchor_image_base64 (line art has no green ink to trace).
+
 2026-07-06 v3 — ARTWORK TRACING (founder audit: "we have the mathematics but
 we are ruining the designer's design"). Root cause found: the drawing's own
 vector geometry never entered the system — stages control→engines were

@@ -8,11 +8,15 @@ from facetta import prose as prose_layer
 from facetta.db import utcnow
 from facetta.dxf import svg_to_dxf
 from facetta.mockup import (
-    SceneUnsupported, compile_finish_request, compile_render_request,
-    compile_restage_request,
+    SceneUnsupported, compile_artwork_restyle_request, compile_finish_request,
+    compile_render_request, compile_restage_request,
 )
+from facetta.overlay import OverlayUnsupported, render_annotated_artwork
 from facetta.plate import render_control_image, render_presentation_plate
-from facetta.render import RenderUnavailable, render_finished_image
+from facetta.render import (
+    RenderUnavailable, _sniff_media_type, render_finished_image,
+    restyle_artwork,
+)
 from facetta.prototype import compile_render_prompt, render_color_preview
 from facetta.spec import Spec
 from facetta.svg_sheet import (
@@ -368,6 +372,90 @@ def restage_request(body: RestageRequestBody):
             status_code=422,
             content={"detail": str(exc), "valid_options": exc.valid},
         )
+
+
+class ArtworkRestyleBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    image_base64: Annotated[str, Field(min_length=1, max_length=14_000_000)]
+    media_type: Annotated[str, Field(pattern=r"^image/(jpeg|png|webp)$")] = "image/jpeg"
+    style: str = "rendered_color"
+
+
+@router.post("/artwork-restyle.png")
+def artwork_restyle(body: ArtworkRestyleBody, model: str = "grok_imagine"):
+    """Restyle the designer's artwork page IN PLACE — rendered color or ink
+    line art. The page IS the composition: nothing is added, removed, moved,
+    or lettered. Numbers belong to /specs/annotated-artwork.svg, where code
+    draws them from the validated spec."""
+    import binascii
+
+    try:
+        image_bytes = __import__("base64").b64decode(body.image_base64,
+                                                     validate=True)
+    except (binascii.Error, ValueError):
+        return JSONResponse(status_code=422,
+                            content={"detail": "image_base64 is not valid base64"})
+    try:
+        image, cached = restyle_artwork(image_bytes, body.media_type,
+                                        body.style, model)
+    except SceneUnsupported as exc:
+        return JSONResponse(status_code=422,
+                            content={"detail": str(exc), "valid_options": exc.valid})
+    except RenderUnavailable as exc:
+        status = 503 if "_KEY" in str(exc) else 502
+        return JSONResponse(status_code=status, content={"detail": str(exc)})
+    return Response(content=image, media_type=_sniff_media_type(image),
+                    headers={"X-Render-Cache": "hit" if cached else "miss"})
+
+
+@router.post("/artwork-restyle-request")
+def artwork_restyle_request(style: str = "rendered_color"):
+    """The compiled restyle instruction — for callers driving an engine
+    themselves. Restyle-in-place, no re-composition, zero lettering."""
+    try:
+        return compile_artwork_restyle_request(style)
+    except SceneUnsupported as exc:
+        return JSONResponse(status_code=422,
+                            content={"detail": str(exc), "valid_options": exc.valid})
+
+
+class AnnotatedArtworkBody(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    spec: Spec
+    image_base64: Annotated[str, Field(min_length=1, max_length=14_000_000)]
+    anchor_image_base64: Annotated[str, Field(max_length=14_000_000)] = ""
+
+
+@router.post("/annotated-artwork.svg")
+def annotated_artwork(body: AnnotatedArtworkBody):
+    """The artwork (or its in-place restyle) lettered by CODE: schedule
+    letters, cluster callouts, dimensions and tolerances all from the
+    validated spec — image models letter fiction, so they never letter here.
+    anchor_image_base64 carries the ORIGINAL artwork when the display image
+    cannot be traced (ink line art has no colored stones)."""
+    import base64 as b64
+    import binascii
+
+    result = validate_spec(body.spec, get_vocabulary())
+    if not result.ok:
+        return JSONResponse(
+            status_code=422,
+            content={"detail": [issue.as_detail() for issue in result.issues]},
+        )
+    try:
+        image_bytes = b64.b64decode(body.image_base64, validate=True)
+        anchor = (b64.b64decode(body.anchor_image_base64, validate=True)
+                  if body.anchor_image_base64 else None)
+    except (binascii.Error, ValueError):
+        return JSONResponse(status_code=422,
+                            content={"detail": "image payload is not valid base64"})
+    try:
+        svg = render_annotated_artwork(result.spec, image_bytes, anchor)
+    except (OverlayUnsupported, ValueError) as exc:
+        return JSONResponse(status_code=422, content={"detail": str(exc)})
+    return Response(content=svg, media_type="image/svg+xml")
 
 
 @router.post("/sheet.dxf")
