@@ -104,6 +104,57 @@ def create_version(design_id: str, submission: DesignSubmission, db: DbSession):
     return _store_version(db, design, spec, version=latest + 1, created_by=submission.created_by)
 
 
+class EditRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    instruction: Annotated[str, Field(min_length=1, max_length=2000)]
+    created_by: str = "usr_pending"
+
+
+@router.post("/{design_id}/edit")
+def edit_design(design_id: str, body: EditRequest, db: DbSession):
+    """The edit loop: a plain-language change on the latest version. Claude
+    translates it into an edited spec, the validator gates it, and only a
+    physically real edit is written as a new immutable version. An impossible
+    ask comes back with the density correction and NO version is saved —
+    conversational editing that cannot ship a wrong stone."""
+    from facetta.agent import plan_edit
+    from facetta.prose import ProseUnavailable
+
+    design = db.get(Design, design_id)
+    if design is None:
+        raise HTTPException(status_code=404, detail=f"unknown design '{design_id}'")
+    latest = db.scalar(
+        select(func.max(DesignVersion.version)).where(
+            DesignVersion.design_id == design_id))
+    if latest is None:
+        raise HTTPException(status_code=404, detail=f"design '{design_id}' has no versions")
+    current = Spec.model_validate(_get_version(db, design_id, latest).spec)
+
+    try:
+        result = plan_edit(body.instruction, current)
+    except ProseUnavailable as exc:
+        return JSONResponse(status_code=503, content={"detail": str(exc)})
+
+    validated = validate_spec(result.spec, get_vocabulary())
+    if not validated.ok:
+        # the edit is physically impossible — surface the correction, save nothing
+        return JSONResponse(status_code=422, content={
+            "detail": [issue.as_detail() for issue in validated.issues],
+            "message": result.message,
+            "changed_fields": result.changed_fields,
+            "rejected": True,
+        })
+    stored = _store_version(db, design, validated.spec, latest + 1, body.created_by)
+    return {
+        "new_version": latest + 1,
+        "changed_fields": result.changed_fields,
+        "isolate_ref": result.isolate_ref,
+        "message": result.message,
+        "spec": stored,
+    }
+
+
 @router.get("")
 def list_designs(db: DbSession, collection: str | None = None):
     query = (
@@ -161,10 +212,12 @@ def get_version(design_id: str, version: int, db: DbSession):
 
 
 @router.get("/{design_id}/versions/{version}/sheet.svg")
-def get_sheet(design_id: str, version: int, db: DbSession):
+def get_sheet(design_id: str, version: int, db: DbSession,
+              highlight: str | None = None):
+    """?highlight=A rings that stone in red — the edit agent's isolate mark."""
     row = _get_version(db, design_id, version)
     try:
-        svg = render_sheet(Spec.model_validate(row.spec))
+        svg = render_sheet(Spec.model_validate(row.spec), highlight_ref=highlight)
     except SheetUnsupported as exc:
         return JSONResponse(status_code=422, content={"detail": str(exc)})
     return Response(content=svg, media_type="image/svg+xml")

@@ -67,6 +67,32 @@ through all three models, compare against the fidelity checklist (14 surround
 stones alternating, claws/cap as drawn, no invented text), send images to the
 founder.
 
+2026-07-06 v7 — GROK-PAINTED BLUEPRINT SHEET + EDIT-LOOP AGENT (founder:
+"ours looks unfinished, are we even using Grok/an agent?" — answer was no
+on both; the sheet was the one output the engine never touched). The fusion,
+finally applied to the sheet itself:
+- Ring views (svg_sheet) split into geometry/annotation layers via a `mode`
+  param; mode=full is byte-identical so every golden held. render_sheet_
+  geometry() = the piece, zero lettering; render_blueprint_frame() letters
+  the dims/key/title over a background image (_frame gained a `background`
+  arg). ARTWORK_STYLES['blueprint'] = graphite technical illustration.
+  blueprint.py: geometry raster → Grok blueprint restyle → full-bleed image
+  behind the code-drawn numbers. POST /specs/blueprint-sheet.svg + versioned
+  route. The crisp master stays /sheet.svg (instant, offline, DXF-exact).
+  Verified live: Grok shaded the ruby ring's three views, our numbers
+  lettered on top and aligned. Note: geometry control is monochrome line-art,
+  so Grok paints a graphite (colorless) rendering — correct for a blueprint.
+- agent.py: plan_edit(instruction, current_spec) → EditResult via Claude
+  (translation only; reuses prose.py vocabulary digest). POST
+  /designs/{id}/edit — Claude edits, the VALIDATOR gates, a real edit becomes
+  a new immutable version, an impossible one (0.20 ct marquise) is REJECTED
+  422 with the density correction and NOTHING is saved. Multi-turn memory =
+  the version chain. Isolate highlight: render_sheet(spec, highlight_ref) and
+  ?highlight= ring the changed stone in red ("ISOLATED · A"). Constitution
+  held: Claude never letters a number into the record; the validator does.
+  LIVE agent needs ANTHROPIC_API_KEY (like FAL/XAI); without it the endpoint
+  returns a clean 503. 262 tests.
+
 2026-07-06 v6 — TECHNICAL SHEET FORMAT v2 (founder audit vs an AI restyle
 of our own sheet: better format, fictional data — adopted the format,
 kept the record). Ring renderers rebuilt: halo top view draws EVERY

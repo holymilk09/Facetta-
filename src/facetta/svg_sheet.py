@@ -43,6 +43,7 @@ FONT = "Georgia, 'Times New Roman', serif"
 
 SUPPORTED_CUTS = ("round_brilliant", "oval_brilliant")  # solitaire / halo center cuts
 BANGLE_STATION_CUTS = ("princess", "asscher")
+ISOLATE_RED = "#c0392b"  # the edit agent's "isolate this stone" highlight
 
 
 class SheetUnsupported(Exception):
@@ -129,7 +130,22 @@ def _ref_letter(spec: Spec, stone) -> str:
     return chr(65 + ([spec.stone] + spec.side_stones).index(stone))
 
 
-def _top_view(spec: Spec, cx: float, cy: float, *, mode: str = "full") -> list[str]:
+def _isolate_ring(cx: float, cy: float, rx: float, ry: float,
+                  ref: str) -> list[str]:
+    """The edit agent's isolate highlight: a bold red ring around the changed
+    stone, the 'outline it in red' the founder asked for."""
+    pad = 2.4
+    return [
+        f'<ellipse cx="{cx:.2f}" cy="{cy:.2f}" rx="{rx + pad:.2f}" '
+        f'ry="{ry + pad:.2f}" fill="none" stroke="{ISOLATE_RED}" '
+        f'stroke-width="0.6" stroke-dasharray="2 1.2"/>',
+        _text(cx, cy - ry - pad - 2, f"ISOLATED · {ref}", size=2.8,
+              color=ISOLATE_RED, halo=True),
+    ]
+
+
+def _top_view(spec: Spec, cx: float, cy: float, *, mode: str = "full",
+              highlight_ref: str | None = None) -> list[str]:
     # mode splits the view so an image model can paint just the geometry while
     # code letters the annotation on top: geometry (metal, stone, prongs) vs
     # annotation (centerlines, dims, labels). "full" keeps them interleaved in
@@ -195,6 +211,8 @@ def _top_view(spec: Spec, cx: float, cy: float, *, mode: str = "full") -> list[s
             *_dim_h(left_x, right_x, bottom + 5, f"{dim_b} mm"),
             _text(cx, bottom + 14, "TOP VIEW", size=3.6, style=' letter-spacing="1.2"'),
         ]
+        if highlight_ref == "A":  # the centre stone is schedule ref A
+            parts += _isolate_ring(cx, cy, rx, ry, "A")
     return parts
 
 
@@ -516,14 +534,14 @@ def _require_ring_sections(spec: Spec, what: str) -> None:
         raise SheetUnsupported(f"a {what} sheet needs band and ring_size (with inner diameter)")
 
 
-def _render_solitaire(spec: Spec) -> str:
+def _render_solitaire(spec: Spec, highlight_ref: str | None = None) -> str:
     if spec.stone.cut not in SUPPORTED_CUTS:
         raise SheetUnsupported(
             f"cut '{spec.stone.cut}' not supported on sheets yet; supported: {list(SUPPORTED_CUTS)}"
         )
     _require_ring_sections(spec, "solitaire")
     body = (
-        _ring_body(spec, "full")
+        _ring_body(spec, "full", highlight_ref)
         + _stone_schedule(spec, MARGIN + 4, 158, circled=True, totals=True)
     )
     return _frame(spec, "TECHNICAL SHEET — SOLITAIRE RING", "3:1", body)
@@ -721,7 +739,7 @@ def _facet_face_up(cx: float, cy: float, cut_id: str, w_pp: float, l_pp: float,
 
 
 def _halo_top_view(spec: Spec, melee, cx: float, cy: float, *,
-                   mode: str = "full") -> list[str]:
+                   mode: str = "full", highlight_ref: str | None = None) -> list[str]:
     """The halo as DESIGNED: every surround group drawn cut-true and
     interleaved on the ring — a marquise sunburst draws marquise petals
     radiating with rounds nested between them, never a row of dots."""
@@ -829,6 +847,10 @@ def _halo_top_view(spec: Spec, melee, cx: float, cy: float, *,
             _text(cx, bottom + 19, f"{note}, 0.3 mm off center girdle",
                   size=2.8, color=FAINT),
         ]
+        if highlight_ref == "A":         # centre stone
+            parts += _isolate_ring(cx, cy, rx, ry, "A")
+        elif highlight_ref:              # a surround group: ring the whole halo
+            parts += _isolate_ring(cx, cy, oax, oby, highlight_ref)
     return parts
 
 
@@ -853,25 +875,27 @@ def _halo_side_view(spec: Spec, melee, cx: float, cy: float, *,
     return parts
 
 
-def _ring_body(spec: Spec, mode: str = "full") -> list[str]:
+def _ring_body(spec: Spec, mode: str = "full",
+               highlight_ref: str | None = None) -> list[str]:
     """The three ring views at their sheet positions, in the requested layer.
     Shared by the master sheet, the geometry control, and the annotation
     overlay so the three always align coordinate-for-coordinate."""
     if spec.template == "halo_prong":
         melee = _find_stone(spec, "halo", "surround")
         return (
-            _halo_top_view(spec, melee, 56, BASELINE, mode=mode)
+            _halo_top_view(spec, melee, 56, BASELINE, mode=mode,
+                           highlight_ref=highlight_ref)
             + _front_view(spec, 140, BASELINE, melee=melee, mode=mode)
             + _halo_side_view(spec, melee, 208, BASELINE, mode=mode)
         )
     return (
-        _top_view(spec, 58, BASELINE, mode=mode)
+        _top_view(spec, 58, BASELINE, mode=mode, highlight_ref=highlight_ref)
         + _front_view(spec, 138, BASELINE, mode=mode)
         + _side_view(spec, 208, BASELINE, mode=mode)
     )
 
 
-def _render_halo(spec: Spec) -> str:
+def _render_halo(spec: Spec, highlight_ref: str | None = None) -> str:
     if spec.stone.cut not in SUPPORTED_CUTS:
         raise SheetUnsupported(
             f"halo center cut '{spec.stone.cut}' not supported; supported: {list(SUPPORTED_CUTS)}"
@@ -881,7 +905,7 @@ def _render_halo(spec: Spec) -> str:
     if melee is None:
         raise SheetUnsupported("halo_prong needs a side_stones entry with position 'halo'")
     body = (
-        _ring_body(spec, "full")
+        _ring_body(spec, "full", highlight_ref)
         + _stone_schedule(spec, MARGIN + 4, 158, circled=True, totals=True)
     )
     return _frame(spec, "TECHNICAL SHEET — HALO RING", "3:1", body)
@@ -2030,13 +2054,19 @@ TEMPLATES = {
 }
 
 
-def render_sheet(spec: Spec) -> str:
-    """Render the annotated technical sheet for a validated spec."""
+def render_sheet(spec: Spec, highlight_ref: str | None = None) -> str:
+    """Render the annotated technical sheet for a validated spec.
+
+    highlight_ref (a stone-schedule letter) rings that stone in red — the edit
+    agent's 'isolate this change' mark. Only the ring templates honor it; it is
+    ignored elsewhere, and defaults off so the master sheet is unchanged."""
     render = TEMPLATES.get(spec.template)
     if render is None:
         raise SheetUnsupported(
             f"template '{spec.template}' not supported yet; supported: {list(TEMPLATES)}"
         )
+    if highlight_ref and spec.template in ("solitaire_prong", "halo_prong"):
+        return render(spec, highlight_ref)
     return render(spec)
 
 
