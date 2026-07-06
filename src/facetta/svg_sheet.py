@@ -102,6 +102,33 @@ def _ext(x1: float, y1: float, x2: float, y2: float) -> str:
     return _line(x1, y1, x2, y2, w=STROKE_DIM, color=FAINT, dash="0.8 0.8")
 
 
+def _circled_ref(x: float, y: float, letter: str) -> list[str]:
+    """A schedule reference the factory can chase: Ⓐ-style circled letter."""
+    return [
+        f'<circle cx="{x:.2f}" cy="{y:.2f}" r="2.2" fill="{PAPER}" '
+        f'stroke="{INK}" stroke-width="{STROKE_DIM * 1.6}"/>',
+        _text(x, y + 1.05, letter, size=2.8),
+    ]
+
+
+def _pointer(tx: float, ty: float, fx: float, fy: float) -> list[str]:
+    """Annotation pointer: a leader from (fx, fy) with an arrowhead landing
+    on the part at (tx, ty)."""
+    ang = math.atan2(ty - fy, tx - fx)
+    barb = lambda da: (tx - 2.0 * math.cos(ang + da), ty - 2.0 * math.sin(ang + da))  # noqa: E731
+    (b1x, b1y), (b2x, b2y) = barb(0.42), barb(-0.42)
+    return [
+        _line(fx, fy, tx, ty, w=STROKE_DIM),
+        _line(tx, ty, b1x, b1y, w=STROKE_DIM),
+        _line(tx, ty, b2x, b2y, w=STROKE_DIM),
+    ]
+
+
+def _ref_letter(spec: Spec, stone) -> str:
+    """The stone entry's schedule letter — one source for every view."""
+    return chr(65 + ([spec.stone] + spec.side_stones).index(stone))
+
+
 def _top_view(spec: Spec, cx: float, cy: float) -> list[str]:
     stone = spec.stone
     length = stone.dimensions_mm.length * SCALE
@@ -207,6 +234,30 @@ def _side_view(spec: Spec, cx: float, cy: float) -> list[str]:
             f'fill="#ffffff" stroke="{INK}" stroke-width="{STROKE_MAIN}"/>',
         ]
 
+    # shoulder pavé along the hoop's shoulders, count-true per side
+    pave = _find_stone(spec, "shoulder_pave", "pave_shoulders")
+    if pave is not None:
+        pr = pave.dimensions_mm.width / 2 * SCALE
+        r_dot = outer_r - (spec.band.thickness_mm * SCALE) / 2
+        step = 2 * pr * 1.15 / r_dot  # arc step between pavé centers
+        for sign in (-1, 1):
+            for k in range(pave.count // 2):
+                a = -math.pi / 2 + sign * (0.32 + k * step)
+                parts.append(_circle(cx + r_dot * math.cos(a),
+                                     ring_cy + r_dot * math.sin(a), pr))
+        a_ref = -math.pi / 2 + 0.32 + (pave.count // 2) * step / 2
+        rx_ref = cx + r_dot * math.cos(a_ref)
+        ry_ref = ring_cy + r_dot * math.sin(a_ref)
+        fx, fy = cx + outer_r + 8, ring_cy - outer_r * 0.55
+        parts += _pointer(rx_ref + pr, ry_ref, fx, fy)
+        parts += _circled_ref(fx + 2.6, fy, _ref_letter(spec, pave))
+
+    if spec.band.profile == "comfort_fit":
+        fx, fy = cx + inner_r * 0.5, ring_cy + inner_r + 8
+        parts += _pointer(cx + inner_r * 0.38, ring_cy + inner_r * 0.92, fx, fy)
+        parts.append(_text(fx + 1.5, fy + 1.0, "comfort-fit inner profile",
+                           size=2.8, anchor="start", color=FAINT, halo=True))
+
     dim_id = _fmt(spec.ring_size.inner_diameter_mm)
     dim_g = _fmt(spec.setting.gallery_height_mm or 0.0)
     dim_d = _fmt(stone.dimensions_mm.depth)
@@ -289,8 +340,9 @@ def _footer_key() -> list[str]:
         f'<rect x="{MARGIN + 114:.2f}" y="{y - 1.5:.2f}" width="8" height="3" '
         f'fill="url(#hatch)" stroke="{INK}" stroke-width="{STROKE_DIM}"/>',
         _text(MARGIN + 124, ty, "metal section", size=2.6, anchor="start", color=FAINT),
-        _text(SHEET_W - MARGIN - 104, ty, "all dimensions in mm", size=2.6,
-              anchor="end", color=FAINT),
+        # pavé section sample: a run of set melee
+        *[_circle(MARGIN + 148 + k * 2.4, y, 1.0) for k in range(3)],
+        _text(MARGIN + 156, ty, "pavé", size=2.6, anchor="start", color=FAINT),
     ]
     return parts
 
@@ -308,10 +360,15 @@ def _frame(spec: Spec, title: str, scale_label: str, body: list[str],
         '<pattern id="hatch" width="1.4" height="1.4" patternTransform="rotate(45)" patternUnits="userSpaceOnUse">'
         f'<line x1="0" y1="0" x2="0" y2="1.4" stroke="{FAINT}" stroke-width="0.12"/>'
         "</pattern>"
+        # drafting grid: 5 mm squares, barely-there — the paper, not the drawing
+        '<pattern id="grid" width="5" height="5" patternUnits="userSpaceOnUse">'
+        f'<line x1="0" y1="0" x2="5" y2="0" stroke="{FAINT}" stroke-width="0.06"/>'
+        f'<line x1="0" y1="0" x2="0" y2="5" stroke="{FAINT}" stroke-width="0.06"/>'
+        "</pattern>"
         "</defs>",
         f'<rect x="0" y="0" width="{SHEET_W:g}" height="{SHEET_H:g}" fill="{PAPER}"/>',
         f'<rect x="{MARGIN:g}" y="{MARGIN:g}" width="{SHEET_W - 2 * MARGIN:g}" '
-        f'height="{SHEET_H - 2 * MARGIN:g}" fill="none" stroke="{INK}" stroke-width="{STROKE_MAIN}"/>',
+        f'height="{SHEET_H - 2 * MARGIN:g}" fill="url(#grid)" stroke="{INK}" stroke-width="{STROKE_MAIN}"/>',
         _text(SHEET_W / 2, MARGIN + 8, title, size=4.6, style=' letter-spacing="1.6"'),
         _line(MARGIN + 3, MARGIN + 11.5, SHEET_W - MARGIN - 3, MARGIN + 11.5,
               w=STROKE_DIM, color=FAINT),  # header rule under the sheet title
@@ -328,6 +385,9 @@ def _frame(spec: Spec, title: str, scale_label: str, body: list[str],
                                         if len(spec.notes_to_factory) > 110
                                         else spec.notes_to_factory),
                            size=3.0, anchor="start"))
+    parts.append(_text(SHEET_W - MARGIN, SHEET_H - 3.2,
+                       "CONFIDENTIAL — FACTORY PRODUCTION ONLY", size=2.8,
+                       anchor="end", color=FAINT, style=' letter-spacing="1.2"'))
     parts.append("</svg>")
     return "\n".join(parts) + "\n"
 
@@ -380,6 +440,22 @@ def _front_view(spec: Spec, cx: float, cy: float, melee=None) -> list[str]:
         for sign in (-1, 1):
             parts.append(_circle(cx + sign * (span / 2 + prong_r + 0.6 + mr), y_girdle, mr))
 
+    # shoulder pavé: the shank's own stones, drawn true-size down the band
+    pave = _find_stone(spec, "shoulder_pave", "pave_shoulders")
+    if pave is not None:
+        pr = pave.dimensions_mm.width / 2 * SCALE
+        per_side = pave.count // 2
+        py0 = ring_top + band_w / 2 + pr
+        for k in range(per_side):
+            parts.append(_circle(cx, py0 + k * (2 * pr * 1.15), pr))
+        ref_y = py0 + (per_side - 1) * (2 * pr * 1.15) / 2
+        fx, fy = cx - band_w / 2 - 8, ref_y + 8
+        parts += _pointer(cx - pr, ref_y, fx, fy)
+        parts += _circled_ref(fx - 2.6, fy, _ref_letter(spec, pave))
+        parts.append(_text(cx, ring_cy + outer_r + 19,
+                           f"{per_side} × ⌀{_fmt(pave.dimensions_mm.width)} mm "
+                           "pavé per shoulder", size=2.8, color=FAINT))
+
     rise_mm = (spec.setting.gallery_height_mm or 0.0) + stone.dimensions_mm.depth / 3
     x_dim = cx + max(span / 2, band_w / 2) + 9
     parts += [
@@ -410,6 +486,7 @@ def _render_solitaire(spec: Spec) -> str:
         _top_view(spec, 58, BASELINE)
         + _front_view(spec, 138, BASELINE)
         + _side_view(spec, 208, BASELINE)
+        + _stone_schedule(spec, MARGIN + 4, 158, circled=True, totals=True)
     )
     return _frame(spec, "TECHNICAL SHEET — SOLITAIRE RING", "3:1", body)
 
@@ -606,16 +683,35 @@ def _facet_face_up(cx: float, cy: float, cut_id: str, w_pp: float, l_pp: float,
 
 
 def _halo_top_view(spec: Spec, melee, cx: float, cy: float) -> list[str]:
+    """The halo as DESIGNED: every surround group drawn cut-true and
+    interleaved on the ring — a marquise sunburst draws marquise petals
+    radiating with rounds nested between them, never a row of dots."""
+    from facetta.prototype import _ellipse_arc_angles
+
     stone = spec.stone.dimensions_mm
     rx, ry = stone.width / 2 * SCALE, stone.length / 2 * SCALE
-    mw = melee.dimensions_mm.width
-    mr = mw / 2 * SCALE
-    # halo centerline and outer edge (mm -> paper)
-    ring_ax = rx + 0.3 * SCALE + mr
-    ring_by = ry + 0.3 * SCALE + mr
-    oax, oby = ring_ax + mr, ring_by + mr
-    halo_w_mm = stone.width + 2 * (0.3 + mw)
-    halo_l_mm = stone.length + 2 * (0.3 + mw)
+
+    # every surround stone on one interleaved ring, in spec round-robin
+    groups = [s for s in spec.side_stones
+              if s.position in ("halo", "surround", "halo_outer")]
+    pools = [[g] * g.count for g in groups]
+    seq, idx = [], 0
+    while any(pools):
+        pool = pools[idx % len(pools)]
+        if pool:
+            seq.append(pool.pop())
+        idx += 1
+
+    base_ax = rx + 0.3 * SCALE   # girdle + halo margin: where stones seat
+    base_by = ry + 0.3 * SCALE
+    # radial extent per stone: elongated cuts point outward along the radius
+    def r_out(s) -> float:
+        return s.dimensions_mm.length * SCALE
+
+    oax = base_ax + max(r_out(s) for s in seq)
+    oby = base_by + max(r_out(s) for s in seq)
+    halo_w_mm = 2 * oax / SCALE
+    halo_l_mm = 2 * oby / SCALE
 
     band_w = spec.band.width_mm * SCALE
     inner = spec.ring_size.inner_diameter_mm * SCALE
@@ -628,11 +724,32 @@ def _halo_top_view(spec: Spec, melee, cx: float, cy: float) -> list[str]:
         f'<rect x="{left_x:.2f}" y="{top:.2f}" width="{band_w:.2f}" height="{strip_len:.2f}" '
         f'rx="{band_w / 2:.2f}" fill="url(#hatch)" stroke="{INK}" '
         f'stroke-width="{STROKE_MAIN}"/>',
-        _ellipse(cx, cy, oax, oby),  # halo outer edge
+        _ellipse(cx, cy, oax, oby),  # halo outer envelope
     ]
-    for i in range(melee.count):
-        t = -math.pi / 2 + i * 2 * math.pi / melee.count
-        parts.append(_circle(cx + ring_ax * math.cos(t), cy + ring_by * math.sin(t), mr))
+    ref_done: set = set()
+    mid_ax = base_ax + max(r_out(s) for s in seq) / 2
+    mid_by = base_by + max(r_out(s) for s in seq) / 2
+    for t, s in zip(_ellipse_arc_angles(mid_ax, mid_by, len(seq)), seq):
+        d = s.dimensions_mm
+        w_pp = d.width * SCALE
+        l_pp = d.length * SCALE
+        px = cx + (base_ax + l_pp / 2) * math.cos(t)
+        py = cy + (base_by + l_pp / 2) * math.sin(t)
+        if s.cut == "round_brilliant" or d.length == d.width:
+            parts.append(_circle(px, py, w_pp / 2))
+        else:
+            deg = math.degrees(t) + 90  # length axis radial, pointing out
+            parts.append(f'<g transform="rotate({deg:.1f} {px:.2f} {py:.2f})">')
+            parts += _facet_face_up(px, py, s.cut, w_pp, l_pp)
+            parts.append("</g>")
+        gi = groups.index(s)
+        if gi not in ref_done and abs(math.cos(t)) > 0.5:  # ref off the sides
+            ref_done.add(gi)
+            sign = 1 if math.cos(t) > 0 else -1
+            fx = cx + sign * (oax + 7)
+            fy = py - 6
+            parts += _pointer(px + sign * w_pp / 2 * 0.8, py, fx, fy)
+            parts += _circled_ref(fx + sign * 2.6, fy, _ref_letter(spec, s))
     parts += [
         *_facet_face_up(cx, cy, spec.stone.cut, 2 * rx, 2 * ry),  # center stone
         _line(cx, cy - oby - 3, cx, cy + oby + 3, w=STROKE_DIM, color=FAINT, dash="3 1 0.5 1"),
@@ -643,6 +760,11 @@ def _halo_top_view(spec: Spec, melee, cx: float, cy: float) -> list[str]:
     y_dim2 = y_dim - 6
     x_dim = cx + max(oax, band_w / 2) + 8
     x_dim2 = x_dim + 18
+    note = " + ".join(
+        f"{g.count} × {g.cut.replace('_', ' ')} "
+        + (f"⌀{_fmt(g.dimensions_mm.width)}" if g.dimensions_mm.width == g.dimensions_mm.length
+           else f"{_fmt(g.dimensions_mm.length)}×{_fmt(g.dimensions_mm.width)}")
+        for g in groups)
     parts += [
         # center stone dims (near), halo outer dims (stacked outside)
         _ext(cx - rx, cy, cx - rx, y_dim - 1), _ext(cx + rx, cy, cx + rx, y_dim - 1),
@@ -657,7 +779,7 @@ def _halo_top_view(spec: Spec, melee, cx: float, cy: float) -> list[str]:
         _ext(right_x, bottom - band_w / 2, right_x, bottom + 6),
         *_dim_h(left_x, right_x, bottom + 5, f"{_fmt(spec.band.width_mm)} mm"),
         _text(cx, bottom + 14, "TOP VIEW", size=3.6, style=' letter-spacing="1.2"'),
-        _text(cx, bottom + 19, f"{melee.count} × ⌀{_fmt(mw)} mm melee, 0.3 mm off center girdle",
+        _text(cx, bottom + 19, f"{note}, 0.3 mm off center girdle",
               size=2.8, color=FAINT),
     ]
     return parts
@@ -694,6 +816,7 @@ def _render_halo(spec: Spec) -> str:
         _halo_top_view(spec, melee, 56, BASELINE)
         + _front_view(spec, 140, BASELINE, melee=melee)
         + _halo_side_view(spec, melee, 208, BASELINE)
+        + _stone_schedule(spec, MARGIN + 4, 158, circled=True, totals=True)
     )
     return _frame(spec, "TECHNICAL SHEET — HALO RING", "3:1", body)
 
@@ -1526,7 +1649,7 @@ def _spray_front_view(spec: Spec, ox: float, oy: float) -> list[str]:
         _ext(tx - r_term, ty, tx - r_term, y_bot + 5),
         _ext(tx + r_term, ty, tx + r_term, y_bot + 5),
         *_dim_h(tx - r_term, tx + r_term, y_bot + 4, f"{_fmt(term_d)} mm"),
-        _text((ox + x_end) / 2, min(y_len + 7, SHEET_H - MARGIN - 26),
+        _text((ox + x_end) / 2, min(y_len + 6, SHEET_H - MARGIN - 19),
               "FACE VIEW", size=3.6, style=' letter-spacing="1.2"'),
     ]
     petals = [s_ for s_ in spec.side_stones if s_.position == "quatrefoil_stations"]
@@ -1534,15 +1657,12 @@ def _spray_front_view(spec: Spec, ox: float, oy: float) -> list[str]:
         f"{p.count // 4} × [{p.count} {p.species}]" for p in petals)
     pave_total = sum(s_.count for s_ in spec.side_stones
                      if s_.position == "pave_leaves")
-    y_cap = min(y_len + 12, SHEET_H - MARGIN - 21)
-    parts += [
-        _text((ox + x_end) / 2, y_cap,
-              f"clusters tip-first: terminal [4 {spec.stone.species}] + {note}",
-              size=2.8, color=FAINT),
-        _text((ox + x_end) / 2, y_cap + 4.5,
-              f"{pave_total} pavé stones across {len(lay['leaves'])} leaves",
-              size=2.8, color=FAINT),
-    ]
+    y_cap = min(y_len + 10.5, SHEET_H - MARGIN - 14.5)
+    parts.append(_text(
+        (ox + x_end) / 2, y_cap,
+        f"clusters tip-first: terminal [4 {spec.stone.species}] + {note} · "
+        f"{pave_total} pavé stones across {len(lay['leaves'])} leaves",
+        size=2.8, color=FAINT))
     return parts
 
 
@@ -1608,10 +1728,13 @@ def _spray_end_view(spec: Spec, cx: float, cy: float) -> list[str]:
     return parts
 
 
-def _stone_schedule(spec: Spec, x0: float, y0: float) -> list[str]:
+def _stone_schedule(spec: Spec, x0: float, y0: float, *, circled: bool = False,
+                    totals: bool = False) -> list[str]:
     """Factory stone schedule: every stone DEFINITION exactly once, lettered.
     Repeats reference the letter — correct one row and every repeat follows,
-    so nobody re-types (or mis-reads) a dimension per stone."""
+    so nobody re-types (or mis-reads) a dimension per stone. circled draws
+    the refs as chaseable Ⓐ marks (matching the view callouts); totals adds
+    the per-entry and grand carat totals a costing office asks for."""
     def desc(stone) -> str:
         return f"{stone.species} {stone.cut.replace('_', ' ')}"
 
@@ -1619,26 +1742,46 @@ def _stone_schedule(spec: Spec, x0: float, y0: float) -> list[str]:
         d = stone.dimensions_mm
         return f"{_fmt(d.length)} × {_fmt(d.width)} × {_fmt(d.depth)}"
 
-    rows = [(chr(65 + i), s) for i, s in enumerate([spec.stone] + spec.side_stones)]
+    stones = [spec.stone] + spec.side_stones
+    rows = [(chr(65 + i), s) for i, s in enumerate(stones)]
+    title = "GEMSTONE KEY &amp; PRODUCTION NOTES" if circled else "STONE SCHEDULE"
+    width = 100 if totals else 92
     parts = [
-        _text(x0, y0, "STONE SCHEDULE", size=3.0, anchor="start",
-              style=' letter-spacing="1.4"'),
-        _line(x0, y0 + 1.4, x0 + 92, y0 + 1.4, w=STROKE_DIM, color=FAINT),
+        _text(x0, y0, title, size=3.0, anchor="start",
+              style=' letter-spacing="1.2"'),
+        _line(x0, y0 + 1.4, x0 + width, y0 + 1.4, w=STROKE_DIM, color=FAINT),
         _text(x0, y0 + 5.0, "REF", size=2.4, anchor="start", color=FAINT),
         _text(x0 + 9, y0 + 5.0, "QTY", size=2.4, anchor="start", color=FAINT),
-        _text(x0 + 18, y0 + 5.0, "STONE", size=2.4, anchor="start", color=FAINT),
-        _text(x0 + 55, y0 + 5.0, "L × W × D mm", size=2.4, anchor="start", color=FAINT),
-        _text(x0 + 80, y0 + 5.0, "CT EA.", size=2.4, anchor="start", color=FAINT),
+        _text(x0 + 17, y0 + 5.0, "STONE", size=2.4, anchor="start", color=FAINT),
+        _text(x0 + 50, y0 + 5.0, "L × W × D mm", size=2.4, anchor="start", color=FAINT),
+        _text(x0 + 72, y0 + 5.0, "CT EA.", size=2.4, anchor="start", color=FAINT),
     ]
+    if totals:
+        parts.append(_text(x0 + 85, y0 + 5.0, "TOTAL", size=2.4,
+                           anchor="start", color=FAINT))
     y = y0 + 5.0
     for ref, stone in rows:
-        y += 3.9
+        y += 4.4 if circled else 3.9
+        if circled:
+            parts += _circled_ref(x0 + 2.2, y - 1.0, ref)
+        else:
+            parts.append(_text(x0, y, ref, size=2.6, anchor="start"))
         parts += [
-            _text(x0, y, ref, size=2.6, anchor="start"),
             _text(x0 + 9, y, str(stone.count), size=2.6, anchor="start"),
-            _text(x0 + 18, y, desc(stone), size=2.6, anchor="start"),
-            _text(x0 + 55, y, dims(stone), size=2.6, anchor="start"),
-            _text(x0 + 80, y, f"{stone.carat:.2f}", size=2.6, anchor="start"),
+            _text(x0 + 17, y, desc(stone), size=2.6, anchor="start"),
+            _text(x0 + 50, y, dims(stone), size=2.6, anchor="start"),
+            _text(x0 + 72, y, f"{stone.carat:.2f}", size=2.6, anchor="start"),
+        ]
+        if totals:
+            parts.append(_text(x0 + 85, y, f"{stone.count * stone.carat:.2f}",
+                               size=2.6, anchor="start"))
+    if totals:
+        y += 4.4
+        grand = sum(s.count * s.carat for s in stones)
+        parts += [
+            _line(x0, y - 2.8, x0 + width, y - 2.8, w=STROKE_DIM, color=FAINT),
+            _text(x0 + 17, y, "TOTAL SET WEIGHT", size=2.6, anchor="start"),
+            _text(x0 + 85, y, f"{grand:.2f}", size=2.6, anchor="start"),
         ]
     return parts
 
@@ -1654,7 +1797,8 @@ def _render_leaf_spray(spec: Spec) -> str:
     oy = BASELINE - (lay["y_top"] + lay["bottom"]) / 2 * SPRAY_SCALE
     body = (_spray_front_view(spec, MARGIN + 12, oy)
             + _spray_end_view(spec, 262, BASELINE)
-            + _stone_schedule(spec, SHEET_W - MARGIN - 96, MARGIN + 16))
+            + _stone_schedule(spec, SHEET_W - MARGIN - 104, MARGIN + 16,
+                              circled=True, totals=True))
     return _frame(spec, "TECHNICAL SHEET — LEAF SPRAY BROOCH", "2:1 / 4:1", body)
 
 

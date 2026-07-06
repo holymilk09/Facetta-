@@ -98,10 +98,14 @@ def test_halo_ring_sheet_matches_golden(halo_spec):
                  ">5.8 mm rise<",                     # front view: setting height
                  "FRONT VIEW"):
         assert text in svg, f"missing callout {text}"
-    assert "8 × ⌀4.1 mm melee" in svg
+    assert "8 × round brilliant ⌀4.1" in svg
     assert "EST. 3.1 g" in svg  # cast-weight estimate in the title block
     # 8 melee top view + 2 side profile + 2 front view = 12 melee circles
     assert svg.count('r="6.15"') == 12
+    # sheet v2: gemstone key with circled refs and true totals
+    assert "GEMSTONE KEY &amp; PRODUCTION NOTES" in svg
+    assert "TOTAL SET WEIGHT" in svg
+    assert "CONFIDENTIAL — FACTORY PRODUCTION ONLY" in svg
 
 
 def test_love_bangle_sheet_matches_golden(bangle_spec):
@@ -196,3 +200,39 @@ def test_halo_requires_melee_entry(halo_spec):
     halo_spec["side_stones"] = []
     with pytest.raises(SheetUnsupported, match="position 'halo'"):
         render_sheet(_validated(halo_spec))  # validation derives the inner diameter
+
+
+def test_sunburst_halo_draws_every_stone_cut_true():
+    """The ruby sunburst: 8 marquise petals as rotated marquise, 8 rounds
+    nested between, 14 pavé per shoulder — counts from the spec, never taste."""
+    import json
+
+    spec = _validated(json.loads(
+        (GOLDEN_DIR.parent.parent / "docs" / "examples" /
+         "ruby_sunburst_ring.json").read_text()))
+    svg = render_sheet(spec)
+    top_view = svg[:svg.index("FRONT VIEW")]
+    assert top_view.count("<g transform=\"rotate(") == 8   # marquise petals
+    assert top_view.count(f'r="{2.5 / 2 * 3:.2f}"') == 8   # nested rounds
+    assert "14 × ⌀1.1 mm pavé per shoulder" in svg
+    assert svg.count(f'r="{1.15 / 2 * 3:.2f}"') == 14 + 28  # front col + side arcs
+    assert "comfort-fit inner profile" in svg
+    assert "TOTAL SET WEIGHT" in svg and ">5.33<" in svg
+
+
+def test_sheet_dxf_has_no_grid_pollution():
+    """The drafting grid lives in <defs>: the DXF export must not inherit a
+    page of grid lines."""
+    import json
+
+    from fastapi.testclient import TestClient
+
+    from facetta.main import app
+
+    raw = json.loads((GOLDEN_DIR.parent.parent / "docs" / "examples" /
+                      "ruby_sunburst_ring.json").read_text())
+    response = TestClient(app).post("/specs/sheet.dxf", json=raw)
+    assert response.status_code == 200
+    # a gridded page would carry thousands of LINE entities; the drawing
+    # itself carries a few hundred
+    assert response.text.count("\nLINE\n") < 600

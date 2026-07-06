@@ -67,6 +67,21 @@ through all three models, compare against the fidelity checklist (14 surround
 stones alternating, claws/cap as drawn, no invented text), send images to the
 founder.
 
+2026-07-06 v6 — TECHNICAL SHEET FORMAT v2 (founder audit vs an AI restyle
+of our own sheet: better format, fictional data — adopted the format,
+kept the record). Ring renderers rebuilt: halo top view draws EVERY
+surround group cut-true and interleaved (marquise sunburst petals radial,
+rounds nested; per-stone radial seat by cut); front view carries the
+shoulder-pavé column and side profile the pavé arcs (count-true per
+side), comfort-fit pointer; GEMSTONE KEY & PRODUCTION NOTES table with
+circled refs Ⓐ–Ⓓ matching in-view annotation pointers, per-entry and
+grand carat totals; drafting-grid paper (in <defs>, zero DXF pollution —
+guarded by test), pavé KEY sample, CONFIDENTIAL footer. All sheet goldens
+regenerated and visually verified. Deferred, next milestones: users/roles;
+builder–designer chat; chat image-annotation toolbar (arrows/boxes/
+labels/mm) — annotations must be structured DATA re-letterable by the
+overlay engine, never baked pixels; and the Grok-style edit loop.
+
 2026-07-06 v5 — BRANDED FACTORY SHEET FROM ANY RENDER (founder test:
 deco drop earring, docs/examples/deco_drop_earring.json). The annotated
 sheet is now template-agnostic with a FACETTA masthead: generic stone

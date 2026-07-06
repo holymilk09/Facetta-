@@ -1,20 +1,25 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 297 210" width="297mm" height="210mm" font-family="Georgia, 'Times New Roman', serif">
-<defs><pattern id="hatch" width="1.4" height="1.4" patternTransform="rotate(45)" patternUnits="userSpaceOnUse"><line x1="0" y1="0" x2="0" y2="1.4" stroke="#8a8a8a" stroke-width="0.12"/></pattern></defs>
+<defs><pattern id="hatch" width="1.4" height="1.4" patternTransform="rotate(45)" patternUnits="userSpaceOnUse"><line x1="0" y1="0" x2="0" y2="1.4" stroke="#8a8a8a" stroke-width="0.12"/></pattern><pattern id="grid" width="5" height="5" patternUnits="userSpaceOnUse"><line x1="0" y1="0" x2="5" y2="0" stroke="#8a8a8a" stroke-width="0.06"/><line x1="0" y1="0" x2="0" y2="5" stroke="#8a8a8a" stroke-width="0.06"/></pattern></defs>
 <rect x="0" y="0" width="297" height="210" fill="#fdfdfa"/>
-<rect x="8" y="8" width="281" height="194" fill="none" stroke="#3f3f3f" stroke-width="0.3"/>
+<rect x="8" y="8" width="281" height="194" fill="url(#grid)" stroke="#3f3f3f" stroke-width="0.3"/>
 <text x="148.50" y="16.00" font-family="Georgia, 'Times New Roman', serif" font-size="4.6" fill="#3f3f3f" text-anchor="middle" letter-spacing="1.6">TECHNICAL SHEET — HALO RING</text>
 <line x1="11.00" y1="19.50" x2="286.00" y2="19.50" stroke="#8a8a8a" stroke-width="0.15"/>
 <line x1="11.00" y1="105.00" x2="286.00" y2="105.00" stroke="#8a8a8a" stroke-width="0.15" stroke-dasharray="6 1.5 1 1.5"/>
 <rect x="53.00" y="74.53" width="6.00" height="60.93" rx="3.00" fill="url(#hatch)" stroke="#3f3f3f" stroke-width="0.3"/>
 <ellipse cx="56.00" cy="105.00" rx="22.80" ry="26.10" fill="#ffffff" stroke="#3f3f3f" stroke-width="0.3"/>
 <circle cx="56.00" cy="85.05" r="6.15" fill="#ffffff" stroke="#3f3f3f" stroke-width="0.3"/>
-<circle cx="67.77" cy="90.89" r="6.15" fill="#ffffff" stroke="#3f3f3f" stroke-width="0.3"/>
+<circle cx="68.32" cy="91.59" r="6.15" fill="#ffffff" stroke="#3f3f3f" stroke-width="0.3"/>
+<line x1="85.80" y1="85.59" x2="73.24" y2="91.59" stroke="#3f3f3f" stroke-width="0.15"/>
+<line x1="73.24" y1="91.59" x2="75.24" y2="91.53" stroke="#3f3f3f" stroke-width="0.15"/>
+<line x1="73.24" y1="91.59" x2="74.54" y2="90.06" stroke="#3f3f3f" stroke-width="0.15"/>
+<circle cx="88.40" cy="85.59" r="2.2" fill="#fdfdfa" stroke="#3f3f3f" stroke-width="0.24"/>
+<text x="88.40" y="86.64" font-family="Georgia, 'Times New Roman', serif" font-size="2.8" fill="#3f3f3f" text-anchor="middle">B</text>
 <circle cx="72.65" cy="105.00" r="6.15" fill="#ffffff" stroke="#3f3f3f" stroke-width="0.3"/>
-<circle cx="67.77" cy="119.11" r="6.15" fill="#ffffff" stroke="#3f3f3f" stroke-width="0.3"/>
+<circle cx="68.28" cy="118.48" r="6.15" fill="#ffffff" stroke="#3f3f3f" stroke-width="0.3"/>
 <circle cx="56.00" cy="124.95" r="6.15" fill="#ffffff" stroke="#3f3f3f" stroke-width="0.3"/>
-<circle cx="44.23" cy="119.11" r="6.15" fill="#ffffff" stroke="#3f3f3f" stroke-width="0.3"/>
+<circle cx="43.68" cy="118.41" r="6.15" fill="#ffffff" stroke="#3f3f3f" stroke-width="0.3"/>
 <circle cx="39.35" cy="105.00" r="6.15" fill="#ffffff" stroke="#3f3f3f" stroke-width="0.3"/>
-<circle cx="44.23" cy="90.89" r="6.15" fill="#ffffff" stroke="#3f3f3f" stroke-width="0.3"/>
+<circle cx="43.72" cy="91.52" r="6.15" fill="#ffffff" stroke="#3f3f3f" stroke-width="0.3"/>
 <polygon points="46.40,105.00 47.01,100.07 49.49,95.50 49.50,95.49 52.30,92.89 52.30,92.89 56.00,92.10 59.70,92.89 59.70,92.89 62.50,95.49 62.51,95.50 64.99,100.07 65.60,105.00 64.99,109.93 62.51,114.50 62.50,114.51 59.70,117.11 59.70,117.11 56.00,117.90 52.30,117.11 52.30,117.11 49.50,114.51 49.49,114.50 47.01,109.93" fill="#ffffff" stroke="#3f3f3f" stroke-width="0.3"/>
 <polygon points="58.70,95.78 58.70,95.78 56.00,97.03 56.00,97.03 53.30,95.78 53.30,95.78 56.00,92.10" fill="none" stroke="#3f3f3f" stroke-width="0.15"/>
 <polygon points="53.30,114.22 53.30,114.22 56.00,112.97 56.00,112.97 58.70,114.22 58.70,114.22 56.00,117.90" fill="none" stroke="#3f3f3f" stroke-width="0.15"/>
@@ -82,7 +87,7 @@
 <line x1="58.10" y1="141.37" x2="59.90" y2="139.56" stroke="#3f3f3f" stroke-width="0.24"/>
 <text x="56.00" y="139.06" font-family="Georgia, 'Times New Roman', serif" font-size="3.2" fill="#3f3f3f" text-anchor="middle" stroke="#fdfdfa" stroke-width="1.0" stroke-linejoin="round" paint-order="stroke">2 mm</text>
 <text x="56.00" y="149.47" font-family="Georgia, 'Times New Roman', serif" font-size="3.6" fill="#3f3f3f" text-anchor="middle" letter-spacing="1.2">TOP VIEW</text>
-<text x="56.00" y="154.47" font-family="Georgia, 'Times New Roman', serif" font-size="2.8" fill="#8a8a8a" text-anchor="middle">8 × ⌀4.1 mm melee, 0.3 mm off center girdle</text>
+<text x="56.00" y="154.47" font-family="Georgia, 'Times New Roman', serif" font-size="2.8" fill="#8a8a8a" text-anchor="middle">8 × round brilliant ⌀4.1, 0.3 mm off center girdle</text>
 <rect x="137.00" y="74.53" width="6.00" height="60.93" rx="3.00" fill="url(#hatch)" stroke="#3f3f3f" stroke-width="0.3"/>
 <line x1="137.00" y1="77.53" x2="130.40" y2="61.03" stroke="#3f3f3f" stroke-width="0.3"/>
 <line x1="143.00" y1="77.53" x2="149.60" y2="61.03" stroke="#3f3f3f" stroke-width="0.3"/>
@@ -138,6 +143,31 @@
 <text x="208.00" y="147.47" font-family="Georgia, 'Times New Roman', serif" font-size="3.6" fill="#3f3f3f" text-anchor="middle" letter-spacing="1.2">SIDE PROFILE</text>
 <circle cx="187.00" cy="61.03" r="6.15" fill="#ffffff" stroke="#3f3f3f" stroke-width="0.3"/>
 <circle cx="229.00" cy="61.03" r="6.15" fill="#ffffff" stroke="#3f3f3f" stroke-width="0.3"/>
+<text x="12.00" y="158.00" font-family="Georgia, 'Times New Roman', serif" font-size="3.0" fill="#3f3f3f" text-anchor="start" letter-spacing="1.2">GEMSTONE KEY &amp; PRODUCTION NOTES</text>
+<line x1="12.00" y1="159.40" x2="112.00" y2="159.40" stroke="#8a8a8a" stroke-width="0.15"/>
+<text x="12.00" y="163.00" font-family="Georgia, 'Times New Roman', serif" font-size="2.4" fill="#8a8a8a" text-anchor="start">REF</text>
+<text x="21.00" y="163.00" font-family="Georgia, 'Times New Roman', serif" font-size="2.4" fill="#8a8a8a" text-anchor="start">QTY</text>
+<text x="29.00" y="163.00" font-family="Georgia, 'Times New Roman', serif" font-size="2.4" fill="#8a8a8a" text-anchor="start">STONE</text>
+<text x="62.00" y="163.00" font-family="Georgia, 'Times New Roman', serif" font-size="2.4" fill="#8a8a8a" text-anchor="start">L × W × D mm</text>
+<text x="84.00" y="163.00" font-family="Georgia, 'Times New Roman', serif" font-size="2.4" fill="#8a8a8a" text-anchor="start">CT EA.</text>
+<text x="97.00" y="163.00" font-family="Georgia, 'Times New Roman', serif" font-size="2.4" fill="#8a8a8a" text-anchor="start">TOTAL</text>
+<circle cx="14.20" cy="166.40" r="2.2" fill="#fdfdfa" stroke="#3f3f3f" stroke-width="0.24"/>
+<text x="14.20" y="167.45" font-family="Georgia, 'Times New Roman', serif" font-size="2.8" fill="#3f3f3f" text-anchor="middle">A</text>
+<text x="21.00" y="167.40" font-family="Georgia, 'Times New Roman', serif" font-size="2.6" fill="#3f3f3f" text-anchor="start">1</text>
+<text x="29.00" y="167.40" font-family="Georgia, 'Times New Roman', serif" font-size="2.6" fill="#3f3f3f" text-anchor="start">diamond oval brilliant</text>
+<text x="62.00" y="167.40" font-family="Georgia, 'Times New Roman', serif" font-size="2.6" fill="#3f3f3f" text-anchor="start">8.6 × 6.4 × 4</text>
+<text x="84.00" y="167.40" font-family="Georgia, 'Times New Roman', serif" font-size="2.6" fill="#3f3f3f" text-anchor="start">1.50</text>
+<text x="97.00" y="167.40" font-family="Georgia, 'Times New Roman', serif" font-size="2.6" fill="#3f3f3f" text-anchor="start">1.50</text>
+<circle cx="14.20" cy="170.80" r="2.2" fill="#fdfdfa" stroke="#3f3f3f" stroke-width="0.24"/>
+<text x="14.20" y="171.85" font-family="Georgia, 'Times New Roman', serif" font-size="2.8" fill="#3f3f3f" text-anchor="middle">B</text>
+<text x="21.00" y="171.80" font-family="Georgia, 'Times New Roman', serif" font-size="2.6" fill="#3f3f3f" text-anchor="start">8</text>
+<text x="29.00" y="171.80" font-family="Georgia, 'Times New Roman', serif" font-size="2.6" fill="#3f3f3f" text-anchor="start">diamond round brilliant</text>
+<text x="62.00" y="171.80" font-family="Georgia, 'Times New Roman', serif" font-size="2.6" fill="#3f3f3f" text-anchor="start">4.1 × 4.1 × 2.5</text>
+<text x="84.00" y="171.80" font-family="Georgia, 'Times New Roman', serif" font-size="2.6" fill="#3f3f3f" text-anchor="start">0.25</text>
+<text x="97.00" y="171.80" font-family="Georgia, 'Times New Roman', serif" font-size="2.6" fill="#3f3f3f" text-anchor="start">2.00</text>
+<line x1="12.00" y1="173.40" x2="112.00" y2="173.40" stroke="#8a8a8a" stroke-width="0.15"/>
+<text x="29.00" y="176.20" font-family="Georgia, 'Times New Roman', serif" font-size="2.6" fill="#3f3f3f" text-anchor="start">TOTAL SET WEIGHT</text>
+<text x="97.00" y="176.20" font-family="Georgia, 'Times New Roman', serif" font-size="2.6" fill="#3f3f3f" text-anchor="start">3.50</text>
 <rect x="189.00" y="162.00" width="100" height="40" fill="none" stroke="#3f3f3f" stroke-width="0.3"/>
 <line x1="189.00" y1="170.00" x2="289.00" y2="170.00" stroke="#3f3f3f" stroke-width="0.15"/>
 <text x="192.00" y="167.80" font-family="Georgia, 'Times New Roman', serif" font-size="4.0" fill="#3f3f3f" text-anchor="start" letter-spacing="2.0">FACETTA</text>
@@ -157,6 +187,10 @@
 <text x="102.00" y="199.00" font-family="Georgia, 'Times New Roman', serif" font-size="2.6" fill="#8a8a8a" text-anchor="start">centerline</text>
 <rect x="122.00" y="196.50" width="8" height="3" fill="url(#hatch)" stroke="#3f3f3f" stroke-width="0.15"/>
 <text x="132.00" y="199.00" font-family="Georgia, 'Times New Roman', serif" font-size="2.6" fill="#8a8a8a" text-anchor="start">metal section</text>
-<text x="185.00" y="199.00" font-family="Georgia, 'Times New Roman', serif" font-size="2.6" fill="#8a8a8a" text-anchor="end">all dimensions in mm</text>
+<circle cx="156.00" cy="198.00" r="1.00" fill="#ffffff" stroke="#3f3f3f" stroke-width="0.3"/>
+<circle cx="158.40" cy="198.00" r="1.00" fill="#ffffff" stroke="#3f3f3f" stroke-width="0.3"/>
+<circle cx="160.80" cy="198.00" r="1.00" fill="#ffffff" stroke="#3f3f3f" stroke-width="0.3"/>
+<text x="164.00" y="199.00" font-family="Georgia, 'Times New Roman', serif" font-size="2.6" fill="#8a8a8a" text-anchor="start">pavé</text>
 <text x="12.00" y="191.50" font-family="Georgia, 'Times New Roman', serif" font-size="3.0" fill="#3f3f3f" text-anchor="start">NOTES: Shared prongs between halo melee; keep the gallery open.</text>
+<text x="289.00" y="206.80" font-family="Georgia, 'Times New Roman', serif" font-size="2.8" fill="#8a8a8a" text-anchor="end" letter-spacing="1.2">CONFIDENTIAL — FACTORY PRODUCTION ONLY</text>
 </svg>
