@@ -5,6 +5,7 @@ a terminal emerald quatrefoil, a diamond quatrefoil beside it, three emerald
 quatrefoils up the branch, 110 pavé diamonds across the leaves.
 """
 
+import math
 from pathlib import Path
 
 import pytest
@@ -46,7 +47,9 @@ class TestSprayValidation:
         assert any("partial cluster" in i.msg for i in _issues(spray_spec))
 
     def test_center_count_matches_clusters(self, spray_spec):
-        spray_spec["side_stones"][3]["count"] = 3  # 4 centers for 5 clusters
+        centers = [s for s in spray_spec["side_stones"]
+                   if s["position"] == "quatrefoil_centers" and s["count"] > 1]
+        centers[0]["count"] = 3  # 4 centers for 5 clusters
         bad = [i for i in _issues(spray_spec) if "center stones" in i.msg]
         assert bad and bad[0].expected == {"center_count": 5}
 
@@ -67,7 +70,9 @@ class TestSprayGeometry:
         assert len(row) == 5  # terminal + diamond + three emerald
         assert row[0][1] == 2 * 7.0 + CLUSTER_HUB_MM  # 15.6 mm terminal
         assert row[1][0].species == "diamond"  # spec order: diamond at the tip side
-        assert all(d == 2 * 5.0 + CLUSTER_HUB_MM for _, d in row[1:])
+        assert row[1][1] == 2 * 5.5 + CLUSTER_HUB_MM
+        diameters = [d for _, d in row]
+        assert diameters == sorted(diameters, reverse=True)  # graduated to the tip
 
     def test_layout_extents_are_the_spec_extents(self, spray_spec):
         spec = _validated(spray_spec)
@@ -81,17 +86,26 @@ class TestSprayGeometry:
         spec = _validated(spray_spec)
         lay = _spray_layout(spec)
         stones = [s for leaf in lay["leaves"] for s in leaf["stones"]]
-        assert len(stones) == 110
+        assert len(stones) == 190
         assert all(r == 0.65 for _, _, r in stones)  # 1.3 mm melee
 
-    def test_clusters_hang_from_the_stem(self, spray_spec):
-        from facetta.svg_sheet import _bezier_t_at_x, _bezier_xy
+    def test_garland_hugs_the_vein(self, spray_spec):
+        from facetta.svg_sheet import _bezier_xy
 
         spec = _validated(spray_spec)
         lay = _spray_layout(spec)
+        vein = [_bezier_xy(*lay["stem"], i / 200) for i in range(201)]
         for x, y, d, _ in lay["clusters"]:
-            stem_y = _bezier_xy(*lay["stem"], _bezier_t_at_x(*lay["stem"], x))[1]
-            assert y - d / 2 <= stem_y + 1.0  # top edge kisses the branch
+            gap = min(math.hypot(x - vx, y - vy) for vx, vy in vein) - d / 2
+            assert gap < 2.0, "a cluster drifted off the branch"
+
+    def test_garland_frames_kiss(self, spray_spec):
+        spec = _validated(spray_spec)
+        lay = _spray_layout(spec)
+        c = lay["clusters"]
+        for (x1, y1, d1, _), (x2, y2, d2, _) in zip(c, c[1:]):
+            gap = math.hypot(x2 - x1, y2 - y1) - (d1 + d2) / 2
+            assert -0.5 < gap < 1.5, "clusters must chain tightly, as drawn"
 
     def test_sheet_matches_golden(self, spray_spec):
         svg = render_sheet(_validated(spray_spec))

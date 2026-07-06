@@ -624,7 +624,7 @@ def _spray_proto(spec: Spec, vocab: Vocabulary,
     sheet draws, so the two can never disagree."""
     import math
 
-    from facetta.svg_sheet import _bezier_t_at_x, _bezier_xy, _spray_layout
+    from facetta.svg_sheet import _bezier_tangent, _bezier_xy, _spray_layout
 
     lay = _spray_layout(spec)
     ox, oy = _spray_origin(lay, s)
@@ -634,22 +634,22 @@ def _spray_proto(spec: Spec, vocab: Vocabulary,
 
     m1, m2 = _metal_stops(spec)
     edge = _mix(m2, "#000000", 0.3)
-    p0, p1, p2 = (pp(p) for p in lay["stem"])
-    stem = (f'M {p0[0]:.2f} {p0[1]:.2f} Q {p1[0]:.2f} {p1[1]:.2f} '
-            f'{p2[0]:.2f} {p2[1]:.2f}')
+    q0, q1, q2 = lay["stem"]
+    upper, lower = [], []
+    for i in range(25):
+        t = i / 24
+        bx, by = _bezier_xy(q0, q1, q2, t)
+        ux, uy = _bezier_tangent(q0, q1, q2, t)
+        w = (0.7 + 1.5 * t) / 2
+        upper.append(pp((bx + uy * w, by - ux * w)))
+        lower.append(pp((bx - uy * w, by + ux * w)))
+    vein_pts = " ".join(f"{x:.2f},{y:.2f}" for x, y in upper + lower[::-1])
     parts = [
         _shadow(SHEET_W / 2, oy + lay["bottom"] * s + 10, lay["length"] * s / 3),
-        f'<path d="{stem}" fill="none" stroke="url(#metal)" '
-        f'stroke-width="{1.4 * s:.2f}" stroke-linecap="round"/>',
-        f'<path d="{stem}" fill="none" stroke="url(#sheen)" '
-        f'stroke-width="{1.4 * s:.2f}" stroke-linecap="round"/>',
+        f'<polygon points="{vein_pts}" fill="url(#metal)" stroke="{edge}" '
+        f'stroke-width="0.3"/>',
+        f'<polygon points="{vein_pts}" fill="url(#sheen)"/>',
     ]
-    for (x, y, d, _), _c in zip(lay["clusters"], lay["center_of"]):
-        cx, cy = pp((x, y))
-        t = _bezier_t_at_x(*lay["stem"], x)
-        sx, sy = pp(_bezier_xy(*lay["stem"], t))
-        parts.append(f'<line x1="{cx:.2f}" y1="{cy:.2f}" x2="{sx:.2f}" '
-                     f'y2="{sy:.2f}" stroke="{m1}" stroke-width="{0.5 * s:.2f}"/>')
     for leaf in lay["leaves"]:
         cxl, cyl = pp(leaf["center"])
         parts.append(
@@ -667,13 +667,20 @@ def _spray_proto(spec: Spec, vocab: Vocabulary,
         r_pp = d / 2 * s
         parts.append(
             f'<circle cx="{cx:.2f}" cy="{cy:.2f}" r="{r_pp:.2f}" fill="none" '
-            f'stroke="{m1}" stroke-width="{0.35 * s:.2f}"/>')
-        parts += _prong_marks(cx, cy, 2 * r_pp, 2 * r_pp, 4, m1, m2)
+            f'stroke="{m1}" stroke-width="{0.30 * s:.2f}"/>')
+        n_beads = max(8, round(math.pi * d / 1.1))
+        for i in range(n_beads):  # fine beaded frame, as the artwork draws it
+            a = 2 * math.pi * i / n_beads
+            bx = cx + r_pp * math.cos(a)
+            by = cy + r_pp * math.sin(a)
+            parts.append(
+                f'<circle cx="{bx:.2f}" cy="{by:.2f}" r="{0.35 * s:.2f}" '
+                f'fill="{m1}" stroke="{edge}" stroke-width="0.15"/>')
         pw = petal.dimensions_mm.width * s
         pl = petal.dimensions_mm.length * s
-        hub = r_pp - pl
+        hub = r_pp - 0.8 * s - pl
         for k in range(4):
-            theta = 90 * k
+            theta = 45 + 90 * k  # petals on the diagonals, as drawn
             r_mid = hub + pl / 2
             px = cx + r_mid * math.cos(math.radians(theta))
             py = cy + r_mid * math.sin(math.radians(theta))

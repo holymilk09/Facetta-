@@ -29,11 +29,11 @@
     {
       "species": "diamond",
       "cut": "pear",
-      "carat": 0.237,
+      "carat": 0.309,
       "dimensions_mm": {
-        "length": 5.0,
-        "width": 3.5,
-        "depth": 2.2
+        "length": 5.5,
+        "width": 3.8,
+        "depth": 2.4
       },
       "color": {
         "trade": "F",
@@ -56,7 +56,41 @@
         "trade": "Muzo Green",
         "gia": "vivid, warm, slightly yellowish green"
       },
-      "count": 12,
+      "count": 4,
+      "position": "quatrefoil_stations",
+      "phenomena": []
+    },
+    {
+      "species": "emerald",
+      "cut": "pear",
+      "carat": 0.143,
+      "dimensions_mm": {
+        "length": 4.4,
+        "width": 3.1,
+        "depth": 2.2
+      },
+      "color": {
+        "trade": "Muzo Green",
+        "gia": "vivid, warm, slightly yellowish green"
+      },
+      "count": 4,
+      "position": "quatrefoil_stations",
+      "phenomena": []
+    },
+    {
+      "species": "emerald",
+      "cut": "pear",
+      "carat": 0.093,
+      "dimensions_mm": {
+        "length": 3.8,
+        "width": 2.7,
+        "depth": 1.9
+      },
+      "color": {
+        "trade": "Muzo Green",
+        "gia": "vivid, warm, slightly yellowish green"
+      },
+      "count": 4,
       "position": "quatrefoil_stations",
       "phenomena": []
     },
@@ -124,7 +158,24 @@
         "trade": "F",
         "gia": "colorless"
       },
-      "count": 46,
+      "count": 64,
+      "position": "pave_leaves",
+      "phenomena": []
+    },
+    {
+      "species": "diamond",
+      "cut": "round_brilliant",
+      "carat": 0.009,
+      "dimensions_mm": {
+        "length": 1.3,
+        "width": 1.3,
+        "depth": 0.8
+      },
+      "color": {
+        "trade": "F",
+        "gia": "colorless"
+      },
+      "count": 62,
       "position": "pave_leaves",
       "phenomena": []
     }
@@ -142,7 +193,8 @@
   },
   "brooch": {
     "length_mm": 85.0,
-    "width_mm": 32.0
+    "width_mm": 32.0,
+    "sweep_deg": 70.0
   },
   "notes_to_factory": "Extracted from the designer's hand-drawn artwork; all dimensions are proposed drafts pending her review."
 }

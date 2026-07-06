@@ -1229,88 +1229,131 @@ def _bezier_t_at_x(p0, p1, p2, x: float) -> float:
     return min(1.0, max(0.0, t))
 
 
+def _bezier_tangent(p0, p1, p2, t: float) -> tuple[float, float]:
+    dx = 2 * (1 - t) * (p1[0] - p0[0]) + 2 * t * (p2[0] - p1[0])
+    dy = 2 * (1 - t) * (p1[1] - p0[1]) + 2 * t * (p2[1] - p1[1])
+    n = math.hypot(dx, dy) or 1.0
+    return dx / n, dy / n
+
+
 def _spray_layout(spec: Spec) -> dict:
     """The leaf spray in mm, y down, x = 0 at the terminal cluster's tip-most
-    point. Everything both renderers draw — cluster positions, the stem curve,
-    the catch, every leaf and every pavé stone — comes from here, so the ink
-    sheet and the color views can never disagree about geometry."""
+    point — laid out the way the archetype is drawn by hand: a plume whose
+    tip dives and whose tail rises (brooch.sweep_deg), leaves attached to the
+    vein on BOTH sides and touching, the quatrefoil garland tucked against
+    the plume's concave edge with the terminal hanging past the tip.
+    Everything both renderers draw comes from here, so the ink sheet and the
+    color views can never disagree about geometry."""
     from facetta.validation import spray_cluster_row
 
     b = spec.brooch
     length, width = b.length_mm, b.width_mm
+    sweep = b.sweep_deg if b.sweep_deg is not None else 70.0
     row = spray_cluster_row(spec)
+    terminal_d = row[0][1]
 
-    xs = []
-    x = row[0][1] / 2
-    for i, (stone, d) in enumerate(row):
-        if i:
-            x += row[i - 1][1] / 2 + 1.0 + d / 2  # STATION_GAP_MM between frames
-        xs.append(x)
+    # --- the vein: tip low-left, rising then flattening to the catch -------
+    rise = width * 0.45 * (sweep / 70.0)
+    leaf_max = width * 0.34
+
+    def build(x_tip: float, x_tail: float):
+        p0 = (x_tip, 0.0)
+        p2 = (x_tail, -rise)
+        p1 = (x_tip + (x_tail - x_tip) * 0.38, -rise * 0.92)  # steep then flat
+        return p0, p1, p2
+
+    # two passes: build, measure the true x extent, stretch the tail to hit
+    # the spec's reach exactly
+    x_tip, x_tail = terminal_d * 0.55, length - 2 * SPRAY_CATCH_R_MM
+    clusters: list = []
+    for _ in range(2):
+        p0, p1, p2 = build(x_tip, x_tail)
+        samples = [(t, _bezier_xy(p0, p1, p2, t)) for t in
+                   (i / 400 for i in range(401))]
+
+        def normal(t):  # concave side: below-right of the vein
+            ux, uy = _bezier_tangent(p0, p1, p2, t)
+            return -uy, ux
+
+        # terminal past the tip, along the tip's own direction
+        ux, uy = _bezier_tangent(p0, p1, p2, 0.0)
+        nx, ny = normal(0.0)
+        c0 = (p0[0] - ux * terminal_d * 0.30 + nx * terminal_d * 0.42,
+              p0[1] - uy * terminal_d * 0.30 + ny * terminal_d * 0.42)
+        clusters = [(c0[0], c0[1], terminal_d, row[0][0])]
+        # stations chain up the concave edge, frames kissing
+        t_at = 0.0
+        for stone, d in row[1:]:
+            prev = clusters[-1]
+            need = prev[2] / 2 + d / 2 + 0.3
+            for t, (bx, by) in samples:
+                if t <= t_at:
+                    continue
+                nx, ny = normal(t)
+                cx = bx + nx * (d * 0.42 + SPRAY_STEM_MM / 2)
+                cy = by + ny * (d * 0.42 + SPRAY_STEM_MM / 2)
+                if math.hypot(cx - prev[0], cy - prev[1]) >= need:
+                    clusters.append((cx, cy, d, stone))
+                    t_at = t
+                    break
+            else:  # the spray is too short for the row — validation reports it
+                clusters.append((prev[0] + need, prev[1], d, stone))
+        left = clusters[0][0] - terminal_d / 2
+        # shift so the terminal's tip-most edge is x = 0, then measure
+        clusters = [(x - left, y, d, s) for x, y, d, s in clusters]
+        x_tip, x_tail = x_tip - left, x_tail - left
+        extent = length - (x_tail + 2 * SPRAY_CATCH_R_MM)
+        x_tail += extent  # stretch the tail run to the spec's exact reach
+
+    p0, p1, p2 = build(x_tip, x_tail)
+    catch = (length - SPRAY_CATCH_R_MM, _bezier_xy(p0, p1, p2, 1.0)[1])
+    bottom = max(y + d / 2 for _, y, d, _ in clusters)
+    y_top = bottom - width                  # width spans leaf tips to garland
 
     # centers pool: one per cluster, spec order, terminal first
     centers = [s for s in spec.side_stones if s.position == "quatrefoil_centers"]
-    center_of = []
     pool = [c for c in centers for _ in range(c.count)]
-    for i in range(len(row)):
-        center_of.append(pool[i] if i < len(pool) else None)
+    center_of = [pool[i] if i < len(pool) else None for i in range(len(row))]
 
-    # the stem rises from behind the terminal to the catch at the far end
-    terminal_d = row[0][1]
-    y_top0 = terminal_d / 2 - width         # provisional top for the stem shape
-    p0 = (xs[0], -terminal_d * 0.35)
-    p2 = (length - 2 * SPRAY_CATCH_R_MM, y_top0 + width * 0.30)
-    p1 = (length * 0.52, y_top0 + width * 0.10)  # bows the branch upward
-    catch = (length - SPRAY_CATCH_R_MM, p2[1])
-
-    # clusters nestle against the branch's underside, as drawn
-    clusters = []  # (x, y, cluster_d, petal stone)
-    for x, (stone, d) in zip(xs, row):
-        t = _bezier_t_at_x(p0, p1, p2, x)
-        sy = _bezier_xy(p0, p1, p2, t)[1]
-        clusters.append((x, sy + SPRAY_STEM_MM / 2 + d / 2 * 0.92, d, stone))
-    bottom = max(y + d / 2 for _, y, d, _ in clusters)
-    y_top = bottom - width                  # width spans leaf tips to cluster row
-
-    # leaves: herringbone above the stem, pavé counts distributed exactly
+    # --- foliage: barbs on BOTH sides of the vein, touching, tapered -------
     pave = [s for s in spec.side_stones if s.position == "pave_leaves"]
     melee_pool = [s for s in pave for _ in range(s.count)]
     total = len(melee_pool)
     leaves = []
     if total:
-        n = max(4, math.ceil(total / SPRAY_MELEE_PER_LEAF))
-        x_start = xs[0] + terminal_d * 0.45
-        x_end = length - 2 * SPRAY_CATCH_R_MM - 2.0
+        # barb pitch sets the density — a plume is CONTINUOUS foliage, so the
+        # slot count comes from the vein's length, never from the stone count
+        span = math.hypot(p2[0] - p0[0], p2[1] - p0[1])
+        n = max(8, round(span / 3.4))
         taken = 0
         for j in range(n):
             share = total // n + (1 if j < total % n else 0)
-            lx = x_start + (x_end - x_start) * (j / max(1, n - 1))
-            t = _bezier_t_at_x(p0, p1, p2, lx)
-            sx, sy = _bezier_xy(p0, p1, p2, t)
-            # stem tangent, then a leaf angled up off whichever side is next
-            dx = 2 * (1 - t) * (p1[0] - p0[0]) + 2 * t * (p2[0] - p1[0])
-            dy = 2 * (1 - t) * (p1[1] - p0[1]) + 2 * t * (p2[1] - p1[1])
-            phi = math.atan2(dy, dx)
-            psi = phi - math.radians(65 if j % 2 == 0 else 115)
-            melee_d = melee_pool[taken].dimensions_mm.width if share else 0.0
-            reach = sy - y_top
-            l_leaf = min(0.42 * width, reach * 0.95 / max(0.35, -math.sin(psi)))
-            l_leaf = max(l_leaf, 3 * melee_d)
-            ux, uy = math.cos(psi), math.sin(psi)
-            px, py = -uy, ux
-            ry = l_leaf * 0.19
+            frac = j / max(1, n - 1)
+            # slots interleave sides: even up the plume, odd down into it
+            side = -1 if j % 2 == 0 else 1
+            t = 0.03 + 0.94 * frac
+            bx, by = _bezier_xy(p0, p1, p2, t)
+            ux, uy = _bezier_tangent(p0, p1, p2, t)
+            # barbs sweep back toward the tail, tapering at both ends
+            back = math.atan2(uy, ux) + side * math.radians(48)
+            taper = 0.50 + 0.50 * math.sin(math.pi * (0.12 + 0.80 * frac))
+            l_leaf = max(leaf_max * taper, 3.2)
+            lx, ly = math.cos(back), math.sin(back)
+            px, py = -ly, lx
+            ry = l_leaf * 0.22
             stones = []
-            step = 0.68 * l_leaf / max(1, math.ceil(share / 2))
+            step = 0.68 * l_leaf / max(1, math.ceil(share / 2)) if share else 0.0
             for m in range(share):
-                along = 0.16 * l_leaf + (m // 2 + 0.5 * (m % 2)) * step
+                along = 0.18 * l_leaf + (m // 2 + 0.5 * (m % 2)) * step
                 side_off = 0.30 * ry * (1 if m % 2 else -1)
-                stones.append((sx + ux * along + px * side_off,
-                               sy + uy * along + py * side_off,
+                stones.append((bx + lx * along + px * side_off,
+                               by + ly * along + py * side_off,
                                melee_pool[taken + m].dimensions_mm.width / 2))
             taken += share
             leaves.append({
-                "base": (sx, sy), "tip": (sx + ux * l_leaf, sy + uy * l_leaf),
-                "center": (sx + ux * l_leaf / 2, sy + uy * l_leaf / 2),
-                "rx": l_leaf / 2, "ry": ry, "deg": math.degrees(psi),
+                "base": (bx, by), "tip": (bx + lx * l_leaf, by + ly * l_leaf),
+                "center": (bx + lx * l_leaf / 2, by + ly * l_leaf / 2),
+                "rx": l_leaf / 2, "ry": ry, "deg": math.degrees(back),
                 "stones": stones,
             })
     return {
@@ -1323,15 +1366,20 @@ def _spray_layout(spec: Spec) -> dict:
 
 def _quatrefoil_ink(cx: float, cy: float, petal, center, d_pp: float,
                     s: float) -> list[str]:
-    """A quatrefoil face-up in ink: faint beaded frame, four pear petals
-    pointing at the hub, the round center over the hub."""
+    """A quatrefoil face-up in ink: fine beaded frame, four pear petals on
+    the DIAGONALS (as the archetype is drawn), the round center over the hub."""
     parts = [f'<circle cx="{cx:.2f}" cy="{cy:.2f}" r="{d_pp / 2:.2f}" '
              f'fill="none" stroke="{FAINT}" stroke-width="{STROKE_DIM}"/>']
+    n_beads = max(8, round(math.pi * d_pp / (1.1 * s)))
+    for i in range(n_beads):
+        a = 2 * math.pi * i / n_beads
+        parts.append(_circle(cx + d_pp / 2 * math.cos(a),
+                             cy + d_pp / 2 * math.sin(a), 0.35 * s))
     pw = petal.dimensions_mm.width * s
     pl = petal.dimensions_mm.length * s
-    hub = d_pp / 2 - pl  # petal tips stop at the hub edge
+    hub = d_pp / 2 - 0.8 * s - pl  # petals sit inside the beaded frame
     for k in range(4):
-        theta = 90 * k  # petals at E, S, W, N
+        theta = 45 + 90 * k  # petals on the diagonals, as drawn
         r_mid = hub + pl / 2
         px = cx + r_mid * math.cos(math.radians(theta))
         py = cy + r_mid * math.sin(math.radians(theta))
@@ -1354,15 +1402,20 @@ def _spray_front_view(spec: Spec, ox: float, oy: float) -> list[str]:
     def pp(pt):  # mm-domain point -> paper space
         return ox + pt[0] * s, oy + pt[1] * s
 
-    p0, p1, p2 = (pp(p) for p in lay["stem"])
+    q0, q1, q2 = lay["stem"]
+    # the vein: a tapering blade, thin at the tip, full toward the catch
+    upper, lower = [], []
+    for i in range(25):
+        t = i / 24
+        bx, by = _bezier_xy(q0, q1, q2, t)
+        ux, uy = _bezier_tangent(q0, q1, q2, t)
+        w = (0.7 + 1.5 * t) / 2
+        upper.append(pp((bx - -uy * w, by - ux * w)))
+        lower.append(pp((bx + -uy * w, by + ux * w)))
+    vein_pts = " ".join(f"{x:.2f},{y:.2f}" for x, y in upper + lower[::-1])
     parts = [
-        # branch: hatched band with its center vein, like the drawn artwork
-        f'<path d="M {p0[0]:.2f} {p0[1]:.2f} Q {p1[0]:.2f} {p1[1]:.2f} '
-        f'{p2[0]:.2f} {p2[1]:.2f}" fill="none" stroke="url(#hatch)" '
-        f'stroke-width="{SPRAY_STEM_MM * s:.2f}" stroke-linecap="round"/>',
-        f'<path d="M {p0[0]:.2f} {p0[1]:.2f} Q {p1[0]:.2f} {p1[1]:.2f} '
-        f'{p2[0]:.2f} {p2[1]:.2f}" fill="none" stroke="{INK}" '
-        f'stroke-width="{STROKE_DIM}"/>',
+        f'<polygon points="{vein_pts}" fill="url(#hatch)" stroke="{INK}" '
+        f'stroke-width="{STROKE_MAIN}"/>',
     ]
     cx_catch, cy_catch = pp(lay["catch"])
     r_catch = SPRAY_CATCH_R_MM * s
@@ -1372,25 +1425,22 @@ def _spray_front_view(spec: Spec, ox: float, oy: float) -> list[str]:
     ]
     for leaf in lay["leaves"]:
         cxl, cyl = pp(leaf["center"])
-        bx, by = pp(leaf["base"])
         parts.append(
             f'<g transform="rotate({leaf["deg"]:.1f} {cxl:.2f} {cyl:.2f})">'
             f'<ellipse cx="{cxl:.2f}" cy="{cyl:.2f}" rx="{leaf["rx"] * s:.2f}" '
-            f'ry="{leaf["ry"] * s:.2f}" fill="none" stroke="{INK}" '
+            f'ry="{leaf["ry"] * s:.2f}" fill="{PAPER}" stroke="{INK}" '
             f'stroke-width="{STROKE_MAIN}"/></g>')
         for mx, my, mr in leaf["stones"]:
             parts.append(_circle(*pp((mx, my)), mr * s))
     for (x, y, d, petal), center in zip(lay["clusters"], lay["center_of"]):
         cx, cy = pp((x, y))
-        stem_t = _bezier_t_at_x(*lay["stem"], x)
-        sx, sy = pp(_bezier_xy(*lay["stem"], stem_t))
-        parts.append(_line(cx, cy - d / 2 * s, sx, sy, w=STROKE_MAIN))  # stalk
         parts += _quatrefoil_ink(cx, cy, petal, center, d * s, s)
 
     # dimensions: overall reach, overall width, the terminal cluster
     term_x, term_y, term_d = (lay["clusters"][0][k] for k in range(3))
     tx, ty = pp((term_x, term_y))
     r_term = term_d / 2 * s
+    deepest = max(lay["clusters"], key=lambda c: c[1] + c[2] / 2)
     y_bot = oy + lay["bottom"] * s
     y_len = y_bot + 10
     x_end = ox + lay["length"] * s
@@ -1398,7 +1448,7 @@ def _spray_front_view(spec: Spec, ox: float, oy: float) -> list[str]:
         _ext(ox, ty, ox, y_len - 1),                       # terminal frame edge
         _ext(x_end, cy_catch, x_end, y_len - 1),           # catch outer edge
         *_dim_h(ox, x_end, y_len, f"{_fmt(lay['length'])} mm"),
-        _ext(tx, y_bot, x_end + 9, y_bot),                 # terminal frame bottom
+        _ext(ox + deepest[0] * s, y_bot, x_end + 9, y_bot),  # deepest frame bottom
         *_dim_v(x_end + 8, oy + lay["y_top"] * s, y_bot, f"{_fmt(lay['width'])} mm"),
         _ext(tx - r_term, ty, tx - r_term, y_bot + 5),
         _ext(tx + r_term, ty, tx + r_term, y_bot + 5),

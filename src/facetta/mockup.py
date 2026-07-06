@@ -235,7 +235,8 @@ def geometry_fingerprint(spec: Spec) -> str:
     if spec.chain:
         geo["chain"] = [spec.chain.style, spec.chain.length_mm, spec.chain.clasp]
     if spec.brooch:
-        geo["brooch"] = [spec.brooch.length_mm, spec.brooch.width_mm]
+        geo["brooch"] = [spec.brooch.length_mm, spec.brooch.width_mm,
+                         spec.brooch.sweep_deg]
     return hashlib.sha256(json.dumps(geo, sort_keys=True).encode()).hexdigest()
 
 

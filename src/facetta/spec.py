@@ -118,10 +118,12 @@ class Pendant(StrictModel):
 
 
 class Brooch(StrictModel):
-    """Spray footprint: tip-to-catch reach and the widest cross measure."""
+    """Spray footprint: tip-to-catch reach, widest cross measure, and how far
+    the plume sweeps — the composition is design data, not renderer taste."""
 
     length_mm: Annotated[float, Field(strict=True, ge=20, le=150)]
     width_mm: Annotated[float, Field(strict=True, ge=8, le=80)]
+    sweep_deg: Annotated[float, Field(strict=True, ge=20, le=110)] | None = None
 
 
 class Spec(StrictModel):

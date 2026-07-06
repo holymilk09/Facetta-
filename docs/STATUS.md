@@ -67,6 +67,17 @@ through all three models, compare against the fidelity checklist (14 surround
 stones alternating, claws/cap as drawn, no invented text), send images to the
 founder.
 
+2026-07-06 later — leaf-spray v2 after founder review ("not matching"): the
+lesson is COMPOSITION IS SPEC DATA. v1 hardcoded layout taste (bare wire
+stem, sparse one-sided leaves, dangling clusters) and the engines faithfully
+rendered the wrong drawing. v2: `brooch.sweep_deg` (plume curvature) in the
+schema; barbs on BOTH sides of a tapering vein, slot count from vein length
+(a plume is continuous foliage — never derive it from stone count);
+quatrefoil garland chained frame-to-frame along the concave edge, terminal
+past the tip; petals on the diagonals with beaded frames, as drawn;
+graduation carried by four separate station entries in the spec. Extraction
+corrected pavé to 190. All three engines now match the artwork.
+
 2026-07-06 — NEW TEMPLATE: `leaf_spray_brooch` (first brooch archetype),
 built from the designer's hand-drawn artwork. Additive `brooch` spec section
 (length/width), quatrefoil cluster rules (petals in fours, one center per
