@@ -597,6 +597,96 @@ def _pendant_proto(spec: Spec, vocab: Vocabulary,
     return parts
 
 
+SPRAY_PROTO_SCALE = 2.6
+
+
+def _melee_dot(cx: float, cy: float, r: float) -> str:
+    """A pavé stone too small for a facet pattern: bright dome, one sparkle."""
+    return (
+        f'<circle cx="{cx:.2f}" cy="{cy:.2f}" r="{r:.2f}" fill="url(#melee)" '
+        f'stroke="#00000033" stroke-width="0.2"/>'
+        f'<circle cx="{cx - r * 0.3:.2f}" cy="{cy - r * 0.3:.2f}" '
+        f'r="{r * 0.3:.2f}" fill="#ffffff" opacity="0.85"/>'
+    )
+
+
+def _spray_origin(lay: dict, s: float) -> tuple[float, float]:
+    """Page origin that centers the spray's true extents on the sheet."""
+    ox = SHEET_W / 2 - lay["length"] * s / 2
+    oy = BASELINE - (lay["y_top"] + lay["bottom"]) / 2 * s
+    return ox, oy
+
+
+def _spray_proto(spec: Spec, vocab: Vocabulary,
+                 s: float = SPRAY_PROTO_SCALE) -> list[str]:
+    """The leaf spray in color: gold branch and leaves, pavé, quatrefoil
+    clusters with claws — every position from the same layout the ink
+    sheet draws, so the two can never disagree."""
+    import math
+
+    from facetta.svg_sheet import _bezier_t_at_x, _bezier_xy, _spray_layout
+
+    lay = _spray_layout(spec)
+    ox, oy = _spray_origin(lay, s)
+
+    def pp(pt):
+        return ox + pt[0] * s, oy + pt[1] * s
+
+    m1, m2 = _metal_stops(spec)
+    edge = _mix(m2, "#000000", 0.3)
+    p0, p1, p2 = (pp(p) for p in lay["stem"])
+    stem = (f'M {p0[0]:.2f} {p0[1]:.2f} Q {p1[0]:.2f} {p1[1]:.2f} '
+            f'{p2[0]:.2f} {p2[1]:.2f}')
+    parts = [
+        _shadow(SHEET_W / 2, oy + lay["bottom"] * s + 10, lay["length"] * s / 3),
+        f'<path d="{stem}" fill="none" stroke="url(#metal)" '
+        f'stroke-width="{1.4 * s:.2f}" stroke-linecap="round"/>',
+        f'<path d="{stem}" fill="none" stroke="url(#sheen)" '
+        f'stroke-width="{1.4 * s:.2f}" stroke-linecap="round"/>',
+    ]
+    for (x, y, d, _), _c in zip(lay["clusters"], lay["center_of"]):
+        cx, cy = pp((x, y))
+        t = _bezier_t_at_x(*lay["stem"], x)
+        sx, sy = pp(_bezier_xy(*lay["stem"], t))
+        parts.append(f'<line x1="{cx:.2f}" y1="{cy:.2f}" x2="{sx:.2f}" '
+                     f'y2="{sy:.2f}" stroke="{m1}" stroke-width="{0.5 * s:.2f}"/>')
+    for leaf in lay["leaves"]:
+        cxl, cyl = pp(leaf["center"])
+        parts.append(
+            f'<g transform="rotate({leaf["deg"]:.1f} {cxl:.2f} {cyl:.2f})">'
+            f'<ellipse cx="{cxl:.2f}" cy="{cyl:.2f}" rx="{leaf["rx"] * s:.2f}" '
+            f'ry="{leaf["ry"] * s:.2f}" fill="url(#metal)" stroke="{edge}" '
+            f'stroke-width="0.3"/>'
+            f'<ellipse cx="{cxl:.2f}" cy="{cyl:.2f}" rx="{leaf["rx"] * s:.2f}" '
+            f'ry="{leaf["ry"] * s:.2f}" fill="url(#sheen)"/></g>')
+        for mx, my, mr in leaf["stones"]:
+            parts.append(_melee_dot(*pp((mx, my)), mr * s))
+    parts += _link_ring(*pp(lay["catch"]), 2.0 * s)
+    for (x, y, d, petal), center in zip(lay["clusters"], lay["center_of"]):
+        cx, cy = pp((x, y))
+        r_pp = d / 2 * s
+        parts.append(
+            f'<circle cx="{cx:.2f}" cy="{cy:.2f}" r="{r_pp:.2f}" fill="none" '
+            f'stroke="{m1}" stroke-width="{0.35 * s:.2f}"/>')
+        parts += _prong_marks(cx, cy, 2 * r_pp, 2 * r_pp, 4, m1, m2)
+        pw = petal.dimensions_mm.width * s
+        pl = petal.dimensions_mm.length * s
+        hub = r_pp - pl
+        for k in range(4):
+            theta = 90 * k
+            r_mid = hub + pl / 2
+            px = cx + r_mid * math.cos(math.radians(theta))
+            py = cy + r_mid * math.sin(math.radians(theta))
+            parts.append(
+                f'<g transform="rotate({(theta + 270) % 360} {px:.2f} {py:.2f})">')
+            parts += _stone_visual(px, py, petal, pw, pl, vocab)
+            parts.append("</g>")
+        if center is not None:
+            cw = center.dimensions_mm.width * s
+            parts += _stone_visual(cx, cy, center, cw, cw, vocab)
+    return parts
+
+
 def _loose_proto(spec: Spec, vocab: Vocabulary) -> list[str]:
     d = spec.stone.dimensions_mm
     s = min(9.0, 60 / max(d.length, d.width))
@@ -625,7 +715,9 @@ def stone_manifest(spec: Spec) -> list[str]:
                 f"{stone.cut.replace('_', ' ')}"]
     position_word = {"halo": "halo", "surround": "surround",
                      "stations": "stations", "under_center": "drop",
-                     "drop": "drop"}
+                     "drop": "drop", "quatrefoil_stations": "cluster petals",
+                     "quatrefoil_centers": "cluster centers",
+                     "pave_leaves": "pavé leaves"}
     for side in spec.side_stones:
         where = position_word.get(side.position or "", "accent")
         manifest.append(
@@ -651,6 +743,8 @@ def render_color_preview(spec: Spec) -> str:
         body = _pendant_proto(spec, vocab)
     elif spec.template == "loose_stone":
         body = _loose_proto(spec, vocab)
+    elif spec.template == "leaf_spray_brooch":
+        body = _spray_proto(spec, vocab)
     else:
         raise ValueError(f"no prototype view for template '{spec.template}'")
 
@@ -688,11 +782,19 @@ def prompt_core(spec: Spec) -> tuple[str, list[str]]:
         "link_bracelet": "articulated link bracelet",
         "cluster_pendant": "cluster pendant necklace" if spec.chain else "cluster pendant",
         "loose_stone": "loose gemstone, unmounted",
+        "leaf_spray_brooch": "leaf-spray brooch — a single curved branch",
     }.get(spec.template, spec.template)
 
     cut_name = stone.cut.replace("_", " ")
     cut_phrase = cut_name if cut_name.endswith("cut") else f"{cut_name} cut"
-    if stone.count > 1:  # station pieces: the count is the design
+    if stone.position == "terminal_quatrefoil":
+        details = [
+            f"EXACTLY {stone.count} {stone.color.trade} {stone.species} petals "
+            f"({stone.color.gia}), {cut_phrase}, each "
+            f"{_fmt(d.length)} x {_fmt(d.width)} mm, points meeting at a "
+            "small hub — the large terminal quatrefoil cluster at the tip",
+        ]
+    elif stone.count > 1:  # station pieces: the count is the design
         details = [
             f"EXACTLY {stone.count} evenly spaced {stone.color.trade} "
             f"{stone.species} stations ({stone.color.gia}), {cut_phrase}, "
@@ -712,7 +814,12 @@ def prompt_core(spec: Spec) -> tuple[str, list[str]]:
     for side in spec.side_stones:
         where = {"halo": "in a halo around the center", "surround": "surrounding the center",
                  "stations": "evenly spaced stations", "under_center": "hanging below the center",
-                 "drop": "hanging below the center"}.get(side.position or "", "as accents")
+                 "drop": "hanging below the center",
+                 "quatrefoil_stations": "as quatrefoil clusters of four along the branch, "
+                                        "graduated toward the terminal",
+                 "quatrefoil_centers": "one at the heart of each quatrefoil cluster",
+                 "pave_leaves": "pavé set across the branch's leaves",
+                 }.get(side.position or "", "as accents")
         # phrasing proven against live image models: EXACTLY + relative scale
         # holds counts and stops accents inflating into feature stones
         w = side.dimensions_mm.width

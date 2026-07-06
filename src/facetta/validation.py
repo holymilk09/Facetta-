@@ -28,6 +28,11 @@ STATION_GAP_MM = 1.0   # minimum metal between bangle station stones
 RING_TEMPLATES = ("solitaire_prong", "halo_prong")
 BRACELET_TEMPLATES = ("love_bangle", "cuff", "link_bracelet")
 UNMOUNTED_TEMPLATES = ("loose_stone",)  # no setting/metal — the stone is the piece
+BROOCH_TEMPLATES = ("leaf_spray_brooch",)
+
+# leaf-spray cluster constants (mm)
+CLUSTER_HUB_MM = 1.6    # metal frame + hub a quatrefoil adds beyond its petals
+SPRAY_END_MM = 5.0      # stem run-out and catch ring past the last cluster
 
 
 def ellipse_perimeter_mm(a: float, b: float) -> float:
@@ -203,6 +208,22 @@ def pendant_drop_mm(spec: Spec) -> float:
         # (identical to width for rounds, longer for pears and ovals)
         drop += PENDANT_LINK_GAP_MM + drop_stone.dimensions_mm.length
     return round(drop, 2)
+
+
+def spray_cluster_row(spec: Spec) -> list[tuple[Stone, float]]:
+    """The leaf-spray's quatrefoil clusters from the tip inward: the terminal
+    (the center stone's four petals) first, then one cluster per four petals
+    of each 'quatrefoil_stations' group, in side-stone order — spec order IS
+    the designer's cluster order along the branch. Each entry is (petal stone,
+    cluster diameter): petals point at the hub, so a cluster spans two petal
+    lengths plus the metal hub and frame."""
+    row = [(spec.stone, 2 * spec.stone.dimensions_mm.length + CLUSTER_HUB_MM)]
+    for stone in spec.side_stones:
+        if stone.position != "quatrefoil_stations":
+            continue
+        d = 2 * stone.dimensions_mm.length + CLUSTER_HUB_MM
+        row += [(stone, d)] * (stone.count // 4)
+    return row
 
 
 def _validate_stone(stone: Stone, loc: tuple, vocab: Vocabulary, issues: list[ValidationIssue]) -> None:
@@ -428,6 +449,64 @@ def _validate_metal(metal, vocab: Vocabulary, issues: list[ValidationIssue]) -> 
         ))
 
 
+def _validate_spray(spec: Spec, issues: list[ValidationIssue]) -> None:
+    """Leaf-spray cluster arithmetic and fit: quatrefoils come in fours, every
+    cluster carries one center, and the cluster row must fit the spray."""
+    if spec.brooch is None:
+        issues.append(ValidationIssue(
+            loc=("brooch",), type="template",
+            msg=f"template '{spec.template}' requires a brooch section",
+        ))
+    counts_ok = True
+    if spec.stone.count != 4:
+        counts_ok = False
+        issues.append(ValidationIssue(
+            loc=("stone", "count"), type="fit",
+            msg="the terminal quatrefoil is four petals — stone.count must be 4",
+            expected={"count": 4},
+        ))
+    for i, stone in enumerate(spec.side_stones):
+        if stone.position == "quatrefoil_stations" and stone.count % 4:
+            counts_ok = False
+            issues.append(ValidationIssue(
+                loc=("side_stones", i, "count"), type="fit",
+                msg=(f"quatrefoil stations come in fours — {stone.count} "
+                     "petals leave a partial cluster"),
+            ))
+    if not counts_ok:
+        return
+    row = spray_cluster_row(spec)
+    centers = sum(s.count for s in spec.side_stones
+                  if s.position == "quatrefoil_centers")
+    if centers and centers != len(row):
+        issues.append(ValidationIssue(
+            loc=("side_stones",), type="fit",
+            msg=(f"{len(row)} quatrefoil clusters need {len(row)} center stones "
+                 f"— the spec carries {centers}"),
+            expected={"center_count": len(row)},
+        ))
+    if spec.brooch is None:
+        return
+    need = round(sum(d for _, d in row) + STATION_GAP_MM * (len(row) - 1)
+                 + SPRAY_END_MM, 2)
+    if need > spec.brooch.length_mm:
+        issues.append(ValidationIssue(
+            loc=("brooch", "length_mm"), type="fit",
+            msg=(f"the cluster row needs {need} mm of spray (clusters + "
+                 f"{STATION_GAP_MM} mm gaps + {SPRAY_END_MM} mm stem run-out) "
+                 f"but the spray is {spec.brooch.length_mm} mm"),
+            expected={"min_length_mm": need},
+        ))
+    terminal_d = row[0][1]
+    if spec.brooch.width_mm < terminal_d + 4:
+        issues.append(ValidationIssue(
+            loc=("brooch", "width_mm"), type="fit",
+            msg=(f"the terminal cluster is {terminal_d} mm across — the spray "
+                 "needs at least 4 mm of leaf above it"),
+            expected={"min_width_mm": round(terminal_d + 4, 2)},
+        ))
+
+
 def _validate_assembly(spec: Spec, vocab: Vocabulary, issues: list[ValidationIssue]) -> None:
     """Template section requirements and multi-stone physical fit."""
     if spec.template not in UNMOUNTED_TEMPLATES:
@@ -502,6 +581,8 @@ def _validate_assembly(spec: Spec, vocab: Vocabulary, issues: list[ValidationIss
             loc=("pendant",), type="template",
             msg="template 'cluster_pendant' requires a pendant section",
         ))
+    if spec.template in BROOCH_TEMPLATES:
+        _validate_spray(spec, issues)
     if spec.chain is not None:
         if spec.chain.style not in vocab.chain_style_ids():
             issues.append(ValidationIssue(

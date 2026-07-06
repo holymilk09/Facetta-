@@ -117,6 +117,13 @@ class Pendant(StrictModel):
     drop_mm: Mm | None = None  # overall bail-top to lowest point; derived if absent
 
 
+class Brooch(StrictModel):
+    """Spray footprint: tip-to-catch reach and the widest cross measure."""
+
+    length_mm: Annotated[float, Field(strict=True, ge=20, le=150)]
+    width_mm: Annotated[float, Field(strict=True, ge=8, le=80)]
+
+
 class Spec(StrictModel):
     schema_version: Literal[1]
     design_id: str
@@ -134,5 +141,6 @@ class Spec(StrictModel):
     bracelet: Bracelet | None = None
     pendant: Pendant | None = None
     chain: Chain | None = None
+    brooch: Brooch | None = None
     side_stones: list[Stone] = Field(default_factory=list)
     notes_to_factory: str | None = None

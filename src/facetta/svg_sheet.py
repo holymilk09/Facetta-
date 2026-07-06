@@ -1203,6 +1203,298 @@ def _render_link_bracelet(spec: Spec) -> str:
     return _frame(spec, "TECHNICAL SHEET — LINK BRACELET", "2:1", body)
 
 
+# --- leaf spray brooch --------------------------------------------------------
+
+SPRAY_SCALE = 2.0          # face view; an 85 mm spray must fit the sheet
+SPRAY_SECTION_SCALE = 4.0  # end section, where stone depths need to read
+SPRAY_STEM_MM = 1.4        # drawn branch width
+SPRAY_CATCH_R_MM = 2.0     # the catch/jump ring closing the stem
+SPRAY_MELEE_PER_LEAF = 12  # pavé stones a drawn leaf comfortably carries
+
+
+def _bezier_xy(p0, p1, p2, t: float) -> tuple[float, float]:
+    u = 1 - t
+    return (u * u * p0[0] + 2 * u * t * p1[0] + t * t * p2[0],
+            u * u * p0[1] + 2 * u * t * p1[1] + t * t * p2[1])
+
+
+def _bezier_t_at_x(p0, p1, p2, x: float) -> float:
+    """Parameter of the x-monotonic quadratic stem at a given x."""
+    a = p0[0] - 2 * p1[0] + p2[0]
+    b = 2 * (p1[0] - p0[0])
+    c = p0[0] - x
+    if abs(a) < 1e-9:
+        return min(1.0, max(0.0, -c / b))
+    t = (-b + math.sqrt(max(0.0, b * b - 4 * a * c))) / (2 * a)
+    return min(1.0, max(0.0, t))
+
+
+def _spray_layout(spec: Spec) -> dict:
+    """The leaf spray in mm, y down, x = 0 at the terminal cluster's tip-most
+    point. Everything both renderers draw — cluster positions, the stem curve,
+    the catch, every leaf and every pavé stone — comes from here, so the ink
+    sheet and the color views can never disagree about geometry."""
+    from facetta.validation import spray_cluster_row
+
+    b = spec.brooch
+    length, width = b.length_mm, b.width_mm
+    row = spray_cluster_row(spec)
+
+    xs = []
+    x = row[0][1] / 2
+    for i, (stone, d) in enumerate(row):
+        if i:
+            x += row[i - 1][1] / 2 + 1.0 + d / 2  # STATION_GAP_MM between frames
+        xs.append(x)
+
+    # centers pool: one per cluster, spec order, terminal first
+    centers = [s for s in spec.side_stones if s.position == "quatrefoil_centers"]
+    center_of = []
+    pool = [c for c in centers for _ in range(c.count)]
+    for i in range(len(row)):
+        center_of.append(pool[i] if i < len(pool) else None)
+
+    # the stem rises from behind the terminal to the catch at the far end
+    terminal_d = row[0][1]
+    y_top0 = terminal_d / 2 - width         # provisional top for the stem shape
+    p0 = (xs[0], -terminal_d * 0.35)
+    p2 = (length - 2 * SPRAY_CATCH_R_MM, y_top0 + width * 0.30)
+    p1 = (length * 0.52, y_top0 + width * 0.10)  # bows the branch upward
+    catch = (length - SPRAY_CATCH_R_MM, p2[1])
+
+    # clusters nestle against the branch's underside, as drawn
+    clusters = []  # (x, y, cluster_d, petal stone)
+    for x, (stone, d) in zip(xs, row):
+        t = _bezier_t_at_x(p0, p1, p2, x)
+        sy = _bezier_xy(p0, p1, p2, t)[1]
+        clusters.append((x, sy + SPRAY_STEM_MM / 2 + d / 2 * 0.92, d, stone))
+    bottom = max(y + d / 2 for _, y, d, _ in clusters)
+    y_top = bottom - width                  # width spans leaf tips to cluster row
+
+    # leaves: herringbone above the stem, pavé counts distributed exactly
+    pave = [s for s in spec.side_stones if s.position == "pave_leaves"]
+    melee_pool = [s for s in pave for _ in range(s.count)]
+    total = len(melee_pool)
+    leaves = []
+    if total:
+        n = max(4, math.ceil(total / SPRAY_MELEE_PER_LEAF))
+        x_start = xs[0] + terminal_d * 0.45
+        x_end = length - 2 * SPRAY_CATCH_R_MM - 2.0
+        taken = 0
+        for j in range(n):
+            share = total // n + (1 if j < total % n else 0)
+            lx = x_start + (x_end - x_start) * (j / max(1, n - 1))
+            t = _bezier_t_at_x(p0, p1, p2, lx)
+            sx, sy = _bezier_xy(p0, p1, p2, t)
+            # stem tangent, then a leaf angled up off whichever side is next
+            dx = 2 * (1 - t) * (p1[0] - p0[0]) + 2 * t * (p2[0] - p1[0])
+            dy = 2 * (1 - t) * (p1[1] - p0[1]) + 2 * t * (p2[1] - p1[1])
+            phi = math.atan2(dy, dx)
+            psi = phi - math.radians(65 if j % 2 == 0 else 115)
+            melee_d = melee_pool[taken].dimensions_mm.width if share else 0.0
+            reach = sy - y_top
+            l_leaf = min(0.42 * width, reach * 0.95 / max(0.35, -math.sin(psi)))
+            l_leaf = max(l_leaf, 3 * melee_d)
+            ux, uy = math.cos(psi), math.sin(psi)
+            px, py = -uy, ux
+            ry = l_leaf * 0.19
+            stones = []
+            step = 0.68 * l_leaf / max(1, math.ceil(share / 2))
+            for m in range(share):
+                along = 0.16 * l_leaf + (m // 2 + 0.5 * (m % 2)) * step
+                side_off = 0.30 * ry * (1 if m % 2 else -1)
+                stones.append((sx + ux * along + px * side_off,
+                               sy + uy * along + py * side_off,
+                               melee_pool[taken + m].dimensions_mm.width / 2))
+            taken += share
+            leaves.append({
+                "base": (sx, sy), "tip": (sx + ux * l_leaf, sy + uy * l_leaf),
+                "center": (sx + ux * l_leaf / 2, sy + uy * l_leaf / 2),
+                "rx": l_leaf / 2, "ry": ry, "deg": math.degrees(psi),
+                "stones": stones,
+            })
+    return {
+        "length": length, "width": width, "y_top": y_top,
+        "clusters": clusters, "center_of": center_of,
+        "stem": (p0, p1, p2), "catch": catch, "leaves": leaves,
+        "bottom": bottom,
+    }
+
+
+def _quatrefoil_ink(cx: float, cy: float, petal, center, d_pp: float,
+                    s: float) -> list[str]:
+    """A quatrefoil face-up in ink: faint beaded frame, four pear petals
+    pointing at the hub, the round center over the hub."""
+    parts = [f'<circle cx="{cx:.2f}" cy="{cy:.2f}" r="{d_pp / 2:.2f}" '
+             f'fill="none" stroke="{FAINT}" stroke-width="{STROKE_DIM}"/>']
+    pw = petal.dimensions_mm.width * s
+    pl = petal.dimensions_mm.length * s
+    hub = d_pp / 2 - pl  # petal tips stop at the hub edge
+    for k in range(4):
+        theta = 90 * k  # petals at E, S, W, N
+        r_mid = hub + pl / 2
+        px = cx + r_mid * math.cos(math.radians(theta))
+        py = cy + r_mid * math.sin(math.radians(theta))
+        # the base pear points up (-y); spin its point onto the hub
+        parts.append(f'<g transform="rotate({(theta + 270) % 360} {px:.2f} {py:.2f})">')
+        parts += _facet_face_up(px, py, petal.cut, pw, pl)
+        parts.append("</g>")
+    if center is not None:
+        parts.append(_circle(cx, cy, center.dimensions_mm.width / 2 * s))
+    return parts
+
+
+def _spray_front_view(spec: Spec, ox: float, oy: float) -> list[str]:
+    """The spray face-up: clusters on the shared baseline, the stem curving
+    over them, pavé leaves above, the catch closing the run. ox is the page x
+    of the terminal tip; oy is the cluster centerline (the sheet datum)."""
+    s = SPRAY_SCALE
+    lay = _spray_layout(spec)
+
+    def pp(pt):  # mm-domain point -> paper space
+        return ox + pt[0] * s, oy + pt[1] * s
+
+    p0, p1, p2 = (pp(p) for p in lay["stem"])
+    parts = [
+        # branch: hatched band with its center vein, like the drawn artwork
+        f'<path d="M {p0[0]:.2f} {p0[1]:.2f} Q {p1[0]:.2f} {p1[1]:.2f} '
+        f'{p2[0]:.2f} {p2[1]:.2f}" fill="none" stroke="url(#hatch)" '
+        f'stroke-width="{SPRAY_STEM_MM * s:.2f}" stroke-linecap="round"/>',
+        f'<path d="M {p0[0]:.2f} {p0[1]:.2f} Q {p1[0]:.2f} {p1[1]:.2f} '
+        f'{p2[0]:.2f} {p2[1]:.2f}" fill="none" stroke="{INK}" '
+        f'stroke-width="{STROKE_DIM}"/>',
+    ]
+    cx_catch, cy_catch = pp(lay["catch"])
+    r_catch = SPRAY_CATCH_R_MM * s
+    parts += [
+        _circle(cx_catch, cy_catch, r_catch),
+        _circle(cx_catch, cy_catch, r_catch * 0.55),
+    ]
+    for leaf in lay["leaves"]:
+        cxl, cyl = pp(leaf["center"])
+        bx, by = pp(leaf["base"])
+        parts.append(
+            f'<g transform="rotate({leaf["deg"]:.1f} {cxl:.2f} {cyl:.2f})">'
+            f'<ellipse cx="{cxl:.2f}" cy="{cyl:.2f}" rx="{leaf["rx"] * s:.2f}" '
+            f'ry="{leaf["ry"] * s:.2f}" fill="none" stroke="{INK}" '
+            f'stroke-width="{STROKE_MAIN}"/></g>')
+        for mx, my, mr in leaf["stones"]:
+            parts.append(_circle(*pp((mx, my)), mr * s))
+    for (x, y, d, petal), center in zip(lay["clusters"], lay["center_of"]):
+        cx, cy = pp((x, y))
+        stem_t = _bezier_t_at_x(*lay["stem"], x)
+        sx, sy = pp(_bezier_xy(*lay["stem"], stem_t))
+        parts.append(_line(cx, cy - d / 2 * s, sx, sy, w=STROKE_MAIN))  # stalk
+        parts += _quatrefoil_ink(cx, cy, petal, center, d * s, s)
+
+    # dimensions: overall reach, overall width, the terminal cluster
+    term_x, term_y, term_d = (lay["clusters"][0][k] for k in range(3))
+    tx, ty = pp((term_x, term_y))
+    r_term = term_d / 2 * s
+    y_bot = oy + lay["bottom"] * s
+    y_len = y_bot + 10
+    x_end = ox + lay["length"] * s
+    parts += [
+        _ext(ox, ty, ox, y_len - 1),                       # terminal frame edge
+        _ext(x_end, cy_catch, x_end, y_len - 1),           # catch outer edge
+        *_dim_h(ox, x_end, y_len, f"{_fmt(lay['length'])} mm"),
+        _ext(tx, y_bot, x_end + 9, y_bot),                 # terminal frame bottom
+        *_dim_v(x_end + 8, oy + lay["y_top"] * s, y_bot, f"{_fmt(lay['width'])} mm"),
+        _ext(tx - r_term, ty, tx - r_term, y_bot + 5),
+        _ext(tx + r_term, ty, tx + r_term, y_bot + 5),
+        *_dim_h(tx - r_term, tx + r_term, y_bot + 4, f"{_fmt(term_d)} mm"),
+        _text((ox + x_end) / 2, y_len + 7, "FACE VIEW", size=3.6,
+              style=' letter-spacing="1.2"'),
+    ]
+    petals = [s_ for s_ in spec.side_stones if s_.position == "quatrefoil_stations"]
+    note = " + ".join(
+        f"{p.count // 4} × [{p.count} {p.species}]" for p in petals)
+    pave_total = sum(s_.count for s_ in spec.side_stones
+                     if s_.position == "pave_leaves")
+    parts += [
+        _text((ox + x_end) / 2, y_len + 12,
+              f"clusters tip-first: terminal [4 {spec.stone.species}] + {note}",
+              size=2.8, color=FAINT),
+        _text((ox + x_end) / 2, y_len + 16.5,
+              f"{pave_total} pavé stones across {len(lay['leaves'])} leaves",
+              size=2.8, color=FAINT),
+    ]
+    return parts
+
+
+def _stone_profile_table_up(cx: float, cy: float, depth_pp: float,
+                            length_pp: float, table_frac: float = 0.57) -> list[str]:
+    """A stone edge-on, table up (a brooch face), culet sunk toward the mount:
+    crown trapezoid, girdle band, pavilion converging downward."""
+    g = max(0.5, 0.03 * depth_pp)
+    crown_h = 0.26 * depth_pp - g / 2
+    y_t = cy - depth_pp / 2
+    y_g1 = y_t + crown_h
+    y_g2 = y_g1 + g
+    y_culet = cy + depth_pp / 2
+    hl = length_pp / 2
+    t_hl = hl * table_frac
+    return [
+        f'<polygon points="{cx - t_hl:.2f},{y_t:.2f} {cx + t_hl:.2f},{y_t:.2f} '
+        f'{cx + hl:.2f},{y_g1:.2f} {cx - hl:.2f},{y_g1:.2f}" '
+        f'fill="#ffffff" stroke="{INK}" stroke-width="{STROKE_MAIN}"/>',
+        f'<rect x="{cx - hl:.2f}" y="{y_g1:.2f}" width="{length_pp:.2f}" '
+        f'height="{g:.2f}" fill="#ffffff" stroke="{INK}" stroke-width="{STROKE_MAIN}"/>',
+        f'<polygon points="{cx - hl:.2f},{y_g2:.2f} {cx + hl:.2f},{y_g2:.2f} '
+        f'{cx:.2f},{y_culet:.2f}" fill="#ffffff" stroke="{INK}" '
+        f'stroke-width="{STROKE_MAIN}"/>',
+    ]
+
+
+def _spray_end_view(spec: Spec, cx: float, cy: float) -> list[str]:
+    """End section at the terminal cluster: stem bar in section, a petal
+    edge-on above it — the stone rise a setter needs."""
+    s = SPRAY_SECTION_SCALE
+    petal = spec.stone.dimensions_mm
+    depth = petal.depth * s
+    span = petal.length * s
+    bar_w, bar_h = 3.4 * s, 1.4 * s
+    bar_top = cy + depth / 2 + 0.1 * s
+    parts = [
+        f'<rect x="{cx - bar_w / 2:.2f}" y="{bar_top:.2f}" width="{bar_w:.2f}" '
+        f'height="{bar_h:.2f}" rx="{bar_h / 2:.2f}" fill="url(#hatch)" '
+        f'stroke="{INK}" stroke-width="{STROKE_MAIN}"/>',
+        *_stone_profile_table_up(cx, cy, depth, span,
+                                 (spec.stone.table_pct or 57) / 100),
+        _line(cx, cy - depth / 2 - 4, cx, bar_top + bar_h + 4,
+              w=STROKE_DIM, color=FAINT, dash="3 1 0.5 1"),
+    ]
+    g = max(0.5, 0.03 * depth)
+    y_g1 = cy - depth / 2 + (0.26 * depth - g / 2)
+    x_dim = cx + span / 2 + 8
+    parts += [
+        _ext(cx + span / 2, y_g1, x_dim + 1, y_g1),
+        _ext(cx + span / 2 * 0.57, cy - depth / 2, x_dim + 1, cy - depth / 2),
+        *_dim_v(x_dim, cy - depth / 2, cy + depth / 2,
+                f"{_fmt(petal.depth)} mm"),
+        _ext(cx - span / 2, y_g1, cx - span / 2, bar_top + bar_h + 8),
+        _ext(cx + span / 2, y_g1, cx + span / 2, bar_top + bar_h + 8),
+        *_dim_h(cx - span / 2, cx + span / 2, bar_top + bar_h + 7,
+                f"{_fmt(petal.length)} mm"),
+        _text(cx, bar_top + bar_h + 15, "END SECTION", size=3.6,
+              style=' letter-spacing="1.2"'),
+        _text(cx, bar_top + bar_h + 20, "terminal petal on the stem bar",
+              size=2.8, color=FAINT),
+    ]
+    return parts
+
+
+def _render_leaf_spray(spec: Spec) -> str:
+    if spec.brooch is None:
+        raise SheetUnsupported("a leaf spray sheet needs a brooch section")
+    if spec.brooch.length_mm * SPRAY_SCALE > 210:
+        raise SheetUnsupported(
+            "a spray longer than 105 mm does not fit the 2:1 sheet")
+    body = (_spray_front_view(spec, MARGIN + 12, BASELINE)
+            + _spray_end_view(spec, 262, BASELINE))
+    return _frame(spec, "TECHNICAL SHEET — LEAF SPRAY BROOCH", "2:1 / 4:1", body)
+
+
 # --- loose stone / gem ID -------------------------------------------------------
 
 GEM_SCALES = (10.0, 8.0, 6.0, 4.0, 3.0)
@@ -1361,6 +1653,7 @@ TEMPLATES = {
     "cuff": _render_cuff,
     "link_bracelet": _render_link_bracelet,
     "loose_stone": _render_loose_stone,
+    "leaf_spray_brooch": _render_leaf_spray,
 }
 
 

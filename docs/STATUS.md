@@ -67,6 +67,18 @@ through all three models, compare against the fidelity checklist (14 surround
 stones alternating, claws/cap as drawn, no invented text), send images to the
 founder.
 
+2026-07-06 — NEW TEMPLATE: `leaf_spray_brooch` (first brooch archetype),
+built from the designer's hand-drawn artwork. Additive `brooch` spec section
+(length/width), quatrefoil cluster rules (petals in fours, one center per
+cluster, row-fits-spray), shared `_spray_layout` driving the ink sheet,
+color prototype, control image, and presentation plate; 21 tests + golden.
+Cluster order along the branch = side_stones order (designer intent).
+Example: docs/examples/leaf_spray_brooch.json — dimensions are DRAFT
+proposals from the artwork, pending the designer's corrections. Live
+three-engine renders off the control image held all 5 clusters exactly
+(direct artwork-as-control renders had each engine inventing elements —
+the control-image pipeline is the product, confirmed).
+
 2026-07-05 update — first live renders done, all three engines. Providers now
 return images inline (fal `sync_mode`, xAI `response_format: b64_json`) so no
 CDN hosts (v3.fal.media, imgen.x.ai) need network allowances — only fal.run

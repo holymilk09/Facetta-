@@ -303,6 +303,17 @@ def round_spec() -> dict:
     return copy.deepcopy(ROUND_SPEC)
 
 
+@pytest.fixture
+def spray_spec() -> dict:
+    """The leaf-spray brooch extracted from the designer's artwork — the
+    checked-in example IS the fixture, so the tests pin the real file."""
+    import json
+    from pathlib import Path
+
+    path = Path(__file__).parent.parent / "docs" / "examples" / "leaf_spray_brooch.json"
+    return json.loads(path.read_text())
+
+
 @pytest.fixture(scope="session")
 def vocab():
     return get_vocabulary()

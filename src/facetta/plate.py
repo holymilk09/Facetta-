@@ -16,7 +16,8 @@ import re
 
 from facetta.prototype import (
     _bracelet_proto, _center_default_mount, _defs, _ellipse_arc_angles,
-    _loose_proto, _metal_stops, _mix, _pendant_proto, _ring_proto, stone_hex,
+    _loose_proto, _metal_stops, _mix, _pendant_proto, _ring_proto,
+    _spray_origin, _spray_proto, SPRAY_PROTO_SCALE, stone_hex,
     stone_manifest,
 )
 from facetta.spec import Spec
@@ -49,6 +50,7 @@ TITLES = {
     "link_bracelet": "Link Bracelet",
     "cluster_pendant": "Cluster Pendant",
     "loose_stone": "Loose Stone",
+    "leaf_spray_brooch": "Leaf Spray Brooch",
 }
 
 
@@ -450,6 +452,26 @@ def _loose_dims(spec: Spec) -> list[str]:
     return parts
 
 
+def _spray_dims(spec: Spec) -> list[str]:
+    from facetta.svg_sheet import _spray_layout
+
+    s = SPRAY_PROTO_SCALE
+    lay = _spray_layout(spec)
+    ox, oy = _spray_origin(lay, s)
+    x_end = ox + lay["length"] * s
+    y_top = oy + lay["y_top"] * s
+    y_bot = oy + lay["bottom"] * s
+    term_x, term_y, term_d = (lay["clusters"][0][k] for k in range(3))
+    parts = _dim_h(ox, x_end, y_bot + 10, f"{_fmt(lay['length'])} mm across")
+    parts += _dim_v(x_end + 8, y_top, y_bot, f"{_fmt(lay['width'])} mm")
+    parts += _leader(ox + (term_x - term_d / 2 * 0.7071) * s,
+                     oy + (term_y + term_d / 2 * 0.7071) * s,
+                     ox - 4, oy + (term_y + term_d) * s,
+                     f"terminal cluster {_fmt(term_d)} mm", anchor="start")
+    parts.append(_t((ox + x_end) / 2, y_top - 5, "face on", size=3.6, color=FAINT))
+    return parts
+
+
 def render_control_image(spec: Spec) -> str:
     """The geometry scaffold an image model paints over: every stone, mount,
     and silhouette at its exact position — and nothing else. No lettering
@@ -465,6 +487,8 @@ def render_control_image(spec: Spec) -> str:
                 + _pendant_profile_plate(spec, vocab, dims=False))
     elif spec.template == "loose_stone":
         body = _loose_proto(spec, vocab)
+    elif spec.template == "leaf_spray_brooch":
+        body = _spray_proto(spec, vocab)
     else:
         raise ValueError(f"no control image for template '{spec.template}'")
     parts = [
@@ -498,6 +522,8 @@ def render_presentation_plate(spec: Spec, paper: str = "ivory") -> str:
         dims = _pendant_dims(spec)
     elif spec.template == "loose_stone":
         body, dims = _loose_proto(spec, vocab), _loose_dims(spec)
+    elif spec.template == "leaf_spray_brooch":
+        body, dims = _spray_proto(spec, vocab), _spray_dims(spec)
     else:
         raise ValueError(f"no presentation plate for template '{spec.template}'")
 

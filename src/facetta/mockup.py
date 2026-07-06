@@ -190,6 +190,12 @@ def fidelity_checklist(spec: Spec) -> list[str]:
                 f"({side.cut.replace('_', ' ')}) — reject smooth domes")
     if spec.chain is None and spec.jewelry_type in ("pendant", "necklace"):
         checks.append("NO chain — the spec has none; reject renders that add one")
+    if spec.template == "leaf_spray_brooch":
+        from facetta.validation import spray_cluster_row
+        checks.insert(0, (
+            f"EXACTLY {len(spray_cluster_row(spec))} quatrefoil clusters on ONE "
+            "curved branch, the largest at the tip — reject a mirrored second "
+            "branch or extra clusters"))
     if spec.metal:
         karat = f"{spec.metal.karat}k " if spec.metal.karat else ""
         color = f"{spec.metal.color} " if spec.metal.color else ""
@@ -228,6 +234,8 @@ def geometry_fingerprint(spec: Spec) -> str:
         geo["pendant"] = [spec.pendant.bail_inner_diameter_mm, spec.pendant.bail_height_mm]
     if spec.chain:
         geo["chain"] = [spec.chain.style, spec.chain.length_mm, spec.chain.clasp]
+    if spec.brooch:
+        geo["brooch"] = [spec.brooch.length_mm, spec.brooch.width_mm]
     return hashlib.sha256(json.dumps(geo, sort_keys=True).encode()).hexdigest()
 
 

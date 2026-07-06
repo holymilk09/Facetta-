@@ -113,14 +113,15 @@ class TestBlueprintAlignment:
 
     def test_witness_lines_snap_on_every_template(
         self, example_spec, halo_spec, bangle_spec, pendant_spec,
-        cuff_spec, link_spec, necklace_spec, loose_spec,
+        cuff_spec, link_spec, necklace_spec, loose_spec, spray_spec,
     ):
         from support import assert_witness_lines_snap
 
         for name, raw in [("solitaire", example_spec), ("halo", halo_spec),
                           ("bangle", bangle_spec), ("pendant", pendant_spec),
                           ("cuff", cuff_spec), ("link_bracelet", link_spec),
-                          ("necklace", necklace_spec), ("loose_stone", loose_spec)]:
+                          ("necklace", necklace_spec), ("loose_stone", loose_spec),
+                          ("leaf_spray", spray_spec)]:
             count = assert_witness_lines_snap(self._sheet(raw), name)
             assert count >= 6, f"{name}: expected a fully dimensioned sheet"
 
