@@ -237,6 +237,8 @@ def geometry_fingerprint(spec: Spec) -> str:
     if spec.brooch:
         geo["brooch"] = [spec.brooch.length_mm, spec.brooch.width_mm,
                          spec.brooch.sweep_deg]
+    if spec.composition:
+        geo["composition"] = [spec.composition.clusters, spec.composition.vein]
     return hashlib.sha256(json.dumps(geo, sort_keys=True).encode()).hexdigest()
 
 

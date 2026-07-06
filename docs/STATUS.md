@@ -67,6 +67,23 @@ through all three models, compare against the fidelity checklist (14 surround
 stones alternating, claws/cap as drawn, no invented text), send images to the
 founder.
 
+2026-07-06 v3 — ARTWORK TRACING (founder audit: "we have the mathematics but
+we are ruining the designer's design"). Root cause found: the drawing's own
+vector geometry never entered the system — stages control→engines were
+provably faithful, but spec→layout re-synthesized composition from taste
+constants. New `facetta/trace.py`: deterministic tracer (no AI) — color
+segmentation finds the drawn quatrefoils, picks the master study, walks the
+chain terminal-first, infers the diamond cluster's slot from its double gap,
+measures reach from the gold foliage. Output = normalized anchors stored in
+the spec's new `composition` section (immutable, versioned with the design).
+The renderer anchors to it; parametric layout is now only the untraced
+fallback. Tracing the artwork CORRECTED the extraction: 6 clusters (not 5),
+true graduation ratios, the real ~48° rake (width 62 mm, not 32). Also per
+founder: leaves are pointed lenses, dense, both sides; quatrefoil frames hug
+each petal's silhouette (NEVER a ring — the drawn circle on the sheet is a
+dashed construction envelope only); factory STONE SCHEDULE on the sheet:
+each stone definition once, lettered A–K, repeats by reference.
+
 2026-07-06 later — leaf-spray v2 after founder review ("not matching"): the
 lesson is COMPOSITION IS SPEC DATA. v1 hardcoded layout taste (bare wire
 stem, sparse one-sided leaves, dangling clusters) and the engines faithfully

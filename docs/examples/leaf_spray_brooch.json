@@ -10,11 +10,11 @@
   "stone": {
     "species": "emerald",
     "cut": "pear",
-    "carat": 0.583,
+    "carat": 0.337,
     "dimensions_mm": {
-      "length": 7.0,
-      "width": 5.0,
-      "depth": 3.5
+      "length": 6.1,
+      "width": 4.3,
+      "depth": 2.7
     },
     "color": {
       "trade": "Muzo Green",
@@ -29,11 +29,11 @@
     {
       "species": "diamond",
       "cut": "pear",
-      "carat": 0.309,
+      "carat": 0.26,
       "dimensions_mm": {
-        "length": 5.5,
-        "width": 3.8,
-        "depth": 2.4
+        "length": 5.1,
+        "width": 3.6,
+        "depth": 2.3
       },
       "color": {
         "trade": "F",
@@ -46,11 +46,11 @@
     {
       "species": "emerald",
       "cut": "pear",
-      "carat": 0.208,
+      "carat": 0.201,
       "dimensions_mm": {
-        "length": 5.0,
-        "width": 3.5,
-        "depth": 2.5
+        "length": 5.1,
+        "width": 3.6,
+        "depth": 2.3
       },
       "color": {
         "trade": "Muzo Green",
@@ -63,11 +63,11 @@
     {
       "species": "emerald",
       "cut": "pear",
-      "carat": 0.143,
+      "carat": 0.163,
       "dimensions_mm": {
-        "length": 4.4,
-        "width": 3.1,
-        "depth": 2.2
+        "length": 4.8,
+        "width": 3.4,
+        "depth": 2.1
       },
       "color": {
         "trade": "Muzo Green",
@@ -80,11 +80,28 @@
     {
       "species": "emerald",
       "cut": "pear",
-      "carat": 0.093,
+      "carat": 0.117,
       "dimensions_mm": {
-        "length": 3.8,
-        "width": 2.7,
+        "length": 4.3,
+        "width": 3.0,
         "depth": 1.9
+      },
+      "color": {
+        "trade": "Muzo Green",
+        "gia": "vivid, warm, slightly yellowish green"
+      },
+      "count": 4,
+      "position": "quatrefoil_stations",
+      "phenomena": []
+    },
+    {
+      "species": "emerald",
+      "cut": "pear",
+      "carat": 0.104,
+      "dimensions_mm": {
+        "length": 4.2,
+        "width": 2.9,
+        "depth": 1.8
       },
       "color": {
         "trade": "Muzo Green",
@@ -124,7 +141,7 @@
         "trade": "F",
         "gia": "colorless"
       },
-      "count": 4,
+      "count": 5,
       "position": "quatrefoil_centers",
       "phenomena": []
     },
@@ -193,8 +210,69 @@
   },
   "brooch": {
     "length_mm": 85.0,
-    "width_mm": 32.0,
-    "sweep_deg": 70.0
+    "width_mm": 62.0,
+    "sweep_deg": null
   },
-  "notes_to_factory": "Extracted from the designer's hand-drawn artwork; all dimensions are proposed drafts pending her review."
+  "notes_to_factory": "Extracted from the designer's hand-drawn artwork; all dimensions are proposed drafts pending her review.",
+  "composition": {
+    "source": "traced:IMG_5523.jpeg",
+    "clusters": [
+      [
+        0.0,
+        0.0,
+        0.0884
+      ],
+      [
+        0.1262,
+        -0.1142,
+        0.075
+      ],
+      [
+        0.2524,
+        -0.2284,
+        0.075
+      ],
+      [
+        0.3883,
+        -0.3255,
+        0.0713
+      ],
+      [
+        0.5102,
+        -0.4234,
+        0.0655
+      ],
+      [
+        0.5418,
+        -0.5513,
+        0.0636
+      ]
+    ],
+    "vein": [
+      [
+        0.0,
+        -0.0796
+      ],
+      [
+        0.1262,
+        -0.1817
+      ],
+      [
+        0.2524,
+        -0.2959
+      ],
+      [
+        0.3883,
+        -0.3897
+      ],
+      [
+        0.5102,
+        -0.4824
+      ],
+      [
+        0.5418,
+        -0.6085
+      ]
+    ]
+  }
 }

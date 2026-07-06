@@ -485,18 +485,30 @@ def _validate_spray(spec: Spec, issues: list[ValidationIssue]) -> None:
                  f"— the spec carries {centers}"),
             expected={"center_count": len(row)},
         ))
+    if spec.composition is not None:
+        if len(spec.composition.clusters) != len(row):
+            issues.append(ValidationIssue(
+                loc=("composition", "clusters"), type="fit",
+                msg=(f"the traced composition anchors {len(spec.composition.clusters)} "
+                     f"clusters but the stones describe {len(row)} — the artwork "
+                     "and the stone list disagree"),
+                expected={"cluster_count": len(row)},
+            ))
     if spec.brooch is None:
         return
-    need = round(sum(d for _, d in row) + STATION_GAP_MM * (len(row) - 1)
-                 + SPRAY_END_MM, 2)
-    if need > spec.brooch.length_mm:
-        issues.append(ValidationIssue(
-            loc=("brooch", "length_mm"), type="fit",
-            msg=(f"the cluster row needs {need} mm of spray (clusters + "
-                 f"{STATION_GAP_MM} mm gaps + {SPRAY_END_MM} mm stem run-out) "
-                 f"but the spray is {spec.brooch.length_mm} mm"),
-            expected={"min_length_mm": need},
-        ))
+    if spec.composition is None:
+        # straight-row fit only applies when the layout is synthesized; a
+        # traced composition carries its own (curved) cluster positions
+        need = round(sum(d for _, d in row) + STATION_GAP_MM * (len(row) - 1)
+                     + SPRAY_END_MM, 2)
+        if need > spec.brooch.length_mm:
+            issues.append(ValidationIssue(
+                loc=("brooch", "length_mm"), type="fit",
+                msg=(f"the cluster row needs {need} mm of spray (clusters + "
+                     f"{STATION_GAP_MM} mm gaps + {SPRAY_END_MM} mm stem run-out) "
+                     f"but the spray is {spec.brooch.length_mm} mm"),
+                expected={"min_length_mm": need},
+            ))
     terminal_d = row[0][1]
     if spec.brooch.width_mm < terminal_d + 4:
         issues.append(ValidationIssue(

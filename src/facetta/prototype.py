@@ -651,36 +651,30 @@ def _spray_proto(spec: Spec, vocab: Vocabulary,
         f'<polygon points="{vein_pts}" fill="url(#sheen)"/>',
     ]
     for leaf in lay["leaves"]:
-        cxl, cyl = pp(leaf["center"])
-        parts.append(
-            f'<g transform="rotate({leaf["deg"]:.1f} {cxl:.2f} {cyl:.2f})">'
-            f'<ellipse cx="{cxl:.2f}" cy="{cyl:.2f}" rx="{leaf["rx"] * s:.2f}" '
-            f'ry="{leaf["ry"] * s:.2f}" fill="url(#metal)" stroke="{edge}" '
-            f'stroke-width="0.3"/>'
-            f'<ellipse cx="{cxl:.2f}" cy="{cyl:.2f}" rx="{leaf["rx"] * s:.2f}" '
-            f'ry="{leaf["ry"] * s:.2f}" fill="url(#sheen)"/></g>')
+        pts = " ".join(f"{x:.2f},{y:.2f}" for x, y in
+                       (pp(pt) for pt in leaf["poly"]))
+        parts += [
+            f'<polygon points="{pts}" fill="url(#metal)" stroke="{edge}" '
+            f'stroke-width="0.3"/>',
+            f'<polygon points="{pts}" fill="url(#sheen)"/>',
+        ]
         for mx, my, mr in leaf["stones"]:
             parts.append(_melee_dot(*pp((mx, my)), mr * s))
     parts += _link_ring(*pp(lay["catch"]), 2.0 * s)
+    from facetta.svg_sheet import _petal_frame_pts
     for (x, y, d, petal), center in zip(lay["clusters"], lay["center_of"]):
         cx, cy = pp((x, y))
         r_pp = d / 2 * s
-        parts.append(
-            f'<circle cx="{cx:.2f}" cy="{cy:.2f}" r="{r_pp:.2f}" fill="none" '
-            f'stroke="{m1}" stroke-width="{0.30 * s:.2f}"/>')
-        n_beads = max(8, round(math.pi * d / 1.1))
-        for i in range(n_beads):  # fine beaded frame, as the artwork draws it
-            a = 2 * math.pi * i / n_beads
-            bx = cx + r_pp * math.cos(a)
-            by = cy + r_pp * math.sin(a)
-            parts.append(
-                f'<circle cx="{bx:.2f}" cy="{by:.2f}" r="{0.35 * s:.2f}" '
-                f'fill="{m1}" stroke="{edge}" stroke-width="0.15"/>')
         pw = petal.dimensions_mm.width * s
         pl = petal.dimensions_mm.length * s
         hub = r_pp - 0.8 * s - pl
         for k in range(4):
             theta = 45 + 90 * k  # petals on the diagonals, as drawn
+            # the frame hugs the petal's silhouette — never a ring around it
+            fpts = " ".join(f"{fx:.2f},{fy:.2f}" for fx, fy in
+                            _petal_frame_pts(cx, cy, petal, theta, 2 * r_pp, s))
+            parts.append(f'<polygon points="{fpts}" fill="none" '
+                         f'stroke="{m1}" stroke-width="{0.30 * s:.2f}"/>')
             r_mid = hub + pl / 2
             px = cx + r_mid * math.cos(math.radians(theta))
             py = cy + r_mid * math.sin(math.radians(theta))
@@ -688,6 +682,12 @@ def _spray_proto(spec: Spec, vocab: Vocabulary,
                 f'<g transform="rotate({(theta + 270) % 360} {px:.2f} {py:.2f})">')
             parts += _stone_visual(px, py, petal, pw, pl, vocab)
             parts.append("</g>")
+        for k in range(4):  # beads where neighbouring petal frames meet
+            a = math.radians(90 * k)
+            parts.append(
+                f'<circle cx="{cx + r_pp * 0.72 * math.cos(a):.2f}" '
+                f'cy="{cy + r_pp * 0.72 * math.sin(a):.2f}" r="{0.5 * s:.2f}" '
+                f'fill="{m1}" stroke="{edge}" stroke-width="0.2"/>')
         if center is not None:
             cw = center.dimensions_mm.width * s
             parts += _stone_visual(cx, cy, center, cw, cw, vocab)

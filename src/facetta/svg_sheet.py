@@ -1251,61 +1251,85 @@ def _spray_layout(spec: Spec) -> dict:
     sweep = b.sweep_deg if b.sweep_deg is not None else 70.0
     row = spray_cluster_row(spec)
     terminal_d = row[0][1]
+    leaf_max = min(width * 0.30, 11.0)
 
-    # --- the vein: tip low-left, rising then flattening to the catch -------
-    rise = width * 0.45 * (sweep / 70.0)
-    leaf_max = width * 0.34
+    if spec.composition is not None and len(spec.composition.clusters) == len(row):
+        # ANCHORED: cluster positions and the branch line come from the
+        # designer's own traced artwork — the drawing decides, not the code
+        comp = spec.composition
+        usable = length - terminal_d / 2   # tip cluster center -> tail end
+        shift = terminal_d / 2             # x = 0 at the terminal's tip edge
+        clusters = [(shift + c[0] * usable, c[1] * usable, d, stone)
+                    for c, (stone, d) in zip(comp.clusters, row)]
+        vraw = comp.vein or [[c[0], c[1] - c[2] * 0.9] for c in comp.clusters]
+        vpts = [(shift + x * usable, y * usable) for x, y in vraw]
+        p0 = vpts[0]
+        end_x = length - 2 * SPRAY_CATCH_R_MM
+        # the traced vein covers the cluster zone; beyond it the plume's tail
+        # flattens and rises to just under the piece's top edge, as drawn
+        tail_top = (max(y + d / 2 for _, y, d, _ in clusters) - width)
+        p2 = (end_x, tail_top + 5.0)
+        # middle control point: least squares through the traced vein points
+        nx_ = ny_ = den = 0.0
+        for px_, py_ in vpts[1:-1]:
+            t = min(1.0, max(0.0, (px_ - p0[0]) / max(1e-6, p2[0] - p0[0])))
+            u, w2 = 1 - t, 2 * (1 - t) * t
+            nx_ += w2 * (px_ - u * u * p0[0] - t * t * p2[0])
+            ny_ += w2 * (py_ - u * u * p0[1] - t * t * p2[1])
+            den += w2 * w2
+        p1 = ((nx_ / den, ny_ / den) if den > 1e-9
+              else ((p0[0] + p2[0]) / 2, (p0[1] + p2[1]) / 2))
+    else:
+        # SYNTHESIZED fallback (no trace): tip low-left, rising to the catch
+        rise = width * 0.45 * (sweep / 70.0)
 
-    def build(x_tip: float, x_tail: float):
-        p0 = (x_tip, 0.0)
-        p2 = (x_tail, -rise)
-        p1 = (x_tip + (x_tail - x_tip) * 0.38, -rise * 0.92)  # steep then flat
-        return p0, p1, p2
+        def build(x_tip: float, x_tail: float):
+            p0 = (x_tip, 0.0)
+            p2 = (x_tail, -rise)
+            p1 = (x_tip + (x_tail - x_tip) * 0.38, -rise * 0.92)
+            return p0, p1, p2
 
-    # two passes: build, measure the true x extent, stretch the tail to hit
-    # the spec's reach exactly
-    x_tip, x_tail = terminal_d * 0.55, length - 2 * SPRAY_CATCH_R_MM
-    clusters: list = []
-    for _ in range(2):
+        # two passes: build, measure the true x extent, stretch the tail to
+        # hit the spec's reach exactly
+        x_tip, x_tail = terminal_d * 0.55, length - 2 * SPRAY_CATCH_R_MM
+        clusters = []
+        for _ in range(2):
+            p0, p1, p2 = build(x_tip, x_tail)
+            samples = [(t, _bezier_xy(p0, p1, p2, t)) for t in
+                       (i / 400 for i in range(401))]
+
+            def normal(t):  # concave side: below-right of the vein
+                ux, uy = _bezier_tangent(p0, p1, p2, t)
+                return -uy, ux
+
+            # terminal past the tip, along the tip's own direction
+            ux, uy = _bezier_tangent(p0, p1, p2, 0.0)
+            nx, ny = normal(0.0)
+            c0 = (p0[0] - ux * terminal_d * 0.30 + nx * terminal_d * 0.42,
+                  p0[1] - uy * terminal_d * 0.30 + ny * terminal_d * 0.42)
+            clusters = [(c0[0], c0[1], terminal_d, row[0][0])]
+            t_at = 0.0
+            for stone, d in row[1:]:
+                prev = clusters[-1]
+                need = prev[2] / 2 + d / 2 + 0.3
+                for t, (bx, by) in samples:
+                    if t <= t_at:
+                        continue
+                    nx, ny = normal(t)
+                    cx = bx + nx * (d * 0.42 + SPRAY_STEM_MM / 2)
+                    cy = by + ny * (d * 0.42 + SPRAY_STEM_MM / 2)
+                    if math.hypot(cx - prev[0], cy - prev[1]) >= need:
+                        clusters.append((cx, cy, d, stone))
+                        t_at = t
+                        break
+                else:  # too short for the row — validation reports it
+                    clusters.append((prev[0] + need, prev[1], d, stone))
+            left = clusters[0][0] - terminal_d / 2
+            clusters = [(x - left, y, d, s) for x, y, d, s in clusters]
+            x_tip, x_tail = x_tip - left, x_tail - left
+            x_tail += length - (x_tail + 2 * SPRAY_CATCH_R_MM)
+
         p0, p1, p2 = build(x_tip, x_tail)
-        samples = [(t, _bezier_xy(p0, p1, p2, t)) for t in
-                   (i / 400 for i in range(401))]
-
-        def normal(t):  # concave side: below-right of the vein
-            ux, uy = _bezier_tangent(p0, p1, p2, t)
-            return -uy, ux
-
-        # terminal past the tip, along the tip's own direction
-        ux, uy = _bezier_tangent(p0, p1, p2, 0.0)
-        nx, ny = normal(0.0)
-        c0 = (p0[0] - ux * terminal_d * 0.30 + nx * terminal_d * 0.42,
-              p0[1] - uy * terminal_d * 0.30 + ny * terminal_d * 0.42)
-        clusters = [(c0[0], c0[1], terminal_d, row[0][0])]
-        # stations chain up the concave edge, frames kissing
-        t_at = 0.0
-        for stone, d in row[1:]:
-            prev = clusters[-1]
-            need = prev[2] / 2 + d / 2 + 0.3
-            for t, (bx, by) in samples:
-                if t <= t_at:
-                    continue
-                nx, ny = normal(t)
-                cx = bx + nx * (d * 0.42 + SPRAY_STEM_MM / 2)
-                cy = by + ny * (d * 0.42 + SPRAY_STEM_MM / 2)
-                if math.hypot(cx - prev[0], cy - prev[1]) >= need:
-                    clusters.append((cx, cy, d, stone))
-                    t_at = t
-                    break
-            else:  # the spray is too short for the row — validation reports it
-                clusters.append((prev[0] + need, prev[1], d, stone))
-        left = clusters[0][0] - terminal_d / 2
-        # shift so the terminal's tip-most edge is x = 0, then measure
-        clusters = [(x - left, y, d, s) for x, y, d, s in clusters]
-        x_tip, x_tail = x_tip - left, x_tail - left
-        extent = length - (x_tail + 2 * SPRAY_CATCH_R_MM)
-        x_tail += extent  # stretch the tail run to the spec's exact reach
-
-    p0, p1, p2 = build(x_tip, x_tail)
     catch = (length - SPRAY_CATCH_R_MM, _bezier_xy(p0, p1, p2, 1.0)[1])
     bottom = max(y + d / 2 for _, y, d, _ in clusters)
     y_top = bottom - width                  # width spans leaf tips to garland
@@ -1324,10 +1348,9 @@ def _spray_layout(spec: Spec) -> dict:
         # barb pitch sets the density — a plume is CONTINUOUS foliage, so the
         # slot count comes from the vein's length, never from the stone count
         span = math.hypot(p2[0] - p0[0], p2[1] - p0[1])
-        n = max(8, round(span / 3.4))
-        taken = 0
+        n = max(8, round(span / 2.6))
+        slots = []
         for j in range(n):
-            share = total // n + (1 if j < total % n else 0)
             frac = j / max(1, n - 1)
             # slots interleave sides: even up the plume, odd down into it
             side = -1 if j % 2 == 0 else 1
@@ -1335,12 +1358,39 @@ def _spray_layout(spec: Spec) -> dict:
             bx, by = _bezier_xy(p0, p1, p2, t)
             ux, uy = _bezier_tangent(p0, p1, p2, t)
             # barbs sweep back toward the tail, tapering at both ends
-            back = math.atan2(uy, ux) + side * math.radians(48)
+            back = math.atan2(uy, ux) + side * math.radians(42)
             taper = 0.50 + 0.50 * math.sin(math.pi * (0.12 + 0.80 * frac))
-            l_leaf = max(leaf_max * taper, 3.2)
+            l_leaf = leaf_max * taper
             lx, ly = math.cos(back), math.sin(back)
+            if side == -1 and ly < 0:  # upper barbs stop at the width envelope
+                l_leaf = min(l_leaf, (by - y_top) * 0.95 / -ly)
+            elif side == 1:            # lower barbs tuck into the plume body
+                l_leaf *= 0.72
+            l_leaf = max(l_leaf, 3.2)
+            slots.append((bx, by, lx, ly, l_leaf))
+        # pavé goes where the metal is: stones split by leaf length, so a
+        # clipped barb never crams the share a full-size leaf would carry
+        weight_sum = sum(s[4] for s in slots)
+        shares = [int(total * s[4] / weight_sum) for s in slots]
+        k = 0
+        while sum(shares) < total:  # largest-remainder top-up
+            shares[k % n] += 1 if slots[k % n][4] > 4.0 else 0
+            k += 1
+            if k > 4 * n:  # every leaf clipped: spread the rest evenly
+                shares[k % n] += 1
+        taken = 0
+        for (bx, by, lx, ly, l_leaf), share in zip(slots, shares):
             px, py = -ly, lx
             ry = l_leaf * 0.22
+            # a leaf is POINTED at both ends — a lens, not an ellipse
+            edge = []
+            for k in range(11):
+                tt = k / 10
+                edge.append((tt * l_leaf, ry * math.sin(math.pi * tt) ** 0.7))
+            poly = ([(bx + lx * a + px * h, by + ly * a + py * h)
+                     for a, h in edge]
+                    + [(bx + lx * a - px * h, by + ly * a - py * h)
+                       for a, h in reversed(edge[1:-1])])
             stones = []
             step = 0.68 * l_leaf / max(1, math.ceil(share / 2)) if share else 0.0
             for m in range(share):
@@ -1352,9 +1402,7 @@ def _spray_layout(spec: Spec) -> dict:
             taken += share
             leaves.append({
                 "base": (bx, by), "tip": (bx + lx * l_leaf, by + ly * l_leaf),
-                "center": (bx + lx * l_leaf / 2, by + ly * l_leaf / 2),
-                "rx": l_leaf / 2, "ry": ry, "deg": math.degrees(back),
-                "stones": stones,
+                "poly": poly, "stones": stones,
             })
     return {
         "length": length, "width": width, "y_top": y_top,
@@ -1364,22 +1412,43 @@ def _spray_layout(spec: Spec) -> dict:
     }
 
 
+def _petal_frame_pts(cx: float, cy: float, petal, theta: float, d_pp: float,
+                     s: float, margin_mm: float = 0.7) -> list[tuple[float, float]]:
+    """The metal frame follows the PETAL's silhouette (never a ring around
+    the cluster): the petal's own outline, inflated by the frame margin,
+    rotated point-to-hub — computed in absolute coordinates."""
+    layout = gemcad.remapped_layout(petal.cut, None)
+    outline = (layout.outline if layout is not None else
+               [(0.5 * math.cos(2 * math.pi * k / 16),
+                 0.5 * math.sin(2 * math.pi * k / 16)) for k in range(16)])
+    pw = petal.dimensions_mm.width * s + 2 * margin_mm * s
+    pl = petal.dimensions_mm.length * s + 2 * margin_mm * s
+    hub = d_pp / 2 - 0.8 * s - petal.dimensions_mm.length * s
+    r_mid = hub + petal.dimensions_mm.length * s / 2
+    px = cx + r_mid * math.cos(math.radians(theta))
+    py = cy + r_mid * math.sin(math.radians(theta))
+    ang = math.radians((theta + 270) % 360)
+    ca, sa = math.cos(ang), math.sin(ang)
+    return [(px + (ox * pw) * ca - (oy * pl) * sa,
+             py + (ox * pw) * sa + (oy * pl) * ca) for ox, oy in outline]
+
+
 def _quatrefoil_ink(cx: float, cy: float, petal, center, d_pp: float,
                     s: float) -> list[str]:
-    """A quatrefoil face-up in ink: fine beaded frame, four pear petals on
-    the DIAGONALS (as the archetype is drawn), the round center over the hub."""
+    """A quatrefoil face-up in ink: a scalloped frame hugging each petal,
+    bead dots at the four petal junctions, petals on the DIAGONALS (as the
+    archetype is drawn), the round center over the hub. The dashed circle is
+    a CONSTRUCTION line — the cluster's envelope for dimensioning, not metal."""
     parts = [f'<circle cx="{cx:.2f}" cy="{cy:.2f}" r="{d_pp / 2:.2f}" '
-             f'fill="none" stroke="{FAINT}" stroke-width="{STROKE_DIM}"/>']
-    n_beads = max(8, round(math.pi * d_pp / (1.1 * s)))
-    for i in range(n_beads):
-        a = 2 * math.pi * i / n_beads
-        parts.append(_circle(cx + d_pp / 2 * math.cos(a),
-                             cy + d_pp / 2 * math.sin(a), 0.35 * s))
+             f'fill="none" stroke="{FAINT}" stroke-width="{STROKE_DIM}" '
+             'stroke-dasharray="0.9 0.9"/>']
     pw = petal.dimensions_mm.width * s
     pl = petal.dimensions_mm.length * s
-    hub = d_pp / 2 - 0.8 * s - pl  # petals sit inside the beaded frame
+    hub = d_pp / 2 - 0.8 * s - pl
     for k in range(4):
         theta = 45 + 90 * k  # petals on the diagonals, as drawn
+        parts.append(_poly(_petal_frame_pts(cx, cy, petal, theta, d_pp, s),
+                           "none", INK, STROKE_DIM))
         r_mid = hub + pl / 2
         px = cx + r_mid * math.cos(math.radians(theta))
         py = cy + r_mid * math.sin(math.radians(theta))
@@ -1387,6 +1456,10 @@ def _quatrefoil_ink(cx: float, cy: float, petal, center, d_pp: float,
         parts.append(f'<g transform="rotate({(theta + 270) % 360} {px:.2f} {py:.2f})">')
         parts += _facet_face_up(px, py, petal.cut, pw, pl)
         parts.append("</g>")
+    for k in range(4):  # beads where neighbouring petal frames meet
+        a = math.radians(90 * k)
+        parts.append(_circle(cx + d_pp / 2 * 0.72 * math.cos(a),
+                             cy + d_pp / 2 * 0.72 * math.sin(a), 0.5 * s))
     if center is not None:
         parts.append(_circle(cx, cy, center.dimensions_mm.width / 2 * s))
     return parts
@@ -1424,12 +1497,8 @@ def _spray_front_view(spec: Spec, ox: float, oy: float) -> list[str]:
         _circle(cx_catch, cy_catch, r_catch * 0.55),
     ]
     for leaf in lay["leaves"]:
-        cxl, cyl = pp(leaf["center"])
-        parts.append(
-            f'<g transform="rotate({leaf["deg"]:.1f} {cxl:.2f} {cyl:.2f})">'
-            f'<ellipse cx="{cxl:.2f}" cy="{cyl:.2f}" rx="{leaf["rx"] * s:.2f}" '
-            f'ry="{leaf["ry"] * s:.2f}" fill="{PAPER}" stroke="{INK}" '
-            f'stroke-width="{STROKE_MAIN}"/></g>')
+        parts.append(_poly([pp(pt) for pt in leaf["poly"]], PAPER, INK,
+                           STROKE_MAIN))
         for mx, my, mr in leaf["stones"]:
             parts.append(_circle(*pp((mx, my)), mr * s))
     for (x, y, d, petal), center in zip(lay["clusters"], lay["center_of"]):
@@ -1453,19 +1522,20 @@ def _spray_front_view(spec: Spec, ox: float, oy: float) -> list[str]:
         _ext(tx - r_term, ty, tx - r_term, y_bot + 5),
         _ext(tx + r_term, ty, tx + r_term, y_bot + 5),
         *_dim_h(tx - r_term, tx + r_term, y_bot + 4, f"{_fmt(term_d)} mm"),
-        _text((ox + x_end) / 2, y_len + 7, "FACE VIEW", size=3.6,
-              style=' letter-spacing="1.2"'),
+        _text((ox + x_end) / 2, min(y_len + 7, SHEET_H - MARGIN - 26),
+              "FACE VIEW", size=3.6, style=' letter-spacing="1.2"'),
     ]
     petals = [s_ for s_ in spec.side_stones if s_.position == "quatrefoil_stations"]
     note = " + ".join(
         f"{p.count // 4} × [{p.count} {p.species}]" for p in petals)
     pave_total = sum(s_.count for s_ in spec.side_stones
                      if s_.position == "pave_leaves")
+    y_cap = min(y_len + 12, SHEET_H - MARGIN - 21)
     parts += [
-        _text((ox + x_end) / 2, y_len + 12,
+        _text((ox + x_end) / 2, y_cap,
               f"clusters tip-first: terminal [4 {spec.stone.species}] + {note}",
               size=2.8, color=FAINT),
-        _text((ox + x_end) / 2, y_len + 16.5,
+        _text((ox + x_end) / 2, y_cap + 4.5,
               f"{pave_total} pavé stones across {len(lay['leaves'])} leaves",
               size=2.8, color=FAINT),
     ]
@@ -1534,14 +1604,53 @@ def _spray_end_view(spec: Spec, cx: float, cy: float) -> list[str]:
     return parts
 
 
+def _stone_schedule(spec: Spec, x0: float, y0: float) -> list[str]:
+    """Factory stone schedule: every stone DEFINITION exactly once, lettered.
+    Repeats reference the letter — correct one row and every repeat follows,
+    so nobody re-types (or mis-reads) a dimension per stone."""
+    def desc(stone) -> str:
+        return f"{stone.species} {stone.cut.replace('_', ' ')}"
+
+    def dims(stone) -> str:
+        d = stone.dimensions_mm
+        return f"{_fmt(d.length)} × {_fmt(d.width)} × {_fmt(d.depth)}"
+
+    rows = [(chr(65 + i), s) for i, s in enumerate([spec.stone] + spec.side_stones)]
+    parts = [
+        _text(x0, y0, "STONE SCHEDULE", size=3.0, anchor="start",
+              style=' letter-spacing="1.4"'),
+        _line(x0, y0 + 1.4, x0 + 92, y0 + 1.4, w=STROKE_DIM, color=FAINT),
+        _text(x0, y0 + 5.0, "REF", size=2.4, anchor="start", color=FAINT),
+        _text(x0 + 9, y0 + 5.0, "QTY", size=2.4, anchor="start", color=FAINT),
+        _text(x0 + 18, y0 + 5.0, "STONE", size=2.4, anchor="start", color=FAINT),
+        _text(x0 + 55, y0 + 5.0, "L × W × D mm", size=2.4, anchor="start", color=FAINT),
+        _text(x0 + 80, y0 + 5.0, "CT EA.", size=2.4, anchor="start", color=FAINT),
+    ]
+    y = y0 + 5.0
+    for ref, stone in rows:
+        y += 3.9
+        parts += [
+            _text(x0, y, ref, size=2.6, anchor="start"),
+            _text(x0 + 9, y, str(stone.count), size=2.6, anchor="start"),
+            _text(x0 + 18, y, desc(stone), size=2.6, anchor="start"),
+            _text(x0 + 55, y, dims(stone), size=2.6, anchor="start"),
+            _text(x0 + 80, y, f"{stone.carat:.2f}", size=2.6, anchor="start"),
+        ]
+    return parts
+
+
 def _render_leaf_spray(spec: Spec) -> str:
     if spec.brooch is None:
         raise SheetUnsupported("a leaf spray sheet needs a brooch section")
     if spec.brooch.length_mm * SPRAY_SCALE > 210:
         raise SheetUnsupported(
             "a spray longer than 105 mm does not fit the 2:1 sheet")
-    body = (_spray_front_view(spec, MARGIN + 12, BASELINE)
-            + _spray_end_view(spec, 262, BASELINE))
+    lay = _spray_layout(spec)
+    # center the face view's true vertical extent on the shared datum
+    oy = BASELINE - (lay["y_top"] + lay["bottom"]) / 2 * SPRAY_SCALE
+    body = (_spray_front_view(spec, MARGIN + 12, oy)
+            + _spray_end_view(spec, 262, BASELINE)
+            + _stone_schedule(spec, SHEET_W - MARGIN - 96, MARGIN + 16))
     return _frame(spec, "TECHNICAL SHEET — LEAF SPRAY BROOCH", "2:1 / 4:1", body)
 
 

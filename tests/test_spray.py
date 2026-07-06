@@ -1,8 +1,9 @@
 """Leaf-spray brooch: cluster arithmetic, spray fit, and exact sheet geometry.
 
 The fixture is the checked-in example extracted from the designer's artwork:
-a terminal emerald quatrefoil, a diamond quatrefoil beside it, three emerald
-quatrefoils up the branch, 110 pavé diamonds across the leaves.
+a terminal emerald quatrefoil, a diamond quatrefoil beside it, four graduated
+emerald quatrefoils up the branch, 190 pavé diamonds across the leaves — with
+composition anchors traced from the artwork itself (facetta.trace).
 """
 
 import math
@@ -49,17 +50,18 @@ class TestSprayValidation:
     def test_center_count_matches_clusters(self, spray_spec):
         centers = [s for s in spray_spec["side_stones"]
                    if s["position"] == "quatrefoil_centers" and s["count"] > 1]
-        centers[0]["count"] = 3  # 4 centers for 5 clusters
+        centers[0]["count"] = 3  # 4 centers for 6 clusters
         bad = [i for i in _issues(spray_spec) if "center stones" in i.msg]
-        assert bad and bad[0].expected == {"center_count": 5}
+        assert bad and bad[0].expected == {"center_count": 6}
 
     def test_cluster_row_must_fit_the_spray(self, spray_spec):
+        del spray_spec["composition"]  # straight-row rule guards UNTRACED specs
         spray_spec["brooch"]["length_mm"] = 50.0
         bad = [i for i in _issues(spray_spec) if i.loc == ("brooch", "length_mm")]
         assert bad and bad[0].expected["min_length_mm"] > 50
 
     def test_terminal_needs_leaf_room(self, spray_spec):
-        spray_spec["brooch"]["width_mm"] = 18.0  # terminal alone is 15.6
+        spray_spec["brooch"]["width_mm"] = 15.0  # terminal alone is 13.8
         assert any(i.loc == ("brooch", "width_mm") for i in _issues(spray_spec))
 
 
@@ -67,10 +69,10 @@ class TestSprayGeometry:
     def test_cluster_row_from_spec(self, spray_spec):
         spec = _validated(spray_spec)
         row = spray_cluster_row(spec)
-        assert len(row) == 5  # terminal + diamond + three emerald
-        assert row[0][1] == 2 * 7.0 + CLUSTER_HUB_MM  # 15.6 mm terminal
+        assert len(row) == 6  # terminal + diamond + four emerald, as traced
+        assert row[0][1] == 2 * 6.1 + CLUSTER_HUB_MM  # 13.8 mm terminal
         assert row[1][0].species == "diamond"  # spec order: diamond at the tip side
-        assert row[1][1] == 2 * 5.5 + CLUSTER_HUB_MM
+        assert row[1][1] == 2 * 5.1 + CLUSTER_HUB_MM
         diameters = [d for _, d in row]
         assert diameters == sorted(diameters, reverse=True)  # graduated to the tip
 
@@ -105,7 +107,7 @@ class TestSprayGeometry:
         c = lay["clusters"]
         for (x1, y1, d1, _), (x2, y2, d2, _) in zip(c, c[1:]):
             gap = math.hypot(x2 - x1, y2 - y1) - (d1 + d2) / 2
-            assert -0.5 < gap < 1.5, "clusters must chain tightly, as drawn"
+            assert -1.0 < gap < 2.5, "clusters must chain tightly, as drawn"
 
     def test_sheet_matches_golden(self, spray_spec):
         svg = render_sheet(_validated(spray_spec))
@@ -119,10 +121,10 @@ class TestSprayGeometry:
     def test_exact_dimension_callouts_present(self, spray_spec):
         svg = render_sheet(_validated(spray_spec))
         for text in (">85 mm<",      # overall reach
-                     ">32 mm<",      # overall width
-                     ">15.6 mm<",    # terminal cluster diameter
-                     ">3.5 mm<",     # terminal petal depth (end section)
-                     ">7 mm<"):      # terminal petal length (end section)
+                     ">62 mm<",      # overall width
+                     ">13.8 mm<",    # terminal cluster diameter
+                     ">2.7 mm<",     # terminal petal depth (end section)
+                     ">6.1 mm<"):    # terminal petal length (end section)
             assert text in svg, f"missing callout {text}"
 
     def test_length_dimension_spans_true_scale(self, spray_spec):
@@ -157,7 +159,7 @@ class TestSprayPipeline:
         from facetta.mockup import fidelity_checklist
 
         checks = fidelity_checklist(_validated(spray_spec))
-        assert any("EXACTLY 5 quatrefoil clusters" in c for c in checks)
+        assert any("EXACTLY 6 quatrefoil clusters" in c for c in checks)
 
     def test_fingerprint_tracks_the_spray_footprint(self, spray_spec):
         from facetta.mockup import geometry_fingerprint
@@ -175,3 +177,33 @@ class TestSprayPipeline:
         response = TestClient(app).post("/specs/sheet.svg", json=spray_spec)
         assert response.status_code == 200
         assert "LEAF SPRAY BROOCH" in response.text
+
+
+class TestTrace:
+    def test_synthetic_artwork_traces_to_anchors(self, tmp_path):
+        """A drawn chain of green quatrefoils with a gap for the white cluster
+        and a gold tail must trace to ordered, normalized anchors."""
+        from PIL import Image, ImageDraw
+
+        from facetta.trace import trace_spray
+
+        im = Image.new("RGB", (700, 500), (242, 235, 216))
+        d = ImageDraw.Draw(im)
+        # terminal, [double gap: the white cluster], then three stations
+        chain = [(100, 400, 34), (225, 345, 28), (290, 313, 26), (355, 288, 24)]
+        for cx, cy, r in chain:  # four petals per cluster, hugging the hub
+            for dx, dy in ((-1, 0), (1, 0), (0, -1), (0, 1)):
+                d.ellipse((cx + dx * r * 0.55 - r * 0.6, cy + dy * r * 0.55 - r * 0.6,
+                           cx + dx * r * 0.55 + r * 0.6, cy + dy * r * 0.55 + r * 0.6),
+                          fill=(0, 150, 60))
+        d.line((355, 288, 640, 175), fill=(180, 140, 40), width=18)  # gold tail
+        path = tmp_path / "study.png"
+        im.save(path)
+
+        t = trace_spray(str(path))
+        xs = [c[0] for c in t["clusters"]]
+        assert t["clusters"][0][:2] == [0.0, 0.0]      # tip anchors the origin
+        assert xs == sorted(xs)                        # ordered along the reach
+        assert len(t["clusters"]) == 5                 # gap slot inferred
+        assert max(c[2] for c in t["clusters"]) == t["clusters"][0][2]
+        assert all(y <= 0.001 for _, y, _ in t["clusters"])  # tail rises

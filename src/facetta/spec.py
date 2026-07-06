@@ -126,6 +126,22 @@ class Brooch(StrictModel):
     sweep_deg: Annotated[float, Field(strict=True, ge=20, le=110)] | None = None
 
 
+class Composition(StrictModel):
+    """Anchor geometry traced from the designer's own artwork (facetta.trace).
+
+    Coordinates are normalized: the tip-most cluster center is (0, 0) and the
+    piece's full drawn reach is 1.0, so the drawing's proportions scale to any
+    length the designer sets. clusters carry [x, y, r] per cluster, tip first;
+    vein carries [x, y] control points of the branch line. When present, the
+    renderers anchor to these points instead of synthesizing a layout — the
+    drawing's geometry, not the renderer's taste, decides the composition."""
+
+    source: str | None = None  # e.g. "traced:IMG_5523.jpeg"
+    clusters: list[Annotated[list[float], Field(min_length=3, max_length=3)]]
+    vein: list[Annotated[list[float], Field(min_length=2, max_length=2)]] = Field(
+        default_factory=list)
+
+
 class Spec(StrictModel):
     schema_version: Literal[1]
     design_id: str
@@ -144,5 +160,6 @@ class Spec(StrictModel):
     pendant: Pendant | None = None
     chain: Chain | None = None
     brooch: Brooch | None = None
+    composition: Composition | None = None
     side_stones: list[Stone] = Field(default_factory=list)
     notes_to_factory: str | None = None
