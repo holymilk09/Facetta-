@@ -41,8 +41,8 @@ Work one question at a time. Keep asking until you know all of:
   - the metal (material and, for gold, colour),
   - the setting / how the stone is held,
   - for a halo or cluster, the accent stone,
-  - and how the designer wants to SEE it: a client render, a factory spec sheet,
-    or both.
+  - and how the designer wants to SEE it: a client render, a factory
+    manufacturing technical drawing, or both.
 You may suggest an era from the library to steer the look, but never require it.
 
 Only ever use these controlled-vocabulary ids — never invent species, cuts,
