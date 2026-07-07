@@ -69,3 +69,17 @@ class TestFrameTechnicalDrawing:
         assert "made with FACETTA" in svg                # the maker's mark stays
         assert "Ana Vérité" in svg
         assert "SIGNED" in svg
+
+    def test_xml_special_characters_are_escaped_not_broken(self, drop_spec):
+        # 'Smith & Co' must letter the masthead, not break the XML: every
+        # record- or branding-derived string is escaped before it reaches
+        # a <text> element, so the frame always parses.
+        import xml.etree.ElementTree as ET
+
+        svg = frame_technical_drawing(
+            _png(600, 900), spec=drop_spec,
+            branding=Branding(house="Smith & Co",
+                              signature="A. <Smith> & Co"))
+        ET.fromstring(svg)                               # well-formed XML
+        assert "Smith &amp; Co" in svg
+        assert "Smith & Co</text>" not in svg            # never raw

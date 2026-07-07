@@ -207,6 +207,32 @@ class TestGenerateSpecSheet:
         assert edits[1][1] == agent.G6_LEGIBILITY  # verbatim repair prompt
         assert sheet == b"sheet-\x02"
 
+    def test_legibility_repair_stays_honest(self):
+        # both modes: the repair pass closes with the same honesty rule as
+        # the first edit — no invented job refs or dates on the second pass
+        assert agent.G6_LEGIBILITY.endswith(agent.HONESTY_RULE)
+
+    def test_templated_legibility_repair_keeps_clean_margins(self, monkeypatch):
+        # legibility=True + templated=True: the repair pass must not undo
+        # the clean-margins rule by reinstating the model-drawn title block,
+        # and it must close with the honesty rule
+        edits = []
+
+        def fake_edit(image, instruction, model="grok_direct"):
+            edits.append(instruction)
+            return b"sheet-" + bytes([len(edits)]), False
+
+        monkeypatch.setattr(agent, "edit_image", fake_edit)
+        monkeypatch.setattr(agent, "inspect_render",
+                            lambda image, notes, mode, region: dict(SUMMARY))
+
+        agent.generate_spec_sheet(PNG, mode="PENDANT", legibility=True,
+                                  templated=True)
+        assert len(edits) == 2
+        assert "Title block with METAL" not in edits[1]
+        assert "official template adds the title block" in edits[1]
+        assert edits[1].endswith(agent.HONESTY_RULE)
+
     def test_summary_hiccup_degrades_but_the_sheet_ships(self, monkeypatch):
         def inspect_boom(image, notes, mode, region):
             raise RenderUnavailable("vision inspect failed: 429")

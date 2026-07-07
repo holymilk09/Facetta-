@@ -27,8 +27,10 @@ MARGIN = 8.0
 MASTHEAD_H = 17.0   # the brand strip across the top, as on the overlay sheet
 FOOTER_H = 22.0     # identity + signature + disclaimer band
 
+# NB: keep this XML-safe (no raw &/<>) — it letters a <text> element. The
+# wording matches specagent.DISCLAIMER.
 DISCLAIMER = ("Manufacturing illustration — final dimensions after master "
-              "model & sign-off.")
+              "model and sign-off.")
 
 
 def frame_technical_drawing(drawing_bytes: bytes, spec: Spec | None = None,
@@ -125,8 +127,8 @@ def frame_technical_drawing(drawing_bytes: bytes, spec: Spec | None = None,
         ]
 
     parts += [
-        _text(sheet_w / 2, sheet_h - MARGIN - 3.4, DISCLAIMER, size=2.6,
-              color=FAINT),
+        _text(sheet_w / 2, sheet_h - MARGIN - 3.4, escape(DISCLAIMER),
+              size=2.6, color=FAINT),
         # outside the border, as on every Facetta sheet
         _text(sheet_w - MARGIN, sheet_h - 3.2,
               "CONFIDENTIAL — FACTORY PRODUCTION ONLY", size=2.8,

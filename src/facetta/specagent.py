@@ -110,11 +110,15 @@ G0_SUFFIX = (
     "design proportions and silhouette from reference. Legible sans-serif "
     "labels. Title block with METAL, JOB REF, REV A.")
 
-# G6 — the one-shot legibility repair pass.
-G6_LEGIBILITY = (
+# G6 — the one-shot legibility repair pass. The body only: the tail (G0,
+# templated or not, plus the honesty rule) is appended at call time by
+# _legibility_instruction, so the repair pass obeys the same title-block and
+# honesty rules as the first edit. G6_LEGIBILITY (the untemplated compiled
+# form) is defined below, after the rules it depends on.
+_G6_BODY = (
     "Identical layout and proportions. Redraw all text, numbers, dimension "
     "arrows, and view labels in sharp black sans-serif. Increase text "
-    "legibility for print at A4. No design changes. " + G0_SUFFIX)
+    "legibility for print at A4. No design changes. ")
 
 # Section C + G — one entry per mode: the mandatory views, the callouts the
 # factory needs, and the image-edit prompt body (G0 is appended at compile
@@ -348,6 +352,25 @@ NO_TITLE_BLOCK_RULE = (
     "Do not draw any title block, brand name, designer name, job reference, "
     "or date — leave clean margins; the platform's official template adds "
     "the title block.")
+
+
+def _templated_tail(templated: bool) -> str:
+    """The G0 tail as the mode demands: templated mode swaps the model-drawn
+    title-block sentence for the clean-margins rule."""
+    if templated:
+        return G0_SUFFIX.replace(_TITLE_BLOCK_SENTENCE, NO_TITLE_BLOCK_RULE)
+    return G0_SUFFIX
+
+
+def _legibility_instruction(*, templated: bool = False) -> str:
+    """The G6 repair instruction, compiled at call time so it carries the
+    same tail as the first edit: templated mode must not reintroduce a
+    model-drawn title block, and the honesty rule closes both modes."""
+    return _G6_BODY + _templated_tail(templated) + " " + HONESTY_RULE
+
+
+# The untemplated compiled form, kept as the public constant.
+G6_LEGIBILITY = _legibility_instruction()
 
 # Section B — the router.
 _ROUTER_SYSTEM = (
@@ -587,10 +610,7 @@ def compile_sheet_instruction(mode: str, region: str = "DUAL",
     if notes:
         parts.append(f"Designer notes: {notes}")
     parts.append(_TBD_POLICY)
-    tail = G0_SUFFIX
-    if templated:
-        tail = tail.replace(_TITLE_BLOCK_SENTENCE, NO_TITLE_BLOCK_RULE)
-    parts.append(tail)
+    parts.append(_templated_tail(templated))
     parts.append(HONESTY_RULE)
     return " ".join(parts)
 
@@ -632,5 +652,6 @@ def generate_spec_sheet(image_bytes: bytes, *, notes: str = "",
 
     sheet, cached = edit_image(image_bytes, instruction, model)
     if legibility:
-        sheet, _ = edit_image(sheet, G6_LEGIBILITY, model)
+        sheet, _ = edit_image(
+            sheet, _legibility_instruction(templated=templated), model)
     return sheet, summary, cached
