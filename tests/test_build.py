@@ -60,10 +60,16 @@ AGENT_SUMMARY = {"mode": "RING_ENGAGEMENT", "region": "DUAL",
                  "disclaimer": "x"}
 
 
+AGENT_DRAWING_PNG = _real_png((160, 100, 60))   # decodable agent drawing —
+                                                # the official frame reads its size
+
+
 def _mock_agent_sheet(monkeypatch):
-    """The agent-drawn factory sheet is network-backed — always mocked here."""
+    """The agent-drawn manufacturing technical drawing is network-backed —
+    always mocked here. Returns a real PNG: the build frames it with the
+    official Facetta template, which reads the drawing's pixel size."""
     monkeypatch.setattr(specs_mod, "generate_spec_sheet",
-                        lambda image, **kwargs: (b"sheet-bytes",
+                        lambda image, **kwargs: (AGENT_DRAWING_PNG,
                                                  dict(AGENT_SUMMARY), False))
 
 
@@ -95,6 +101,10 @@ class TestBuild:
         assert body["spec"]["template"] == "halo_prong"
         assert body["spec"]["setting"]["style"] == "bezel"      # setting flowed through
         assert body["sheet_svg"].startswith("<svg")             # factory sheet present
+        # the agent-drawn manufacturing technical drawing + its official frame
+        assert base64.b64decode(body["technical_drawing_b64"]) == AGENT_DRAWING_PNG
+        assert body["manufacturing_summary"]["mode"] == "RING_ENGAGEMENT"
+        assert "FACETTA" in body["technical_drawing_framed_svg"]
         # the client render is the SPEC-driven render (in the design's lane)
         assert base64.b64decode(body["client_render_b64"]) == RENDER_PNG
         assert base64.b64decode(body["spec_render_b64"]) == RENDER_PNG

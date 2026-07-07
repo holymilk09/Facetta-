@@ -33,12 +33,36 @@ from facetta.spec import Spec
 DISCLAIMER = ("Manufacturing illustration—final dimensions after master "
               "model and sign-off.")
 
+# The founder's terminology directive: image models read "spec sheet" as a
+# form/table — the phrase that reliably lands is the primary one below. It
+# opens every image instruction; the synonyms line teaches system prompts
+# what the artifact is (and is not).
+TASK_LINE = (
+    "Task: Convert the render into a jewelry manufacturing technical drawing "
+    "(line art, orthographic plan/front/side, mm dimensions, material and "
+    "stone callouts) for factory handoff.")
+
+SYNONYMS_LINE = (
+    "Also called: factory drawing, technical file, production drawing — not "
+    "a photoreal render, not a spreadsheet-only spec.")
+
+# Product naming — the app's single source for how this capability is labeled.
+TASK_MODE = "MANUFACTURING_TECHNICAL_DRAWING"
+UI_LABELS = {
+    "button": "Create manufacturing drawing",
+    "subtitle": ("True-scale views, dimensions, materials & stones for "
+                 "production"),
+    "synonyms": SYNONYMS_LINE,
+}
+
 MASTER_SYSTEM = """\
-You are the Jewelry Manufacturing Spec Agent for a designer-facing app. You
-convert photorealistic jewelry renders into factory-ready technical
-specification sheets (line art, orthographic views, dimensions, component
-labels) using vision-first analysis and controlled image generation — not
-parametric guesswork.
+You are the Jewelry Manufacturing Technical Drawing Agent for a
+designer-facing app. You convert photorealistic jewelry renders into
+factory-ready jewelry manufacturing technical drawings (line art,
+orthographic views, dimensions, component labels) using vision-first
+analysis and controlled image generation — not parametric guesswork.
+
+""" + TASK_LINE + "\n" + SYNONYMS_LINE + """
 
 Mission: maximize manufacturing usefulness and visual fidelity to the
 designer's render (~90%+ layout accuracy). Minimize invented dimensions. Use
@@ -53,7 +77,7 @@ plus a structured manufacturing summary with an explicit TBD/confirm list.
 
 Never: fall back to code-only geometry for this user-facing step unless the
 user explicitly requests CAD export; output photorealistic re-renders when a
-spec sheet was asked for; present guessed stone weights or finger sizes as
+manufacturing technical drawing was asked for; present guessed stone weights or finger sizes as
 final; "improve" or simplify the designer's proportions.
 
 Sheet layout (default composite): title block (job/style ref — TBD ok,
@@ -76,9 +100,9 @@ TBD", blank shank; rough render → ask for a cleaner render, never hallucinate
 prongs; house styles → generic labels, no third-party logos. CAD handoff is a
 separate explicit action — the sheet is an illustration."""
 
-# G0 — the universal suffix. EVERY image-edit instruction ends with it.
+# G0 — the universal suffix, the tail of every image-edit instruction.
 G0_SUFFIX = (
-    "Single composite jewelry manufacturing specification sheet. Black "
+    "Single composite jewelry manufacturing technical drawing. Black "
     "technical line art on pure white. Orthographic views with view labels "
     "PLAN, FRONT, SIDE. Dimension lines with arrowheads. CAD/jewelry atelier "
     "documentation style. Gemstones as faceted outlines only, no color. No "
@@ -107,8 +131,8 @@ MODES: dict[str, dict] = {
                      "finger bore → US size + inner Ø mm",
                      "stone table: CENTER / HALO / SHANK ACCENTS"],
         "prompt": (
-            "Transform the engagement ring from the reference into a factory "
-            "spec sheet. Views: plan showing head and shank top, front "
+            "Transform the engagement ring from the reference into a jewelry "
+            "manufacturing technical drawing. Views: plan showing head and shank top, front "
             "elevation, side profile, section A–A through center stone. "
             "Dimension callouts in mm: center stone diameter TBD unless "
             "known, halo outer diameter if present, prong count visible, "
@@ -123,7 +147,7 @@ MODES: dict[str, dict] = {
                      "min metal between stones", "edge type",
                      "stone count TBD unless countable"],
         "prompt": (
-            "Pavé band spec sheet from reference. Views: plan with stone row "
+            "Pavé band manufacturing technical drawing from reference. Views: plan with stone row "
             "schematic, front, side. Callouts: band width, thickness, "
             "estimated melee size mm TBD, number of pave rows, edge profile. "
             "Note on sheet: melee spacing nominal—confirm at setting."),
@@ -134,7 +158,7 @@ MODES: dict[str, dict] = {
         "callouts": ["face L×W/Ø", "face thickness", "shoulder width",
                      "shank taper", "engraving depth TBD post-artwork"],
         "prompt": (
-            "Signet ring spec sheet from reference. Views: plan of the face, "
+            "Signet ring manufacturing technical drawing from reference. Views: plan of the face, "
             "front elevation, side profile. Dimension callouts in mm: face "
             "length and width or diameter, face thickness, shoulder width, "
             "shank taper. Engraving depth: TBD post-artwork."),
@@ -145,7 +169,7 @@ MODES: dict[str, dict] = {
         "callouts": ["band width", "band thickness", "profile",
                      "stacked gap TBD", "qty in set TBD from single render"],
         "prompt": (
-            "Stackable band set spec sheet from reference. Views: plan and "
+            "Stackable band set manufacturing technical drawing from reference. Views: plan and "
             "side per band. Dimension callouts in mm: band width, band "
             "thickness, profile shape. Stacked gap TBD. Note on sheet: qty "
             "in set TBD."),
@@ -156,7 +180,7 @@ MODES: dict[str, dict] = {
         "callouts": ["overall H×W", "bail wire OD", "bail ID (chain pass)",
                      "thickness", "stone positions", "bail type"],
         "prompt": (
-            "Pendant spec sheet. Views: plan, front, side, bail detail "
+            "Pendant manufacturing technical drawing. Views: plan, front, side, bail detail "
             "inset. Dimensions: overall height and width mm, metal "
             "thickness, bail inner diameter for chain. Label bail and main "
             "stone locations."),
@@ -168,7 +192,7 @@ MODES: dict[str, dict] = {
         "callouts": ["finished length cm/in", "link L×W×wire gauge",
                      "clasp type", "safety chain Y/N"],
         "prompt": (
-            "Necklace spec sheet from reference. Views: compressed "
+            "Necklace manufacturing technical drawing from reference. Views: compressed "
             "full-length elevation, motif front detail, clasp detail, link "
             "section. Dimension callouts: finished length in cm and inches, "
             "link length, width and wire gauge, clasp type, safety chain "
@@ -181,7 +205,7 @@ MODES: dict[str, dict] = {
         "callouts": ["motif W×H", "projection", "post Ø & length",
                      "pair L/R mirror"],
         "prompt": (
-            "Pair of stud earrings spec sheet L/R. Views: front, side "
+            "Pair of stud earrings manufacturing technical drawing L/R. Views: front, side "
             "showing the post, optional back detail. Dimension callouts in "
             "mm: motif width and height, projection from the ear, post "
             "diameter and length. Note: pair mirrored left/right."),
@@ -194,7 +218,7 @@ MODES: dict[str, dict] = {
                      "component stack heights",
                      "articulation TBD when unclear"],
         "prompt": (
-            "Pair of drop earrings spec sheet L/R. Views: front pair, side "
+            "Pair of drop earrings manufacturing technical drawing L/R. Views: front pair, side "
             "profile showing drop length. Dimension total drop length mm, "
             "width at widest, hinge and finding details."),
     },
@@ -205,7 +229,7 @@ MODES: dict[str, dict] = {
         "callouts": ["interior length cm", "link dims", "clasp width",
                      "safety latch"],
         "prompt": (
-            "Bracelet spec sheet from reference. Views: flattened plan, "
+            "Bracelet manufacturing technical drawing from reference. Views: flattened plan, "
             "front elevation, side link profile, clasp shown open and "
             "closed. Dimension callouts: interior length in cm, link "
             "dimensions, clasp width, safety latch."),
@@ -217,7 +241,7 @@ MODES: dict[str, dict] = {
         "callouts": ["W×H", "thickness", "hinge/catch position",
                      "pin length"],
         "prompt": (
-            "Brooch spec sheet from reference. Views: plan, front, side "
+            "Brooch manufacturing technical drawing from reference. Views: plan, front, side "
             "showing the pin hinge, pin mechanism detail. Dimension callouts "
             "in mm: overall width and height, thickness, hinge and catch "
             "positions, pin length."),
@@ -231,7 +255,7 @@ MODES: dict[str, dict] = {
                      "with master jeweler",
                      "never collapse asymmetry; label L/R asym"],
         "prompt": (
-            "High jewelry spec sheet with large stone schedule table "
+            "High jewelry manufacturing technical drawing with large stone schedule table "
             "(columns: ITEM, QTY, SHAPE, SIZE mm, SETTING, MATERIAL, TBD). "
             "Views: plan, front, side, section, two detail callouts for "
             "gallery and cluster. Preserve asymmetry."),
@@ -242,7 +266,7 @@ MODES: dict[str, dict] = {
         "callouts": ["case Ø/L×W", "lug width", "crown position",
                      "bezel height", "bezel stone count"],
         "prompt": (
-            "Jewelry watch spec sheet from reference. Views: dial plan, "
+            "Jewelry watch manufacturing technical drawing from reference. Views: dial plan, "
             "front, side of the case, lug width detail. Dimension callouts "
             "in mm: case diameter or length and width, lug width, crown "
             "position, bezel height, bezel stone count."),
@@ -252,7 +276,7 @@ MODES: dict[str, dict] = {
         "views": ["plan", "front", "side"],
         "callouts": ["label visible settings", "TBD elsewhere"],
         "prompt": (
-            "Jewelry spec sheet from reference. Views: plan, front, side "
+            "Jewelry manufacturing technical drawing from reference. Views: plan, front, side "
             "minimum. Label every visible setting; mark all other "
             "dimensions TBD."),
     },
@@ -310,10 +334,26 @@ MODE_FOR_TEMPLATE: dict[str, str] = {
 _TBD_POLICY = ("Any dimension not listed above: mark TBD with a leader "
                "line, or 'nominal from render—verify on master model'.")
 
+# The live test caught Grok signing sheets as 'ATELIER PRECIEUX | JOB REF
+# 2024-E01 | DATE 2024-10-26' — pure fiction. Both instruction modes close
+# with this rule.
+HONESTY_RULE = ("Never invent designer names, job references, or dates — "
+                "write TBD where unknown.")
+
+# The G0 sentence the official-template mode swaps out: when the platform's
+# code applies the Facetta frame from the record, the model must draw NO
+# identity block at all — code letters identity, the model never does.
+_TITLE_BLOCK_SENTENCE = "Title block with METAL, JOB REF, REV A."
+NO_TITLE_BLOCK_RULE = (
+    "Do not draw any title block, brand name, designer name, job reference, "
+    "or date — leave clean margins; the platform's official template adds "
+    "the title block.")
+
 # Section B — the router.
 _ROUTER_SYSTEM = (
-    "You classify one jewelry render for the Jewelry Manufacturing Spec "
-    "Agent. Given the designer's notes and the image, output JSON only:\n"
+    "You classify one jewelry render for the Jewelry Manufacturing "
+    "Technical Drawing Agent. Given the designer's notes and the image, "
+    "output JSON only:\n"
     '{"mode": "...", "region": "US|EU|DUAL", "confidence": 0-1, '
     '"occlusion": "low|med|high"}\n'
     "Valid modes: " + ", ".join(MODES) + ".\n"
@@ -523,15 +563,22 @@ def authoritative_dims(spec: Spec) -> list[str]:
 
 def compile_sheet_instruction(mode: str, region: str = "DUAL",
                               dims: list[str] | None = None,
-                              notes: str = "") -> str:
-    """Assemble the one image-edit instruction: mode block + region units +
-    the designer-authoritative dimensions (when a validated spec supplied
-    them) + the TBD policy + the universal G0 suffix, always last."""
+                              notes: str = "", *,
+                              templated: bool = False) -> str:
+    """Assemble the one image-edit instruction: the founder's Task line
+    first, then mode block + region units + the designer-authoritative
+    dimensions (when a validated spec supplied them) + the TBD policy + the
+    G0 tail + the honesty rule.
+
+    templated=True is the official-template mode: the platform's code frames
+    the drawing afterwards (facetta.drawing_frame), so the G0 tail's
+    title-block sentence is replaced with the no-title-block rule — the model
+    leaves clean margins and letters no identity at all."""
     if mode not in MODES:
         raise ValueError(f"unknown mode '{mode}'; options: {list(MODES)}")
     if region not in REGIONS:
         raise ValueError(f"unknown region '{region}'; options: {list(REGIONS)}")
-    parts = [MODES[mode]["prompt"], REGIONS[region]]
+    parts = [TASK_LINE, MODES[mode]["prompt"], REGIONS[region]]
     if dims:
         parts.append(
             "Designer-authoritative dimensions — place these EXACTLY on the "
@@ -540,17 +587,26 @@ def compile_sheet_instruction(mode: str, region: str = "DUAL",
     if notes:
         parts.append(f"Designer notes: {notes}")
     parts.append(_TBD_POLICY)
-    parts.append(G0_SUFFIX)
+    tail = G0_SUFFIX
+    if templated:
+        tail = tail.replace(_TITLE_BLOCK_SENTENCE, NO_TITLE_BLOCK_RULE)
+    parts.append(tail)
+    parts.append(HONESTY_RULE)
     return " ".join(parts)
 
 
 def generate_spec_sheet(image_bytes: bytes, *, notes: str = "",
                         mode: str | None = None, region: str = "DUAL",
                         spec: Spec | None = None, legibility: bool = False,
+                        templated: bool = False,
                         model: str = "grok_direct") -> tuple[bytes, dict, bool]:
     """The Section H pipeline, one call: classify (unless the caller or the
     spec already knows the mode) → inspect → controlled image edit →
     optional legibility pass. Returns (sheet_bytes, summary, was_cached).
+
+    templated=True passes through to compile_sheet_instruction: the model
+    leaves clean margins and the caller applies the official Facetta frame
+    (facetta.drawing_frame) from the record afterwards.
 
     A hiccup on the INSPECT call degrades to a stub summary — the sheet
     itself must not die because the summary call failed. The edit call's
@@ -565,7 +621,8 @@ def generate_spec_sheet(image_bytes: bytes, *, notes: str = "",
                 region = route.region
 
     dims = authoritative_dims(spec) if spec is not None else None
-    instruction = compile_sheet_instruction(mode, region, dims, notes)
+    instruction = compile_sheet_instruction(mode, region, dims, notes,
+                                            templated=templated)
 
     try:
         summary = inspect_render(image_bytes, notes, mode, region)

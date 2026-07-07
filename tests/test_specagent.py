@@ -26,6 +26,19 @@ from facetta.spec import Spec
 
 PNG = b"\x89PNG\r\n\x1a\nrender"
 
+
+def _real_png(size=(600, 900), color=(255, 255, 255)) -> bytes:
+    """A decodable PNG — the official frame reads the drawing's size."""
+    import io
+
+    from PIL import Image
+    buf = io.BytesIO()
+    Image.new("RGB", size, color).save(buf, format="PNG")
+    return buf.getvalue()
+
+
+REAL_PNG = _real_png()
+
 SUMMARY = {"mode": "EARRINGS_DROP", "region": "DUAL",
            "confirmed_from_render": ["drop silhouette"],
            "designer_must_confirm": ["hook gauge"],
@@ -44,16 +57,45 @@ def drop_spec() -> Spec:
 class TestCompileSheetInstruction:
     def test_mode_region_and_universal_suffix(self):
         text = agent.compile_sheet_instruction("EARRINGS_DROP", "US")
-        assert "drop earrings spec sheet" in text          # the mode's views
-        assert "side profile showing drop length" in text
+        assert "drop earrings manufacturing technical drawing" in text
+        assert "side profile showing drop length" in text  # the mode's views
         assert "inches optional on shank lines" in text    # the US region line
-        assert text.endswith(agent.G0_SUFFIX)              # G0 always last
+        assert agent.G0_SUFFIX in text                     # the G0 tail
+        assert text.endswith(agent.HONESTY_RULE)           # honesty always last
 
-    def test_all_13_modes_compile_and_end_with_g0(self):
+    def test_all_13_modes_open_with_the_task_line(self):
         assert len(agent.MODES) == 13
         for mode in agent.MODES:
             text = agent.compile_sheet_instruction(mode)
-            assert text.endswith(agent.G0_SUFFIX)
+            assert text.startswith(agent.TASK_LINE)        # founder's opener
+            assert agent.G0_SUFFIX in text
+            assert text.endswith(agent.HONESTY_RULE)
+
+    def test_default_instruction_keeps_the_model_drawn_title_block(self):
+        text = agent.compile_sheet_instruction("RING_ENGAGEMENT")
+        assert "Title block with METAL, JOB REF, REV A." in text
+        assert "the platform's official template" not in text
+        assert "Never invent designer names" in text
+
+    def test_templated_swaps_the_title_block_for_clean_margins(self):
+        text = agent.compile_sheet_instruction("RING_ENGAGEMENT",
+                                               templated=True)
+        assert "Title block with METAL" not in text
+        assert ("Do not draw any title block, brand name, designer name, "
+                "job reference, or date") in text
+        assert "the platform's official template adds the title block" in text
+        assert "Never invent designer names" in text       # both modes
+        assert text.startswith(agent.TASK_LINE)
+
+    def test_terminology_constants_exist_for_the_app(self):
+        assert agent.TASK_MODE == "MANUFACTURING_TECHNICAL_DRAWING"
+        assert agent.UI_LABELS["button"] == "Create manufacturing drawing"
+        assert agent.UI_LABELS["subtitle"] == (
+            "True-scale views, dimensions, materials & stones for production")
+        assert agent.UI_LABELS["synonyms"] == agent.SYNONYMS_LINE
+        assert "factory drawing" in agent.SYNONYMS_LINE
+        assert agent.TASK_LINE in agent.MASTER_SYSTEM      # near the top
+        assert agent.SYNONYMS_LINE in agent.MASTER_SYSTEM
 
     def test_dims_block_is_designer_authoritative(self):
         text = agent.compile_sheet_instruction(
@@ -144,7 +186,8 @@ class TestGenerateSpecSheet:
         assert sheet == b"sheet" and cached is False
         assert summary["mode"] == "EARRINGS_DROP"
         assert len(edits) == 1
-        assert edits[0].endswith(agent.G0_SUFFIX)
+        assert agent.G0_SUFFIX in edits[0]
+        assert edits[0].endswith(agent.HONESTY_RULE)
 
     def test_legibility_makes_exactly_two_edit_calls(self, monkeypatch):
         edits = []
@@ -200,6 +243,22 @@ class TestGenerateSpecSheet:
         assert "marquise diamond 14 × 9 × 5.4 mm" in edits[0]
         assert "Designer-authoritative dimensions" in edits[0]
 
+    def test_templated_reaches_the_edit_instruction(self, monkeypatch):
+        edits = []
+
+        def fake_edit(image, instruction, model="grok_direct"):
+            edits.append(instruction)
+            return b"sheet", False
+
+        monkeypatch.setattr(agent, "edit_image", fake_edit)
+        monkeypatch.setattr(agent, "inspect_render",
+                            lambda image, notes, mode, region: dict(SUMMARY))
+
+        agent.generate_spec_sheet(PNG, mode="PENDANT", templated=True)
+        assert "Title block with METAL" not in edits[0]
+        assert "official template adds the title block" in edits[0]
+        assert edits[0].endswith(agent.HONESTY_RULE)
+
     def test_router_fills_mode_and_default_region(self, monkeypatch):
         monkeypatch.setattr(agent, "route_design",
                             lambda image, notes="": agent.Route(
@@ -237,7 +296,7 @@ class TestEditImageCache:
             # the provider must receive our render and instruction
             assert kwargs["json"]["image"]["url"].startswith(
                 "data:image/png;base64,")
-            assert kwargs["json"]["prompt"].endswith(agent.G0_SUFFIX)
+            assert agent.G0_SUFFIX in kwargs["json"]["prompt"]
             return FakeResponse()
 
         monkeypatch.setattr(httpx, "post", fake_post)
@@ -255,11 +314,11 @@ class TestEditImageCache:
         assert "grok_direct" in str(err.value)
 
 
-class TestAgentSheetEndpoint:
+class TestTechnicalDrawingEndpoint:
     def test_returns_sheet_and_echoed_summary(self, monkeypatch):
         monkeypatch.setattr(specs_mod, "generate_spec_sheet",
                             lambda image, **kwargs: (PNG, dict(SUMMARY), False))
-        r = TestClient(app).post("/specs/agent-sheet", json={
+        r = TestClient(app).post("/specs/technical-drawing", json={
             "image_base64": base64.b64encode(PNG).decode(),
             "notes": "modern drop"})
         assert r.status_code == 200, r.text
@@ -270,6 +329,34 @@ class TestAgentSheetEndpoint:
         assert body["region"] == "DUAL"
         assert body["summary"]["disclaimer"] == agent.DISCLAIMER
         assert body["cached"] is False
+        assert body["framed_svg"] is None            # no template requested
+
+    def test_agent_sheet_alias_still_answers(self, monkeypatch):
+        monkeypatch.setattr(specs_mod, "generate_spec_sheet",
+                            lambda image, **kwargs: (PNG, dict(SUMMARY), False))
+        r = TestClient(app).post("/specs/agent-sheet", json={
+            "image_base64": base64.b64encode(PNG).decode()})
+        assert r.status_code == 200, r.text
+        assert base64.b64decode(r.json()["sheet_b64"]) == PNG
+
+    def test_facetta_template_frames_the_drawing(self, monkeypatch):
+        seen = {}
+
+        def fake_generate(image, **kwargs):
+            seen.update(kwargs)
+            return REAL_PNG, dict(SUMMARY), False
+
+        monkeypatch.setattr(specs_mod, "generate_spec_sheet", fake_generate)
+        r = TestClient(app).post("/specs/technical-drawing", json={
+            "image_base64": base64.b64encode(PNG).decode(),
+            "facetta_template": True, "signature": "Ana V."})
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert seen["templated"] is True             # clean-margin instruction
+        assert body["framed_svg"].startswith("<svg")
+        assert "FACETTA" in body["framed_svg"]       # the official masthead
+        assert "Ana V." in body["framed_svg"]        # the designer's hand
+        assert "dsn_pending · v1" in body["framed_svg"]  # no spec: placeholders
 
     def test_missing_key_is_503(self, monkeypatch):
         def boom(image, **kwargs):
@@ -359,21 +446,31 @@ class TestBuildWiring:
         monkeypatch.setattr(specs_mod, "render_from_spec",
                             lambda spec, *a, **k: (png, False))
 
-    def test_build_ships_the_agent_sheet(self, client, monkeypatch):
+    def test_build_ships_the_technical_drawing(self, client, monkeypatch):
         self._mock_origination(monkeypatch)
         seen = {}
 
         def fake_generate(image, **kwargs):
-            seen["spec"] = kwargs.get("spec")
-            return b"agent-sheet", dict(SUMMARY, mode="RING_ENGAGEMENT"), False
+            seen.update(kwargs)
+            return REAL_PNG, dict(SUMMARY, mode="RING_ENGAGEMENT"), False
 
         monkeypatch.setattr(specs_mod, "generate_spec_sheet", fake_generate)
         r = client.post("/specs/build", json={"brief": "emerald halo ring",
-                                              "output": "sheet"})
+                                              "output": "sheet",
+                                              "house": "Maison V",
+                                              "signature": "Ana V."})
         assert r.status_code == 200, r.text
         body = r.json()
-        assert base64.b64decode(body["agent_sheet_b64"]) == b"agent-sheet"
-        assert body["agent_summary"]["mode"] == "RING_ENGAGEMENT"
+        assert base64.b64decode(body["technical_drawing_b64"]) == REAL_PNG
+        assert body["manufacturing_summary"]["mode"] == "RING_ENGAGEMENT"
+        # the build's agent call is templated: the official frame letters
+        # identity, so the model must leave clean margins
+        assert seen["templated"] is True
+        framed = body["technical_drawing_framed_svg"]
+        assert framed.startswith("<svg")
+        assert "MAISON V" in framed.upper()           # the build's branding
+        assert "Ana V." in framed
+        assert "made with FACETTA" in framed
         # Section H hard rule: the agent transaction never calls the legacy
         # math spec module — no parametric artifacts unless explicitly asked
         assert body["sheet_svg"] is None
@@ -386,19 +483,19 @@ class TestBuildWiring:
                                                         monkeypatch):
         self._mock_origination(monkeypatch)
         monkeypatch.setattr(specs_mod, "generate_spec_sheet",
-                            lambda image, **kwargs: (b"agent-sheet",
+                            lambda image, **kwargs: (REAL_PNG,
                                                      dict(SUMMARY), False))
         r = client.post("/specs/build", json={"brief": "emerald halo ring",
                                               "output": "sheet",
                                               "include_cad_sheet": True})
         assert r.status_code == 200, r.text
         body = r.json()
-        assert base64.b64decode(body["agent_sheet_b64"]) == b"agent-sheet"
+        assert base64.b64decode(body["technical_drawing_b64"]) == REAL_PNG
         assert body["sheet_svg"].startswith("<svg")   # explicit CAD handoff
         assert body["sheet_over_render_svg"] is not None
 
-    def test_agent_sheet_failure_is_a_warning_not_a_failure(self, client,
-                                                            monkeypatch):
+    def test_agent_drawing_failure_is_a_warning_not_a_failure(self, client,
+                                                              monkeypatch):
         self._mock_origination(monkeypatch)
 
         def boom(image, **kwargs):
@@ -409,6 +506,7 @@ class TestBuildWiring:
                                               "output": "both"})
         assert r.status_code == 200, r.text           # the spec still ships
         body = r.json()
-        assert body["agent_sheet_b64"] is None
-        assert body["agent_summary"] is None
+        assert body["technical_drawing_b64"] is None
+        assert body["manufacturing_summary"] is None
+        assert body["technical_drawing_framed_svg"] is None
         assert any("agent spec sheet unavailable" in w for w in body["warnings"])

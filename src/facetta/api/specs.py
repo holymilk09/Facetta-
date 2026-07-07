@@ -9,6 +9,7 @@ from facetta.db import get_db
 
 from facetta import prose as prose_layer
 from facetta.db import utcnow
+from facetta.drawing_frame import frame_technical_drawing
 from facetta.dxf import svg_to_dxf
 from facetta.mockup import (
     SceneUnsupported, compile_artwork_restyle_request, compile_finish_request,
@@ -158,16 +159,26 @@ class AgentSheetRequest(BaseModel):
     region: str = "DUAL"
     spec: Spec | None = None               # validated → authoritative dims
     legibility: bool = False               # one extra text-repair pass
+    facetta_template: bool = False         # official frame, lettered by code
+    house: str | None = None               # branding for the official frame
+    signature: str | None = None
 
 
-@router.post("/agent-sheet")
-def agent_sheet(request: AgentSheetRequest):
-    """The user-facing factory sheet, drawn by the spec AGENT: Grok vision
-    classifies and inspects the designer's render, then a controlled
-    image-to-image edit turns it into black-line orthographic documentation.
-    Deterministic code never draws this artifact — when a spec is supplied it
-    is validated first and its numbers ride along in the prompt as
-    designer-authoritative dimensions; everything else is TBD on the sheet.
+@router.post("/technical-drawing")
+@router.post("/agent-sheet")               # legacy alias, same handler
+def technical_drawing(request: AgentSheetRequest):
+    """The user-facing jewelry manufacturing technical drawing, drawn by the
+    AGENT: Grok vision classifies and inspects the designer's render, then a
+    controlled image-to-image edit turns it into black-line orthographic
+    documentation. Deterministic code never draws this artifact — when a spec
+    is supplied it is validated first and its numbers ride along in the
+    prompt as designer-authoritative dimensions; everything else is TBD on
+    the drawing.
+
+    facetta_template=true is the official-template mode: the model is told to
+    leave clean margins (no title block, no names, no dates) and the response
+    carries framed_svg — the drawing wrapped in the Facetta frame, lettered
+    by code from the validated spec and the ?house=/?signature= branding.
     (The parametric CAD/DXF sheet remains /specs/sheet.svg — a separate,
     explicit handoff.)"""
     import base64 as b64
@@ -195,12 +206,18 @@ def agent_sheet(request: AgentSheetRequest):
         sheet, summary, cached = generate_spec_sheet(
             image_bytes, notes=request.notes, mode=request.mode,
             region=request.region, spec=validated,
-            legibility=request.legibility)
+            legibility=request.legibility,
+            templated=request.facetta_template)
     except ValueError as exc:
         return JSONResponse(status_code=422, content={"detail": str(exc)})
     except RenderUnavailable as exc:
         status = 503 if "_KEY" in str(exc) else 502
         return JSONResponse(status_code=status, content={"detail": str(exc)})
+    framed_svg = None
+    if request.facetta_template:
+        framed_svg = frame_technical_drawing(
+            sheet, spec=validated,
+            branding=_branding(request.house, request.signature))
     return {
         "sheet_b64": b64.b64encode(sheet).decode(),
         "media_type": _sniff_media_type(sheet),
@@ -208,6 +225,7 @@ def agent_sheet(request: AgentSheetRequest):
         "region": summary.get("region"),
         "summary": summary,
         "cached": cached,
+        "framed_svg": framed_svg,
     }
 
 
@@ -230,20 +248,24 @@ class BuildRequest(BaseModel):
 
 @router.post("/build")
 def build(request: BuildRequest, db: DbSession):
-    """One call, the whole piece: Grok invents the design, the validator makes it
-    real, and we return the concept image, the validated spec, the factory sheet,
-    and a client render together — the assistant's `output` choice decides which
-    visual layers come back. The user-facing factory sheet (agent_sheet_b64) is
-    drawn by the spec AGENT from the render with the validated spec's numbers
-    injected as designer-authoritative dimensions; per the pack's Section H hard
-    rule the agent pipeline never calls the legacy math spec module in the same
-    transaction, so the parametric CAD/DXF artifacts (sheet_svg and the
-    render-matched sheet_over_render_svg) are drawn only on the explicit
-    include_cad_sheet=true request — a separate, explicit handoff. Concept failure
-    is fatal (503/502) and an unbuildable concept is 422; a downstream
-    sheet/render hiccup is a warning, not a failure, so the spec always ships.
-    With persist=true the piece is saved as a design (v1) and its design_id
-    returned, ready for surgical annotation edits."""
+    """One call, the whole piece: Grok invents the design, the validator makes
+    it real, and we return the concept image, the validated spec, the
+    manufacturing technical drawing, and a client render together — the
+    assistant's `output` choice decides which visual layers come back. The
+    user-facing jewelry manufacturing technical drawing (technical_drawing_b64)
+    is drawn by the AGENT from the render with the validated spec's numbers
+    injected as designer-authoritative dimensions; the agent draws it templated
+    (clean margins, no invented names) and technical_drawing_framed_svg wraps it
+    in the official Facetta frame, lettered by code from the record and the
+    house/signature branding. Per the pack's Section H hard rule the agent
+    pipeline never calls the legacy math spec module in the same transaction,
+    so the parametric CAD/DXF artifacts (sheet_svg and the render-matched
+    sheet_over_render_svg) are drawn only on the explicit
+    include_cad_sheet=true request — a separate, explicit handoff. Concept
+    failure is fatal (503/502) and an unbuildable concept is 422; a downstream
+    drawing/render hiccup is a warning, not a failure, so the spec always
+    ships. With persist=true the piece is saved as a design (v1) and its
+    design_id returned, ready for surgical annotation edits."""
     import base64
 
     from facetta.concept import ConceptInvalid, originate_concept
@@ -279,17 +301,23 @@ def build(request: BuildRequest, db: DbSession):
         client_render_b64 = base64.b64encode(spec_render).decode()
         render_media_type = "image/png"
 
-    agent_sheet_b64 = agent_summary = None
+    technical_drawing_b64 = manufacturing_summary = None
+    technical_drawing_framed_svg = None
     if request.output in ("sheet", "both"):
-        # the USER-FACING factory sheet: the spec agent draws it from the
-        # accurate render (or the concept image), with the validated spec's
-        # numbers riding along as designer-authoritative dimensions
+        # the USER-FACING manufacturing technical drawing: the agent draws it
+        # from the accurate render (or the concept image) with the validated
+        # spec's numbers riding along as designer-authoritative dimensions —
+        # templated, so the model leaves clean margins and the official
+        # Facetta frame (code, from the record) letters all identity
         try:
-            agent_sheet, agent_summary, _ = generate_spec_sheet(
+            drawing, manufacturing_summary, _ = generate_spec_sheet(
                 spec_render if spec_render is not None else image,
-                spec=spec, region="DUAL")
-            agent_sheet_b64 = base64.b64encode(agent_sheet).decode()
+                spec=spec, region="DUAL", templated=True)
+            technical_drawing_framed_svg = frame_technical_drawing(
+                drawing, spec=spec, branding=branding)
+            technical_drawing_b64 = base64.b64encode(drawing).decode()
         except (RenderUnavailable, ValueError, OSError) as exc:
+            manufacturing_summary = technical_drawing_framed_svg = None
             warnings.append(f"agent spec sheet unavailable: {exc}")
 
     # the parametric CAD/DXF artifacts come from the LEGACY MATH spec module.
@@ -328,8 +356,9 @@ def build(request: BuildRequest, db: DbSession):
         "spec_render_b64": (base64.b64encode(spec_render).decode()
                             if spec_render is not None else None),
         "sheet_svg": sheet_svg,
-        "agent_sheet_b64": agent_sheet_b64,
-        "agent_summary": agent_summary,
+        "technical_drawing_b64": technical_drawing_b64,
+        "manufacturing_summary": manufacturing_summary,
+        "technical_drawing_framed_svg": technical_drawing_framed_svg,
         "sheet_over_render_svg": sheet_over_render_svg,
         "blueprint_svg": blueprint_svg,
         "client_render_b64": client_render_b64,

@@ -227,3 +227,28 @@ separate explicit action — the sheet is an illustration.
 
 RING_TENSION · RING_ETERNITY · CUFFLINKS · TIARA — same pattern: C block +
 G prompt + F template.
+
+## Terminology addendum (founder)
+
+**Primary phrase** — everywhere the model is prompted:
+"jewelry manufacturing technical drawing".
+
+**Avoid as the sole label**: "spec sheet" (models read it as a form/table),
+"tech pack", "sketch", "render". They may appear as synonyms, never alone.
+
+**Task line** — opens every image instruction:
+"Task: Convert the render into a jewelry manufacturing technical drawing
+(line art, orthographic plan/front/side, mm dimensions, material and stone
+callouts) for factory handoff."
+
+**Synonyms line** — for system prompts:
+"Also called: factory drawing, technical file, production drawing — not a
+photoreal render, not a spreadsheet-only spec."
+
+**Product naming**
+
+| Surface | Value |
+|---|---|
+| UI button | Create manufacturing drawing |
+| Agent task enum | `MANUFACTURING_TECHNICAL_DRAWING` |
+| User-facing subtitle | True-scale views, dimensions, materials & stones for production |
