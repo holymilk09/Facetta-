@@ -223,6 +223,21 @@ def restyle_artwork(image_bytes: bytes, media_type: str = "image/jpeg",
     return image, False
 
 
+def render_from_spec(spec: Spec, model: str = "grok_direct") -> tuple[bytes, bool]:
+    """Render the piece straight from the VALIDATED spec — the accurate path.
+
+    The founder's finding: our deterministic drawing stays schematic, but feeding
+    the structured spec to Grok renders faithfully because the spec's controlled
+    vocabulary keeps it in the design's lane (exact species, cut, mm, metal,
+    counts, arrangement). This compiles that spec into a spec-true text-to-image
+    prompt and generates from it — no loose brief, no re-reading. Cached by the
+    prompt (which is a pure function of the spec), so the same design renders
+    once. Returns (bytes, was_cached)."""
+    from facetta.prototype import compile_render_prompt
+
+    return generate_image(compile_render_prompt(spec)["prompt"], model=model)
+
+
 def _provider_key(key_env: str) -> str | None:
     if os.environ.get(key_env):
         return os.environ[key_env]

@@ -31,8 +31,8 @@ def _real_png(color=(210, 205, 198)) -> bytes:
     return buf.getvalue()
 
 
-FAKE_PNG = _real_png()   # a decodable concept image so the render-matched sheet works
-RENDER_PNG = b"\x89PNG\r\n\x1a\nclient-render"
+FAKE_PNG = _real_png()                    # decodable concept image
+RENDER_PNG = _real_png((180, 150, 120))   # decodable spec render (distinct bytes)
 
 
 @pytest.fixture
@@ -69,7 +69,7 @@ def _mock_origination(monkeypatch):
 class TestBuild:
     def test_both_returns_concept_spec_sheet_and_render(self, client, monkeypatch):
         _mock_origination(monkeypatch)
-        monkeypatch.setattr(specs_mod, "render_finished_image",
+        monkeypatch.setattr(specs_mod, "render_from_spec",
                             lambda spec, *a, **k: (RENDER_PNG, False))
 
         r = client.post("/specs/build", json={"brief": "art deco emerald halo ring",
@@ -80,45 +80,45 @@ class TestBuild:
         assert body["spec"]["template"] == "halo_prong"
         assert body["spec"]["setting"]["style"] == "bezel"      # setting flowed through
         assert body["sheet_svg"].startswith("<svg")             # factory sheet present
+        # the client render is the SPEC-driven render (in the design's lane)
         assert base64.b64decode(body["client_render_b64"]) == RENDER_PNG
+        assert base64.b64decode(body["spec_render_b64"]) == RENDER_PNG
         assert body["warnings"] == []
 
-    def test_sheet_only_skips_the_render(self, client, monkeypatch):
+    def test_sheet_only_returns_no_client_render(self, client, monkeypatch):
         _mock_origination(monkeypatch)
-        called = {"render": False}
-
-        def _should_not_run(*a, **k):
-            called["render"] = True
-            return (RENDER_PNG, False)
-
-        monkeypatch.setattr(specs_mod, "render_finished_image", _should_not_run)
+        monkeypatch.setattr(specs_mod, "render_from_spec",
+                            lambda spec, *a, **k: (RENDER_PNG, False))
         r = client.post("/specs/build", json={"brief": "emerald halo ring",
                                               "output": "sheet"})
         assert r.status_code == 200, r.text
         body = r.json()
         assert body["sheet_svg"].startswith("<svg")
-        assert body["client_render_b64"] is None
-        assert called["render"] is False           # render engine never touched
+        assert body["client_render_b64"] is None       # no render requested
+        # but the spec render still backs the render-matched sheet
+        assert body["sheet_over_render_svg"] is not None
 
-    def test_render_failure_is_a_warning_not_a_failure(self, client, monkeypatch):
+    def test_spec_render_failure_is_a_warning_not_a_failure(self, client, monkeypatch):
         _mock_origination(monkeypatch)
         from facetta.render import RenderUnavailable
 
         def boom(spec, *a, **k):
-            raise RenderUnavailable("render provider failed: blocked")
+            raise RenderUnavailable("generation provider failed: blocked")
 
-        monkeypatch.setattr(specs_mod, "render_finished_image", boom)
+        monkeypatch.setattr(specs_mod, "render_from_spec", boom)
         r = client.post("/specs/build", json={"brief": "emerald halo ring",
                                               "output": "both"})
         assert r.status_code == 200, r.text          # the spec still ships
         body = r.json()
         assert body["client_render_b64"] is None
         assert body["sheet_svg"].startswith("<svg")
-        assert any("client render unavailable" in w for w in body["warnings"])
+        # the render-matched sheet falls back to the concept image, still drawn
+        assert body["sheet_over_render_svg"] is not None
+        assert any("spec render unavailable" in w for w in body["warnings"])
 
     def test_persist_saves_a_design_ready_to_annotate(self, client, monkeypatch):
         _mock_origination(monkeypatch)
-        monkeypatch.setattr(specs_mod, "render_finished_image",
+        monkeypatch.setattr(specs_mod, "render_from_spec",
                             lambda spec, *a, **k: (RENDER_PNG, False))
 
         r = client.post("/specs/build", json={"brief": "emerald halo ring",
@@ -149,7 +149,7 @@ class TestBuild:
                                 jewelry_type="earring", halo=True, species="diamond",
                                 cut="marquise", center_length_mm=14, center_width_mm=9,
                                 metal_material="gold", metal_color="yellow"))
-        monkeypatch.setattr(specs_mod, "render_finished_image",
+        monkeypatch.setattr(specs_mod, "render_from_spec",
                             lambda spec, *a, **k: (RENDER_PNG, False))
 
         r = client.post("/specs/build", json={"brief": "modern marquise drop earring",

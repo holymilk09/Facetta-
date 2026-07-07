@@ -95,6 +95,32 @@ class TestRenderAsSheet:
         assert "pending designer" not in svg
 
 
+class TestSpecRender:
+    """The accurate path: render straight from the validated spec so the engine
+    stays in the design's lane (families, cuts, mm, counts)."""
+
+    def test_render_from_spec_compiles_a_faithful_in_lane_prompt(self, monkeypatch):
+        import facetta.render as render_mod
+
+        captured = {}
+
+        def fake_gen(prompt, model="grok_direct", variant=0):
+            captured["prompt"] = prompt
+            return (b"img-bytes", False)
+
+        monkeypatch.setattr(render_mod, "generate_image", fake_gen)
+        img, cached = render_mod.render_from_spec(_example_spec())
+        assert img == b"img-bytes"
+        p = captured["prompt"]
+        # every family and dimension travels in the prompt — nothing invented
+        assert "articulated drop earring" in p
+        assert "marquise" in p and "yellow gold" in p
+        assert "halo around the center" in p and "hanging below the center" in p
+        assert "overall length" in p
+        assert _example_spec().drop is not None
+        assert f"{int(_example_spec().drop.overall_length_mm)}" in p
+
+
 class TestValidation:
     def test_drop_section_is_required(self):
         raw = json.loads(EXAMPLE.read_text())

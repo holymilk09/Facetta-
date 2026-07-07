@@ -18,7 +18,7 @@ from facetta.overlay import OverlayUnsupported, render_annotated_artwork
 from facetta.plate import render_control_image, render_presentation_plate
 from facetta.render import (
     RenderUnavailable, _sniff_media_type, render_finished_image,
-    restyle_artwork,
+    render_from_spec, restyle_artwork,
 )
 from facetta.prototype import compile_render_prompt, render_color_preview
 from facetta.spec import Spec
@@ -193,16 +193,31 @@ def build(request: BuildRequest, db: DbSession):
     sheet_svg = sheet_over_render_svg = blueprint_svg = None
     client_render_b64 = render_media_type = None
 
+    # the accurate render: built straight from the VALIDATED spec, so Grok stays
+    # in the design's lane (exact families, cuts, mm, counts). This is the piece
+    # the render-matched sheet draws and the client render shows.
+    spec_render = None
+    try:
+        spec_render, _ = render_from_spec(spec)
+    except RenderUnavailable as exc:
+        warnings.append(f"spec render unavailable: {exc}")
+
+    if request.output in ("render", "both") and spec_render is not None:
+        client_render_b64 = base64.b64encode(spec_render).decode()
+        render_media_type = "image/png"
+
     if request.output in ("sheet", "both"):
         try:
             sheet_svg = render_sheet(spec, branding=branding)
         except SheetUnsupported as exc:
             warnings.append(f"factory sheet unavailable: {exc}")
-        # the render-matched sheet: the actual generated piece IS the drawing,
-        # code letters the validated dimensions on it — so it matches the render
+        # the render-matched sheet: the accurate spec render IS the drawing (or
+        # the concept image if the spec render was unavailable), code letters the
+        # validated dimensions on it — so the sheet matches the render
         from facetta.overlay import OverlayUnsupported, render_annotated_artwork
         try:
-            sheet_over_render_svg = render_annotated_artwork(spec, image)
+            sheet_over_render_svg = render_annotated_artwork(
+                spec, spec_render or image)
         except (OverlayUnsupported, ValueError, OSError) as exc:
             warnings.append(f"render-matched sheet unavailable: {exc}")
         if request.blueprint:
@@ -211,14 +226,6 @@ def build(request: BuildRequest, db: DbSession):
                 blueprint_svg, _ = render_blueprint_sheet(spec, branding=branding)
             except (SheetUnsupported, RenderUnavailable) as exc:
                 warnings.append(f"blueprint unavailable: {exc}")
-
-    if request.output in ("render", "both"):
-        try:
-            png, _ = render_finished_image(spec)
-            client_render_b64 = base64.b64encode(png).decode()
-            render_media_type = "image/png"
-        except RenderUnavailable as exc:
-            warnings.append(f"client render unavailable: {exc}")
 
     spec_out = spec.model_dump(mode="json")
     response: dict = {
@@ -229,6 +236,8 @@ def build(request: BuildRequest, db: DbSession):
         "read": read.model_dump(),
         "spec": spec_out,
         "corrections": corrections,
+        "spec_render_b64": (base64.b64encode(spec_render).decode()
+                            if spec_render is not None else None),
         "sheet_svg": sheet_svg,
         "sheet_over_render_svg": sheet_over_render_svg,
         "blueprint_svg": blueprint_svg,
