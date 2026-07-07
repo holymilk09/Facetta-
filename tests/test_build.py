@@ -125,6 +125,27 @@ class TestBuild:
         assert got.status_code == 200
         assert got.json()["template"] == "halo_prong"
 
+    def test_earring_brief_builds_the_drop_archetype(self, client, monkeypatch):
+        # the archetype is built WITH origination: an earring read → an earring
+        monkeypatch.setattr(concept_mod, "generate_concept",
+                            lambda brief, model="grok_direct", variant=0: (FAKE_PNG, False))
+        monkeypatch.setattr(concept_mod, "read_design",
+                            lambda image, brief="": DesignRead(
+                                jewelry_type="earring", halo=True, species="diamond",
+                                cut="marquise", center_length_mm=14, center_width_mm=9,
+                                metal_material="gold", metal_color="yellow"))
+        monkeypatch.setattr(specs_mod, "render_finished_image",
+                            lambda spec, *a, **k: (RENDER_PNG, False))
+
+        r = client.post("/specs/build", json={"brief": "modern marquise drop earring",
+                                              "output": "both"})
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["spec"]["template"] == "deco_drop_earring"    # earring, not a ring
+        assert body["spec"]["drop"]["overall_length_mm"] > 0
+        assert "DROP EARRING" in body["sheet_svg"]                # native dimensioned sheet
+        assert base64.b64decode(body["client_render_b64"]) == RENDER_PNG
+
     def test_missing_key_is_503(self, client, monkeypatch):
         from facetta.render import RenderUnavailable
 

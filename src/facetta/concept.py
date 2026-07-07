@@ -28,7 +28,8 @@ from pydantic import BaseModel, ConfigDict, Field
 from facetta.density import check_density
 from facetta.render import RenderUnavailable, generate_image
 from facetta.spec import (
-    Band, Metal, RingSize, Setting, Spec, Stone, StoneColor, StoneDimensions,
+    Band, Drop, Metal, RingSize, Setting, Spec, Stone, StoneColor,
+    StoneDimensions,
 )
 from facetta.validation import (
     HALO_MARGIN_MM, STONE_GAP_MM, _surround_fit, validate_spec,
@@ -217,6 +218,8 @@ def complete_design(read: DesignRead, brief: str = "",
     jeweler: measurements land in the right places and nothing impossible ships.
     """
     vocab = vocab or get_vocabulary()
+    if read.jewelry_type == "earring":
+        return _complete_earring(read, brief, vocab)
     corrections: list[str] = []
 
     cut = _CUT_MAP.get(read.cut, read.cut)
@@ -315,6 +318,105 @@ def complete_design(read: DesignRead, brief: str = "",
         applied = _apply_corrections(spec, result.issues, corrections)
         if not applied:
             break
+    return spec, corrections
+
+
+def _species_color(vocab: Vocabulary, species: str) -> StoneColor:
+    terms = vocab.trade_color_terms(species)
+    if terms:
+        return StoneColor(trade=terms[0].term, gia=terms[0].gia)
+    return StoneColor(trade=species.title(), gia="natural colour")
+
+
+def _complete_earring(read: DesignRead, brief: str,
+                      vocab: Vocabulary) -> tuple[Spec, list[str]]:
+    """Build an articulated drop earring from a sparse read — the vertical
+    archetype. The read's centre becomes the marquise (or read) frame; a pavé
+    halo, a nested pear drop, and a bezel accent are added on conventional
+    proportions, every carat set by the density model so the whole piece is
+    physically real. The designer confirms exact millimetres before production.
+    """
+    corrections: list[str] = []
+    species = read.species if vocab.species(read.species) else "diamond"
+    fcut = read.cut if vocab.cut(read.cut) else "marquise"
+    if fcut != read.cut:
+        corrections.append(f"frame cut '{read.cut}' read as {fcut}")
+
+    L = max(read.center_length_mm, read.center_width_mm)
+    W = min(read.center_length_mm, read.center_width_mm)
+    fdepth = round(W * 0.60, 1)
+    fct, _ = _round_stone(vocab, species, fcut, W, L, fdepth)
+    frame = Stone(species=species, cut=fcut, carat=max(fct, 0.001),
+                  dimensions_mm=StoneDimensions(length=L, width=W, depth=fdepth),
+                  color=_species_color(vocab, species), count=1,
+                  position="center", mount="prong_4")
+    corrections.append(f"marquise frame set to {L}×{W}×{fdepth} mm, {fct} ct "
+                       f"at {species}'s density")
+
+    side: list[Stone] = []
+    if read.halo:
+        mw = round(max(1.2, W * 0.16), 1)
+        md = round(mw * 0.61, 2)
+        mct, _ = _round_stone(vocab, "diamond", "round_brilliant", mw, mw, md)
+        per = math.pi * (3 * (L / 2 + W / 2)
+                         - math.sqrt(max(0.0, (3 * L / 2 + W / 2) * (L / 2 + 3 * W / 2))))
+        count = max(12, min(int(per / (mw + 0.4)), 40))
+        side.append(Stone(species="diamond", cut="round_brilliant",
+                          carat=max(mct, 0.001),
+                          dimensions_mm=StoneDimensions(length=mw, width=mw, depth=md),
+                          color=StoneColor(trade="F", gia="colorless"),
+                          count=count, position="halo", mount="pave"))
+        corrections.append(f"pavé halo sized to {count} × ⌀{mw} mm diamonds "
+                           "around the frame")
+
+    dl, dw = round(L * 0.5, 1), round(W * 0.55, 1)
+    dd = round(dw * 0.60, 1)
+    dcut = "pear" if vocab.cut("pear") else "oval_brilliant"
+    dct, _ = _round_stone(vocab, species, dcut, dw, dl, dd)
+    side.append(Stone(species=species, cut=dcut, carat=max(dct, 0.001),
+                      dimensions_mm=StoneDimensions(length=dl, width=dw, depth=dd),
+                      color=_species_color(vocab, species), count=1,
+                      position="drop", mount="v_prong"))
+
+    aw = round(max(1.6, W * 0.22), 1)
+    ad = round(aw * 0.60, 2)
+    act, _ = _round_stone(vocab, "diamond", "round_brilliant", aw, aw, ad)
+    side.append(Stone(species="diamond", cut="round_brilliant", carat=max(act, 0.001),
+                      dimensions_mm=StoneDimensions(length=aw, width=aw, depth=ad),
+                      color=StoneColor(trade="F", gia="colorless"), count=1,
+                      position="stations", mount="bezel"))
+
+    material = read.metal_material if any(
+        m["id"] == read.metal_material for m in vocab.metals()) else "gold"
+    if material == "gold":
+        metal = Metal(material="gold", karat=18, color=read.metal_color or "yellow",
+                      finish="high_polish")
+    else:
+        metal = Metal(material=material, finish="high_polish")
+
+    hook = 10.0
+    link_count, link_pitch = 3, 2.4
+    halo_extra = (side[0].dimensions_mm.width if read.halo else 0.0)
+    overall = round(hook + link_count * link_pitch + 3 + L + 2 * halo_extra, 1)
+    drop_section = Drop(hook_height_mm=hook, overall_length_mm=overall,
+                        link_count=link_count, link_pitch_mm=link_pitch,
+                        wall_mm=0.9, wire_mm=0.8)
+    corrections.append(f"overall reach set to {overall} mm — hook, {link_count}-link "
+                       "run, frame and halo stacked; designer confirms final length")
+
+    spec = Spec(
+        schema_version=1, design_id="dsn_concept", version=1,
+        created_by="usr_pending", created_at="1970-01-01T00:00:00Z",
+        jewelry_type="earring", template="deco_drop_earring", mode="pro",
+        stone=frame, side_stones=side, metal=metal,
+        setting=Setting(style="prong_4", prong_count=4, prong_tip_mm=0.9),
+        drop=drop_section,
+        notes_to_factory=(
+            f"Concept originated by image generation from the brief: “{brief}”. "
+            "Modular articulated drop — cast frame, hand-set pavé. All dimensions "
+            "are density-consistent DRAFT proposals scaled from a vision estimate; "
+            "the designer confirms exact millimetres before production."),
+    )
     return spec, corrections
 
 

@@ -2202,6 +2202,164 @@ def _render_loose_stone(spec: Spec) -> str:
     return _frame(spec, "GEM IDENTIFICATION — LOOSE STONE", f"{s:g}:1", body)
 
 
+# --- articulated drop earring ---------------------------------------------------
+#
+# The first vertical archetype: a hook, an articulated link run, a marquise
+# frame wrapped in a pavé halo, and a nested drop with a bezel accent at the
+# tip. Every part is drawn from the spec's mm and lettered — the overall reach,
+# the frame, the drop, the hook — so an earring the designer described in prose
+# leaves as a true dimensioned factory sheet, not a captioned photo.
+
+EARRING_SCALE = 2.3
+
+
+def _marquise_path(cx: float, cy: float, length: float, width: float) -> str:
+    """A pointed-oval (marquise) outline, length vertical. Two quadratics with
+    controls at ±width give a half-width of width/2 at the waist and sharp
+    poles top and bottom."""
+    ty, by = cy - length / 2, cy + length / 2
+    return (f'M {cx:.2f} {ty:.2f} '
+            f'Q {cx + width:.2f} {cy:.2f} {cx:.2f} {by:.2f} '
+            f'Q {cx - width:.2f} {cy:.2f} {cx:.2f} {ty:.2f} Z')
+
+
+def _pear_path(cx: float, cy: float, length: float, width: float) -> str:
+    """A pear (teardrop) outline: a pointed top over a round bottom of radius
+    width/2, length vertical."""
+    r = width / 2
+    ty = cy - length / 2
+    by = cy + length / 2 - r          # centre of the round bottom
+    return (f'M {cx:.2f} {ty:.2f} '
+            f'C {cx + width * 0.78:.2f} {ty + length * 0.16:.2f} '
+            f'{cx + r:.2f} {by - r * 0.4:.2f} {cx + r:.2f} {by:.2f} '
+            f'A {r:.2f} {r:.2f} 0 1 1 {cx - r:.2f} {by:.2f} '
+            f'C {cx - r:.2f} {by - r * 0.4:.2f} '
+            f'{cx - width * 0.78:.2f} {ty + length * 0.16:.2f} {cx:.2f} {ty:.2f} Z')
+
+
+def _marquise_point(cx: float, cy: float, length: float, width: float,
+                    t: float) -> tuple[float, float]:
+    """A point on the marquise waist ring at parameter t∈[0,1) — used to seat
+    the pavé halo evenly around the frame (elliptical approximation)."""
+    ang = -math.pi / 2 + t * 2 * math.pi
+    return cx + (width / 2) * math.cos(ang), cy + (length / 2) * math.sin(ang)
+
+
+def _render_drop_earring(spec: Spec, highlight_ref: str | None = None,
+                         branding: Branding | None = None) -> str:
+    if spec.drop is None:
+        raise SheetUnsupported("deco_drop_earring needs a drop section")
+    S = EARRING_SCALE
+    d = spec.drop
+    frame = spec.stone.dimensions_mm
+    halo = _find_stone(spec, "halo", "surround")
+    drop_stone = _find_stone(spec, "drop", "under_center")
+    accent = _find_stone(spec, "stations", "accent")
+
+    cx = 78.0
+    top = 26.0                                   # top of the hook
+    wire = (d.wire_mm or 0.9) * S
+
+    # stack the parts down the centreline, in paper-mm
+    hook_h = d.hook_height_mm * S
+    hook_w = hook_h * 0.62
+    y_hook_c = top + hook_h / 2
+    y = top + hook_h                             # bottom of the hook
+
+    link_pitch = (d.link_pitch_mm or 2.0) * S
+    y += 1.2                                     # jump ring gap
+    link_ys = [y + link_pitch * (i + 0.5) for i in range(d.link_count)]
+    y += link_pitch * d.link_count + 1.2
+
+    frame_l, frame_w = frame.length * S, frame.width * S
+    halo_gap = ((halo.dimensions_mm.width if halo else 1.2) * S) * 0.9
+    frame_cy = y + frame_l / 2 + halo_gap
+    lowest = frame_cy + frame_l / 2 + halo_gap   # bottom pole of the halo
+
+    parts: list[str] = []
+
+    # hook — an open ear wire, drawn at the wire gauge
+    parts.append(
+        f'<path d="M {cx:.2f} {y_hook_c + hook_h / 2:.2f} '
+        f'A {hook_w / 2:.2f} {hook_h / 2:.2f} 0 1 1 {cx + 0.1:.2f} {y_hook_c + hook_h / 2:.2f}" '
+        f'fill="none" stroke="{INK}" stroke-width="{max(wire, STROKE_MAIN):.2f}" '
+        f'stroke-linecap="round"/>')
+    # jump ring + articulated links down to the frame
+    parts.append(_circle(cx, top + hook_h + 1.2, wire * 0.9))
+    for ly in link_ys:
+        parts.append(f'<ellipse cx="{cx:.2f}" cy="{ly:.2f}" rx="{link_pitch * 0.34:.2f}" '
+                     f'ry="{link_pitch * 0.5:.2f}" fill="none" stroke="{INK}" '
+                     f'stroke-width="{STROKE_MAIN}"/>')
+
+    # pavé halo — a ring of beads on an outward-offset marquise
+    if halo is not None:
+        pr = halo.dimensions_mm.width / 2 * S
+        ox, oy = frame_w / 2 + pr, frame_l / 2 + pr
+        for i in range(halo.count):
+            t = i / halo.count
+            ang = -math.pi / 2 + t * 2 * math.pi
+            parts.append(_circle(cx + ox * math.cos(ang),
+                                 frame_cy + oy * math.sin(ang), pr))
+    # the marquise frame
+    parts.append(f'<path d="{_marquise_path(cx, frame_cy, frame_l, frame_w)}" '
+                 f'fill="#ffffff" stroke="{INK}" stroke-width="{STROKE_MAIN}"/>')
+    parts += _facet_face_up(cx, frame_cy, "marquise", frame_w, frame_l) \
+        if "marquise" in SUPPORTED_CUTS else []
+
+    # the nested pear drop, suspended just below the frame centre
+    if drop_stone is not None:
+        dl, dw = drop_stone.dimensions_mm.length * S, drop_stone.dimensions_mm.width * S
+        drop_cy = frame_cy + frame_l * 0.06
+        parts.append(_circle(cx, frame_cy - frame_l / 2 + 1.2, wire * 0.7))  # bail
+        parts.append(f'<path d="{_pear_path(cx, drop_cy, dl, dw)}" '
+                     f'fill="#ffffff" stroke="{INK}" stroke-width="{STROKE_MAIN}"/>')
+    # bezel accent at the tip
+    if accent is not None:
+        ar = accent.dimensions_mm.width / 2 * S
+        ay = frame_cy + frame_l / 2 - ar - 1.0
+        parts.append(_circle(cx, ay, ar + 0.5 * S))     # bezel collar
+        parts.append(_circle(cx, ay, ar))
+
+    # dimensions — every number from the spec
+    overall_px = d.overall_length_mm * S
+    xdim = cx - frame_w / 2 - halo_gap - 14
+    parts += [
+        _ext(cx - hook_w / 2, top, xdim - 1, top),
+        _ext(cx, lowest, xdim - 1, lowest),
+        *_dim_v(xdim, top, lowest, f"{_fmt(d.overall_length_mm)} mm overall"),
+    ]
+    # frame L×W on the right, drop below, hook top-left
+    xr = cx + frame_w / 2 + halo_gap + 10
+    parts += [
+        _ext(cx + frame_w / 2, frame_cy - frame_l / 2, xr + 1, frame_cy - frame_l / 2),
+        _ext(cx + frame_w / 2, frame_cy + frame_l / 2, xr + 1, frame_cy + frame_l / 2),
+        *_dim_v(xr, frame_cy - frame_l / 2, frame_cy + frame_l / 2,
+                f"{_fmt(frame.length)} × {_fmt(frame.width)} mm frame"),
+        _text(cx, top - 3, "FRONT VIEW", size=3.6, style=' letter-spacing="1.2"'),
+        _text(cx, lowest + 6,
+              f"hook {_fmt(d.hook_height_mm)} mm"
+              + (f"  ·  {d.link_count} links @ {_fmt(d.link_pitch_mm)} mm"
+                 if d.link_count and d.link_pitch_mm else ""), size=2.8, color=FAINT),
+    ]
+    if halo is not None:
+        parts.append(_text(cx, lowest + 10,
+                           f"{halo.count} × ⌀{_fmt(halo.dimensions_mm.width)} mm pavé halo",
+                           size=2.8, color=FAINT))
+    if drop_stone is not None:
+        parts.append(_text(cx, lowest + 14,
+                           f"pear drop {_fmt(drop_stone.dimensions_mm.length)} × "
+                           f"{_fmt(drop_stone.dimensions_mm.width)} mm", size=2.8, color=FAINT))
+    if d.wall_mm or d.wire_mm:
+        gauge = "  ·  ".join(filter(None, [
+            f"wall {_fmt(d.wall_mm)} mm" if d.wall_mm else "",
+            f"wire {_fmt(d.wire_mm)} mm" if d.wire_mm else ""]))
+        parts.append(_text(cx, lowest + 18, gauge, size=2.8, color=FAINT))
+
+    body = parts + _stone_schedule(spec, 168, 30, circled=True, totals=True)
+    return _frame(spec, "TECHNICAL SHEET — DROP EARRING", f"{S:g}:1", body,
+                  datum_y=None, branding=branding)
+
+
 TEMPLATES = {
     "solitaire_prong": _render_solitaire,
     "halo_prong": _render_halo,
@@ -2211,6 +2369,7 @@ TEMPLATES = {
     "link_bracelet": _render_link_bracelet,
     "loose_stone": _render_loose_stone,
     "leaf_spray_brooch": _render_leaf_spray,
+    "deco_drop_earring": _render_drop_earring,
 }
 
 
@@ -2230,7 +2389,7 @@ def render_sheet(spec: Spec, highlight_ref: str | None = None,
         raise SheetUnsupported(
             f"template '{spec.template}' not supported yet; supported: {list(TEMPLATES)}"
         )
-    if spec.template in ("solitaire_prong", "halo_prong"):
+    if spec.template in ("solitaire_prong", "halo_prong", "deco_drop_earring"):
         return render(spec, highlight_ref, branding)
     return render(spec)
 

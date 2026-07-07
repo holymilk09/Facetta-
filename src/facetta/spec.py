@@ -126,6 +126,22 @@ class Brooch(StrictModel):
     sweep_deg: Annotated[float, Field(strict=True, ge=20, le=110)] | None = None
 
 
+class Drop(StrictModel):
+    """Articulated drop-earring construction: the ear hook, the link run that
+    gives the piece movement, the overall reach, and the wall/wire gauges the
+    design lives on. The frame, halo, drop, and accent STONES live in
+    stone/side_stones; this section carries the metal architecture — everything
+    a factory needs that isn't a gem. overall_length_mm is bail-top to the
+    lowest point; the renderer stacks the parts to it and letters it."""
+
+    hook_height_mm: Annotated[float, Field(strict=True, ge=5, le=20)]
+    overall_length_mm: Annotated[float, Field(strict=True, ge=15, le=90)]
+    link_count: Annotated[int, Field(ge=0, le=20)] = 0
+    link_pitch_mm: Annotated[float, Field(strict=True, ge=0.8, le=6.0)] | None = None
+    wall_mm: Annotated[float, Field(strict=True, ge=0.5, le=3.0)] | None = None
+    wire_mm: Annotated[float, Field(strict=True, ge=0.5, le=2.0)] | None = None
+
+
 class Composition(StrictModel):
     """Anchor geometry traced from the designer's own artwork (facetta.trace).
 
@@ -160,6 +176,7 @@ class Spec(StrictModel):
     pendant: Pendant | None = None
     chain: Chain | None = None
     brooch: Brooch | None = None
+    drop: Drop | None = None
     composition: Composition | None = None
     side_stones: list[Stone] = Field(default_factory=list)
     notes_to_factory: str | None = None
