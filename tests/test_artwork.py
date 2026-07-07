@@ -279,12 +279,15 @@ class TestGenericOverlay:
         assert "A — 16 × 12" in svg      # the aquamarine, spec truth
         assert "B — ⌀ 4.7" in svg        # the big line stone
         assert "center stone 16 × 12 × 8" in svg
-        assert "pending designer" in svg  # no overall section: says so
+        assert "overall length" in svg   # the drop's reach, lettered from the spec
         assert "±0.1" in svg
 
-    def test_untraceable_image_degrades(self):
+    def test_untraceable_drop_degrades_silently(self):
+        # a drop's dimensions live in the column, so an untraceable render just
+        # loses its leader lines — no error note, the record still carries it
         from facetta.overlay import render_annotated_artwork
 
         blank = Image.new("RGB", (400, 400), (128, 128, 128))
         svg = render_annotated_artwork(self._drop_spec(), _png_bytes(blank))
-        assert "callouts omitted" in svg and "STONE SCHEDULE" in svg
+        assert "callouts omitted" not in svg
+        assert "STONE SCHEDULE" in svg and "overall length" in svg

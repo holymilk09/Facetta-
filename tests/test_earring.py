@@ -71,6 +71,30 @@ class TestSheet:
             "drop-earring sheet changed — if intentional, regenerate the golden")
 
 
+class TestRenderAsSheet:
+    """The render IS the sheet: the actual image is the drawing, code letters
+    the validated drop dimensions beside it — so it matches the render."""
+
+    def _png(self) -> bytes:
+        import io
+
+        from PIL import Image
+        buf = io.BytesIO()
+        Image.new("RGB", (600, 900), (210, 205, 198)).save(buf, format="PNG")
+        return buf.getvalue()
+
+    def test_overlay_letters_the_drop_dimensions(self):
+        from facetta.overlay import render_annotated_artwork
+
+        svg = render_annotated_artwork(_example_spec(), self._png())
+        assert "overall length" in svg          # the drop's real reach
+        assert "hook" in svg and "pavé halo" in svg
+        assert "wall" in svg and "wire" in svg
+        # a drop's dims live in the column, so no "could not be traced" note
+        assert "could not be traced" not in svg
+        assert "pending designer" not in svg
+
+
 class TestValidation:
     def test_drop_section_is_required(self):
         raw = json.loads(EXAMPLE.read_text())

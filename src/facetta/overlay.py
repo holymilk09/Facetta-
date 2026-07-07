@@ -144,8 +144,12 @@ def render_annotated_artwork(spec: Spec, image_bytes: bytes,
     except (OverlayUnsupported, ValueError) as exc:
         if strict:
             raise OverlayUnsupported(str(exc)) from exc
-        degrade_note = ("cluster callouts omitted — the image could not be "
-                        "traced against the spec")
+        # a drop earring carries every number in its dimensions column, so an
+        # untraceable render (e.g. diamonds on gold) degrades silently — the
+        # render stays the drawing, the record still speaks. Other pieces say so.
+        if spec.template != "deco_drop_earring":
+            degrade_note = ("cluster callouts omitted — the image could not be "
+                            "traced against the spec")
     if image_size is None:
         from PIL import Image
         image_size = Image.open(io.BytesIO(image_bytes)).size
@@ -221,6 +225,22 @@ def render_annotated_artwork(spec: Spec, image_bytes: bytes,
         if spec.setting is not None and spec.setting.gallery_height_mm:
             dim_lines.append((f"gallery {_fmt(spec.setting.gallery_height_mm)} "
                               "under center", False))
+    elif spec.drop is not None:
+        dr = spec.drop
+        dim_lines.append((f"overall length {_fmt(dr.overall_length_mm)}", False))
+        run = (f"  ·  {dr.link_count} links @ {_fmt(dr.link_pitch_mm)}"
+               if dr.link_count and dr.link_pitch_mm else "")
+        dim_lines.append((f"hook {_fmt(dr.hook_height_mm)}{run}", False))
+        halo = next((s for s in spec.side_stones
+                     if s.position in ("halo", "surround")), None)
+        if halo is not None:
+            dim_lines.append((f"pavé halo {halo.count} × ⌀"
+                              f"{_fmt(halo.dimensions_mm.width)}", False))
+        gauge = "  ·  ".join(filter(None, [
+            f"wall {_fmt(dr.wall_mm)}" if dr.wall_mm else "",
+            f"wire {_fmt(dr.wire_mm)}" if dr.wire_mm else ""]))
+        if gauge:
+            dim_lines.append((gauge, False))
     else:
         dim_lines.append(("overall extent — pending designer", False))
     if spec.template == "leaf_spray_brooch":

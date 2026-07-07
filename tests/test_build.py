@@ -22,7 +22,16 @@ from facetta.concept import DesignRead
 from facetta.db import Base, get_db
 from facetta.main import app
 
-FAKE_PNG = b"\x89PNG\r\n\x1a\nconcept"
+def _real_png(color=(210, 205, 198)) -> bytes:
+    import io as _io
+
+    from PIL import Image
+    buf = _io.BytesIO()
+    Image.new("RGB", (600, 900), color).save(buf, format="PNG")
+    return buf.getvalue()
+
+
+FAKE_PNG = _real_png()   # a decodable concept image so the render-matched sheet works
 RENDER_PNG = b"\x89PNG\r\n\x1a\nclient-render"
 
 
@@ -126,9 +135,15 @@ class TestBuild:
         assert got.json()["template"] == "halo_prong"
 
     def test_earring_brief_builds_the_drop_archetype(self, client, monkeypatch):
+        import io as _io
+
+        from PIL import Image
+        buf = _io.BytesIO()
+        Image.new("RGB", (600, 900), (210, 205, 198)).save(buf, format="PNG")
+        real_png = buf.getvalue()
         # the archetype is built WITH origination: an earring read → an earring
         monkeypatch.setattr(concept_mod, "generate_concept",
-                            lambda brief, model="grok_direct", variant=0: (FAKE_PNG, False))
+                            lambda brief, model="grok_direct", variant=0: (real_png, False))
         monkeypatch.setattr(concept_mod, "read_design",
                             lambda image, brief="": DesignRead(
                                 jewelry_type="earring", halo=True, species="diamond",
@@ -144,6 +159,9 @@ class TestBuild:
         assert body["spec"]["template"] == "deco_drop_earring"    # earring, not a ring
         assert body["spec"]["drop"]["overall_length_mm"] > 0
         assert "DROP EARRING" in body["sheet_svg"]                # native dimensioned sheet
+        # the render-matched sheet: the concept image IS the drawing + lettered dims
+        assert body["sheet_over_render_svg"] is not None
+        assert "overall length" in body["sheet_over_render_svg"]
         assert base64.b64decode(body["client_render_b64"]) == RENDER_PNG
 
     def test_missing_key_is_503(self, client, monkeypatch):

@@ -190,13 +190,21 @@ def build(request: BuildRequest, db: DbSession):
 
     branding = _branding(request.house, request.signature)
     warnings: list[str] = []
-    sheet_svg = blueprint_svg = client_render_b64 = render_media_type = None
+    sheet_svg = sheet_over_render_svg = blueprint_svg = None
+    client_render_b64 = render_media_type = None
 
     if request.output in ("sheet", "both"):
         try:
             sheet_svg = render_sheet(spec, branding=branding)
         except SheetUnsupported as exc:
             warnings.append(f"factory sheet unavailable: {exc}")
+        # the render-matched sheet: the actual generated piece IS the drawing,
+        # code letters the validated dimensions on it — so it matches the render
+        from facetta.overlay import OverlayUnsupported, render_annotated_artwork
+        try:
+            sheet_over_render_svg = render_annotated_artwork(spec, image)
+        except (OverlayUnsupported, ValueError, OSError) as exc:
+            warnings.append(f"render-matched sheet unavailable: {exc}")
         if request.blueprint:
             from facetta.blueprint import render_blueprint_sheet
             try:
@@ -222,6 +230,7 @@ def build(request: BuildRequest, db: DbSession):
         "spec": spec_out,
         "corrections": corrections,
         "sheet_svg": sheet_svg,
+        "sheet_over_render_svg": sheet_over_render_svg,
         "blueprint_svg": blueprint_svg,
         "client_render_b64": client_render_b64,
         "render_media_type": render_media_type,
