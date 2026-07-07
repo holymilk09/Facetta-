@@ -27,6 +27,7 @@ from pydantic import BaseModel, ConfigDict, ValidationError
 
 from facetta.render import (
     RenderUnavailable, _provider_key, _sniff_media_type, edit_image,
+    generate_image,
 )
 from facetta.spec import Spec
 
@@ -99,6 +100,128 @@ multiple metals → label zones or "two-tone TBD"; engraving → "artwork vector
 TBD", blank shank; rough render → ask for a cleaner render, never hallucinate
 prongs; house styles → generic labels, no third-party logos. CAD handoff is a
 separate explicit action — the sheet is an illustration."""
+
+# ---------------------------------------------------------------------------
+# Section 1 — the three-capability agent contract
+# (docs/jewelry_agent_system_prompt.md). AGENT_SYSTEM is the app's TOP-LEVEL
+# system message; MASTER_SYSTEM above remains the MODE B drawing pipeline's.
+# ---------------------------------------------------------------------------
+
+CAPABILITIES = ("JEWELRY_RENDER", "MANUFACTURING_TECHNICAL_DRAWING",
+                "LOCALIZED_EDIT")
+
+AGENT_SYSTEM = """\
+You are the Jewelry Design & Manufacturing Agent embedded in a professional
+jewelry design application. You work only in jewelry and fine jewelry (rings,
+bands, engagement and wedding jewelry, pendants, necklaces, earrings,
+bracelets, brooches, cuffs, high jewelry, jewelry watches). You are not a
+general image editor, fashion tech-pack tool, or mechanical CAD system.
+
+You operate in three distinct capabilities. Identify which one the user (or
+the application mode field) is requesting and never mix behaviors — no
+photoreal marketing renders when a factory technical drawing was asked for,
+no dimensioned line art when only a beauty render was asked for.
+
+MODE A — JEWELRY_RENDER: photorealistic product visualization for
+presentation and design approval, not factory line art. Photoreal jewelry
+image on a neutral studio background unless the user requests context. Use
+correct jewelry vocabulary (shank, gallery, prong, bezel, pavé, melee,
+bail); no invented trademarks or copies of protected house designs unless
+the user owns them; no factory dimension strings on the image unless
+explicitly requested; when sizes are not given, visualize plausible
+proportions but never present them as confirmed manufacturing specs.
+
+MODE B — MANUFACTURING_TECHNICAL_DRAWING: convert an approved reference
+(usually a photoreal render or uploaded sketch) into a jewelry manufacturing
+technical drawing for factory handoff — black line art on white,
+orthographic views per piece type, dimension lines in millimeters, labels,
+a stone schedule table, and a short manufacturing summary in chat. Always
+inspect the reference first — never generate blind. Dimension honesty:
+final numbers only when designer-supplied or labeled "nominal from
+reference—verify on master model", else TBD with leader lines. Preserve the
+proportions of the reference silhouette — never "improve" the design. No
+photorealism on the sheet.
+
+MODE C — LOCALIZED_EDIT: the designer highlights a region on an existing
+image (render or, with care, technical drawing) and gives an instruction.
+Apply only the requested change inside that region; freeze everything
+outside the highlight. Required: region_description and change_instruction
+(mask strongly recommended — white = edit, black = preserve). If no
+highlight or mask was provided, ask the user to select the area — do not
+perform a full-image redesign unless they explicitly ask for a global
+restyle. Every edit prompt carries the preservation contract: PRESERVE /
+EDIT SCOPE / FORBIDDEN. Obvious drift outside the region gets ONE retry
+with stronger preserve language; still failing, ask the user to tighten
+the mask or split the edit.
+
+DEFAULT JOURNEY: 1) designer describes a piece → JEWELRY_RENDER (optional);
+2) designer refines → LOCALIZED_EDIT on the latest render (repeat);
+3) designer approves → MANUFACTURING_TECHNICAL_DRAWING from the latest
+render asset; 4) minor fixes → LOCALIZED_EDIT on the render or one drawing
+legibility pass — never the legacy math spec backend.
+
+MODE INFERENCE when the mode is ambiguous: "render / realistic / show me /
+visualization" → JEWELRY_RENDER; "technical drawing / factory /
+manufacturing / dimensions / orthographic / production" →
+MANUFACTURING_TECHNICAL_DRAWING; "only this part / highlight / selected
+area / don't change the rest" → LOCALIZED_EDIT.
+
+DOMAIN GUARDRAILS: 1) jewelry-only — politely decline non-jewelry requests
+and ask for a jewelry-focused one; 2) standard manufacturing terminology on
+drawings and in prompts — no vague words when a standard term exists;
+3) no false precision — never present guessed carat weights, exact melee
+counts, or finger sizes as final factory data; 4) compliance — no
+non-consensual sexualized content, no minors; respect moderation and never
+evade filters by paraphrasing; 5) real people and branded characters follow
+the platform's reference workflows — this agent does not bypass them;
+6) every manufacturing summary carries the disclaimer: "Manufacturing
+illustration for discussion; final dimensions and tolerances require
+designer sign-off and verification on master model / gauge."
+
+ERROR HANDLING: moderated, rate-limited, or provider unavailable — stop,
+don't evade, inform briefly. Other errors: at most one retry for generation
+or legibility. LOCALIZED_EDIT drift: one preserve-retry, then ask for a
+tighter mask or a smaller scope.
+
+CHAT RESPONSE FORMAT: after JEWELRY_RENDER — a brief design read; invite
+localized edits or a technical drawing. After
+MANUFACTURING_TECHNICAL_DRAWING — the sheet plus Confirmed from reference /
+Designer must confirm / Factory notes bullets and the disclaimer. After
+LOCALIZED_EDIT — confirm what changed and what was frozen; suggest comparing
+to the parent; offer revert via the app.
+
+YOU MUST NOT: use the legacy parametric/math spec backend for modes B or C;
+replace a technical-drawing request with a photoreal render; replace a
+render request with line art unless asked; guess the highlight region when
+none was provided — ask; invent exact factory numbers without designer
+input or nominal labeling."""
+
+# Section 1's mode-inference rules as keyword heuristics — checked in
+# priority order: the edit signals win over drawing signals, drawing over
+# render (a message that says "highlight" and "render" is an edit OF a
+# render, not a new render).
+_CAPABILITY_SIGNALS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("LOCALIZED_EDIT",
+     ("only this part", "highlight", "selected area", "don't change the rest",
+      "this area", "just the")),
+    ("MANUFACTURING_TECHNICAL_DRAWING",
+     ("technical drawing", "factory", "manufacturing", "dimension",
+      "orthographic", "production", "spec sheet")),
+    ("JEWELRY_RENDER",
+     ("render", "realistic", "show me", "visualization", "photo")),
+)
+
+
+def infer_capability(text: str) -> str:
+    """Section 1's mode-inference rules for the app's router: localized-edit
+    signals first, then technical-drawing, then render; the default journey
+    starts at JEWELRY_RENDER. Case-insensitive."""
+    lowered = text.lower()
+    for capability, signals in _CAPABILITY_SIGNALS:
+        if any(signal in lowered for signal in signals):
+            return capability
+    return "JEWELRY_RENDER"
+
 
 # G0 — the universal suffix, the tail of every image-edit instruction.
 G0_SUFFIX = (
@@ -386,16 +509,18 @@ _ROUTER_SYSTEM = (
     "zones + complex gallery → HIGH_JEWELRY. Anything else you cannot place "
     "→ GENERIC.")
 
-# Section I — the manufacturing summary the app shows next to the sheet.
+# Section I / Section 5 — the manufacturing summary the app shows next to
+# the sheet. `mode` is the CAPABILITY (always MANUFACTURING_TECHNICAL_DRAWING
+# here); `piece_type` is the MODES table key the drawing was compiled from.
 _INSPECT_SYSTEM = (
     MASTER_SYSTEM + "\n\n"
     "Inspect this render and return the manufacturing summary as JSON only, "
     "exactly this shape:\n"
-    '{"mode": "...", "region": "...",\n'
-    ' "confirmed_from_render": ["what the render establishes"],\n'
+    f'{{"mode": "{TASK_MODE}", "piece_type": "...", "region": "...",\n'
+    ' "confirmed_from_reference": ["what the reference establishes"],\n'
     ' "designer_must_confirm": ["every guessed or occluded value"],\n'
     ' "factory_notes": ["setter/caster instructions"],\n'
-    ' "dimensions_on_sheet": "nominal_from_render",\n'
+    ' "dimension_status": "nominal_from_reference",\n'
     f' "disclaimer": "{DISCLAIMER}"}}')
 
 
@@ -467,29 +592,33 @@ def route_design(image_bytes: bytes, notes: str = "") -> Route:
         return Route(mode=data["mode"], region=data["region"])
 
 
-def _stub_summary(mode: str, region: str, note: str) -> dict:
+def _stub_summary(piece_type: str, region: str, note: str) -> dict:
+    """The Section 5 summary shape: `mode` is the capability, `piece_type`
+    the MODES table key, `dimension_status` one of nominal_from_reference /
+    TBD / designer_supplied."""
     return {
-        "mode": mode, "region": region,
-        "confirmed_from_render": [], "designer_must_confirm": [],
+        "mode": TASK_MODE, "piece_type": piece_type, "region": region,
+        "confirmed_from_reference": [], "designer_must_confirm": [],
         "factory_notes": [note],
-        "dimensions_on_sheet": "nominal_from_render",
+        "dimension_status": "nominal_from_reference",
         "disclaimer": DISCLAIMER,
     }
 
 
 def inspect_render(image_bytes: bytes, notes: str, mode: str,
                    region: str) -> dict:
-    """Section I: the structured manufacturing summary — what the render
-    establishes, what the designer must confirm, what the factory should
-    know. mode/region are ours (the router's or the caller's), so they are
-    stamped over whatever the model echoed back."""
+    """Section I / Section 5: the structured manufacturing summary — what the
+    reference establishes, what the designer must confirm, what the factory
+    should know. mode (the piece type) and region are ours (the router's or
+    the caller's), so they are stamped over whatever the model echoed back."""
     data = _vision_json(
         _INSPECT_SYSTEM, image_bytes,
-        f"Mode: {mode}. Region: {region}. Designer notes: {notes or 'none'}")
+        f"Piece type: {mode}. Region: {region}. "
+        f"Designer notes: {notes or 'none'}")
     summary = _stub_summary(mode, region, "")
     summary["factory_notes"] = []
-    for field in ("confirmed_from_render", "designer_must_confirm",
-                  "factory_notes", "dimensions_on_sheet", "disclaimer"):
+    for field in ("confirmed_from_reference", "designer_must_confirm",
+                  "factory_notes", "dimension_status", "disclaimer"):
         if data.get(field):
             summary[field] = data[field]
     return summary
@@ -649,9 +778,191 @@ def generate_spec_sheet(image_bytes: bytes, *, notes: str = "",
     except RenderUnavailable as exc:
         summary = _stub_summary(
             mode, region, f"manufacturing summary unavailable: {exc}")
+    # ours, not the model's: capability, piece type, region — and when a
+    # validated spec injected authoritative numbers, the dimension status
+    summary["mode"] = TASK_MODE
+    summary["piece_type"] = mode
+    summary["region"] = region
+    if dims:
+        summary["dimension_status"] = "designer_supplied"
 
     sheet, cached = edit_image(image_bytes, instruction, model)
     if legibility:
         sheet, _ = edit_image(
             sheet, _legibility_instruction(templated=templated), model)
     return sheet, summary, cached
+
+
+# ---------------------------------------------------------------------------
+# MODE A — JEWELRY_RENDER (Section 4A): photoreal product visualization.
+# ---------------------------------------------------------------------------
+
+_RENDER_SPINE = (
+    "Studio lighting, soft gradient neutral background, sharp focus, no "
+    "watermark, no text overlay, no factory dimensions.")
+
+
+def compile_render_instruction(piece_description: str, metal: str = "",
+                               stones: str = "", setting_details: str = "",
+                               view_angle: str = "three-quarter product view"
+                               ) -> str:
+    """The Section 4A prompt body, near-verbatim: the Metal:/Stones:/setting
+    clauses appear only when supplied — an empty field is omitted cleanly,
+    never printed as 'Metal: .'."""
+    parts = ["Photorealistic fine jewelry product photograph, "
+             f"{piece_description.strip()}."]
+    if metal.strip():
+        parts.append(f"Metal: {metal.strip()}.")
+    if stones.strip():
+        parts.append(f"Stones: {stones.strip()}.")
+    if setting_details.strip():
+        parts.append(setting_details.strip().rstrip(".") + ".")
+    parts.append(_RENDER_SPINE)
+    parts.append("Professional jewelry campaign quality, accurate "
+                 f"proportions, {view_angle.strip()}.")
+    return " ".join(parts)
+
+
+def jewelry_render(piece_description: str, *, metal: str = "",
+                   stones: str = "", setting_details: str = "",
+                   view_angle: str = "three-quarter product view",
+                   variant: int = 0,
+                   model: str = "grok_direct") -> tuple[bytes, bool]:
+    """MODE A, one call: compile the Section 4A prompt and generate. Returns
+    (image_bytes, was_cached); variant>0 asks for a genuinely fresh take."""
+    prompt = compile_render_instruction(
+        piece_description, metal=metal, stones=stones,
+        setting_details=setting_details, view_angle=view_angle)
+    return generate_image(prompt, model=model, variant=variant)
+
+
+# ---------------------------------------------------------------------------
+# MODE C — LOCALIZED_EDIT (Section 4C): change inside the highlight, freeze
+# everything outside it. The preservation contract rides in EVERY edit
+# prompt; a mask enables the drift QA and the one stronger-preserve retry.
+# ---------------------------------------------------------------------------
+
+_EDIT_OPENERS = {"render": "Jewelry render edit.",
+                 "technical": "Jewelry technical drawing edit."}
+
+_STRENGTHEN_LINE = (
+    "CRITICAL: the previous attempt drifted outside the highlighted region. "
+    "Preserve every pixel outside the region below with exact fidelity — "
+    "this preservation contract is absolute.")
+
+
+def compile_localized_edit_instruction(region_description: str,
+                                       change_instruction: str,
+                                       kind: str = "render",
+                                       strengthen: bool = False) -> str:
+    """The Section 4C preservation contract, verbatim blocks: PRESERVE /
+    EDIT SCOPE / FORBIDDEN with the region and change filled in. kind
+    'technical' opens as a drawing edit and forbids moving other view boxes
+    or unrelated dimension strings; strengthen=True is the one-retry
+    stronger-preserve language — a CRITICAL opener plus the preserve clause
+    repeated at the tail."""
+    if kind not in _EDIT_OPENERS:
+        raise ValueError(
+            f"unknown edit kind '{kind}'; options: {list(_EDIT_OPENERS)}")
+    preserve = (
+        f"PRESERVE: All design elements outside '{region_description}' must "
+        "remain exactly as in the reference — same camera angle, lighting, "
+        "metal tone, every stone and prong outside the region, shank shape "
+        "outside the region, background unchanged.")
+    edit_scope = (f"EDIT SCOPE: Inside '{region_description}' only: "
+                  f"{change_instruction}.")
+    forbidden = (
+        "FORBIDDEN: Any change outside the highlighted region; no crop; no "
+        "zoom; no global redesign; no new stones outside region unless "
+        "explicitly inside highlight.")
+    if kind == "technical":
+        forbidden += (" Do not move other view boxes or unrelated dimension "
+                      "strings.")
+        closing = ("Black line art on white preserved. Match reference "
+                   "style exactly outside edit zone.")
+    else:
+        closing = ("Photorealistic jewelry product quality. Match reference "
+                   "style exactly outside edit zone.")
+    lines = [_EDIT_OPENERS[kind], preserve, edit_scope, forbidden, closing]
+    if strengthen:
+        lines = [_STRENGTHEN_LINE] + lines + [preserve]
+    return "\n".join(lines)
+
+
+def _outside_drift(parent_bytes: bytes, child_bytes: bytes,
+                   mask_bytes: bytes) -> float:
+    """How much the edit moved OUTSIDE the mask (white = edit, black =
+    preserve): mean absolute grayscale pixel delta over the preserve pixels,
+    normalized to 0..1. Child and mask are resized to the parent so provider
+    resolution changes never break the compare. Pure function — no provider,
+    no cache."""
+    import io
+
+    from PIL import Image
+
+    parent = Image.open(io.BytesIO(parent_bytes)).convert("L")
+    child = Image.open(io.BytesIO(child_bytes)).convert("L")
+    mask = Image.open(io.BytesIO(mask_bytes)).convert("L")
+    if child.size != parent.size:
+        child = child.resize(parent.size)
+    if mask.size != parent.size:
+        mask = mask.resize(parent.size)
+
+    total = 0
+    count = 0
+    # "L" mode → tobytes() is one byte per pixel, row-major
+    for p, c, m in zip(parent.tobytes(), child.tobytes(), mask.tobytes()):
+        if m < 128:                      # black = preserve — measure here
+            total += abs(p - c)
+            count += 1
+    if count == 0:                       # all-white mask: nothing to preserve
+        return 0.0
+    return total / count / 255.0
+
+
+def localized_edit(image_bytes: bytes, *, region_description: str,
+                   change_instruction: str, mask_bytes: bytes | None = None,
+                   kind: str = "render", model: str = "grok_direct",
+                   drift_threshold: float = 0.18) -> dict:
+    """MODE C, one call: compile the preservation contract, edit, and (with a
+    mask) QA the result — drift outside the mask beyond the threshold gets
+    exactly ONE retry with the stronger preserve language, and the
+    lower-drift child wins. The strengthened instruction is a different
+    cache key, so the retry is a fresh render, never the same cached result.
+
+    Returns {"image", "changed", "frozen", "retried", "drift", "cached"}.
+    Raises ValueError when the region or change is missing — per the MODE C
+    rule, ask the user to select the area instead of guessing."""
+    if not region_description.strip() or not change_instruction.strip():
+        raise ValueError(
+            "localized edit needs a highlighted region and a change "
+            "instruction — ask the user to select the area to edit; a "
+            "full-image redesign must be requested explicitly")
+
+    instruction = compile_localized_edit_instruction(
+        region_description, change_instruction, kind=kind)
+    child, cached = edit_image(image_bytes, instruction, model)
+
+    retried = False
+    drift: float | None = None
+    if mask_bytes is not None:
+        drift = _outside_drift(image_bytes, child, mask_bytes)
+        if drift > drift_threshold:
+            retried = True
+            stronger = compile_localized_edit_instruction(
+                region_description, change_instruction, kind=kind,
+                strengthen=True)
+            retry_child, retry_cached = edit_image(image_bytes, stronger,
+                                                   model)
+            retry_drift = _outside_drift(image_bytes, retry_child, mask_bytes)
+            if retry_drift < drift:      # keep the better (lower-drift) child
+                child, cached, drift = retry_child, retry_cached, retry_drift
+
+    return {
+        "image": child,
+        "changed": f"inside '{region_description}': {change_instruction}",
+        "frozen": "everything outside: " + region_description,
+        "retried": retried,
+        "drift": drift,
+        "cached": cached,
+    }

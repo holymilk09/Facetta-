@@ -39,11 +39,12 @@ def _real_png(size=(600, 900), color=(255, 255, 255)) -> bytes:
 
 REAL_PNG = _real_png()
 
-SUMMARY = {"mode": "EARRINGS_DROP", "region": "DUAL",
-           "confirmed_from_render": ["drop silhouette"],
+SUMMARY = {"mode": agent.TASK_MODE, "piece_type": "EARRINGS_DROP",
+           "region": "DUAL",
+           "confirmed_from_reference": ["drop silhouette"],
            "designer_must_confirm": ["hook gauge"],
            "factory_notes": ["cast frame"],
-           "dimensions_on_sheet": "nominal_from_render",
+           "dimension_status": "nominal_from_reference",
            "disclaimer": agent.DISCLAIMER}
 
 
@@ -184,7 +185,8 @@ class TestGenerateSpecSheet:
         sheet, summary, cached = agent.generate_spec_sheet(
             PNG, mode="EARRINGS_DROP")
         assert sheet == b"sheet" and cached is False
-        assert summary["mode"] == "EARRINGS_DROP"
+        assert summary["mode"] == agent.TASK_MODE     # the CAPABILITY
+        assert summary["piece_type"] == "EARRINGS_DROP"
         assert len(edits) == 1
         assert agent.G0_SUFFIX in edits[0]
         assert edits[0].endswith(agent.HONESTY_RULE)
@@ -244,10 +246,14 @@ class TestGenerateSpecSheet:
 
         sheet, summary, cached = agent.generate_spec_sheet(PNG, mode="BROOCH")
         assert sheet == b"sheet" and cached is True
-        assert summary["mode"] == "BROOCH" and summary["region"] == "DUAL"
-        assert set(summary) == {"mode", "region", "confirmed_from_render",
+        assert summary["mode"] == agent.TASK_MODE
+        assert summary["piece_type"] == "BROOCH"
+        assert summary["region"] == "DUAL"
+        assert set(summary) == {"mode", "piece_type", "region",
+                                "confirmed_from_reference",
                                 "designer_must_confirm", "factory_notes",
-                                "dimensions_on_sheet", "disclaimer"}
+                                "dimension_status", "disclaimer"}
+        assert summary["dimension_status"] == "nominal_from_reference"
         assert any("summary unavailable" in n for n in summary["factory_notes"])
 
     def test_spec_picks_the_mode_and_injects_dims(self, monkeypatch, drop_spec):
@@ -265,7 +271,9 @@ class TestGenerateSpecSheet:
                             lambda *a, **k: pytest.fail("router must not run"))
 
         _, summary, _ = agent.generate_spec_sheet(PNG, spec=drop_spec)
-        assert summary["mode"] == "EARRINGS_DROP"    # from MODE_FOR_TEMPLATE
+        assert summary["piece_type"] == "EARRINGS_DROP"  # from MODE_FOR_TEMPLATE
+        # the validated spec's numbers were injected → designer_supplied
+        assert summary["dimension_status"] == "designer_supplied"
         assert "marquise diamond 14 × 9 × 5.4 mm" in edits[0]
         assert "Designer-authoritative dimensions" in edits[0]
 
@@ -291,13 +299,13 @@ class TestGenerateSpecSheet:
                                 mode="PENDANT", region="EU", confidence=0.8))
         monkeypatch.setattr(agent, "inspect_render",
                             lambda image, notes, mode, region: dict(
-                                SUMMARY, mode=mode, region=region))
+                                SUMMARY, piece_type=mode, region=region))
         monkeypatch.setattr(agent, "edit_image",
                             lambda image, instruction, model="grok_direct":
                             (b"sheet", False))
 
         _, summary, _ = agent.generate_spec_sheet(PNG)
-        assert summary["mode"] == "PENDANT"
+        assert summary["piece_type"] == "PENDANT"
         assert summary["region"] == "EU"             # default DUAL → router's call
 
 
@@ -478,7 +486,7 @@ class TestBuildWiring:
 
         def fake_generate(image, **kwargs):
             seen.update(kwargs)
-            return REAL_PNG, dict(SUMMARY, mode="RING_ENGAGEMENT"), False
+            return REAL_PNG, dict(SUMMARY, piece_type="RING_ENGAGEMENT"), False
 
         monkeypatch.setattr(specs_mod, "generate_spec_sheet", fake_generate)
         r = client.post("/specs/build", json={"brief": "emerald halo ring",
@@ -488,7 +496,7 @@ class TestBuildWiring:
         assert r.status_code == 200, r.text
         body = r.json()
         assert base64.b64decode(body["technical_drawing_b64"]) == REAL_PNG
-        assert body["manufacturing_summary"]["mode"] == "RING_ENGAGEMENT"
+        assert body["manufacturing_summary"]["piece_type"] == "RING_ENGAGEMENT"
         # the build's agent call is templated: the official frame letters
         # identity, so the model must leave clean margins
         assert seen["templated"] is True

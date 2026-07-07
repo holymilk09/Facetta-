@@ -18,12 +18,15 @@ from facetta.mockup import (
 from facetta.overlay import OverlayUnsupported, render_annotated_artwork
 from facetta.plate import render_control_image, render_presentation_plate
 from facetta.render import (
-    RenderUnavailable, _sniff_media_type, render_finished_image,
-    render_from_spec, restyle_artwork,
+    RenderUnavailable, _sniff_media_type, generate_image,
+    render_finished_image, render_from_spec, restyle_artwork,
 )
 from facetta.prototype import compile_render_prompt, render_color_preview
 from facetta.spec import Spec
-from facetta.specagent import generate_spec_sheet
+from facetta.specagent import (
+    compile_render_instruction, generate_spec_sheet, infer_capability,
+    localized_edit,
+)
 from facetta.svg_sheet import (
     Branding, SheetUnsupported, render_sheet, render_stack_sheet,
     render_true_size_sheet,
@@ -221,12 +224,113 @@ def technical_drawing(request: AgentSheetRequest):
     return {
         "sheet_b64": b64.b64encode(sheet).decode(),
         "media_type": _sniff_media_type(sheet),
-        "mode": summary.get("mode"),
+        # Section 5 rename: summary["mode"] is now the CAPABILITY; the
+        # piece-type key the drawing was compiled from lives in piece_type —
+        # which is what this response's "mode" field has always meant
+        "mode": summary.get("piece_type"),
         "region": summary.get("region"),
         "summary": summary,
         "cached": cached,
         "framed_svg": framed_svg,
     }
+
+
+class RenderModeRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    piece_description: Annotated[str, Field(min_length=3, max_length=600)]
+    metal: str = ""
+    stones: str = ""
+    setting_details: str = ""
+    view_angle: str = "three-quarter product view"
+    variant: int = 0  # >0 asks for a genuinely fresh take, not the cached one
+
+
+@router.post("/jewelry-render")
+def jewelry_render_endpoint(request: RenderModeRequest):
+    """MODE A — JEWELRY_RENDER: photorealistic product visualization from the
+    Section 4A prompt body (presentation and design approval, never factory
+    line art — that is /specs/technical-drawing). The compiled prompt rides
+    back so the app can show exactly what was asked of the engine."""
+    import base64 as b64
+
+    prompt = compile_render_instruction(
+        request.piece_description, metal=request.metal, stones=request.stones,
+        setting_details=request.setting_details,
+        view_angle=request.view_angle)
+    try:
+        image, _cached = generate_image(prompt, variant=request.variant)
+    except RenderUnavailable as exc:
+        status = 503 if "_KEY" in str(exc) else 502
+        return JSONResponse(status_code=status, content={"detail": str(exc)})
+    return {
+        "image_b64": b64.b64encode(image).decode(),
+        "media_type": _sniff_media_type(image),
+        "capability": "JEWELRY_RENDER",
+        "prompt": prompt,
+    }
+
+
+class LocalizedEditRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    image_base64: Annotated[str, Field(min_length=1, max_length=14_000_000)]
+    region_description: Annotated[str, Field(min_length=1, max_length=500)]
+    change_instruction: Annotated[str, Field(min_length=1, max_length=2000)]
+    mask_base64: str | None = None      # white = edit, black = preserve
+    kind: Literal["render", "technical"] = "render"
+
+
+@router.post("/localized-edit")
+def localized_edit_endpoint(request: LocalizedEditRequest):
+    """MODE C — LOCALIZED_EDIT: apply the change ONLY inside the highlighted
+    region, freeze everything outside it. The preservation contract rides in
+    every edit prompt; with a mask the result is drift-checked and retried
+    once with stronger preserve language when it moved outside the region."""
+    import base64 as b64
+    import binascii
+
+    try:
+        image_bytes = b64.b64decode(request.image_base64, validate=True)
+        mask_bytes = (b64.b64decode(request.mask_base64, validate=True)
+                      if request.mask_base64 else None)
+    except (binascii.Error, ValueError):
+        return JSONResponse(status_code=422,
+                            content={"detail": "image payload is not valid base64"})
+    try:
+        result = localized_edit(
+            image_bytes, region_description=request.region_description,
+            change_instruction=request.change_instruction,
+            mask_bytes=mask_bytes, kind=request.kind)
+    except ValueError as exc:
+        return JSONResponse(status_code=422, content={"detail": str(exc)})
+    except RenderUnavailable as exc:
+        status = 503 if "_KEY" in str(exc) else 502
+        return JSONResponse(status_code=status, content={"detail": str(exc)})
+    return {
+        "image_b64": b64.b64encode(result["image"]).decode(),
+        "media_type": _sniff_media_type(result["image"]),
+        "changed": result["changed"],
+        "frozen": result["frozen"],
+        "retried": result["retried"],
+        "drift": result["drift"],
+        "cached": result["cached"],
+        "capability": "LOCALIZED_EDIT",
+    }
+
+
+class InferCapabilityRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    text: Annotated[str, Field(min_length=1, max_length=4000)]
+
+
+@router.post("/infer-capability")
+def infer_capability_endpoint(request: InferCapabilityRequest):
+    """The app's router hook: Section 1's mode-inference rules over the
+    user's message — localized-edit signals win, then technical-drawing,
+    then render; the default journey starts at JEWELRY_RENDER."""
+    return {"capability": infer_capability(request.text)}
 
 
 class BuildRequest(BaseModel):

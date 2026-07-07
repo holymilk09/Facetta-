@@ -54,9 +54,11 @@ def client():
     app.dependency_overrides.clear()
 
 
-AGENT_SUMMARY = {"mode": "RING_ENGAGEMENT", "region": "DUAL",
-                 "confirmed_from_render": [], "designer_must_confirm": [],
-                 "factory_notes": [], "dimensions_on_sheet": "nominal_from_render",
+AGENT_SUMMARY = {"mode": "MANUFACTURING_TECHNICAL_DRAWING",
+                 "piece_type": "RING_ENGAGEMENT", "region": "DUAL",
+                 "confirmed_from_reference": [], "designer_must_confirm": [],
+                 "factory_notes": [],
+                 "dimension_status": "nominal_from_reference",
                  "disclaimer": "x"}
 
 
@@ -103,7 +105,7 @@ class TestBuild:
         assert body["sheet_svg"].startswith("<svg")             # factory sheet present
         # the agent-drawn manufacturing technical drawing + its official frame
         assert base64.b64decode(body["technical_drawing_b64"]) == AGENT_DRAWING_PNG
-        assert body["manufacturing_summary"]["mode"] == "RING_ENGAGEMENT"
+        assert body["manufacturing_summary"]["piece_type"] == "RING_ENGAGEMENT"
         assert "FACETTA" in body["technical_drawing_framed_svg"]
         # the client render is the SPEC-driven render (in the design's lane)
         assert base64.b64decode(body["client_render_b64"]) == RENDER_PNG
