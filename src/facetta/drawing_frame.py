@@ -102,9 +102,16 @@ def frame_technical_drawing(drawing_bytes: bytes, spec: Spec | None = None,
         description = (f"{stone.carat:.2f} ct {stone.species.title()}  ·  "
                        f"{stone.cut.replace('_', ' ')} — "
                        f"{_metal_line(spec.metal)}")
+        # the description must stop short of the signature block — a long
+        # metal line ran straight into the signed name on the live test
+        avail = ((sheet_w - MARGIN - 46) if signature
+                 else (sheet_w - MARGIN - 2)) - (MARGIN + 4) - 3
+        max_chars = max(20, int(avail / 2.1))
+        if len(description) > max_chars:
+            description = description[: max_chars - 1].rstrip() + "…"
         parts += [
-            _text(MARGIN + 4, ty, escape(description), size=3.4,
-                  anchor="start", style=' letter-spacing="0.8"'),
+            _text(MARGIN + 4, ty, escape(description), size=3.0,
+                  anchor="start", style=' letter-spacing="0.4"'),
             _text(MARGIN + 4, ty + 5,
                   escape(f"designer {spec.created_by} · "
                          f"{spec.created_at.date().isoformat()}"),
