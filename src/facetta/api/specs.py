@@ -22,6 +22,7 @@ from facetta.render import (
 )
 from facetta.prototype import compile_render_prompt, render_color_preview
 from facetta.spec import Spec
+from facetta.specagent import generate_spec_sheet
 from facetta.svg_sheet import (
     Branding, SheetUnsupported, render_sheet, render_stack_sheet,
     render_true_size_sheet,
@@ -148,6 +149,68 @@ def from_concept(request: ConceptRequest):
     }
 
 
+class AgentSheetRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    image_base64: Annotated[str, Field(min_length=1, max_length=14_000_000)]
+    notes: Annotated[str, Field(max_length=2000)] = ""
+    mode: str | None = None                # None → the agent routes it
+    region: str = "DUAL"
+    spec: Spec | None = None               # validated → authoritative dims
+    legibility: bool = False               # one extra text-repair pass
+
+
+@router.post("/agent-sheet")
+def agent_sheet(request: AgentSheetRequest):
+    """The user-facing factory sheet, drawn by the spec AGENT: Grok vision
+    classifies and inspects the designer's render, then a controlled
+    image-to-image edit turns it into black-line orthographic documentation.
+    Deterministic code never draws this artifact — when a spec is supplied it
+    is validated first and its numbers ride along in the prompt as
+    designer-authoritative dimensions; everything else is TBD on the sheet.
+    (The parametric CAD/DXF sheet remains /specs/sheet.svg — a separate,
+    explicit handoff.)"""
+    import base64 as b64
+    import binascii
+
+    try:
+        image_bytes = b64.b64decode(request.image_base64, validate=True)
+    except (binascii.Error, ValueError):
+        return JSONResponse(status_code=422,
+                            content={"detail": "image_base64 is not valid base64"})
+
+    validated = None
+    if request.spec is not None:
+        # the assistance numbers must be REAL — an invalid spec never
+        # letters a factory sheet
+        result = validate_spec(request.spec, get_vocabulary())
+        if not result.ok:
+            return JSONResponse(
+                status_code=422,
+                content={"detail": [issue.as_detail() for issue in result.issues]},
+            )
+        validated = result.spec
+
+    try:
+        sheet, summary, cached = generate_spec_sheet(
+            image_bytes, notes=request.notes, mode=request.mode,
+            region=request.region, spec=validated,
+            legibility=request.legibility)
+    except ValueError as exc:
+        return JSONResponse(status_code=422, content={"detail": str(exc)})
+    except RenderUnavailable as exc:
+        status = 503 if "_KEY" in str(exc) else 502
+        return JSONResponse(status_code=status, content={"detail": str(exc)})
+    return {
+        "sheet_b64": b64.b64encode(sheet).decode(),
+        "media_type": _sniff_media_type(sheet),
+        "mode": summary.get("mode"),
+        "region": summary.get("region"),
+        "summary": summary,
+        "cached": cached,
+    }
+
+
 class BuildRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -155,7 +218,10 @@ class BuildRequest(BaseModel):
     output: Literal["render", "sheet", "both"] = "both"
     model: str = "grok_direct"
     variant: int = 0
+    include_cad_sheet: bool = False   # explicit CAD handoff: parametric sheet_svg
+                                      # + render-matched sheet (legacy math module)
     blueprint: bool = False           # also paint the graphite blueprint twin
+                                      # (explicit request, like the CAD handoff)
     house: str | None = None
     signature: str | None = None
     persist: bool = False             # save as a design so it can be annotated/edited
@@ -167,10 +233,17 @@ def build(request: BuildRequest, db: DbSession):
     """One call, the whole piece: Grok invents the design, the validator makes it
     real, and we return the concept image, the validated spec, the factory sheet,
     and a client render together — the assistant's `output` choice decides which
-    visual layers come back. Concept failure is fatal (503/502) and an
-    unbuildable concept is 422; a downstream sheet/render hiccup is a warning, not
-    a failure, so the spec always ships. With persist=true the piece is saved as a
-    design (v1) and its design_id returned, ready for surgical annotation edits."""
+    visual layers come back. The user-facing factory sheet (agent_sheet_b64) is
+    drawn by the spec AGENT from the render with the validated spec's numbers
+    injected as designer-authoritative dimensions; per the pack's Section H hard
+    rule the agent pipeline never calls the legacy math spec module in the same
+    transaction, so the parametric CAD/DXF artifacts (sheet_svg and the
+    render-matched sheet_over_render_svg) are drawn only on the explicit
+    include_cad_sheet=true request — a separate, explicit handoff. Concept failure
+    is fatal (503/502) and an unbuildable concept is 422; a downstream
+    sheet/render hiccup is a warning, not a failure, so the spec always ships.
+    With persist=true the piece is saved as a design (v1) and its design_id
+    returned, ready for surgical annotation edits."""
     import base64
 
     from facetta.concept import ConceptInvalid, originate_concept
@@ -206,7 +279,24 @@ def build(request: BuildRequest, db: DbSession):
         client_render_b64 = base64.b64encode(spec_render).decode()
         render_media_type = "image/png"
 
+    agent_sheet_b64 = agent_summary = None
     if request.output in ("sheet", "both"):
+        # the USER-FACING factory sheet: the spec agent draws it from the
+        # accurate render (or the concept image), with the validated spec's
+        # numbers riding along as designer-authoritative dimensions
+        try:
+            agent_sheet, agent_summary, _ = generate_spec_sheet(
+                spec_render if spec_render is not None else image,
+                spec=spec, region="DUAL")
+            agent_sheet_b64 = base64.b64encode(agent_sheet).decode()
+        except (RenderUnavailable, ValueError, OSError) as exc:
+            warnings.append(f"agent spec sheet unavailable: {exc}")
+
+    # the parametric CAD/DXF artifacts come from the LEGACY MATH spec module.
+    # Section H hard rule: the agent pipeline (steps 4-6 above) never calls it
+    # in the same transaction unless the designer EXPLICITLY asks for the CAD
+    # handoff — so these are gated on include_cad_sheet, never on output alone.
+    if request.include_cad_sheet:
         try:
             sheet_svg = render_sheet(spec, branding=branding)
         except SheetUnsupported as exc:
@@ -214,18 +304,17 @@ def build(request: BuildRequest, db: DbSession):
         # the render-matched sheet: the accurate spec render IS the drawing (or
         # the concept image if the spec render was unavailable), code letters the
         # validated dimensions on it — so the sheet matches the render
-        from facetta.overlay import OverlayUnsupported, render_annotated_artwork
         try:
             sheet_over_render_svg = render_annotated_artwork(
                 spec, spec_render or image)
         except (OverlayUnsupported, ValueError, OSError) as exc:
             warnings.append(f"render-matched sheet unavailable: {exc}")
-        if request.blueprint:
-            from facetta.blueprint import render_blueprint_sheet
-            try:
-                blueprint_svg, _ = render_blueprint_sheet(spec, branding=branding)
-            except (SheetUnsupported, RenderUnavailable) as exc:
-                warnings.append(f"blueprint unavailable: {exc}")
+    if request.blueprint:
+        from facetta.blueprint import render_blueprint_sheet
+        try:
+            blueprint_svg, _ = render_blueprint_sheet(spec, branding=branding)
+        except (SheetUnsupported, RenderUnavailable) as exc:
+            warnings.append(f"blueprint unavailable: {exc}")
 
     spec_out = spec.model_dump(mode="json")
     response: dict = {
@@ -239,6 +328,8 @@ def build(request: BuildRequest, db: DbSession):
         "spec_render_b64": (base64.b64encode(spec_render).decode()
                             if spec_render is not None else None),
         "sheet_svg": sheet_svg,
+        "agent_sheet_b64": agent_sheet_b64,
+        "agent_summary": agent_summary,
         "sheet_over_render_svg": sheet_over_render_svg,
         "blueprint_svg": blueprint_svg,
         "client_render_b64": client_render_b64,

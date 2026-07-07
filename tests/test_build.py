@@ -54,6 +54,19 @@ def client():
     app.dependency_overrides.clear()
 
 
+AGENT_SUMMARY = {"mode": "RING_ENGAGEMENT", "region": "DUAL",
+                 "confirmed_from_render": [], "designer_must_confirm": [],
+                 "factory_notes": [], "dimensions_on_sheet": "nominal_from_render",
+                 "disclaimer": "x"}
+
+
+def _mock_agent_sheet(monkeypatch):
+    """The agent-drawn factory sheet is network-backed — always mocked here."""
+    monkeypatch.setattr(specs_mod, "generate_spec_sheet",
+                        lambda image, **kwargs: (b"sheet-bytes",
+                                                 dict(AGENT_SUMMARY), False))
+
+
 def _mock_origination(monkeypatch):
     """Grok invents + vision reads are mocked; complete_design/validate run for real
     so the returned spec is genuinely buildable."""
@@ -64,6 +77,7 @@ def _mock_origination(monkeypatch):
                             halo=True, species="emerald", cut="emerald",
                             center_length_mm=12, center_width_mm=9,
                             metal_material="platinum", setting_style="bezel"))
+    _mock_agent_sheet(monkeypatch)
 
 
 class TestBuild:
@@ -73,7 +87,8 @@ class TestBuild:
                             lambda spec, *a, **k: (RENDER_PNG, False))
 
         r = client.post("/specs/build", json={"brief": "art deco emerald halo ring",
-                                              "output": "both"})
+                                              "output": "both",
+                                              "include_cad_sheet": True})
         assert r.status_code == 200, r.text
         body = r.json()
         assert base64.b64decode(body["concept_image_b64"]) == FAKE_PNG
@@ -90,7 +105,8 @@ class TestBuild:
         monkeypatch.setattr(specs_mod, "render_from_spec",
                             lambda spec, *a, **k: (RENDER_PNG, False))
         r = client.post("/specs/build", json={"brief": "emerald halo ring",
-                                              "output": "sheet"})
+                                              "output": "sheet",
+                                              "include_cad_sheet": True})
         assert r.status_code == 200, r.text
         body = r.json()
         assert body["sheet_svg"].startswith("<svg")
@@ -107,7 +123,8 @@ class TestBuild:
 
         monkeypatch.setattr(specs_mod, "render_from_spec", boom)
         r = client.post("/specs/build", json={"brief": "emerald halo ring",
-                                              "output": "both"})
+                                              "output": "both",
+                                              "include_cad_sheet": True})
         assert r.status_code == 200, r.text          # the spec still ships
         body = r.json()
         assert body["client_render_b64"] is None
@@ -151,9 +168,11 @@ class TestBuild:
                                 metal_material="gold", metal_color="yellow"))
         monkeypatch.setattr(specs_mod, "render_from_spec",
                             lambda spec, *a, **k: (RENDER_PNG, False))
+        _mock_agent_sheet(monkeypatch)
 
         r = client.post("/specs/build", json={"brief": "modern marquise drop earring",
-                                              "output": "both"})
+                                              "output": "both",
+                                              "include_cad_sheet": True})
         assert r.status_code == 200, r.text
         body = r.json()
         assert body["spec"]["template"] == "deco_drop_earring"    # earring, not a ring
@@ -171,5 +190,6 @@ class TestBuild:
             raise RenderUnavailable("no XAI_KEY configured — set it")
 
         monkeypatch.setattr(concept_mod, "generate_concept", boom)
+        _mock_agent_sheet(monkeypatch)  # never reached, never networked
         r = client.post("/specs/build", json={"brief": "a ring", "output": "both"})
         assert r.status_code == 503

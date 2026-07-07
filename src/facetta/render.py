@@ -183,6 +183,33 @@ def generate_image(prompt: str, model: str = "grok_direct",
     return image, False
 
 
+def edit_image(image_bytes: bytes, instruction: str,
+               model: str = "grok_direct") -> tuple[bytes, bool]:
+    """Instruction-driven edit of a caller-supplied image — the primitive the
+    spec agent's image-to-image passes ride on. Content-addressed like
+    restyle_artwork: the input bytes pin the source, the instruction carries
+    the transformation — either changing means a genuinely new image.
+    ':edit:' namespaces these keys away from artwork and spec renders.
+    Returns (bytes, was_cached)."""
+    if model not in MODELS:
+        raise RenderUnavailable(
+            f"unknown render model '{model}'; options: {list(MODELS)}")
+    key = hashlib.sha256(
+        (PIPELINE_VERSION + ":edit:" + model + ":"
+         + hashlib.sha256(image_bytes).hexdigest()
+         + ":" + hashlib.sha256(instruction.encode()).hexdigest()).encode()
+    ).hexdigest()[:32]
+    CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    cached = CACHE_DIR / f"{key}.png"
+    if cached.exists():
+        return cached.read_bytes(), True
+    data_uri = (f"data:{_sniff_media_type(image_bytes)};base64,"
+                + base64.b64encode(image_bytes).decode())
+    image = _call_engine(model, instruction, data_uri, {})
+    cached.write_bytes(image)
+    return image, False
+
+
 def artwork_cache_key(image_bytes: bytes, style: str,
                       model: str = "grok_imagine") -> str:
     """Content-addressed like spec renders: the artwork's bytes pin the
