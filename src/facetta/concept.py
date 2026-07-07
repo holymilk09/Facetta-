@@ -84,6 +84,32 @@ class DesignRead(BaseModel):
     setting_style: str = "prong"     # how the centre is held (see _SETTING_MAP)
 
 
+class ConceptInvalid(Exception):
+    """A generated concept could not be made physically real — carries the
+    corrections tried and the validator issues, so a caller can report both."""
+
+    def __init__(self, corrections: list[str], issues):
+        self.corrections = corrections
+        self.issues = issues
+        super().__init__("generated concept could not be made physically real")
+
+
+def originate_concept(brief: str, model: str = "grok_direct",
+                      variant: int = 0) -> tuple[bytes, DesignRead, Spec, list[str]]:
+    """The whole origination flow, once: Grok invents → vision reads → the
+    validator makes it real. Returns (concept_image, read, validated_spec,
+    corrections). Raises RenderUnavailable (no key / provider) or ConceptInvalid
+    (the concept could not be made buildable). Shared by /from-concept and the
+    one-call /build so both stay in lockstep."""
+    image, _ = generate_concept(brief, model, variant)
+    read = read_design(image, brief)
+    spec, corrections = complete_design(read, brief)
+    result = validate_spec(spec, get_vocabulary())
+    if not result.ok:
+        raise ConceptInvalid(corrections, result.issues)
+    return image, read, result.spec, corrections
+
+
 def concept_prompt(brief: str) -> str:
     """A clean product-photo brief so the read is unambiguous."""
     return (

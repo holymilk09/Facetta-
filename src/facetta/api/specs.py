@@ -1,8 +1,11 @@
-from typing import Annotated
+from typing import Annotated, Literal
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, ConfigDict, Field
+from sqlalchemy.orm import Session
+
+from facetta.db import get_db
 
 from facetta import prose as prose_layer
 from facetta.db import utcnow
@@ -27,6 +30,8 @@ from facetta.validation import nesting_clearance, validate_spec
 from facetta.vocabulary import get_vocabulary
 
 router = APIRouter(prefix="/specs", tags=["specs"])
+
+DbSession = Annotated[Session, Depends(get_db)]
 
 
 def _branding(house: str | None, signature: str | None) -> Branding | None:
@@ -120,30 +125,121 @@ def from_concept(request: ConceptRequest):
     existing endpoints on the returned spec."""
     import base64
 
-    from facetta.concept import complete_design, generate_concept, read_design
+    from facetta.concept import ConceptInvalid, originate_concept
 
     try:
-        image, _ = generate_concept(request.brief, request.model, request.variant)
-        read = read_design(image, request.brief)
+        image, read, spec, corrections = originate_concept(
+            request.brief, request.model, request.variant)
     except RenderUnavailable as exc:
         status = 503 if "_KEY" in str(exc) else 502
         return JSONResponse(status_code=status, content={"detail": str(exc)})
-
-    spec, corrections = complete_design(read, request.brief)
-    result = validate_spec(spec, get_vocabulary())
-    if not result.ok:
+    except ConceptInvalid as exc:
         return JSONResponse(status_code=422, content={
-            "detail": [issue.as_detail() for issue in result.issues],
-            "corrections": corrections,
+            "detail": [issue.as_detail() for issue in exc.issues],
+            "corrections": exc.corrections,
             "note": "the generated concept could not be made physically real",
         })
     return {
         "concept_image_b64": base64.b64encode(image).decode(),
         "media_type": _sniff_media_type(image),
         "read": read.model_dump(),
-        "spec": result.spec.model_dump(mode="json"),
+        "spec": spec.model_dump(mode="json"),
         "corrections": corrections,
     }
+
+
+class BuildRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    brief: Annotated[str, Field(min_length=3, max_length=600)]
+    output: Literal["render", "sheet", "both"] = "both"
+    model: str = "grok_direct"
+    variant: int = 0
+    blueprint: bool = False           # also paint the graphite blueprint twin
+    house: str | None = None
+    signature: str | None = None
+    persist: bool = False             # save as a design so it can be annotated/edited
+    created_by: str = "usr_pending"
+
+
+@router.post("/build")
+def build(request: BuildRequest, db: DbSession):
+    """One call, the whole piece: Grok invents the design, the validator makes it
+    real, and we return the concept image, the validated spec, the factory sheet,
+    and a client render together — the assistant's `output` choice decides which
+    visual layers come back. Concept failure is fatal (503/502) and an
+    unbuildable concept is 422; a downstream sheet/render hiccup is a warning, not
+    a failure, so the spec always ships. With persist=true the piece is saved as a
+    design (v1) and its design_id returned, ready for surgical annotation edits."""
+    import base64
+
+    from facetta.concept import ConceptInvalid, originate_concept
+
+    try:
+        image, read, spec, corrections = originate_concept(
+            request.brief, request.model, request.variant)
+    except RenderUnavailable as exc:
+        status = 503 if "_KEY" in str(exc) else 502
+        return JSONResponse(status_code=status, content={"detail": str(exc)})
+    except ConceptInvalid as exc:
+        return JSONResponse(status_code=422, content={
+            "detail": [issue.as_detail() for issue in exc.issues],
+            "corrections": exc.corrections,
+            "note": "the generated concept could not be made physically real",
+        })
+
+    branding = _branding(request.house, request.signature)
+    warnings: list[str] = []
+    sheet_svg = blueprint_svg = client_render_b64 = render_media_type = None
+
+    if request.output in ("sheet", "both"):
+        try:
+            sheet_svg = render_sheet(spec, branding=branding)
+        except SheetUnsupported as exc:
+            warnings.append(f"factory sheet unavailable: {exc}")
+        if request.blueprint:
+            from facetta.blueprint import render_blueprint_sheet
+            try:
+                blueprint_svg, _ = render_blueprint_sheet(spec, branding=branding)
+            except (SheetUnsupported, RenderUnavailable) as exc:
+                warnings.append(f"blueprint unavailable: {exc}")
+
+    if request.output in ("render", "both"):
+        try:
+            png, _ = render_finished_image(spec)
+            client_render_b64 = base64.b64encode(png).decode()
+            render_media_type = "image/png"
+        except RenderUnavailable as exc:
+            warnings.append(f"client render unavailable: {exc}")
+
+    spec_out = spec.model_dump(mode="json")
+    response: dict = {
+        "brief": request.brief,
+        "output": request.output,
+        "concept_image_b64": base64.b64encode(image).decode(),
+        "media_type": _sniff_media_type(image),
+        "read": read.model_dump(),
+        "spec": spec_out,
+        "corrections": corrections,
+        "sheet_svg": sheet_svg,
+        "blueprint_svg": blueprint_svg,
+        "client_render_b64": client_render_b64,
+        "render_media_type": render_media_type,
+        "warnings": warnings,
+    }
+
+    if request.persist:
+        from facetta.api.designs import _store_version
+        from facetta.db import Design, new_id
+
+        design = Design(id=new_id("dsn"), created_by=request.created_by,
+                        collection=None)
+        db.add(design)
+        response["spec"] = _store_version(db, design, spec, 1, request.created_by)
+        response["design_id"] = design.id
+        response["version"] = 1
+
+    return response
 
 
 @router.post("/blueprint-sheet.svg")
