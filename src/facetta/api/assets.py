@@ -20,7 +20,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from facetta.db import ImageAsset, get_db, new_id, utcnow
+from facetta.db import ImageAsset, Project, get_db, new_id, utcnow
 from facetta.render import RenderUnavailable, _sniff_media_type
 from facetta.spec import Spec
 from facetta.specagent import (
@@ -64,7 +64,29 @@ def _store_asset(db: Session, image: bytes, capability: str,
         asset.root_id = asset.id
     db.add(asset)
     db.commit()
+    if parent is not None:                       # a new item in an existing chain
+        _touch_project(db, asset.root_id)
     return asset
+
+
+def _ensure_project(db: Session, root: ImageAsset) -> Project:
+    """Every chain root files a project into the owner's library (Unfiled until
+    the designer organizes it). Idempotent."""
+    project = db.get(Project, root.id)
+    if project is None:
+        title = (root.instruction or "Untitled piece")[:200]
+        project = Project(root_id=root.id, owner=root.created_by,
+                          collection=None, title=title, tags=[])
+        db.add(project)
+        db.commit()
+    return project
+
+
+def _touch_project(db: Session, root_id: str) -> None:
+    project = db.get(Project, root_id)
+    if project is not None:
+        project.updated_at = utcnow()
+        db.commit()
 
 
 def _chain(db: Session, root_id: str) -> list[ImageAsset]:
@@ -149,6 +171,7 @@ def create_render_asset(request: AssetRenderRequest, db: DbSession):
         hero = _store_asset(db, image, "JEWELRY_RENDER",
                             instruction=request.piece_description,
                             created_by=request.created_by)
+        _ensure_project(db, hero)             # file it into the owner's library
         views = _view_children(db, hero, request.angles, request.created_by,
                                request.skin_tone) if request.angles else []
     except RenderUnavailable as exc:
@@ -304,6 +327,37 @@ def create_spin_video(asset_id: str, request: AssetVideoRequest, db: DbSession):
                  "clip generated; mp4 lives at video_url (this server could "
                  "not fetch the media host — stream it client-side)"),
     }
+
+
+class OrganizeRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    collection: str | None = None   # client / folder name (None leaves as-is)
+    title: str | None = None
+    tags: list[str] | None = None
+    clear_collection: bool = False  # move back to Unfiled
+
+
+@router.patch("/{asset_id}/organize")
+def organize_asset(asset_id: str, request: OrganizeRequest, db: DbSession):
+    """File the asset's whole project (chain) — set its collection (client
+    folder), title, and tags. Acts on the chain ROOT, so organizing any
+    asset organizes the project it belongs to."""
+    asset = _get_asset(db, asset_id)
+    root = db.get(ImageAsset, asset.root_id)
+    project = _ensure_project(db, root)
+    if request.clear_collection:
+        project.collection = None
+    elif request.collection is not None:
+        project.collection = request.collection.strip() or None
+    if request.title is not None:
+        project.title = request.title.strip()[:200] or project.title
+    if request.tags is not None:
+        project.tags = sorted({t.strip() for t in request.tags if t.strip()})
+    project.updated_at = utcnow()
+    db.commit()
+    return {"root_id": project.root_id, "collection": project.collection,
+            "title": project.title, "tags": project.tags}
 
 
 @router.get("/{asset_id}")

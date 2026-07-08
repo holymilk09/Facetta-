@@ -110,6 +110,30 @@ class ImageAsset(Base):
         DateTime(timezone=True), default=utcnow)
 
 
+class Project(Base):
+    """A design project = one asset chain (a hero render and all its edits,
+    views, videos, and factory drawings), filed for the designer.
+
+    Proven library model: owner → collection (a client folder like "Sarah K —
+    engagement", or a personal folder) → project → tags. Everything a client's
+    work produces stays under one collection, and tags + free-text search
+    locate a piece across the whole library. Metadata lives here, off the asset
+    rows, so renaming a folder never touches an image."""
+
+    __tablename__ = "projects"
+
+    root_id: Mapped[str] = mapped_column(String(32), primary_key=True)  # chain root
+    owner: Mapped[str] = mapped_column(String(32), index=True)
+    collection: Mapped[str | None] = mapped_column(
+        String(120), nullable=True, index=True)  # client / folder; None = Unfiled
+    title: Mapped[str] = mapped_column(String(200))
+    tags: Mapped[list] = mapped_column(SpecJSON, default=list)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow)
+
+
 class DesignMessage(Base):
     """Free-form discussion between designer and factory on a design.
 
