@@ -33,11 +33,10 @@ def render_blueprint_sheet(spec: Spec, model: str = "grok_imagine",
     """Return (svg, was_cached). Raises RenderUnavailable without a key or
     when the provider fails — callers translate to 503/502, exactly like the
     photoreal render."""
-    import cairosvg  # deferred: rasterizer needs system cairo
+    from facetta.rasterize import rasterize_svg
 
-    geometry_png = cairosvg.svg2png(
-        bytestring=render_sheet_geometry(spec).encode(),
-        output_width=BLUEPRINT_RASTER_WIDTH)
+    geometry_png = rasterize_svg(render_sheet_geometry(spec),
+                                 BLUEPRINT_RASTER_WIDTH)
     painted, cached = restyle_artwork(
         geometry_png, media_type="image/png", style="blueprint", model=model)
     media_type = _sniff_media_type(painted)
