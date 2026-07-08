@@ -90,6 +90,26 @@ GENERATION_MODELS = {
 }
 
 
+# Image-to-video (Grok Imagine): a short showcase clip from a still render.
+# Async — POST returns a request_id, then poll GET /v1/videos/{id} until
+# status == "done", which returns {"video": {"url", "duration"}}. The mp4
+# lives on a separate media host.
+VIDEO_MODELS = {
+    "grok_video": {
+        "endpoint": "https://api.x.ai/v1/videos/generations",
+        "poll": "https://api.x.ai/v1/videos/",
+        "key_env": "XAI_KEY", "auth": "Bearer",
+        "model": "grok-imagine-video",
+    },
+    "grok_video_hd": {
+        "endpoint": "https://api.x.ai/v1/videos/generations",
+        "poll": "https://api.x.ai/v1/videos/",
+        "key_env": "XAI_KEY", "auth": "Bearer",
+        "model": "grok-imagine-video-1.5",
+    },
+}
+
+
 class RenderUnavailable(Exception):
     """No key, or the provider cannot be reached."""
 
@@ -248,6 +268,99 @@ def restyle_artwork(image_bytes: bytes, media_type: str = "image/jpeg",
                          body["provider_payload"])
     cached.write_bytes(image)
     return image, False
+
+
+class VideoResult:
+    """A finished showcase clip. `data` is the mp4 bytes when the media host is
+    reachable; otherwise it is None and only `url` is available (the mp4 lives
+    on a media host that a network policy may gate). `duration` is seconds."""
+
+    __slots__ = ("url", "data", "duration", "cached")
+
+    def __init__(self, url: str, data: bytes | None, duration: int | None,
+                 cached: bool):
+        self.url, self.data, self.duration, self.cached = url, data, duration, cached
+
+
+def _video_cache_key(image_bytes: bytes, prompt: str, model: str) -> str:
+    return hashlib.sha256(
+        (PIPELINE_VERSION + ":video:" + model + ":"
+         + hashlib.sha256(image_bytes).hexdigest() + ":"
+         + hashlib.sha256(prompt.encode()).hexdigest()).encode()
+    ).hexdigest()[:32]
+
+
+def generate_video(image_bytes: bytes, prompt: str, *, model: str = "grok_video",
+                   poll_seconds: float = 6.0, max_polls: int = 40,
+                   sleep=None) -> VideoResult:
+    """Turn a still render into a short showcase clip (image-to-video). Async:
+    submit, poll until done, then fetch the mp4. Returns a VideoResult — the
+    bytes are cached on disk by (image, prompt, model) so a clip renders once.
+    When the media host is unreachable the bytes are None but the url is still
+    returned. Raises RenderUnavailable on missing key or provider failure."""
+    if model not in VIDEO_MODELS:
+        raise RenderUnavailable(
+            f"unknown video model '{model}'; options: {list(VIDEO_MODELS)}")
+    cfg = VIDEO_MODELS[model]
+    key = _video_cache_key(image_bytes, prompt, model)
+    CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    cached_mp4 = CACHE_DIR / f"{key}.mp4"
+    cached_url = CACHE_DIR / f"{key}.url"
+    if cached_mp4.exists():
+        url = cached_url.read_text() if cached_url.exists() else ""
+        return VideoResult(url, cached_mp4.read_bytes(), None, True)
+
+    provider_key = _provider_key(cfg["key_env"])
+    if not provider_key:
+        raise RenderUnavailable(
+            f"no {cfg['key_env']} configured — set it in the environment or .env")
+
+    import time as _time
+
+    import httpx
+
+    sleep = sleep or _time.sleep
+    headers = {"Authorization": f"{cfg['auth']} {provider_key}"}
+    data_uri = (f"data:{_sniff_media_type(image_bytes)};base64,"
+                + base64.b64encode(image_bytes).decode())
+    try:
+        submit = httpx.post(
+            cfg["endpoint"], headers=headers, timeout=60.0,
+            json={"model": cfg["model"], "prompt": prompt,
+                  "image": {"url": data_uri, "type": "image_url"}})
+        submit.raise_for_status()
+        request_id = submit.json()["request_id"]
+        video = None
+        for _ in range(max_polls):
+            sleep(poll_seconds)
+            poll = httpx.get(cfg["poll"] + request_id, headers=headers, timeout=30.0)
+            body = poll.json()
+            if poll.status_code == 200 or body.get("status") == "done":
+                video = body.get("video", {})
+                break
+            if body.get("status") in ("failed", "error", "moderated"):
+                raise RenderUnavailable(f"video generation {body.get('status')}")
+        if not video:
+            raise RenderUnavailable("video generation timed out")
+    except RenderUnavailable:
+        raise
+    except Exception as exc:
+        raise RenderUnavailable(f"video provider failed: {exc}") from exc
+
+    url = video.get("url", "")
+    duration = video.get("duration")
+    cached_url.write_text(url)
+    # fetch the mp4 from the media host; a gated host leaves bytes None but the
+    # url is still usable by a client whose network can reach it
+    mp4 = None
+    try:
+        got = httpx.get(url, timeout=120.0)
+        got.raise_for_status()
+        mp4 = got.content
+        cached_mp4.write_bytes(mp4)
+    except Exception:
+        mp4 = None
+    return VideoResult(url, mp4, duration, False)
 
 
 def render_from_spec(spec: Spec, model: str = "grok_direct") -> tuple[bytes, bool]:

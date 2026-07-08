@@ -859,15 +859,34 @@ def jewelry_render(piece_description: str, *, metal: str = "",
 # The named presets are the standard product-photography turntable; a designer
 # may also pass free-text ("from below, looking up at the gallery").
 VIEW_ANGLES: dict[str, str] = {
-    "three_quarter": "a three-quarter product angle",
-    "top": "a top-down plan view looking straight down at the face",
-    "front": "a straight-on front elevation",
-    "side": "a side profile view",
-    "back": "the back / underside, showing the gallery and shank underneath",
-    "detail": "a close-up macro of the centre setting and gallery",
-    "hand": "worn on a hand, natural three-quarter lifestyle angle",
+    "three_quarter": "a three-quarter product angle, camera slightly above and "
+                     "to the side, the piece filling the frame the same as the "
+                     "reference",
+    "top": "a strict top-down bird's-eye plan view — camera pointing straight "
+           "DOWN at the face from directly overhead (90° above), the face flat "
+           "to the camera",
+    "front": "a straight-on front elevation — camera at the SAME HEIGHT as the "
+             "piece, looking horizontally at the front (NOT from above, NOT "
+             "top-down), the shank going down out of frame",
+    "side": "a true 90° side profile — camera at the piece's height, looking "
+            "horizontally from the side, showing the setting height and shank "
+            "depth in profile",
+    "back": "the back three-quarter, showing the underside gallery and the "
+            "underneath of the shank",
+    "detail": "a tight close-up macro of the centre setting and gallery, the "
+              "rest of the piece softly out of frame",
+    "hand": "worn on ONE finger of an elegant manicured hand, the ring on a "
+            "single finger only, natural three-quarter lifestyle angle",
 }
 STANDARD_VIEW_SET = ("three_quarter", "top", "front", "side")
+
+# hand/worn angles need explicit anatomy guardrails — a live test produced a
+# ring spanning two fingers.
+_WORN_SAFETY = (
+    "The ring sits on exactly ONE finger. Realistic human hand anatomy: one "
+    "normal hand, five fingers, correct proportions. FORBIDDEN: a ring "
+    "spanning or bridging two fingers, extra or missing or deformed fingers, "
+    "more than one hand.")
 
 
 def compile_view_instruction(angle: str) -> str:
@@ -875,7 +894,8 @@ def compile_view_instruction(angle: str) -> str:
     is locked — only the viewpoint moves. `angle` is a preset key from
     VIEW_ANGLES or a free-text camera description."""
     described = VIEW_ANGLES.get(angle, angle)
-    return "\n".join([
+    worn = "hand" in angle.lower() or "worn" in angle.lower() or "finger" in angle.lower()
+    lines = [
         "Jewelry render — new camera angle of the SAME piece.",
         f"Show the EXACT SAME piece from the reference from {described}.",
         "IDENTITY LOCK: identical design — same centre stone (cut, colour, "
@@ -885,7 +905,10 @@ def compile_view_instruction(angle: str) -> str:
         "remove any element.",
         "Photorealistic studio product photograph, same soft neutral "
         "background and lighting as the reference, sharp focus, no text.",
-    ])
+    ]
+    if worn:
+        lines.append(_WORN_SAFETY)
+    return "\n".join(lines)
 
 
 def render_view(image_bytes: bytes, angle: str,
@@ -906,6 +929,44 @@ def render_view_set(image_bytes: bytes, angles, *,
         image, cached = render_view(image_bytes, angle, model=model)
         views.append({"angle": angle, "image": image, "cached": cached})
     return views
+
+
+# A short showcase clip of the piece. Motions the designer can pick; each keeps
+# the piece centred and the design locked, and spins/moves GENTLY — a jewelry
+# showcase reads as elegant, never a fast whirl.
+SPIN_MOTIONS: dict[str, str] = {
+    "turntable": "a slow, smooth 360-degree turntable rotation, the piece "
+                 "spinning gently and evenly on its stand, seamless loop",
+    "sway": "a gentle slow sway, the piece rocking softly side to side so the "
+            "facets catch the light",
+    "orbit": "the camera slowly orbiting around the piece a little more than "
+             "half a turn, smooth and unhurried",
+    "sparkle": "the piece nearly still with a slow subtle drift, light moving "
+               "across the stones so they sparkle",
+}
+DEFAULT_SPIN_MOTION = "turntable"
+
+
+def compile_spin_prompt(motion: str = DEFAULT_SPIN_MOTION) -> str:
+    """The showcase-video prompt: design-locked, slow and elegant."""
+    described = SPIN_MOTIONS.get(motion, motion)
+    return (
+        f"Fine jewelry showcase video: {described}. Photorealistic studio "
+        "product footage of the EXACT piece in the reference image — same "
+        "design, same stones, setting, metal and proportions; do not redesign "
+        "it. Soft neutral studio background and lighting, sharp focus on the "
+        "piece, smooth slow motion, no text or watermark. Keep the piece "
+        "centred in frame the whole time.")
+
+
+def render_spin_video(image_bytes: bytes, *, motion: str = DEFAULT_SPIN_MOTION,
+                      model: str = "grok_video"):
+    """A short spinning showcase clip from a still render, design-locked.
+    Returns a render.VideoResult (mp4 bytes when the media host is reachable,
+    otherwise just the url)."""
+    from facetta.render import generate_video
+
+    return generate_video(image_bytes, compile_spin_prompt(motion), model=model)
 
 
 # ---------------------------------------------------------------------------

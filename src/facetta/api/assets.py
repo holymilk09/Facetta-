@@ -24,8 +24,8 @@ from facetta.db import ImageAsset, get_db, new_id, utcnow
 from facetta.render import RenderUnavailable, _sniff_media_type
 from facetta.spec import Spec
 from facetta.specagent import (
-    VIEW_ANGLES, generate_spec_sheet, global_restyle, jewelry_render,
-    localized_edit, render_view_set,
+    SPIN_MOTIONS, VIEW_ANGLES, generate_spec_sheet, global_restyle,
+    jewelry_render, localized_edit, render_spin_video, render_view_set,
 )
 from facetta.validation import validate_spec
 from facetta.vocabulary import get_vocabulary
@@ -257,6 +257,49 @@ def create_global_restyle(asset_id: str, request: AssetRestyleRequest,
             "image_b64": base64.b64encode(result["image"]).decode(),
             "changed": result["changed"], "frozen": result["frozen"],
             "warning": result["warning"], "cached": result["cached"]}
+
+
+class AssetVideoRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    motion: str = "turntable"
+    model: str = "grok_video"
+    created_by: str = "usr_pending"
+
+
+@router.post("/{asset_id}/video", status_code=201)
+def create_spin_video(asset_id: str, request: AssetVideoRequest, db: DbSession):
+    """A short showcase clip (slow spin) of the piece, from its render —
+    design-locked. Stored as a chain child (SPIN_VIDEO) when the mp4 is
+    retrievable; the finished clip also lives at a media url the client can
+    stream. Presets: turntable / sway / orbit / sparkle."""
+    hero = _get_asset(db, asset_id)
+    try:
+        result = render_spin_video(bytes(hero.image), motion=request.motion,
+                                   model=request.model)
+    except RenderUnavailable as exc:
+        return _provider_error(exc)
+    child = None
+    if result.data is not None:
+        child = _store_asset(db, result.data, "SPIN_VIDEO", hero,
+                             instruction=request.motion,
+                             created_by=request.created_by)
+        child.media_type = "video/mp4"
+        db.commit()
+    return {
+        "parent_asset_id": hero.id,
+        "asset_id": child.id if child else None,
+        "video_url": result.url or None,
+        "duration_seconds": result.duration,
+        "video_b64": (base64.b64encode(result.data).decode()
+                      if result.data is not None else None),
+        "media_type": "video/mp4",
+        "cached": result.cached,
+        "known_motions": list(SPIN_MOTIONS),
+        "note": (None if result.data is not None else
+                 "clip generated; mp4 lives at video_url (this server could "
+                 "not fetch the media host — stream it client-side)"),
+    }
 
 
 @router.get("/{asset_id}")

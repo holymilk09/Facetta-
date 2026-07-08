@@ -272,6 +272,105 @@ class TestMultiView:
         assert "from below" in compile_view_instruction("from below")
 
 
+class TestSpinVideo:
+    """The showcase clip: a slow spin from the render, design-locked. The mp4
+    lives on a media host that a network policy may gate, so bytes are
+    optional — the url always comes back."""
+
+    def test_spin_prompt_is_design_locked_and_gentle(self):
+        from facetta.specagent import compile_spin_prompt
+
+        p = compile_spin_prompt("turntable")
+        assert "EXACT piece" in p and "do not redesign" in p
+        assert "slow" in p and ("turntable" in p or "rotation" in p)
+        assert "watermark" not in p or "no text or watermark" in p
+
+    def test_endpoint_with_bytes_stores_a_video_child(self, client, monkeypatch):
+        from facetta.render import VideoResult
+        monkeypatch.setattr(assets_mod, "jewelry_render",
+                            lambda *a, **k: (_png((1, 1, 1)), False))
+        monkeypatch.setattr(
+            assets_mod, "render_spin_video",
+            lambda image_bytes, **k: VideoResult(
+                "https://media.example/clip.mp4", b"MP4DATA", 8, False))
+        r = client.post("/assets/render", json={"piece_description": "a ring"})
+        aid = r.json()["asset_id"]
+        r = client.post(f"/assets/{aid}/video", json={"motion": "turntable"})
+        assert r.status_code == 201, r.text
+        body = r.json()
+        assert body["video_url"] == "https://media.example/clip.mp4"
+        assert body["duration_seconds"] == 8
+        assert base64.b64decode(body["video_b64"]) == b"MP4DATA"
+        child = client.get(f"/assets/{body['asset_id']}").json()
+        assert child["capability"] == "SPIN_VIDEO"
+        assert child["parent_asset_id"] == aid
+
+    def test_endpoint_without_bytes_returns_url_only(self, client, monkeypatch):
+        """Media host gated: the clip exists at a url but the server has no
+        bytes — no child asset, a note, and still a 201."""
+        from facetta.render import VideoResult
+        monkeypatch.setattr(assets_mod, "jewelry_render",
+                            lambda *a, **k: (_png((1, 1, 1)), False))
+        monkeypatch.setattr(
+            assets_mod, "render_spin_video",
+            lambda image_bytes, **k: VideoResult(
+                "https://vidgen.example/clip.mp4", None, 8, False))
+        r = client.post("/assets/render", json={"piece_description": "a ring"})
+        aid = r.json()["asset_id"]
+        r = client.post(f"/assets/{aid}/video", json={})
+        assert r.status_code == 201, r.text
+        body = r.json()
+        assert body["video_url"] == "https://vidgen.example/clip.mp4"
+        assert body["video_b64"] is None and body["asset_id"] is None
+        assert "media host" in body["note"]
+
+    def test_generate_video_polls_then_caches(self, monkeypatch, tmp_path):
+        """The async loop: submit → poll pending → done → fetch mp4 → cache."""
+        import facetta.render as render_mod
+        from facetta.render import generate_video
+
+        monkeypatch.setattr(render_mod, "CACHE_DIR", tmp_path)
+        monkeypatch.setattr(render_mod, "_provider_key", lambda env: "k")
+        calls = {"poll": 0, "get_mp4": 0}
+
+        class Resp:
+            def __init__(self, code, js=None, content=b""):
+                self.status_code = code
+                self._js = js or {}
+                self.content = content
+
+            def raise_for_status(self):
+                pass
+
+            def json(self):
+                return self._js
+
+        import httpx
+
+        def fake_post(url, **k):
+            return Resp(200, {"request_id": "rid-1"})
+
+        def fake_get(url, **k):
+            if url.endswith("/clip.mp4"):
+                calls["get_mp4"] += 1
+                return Resp(200, content=b"MP4BYTES")
+            calls["poll"] += 1
+            if calls["poll"] < 2:
+                return Resp(202, {"status": "pending", "progress": 40})
+            return Resp(200, {"status": "done",
+                              "video": {"url": "https://m/clip.mp4", "duration": 8}})
+
+        monkeypatch.setattr(httpx, "post", fake_post)
+        monkeypatch.setattr(httpx, "get", fake_get)
+
+        v1 = generate_video(b"\x89PNG\r\n\x1a\nx", "spin", sleep=lambda s: None)
+        assert v1.data == b"MP4BYTES" and v1.duration == 8 and v1.cached is False
+        # second call for the same (image, prompt, model) is served from disk
+        v2 = generate_video(b"\x89PNG\r\n\x1a\nx", "spin", sleep=lambda s: None)
+        assert v2.data == b"MP4BYTES" and v2.cached is True
+        assert calls["get_mp4"] == 1  # provider fetched once, then cached
+
+
 class TestGlobalRestyle:
     def test_inference_routes_whole_piece_changes(self):
         from facetta.specagent import infer_capability
