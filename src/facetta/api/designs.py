@@ -353,6 +353,27 @@ def get_sheet(design_id: str, version: int, db: DbSession,
     return Response(content=svg, media_type="image/svg+xml")
 
 
+@router.get("/{design_id}/versions/{version}/technical-drawing.svg")
+def get_technical_drawing(design_id: str, version: int, db: DbSession,
+                          house: str | None = None, signature: str | None = None,
+                          piece_name: str | None = None):
+    """The stored version's factory sheet in the official Facetta template:
+    code-drawn dimensioned views inside the branded frame. Fully deterministic
+    — no image engine — so editing a dimension and re-fetching re-letters every
+    number (drawing AND panel) with no cost and no chance the drawing drifts.
+    422 for templates whose views aren't line-drawable yet."""
+    from facetta.drawing_frame import render_framed_line_drawing
+
+    row = _get_version(db, design_id, version)
+    try:
+        svg = render_framed_line_drawing(
+            Spec.model_validate(row.spec), branding=_branding(house, signature),
+            piece_name=piece_name)
+    except SheetUnsupported as exc:
+        return JSONResponse(status_code=422, content={"detail": str(exc)})
+    return Response(content=svg, media_type="image/svg+xml")
+
+
 @router.get("/{design_id}/versions/{version}/blueprint-sheet.svg")
 def get_blueprint_sheet(design_id: str, version: int, db: DbSession,
                         model: str = "grok_imagine", house: str | None = None,

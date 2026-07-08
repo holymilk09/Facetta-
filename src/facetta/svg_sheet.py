@@ -2444,6 +2444,51 @@ def render_blueprint_frame(spec: Spec, background_image: str,
                   branding=branding)
 
 
+# templates whose dimensioned views can be drawn entirely in code (no image
+# engine) — the same layered ring templates the blueprint covers
+LINE_TEMPLATES = BLUEPRINT_TEMPLATES
+
+# the vertical band the orthographic views + their dimension callouts occupy,
+# above the schedule (y=158) — used to crop the views for an external frame
+_VIEWS_BAND = (24.0, 152.0)
+
+_HATCH_DEF = (
+    '<defs><pattern id="hatch" width="1.4" height="1.4" '
+    'patternTransform="rotate(45)" patternUnits="userSpaceOnUse">'
+    f'<line x1="0" y1="0" x2="0" y2="1.4" stroke="{FAINT}" stroke-width="0.12"/>'
+    "</pattern></defs>")
+
+
+def line_views_content(spec: Spec,
+                       highlight_ref: str | None = None) -> tuple[str, str]:
+    """The dimensioned orthographic views ONLY — geometry PLUS the code-drawn
+    dimension callouts, no title block or schedule — as (inner_markup,
+    viewbox) for nesting inside an external frame. Every number is code, drawn
+    from the record, so a dimension edit re-renders instantly, offline, with no
+    image engine and no chance the drawing drifts. Ring templates only;
+    raises SheetUnsupported otherwise (the caller falls back to the agent
+    sheet)."""
+    _require_blueprint(spec)
+    if spec.stone.cut not in SUPPORTED_CUTS:
+        raise SheetUnsupported(
+            f"line drawing center cut '{spec.stone.cut}' not supported; "
+            f"supported: {list(SUPPORTED_CUTS)}")
+    top, bottom = _VIEWS_BAND
+    datum = _line(MARGIN + 3, BASELINE, SHEET_W - MARGIN - 3, BASELINE,
+                  w=STROKE_DIM, color=FAINT, dash="6 1.5 1 1.5")
+    inner = _HATCH_DEF + "\n" + datum + "\n" + "\n".join(
+        _ring_body(spec, "full", highlight_ref))
+    return inner, f"0 {top:g} {SHEET_W:g} {bottom - top:g}"
+
+
+def render_line_views(spec: Spec, highlight_ref: str | None = None) -> str:
+    """Standalone SVG of the code-drawn dimensioned views (no title block) —
+    the drawing that goes inside the official frame."""
+    inner, viewbox = line_views_content(spec, highlight_ref)
+    return (f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="{viewbox}" '
+            f'font-family="{FONT}">\n{inner}\n</svg>\n')
+
+
 # --- true-size print sheet -------------------------------------------------------
 #
 # The sheet root already declares 1 SVG user unit = 1 mm of paper, so a shape
