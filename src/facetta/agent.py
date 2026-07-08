@@ -119,6 +119,13 @@ _SECTION_ALIASES = {
     "band": ("band", None), "shank": ("band", None),
     "setting": ("setting", None), "mount": ("setting", None),
     "ring_size": ("ring_size", None), "size": ("ring_size", None),
+    # non-ring construction sections — scope_guard's generic branch grafts any
+    # top-level subtree, so these resolve the same way band/setting do
+    "drop": ("drop", None), "hook": ("drop", None), "earring": ("drop", None),
+    "pendant": ("pendant", None), "bail": ("pendant", None),
+    "chain": ("chain", None), "clasp": ("chain", None),
+    "bracelet": ("bracelet", None), "cuff": ("bracelet", None),
+    "bangle": ("bracelet", None), "brooch": ("brooch", None),
 }
 # sections that address a side_stones entry — need an index (default 0 if unique)
 _SIDE_ALIASES = ("side_stones", "side_stone", "side", "halo", "melee", "surround",
@@ -189,7 +196,8 @@ def resolve_target(spec: Spec, annotation: Annotation) -> tuple[str, int | None]
         return ("side_stones", idx)
     raise AnnotationUnresolved(
         "annotation must carry a schedule ref (A, B, …) or a known section "
-        "(stone, metal, band, setting, ring_size, halo)")
+        "(stone, metal, band, setting, ring_size, halo, drop, pendant, "
+        "chain, bracelet, brooch)")
 
 
 def _target_ref(target: tuple[str, int | None]) -> str | None:

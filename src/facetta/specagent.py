@@ -1148,6 +1148,99 @@ def check_design_consistency(reference_bytes: bytes,
     return data
 
 
+# The markup reader: the designer draws/writes ON the piece — in-app canvas
+# circles and arrows with typed notes, or freehand pen and handwriting (even a
+# photographed printout). Grok reads the marks into structured change requests
+# the localized-edit contract executes; the marks themselves never become an
+# edit base, and an unclear mark asks instead of guessing.
+_MARKUP_SYSTEM = """\
+You read a designer's markup on a jewelry image for a manufacturing platform.
+The FIRST image is the clean approved render. The SECOND is the SAME image
+carrying the designer's marks: canvas circles, arrows, highlights, or freehand
+pen strokes and HANDWRITING (possibly photographed).
+
+For EVERY distinct mark: transcribe any handwriting VERBATIM first, then
+interpret it. Describe the marked region in jewelry terms ("the prongs on the
+center setting", "the halo, lower arc", "the shank, left shoulder"). One
+annotation per mark. Do not invent marks; do not merge separate marks.
+
+Return JSON exactly:
+{"annotations": [{"region_description": "...", "change_instruction": "...",
+  "target_section": "stone|side_stones|setting|metal|band|ring_size|drop|pendant|chain|bracelet|brooch" or null,
+  "handwriting": "verbatim transcription or empty",
+  "confidence": 0.0-1.0}],
+ "understood_as": "Understood as: (1) ...; (2) ... — nothing else changes.",
+ "needs_clarification": true|false, "clarification": "the ONE question to ask"}
+
+Set needs_clarification true (with a concrete question) if any handwriting is
+illegible, a mark's intent is ambiguous, or you cannot tell WHICH element a
+mark points at. NEVER guess a region or an intent. Output ONLY the JSON."""
+
+
+def read_markup(clean_bytes: bytes, marked_bytes: bytes) -> dict:
+    """Read the designer's marks: clean render vs marked copy, structured
+    change requests out. Post-rule: any annotation under 0.6 confidence flips
+    needs_clarification — a half-read mark is asked about, never executed.
+    Raises RenderUnavailable on provider failure (explicit request, fails
+    loudly)."""
+    data = _vision_json_2img(_MARKUP_SYSTEM, clean_bytes, marked_bytes,
+                             "Read the designer's marks on the second image.")
+    annotations = []
+    for a in data.get("annotations") or []:
+        if not isinstance(a, dict):
+            continue
+        region = str(a.get("region_description") or "").strip()
+        change = str(a.get("change_instruction") or "").strip()
+        if not region or not change:
+            continue
+        annotations.append({
+            "region_description": region,
+            "change_instruction": change,
+            "target_section": a.get("target_section"),
+            "handwriting": str(a.get("handwriting") or ""),
+            "confidence": float(a.get("confidence") or 0.0),
+        })
+    needs = bool(data.get("needs_clarification"))
+    clarification = str(data.get("clarification") or "")
+    low = [a for a in annotations if a["confidence"] < 0.6]
+    if low and not needs:
+        needs = True
+        clarification = clarification or (
+            "some marks were hard to read with confidence — restate: "
+            + "; ".join(a["region_description"] for a in low))
+    return {"annotations": annotations,
+            "understood_as": str(data.get("understood_as") or ""),
+            "needs_clarification": needs,
+            "clarification": clarification}
+
+
+def mask_from_markup(clean_bytes: bytes, marked_bytes: bytes,
+                     dilate_px: int = 24) -> bytes | None:
+    """Where did the designer draw? Pixel-diff the clean and marked images
+    (same raster only — in-app canvas marks) into a dilated white-on-black
+    mask PNG, so the markup edit gets the SAME measured-drift gate as a
+    canvas-masked localized edit. Returns None when the two images differ in
+    size (e.g. a photographed printout) — no mask beats a wrong mask."""
+    import io
+
+    from PIL import Image, ImageChops, ImageFilter
+
+    clean = Image.open(io.BytesIO(clean_bytes)).convert("RGB")
+    marked = Image.open(io.BytesIO(marked_bytes)).convert("RGB")
+    if clean.size != marked.size:
+        return None
+    diff = ImageChops.difference(clean, marked).convert("L")
+    mask = diff.point(lambda p: 255 if p > 24 else 0)
+    if mask.getbbox() is None:
+        return None                      # no marks at all
+    # dilate so the edit region breathes around the stroke itself
+    grown = mask.filter(ImageFilter.MaxFilter(
+        max(3, (dilate_px // 2) * 2 + 1)))
+    buf = io.BytesIO()
+    grown.save(buf, format="PNG")
+    return buf.getvalue()
+
+
 def render_worn_view(image_bytes: bytes, angle: str, *,
                      skin_tone: str | None = None, model: str = "grok_direct",
                      max_attempts: int = 3) -> dict:

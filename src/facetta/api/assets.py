@@ -17,17 +17,26 @@ from typing import Annotated, Literal
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, ConfigDict, Field
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from facetta.db import ImageAsset, Project, get_db, new_id, utcnow
+from facetta.checklist import (
+    DEFAULT_MODE, MODES, approval_footer_line, build_checklist_items,
+    checklist_status,
+)
+from facetta.db import (
+    ApprovalChecklist, ApprovalResponse, DesignVersion, ImageAsset, Project,
+    get_db, new_id, utcnow,
+)
 from facetta.disclaimer import is_stampable, stamp_b64, stamp_image
 from facetta.render import RenderUnavailable, _sniff_media_type
 from facetta.spec import Spec
 from facetta.specagent import (
-    SKIN_TONES, SPIN_MOTIONS, VIEW_ANGLES, generate_spec_sheet, global_restyle,
-    jewelry_render, localized_edit, render_spin_video, render_view_set,
+    SKIN_TONES, SPIN_MOTIONS, VIEW_ANGLES, check_design_consistency,
+    generate_spec_sheet, global_restyle, jewelry_render, localized_edit,
+    mask_from_markup, read_markup, render_spin_video, render_view_set,
 )
+from facetta.specdiff import diff_specs, summarize_changes
 from facetta.validation import validate_spec
 from facetta.vocabulary import get_vocabulary
 
@@ -154,6 +163,9 @@ class AssetRenderRequest(BaseModel):
     angles: Annotated[list[str], Field(max_length=6)] = []
     skin_tone: str | None = None    # for worn/hand angles only
     check_consistency: bool = True  # re-roll a view that drifts from the hero
+    # link the chain to a persisted design: markup edits then also move the
+    # design's spec, and the factory sheet letters the latest version
+    design_id: str | None = None
     created_by: str = "usr_pending"
 
 
@@ -198,6 +210,11 @@ def create_render_asset(request: AssetRenderRequest, db: DbSession):
     request — each is derived from this hero render (design-locked), so the
     designer gets a consistent turntable without re-generating (which would
     invent a different piece per angle)."""
+    if request.design_id is not None:
+        from facetta.db import Design
+        if db.get(Design, request.design_id) is None:
+            raise HTTPException(status_code=404,
+                                detail=f"unknown design '{request.design_id}'")
     try:
         image, cached = jewelry_render(
             request.piece_description, metal=request.metal,
@@ -206,6 +223,9 @@ def create_render_asset(request: AssetRenderRequest, db: DbSession):
         hero = _store_asset(db, image, "JEWELRY_RENDER",
                             instruction=request.piece_description,
                             created_by=request.created_by)
+        if request.design_id is not None:
+            hero.design_id = request.design_id  # the root carries the link
+            db.commit()
         _ensure_project(db, hero)             # file it into the owner's library
         views = _view_children(db, hero, request.angles, request.created_by,
                                request.skin_tone,
@@ -295,6 +315,217 @@ def create_localized_edit(asset_id: str, request: AssetEditRequest,
             "cached": result["cached"]}
 
 
+class MarkupReadRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    marked_image_base64: Annotated[str, Field(min_length=1,
+                                              max_length=14_000_000)]
+    created_by: str = "usr_pending"
+    assistant_name: str | None = None
+
+
+@router.post("/{asset_id}/markup/read")
+def markup_read(asset_id: str, request: MarkupReadRequest, db: DbSession):
+    """Phase 1 of a markup edit: the agent READS the designer's marks (canvas
+    shapes, arrows, freehand handwriting) against the clean render and echoes
+    back what it understood — nothing executes here. The designer confirms or
+    corrects the echo, then calls markup/apply with the confirmed list: the
+    100%-understanding gate. Unreadable or ambiguous marks come back as a 422
+    question — a region or intent is never guessed."""
+    from facetta.assistant import DEFAULT_ASSISTANT_NAME
+
+    asset = _get_asset(db, asset_id)
+    try:
+        marked = base64.b64decode(request.marked_image_base64, validate=True)
+    except (binascii.Error, ValueError):
+        return JSONResponse(status_code=422, content={
+            "detail": "marked_image_base64 is not valid base64"})
+    try:
+        reading = read_markup(bytes(asset.image), marked)
+    except RenderUnavailable as exc:
+        return _provider_error(exc)
+
+    name = (request.assistant_name or "").strip() or DEFAULT_ASSISTANT_NAME
+    if reading["needs_clarification"] or not reading["annotations"]:
+        return JSONResponse(status_code=422, content={
+            "detail": reading["clarification"]
+                      or "no readable marks found — draw on the piece or "
+                         "add a note",
+            "understood_as": reading["understood_as"],
+            "annotations": reading["annotations"],
+            "assistant_name": name})
+
+    # the marked upload is filed as an audit leaf — never an edit base
+    notes = _store_asset(db, marked, "MARKUP_NOTES", asset,
+                         instruction=reading["understood_as"],
+                         created_by=request.created_by)
+    linked = _linked_design(db, asset)
+    return {"markup_asset_id": notes.id, "assistant_name": name,
+            "understood_as": reading["understood_as"],
+            "annotations": reading["annotations"],
+            "design_linked": linked is not None,
+            "design_id": linked[0] if linked else None}
+
+
+class MarkupAnnotation(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    region_description: Annotated[str, Field(min_length=1, max_length=500)]
+    change_instruction: Annotated[str, Field(min_length=1, max_length=2000)]
+    target_section: str | None = None
+    target_ref: str | None = None
+    index: int | None = None
+    mask_base64: str | None = None
+
+
+class MarkupApplyRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    annotations: Annotated[list[MarkupAnnotation], Field(min_length=1,
+                                                         max_length=8)]
+    markup_asset_id: str | None = None   # phase-1 upload, for mask derivation
+    kind: Literal["render", "technical"] = "render"
+    update_spec: bool = True
+    created_by: str = "usr_pending"
+
+
+@router.post("/{asset_id}/markup/apply", status_code=201)
+def markup_apply(asset_id: str, request: MarkupApplyRequest, db: DbSession):
+    """Phase 2: execute the CONFIRMED annotations, sequentially — each child
+    is the parent of the next, so every hop keeps its own freeze contract,
+    drift measurement, and revert point. Per annotation: the linked design's
+    spec moves FIRST through the Grok scoped edit (scope_guard makes touching
+    anything else impossible; a physically impossible change skips the
+    annotation entirely — image and spec move in lockstep or not at all),
+    then the image through the localized-edit contract. One immutable
+    DesignVersion per synced change, with the before → after diff. A final
+    consistency check against the starting image is ADVISORY — the intended
+    changes are real differences; the hard gate is the per-hop drift."""
+    from facetta.agent import Annotation, AnnotationUnresolved
+    from facetta.grokedit import GrokEditUnavailable, grok_plan_scoped_edit
+
+    asset = _get_asset(db, asset_id)
+    start_bytes = bytes(asset.image)
+
+    # a phase-1 canvas upload yields a drift mask (same raster only)
+    derived_mask = None
+    if request.markup_asset_id:
+        notes = db.get(ImageAsset, request.markup_asset_id)
+        if notes is not None and notes.capability == "MARKUP_NOTES":
+            derived_mask = mask_from_markup(start_bytes, bytes(notes.image))
+
+    linked = _linked_design(db, asset) if request.update_spec else None
+    design_id = linked[0] if linked else None
+    current_spec = linked[2] if linked else None
+
+    current = asset
+    steps: list[dict] = []
+    for note in request.annotations:
+        step: dict = {"annotation": note.model_dump(exclude={"mask_base64"})}
+
+        # 1) spec first, when linked and the mark names a section
+        scoped = None
+        if current_spec is not None and (note.target_section or note.target_ref):
+            annotation = Annotation(
+                ref=note.target_ref, section=note.target_section,
+                index=note.index, instruction=note.change_instruction)
+            try:
+                scoped = grok_plan_scoped_edit(annotation, current_spec)
+            except AnnotationUnresolved as exc:
+                step["spec_synced"] = False
+                step["spec_note"] = str(exc)
+            except GrokEditUnavailable as exc:
+                status = 503 if "KEY" in str(exc) else 502
+                return JSONResponse(status_code=status, content={
+                    "detail": str(exc), "steps": steps})
+            if scoped is not None:
+                validated = validate_spec(scoped.spec, get_vocabulary())
+                if not validated.ok:
+                    # lockstep rule: an impossible spec change skips the
+                    # image edit too — the two never diverge
+                    step["rejected"] = True
+                    step["detail"] = [i.as_detail() for i in validated.issues]
+                    steps.append(step)
+                    continue
+                scoped_spec = validated.spec
+
+        # 2) the image, through the localized-edit contract
+        mask_bytes = derived_mask
+        if note.mask_base64:
+            try:
+                mask_bytes = base64.b64decode(note.mask_base64, validate=True)
+            except (binascii.Error, ValueError):
+                return JSONResponse(status_code=422, content={
+                    "detail": "mask_base64 is not valid base64",
+                    "steps": steps})
+        try:
+            result = localized_edit(
+                bytes(current.image),
+                region_description=note.region_description,
+                change_instruction=note.change_instruction,
+                mask_bytes=mask_bytes, kind=request.kind)
+        except ValueError as exc:
+            step["rejected"] = True
+            step["detail"] = str(exc)
+            steps.append(step)
+            continue
+        except RenderUnavailable as exc:
+            return JSONResponse(status_code=502, content={
+                "detail": str(exc), "steps": steps})
+
+        child = _store_asset(
+            db, result["image"], "LOCALIZED_EDIT", current,
+            instruction=note.change_instruction,
+            region=note.region_description, drift=result["drift"],
+            created_by=request.created_by)
+        step.update({"asset_id": child.id,
+                     "version": _version_number(_chain(db, asset.root_id),
+                                                child.id),
+                     "drift": result["drift"], "retried": result["retried"]})
+
+        # 3) one immutable DesignVersion per synced change
+        if scoped is not None and current_spec is not None:
+            from facetta.api.designs import _store_version
+            from facetta.db import Design
+
+            design = db.get(Design, design_id)
+            latest = db.scalar(
+                select(func.max(DesignVersion.version)).where(
+                    DesignVersion.design_id == design_id)) or 0
+            before = current_spec.model_dump(mode="json")
+            stored = _store_version(db, design, scoped_spec, latest + 1,
+                                    request.created_by)
+            changes = diff_specs(before, stored)
+            step.update({
+                "spec_synced": True, "new_spec_version": latest + 1,
+                "changed_fields": scoped.changed_fields,
+                "ignored_fields": scoped.ignored_fields,
+                "changes_summary": summarize_changes(changes)})
+            current_spec = scoped_spec
+        elif "spec_synced" not in step:
+            step["spec_synced"] = False
+            if current_spec is None and request.update_spec:
+                step["spec_note"] = ("chain not linked to a design — image "
+                                     "only (PATCH /assets/{id}/link-design)")
+
+        current = child
+        steps.append(step)
+
+    applied = [s for s in steps if s.get("asset_id")]
+    consistency = {"checked": False}
+    if applied:
+        consistency = check_design_consistency(start_bytes,
+                                               bytes(current.image))
+    return {
+        "final_asset_id": current.id if applied else None,
+        "root_id": asset.root_id,
+        "design_id": design_id,
+        "steps": steps,
+        "consistency": consistency,
+        "image_b64": (stamp_b64(bytes(current.image)) if applied else None),
+    }
+
+
 class AssetRestyleRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -372,6 +603,32 @@ def create_spin_video(asset_id: str, request: AssetVideoRequest, db: DbSession):
     }
 
 
+class LinkDesignRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    design_id: Annotated[str, Field(min_length=1, max_length=32)]
+
+
+@router.patch("/{asset_id}/link-design")
+def link_design(asset_id: str, request: LinkDesignRequest, db: DbSession):
+    """Join an existing chain to the spec universe: sets design_id on the
+    chain ROOT (acting on any asset in the chain). Once linked, markup edits
+    also move the design's spec and the factory sheet letters the latest
+    version automatically."""
+    from facetta.db import Design
+
+    asset = _get_asset(db, asset_id)
+    if db.get(Design, request.design_id) is None:
+        raise HTTPException(status_code=404,
+                            detail=f"unknown design '{request.design_id}'")
+    root = db.get(ImageAsset, asset.root_id) or asset
+    root.design_id = request.design_id
+    db.commit()
+    return {"root_id": root.id, "design_id": request.design_id,
+            "message": f"chain linked to design {request.design_id} — markup "
+                       "edits will keep its spec in sync"}
+
+
 class OrganizeRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -443,12 +700,69 @@ def get_history(asset_id: str, db: DbSession):
     }
 
 
+def _linked_design(db: Session, asset: ImageAsset):
+    """The chain's bridge to the spec universe: root.design_id → the design's
+    LATEST version spec (validated). Returns (design_id, version, Spec) or
+    None when the chain is unlinked or the design has no versions."""
+    root = db.get(ImageAsset, asset.root_id) or asset
+    if not root.design_id:
+        return None
+    row = db.execute(
+        select(DesignVersion)
+        .where(DesignVersion.design_id == root.design_id)
+        .order_by(DesignVersion.version.desc())
+    ).scalars().first()
+    if row is None:
+        return None
+    result = validate_spec(Spec.model_validate(row.spec), get_vocabulary())
+    if not result.ok:
+        return None
+    return root.design_id, row.version, result.spec
+
+
+def _newest_checklist(db: Session, asset_id: str) -> ApprovalChecklist | None:
+    return db.execute(
+        select(ApprovalChecklist)
+        .where(ApprovalChecklist.asset_id == asset_id)
+        .order_by(ApprovalChecklist.created_at.desc(),
+                  ApprovalChecklist.id.desc())
+    ).scalars().first()
+
+
+def _checklist_responses(db: Session, checklist_id: str) -> list[ApprovalResponse]:
+    return list(db.execute(
+        select(ApprovalResponse)
+        .where(ApprovalResponse.checklist_id == checklist_id)
+        .order_by(ApprovalResponse.id)
+    ).scalars())
+
+
+def _checklist_state(db: Session, checklist: ApprovalChecklist) -> dict:
+    responses = _checklist_responses(db, checklist.id)
+    return checklist_status(checklist.items, responses)
+
+
 @router.post("/{asset_id}/pin")
 def pin_asset(asset_id: str, db: DbSession):
     """Pin this version for factory: the manufacturing technical drawing is
     generated from the chain's pinned asset, never silently from 'latest'.
-    Pinning a new version supersedes the previous pin (latest pin wins)."""
+    Pinning a new version supersedes the previous pin (latest pin wins).
+
+    Gated by the approval checklist when one exists for this asset (and its
+    mode isn't 'optional'): every item must be approved first — the tap-tap
+    ritual IS the road to the factory. No checklist → pin behaves as always."""
     asset = _get_asset(db, asset_id)
+    checklist = _newest_checklist(db, asset_id)
+    if checklist is not None and checklist.mode != "optional":
+        status = _checklist_state(db, checklist)
+        if not status["all_approved"]:
+            return JSONResponse(status_code=409, content={
+                "detail": (f"this version has an approval checklist with "
+                           f"{len(status['outstanding'])} item(s) outstanding "
+                           "— approve them (or answer NO with a change note) "
+                           "before pinning"),
+                "outstanding": status["outstanding"],
+                "checklist_id": checklist.id})
     asset.pinned_at = utcnow()
     db.commit()
     chain = _chain(db, asset.root_id)
@@ -456,6 +770,173 @@ def pin_asset(asset_id: str, db: DbSession):
             "pinned_version": _version_number(chain, asset.id),
             "message": f"Pinned for factory: version "
                        f"{_version_number(chain, asset.id)} of this chain"}
+
+
+class ChecklistCreateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    spec: Spec | None = None      # else resolved via the chain's design link
+    mode: Literal["auto_pin", "explicit_pin", "optional"] = DEFAULT_MODE
+    created_by: str = "usr_pending"
+
+
+@router.post("/{asset_id}/checklist", status_code=201)
+def create_checklist(asset_id: str, request: ChecklistCreateRequest,
+                     db: DbSession):
+    """Start the tap-to-approve ritual for this exact version. Items are
+    facts derived from the piece's own spec sections — jewelry-type aware by
+    construction (a ring asks about its band; a necklace about its chain).
+    The spec comes from the body, else the chain's design link; with neither
+    there is nothing to derive facts from → 409."""
+    asset = _get_asset(db, asset_id)
+    validated = None
+    if request.spec is not None:
+        result = validate_spec(request.spec, get_vocabulary())
+        if not result.ok:
+            return JSONResponse(status_code=422, content={
+                "detail": [issue.as_detail() for issue in result.issues]})
+        validated = result.spec
+    else:
+        linked = _linked_design(db, asset)
+        if linked:
+            _, _, validated = linked
+    if validated is None:
+        return JSONResponse(status_code=409, content={
+            "detail": "no spec to derive checklist items from — pass a spec "
+                      "or link the chain to a design "
+                      "(PATCH /assets/{id}/link-design)"})
+
+    items = [i.model_dump() for i in build_checklist_items(validated)]
+    checklist = ApprovalChecklist(
+        id=new_id("chk"), asset_id=asset.id, mode=request.mode, items=items,
+        created_by=request.created_by)
+    db.add(checklist)
+    db.commit()
+    return {"checklist_id": checklist.id, "asset_id": asset.id,
+            "version": _version_number(_chain(db, asset.root_id), asset.id),
+            "mode": checklist.mode, "items": items,
+            "status": checklist_status(items, [])}
+
+
+@router.get("/{asset_id}/checklist")
+def get_checklist(asset_id: str, db: DbSession):
+    """The newest checklist for this exact asset: items, the latest answer
+    per item, roll-up status, and where the pin stands."""
+    asset = _get_asset(db, asset_id)
+    checklist = _newest_checklist(db, asset_id)
+    if checklist is None:
+        raise HTTPException(status_code=404,
+                            detail=f"no checklist for asset '{asset_id}' — "
+                                   "POST /assets/{id}/checklist to start one")
+    responses = _checklist_responses(db, checklist.id)
+    latest: dict[str, dict] = {}
+    for r in responses:
+        latest[r.item_key] = {
+            "approved": bool(r.approved), "note": r.note,
+            "understood_as": r.understood_as, "created_by": r.created_by,
+            "created_at": r.created_at.isoformat()}
+    status = checklist_status(checklist.items, responses)
+    return {"checklist_id": checklist.id, "asset_id": asset.id,
+            "mode": checklist.mode, "items": checklist.items,
+            "answers": latest, "status": status,
+            "pin_state": {"pinned": asset.pinned_at is not None,
+                          "gated": checklist.mode != "optional"}}
+
+
+class ChecklistRespondRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    item_key: Annotated[str, Field(min_length=1, max_length=48)]
+    approved: bool
+    note: Annotated[str, Field(max_length=2000)] = ""
+    interpret: bool = False       # ask the agent for its understood-as echo
+    created_by: str = "usr_pending"
+    assistant_name: str | None = None
+
+
+@router.post("/{asset_id}/checklist/respond", status_code=201)
+def respond_checklist(asset_id: str, request: ChecklistRespondRequest,
+                      db: DbSession):
+    """One tap. YES approves the fact. NO requires the change note (the WHOOP
+    journal rule) and comes back with an agent-ready change request prefill —
+    and, with interpret=true, the agent's understood-as echo the designer
+    confirms BEFORE anything executes. In auto_pin mode the last YES pins the
+    version for factory. Append-only: every tap is an audit row."""
+    asset = _get_asset(db, asset_id)
+    checklist = _newest_checklist(db, asset_id)
+    if checklist is None:
+        raise HTTPException(status_code=404,
+                            detail=f"no checklist for asset '{asset_id}'")
+    items = {i["key"]: i for i in checklist.items}
+    item = items.get(request.item_key)
+    if item is None:
+        return JSONResponse(status_code=422, content={
+            "detail": f"unknown item '{request.item_key}' — valid: "
+                      f"{sorted(items)}"})
+    note = request.note.strip()
+    if not request.approved and not note:
+        return JSONResponse(status_code=422, content={
+            "detail": "a NO needs the change note — say what should change "
+                      "so the agent can execute it"})
+
+    # the tap is never lost to a network hiccup: save first, interpret after
+    row = ApprovalResponse(
+        checklist_id=checklist.id, item_key=request.item_key,
+        approved=request.approved, note=note or None,
+        created_by=request.created_by)
+    db.add(row)
+    db.commit()
+
+    out: dict = {"checklist_id": checklist.id, "item_key": request.item_key,
+                 "approved": request.approved}
+
+    linked = _linked_design(db, asset)
+    if not request.approved:
+        # the code-built prefill: the item's section/ref map 1:1 onto the
+        # scoped-edit Annotation and the localized-edit region
+        out["change_request"] = {
+            "annotate": {"ref": item.get("ref"), "section": item["section"],
+                         "index": item.get("index"), "instruction": note},
+            "localized_edit": {
+                "region_description": f"the {item['label'].lower()}",
+                "change_instruction": note},
+            "endpoints": ["POST /designs/{design_id}/annotate",
+                          f"POST /assets/{asset.id}/localized-edit"],
+            "design_id": linked[0] if linked else None,
+        }
+        if request.interpret:
+            from facetta.grokedit import (
+                GrokEditUnavailable, interpret_change_note,
+            )
+            try:
+                interpretation = interpret_change_note(
+                    note, item_label=item["label"], item_fact=item["fact"],
+                    spec_json=(linked[2].model_dump(mode="json")
+                               if linked else None),
+                    name=request.assistant_name or "")
+            except GrokEditUnavailable as exc:
+                status = 503 if "KEY" in str(exc) else 502
+                out["interpretation_error"] = str(exc)
+                return JSONResponse(status_code=status,
+                                    content={"detail": str(exc), **out})
+            row.understood_as = interpretation["understood_as"]
+            db.commit()
+            out["interpretation"] = interpretation
+
+    status = _checklist_state(db, checklist)
+    out["status"] = status
+    if (checklist.mode == "auto_pin" and status["all_approved"]
+            and asset.pinned_at is None):
+        asset.pinned_at = utcnow()
+        db.commit()
+        chain = _chain(db, asset.root_id)
+        out["pinned"] = True
+        out["pinned_version"] = _version_number(chain, asset.id)
+        out["message"] = (f"All {status['total']} checks approved — pinned "
+                          f"version {out['pinned_version']} for factory")
+    else:
+        out["pinned"] = asset.pinned_at is not None
+    return out
 
 
 class ChainDrawingRequest(BaseModel):
@@ -499,13 +980,23 @@ def chain_technical_drawing(asset_id: str, request: ChainDrawingRequest,
                           "use_this_asset=true to draw from this exact "
                           "version"})
 
+    # spec resolution: the request body wins → else the chain's linked
+    # design's LATEST version (so a synced edit letters automatically) →
+    # else the assist estimate (below)
     validated = None
+    spec_source = None
     if request.spec is not None:
         result = validate_spec(request.spec, get_vocabulary())
         if not result.ok:
             return JSONResponse(status_code=422, content={
                 "detail": [issue.as_detail() for issue in result.issues]})
         validated = result.spec
+        spec_source = "request"
+    else:
+        linked = _linked_design(db, source)
+        if linked:
+            design_id, design_version, validated = linked
+            spec_source = f"design:{design_id} v{design_version}"
 
     try:
         sheet, summary, cached = generate_spec_sheet(
@@ -517,7 +1008,7 @@ def chain_technical_drawing(asset_id: str, request: ChainDrawingRequest,
     except RenderUnavailable as exc:
         return _provider_error(exc)
 
-    # assist: no spec on this request → Grok vision-reads the SOURCE render
+    # assist: no spec anywhere → Grok vision-reads the SOURCE render
     # (the pinned version) and code letters the panel as ESTIMATED
     estimates = None
     if (request.facetta_template and request.assist_specs
@@ -525,8 +1016,21 @@ def chain_technical_drawing(asset_id: str, request: ChainDrawingRequest,
         from facetta.specagent import read_sheet_specs
         try:
             estimates = read_sheet_specs(bytes(source.image))
+            spec_source = "assist_estimate"
         except RenderUnavailable as exc:
             return _provider_error(exc)
+
+    # the checklist sign-off, lettered on the sheet when the SOURCE version
+    # completed its ritual — from the approval record, never invented
+    approval = None
+    checklist = _newest_checklist(db, source.id)
+    if checklist is not None:
+        responses = _checklist_responses(db, checklist.id)
+        status = checklist_status(checklist.items, responses)
+        if status["all_approved"] and responses:
+            last = responses[-1]
+            approval = approval_footer_line(status, last.created_by,
+                                            last.created_at)
 
     framed_svg = None
     if request.facetta_template:
@@ -538,7 +1042,8 @@ def chain_technical_drawing(asset_id: str, request: ChainDrawingRequest,
             framed_svg = frame_technical_drawing(sheet, spec=validated,
                                                  branding=branding,
                                                  piece_name=request.piece_name,
-                                                 estimates=estimates)
+                                                 estimates=estimates,
+                                                 approval=approval)
         except OSError as exc:
             framed_svg = None
             summary.setdefault("factory_notes", []).append(
@@ -551,6 +1056,8 @@ def chain_technical_drawing(asset_id: str, request: ChainDrawingRequest,
         "summary": summary,
         "cached": cached,
         "estimated_specs": estimates,
+        "spec_source": spec_source,
+        "approval": approval,
         "source_asset_id": source.id,
         "from_pinned_version": (None if request.use_this_asset
                                 else _version_number(chain, source.id)),

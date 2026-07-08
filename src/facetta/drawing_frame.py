@@ -208,7 +208,8 @@ def _estimate_panel(est: dict, x0: float, y0: float, x1: float) -> list[str]:
 def frame_technical_drawing(drawing_bytes: bytes, spec: Spec | None = None,
                             branding: Branding | None = None,
                             piece_name: str | None = None,
-                            estimates: dict | None = None) -> str:
+                            estimates: dict | None = None,
+                            approval: str | None = None) -> str:
     """Wrap the agent's drawing in the official Facetta template: A4 page
     (orientation follows the drawing), a masthead (with an optional piece
     name), the drawing centered, a specification panel (stone schedule +
@@ -224,7 +225,11 @@ def frame_technical_drawing(drawing_bytes: bytes, spec: Spec | None = None,
     ballpark designer: Grok's vision read of the render
     (specagent.read_sheet_specs), lettered by code into an ESTIMATED panel —
     the model never paints spec text on the sheet. A validated spec always
-    wins over estimates."""
+    wins over estimates.
+
+    approval, when given, is the checklist sign-off line
+    ('approved 7/7 · usr_ana · 2026-07-08') lettered on the identity row —
+    built by the caller from the approval record, never invented here."""
     from PIL import Image
 
     img_w, img_h = Image.open(io.BytesIO(drawing_bytes)).size
@@ -331,7 +336,8 @@ def frame_technical_drawing(drawing_bytes: bytes, spec: Spec | None = None,
                   anchor="start", style=' letter-spacing="0.4"'),
             _text(MARGIN + 4, ty + 5,
                   escape(f"designer {spec.created_by} · "
-                         f"{spec.created_at.date().isoformat()}"),
+                         f"{spec.created_at.date().isoformat()}"
+                         + (f"   ·   {approval}" if approval else "")),
                   size=2.8, anchor="start", color=FAINT),
         ]
     elif assist:

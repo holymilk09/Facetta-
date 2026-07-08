@@ -97,6 +97,12 @@ class ImageAsset(Base):
     root_id: Mapped[str] = mapped_column(String(32), index=True)  # chain key
     parent_asset_id: Mapped[str | None] = mapped_column(
         String(32), nullable=True, index=True)
+    # the bridge to the spec universe: set on the chain ROOT when a render is
+    # created from (or linked to) a persisted design, so an image edit can
+    # also move the design's spec and the factory sheet letters the latest
+    # numbers automatically. Children resolve through their root.
+    design_id: Mapped[str | None] = mapped_column(
+        String(32), nullable=True, index=True)
     capability: Mapped[str] = mapped_column(String(48))  # which mode made it
     instruction: Mapped[str | None] = mapped_column(Text, nullable=True)
     region: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -176,6 +182,49 @@ class ShareLink(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class ApprovalChecklist(Base):
+    """The tap-to-approve ritual for one exact version: a frozen list of
+    fact-items derived from the piece's own spec sections (a ring asks about
+    its band; a necklace about its chain). Binding to a specific asset (or
+    design version) makes invalidation structural — a new version simply has
+    no checklist yet. `mode` picks the pin behavior: auto_pin (all-YES pins
+    for factory), explicit_pin (completion unlocks the pin), optional
+    (advisory only, never gates)."""
+
+    __tablename__ = "approval_checklists"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    asset_id: Mapped[str | None] = mapped_column(String(32), nullable=True,
+                                                 index=True)
+    design_id: Mapped[str | None] = mapped_column(String(32), nullable=True,
+                                                  index=True)
+    design_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    mode: Mapped[str] = mapped_column(String(16), default="auto_pin")
+    items: Mapped[list] = mapped_column(SpecJSON)   # frozen ChecklistItem dicts
+    created_by: Mapped[str] = mapped_column(String(32), default="usr_pending")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow)
+
+
+class ApprovalResponse(Base):
+    """One tap on one checklist item — append-only, latest per item wins.
+    The audit trail a factory relationship runs on: who confirmed which fact,
+    when, and (on a NO) the change note plus the agent's understood-as echo."""
+
+    __tablename__ = "approval_responses"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True,
+                                    autoincrement=True)
+    checklist_id: Mapped[str] = mapped_column(String(32), index=True)
+    item_key: Mapped[str] = mapped_column(String(48))
+    approved: Mapped[bool] = mapped_column()
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    understood_as: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_by: Mapped[str] = mapped_column(String(32), default="usr_pending")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow)
+
+
 def _apply_additive_migrations(engine) -> None:
     """Add columns that newer schema versions introduced (additive only)."""
     from sqlalchemy import inspect, text
@@ -185,6 +234,11 @@ def _apply_additive_migrations(engine) -> None:
     if "collection" not in existing:
         with engine.begin() as conn:
             conn.execute(text("ALTER TABLE designs ADD COLUMN collection VARCHAR(80)"))
+    existing = {c["name"] for c in inspector.get_columns("image_assets")}
+    if "design_id" not in existing:
+        with engine.begin() as conn:
+            conn.execute(text(
+                "ALTER TABLE image_assets ADD COLUMN design_id VARCHAR(32)"))
 
 
 @lru_cache(maxsize=1)
