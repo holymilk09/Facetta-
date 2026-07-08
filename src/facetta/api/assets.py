@@ -470,6 +470,9 @@ class ChainDrawingRequest(BaseModel):
     house: str | None = None
     signature: str | None = None
     piece_name: Annotated[str, Field(max_length=48)] | None = None
+    # no spec on the chain? Grok vision-reads the pinned render and code
+    # letters the panel as ESTIMATED — the ballpark designer's assist
+    assist_specs: bool = False
     # explicit override: draw from THIS asset instead of the chain's pin
     use_this_asset: bool = False
 
@@ -514,6 +517,17 @@ def chain_technical_drawing(asset_id: str, request: ChainDrawingRequest,
     except RenderUnavailable as exc:
         return _provider_error(exc)
 
+    # assist: no spec on this request → Grok vision-reads the SOURCE render
+    # (the pinned version) and code letters the panel as ESTIMATED
+    estimates = None
+    if (request.facetta_template and request.assist_specs
+            and validated is None):
+        from facetta.specagent import read_sheet_specs
+        try:
+            estimates = read_sheet_specs(bytes(source.image))
+        except RenderUnavailable as exc:
+            return _provider_error(exc)
+
     framed_svg = None
     if request.facetta_template:
         from facetta.drawing_frame import frame_technical_drawing
@@ -523,7 +537,8 @@ def chain_technical_drawing(asset_id: str, request: ChainDrawingRequest,
         try:
             framed_svg = frame_technical_drawing(sheet, spec=validated,
                                                  branding=branding,
-                                                 piece_name=request.piece_name)
+                                                 piece_name=request.piece_name,
+                                                 estimates=estimates)
         except OSError as exc:
             framed_svg = None
             summary.setdefault("factory_notes", []).append(
@@ -535,6 +550,7 @@ def chain_technical_drawing(asset_id: str, request: ChainDrawingRequest,
         "framed_svg": framed_svg,
         "summary": summary,
         "cached": cached,
+        "estimated_specs": estimates,
         "source_asset_id": source.id,
         "from_pinned_version": (None if request.use_this_asset
                                 else _version_number(chain, source.id)),

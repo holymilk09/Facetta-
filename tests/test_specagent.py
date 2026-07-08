@@ -88,6 +88,23 @@ class TestCompileSheetInstruction:
         assert "Never invent designer names" in text       # both modes
         assert text.startswith(agent.TASK_LINE)
 
+    def test_templated_forbids_painted_spec_blocks(self):
+        # a live sheet showed Grok painting 'RING SPECIFICATIONS' (with
+        # 'Pullish') — duplicating the panel our code letters. Templated mode
+        # bans every freestanding spec block; view callouts stay allowed.
+        text = agent.compile_sheet_instruction("RING_ENGAGEMENT",
+                                               templated=True)
+        assert "do NOT draw any freestanding specification text" in text
+        assert "'RING SPECIFICATIONS'" in text
+        assert "no stone schedule" in text and "no materials list" in text
+        assert "dimension callouts anchored to the geometry" in text
+        # untemplated mode is unchanged — the model may letter its own block
+        assert ("freestanding specification"
+                not in agent.compile_sheet_instruction("RING_ENGAGEMENT"))
+        # and the legibility repair pass inherits the same ban
+        assert ("freestanding specification"
+                in agent._legibility_instruction(templated=True))
+
     def test_terminology_constants_exist_for_the_app(self):
         assert agent.TASK_MODE == "MANUFACTURING_TECHNICAL_DRAWING"
         assert agent.UI_LABELS["button"] == "Create manufacturing drawing"
@@ -391,6 +408,63 @@ class TestTechnicalDrawingEndpoint:
         assert "FACETTA" in body["framed_svg"]       # the official masthead
         assert "Ana V." in body["framed_svg"]        # the designer's hand
         assert "dsn_pending · v1" in body["framed_svg"]  # no spec: placeholders
+
+    def test_assist_specs_letters_an_estimated_panel(self, monkeypatch):
+        """The ballpark designer's assist: no spec → Grok vision-reads the
+        RENDER, code letters the panel marked ESTIMATED, and the same
+        estimates ride back to prefill a spec form. Never painted text."""
+        monkeypatch.setattr(specs_mod, "generate_spec_sheet",
+                            lambda image, **kwargs: (REAL_PNG, dict(SUMMARY),
+                                                     False))
+        est = {"stones": [{"qty": 1, "type": "diamond oval brilliant",
+                           "size_mm": "8.5 × 6.5", "carat_each": 1.5},
+                          {"qty": 8, "type": "diamond round brilliant",
+                           "size_mm": "1.4 × 1.4", "carat_each": None}],
+               "metal": "18k white gold, high polish",
+               "measurements": [["band width", "~2 mm"]]}
+        monkeypatch.setattr(agent, "read_sheet_specs", lambda image: est)
+        r = TestClient(app).post("/specs/technical-drawing", json={
+            "image_base64": base64.b64encode(PNG).decode(),
+            "facetta_template": True, "assist_specs": True})
+        assert r.status_code == 200, r.text
+        body = r.json()
+        svg = body["framed_svg"]
+        assert "ESTIMATED SPECIFICATIONS" in svg
+        assert "diamond oval brilliant" in svg
+        assert "confirm every value before production" in svg
+        assert "estimated from render" in svg          # the footer line
+        assert body["estimated_specs"] == est          # the form-prefill ride
+
+    def test_assist_is_skipped_when_a_spec_letters_the_panel(self, monkeypatch,
+                                                             drop_spec):
+        # a validated record always wins: assist must not even be called
+        monkeypatch.setattr(specs_mod, "generate_spec_sheet",
+                            lambda image, **kwargs: (REAL_PNG, dict(SUMMARY),
+                                                     False))
+        monkeypatch.setattr(agent, "read_sheet_specs",
+                            lambda image: pytest.fail("assist must not run"))
+        r = TestClient(app).post("/specs/technical-drawing", json={
+            "image_base64": base64.b64encode(PNG).decode(),
+            "facetta_template": True, "assist_specs": True,
+            "spec": drop_spec.model_dump(mode="json")})
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert "STONE SCHEDULE" in body["framed_svg"]  # the record panel
+        assert "ESTIMATED SPECIFICATIONS" not in body["framed_svg"]
+        assert body["estimated_specs"] is None
+
+    def test_read_sheet_specs_normalizes_the_vision_read(self, monkeypatch):
+        monkeypatch.setattr(agent, "_vision_json", lambda *a, **k: {
+            "stones": [{"qty": "2", "type": "sapphire pear",
+                        "size_mm": "7 × 5"},
+                       {"no_type": True}],           # junk entry dropped
+            "measurements": [["drop length", "38 mm"], ["bad"]],
+        })
+        est = agent.read_sheet_specs(b"img")
+        assert est["stones"] == [{"qty": 2, "type": "sapphire pear",
+                                  "size_mm": "7 × 5", "carat_each": None}]
+        assert est["metal"] == "TBD"                  # missing → honest TBD
+        assert est["measurements"] == [["drop length", "38 mm"]]
 
     def test_missing_key_is_503(self, monkeypatch):
         def boom(image, **kwargs):

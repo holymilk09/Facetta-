@@ -487,11 +487,19 @@ HONESTY_RULE = ("Never invent designer names, job references, or dates — "
 # The G0 sentence the official-template mode swaps out: when the platform's
 # code applies the Facetta frame from the record, the model must draw NO
 # identity block at all — code letters identity, the model never does.
+# The same goes for specification text: a live sheet showed Grok painting a
+# 'RING SPECIFICATIONS' list that duplicated (and mis-lettered — 'Pullish')
+# the panel our code letters from the record. Views and their anchored
+# dimension callouts are the model's job; freestanding spec text is never.
 _TITLE_BLOCK_SENTENCE = "Title block with METAL, JOB REF, REV A."
 NO_TITLE_BLOCK_RULE = (
     "Do not draw any title block, brand name, designer name, job reference, "
     "or date — leave clean margins; the platform's official template adds "
-    "the title block.")
+    "the title block. Also do NOT draw any freestanding specification text "
+    "block, list, or table (no 'RING SPECIFICATIONS', no stone schedule, no "
+    "materials list, no ring-size line) — the template letters every "
+    "specification from the record. Draw ONLY the views with their view "
+    "labels and dimension callouts anchored to the geometry.")
 
 
 def _templated_tail(templated: bool) -> str:
@@ -639,6 +647,49 @@ def inspect_render(image_bytes: bytes, notes: str, mode: str,
         if data.get(field):
             summary[field] = data[field]
     return summary
+
+
+# The assist reader: when a designer has NO saved record (the ballpark
+# workflow), the official template's panel has nothing to letter. Grok
+# assists by READING the render into estimated values that CODE letters into
+# the panel, clearly marked estimated — the model never paints spec text on
+# the sheet (see NO_TITLE_BLOCK_RULE), so a 'Pullish' can never ship.
+_ESTIMATE_SYSTEM = (
+    MASTER_SYSTEM + "\n\n"
+    "Read this jewelry image and estimate its specifications for a factory "
+    "panel. Output JSON only, exactly this shape:\n"
+    '{"stones": [{"qty": 1, "type": "species + cut, e.g. diamond oval '
+    'brilliant", "size_mm": "L × W", "carat_each": 1.5}],\n'
+    ' "metal": "karat/colour/material + finish",\n'
+    ' "measurements": [["label", "value"], ...]}\n'
+    "stones: one entry per distinct stone group (center first), qty counted "
+    "from the image, sizes your best estimate in mm. carat_each may be null. "
+    "measurements: the piece's own key numbers you can estimate (band width, "
+    "overall length...). Estimate honestly; omit what you cannot see. "
+    "Output ONLY the JSON.")
+
+
+def read_sheet_specs(image_bytes: bytes) -> dict:
+    """Grok's ESTIMATED read of a render for the assist panel. Returns
+    {"stones": [...], "metal": str, "measurements": [[label, value], ...]}
+    with missing keys normalized. Raises RenderUnavailable on provider
+    failure — an explicit assist request fails loudly, never silently."""
+    data = _vision_json(_ESTIMATE_SYSTEM, image_bytes,
+                        "Estimate the specifications of this piece.")
+    stones = []
+    for s in data.get("stones") or []:
+        if isinstance(s, dict) and s.get("type"):
+            stones.append({
+                "qty": int(s.get("qty") or 1),
+                "type": str(s["type"]),
+                "size_mm": str(s.get("size_mm") or "TBD"),
+                "carat_each": s.get("carat_each"),
+            })
+    measurements = [[str(m[0]), str(m[1])]
+                    for m in (data.get("measurements") or [])
+                    if isinstance(m, (list, tuple)) and len(m) >= 2]
+    return {"stones": stones, "metal": str(data.get("metal") or "TBD"),
+            "measurements": measurements}
 
 
 def authoritative_dims(spec: Spec) -> list[str]:

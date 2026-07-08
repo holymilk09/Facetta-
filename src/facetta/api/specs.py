@@ -167,6 +167,9 @@ class AgentSheetRequest(BaseModel):
     house: str | None = None               # branding for the official frame
     signature: str | None = None
     piece_name: Annotated[str, Field(max_length=48)] | None = None  # optional title
+    # the ballpark designer's assist: with NO spec, Grok vision-reads the
+    # render and code letters the panel as ESTIMATED (never painted text)
+    assist_specs: bool = False
 
 
 @router.post("/technical-drawing")
@@ -218,12 +221,25 @@ def technical_drawing(request: AgentSheetRequest):
     except RenderUnavailable as exc:
         status = 503 if "_KEY" in str(exc) else 502
         return JSONResponse(status_code=status, content={"detail": str(exc)})
+    # the assist read: no record to letter the panel from, so Grok estimates
+    # from the DESIGNER'S RENDER (not the drawing) and code letters it as
+    # ESTIMATED. A validated spec always wins; assist is skipped then.
+    estimates = None
+    if (request.facetta_template and request.assist_specs
+            and validated is None):
+        from facetta.specagent import read_sheet_specs
+        try:
+            estimates = read_sheet_specs(image_bytes)
+        except RenderUnavailable as exc:
+            status = 503 if "_KEY" in str(exc) else 502
+            return JSONResponse(status_code=status, content={"detail": str(exc)})
+
     framed_svg = None
     if request.facetta_template:
         framed_svg = frame_technical_drawing(
             sheet, spec=validated,
             branding=_branding(request.house, request.signature),
-            piece_name=request.piece_name)
+            piece_name=request.piece_name, estimates=estimates)
     return {
         "sheet_b64": b64.b64encode(sheet).decode(),
         "media_type": _sniff_media_type(sheet),
@@ -235,6 +251,9 @@ def technical_drawing(request: AgentSheetRequest):
         "summary": summary,
         "cached": cached,
         "framed_svg": framed_svg,
+        # the same estimates prefill the designer's spec form — the on-ramp
+        # from ballpark to a confirmed record
+        "estimated_specs": estimates,
     }
 
 

@@ -140,9 +140,75 @@ def _spec_panel(spec: Spec, x0: float, y0: float, x1: float,
     return parts
 
 
+def _estimate_panel_height(est: dict) -> float:
+    rows = max(len(est.get("stones") or []), 1)
+    left = 9.4 + rows * 3.9
+    right = 5.0 + (1 + len(est.get("measurements") or [])) * 4.0
+    return max(40.0, max(left, right) + 12.0)   # extra row: the confirm banner
+
+
+def _estimate_panel(est: dict, x0: float, y0: float, x1: float) -> list[str]:
+    """The ASSIST panel: Grok's vision-estimated read of the render, lettered
+    by CODE and unmistakably marked as estimates. Same two-column layout as
+    the record panel, so the sheet reads the same — but every value carries
+    the confirm-before-production banner instead of the record's authority."""
+    parts = [
+        _text(x0, y0, "ESTIMATED SPECIFICATIONS", size=3.0, anchor="start",
+              style=' letter-spacing="1.2"'),
+        _line(x0, y0 + 1.4, x0 + 100, y0 + 1.4, w=STROKE_DIM, color=FAINT),
+        _text(x0, y0 + 5.0, "QTY", size=2.4, anchor="start", color=FAINT),
+        _text(x0 + 9, y0 + 5.0, "STONE (estimated)", size=2.4, anchor="start",
+              color=FAINT),
+        _text(x0 + 55, y0 + 5.0, "~SIZE mm", size=2.4, anchor="start",
+              color=FAINT),
+        _text(x0 + 78, y0 + 5.0, "~CT EA.", size=2.4, anchor="start",
+              color=FAINT),
+    ]
+    y = y0 + 5.0
+    for s in (est.get("stones") or [])[:8]:
+        y += 3.9
+        ct = s.get("carat_each")
+        parts += [
+            _text(x0, y, str(s.get("qty", 1)), size=2.6, anchor="start"),
+            _text(x0 + 9, y, escape(str(s.get("type", ""))[:34]), size=2.6,
+                  anchor="start"),
+            _text(x0 + 55, y, escape(str(s.get("size_mm", "TBD"))), size=2.6,
+                  anchor="start"),
+            _text(x0 + 78, y, f"{ct:.2f}" if isinstance(ct, (int, float))
+                  else "TBD", size=2.6, anchor="start"),
+        ]
+
+    rx = x0 + 108
+    parts.append(_line(rx - 6, y0 - 1.0, rx - 6,
+                       y0 + _estimate_panel_height(est) - 12.0,
+                       w=STROKE_DIM, color=FAINT))
+    parts.append(_text(rx, y0, "MATERIALS &amp; CONSTRUCTION (ESTIMATED)",
+                       size=3.0, anchor="start", style=' letter-spacing="1.2"'))
+    parts.append(_line(rx, y0 + 1.4, x1, y0 + 1.4, w=STROKE_DIM, color=FAINT))
+    ry = y0 + 5.0
+    rows = [("METAL", str(est.get("metal") or "TBD"))]
+    rows += [(str(label).upper()[:14], str(value))
+             for label, value in (est.get("measurements") or [])[:6]]
+    for label, value in rows:
+        ry += 4.0
+        parts.append(_text(rx, ry, escape(label), size=2.4, anchor="start",
+                           color=FAINT))
+        parts.append(_text(rx + 24, ry, escape(value)[:60], size=2.8,
+                           anchor="start"))
+
+    banner_y = y0 + _estimate_panel_height(est) - 9.0
+    parts.append(_text(x0, banner_y,
+                       "ALL VALUES ESTIMATED FROM THE RENDER — designer must "
+                       "confirm every value before production.",
+                       size=2.6, anchor="start", color=FAINT,
+                       style=' font-style="italic"'))
+    return parts
+
+
 def frame_technical_drawing(drawing_bytes: bytes, spec: Spec | None = None,
                             branding: Branding | None = None,
-                            piece_name: str | None = None) -> str:
+                            piece_name: str | None = None,
+                            estimates: dict | None = None) -> str:
     """Wrap the agent's drawing in the official Facetta template: A4 page
     (orientation follows the drawing), a masthead (with an optional piece
     name), the drawing centered, a specification panel (stone schedule +
@@ -152,7 +218,13 @@ def frame_technical_drawing(drawing_bytes: bytes, spec: Spec | None = None,
     spec=None frames an unsaved drawing — identity shows the pending
     placeholders instead of inventing anything. piece_name is the optional
     friendly title of the piece ('The Vérité Solitaire'); blank falls back to
-    the design id in the subtitle."""
+    the design id in the subtitle.
+
+    estimates (only honored when spec is None) is the assist path for the
+    ballpark designer: Grok's vision read of the render
+    (specagent.read_sheet_specs), lettered by code into an ESTIMATED panel —
+    the model never paints spec text on the sheet. A validated spec always
+    wins over estimates."""
     from PIL import Image
 
     img_w, img_h = Image.open(io.BytesIO(drawing_bytes)).size
@@ -203,12 +275,23 @@ def frame_technical_drawing(drawing_bytes: bytes, spec: Spec | None = None,
     # the specification panel sits just above the identity footer; the drawing
     # fills everything between the masthead and the panel. The panel is sized
     # to the record — more stone groups, taller schedule — so it never clips.
-    panel_h = _panel_height(spec) if spec is not None else 0.0
+    # A validated spec letters the record panel; with no spec, Grok's assist
+    # estimates (when supplied) letter the ESTIMATED panel instead.
+    assist = estimates if (spec is None and estimates) else None
+    if spec is not None:
+        panel_h = _panel_height(spec)
+    elif assist:
+        panel_h = _estimate_panel_height(assist)
+    else:
+        panel_h = 0.0
     ident_top = sheet_h - MARGIN - FOOTER_H
     panel_top = ident_top - panel_h
     if spec is not None:
         parts += _spec_panel(spec, MARGIN + 4, panel_top + 2,
                              sheet_w - MARGIN - 4, panel_h)
+    elif assist:
+        parts += _estimate_panel(assist, MARGIN + 4, panel_top + 2,
+                                 sheet_w - MARGIN - 4)
 
     # the drawing itself, centered between masthead and the panel
     ax, ay = MARGIN + 2, MARGIN + masthead_h + 2
@@ -251,6 +334,10 @@ def frame_technical_drawing(drawing_bytes: bytes, spec: Spec | None = None,
                          f"{spec.created_at.date().isoformat()}"),
                   size=2.8, anchor="start", color=FAINT),
         ]
+    elif assist:
+        parts.append(_text(MARGIN + 4, ty,
+                           "estimated from render — confirm before production",
+                           size=3.0, anchor="start", color=FAINT))
     else:
         parts.append(_text(MARGIN + 4, ty, "unsaved drawing — pending record",
                            size=3.0, anchor="start", color=FAINT))

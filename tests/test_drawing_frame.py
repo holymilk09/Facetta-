@@ -145,6 +145,28 @@ class TestFrameTechnicalDrawing:
         ET.fromstring(svg)
         assert "Ana &amp; Co" in svg
 
+    def test_estimates_letter_an_assist_panel_when_no_record(self):
+        import xml.etree.ElementTree as ET
+        est = {"stones": [{"qty": 1, "type": "diamond <oval> & pear",
+                           "size_mm": "8 × 6", "carat_each": 1.5}],
+               "metal": "18k gold & rhodium",
+               "measurements": [["band width", "~2 mm"]]}
+        svg = frame_technical_drawing(_png(1000, 560), estimates=est)
+        ET.fromstring(svg)                           # escaped, well-formed
+        assert "ESTIMATED SPECIFICATIONS" in svg
+        assert "MATERIALS &amp; CONSTRUCTION (ESTIMATED)" in svg
+        assert "designer must confirm every value" in svg
+        assert "estimated from render — confirm before production" in svg
+        assert "unsaved drawing" not in svg
+
+    def test_a_validated_spec_always_wins_over_estimates(self, drop_spec):
+        svg = frame_technical_drawing(
+            _png(1000, 560), spec=drop_spec,
+            estimates={"stones": [], "metal": "IGNORED", "measurements": []})
+        assert "STONE SCHEDULE" in svg               # the record panel
+        assert "ESTIMATED SPECIFICATIONS" not in svg
+        assert "IGNORED" not in svg
+
     def test_xml_special_characters_are_escaped_not_broken(self, drop_spec):
         # 'Smith & Co' must letter the masthead, not break the XML: every
         # record- or branding-derived string is escaped before it reaches
