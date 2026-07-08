@@ -13,7 +13,10 @@ import secrets
 from datetime import datetime, timezone
 from functools import lru_cache
 
-from sqlalchemy import JSON, DateTime, Float, ForeignKey, Integer, String, Text, create_engine
+from sqlalchemy import (
+    JSON, DateTime, Float, ForeignKey, Integer, LargeBinary, String, Text,
+    create_engine,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker
 
@@ -76,6 +79,35 @@ class SavedStone(Base):
     label: Mapped[str] = mapped_column(String(120))
     stone: Mapped[dict] = mapped_column(SpecJSON)  # a Spec Stone object
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class ImageAsset(Base):
+    """One node in the iteration chain: a render or an edit of a render.
+
+    Iteration is the designer's primary loop (A → many C → pin → B on
+    demand), so every generated image is a first-class, immutable asset with
+    a parent — history, compare, and revert are chain walks, never
+    mutations. `pinned_at` marks the version approved for factory handoff:
+    the manufacturing technical drawing defaults to the chain's most recently
+    pinned asset, not to "latest"."""
+
+    __tablename__ = "image_assets"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    root_id: Mapped[str] = mapped_column(String(32), index=True)  # chain key
+    parent_asset_id: Mapped[str | None] = mapped_column(
+        String(32), nullable=True, index=True)
+    capability: Mapped[str] = mapped_column(String(48))  # which mode made it
+    instruction: Mapped[str | None] = mapped_column(Text, nullable=True)
+    region: Mapped[str | None] = mapped_column(Text, nullable=True)
+    drift: Mapped[float | None] = mapped_column(Float, nullable=True)
+    image: Mapped[bytes] = mapped_column(LargeBinary)
+    media_type: Mapped[str] = mapped_column(String(24), default="image/png")
+    pinned_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)
+    created_by: Mapped[str] = mapped_column(String(32), default="usr_pending")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow)
 
 
 class DesignMessage(Base):

@@ -108,7 +108,7 @@ separate explicit action — the sheet is an illustration."""
 # ---------------------------------------------------------------------------
 
 CAPABILITIES = ("JEWELRY_RENDER", "MANUFACTURING_TECHNICAL_DRAWING",
-                "LOCALIZED_EDIT")
+                "LOCALIZED_EDIT", "GLOBAL_RESTYLE")
 
 AGENT_SYSTEM = """\
 You are the Jewelry Design & Manufacturing Agent embedded in a professional
@@ -160,11 +160,21 @@ DEFAULT JOURNEY: 1) designer describes a piece → JEWELRY_RENDER (optional);
 render asset; 4) minor fixes → LOCALIZED_EDIT on the render or one drawing
 legibility pass — never the legacy math spec backend.
 
+ITERATION IS THE PRIMARY LOOP: designers always adjust. The journey is
+JEWELRY_RENDER → many LOCALIZED_EDIT → pin → MANUFACTURING_TECHNICAL_DRAWING
+on demand. A technical drawing is NOT the natural next step after every edit;
+regenerate it only on an explicit "approve for factory" action, from the
+PINNED version, not the latest.
+
 MODE INFERENCE when the mode is ambiguous: "render / realistic / show me /
 visualization" → JEWELRY_RENDER; "technical drawing / factory /
 manufacturing / dimensions / orthographic / production" →
 MANUFACTURING_TECHNICAL_DRAWING; "only this part / highlight / selected
-area / don't change the rest" → LOCALIZED_EDIT.
+area / don't change the rest" → LOCALIZED_EDIT; a whole-piece change —
+"everywhere / the whole shank / overall style / make it more X" →
+GLOBAL_RESTYLE, a reference-locked restyle with no region freeze (warn the
+designer and lean on parent/child compare and revert), NOT a localized edit
+forced without a mask.
 
 DOMAIN GUARDRAILS: 1) jewelry-only — politely decline non-jewelry requests
 and ask for a jewelry-focused one; 2) standard manufacturing terminology on
@@ -197,10 +207,16 @@ none was provided — ask; invent exact factory numbers without designer
 input or nominal labeling."""
 
 # Section 1's mode-inference rules as keyword heuristics — checked in
-# priority order: the edit signals win over drawing signals, drawing over
-# render (a message that says "highlight" and "render" is an edit OF a
-# render, not a new render).
+# priority order. GLOBAL_RESTYLE outranks LOCALIZED_EDIT: "widen the whole
+# shank" or "make it more deco everywhere" is a scoped-to-everything change,
+# and forcing it through the localized path without a mask would either block
+# the designer or silently guess a region. Edit signals still win over
+# drawing signals, drawing over render (a message that says "highlight" and
+# "render" is an edit OF a render, not a new render).
 _CAPABILITY_SIGNALS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("GLOBAL_RESTYLE",
+     ("everywhere", "whole piece", "whole shank", "entire", "overall style",
+      "all over", "restyle", "globally", "the whole")),
     ("LOCALIZED_EDIT",
      ("only this part", "highlight", "selected area", "don't change the rest",
       "this area", "just the")),
@@ -213,9 +229,10 @@ _CAPABILITY_SIGNALS: tuple[tuple[str, tuple[str, ...]], ...] = (
 
 
 def infer_capability(text: str) -> str:
-    """Section 1's mode-inference rules for the app's router: localized-edit
-    signals first, then technical-drawing, then render; the default journey
-    starts at JEWELRY_RENDER. Case-insensitive."""
+    """Section 1's mode-inference rules for the app's router: global-restyle
+    signals first (a whole-piece change must not be forced through the
+    localized path), then localized-edit, then technical-drawing, then
+    render; the default journey starts at JEWELRY_RENDER. Case-insensitive."""
     lowered = text.lower()
     for capability, signals in _CAPABILITY_SIGNALS:
         if any(signal in lowered for signal in signals):
@@ -964,5 +981,56 @@ def localized_edit(image_bytes: bytes, *, region_description: str,
         "frozen": "everything outside: " + region_description,
         "retried": retried,
         "drift": drift,
+        "cached": cached,
+    }
+
+
+GLOBAL_RESTYLE_WARNING = (
+    "global restyle — the whole piece may change; compare with the parent "
+    "version and revert if the direction is wrong")
+
+
+def compile_global_restyle_instruction(instruction: str,
+                                       kind: str = "render") -> str:
+    """A scoped-to-everything change: reference-locked so it restyles THIS
+    piece rather than inventing a new one, but with no region freeze — that
+    is the point. The identity locks (same piece, composition, camera,
+    background) are the guardrail; drift is expected and tolerated."""
+    if kind not in _EDIT_OPENERS:
+        raise ValueError(
+            f"unknown edit kind '{kind}'; options: {list(_EDIT_OPENERS)}")
+    opener = ("Jewelry render restyle." if kind == "render"
+              else "Jewelry technical drawing restyle.")
+    return "\n".join([
+        opener,
+        f"Apply this change across the whole piece: {instruction.strip()}.",
+        "IDENTITY LOCK: This is a restyle of the SAME design in the "
+        "reference — keep the same piece, the same composition and stone "
+        "arrangement unless the change says otherwise, the same camera "
+        "angle, and the same background. Do not replace the design with a "
+        "different piece.",
+        ("Photorealistic jewelry product quality." if kind == "render"
+         else "Black line art on white preserved."),
+    ])
+
+
+def global_restyle(image_bytes: bytes, *, instruction: str,
+                   kind: str = "render",
+                   model: str = "grok_direct") -> dict:
+    """The whole-piece change path: when the designer says "more X
+    everywhere" or "widen the whole shank", forcing LOCALIZED_EDIT without a
+    mask would either block them or guess a region. This edits reference-
+    locked with NO freeze contract and returns a warning instead of a drift
+    gate — the UI's parent/child compare and revert are the safety net."""
+    if not instruction.strip():
+        raise ValueError("global restyle needs a change instruction")
+    child, cached = edit_image(
+        image_bytes, compile_global_restyle_instruction(instruction, kind),
+        model)
+    return {
+        "image": child,
+        "changed": f"across the whole piece: {instruction.strip()}",
+        "frozen": "piece identity, composition, camera, background",
+        "warning": GLOBAL_RESTYLE_WARNING,
         "cached": cached,
     }

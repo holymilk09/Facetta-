@@ -92,7 +92,7 @@ class TestInferCapability:
     def test_capabilities_constant(self):
         assert agent.CAPABILITIES == (
             "JEWELRY_RENDER", "MANUFACTURING_TECHNICAL_DRAWING",
-            "LOCALIZED_EDIT")
+            "LOCALIZED_EDIT", "GLOBAL_RESTYLE")
         for capability in agent.CAPABILITIES:
             assert capability in agent.AGENT_SYSTEM
 

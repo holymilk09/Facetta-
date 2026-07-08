@@ -267,3 +267,38 @@ photorealism."
 Section 1 (full system prompt) → Section 2 (active mode injection) → user
 message from Section 3. Agent then: view media → build prompt from Section 4
 → generate → render → structured reply (+ JSON for MODE B).
+
+## SECTION 8 — ITERATION-FIRST JOURNEY (founder addendum)
+
+**Designers will always adjust — treat as 100% certainty.** MODE C is the
+primary loop, not an edge case. The default journey is:
+
+    A (render) → many C (localized edits) → PIN → B on demand
+
+The technical drawing is NOT the natural next step after every edit.
+
+- **Version chain.** Every render and every edit is an immutable asset with
+  a `parent_asset_id`; the job exposes history, parent/child compare,
+  revert, and **Pin for factory**. Implemented: `ImageAsset` chain +
+  `/assets/*` endpoints; `POST /assets/{id}/pin` sets the chain's
+  `factory_source_asset_id`.
+- **MODE B is gated by the pin.** The manufacturing technical drawing is
+  regenerated only on explicit action ("Approve for factory" / "Generate
+  technical drawing") and defaults to the chain's **pinned** asset — never
+  silently "latest". UI copy: *"From pinned version N."* An unpinned chain
+  gets a 409 asking the designer to approve a version (or pass the explicit
+  `use_this_asset` override).
+- **GLOBAL_RESTYLE.** Whole-piece changes ("widen the whole shank", "make it
+  more deco everywhere") route to a reference-locked restyle with a warning
+  and no drift gate — NOT forced through LOCALIZED_EDIT without a mask. The
+  identity lock (same piece, composition, camera, background) is the
+  guardrail; parent/child compare + revert are the safety net.
+- **LOCALIZED_EDIT** keeps the drift QA + one stronger-preserve retry; the
+  drift score is in the API response for the UI. No highlighted region →
+  blocked with "select the area on the canvas"; the region is never guessed.
+- **UX note:** true mask inpainting is TBD (the edit API has no mask
+  channel today) — prompt-guided MODE C is best for one region at a time;
+  whole-piece changes should use the GLOBAL_RESTYLE path.
+- **Deferred:** MODE C directly on a technical drawing stays supported
+  (`kind="technical"`) but non-preferred — edit the render, then regenerate
+  MODE B from the new pin.

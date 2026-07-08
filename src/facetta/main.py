@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from facetta import __version__
-from facetta.api import stones, designs, share, specs, users, vocabulary
+from facetta.api import assets, designs, share, specs, stones, users, vocabulary
 
 app = FastAPI(title="Facetta", version=__version__)
 
@@ -23,6 +23,7 @@ app.include_router(designs.router)
 app.include_router(share.router)
 app.include_router(users.router)
 app.include_router(stones.router)
+app.include_router(assets.router)
 
 
 @app.get("/health")
