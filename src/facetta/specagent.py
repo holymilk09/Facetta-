@@ -853,6 +853,61 @@ def jewelry_render(piece_description: str, *, metal: str = "",
     return generate_image(prompt, model=model, variant=variant)
 
 
+# Extra camera angles of the SAME piece. Consistency is why these are derived
+# from the hero render by image-to-image (design-locked), never re-generated
+# from text — a fresh text render would invent a different ring every time.
+# The named presets are the standard product-photography turntable; a designer
+# may also pass free-text ("from below, looking up at the gallery").
+VIEW_ANGLES: dict[str, str] = {
+    "three_quarter": "a three-quarter product angle",
+    "top": "a top-down plan view looking straight down at the face",
+    "front": "a straight-on front elevation",
+    "side": "a side profile view",
+    "back": "the back / underside, showing the gallery and shank underneath",
+    "detail": "a close-up macro of the centre setting and gallery",
+    "hand": "worn on a hand, natural three-quarter lifestyle angle",
+}
+STANDARD_VIEW_SET = ("three_quarter", "top", "front", "side")
+
+
+def compile_view_instruction(angle: str) -> str:
+    """A camera-only change: the hero render is the reference, and the design
+    is locked — only the viewpoint moves. `angle` is a preset key from
+    VIEW_ANGLES or a free-text camera description."""
+    described = VIEW_ANGLES.get(angle, angle)
+    return "\n".join([
+        "Jewelry render — new camera angle of the SAME piece.",
+        f"Show the EXACT SAME piece from the reference from {described}.",
+        "IDENTITY LOCK: identical design — same centre stone (cut, colour, "
+        "size), same halo and side stones, same setting and prong style, "
+        "same metal and finish, same proportions and silhouette. Only the "
+        "camera viewpoint changes; do NOT redesign, restyle, or add or "
+        "remove any element.",
+        "Photorealistic studio product photograph, same soft neutral "
+        "background and lighting as the reference, sharp focus, no text.",
+    ])
+
+
+def render_view(image_bytes: bytes, angle: str,
+                model: str = "grok_direct") -> tuple[bytes, bool]:
+    """One additional camera angle of the piece in `image_bytes`, design-
+    locked. Returns (image_bytes, was_cached)."""
+    return edit_image(image_bytes, compile_view_instruction(angle), model)
+
+
+def render_view_set(image_bytes: bytes, angles, *,
+                    model: str = "grok_direct") -> list[dict]:
+    """A turntable set: each requested angle derived from the ONE hero render,
+    so every view is the same design. Returns a list of
+    {"angle", "image", "cached"} in request order. The hero itself is not
+    re-emitted here — the caller already has it."""
+    views = []
+    for angle in angles:
+        image, cached = render_view(image_bytes, angle, model=model)
+        views.append({"angle": angle, "image": image, "cached": cached})
+    return views
+
+
 # ---------------------------------------------------------------------------
 # MODE C — LOCALIZED_EDIT (Section 4C): change inside the highlight, freeze
 # everything outside it. The preservation contract rides in EVERY edit

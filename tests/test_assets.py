@@ -206,6 +206,72 @@ class TestIterationChain:
         assert parent["image_b64"] == root["image_b64"]   # immutable
 
 
+class TestMultiView:
+    """Extra angles are derived from the HERO render (design-locked), so the
+    designer gets a consistent turntable in one request — never re-generated
+    per angle (which would invent a different piece)."""
+
+    def _mock(self, monkeypatch):
+        monkeypatch.setattr(assets_mod, "jewelry_render",
+                            lambda *a, **k: (_png((200, 200, 200)), False))
+        seen = {}
+
+        def fake_view_set(image_bytes, angles, **k):
+            seen["source"] = image_bytes    # every angle derives from the hero
+            return [{"angle": ang, "image": _png((10 * i, 20, 30)),
+                     "cached": False} for i, ang in enumerate(angles, 1)]
+
+        monkeypatch.setattr(assets_mod, "render_view_set", fake_view_set)
+        return seen
+
+    def test_render_with_angles_returns_a_view_set(self, client, monkeypatch):
+        seen = self._mock(monkeypatch)
+        r = client.post("/assets/render",
+                        json={"piece_description": "a solitaire ring",
+                              "angles": ["top", "front", "side"]})
+        assert r.status_code == 201, r.text
+        body = r.json()
+        hero_png = base64.b64decode(body["image_b64"])
+        assert [v["angle"] for v in body["views"]] == ["top", "front", "side"]
+        # every angle was derived from the hero render's bytes, design-locked
+        assert seen["source"] == hero_png
+        # each view is its own chain child of the hero
+        for v in body["views"]:
+            child = client.get(f"/assets/{v['asset_id']}").json()
+            assert child["parent_asset_id"] == body["asset_id"]
+            assert child["capability"] == "ANGLE_VIEW"
+
+    def test_render_without_angles_is_unchanged(self, client, monkeypatch):
+        self._mock(monkeypatch)
+        r = client.post("/assets/render",
+                        json={"piece_description": "a solitaire ring"})
+        assert r.status_code == 201
+        assert r.json()["views"] == []
+
+    def test_views_on_existing_asset(self, client, monkeypatch):
+        self._mock(monkeypatch)
+        r = client.post("/assets/render",
+                        json={"piece_description": "a ring"})
+        asset_id = r.json()["asset_id"]
+        r = client.post(f"/assets/{asset_id}/views",
+                        json={"angles": ["top", "back"]})
+        assert r.status_code == 201, r.text
+        body = r.json()
+        assert body["parent_asset_id"] == asset_id
+        assert [v["angle"] for v in body["views"]] == ["top", "back"]
+        assert "three_quarter" in body["known_presets"]
+
+    def test_view_instruction_is_design_locked(self):
+        from facetta.specagent import compile_view_instruction
+
+        text = compile_view_instruction("top")
+        assert "IDENTITY LOCK" in text and "SAME piece" in text
+        assert "top-down" in text            # the preset expanded
+        assert "Only the camera" in text or "camera viewpoint changes" in text
+        # a free-text angle passes through
+        assert "from below" in compile_view_instruction("from below")
+
+
 class TestGlobalRestyle:
     def test_inference_routes_whole_piece_changes(self):
         from facetta.specagent import infer_capability

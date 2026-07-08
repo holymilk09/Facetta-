@@ -24,7 +24,8 @@ from facetta.db import ImageAsset, get_db, new_id, utcnow
 from facetta.render import RenderUnavailable, _sniff_media_type
 from facetta.spec import Spec
 from facetta.specagent import (
-    generate_spec_sheet, global_restyle, jewelry_render, localized_edit,
+    VIEW_ANGLES, generate_spec_sheet, global_restyle, jewelry_render,
+    localized_edit, render_view_set,
 )
 from facetta.validation import validate_spec
 from facetta.vocabulary import get_vocabulary
@@ -110,24 +111,71 @@ class AssetRenderRequest(BaseModel):
     setting_details: str = ""
     view_angle: str = "three-quarter product view"
     variant: int = 0
+    # extra camera angles of the SAME piece, derived from the hero render so
+    # the design is identical across views (preset keys or free-text angles)
+    angles: Annotated[list[str], Field(max_length=6)] = []
     created_by: str = "usr_pending"
+
+
+def _view_children(db: Session, hero: ImageAsset, angles: list[str],
+                   created_by: str) -> list[dict]:
+    """Derive each requested angle from the hero and store it as an
+    ANGLE_VIEW child. Returns per-view summaries (image_b64 included)."""
+    out = []
+    for view in render_view_set(bytes(hero.image), angles):
+        child = _store_asset(db, view["image"], "ANGLE_VIEW", hero,
+                             region=view["angle"], created_by=created_by)
+        out.append({"angle": view["angle"], "asset_id": child.id,
+                    "version": _version_number(_chain(db, hero.root_id),
+                                               child.id),
+                    "cached": view["cached"],
+                    "image_b64": base64.b64encode(view["image"]).decode()})
+    return out
 
 
 @router.post("/render", status_code=201)
 def create_render_asset(request: AssetRenderRequest, db: DbSession):
-    """MODE A into the chain: a new root asset the iteration loop grows from."""
+    """MODE A into the chain: a new root asset the iteration loop grows from.
+    Pass `angles` to also get extra camera views of the same design in one
+    request — each is derived from this hero render (design-locked), so the
+    designer gets a consistent turntable without re-generating (which would
+    invent a different piece per angle)."""
     try:
         image, cached = jewelry_render(
             request.piece_description, metal=request.metal,
             stones=request.stones, setting_details=request.setting_details,
             view_angle=request.view_angle, variant=request.variant)
+        hero = _store_asset(db, image, "JEWELRY_RENDER",
+                            instruction=request.piece_description,
+                            created_by=request.created_by)
+        views = _view_children(db, hero, request.angles,
+                               request.created_by) if request.angles else []
     except RenderUnavailable as exc:
         return _provider_error(exc)
-    asset = _store_asset(db, image, "JEWELRY_RENDER",
-                         instruction=request.piece_description,
-                         created_by=request.created_by)
-    return {**_asset_meta(db, asset),
-            "image_b64": base64.b64encode(image).decode(), "cached": cached}
+    return {**_asset_meta(db, hero),
+            "image_b64": base64.b64encode(image).decode(), "cached": cached,
+            "views": views}
+
+
+class AssetViewsRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    angles: Annotated[list[str], Field(min_length=1, max_length=6)]
+    created_by: str = "usr_pending"
+
+
+@router.post("/{asset_id}/views", status_code=201)
+def add_views(asset_id: str, request: AssetViewsRequest, db: DbSession):
+    """Extra camera angles of an EXISTING asset — the same design from new
+    viewpoints, design-locked. Useful on a pinned version: get the approved
+    piece from four angles for the client without touching the design."""
+    hero = _get_asset(db, asset_id)
+    try:
+        views = _view_children(db, hero, request.angles, request.created_by)
+    except RenderUnavailable as exc:
+        return _provider_error(exc)
+    return {"parent_asset_id": hero.id,
+            "known_presets": list(VIEW_ANGLES), "views": views}
 
 
 class AssetEditRequest(BaseModel):
