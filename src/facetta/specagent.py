@@ -867,10 +867,17 @@ VIEW_ANGLES: dict[str, str] = {
            "to the camera",
     "front": "a straight-on front elevation — camera at the SAME HEIGHT as the "
              "piece, looking horizontally at the front (NOT from above, NOT "
-             "top-down), the shank going down out of frame",
-    "side": "a true 90° side profile — camera at the piece's height, looking "
-            "horizontally from the side, showing the setting height and shank "
-            "depth in profile",
+             "top-down); the WHOLE ring including the complete band is visible "
+             "and centred, nothing cropped at the bottom",
+    "side": "a true side profile facing the LENGTH of the finger — camera level, "
+            "the band forming a vertical circle (an O), showing the full height "
+            "the setting rises above the band and the shoulder taper; the ENTIRE "
+            "ring in frame, nothing cropped",
+    "profile_width": "the OTHER side profile, facing the WIDTH of the piece — "
+                     "rotate the piece 90° from the standard side view so the "
+                     "camera looks across the width of the head; you see how "
+                     "wide the setting sits and both shoulders symmetrically; "
+                     "the ENTIRE ring in frame, nothing cropped",
     "back": "the back three-quarter, showing the underside gallery and the "
             "underneath of the shank",
     "detail": "a tight close-up macro of the centre setting and gallery, the "
@@ -878,7 +885,7 @@ VIEW_ANGLES: dict[str, str] = {
     "hand": "worn on ONE finger of an elegant manicured hand, the ring on a "
             "single finger only, natural three-quarter lifestyle angle",
 }
-STANDARD_VIEW_SET = ("three_quarter", "top", "front", "side")
+STANDARD_VIEW_SET = ("three_quarter", "top", "front", "side", "profile_width")
 
 # hand/worn angles need explicit anatomy guardrails — a live test produced a
 # ring spanning two fingers.
@@ -888,13 +895,23 @@ _WORN_SAFETY = (
     "spanning or bridging two fingers, extra or missing or deformed fingers, "
     "more than one hand.")
 
+# Optional skin-tone choice for worn (hand) shots — a respectful, neutral
+# spread; a designer may also pass a free-text description.
+SKIN_TONES: dict[str, str] = {
+    "fair": "fair, light skin", "light": "light skin",
+    "medium": "medium skin tone", "olive": "olive skin tone",
+    "tan": "tan skin", "brown": "brown skin", "deep": "deep brown skin",
+    "dark": "dark skin",
+}
 
-def compile_view_instruction(angle: str) -> str:
+
+def compile_view_instruction(angle: str, skin_tone: str | None = None) -> str:
     """A camera-only change: the hero render is the reference, and the design
     is locked — only the viewpoint moves. `angle` is a preset key from
-    VIEW_ANGLES or a free-text camera description."""
+    VIEW_ANGLES or a free-text camera description. `skin_tone` (a SKIN_TONES
+    key or free text) applies only to worn/hand shots."""
     described = VIEW_ANGLES.get(angle, angle)
-    worn = "hand" in angle.lower() or "worn" in angle.lower() or "finger" in angle.lower()
+    worn = any(w in angle.lower() for w in ("hand", "worn", "finger"))
     lines = [
         "Jewelry render — new camera angle of the SAME piece.",
         f"Show the EXACT SAME piece from the reference from {described}.",
@@ -903,22 +920,29 @@ def compile_view_instruction(angle: str) -> str:
         "same metal and finish, same proportions and silhouette. Only the "
         "camera viewpoint changes; do NOT redesign, restyle, or add or "
         "remove any element.",
+        "The ENTIRE piece is fully visible and centred in frame — nothing "
+        "cropped or cut off at any edge.",
         "Photorealistic studio product photograph, same soft neutral "
         "background and lighting as the reference, sharp focus, no text.",
     ]
     if worn:
+        if skin_tone:
+            described_tone = SKIN_TONES.get(skin_tone, skin_tone)
+            lines.append(f"The hand has {described_tone}.")
         lines.append(_WORN_SAFETY)
     return "\n".join(lines)
 
 
-def render_view(image_bytes: bytes, angle: str,
+def render_view(image_bytes: bytes, angle: str, *, skin_tone: str | None = None,
                 model: str = "grok_direct") -> tuple[bytes, bool]:
     """One additional camera angle of the piece in `image_bytes`, design-
-    locked. Returns (image_bytes, was_cached)."""
-    return edit_image(image_bytes, compile_view_instruction(angle), model)
+    locked. skin_tone applies only to worn/hand shots. Returns
+    (image_bytes, was_cached)."""
+    return edit_image(
+        image_bytes, compile_view_instruction(angle, skin_tone), model)
 
 
-def render_view_set(image_bytes: bytes, angles, *,
+def render_view_set(image_bytes: bytes, angles, *, skin_tone: str | None = None,
                     model: str = "grok_direct") -> list[dict]:
     """A turntable set: each requested angle derived from the ONE hero render,
     so every view is the same design. Returns a list of
@@ -926,7 +950,8 @@ def render_view_set(image_bytes: bytes, angles, *,
     re-emitted here — the caller already has it."""
     views = []
     for angle in angles:
-        image, cached = render_view(image_bytes, angle, model=model)
+        image, cached = render_view(image_bytes, angle, skin_tone=skin_tone,
+                                    model=model)
         views.append({"angle": angle, "image": image, "cached": cached})
     return views
 

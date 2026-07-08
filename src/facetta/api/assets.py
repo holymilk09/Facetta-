@@ -24,7 +24,7 @@ from facetta.db import ImageAsset, get_db, new_id, utcnow
 from facetta.render import RenderUnavailable, _sniff_media_type
 from facetta.spec import Spec
 from facetta.specagent import (
-    SPIN_MOTIONS, VIEW_ANGLES, generate_spec_sheet, global_restyle,
+    SKIN_TONES, SPIN_MOTIONS, VIEW_ANGLES, generate_spec_sheet, global_restyle,
     jewelry_render, localized_edit, render_spin_video, render_view_set,
 )
 from facetta.validation import validate_spec
@@ -114,15 +114,16 @@ class AssetRenderRequest(BaseModel):
     # extra camera angles of the SAME piece, derived from the hero render so
     # the design is identical across views (preset keys or free-text angles)
     angles: Annotated[list[str], Field(max_length=6)] = []
+    skin_tone: str | None = None    # for worn/hand angles only
     created_by: str = "usr_pending"
 
 
 def _view_children(db: Session, hero: ImageAsset, angles: list[str],
-                   created_by: str) -> list[dict]:
+                   created_by: str, skin_tone: str | None = None) -> list[dict]:
     """Derive each requested angle from the hero and store it as an
     ANGLE_VIEW child. Returns per-view summaries (image_b64 included)."""
     out = []
-    for view in render_view_set(bytes(hero.image), angles):
+    for view in render_view_set(bytes(hero.image), angles, skin_tone=skin_tone):
         child = _store_asset(db, view["image"], "ANGLE_VIEW", hero,
                              region=view["angle"], created_by=created_by)
         out.append({"angle": view["angle"], "asset_id": child.id,
@@ -148,8 +149,8 @@ def create_render_asset(request: AssetRenderRequest, db: DbSession):
         hero = _store_asset(db, image, "JEWELRY_RENDER",
                             instruction=request.piece_description,
                             created_by=request.created_by)
-        views = _view_children(db, hero, request.angles,
-                               request.created_by) if request.angles else []
+        views = _view_children(db, hero, request.angles, request.created_by,
+                               request.skin_tone) if request.angles else []
     except RenderUnavailable as exc:
         return _provider_error(exc)
     return {**_asset_meta(db, hero),
@@ -161,6 +162,7 @@ class AssetViewsRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     angles: Annotated[list[str], Field(min_length=1, max_length=6)]
+    skin_tone: str | None = None
     created_by: str = "usr_pending"
 
 
@@ -168,14 +170,16 @@ class AssetViewsRequest(BaseModel):
 def add_views(asset_id: str, request: AssetViewsRequest, db: DbSession):
     """Extra camera angles of an EXISTING asset — the same design from new
     viewpoints, design-locked. Useful on a pinned version: get the approved
-    piece from four angles for the client without touching the design."""
+    piece from four angles for the client without touching the design.
+    skin_tone (SKIN_TONES key or free text) applies to worn/hand angles."""
     hero = _get_asset(db, asset_id)
     try:
-        views = _view_children(db, hero, request.angles, request.created_by)
+        views = _view_children(db, hero, request.angles, request.created_by,
+                               request.skin_tone)
     except RenderUnavailable as exc:
         return _provider_error(exc)
-    return {"parent_asset_id": hero.id,
-            "known_presets": list(VIEW_ANGLES), "views": views}
+    return {"parent_asset_id": hero.id, "known_presets": list(VIEW_ANGLES),
+            "known_skin_tones": list(SKIN_TONES), "views": views}
 
 
 class AssetEditRequest(BaseModel):
