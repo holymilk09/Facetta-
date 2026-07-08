@@ -76,7 +76,7 @@ class TestFrameTechnicalDrawing:
         svg = frame_technical_drawing(_png(1000, 560), spec=drop_spec)
         assert "STONE SCHEDULE" in svg
         assert "TOTAL SET WEIGHT" in svg
-        assert "MATERIALS &amp; DIMENSIONS" in svg
+        assert "MATERIALS &amp; CONSTRUCTION" in svg
         # the qty column carries each stone's count (the melee group > 1)
         assert max(s.count for s in [drop_spec.stone] + drop_spec.side_stones) > 1
         assert "TOLERANCE" in svg and "UNITS" in svg

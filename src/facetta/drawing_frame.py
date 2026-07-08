@@ -6,7 +6,7 @@ The live test caught Grok signing a sheet 'ATELIER PRECIEUX | JOB REF
 same one every Facetta artifact obeys: the model draws geometry (with the
 templated instruction telling it to leave clean margins), and this module
 letters the masthead, the piece name, the full stone schedule, the materials
-and dimensions, the designer, the date, and the signature from the validated
+and construction, the designer, the date, and the signature from the validated
 spec and the designer's branding. A letter the record cannot vouch for never
 reaches the page.
 """
@@ -90,14 +90,16 @@ def _dimension_lines(spec: Spec) -> list[tuple[str, str]]:
 
 def _spec_panel(spec: Spec, x0: float, y0: float, x1: float) -> list[str]:
     """The specification panel: the full stone schedule on the left (every
-    stone's count, size, and type, with total set weight) and materials +
-    dimensions on the right. Common-sense factory title-block content, all
-    lettered by code from the validated record."""
+    stone's count, size, and type, with total set weight) and the
+    non-stone build — metal, mount, band, overall measurement, tolerance —
+    on the right. Common-sense factory title-block content, all lettered by
+    code from the validated record. The two halves never overlap: stone sizes
+    live in the schedule, the metalwork lives in construction."""
     parts = _stone_schedule(spec, x0, y0, circled=False, totals=True)
 
     rx = x0 + 108
     parts.append(_line(rx - 6, y0, rx - 6, y0 + 34, w=STROKE_DIM, color=FAINT))
-    parts.append(_text(rx, y0, "MATERIALS &amp; DIMENSIONS", size=3.0,
+    parts.append(_text(rx, y0, "MATERIALS &amp; CONSTRUCTION", size=3.0,
                        anchor="start", style=' letter-spacing="1.2"'))
     parts.append(_line(rx, y0 + 1.4, x1, y0 + 1.4, w=STROKE_DIM, color=FAINT))
 
