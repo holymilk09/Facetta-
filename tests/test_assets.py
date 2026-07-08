@@ -272,6 +272,195 @@ class TestMultiView:
         assert "from below" in compile_view_instruction("from below")
 
 
+class TestWornValidation:
+    """A worn shot is vision-validated: a ring across two fingers must never
+    ship. The check re-rolls until the ring is on one finger, or refuses."""
+
+    def test_retries_until_single_finger(self, monkeypatch):
+        import facetta.specagent as agent
+        calls = {"edit": 0}
+
+        def fake_edit(image_bytes, instruction, model):
+            calls["edit"] += 1
+            return (b"IMG" + str(calls["edit"]).encode(), False)
+
+        # first attempt fails the check, second passes
+        checks = iter([
+            {"single_finger": False, "one_hand": True, "anatomy_ok": True,
+             "issue": "ring across two fingers"},
+            {"single_finger": True, "one_hand": True, "anatomy_ok": True,
+             "issue": ""}])
+        monkeypatch.setattr(agent, "edit_image", fake_edit)
+        monkeypatch.setattr(agent, "check_worn_render", lambda img: next(checks))
+
+        r = agent.render_worn_view(b"hero", "hand", max_attempts=3)
+        assert r["ok"] is True and r["attempts"] == 2
+        assert calls["edit"] == 2
+
+    def test_refuses_after_max_attempts(self, monkeypatch):
+        import facetta.specagent as agent
+        monkeypatch.setattr(agent, "edit_image",
+                            lambda *a, **k: (b"BAD", False))
+        monkeypatch.setattr(agent, "check_worn_render",
+                            lambda img: {"single_finger": False, "one_hand": True,
+                                         "anatomy_ok": True, "issue": "two fingers"})
+        r = agent.render_worn_view(b"hero", "hand", max_attempts=2)
+        assert r["ok"] is False and r["attempts"] == 2
+        assert "finger" in r["issue"]
+
+    def test_endpoint_does_not_file_a_rejected_worn_view(self, client, monkeypatch):
+        monkeypatch.setattr(assets_mod, "jewelry_render",
+                            lambda *a, **k: (_png((1, 1, 1)), False))
+
+        def fake_view_set(image_bytes, angles, **k):
+            # the hand shot failed validation; a normal angle passes
+            return [{"angle": "top", "image": _png((2, 2, 2)), "cached": False,
+                     "ok": True, "issue": ""},
+                    {"angle": "hand", "image": _png((3, 3, 3)), "cached": False,
+                     "ok": False, "issue": "ring across two fingers"}]
+
+        monkeypatch.setattr(assets_mod, "render_view_set", fake_view_set)
+        r = client.post("/assets/render",
+                        json={"piece_description": "a ring",
+                              "angles": ["top", "hand"]})
+        assert r.status_code == 201, r.text
+        views = {v["angle"]: v for v in r.json()["views"]}
+        assert views["top"]["asset_id"] is not None
+        # the rejected worn shot is flagged and NOT stored
+        assert views["hand"]["ok"] is False
+        assert views["hand"]["asset_id"] is None
+        assert views["hand"]["rejected"] is True
+        assert "finger" in views["hand"]["issue"]
+
+
+class TestConsistencyValidation:
+    """A derived view must be the SAME piece as the hero — same stones, same
+    setting, and the SAME SIZE (a 2 ct centre must not read bigger on one
+    skin tone than another, or the client is misled). A view that drifts the
+    design is re-rolled, and refused if it never matches."""
+
+    def test_rerolls_until_consistent(self, monkeypatch):
+        import facetta.specagent as agent
+        calls = {"edit": 0}
+
+        def fake_edit(image_bytes, instruction, model):
+            calls["edit"] += 1
+            return (b"IMG" + str(calls["edit"]).encode(), False)
+
+        # first derived view drifts the design (major), second matches
+        checks = iter([
+            {"consistent": False, "differences": ["stone bigger"],
+             "severity": "major", "checked": True},
+            {"consistent": True, "differences": [], "severity": "none",
+             "checked": True}])
+        monkeypatch.setattr(agent, "edit_image", fake_edit)
+        monkeypatch.setattr(agent, "check_design_consistency",
+                            lambda ref, cand: next(checks))
+
+        r = agent.render_checked_view(b"hero", "top", max_attempts=3)
+        assert r["ok"] is True and r["consistent"] is True
+        assert r["attempts"] == 2 and calls["edit"] == 2
+
+    def test_refuses_after_max_drift(self, monkeypatch):
+        import facetta.specagent as agent
+        monkeypatch.setattr(agent, "edit_image",
+                            lambda *a, **k: (b"BAD", False))
+        monkeypatch.setattr(agent, "check_design_consistency",
+                            lambda ref, cand: {
+                                "consistent": False,
+                                "differences": ["halo count changed"],
+                                "severity": "major", "checked": True})
+        r = agent.render_checked_view(b"hero", "side", max_attempts=2)
+        assert r["consistent"] is False and r["attempts"] == 2
+        assert "halo count changed" in r["differences"]
+
+    def test_minor_drift_is_tolerated(self, monkeypatch):
+        import facetta.specagent as agent
+        calls = {"edit": 0}
+
+        def fake_edit(image_bytes, instruction, model):
+            calls["edit"] += 1
+            return (b"IMG", False)
+
+        # a minor difference passes on the first try (no re-roll storm)
+        monkeypatch.setattr(agent, "edit_image", fake_edit)
+        monkeypatch.setattr(agent, "check_design_consistency",
+                            lambda ref, cand: {
+                                "consistent": True, "differences": ["reflection"],
+                                "severity": "minor", "checked": True})
+        r = agent.render_checked_view(b"hero", "front", max_attempts=3)
+        assert r["attempts"] == 1 and calls["edit"] == 1
+
+    def test_worn_view_gated_on_both_finger_and_design(self, monkeypatch):
+        """A hand shot must pass the single-finger check AND stay the same
+        design — the worn view's two-layer gate."""
+        import facetta.specagent as agent
+        monkeypatch.setattr(agent, "edit_image",
+                            lambda *a, **k: (b"IMG", False))
+        monkeypatch.setattr(agent, "check_worn_render",
+                            lambda img: {"single_finger": True, "one_hand": True,
+                                         "anatomy_ok": True, "gesture_ok": True,
+                                         "issue": ""})
+        seen = {"consistency": 0}
+
+        def fake_consistency(ref, cand):
+            seen["consistency"] += 1
+            return {"consistent": True, "differences": [], "severity": "none",
+                    "checked": True}
+
+        monkeypatch.setattr(agent, "check_design_consistency", fake_consistency)
+        r = agent.render_checked_view(b"hero", "hand", max_attempts=2)
+        assert r["ok"] is True and r["consistent"] is True
+        assert seen["consistency"] == 1        # design also verified for worn
+
+    def test_offensive_gesture_is_rejected(self, monkeypatch):
+        """The rude-gesture net: a hand making an isolated-finger gesture fails
+        the worn check even if it is otherwise on one finger."""
+        import facetta.specagent as agent
+        assert agent._worn_ok({"single_finger": True, "one_hand": True,
+                               "anatomy_ok": True, "gesture_ok": False}) is False
+        assert agent._worn_ok({"single_finger": True, "one_hand": True,
+                               "anatomy_ok": True, "gesture_ok": True}) is True
+
+    def test_can_disable_consistency_check(self, monkeypatch):
+        import facetta.specagent as agent
+        monkeypatch.setattr(agent, "edit_image",
+                            lambda *a, **k: (b"IMG", False))
+
+        def boom(ref, cand):
+            raise AssertionError("consistency should not be called when disabled")
+
+        monkeypatch.setattr(agent, "check_design_consistency", boom)
+        r = agent.render_checked_view(b"hero", "top", check_consistency=False)
+        assert r["consistent"] is True and r["attempts"] == 1
+
+    def test_endpoint_does_not_file_a_drifted_view(self, client, monkeypatch):
+        monkeypatch.setattr(assets_mod, "jewelry_render",
+                            lambda *a, **k: (_png((1, 1, 1)), False))
+
+        def fake_view_set(image_bytes, angles, **k):
+            # 'top' matches the hero; 'front' drifted the design
+            return [
+                {"angle": "top", "image": _png((2, 2, 2)), "cached": False,
+                 "ok": True, "consistent": True, "differences": [], "issue": ""},
+                {"angle": "front", "image": _png((3, 3, 3)), "cached": False,
+                 "ok": True, "consistent": False,
+                 "differences": ["stone reads larger"], "issue": ""}]
+
+        monkeypatch.setattr(assets_mod, "render_view_set", fake_view_set)
+        r = client.post("/assets/render",
+                        json={"piece_description": "a ring",
+                              "angles": ["top", "front"]})
+        assert r.status_code == 201, r.text
+        views = {v["angle"]: v for v in r.json()["views"]}
+        assert views["top"]["asset_id"] is not None
+        # the drifted view is flagged and NOT stored
+        assert views["front"]["consistent"] is False
+        assert views["front"]["asset_id"] is None
+        assert views["front"]["rejected"] is True
+        assert "larger" in views["front"]["differences"][0]
+
+
 class TestSpinVideo:
     """The showcase clip: a slow spin from the render, design-locked. The mp4
     lives on a media host that a network policy may gate, so bytes are

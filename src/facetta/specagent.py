@@ -882,18 +882,50 @@ VIEW_ANGLES: dict[str, str] = {
             "underneath of the shank",
     "detail": "a tight close-up macro of the centre setting and gallery, the "
               "rest of the piece softly out of frame",
-    "hand": "worn on ONE finger of an elegant manicured hand, the ring on a "
-            "single finger only, natural three-quarter lifestyle angle",
+    "hand": "worn on an elegant manicured hand in a relaxed, graceful editorial "
+            "jewelry pose — the hand softly draped or resting, all fingers "
+            "gently together or lightly separated and naturally curved, the "
+            "ring resting on the ring finger and clearly visible. A tasteful, "
+            "classic hand pose, never a rude or pointing gesture",
 }
 STANDARD_VIEW_SET = ("three_quarter", "top", "front", "side", "profile_width")
 
-# hand/worn angles need explicit anatomy guardrails — a live test produced a
-# ring spanning two fingers.
+# hand/worn angles need explicit anatomy guardrails — a live test repeatedly
+# produced a ring spanning two fingers, so the prompt is emphatic AND the
+# result is vision-validated below (a prompt alone is not reliable enough).
 _WORN_SAFETY = (
-    "The ring sits on exactly ONE finger. Realistic human hand anatomy: one "
-    "normal hand, five fingers, correct proportions. FORBIDDEN: a ring "
-    "spanning or bridging two fingers, extra or missing or deformed fingers, "
-    "more than one hand.")
+    "CRITICAL — how the ring is worn: an elegant, relaxed hand in a tasteful "
+    "editorial jewelry pose. The fingers are gently, evenly separated and "
+    "softly curved so each finger is distinct, and the ring sits on the ring "
+    "finger alone. The ring encircles exactly ONE finger and its head/halo "
+    "sits centred on that finger, with clear space on BOTH sides of the head — "
+    "the head must NOT touch, overlap, bridge to, or crowd a neighbouring "
+    "finger, and the band must NOT rest across the gap between two fingers. "
+    "Keep it graceful and professional: a natural resting or softly draped "
+    "hand. Realistic human hand anatomy: one hand, five fingers, correct "
+    "proportions. STRICTLY FORBIDDEN: any rude, offensive, or pointing "
+    "gesture; a single finger raised or thrust forward on its own (never an "
+    "isolated middle or index finger); a ring on or across two fingers; a "
+    "head touching an adjacent finger; extra/missing/deformed fingers; two "
+    "hands.")
+
+# The ring's PHYSICAL size must never change between shots. If a 2 ct centre
+# reads huge in the render and arrives smaller from the factory the client is
+# betrayed — so lock the true scale across every angle and skin tone.
+_SCALE_LOCK = (
+    "SCALE LOCK — the ring's real size is fixed: the centre stone, halo, and "
+    "band keep the EXACT same physical dimensions and the same proportion "
+    "relative to the finger as the reference. Do NOT enlarge the stone to look "
+    "more impressive or shrink it to fit — a 2 ct stone must read as 2 ct. The "
+    "ring must look the SAME size in every view and on every skin tone; the "
+    "stone-to-finger ratio is identical across all versions.")
+
+_WORN_RETRY = (
+    "The previous attempt was wrong — it either placed the ring across TWO "
+    "fingers or used a rude/isolated-finger gesture. Redo it with a graceful, "
+    "relaxed hand, fingers gently separated, the ring encircling only ONE "
+    "finger with its head sitting on that single finger alone, and no "
+    "offensive or pointing gesture.")
 
 # Optional skin-tone choice for worn (hand) shots — a respectful, neutral
 # spread; a designer may also pass a free-text description.
@@ -905,13 +937,19 @@ SKIN_TONES: dict[str, str] = {
 }
 
 
-def compile_view_instruction(angle: str, skin_tone: str | None = None) -> str:
+def is_worn_angle(angle: str) -> bool:
+    return any(w in angle.lower() for w in ("hand", "worn", "finger"))
+
+
+def compile_view_instruction(angle: str, skin_tone: str | None = None,
+                             retry: bool = False) -> str:
     """A camera-only change: the hero render is the reference, and the design
     is locked — only the viewpoint moves. `angle` is a preset key from
     VIEW_ANGLES or a free-text camera description. `skin_tone` (a SKIN_TONES
-    key or free text) applies only to worn/hand shots."""
+    key or free text) applies only to worn/hand shots. retry adds the
+    single-finger correction after a validation failure."""
     described = VIEW_ANGLES.get(angle, angle)
-    worn = any(w in angle.lower() for w in ("hand", "worn", "finger"))
+    worn = is_worn_angle(angle)
     lines = [
         "Jewelry render — new camera angle of the SAME piece.",
         f"Show the EXACT SAME piece from the reference from {described}.",
@@ -920,6 +958,7 @@ def compile_view_instruction(angle: str, skin_tone: str | None = None) -> str:
         "same metal and finish, same proportions and silhouette. Only the "
         "camera viewpoint changes; do NOT redesign, restyle, or add or "
         "remove any element.",
+        _SCALE_LOCK,
         "The ENTIRE piece is fully visible and centred in frame — nothing "
         "cropped or cut off at any edge.",
         "Photorealistic studio product photograph, same soft neutral "
@@ -930,29 +969,246 @@ def compile_view_instruction(angle: str, skin_tone: str | None = None) -> str:
             described_tone = SKIN_TONES.get(skin_tone, skin_tone)
             lines.append(f"The hand has {described_tone}.")
         lines.append(_WORN_SAFETY)
+        if retry:
+            lines.insert(1, _WORN_RETRY)
     return "\n".join(lines)
+
+
+# A prompt alone cannot guarantee the ring lands on one finger — a factory
+# lookbook can NEVER show a ring bridging two fingers, so the worn render is
+# vision-validated and re-rolled until it passes (or is refused).
+_WORN_CHECK_SYSTEM = """\
+You are a STRICT quality inspector for jewelry model photography. Look at the
+image of a ring worn on a hand and judge ONLY how it is worn. Reason about the
+ring's head/halo relative to the finger next to it.
+
+Return a JSON object exactly:
+{"single_finger": true|false, "head_touches_neighbor": true|false,
+ "one_hand": true|false, "anatomy_ok": true|false, "gesture_ok": true|false,
+ "issue": "short reason"}
+
+single_finger is TRUE only if ALL hold: the band encircles exactly ONE finger,
+the head/halo does NOT touch, overlap, bridge to, or crowd the neighbouring
+finger, and there is clear empty background space on BOTH sides of the head.
+Set head_touches_neighbor TRUE if the head reaches over or contacts an adjacent
+finger. one_hand is FALSE if more than one hand appears; anatomy_ok is FALSE for
+extra/missing/deformed fingers. gesture_ok is FALSE if the hand makes any rude,
+offensive, or pointing gesture, or a single finger is raised/extended on its own
+(e.g. an isolated middle or index finger) — a jewelry lookbook must be tasteful.
+Be strict — when unsure, answer single_finger false. Output ONLY the JSON."""
+
+
+def check_worn_render(image_bytes: bytes) -> dict:
+    """Vision QA of a worn shot. Returns the inspector JSON; on a provider
+    failure returns a permissive pass so a hiccup never blocks the pipeline
+    (the strict gate is best-effort, not a hard dependency)."""
+    try:
+        data = _vision_json(_WORN_CHECK_SYSTEM, image_bytes,
+                            "Judge how the ring is worn.")
+    except RenderUnavailable:
+        return {"single_finger": True, "one_hand": True, "anatomy_ok": True,
+                "gesture_ok": True, "issue": "", "checked": False}
+    data.setdefault("issue", "")
+    data["checked"] = True
+    return data
+
+
+def _worn_ok(check: dict) -> bool:
+    return bool(check.get("single_finger") and check.get("one_hand", True)
+                and check.get("anatomy_ok", True)
+                and check.get("gesture_ok", True))
+
+
+# The design-consistency validator: a derived view (a new angle, a worn shot)
+# must be the SAME piece as the hero. This compares the two images by vision
+# and re-rolls if the jewelry drifted — the same gate the worn check applies to
+# the hand, applied to the design itself.
+_CONSISTENCY_SYSTEM = """\
+You compare TWO photos of fine jewelry for a manufacturer. The FIRST image is
+the approved reference design. The SECOND is a new photo that must show the
+EXACT SAME piece from a different angle or setting — not a redesign.
+
+Judge ONLY the jewelry (ignore camera angle, background, hands, lighting).
+Return JSON exactly:
+{"consistent": true|false, "differences": ["..."], "severity": "none|minor|major"}
+
+consistent is FALSE if the second piece differs in any of: centre stone shape/
+cut, centre stone colour, number or arrangement of side/halo stones, setting or
+prong style, metal colour, overall proportions, or the SIZE/SCALE of the stone
+and ring. Scale matters: if the ring is worn on a hand, the centre stone must
+keep the same size relative to the finger — a stone that looks noticeably bigger
+or smaller than the reference (so a 2 ct would read as a different carat) is a
+MAJOR difference, because the client must not be misled about how large the
+finished piece is. List each real difference briefly in differences. Minor
+lighting/reflection changes are NOT differences. Set severity to "major" for any
+change to the design, stones, metal, or size; "minor" for trivial framing. Be
+fair but honest. Output ONLY the JSON."""
+
+
+def _vision_json_2img(system: str, image_a: bytes, image_b: bytes,
+                      text: str) -> dict:
+    """A vision call over TWO images (reference, candidate), JSON out."""
+    key = _provider_key("XAI_KEY")
+    if not key:
+        raise RenderUnavailable("no XAI_KEY configured — validation needs a key")
+
+    import httpx
+
+    def uri(b: bytes) -> str:
+        return f"data:{_sniff_media_type(b)};base64," + base64.b64encode(b).decode()
+
+    try:
+        response = httpx.post(
+            "https://api.x.ai/v1/chat/completions", timeout=120.0,
+            headers={"Authorization": f"Bearer {key}"},
+            json={"model": os.environ.get("FACETTA_XAI_VISION", "grok-4.3"),
+                  "messages": [
+                      {"role": "system", "content": system},
+                      {"role": "user", "content": [
+                          {"type": "image_url", "image_url": {"url": uri(image_a)}},
+                          {"type": "image_url", "image_url": {"url": uri(image_b)}},
+                          {"type": "text", "text": text}]}],
+                  "response_format": {"type": "json_object"}})
+        response.raise_for_status()
+        data = json.loads(response.json()["choices"][0]["message"]["content"])
+        if not isinstance(data, dict):
+            raise ValueError("non-object JSON")
+        return data
+    except Exception as exc:
+        raise RenderUnavailable(f"consistency check failed: {exc}") from exc
+
+
+def check_design_consistency(reference_bytes: bytes,
+                             candidate_bytes: bytes) -> dict:
+    """Does the candidate show the SAME jewelry design as the reference?
+    Returns {"consistent", "differences", "severity", "checked"}. A provider
+    failure returns a permissive pass (checked=False) — the gate is best-effort,
+    never a hard dependency that blocks a render."""
+    try:
+        data = _vision_json_2img(
+            _CONSISTENCY_SYSTEM, reference_bytes, candidate_bytes,
+            "Is the second the same piece as the first?")
+    except RenderUnavailable:
+        return {"consistent": True, "differences": [], "severity": "none",
+                "checked": False}
+    data.setdefault("differences", [])
+    data.setdefault("severity", "none")
+    data["checked"] = True
+    return data
+
+
+def render_worn_view(image_bytes: bytes, angle: str, *,
+                     skin_tone: str | None = None, model: str = "grok_direct",
+                     max_attempts: int = 3) -> dict:
+    """A worn/hand shot that is vision-validated: generate, inspect, and
+    re-roll (with the single-finger correction) until the ring is on exactly
+    one finger — or refuse. Returns {"image", "ok", "attempts", "issue"};
+    ok=False means every attempt failed the check and the image must NOT be
+    shown as final (the caller drops or flags it)."""
+    last_image, last_issue = None, ""
+    for attempt in range(1, max_attempts + 1):
+        instruction = compile_view_instruction(angle, skin_tone,
+                                                retry=attempt > 1)
+        image, _ = edit_image(image_bytes, instruction, model)
+        check = check_worn_render(image)
+        last_image, last_issue = image, check.get("issue", "")
+        if _worn_ok(check):
+            return {"image": image, "ok": True, "attempts": attempt, "issue": ""}
+    return {"image": last_image, "ok": False, "attempts": max_attempts,
+            "issue": last_issue or "ring not clearly on a single finger"}
 
 
 def render_view(image_bytes: bytes, angle: str, *, skin_tone: str | None = None,
                 model: str = "grok_direct") -> tuple[bytes, bool]:
     """One additional camera angle of the piece in `image_bytes`, design-
     locked. skin_tone applies only to worn/hand shots. Returns
-    (image_bytes, was_cached)."""
+    (image_bytes, was_cached). For worn angles prefer render_worn_view, which
+    validates that the ring is on one finger."""
     return edit_image(
         image_bytes, compile_view_instruction(angle, skin_tone), model)
 
 
+# When a derived view DRIFTS the design (a new angle that is subtly a different
+# piece), this note re-anchors the re-roll to the reference. It also varies the
+# instruction text (attempt suffix) so the content-addressed cache is busted and
+# the re-roll actually generates a fresh image rather than returning the drifted
+# one again.
+_DRIFT_RETRY = (
+    "The previous attempt DRIFTED from the reference design — it changed the "
+    "piece instead of only moving the camera. Regenerate strictly locked to "
+    "the reference: same centre stone (cut, colour, size), same halo and side "
+    "stones, same setting and prong style, same metal and proportions. Only "
+    "the viewpoint differs.")
+
+
+def render_checked_view(image_bytes: bytes, angle: str, *,
+                        skin_tone: str | None = None, model: str = "grok_direct",
+                        max_attempts: int = 3,
+                        check_consistency: bool = True) -> dict:
+    """One derived view, gated on BOTH validators: a worn/hand shot must have
+    the ring on a single finger (see render_worn_view), and every view must be
+    the SAME design as the hero (check_design_consistency). Generate, inspect,
+    and re-roll on a worn failure or a MAJOR design drift until it passes — or
+    return the best attempt flagged so the caller need not file it.
+
+    Returns {"angle", "image", "cached", "ok", "consistent", "differences",
+    "severity", "issue", "attempts"}. ok=False → worn check failed;
+    consistent=False → the piece drifted from the hero."""
+    worn = is_worn_angle(angle)
+    last = None
+    for attempt in range(1, max_attempts + 1):
+        retry = attempt > 1
+        if worn:
+            instruction = compile_view_instruction(angle, skin_tone, retry=retry)
+        else:
+            instruction = compile_view_instruction(angle, skin_tone)
+            if retry:
+                instruction += f"\n{_DRIFT_RETRY} (attempt {attempt})"
+        image, cached = edit_image(image_bytes, instruction, model)
+
+        worn_ok, issue = True, ""
+        if worn:
+            check = check_worn_render(image)
+            worn_ok = _worn_ok(check)
+            issue = check.get("issue", "")
+
+        cons = {"consistent": True, "differences": [], "severity": "none",
+                "checked": False}
+        if check_consistency:
+            cons = check_design_consistency(image_bytes, image)
+        # only a CHECKED, MAJOR drift forces a re-roll; minor lighting/reflection
+        # noise the vision model may flag is tolerated so we don't loop forever
+        drift_major = bool(cons.get("checked") and cons.get("severity") == "major")
+
+        last = {"angle": angle, "image": image, "cached": cached,
+                "ok": worn_ok, "consistent": bool(cons.get("consistent", True)),
+                "differences": list(cons.get("differences", [])),
+                "severity": cons.get("severity", "none"),
+                "issue": issue, "attempts": attempt}
+        if worn_ok and not drift_major:
+            return last
+    return last
+
+
 def render_view_set(image_bytes: bytes, angles, *, skin_tone: str | None = None,
-                    model: str = "grok_direct") -> list[dict]:
+                    model: str = "grok_direct",
+                    check_consistency: bool = True) -> list[dict]:
     """A turntable set: each requested angle derived from the ONE hero render,
-    so every view is the same design. Returns a list of
-    {"angle", "image", "cached"} in request order. The hero itself is not
-    re-emitted here — the caller already has it."""
+    so every view is the same design. Every view is design-consistency checked
+    against the hero (re-rolled on major drift); worn/hand angles are also
+    single-finger validated. Views carry ok/consistent/issue so the caller can
+    drop or flag a bad one. Returns a list of {"angle", "image", "cached",
+    "ok", "consistent", "differences", "severity", "issue"} in request order."""
     views = []
     for angle in angles:
-        image, cached = render_view(image_bytes, angle, skin_tone=skin_tone,
-                                    model=model)
-        views.append({"angle": angle, "image": image, "cached": cached})
+        result = render_checked_view(image_bytes, angle, skin_tone=skin_tone,
+                                     model=model,
+                                     check_consistency=check_consistency)
+        views.append({"angle": angle, "image": result["image"],
+                      "cached": result["cached"], "ok": result["ok"],
+                      "consistent": result["consistent"],
+                      "differences": result["differences"],
+                      "severity": result["severity"], "issue": result["issue"]})
     return views
 
 

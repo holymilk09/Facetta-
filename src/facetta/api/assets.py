@@ -137,22 +137,41 @@ class AssetRenderRequest(BaseModel):
     # the design is identical across views (preset keys or free-text angles)
     angles: Annotated[list[str], Field(max_length=6)] = []
     skin_tone: str | None = None    # for worn/hand angles only
+    check_consistency: bool = True  # re-roll a view that drifts from the hero
     created_by: str = "usr_pending"
 
 
 def _view_children(db: Session, hero: ImageAsset, angles: list[str],
-                   created_by: str, skin_tone: str | None = None) -> list[dict]:
+                   created_by: str, skin_tone: str | None = None,
+                   check_consistency: bool = True) -> list[dict]:
     """Derive each requested angle from the hero and store it as an
-    ANGLE_VIEW child. Returns per-view summaries (image_b64 included)."""
+    ANGLE_VIEW child. A view is filed only if it passes BOTH gates: the worn
+    single-finger/tasteful-gesture check (a two-finger or rude-gesture render
+    must never reach the library or client) AND the design-consistency check
+    (a view that drifted the piece — a different stone size, changed halo — is
+    not the approved design). A failed view comes back flagged (rejected) with
+    its differences so the UI can offer a retry. Returns per-view summaries."""
     out = []
-    for view in render_view_set(bytes(hero.image), angles, skin_tone=skin_tone):
-        child = _store_asset(db, view["image"], "ANGLE_VIEW", hero,
-                             region=view["angle"], created_by=created_by)
-        out.append({"angle": view["angle"], "asset_id": child.id,
-                    "version": _version_number(_chain(db, hero.root_id),
-                                               child.id),
-                    "cached": view["cached"],
-                    "image_b64": base64.b64encode(view["image"]).decode()})
+    for view in render_view_set(bytes(hero.image), angles, skin_tone=skin_tone,
+                                check_consistency=check_consistency):
+        ok = view.get("ok", True)
+        consistent = view.get("consistent", True)
+        entry = {"angle": view["angle"], "ok": ok, "consistent": consistent,
+                 "differences": view.get("differences", []),
+                 "issue": view.get("issue", ""), "cached": view["cached"]}
+        if ok and consistent:
+            child = _store_asset(db, view["image"], "ANGLE_VIEW", hero,
+                                 region=view["angle"], created_by=created_by)
+            entry["asset_id"] = child.id
+            entry["version"] = _version_number(_chain(db, hero.root_id), child.id)
+            entry["image_b64"] = base64.b64encode(view["image"]).decode()
+        else:
+            # rejected — not filed; surface a preview + the reason, no asset id
+            entry["asset_id"] = None
+            entry["image_b64"] = (base64.b64encode(view["image"]).decode()
+                                  if view.get("image") else None)
+            entry["rejected"] = True
+        out.append(entry)
     return out
 
 
@@ -173,7 +192,8 @@ def create_render_asset(request: AssetRenderRequest, db: DbSession):
                             created_by=request.created_by)
         _ensure_project(db, hero)             # file it into the owner's library
         views = _view_children(db, hero, request.angles, request.created_by,
-                               request.skin_tone) if request.angles else []
+                               request.skin_tone,
+                               request.check_consistency) if request.angles else []
     except RenderUnavailable as exc:
         return _provider_error(exc)
     return {**_asset_meta(db, hero),
@@ -186,6 +206,7 @@ class AssetViewsRequest(BaseModel):
 
     angles: Annotated[list[str], Field(min_length=1, max_length=6)]
     skin_tone: str | None = None
+    check_consistency: bool = True
     created_by: str = "usr_pending"
 
 
@@ -194,11 +215,13 @@ def add_views(asset_id: str, request: AssetViewsRequest, db: DbSession):
     """Extra camera angles of an EXISTING asset — the same design from new
     viewpoints, design-locked. Useful on a pinned version: get the approved
     piece from four angles for the client without touching the design.
-    skin_tone (SKIN_TONES key or free text) applies to worn/hand angles."""
+    skin_tone (SKIN_TONES key or free text) applies to worn/hand angles.
+    Each view is design-consistency checked against this asset and re-rolled
+    on drift (disable with check_consistency=false)."""
     hero = _get_asset(db, asset_id)
     try:
         views = _view_children(db, hero, request.angles, request.created_by,
-                               request.skin_tone)
+                               request.skin_tone, request.check_consistency)
     except RenderUnavailable as exc:
         return _provider_error(exc)
     return {"parent_asset_id": hero.id, "known_presets": list(VIEW_ANGLES),
