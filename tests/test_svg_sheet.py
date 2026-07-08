@@ -109,21 +109,6 @@ def test_sheet_endpoint_rejects_invalid_spec(example_spec):
     assert response.status_code == 422
 
 
-def test_technical_drawing_endpoint_is_code_owned(example_spec):
-    from fastapi.testclient import TestClient
-
-    from facetta.main import app
-
-    response = TestClient(app).post("/specs/technical-drawing.svg",
-                                    json=example_spec,
-                                    params={"piece_name": "The Solitaire"})
-    assert response.status_code == 200
-    assert response.headers["content-type"].startswith("image/svg+xml")
-    assert response.text.startswith("<svg")
-    assert "<image" not in response.text          # official frame, pure code
-    assert "The Solitaire" in response.text and "STONE SCHEDULE" in response.text
-
-
 # --- multi-stone templates ----------------------------------------------------
 
 

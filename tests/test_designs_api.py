@@ -89,45 +89,6 @@ def test_history_and_changes_show_what_moved(client, example_spec):
         "band"]["width_mm"] == old_width
 
 
-def test_technical_drawing_svg_is_code_owned_and_edit_re_letters(client, example_spec):
-    """The code-drawn factory sheet: editing a dimension and re-fetching the
-    SVG re-letters every number with no image engine — the drawing can't drift
-    and there's no API cost."""
-    v1 = _create(client, example_spec)
-    design_id = v1["design_id"]
-
-    r1 = client.get(f"/designs/{design_id}/versions/1/technical-drawing.svg")
-    assert r1.status_code == 200, r1.text
-    assert r1.headers["content-type"].startswith("image/svg+xml")
-    assert "<image" not in r1.text                 # pure code, no raster
-    assert "MANUFACTURING TECHNICAL DRAWING" in r1.text
-    assert "STONE SCHEDULE" in r1.text
-    # deterministic: same version renders byte-identically
-    assert client.get(
-        f"/designs/{design_id}/versions/1/technical-drawing.svg").text == r1.text
-
-    # edit a dimension into v2, re-fetch — the new number is on the sheet
-    example_spec["band"]["width_mm"] = example_spec["band"]["width_mm"] + 0.4
-    client.post(f"/designs/{design_id}/versions",
-                json={"created_by": "usr_ana", "spec": example_spec})
-    r2 = client.get(f"/designs/{design_id}/versions/2/technical-drawing.svg")
-    assert r2.status_code == 200 and r2.text != r1.text
-    assert "<image" not in r2.text
-    # v1 still renders its original, unchanged (immutable)
-    assert client.get(
-        f"/designs/{design_id}/versions/1/technical-drawing.svg").text == r1.text
-
-
-def test_technical_drawing_carries_branding_and_piece_name(client, example_spec):
-    design_id = _create(client, example_spec)["design_id"]
-    r = client.get(f"/designs/{design_id}/versions/1/technical-drawing.svg",
-                   params={"house": "Maison Vérité", "signature": "Ana",
-                           "piece_name": "The Vérité Solitaire"})
-    assert r.status_code == 200
-    assert "Maison Vérité" in r.text and "The Vérité Solitaire" in r.text
-    assert "made with FACETTA" in r.text
-
-
 def test_versions_are_immutable_no_update_route(client, example_spec):
     design_id = _create(client, example_spec)["design_id"]
     for method in ("PUT", "PATCH", "DELETE"):

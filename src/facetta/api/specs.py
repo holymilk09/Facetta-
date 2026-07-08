@@ -85,31 +85,6 @@ def sheet_preview(spec: Spec, house: str | None = None,
     return Response(content=svg, media_type="image/svg+xml")
 
 
-@router.post("/technical-drawing.svg")
-def technical_drawing_preview(spec: Spec, house: str | None = None,
-                              signature: str | None = None,
-                              piece_name: str | None = None):
-    """Stateless factory sheet in the official Facetta template: code-drawn
-    dimensioned views inside the branded frame. Fully deterministic (no image
-    engine), so it re-letters instantly on any dimension change — the saved,
-    versioned form lives at /designs/{id}/versions/{v}/technical-drawing.svg.
-    422 for templates whose views aren't line-drawable yet."""
-    from facetta.drawing_frame import render_framed_line_drawing
-
-    result = validate_spec(spec, get_vocabulary())
-    if not result.ok:
-        return JSONResponse(
-            status_code=422,
-            content={"detail": [issue.as_detail() for issue in result.issues]})
-    try:
-        svg = render_framed_line_drawing(
-            result.spec, branding=_branding(house, signature),
-            piece_name=piece_name)
-    except SheetUnsupported as exc:
-        return JSONResponse(status_code=422, content={"detail": str(exc)})
-    return Response(content=svg, media_type="image/svg+xml")
-
-
 class AssistRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

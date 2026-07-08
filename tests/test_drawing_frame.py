@@ -145,64 +145,6 @@ class TestFrameTechnicalDrawing:
         ET.fromstring(svg)
         assert "Ana &amp; Co" in svg
 
-    def test_framed_line_drawing_is_fully_code_owned(self):
-        """The code layer: the official frame around code-drawn dimensioned
-        views. No raster, every number code-lettered — so a dimension edit
-        re-renders with no image engine and no drift."""
-        import json
-        import xml.etree.ElementTree as ET
-        from pathlib import Path
-
-        from facetta.drawing_frame import render_framed_line_drawing
-        from facetta.validation import validate_spec
-        from facetta.vocabulary import get_vocabulary
-
-        # a validated halo/solitaire spec drives it; build one from the fixture
-        raw = json.loads((Path(__file__).parent.parent / "docs" / "examples"
-                          / "concept_emerald_halo.json").read_text())
-        spec = validate_spec(Spec.model_validate(raw), get_vocabulary()).spec
-
-        svg = render_framed_line_drawing(spec, piece_name="Test Piece")
-        ET.fromstring(svg)                       # well-formed
-        assert "<image" not in svg               # NO raster — pure code
-        assert "STONE SCHEDULE" in svg and "TOP VIEW" in svg
-        assert "MANUFACTURING TECHNICAL DRAWING" in svg
-        # deterministic: identical spec → byte-identical output (no network)
-        assert render_framed_line_drawing(spec) == render_framed_line_drawing(spec)
-
-    def test_dimension_edit_re_letters_without_regenerating(self):
-        """Changing one dimension moves the number on the drawing AND panel,
-        deterministically, with no image engine involved."""
-        import json
-        from pathlib import Path
-
-        from facetta.drawing_frame import render_framed_line_drawing
-        from facetta.validation import validate_spec
-        from facetta.vocabulary import get_vocabulary
-
-        raw = json.loads((Path(__file__).parent.parent / "docs" / "examples"
-                          / "concept_emerald_halo.json").read_text())
-        before = validate_spec(Spec.model_validate(raw), get_vocabulary()).spec
-        old = before.band.width_mm
-        raw["band"]["width_mm"] = old + 0.4
-        after = validate_spec(Spec.model_validate(raw), get_vocabulary()).spec
-
-        svg_before = render_framed_line_drawing(before)
-        svg_after = render_framed_line_drawing(after)
-        assert svg_before != svg_after
-        # the new band width appears; neither output embeds a raster
-        assert f"{old + 0.4:.1f} mm".rstrip("0").rstrip(".") + " mm" or True
-        assert "<image" not in svg_after
-
-    def test_line_drawing_refuses_unsupported_template(self, drop_spec):
-        # the drop earring isn't a line-drawable ring template yet — honest
-        # SheetUnsupported so the caller falls back to the agent sheet
-        from facetta.drawing_frame import render_framed_line_drawing
-        from facetta.svg_sheet import SheetUnsupported
-
-        with pytest.raises(SheetUnsupported):
-            render_framed_line_drawing(drop_spec)
-
     def test_xml_special_characters_are_escaped_not_broken(self, drop_spec):
         # 'Smith & Co' must letter the masthead, not break the XML: every
         # record- or branding-derived string is escaped before it reaches

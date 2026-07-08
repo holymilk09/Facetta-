@@ -140,37 +140,23 @@ def _spec_panel(spec: Spec, x0: float, y0: float, x1: float,
     return parts
 
 
-def frame_technical_drawing(drawing_bytes: bytes | None = None,
-                            spec: Spec | None = None,
+def frame_technical_drawing(drawing_bytes: bytes, spec: Spec | None = None,
                             branding: Branding | None = None,
-                            piece_name: str | None = None, *,
-                            drawing_content: str | None = None,
-                            drawing_viewbox: str | None = None) -> str:
-    """Wrap the drawing in the official Facetta template: A4 page (orientation
-    follows the drawing), a masthead (with an optional piece name), the drawing
-    centered, a specification panel (stone schedule + materials &
-    construction), and an identity footer — everything but the drawing lettered
-    from the record.
-
-    The drawing is EITHER a raster (`drawing_bytes`, the agent/Grok sheet) OR
-    code-drawn SVG (`drawing_content` + `drawing_viewbox`, from
-    svg_sheet.line_views_content) nested into the drawing area. The code path
-    is fully deterministic — a dimension edit re-renders it with no image
-    engine and no drift.
+                            piece_name: str | None = None) -> str:
+    """Wrap the agent's drawing in the official Facetta template: A4 page
+    (orientation follows the drawing), a masthead (with an optional piece
+    name), the drawing centered, a specification panel (stone schedule +
+    materials & dimensions), and an identity footer — everything but the
+    drawing lettered from the record.
 
     spec=None frames an unsaved drawing — identity shows the pending
     placeholders instead of inventing anything. piece_name is the optional
     friendly title of the piece ('The Vérité Solitaire'); blank falls back to
     the design id in the subtitle."""
-    if drawing_content is None and drawing_bytes is None:
-        raise ValueError("need drawing_bytes or drawing_content")
+    from PIL import Image
 
-    if drawing_content is not None:
-        portrait = False          # the code-drawn views band is landscape
-    else:
-        from PIL import Image
-        img_w, img_h = Image.open(io.BytesIO(drawing_bytes)).size
-        portrait = img_h > img_w
+    img_w, img_h = Image.open(io.BytesIO(drawing_bytes)).size
+    portrait = img_h > img_w
     sheet_w, sheet_h = (210.0, 297.0) if portrait else (297.0, 210.0)
 
     house = branding.house_line if branding else None
@@ -224,23 +210,16 @@ def frame_technical_drawing(drawing_bytes: bytes | None = None,
         parts += _spec_panel(spec, MARGIN + 4, panel_top + 2,
                              sheet_w - MARGIN - 4, panel_h)
 
-    # the drawing itself, centered between masthead and the panel — either a
-    # code-drawn SVG (nested, deterministic) or the agent's raster
+    # the drawing itself, centered between masthead and the panel
     ax, ay = MARGIN + 2, MARGIN + masthead_h + 2
     aw = sheet_w - 2 * (MARGIN + 2)
     ah = panel_top - ay - 2
-    if drawing_content is not None:
-        parts.append(
-            f'<svg x="{ax:.2f}" y="{ay:.2f}" width="{aw:.2f}" '
-            f'height="{ah:.2f}" viewBox="{drawing_viewbox}" '
-            f'preserveAspectRatio="xMidYMid meet">{drawing_content}</svg>')
-    else:
-        media_type = _sniff_media_type(drawing_bytes)
-        parts.append(
-            f'<image x="{ax:.2f}" y="{ay:.2f}" width="{aw:.2f}" '
-            f'height="{ah:.2f}" preserveAspectRatio="xMidYMid meet" '
-            f'href="data:{media_type};base64,'
-            f'{base64.b64encode(drawing_bytes).decode()}"/>')
+    media_type = _sniff_media_type(drawing_bytes)
+    parts.append(
+        f'<image x="{ax:.2f}" y="{ay:.2f}" width="{aw:.2f}" '
+        f'height="{ah:.2f}" preserveAspectRatio="xMidYMid meet" '
+        f'href="data:{media_type};base64,'
+        f'{base64.b64encode(drawing_bytes).decode()}"/>')
 
     # footer band: identity left, signature right, disclaimer — every letter
     # from the record
@@ -298,19 +277,3 @@ def frame_technical_drawing(drawing_bytes: bytes | None = None,
         "</svg>",
     ]
     return "\n".join(parts) + "\n"
-
-
-def render_framed_line_drawing(spec: Spec, branding: Branding | None = None,
-                               piece_name: str | None = None,
-                               highlight_ref: str | None = None) -> str:
-    """The fully code-owned factory sheet: the official Facetta frame wrapping
-    code-drawn dimensioned views (no image engine). Every number is code from
-    the record, so editing a dimension re-renders instantly, offline, and the
-    drawing can never drift. Raises SheetUnsupported for templates whose views
-    aren't line-drawable yet (the caller falls back to the agent sheet)."""
-    from facetta.svg_sheet import line_views_content
-
-    content, viewbox = line_views_content(spec, highlight_ref)
-    return frame_technical_drawing(
-        spec=spec, branding=branding, piece_name=piece_name,
-        drawing_content=content, drawing_viewbox=viewbox)
