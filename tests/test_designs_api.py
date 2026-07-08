@@ -61,6 +61,34 @@ def test_edits_create_new_versions_and_never_mutate(client, example_spec):
     assert listing[0]["latest_version"] == 2
 
 
+def test_history_and_changes_show_what_moved(client, example_spec):
+    """A designer who adjusts a dimension can always see the before → after
+    and recover the previous correct value — no LLM, pure structural diff."""
+    v1 = _create(client, example_spec)
+    design_id = v1["design_id"]
+    old_width = example_spec["band"]["width_mm"]
+
+    example_spec["band"]["width_mm"] = old_width - 0.2
+    client.post(f"/designs/{design_id}/versions",
+                json={"created_by": "usr_ana", "spec": example_spec})
+
+    # the /changes compare defaults to the latest edit (v1 → v2)
+    diff = client.get(f"/designs/{design_id}/changes").json()
+    assert diff["base_version"] == 1 and diff["target_version"] == 2
+    band = [c for c in diff["changes"] if c["path"] == "band.width_mm"][0]
+    assert band["label"] == "band width"
+    assert band["from"].startswith(str(old_width))
+    assert "band width" in diff["changes_summary"]
+
+    # the history trail carries a per-version summary; v1 is the initial one
+    hist = client.get(f"/designs/{design_id}").json()["versions"]
+    assert hist[0]["changes_summary"] == "initial version"
+    assert "band width" in hist[1]["changes_summary"]
+    # and the previous exact value is still permanently addressable
+    assert client.get(f"/designs/{design_id}/versions/1").json()[
+        "band"]["width_mm"] == old_width
+
+
 def test_versions_are_immutable_no_update_route(client, example_spec):
     design_id = _create(client, example_spec)["design_id"]
     for method in ("PUT", "PATCH", "DELETE"):

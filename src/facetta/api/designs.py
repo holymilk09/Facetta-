@@ -15,6 +15,7 @@ from facetta.db import (
 )
 from facetta.dxf import svg_to_dxf
 from facetta.spec import Spec
+from facetta.specdiff import diff_specs, summarize_changes
 from facetta.svg_sheet import (
     Branding, SheetUnsupported, render_sheet, render_stack_sheet,
     render_true_size_sheet,
@@ -153,11 +154,16 @@ def edit_design(design_id: str, body: EditRequest, db: DbSession):
             "rejected": True,
         })
     stored = _store_version(db, design, validated.spec, latest + 1, body.created_by)
+    changes = diff_specs(current.model_dump(mode="json"), stored)
     return {
         "new_version": latest + 1,
         "changed_fields": result.changed_fields,
         "isolate_ref": result.isolate_ref,
         "message": result.message,
+        # the exact before → after, structural (never mis-states the change),
+        # so the prior correct value is always recoverable
+        "changes": changes,
+        "changes_summary": summarize_changes(changes),
         "spec": stored,
     }
 
@@ -222,6 +228,7 @@ def annotate_design(design_id: str, body: AnnotateRequest, db: DbSession):
             "rejected": True,
         })
     stored = _store_version(db, design, validated.spec, latest + 1, body.created_by)
+    changes = diff_specs(current.model_dump(mode="json"), stored)
     return {
         "new_version": latest + 1,
         "target": result.target,
@@ -229,6 +236,8 @@ def annotate_design(design_id: str, body: AnnotateRequest, db: DbSession):
         "changed_fields": result.changed_fields,
         "ignored_fields": result.ignored_fields,  # out-of-scope, deliberately dropped
         "message": result.message,
+        "changes": changes,
+        "changes_summary": summarize_changes(changes),
         "spec": stored,
     }
 
@@ -273,20 +282,60 @@ def get_design(design_id: str, db: DbSession):
         .where(DesignVersion.design_id == design_id)
         .order_by(DesignVersion.version)
     ).all()
+    # each version carries what changed from the one before it, so the history
+    # reads as a plain-language trail — the designer sees exactly which
+    # dimension moved at each step, and every prior value stays recoverable
+    history = []
+    prev_spec: dict | None = None
+    for v in versions:
+        changes = diff_specs(prev_spec, v.spec) if prev_spec is not None else []
+        history.append({
+            "version": v.version, "created_by": v.created_by,
+            "created_at": v.created_at,
+            "changes": changes,
+            "changes_summary": (summarize_changes(changes) if prev_spec is not None
+                                else "initial version"),
+        })
+        prev_spec = v.spec
     return {
         "design_id": design.id,
         "created_by": design.created_by,
         "created_at": design.created_at,
-        "versions": [
-            {"version": v.version, "created_by": v.created_by, "created_at": v.created_at}
-            for v in versions
-        ],
+        "versions": history,
     }
 
 
 @router.get("/{design_id}/versions/{version}")
 def get_version(design_id: str, version: int, db: DbSession):
     return _get_version(db, design_id, version).spec
+
+
+@router.get("/{design_id}/changes")
+def compare_versions(design_id: str, db: DbSession,
+                     base: int | None = None, target: int | None = None):
+    """What changed between two versions, before → after. Defaults to the two
+    most recent (the last edit); pass ?base=&target= for any pair. Structural,
+    so it never mis-states a change — the safety net for 'I moved a size and
+    forgot the old value'."""
+    design = db.get(Design, design_id)
+    if design is None:
+        raise HTTPException(status_code=404, detail=f"unknown design '{design_id}'")
+    latest = db.scalar(
+        select(func.max(DesignVersion.version)).where(
+            DesignVersion.design_id == design_id))
+    if latest is None:
+        raise HTTPException(status_code=404,
+                            detail=f"design '{design_id}' has no versions")
+    target = target or latest
+    base = base if base is not None else max(1, target - 1)
+    before = _get_version(db, design_id, base).spec
+    after = _get_version(db, design_id, target).spec
+    changes = diff_specs(before, after)
+    return {
+        "design_id": design_id, "base_version": base, "target_version": target,
+        "changes": changes,
+        "changes_summary": summarize_changes(changes) or "no changes",
+    }
 
 
 @router.get("/{design_id}/versions/{version}/sheet.svg")
