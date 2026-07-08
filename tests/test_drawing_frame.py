@@ -79,8 +79,47 @@ class TestFrameTechnicalDrawing:
         assert "MATERIALS &amp; CONSTRUCTION" in svg
         # the qty column carries each stone's count (the melee group > 1)
         assert max(s.count for s in [drop_spec.stone] + drop_spec.side_stones) > 1
-        assert "TOLERANCE" in svg and "UNITS" in svg
+        assert "TOLERANCE" in svg and "all dims in mm" in svg
         assert "DROP LENGTH" in svg              # the earring's own measurement
+
+    def test_footer_summarizes_the_set_without_repeating_the_metal(self, drop_spec):
+        # the panel owns the metal; the footer is centre stone + set totals
+        svg = frame_technical_drawing(_png(1000, 560), spec=drop_spec)
+        stones = [drop_spec.stone] + drop_spec.side_stones
+        total_ct = sum(s.count * s.carat for s in stones)
+        assert f"{sum(s.count for s in stones)} stones set" in svg
+        assert f"{total_ct:.2f} ct total" in svg
+
+    def test_setting_line_does_not_stutter_the_prong_count(self, drop_spec):
+        # 'Prong 4 · 4-prong' was the live-sheet stutter: when the style name
+        # already carries the count, the suffix is skipped
+        s = drop_spec.model_copy(deep=True)
+        s.setting.style, s.setting.prong_count = "prong_4", 4
+        svg = frame_technical_drawing(_png(1000, 560), spec=s)
+        assert "Prong 4" in svg and "4-prong" not in svg
+        s.setting.style = "basket"
+        svg = frame_technical_drawing(_png(1000, 560), spec=s)
+        assert "Basket  ·  4-prong" in svg       # count kept when style is silent
+
+    def test_panel_grows_with_the_stone_count_instead_of_clipping(self, drop_spec):
+        import xml.etree.ElementTree as ET
+
+        from facetta.drawing_frame import _panel_height
+        big = drop_spec.model_copy(deep=True)
+        extra = drop_spec.side_stones[0].model_copy(deep=True)
+        big.side_stones = list(big.side_stones) + [extra] * 8
+        assert _panel_height(big) > _panel_height(drop_spec)
+        ET.fromstring(frame_technical_drawing(_png(1000, 560), spec=big))
+
+    def test_factory_notes_wrap_instead_of_one_hard_cut(self, drop_spec):
+        s = drop_spec.model_copy(deep=True)
+        s.notes_to_factory = ("please match the polish of the sample piece and "
+                              "confirm the hinge articulation before casting "
+                              "the second unit of the pair")
+        svg = frame_technical_drawing(_png(1000, 560), spec=s)
+        assert "FACTORY NOTES" in svg
+        assert "match the polish" in svg
+        assert "hinge articulation" in svg       # made the second row, not cut
 
     def test_panel_is_well_formed_xml(self, drop_spec):
         import xml.etree.ElementTree as ET

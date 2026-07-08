@@ -21,7 +21,7 @@ from facetta.render import _sniff_media_type
 from facetta.spec import Spec
 from facetta.svg_sheet import (
     FAINT, FONT, INK, PAPER, STROKE_DIM, STROKE_MAIN, Branding, _fmt, _line,
-    _metal_line, _stone_schedule, _text,
+    _metal_line, _stone_schedule, _text, _wrap,
 )
 from facetta.validation import estimate_metal_g
 
@@ -46,7 +46,10 @@ def _dimension_lines(spec: Spec) -> list[tuple[str, str]]:
 
     if spec.setting is not None:
         style = spec.setting.style.replace("_", " ").title()
-        if spec.setting.prong_count:
+        # only append the prong count when the style name doesn't already
+        # carry it — 'Prong 4 · 4-prong' read as a stutter on the live sheet
+        if (spec.setting.prong_count
+                and str(spec.setting.prong_count) not in style):
             style += f"  ·  {spec.setting.prong_count}-prong"
         lines.append(("SETTING", style))
 
@@ -83,12 +86,28 @@ def _dimension_lines(spec: Spec) -> list[tuple[str, str]]:
         lines.append(("FOOTPRINT", f"{_fmt(spec.brooch.length_mm)} × "
                                    f"{_fmt(spec.brooch.width_mm)} mm"))
 
-    lines.append(("TOLERANCE", "± 0.10 mm general"))
-    lines.append(("UNITS", "mm  ·  scale nominal"))
+    # one compact line: the tolerance and the unit convention travel together
+    lines.append(("TOLERANCE", "± 0.10 mm general  ·  all dims in mm"))
     return lines
 
 
-def _spec_panel(spec: Spec, x0: float, y0: float, x1: float) -> list[str]:
+_NOTE_LINES = 2      # factory notes wrap to a short paragraph, never one long cut
+
+
+def _panel_height(spec: Spec) -> float:
+    """The panel grows with the record instead of clipping it: a piece with
+    eight stone groups gets a taller schedule, the drawing area gives up the
+    difference. Mirrors the row math of _stone_schedule / _spec_panel."""
+    rows = 1 + len(spec.side_stones)
+    left = 9.4 + rows * 3.9                       # header + rows + total line
+    right = 5.0 + len(_dimension_lines(spec)) * 4.0
+    if spec.notes_to_factory:
+        right += 4.6 + 3.6 * _NOTE_LINES
+    return max(40.0, max(left, right) + 8.0)
+
+
+def _spec_panel(spec: Spec, x0: float, y0: float, x1: float,
+                height: float) -> list[str]:
     """The specification panel: the full stone schedule on the left (every
     stone's count, size, and type, with total set weight) and the
     non-stone build — metal, mount, band, overall measurement, tolerance —
@@ -98,7 +117,8 @@ def _spec_panel(spec: Spec, x0: float, y0: float, x1: float) -> list[str]:
     parts = _stone_schedule(spec, x0, y0, circled=False, totals=True)
 
     rx = x0 + 108
-    parts.append(_line(rx - 6, y0, rx - 6, y0 + 34, w=STROKE_DIM, color=FAINT))
+    parts.append(_line(rx - 6, y0 - 1.0, rx - 6, y0 + height - 8.0,
+                       w=STROKE_DIM, color=FAINT))
     parts.append(_text(rx, y0, "MATERIALS &amp; CONSTRUCTION", size=3.0,
                        anchor="start", style=' letter-spacing="1.2"'))
     parts.append(_line(rx, y0 + 1.4, x1, y0 + 1.4, w=STROKE_DIM, color=FAINT))
@@ -113,12 +133,10 @@ def _spec_panel(spec: Spec, x0: float, y0: float, x1: float) -> list[str]:
         y += 4.6
         parts.append(_text(rx, y, "FACTORY NOTES", size=2.4, anchor="start",
                            color=FAINT))
-        note = " ".join(spec.notes_to_factory.split())
-        max_chars = max(24, int((x1 - rx) / 1.55))
-        if len(note) > max_chars:
-            note = note[: max_chars - 1].rstrip() + "…"
-        y += 3.6
-        parts.append(_text(rx, y, escape(note), size=2.6, anchor="start"))
+        width_chars = max(24, int((x1 - rx) / 1.55))
+        for row in _wrap(spec.notes_to_factory, width_chars, _NOTE_LINES):
+            y += 3.6
+            parts.append(_text(rx, y, escape(row), size=2.6, anchor="start"))
     return parts
 
 
@@ -183,13 +201,14 @@ def frame_technical_drawing(drawing_bytes: bytes, spec: Spec | None = None,
                            color=FAINT, style=' letter-spacing="0.6"'))
 
     # the specification panel sits just above the identity footer; the drawing
-    # fills everything between the masthead and the panel
-    panel_h = 40.0 if spec is not None else 0.0
+    # fills everything between the masthead and the panel. The panel is sized
+    # to the record — more stone groups, taller schedule — so it never clips.
+    panel_h = _panel_height(spec) if spec is not None else 0.0
     ident_top = sheet_h - MARGIN - FOOTER_H
     panel_top = ident_top - panel_h
     if spec is not None:
         parts += _spec_panel(spec, MARGIN + 4, panel_top + 2,
-                             sheet_w - MARGIN - 4)
+                             sheet_w - MARGIN - 4, panel_h)
 
     # the drawing itself, centered between masthead and the panel
     ax, ay = MARGIN + 2, MARGIN + masthead_h + 2
@@ -209,9 +228,14 @@ def frame_technical_drawing(drawing_bytes: bytes, spec: Spec | None = None,
                        w=STROKE_DIM, color=FAINT))
     if spec is not None:
         stone = spec.stone
+        stones = [stone] + spec.side_stones
+        total_ct = sum(s.count * s.carat for s in stones)
+        total_n = sum(s.count for s in stones)
+        # the at-a-glance line: centre stone + the set totals. The metal is
+        # NOT repeated here — it lives in Materials & Construction above.
         description = (f"{stone.carat:.2f} ct {stone.species.title()}  ·  "
                        f"{stone.cut.replace('_', ' ')} — "
-                       f"{_metal_line(spec.metal)}")
+                       f"{total_n} stones set  ·  {total_ct:.2f} ct total")
         # the description must stop short of the signature block — a long
         # metal line ran straight into the signed name on the live test
         avail = ((sheet_w - MARGIN - 46) if signature
