@@ -469,6 +469,7 @@ class ChainDrawingRequest(BaseModel):
     facetta_template: bool = False
     house: str | None = None
     signature: str | None = None
+    piece_name: Annotated[str, Field(max_length=48)] | None = None
     # explicit override: draw from THIS asset instead of the chain's pin
     use_this_asset: bool = False
 
@@ -521,7 +522,8 @@ def chain_technical_drawing(asset_id: str, request: ChainDrawingRequest,
                     if (request.house or request.signature) else None)
         try:
             framed_svg = frame_technical_drawing(sheet, spec=validated,
-                                                 branding=branding)
+                                                 branding=branding,
+                                                 piece_name=request.piece_name)
         except OSError as exc:
             framed_svg = None
             summary.setdefault("factory_notes", []).append(

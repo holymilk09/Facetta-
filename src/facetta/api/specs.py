@@ -166,6 +166,7 @@ class AgentSheetRequest(BaseModel):
     facetta_template: bool = False         # official frame, lettered by code
     house: str | None = None               # branding for the official frame
     signature: str | None = None
+    piece_name: Annotated[str, Field(max_length=48)] | None = None  # optional title
 
 
 @router.post("/technical-drawing")
@@ -221,7 +222,8 @@ def technical_drawing(request: AgentSheetRequest):
     if request.facetta_template:
         framed_svg = frame_technical_drawing(
             sheet, spec=validated,
-            branding=_branding(request.house, request.signature))
+            branding=_branding(request.house, request.signature),
+            piece_name=request.piece_name)
     return {
         "sheet_b64": b64.b64encode(sheet).decode(),
         "media_type": _sniff_media_type(sheet),
@@ -348,6 +350,7 @@ class BuildRequest(BaseModel):
                                       # (explicit request, like the CAD handoff)
     house: str | None = None
     signature: str | None = None
+    piece_name: Annotated[str, Field(max_length=48)] | None = None  # optional title
     persist: bool = False             # save as a design so it can be annotated/edited
     created_by: str = "usr_pending"
 
@@ -420,7 +423,8 @@ def build(request: BuildRequest, db: DbSession):
                 spec_render if spec_render is not None else image,
                 spec=spec, region="DUAL", templated=True)
             technical_drawing_framed_svg = frame_technical_drawing(
-                drawing, spec=spec, branding=branding)
+                drawing, spec=spec, branding=branding,
+                piece_name=request.piece_name)
             technical_drawing_b64 = base64.b64encode(drawing).decode()
         except (RenderUnavailable, ValueError, OSError) as exc:
             manufacturing_summary = technical_drawing_framed_svg = None

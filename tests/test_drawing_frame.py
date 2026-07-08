@@ -70,6 +70,42 @@ class TestFrameTechnicalDrawing:
         assert "Ana Vérité" in svg
         assert "SIGNED" in svg
 
+    def test_specification_panel_letters_the_stone_schedule(self, drop_spec):
+        # each stone's count, size, and type + the total set weight, plus the
+        # materials & dimensions block — the factory's "what is this made of"
+        svg = frame_technical_drawing(_png(1000, 560), spec=drop_spec)
+        assert "STONE SCHEDULE" in svg
+        assert "TOTAL SET WEIGHT" in svg
+        assert "MATERIALS &amp; DIMENSIONS" in svg
+        # the qty column carries each stone's count (the melee group > 1)
+        assert max(s.count for s in [drop_spec.stone] + drop_spec.side_stones) > 1
+        assert "TOLERANCE" in svg and "UNITS" in svg
+        assert "DROP LENGTH" in svg              # the earring's own measurement
+
+    def test_panel_is_well_formed_xml(self, drop_spec):
+        import xml.etree.ElementTree as ET
+        ET.fromstring(frame_technical_drawing(_png(1000, 560), spec=drop_spec))
+
+    def test_unsaved_frame_has_no_specification_panel(self):
+        # nothing to letter without a record — no invented schedule
+        svg = frame_technical_drawing(_png(1000, 560))
+        assert "STONE SCHEDULE" not in svg
+        assert "unsaved drawing — pending record" in svg
+
+    def test_optional_piece_name_letters_the_masthead(self, drop_spec):
+        svg = frame_technical_drawing(_png(1000, 560), spec=drop_spec,
+                                      piece_name="The Vérité Drop")
+        assert "The Vérité Drop" in svg
+        # still shows the id subtitle underneath as the unambiguous reference
+        assert f"— {drop_spec.design_id} · v{drop_spec.version}" in svg
+
+    def test_piece_name_is_escaped(self, drop_spec):
+        import xml.etree.ElementTree as ET
+        svg = frame_technical_drawing(_png(1000, 560), spec=drop_spec,
+                                      piece_name="Ana & Co <Signature>")
+        ET.fromstring(svg)
+        assert "Ana &amp; Co" in svg
+
     def test_xml_special_characters_are_escaped_not_broken(self, drop_spec):
         # 'Smith & Co' must letter the masthead, not break the XML: every
         # record- or branding-derived string is escaped before it reaches

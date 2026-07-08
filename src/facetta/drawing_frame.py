@@ -5,9 +5,10 @@ The live test caught Grok signing a sheet 'ATELIER PRECIEUX | JOB REF
 2024-E01 | DATE 2024-10-26' — pure fiction. So the division of labor is the
 same one every Facetta artifact obeys: the model draws geometry (with the
 templated instruction telling it to leave clean margins), and this module
-letters the masthead, identity, description, designer, date, and signature
-from the validated spec and the designer's branding. A letter the record
-cannot vouch for never reaches the page.
+letters the masthead, the piece name, the full stone schedule, the materials
+and dimensions, the designer, the date, and the signature from the validated
+spec and the designer's branding. A letter the record cannot vouch for never
+reaches the page.
 """
 
 from __future__ import annotations
@@ -19,13 +20,13 @@ from xml.sax.saxutils import escape
 from facetta.render import _sniff_media_type
 from facetta.spec import Spec
 from facetta.svg_sheet import (
-    FAINT, FONT, INK, PAPER, STROKE_DIM, STROKE_MAIN, Branding, _line,
-    _metal_line, _text,
+    FAINT, FONT, INK, PAPER, STROKE_DIM, STROKE_MAIN, Branding, _fmt, _line,
+    _metal_line, _stone_schedule, _text,
 )
+from facetta.validation import estimate_metal_g
 
 MARGIN = 8.0
-MASTHEAD_H = 17.0   # the brand strip across the top, as on the overlay sheet
-FOOTER_H = 22.0     # identity + signature + disclaimer band
+FOOTER_H = 22.0     # identity + signature + disclaimer band (below the panel)
 
 # NB: keep this XML-safe (no raw &/<>) — it letters a <text> element. The
 # wording matches specagent.DISCLAIMER.
@@ -33,14 +34,105 @@ DISCLAIMER = ("Manufacturing illustration — final dimensions after master "
               "model and sign-off.")
 
 
+def _dimension_lines(spec: Spec) -> list[tuple[str, str]]:
+    """The materials + construction facts a factory needs that aren't stones:
+    metal, mount, the piece's own key measurements, tolerance, and units —
+    each straight from the record, TBD-free (only what's present is lettered)."""
+    lines: list[tuple[str, str]] = [("METAL", _metal_line(spec.metal))]
+
+    weight = estimate_metal_g(spec)
+    if weight:
+        lines.append(("EST. METAL", f"{weight} g"))
+
+    if spec.setting is not None:
+        style = spec.setting.style.replace("_", " ").title()
+        if spec.setting.prong_count:
+            style += f"  ·  {spec.setting.prong_count}-prong"
+        lines.append(("SETTING", style))
+
+    if spec.band is not None:
+        b = spec.band
+        lines.append(("BAND", f"{b.profile.replace('_', ' ')}  ·  "
+                              f"{_fmt(b.width_mm)} × {_fmt(b.thickness_mm)} mm"))
+
+    if spec.ring_size is not None:
+        rs = spec.ring_size
+        val = f"{rs.system} {rs.value}"
+        if rs.inner_diameter_mm:
+            val += f"  ·  ⌀ {_fmt(rs.inner_diameter_mm)} mm"
+        lines.append(("RING SIZE", val))
+
+    if spec.drop is not None:
+        lines.append(("DROP LENGTH", f"{_fmt(spec.drop.overall_length_mm)} mm"))
+        if spec.drop.link_count:
+            lines.append(("LINKS", str(spec.drop.link_count)))
+
+    if spec.pendant is not None and spec.pendant.drop_mm:
+        lines.append(("DROP", f"{_fmt(spec.pendant.drop_mm)} mm"))
+
+    if spec.bracelet is not None:
+        br = spec.bracelet
+        lines.append(("INNER", f"{_fmt(br.inner_length_mm)} × "
+                               f"{_fmt(br.inner_width_mm)} mm"))
+
+    if spec.chain is not None:
+        lines.append(("CHAIN", f"{spec.chain.style.replace('_', ' ')}  ·  "
+                               f"{_fmt(spec.chain.length_mm)} mm"))
+
+    if spec.brooch is not None:
+        lines.append(("FOOTPRINT", f"{_fmt(spec.brooch.length_mm)} × "
+                                   f"{_fmt(spec.brooch.width_mm)} mm"))
+
+    lines.append(("TOLERANCE", "± 0.10 mm general"))
+    lines.append(("UNITS", "mm  ·  scale nominal"))
+    return lines
+
+
+def _spec_panel(spec: Spec, x0: float, y0: float, x1: float) -> list[str]:
+    """The specification panel: the full stone schedule on the left (every
+    stone's count, size, and type, with total set weight) and materials +
+    dimensions on the right. Common-sense factory title-block content, all
+    lettered by code from the validated record."""
+    parts = _stone_schedule(spec, x0, y0, circled=False, totals=True)
+
+    rx = x0 + 108
+    parts.append(_line(rx - 6, y0, rx - 6, y0 + 34, w=STROKE_DIM, color=FAINT))
+    parts.append(_text(rx, y0, "MATERIALS &amp; DIMENSIONS", size=3.0,
+                       anchor="start", style=' letter-spacing="1.2"'))
+    parts.append(_line(rx, y0 + 1.4, x1, y0 + 1.4, w=STROKE_DIM, color=FAINT))
+
+    y = y0 + 5.0
+    for label, value in _dimension_lines(spec):
+        y += 4.0
+        parts.append(_text(rx, y, label, size=2.4, anchor="start", color=FAINT))
+        parts.append(_text(rx + 24, y, escape(value), size=2.8, anchor="start"))
+
+    if spec.notes_to_factory:
+        y += 4.6
+        parts.append(_text(rx, y, "FACTORY NOTES", size=2.4, anchor="start",
+                           color=FAINT))
+        note = " ".join(spec.notes_to_factory.split())
+        max_chars = max(24, int((x1 - rx) / 1.55))
+        if len(note) > max_chars:
+            note = note[: max_chars - 1].rstrip() + "…"
+        y += 3.6
+        parts.append(_text(rx, y, escape(note), size=2.6, anchor="start"))
+    return parts
+
+
 def frame_technical_drawing(drawing_bytes: bytes, spec: Spec | None = None,
-                            branding: Branding | None = None) -> str:
+                            branding: Branding | None = None,
+                            piece_name: str | None = None) -> str:
     """Wrap the agent's drawing in the official Facetta template: A4 page
-    (orientation follows the drawing), masthead, the drawing centered, and a
-    footer band lettered entirely from the record.
+    (orientation follows the drawing), a masthead (with an optional piece
+    name), the drawing centered, a specification panel (stone schedule +
+    materials & dimensions), and an identity footer — everything but the
+    drawing lettered from the record.
 
     spec=None frames an unsaved drawing — identity shows the pending
-    placeholders instead of inventing anything."""
+    placeholders instead of inventing anything. piece_name is the optional
+    friendly title of the piece ('The Vérité Solitaire'); blank falls back to
+    the design id in the subtitle."""
     from PIL import Image
 
     img_w, img_h = Image.open(io.BytesIO(drawing_bytes)).size
@@ -52,6 +144,8 @@ def frame_technical_drawing(drawing_bytes: bytes, spec: Spec | None = None,
     masthead = house or "FACETTA"
     design_id = spec.design_id if spec is not None else "dsn_pending"
     version = spec.version if spec is not None else 1
+    name = " ".join(piece_name.split())[:48] if piece_name else None
+    masthead_h = 21.0 if name else 17.0
 
     parts = [
         f'<svg xmlns="http://www.w3.org/2000/svg" '
@@ -67,12 +161,17 @@ def frame_technical_drawing(drawing_bytes: bytes, spec: Spec | None = None,
         # string is XML-escaped: 'Smith & Co' must letter, not break, the SVG.
         _text(sheet_w / 2, MARGIN + 8.5, escape(masthead), size=7.0,
               style=' letter-spacing="6"'),
-        _text(sheet_w / 2, MARGIN + 13.5,
+    ]
+    if name:
+        parts.append(_text(sheet_w / 2, MARGIN + 13.8, escape(name), size=4.2,
+                           style=' font-style="italic"'))
+    parts += [
+        _text(sheet_w / 2, MARGIN + (masthead_h - 3.5),
               escape(f"MANUFACTURING TECHNICAL DRAWING — {design_id} "
                      f"· v{version}"),
               size=3.0, color=FAINT, style=' letter-spacing="1.6"'),
-        _line(MARGIN + 3, MARGIN + MASTHEAD_H - 1,
-              sheet_w - MARGIN - 3, MARGIN + MASTHEAD_H - 1,
+        _line(MARGIN + 3, MARGIN + masthead_h - 1,
+              sheet_w - MARGIN - 3, MARGIN + masthead_h - 1,
               w=STROKE_DIM, color=FAINT),
     ]
     # Facetta keeps its maker's mark even under a designer's house name
@@ -81,10 +180,19 @@ def frame_technical_drawing(drawing_bytes: bytes, spec: Spec | None = None,
                            "made with FACETTA", size=2.2, anchor="end",
                            color=FAINT, style=' letter-spacing="0.6"'))
 
-    # the drawing itself, centered in everything between masthead and footer
-    ax, ay = MARGIN + 2, MARGIN + MASTHEAD_H + 2
+    # the specification panel sits just above the identity footer; the drawing
+    # fills everything between the masthead and the panel
+    panel_h = 40.0 if spec is not None else 0.0
+    ident_top = sheet_h - MARGIN - FOOTER_H
+    panel_top = ident_top - panel_h
+    if spec is not None:
+        parts += _spec_panel(spec, MARGIN + 4, panel_top + 2,
+                             sheet_w - MARGIN - 4)
+
+    # the drawing itself, centered between masthead and the panel
+    ax, ay = MARGIN + 2, MARGIN + masthead_h + 2
     aw = sheet_w - 2 * (MARGIN + 2)
-    ah = sheet_h - ay - MARGIN - FOOTER_H
+    ah = panel_top - ay - 2
     media_type = _sniff_media_type(drawing_bytes)
     parts.append(
         f'<image x="{ax:.2f}" y="{ay:.2f}" width="{aw:.2f}" '
