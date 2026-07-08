@@ -182,18 +182,18 @@ def _estimate_panel(est: dict, x0: float, y0: float, x1: float) -> list[str]:
     parts.append(_line(rx - 6, y0 - 1.0, rx - 6,
                        y0 + _estimate_panel_height(est) - 12.0,
                        w=STROKE_DIM, color=FAINT))
-    parts.append(_text(rx, y0, "MATERIALS &amp; CONSTRUCTION (ESTIMATED)",
+    parts.append(_text(rx, y0, "MATERIALS (ESTIMATED)",
                        size=3.0, anchor="start", style=' letter-spacing="1.2"'))
     parts.append(_line(rx, y0 + 1.4, x1, y0 + 1.4, w=STROKE_DIM, color=FAINT))
     ry = y0 + 5.0
     rows = [("METAL", str(est.get("metal") or "TBD"))]
-    rows += [(str(label).upper()[:14], str(value))
+    rows += [(str(label).upper()[:20], str(value))
              for label, value in (est.get("measurements") or [])[:6]]
     for label, value in rows:
         ry += 4.0
         parts.append(_text(rx, ry, escape(label), size=2.4, anchor="start",
                            color=FAINT))
-        parts.append(_text(rx + 24, ry, escape(value)[:60], size=2.8,
+        parts.append(_text(rx + 34, ry, escape(value)[:60], size=2.8,
                            anchor="start"))
 
     banner_y = y0 + _estimate_panel_height(est) - 9.0

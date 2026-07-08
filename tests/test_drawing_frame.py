@@ -154,7 +154,7 @@ class TestFrameTechnicalDrawing:
         svg = frame_technical_drawing(_png(1000, 560), estimates=est)
         ET.fromstring(svg)                           # escaped, well-formed
         assert "ESTIMATED SPECIFICATIONS" in svg
-        assert "MATERIALS &amp; CONSTRUCTION (ESTIMATED)" in svg
+        assert "MATERIALS (ESTIMATED)" in svg
         assert "designer must confirm every value" in svg
         assert "estimated from render — confirm before production" in svg
         assert "unsaved drawing" not in svg
