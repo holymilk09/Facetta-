@@ -151,9 +151,13 @@ class TestIterationChain:
         assert body["source_asset_id"] == pinned_id
         assert body["from_pinned_version"] == 4
         assert body["source_note"] == "From pinned version 4"
-        # and it really drew from the pinned asset's bytes
+        # and it really drew from the pinned asset's bytes (the drawing draws
+        # from the CLEAN stored bytes; the delivered b64 carries the client
+        # accuracy disclaimer, so compare against the stamped form)
+        from facetta.disclaimer import stamp_image
         v4 = client.get(f"/assets/{pinned_id}").json()
-        assert captured["source_bytes"] == base64.b64decode(v4["image_b64"])
+        assert stamp_image(captured["source_bytes"]) == \
+            base64.b64decode(v4["image_b64"])
 
     def test_unpinned_chain_blocks_drawing_with_409(self, client, monkeypatch):
         _mock_engines(monkeypatch)
@@ -231,10 +235,11 @@ class TestMultiView:
                               "angles": ["top", "front", "side"]})
         assert r.status_code == 201, r.text
         body = r.json()
-        hero_png = base64.b64decode(body["image_b64"])
         assert [v["angle"] for v in body["views"]] == ["top", "front", "side"]
-        # every angle was derived from the hero render's bytes, design-locked
-        assert seen["source"] == hero_png
+        # every angle derived from the CLEAN hero bytes (views are design-locked
+        # to the stored render); the delivered image_b64 carries the disclaimer,
+        # so the source is the clean mock hero, not the stamped delivered bytes
+        assert seen["source"] == _png((200, 200, 200))
         # each view is its own chain child of the hero
         for v in body["views"]:
             child = client.get(f"/assets/{v['asset_id']}").json()

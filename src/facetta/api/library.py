@@ -20,6 +20,11 @@ from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from facetta.db import ImageAsset, Project, get_db
+from facetta.disclaimer import is_stampable, stamp_b64
+
+# a factory technical drawing carries its own dimension-honesty disclaimer; the
+# "preview may vary" caption is for client-facing photoreal renders only
+_UNSTAMPED_CAPS = {"MANUFACTURING_TECHNICAL_DRAWING"}
 
 router = APIRouter(tags=["library"])
 
@@ -148,7 +153,11 @@ def get_project(root_id: str, db: DbSession, include_images: bool = False):
              "pinned": a.pinned_at is not None, "media_type": a.media_type,
              "created_at": a.created_at.isoformat()}
         if include_images:
-            d["image_b64"] = base64.b64encode(bytes(a.image)).decode()
+            raw = bytes(a.image)
+            d["image_b64"] = (
+                stamp_b64(raw) if (a.capability not in _UNSTAMPED_CAPS
+                                   and is_stampable(a.media_type))
+                else base64.b64encode(raw).decode())
         return d
 
     return {**_project_card(db, project),

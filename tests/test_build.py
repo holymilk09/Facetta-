@@ -34,6 +34,12 @@ def _real_png(color=(210, 205, 198)) -> bytes:
 FAKE_PNG = _real_png()                    # decodable concept image
 RENDER_PNG = _real_png((180, 150, 120))   # decodable spec render (distinct bytes)
 
+# client-facing photoreal images come back with the accuracy disclaimer stamped
+from facetta.disclaimer import stamp_image  # noqa: E402
+
+STAMPED_FAKE = stamp_image(FAKE_PNG)
+STAMPED_RENDER = stamp_image(RENDER_PNG)
+
 
 @pytest.fixture
 def client():
@@ -99,7 +105,7 @@ class TestBuild:
                                               "include_cad_sheet": True})
         assert r.status_code == 200, r.text
         body = r.json()
-        assert base64.b64decode(body["concept_image_b64"]) == FAKE_PNG
+        assert base64.b64decode(body["concept_image_b64"]) == STAMPED_FAKE
         assert body["spec"]["template"] == "halo_prong"
         assert body["spec"]["setting"]["style"] == "bezel"      # setting flowed through
         assert body["sheet_svg"].startswith("<svg")             # factory sheet present
@@ -107,9 +113,10 @@ class TestBuild:
         assert base64.b64decode(body["technical_drawing_b64"]) == AGENT_DRAWING_PNG
         assert body["manufacturing_summary"]["piece_type"] == "RING_ENGAGEMENT"
         assert "FACETTA" in body["technical_drawing_framed_svg"]
-        # the client render is the SPEC-driven render (in the design's lane)
-        assert base64.b64decode(body["client_render_b64"]) == RENDER_PNG
-        assert base64.b64decode(body["spec_render_b64"]) == RENDER_PNG
+        # the client render is the SPEC-driven render (in the design's lane),
+        # delivered with the accuracy disclaimer stamped
+        assert base64.b64decode(body["client_render_b64"]) == STAMPED_RENDER
+        assert base64.b64decode(body["spec_render_b64"]) == STAMPED_RENDER
         assert body["warnings"] == []
 
     def test_sheet_only_returns_no_client_render(self, client, monkeypatch):
@@ -193,7 +200,7 @@ class TestBuild:
         # the render-matched sheet: the concept image IS the drawing + lettered dims
         assert body["sheet_over_render_svg"] is not None
         assert "overall length" in body["sheet_over_render_svg"]
-        assert base64.b64decode(body["client_render_b64"]) == RENDER_PNG
+        assert base64.b64decode(body["client_render_b64"]) == STAMPED_RENDER
 
     def test_missing_key_is_503(self, client, monkeypatch):
         from facetta.render import RenderUnavailable

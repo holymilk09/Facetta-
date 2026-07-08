@@ -21,6 +21,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from facetta.db import ImageAsset, Project, get_db, new_id, utcnow
+from facetta.disclaimer import is_stampable, stamp_b64, stamp_image
 from facetta.render import RenderUnavailable, _sniff_media_type
 from facetta.spec import Spec
 from facetta.specagent import (
@@ -38,6 +39,21 @@ DbSession = Annotated[Session, Depends(get_db)]
 def _provider_error(exc: RenderUnavailable) -> JSONResponse:
     status = 503 if "_KEY" in str(exc) else 502
     return JSONResponse(status_code=status, content={"detail": str(exc)})
+
+
+# The gentle accuracy disclaimer is stamped on client-facing photoreal renders.
+# A factory technical drawing carries its own dimension-honesty disclaimer, so a
+# "preview may vary" caption would undermine it — those are delivered unstamped.
+_UNSTAMPED_CAPS = {"MANUFACTURING_TECHNICAL_DRAWING"}
+
+
+def _client_b64(image_bytes: bytes, *, capability: str | None = None,
+                media_type: str = "image/png") -> str:
+    """base64 for a client response, with the accuracy disclaimer stamped on
+    photoreal renders (never on a factory technical drawing or a video)."""
+    if capability in _UNSTAMPED_CAPS or not is_stampable(media_type):
+        return base64.b64encode(image_bytes).decode()
+    return stamp_b64(image_bytes)
 
 
 def _get_asset(db: Session, asset_id: str) -> ImageAsset:
@@ -164,11 +180,11 @@ def _view_children(db: Session, hero: ImageAsset, angles: list[str],
                                  region=view["angle"], created_by=created_by)
             entry["asset_id"] = child.id
             entry["version"] = _version_number(_chain(db, hero.root_id), child.id)
-            entry["image_b64"] = base64.b64encode(view["image"]).decode()
+            entry["image_b64"] = stamp_b64(view["image"])
         else:
             # rejected — not filed; surface a preview + the reason, no asset id
             entry["asset_id"] = None
-            entry["image_b64"] = (base64.b64encode(view["image"]).decode()
+            entry["image_b64"] = (stamp_b64(view["image"])
                                   if view.get("image") else None)
             entry["rejected"] = True
         out.append(entry)
@@ -197,7 +213,7 @@ def create_render_asset(request: AssetRenderRequest, db: DbSession):
     except RenderUnavailable as exc:
         return _provider_error(exc)
     return {**_asset_meta(db, hero),
-            "image_b64": base64.b64encode(image).decode(), "cached": cached,
+            "image_b64": stamp_b64(image), "cached": cached,
             "views": views}
 
 
@@ -271,7 +287,9 @@ def create_localized_edit(asset_id: str, request: AssetEditRequest,
         region=request.region_description, drift=result["drift"],
         created_by=request.created_by)
     return {**_asset_meta(db, asset),
-            "image_b64": base64.b64encode(result["image"]).decode(),
+            "image_b64": (stamp_b64(result["image"])
+                          if request.kind == "render"
+                          else base64.b64encode(result["image"]).decode()),
             "changed": result["changed"], "frozen": result["frozen"],
             "retried": result["retried"], "drift": result["drift"],
             "cached": result["cached"]}
@@ -304,7 +322,9 @@ def create_global_restyle(asset_id: str, request: AssetRestyleRequest,
                          instruction=request.instruction,
                          created_by=request.created_by)
     return {**_asset_meta(db, asset),
-            "image_b64": base64.b64encode(result["image"]).decode(),
+            "image_b64": (stamp_b64(result["image"])
+                          if request.kind == "render"
+                          else base64.b64encode(result["image"]).decode()),
             "changed": result["changed"], "frozen": result["frozen"],
             "warning": result["warning"], "cached": result["cached"]}
 
@@ -387,13 +407,18 @@ def organize_asset(asset_id: str, request: OrganizeRequest, db: DbSession):
 def get_asset(asset_id: str, db: DbSession):
     asset = _get_asset(db, asset_id)
     return {**_asset_meta(db, asset),
-            "image_b64": base64.b64encode(bytes(asset.image)).decode()}
+            "image_b64": _client_b64(bytes(asset.image),
+                                     capability=asset.capability,
+                                     media_type=asset.media_type)}
 
 
 @router.get("/{asset_id}/image")
 def get_asset_image(asset_id: str, db: DbSession):
     asset = _get_asset(db, asset_id)
-    return Response(content=bytes(asset.image), media_type=asset.media_type)
+    content = bytes(asset.image)
+    if asset.capability not in _UNSTAMPED_CAPS and is_stampable(asset.media_type):
+        content = stamp_image(content)
+    return Response(content=content, media_type=asset.media_type)
 
 
 @router.get("/{asset_id}/history")

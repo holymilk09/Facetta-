@@ -9,6 +9,7 @@ from facetta.db import get_db
 
 from facetta import prose as prose_layer
 from facetta.db import utcnow
+from facetta.disclaimer import stamp_b64
 from facetta.drawing_frame import frame_technical_drawing
 from facetta.dxf import svg_to_dxf
 from facetta.mockup import (
@@ -145,7 +146,7 @@ def from_concept(request: ConceptRequest):
             "note": "the generated concept could not be made physically real",
         })
     return {
-        "concept_image_b64": base64.b64encode(image).decode(),
+        "concept_image_b64": stamp_b64(image),
         "media_type": _sniff_media_type(image),
         "read": read.model_dump(),
         "spec": spec.model_dump(mode="json"),
@@ -264,7 +265,7 @@ def jewelry_render_endpoint(request: RenderModeRequest):
         status = 503 if "_KEY" in str(exc) else 502
         return JSONResponse(status_code=status, content={"detail": str(exc)})
     return {
-        "image_b64": b64.b64encode(image).decode(),
+        "image_b64": stamp_b64(image),
         "media_type": _sniff_media_type(image),
         "capability": "JEWELRY_RENDER",
         "prompt": prompt,
@@ -308,7 +309,8 @@ def localized_edit_endpoint(request: LocalizedEditRequest):
         status = 503 if "_KEY" in str(exc) else 502
         return JSONResponse(status_code=status, content={"detail": str(exc)})
     return {
-        "image_b64": b64.b64encode(result["image"]).decode(),
+        "image_b64": (stamp_b64(result["image"]) if request.kind == "render"
+                      else b64.b64encode(result["image"]).decode()),
         "media_type": _sniff_media_type(result["image"]),
         "changed": result["changed"],
         "frozen": result["frozen"],
@@ -402,7 +404,7 @@ def build(request: BuildRequest, db: DbSession):
         warnings.append(f"spec render unavailable: {exc}")
 
     if request.output in ("render", "both") and spec_render is not None:
-        client_render_b64 = base64.b64encode(spec_render).decode()
+        client_render_b64 = stamp_b64(spec_render)
         render_media_type = "image/png"
 
     technical_drawing_b64 = manufacturing_summary = None
@@ -452,12 +454,12 @@ def build(request: BuildRequest, db: DbSession):
     response: dict = {
         "brief": request.brief,
         "output": request.output,
-        "concept_image_b64": base64.b64encode(image).decode(),
+        "concept_image_b64": stamp_b64(image),
         "media_type": _sniff_media_type(image),
         "read": read.model_dump(),
         "spec": spec_out,
         "corrections": corrections,
-        "spec_render_b64": (base64.b64encode(spec_render).decode()
+        "spec_render_b64": (stamp_b64(spec_render)
                             if spec_render is not None else None),
         "sheet_svg": sheet_svg,
         "technical_drawing_b64": technical_drawing_b64,
@@ -633,7 +635,8 @@ def render_png(body: FinishRequestBody, model: str = "flux_kontext"):
     except RenderUnavailable as exc:
         status = 503 if "_KEY" in str(exc) else 502
         return JSONResponse(status_code=status, content={"detail": str(exc)})
-    return Response(content=png, media_type="image/png",
+    from facetta.disclaimer import stamp_image
+    return Response(content=stamp_image(png), media_type="image/png",
                     headers={"X-Render-Cache": "hit" if cached else "miss"})
 
 
