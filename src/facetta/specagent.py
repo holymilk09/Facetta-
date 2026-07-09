@@ -402,9 +402,8 @@ def colorize_lineart(lineart_bytes: bytes, materials: str, *,
                      model: str = "grok_direct",
                      variant: int = 0) -> tuple[bytes, bool]:
     """Stage 2: colour a designer-CONFIRMED line drawing from the confirmed
-    materials. Colouring locked geometry, so the piece cannot drift. model
-    picks the engine (grok_direct, or flux_kontext which edits more faithfully
-    on the baseline eval). Returns (image_bytes, was_cached)."""
+    materials. Colouring locked geometry, so the piece cannot drift. Runs on
+    Grok (grok_direct). Returns (image_bytes, was_cached)."""
     return edit_image(lineart_bytes, compile_colorize(materials), model,
                       variant=variant)
 
