@@ -579,7 +579,8 @@ class TestTechnicalDrawingEndpoint:
         # the redraw is mocked — 3 tiny views, no network
         monkeypatch.setattr(specs_mod, "redraw_plate_colored",
                             lambda image, read, **k: [
-                                {"view": v, "image": REAL_PNG, "cached": False}
+                                {"view": v, "image": REAL_PNG, "cached": False,
+                                 "ok": True, "differences": []}
                                 for v in ("front", "three-quarter", "side")])
         r = TestClient(app).post("/specs/read-plate", json={
             "image_base64": base64.b64encode(REAL_PNG).decode(),
@@ -596,6 +597,43 @@ class TestTechnicalDrawingEndpoint:
         assert "EXTRACTED FROM THE DESIGN PLATE" in body["framed_svg"]
         assert body["extracted"]["source"] == "plate"
 
+    def test_read_plate_drops_a_drifted_view_from_the_sheet(self, monkeypatch):
+        # a view that drifts the design (extra wings) is returned ok=False and
+        # NEVER composited onto the factory sheet
+        monkeypatch.setattr(specs_mod, "read_design_plate", lambda image, **k: {
+            "stones": [{"qty": 1, "type": "lapis cabochon", "size_mm": "TBD",
+                        "carat_each": None, "confidence": 0.6}],
+            "metal": "gold", "measurements": [], "scaled": False,
+            "scale_anchor": None, "source": "plate", "jewelry_type": "pendant",
+            "assembly": "dome centre, two wings", "hand_written": []})
+        monkeypatch.setattr(specs_mod, "redraw_plate_colored",
+                            lambda image, read, **k: [
+                                {"view": "front", "image": REAL_PNG,
+                                 "cached": False, "ok": True, "differences": []},
+                                {"view": "three-quarter", "image": PNG,
+                                 "cached": False, "ok": False,
+                                 "differences": ["added 5 wings"]}])
+        r = TestClient(app).post("/specs/read-plate", json={
+            "image_base64": base64.b64encode(REAL_PNG).decode()})
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["dropped_views"] == ["three-quarter"]   # drift dropped
+        assert {v["view"] for v in body["views"] if v["ok"]} == {"front"}
+
+    def test_read_plate_422_when_every_view_drifts(self, monkeypatch):
+        monkeypatch.setattr(specs_mod, "read_design_plate", lambda image, **k: {
+            "stones": [], "metal": "gold", "measurements": [], "scaled": False,
+            "scale_anchor": None, "source": "plate", "jewelry_type": "pendant",
+            "assembly": None, "hand_written": []})
+        monkeypatch.setattr(specs_mod, "redraw_plate_colored",
+                            lambda image, read, **k: [
+                                {"view": "front", "image": PNG, "cached": False,
+                                 "ok": False, "differences": ["wrong"]}])
+        r = TestClient(app).post("/specs/read-plate", json={
+            "image_base64": base64.b64encode(REAL_PNG).decode()})
+        assert r.status_code == 422
+        assert "drifted the design" in r.json()["detail"]
+
     def test_read_plate_paste_fallback_keeps_her_drawing(self, monkeypatch):
         # redraw=False is the "use my own art" fallback: no redraw call at all
         monkeypatch.setattr(specs_mod, "read_design_plate", lambda image, **k: {
@@ -610,6 +648,67 @@ class TestTechnicalDrawingEndpoint:
         assert r.status_code == 200, r.text
         body = r.json()
         assert body["redrawn"] is False and body["views"] == []
+
+    def test_plate_lineart_returns_confirmable_views(self, monkeypatch):
+        """Stage 1: line-art views for the designer to confirm before colour."""
+        monkeypatch.setattr(specs_mod, "read_design_plate", lambda image, **k: {
+            "stones": [{"qty": 2, "type": "diamond marquise", "size_mm": "TBD",
+                        "carat_each": None, "confidence": 0.6}],
+            "metal": "gold", "measurements": [], "scaled": False,
+            "scale_anchor": None, "source": "plate", "jewelry_type": "pendant",
+            "assembly": "dome centre, two wings", "hand_written": []})
+        seen = {}
+
+        def fake_lineart(image, read, **k):
+            seen.update(k)
+            return [{"view": v, "image": REAL_PNG, "cached": False,
+                     "ok": True, "differences": []}
+                    for v in ("front", "three-quarter")]
+
+        monkeypatch.setattr(specs_mod, "redraw_plate_lineart", fake_lineart)
+        r = TestClient(app).post("/specs/plate-lineart", json={
+            "image_base64": base64.b64encode(REAL_PNG).decode(),
+            "angles": ["front", "three-quarter"]})
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert [v["view"] for v in body["views"]] == ["front", "three-quarter"]
+        assert body["extracted"]["jewelry_type"] == "pendant"
+        assert "plate-colorize" in body["next"]
+
+    def test_plate_colorize_colours_confirmed_lineart(self, monkeypatch):
+        """Stage 2: colour the CONFIRMED line art from the confirmed materials,
+        then frame. Geometry is locked; colour comes from the designer's spec."""
+        seen = {}
+
+        def fake_colorize(line_bytes, materials, **k):
+            seen["materials"] = materials
+            return REAL_PNG, False
+
+        monkeypatch.setattr(specs_mod, "colorize_lineart", fake_colorize)
+        r = TestClient(app).post("/specs/plate-colorize", json={
+            "views": [{"view": "front",
+                       "image_base64": base64.b64encode(REAL_PNG).decode()}],
+            "materials": "lapis cabochon (deep blue); two diamond marquise "
+                         "wings (white); 18k yellow gold",
+            "estimates": {"stones": [{"qty": 2, "type": "diamond marquise",
+                                      "size_mm": "TBD", "carat_each": None,
+                                      "confidence": 0.7}],
+                          "metal": "18k yellow gold", "measurements": [],
+                          "scaled": False, "scale_anchor": None,
+                          "source": "plate"},
+            "piece_name": "Lapis Pendant"})
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert "lapis cabochon" in seen["materials"]     # designer's colours used
+        assert [v["view"] for v in body["views"]] == ["front"]
+        assert "diamond marquise" in body["framed_svg"]   # code-lettered panel
+        assert "EXTRACTED FROM THE DESIGN PLATE" in body["framed_svg"]
+
+    def test_plate_colorize_bad_base64_is_422(self):
+        r = TestClient(app).post("/specs/plate-colorize", json={
+            "views": [{"view": "front", "image_base64": "not base64!!!"}],
+            "materials": "gold"})
+        assert r.status_code == 422
 
     def test_read_plate_bad_base64_is_422(self):
         r = TestClient(app).post("/specs/read-plate",

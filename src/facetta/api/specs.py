@@ -28,9 +28,9 @@ from facetta.render import (
 from facetta.prototype import compile_render_prompt, render_color_preview
 from facetta.spec import Spec
 from facetta.specagent import (
-    PLATE_VIEWS, compile_render_instruction, compose_views_strip,
-    generate_spec_sheet, infer_capability, localized_edit, read_design_plate,
-    redraw_plate_colored,
+    PLATE_VIEWS, colorize_lineart, compile_render_instruction,
+    compose_views_strip, generate_spec_sheet, infer_capability, localized_edit,
+    read_design_plate, redraw_plate_colored, redraw_plate_lineart,
 )
 from facetta.svg_sheet import (
     Branding, SheetUnsupported, render_sheet, render_stack_sheet,
@@ -160,7 +160,18 @@ def read_plate(request: ReadPlateRequest):
             views = redraw_plate_colored(image_bytes, read,
                                          views=tuple(request.angles),
                                          variant=request.variant)
-            drawing = compose_views_strip([v["image"] for v in views])
+            # only FAITHFUL views reach the sheet — a drifted view (extra
+            # wings, wrong count) is never composited onto a factory drawing
+            faithful = [v for v in views if v["ok"]]
+            if not faithful:
+                return JSONResponse(status_code=422, content={
+                    "detail": "the redraw drifted the design on every angle "
+                              "(added or changed elements) and could not be "
+                              "made faithful — regenerate, or use redraw=false "
+                              "to keep the original drawing",
+                    "views": [{"view": v["view"], "ok": v["ok"],
+                               "differences": v["differences"]} for v in views]})
+            drawing = compose_views_strip([v["image"] for v in faithful])
         else:
             drawing = image_bytes
     except RenderUnavailable as exc:
@@ -177,11 +188,125 @@ def read_plate(request: ReadPlateRequest):
         "extracted": read,                 # stones/metal/measurements + hand_written
         "hand_written": read.get("hand_written", []),
         "redrawn": request.redraw,
-        "views": [{"view": v["view"],
+        # every view carries its fidelity verdict; a drifted view (ok=False)
+        # is returned for transparency but NEVER composited onto the sheet
+        "views": [{"view": v["view"], "ok": v["ok"],
+                   "differences": v["differences"],
                    "image_b64": b64.b64encode(v["image"]).decode()}
                   for v in views],
+        "dropped_views": [v["view"] for v in views if not v["ok"]],
         "framed_svg": framed_svg,
         "media_type": _sniff_media_type(drawing),
+    }
+
+
+class PlateLineartRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    image_base64: Annotated[str, Field(min_length=1, max_length=14_000_000)]
+    scale_anchor: str | None = None
+    angles: Annotated[list[str], Field(max_length=5)] = list(PLATE_VIEWS)
+    variant: int = 0                     # regenerate an angle the designer rejects
+
+
+@router.post("/plate-lineart")
+def plate_lineart(request: PlateLineartRequest):
+    """Stage 1 of the high-fidelity redraw: read the plate, then Grok draws
+    the piece as clean BLACK LINE ART in the requested angles — NO colour. The
+    designer reviews these and confirms the geometry (counts, wings, layout) is
+    right, regenerating any angle with a bumped variant, BEFORE any colour is
+    applied. Human confirmation is the reliable fidelity gate; colour comes
+    later, on the locked line art (POST /specs/plate-colorize).
+
+    Returns the line-art views and the extracted read (so the app can prefill
+    the colour specs). Grok draws; code owns every label on the final sheet."""
+    import base64 as b64
+    import binascii
+
+    try:
+        image_bytes = b64.b64decode(request.image_base64, validate=True)
+    except (binascii.Error, ValueError):
+        return JSONResponse(status_code=422,
+                            content={"detail": "image_base64 is not valid base64"})
+    try:
+        read = read_design_plate(image_bytes, scale_anchor=request.scale_anchor)
+        read = physics_check_estimates(get_vocabulary(), read)
+        views = redraw_plate_lineart(image_bytes, read,
+                                     views=tuple(request.angles),
+                                     variant=request.variant)
+    except RenderUnavailable as exc:
+        status = 503 if "_KEY" in str(exc) else 502
+        return JSONResponse(status_code=status, content={"detail": str(exc)})
+    return {
+        "jewelry_type": read.get("jewelry_type"),
+        "assembly": read.get("assembly"),
+        "extracted": read,               # prefill the colour specs from this
+        "views": [{"view": v["view"], "ok": v["ok"],
+                   "differences": v["differences"],
+                   "image_b64": b64.b64encode(v["image"]).decode()}
+                  for v in views],
+        "next": "confirm the line art, then POST /specs/plate-colorize with "
+                "the confirmed views and the material colours",
+    }
+
+
+class ConfirmedView(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    view: str
+    image_base64: Annotated[str, Field(min_length=1, max_length=14_000_000)]
+
+
+class PlateColorizeRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    # the CONFIRMED line-art views from stage 1 (geometry the designer approved)
+    views: Annotated[list[ConfirmedView], Field(min_length=1, max_length=5)]
+    # the confirmed colours/materials, e.g. "lapis cabochon (deep blue); two
+    # diamond marquise wings (white); 18k yellow gold" — from the designer's spec
+    materials: Annotated[str, Field(min_length=1, max_length=1000)]
+    estimates: dict | None = None        # the read, to letter the panel
+    house: str | None = None
+    signature: str | None = None
+    piece_name: Annotated[str, Field(max_length=48)] | None = None
+    variant: int = 0
+
+
+@router.post("/plate-colorize")
+def plate_colorize(request: PlateColorizeRequest):
+    """Stage 2: colour the designer-CONFIRMED line art from the confirmed
+    material colours, then frame the factory sheet. Grok colours WITHIN the
+    locked outlines — it cannot add wings or change counts, because the
+    geometry is already fixed and approved. The colours come from the
+    designer's spec, not a visual guess. Code letters the panel."""
+    import base64 as b64
+    import binascii
+
+    coloured: list[bytes] = []
+    try:
+        for cv in request.views:
+            try:
+                line_bytes = b64.b64decode(cv.image_base64, validate=True)
+            except (binascii.Error, ValueError):
+                return JSONResponse(status_code=422, content={
+                    "detail": f"view '{cv.view}' image_base64 is not valid base64"})
+            img, _ = colorize_lineart(line_bytes, request.materials,
+                                      variant=request.variant)
+            coloured.append(img)
+    except RenderUnavailable as exc:
+        status = 503 if "_KEY" in str(exc) else 502
+        return JSONResponse(status_code=status, content={"detail": str(exc)})
+
+    drawing = compose_views_strip(coloured)
+    framed_svg = frame_technical_drawing(
+        drawing, estimates=request.estimates,
+        branding=_branding(request.house, request.signature),
+        piece_name=request.piece_name)
+    return {
+        "views": [{"view": cv.view, "image_b64": b64.b64encode(img).decode()}
+                  for cv, img in zip(request.views, coloured)],
+        "framed_svg": framed_svg,
+        "media_type": "image/png",
     }
 
 

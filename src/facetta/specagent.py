@@ -323,29 +323,41 @@ def _assembly_lock(read: dict) -> str:
     return (clause + " Keep this EXACT assembly and spatial arrangement — what "
             "connects to what, top to bottom. Do NOT lay the stones out in a "
             "row or separate them into loose components; draw the assembled "
-            "piece as designed.")
+            "piece as designed. COUNT LOCK: reproduce the EXACT number of every "
+            "element in the reference — the same number of wings, petals, "
+            "stones, discs and prongs. Do NOT add, duplicate, multiply, or "
+            "invent any element; if the reference has two wings, draw exactly "
+            "two.")
 
 
-def compile_plate_redraw(read: dict, view: str, *, from_hero: bool) -> str:
-    """A COLOURED clean-technical redraw instruction for one view. from_hero
-    locks to an already-redrawn hero (viewpoint change only); otherwise it
-    redraws the designer's plate itself into the clean coloured style. Grok
-    draws; CLEAN_G0 forbids all text so the code panel owns every label."""
+def compile_plate_redraw(read: dict, view: str, *, from_hero: bool,
+                         colored: bool = True) -> str:
+    """A clean-technical redraw instruction for one view. colored=True fills
+    the piece with colour matching the materials; colored=False draws pure
+    BLACK LINE ART (the high-fidelity first stage — the designer confirms the
+    geometry before any colour). from_hero locks to an already-redrawn hero
+    (viewpoint change only). Grok draws; CLEAN_G0 forbids all text."""
     phrase = _PLATE_VIEW_PHRASE.get(view, view)
-    materials = _material_summary(read)
     if from_hero:
         lead = ("New camera angle of the SAME redrawn piece: show it from "
                 f"{phrase}.")
     else:
         lead = ("Redraw the SAME jewelry piece from the reference as a clean "
                 f"jewelry manufacturing technical illustration — {phrase}.")
+    if colored:
+        style = ("Crisp clean line work with FLAT COLOUR matching the piece's "
+                 f"real materials: {_material_summary(read)}. Colour it like a "
+                 "jeweller's coloured technical rendering — accurate hues, "
+                 "subtle shading only, on a plain white background.")
+    else:
+        style = ("Draw as clean BLACK LINE ART only — crisp outlines on a pure "
+                 "white background, NO colour and NO shaded fills, like a "
+                 "jeweller's technical line drawing. Accurate proportions and "
+                 "silhouette.")
     return "\n".join([
         lead,
         _assembly_lock(read),
-        "Crisp clean line work with FLAT COLOUR matching the piece's real "
-        f"materials: {materials}. Colour it like a jeweller's coloured "
-        "technical rendering — accurate hues, subtle shading only, on a plain "
-        "white background, accurate proportions and silhouette.",
+        style,
         "IDENTITY LOCK: keep the exact design, stones, setting, metal and "
         "proportions of the reference — this is the designer's actual piece; "
         "do NOT restyle, redesign, or add or remove any element. Only the "
@@ -354,27 +366,90 @@ def compile_plate_redraw(read: dict, view: str, *, from_hero: bool) -> str:
     ])
 
 
-def redraw_plate_colored(plate_bytes: bytes, read: dict, *,
-                         views=PLATE_VIEWS, model: str = "grok_direct",
-                         variant: int = 0) -> list[dict]:
-    """Colour clean-technical redraw of a hand plate in MULTIPLE ANGLES. The
+def compile_colorize(materials: str) -> str:
+    """Colour a CONFIRMED line drawing from the designer's specs. The geometry
+    is locked — Grok may only fill colour inside the existing outlines, so it
+    cannot add wings or multiply elements. Colours come from the designer's
+    confirmed materials, not a visual guess."""
+    return "\n".join([
+        "Add FLAT COLOUR to this jewelry technical LINE DRAWING.",
+        "CRITICAL — the line drawing's geometry is FINAL and LOCKED: do NOT "
+        "change, move, add, remove, or duplicate ANY line, outline, shape, "
+        "stone, wing, disc, or element. Keep every element exactly where it is "
+        "and exactly how many there are. Only FILL colour inside the existing "
+        "outlines.",
+        f"Colour the elements to match these confirmed materials: {materials}. "
+        "Flat jeweller's colour, accurate hues, subtle shading only; keep the "
+        "plain white background. Write NO text of any kind.",
+    ])
+
+
+def colorize_lineart(lineart_bytes: bytes, materials: str, *,
+                     model: str = "grok_direct",
+                     variant: int = 0) -> tuple[bytes, bool]:
+    """Stage 2: colour a designer-CONFIRMED line drawing from the confirmed
+    materials. Coating locked geometry, so the piece cannot drift. Returns
+    (image_bytes, was_cached)."""
+    return edit_image(lineart_bytes, compile_colorize(materials), model,
+                      variant=variant)
+
+
+_NO_MULTIPLY_RETRY = (
+    "The previous attempt DRIFTED the design — it added, duplicated, or "
+    "multiplied elements (extra wings, petals, or stones) that are NOT in the "
+    "reference. Redraw with the EXACT SAME elements and the EXACT SAME COUNT of "
+    "every part as the reference — do not add or invent anything.")
+
+
+def redraw_plate_views(plate_bytes: bytes, read: dict, *, colored: bool,
+                       views=PLATE_VIEWS, model: str = "grok_direct",
+                       variant: int = 0, max_attempts: int = 3) -> list[dict]:
+    """Clean-technical redraw of a hand plate in MULTIPLE ANGLES, each softly
+    checked for design drift. colored toggles colour vs pure line art. The
     first view is redrawn from the designer's plate (the hero); every other
-    angle is derived from that hero, so all views are the SAME redrawn piece,
-    design-locked and assembly-locked. Returns [{"view", "image", "cached"}]."""
+    angle is derived from the hero, so all views are the same piece. A view
+    the vision check flags as MAJOR drift (added/changed elements) is re-rolled
+    with stronger no-multiply language; the flag rides back as `ok`.
+
+    The vision check is ADVISORY — it misses count errors (line-art vs line-art
+    reads as 'same design'), so the reliable gate is the DESIGNER confirming
+    the line art. Returns [{"view", "image", "cached", "ok", "differences"}]."""
     out: list[dict] = []
     hero = None
     for view in views:
+        reference = plate_bytes if hero is None else hero
+        from_hero = hero is not None
+        best = None
+        for attempt in range(max_attempts):
+            instr = compile_plate_redraw(read, view, from_hero=from_hero,
+                                         colored=colored)
+            if attempt > 0:
+                instr += "\n" + _NO_MULTIPLY_RETRY + f" (attempt {attempt + 1})"
+            img, cached = edit_image(reference, instr, model,
+                                     variant=variant + attempt)
+            cons = check_design_consistency(reference, img)
+            ok = cons.get("severity") != "major"
+            cand = {"view": view, "image": img, "cached": cached, "ok": ok,
+                    "differences": list(cons.get("differences", []))}
+            best = cand if ok else (best or cand)
+            if ok:
+                break
+        out.append(best)
         if hero is None:
-            img, cached = edit_image(
-                plate_bytes, compile_plate_redraw(read, view, from_hero=False),
-                model, variant=variant)
-            hero = img
-        else:
-            img, cached = edit_image(
-                hero, compile_plate_redraw(read, view, from_hero=True),
-                model, variant=variant)
-        out.append({"view": view, "image": img, "cached": cached})
+            hero = best["image"]
     return out
+
+
+def redraw_plate_lineart(plate_bytes: bytes, read: dict, **kwargs) -> list[dict]:
+    """Stage 1 (high fidelity): pure BLACK LINE ART in multiple angles for the
+    designer to CONFIRM before any colour. Same shape as redraw_plate_views."""
+    return redraw_plate_views(plate_bytes, read, colored=False, **kwargs)
+
+
+def redraw_plate_colored(plate_bytes: bytes, read: dict, **kwargs) -> list[dict]:
+    """One-shot COLOURED redraw in multiple angles (the quick path). The
+    higher-fidelity route is redraw_plate_lineart → confirm → colorize_lineart."""
+    return redraw_plate_views(plate_bytes, read, colored=True, **kwargs)
 
 
 def compose_views_strip(images: list[bytes], *, gap: int = 48,
