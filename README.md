@@ -17,6 +17,27 @@ Requires Python 3.11+ and [uv](https://docs.astral.sh/uv/).
 uv sync
 ```
 
+## Configuration
+
+All secrets live in one place: a gitignored `.env` at the repo root. Copy the
+template and fill in what you need:
+
+```sh
+cp .env.example .env
+```
+
+| Key | Used by |
+|---|---|
+| `DATABASE_URL` | PostgreSQL / Supabase (unset → local SQLite). See [Database](#database). |
+| `ANTHROPIC_API_KEY` | Claude endpoints: prose → spec, photo → spec, the edit agent |
+| `FAL_KEY` | Photoreal renders / blueprint sheets via fal.ai |
+| `XAI_KEY` | Grok Imagine direct + concept origination |
+
+`.env` is loaded into the process environment at app startup (`facetta.config`),
+so the keys reach both Facetta's own reads and the Anthropic SDK. A real exported
+environment variable always wins over the file — so a hosting platform's injected
+secrets override `.env` in production with no code change.
+
 ## Run the tests
 
 ```sh
