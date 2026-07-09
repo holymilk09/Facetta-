@@ -482,7 +482,7 @@ def get_sheet(design_id: str, version: int, db: DbSession,
 
 @router.get("/{design_id}/versions/{version}/blueprint-sheet.svg")
 def get_blueprint_sheet(design_id: str, version: int, db: DbSession,
-                        model: str = "grok_imagine", house: str | None = None,
+                        model: str = "grok_direct", house: str | None = None,
                         signature: str | None = None):
     """The stored version's presentation blueprint: painted views, code-drawn
     numbers. The crisp master stays at .../sheet.svg. ?house=/?signature= stamp

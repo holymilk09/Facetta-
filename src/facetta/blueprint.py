@@ -28,7 +28,7 @@ from facetta.svg_sheet import (
 BLUEPRINT_RASTER_WIDTH = 1485  # matches the control-image rasterization
 
 
-def render_blueprint_sheet(spec: Spec, model: str = "grok_imagine",
+def render_blueprint_sheet(spec: Spec, model: str = "grok_direct",
                            branding: Branding | None = None) -> tuple[str, bool]:
     """Return (svg, was_cached). Raises RenderUnavailable without a key or
     when the provider fails — callers translate to 503/502, exactly like the

@@ -50,7 +50,7 @@ def test_no_key_means_503_not_crash(example_spec, monkeypatch):
     response = client.post("/specs/render.png",
                            json={"spec": example_spec, "style": "photo"})
     assert response.status_code == 503
-    assert "FAL_KEY" in response.json()["detail"]  # names the missing key
+    assert "XAI_KEY" in response.json()["detail"]  # names the missing Grok key
 
 
 def test_render_calls_provider_once_then_serves_cache(example_spec,
@@ -64,15 +64,14 @@ def test_render_calls_provider_once_then_serves_cache(example_spec,
             pass
 
         def json(self):
-            return {"images": [{"url": "data:image/png;base64,"
-                                + base64.b64encode(PNG_1PX).decode()}]}
+            return {"data": [{"b64_json": base64.b64encode(PNG_1PX).decode()}]}
 
     import httpx
 
     def fake_post(url, **kwargs):
         calls.append(url)
-        # the provider must receive our control image and instruction
-        assert kwargs["json"]["image_url"].startswith("data:image/png;base64,")
+        # Grok receives our control image and instruction
+        assert kwargs["json"]["image"]["url"].startswith("data:image/png;base64,")
         assert "control drawing" in kwargs["json"]["prompt"]
         return FakeResponse()
 

@@ -779,7 +779,7 @@ def build(request: BuildRequest, db: DbSession):
 
 
 @router.post("/blueprint-sheet.svg")
-def blueprint_sheet(spec: Spec, model: str = "grok_imagine",
+def blueprint_sheet(spec: Spec, model: str = "grok_direct",
                     house: str | None = None, signature: str | None = None):
     """The presentation twin of the technical sheet: an image model paints the
     views into a graphite blueprint, code letters every dimension on top. The
@@ -907,7 +907,7 @@ def finish_request(body: FinishRequestBody):
 
 
 @router.post("/render.png")
-def render_png(body: FinishRequestBody, model: str = "flux_kontext"):
+def render_png(body: FinishRequestBody, model: str = "grok_direct"):
     """The one-button photoreal render: control image + finish instruction
     sent to the image provider, result cached by content — an unchanged
     design renders once, ever. ?model= picks the engine: flux_kontext or
@@ -1127,7 +1127,7 @@ class ArtworkRestyleBody(BaseModel):
 
 
 @router.post("/artwork-restyle.png")
-def artwork_restyle(body: ArtworkRestyleBody, model: str = "grok_imagine"):
+def artwork_restyle(body: ArtworkRestyleBody, model: str = "grok_direct"):
     """Restyle the designer's artwork page IN PLACE — rendered color or ink
     line art. The page IS the composition: nothing is added, removed, moved,
     or lettered. Numbers belong to /specs/annotated-artwork.svg, where code

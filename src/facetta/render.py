@@ -340,7 +340,7 @@ def edit_image(image_bytes: bytes, instruction: str,
 
 
 def artwork_cache_key(image_bytes: bytes, style: str,
-                      model: str = "grok_imagine") -> str:
+                      model: str = "grok_direct") -> str:
     """Content-addressed like spec renders: the artwork's bytes pin the
     composition, the instruction carries the style — either changing means
     a genuinely new image. ':artwork:' namespaces these away from spec keys."""
@@ -356,7 +356,7 @@ def artwork_cache_key(image_bytes: bytes, style: str,
 
 def restyle_artwork(image_bytes: bytes, media_type: str = "image/jpeg",
                     style: str = "rendered_color",
-                    model: str = "grok_imagine") -> tuple[bytes, bool]:
+                    model: str = "grok_direct") -> tuple[bytes, bool]:
     """Restyle the designer's artwork page IN PLACE — the page IS the
     composition, so there is no control image and no spec: the engine only
     changes the rendering style, never the layout. Returns (bytes, cached)."""
@@ -504,7 +504,7 @@ def _provider_key(key_env: str) -> str | None:
 
 
 def render_cache_key(spec: Spec, style: str, lighting: str,
-                     model: str = "flux_kontext") -> str:
+                     model: str = "grok_direct") -> str:
     """Content-addressed: geometry pins the composition, the instruction
     carries colors/metal/style — either changing means a genuinely new image."""
     body = compile_finish_request(spec, style, lighting)
@@ -516,7 +516,7 @@ def render_cache_key(spec: Spec, style: str, lighting: str,
 
 def render_finished_image(spec: Spec, style: str = "photo",
                           lighting: str = "studio",
-                          model: str = "flux_kontext") -> tuple[bytes, bool]:
+                          model: str = "grok_direct") -> tuple[bytes, bool]:
     """Returns (png_bytes, was_cached). Raises RenderUnavailable without a
     key or when the provider fails — callers translate to 503/502."""
     if model not in MODELS:
