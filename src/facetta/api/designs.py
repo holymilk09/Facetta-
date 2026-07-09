@@ -6,7 +6,7 @@ from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse, Response
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -238,6 +238,132 @@ def annotate_design(design_id: str, body: AnnotateRequest, db: DbSession):
         "message": result.message,
         "changes": changes,
         "changes_summary": summarize_changes(changes),
+        "spec": stored,
+    }
+
+
+def _subtree_ref(spec_dict: dict, target: tuple[str, int | None]):
+    """The mutable dict/list for one editable section of a spec dump."""
+    kind, idx = target
+    if kind == "side_stones":
+        return spec_dict["side_stones"][idx]
+    return spec_dict.get(kind)
+
+
+def _set_dotted(root, dotted: str, value) -> None:
+    """Set ONE existing leaf named by a dotted/indexed path inside `root`
+    (e.g. 'dimensions_mm.length' or 'foo.bar[0]'). Only assigns to a path that
+    already exists — never invents a key — so a typo fails loudly instead of
+    silently growing the spec. Raises KeyError/IndexError/TypeError on a bad
+    path, which the caller turns into a 422."""
+    parts = [p for p in dotted.replace("[", ".").replace("]", "").split(".") if p]
+    if not parts:
+        raise KeyError("empty field path")
+    node = root
+    for p in parts[:-1]:
+        node = node[int(p)] if isinstance(node, list) else node[p]
+    last = parts[-1]
+    if isinstance(node, list):
+        node[int(last)] = value               # IndexError if out of range
+    elif isinstance(node, dict):
+        if last not in node:
+            raise KeyError(last)              # only set fields that exist
+        node[last] = value
+    else:
+        raise TypeError(f"'{last}' is not settable on a {type(node).__name__}")
+
+
+class SetFieldRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    section: Annotated[str, Field(min_length=1, max_length=60)]
+    index: int | None = None                  # which side-stone group, if a group
+    field: Annotated[str, Field(min_length=1, max_length=200)]  # dotted path in section
+    value: object                             # the adopted leaf (number/str/bool/null)
+    created_by: str = "usr_pending"
+
+
+@router.post("/{design_id}/set-field")
+def set_field(design_id: str, body: SetFieldRequest, db: DbSession):
+    """Adopt-a-value: a pure-code single-field edit — NO LLM, NO redraw. The
+    designer names one editable section (stone, band, setting, a side-stone
+    group, …) and one dotted field inside it, and supplies the value — adopting
+    an estimate from the reference panel, or typing a correction (band width
+    1.8 -> 2.2 mm). The scope guard forces the change to touch that section and
+    nothing else, the validator gates the physics, and a real change is written
+    as a new immutable version. Same guarantees as /annotate, zero API cost;
+    the Grok drawing is untouched — only the record advances."""
+    from facetta.agent import (
+        Annotation, AnnotationUnresolved, _target_label, _target_ref,
+        resolve_target, scope_guard,
+    )
+
+    design = db.get(Design, design_id)
+    if design is None:
+        raise HTTPException(status_code=404, detail=f"unknown design '{design_id}'")
+    latest = db.scalar(
+        select(func.max(DesignVersion.version)).where(
+            DesignVersion.design_id == design_id))
+    if latest is None:
+        raise HTTPException(status_code=404,
+                            detail=f"design '{design_id}' has no versions")
+    current = Spec.model_validate(_get_version(db, design_id, latest).spec)
+
+    try:
+        target = resolve_target(current, Annotation(
+            instruction="set-field", section=body.section, index=body.index))
+    except AnnotationUnresolved as exc:
+        return JSONResponse(status_code=422, content={"detail": str(exc)})
+
+    edited = current.model_dump(mode="json")
+    subtree = _subtree_ref(edited, target)
+    if subtree is None:
+        return JSONResponse(status_code=422, content={
+            "detail": f"section '{body.section}' is not present on this design"})
+    try:
+        _set_dotted(subtree, body.field, body.value)
+    except (KeyError, IndexError, TypeError, ValueError) as exc:
+        return JSONResponse(status_code=422, content={
+            "detail": (f"field '{body.field}' is not a settable path in section "
+                       f"'{body.section}': {exc}")})
+
+    try:
+        proposed = Spec.model_validate(edited)
+    except ValidationError as exc:
+        return JSONResponse(status_code=422, content={"detail": exc.errors()})
+
+    # graft only the named subtree onto an untouched copy — the value can never
+    # leak into another section even if the path were crafted to try
+    guarded, changed, ignored = scope_guard(current, target, proposed)
+    if not changed:
+        return {
+            "new_version": latest, "target": _target_label(target),
+            "changed_fields": [], "changed": False,
+            "message": "value already matches the record — no new version",
+            "spec": _get_version(db, design_id, latest).spec,
+        }
+
+    validated = validate_spec(guarded, get_vocabulary())
+    if not validated.ok:
+        # the single adopted value is physically impossible — save nothing
+        return JSONResponse(status_code=422, content={
+            "detail": [issue.as_detail() for issue in validated.issues],
+            "target": _target_label(target),
+            "changed_fields": changed,
+            "note": (f"setting {body.section}.{body.field} to {body.value!r} is "
+                     "not physically possible; adjust the value"),
+            "rejected": True,
+        })
+    stored = _store_version(db, design, validated.spec, latest + 1, body.created_by)
+    diff = diff_specs(current.model_dump(mode="json"), stored)
+    return {
+        "new_version": latest + 1,
+        "target": _target_label(target),
+        "isolate_ref": _target_ref(target),
+        "changed_fields": changed,
+        "changed": True,
+        "changes": diff,
+        "changes_summary": summarize_changes(diff),
         "spec": stored,
     }
 
