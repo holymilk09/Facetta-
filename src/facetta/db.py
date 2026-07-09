@@ -4,18 +4,25 @@ PostgreSQL with JSONB spec storage in production (set DATABASE_URL); SQLite
 fallback for zero-setup local development. Design versions are immutable —
 there is no update path, at the API layer or here. Schema changes must be
 additive only.
+
+Supabase is just managed Postgres, so pointing DATABASE_URL at it is the whole
+integration — no rewrite. A raw connection string copied from the Supabase
+dashboard (``postgres://…`` / ``postgresql://…``) is normalized onto psycopg v3,
+the driver this project installs, so it works unchanged. See README → Database.
 """
 
 from __future__ import annotations
 
-import os
 import secrets
 from datetime import datetime, timezone
 from functools import lru_cache
 
 from sqlalchemy import JSON, DateTime, Float, ForeignKey, Integer, String, Text, create_engine
 from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.engine import make_url
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker
+
+from facetta.config import env_value
 
 DEFAULT_DATABASE_URL = "sqlite:///./facetta.db"
 
@@ -131,11 +138,61 @@ def _apply_additive_migrations(engine) -> None:
             conn.execute(text("ALTER TABLE designs ADD COLUMN collection VARCHAR(80)"))
 
 
+def normalize_database_url(url: str) -> str:
+    """Route bare Postgres URLs onto psycopg v3 — the installed driver.
+
+    Supabase (and Heroku-style) dashboards hand out ``postgres://`` /
+    ``postgresql://`` strings. SQLAlchemy maps those to psycopg2, which this
+    project does not depend on (only ``psycopg[binary]``, i.e. psycopg v3).
+    Rewriting the scheme lets a pasted connection string work as-is; a URL that
+    already names a driver (``postgresql+psycopg://``, ``postgresql+asyncpg://``)
+    is left untouched.
+    """
+    if url.startswith("postgres://"):
+        url = "postgresql://" + url[len("postgres://"):]
+    if url.startswith("postgresql://"):
+        url = "postgresql+psycopg://" + url[len("postgresql://"):]
+    return url
+
+
+def engine_config(raw_url: str) -> tuple[str, dict]:
+    """Resolve (final url, create_engine kwargs) for a DATABASE_URL.
+
+    SQLite gets the thread guard it needs for FastAPI's threadpool. Hosted
+    Postgres gets ``pool_pre_ping`` so connections the server drops while idle
+    are recycled instead of erroring mid-request. Supabase's transaction pooler
+    (port 6543, host ``…pooler.supabase.com``, or ``?pgbouncer=true``) runs
+    pgbouncer in transaction mode, which is incompatible with server-side
+    prepared statements — so psycopg's prepare cache is disabled there, and the
+    non-libpq ``pgbouncer`` query flag (which psycopg would reject) is stripped.
+    """
+    url = normalize_database_url(raw_url)
+    parsed = make_url(url)
+    if parsed.get_backend_name() == "sqlite":
+        return url, {"connect_args": {"check_same_thread": False}}
+
+    host = parsed.host or ""
+    query = {k.lower(): str(v).lower() for k, v in parsed.query.items()}
+    pooled = (
+        parsed.port == 6543
+        or host.endswith("pooler.supabase.com")
+        or query.get("pgbouncer") in {"true", "1"}
+    )
+    stale_flags = [k for k in parsed.query if k.lower() == "pgbouncer"]
+    if stale_flags:
+        parsed = parsed.difference_update_query(stale_flags)
+        url = parsed.render_as_string(hide_password=False)
+
+    kwargs: dict = {"pool_pre_ping": True}
+    if parsed.get_driver_name() == "psycopg" and pooled:
+        kwargs["connect_args"] = {"prepare_threshold": None}
+    return url, kwargs
+
+
 @lru_cache(maxsize=1)
 def get_engine():
-    url = os.environ.get("DATABASE_URL", DEFAULT_DATABASE_URL)
-    connect_args = {"check_same_thread": False} if url.startswith("sqlite") else {}
-    engine = create_engine(url, connect_args=connect_args)
+    url, kwargs = engine_config(env_value("DATABASE_URL", DEFAULT_DATABASE_URL))
+    engine = create_engine(url, **kwargs)
     Base.metadata.create_all(engine)
     _apply_additive_migrations(engine)
     return engine

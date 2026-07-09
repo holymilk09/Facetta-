@@ -126,12 +126,61 @@ procedural pattern.
 
 ## Database
 
-SQLite (`./facetta.db`) out of the box for zero-setup dev. For PostgreSQL (spec objects
-stored as JSONB):
+SQLite (`./facetta.db`) out of the box for zero-setup dev — no config needed. Point
+`DATABASE_URL` at any PostgreSQL instance to switch; spec objects are stored as JSONB and
+the immutable-version model is identical on both.
 
 ```sh
-export DATABASE_URL="postgresql+psycopg://user@host:5432/facetta"
+export DATABASE_URL="postgresql://user:password@host:5432/facetta"
 ```
+
+You can also drop `DATABASE_URL=...` into a gitignored `.env` at the repo root (see
+`.env.example`) — the same place the render/AI keys live — and it is picked up
+automatically.
+
+### Supabase
+
+Supabase is managed PostgreSQL, so there is nothing to rewrite: the connection string
+*is* the integration. Facetta normalizes a raw dashboard string onto its psycopg v3
+driver, so you can paste it verbatim.
+
+1. In your Supabase project, open **Project Settings → Database → Connection string**
+   and copy the **URI**. It looks like:
+
+   ```
+   postgresql://postgres:[YOUR-PASSWORD]@db.[PROJECT-REF].supabase.co:5432/postgres
+   ```
+
+2. Set it (substituting your password) — either export it or put it in `.env`:
+
+   ```sh
+   export DATABASE_URL="postgresql://postgres:[YOUR-PASSWORD]@db.[PROJECT-REF].supabase.co:5432/postgres"
+   ```
+
+3. Start the API. Facetta creates its tables (`designs`, `design_versions`, `comments`,
+   …) on first boot — no manual migration step.
+
+   ```sh
+   uv run uvicorn facetta.main:app --reload
+   ```
+
+**Which connection type?** Supabase offers three, all handled automatically:
+
+| Use | Endpoint | Notes |
+|---|---|---|
+| Long-running server (this API) | **Direct** `db.<ref>.supabase.co:5432` | Simplest; requires IPv6 egress |
+| Server without IPv6 | **Session pooler** `…pooler.supabase.com:5432` | IPv4-friendly, one connection per client |
+| Serverless / functions | **Transaction pooler** `…pooler.supabase.com:6543` | pgbouncer; Facetta disables prepared statements for you |
+
+A bare `postgres://`/`postgresql://` scheme is routed to psycopg v3 (SQLAlchemy would
+otherwise reach for psycopg2, which isn't installed). Hosted connections get
+`pool_pre_ping` so Supabase's idle-connection drops are recycled rather than surfaced as
+errors. Append `?sslmode=require` to force TLS if your policy demands it (psycopg
+negotiates SSL with Supabase either way).
+
+> The Supabase JS client / PostgREST auto-API is **not** used — Facetta talks to Postgres
+> directly through SQLAlchemy so every write goes through the spec validator and the
+> immutable-version rules. Supabase is the database, not the API layer.
 
 ## Mobile app (Expo)
 
