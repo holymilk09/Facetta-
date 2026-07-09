@@ -1,0 +1,206 @@
+{
+ "run": "baseline",
+ "summary": {
+  "grok_direct": {
+   "render_avg": 75.6,
+   "edit_avg": 80.0,
+   "runs": 8
+  },
+  "flux": {
+   "render_avg": 66.8,
+   "edit_avg": null,
+   "runs": 5
+  },
+  "flux_kontext": {
+   "render_avg": null,
+   "edit_avg": 100.0,
+   "runs": 3
+  }
+ },
+ "rows": [
+  {
+   "engine": "grok_direct",
+   "kind": "render",
+   "item": "ruby_sunburst_ring",
+   "score": 59.3,
+   "components": {
+    "species_named": 1.0,
+    "metal_matched": 0.0,
+    "stone_count": 0.778,
+    "centre_carat": 0.033,
+    "centre_size": 0.912
+   }
+  },
+  {
+   "engine": "flux",
+   "kind": "render",
+   "item": "ruby_sunburst_ring",
+   "score": 60.2,
+   "components": {
+    "species_named": 1.0,
+    "metal_matched": 0.0,
+    "stone_count": 0.467,
+    "centre_carat": 0.542,
+    "centre_size": 0.887
+   }
+  },
+  {
+   "engine": "grok_direct",
+   "kind": "render",
+   "item": "marquise_drop_earring",
+   "score": 79.5,
+   "components": {
+    "species_named": 1.0,
+    "metal_matched": 1.0,
+    "stone_count": 0.739,
+    "centre_carat": 0.349,
+    "centre_size": 0.726
+   }
+  },
+  {
+   "engine": "flux",
+   "kind": "render",
+   "item": "marquise_drop_earring",
+   "score": 77.6,
+   "components": {
+    "species_named": 1.0,
+    "metal_matched": 1.0,
+    "stone_count": 0.739,
+    "centre_carat": 0.313,
+    "centre_size": 0.655
+   }
+  },
+  {
+   "engine": "grok_direct",
+   "kind": "render",
+   "item": "aurora_pendant",
+   "score": 78.3,
+   "components": {
+    "species_named": 1.0,
+    "metal_matched": 1.0,
+    "stone_count": 0.286,
+    "centre_carat": 0.676,
+    "centre_size": 0.875
+   }
+  },
+  {
+   "engine": "flux",
+   "kind": "render",
+   "item": "aurora_pendant",
+   "score": 71.7,
+   "components": {
+    "species_named": 1.0,
+    "metal_matched": 1.0,
+    "stone_count": 0.0,
+    "centre_carat": 0.699,
+    "centre_size": 0.812
+   }
+  },
+  {
+   "engine": "grok_direct",
+   "kind": "render",
+   "item": "leaf_spray_brooch",
+   "score": 74.6,
+   "components": {
+    "species_named": 1.0,
+    "metal_matched": 1.0,
+    "stone_count": 0.227,
+    "centre_carat": 0.567,
+    "centre_size": 0.828
+   }
+  },
+  {
+   "engine": "flux",
+   "kind": "render",
+   "item": "leaf_spray_brooch",
+   "score": 68.3,
+   "components": {
+    "species_named": 1.0,
+    "metal_matched": 1.0,
+    "stone_count": 0.064,
+    "centre_carat": 0.451,
+    "centre_size": 0.763
+   }
+  },
+  {
+   "engine": "grok_direct",
+   "kind": "render",
+   "item": "concept_emerald_halo",
+   "score": 86.4,
+   "components": {
+    "species_named": 1.0,
+    "metal_matched": 1.0,
+    "stone_count": 0.684,
+    "centre_carat": 0.685,
+    "centre_size": 0.873
+   }
+  },
+  {
+   "engine": "flux",
+   "kind": "render",
+   "item": "concept_emerald_halo",
+   "score": 56.3,
+   "components": {
+    "species_named": 1.0,
+    "metal_matched": 0.0,
+    "stone_count": 0.579,
+    "centre_carat": 0.358,
+    "centre_size": 0.715
+   }
+  },
+  {
+   "engine": "grok_direct",
+   "kind": "edit",
+   "item": "edit:replace the ruby with a blue sap",
+   "score": 100.0,
+   "applied": true,
+   "severity": "none",
+   "unintended": []
+  },
+  {
+   "engine": "flux_kontext",
+   "kind": "edit",
+   "item": "edit:replace the ruby with a blue sap",
+   "score": 100.0,
+   "applied": true,
+   "severity": "none",
+   "unintended": []
+  },
+  {
+   "engine": "grok_direct",
+   "kind": "edit",
+   "item": "edit:make the band visibly wider and ",
+   "score": 40.0,
+   "applied": false,
+   "severity": "none",
+   "unintended": []
+  },
+  {
+   "engine": "flux_kontext",
+   "kind": "edit",
+   "item": "edit:make the band visibly wider and ",
+   "score": 100.0,
+   "applied": true,
+   "severity": "none",
+   "unintended": []
+  },
+  {
+   "engine": "grok_direct",
+   "kind": "edit",
+   "item": "edit:change all the metal to yellow g",
+   "score": 100.0,
+   "applied": true,
+   "severity": "none",
+   "unintended": []
+  },
+  {
+   "engine": "flux_kontext",
+   "kind": "edit",
+   "item": "edit:change all the metal to yellow g",
+   "score": 100.0,
+   "applied": true,
+   "severity": "none",
+   "unintended": []
+  }
+ ]
+}

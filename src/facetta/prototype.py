@@ -790,6 +790,7 @@ def prompt_core(spec: Spec) -> tuple[str, list[str]]:
         "cluster_pendant": "cluster pendant necklace" if spec.chain else "cluster pendant",
         "loose_stone": "loose gemstone, unmounted",
         "leaf_spray_brooch": "leaf-spray brooch — a single curved branch",
+        "deco_drop_earring": "articulated drop earring",
     }.get(spec.template, spec.template)
 
     cut_name = stone.cut.replace("_", " ")
@@ -846,6 +847,14 @@ def prompt_core(spec: Spec) -> tuple[str, list[str]]:
         )
     if spec.pendant:
         details.append(f"overall drop {_fmt(pendant_drop_mm(spec))} mm from the bail")
+    if spec.drop:
+        dr = spec.drop
+        run = (f"a vertical run of {dr.link_count} small articulated links"
+               if dr.link_count else "a short articulated link")
+        details.append(
+            f"the whole composition hung from an arched lever-back ear hook by "
+            f"{run}, so it moves and hangs vertically; overall length "
+            f"{_fmt(dr.overall_length_mm)} mm from hook top to the lowest point")
     if spec.chain:
         details.append(
             f"on a {spec.chain.style.replace('_', ' ')} chain, "

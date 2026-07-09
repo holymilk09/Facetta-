@@ -29,6 +29,7 @@ RING_TEMPLATES = ("solitaire_prong", "halo_prong")
 BRACELET_TEMPLATES = ("love_bangle", "cuff", "link_bracelet")
 UNMOUNTED_TEMPLATES = ("loose_stone",)  # no setting/metal — the stone is the piece
 BROOCH_TEMPLATES = ("leaf_spray_brooch",)
+DROP_TEMPLATES = ("deco_drop_earring",)  # articulated drop earrings
 
 # leaf-spray cluster constants (mm)
 CLUSTER_HUB_MM = 1.6    # metal frame + hub a quatrefoil adds beyond its petals
@@ -588,6 +589,26 @@ def _validate_assembly(spec: Spec, vocab: Vocabulary, issues: list[ValidationIss
                 ),
                 expected={"max_gap_mm": spec.bracelet.inner_width_mm - 1},
             ))
+    if spec.template in DROP_TEMPLATES:
+        if spec.drop is None:
+            issues.append(ValidationIssue(
+                loc=("drop",), type="template",
+                msg=f"template '{spec.template}' is an articulated drop earring "
+                    "and requires a drop section",
+            ))
+        else:
+            # the reach must at least contain the hook and the frame it hangs
+            # (the drop nests inside the frame); a link run only adds to it
+            frame_len = spec.stone.dimensions_mm.length
+            needed = round(spec.drop.hook_height_mm + frame_len, 2)
+            if spec.drop.overall_length_mm < needed:
+                issues.append(ValidationIssue(
+                    loc=("drop", "overall_length_mm"), type="fit",
+                    msg=(f"overall length {spec.drop.overall_length_mm} mm cannot "
+                         f"contain a {spec.drop.hook_height_mm} mm hook above a "
+                         f"{frame_len} mm frame"),
+                    expected={"min_overall_length_mm": needed},
+                ))
     if spec.template == "cluster_pendant" and spec.pendant is None:
         issues.append(ValidationIssue(
             loc=("pendant",), type="template",

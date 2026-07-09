@@ -167,7 +167,6 @@ def _bracelet_dims(spec: Spec) -> list[str]:
 
 
 def _ring_dims(spec: Spec) -> list[str]:
-    import math
     s = 5.0
     cx, cy = SHEET_W / 2, BASELINE
     stone = spec.stone.dimensions_mm

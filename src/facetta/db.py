@@ -13,7 +13,10 @@ import secrets
 from datetime import datetime, timezone
 from functools import lru_cache
 
-from sqlalchemy import JSON, DateTime, Float, ForeignKey, Integer, String, Text, create_engine
+from sqlalchemy import (
+    JSON, DateTime, Float, ForeignKey, Integer, LargeBinary, String, Text,
+    create_engine,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, sessionmaker
 
@@ -78,6 +81,65 @@ class SavedStone(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class ImageAsset(Base):
+    """One node in the iteration chain: a render or an edit of a render.
+
+    Iteration is the designer's primary loop (A → many C → pin → B on
+    demand), so every generated image is a first-class, immutable asset with
+    a parent — history, compare, and revert are chain walks, never
+    mutations. `pinned_at` marks the version approved for factory handoff:
+    the manufacturing technical drawing defaults to the chain's most recently
+    pinned asset, not to "latest"."""
+
+    __tablename__ = "image_assets"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    root_id: Mapped[str] = mapped_column(String(32), index=True)  # chain key
+    parent_asset_id: Mapped[str | None] = mapped_column(
+        String(32), nullable=True, index=True)
+    # the bridge to the spec universe: set on the chain ROOT when a render is
+    # created from (or linked to) a persisted design, so an image edit can
+    # also move the design's spec and the factory sheet letters the latest
+    # numbers automatically. Children resolve through their root.
+    design_id: Mapped[str | None] = mapped_column(
+        String(32), nullable=True, index=True)
+    capability: Mapped[str] = mapped_column(String(48))  # which mode made it
+    instruction: Mapped[str | None] = mapped_column(Text, nullable=True)
+    region: Mapped[str | None] = mapped_column(Text, nullable=True)
+    drift: Mapped[float | None] = mapped_column(Float, nullable=True)
+    image: Mapped[bytes] = mapped_column(LargeBinary)
+    media_type: Mapped[str] = mapped_column(String(24), default="image/png")
+    pinned_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)
+    created_by: Mapped[str] = mapped_column(String(32), default="usr_pending")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow)
+
+
+class Project(Base):
+    """A design project = one asset chain (a hero render and all its edits,
+    views, videos, and factory drawings), filed for the designer.
+
+    Proven library model: owner → collection (a client folder like "Sarah K —
+    engagement", or a personal folder) → project → tags. Everything a client's
+    work produces stays under one collection, and tags + free-text search
+    locate a piece across the whole library. Metadata lives here, off the asset
+    rows, so renaming a folder never touches an image."""
+
+    __tablename__ = "projects"
+
+    root_id: Mapped[str] = mapped_column(String(32), primary_key=True)  # chain root
+    owner: Mapped[str] = mapped_column(String(32), index=True)
+    collection: Mapped[str | None] = mapped_column(
+        String(120), nullable=True, index=True)  # client / folder; None = Unfiled
+    title: Mapped[str] = mapped_column(String(200))
+    tags: Mapped[list] = mapped_column(SpecJSON, default=list)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow)
+
+
 class DesignMessage(Base):
     """Free-form discussion between designer and factory on a design.
 
@@ -120,6 +182,67 @@ class ShareLink(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class ApprovalChecklist(Base):
+    """The tap-to-approve ritual for one exact version: a frozen list of
+    fact-items derived from the piece's own spec sections (a ring asks about
+    its band; a necklace about its chain). Binding to a specific asset (or
+    design version) makes invalidation structural — a new version simply has
+    no checklist yet. `mode` picks the pin behavior: auto_pin (all-YES pins
+    for factory), explicit_pin (completion unlocks the pin), optional
+    (advisory only, never gates)."""
+
+    __tablename__ = "approval_checklists"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    asset_id: Mapped[str | None] = mapped_column(String(32), nullable=True,
+                                                 index=True)
+    design_id: Mapped[str | None] = mapped_column(String(32), nullable=True,
+                                                  index=True)
+    design_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    mode: Mapped[str] = mapped_column(String(16), default="auto_pin")
+    items: Mapped[list] = mapped_column(SpecJSON)   # frozen ChecklistItem dicts
+    created_by: Mapped[str] = mapped_column(String(32), default="usr_pending")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow)
+
+
+class FeedbackEvent(Base):
+    """One designer verdict on one generated asset — the correction flywheel's
+    raw data. accepted / regenerated / rejected, append-only. Aggregated per
+    capability and instruction, this is what later teaches the prompts which
+    phrasings work; no prompt ever mutates from a single event."""
+
+    __tablename__ = "feedback_events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True,
+                                    autoincrement=True)
+    asset_id: Mapped[str] = mapped_column(String(32), index=True)
+    action: Mapped[str] = mapped_column(String(16))  # accepted|regenerated|rejected
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_by: Mapped[str] = mapped_column(String(32), default="usr_pending")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow)
+
+
+class ApprovalResponse(Base):
+    """One tap on one checklist item — append-only, latest per item wins.
+    The audit trail a factory relationship runs on: who confirmed which fact,
+    when, and (on a NO) the change note plus the agent's understood-as echo."""
+
+    __tablename__ = "approval_responses"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True,
+                                    autoincrement=True)
+    checklist_id: Mapped[str] = mapped_column(String(32), index=True)
+    item_key: Mapped[str] = mapped_column(String(48))
+    approved: Mapped[bool] = mapped_column()
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    understood_as: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_by: Mapped[str] = mapped_column(String(32), default="usr_pending")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow)
+
+
 def _apply_additive_migrations(engine) -> None:
     """Add columns that newer schema versions introduced (additive only)."""
     from sqlalchemy import inspect, text
@@ -129,6 +252,11 @@ def _apply_additive_migrations(engine) -> None:
     if "collection" not in existing:
         with engine.begin() as conn:
             conn.execute(text("ALTER TABLE designs ADD COLUMN collection VARCHAR(80)"))
+    existing = {c["name"] for c in inspector.get_columns("image_assets")}
+    if "design_id" not in existing:
+        with engine.begin() as conn:
+            conn.execute(text(
+                "ALTER TABLE image_assets ADD COLUMN design_id VARCHAR(32)"))
 
 
 @lru_cache(maxsize=1)

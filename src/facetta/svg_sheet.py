@@ -21,6 +21,7 @@ cross-sections, architectural tick dimension lines, and a title block.
 from __future__ import annotations
 
 import math
+from dataclasses import dataclass
 
 from facetta import gemcad
 from facetta.spec import Spec
@@ -45,9 +46,77 @@ SUPPORTED_CUTS = ("round_brilliant", "oval_brilliant", "emerald_cut", "cushion")
 BANGLE_STATION_CUTS = ("princess", "asscher")
 ISOLATE_RED = "#c0392b"  # the edit agent's "isolate this stone" highlight
 
+# continuous-metal centre mounts: the sheet draws a collar hugging the girdle
+# instead of individual claws, so a bezel reads as a bezel — not four dots.
+BEZEL_STYLES = ("bezel", "semi_bezel")
+BEZEL_WALL_MM = 0.8  # metal wall thickness around the girdle
+
 
 class SheetUnsupported(Exception):
     """The sheet renderer does not cover this template/cut yet."""
+
+
+@dataclass(frozen=True)
+class Branding:
+    """The designer's own mark on a sheet, for pieces they send to clients and
+    factories under their studio's name. This is PRESENTATION, never part of the
+    immutable spec — two designers can brand the same version differently, and
+    the dimensions never change. Facetta keeps a small maker's mark regardless.
+    """
+    house: str | None = None       # studio / maison name, leads the title block
+    signature: str | None = None   # the designer's name, drawn as a signature
+
+    def _clip(self, s: str | None, n: int) -> str | None:
+        if not s:
+            return None
+        s = " ".join(s.split())
+        return s if len(s) <= n else s[: n - 1].rstrip() + "…"
+
+    @property
+    def house_line(self) -> str | None:
+        return self._clip(self.house, 24)
+
+    @property
+    def signature_line(self) -> str | None:
+        return self._clip(self.signature, 26)
+
+
+def _setting_is_bezel(spec: Spec) -> bool:
+    return spec.setting is not None and spec.setting.style in BEZEL_STYLES
+
+
+def _bezel_collar_top(cx: float, cy: float, rx: float, ry: float) -> str:
+    """A metal collar seen from above: a hatched annulus hugging the girdle,
+    crisp inner and outer edges. The stone (drawn earlier) shows through the
+    hole, so it reads as a rim of metal wrapping the stone."""
+    wall = BEZEL_WALL_MM * SCALE
+    orx, ory = rx + wall, ry + wall
+    return (
+        f'<path d="M {cx - orx:.2f} {cy:.2f} '
+        f'A {orx:.2f} {ory:.2f} 0 1 0 {cx + orx:.2f} {cy:.2f} '
+        f'A {orx:.2f} {ory:.2f} 0 1 0 {cx - orx:.2f} {cy:.2f} Z '
+        f'M {cx - rx:.2f} {cy:.2f} '
+        f'A {rx:.2f} {ry:.2f} 0 1 1 {cx + rx:.2f} {cy:.2f} '
+        f'A {rx:.2f} {ry:.2f} 0 1 1 {cx - rx:.2f} {cy:.2f} Z" '
+        f'fill="url(#hatch)" fill-rule="evenodd" stroke="{INK}" '
+        f'stroke-width="{STROKE_MAIN}"/>')
+
+
+def _bezel_collar_side(xl: float, xr: float, y_girdle: float,
+                       y_table: float) -> list[str]:
+    """The collar in elevation: two metal walls at the girdle edges, rising most
+    of the way up the crown — the profile factories read as a bezel seat."""
+    wall = BEZEL_WALL_MM * SCALE
+    lip_top = y_table + (y_girdle - y_table) * 0.35  # up ~65% of the crown
+    h = y_girdle - lip_top + wall * 0.5
+    return [
+        f'<rect x="{xl - wall:.2f}" y="{lip_top:.2f}" width="{wall:.2f}" '
+        f'height="{h:.2f}" fill="url(#hatch)" stroke="{INK}" '
+        f'stroke-width="{STROKE_MAIN}"/>',
+        f'<rect x="{xr:.2f}" y="{lip_top:.2f}" width="{wall:.2f}" '
+        f'height="{h:.2f}" fill="url(#hatch)" stroke="{INK}" '
+        f'stroke-width="{STROKE_MAIN}"/>',
+    ]
 
 
 def _fmt(value: float) -> str:
@@ -182,7 +251,9 @@ def _top_view(spec: Spec, cx: float, cy: float, *, mode: str = "full",
             _line(cx - rx - 3, cy, cx + rx + 3, cy, w=STROKE_DIM, color=FAINT, dash="3 1 0.5 1"),
         ]
 
-    if geo:
+    if geo and _setting_is_bezel(spec):
+        parts.append(_bezel_collar_top(cx, cy, rx, ry))
+    elif geo:
         prong_r = (spec.setting.prong_tip_mm or 0.9) * SCALE / 2
         count = spec.setting.prong_count or 4
         for i in range(count):
@@ -262,7 +333,9 @@ def _side_view(spec: Spec, cx: float, cy: float, *, mode: str = "full") -> list[
         parts.append(_line(cx, ring_top - gallery - crown_h - 3, cx, ring_cy + outer_r + 3,
                            w=STROKE_DIM, color=FAINT, dash="3 1 0.5 1"))
 
-    if geo:
+    if geo and _setting_is_bezel(spec):
+        parts += _bezel_collar_side(xl, xr, y_girdle, y_table)
+    elif geo:
         prong_r = (spec.setting.prong_tip_mm or 0.9) * SCALE / 2
         for x in (xl - prong_r / 2, xr + prong_r / 2):
             parts += [
@@ -319,39 +392,118 @@ def _side_view(spec: Spec, cx: float, cy: float, *, mode: str = "full") -> list[
     return parts
 
 
-def _title_block(spec: Spec, scale_label: str = "3:1") -> list[str]:
+def _metal_line(metal) -> str:
+    """Clean, title-cased mount description: '18k Yellow Gold · high polish'."""
+    if metal is None:
+        return "Loose stone — unmounted"
+    karat = f"{metal.karat}k " if metal.karat else ""
+    color = f"{metal.color.title()} " if metal.color else ""
+    material = metal.material.replace("_", " ").title()
+    finish = f"  ·  {metal.finish.replace('_', ' ')}" if metal.finish else ""
+    return f"{karat}{color}{material}{finish}"
+
+
+def _title_block(spec: Spec, scale_label: str = "3:1",
+                 branding: Branding | None = None) -> list[str]:
     x = SHEET_W - MARGIN - 100
     y = SHEET_H - MARGIN - 40
+    w = 100.0
     stone = spec.stone
-    metal = spec.metal
-    if metal is not None:
-        karat = f"{metal.karat}k " if metal.karat else ""
-        color = f"{metal.color} " if metal.color else ""
-        finish = f", {metal.finish.replace('_', ' ')}" if metal.finish else ""
-        metal_line = f"{karat}{color}{metal.material}{finish}"
-    else:
-        metal_line = "loose stone — unmounted"
-    lines = [
-        (f"{spec.design_id}  ·  v{spec.version}", 4.2, True),
-        (f"{stone.carat:.2f} ct {stone.species}, {stone.cut.replace('_', ' ')}", 3.2, False),
-        (metal_line, 3.2, False),
-        (f"{stone.color.trade}  ·  {stone.clarity.grade}" if stone.clarity
-         else f"{stone.color.trade}  ·  finest available", 3.2, False),
-        (f"designer {spec.created_by}  ·  {spec.created_at.date().isoformat()}", 3.0, False),
-        (f"UNITS mm  ·  SCALE {scale_label}"
-         + (f"  ·  EST. {weight} g" if (weight := estimate_metal_g(spec)) else ""), 3.0, False),
-    ]
+
+    house = branding.house_line if branding else None
+    signature = branding.signature_line if branding else None
+    masthead = house or "FACETTA"
+
+    # spec body — a tidy, scannable hierarchy: identity, stone, mount, colour,
+    # then a faint meta line. Consistent middle-dot separators, title case.
+    color_line = (f"{stone.color.trade}  ·  {stone.clarity.grade}" if stone.clarity
+                  else f"{stone.color.trade}  ·  finest available")
+    weight = estimate_metal_g(spec)
+    meta = (f"UNITS mm  ·  SCALE {scale_label}"
+            + (f"  ·  EST. {weight} g" if weight else "")
+            + f"  ·  {spec.created_by}")
+
     parts = [
-        f'<rect x="{x:.2f}" y="{y:.2f}" width="100" height="40" fill="none" '
+        f'<rect x="{x:.2f}" y="{y:.2f}" width="{w:g}" height="40" fill="{PAPER}" '
         f'stroke="{INK}" stroke-width="{STROKE_MAIN}"/>',
-        _line(x, y + 8, x + 100, y + 8, w=STROKE_DIM),
-        _text(x + 3, y + 5.8, "FACETTA", size=4.0, anchor="start", style=' letter-spacing="2.0"'),
+        # masthead band
+        _line(x, y + 8, x + w, y + 8, w=STROKE_DIM),
+        _text(x + 3, y + 5.8, masthead, size=4.0, anchor="start",
+              style=' letter-spacing="1.6"'),
     ]
+    # keep Facetta as the maker's mark even under a designer's house name
+    if house:
+        parts.append(_text(x + w - 3, y + 5.6, "made with FACETTA", size=2.2,
+                           anchor="end", color=FAINT, style=' letter-spacing="0.6"'))
+
     ty = y + 8
-    for s, size, bold in lines:
-        ty += 4.6 if not bold else 5.6
-        weight = ' font-weight="bold"' if bold else ""
-        parts.append(_text(x + 3, ty, s, size=size, anchor="start", style=weight))
+    body = [
+        (f"{spec.design_id}  ·  v{spec.version}", 3.8, True),
+        (f"{stone.carat:.2f} ct {stone.species.title()}  ·  "
+         f"{stone.cut.replace('_', ' ')}", 3.1, False),
+        (_metal_line(spec.metal), 3.1, False),
+        (color_line, 3.1, False),
+    ]
+    for s, size, bold in body:
+        ty += 5.4 if bold else 4.4
+        parts.append(_text(x + 3, ty, s, size=size, anchor="start",
+                           style=' font-weight="bold"' if bold else ""))
+    parts.append(_text(x + 3, ty + 4.0, meta, size=2.7, anchor="start", color=FAINT))
+
+    # signature block: a designer's hand, only when they've supplied a mark.
+    # A ruled line with an italic signature above it — the same gesture as
+    # signing a physical work order sent to a factory.
+    sy = y + 40 - 3.2
+    if signature:
+        parts += [
+            _line(x + 3, sy - 1.5, x + 42, sy - 1.5, w=STROKE_DIM, color=FAINT),
+            _text(x + 3, sy - 2.6, signature, size=3.6, anchor="start",
+                  style=' font-style="italic"'),
+            _text(x + 3, sy + 1.4, "SIGNED", size=2.1, anchor="start", color=FAINT,
+                  style=' letter-spacing="1.0"'),
+        ]
+    parts.append(_text(x + w - 3, sy, spec.created_at.date().isoformat(),
+                       size=2.7, anchor="end", color=FAINT))
+    return parts
+
+
+def _wrap(text: str, width: int, lines: int) -> list[str]:
+    """Word-wrap into at most `lines` rows of ~`width` chars, ellipsizing the
+    tail if it overruns — a clean paragraph instead of a hard mid-word cut."""
+    words = " ".join(text.split()).split(" ")
+    rows: list[str] = []
+    cur = ""
+    i = 0
+    while i < len(words):
+        trial = f"{cur} {words[i]}".strip()
+        if len(trial) <= width or not cur:
+            cur, i = trial, i + 1
+        elif len(rows) < lines - 1:
+            rows.append(cur)
+            cur = ""
+        else:
+            break  # last row is full; whatever remains overruns
+    if cur and len(rows) < lines:
+        rows.append(cur)
+        cur = ""
+    if i < len(words) or cur:  # words left unplaced — mark the tail continued
+        if rows:
+            rows[-1] = rows[-1][: width - 1].rstrip() + "…"
+    return rows
+
+
+def _notes_block(notes: str) -> list[str]:
+    """Notes to factory, set as a titled two-line paragraph — professional,
+    readable, never a hard-truncated run-on."""
+    label_y = SHEET_H - MARGIN - 18.5
+    rows = _wrap(notes, 112, 2)
+    parts = [
+        _text(MARGIN + 4, label_y, "NOTES TO FACTORY", size=2.6, anchor="start",
+              color=FAINT, style=' letter-spacing="1.2"'),
+    ]
+    for i, row in enumerate(rows):
+        parts.append(_text(MARGIN + 4, label_y + 3.8 + i * 3.6, row, size=3.0,
+                           anchor="start"))
     return parts
 
 
@@ -388,7 +540,8 @@ def _footer_key() -> list[str]:
 
 
 def _frame(spec: Spec, title: str, scale_label: str, body: list[str],
-           datum_y: float | None = BASELINE, background: str | None = None) -> str:
+           datum_y: float | None = BASELINE, background: str | None = None,
+           branding: Branding | None = None) -> str:
     """The shared sheet envelope: page, border, title, body views, title block.
 
     datum_y draws the shared horizontal baseline every view is centered on.
@@ -425,14 +578,10 @@ def _frame(spec: Spec, title: str, scale_label: str, body: list[str],
         parts.append(_line(MARGIN + 3, datum_y, SHEET_W - MARGIN - 3, datum_y,
                            w=STROKE_DIM, color=FAINT, dash="6 1.5 1 1.5"))
     parts += body
-    parts += _title_block(spec, scale_label)
+    parts += _title_block(spec, scale_label, branding)
     parts += _footer_key()
     if spec.notes_to_factory:
-        parts.append(_text(MARGIN + 4, SHEET_H - MARGIN - 10.5,
-                           "NOTES: " + (spec.notes_to_factory[:110] + "…"
-                                        if len(spec.notes_to_factory) > 110
-                                        else spec.notes_to_factory),
-                           size=3.0, anchor="start"))
+        parts += _notes_block(spec.notes_to_factory)
     parts.append(_text(SHEET_W - MARGIN, SHEET_H - 3.2,
                        "CONFIDENTIAL — FACTORY PRODUCTION ONLY", size=2.8,
                        anchor="end", color=FAINT, style=' letter-spacing="1.2"'))
@@ -485,15 +634,20 @@ def _front_view(spec: Spec, cx: float, cy: float, melee=None, *,
                            color=FAINT, dash="3 1 0.5 1"))
     if geo:
         prong_r = (spec.setting.prong_tip_mm or 0.9) * SCALE / 2
-        for x in (xl - prong_r / 2, xr + prong_r / 2):
-            parts += [
-                _line(x, y_girdle + 2.0, x, y_table + 1.0),
-                _circle(x, y_table + 1.0, prong_r),
-            ]
+        if _setting_is_bezel(spec):
+            parts += _bezel_collar_side(xl, xr, y_girdle, y_table)
+            edge = BEZEL_WALL_MM * SCALE  # melee seat outside the collar
+        else:
+            for x in (xl - prong_r / 2, xr + prong_r / 2):
+                parts += [
+                    _line(x, y_girdle + 2.0, x, y_table + 1.0),
+                    _circle(x, y_table + 1.0, prong_r),
+                ]
+            edge = prong_r
         if melee is not None:
             mr = melee.dimensions_mm.width / 2 * SCALE
             for sign in (-1, 1):
-                parts.append(_circle(cx + sign * (span / 2 + prong_r + 0.6 + mr), y_girdle, mr))
+                parts.append(_circle(cx + sign * (span / 2 + edge + 0.6 + mr), y_girdle, mr))
 
     # shoulder pavé: the shank's own stones, drawn true-size down the band
     pave = _find_stone(spec, "shoulder_pave", "pave_shoulders")
@@ -534,7 +688,8 @@ def _require_ring_sections(spec: Spec, what: str) -> None:
         raise SheetUnsupported(f"a {what} sheet needs band and ring_size (with inner diameter)")
 
 
-def _render_solitaire(spec: Spec, highlight_ref: str | None = None) -> str:
+def _render_solitaire(spec: Spec, highlight_ref: str | None = None,
+                      branding: Branding | None = None) -> str:
     if spec.stone.cut not in SUPPORTED_CUTS:
         raise SheetUnsupported(
             f"cut '{spec.stone.cut}' not supported on sheets yet; supported: {list(SUPPORTED_CUTS)}"
@@ -544,7 +699,8 @@ def _render_solitaire(spec: Spec, highlight_ref: str | None = None) -> str:
         _ring_body(spec, "full", highlight_ref)
         + _stone_schedule(spec, MARGIN + 4, 158, circled=True, totals=True)
     )
-    return _frame(spec, "TECHNICAL SHEET — SOLITAIRE RING", "3:1", body)
+    return _frame(spec, "TECHNICAL SHEET — SOLITAIRE RING", "3:1", body,
+                  branding=branding)
 
 
 def _find_stone(spec: Spec, *positions: str):
@@ -814,6 +970,8 @@ def _halo_top_view(spec: Spec, melee, cx: float, cy: float, *,
             parts += _circled_ref(fx + sign * 2.6, fy, _ref_letter(spec, s))
     if geo:
         parts += _facet_face_up(cx, cy, spec.stone.cut, 2 * rx, 2 * ry)  # center stone
+        if _setting_is_bezel(spec):
+            parts.append(_bezel_collar_top(cx, cy, rx, ry))
     if ann:
         parts += [
             _line(cx, cy - oby - 3, cx, cy + oby + 3, w=STROKE_DIM, color=FAINT, dash="3 1 0.5 1"),
@@ -895,7 +1053,8 @@ def _ring_body(spec: Spec, mode: str = "full",
     )
 
 
-def _render_halo(spec: Spec, highlight_ref: str | None = None) -> str:
+def _render_halo(spec: Spec, highlight_ref: str | None = None,
+                 branding: Branding | None = None) -> str:
     if spec.stone.cut not in SUPPORTED_CUTS:
         raise SheetUnsupported(
             f"halo center cut '{spec.stone.cut}' not supported; supported: {list(SUPPORTED_CUTS)}"
@@ -908,7 +1067,8 @@ def _render_halo(spec: Spec, highlight_ref: str | None = None) -> str:
         _ring_body(spec, "full", highlight_ref)
         + _stone_schedule(spec, MARGIN + 4, 158, circled=True, totals=True)
     )
-    return _frame(spec, "TECHNICAL SHEET — HALO RING", "3:1", body)
+    return _frame(spec, "TECHNICAL SHEET — HALO RING", "3:1", body,
+                  branding=branding)
 
 
 # --- oval station bangle ------------------------------------------------------
@@ -2042,6 +2202,163 @@ def _render_loose_stone(spec: Spec) -> str:
     return _frame(spec, "GEM IDENTIFICATION — LOOSE STONE", f"{s:g}:1", body)
 
 
+# --- articulated drop earring ---------------------------------------------------
+#
+# The first vertical archetype: a hook, an articulated link run, a marquise
+# frame wrapped in a pavé halo, and a nested drop with a bezel accent at the
+# tip. Every part is drawn from the spec's mm and lettered — the overall reach,
+# the frame, the drop, the hook — so an earring the designer described in prose
+# leaves as a true dimensioned factory sheet, not a captioned photo.
+
+EARRING_SCALE = 2.3
+
+
+def _marquise_path(cx: float, cy: float, length: float, width: float) -> str:
+    """A pointed-oval (marquise) outline, length vertical. Two quadratics with
+    controls at ±width give a half-width of width/2 at the waist and sharp
+    poles top and bottom."""
+    ty, by = cy - length / 2, cy + length / 2
+    return (f'M {cx:.2f} {ty:.2f} '
+            f'Q {cx + width:.2f} {cy:.2f} {cx:.2f} {by:.2f} '
+            f'Q {cx - width:.2f} {cy:.2f} {cx:.2f} {ty:.2f} Z')
+
+
+def _pear_path(cx: float, cy: float, length: float, width: float) -> str:
+    """A pear (teardrop) outline: a pointed top over a round bottom of radius
+    width/2, length vertical."""
+    r = width / 2
+    ty = cy - length / 2
+    by = cy + length / 2 - r          # centre of the round bottom
+    return (f'M {cx:.2f} {ty:.2f} '
+            f'C {cx + width * 0.78:.2f} {ty + length * 0.16:.2f} '
+            f'{cx + r:.2f} {by - r * 0.4:.2f} {cx + r:.2f} {by:.2f} '
+            f'A {r:.2f} {r:.2f} 0 1 1 {cx - r:.2f} {by:.2f} '
+            f'C {cx - r:.2f} {by - r * 0.4:.2f} '
+            f'{cx - width * 0.78:.2f} {ty + length * 0.16:.2f} {cx:.2f} {ty:.2f} Z')
+
+
+def _marquise_point(cx: float, cy: float, length: float, width: float,
+                    t: float) -> tuple[float, float]:
+    """A point on the marquise waist ring at parameter t∈[0,1) — used to seat
+    the pavé halo evenly around the frame (elliptical approximation)."""
+    ang = -math.pi / 2 + t * 2 * math.pi
+    return cx + (width / 2) * math.cos(ang), cy + (length / 2) * math.sin(ang)
+
+
+def _render_drop_earring(spec: Spec, highlight_ref: str | None = None,
+                         branding: Branding | None = None) -> str:
+    if spec.drop is None:
+        raise SheetUnsupported("deco_drop_earring needs a drop section")
+    S = EARRING_SCALE
+    d = spec.drop
+    frame = spec.stone.dimensions_mm
+    halo = _find_stone(spec, "halo", "surround")
+    drop_stone = _find_stone(spec, "drop", "under_center")
+    accent = _find_stone(spec, "stations", "accent")
+
+    cx = 78.0
+    top = 26.0                                   # top of the hook
+    wire = (d.wire_mm or 0.9) * S
+
+    # stack the parts down the centreline, in paper-mm
+    hook_h = d.hook_height_mm * S
+    hook_w = hook_h * 0.62
+    y_hook_c = top + hook_h / 2
+    y = top + hook_h                             # bottom of the hook
+
+    link_pitch = (d.link_pitch_mm or 2.0) * S
+    y += 1.2                                     # jump ring gap
+    link_ys = [y + link_pitch * (i + 0.5) for i in range(d.link_count)]
+    y += link_pitch * d.link_count + 1.2
+
+    frame_l, frame_w = frame.length * S, frame.width * S
+    halo_gap = ((halo.dimensions_mm.width if halo else 1.2) * S) * 0.9
+    frame_cy = y + frame_l / 2 + halo_gap
+    lowest = frame_cy + frame_l / 2 + halo_gap   # bottom pole of the halo
+
+    parts: list[str] = []
+
+    # hook — an open ear wire, drawn at the wire gauge
+    parts.append(
+        f'<path d="M {cx:.2f} {y_hook_c + hook_h / 2:.2f} '
+        f'A {hook_w / 2:.2f} {hook_h / 2:.2f} 0 1 1 {cx + 0.1:.2f} {y_hook_c + hook_h / 2:.2f}" '
+        f'fill="none" stroke="{INK}" stroke-width="{max(wire, STROKE_MAIN):.2f}" '
+        f'stroke-linecap="round"/>')
+    # jump ring + articulated links down to the frame
+    parts.append(_circle(cx, top + hook_h + 1.2, wire * 0.9))
+    for ly in link_ys:
+        parts.append(f'<ellipse cx="{cx:.2f}" cy="{ly:.2f}" rx="{link_pitch * 0.34:.2f}" '
+                     f'ry="{link_pitch * 0.5:.2f}" fill="none" stroke="{INK}" '
+                     f'stroke-width="{STROKE_MAIN}"/>')
+
+    # pavé halo — a ring of beads on an outward-offset marquise
+    if halo is not None:
+        pr = halo.dimensions_mm.width / 2 * S
+        ox, oy = frame_w / 2 + pr, frame_l / 2 + pr
+        for i in range(halo.count):
+            t = i / halo.count
+            ang = -math.pi / 2 + t * 2 * math.pi
+            parts.append(_circle(cx + ox * math.cos(ang),
+                                 frame_cy + oy * math.sin(ang), pr))
+    # the marquise frame
+    parts.append(f'<path d="{_marquise_path(cx, frame_cy, frame_l, frame_w)}" '
+                 f'fill="#ffffff" stroke="{INK}" stroke-width="{STROKE_MAIN}"/>')
+    parts += _facet_face_up(cx, frame_cy, "marquise", frame_w, frame_l) \
+        if "marquise" in SUPPORTED_CUTS else []
+
+    # the nested pear drop, suspended just below the frame centre
+    if drop_stone is not None:
+        dl, dw = drop_stone.dimensions_mm.length * S, drop_stone.dimensions_mm.width * S
+        drop_cy = frame_cy + frame_l * 0.06
+        parts.append(_circle(cx, frame_cy - frame_l / 2 + 1.2, wire * 0.7))  # bail
+        parts.append(f'<path d="{_pear_path(cx, drop_cy, dl, dw)}" '
+                     f'fill="#ffffff" stroke="{INK}" stroke-width="{STROKE_MAIN}"/>')
+    # bezel accent at the tip
+    if accent is not None:
+        ar = accent.dimensions_mm.width / 2 * S
+        ay = frame_cy + frame_l / 2 - ar - 1.0
+        parts.append(_circle(cx, ay, ar + 0.5 * S))     # bezel collar
+        parts.append(_circle(cx, ay, ar))
+
+    # dimensions — every number from the spec
+    xdim = cx - frame_w / 2 - halo_gap - 14
+    parts += [
+        _ext(cx - hook_w / 2, top, xdim - 1, top),
+        _ext(cx, lowest, xdim - 1, lowest),
+        *_dim_v(xdim, top, lowest, f"{_fmt(d.overall_length_mm)} mm overall"),
+    ]
+    # frame L×W on the right, drop below, hook top-left
+    xr = cx + frame_w / 2 + halo_gap + 10
+    parts += [
+        _ext(cx + frame_w / 2, frame_cy - frame_l / 2, xr + 1, frame_cy - frame_l / 2),
+        _ext(cx + frame_w / 2, frame_cy + frame_l / 2, xr + 1, frame_cy + frame_l / 2),
+        *_dim_v(xr, frame_cy - frame_l / 2, frame_cy + frame_l / 2,
+                f"{_fmt(frame.length)} × {_fmt(frame.width)} mm frame"),
+        _text(cx, top - 3, "FRONT VIEW", size=3.6, style=' letter-spacing="1.2"'),
+        _text(cx, lowest + 6,
+              f"hook {_fmt(d.hook_height_mm)} mm"
+              + (f"  ·  {d.link_count} links @ {_fmt(d.link_pitch_mm)} mm"
+                 if d.link_count and d.link_pitch_mm else ""), size=2.8, color=FAINT),
+    ]
+    if halo is not None:
+        parts.append(_text(cx, lowest + 10,
+                           f"{halo.count} × ⌀{_fmt(halo.dimensions_mm.width)} mm pavé halo",
+                           size=2.8, color=FAINT))
+    if drop_stone is not None:
+        parts.append(_text(cx, lowest + 14,
+                           f"pear drop {_fmt(drop_stone.dimensions_mm.length)} × "
+                           f"{_fmt(drop_stone.dimensions_mm.width)} mm", size=2.8, color=FAINT))
+    if d.wall_mm or d.wire_mm:
+        gauge = "  ·  ".join(filter(None, [
+            f"wall {_fmt(d.wall_mm)} mm" if d.wall_mm else "",
+            f"wire {_fmt(d.wire_mm)} mm" if d.wire_mm else ""]))
+        parts.append(_text(cx, lowest + 18, gauge, size=2.8, color=FAINT))
+
+    body = parts + _stone_schedule(spec, 168, 30, circled=True, totals=True)
+    return _frame(spec, "TECHNICAL SHEET — DROP EARRING", f"{S:g}:1", body,
+                  datum_y=None, branding=branding)
+
+
 TEMPLATES = {
     "solitaire_prong": _render_solitaire,
     "halo_prong": _render_halo,
@@ -2051,22 +2368,28 @@ TEMPLATES = {
     "link_bracelet": _render_link_bracelet,
     "loose_stone": _render_loose_stone,
     "leaf_spray_brooch": _render_leaf_spray,
+    "deco_drop_earring": _render_drop_earring,
 }
 
 
-def render_sheet(spec: Spec, highlight_ref: str | None = None) -> str:
+def render_sheet(spec: Spec, highlight_ref: str | None = None,
+                 branding: Branding | None = None) -> str:
     """Render the annotated technical sheet for a validated spec.
 
     highlight_ref (a stone-schedule letter) rings that stone in red — the edit
     agent's 'isolate this change' mark. Only the ring templates honor it; it is
-    ignored elsewhere, and defaults off so the master sheet is unchanged."""
+    ignored elsewhere, and defaults off so the master sheet is unchanged.
+
+    branding stamps the designer's house name and signature in the title block
+    for pieces sent to clients and factories under their studio — presentation
+    only, never the spec. Also ring-only, and off by default."""
     render = TEMPLATES.get(spec.template)
     if render is None:
         raise SheetUnsupported(
             f"template '{spec.template}' not supported yet; supported: {list(TEMPLATES)}"
         )
-    if highlight_ref and spec.template in ("solitaire_prong", "halo_prong"):
-        return render(spec, highlight_ref)
+    if spec.template in ("solitaire_prong", "halo_prong", "deco_drop_earring"):
+        return render(spec, highlight_ref, branding)
     return render(spec)
 
 
@@ -2107,7 +2430,8 @@ def render_sheet_geometry(spec: Spec) -> str:
     return "\n".join(parts) + "\n"
 
 
-def render_blueprint_frame(spec: Spec, background_image: str) -> str:
+def render_blueprint_frame(spec: Spec, background_image: str,
+                           branding: Branding | None = None) -> str:
     """The blueprint sheet: the painted views (background_image, a full-bleed
     <image>) with EVERY number drawn by code on top — dims, gemstone key,
     title block. The engine paints; the record letters."""
@@ -2115,7 +2439,8 @@ def render_blueprint_frame(spec: Spec, background_image: str) -> str:
     body = _ring_body(spec, "annotation") + _stone_schedule(
         spec, MARGIN + 4, 158, circled=True, totals=True)
     title = _SHEET_TITLE.get(spec.template, "TECHNICAL SHEET")
-    return _frame(spec, title, "3:1", body, background=background_image)
+    return _frame(spec, title, "3:1", body, background=background_image,
+                  branding=branding)
 
 
 # --- true-size print sheet -------------------------------------------------------

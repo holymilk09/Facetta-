@@ -108,5 +108,13 @@
     "prong_count": 4,
     "prong_tip_mm": 0.8
   },
-  "notes_to_factory": "DRAFT extracted from a render: all mm scale from an assumed 16x12 mm center aquamarine (total drop ~55 mm); designer to confirm dimensions and stone species before production."
+  "notes_to_factory": "DRAFT extracted from a render: all mm scale from an assumed 16x12 mm center aquamarine (total drop ~55 mm); designer to confirm dimensions and stone species before production.",
+  "drop": {
+    "hook_height_mm": 11.0,
+    "overall_length_mm": 55.0,
+    "link_count": 4,
+    "link_pitch_mm": 2.6,
+    "wall_mm": 0.9,
+    "wire_mm": 0.8
+  }
 }

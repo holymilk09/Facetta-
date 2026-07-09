@@ -50,7 +50,7 @@ def test_no_key_means_503_not_crash(example_spec, monkeypatch):
     response = client.post("/specs/render.png",
                            json={"spec": example_spec, "style": "photo"})
     assert response.status_code == 503
-    assert "FAL_KEY" in response.json()["detail"]  # names the missing key
+    assert "XAI_KEY" in response.json()["detail"]  # names the missing Grok key
 
 
 def test_render_calls_provider_once_then_serves_cache(example_spec,
@@ -64,15 +64,14 @@ def test_render_calls_provider_once_then_serves_cache(example_spec,
             pass
 
         def json(self):
-            return {"images": [{"url": "data:image/png;base64,"
-                                + base64.b64encode(PNG_1PX).decode()}]}
+            return {"data": [{"b64_json": base64.b64encode(PNG_1PX).decode()}]}
 
     import httpx
 
     def fake_post(url, **kwargs):
         calls.append(url)
-        # the provider must receive our control image and instruction
-        assert kwargs["json"]["image_url"].startswith("data:image/png;base64,")
+        # Grok receives our control image and instruction
+        assert kwargs["json"]["image"]["url"].startswith("data:image/png;base64,")
         assert "control drawing" in kwargs["json"]["prompt"]
         return FakeResponse()
 
@@ -109,3 +108,86 @@ def test_unknown_model_fails_loudly(example_spec):
     with pytest.raises(render_mod.RenderUnavailable) as err:
         render_finished_image(_validated(example_spec), model="dalle_1999")
     assert "flux_kontext" in str(err.value)
+
+
+def test_generation_variant_makes_a_fresh_image(monkeypatch, tmp_path):
+    """The founder's stale-concept bug: the same brief must be able to
+    regenerate instead of serving the first-ever image forever."""
+    from facetta.render import generate_image
+
+    monkeypatch.setattr(render_mod, "CACHE_DIR", tmp_path)
+    monkeypatch.setattr(render_mod, "_provider_key", lambda env: "test:key")
+    calls = []
+
+    class FakeResponse:
+        def raise_for_status(self):
+            pass
+
+        def json(self):
+            # a distinct 1px payload per call so we can see cache vs fresh
+            return {"data": [{"b64_json": base64.b64encode(
+                b"png-" + str(len(calls)).encode()).decode()}]}
+
+    import httpx
+
+    def fake_post(url, **kwargs):
+        calls.append(url)
+        return FakeResponse()
+
+    monkeypatch.setattr(httpx, "post", fake_post)
+
+    a, cached_a = generate_image("art deco emerald ring")
+    a2, cached_a2 = generate_image("art deco emerald ring")   # same brief, cached
+    b, cached_b = generate_image("art deco emerald ring", variant=1)  # regenerate
+
+    assert (cached_a, cached_a2, cached_b) == (False, True, False)
+    assert a == a2 and a != b            # variant busts the cache, same brief
+    assert len(calls) == 2               # only the two live generations paid
+
+
+def test_setting_change_moves_the_cache_key_and_variant_busts_it():
+    """The stale-drawing bug: a design change that the (lossy) prompt drops —
+    the setting's prong count — must still change the render cache key, and a
+    variant must force a genuinely fresh render."""
+    import json
+    from pathlib import Path
+
+    from facetta.render import spec_visual_hash
+    raw = json.loads((Path(__file__).parent.parent / "docs" / "examples"
+                      / "concept_emerald_halo.json").read_text())
+    a = validate_spec(Spec.model_validate(raw), get_vocabulary()).spec
+    # change ONLY the setting prong count — the exact field prompt_core drops
+    raw2 = json.loads(json.dumps(raw))
+    raw2["setting"]["prong_count"] = (a.setting.prong_count or 4) + 2
+    b = validate_spec(Spec.model_validate(raw2), get_vocabulary()).spec
+
+    assert spec_visual_hash(a) != spec_visual_hash(b)     # design change -> new key
+    # metadata (version/date) must NOT move the key (no needless re-render)
+    c = a.model_copy(update={"version": a.version + 9})
+    assert spec_visual_hash(a) == spec_visual_hash(c)
+    # the finished-render key also reflects it
+    assert (render_cache_key(a, "photo", "studio")
+            != render_cache_key(b, "photo", "studio"))
+
+
+def test_metal_finish_change_moves_the_render_key():
+    """The parallel bug: metal.finish was in neither the fingerprint nor the
+    instruction, so changing polish served the old render."""
+    import json
+    from pathlib import Path
+
+    raw = json.loads((Path(__file__).parent.parent / "docs" / "examples"
+                      / "concept_emerald_halo.json").read_text())
+    a = validate_spec(Spec.model_validate(raw), get_vocabulary()).spec
+    raw2 = json.loads(json.dumps(raw))
+    raw2["metal"]["finish"] = "matte"
+    b = validate_spec(Spec.model_validate(raw2), get_vocabulary()).spec
+    assert (render_cache_key(a, "photo", "studio")
+            != render_cache_key(b, "photo", "studio"))
+
+
+def test_edit_image_refuses_empty_source():
+    from facetta.render import RenderUnavailable, edit_image
+    import pytest as _pytest
+    with _pytest.raises(RenderUnavailable):
+        edit_image(b"", "draw it", "grok_direct")

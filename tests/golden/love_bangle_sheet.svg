@@ -49,15 +49,15 @@
 <line x1="255.40" y1="113.70" x2="257.20" y2="111.90" stroke="#3f3f3f" stroke-width="0.24"/>
 <text x="258.10" y="106.10" font-family="Georgia, 'Times New Roman', serif" font-size="3.2" fill="#3f3f3f" text-anchor="start" stroke="#fdfdfa" stroke-width="1.0" stroke-linejoin="round" paint-order="stroke">2.6 mm</text>
 <text x="232.00" y="127.80" font-family="Georgia, 'Times New Roman', serif" font-size="3.6" fill="#3f3f3f" text-anchor="middle" letter-spacing="1.2">SECTION — 6:1</text>
-<rect x="189.00" y="162.00" width="100" height="40" fill="none" stroke="#3f3f3f" stroke-width="0.3"/>
+<rect x="189.00" y="162.00" width="100" height="40" fill="#fdfdfa" stroke="#3f3f3f" stroke-width="0.3"/>
 <line x1="189.00" y1="170.00" x2="289.00" y2="170.00" stroke="#3f3f3f" stroke-width="0.15"/>
-<text x="192.00" y="167.80" font-family="Georgia, 'Times New Roman', serif" font-size="4.0" fill="#3f3f3f" text-anchor="start" letter-spacing="2.0">FACETTA</text>
-<text x="192.00" y="175.60" font-family="Georgia, 'Times New Roman', serif" font-size="4.2" fill="#3f3f3f" text-anchor="start" font-weight="bold">dsn_bangle  ·  v1</text>
-<text x="192.00" y="180.20" font-family="Georgia, 'Times New Roman', serif" font-size="3.2" fill="#3f3f3f" text-anchor="start">0.14 ct diamond, princess</text>
-<text x="192.00" y="184.80" font-family="Georgia, 'Times New Roman', serif" font-size="3.2" fill="#3f3f3f" text-anchor="start">18k yellow gold, high polish</text>
-<text x="192.00" y="189.40" font-family="Georgia, 'Times New Roman', serif" font-size="3.2" fill="#3f3f3f" text-anchor="start">F  ·  VS1</text>
-<text x="192.00" y="194.00" font-family="Georgia, 'Times New Roman', serif" font-size="3.0" fill="#3f3f3f" text-anchor="start">designer usr_ana  ·  2026-07-02</text>
-<text x="192.00" y="198.60" font-family="Georgia, 'Times New Roman', serif" font-size="3.0" fill="#3f3f3f" text-anchor="start">UNITS mm  ·  SCALE 2:1  ·  EST. 41.5 g</text>
+<text x="192.00" y="167.80" font-family="Georgia, 'Times New Roman', serif" font-size="4.0" fill="#3f3f3f" text-anchor="start" letter-spacing="1.6">FACETTA</text>
+<text x="192.00" y="175.40" font-family="Georgia, 'Times New Roman', serif" font-size="3.8" fill="#3f3f3f" text-anchor="start" font-weight="bold">dsn_bangle  ·  v1</text>
+<text x="192.00" y="179.80" font-family="Georgia, 'Times New Roman', serif" font-size="3.1" fill="#3f3f3f" text-anchor="start">0.14 ct Diamond  ·  princess</text>
+<text x="192.00" y="184.20" font-family="Georgia, 'Times New Roman', serif" font-size="3.1" fill="#3f3f3f" text-anchor="start">18k Yellow Gold  ·  high polish</text>
+<text x="192.00" y="188.60" font-family="Georgia, 'Times New Roman', serif" font-size="3.1" fill="#3f3f3f" text-anchor="start">F  ·  VS1</text>
+<text x="192.00" y="192.60" font-family="Georgia, 'Times New Roman', serif" font-size="2.7" fill="#8a8a8a" text-anchor="start">UNITS mm  ·  SCALE 2:1  ·  EST. 41.5 g  ·  usr_ana</text>
+<text x="286.00" y="198.80" font-family="Georgia, 'Times New Roman', serif" font-size="2.7" fill="#8a8a8a" text-anchor="end">2026-07-02</text>
 <line x1="8.00" y1="194.00" x2="189.00" y2="194.00" stroke="#8a8a8a" stroke-width="0.15"/>
 <text x="12.00" y="199.00" font-family="Georgia, 'Times New Roman', serif" font-size="2.8" fill="#3f3f3f" text-anchor="start" letter-spacing="1.4">KEY</text>
 <line x1="26.00" y1="198.00" x2="34.00" y2="198.00" stroke="#3f3f3f" stroke-width="0.3"/>
@@ -72,6 +72,7 @@
 <circle cx="158.40" cy="198.00" r="1.00" fill="#ffffff" stroke="#3f3f3f" stroke-width="0.3"/>
 <circle cx="160.80" cy="198.00" r="1.00" fill="#ffffff" stroke="#3f3f3f" stroke-width="0.3"/>
 <text x="164.00" y="199.00" font-family="Georgia, 'Times New Roman', serif" font-size="2.6" fill="#8a8a8a" text-anchor="start">pavé</text>
-<text x="12.00" y="191.50" font-family="Georgia, 'Times New Roman', serif" font-size="3.0" fill="#3f3f3f" text-anchor="start">NOTES: Hinged oval bangle; stations flush-set, screw-motif free.</text>
+<text x="12.00" y="183.50" font-family="Georgia, 'Times New Roman', serif" font-size="2.6" fill="#8a8a8a" text-anchor="start" letter-spacing="1.2">NOTES TO FACTORY</text>
+<text x="12.00" y="187.30" font-family="Georgia, 'Times New Roman', serif" font-size="3.0" fill="#3f3f3f" text-anchor="start">Hinged oval bangle; stations flush-set, screw-motif free.</text>
 <text x="289.00" y="206.80" font-family="Georgia, 'Times New Roman', serif" font-size="2.8" fill="#8a8a8a" text-anchor="end" letter-spacing="1.2">CONFIDENTIAL — FACTORY PRODUCTION ONLY</text>
 </svg>
