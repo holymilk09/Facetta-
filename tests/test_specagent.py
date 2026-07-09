@@ -462,6 +462,32 @@ class TestTechnicalDrawingEndpoint:
         assert "estimated from render" in svg          # the footer line
         assert body["estimated_specs"] == est          # the form-prefill ride
 
+    def test_assist_estimates_are_physics_checked(self, monkeypatch):
+        """The math assist over Grok's read: a carat that contradicts its own
+        estimated size is corrected by the density model (pure code, no extra
+        API call) and the panel banner says the check ran."""
+        monkeypatch.setattr(specs_mod, "generate_spec_sheet",
+                            lambda image, **kwargs: (REAL_PNG, dict(SUMMARY),
+                                                     False))
+        est = {"stones": [{"qty": 1, "type": "diamond oval brilliant",
+                           "size_mm": "8 × 6", "carat_each": 5.0,
+                           "confidence": 0.6}],
+               "metal": "18k white gold", "measurements": [],
+               "scaled": False, "scale_anchor": None}
+        monkeypatch.setattr(agent, "read_sheet_specs",
+                            lambda image, **kwargs: est)
+        r = TestClient(app).post("/specs/technical-drawing", json={
+            "image_base64": base64.b64encode(PNG).decode(),
+            "facetta_template": True, "assist_specs": True})
+        assert r.status_code == 200, r.text
+        body = r.json()
+        stone = body["estimated_specs"]["stones"][0]
+        assert stone["carat_each"] != 5.0                  # impossible at 8 × 6
+        assert stone["carat_each"] == pytest.approx(1.257, abs=0.01)
+        assert "adjusted" in stone["note"]
+        assert body["estimated_specs"]["physics_checked"] is True
+        assert "physics-checked against the density model" in body["framed_svg"]
+
     def test_assist_is_skipped_when_a_spec_letters_the_panel(self, monkeypatch,
                                                              drop_spec):
         # a validated record always wins: assist must not even be called

@@ -11,6 +11,9 @@ from facetta import prose as prose_layer
 from facetta.db import utcnow
 from facetta.disclaimer import stamp_b64
 from facetta.drawing_frame import frame_technical_drawing
+from facetta.estimate import (
+    EstimateError, estimate_carat, physics_check_estimates, required_depth_mm,
+)
 from facetta.dxf import svg_to_dxf
 from facetta.mockup import (
     SceneUnsupported, compile_artwork_restyle_request, compile_finish_request,
@@ -61,6 +64,50 @@ def validate(spec: Spec):
             content={"detail": [issue.as_detail() for issue in result.issues]},
         )
     return result.spec
+
+
+class StoneEstimateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    species: str
+    cut: str
+    length_mm: float | None = None
+    width_mm: float | None = None
+    depth_mm: float | None = None
+    carat: float | None = None
+
+
+@router.post("/estimate-stone")
+def estimate_stone(request: StoneEstimateRequest):
+    """The math assist, designer-entry direction: derive the value the form is
+    missing, instantly and deterministically — the same density model the
+    validator trusts. Give length+width (depth optional) → the modeled carat;
+    give carat+length+width → the depth that carat physically requires. Pure
+    code: no LLM, no cache, nothing drawn. Estimates only — the validator
+    still gates whatever the designer finally saves."""
+    if request.length_mm is None or request.width_mm is None:
+        return JSONResponse(status_code=422, content={
+            "detail": "length_mm and width_mm are required — the model derives "
+                      "carat from dimensions, or depth from carat + L × W"})
+    try:
+        if request.carat is None:
+            result = estimate_carat(
+                get_vocabulary(), request.species, request.cut,
+                request.length_mm, request.width_mm, request.depth_mm)
+            return {**result, "derived": "carat",
+                    "note": ("depth assumed from the cut's typical ratio — "
+                             "a stated depth always wins"
+                             if result["depth_assumed"] else
+                             "carat modeled from the stated dimensions")}
+        depth = required_depth_mm(
+            get_vocabulary(), request.species, request.cut,
+            request.carat, request.length_mm, request.width_mm)
+        return {"required_depth_mm": depth, "derived": "depth_mm",
+                "note": (f"a {request.carat} ct stone at "
+                         f"{request.length_mm} × {request.width_mm} mm needs "
+                         f"about {depth} mm of depth to be physically real")}
+    except EstimateError as exc:
+        return JSONResponse(status_code=422, content={"detail": str(exc)})
 
 
 @router.post("/sheet.svg")
@@ -234,6 +281,9 @@ def technical_drawing(request: AgentSheetRequest):
         try:
             estimates = read_sheet_specs(image_bytes,
                                          scale_anchor=request.scale_anchor)
+            # pure code: correct any carat that contradicts its own estimated
+            # size, fill missing ones — zero API calls, drawing untouched
+            estimates = physics_check_estimates(get_vocabulary(), estimates)
         except RenderUnavailable as exc:
             status = 503 if "_KEY" in str(exc) else 502
             return JSONResponse(status_code=status, content={"detail": str(exc)})

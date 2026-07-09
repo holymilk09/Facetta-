@@ -30,6 +30,9 @@ class Cut:
     name: str
     category: str
     shape_factor: float
+    # estimation default when no depth is given (fraction of width);
+    # a stated depth always wins — this is never grading truth
+    typical_depth_ratio: float = 0.6
 
 
 @dataclass(frozen=True)
@@ -58,8 +61,11 @@ class Vocabulary:
             if sid != "note"
         }
         factors = raw["shape_factors"]["factors"]
+        depth_ratios = raw.get("typical_depth_ratios", {}).get("ratios", {})
         self._cuts = {
-            c["id"]: Cut(id=c["id"], name=c["name"], category=c["category"], shape_factor=factors[c["id"]])
+            c["id"]: Cut(id=c["id"], name=c["name"], category=c["category"],
+                         shape_factor=factors[c["id"]],
+                         typical_depth_ratio=depth_ratios.get(c["id"], 0.6))
             for c in raw["cuts_and_shapes"]
         }
 

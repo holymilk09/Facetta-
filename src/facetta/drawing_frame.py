@@ -212,6 +212,8 @@ def _estimate_panel(est: dict, x0: float, y0: float, x1: float) -> list[str]:
     banner = ("REFERENCE ESTIMATES FROM THE RENDER"
               + (f", scaled to '{scaled_to}'" if est.get("scaled") and scaled_to
                  else "")
+              + (", physics-checked against the density model"
+                 if est.get("physics_checked") else "")
               + " — a prototyping starting point, not to scale; confirm every "
                 "value before production. Fainter = lower confidence.")
     parts.append(_text(x0, banner_y, escape(banner), size=2.6, anchor="start",

@@ -1026,10 +1026,14 @@ def chain_technical_drawing(asset_id: str, request: ChainDrawingRequest,
     estimates = None
     if (request.facetta_template and request.assist_specs
             and validated is None):
+        from facetta.estimate import physics_check_estimates
         from facetta.specagent import read_sheet_specs
         try:
             estimates = read_sheet_specs(bytes(source.image),
                                         scale_anchor=request.scale_anchor)
+            # pure code: correct any carat that contradicts its own estimated
+            # size, fill missing ones — zero API calls, drawing untouched
+            estimates = physics_check_estimates(get_vocabulary(), estimates)
             spec_source = "assist_estimate"
         except RenderUnavailable as exc:
             return _provider_error(exc)
