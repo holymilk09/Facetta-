@@ -21,9 +21,8 @@ from pathlib import Path
 from facetta.render import RenderUnavailable, _provider_key
 
 LORAS_PATH = Path(__file__).resolve().parents[2] / "data" / "loras.json"
-# the SYNC route: this environment's network policy allows fal.run but not
-# queue.fal.run, so the training call holds the connection until done
 TRAIN_ENDPOINT = "https://fal.run/fal-ai/flux-lora-fast-training"
+STORAGE_INITIATE = "https://rest.alpha.fal.ai/storage/upload/initiate"
 HOUSE_TRIGGER = "FACETTASTYLE"
 
 
@@ -38,13 +37,34 @@ def house_lora() -> dict | None:
     return load_loras().get("house_style")
 
 
-def _zip_data_uri(image_paths: list[Path]) -> str:
+def _zip_bytes(image_paths: list[Path]) -> bytes:
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_STORED) as z:
         for p in image_paths:
             z.write(p, p.name)
-    return ("data:application/zip;base64,"
-            + base64.b64encode(buf.getvalue()).decode())
+    return buf.getvalue()
+
+
+def _upload_archive(key: str, zip_bytes: bytes) -> str:
+    """Upload the training archive to fal storage and return its URL. The
+    trainer REQUIRES a fetchable URL (a data URI is rejected as 'URL too
+    long'), so storage is the only route. NOTE: a restricted network policy
+    that blocks rest.alpha.fal.ai blocks training entirely — allow that host
+    (and queue.fal.run) or run the training from an unrestricted machine."""
+    import httpx
+
+    initiate = httpx.post(
+        STORAGE_INITIATE,
+        json={"file_name": "facetta_style_train.zip",
+              "content_type": "application/zip"},
+        headers={"Authorization": f"Key {key}"}, timeout=60.0)
+    initiate.raise_for_status()
+    body = initiate.json()
+    upload = httpx.put(body["upload_url"], content=zip_bytes,
+                       headers={"Content-Type": "application/zip"},
+                       timeout=300.0)
+    upload.raise_for_status()
+    return body["file_url"]
 
 
 def train_style_lora(image_paths: list[Path], *,
@@ -66,13 +86,14 @@ def train_style_lora(image_paths: list[Path], *,
 
     import httpx
 
-    payload = {
-        "images_data_url": _zip_data_uri(image_paths),
-        "trigger_word": trigger_word,
-        "steps": steps,
-        "is_style": True,          # style LoRA: learn the look, not a subject
-    }
     try:
+        archive_url = _upload_archive(key, _zip_bytes(image_paths))
+        payload = {
+            "images_data_url": archive_url,
+            "trigger_word": trigger_word,
+            "steps": steps,
+            "is_style": True,      # style LoRA: learn the look, not a subject
+        }
         submit = httpx.post(TRAIN_ENDPOINT, json=payload, timeout=timeout,
                             headers={"Authorization": f"Key {key}"})
         submit.raise_for_status()

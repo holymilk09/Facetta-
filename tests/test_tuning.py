@@ -30,17 +30,28 @@ def images(tmp_path):
 
 
 def _mock_train(monkeypatch, result=None, error=None):
+    """Mock the storage initiate + PUT + training submit round-trip."""
     class R:
-        text = json.dumps(result or {})
+        def __init__(self, body):
+            self.body = body
+            self.text = json.dumps(body)
         def raise_for_status(self):
             if error:
                 raise error
         def json(self):
-            return result or {}
+            return self.body
+
+    def fake_post(url, json=None, headers=None, timeout=None, content=None):
+        if "storage" in url:
+            return R({"upload_url": "https://storage.fal/put",
+                      "file_url": "https://storage.fal/train.zip"})
+        return R(result or {})
 
     import httpx
-    monkeypatch.setattr(httpx, "post",
-                        lambda url, json=None, headers=None, timeout=None: R())
+    monkeypatch.setattr(httpx, "post", fake_post)
+    monkeypatch.setattr(httpx, "put",
+                        lambda url, content=None, headers=None, timeout=None:
+                        R({}))
     monkeypatch.setenv("FAL_KEY", "test-key")
 
 
