@@ -216,14 +216,9 @@ def restyle_artwork(image_bytes: bytes, media_type: str = "image/jpeg",
 
 
 def _provider_key(key_env: str) -> str | None:
-    if os.environ.get(key_env):
-        return os.environ[key_env]
-    env_file = Path(".env")
-    if env_file.exists():
-        for line in env_file.read_text().splitlines():
-            if line.startswith(f"{key_env}="):
-                return line.split("=", 1)[1].strip()
-    return None
+    from facetta.config import env_value
+
+    return env_value(key_env)
 
 
 def render_cache_key(spec: Spec, style: str, lighting: str,

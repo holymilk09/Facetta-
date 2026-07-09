@@ -7,6 +7,11 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from facetta import __version__
 from facetta.api import stones, designs, share, specs, users, vocabulary
+from facetta.config import load_env_file
+
+# Load .env into the process environment before anything reads a key or the
+# Anthropic SDK is constructed. A real exported env var always takes precedence.
+load_env_file()
 
 app = FastAPI(title="Facetta", version=__version__)
 
