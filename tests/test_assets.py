@@ -145,7 +145,7 @@ class TestIterationChain:
 
         # B from any asset in the chain resolves the PIN, not the head
         r = client.post(f"/assets/{head['asset_id']}/technical-drawing",
-                        json={})
+                        json={"facetta_template": False})
         assert r.status_code == 200, r.text
         body = r.json()
         assert body["source_asset_id"] == pinned_id
@@ -164,7 +164,8 @@ class TestIterationChain:
         r = client.post("/assets/render",
                         json={"piece_description": "a pendant"})
         asset_id = r.json()["asset_id"]
-        r = client.post(f"/assets/{asset_id}/technical-drawing", json={})
+        r = client.post(f"/assets/{asset_id}/technical-drawing",
+                        json={"facetta_template": False})
         assert r.status_code == 409
         assert "pin" in r.json()["detail"]
 
@@ -176,7 +177,8 @@ class TestIterationChain:
                         json={"piece_description": "a pendant"})
         asset_id = r.json()["asset_id"]
         r = client.post(f"/assets/{asset_id}/technical-drawing",
-                        json={"use_this_asset": True})
+                        json={"use_this_asset": True,
+                              "facetta_template": False})
         assert r.status_code == 200
         body = r.json()
         assert body["source_asset_id"] == asset_id

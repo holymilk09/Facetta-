@@ -2321,7 +2321,6 @@ def _render_drop_earring(spec: Spec, highlight_ref: str | None = None,
         parts.append(_circle(cx, ay, ar))
 
     # dimensions — every number from the spec
-    overall_px = d.overall_length_mm * S
     xdim = cx - frame_w / 2 - halo_gap - 14
     parts += [
         _ext(cx - hook_w / 2, top, xdim - 1, top),

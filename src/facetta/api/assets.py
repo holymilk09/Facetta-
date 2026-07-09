@@ -21,7 +21,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from facetta.checklist import (
-    DEFAULT_MODE, MODES, approval_footer_line, build_checklist_items,
+    DEFAULT_MODE, approval_footer_line, build_checklist_items,
     checklist_status,
 )
 from facetta.db import (
@@ -272,6 +272,7 @@ class AssetEditRequest(BaseModel):
     mask_base64: str | None = None
     kind: Literal["render", "technical"] = "render"
     created_by: str = "usr_pending"
+    variant: int = 0  # regenerate: a fresh take on the SAME edit, not the cache
 
 
 @router.post("/{asset_id}/localized-edit", status_code=201)
@@ -296,7 +297,7 @@ def create_localized_edit(asset_id: str, request: AssetEditRequest,
         result = localized_edit(
             bytes(parent.image), region_description=request.region_description,
             change_instruction=request.change_instruction,
-            mask_bytes=mask_bytes, kind=request.kind)
+            mask_bytes=mask_bytes, kind=request.kind, variant=request.variant)
     except ValueError as exc:
         return JSONResponse(status_code=422, content={"detail": str(exc)})
     except RenderUnavailable as exc:
@@ -387,6 +388,7 @@ class MarkupApplyRequest(BaseModel):
     kind: Literal["render", "technical"] = "render"
     update_spec: bool = True
     created_by: str = "usr_pending"
+    variant: int = 0  # regenerate: fresh takes on the SAME marks, not the cache
 
 
 @router.post("/{asset_id}/markup/apply", status_code=201)
@@ -463,7 +465,8 @@ def markup_apply(asset_id: str, request: MarkupApplyRequest, db: DbSession):
                 bytes(current.image),
                 region_description=note.region_description,
                 change_instruction=note.change_instruction,
-                mask_bytes=mask_bytes, kind=request.kind)
+                mask_bytes=mask_bytes, kind=request.kind,
+                variant=request.variant)
         except ValueError as exc:
             step["rejected"] = True
             step["detail"] = str(exc)
@@ -532,6 +535,7 @@ class AssetRestyleRequest(BaseModel):
     instruction: Annotated[str, Field(min_length=1, max_length=2000)]
     kind: Literal["render", "technical"] = "render"
     created_by: str = "usr_pending"
+    variant: int = 0  # regenerate: a fresh take on the SAME restyle
 
 
 @router.post("/{asset_id}/global-restyle", status_code=201)
@@ -544,7 +548,7 @@ def create_global_restyle(asset_id: str, request: AssetRestyleRequest,
     try:
         result = global_restyle(bytes(parent.image),
                                 instruction=request.instruction,
-                                kind=request.kind)
+                                kind=request.kind, variant=request.variant)
     except ValueError as exc:
         return JSONResponse(status_code=422, content={"detail": str(exc)})
     except RenderUnavailable as exc:
@@ -947,7 +951,9 @@ class ChainDrawingRequest(BaseModel):
     region: str = "DUAL"
     spec: Spec | None = None
     legibility: bool = False
-    facetta_template: bool = False
+    # the app's factory sheet IS the official one: Grok draws clean, code
+    # letters every number. Opting OUT (false) is the raw-drawing escape hatch.
+    facetta_template: bool = True
     house: str | None = None
     signature: str | None = None
     piece_name: Annotated[str, Field(max_length=48)] | None = None

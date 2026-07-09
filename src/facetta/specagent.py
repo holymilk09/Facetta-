@@ -510,32 +510,6 @@ _TBD_POLICY = ("Any dimension not listed above: mark TBD with a leader "
 HONESTY_RULE = ("Never invent designer names, job references, or dates — "
                 "write TBD where unknown.")
 
-# The G0 sentence the official-template mode swaps out: when the platform's
-# code applies the Facetta frame from the record, the model must draw NO
-# identity block at all — code letters identity, the model never does.
-# The same goes for specification text: a live sheet showed Grok painting a
-# 'RING SPECIFICATIONS' list that duplicated (and mis-lettered — 'Pullish')
-# the panel our code letters from the record. Views and their anchored
-# dimension callouts are the model's job; freestanding spec text is never.
-_TITLE_BLOCK_SENTENCE = "Title block with METAL, JOB REF, REV A."
-NO_TITLE_BLOCK_RULE = (
-    "Do not draw any title block, brand name, designer name, job reference, "
-    "or date — leave clean margins; the platform's official template adds "
-    "the title block. Also do NOT draw any freestanding specification text "
-    "block, list, or table (no 'RING SPECIFICATIONS', no stone schedule, no "
-    "materials list, no ring-size line) — the template letters every "
-    "specification from the record. Draw ONLY the views with their view "
-    "labels and dimension callouts anchored to the geometry.")
-
-
-def _templated_tail(templated: bool) -> str:
-    """The G0 tail as the mode demands: templated mode swaps the model-drawn
-    title-block sentence for the clean-margins rule."""
-    if templated:
-        return G0_SUFFIX.replace(_TITLE_BLOCK_SENTENCE, NO_TITLE_BLOCK_RULE)
-    return G0_SUFFIX
-
-
 def _legibility_instruction(*, templated: bool = False) -> str:
     """The G6 repair pass. In templated mode the drawing carries NO text (the
     code panel letters everything), so the pass only reinforces a clean,
@@ -544,7 +518,7 @@ def _legibility_instruction(*, templated: bool = False) -> str:
     if templated:
         return ("Identical layout, proportions, and design — no changes. Keep "
                 "the drawing perfectly clean. " + CLEAN_G0 + " " + HONESTY_RULE)
-    return _G6_BODY + _templated_tail(templated) + " " + HONESTY_RULE
+    return _G6_BODY + G0_SUFFIX + " " + HONESTY_RULE
 
 
 # The untemplated compiled form, kept as the public constant.
@@ -683,7 +657,7 @@ def inspect_render(image_bytes: bytes, notes: str, mode: str,
 # workflow), the official template's panel has nothing to letter. Grok
 # assists by READING the render into estimated values that CODE letters into
 # the panel, clearly marked estimated — the model never paints spec text on
-# the sheet (see NO_TITLE_BLOCK_RULE), so a 'Pullish' can never ship.
+# the sheet (see CLEAN_G0), so a 'Pullish' can never ship.
 _ESTIMATE_SYSTEM = (
     MASTER_SYSTEM + "\n\n"
     "Read this jewelry image and estimate its dimensions as a REFERENCE for a "
@@ -881,7 +855,7 @@ def compile_sheet_instruction(mode: str, region: str = "DUAL",
     if notes:
         parts.append(f"Designer notes: {notes}")
     parts.append(_TBD_POLICY)
-    parts.append(_templated_tail(templated))
+    parts.append(G0_SUFFIX)
     parts.append(HONESTY_RULE)
     return " ".join(parts)
 
@@ -1558,12 +1532,16 @@ def _outside_drift(parent_bytes: bytes, child_bytes: bytes,
 def localized_edit(image_bytes: bytes, *, region_description: str,
                    change_instruction: str, mask_bytes: bytes | None = None,
                    kind: str = "render", model: str = "grok_direct",
-                   drift_threshold: float = 0.18) -> dict:
+                   drift_threshold: float = 0.18, variant: int = 0) -> dict:
     """MODE C, one call: compile the preservation contract, edit, and (with a
     mask) QA the result — drift outside the mask beyond the threshold gets
     exactly ONE retry with the stronger preserve language, and the
     lower-drift child wins. The strengthened instruction is a different
     cache key, so the retry is a fresh render, never the same cached result.
+
+    variant>0 is the designer's regenerate: re-asking for the SAME edit on the
+    SAME image must be able to produce a fresh result — without it the
+    content-addressed cache would replay the first (possibly bad) edit forever.
 
     Returns {"image", "changed", "frozen", "retried", "drift", "cached"}.
     Raises ValueError when the region or change is missing — per the MODE C
@@ -1576,7 +1554,7 @@ def localized_edit(image_bytes: bytes, *, region_description: str,
 
     instruction = compile_localized_edit_instruction(
         region_description, change_instruction, kind=kind)
-    child, cached = edit_image(image_bytes, instruction, model)
+    child, cached = edit_image(image_bytes, instruction, model, variant=variant)
 
     retried = False
     drift: float | None = None
@@ -1588,7 +1566,7 @@ def localized_edit(image_bytes: bytes, *, region_description: str,
                 region_description, change_instruction, kind=kind,
                 strengthen=True)
             retry_child, retry_cached = edit_image(image_bytes, stronger,
-                                                   model)
+                                                   model, variant=variant)
             retry_drift = _outside_drift(image_bytes, retry_child, mask_bytes)
             if retry_drift < drift:      # keep the better (lower-drift) child
                 child, cached, drift = retry_child, retry_cached, retry_drift
@@ -1634,17 +1612,18 @@ def compile_global_restyle_instruction(instruction: str,
 
 def global_restyle(image_bytes: bytes, *, instruction: str,
                    kind: str = "render",
-                   model: str = "grok_direct") -> dict:
+                   model: str = "grok_direct", variant: int = 0) -> dict:
     """The whole-piece change path: when the designer says "more X
     everywhere" or "widen the whole shank", forcing LOCALIZED_EDIT without a
     mask would either block them or guess a region. This edits reference-
     locked with NO freeze contract and returns a warning instead of a drift
-    gate — the UI's parent/child compare and revert are the safety net."""
+    gate — the UI's parent/child compare and revert are the safety net.
+    variant>0 regenerates: a fresh take instead of the cached first result."""
     if not instruction.strip():
         raise ValueError("global restyle needs a change instruction")
     child, cached = edit_image(
         image_bytes, compile_global_restyle_instruction(instruction, kind),
-        model)
+        model, variant=variant)
     return {
         "image": child,
         "changed": f"across the whole piece: {instruction.strip()}",

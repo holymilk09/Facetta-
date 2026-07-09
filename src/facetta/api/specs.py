@@ -129,7 +129,6 @@ def from_concept(request: ConceptRequest):
     spec that PASSES every jewelry rule — plus the corrections it had to make.
     The factory pack (sheet, blueprint, client render) then comes from the
     existing endpoints on the returned spec."""
-    import base64
 
     from facetta.concept import ConceptInvalid, originate_concept
 
@@ -163,7 +162,9 @@ class AgentSheetRequest(BaseModel):
     region: str = "DUAL"
     spec: Spec | None = None               # validated → authoritative dims
     legibility: bool = False               # one extra text-repair pass
-    facetta_template: bool = False         # official frame, lettered by code
+    # the app's factory sheet IS the official one: Grok draws clean, code
+    # letters every number. Opting OUT (false) is the raw-drawing escape hatch.
+    facetta_template: bool = True
     house: str | None = None               # branding for the official frame
     signature: str | None = None
     piece_name: Annotated[str, Field(max_length=48)] | None = None  # optional title
@@ -177,20 +178,20 @@ class AgentSheetRequest(BaseModel):
 @router.post("/technical-drawing")
 @router.post("/agent-sheet")               # legacy alias, same handler
 def technical_drawing(request: AgentSheetRequest):
-    """The user-facing jewelry manufacturing technical drawing, drawn by the
-    AGENT: Grok vision classifies and inspects the designer's render, then a
-    controlled image-to-image edit turns it into black-line orthographic
-    documentation. Deterministic code never draws this artifact — when a spec
-    is supplied it is validated first and its numbers ride along in the
-    prompt as designer-authoritative dimensions; everything else is TBD on
-    the drawing.
+    """The user-facing jewelry manufacturing technical drawing: Grok vision
+    classifies and inspects the designer's render, then a controlled
+    image-to-image edit turns it into a clean black-line technical
+    illustration. Deterministic code never draws the piece; Grok never
+    letters a number.
 
-    facetta_template=true is the official-template mode: the model is told to
-    leave clean margins (no title block, no names, no dates) and the response
-    carries framed_svg — the drawing wrapped in the Facetta frame, lettered
-    by code from the validated spec and the ?house=/?signature= branding.
-    (The parametric CAD/DXF sheet remains /specs/sheet.svg — a separate,
-    explicit handoff.)"""
+    By DEFAULT (facetta_template=true) this is the official sheet: the model
+    draws the piece clean — no painted text, no title block — and the
+    response carries framed_svg, the drawing wrapped in the Facetta frame
+    with every specification lettered by code from the validated spec (or
+    from the assist estimates), plus house/signature branding.
+    facetta_template=false is the raw-drawing escape hatch: the legacy
+    self-lettered sheet, unframed. (The parametric CAD/DXF sheet remains
+    /specs/sheet.svg — a separate, explicit handoff.)"""
     import base64 as b64
     import binascii
 
@@ -277,7 +278,6 @@ def jewelry_render_endpoint(request: RenderModeRequest):
     Section 4A prompt body (presentation and design approval, never factory
     line art — that is /specs/technical-drawing). The compiled prompt rides
     back so the app can show exactly what was asked of the engine."""
-    import base64 as b64
 
     prompt = compile_render_instruction(
         request.piece_description, metal=request.metal, stones=request.stones,
@@ -304,6 +304,7 @@ class LocalizedEditRequest(BaseModel):
     change_instruction: Annotated[str, Field(min_length=1, max_length=2000)]
     mask_base64: str | None = None      # white = edit, black = preserve
     kind: Literal["render", "technical"] = "render"
+    variant: int = 0  # regenerate: a fresh take on the SAME edit, not the cache
 
 
 @router.post("/localized-edit")
@@ -326,7 +327,7 @@ def localized_edit_endpoint(request: LocalizedEditRequest):
         result = localized_edit(
             image_bytes, region_description=request.region_description,
             change_instruction=request.change_instruction,
-            mask_bytes=mask_bytes, kind=request.kind)
+            mask_bytes=mask_bytes, kind=request.kind, variant=request.variant)
     except ValueError as exc:
         return JSONResponse(status_code=422, content={"detail": str(exc)})
     except RenderUnavailable as exc:

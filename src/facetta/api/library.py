@@ -16,7 +16,7 @@ from collections import Counter
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException
-from sqlalchemy import func, or_, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from facetta.db import ImageAsset, Project, get_db

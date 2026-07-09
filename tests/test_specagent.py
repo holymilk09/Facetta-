@@ -370,11 +370,12 @@ class TestEditImageCache:
 
 class TestTechnicalDrawingEndpoint:
     def test_returns_sheet_and_echoed_summary(self, monkeypatch):
+        # facetta_template=false is the raw-drawing escape hatch
         monkeypatch.setattr(specs_mod, "generate_spec_sheet",
                             lambda image, **kwargs: (PNG, dict(SUMMARY), False))
         r = TestClient(app).post("/specs/technical-drawing", json={
             "image_base64": base64.b64encode(PNG).decode(),
-            "notes": "modern drop"})
+            "notes": "modern drop", "facetta_template": False})
         assert r.status_code == 200, r.text
         body = r.json()
         assert base64.b64decode(body["sheet_b64"]) == PNG
@@ -383,13 +384,31 @@ class TestTechnicalDrawingEndpoint:
         assert body["region"] == "DUAL"
         assert body["summary"]["disclaimer"] == agent.DISCLAIMER
         assert body["cached"] is False
-        assert body["framed_svg"] is None            # no template requested
+        assert body["framed_svg"] is None            # raw mode: no frame
+
+    def test_official_template_is_the_default(self, monkeypatch):
+        """The founder's rule as the default: a plain request gets the
+        official sheet — Grok's clean drawing in the code-lettered frame.
+        The junk legacy mode only ever comes from an explicit opt-out."""
+        seen = {}
+
+        def fake_generate(image, **kwargs):
+            seen.update(kwargs)
+            return REAL_PNG, dict(SUMMARY), False
+
+        monkeypatch.setattr(specs_mod, "generate_spec_sheet", fake_generate)
+        r = TestClient(app).post("/specs/technical-drawing", json={
+            "image_base64": base64.b64encode(PNG).decode()})
+        assert r.status_code == 200, r.text
+        assert seen["templated"] is True             # clean-drawing instruction
+        assert r.json()["framed_svg"].startswith("<svg")
 
     def test_agent_sheet_alias_still_answers(self, monkeypatch):
         monkeypatch.setattr(specs_mod, "generate_spec_sheet",
                             lambda image, **kwargs: (PNG, dict(SUMMARY), False))
         r = TestClient(app).post("/specs/agent-sheet", json={
-            "image_base64": base64.b64encode(PNG).decode()})
+            "image_base64": base64.b64encode(PNG).decode(),
+            "facetta_template": False})
         assert r.status_code == 200, r.text
         assert base64.b64decode(r.json()["sheet_b64"]) == PNG
 

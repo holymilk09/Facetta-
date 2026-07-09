@@ -19,7 +19,7 @@ from __future__ import annotations
 import base64
 
 from facetta.mockup import compile_artwork_restyle_request  # noqa: F401 (style guard)
-from facetta.render import RenderUnavailable, _sniff_media_type, restyle_artwork
+from facetta.render import _sniff_media_type, restyle_artwork
 from facetta.spec import Spec
 from facetta.svg_sheet import (
     SHEET_H, SHEET_W, Branding, render_blueprint_frame, render_sheet_geometry,

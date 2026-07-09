@@ -238,7 +238,7 @@ class TestLocalizedEdit:
     def test_happy_path_without_mask(self, monkeypatch):
         calls = []
 
-        def fake_edit(image, instruction, model="grok_direct"):
+        def fake_edit(image, instruction, model="grok_direct", variant=0):
             calls.append(instruction)
             return b"child", False
 
@@ -259,7 +259,7 @@ class TestLocalizedEdit:
     def test_clean_edit_with_mask_passes_qa_without_retry(self, monkeypatch):
         calls = []
 
-        def fake_edit(image, instruction, model="grok_direct"):
+        def fake_edit(image, instruction, model="grok_direct", variant=0):
             calls.append(instruction)
             return CHILD_CLEAN, False
 
@@ -275,7 +275,7 @@ class TestLocalizedEdit:
     def test_drift_triggers_exactly_one_stronger_retry(self, monkeypatch):
         calls = []
 
-        def fake_edit(image, instruction, model="grok_direct"):
+        def fake_edit(image, instruction, model="grok_direct", variant=0):
             calls.append(instruction)
             # first attempt drifts everywhere; the strengthened retry is clean
             return (CHILD_DRIFTED, False) if len(calls) == 1 \
@@ -296,7 +296,7 @@ class TestLocalizedEdit:
     def test_worse_retry_keeps_the_first_child(self, monkeypatch):
         worse = _png(0)                              # drifts even further
 
-        def fake_edit(image, instruction, model="grok_direct"):
+        def fake_edit(image, instruction, model="grok_direct", variant=0):
             return (worse, False) if instruction.startswith("CRITICAL") \
                 else (CHILD_DRIFTED, True)
 
@@ -308,6 +308,23 @@ class TestLocalizedEdit:
         assert result["image"] == CHILD_DRIFTED      # lower drift wins
         assert result["cached"] is True              # kept with its child
         assert result["drift"] == pytest.approx((200 - 60) / 255, abs=0.02)
+
+
+    def test_variant_is_the_regenerate_and_reaches_the_engine(self, monkeypatch):
+        """The designer's regenerate: the SAME edit re-asked with variant>0
+        must reach the engine as a different cache key — without it the
+        content-addressed cache would replay the first bad edit forever."""
+        seen = []
+
+        def fake_edit(image, instruction, model="grok_direct", variant=0):
+            seen.append(variant)
+            return b"child", False
+
+        monkeypatch.setattr(agent, "edit_image", fake_edit)
+        agent.localized_edit(PNG, region_description="the prongs",
+                             change_instruction="longer", variant=2)
+        agent.global_restyle(PNG, instruction="more milgrain", variant=3)
+        assert seen == [2, 3]
 
 
 class TestJewelryRenderEndpoint:

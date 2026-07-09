@@ -307,7 +307,8 @@ def set_field(design_id: str, body: SetFieldRequest, db: DbSession):
     if latest is None:
         raise HTTPException(status_code=404,
                             detail=f"design '{design_id}' has no versions")
-    current = Spec.model_validate(_get_version(db, design_id, latest).spec)
+    row = _get_version(db, design_id, latest)
+    current = Spec.model_validate(row.spec)
 
     try:
         target = resolve_target(current, Annotation(
@@ -334,13 +335,13 @@ def set_field(design_id: str, body: SetFieldRequest, db: DbSession):
 
     # graft only the named subtree onto an untouched copy — the value can never
     # leak into another section even if the path were crafted to try
-    guarded, changed, ignored = scope_guard(current, target, proposed)
+    guarded, changed, _ = scope_guard(current, target, proposed)
     if not changed:
         return {
             "new_version": latest, "target": _target_label(target),
             "changed_fields": [], "changed": False,
             "message": "value already matches the record — no new version",
-            "spec": _get_version(db, design_id, latest).spec,
+            "spec": row.spec,
         }
 
     validated = validate_spec(guarded, get_vocabulary())

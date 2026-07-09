@@ -23,9 +23,8 @@ import json
 import math
 import os
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict
 
-from facetta.density import check_density
 from facetta.render import RenderUnavailable, generate_image
 from facetta.spec import (
     Band, Drop, Metal, RingSize, Setting, Spec, Stone, StoneColor,
@@ -256,7 +255,6 @@ def complete_design(read: DesignRead, brief: str = "",
         mw = round(max(1.3, W * 0.22), 1)          # melee ~22% of the centre width
         md = round(mw * 0.61, 2)
         mct, _ = _round_stone(vocab, "diamond", "round_brilliant", mw, mw, md)
-        dw = vocab.trade_color_terms("diamond")
         dcolor = StoneColor(trade="F", gia="colorless")
         melee = Stone(species="diamond", cut="round_brilliant", carat=max(mct, 0.001),
                       dimensions_mm=StoneDimensions(length=mw, width=mw, depth=md),
