@@ -125,6 +125,7 @@ class ReadPlateRequest(BaseModel):
     redraw: bool = True
     angles: Annotated[list[str], Field(max_length=5)] = list(PLATE_VIEWS)
     variant: int = 0                     # regenerate: a fresh redraw
+    engine: str = "grok_direct"          # or flux_kontext (edits more faithfully)
 
 
 @router.post("/read-plate")
@@ -159,7 +160,8 @@ def read_plate(request: ReadPlateRequest):
         if request.redraw:
             views = redraw_plate_colored(image_bytes, read,
                                          views=tuple(request.angles),
-                                         variant=request.variant)
+                                         variant=request.variant,
+                                         model=request.engine)
             # only FAITHFUL views reach the sheet — a drifted view (extra
             # wings, wrong count) is never composited onto a factory drawing
             faithful = [v for v in views if v["ok"]]
@@ -207,6 +209,7 @@ class PlateLineartRequest(BaseModel):
     scale_anchor: str | None = None
     angles: Annotated[list[str], Field(max_length=5)] = list(PLATE_VIEWS)
     variant: int = 0                     # regenerate an angle the designer rejects
+    engine: str = "grok_direct"          # or flux_kontext
 
 
 @router.post("/plate-lineart")
@@ -233,7 +236,8 @@ def plate_lineart(request: PlateLineartRequest):
         read = physics_check_estimates(get_vocabulary(), read)
         views = redraw_plate_lineart(image_bytes, read,
                                      views=tuple(request.angles),
-                                     variant=request.variant)
+                                     variant=request.variant,
+                                     model=request.engine)
     except RenderUnavailable as exc:
         status = 503 if "_KEY" in str(exc) else 502
         return JSONResponse(status_code=status, content={"detail": str(exc)})
@@ -270,6 +274,8 @@ class PlateColorizeRequest(BaseModel):
     signature: str | None = None
     piece_name: Annotated[str, Field(max_length=48)] | None = None
     variant: int = 0
+    # flux_kontext edits more faithfully on the baseline eval; grok_direct default
+    engine: str = "grok_direct"
 
 
 @router.post("/plate-colorize")
@@ -291,6 +297,7 @@ def plate_colorize(request: PlateColorizeRequest):
                 return JSONResponse(status_code=422, content={
                     "detail": f"view '{cv.view}' image_base64 is not valid base64"})
             img, _ = colorize_lineart(line_bytes, request.materials,
+                                      model=request.engine,
                                       variant=request.variant)
             coloured.append(img)
     except RenderUnavailable as exc:

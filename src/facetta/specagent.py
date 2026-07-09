@@ -311,11 +311,23 @@ def _material_summary(read: dict) -> str:
     return "; ".join(parts) if parts else "as coloured in the reference"
 
 
+# two stones cannot occupy the same space — a merged/overlapping stone is a
+# physically impossible piece a factory cannot make. This clause rides in both
+# the line-art and the colorize prompts.
+_PHYSICAL_SEPARATION = (
+    "PHYSICAL SEPARATION (a real factory piece): every stone is a SEPARATE "
+    "solid part — stones must NOT overlap, merge, fuse, or cross into each "
+    "other. Each stone keeps its own complete outline with metal or clear "
+    "space between it and its neighbours. Wings and side stones sit BESIDE the "
+    "centre stone and attach to the metal frame; they never cross over, sink "
+    "into, or blend with the centre stone. No stone floats inside another.")
+
+
 def _assembly_lock(read: dict) -> str:
     """The spatial-assembly clause: without it Grok flattens a complex piece
-    into a row of loose stones. Built from the plate read's jewelry_type and
-    the extracted assembly sentence, so the redraw keeps what connects to
-    what — the fix for 'it's a ring but the design is NOT a ring'."""
+    into a row of loose stones, or merges overlapping stones into one. Built
+    from the plate read's jewelry_type and the extracted assembly sentence, so
+    the redraw keeps what connects to what and keeps every stone separate."""
     jtype = (read.get("jewelry_type") or "piece").replace("_", " ")
     assembly = read.get("assembly")
     clause = (f"This is ONE assembled {jtype}"
@@ -327,7 +339,7 @@ def _assembly_lock(read: dict) -> str:
             "element in the reference — the same number of wings, petals, "
             "stones, discs and prongs. Do NOT add, duplicate, multiply, or "
             "invent any element; if the reference has two wings, draw exactly "
-            "two.")
+            "two. " + _PHYSICAL_SEPARATION)
 
 
 def compile_plate_redraw(read: dict, view: str, *, from_hero: bool,
@@ -377,7 +389,9 @@ def compile_colorize(materials: str) -> str:
         "change, move, add, remove, or duplicate ANY line, outline, shape, "
         "stone, wing, disc, or element. Keep every element exactly where it is "
         "and exactly how many there are. Only FILL colour inside the existing "
-        "outlines.",
+        "outlines. Keep each stone's outline distinct — do NOT let colour bleed "
+        "across two stones so they read as merged; every stone stays a separate "
+        "shape.",
         f"Colour the elements to match these confirmed materials: {materials}. "
         "Flat jeweller's colour, accurate hues, subtle shading only; keep the "
         "plain white background. Write NO text of any kind.",
@@ -388,8 +402,9 @@ def colorize_lineart(lineart_bytes: bytes, materials: str, *,
                      model: str = "grok_direct",
                      variant: int = 0) -> tuple[bytes, bool]:
     """Stage 2: colour a designer-CONFIRMED line drawing from the confirmed
-    materials. Coating locked geometry, so the piece cannot drift. Returns
-    (image_bytes, was_cached)."""
+    materials. Colouring locked geometry, so the piece cannot drift. model
+    picks the engine (grok_direct, or flux_kontext which edits more faithfully
+    on the baseline eval). Returns (image_bytes, was_cached)."""
     return edit_image(lineart_bytes, compile_colorize(materials), model,
                       variant=variant)
 
