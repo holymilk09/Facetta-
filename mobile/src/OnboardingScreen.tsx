@@ -1,24 +1,31 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Animated, Easing, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Animated, Easing, Image, Pressable, StyleSheet, Text, View } from 'react-native';
 import {
-  Float, GemSketch, MotionBackground, Pulse, RingSketch, SparkleSketch, Spin,
+  Float, GemSketch, MotionBackground, Pulse, RingSketch, SparkleSketch,
 } from './MotionBackground';
 import { radius, shadows, sketchGold, sketchInk, theme } from './theme';
 
+// Grok-rendered vignettes (see facetta.render.generate_image) — photoreal
+// jewelry over the pencil construction lines of a factory sheet.
+const ringRender = require('../assets/onboarding-ring.jpg');
+const gemRender = require('../assets/onboarding-gem.jpg');
+
 // ---------------------------------------------------------------------------
-// Step illustrations — line-art vignettes built from the sketch primitives.
+// Step illustrations — rendered vignettes and line-art built from primitives.
 // ---------------------------------------------------------------------------
 
 function IllustrationDescribe() {
   return (
     <View style={styles.vignette}>
-      <Float duration={7000} drift={8} tilt={3}>
-        <RingSketch size={120} color={sketchInk(0.55)} stroke={2} />
+      <Float duration={8000} drift={5} tilt={1.5}>
+        <View style={[styles.renderFrame, shadows.soft]}>
+          <Image source={ringRender} style={styles.renderImage} resizeMode="cover" />
+        </View>
       </Float>
-      <Pulse style={{ position: 'absolute', top: 16, right: 34 }} duration={2600}>
+      <Pulse style={{ position: 'absolute', top: 6, right: 12 }} duration={2600}>
         <SparkleSketch size={18} color={sketchGold(0.9)} stroke={2} />
       </Pulse>
-      <Pulse style={{ position: 'absolute', bottom: 28, left: 30 }} duration={3400} delay={700}>
+      <Pulse style={{ position: 'absolute', bottom: 10, left: 8 }} duration={3400} delay={700}>
         <SparkleSketch size={12} color={sketchGold(0.7)} stroke={2} />
       </Pulse>
     </View>
@@ -28,10 +35,10 @@ function IllustrationDescribe() {
 function IllustrationTruth() {
   return (
     <View style={styles.vignette}>
-      <Float duration={8000} drift={6} tilt={2}>
-        <Spin duration={40000}>
-          <GemSketch size={110} color={sketchGold(0.85)} stroke={2} />
-        </Spin>
+      <Float duration={9000} drift={4} tilt={1.5}>
+        <View style={[styles.renderFrame, shadows.soft]}>
+          <Image source={gemRender} style={styles.renderImageShort} resizeMode="cover" />
+        </View>
       </Float>
       {/* dimension callout: |--- 6.5 mm ---| */}
       <View style={styles.dimension}>
@@ -218,6 +225,9 @@ const styles = StyleSheet.create({
     marginBottom: 32,
   },
   vignette: { width: 200, height: 180, alignItems: 'center', justifyContent: 'center' },
+  renderFrame: { borderRadius: radius.lg, backgroundColor: theme.card },
+  renderImage: { width: 172, height: 172, borderRadius: radius.lg },
+  renderImageShort: { width: 172, height: 138, borderRadius: radius.lg },
   kicker: {
     fontSize: 12,
     letterSpacing: 3,
