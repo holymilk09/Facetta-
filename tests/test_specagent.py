@@ -149,9 +149,13 @@ class TestAuthoritativeDims:
         assert "prong 4, 4 prongs" in text                  # setting, as stated
 
     def test_only_stdlib_and_spec_are_imported(self):
-        # math is ASSISTANCE: the agent must not import anything that draws
+        # math is ASSISTANCE: the agent must not import anything that draws.
+        # The real guard is the three module-import asserts below. 'plate' and
+        # 'prototype' are legitimate jewelry vocabulary here (a design plate;
+        # a prototyping estimate), so only svg_sheet — which is never an
+        # English word — stays in the bare-token sweep.
         src = Path(agent.__file__).read_text()
-        banned = re.compile(r"(?<![A-Za-z_])(svg_sheet|plate|prototype)(?![A-Za-z_])")
+        banned = re.compile(r"(?<![A-Za-z_])svg_sheet(?![A-Za-z_])")
         assert banned.search(src) is None, banned.search(src)
         assert "facetta.plate" not in src
         assert "facetta.prototype" not in src
@@ -505,6 +509,66 @@ class TestTechnicalDrawingEndpoint:
         assert "STONE SCHEDULE" in body["framed_svg"]  # the record panel
         assert "ESTIMATED SPECIFICATIONS" not in body["framed_svg"]
         assert body["estimated_specs"] is None
+
+    def test_read_design_plate_reads_a_hand_drawing(self, monkeypatch):
+        """The reverse flow: a hand-rendered plate -> structured read. Any
+        dimension the designer WROTE is transcribed verbatim into hand_written
+        and rides as a high-confidence measurement; the source is marked
+        'plate' so the panel banner adapts."""
+        monkeypatch.setattr(agent, "_vision_json", lambda *a, **k: {
+            "jewelry_type": "pendant",
+            "stones": [{"qty": 1, "type": "lapis lazuli cabochon",
+                        "size_mm": "14 x 14", "confidence": 0.8},
+                       {"qty": 2, "type": "diamond marquise",
+                        "size_mm": "6 x 3", "confidence": 0.6}],
+            "metal": "18k yellow gold",
+            "measurements": [{"label": "overall drop", "value": "42 mm",
+                              "confidence": 0.9}],
+            "hand_written": ["42 mm drop", "2 ct centre"],
+        })
+        read = agent.read_design_plate(b"plate")
+        assert read["source"] == "plate"
+        assert read["jewelry_type"] == "pendant"
+        assert read["stones"][0]["type"] == "lapis lazuli cabochon"
+        assert read["stones"][1]["qty"] == 2
+        assert read["hand_written"] == ["42 mm drop", "2 ct centre"]
+        assert read["measurements"][0]["confidence"] == 0.9   # she wrote it
+
+    def test_read_design_plate_tolerates_a_thin_read(self, monkeypatch):
+        monkeypatch.setattr(agent, "_vision_json", lambda *a, **k: {
+            "stones": [{"qty": 1, "type": "aquamarine emerald cut"}]})
+        read = agent.read_design_plate(b"plate")
+        assert read["jewelry_type"] is None
+        assert read["hand_written"] == []
+        assert read["metal"] == "TBD"
+        assert read["source"] == "plate"
+
+    def test_read_plate_endpoint_frames_her_drawing(self, monkeypatch):
+        """POST /specs/read-plate: her plate in, a framed factory sheet out.
+        Her drawing is the sheet image; the extracted panel is code-lettered
+        and marked as extracted-from-plate."""
+        monkeypatch.setattr(specs_mod, "read_design_plate", lambda image, **k: {
+            "stones": [{"qty": 1, "type": "aquamarine emerald cut",
+                        "size_mm": "TBD", "carat_each": None, "confidence": 0.6}],
+            "metal": "platinum", "measurements": [],
+            "scaled": False, "scale_anchor": None, "source": "plate",
+            "jewelry_type": "earrings", "hand_written": ["12 x 8 mm centre"]})
+        r = TestClient(app).post("/specs/read-plate", json={
+            "image_base64": base64.b64encode(REAL_PNG).decode(),
+            "piece_name": "Aqua Earring"})
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["jewelry_type"] == "earrings"
+        assert body["hand_written"] == ["12 x 8 mm centre"]
+        assert "aquamarine emerald cut" in body["framed_svg"]
+        assert "EXTRACTED FROM THE DESIGN PLATE" in body["framed_svg"]
+        assert "data:image/png;base64," in body["framed_svg"]   # her drawing rides
+        assert body["extracted"]["source"] == "plate"
+
+    def test_read_plate_bad_base64_is_422(self):
+        r = TestClient(app).post("/specs/read-plate",
+                                 json={"image_base64": "not base64!!!"})
+        assert r.status_code == 422
 
     def test_read_sheet_specs_normalizes_the_vision_read(self, monkeypatch):
         monkeypatch.setattr(agent, "_vision_json", lambda *a, **k: {

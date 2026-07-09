@@ -29,7 +29,7 @@ from facetta.prototype import compile_render_prompt, render_color_preview
 from facetta.spec import Spec
 from facetta.specagent import (
     compile_render_instruction, generate_spec_sheet, infer_capability,
-    localized_edit,
+    localized_edit, read_design_plate,
 )
 from facetta.svg_sheet import (
     Branding, SheetUnsupported, render_sheet, render_stack_sheet,
@@ -108,6 +108,56 @@ def estimate_stone(request: StoneEstimateRequest):
                          f"about {depth} mm of depth to be physically real")}
     except EstimateError as exc:
         return JSONResponse(status_code=422, content={"detail": str(exc)})
+
+
+class ReadPlateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    image_base64: Annotated[str, Field(min_length=1, max_length=14_000_000)]
+    scale_anchor: str | None = None      # a known measurement, if the designer has one
+    house: str | None = None             # branding for the framed sheet
+    signature: str | None = None
+    piece_name: Annotated[str, Field(max_length=48)] | None = None
+
+
+@router.post("/read-plate")
+def read_plate(request: ReadPlateRequest):
+    """The reverse of the usual flow: the designer's HAND-RENDERED plate IN, a
+    structured factory sheet OUT. Grok vision reads the plate into stones,
+    metal, and measurements (every dimension she WROTE is transcribed verbatim
+    and marked authoritative); the density model physics-checks it; and code
+    letters it onto the official frame with HER drawing as the sheet's image.
+
+    Nothing is redrawn — her plate IS the drawing. The panel is marked
+    ESTIMATED/extracted so the factory knows to confirm; the values she
+    hand-wrote ride at high confidence. This replaces the manual step she does
+    today: reading her own drawing and lettering the dimensioned sheet."""
+    import base64 as b64
+    import binascii
+
+    try:
+        image_bytes = b64.b64decode(request.image_base64, validate=True)
+    except (binascii.Error, ValueError):
+        return JSONResponse(status_code=422,
+                            content={"detail": "image_base64 is not valid base64"})
+    try:
+        read = read_design_plate(image_bytes, scale_anchor=request.scale_anchor)
+        read = physics_check_estimates(get_vocabulary(), read)
+    except RenderUnavailable as exc:
+        status = 503 if "_KEY" in str(exc) else 502
+        return JSONResponse(status_code=status, content={"detail": str(exc)})
+
+    framed_svg = frame_technical_drawing(
+        image_bytes, estimates=read,
+        branding=_branding(request.house, request.signature),
+        piece_name=request.piece_name)
+    return {
+        "jewelry_type": read.get("jewelry_type"),
+        "extracted": read,                 # stones/metal/measurements + hand_written
+        "hand_written": read.get("hand_written", []),
+        "framed_svg": framed_svg,
+        "media_type": _sniff_media_type(image_bytes),
+    }
 
 
 @router.post("/sheet.svg")

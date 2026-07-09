@@ -209,7 +209,9 @@ def _estimate_panel(est: dict, x0: float, y0: float, x1: float) -> list[str]:
 
     banner_y = y0 + _estimate_panel_height(est) - 9.0
     scaled_to = est.get("scale_anchor")
-    banner = ("REFERENCE ESTIMATES FROM THE RENDER"
+    source = ("EXTRACTED FROM THE DESIGN PLATE" if est.get("source") == "plate"
+              else "REFERENCE ESTIMATES FROM THE RENDER")
+    banner = (source
               + (f", scaled to '{scaled_to}'" if est.get("scaled") and scaled_to
                  else "")
               + (", physics-checked against the density model"
@@ -357,8 +359,10 @@ def frame_technical_drawing(drawing_bytes: bytes, spec: Spec | None = None,
                   size=2.8, anchor="start", color=FAINT),
         ]
     elif assist:
+        src = ("extracted from the design plate" if assist.get("source") == "plate"
+               else "estimated from render")
         parts.append(_text(MARGIN + 4, ty,
-                           "estimated from render — confirm before production",
+                           f"{src} — confirm before production",
                            size=3.0, anchor="start", color=FAINT))
     else:
         parts.append(_text(MARGIN + 4, ty, "unsaved drawing — pending record",

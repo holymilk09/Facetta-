@@ -703,7 +703,16 @@ def read_sheet_specs(image_bytes: bytes, *,
                 f"{scale_anchor}. Scale all other estimates to be consistent "
                 f"with it and raise your confidence accordingly.")
     data = _vision_json(_ESTIMATE_SYSTEM, image_bytes, ask)
+    return _normalize_stone_read(data, scale_anchor)
 
+
+def _normalize_stone_read(data: dict, scale_anchor: str | None) -> dict:
+    """Coerce a vision read into the shared estimate shape:
+    {"stones": [{qty,type,size_mm,carat_each,confidence}], "metal": str,
+     "measurements": [{label,value,confidence}], "scaled", "scale_anchor"}.
+    Used by both the render reader (read_sheet_specs) and the hand-plate
+    reader (read_design_plate) so downstream (physics check, panel) is one
+    path. Junk entries are dropped; missing keys are filled honestly."""
     stones = []
     for s in data.get("stones") or []:
         if isinstance(s, dict) and s.get("type"):
@@ -726,6 +735,59 @@ def read_sheet_specs(image_bytes: bytes, *,
     return {"stones": stones, "metal": str(data.get("metal") or "TBD"),
             "measurements": measurements,
             "scaled": bool(scale_anchor), "scale_anchor": scale_anchor}
+
+
+# The hand-plate reader: the founder's wife hand-renders dimensioned design
+# plates for factories (gouache + pencil on toned paper, often with the piece
+# drawn over a figure croquis and dimensions written by hand). This reads ONE
+# such plate into the same estimate shape so the factory-sheet panel can letter
+# it — the app extracting what she used to letter by hand. Numbers she WROTE on
+# the plate are authoritative (high confidence); shapes/colours read from the
+# rendering are estimates; the croquis figure and background are ignored.
+_PLATE_SYSTEM = (
+    MASTER_SYSTEM + "\n\n"
+    "This is a jewelry designer's HAND-RENDERED design plate (gouache/"
+    "watercolour and pencil on toned paper) — often the piece drawn beside or "
+    "over a faint pencil figure sketch, and possibly rotated. Read ONLY the "
+    "rendered jewelry piece; IGNORE the figure/croquis, the background paper, "
+    "and any body outline. Report the piece as JSON only, exactly this shape:\n"
+    '{"jewelry_type": "ring|pendant|earrings|brooch|bracelet|necklace",\n'
+    ' "stones": [{"qty": 1, "type": "species + cut, e.g. sapphire emerald cut '
+    'or lapis cabochon or diamond marquise", "size_mm": "L × W", '
+    '"carat_each": null, "confidence": 0.0}],\n'
+    ' "metal": "karat/colour/material, e.g. 18k yellow gold or platinum",\n'
+    ' "measurements": [{"label": "overall length", "value": "38 mm", '
+    '"confidence": 0.0}],\n'
+    ' "hand_written": ["transcribe VERBATIM every number, dimension, or note '
+    'the designer wrote on the plate"]}\n'
+    "stones: one entry per distinct stone group (centre first); include "
+    "cabochons, enamel domes, briolettes, pavé — name the cut/shape and the "
+    "colour you see. ANY dimension the designer WROTE on the plate is "
+    "authoritative: report it in measurements at HIGH confidence (>=0.85) and "
+    "echo it verbatim in hand_written. Shapes and colours you infer from the "
+    "rendering are estimates — keep confidence modest. Use controlled trade "
+    "terms where you are sure; never invent a stone. Output ONLY the JSON.")
+
+
+def read_design_plate(image_bytes: bytes, *,
+                      scale_anchor: str | None = None) -> dict:
+    """Read a hand-rendered design plate into the shared estimate shape plus a
+    `hand_written` list (every number/note the designer lettered, verbatim —
+    those are authoritative, not guesses). The factory-sheet panel letters the
+    result; her drawing itself is the sheet's image. Raises RenderUnavailable
+    on provider failure. This is the reverse of the app's usual flow: her hand
+    drawing IN, a structured factory sheet OUT."""
+    ask = ("Read this hand-rendered jewelry design plate. Transcribe every "
+           "dimension or note the designer wrote by hand.")
+    if scale_anchor:
+        ask += (f" KNOWN measurement to scale the rest against: {scale_anchor}.")
+    data = _vision_json(_PLATE_SYSTEM, image_bytes, ask)
+    read = _normalize_stone_read(data, scale_anchor)
+    read["source"] = "plate"             # the panel banner adapts its wording
+    read["jewelry_type"] = str(data.get("jewelry_type") or "").strip() or None
+    hand = data.get("hand_written") or []
+    read["hand_written"] = [str(h) for h in hand if str(h).strip()]
+    return read
 
 
 def authoritative_dims(spec: Spec) -> list[str]:
