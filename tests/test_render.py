@@ -144,3 +144,51 @@ def test_generation_variant_makes_a_fresh_image(monkeypatch, tmp_path):
     assert (cached_a, cached_a2, cached_b) == (False, True, False)
     assert a == a2 and a != b            # variant busts the cache, same brief
     assert len(calls) == 2               # only the two live generations paid
+
+
+def test_setting_change_moves_the_cache_key_and_variant_busts_it():
+    """The stale-drawing bug: a design change that the (lossy) prompt drops —
+    the setting's prong count — must still change the render cache key, and a
+    variant must force a genuinely fresh render."""
+    import json
+    from pathlib import Path
+
+    from facetta.render import spec_visual_hash
+    raw = json.loads((Path(__file__).parent.parent / "docs" / "examples"
+                      / "concept_emerald_halo.json").read_text())
+    a = validate_spec(Spec.model_validate(raw), get_vocabulary()).spec
+    # change ONLY the setting prong count — the exact field prompt_core drops
+    raw2 = json.loads(json.dumps(raw))
+    raw2["setting"]["prong_count"] = (a.setting.prong_count or 4) + 2
+    b = validate_spec(Spec.model_validate(raw2), get_vocabulary()).spec
+
+    assert spec_visual_hash(a) != spec_visual_hash(b)     # design change -> new key
+    # metadata (version/date) must NOT move the key (no needless re-render)
+    c = a.model_copy(update={"version": a.version + 9})
+    assert spec_visual_hash(a) == spec_visual_hash(c)
+    # the finished-render key also reflects it
+    assert (render_cache_key(a, "photo", "studio")
+            != render_cache_key(b, "photo", "studio"))
+
+
+def test_metal_finish_change_moves_the_render_key():
+    """The parallel bug: metal.finish was in neither the fingerprint nor the
+    instruction, so changing polish served the old render."""
+    import json
+    from pathlib import Path
+
+    raw = json.loads((Path(__file__).parent.parent / "docs" / "examples"
+                      / "concept_emerald_halo.json").read_text())
+    a = validate_spec(Spec.model_validate(raw), get_vocabulary()).spec
+    raw2 = json.loads(json.dumps(raw))
+    raw2["metal"]["finish"] = "matte"
+    b = validate_spec(Spec.model_validate(raw2), get_vocabulary()).spec
+    assert (render_cache_key(a, "photo", "studio")
+            != render_cache_key(b, "photo", "studio"))
+
+
+def test_edit_image_refuses_empty_source():
+    from facetta.render import RenderUnavailable, edit_image
+    import pytest as _pytest
+    with _pytest.raises(RenderUnavailable):
+        edit_image(b"", "draw it", "grok_direct")

@@ -170,6 +170,7 @@ class AgentSheetRequest(BaseModel):
     # the ballpark designer's assist: with NO spec, Grok vision-reads the
     # render and code letters the panel as ESTIMATED (never painted text)
     assist_specs: bool = False
+    variant: int = 0  # regenerate: force a fresh Grok drawing, not the cached one
 
 
 @router.post("/technical-drawing")
@@ -215,7 +216,7 @@ def technical_drawing(request: AgentSheetRequest):
             image_bytes, notes=request.notes, mode=request.mode,
             region=request.region, spec=validated,
             legibility=request.legibility,
-            templated=request.facetta_template)
+            templated=request.facetta_template, variant=request.variant)
     except ValueError as exc:
         return JSONResponse(status_code=422, content={"detail": str(exc)})
     except RenderUnavailable as exc:
@@ -421,7 +422,7 @@ def build(request: BuildRequest, db: DbSession):
     # the render-matched sheet draws and the client render shows.
     spec_render = None
     try:
-        spec_render, _ = render_from_spec(spec)
+        spec_render, _ = render_from_spec(spec, variant=request.variant)
     except RenderUnavailable as exc:
         warnings.append(f"spec render unavailable: {exc}")
 
@@ -440,7 +441,8 @@ def build(request: BuildRequest, db: DbSession):
         try:
             drawing, manufacturing_summary, _ = generate_spec_sheet(
                 spec_render if spec_render is not None else image,
-                spec=spec, region="DUAL", templated=True)
+                spec=spec, region="DUAL", templated=True,
+                variant=request.variant)
             technical_drawing_framed_svg = frame_technical_drawing(
                 drawing, spec=spec, branding=branding,
                 piece_name=request.piece_name)

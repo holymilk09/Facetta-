@@ -104,7 +104,7 @@ class TestSpecRender:
 
         captured = {}
 
-        def fake_gen(prompt, model="grok_direct", variant=0):
+        def fake_gen(prompt, model="grok_direct", variant=0, discriminator=""):
             captured["prompt"] = prompt
             return (b"img-bytes", False)
 

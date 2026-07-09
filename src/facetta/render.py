@@ -15,11 +15,34 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import json
 import os
 from pathlib import Path
 
 from facetta.mockup import compile_finish_request, geometry_fingerprint
 from facetta.spec import Spec
+
+# Fields that do NOT change what the rendered image looks like -- excluded from
+# the visual hash so a new version (bumped id/date/notes) doesn't needlessly
+# re-render, while every APPEARANCE field (stone, setting, metal, band, ...) IS
+# in the key. The old bug was the reverse: appearance fields (setting, metal
+# finish, clarity) were in NEITHER the prompt nor the fingerprint, so a changed
+# design kept the old key and served a stale image "from ages ago".
+_NONVISUAL_SPEC_FIELDS = {
+    "design_id", "version", "created_by", "created_at", "schema_version",
+    "mode", "notes_to_factory",
+}
+
+
+def spec_visual_hash(spec: Spec) -> str:
+    """A stable fingerprint of everything about a spec that affects how the
+    rendered piece LOOKS -- the whole spec minus pure metadata. Any appearance
+    change (setting, finish, clarity, counts, arrangement) moves this hash, so
+    it can never serve a stale render for a design that actually changed."""
+    data = {k: v for k, v in spec.model_dump(mode="json").items()
+            if k not in _NONVISUAL_SPEC_FIELDS}
+    return hashlib.sha256(
+        json.dumps(data, sort_keys=True, default=str).encode()).hexdigest()[:16]
 
 CACHE_DIR = Path(os.environ.get("FACETTA_RENDER_CACHE", "data/render_cache"))
 PIPELINE_VERSION = "2"  # bump to invalidate every cached render
@@ -154,7 +177,7 @@ def _call_engine(model: str, instruction: str, image_data_uri: str,
 
 
 def generate_image(prompt: str, model: str = "grok_direct",
-                   variant: int = 0) -> tuple[bytes, bool]:
+                   variant: int = 0, discriminator: str = "") -> tuple[bytes, bool]:
     """Grok invents a NEW design image from a text brief. Content-addressed by
     (prompt, model, variant). Returns (bytes, was_cached).
 
@@ -168,6 +191,8 @@ def generate_image(prompt: str, model: str = "grok_direct",
         raise RenderUnavailable(
             f"unknown generation model '{model}'; options: {list(GENERATION_MODELS)}")
     suffix = f":v{variant}" if variant else ""
+    if discriminator:  # e.g. the full-spec visual hash, so a design change
+        suffix += ":" + discriminator  # never collides with the old render
     key = hashlib.sha256(
         (PIPELINE_VERSION + ":generate:" + model + ":" + prompt + suffix).encode()
     ).hexdigest()[:32]
@@ -204,7 +229,7 @@ def generate_image(prompt: str, model: str = "grok_direct",
 
 
 def edit_image(image_bytes: bytes, instruction: str,
-               model: str = "grok_direct") -> tuple[bytes, bool]:
+               model: str = "grok_direct", variant: int = 0) -> tuple[bytes, bool]:
     """Instruction-driven edit of a caller-supplied image — the primitive the
     spec agent's image-to-image passes ride on. Content-addressed like
     restyle_artwork: the input bytes pin the source, the instruction carries
@@ -214,10 +239,16 @@ def edit_image(image_bytes: bytes, instruction: str,
     if model not in MODELS:
         raise RenderUnavailable(
             f"unknown render model '{model}'; options: {list(MODELS)}")
+    if not image_bytes:  # a failed upstream render must not collide on the
+        raise RenderUnavailable(  # empty-bytes hash and serve a stale drawing
+            "edit_image received an empty source image — the upstream render "
+            "produced nothing to edit")
+    suffix = f":v{variant}" if variant else ""
     key = hashlib.sha256(
         (PIPELINE_VERSION + ":edit:" + model + ":"
          + hashlib.sha256(image_bytes).hexdigest()
-         + ":" + hashlib.sha256(instruction.encode()).hexdigest()).encode()
+         + ":" + hashlib.sha256(instruction.encode()).hexdigest()
+         + suffix).encode()
     ).hexdigest()[:32]
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
     cached = CACHE_DIR / f"{key}.png"
@@ -363,7 +394,8 @@ def generate_video(image_bytes: bytes, prompt: str, *, model: str = "grok_video"
     return VideoResult(url, mp4, duration, False)
 
 
-def render_from_spec(spec: Spec, model: str = "grok_direct") -> tuple[bytes, bool]:
+def render_from_spec(spec: Spec, model: str = "grok_direct",
+                     variant: int = 0) -> tuple[bytes, bool]:
     """Render the piece straight from the VALIDATED spec — the accurate path.
 
     The founder's finding: our deterministic drawing stays schematic, but feeding
@@ -375,7 +407,11 @@ def render_from_spec(spec: Spec, model: str = "grok_direct") -> tuple[bytes, boo
     once. Returns (bytes, was_cached)."""
     from facetta.prototype import compile_render_prompt
 
-    return generate_image(compile_render_prompt(spec)["prompt"], model=model)
+    # key on the FULL spec, not just the (lossy) prompt: prompt_core drops
+    # sections like spec.setting, so a prompt-only key served a stale render
+    # when only the setting changed. variant lets the designer force a fresh one.
+    return generate_image(compile_render_prompt(spec)["prompt"], model=model,
+                          variant=variant, discriminator=spec_visual_hash(spec))
 
 
 def _provider_key(key_env: str) -> str | None:
@@ -396,7 +432,7 @@ def render_cache_key(spec: Spec, style: str, lighting: str,
     body = compile_finish_request(spec, style, lighting)
     return hashlib.sha256(
         (PIPELINE_VERSION + model + geometry_fingerprint(spec)
-         + body["instruction"]).encode()
+         + body["instruction"] + spec_visual_hash(spec)).encode()
     ).hexdigest()[:32]
 
 

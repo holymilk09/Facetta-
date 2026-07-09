@@ -78,32 +78,34 @@ class TestCompileSheetInstruction:
         assert "the platform's official template" not in text
         assert "Never invent designer names" in text
 
-    def test_templated_swaps_the_title_block_for_clean_margins(self):
+    def test_templated_draws_clean_and_letters_nothing(self):
+        # the factory-sheet path: Grok draws the actual piece, writes NO text;
+        # the code panel letters every number. No title block, no old junk.
         text = agent.compile_sheet_instruction("RING_ENGAGEMENT",
                                                templated=True)
         assert "Title block with METAL" not in text
-        assert ("Do not draw any title block, brand name, designer name, "
-                "job reference, or date") in text
-        assert "the platform's official template adds the title block" in text
-        assert "Never invent designer names" in text       # both modes
+        assert "write NO text of ANY kind" in text
+        assert "no title block" in text
+        assert "Never invent designer names" in text       # honesty rule stays
         assert text.startswith(agent.TASK_LINE)
 
-    def test_templated_forbids_painted_spec_blocks(self):
-        # a live sheet showed Grok painting 'RING SPECIFICATIONS' (with
-        # 'Pullish') — duplicating the panel our code letters. Templated mode
-        # bans every freestanding spec block; view callouts stay allowed.
+    def test_templated_forbids_all_painted_text(self):
+        # Grok can't reliably letter text ('Pullish', 'G6.91') and invented
+        # phantom 'PLAN'/'SECTION A-A'. Templated mode forbids ALL text so the
+        # drawing is clean and the code panel owns every number and label.
         text = agent.compile_sheet_instruction("RING_ENGAGEMENT",
                                                templated=True)
-        assert "do NOT draw any freestanding specification text" in text
-        assert "'RING SPECIFICATIONS'" in text
-        assert "no stone schedule" in text and "no materials list" in text
-        assert "dimension callouts anchored to the geometry" in text
-        # untemplated mode is unchanged — the model may letter its own block
-        assert ("freestanding specification"
-                not in agent.compile_sheet_instruction("RING_ENGAGEMENT"))
-        # and the legibility repair pass inherits the same ban
-        assert ("freestanding specification"
-                in agent._legibility_instruction(templated=True))
+        for banned in ("'PLAN'", "'SECTION'", "'TBD'", "no numbers",
+                       "no title block", "no legend"):
+            assert banned in text, banned
+        assert "mark TBD" not in text          # no TBD-leader flooding
+        assert "Dimension lines with arrowheads" not in text
+        # untemplated legacy mode still lets the model letter its own numbers
+        assert "write NO text of ANY kind" not in agent.compile_sheet_instruction(
+            "RING_ENGAGEMENT")
+        # the legibility repair pass inherits the no-text rule
+        assert "write NO text of ANY kind" in agent._legibility_instruction(
+            templated=True)
 
     def test_terminology_constants_exist_for_the_app(self):
         assert agent.TASK_MODE == "MANUFACTURING_TECHNICAL_DRAWING"
@@ -191,7 +193,7 @@ class TestGenerateSpecSheet:
     def test_returns_sheet_summary_cached(self, monkeypatch):
         edits = []
 
-        def fake_edit(image, instruction, model="grok_direct"):
+        def fake_edit(image, instruction, model="grok_direct", variant=0):
             edits.append(instruction)
             return b"sheet", False
 
@@ -211,7 +213,7 @@ class TestGenerateSpecSheet:
     def test_legibility_makes_exactly_two_edit_calls(self, monkeypatch):
         edits = []
 
-        def fake_edit(image, instruction, model="grok_direct"):
+        def fake_edit(image, instruction, model="grok_direct", variant=0):
             edits.append((image, instruction))
             return b"sheet-" + bytes([len(edits)]), False
 
@@ -237,7 +239,7 @@ class TestGenerateSpecSheet:
         # and it must close with the honesty rule
         edits = []
 
-        def fake_edit(image, instruction, model="grok_direct"):
+        def fake_edit(image, instruction, model="grok_direct", variant=0):
             edits.append(instruction)
             return b"sheet-" + bytes([len(edits)]), False
 
@@ -249,7 +251,7 @@ class TestGenerateSpecSheet:
                                   templated=True)
         assert len(edits) == 2
         assert "Title block with METAL" not in edits[1]
-        assert "official template adds the title block" in edits[1]
+        assert "write NO text of ANY kind" in edits[1]      # clean repair pass
         assert edits[1].endswith(agent.HONESTY_RULE)
 
     def test_summary_hiccup_degrades_but_the_sheet_ships(self, monkeypatch):
@@ -258,7 +260,7 @@ class TestGenerateSpecSheet:
 
         monkeypatch.setattr(agent, "inspect_render", inspect_boom)
         monkeypatch.setattr(agent, "edit_image",
-                            lambda image, instruction, model="grok_direct":
+                            lambda image, instruction, model="grok_direct", variant=0:
                             (b"sheet", True))
 
         sheet, summary, cached = agent.generate_spec_sheet(PNG, mode="BROOCH")
@@ -276,7 +278,7 @@ class TestGenerateSpecSheet:
     def test_spec_picks_the_mode_and_injects_dims(self, monkeypatch, drop_spec):
         edits = []
 
-        def fake_edit(image, instruction, model="grok_direct"):
+        def fake_edit(image, instruction, model="grok_direct", variant=0):
             edits.append(instruction)
             return b"sheet", False
 
@@ -297,7 +299,7 @@ class TestGenerateSpecSheet:
     def test_templated_reaches_the_edit_instruction(self, monkeypatch):
         edits = []
 
-        def fake_edit(image, instruction, model="grok_direct"):
+        def fake_edit(image, instruction, model="grok_direct", variant=0):
             edits.append(instruction)
             return b"sheet", False
 
@@ -307,7 +309,8 @@ class TestGenerateSpecSheet:
 
         agent.generate_spec_sheet(PNG, mode="PENDANT", templated=True)
         assert "Title block with METAL" not in edits[0]
-        assert "official template adds the title block" in edits[0]
+        assert "write NO text of ANY kind" in edits[0]       # clean, no junk
+        assert "mark TBD" not in edits[0]
         assert edits[0].endswith(agent.HONESTY_RULE)
 
     def test_router_fills_mode_and_default_region(self, monkeypatch):
@@ -318,7 +321,7 @@ class TestGenerateSpecSheet:
                             lambda image, notes, mode, region: dict(
                                 SUMMARY, piece_type=mode, region=region))
         monkeypatch.setattr(agent, "edit_image",
-                            lambda image, instruction, model="grok_direct":
+                            lambda image, instruction, model="grok_direct", variant=0:
                             (b"sheet", False))
 
         _, summary, _ = agent.generate_spec_sheet(PNG)

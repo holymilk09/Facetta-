@@ -954,6 +954,9 @@ class ChainDrawingRequest(BaseModel):
     # no spec on the chain? Grok vision-reads the pinned render and code
     # letters the panel as ESTIMATED — the ballpark designer's assist
     assist_specs: bool = False
+    # regenerate: force a genuinely fresh Grok drawing instead of the cached
+    # one (bump per press; the app's "regenerate" button)
+    variant: int = 0
     # explicit override: draw from THIS asset instead of the chain's pin
     use_this_asset: bool = False
 
@@ -1002,7 +1005,8 @@ def chain_technical_drawing(asset_id: str, request: ChainDrawingRequest,
         sheet, summary, cached = generate_spec_sheet(
             bytes(source.image), notes=request.notes, mode=request.mode,
             region=request.region, spec=validated,
-            legibility=request.legibility, templated=request.facetta_template)
+            legibility=request.legibility, templated=request.facetta_template,
+            variant=request.variant)
     except ValueError as exc:
         return JSONResponse(status_code=422, content={"detail": str(exc)})
     except RenderUnavailable as exc:

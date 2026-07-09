@@ -250,6 +250,32 @@ G0_SUFFIX = (
     "design proportions and silhouette from reference. Legible sans-serif "
     "labels. Title block with METAL, JOB REF, REV A.")
 
+# The CLEAN factory-drawing directive (templated mode, the app's factory-sheet
+# path): Grok draws ONLY the actual piece — clean views and thin dimension
+# INDICATOR lines it renders accurately — and writes NO text at all. Every
+# number, label, and identity is lettered by the platform's code panel beside
+# the drawing (facetta.drawing_frame). Grok can't reliably letter precise text
+# (it produced 'Pullish', 'G6.91'), and inventing labels gave phantom 'PLAN'
+# and 'SECTION A-A' with no cut line — so it letters nothing, ever.
+CLEAN_DRAW_DIRECTIVE = (
+    "Redraw the SAME piece from the reference as a clean jewelry manufacturing "
+    "technical illustration — precise graphite/line technical style on pure "
+    "white paper. Orthographic views: {views}. Keep the design, proportions, "
+    "stones, setting, metal and silhouette EXACTLY as the reference — this is "
+    "the designer's actual piece, do not restyle it. You MAY draw clean, thin "
+    "dimension indicator lines between features (heights between levels, widths) "
+    "as visual guides.")
+
+CLEAN_G0 = (
+    "CRITICAL — write NO text of ANY kind on the drawing: no numbers, no "
+    "dimension values or measurements, no view-name labels (no 'PLAN', 'TOP', "
+    "'FRONT', 'SIDE', 'SECTION', 'A-A'), no 'TBD', no title block, no brand, "
+    "designer, or date, no callout words, no legend, no letters. The platform's "
+    "template letters every number and label from the record beside the "
+    "drawing. Draw ONLY the clean views and thin indicator lines. Gemstones as "
+    "clean faceted outlines. No photorealism, no shadows, no jewelry box, no "
+    "model, no background, no watermark.")
+
 # G6 — the one-shot legibility repair pass. The body only: the tail (G0,
 # templated or not, plus the honesty rule) is appended at call time by
 # _legibility_instruction, so the repair pass obeys the same title-block and
@@ -511,9 +537,13 @@ def _templated_tail(templated: bool) -> str:
 
 
 def _legibility_instruction(*, templated: bool = False) -> str:
-    """The G6 repair instruction, compiled at call time so it carries the
-    same tail as the first edit: templated mode must not reintroduce a
-    model-drawn title block, and the honesty rule closes both modes."""
+    """The G6 repair pass. In templated mode the drawing carries NO text (the
+    code panel letters everything), so the pass only reinforces a clean,
+    text-free illustration — never redraw or add labels. Legacy mode keeps the
+    text-legibility repair."""
+    if templated:
+        return ("Identical layout, proportions, and design — no changes. Keep "
+                "the drawing perfectly clean. " + CLEAN_G0 + " " + HONESTY_RULE)
     return _G6_BODY + _templated_tail(templated) + " " + HONESTY_RULE
 
 
@@ -798,6 +828,18 @@ def compile_sheet_instruction(mode: str, region: str = "DUAL",
         raise ValueError(f"unknown mode '{mode}'; options: {list(MODES)}")
     if region not in REGIONS:
         raise ValueError(f"unknown region '{region}'; options: {list(REGIONS)}")
+    if templated:
+        # the app's factory-sheet path: Grok draws the actual piece clean, the
+        # code panel letters every number — so the model writes NO text at all.
+        views = ", ".join(MODES[mode]["views"])
+        parts = [TASK_LINE, CLEAN_DRAW_DIRECTIVE.format(views=views)]
+        if notes:
+            parts.append(f"Designer notes (honor in the drawing, do NOT letter "
+                         f"them as text): {notes}")
+        parts.append(CLEAN_G0)
+        parts.append(HONESTY_RULE)
+        return " ".join(parts)
+    # legacy standalone sheet: the model letters its own numbers/title block
     parts = [TASK_LINE, MODES[mode]["prompt"], REGIONS[region]]
     if dims:
         parts.append(
@@ -815,7 +857,7 @@ def compile_sheet_instruction(mode: str, region: str = "DUAL",
 def generate_spec_sheet(image_bytes: bytes, *, notes: str = "",
                         mode: str | None = None, region: str = "DUAL",
                         spec: Spec | None = None, legibility: bool = False,
-                        templated: bool = False,
+                        templated: bool = False, variant: int = 0,
                         model: str = "grok_direct") -> tuple[bytes, dict, bool]:
     """The Section H pipeline, one call: classify (unless the caller or the
     spec already knows the mode) → inspect → controlled image edit →
@@ -854,10 +896,13 @@ def generate_spec_sheet(image_bytes: bytes, *, notes: str = "",
     if dims:
         summary["dimension_status"] = "designer_supplied"
 
-    sheet, cached = edit_image(image_bytes, instruction, model)
+    # variant lets the designer force a genuinely fresh drawing (the
+    # regenerate button) instead of the content-addressed cached one
+    sheet, cached = edit_image(image_bytes, instruction, model, variant=variant)
     if legibility:
         sheet, _ = edit_image(
-            sheet, _legibility_instruction(templated=templated), model)
+            sheet, _legibility_instruction(templated=templated), model,
+            variant=variant)
     return sheet, summary, cached
 
 
