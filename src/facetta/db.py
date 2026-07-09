@@ -34,7 +34,12 @@ def utcnow() -> datetime:
 
 
 def new_id(prefix: str) -> str:
-    return f"{prefix}_{secrets.token_hex(4)}"
+    # 8 random bytes (64-bit) so IDs stay collision-safe even when several
+    # regional deployments mint them independently and later sync a shared
+    # design/thread across the border (see docs/hosting-and-data-residency.md).
+    # Opaque + globally unique means a row can replicate between databases
+    # without renumbering — the property auto-increment integers break.
+    return f"{prefix}_{secrets.token_hex(8)}"
 
 
 class Base(DeclarativeBase):
@@ -94,7 +99,11 @@ class DesignMessage(Base):
 
     __tablename__ = "design_messages"
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    # opaque global id (msg_…), not an auto-increment int: two regional
+    # databases must be able to mint messages and sync them into one shared
+    # thread without primary-key collisions. Chronology is carried by
+    # created_at (UTC), so cross-region ordering stays correct.
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
     design_id: Mapped[str] = mapped_column(String(32), index=True)
     version: Mapped[int | None] = mapped_column(Integer, nullable=True)
     author: Mapped[str] = mapped_column(String(120))
@@ -106,7 +115,8 @@ class DesignMessage(Base):
 class Comment(Base):
     __tablename__ = "comments"
 
-    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    # opaque global id (cmt_…) for the same cross-region reason as messages
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
     design_id: Mapped[str] = mapped_column(String(32), index=True)
     version: Mapped[int] = mapped_column(Integer)
     view: Mapped[str] = mapped_column(String(16))  # top | side | sheet
