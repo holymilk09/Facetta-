@@ -534,6 +534,28 @@ class TestTechnicalDrawingEndpoint:
         assert read["hand_written"] == ["42 mm drop", "2 ct centre"]
         assert read["measurements"][0]["confidence"] == 0.9   # she wrote it
 
+    def test_read_design_plate_extracts_assembly(self, monkeypatch):
+        monkeypatch.setattr(agent, "_vision_json", lambda *a, **k: {
+            "jewelry_type": "earrings",
+            "assembly": "vertical drop: hook at top, discs, aqua at bottom",
+            "stones": [{"type": "aquamarine emerald cut"}]})
+        read = agent.read_design_plate(b"plate")
+        assert read["assembly"].startswith("vertical drop")
+
+    def test_assembly_lock_keeps_the_piece_assembled(self):
+        # the fix for 'a row of loose stones': the redraw carries the assembly
+        read = {"jewelry_type": "earrings",
+                "assembly": "hook at top, discs, aqua at bottom",
+                "stones": [{"qty": 1, "type": "aquamarine emerald cut"}],
+                "metal": "white gold"}
+        text = agent.compile_plate_redraw(read, "front", from_hero=False)
+        assert "assembled earrings" in text
+        assert "hook at top, discs, aqua at bottom" in text
+        assert "Do NOT lay the stones out in a row" in text
+        assert "FLAT COLOUR" in text                   # the colour requirement
+        assert "aquamarine emerald cut" in text        # materials reach the prompt
+        assert agent.CLEAN_G0 in text                  # still no painted text
+
     def test_read_design_plate_tolerates_a_thin_read(self, monkeypatch):
         monkeypatch.setattr(agent, "_vision_json", lambda *a, **k: {
             "stones": [{"qty": 1, "type": "aquamarine emerald cut"}]})
@@ -544,26 +566,50 @@ class TestTechnicalDrawingEndpoint:
         assert read["source"] == "plate"
 
     def test_read_plate_endpoint_frames_her_drawing(self, monkeypatch):
-        """POST /specs/read-plate: her plate in, a framed factory sheet out.
-        Her drawing is the sheet image; the extracted panel is code-lettered
-        and marked as extracted-from-plate."""
-        monkeypatch.setattr(specs_mod, "read_design_plate", lambda image, **k: {
-            "stones": [{"qty": 1, "type": "aquamarine emerald cut",
-                        "size_mm": "TBD", "carat_each": None, "confidence": 0.6}],
-            "metal": "platinum", "measurements": [],
-            "scaled": False, "scale_anchor": None, "source": "plate",
-            "jewelry_type": "earrings", "hand_written": ["12 x 8 mm centre"]})
+        """POST /specs/read-plate: her plate in, a COLOURED multi-angle redraw
+        + framed sheet out. Grok redraws every view; code letters the panel."""
+        est = {"stones": [{"qty": 1, "type": "aquamarine emerald cut",
+                           "size_mm": "TBD", "carat_each": None,
+                           "confidence": 0.6}],
+               "metal": "platinum", "measurements": [],
+               "scaled": False, "scale_anchor": None, "source": "plate",
+               "jewelry_type": "earrings", "assembly": "vertical drop",
+               "hand_written": ["12 x 8 mm centre"]}
+        monkeypatch.setattr(specs_mod, "read_design_plate", lambda image, **k: est)
+        # the redraw is mocked — 3 tiny views, no network
+        monkeypatch.setattr(specs_mod, "redraw_plate_colored",
+                            lambda image, read, **k: [
+                                {"view": v, "image": REAL_PNG, "cached": False}
+                                for v in ("front", "three-quarter", "side")])
         r = TestClient(app).post("/specs/read-plate", json={
             "image_base64": base64.b64encode(REAL_PNG).decode(),
             "piece_name": "Aqua Earring"})
         assert r.status_code == 200, r.text
         body = r.json()
+        assert body["redrawn"] is True
+        assert [v["view"] for v in body["views"]] == \
+            ["front", "three-quarter", "side"]        # the multi-angle set
+        assert body["assembly"] == "vertical drop"
         assert body["jewelry_type"] == "earrings"
         assert body["hand_written"] == ["12 x 8 mm centre"]
         assert "aquamarine emerald cut" in body["framed_svg"]
         assert "EXTRACTED FROM THE DESIGN PLATE" in body["framed_svg"]
-        assert "data:image/png;base64," in body["framed_svg"]   # her drawing rides
         assert body["extracted"]["source"] == "plate"
+
+    def test_read_plate_paste_fallback_keeps_her_drawing(self, monkeypatch):
+        # redraw=False is the "use my own art" fallback: no redraw call at all
+        monkeypatch.setattr(specs_mod, "read_design_plate", lambda image, **k: {
+            "stones": [], "metal": "gold", "measurements": [], "scaled": False,
+            "scale_anchor": None, "source": "plate", "jewelry_type": "pendant",
+            "assembly": None, "hand_written": []})
+        monkeypatch.setattr(specs_mod, "redraw_plate_colored",
+                            lambda *a, **k: pytest.fail("redraw must not run"))
+        r = TestClient(app).post("/specs/read-plate", json={
+            "image_base64": base64.b64encode(REAL_PNG).decode(),
+            "redraw": False})
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["redrawn"] is False and body["views"] == []
 
     def test_read_plate_bad_base64_is_422(self):
         r = TestClient(app).post("/specs/read-plate",

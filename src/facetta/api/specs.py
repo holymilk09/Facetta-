@@ -28,8 +28,9 @@ from facetta.render import (
 from facetta.prototype import compile_render_prompt, render_color_preview
 from facetta.spec import Spec
 from facetta.specagent import (
-    compile_render_instruction, generate_spec_sheet, infer_capability,
-    localized_edit, read_design_plate,
+    PLATE_VIEWS, compile_render_instruction, compose_views_strip,
+    generate_spec_sheet, infer_capability, localized_edit, read_design_plate,
+    redraw_plate_colored,
 )
 from facetta.svg_sheet import (
     Branding, SheetUnsupported, render_sheet, render_stack_sheet,
@@ -118,20 +119,28 @@ class ReadPlateRequest(BaseModel):
     house: str | None = None             # branding for the framed sheet
     signature: str | None = None
     piece_name: Annotated[str, Field(max_length=48)] | None = None
+    # redraw=True (default): Grok redraws the plate into clean COLOURED line
+    # art in multiple angles (the real product). False pastes her raw drawing
+    # unchanged (the explicit "use my own drawing" fallback).
+    redraw: bool = True
+    angles: Annotated[list[str], Field(max_length=5)] = list(PLATE_VIEWS)
+    variant: int = 0                     # regenerate: a fresh redraw
 
 
 @router.post("/read-plate")
 def read_plate(request: ReadPlateRequest):
     """The reverse of the usual flow: the designer's HAND-RENDERED plate IN, a
     structured factory sheet OUT. Grok vision reads the plate into stones,
-    metal, and measurements (every dimension she WROTE is transcribed verbatim
-    and marked authoritative); the density model physics-checks it; and code
-    letters it onto the official frame with HER drawing as the sheet's image.
+    metal, assembly, and measurements (every dimension she WROTE is transcribed
+    verbatim and marked authoritative); the density model physics-checks it.
 
-    Nothing is redrawn — her plate IS the drawing. The panel is marked
-    ESTIMATED/extracted so the factory knows to confirm; the values she
-    hand-wrote ride at high confidence. This replaces the manual step she does
-    today: reading her own drawing and lettering the dimensioned sheet."""
+    By default (redraw=True) Grok then REDRAWS the piece into clean COLOURED
+    technical line art in multiple design-locked angles (front · three-quarter
+    · side), assembly-locked so it stays the assembled piece, never a row of
+    loose stones — and code letters the panel (so text never garbles). This is
+    the product: her sketch becomes a factory-grade coloured multi-view sheet.
+    redraw=False keeps her original drawing untouched — the explicit "use my
+    own art" fallback (a paste). Grok draws every view; code owns every label."""
     import base64 as b64
     import binascii
 
@@ -143,20 +152,36 @@ def read_plate(request: ReadPlateRequest):
     try:
         read = read_design_plate(image_bytes, scale_anchor=request.scale_anchor)
         read = physics_check_estimates(get_vocabulary(), read)
+        # the product: Grok redraws the plate into clean COLOURED line art in
+        # multiple design-locked angles, then code letters the panel. redraw=
+        # False keeps her original drawing (the "use my own art" fallback).
+        views = []
+        if request.redraw:
+            views = redraw_plate_colored(image_bytes, read,
+                                         views=tuple(request.angles),
+                                         variant=request.variant)
+            drawing = compose_views_strip([v["image"] for v in views])
+        else:
+            drawing = image_bytes
     except RenderUnavailable as exc:
         status = 503 if "_KEY" in str(exc) else 502
         return JSONResponse(status_code=status, content={"detail": str(exc)})
 
     framed_svg = frame_technical_drawing(
-        image_bytes, estimates=read,
+        drawing, estimates=read,
         branding=_branding(request.house, request.signature),
         piece_name=request.piece_name)
     return {
         "jewelry_type": read.get("jewelry_type"),
+        "assembly": read.get("assembly"),
         "extracted": read,                 # stones/metal/measurements + hand_written
         "hand_written": read.get("hand_written", []),
+        "redrawn": request.redraw,
+        "views": [{"view": v["view"],
+                   "image_b64": b64.b64encode(v["image"]).decode()}
+                  for v in views],
         "framed_svg": framed_svg,
-        "media_type": _sniff_media_type(image_bytes),
+        "media_type": _sniff_media_type(drawing),
     }
 
 

@@ -276,6 +276,132 @@ CLEAN_G0 = (
     "clean faceted outlines. No photorealism, no shadows, no jewelry box, no "
     "model, no background, no watermark.")
 
+# --- colored, multi-angle clean redraw of a hand plate -----------------------
+#
+# The domain expert's requirement for the redraw: it must carry COLOUR matching
+# the piece's real materials (a factory has to see blue enamel vs lapis,
+# tsavorite vs emerald), and come in MULTIPLE ANGLES — factories build from
+# more than one view. Grok DRAWS every view (image-to-image, design-locked);
+# code still letters all text on the sheet, so nothing garbles like 'penalr'.
+
+PLATE_VIEWS = ("front", "three-quarter", "side")
+
+_PLATE_VIEW_PHRASE = {
+    "front": "a straight-on orthographic FRONT view",
+    "three-quarter": "a three-quarter view, rotated about 35° to show depth",
+    "side": "a side profile view",
+    "back": "a back view",
+    "top": "a top-down plan view",
+}
+
+
+def _material_summary(read: dict) -> str:
+    """A short colour/materials phrase for the redraw prompt, from the plate
+    read — the stone types (which carry the colour words) and the metal."""
+    parts = []
+    for s in read.get("stones") or []:
+        t = str(s.get("type", "")).strip()
+        if not t:
+            continue
+        qty = int(s.get("qty") or 1)
+        parts.append(f"{qty}× {t}" if qty > 1 else t)
+    metal = str(read.get("metal") or "").strip()
+    if metal and metal.upper() != "TBD":
+        parts.append(f"{metal} metal")
+    return "; ".join(parts) if parts else "as coloured in the reference"
+
+
+def _assembly_lock(read: dict) -> str:
+    """The spatial-assembly clause: without it Grok flattens a complex piece
+    into a row of loose stones. Built from the plate read's jewelry_type and
+    the extracted assembly sentence, so the redraw keeps what connects to
+    what — the fix for 'it's a ring but the design is NOT a ring'."""
+    jtype = (read.get("jewelry_type") or "piece").replace("_", " ")
+    assembly = read.get("assembly")
+    clause = (f"This is ONE assembled {jtype}"
+              + (f": {assembly}." if assembly else "."))
+    return (clause + " Keep this EXACT assembly and spatial arrangement — what "
+            "connects to what, top to bottom. Do NOT lay the stones out in a "
+            "row or separate them into loose components; draw the assembled "
+            "piece as designed.")
+
+
+def compile_plate_redraw(read: dict, view: str, *, from_hero: bool) -> str:
+    """A COLOURED clean-technical redraw instruction for one view. from_hero
+    locks to an already-redrawn hero (viewpoint change only); otherwise it
+    redraws the designer's plate itself into the clean coloured style. Grok
+    draws; CLEAN_G0 forbids all text so the code panel owns every label."""
+    phrase = _PLATE_VIEW_PHRASE.get(view, view)
+    materials = _material_summary(read)
+    if from_hero:
+        lead = ("New camera angle of the SAME redrawn piece: show it from "
+                f"{phrase}.")
+    else:
+        lead = ("Redraw the SAME jewelry piece from the reference as a clean "
+                f"jewelry manufacturing technical illustration — {phrase}.")
+    return "\n".join([
+        lead,
+        _assembly_lock(read),
+        "Crisp clean line work with FLAT COLOUR matching the piece's real "
+        f"materials: {materials}. Colour it like a jeweller's coloured "
+        "technical rendering — accurate hues, subtle shading only, on a plain "
+        "white background, accurate proportions and silhouette.",
+        "IDENTITY LOCK: keep the exact design, stones, setting, metal and "
+        "proportions of the reference — this is the designer's actual piece; "
+        "do NOT restyle, redesign, or add or remove any element. Only the "
+        "viewpoint differs.",
+        CLEAN_G0,
+    ])
+
+
+def redraw_plate_colored(plate_bytes: bytes, read: dict, *,
+                         views=PLATE_VIEWS, model: str = "grok_direct",
+                         variant: int = 0) -> list[dict]:
+    """Colour clean-technical redraw of a hand plate in MULTIPLE ANGLES. The
+    first view is redrawn from the designer's plate (the hero); every other
+    angle is derived from that hero, so all views are the SAME redrawn piece,
+    design-locked and assembly-locked. Returns [{"view", "image", "cached"}]."""
+    out: list[dict] = []
+    hero = None
+    for view in views:
+        if hero is None:
+            img, cached = edit_image(
+                plate_bytes, compile_plate_redraw(read, view, from_hero=False),
+                model, variant=variant)
+            hero = img
+        else:
+            img, cached = edit_image(
+                hero, compile_plate_redraw(read, view, from_hero=True),
+                model, variant=variant)
+        out.append({"view": view, "image": img, "cached": cached})
+    return out
+
+
+def compose_views_strip(images: list[bytes], *, gap: int = 48,
+                        bg=(255, 255, 255)) -> bytes:
+    """Lay the redraw views side by side on one white canvas — the multi-angle
+    row a factory reads (front · three-quarter · side). Each view is scaled to
+    a common height. Returns PNG bytes; the frame letters the panel beneath."""
+    import io
+
+    from PIL import Image
+
+    ims = [Image.open(io.BytesIO(b)).convert("RGB") for b in images]
+    if not ims:
+        raise ValueError("no views to compose")
+    h = max(i.height for i in ims)
+    scaled = [i.resize((max(1, round(i.width * h / i.height)), h)) for i in ims]
+    w = sum(i.width for i in scaled) + gap * (len(scaled) + 1)
+    canvas = Image.new("RGB", (w, h + 2 * gap), bg)
+    x = gap
+    for i in scaled:
+        canvas.paste(i, (x, gap))
+        x += i.width + gap
+    buf = io.BytesIO()
+    canvas.save(buf, format="PNG")
+    return buf.getvalue()
+
+
 # G6 — the one-shot legibility repair pass. The body only: the tail (G0,
 # templated or not, plus the honesty rule) is appended at call time by
 # _legibility_instruction, so the repair pass obeys the same title-block and
@@ -756,6 +882,10 @@ _PLATE_SYSTEM = (
     'or lapis cabochon or diamond marquise", "size_mm": "L × W", '
     '"carat_each": null, "confidence": 0.0}],\n'
     ' "metal": "karat/colour/material, e.g. 18k yellow gold or platinum",\n'
+    ' "assembly": "one sentence describing the SPATIAL arrangement: what is at '
+    'top/bottom/centre and what connects to what, e.g. \'vertical drop earring: '
+    'ear wire at top, graduated discs descending, emerald-cut stone in a round '
+    'frame at the bottom\'",\n'
     ' "measurements": [{"label": "overall length", "value": "38 mm", '
     '"confidence": 0.0}],\n'
     ' "hand_written": ["transcribe VERBATIM every number, dimension, or note '
@@ -785,6 +915,9 @@ def read_design_plate(image_bytes: bytes, *,
     read = _normalize_stone_read(data, scale_anchor)
     read["source"] = "plate"             # the panel banner adapts its wording
     read["jewelry_type"] = str(data.get("jewelry_type") or "").strip() or None
+    # the spatial arrangement — feeds the redraw's assembly lock so Grok keeps
+    # the piece assembled instead of flattening it into a row of loose stones
+    read["assembly"] = str(data.get("assembly") or "").strip() or None
     hand = data.get("hand_written") or []
     read["hand_written"] = [str(h) for h in hand if str(h).strip()]
     return read
