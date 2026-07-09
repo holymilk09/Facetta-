@@ -80,7 +80,7 @@ class TestCompileSheetInstruction:
 
     def test_templated_draws_clean_and_letters_nothing(self):
         # the factory-sheet path: Grok draws the actual piece, writes NO text;
-        # the code panel letters every number. No title block, no old junk.
+        # the code panel letters every number. No title block, no stray text.
         text = agent.compile_sheet_instruction("RING_ENGAGEMENT",
                                                templated=True)
         assert "Title block with METAL" not in text
@@ -309,7 +309,7 @@ class TestGenerateSpecSheet:
 
         agent.generate_spec_sheet(PNG, mode="PENDANT", templated=True)
         assert "Title block with METAL" not in edits[0]
-        assert "write NO text of ANY kind" in edits[0]       # clean, no junk
+        assert "write NO text of ANY kind" in edits[0]       # clean drawing
         assert "mark TBD" not in edits[0]
         assert edits[0].endswith(agent.HONESTY_RULE)
 
@@ -389,7 +389,7 @@ class TestTechnicalDrawingEndpoint:
     def test_official_template_is_the_default(self, monkeypatch):
         """The founder's rule as the default: a plain request gets the
         official sheet — Grok's clean drawing in the code-lettered frame.
-        The junk legacy mode only ever comes from an explicit opt-out."""
+        The self-lettered legacy mode only comes from an explicit opt-out."""
         seen = {}
 
         def fake_generate(image, **kwargs):
