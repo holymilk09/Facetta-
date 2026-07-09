@@ -67,8 +67,13 @@ MODELS = {
     "grok_imagine": {  # Grok Imagine edit via fal's marketplace
         "endpoint": "https://fal.run/xai/grok-imagine-image/edit",
         "key_env": "FAL_KEY", "auth": "Key",
+        # image_urls is an ARRAY: extra_images (e.g. a house-style reference)
+        # ride after the design image — the only edit route that can
+        "multi_image": True,
         "payload": lambda prompt, image, extra: {
-            "prompt": prompt, "image_urls": [image], "sync_mode": True,
+            "prompt": prompt,
+            "image_urls": [image] + list(extra.get("extra_images", [])),
+            "sync_mode": True,
         },
         "parse": lambda data: data["images"][0]["url"],
     },
@@ -110,7 +115,40 @@ GENERATION_MODELS = {
             "sync_mode": True},
         "parse": lambda data: data["images"][0]["url"],
     },
+    "flux_lora": {  # FLUX with the house-style LoRA (facetta.tuning)
+        "endpoint": "https://fal.run/fal-ai/flux-lora",
+        "key_env": "FAL_KEY", "auth": "Key",
+        "payload": lambda prompt: _house_lora_payload(prompt),
+        "parse": lambda data: data["images"][0]["url"],
+        # a retrained LoRA is a DIFFERENT engine: its URL moves the cache key
+        "key_extra": lambda: _house_lora_url(),
+    },
 }
+
+
+def _house_lora_record() -> dict:
+    from facetta.tuning import house_lora
+
+    record = house_lora()
+    if record is None:
+        raise RenderUnavailable(
+            "no house-style LoRA trained yet — run "
+            "facetta.tuning.train_style_lora on the curated set first")
+    return record
+
+
+def _house_lora_url() -> str:
+    return _house_lora_record()["url"]
+
+
+def _house_lora_payload(prompt: str) -> dict:
+    record = _house_lora_record()
+    return {
+        "prompt": f"{record['trigger_word']} style. {prompt}",
+        "loras": [{"path": record["url"], "scale": 1.0}],
+        "num_images": 1, "output_format": "png", "sync_mode": True,
+        "image_size": "square_hd",
+    }
 
 
 # Image-to-video (Grok Imagine): a short showcase clip from a still render.
@@ -193,6 +231,9 @@ def generate_image(prompt: str, model: str = "grok_direct",
     suffix = f":v{variant}" if variant else ""
     if discriminator:  # e.g. the full-spec visual hash, so a design change
         suffix += ":" + discriminator  # never collides with the old render
+    key_extra = GENERATION_MODELS[model].get("key_extra")
+    if key_extra:      # e.g. the LoRA URL: a retrained style is a new engine
+        suffix += ":" + key_extra()
     key = hashlib.sha256(
         (PIPELINE_VERSION + ":generate:" + model + ":" + prompt + suffix).encode()
     ).hexdigest()[:32]
@@ -228,13 +269,35 @@ def generate_image(prompt: str, model: str = "grok_direct",
     return image, False
 
 
+STYLE_REF_RULE = (
+    "STYLE REFERENCE: the LAST image is a style reference ONLY — match its "
+    "rendering style, lighting, finish and overall presentation. The FIRST "
+    "image is the design: never copy stones, shapes, settings, or any design "
+    "element from the style reference.")
+
+
+def supports_style_ref(model: str) -> bool:
+    """Only engines whose edit route accepts multiple input images can carry
+    a house-style reference alongside the design."""
+    return bool(MODELS.get(model, {}).get("multi_image"))
+
+
 def edit_image(image_bytes: bytes, instruction: str,
-               model: str = "grok_direct", variant: int = 0) -> tuple[bytes, bool]:
+               model: str = "grok_direct", variant: int = 0,
+               style_ref: bytes | None = None) -> tuple[bytes, bool]:
     """Instruction-driven edit of a caller-supplied image — the primitive the
     spec agent's image-to-image passes ride on. Content-addressed like
     restyle_artwork: the input bytes pin the source, the instruction carries
     the transformation — either changing means a genuinely new image.
     ':edit:' namespaces these keys away from artwork and spec renders.
+
+    style_ref is an optional house-style anchor image: it rides as a SECOND
+    input with a strict style-only rule, so the output converges on the
+    house's rendering style without borrowing design elements. Only engines
+    with a multi-image edit route accept it — anywhere else this fails
+    LOUDLY rather than silently pretending the style was applied. The style
+    bytes are part of the cache key: a changed style set is a different image.
+
     Returns (bytes, was_cached)."""
     if model not in MODELS:
         raise RenderUnavailable(
@@ -243,7 +306,22 @@ def edit_image(image_bytes: bytes, instruction: str,
         raise RenderUnavailable(  # empty-bytes hash and serve a stale drawing
             "edit_image received an empty source image — the upstream render "
             "produced nothing to edit")
+    extra: dict = {}
+    if style_ref is not None:
+        if not supports_style_ref(model):
+            supported = [m for m in MODELS if supports_style_ref(m)]
+            raise RenderUnavailable(
+                f"model '{model}' cannot carry a style reference (single-image "
+                f"edit route); style anchoring needs one of {supported}")
+        if not style_ref:
+            raise RenderUnavailable("style reference image is empty")
+        instruction = instruction + "\n" + STYLE_REF_RULE
+        extra["extra_images"] = [
+            f"data:{_sniff_media_type(style_ref)};base64,"
+            + base64.b64encode(style_ref).decode()]
     suffix = f":v{variant}" if variant else ""
+    if style_ref is not None:
+        suffix += ":style:" + hashlib.sha256(style_ref).hexdigest()[:16]
     key = hashlib.sha256(
         (PIPELINE_VERSION + ":edit:" + model + ":"
          + hashlib.sha256(image_bytes).hexdigest()
@@ -256,7 +334,7 @@ def edit_image(image_bytes: bytes, instruction: str,
         return cached.read_bytes(), True
     data_uri = (f"data:{_sniff_media_type(image_bytes)};base64,"
                 + base64.b64encode(image_bytes).decode())
-    image = _call_engine(model, instruction, data_uri, {})
+    image = _call_engine(model, instruction, data_uri, extra)
     cached.write_bytes(image)
     return image, False
 

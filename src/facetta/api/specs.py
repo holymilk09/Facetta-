@@ -354,6 +354,9 @@ class LocalizedEditRequest(BaseModel):
     change_instruction: Annotated[str, Field(min_length=1, max_length=2000)]
     mask_base64: str | None = None      # white = edit, black = preserve
     kind: Literal["render", "technical"] = "render"
+    # anchor the output to the curated house style set (data/style_refs) —
+    # routed to the multi-image engine; style only, never design elements
+    use_house_style: bool = False
     variant: int = 0  # regenerate: a fresh take on the SAME edit, not the cache
 
 
@@ -373,11 +376,21 @@ def localized_edit_endpoint(request: LocalizedEditRequest):
     except (binascii.Error, ValueError):
         return JSONResponse(status_code=422,
                             content={"detail": "image payload is not valid base64"})
+    style_ref, model = None, "grok_direct"
+    if request.use_house_style:
+        from facetta.housestyle import default_style_ref
+        style_ref = default_style_ref()
+        if style_ref is None:
+            return JSONResponse(status_code=422, content={
+                "detail": "no house style references curated yet — add images "
+                          "to data/style_refs/"})
+        model = "grok_imagine"          # the multi-image route carries the ref
     try:
         result = localized_edit(
             image_bytes, region_description=request.region_description,
             change_instruction=request.change_instruction,
-            mask_bytes=mask_bytes, kind=request.kind, variant=request.variant)
+            mask_bytes=mask_bytes, kind=request.kind, variant=request.variant,
+            model=model, style_ref=style_ref)
     except ValueError as exc:
         return JSONResponse(status_code=422, content={"detail": str(exc)})
     except RenderUnavailable as exc:
@@ -392,6 +405,7 @@ def localized_edit_endpoint(request: LocalizedEditRequest):
         "retried": result["retried"],
         "drift": result["drift"],
         "cached": result["cached"],
+        "style_anchored": request.use_house_style,
         "capability": "LOCALIZED_EDIT",
     }
 

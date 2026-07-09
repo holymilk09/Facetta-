@@ -1532,7 +1532,8 @@ def _outside_drift(parent_bytes: bytes, child_bytes: bytes,
 def localized_edit(image_bytes: bytes, *, region_description: str,
                    change_instruction: str, mask_bytes: bytes | None = None,
                    kind: str = "render", model: str = "grok_direct",
-                   drift_threshold: float = 0.18, variant: int = 0) -> dict:
+                   drift_threshold: float = 0.18, variant: int = 0,
+                   style_ref: bytes | None = None) -> dict:
     """MODE C, one call: compile the preservation contract, edit, and (with a
     mask) QA the result — drift outside the mask beyond the threshold gets
     exactly ONE retry with the stronger preserve language, and the
@@ -1554,7 +1555,8 @@ def localized_edit(image_bytes: bytes, *, region_description: str,
 
     instruction = compile_localized_edit_instruction(
         region_description, change_instruction, kind=kind)
-    child, cached = edit_image(image_bytes, instruction, model, variant=variant)
+    child, cached = edit_image(image_bytes, instruction, model,
+                               variant=variant, style_ref=style_ref)
 
     retried = False
     drift: float | None = None
@@ -1566,7 +1568,8 @@ def localized_edit(image_bytes: bytes, *, region_description: str,
                 region_description, change_instruction, kind=kind,
                 strengthen=True)
             retry_child, retry_cached = edit_image(image_bytes, stronger,
-                                                   model, variant=variant)
+                                                   model, variant=variant,
+                                                   style_ref=style_ref)
             retry_drift = _outside_drift(image_bytes, retry_child, mask_bytes)
             if retry_drift < drift:      # keep the better (lower-drift) child
                 child, cached, drift = retry_child, retry_cached, retry_drift
@@ -1612,7 +1615,8 @@ def compile_global_restyle_instruction(instruction: str,
 
 def global_restyle(image_bytes: bytes, *, instruction: str,
                    kind: str = "render",
-                   model: str = "grok_direct", variant: int = 0) -> dict:
+                   model: str = "grok_direct", variant: int = 0,
+                   style_ref: bytes | None = None) -> dict:
     """The whole-piece change path: when the designer says "more X
     everywhere" or "widen the whole shank", forcing LOCALIZED_EDIT without a
     mask would either block them or guess a region. This edits reference-
@@ -1623,7 +1627,7 @@ def global_restyle(image_bytes: bytes, *, instruction: str,
         raise ValueError("global restyle needs a change instruction")
     child, cached = edit_image(
         image_bytes, compile_global_restyle_instruction(instruction, kind),
-        model, variant=variant)
+        model, variant=variant, style_ref=style_ref)
     return {
         "image": child,
         "changed": f"across the whole piece: {instruction.strip()}",

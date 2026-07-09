@@ -206,6 +206,24 @@ class ApprovalChecklist(Base):
         DateTime(timezone=True), default=utcnow)
 
 
+class FeedbackEvent(Base):
+    """One designer verdict on one generated asset — the correction flywheel's
+    raw data. accepted / regenerated / rejected, append-only. Aggregated per
+    capability and instruction, this is what later teaches the prompts which
+    phrasings work; no prompt ever mutates from a single event."""
+
+    __tablename__ = "feedback_events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True,
+                                    autoincrement=True)
+    asset_id: Mapped[str] = mapped_column(String(32), index=True)
+    action: Mapped[str] = mapped_column(String(16))  # accepted|regenerated|rejected
+    note: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_by: Mapped[str] = mapped_column(String(32), default="usr_pending")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow)
+
+
 class ApprovalResponse(Base):
     """One tap on one checklist item — append-only, latest per item wins.
     The audit trail a factory relationship runs on: who confirmed which fact,

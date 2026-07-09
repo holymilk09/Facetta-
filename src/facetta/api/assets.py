@@ -25,8 +25,8 @@ from facetta.checklist import (
     checklist_status,
 )
 from facetta.db import (
-    ApprovalChecklist, ApprovalResponse, DesignVersion, ImageAsset, Project,
-    get_db, new_id, utcnow,
+    ApprovalChecklist, ApprovalResponse, DesignVersion, FeedbackEvent,
+    ImageAsset, Project, get_db, new_id, utcnow,
 )
 from facetta.disclaimer import is_stampable, stamp_b64, stamp_image
 from facetta.render import RenderUnavailable, _sniff_media_type
@@ -271,6 +271,8 @@ class AssetEditRequest(BaseModel):
     change_instruction: Annotated[str, Field(min_length=1, max_length=2000)]
     mask_base64: str | None = None
     kind: Literal["render", "technical"] = "render"
+    # anchor to the curated house style set (style only, never design)
+    use_house_style: bool = False
     created_by: str = "usr_pending"
     variant: int = 0  # regenerate: a fresh take on the SAME edit, not the cache
 
@@ -293,11 +295,21 @@ def create_localized_edit(asset_id: str, request: AssetEditRequest,
         except (binascii.Error, ValueError):
             return JSONResponse(status_code=422, content={
                 "detail": "mask_base64 is not valid base64"})
+    style_ref, model = None, "grok_direct"
+    if request.use_house_style:
+        from facetta.housestyle import default_style_ref
+        style_ref = default_style_ref()
+        if style_ref is None:
+            return JSONResponse(status_code=422, content={
+                "detail": "no house style references curated yet — add images "
+                          "to data/style_refs/"})
+        model = "grok_imagine"
     try:
         result = localized_edit(
             bytes(parent.image), region_description=request.region_description,
             change_instruction=request.change_instruction,
-            mask_bytes=mask_bytes, kind=request.kind, variant=request.variant)
+            mask_bytes=mask_bytes, kind=request.kind, variant=request.variant,
+            model=model, style_ref=style_ref)
     except ValueError as exc:
         return JSONResponse(status_code=422, content={"detail": str(exc)})
     except RenderUnavailable as exc:
@@ -313,6 +325,7 @@ def create_localized_edit(asset_id: str, request: AssetEditRequest,
                           else base64.b64encode(result["image"]).decode()),
             "changed": result["changed"], "frozen": result["frozen"],
             "retried": result["retried"], "drift": result["drift"],
+            "style_anchored": request.use_house_style,
             "cached": result["cached"]}
 
 
@@ -534,6 +547,7 @@ class AssetRestyleRequest(BaseModel):
 
     instruction: Annotated[str, Field(min_length=1, max_length=2000)]
     kind: Literal["render", "technical"] = "render"
+    use_house_style: bool = False
     created_by: str = "usr_pending"
     variant: int = 0  # regenerate: a fresh take on the SAME restyle
 
@@ -545,10 +559,20 @@ def create_global_restyle(asset_id: str, request: AssetRestyleRequest,
     warning instead of a drift gate — parent/child compare and revert are the
     safety net."""
     parent = _get_asset(db, asset_id)
+    style_ref, model = None, "grok_direct"
+    if request.use_house_style:
+        from facetta.housestyle import default_style_ref
+        style_ref = default_style_ref()
+        if style_ref is None:
+            return JSONResponse(status_code=422, content={
+                "detail": "no house style references curated yet — add images "
+                          "to data/style_refs/"})
+        model = "grok_imagine"
     try:
         result = global_restyle(bytes(parent.image),
                                 instruction=request.instruction,
-                                kind=request.kind, variant=request.variant)
+                                kind=request.kind, variant=request.variant,
+                                model=model, style_ref=style_ref)
     except ValueError as exc:
         return JSONResponse(status_code=422, content={"detail": str(exc)})
     except RenderUnavailable as exc:
@@ -1085,3 +1109,57 @@ def chain_technical_drawing(asset_id: str, request: ChainDrawingRequest,
                         f"From pinned version "
                         f"{_version_number(chain, source.id)}"),
     }
+
+# --- the correction flywheel: designer verdicts on generated assets ----------
+#
+# Raw data first, learning later: every accepted / regenerated / rejected tap
+# is filed append-only against its asset. The stats endpoint aggregates
+# success per capability and instruction so the prompt library can eventually
+# be tuned from the house's own usage — no prompt ever mutates automatically.
+
+
+class FeedbackRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    action: Literal["accepted", "regenerated", "rejected"]
+    note: Annotated[str, Field(max_length=1000)] | None = None
+    created_by: str = "usr_pending"
+
+
+@router.post("/{asset_id}/feedback", status_code=201)
+def record_feedback(asset_id: str, request: FeedbackRequest, db: DbSession):
+    """One designer verdict on one generated image — append-only."""
+    asset = _get_asset(db, asset_id)
+    row = FeedbackEvent(asset_id=asset.id, action=request.action,
+                        note=request.note, created_by=request.created_by)
+    db.add(row)
+    db.commit()
+    return {"asset_id": asset.id, "action": request.action,
+            "capability": asset.capability}
+
+
+@router.get("/insights/instruction-stats")
+def instruction_stats(db: DbSession):
+    """The flywheel readout: per capability (and per instruction within it),
+    how often the designer accepted vs regenerated vs rejected. This is the
+    dataset the prompt-tuning step will read — served raw, judged by humans."""
+    rows = db.execute(
+        select(FeedbackEvent.action, ImageAsset.capability,
+               ImageAsset.instruction)
+        .join(ImageAsset, ImageAsset.id == FeedbackEvent.asset_id)
+    ).all()
+    by_capability: dict[str, dict] = {}
+    for action, capability, instruction in rows:
+        cap = by_capability.setdefault(capability or "UNKNOWN", {
+            "accepted": 0, "regenerated": 0, "rejected": 0, "instructions": {}})
+        cap[action] += 1
+        if instruction:
+            ins = cap["instructions"].setdefault(
+                instruction[:120],
+                {"accepted": 0, "regenerated": 0, "rejected": 0})
+            ins[action] += 1
+    for cap in by_capability.values():
+        total = cap["accepted"] + cap["regenerated"] + cap["rejected"]
+        cap["acceptance_rate"] = (round(cap["accepted"] / total, 3)
+                                  if total else None)
+    return {"events": len(rows), "by_capability": by_capability}

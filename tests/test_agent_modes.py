@@ -238,7 +238,8 @@ class TestLocalizedEdit:
     def test_happy_path_without_mask(self, monkeypatch):
         calls = []
 
-        def fake_edit(image, instruction, model="grok_direct", variant=0):
+        def fake_edit(image, instruction, model="grok_direct", variant=0,
+                      style_ref=None):
             calls.append(instruction)
             return b"child", False
 
@@ -259,7 +260,8 @@ class TestLocalizedEdit:
     def test_clean_edit_with_mask_passes_qa_without_retry(self, monkeypatch):
         calls = []
 
-        def fake_edit(image, instruction, model="grok_direct", variant=0):
+        def fake_edit(image, instruction, model="grok_direct", variant=0,
+                      style_ref=None):
             calls.append(instruction)
             return CHILD_CLEAN, False
 
@@ -275,7 +277,8 @@ class TestLocalizedEdit:
     def test_drift_triggers_exactly_one_stronger_retry(self, monkeypatch):
         calls = []
 
-        def fake_edit(image, instruction, model="grok_direct", variant=0):
+        def fake_edit(image, instruction, model="grok_direct", variant=0,
+                      style_ref=None):
             calls.append(instruction)
             # first attempt drifts everywhere; the strengthened retry is clean
             return (CHILD_DRIFTED, False) if len(calls) == 1 \
@@ -296,7 +299,8 @@ class TestLocalizedEdit:
     def test_worse_retry_keeps_the_first_child(self, monkeypatch):
         worse = _png(0)                              # drifts even further
 
-        def fake_edit(image, instruction, model="grok_direct", variant=0):
+        def fake_edit(image, instruction, model="grok_direct", variant=0,
+                      style_ref=None):
             return (worse, False) if instruction.startswith("CRITICAL") \
                 else (CHILD_DRIFTED, True)
 
@@ -316,7 +320,8 @@ class TestLocalizedEdit:
         content-addressed cache would replay the first bad edit forever."""
         seen = []
 
-        def fake_edit(image, instruction, model="grok_direct", variant=0):
+        def fake_edit(image, instruction, model="grok_direct", variant=0,
+                      style_ref=None):
             seen.append(variant)
             return b"child", False
 
