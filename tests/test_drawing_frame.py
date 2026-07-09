@@ -148,14 +148,18 @@ class TestFrameTechnicalDrawing:
     def test_estimates_letter_an_assist_panel_when_no_record(self):
         import xml.etree.ElementTree as ET
         est = {"stones": [{"qty": 1, "type": "diamond <oval> & pear",
-                           "size_mm": "8 × 6", "carat_each": 1.5}],
+                           "size_mm": "8 × 6", "carat_each": 1.5,
+                           "confidence": 0.8}],
                "metal": "18k gold & rhodium",
-               "measurements": [["band width", "~2 mm"]]}
+               "measurements": [{"label": "band width", "value": "~2 mm",
+                                 "confidence": 0.3}],
+               "scaled": True, "scale_anchor": "centre stone 1.5 ct"}
         svg = frame_technical_drawing(_png(1000, 560), estimates=est)
         ET.fromstring(svg)                           # escaped, well-formed
         assert "ESTIMATED SPECIFICATIONS" in svg
         assert "MATERIALS (ESTIMATED)" in svg
-        assert "designer must confirm every value" in svg
+        assert "confirm every value before production" in svg
+        assert "scaled to" in svg and "lower confidence" in svg
         assert "estimated from render — confirm before production" in svg
         assert "unsaved drawing" not in svg
 

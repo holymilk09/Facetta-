@@ -954,6 +954,9 @@ class ChainDrawingRequest(BaseModel):
     # no spec on the chain? Grok vision-reads the pinned render and code
     # letters the panel as ESTIMATED — the ballpark designer's assist
     assist_specs: bool = False
+    # one known measurement so Grok scales the reference estimates (e.g.
+    # "centre stone 2 ct" or "overall height 40 mm")
+    scale_anchor: str | None = None
     # regenerate: force a genuinely fresh Grok drawing instead of the cached
     # one (bump per press; the app's "regenerate" button)
     variant: int = 0
@@ -1019,7 +1022,8 @@ def chain_technical_drawing(asset_id: str, request: ChainDrawingRequest,
             and validated is None):
         from facetta.specagent import read_sheet_specs
         try:
-            estimates = read_sheet_specs(bytes(source.image))
+            estimates = read_sheet_specs(bytes(source.image),
+                                        scale_anchor=request.scale_anchor)
             spec_source = "assist_estimate"
         except RenderUnavailable as exc:
             return _provider_error(exc)

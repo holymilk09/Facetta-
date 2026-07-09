@@ -170,6 +170,7 @@ class AgentSheetRequest(BaseModel):
     # the ballpark designer's assist: with NO spec, Grok vision-reads the
     # render and code letters the panel as ESTIMATED (never painted text)
     assist_specs: bool = False
+    scale_anchor: str | None = None  # one known measurement to scale estimates
     variant: int = 0  # regenerate: force a fresh Grok drawing, not the cached one
 
 
@@ -230,7 +231,8 @@ def technical_drawing(request: AgentSheetRequest):
             and validated is None):
         from facetta.specagent import read_sheet_specs
         try:
-            estimates = read_sheet_specs(image_bytes)
+            estimates = read_sheet_specs(image_bytes,
+                                         scale_anchor=request.scale_anchor)
         except RenderUnavailable as exc:
             status = 503 if "_KEY" in str(exc) else 502
             return JSONResponse(status_code=status, content={"detail": str(exc)})

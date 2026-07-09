@@ -420,12 +420,17 @@ class TestTechnicalDrawingEndpoint:
                             lambda image, **kwargs: (REAL_PNG, dict(SUMMARY),
                                                      False))
         est = {"stones": [{"qty": 1, "type": "diamond oval brilliant",
-                           "size_mm": "8.5 × 6.5", "carat_each": 1.5},
+                           "size_mm": "8.5 × 6.5", "carat_each": 1.5,
+                           "confidence": 0.7},
                           {"qty": 8, "type": "diamond round brilliant",
-                           "size_mm": "1.4 × 1.4", "carat_each": None}],
+                           "size_mm": "1.4 × 1.4", "carat_each": None,
+                           "confidence": 0.4}],
                "metal": "18k white gold, high polish",
-               "measurements": [["band width", "~2 mm"]]}
-        monkeypatch.setattr(agent, "read_sheet_specs", lambda image: est)
+               "measurements": [{"label": "band width", "value": "~2 mm",
+                                 "confidence": 0.3}],
+               "scaled": False, "scale_anchor": None}
+        monkeypatch.setattr(agent, "read_sheet_specs",
+                            lambda image, **kwargs: est)
         r = TestClient(app).post("/specs/technical-drawing", json={
             "image_base64": base64.b64encode(PNG).decode(),
             "facetta_template": True, "assist_specs": True})
@@ -465,9 +470,12 @@ class TestTechnicalDrawingEndpoint:
         })
         est = agent.read_sheet_specs(b"img")
         assert est["stones"] == [{"qty": 2, "type": "sapphire pear",
-                                  "size_mm": "7 × 5", "carat_each": None}]
+                                  "size_mm": "7 × 5", "carat_each": None,
+                                  "confidence": 0.5}]
         assert est["metal"] == "TBD"                  # missing → honest TBD
-        assert est["measurements"] == [["drop length", "38 mm"]]
+        assert est["measurements"] == [{"label": "drop length",
+                                        "value": "38 mm", "confidence": 0.5}]
+        assert est["scaled"] is False and est["scale_anchor"] is None
 
     def test_missing_key_is_503(self, monkeypatch):
         def boom(image, **kwargs):

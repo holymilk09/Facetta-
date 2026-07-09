@@ -164,18 +164,27 @@ def _estimate_panel(est: dict, x0: float, y0: float, x1: float) -> list[str]:
         _text(x0 + 78, y0 + 5.0, "~CT EA.", size=2.4, anchor="start",
               color=FAINT),
     ]
+    def ink(conf) -> str:
+        # low-confidence estimates letter fainter, so the designer sees at a
+        # glance which numbers to trust vs re-measure
+        try:
+            return INK if float(conf) >= 0.5 else FAINT
+        except (TypeError, ValueError):
+            return INK
+
     y = y0 + 5.0
-    for s in (est.get("stones") or [])[:8]:
+    for st in (est.get("stones") or [])[:8]:
         y += 3.9
-        ct = s.get("carat_each")
+        ct = st.get("carat_each")
+        col = ink(st.get("confidence"))
         parts += [
-            _text(x0, y, str(s.get("qty", 1)), size=2.6, anchor="start"),
-            _text(x0 + 9, y, escape(str(s.get("type", ""))[:34]), size=2.6,
-                  anchor="start"),
-            _text(x0 + 55, y, escape(str(s.get("size_mm", "TBD"))), size=2.6,
-                  anchor="start"),
+            _text(x0, y, str(st.get("qty", 1)), size=2.6, anchor="start"),
+            _text(x0 + 9, y, escape(str(st.get("type", ""))[:34]), size=2.6,
+                  anchor="start", color=col),
+            _text(x0 + 55, y, escape(str(st.get("size_mm", "TBD"))), size=2.6,
+                  anchor="start", color=col),
             _text(x0 + 78, y, f"{ct:.2f}" if isinstance(ct, (int, float))
-                  else "TBD", size=2.6, anchor="start"),
+                  else "TBD", size=2.6, anchor="start", color=col),
         ]
 
     rx = x0 + 108
@@ -186,22 +195,27 @@ def _estimate_panel(est: dict, x0: float, y0: float, x1: float) -> list[str]:
                        size=3.0, anchor="start", style=' letter-spacing="1.2"'))
     parts.append(_line(rx, y0 + 1.4, x1, y0 + 1.4, w=STROKE_DIM, color=FAINT))
     ry = y0 + 5.0
-    rows = [("METAL", str(est.get("metal") or "TBD"))]
-    rows += [(str(label).upper()[:20], str(value))
-             for label, value in (est.get("measurements") or [])[:6]]
-    for label, value in rows:
+    parts.append(_text(rx, ry + 4.0, "METAL", size=2.4, anchor="start",
+                       color=FAINT))
+    parts.append(_text(rx + 34, ry + 4.0, escape(str(est.get("metal") or "TBD"))[:60],
+                       size=2.8, anchor="start"))
+    ry += 4.0
+    for m in (est.get("measurements") or [])[:6]:
         ry += 4.0
-        parts.append(_text(rx, ry, escape(label), size=2.4, anchor="start",
-                           color=FAINT))
-        parts.append(_text(rx + 34, ry, escape(value)[:60], size=2.8,
-                           anchor="start"))
+        parts.append(_text(rx, ry, escape(str(m.get("label", "")).upper()[:20]),
+                           size=2.4, anchor="start", color=FAINT))
+        parts.append(_text(rx + 34, ry, escape(str(m.get("value", "")))[:60],
+                           size=2.8, anchor="start", color=ink(m.get("confidence"))))
 
     banner_y = y0 + _estimate_panel_height(est) - 9.0
-    parts.append(_text(x0, banner_y,
-                       "ALL VALUES ESTIMATED FROM THE RENDER — designer must "
-                       "confirm every value before production.",
-                       size=2.6, anchor="start", color=FAINT,
-                       style=' font-style="italic"'))
+    scaled_to = est.get("scale_anchor")
+    banner = ("REFERENCE ESTIMATES FROM THE RENDER"
+              + (f", scaled to '{scaled_to}'" if est.get("scaled") and scaled_to
+                 else "")
+              + " — a prototyping starting point, not to scale; confirm every "
+                "value before production. Fainter = lower confidence.")
+    parts.append(_text(x0, banner_y, escape(banner), size=2.6, anchor="start",
+                       color=FAINT, style=' font-style="italic"'))
     return parts
 
 

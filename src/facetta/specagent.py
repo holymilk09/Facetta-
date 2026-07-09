@@ -686,26 +686,50 @@ def inspect_render(image_bytes: bytes, notes: str, mode: str,
 # the sheet (see NO_TITLE_BLOCK_RULE), so a 'Pullish' can never ship.
 _ESTIMATE_SYSTEM = (
     MASTER_SYSTEM + "\n\n"
-    "Read this jewelry image and estimate its specifications for a factory "
-    "panel. Output JSON only, exactly this shape:\n"
+    "Read this jewelry image and estimate its dimensions as a REFERENCE for a "
+    "designer prototyping — a helpful starting point, not production truth. "
+    "Output JSON only, exactly this shape:\n"
     '{"stones": [{"qty": 1, "type": "species + cut, e.g. diamond oval '
-    'brilliant", "size_mm": "L × W", "carat_each": 1.5}],\n'
+    'brilliant", "size_mm": "L × W", "carat_each": 1.5, "confidence": 0.0}],\n'
     ' "metal": "karat/colour/material + finish",\n'
-    ' "measurements": [["label", "value"], ...]}\n'
+    ' "measurements": [{"label": "band width", "value": "~2 mm", '
+    '"confidence": 0.0}, ...]}\n'
     "stones: one entry per distinct stone group (center first), qty counted "
     "from the image, sizes your best estimate in mm. carat_each may be null. "
     "measurements: the piece's own key numbers you can estimate (band width, "
-    "overall length...). Estimate honestly; omit what you cannot see. "
-    "Output ONLY the JSON.")
+    "overall length, drop, heights between levels...). "
+    "confidence (0-1) is how sure you are of EACH value: an image alone has no "
+    "true scale, so keep confidence modest unless a known measurement anchors "
+    "it. Estimate honestly; omit what you cannot see. Output ONLY the JSON.")
 
 
-def read_sheet_specs(image_bytes: bytes) -> dict:
-    """Grok's ESTIMATED read of a render for the assist panel. Returns
-    {"stones": [...], "metal": str, "measurements": [[label, value], ...]}
-    with missing keys normalized. Raises RenderUnavailable on provider
-    failure — an explicit assist request fails loudly, never silently."""
-    data = _vision_json(_ESTIMATE_SYSTEM, image_bytes,
-                        "Estimate the specifications of this piece.")
+def _conf(value) -> float:
+    try:
+        return max(0.0, min(1.0, float(value)))
+    except (TypeError, ValueError):
+        return 0.5   # a middling default when the model omits confidence
+
+
+def read_sheet_specs(image_bytes: bytes, *,
+                     scale_anchor: str | None = None) -> dict:
+    """Grok's ESTIMATED read of a render — a designer's quick-draft
+    REFERENCE, never production truth. Returns
+    {"stones": [{qty,type,size_mm,carat_each,confidence}], "metal": str,
+     "measurements": [{label,value,confidence}], "scaled": bool,
+     "scale_anchor": str|None}.
+
+    scale_anchor is ONE known measurement the designer supplies (e.g. "centre
+    stone 2 ct" or "overall height 40 mm"); an image has no inherent scale, so
+    with an anchor Grok scales every other estimate relative to it and the
+    numbers get far more useful. Missing keys are normalized. Raises
+    RenderUnavailable on provider failure — an explicit assist fails loudly."""
+    ask = "Estimate the dimensions of this piece as a reference."
+    if scale_anchor:
+        ask += (f" KNOWN measurement to scale everything else against: "
+                f"{scale_anchor}. Scale all other estimates to be consistent "
+                f"with it and raise your confidence accordingly.")
+    data = _vision_json(_ESTIMATE_SYSTEM, image_bytes, ask)
+
     stones = []
     for s in data.get("stones") or []:
         if isinstance(s, dict) and s.get("type"):
@@ -714,12 +738,20 @@ def read_sheet_specs(image_bytes: bytes) -> dict:
                 "type": str(s["type"]),
                 "size_mm": str(s.get("size_mm") or "TBD"),
                 "carat_each": s.get("carat_each"),
+                "confidence": _conf(s.get("confidence")),
             })
-    measurements = [[str(m[0]), str(m[1])]
-                    for m in (data.get("measurements") or [])
-                    if isinstance(m, (list, tuple)) and len(m) >= 2]
+    measurements = []
+    for m in data.get("measurements") or []:
+        if isinstance(m, dict) and m.get("label"):
+            measurements.append({"label": str(m["label"]),
+                                 "value": str(m.get("value") or "TBD"),
+                                 "confidence": _conf(m.get("confidence"))})
+        elif isinstance(m, (list, tuple)) and len(m) >= 2:  # tolerate old shape
+            measurements.append({"label": str(m[0]), "value": str(m[1]),
+                                 "confidence": 0.5})
     return {"stones": stones, "metal": str(data.get("metal") or "TBD"),
-            "measurements": measurements}
+            "measurements": measurements,
+            "scaled": bool(scale_anchor), "scale_anchor": scale_anchor}
 
 
 def authoritative_dims(spec: Spec) -> list[str]:
