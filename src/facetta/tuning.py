@@ -1,11 +1,15 @@
 """LoRA fine-tuning through fal: teach FLUX the house's rendering style from
 the designer's approved images.
 
-The whole pipeline is API-driven — zip the curated images, submit a training
-job to fal's queue, poll to completion, persist the LoRA weights URL — so a
-retrain is one function call whenever the curated set grows. The trained LoRA
-registers as the `flux_lora` engine (render.py) whose cache keys carry the
-LoRA URL: a retrained style is a DIFFERENT engine, never a stale cache hit.
+Two halves:
+
+- `export_approved_training_set` turns the designer's REAL approvals (pinned
+  or accepted assets) into a curated style set — the moat. This is the source
+  worth training on; it accrues as the app is used.
+- `train_style_lora` uploads that set to fal storage, trains a FLUX style
+  LoRA, and persists the weights URL. The trained LoRA registers as the
+  `flux_lora` engine (render.py) whose cache keys carry the LoRA URL: a
+  retrained style is a DIFFERENT engine, never a stale cache hit.
 
 Code never draws; a LoRA only teaches an engine the house's look.
 """
@@ -43,6 +47,98 @@ def _zip_bytes(image_paths: list[Path]) -> bytes:
         for p in image_paths:
             z.write(p, p.name)
     return buf.getvalue()
+
+
+# --- curation: which images belong in a STYLE training set -------------------
+#
+# A style LoRA should learn the house's PRODUCT look, not the artifacts around
+# it. Two things never belong: technical drawings (near-white, colourless —
+# they would teach line-art, not style) and, for a product-style LoRA, worn/
+# hand shots (skin dominates the frame and biases the model toward hands).
+# The thresholds are heuristic; approval is always the primary signal, so this
+# only filters the obvious wrong shapes and REPORTS every drop — never silent.
+
+def is_style_worthy(image_bytes: bytes, *, product_only: bool = True,
+                    min_side: int = 512) -> tuple[bool, str]:
+    """(ok, reason) — is this image a good STYLE training example? Rejects
+    technical drawings and (when product_only) likely worn/hand shots and
+    anything too small. reason is empty when ok."""
+    from PIL import Image, ImageStat
+
+    try:
+        im = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+    except Exception as exc:
+        return False, f"unreadable image ({exc})"
+    if min(im.size) < min_side:
+        return False, f"too small ({im.size[0]}x{im.size[1]})"
+    brightness = sum(ImageStat.Stat(im).mean) / 3
+    saturation = ImageStat.Stat(im.convert("HSV")).mean[1]
+    # a technical drawing: very bright and nearly colourless
+    if brightness >= 235 and saturation <= 20:
+        return False, "looks like a technical drawing (near-white, desaturated)"
+    if product_only and saturation > 55 and brightness < 140:
+        return False, "looks like a worn/hand shot (skin-dominated)"
+    return True, ""
+
+
+# capabilities that are NOT photoreal product renders — never style examples
+_NON_STYLE_CAPABILITIES = {"MANUFACTURING_TECHNICAL_DRAWING"}
+
+
+def export_approved_training_set(db, out_dir: Path, *,
+                                 product_only: bool = True,
+                                 min_side: int = 512) -> dict:
+    """Turn the designer's REAL approvals into a style training set — the moat.
+
+    An asset counts as approved when it is pinned (`pinned_at`) OR carries an
+    `accepted` FeedbackEvent. Only image renders qualify (technical drawings
+    excluded by capability); each is run through `is_style_worthy` and the
+    survivors are written as downscaled JPEGs to out_dir. Returns a manifest
+    {"kept": int, "dropped": [{"id", "reason"}], "out_dir": str} — every
+    rejected candidate is reported, so a thin set never masquerades as a full
+    one. When `kept` is large enough (~30+), feed out_dir to train_style_lora."""
+    from sqlalchemy import select
+
+    from facetta.db import FeedbackEvent, ImageAsset
+
+    accepted_ids = set(db.scalars(
+        select(FeedbackEvent.asset_id).where(
+            FeedbackEvent.action == "accepted")).all())
+    assets = db.scalars(select(ImageAsset)).all()
+
+    out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    kept: list[str] = []
+    dropped: list[dict] = []
+    seen: set[str] = set()
+    for asset in assets:
+        approved = asset.pinned_at is not None or asset.id in accepted_ids
+        if not approved or asset.id in seen:
+            continue
+        seen.add(asset.id)
+        if not (asset.media_type or "").startswith("image/"):
+            dropped.append({"id": asset.id, "reason": "not an image"})
+            continue
+        if asset.capability in _NON_STYLE_CAPABILITIES:
+            dropped.append({"id": asset.id, "reason": "technical drawing"})
+            continue
+        ok, reason = is_style_worthy(bytes(asset.image),
+                                     product_only=product_only,
+                                     min_side=min_side)
+        if not ok:
+            dropped.append({"id": asset.id, "reason": reason})
+            continue
+        _write_jpeg(bytes(asset.image), out_dir / f"{asset.id}.jpg")
+        kept.append(asset.id)
+    return {"kept": len(kept), "dropped": dropped, "out_dir": str(out_dir)}
+
+
+def _write_jpeg(image_bytes: bytes, path: Path, *, max_side: int = 1024) -> None:
+    from PIL import Image
+
+    im = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+    im.thumbnail((max_side, max_side))
+    im.save(path, "JPEG", quality=88)
 
 
 def _upload_archive(key: str, zip_bytes: bytes) -> str:
