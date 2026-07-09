@@ -13,9 +13,10 @@ import { LoginScreen } from './src/LoginScreen';
 import { OnboardingScreen } from './src/OnboardingScreen';
 import { ShareScreen } from './src/ShareScreen';
 import { radius, shadows, theme } from './src/theme';
+import { WorkflowShowcase } from './src/WorkflowShowcase';
 
 type Tab = 'builder' | 'designs' | 'share';
-type Stage = 'onboarding' | 'login' | 'app';
+type Stage = 'onboarding' | 'tour' | 'login' | 'app';
 
 export default function App() {
   const [session, setSession] = useState<Session | null>(() => loadSession());
@@ -41,9 +42,18 @@ export default function App() {
         <OnboardingScreen
           onDone={() => {
             markOnboarded();
-            setStage('login');
+            setStage('tour');
           }}
         />
+      </SafeAreaView>
+    );
+  }
+
+  if (stage === 'tour') {
+    return (
+      <SafeAreaView style={styles.root}>
+        <StatusBar style="dark" />
+        <WorkflowShowcase onDone={() => setStage('login')} />
       </SafeAreaView>
     );
   }
@@ -59,6 +69,7 @@ export default function App() {
             setDesigner(s.designerId);
             setStage('app');
           }}
+          onShowTour={() => setStage('tour')}
         />
       </SafeAreaView>
     );

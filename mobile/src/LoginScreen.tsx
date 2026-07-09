@@ -44,7 +44,13 @@ function RoundedInput(props: {
   );
 }
 
-export function LoginScreen({ onSignIn }: { onSignIn: (session: Session) => void }) {
+export function LoginScreen({
+  onSignIn,
+  onShowTour,
+}: {
+  onSignIn: (session: Session) => void;
+  onShowTour?: () => void;
+}) {
   const [mode, setMode] = useState<Mode>('signin');
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -110,6 +116,11 @@ export function LoginScreen({ onSignIn }: { onSignIn: (session: Session) => void
           <View style={styles.brand}>
             <Text style={styles.wordmark}>F A C E T T A</Text>
             <Text style={styles.tagline}>dimensional truth, from dropdowns to factory sheet</Text>
+            {onShowTour && (
+              <Pressable onPress={onShowTour} hitSlop={8} style={styles.tourLink}>
+                <Text style={styles.tourLinkText}>See how it works →</Text>
+              </Pressable>
+            )}
           </View>
 
           <Animated.View
@@ -256,6 +267,8 @@ const styles = StyleSheet.create({
   brand: { alignItems: 'center', marginBottom: 26 },
   wordmark: { fontFamily: theme.serif, fontSize: 26, letterSpacing: 8, color: theme.ink },
   tagline: { fontSize: 12, color: theme.faint, fontStyle: 'italic', marginTop: 6 },
+  tourLink: { marginTop: 12 },
+  tourLinkText: { fontSize: 13, color: theme.accent, textDecorationLine: 'underline' },
   card: {
     width: '100%',
     maxWidth: 440,
