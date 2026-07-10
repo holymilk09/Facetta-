@@ -17,6 +17,27 @@ Requires Python 3.11+ and [uv](https://docs.astral.sh/uv/).
 uv sync
 ```
 
+## Configuration
+
+All secrets live in one place: a gitignored `.env` at the repo root. Copy the
+template and fill in what you need:
+
+```sh
+cp .env.example .env
+```
+
+| Key | Used by |
+|---|---|
+| `DATABASE_URL` | PostgreSQL / Supabase (unset → local SQLite). See [Database](#database). |
+| `ANTHROPIC_API_KEY` | Claude endpoints: prose → spec, photo → spec, the edit agent |
+| `FAL_KEY` | Photoreal renders / blueprint sheets via fal.ai |
+| `XAI_KEY` | Grok Imagine direct + concept origination |
+
+`.env` is loaded into the process environment at app startup (`facetta.config`),
+so the keys reach both Facetta's own reads and the Anthropic SDK. A real exported
+environment variable always wins over the file — so a hosting platform's injected
+secrets override `.env` in production with no code change.
+
 ## Run the tests
 
 ```sh
@@ -126,12 +147,68 @@ procedural pattern.
 
 ## Database
 
-SQLite (`./facetta.db`) out of the box for zero-setup dev. For PostgreSQL (spec objects
-stored as JSONB):
+SQLite (`./facetta.db`) out of the box for zero-setup dev — no config needed. Point
+`DATABASE_URL` at any PostgreSQL instance to switch; spec objects are stored as JSONB and
+the immutable-version model is identical on both.
 
 ```sh
-export DATABASE_URL="postgresql+psycopg://user@host:5432/facetta"
+export DATABASE_URL="postgresql://user:password@host:5432/facetta"
 ```
+
+You can also drop `DATABASE_URL=...` into a gitignored `.env` at the repo root (see
+`.env.example`) — the same place the render/AI keys live — and it is picked up
+automatically.
+
+### Supabase
+
+Supabase is managed PostgreSQL, so there is nothing to rewrite: the connection string
+*is* the integration. Facetta normalizes a raw dashboard string onto its psycopg v3
+driver, so you can paste it verbatim.
+
+1. In your Supabase project, click **Connect**, choose the connection method for
+   your host, and copy its **URI**. It looks like:
+
+   ```
+   postgresql://postgres:[YOUR-PASSWORD]@db.[PROJECT-REF].supabase.co:5432/postgres
+   ```
+
+2. Set it (substituting your password) — either export it or put it in `.env`:
+
+   ```sh
+   export DATABASE_URL="postgresql://postgres:[YOUR-PASSWORD]@db.[PROJECT-REF].supabase.co:5432/postgres"
+   ```
+
+3. Start the API. Facetta creates its tables (`designs`, `design_versions`, `comments`,
+   …) on first boot — no manual migration step.
+
+   ```sh
+   uv run uvicorn facetta.main:app --reload
+   ```
+
+**Which connection type?** Supabase offers three, all handled automatically:
+
+| Use | Endpoint | Notes |
+|---|---|---|
+| Long-running server (this API) | **Direct** `db.<ref>.supabase.co:5432` | Simplest; requires IPv6 egress |
+| Server without IPv6 | **Session pooler** `…pooler.supabase.com:5432` | IPv4-friendly, one connection per client |
+| Serverless / functions | **Transaction pooler** `…pooler.supabase.com:6543` | pgbouncer; Facetta disables prepared statements for you |
+
+A bare `postgres://`/`postgresql://` scheme is routed to psycopg v3 (SQLAlchemy would
+otherwise reach for psycopg2, which isn't installed). Hosted connections get
+`pool_pre_ping` so Supabase's idle-connection drops are recycled rather than surfaced as
+errors. Append `?sslmode=require` to force TLS if your policy demands it (psycopg
+negotiates SSL with Supabase either way).
+
+> The Supabase JS client / PostgREST auto-API is **not** used — Facetta talks to Postgres
+> directly through SQLAlchemy so every write goes through the spec validator and the
+> immutable-version rules. Supabase is the database, not the API layer.
+
+> **Deployment guard:** database connectivity is integrated; production authentication
+> is not. The current mobile login is a local UI prototype and the API does not verify
+> Supabase JWTs yet. Keep Facetta's tables out of the Supabase Data API until owner-based
+> RLS policies and backend JWT verification are implemented and tested. If the `public`
+> schema is exposed in **Integrations → Data API**, do not grant `anon` or `authenticated`
+> access to these tables yet.
 
 ## Mobile app (Expo)
 

@@ -55,6 +55,20 @@ def test_layout_is_deterministic():
     assert gemcad.face_up_layout(diagram) == gemcad.face_up_layout(diagram)
 
 
+def test_closed_polygon_cycles_have_one_canonical_start():
+    points = ((0.5, 0.0), (0.0, 0.5), (-0.5, 0.0), (0.0, -0.5))
+    expected = gemcad._canonical_cycle(points)
+
+    for offset in range(len(points)):
+        rotated = points[offset:] + points[:offset]
+        assert gemcad._canonical_cycle(rotated) == expected
+
+    layout = gemcad.layout_for_cut("oval_brilliant")
+    assert layout.outline == gemcad._canonical_cycle(layout.outline)
+    assert all(facet.points == gemcad._canonical_cycle(facet.points)
+               for facet in layout.facets)
+
+
 def test_table_remap_hits_spec_percentage():
     layout = gemcad.layout_for_cut("round_brilliant")
     remapped = gemcad.remap_table(layout, 0.62)

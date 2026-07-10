@@ -616,8 +616,8 @@ def _comment_json(c: Comment) -> dict:
 
 
 def add_comment(db: Session, design_id: str, version: int, comment: CommentCreate) -> dict:
-    row = Comment(design_id=design_id, version=version, view=comment.view,
-                  x_pct=comment.x_pct, y_pct=comment.y_pct,
+    row = Comment(id=new_id("cmt"), design_id=design_id, version=version,
+                  view=comment.view, x_pct=comment.x_pct, y_pct=comment.y_pct,
                   body=comment.body, author=comment.author)
     db.add(row)
     db.commit()
@@ -675,7 +675,7 @@ def list_messages(design_id: str, db: DbSession):
 def create_message(design_id: str, message: MessageCreate, db: DbSession):
     if db.get(Design, design_id) is None:
         raise HTTPException(status_code=404, detail=f"unknown design '{design_id}'")
-    row = DesignMessage(design_id=design_id, version=message.version,
+    row = DesignMessage(id=new_id("msg"), design_id=design_id, version=message.version,
                         author=message.author, author_label=message.author_label,
                         body=message.body)
     db.add(row)

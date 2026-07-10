@@ -282,6 +282,21 @@ def _hull_2d(points):
     return half(pts) + half(pts[::-1])
 
 
+def _canonical_cycle(points, digits: int = 9):
+    """Return one byte-stable representation of a closed polygon cycle.
+
+    Half-space clipping preserves a polygon's winding, but the vertex chosen
+    as its first item can vary across Python/libm versions when an edge lands
+    on a clipping tolerance.  SVG treats rotations of a closed cycle as the
+    same shape; golden files do not.  Quantize below renderer precision, then
+    choose the lexicographically smallest rotation without reversing winding.
+    """
+    pts = tuple((round(x, digits), round(y, digits)) for x, y in points)
+    if len(pts) < 2:
+        return pts
+    return min(pts[i:] + pts[:i] for i in range(len(pts)))
+
+
 def face_up_layout(diagram: Diagram) -> FaceUpLayout:
     """Project the crown straight down to the exact face-up drawing.
 
@@ -301,7 +316,9 @@ def face_up_layout(diagram: Diagram) -> FaceUpLayout:
     def norm(p):
         return ((p[0] - cx) / sx, (p[1] - cy) / sy)
 
-    outline = tuple(norm(p) for p in _hull_2d((p[0], p[1]) for p in all_pts))
+    outline = _canonical_cycle(
+        norm(p) for p in _hull_2d((p[0], p[1]) for p in all_pts)
+    )
 
     facets: list[FaceUpFacet] = []
     table_extent = 0.0
@@ -309,7 +326,7 @@ def face_up_layout(diagram: Diagram) -> FaceUpLayout:
         tier = diagram.tiers[t_i]
         if tier.side not in ("crown", "table"):
             continue
-        pts2 = tuple(norm(p) for p in points)
+        pts2 = _canonical_cycle(norm(p) for p in points)
         if tier.side == "table":
             table_extent = max(table_extent,
                                *(max(abs(x), abs(y)) for x, y in pts2))
@@ -366,7 +383,9 @@ def profile_layout(cut_id: str, axis: str = "length") -> ProfileLayout | None:
         side = diagram.tiers[t_i].side
         if side not in ("crown", "pavilion") or n[cull] > -1e-6:
             continue  # back-facing or girdle/table — not visible from the front
-        poly = tuple(((p[keep] - center) / span, p[2]) for p in pts)
+        poly = _canonical_cycle(
+            ((p[keep] - center) / span, p[2]) for p in pts
+        )
         (crown if side == "crown" else pavilion).append(poly)
     if not crown or not pavilion:
         return None

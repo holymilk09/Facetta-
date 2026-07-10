@@ -6,6 +6,12 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from facetta import __version__
+from facetta.config import load_env_file
+
+# Load .env before importing routers: provider modules are allowed to inspect
+# their environment during import, while real exported values still win.
+load_env_file()
+
 from facetta.api import (
     assets, designs, library, share, specs, stones, users, vocabulary,
 )
