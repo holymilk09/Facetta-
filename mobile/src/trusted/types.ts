@@ -651,6 +651,8 @@ export interface PreSpecPresentationResumeCandidate extends PreSpecPresentationC
   project_id: string;
   source_asset_id: string;
   source_sha256: string;
+  /** Null for a pre-spec visual; exact Present candidates carry their immutable spec version. */
+  design_version: number | null;
   destination: 'client' | 'marketing';
   status: 'reviewing';
   accepted_asset_id: null;
@@ -748,6 +750,7 @@ export interface BeautyRenderRequest {
   instruction?: string;
   variant?: number;
   presentation_only?: boolean;
+  studio_job_id?: string;
 }
 
 export interface BeautyRenderAccepted {
@@ -1003,6 +1006,7 @@ export interface ProductPhotoRequest {
   custom_instruction?: string;
   variant?: number;
   presentation_only?: boolean;
+  studio_job_id?: string;
 }
 
 export interface MarketingPackRequest {
@@ -1013,6 +1017,7 @@ export interface MarketingPackRequest {
   framing?: ProductPhotoFraming;
   custom_instruction?: string;
   starting_variant?: number;
+  studio_job_id?: string;
 }
 
 export interface MarketingPackCandidate {
@@ -1440,6 +1445,51 @@ export interface CreateLineArtRequest {
   source_region_description?: string;
   source_region?: NormalizedSourceRegion;
   variant?: number;
+  studio_job_id?: string;
+}
+
+/** Durable exact-revision View awaiting an explicit Save or Discard decision. */
+export interface StudioViewResumeCandidate {
+  candidate_id: string;
+  image_run_id: string;
+  studio_job_id: string | null;
+  project_id: string;
+  source_asset_id: string;
+  design_version: number;
+  view: LineArtView;
+  qa: ImageQualityReport;
+  status: 'reviewing';
+  accepted_asset_id: null;
+  expires_at: string;
+  preview_url: string;
+}
+
+export interface StudioViewCandidateListResult {
+  candidates: StudioViewResumeCandidate[];
+}
+
+export interface StudioViewCandidateDecisionRequest {
+  created_by: string;
+  expected_project_id: string;
+  expected_source_asset_id: string;
+  expected_design_version: number;
+}
+
+export interface StudioViewCandidateAcceptResult {
+  status: 'accepted';
+  project_id: string;
+  source_asset_id: string;
+  design_version: number;
+  asset_id: string;
+  project: ProjectDetail;
+}
+
+export interface StudioViewCandidateDiscardResult {
+  status: 'discarded';
+  project_id: string;
+  source_asset_id: string;
+  design_version: number;
+  candidate_id: string;
 }
 
 export interface DrawingConfirmationResult {

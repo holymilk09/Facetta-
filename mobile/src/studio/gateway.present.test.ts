@@ -220,7 +220,7 @@ test('pre-spec Present resumes a durable preview after gateway refresh', async (
       candidates: [{
         candidate_id: 'candidate_resumed', image_run_id: 'run_resumed',
         project_id: 'project_visual', source_asset_id: 'asset_visual',
-        source_sha256: sourceHash, destination: 'client' as const,
+        source_sha256: sourceHash, design_version: null, destination: 'client' as const,
         preview_url: 'https://test/resumed.png', studio_job_id: 'job_resumed',
         capability: 'CLIENT_PRODUCT_PHOTO' as const,
         preset: 'catalog_white' as const, framing: 'square' as const,
@@ -263,4 +263,51 @@ test('pre-spec Present resumes a durable preview after gateway refresh', async (
     created_by: 'designer', expected_active_asset_id: 'asset_visual',
     expected_source_sha256: sourceHash,
   });
+});
+
+test('exact Present resumes only candidates bound to the immutable revision and reviewing job', async () => {
+  const lineage = {
+    projectId: 'project_exact', sourceAssetId: 'asset_exact', sourceDesignVersion: 9,
+  };
+  const candidate = {
+    candidate_id: 'candidate_exact', image_run_id: 'run_exact',
+    project_id: 'project_exact', source_asset_id: 'asset_exact',
+    source_sha256: '9'.repeat(64), design_version: 9, destination: 'client' as const,
+    preview_url: 'https://test/exact.png', studio_job_id: 'job_exact',
+    capability: 'CLIENT_PRODUCT_PHOTO' as const,
+    preset: 'catalog_white' as const, framing: 'square' as const,
+    qa: { verdict: 'pass' as const, accepted: true, review_required: false,
+      score: 99, summary: '', failed_checks: [], warnings: [], checks: [] },
+    status: 'reviewing' as const, accepted_asset_id: null,
+    expires_at: '2026-07-14T12:00:00Z',
+  };
+  const gateway = createStudioGateway({
+    listPreSpecPresentations: async () => ok({ candidates: [candidate] }),
+    listStudioJobs: async () => ok({ jobs: [{
+      job_id: 'job_exact', owner: 'designer', action_id: 'present' as const,
+      lane: 'fast_visual' as const, status: 'reviewing' as const, progress: 0.9,
+      active_design_id: 'project_exact', source_revision_id: 'asset_exact', error_code: null,
+      created_at: '2026-07-13T00:00:00Z', updated_at: '2026-07-13T00:00:01Z',
+      billing: { requested_outputs: 1, credits_per_output: 18, estimated_credits: 18,
+        completed_outputs: 0, charged_outputs: 0, charged_credits: 0, policy: 'accepted outputs only' },
+    }] }),
+  } as unknown as Parameters<typeof createStudioGateway>[0]);
+
+  const resumed = await gateway.resumeExactPresentations(lineage, 'designer');
+  assert.equal(resumed.error, null);
+  assert.equal(resumed.data?.[0]?.candidate.candidate_id, 'candidate_exact');
+
+  const staleGateway = createStudioGateway({
+    listPreSpecPresentations: async () => ok({ candidates: [candidate] }),
+    listStudioJobs: async () => ok({ jobs: [{
+      job_id: 'job_exact', owner: 'designer', action_id: 'present' as const,
+      lane: 'fast_visual' as const, status: 'reviewing' as const, progress: 0.9,
+      active_design_id: 'project_exact', source_revision_id: 'different_asset', error_code: null,
+      created_at: '2026-07-13T00:00:00Z', updated_at: '2026-07-13T00:00:01Z',
+      billing: { requested_outputs: 1, credits_per_output: 18, estimated_credits: 18,
+        completed_outputs: 0, charged_outputs: 0, charged_credits: 0, policy: 'accepted outputs only' },
+    }] }),
+  } as unknown as Parameters<typeof createStudioGateway>[0]);
+  const stale = await staleGateway.resumeExactPresentations(lineage, 'designer');
+  assert.equal(stale.error?.code, 'STUDIO_REVIEW_JOB_MISMATCH');
 });

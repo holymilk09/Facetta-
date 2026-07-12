@@ -229,64 +229,81 @@ test('saving a catalog preview variation resolves Activity once with one complet
   assert.equal(completions[0]?.request.completed_outputs, 1);
 });
 
-test('discarded view closes reviewing Activity as canceled with zero outputs', async () => {
+test('discarded view delegates atomic zero-charge Activity completion to the durable endpoint', async () => {
   const jobs = tracking();
+  let lineArtRequest: any = null;
   const gateway = createStudioGateway({
     ...jobs.client,
-    createLineArt: async (_projectId: string, request: any) => ok({
-      status: 'confirmation_required', project_id: 'project_1', image_run_id: 'image_run_view',
-      quality_report: quality,
-      routing: { attempt_count: 1, used_retry: false, used_fallback: false, cache_hit: false, run_id: 'image_run_view' },
-      view: request.view, candidate: {
-        run_id: 'image_run_view', candidate_id: 'candidate_view', preview_url: 'https://test/view.png',
-        qa: quality, operation: 'VISUAL_ONLY_EDIT', requested_change: 'Front view', asset_capability: 'LINE_ART',
-      }, next: 'Review',
-    }, 202),
-    recordImageRunFeedback: async () => ok({}),
+    createLineArt: async (_projectId: string, request: any) => {
+      lineArtRequest = request;
+      return ok({
+        status: 'confirmation_required', project_id: 'project_1', image_run_id: 'image_run_view',
+        quality_report: quality,
+        routing: { attempt_count: 1, used_retry: false, used_fallback: false, cache_hit: false, run_id: 'image_run_view' },
+        view: request.view, candidate: {
+          run_id: 'image_run_view', candidate_id: 'candidate_view', preview_url: 'https://test/view.png',
+          qa: quality, operation: 'VISUAL_ONLY_EDIT', requested_change: 'Front view', asset_capability: 'LINE_ART',
+        }, next: 'Review',
+      }, 202);
+    },
+    discardStudioViewCandidate: async () => ok({
+      status: 'discarded' as const, project_id: 'project_1', source_asset_id: 'candidate_1',
+      design_version: 1, candidate_id: 'candidate_view',
+    }),
   } as any, { trackJobs: true });
 
   await gateway.previewLineArtView({
     projectId: 'project_1', sourceAssetId: 'candidate_1', sourceDesignVersion: 1,
     createdBy: 'designer_1', view: 'front',
   });
+  assert.deepEqual(jobs.transitions.map((call) => call.request.status), ['running']);
   const discarded = await gateway.discardLineArtView({
     candidateId: 'candidate_view', createdBy: 'designer_1',
   });
   assert.equal(discarded.error, null);
-  assert.deepEqual(jobs.cancellations.at(-1), {
-    jobId: 'studio_job_1', owner: 'designer_1',
-  });
+  assert.equal(lineArtRequest.studio_job_id, 'studio_job_1');
+  assert.equal(jobs.cancellations.length, 0);
 });
 
 test('Present distinguishes accepted, review-only, and failed generation outcomes', async () => {
   const jobs = tracking();
+  const boundJobIds: string[] = [];
   const acceptedProject = project(1);
   acceptedProject.derived_assets = [asset('presentation_1', 'BEAUTY_RENDER')];
   const gateway = createStudioGateway({
     ...jobs.client,
-    createBeautyRender: async () => ok({
-      status: 'accepted', project: acceptedProject, source_asset_id: 'candidate_1',
-      asset_id: 'presentation_1', image_run_id: 'image_run_beauty', qa: quality,
-    }, 201),
-    createProductPhoto: async () => ok({
-      status: 'review_required', project_id: 'project_1', source_asset_id: 'candidate_1',
-      image_run_id: 'image_run_product', quality_report: quality,
-      routing: { attempt_count: 1, used_retry: false, used_fallback: false, cache_hit: false, run_id: 'image_run_product' },
-      presentation: {
-        preset: 'catalog_white', framing: 'square', source_asset_id: 'candidate_1',
-        design_version: 1,
-      },
-      warning_candidate: {
-        run_id: 'image_run_product', candidate_id: 'candidate_product',
-        preview_url: 'https://test/product.png', qa: quality,
-        operation: 'VISUAL_ONLY_EDIT', requested_change: 'Product photo', asset_capability: 'PRODUCT_PHOTO',
-      },
-    }, 202),
-    createMarketingPack: async () => ok({
-      status: 'failed', project_id: 'project_1', source_asset_id: 'candidate_1',
-      design_version: 1, requested_count: 1, candidate_count: 0, failed_count: 1,
-      maximum_provider_attempts: 3, actual_attempts: 1, candidates: [], failures: [],
-    }, 200),
+    createBeautyRender: async (_projectId: string, request: any) => {
+      boundJobIds.push(request.studio_job_id);
+      return ok({
+        status: 'accepted', project: acceptedProject, source_asset_id: 'candidate_1',
+        asset_id: 'presentation_1', image_run_id: 'image_run_beauty', qa: quality,
+      }, 201);
+    },
+    createProductPhoto: async (_projectId: string, request: any) => {
+      boundJobIds.push(request.studio_job_id);
+      return ok({
+        status: 'review_required', project_id: 'project_1', source_asset_id: 'candidate_1',
+        image_run_id: 'image_run_product', quality_report: quality,
+        routing: { attempt_count: 1, used_retry: false, used_fallback: false, cache_hit: false, run_id: 'image_run_product' },
+        presentation: {
+          preset: 'catalog_white', framing: 'square', source_asset_id: 'candidate_1',
+          design_version: 1,
+        },
+        warning_candidate: {
+          run_id: 'image_run_product', candidate_id: 'candidate_product',
+          preview_url: 'https://test/product.png', qa: quality,
+          operation: 'VISUAL_ONLY_EDIT', requested_change: 'Product photo', asset_capability: 'PRODUCT_PHOTO',
+        },
+      }, 202);
+    },
+    createMarketingPack: async (_projectId: string, request: any) => {
+      boundJobIds.push(request.studio_job_id);
+      return ok({
+        status: 'failed', project_id: 'project_1', source_asset_id: 'candidate_1',
+        design_version: 1, requested_count: 1, candidate_count: 0, failed_count: 1,
+        maximum_provider_attempts: 3, actual_attempts: 1, candidates: [], failures: [],
+      }, 200);
+    },
   } as any, { trackJobs: true });
 
   await gateway.createBeautyPresentation('project_1', {
@@ -300,7 +317,8 @@ test('Present distinguishes accepted, review-only, and failed generation outcome
     created_by: 'designer_1', expected_asset_id: 'candidate_1', expected_design_version: 1,
     preset: 'catalog_white', framing: 'square', presentation_only: true,
   });
-  assert.equal(jobs.transitions.at(-1)?.request.status, 'reviewing');
+  assert.deepEqual(jobs.transitions.filter((call) => call.jobId === 'studio_job_2')
+    .map((call) => call.request.status), ['running']);
 
   await gateway.createMarketingPresentation('project_1', {
     created_by: 'designer_1', expected_asset_id: 'candidate_1', expected_design_version: 1,
@@ -308,6 +326,7 @@ test('Present distinguishes accepted, review-only, and failed generation outcome
   });
   assert.equal(jobs.transitions.at(-1)?.request.status, 'failed');
   assert.equal(jobs.transitions.at(-1)?.request.error_code, 'NO_PRESENTATION_OUTPUTS');
+  assert.deepEqual(boundJobIds, ['studio_job_1', 'studio_job_2', 'studio_job_3']);
 });
 
 test('marketing presentation decisions resolve independently and charge only saved outputs', async () => {
@@ -364,7 +383,8 @@ test('marketing presentation decisions resolve independently and charge only sav
     presets: ['catalog_white', 'luxury_studio'], framing: 'square',
   });
   assert.equal(generated.error, null);
-  assert.equal(jobs.transitions.at(-1)?.request.status, 'reviewing');
+  assert.deepEqual(jobs.transitions.map((call) => call.request.status), ['running']);
+  const transitionsBeforeDecisions = jobs.transitions.length;
 
   const saved = await gateway.acceptPresentationCandidate({
     candidateId: 'candidate_white', createdBy: 'designer_1',
@@ -372,7 +392,7 @@ test('marketing presentation decisions resolve independently and charge only sav
   assert.equal(saved.error, null);
   assert.equal(saved.data?.project.active_asset_id, 'candidate_1');
   assert.equal(saved.data?.project.active_design_version, 1);
-  assert.equal(jobs.transitions.at(-1)?.request.status, 'reviewing');
+  assert.deepEqual(jobs.transitions.map((call) => call.request.status), ['running']);
 
   const discarded = await gateway.discardPresentationCandidate({
     candidateId: 'candidate_luxury', createdBy: 'designer_1',
@@ -387,8 +407,7 @@ test('marketing presentation decisions resolve independently and charge only sav
       expected_source_asset_id: 'candidate_1', expected_design_version: 1 },
   ]);
   assert.equal(jobs.cancellations.length, 0);
-  assert.equal(jobs.transitions.at(-1)?.request.status, 'succeeded');
-  assert.equal(jobs.transitions.at(-1)?.request.completed_outputs, 1);
+  assert.equal(jobs.transitions.length, transitionsBeforeDecisions);
 });
 
 test('pre-spec presentation jobs charge only saved derived outputs', async () => {
@@ -514,7 +533,7 @@ test('presentation decisions fail closed if the selected revision changes before
   assert.equal(jobs.transitions.at(-1)?.request.status, 'failed');
 });
 
-test('discarding the only presentation preview cancels reviewing work without charge', async () => {
+test('discarding the only exact presentation delegates atomic zero-charge settlement', async () => {
   const jobs = tracking();
   const current = project(1);
   const gateway = createStudioGateway({
@@ -539,12 +558,49 @@ test('discarding the only presentation preview cancels reviewing work without ch
     created_by: 'designer_1', expected_asset_id: 'candidate_1', expected_design_version: 1,
     preset: 'catalog_white', framing: 'square', presentation_only: true,
   });
+  const transitionsBeforeDecision = jobs.transitions.length;
   const result = await gateway.discardPresentationCandidate({
     candidateId: 'candidate_product', createdBy: 'designer_1',
   });
   assert.equal(result.error, null);
-  assert.deepEqual(jobs.cancellations.at(-1), {
-    jobId: 'studio_job_1', owner: 'designer_1',
-  });
+  assert.equal(jobs.cancellations.length, 0);
+  assert.equal(jobs.transitions.length, transitionsBeforeDecision);
   assert.equal(jobs.transitions.some((call) => call.request.completed_outputs), false);
+});
+
+test('exact presentation decision errors leave the durable reviewing job untouched', async () => {
+  const jobs = tracking();
+  const current = project(1);
+  const gateway = createStudioGateway({
+    ...jobs.client,
+    createProductPhoto: async () => ok({
+      status: 'review_required', project_id: 'project_1', image_run_id: 'run_product_error',
+      quality_report: quality, routing: {}, presentation: {
+        preset: 'catalog_white', framing: 'square', source_asset_id: 'candidate_1', design_version: 1,
+      }, warning_candidate: {
+        run_id: 'run_product_error', candidate_id: 'candidate_product_error',
+        preview_url: 'https://test/product-error.png', qa: quality,
+        operation: 'VISUAL_ONLY_EDIT', requested_change: 'Product photo',
+        asset_capability: 'CLIENT_PRODUCT_PHOTO',
+      },
+    }, 202),
+    getProject: async () => ok(current),
+    acceptPresentationCandidate: async () => ({
+      data: null,
+      error: { code: 'STALE_PRESENTATION_SOURCE', message: 'stale', category: 'conflict' as const,
+        status: 409, retryable: false },
+      status: 409,
+    }),
+  } as any, { trackJobs: true });
+  await gateway.createProductPresentation('project_1', {
+    created_by: 'designer_1', expected_asset_id: 'candidate_1', expected_design_version: 1,
+    preset: 'catalog_white', framing: 'square', presentation_only: true,
+  });
+  const transitionsBeforeDecision = jobs.transitions.length;
+  const result = await gateway.acceptPresentationCandidate({
+    candidateId: 'candidate_product_error', createdBy: 'designer_1',
+  });
+  assert.equal(result.error?.code, 'STALE_PRESENTATION_SOURCE');
+  assert.equal(jobs.transitions.length, transitionsBeforeDecision);
+  assert.equal(jobs.transitions.some((call) => call.request.status === 'failed'), false);
 });

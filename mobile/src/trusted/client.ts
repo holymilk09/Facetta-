@@ -123,6 +123,10 @@ import type {
   StudioJobRecord,
   StudioJobStatus,
   StudioProjectHistory,
+  StudioViewCandidateAcceptResult,
+  StudioViewCandidateDecisionRequest,
+  StudioViewCandidateDiscardResult,
+  StudioViewCandidateListResult,
   StudioConfirmDesignResponse,
   CreateStudioJobRequest,
   TransitionStudioJobRequest,
@@ -970,6 +974,7 @@ const decodePreSpecPresentationListResult: Decoder<PreSpecPresentationListResult
     const previewUrl = nullableText(raw.preview_url);
     const expiresAt = nullableText(raw.expires_at);
     const studioJobId = nullableText(raw.studio_job_id);
+    const designVersion = raw.design_version === null ? null : number(raw.design_version);
     const preset = knownProductPhotoPreset(raw.preset);
     const framing = knownProductPhotoFraming(raw.framing);
     const qa = decodeImageQualityReport(raw.qa);
@@ -979,6 +984,7 @@ const decodePreSpecPresentationListResult: Decoder<PreSpecPresentationListResult
       || sourceAssetId === null || sourceHash === null
       || !/^[0-9a-f]{64}$/.test(sourceHash) || previewUrl === null
       || expiresAt === null || preset === null || framing === null || qa === null
+      || (raw.design_version !== null && designVersion === null)
       || (destination !== 'client' && destination !== 'marketing')
       || (capability !== 'CLIENT_BEAUTY_RENDER'
         && capability !== 'CLIENT_PRODUCT_PHOTO'
@@ -986,12 +992,69 @@ const decodePreSpecPresentationListResult: Decoder<PreSpecPresentationListResult
     candidates.push({
       candidate_id: candidateId, image_run_id: runId, project_id: projectId,
       source_asset_id: sourceAssetId, source_sha256: sourceHash,
+      design_version: designVersion,
       preview_url: previewUrl, studio_job_id: studioJobId,
       destination, capability, preset, framing, qa,
       status: 'reviewing', accepted_asset_id: null, expires_at: expiresAt,
     });
   }
   return { candidates };
+};
+
+const decodeStudioViewCandidateListResult: Decoder<StudioViewCandidateListResult> = (value) => {
+  if (!isRecord(value) || !Array.isArray(value.candidates)) return null;
+  const candidates: StudioViewCandidateListResult['candidates'] = [];
+  for (const raw of value.candidates) {
+    if (!isRecord(raw) || raw.status !== 'reviewing' || raw.accepted_asset_id !== null) return null;
+    const candidateId = nullableText(raw.candidate_id);
+    const runId = nullableText(raw.image_run_id);
+    const projectId = nullableText(raw.project_id);
+    const sourceAssetId = nullableText(raw.source_asset_id);
+    const designVersion = number(raw.design_version);
+    const previewUrl = nullableText(raw.preview_url);
+    const expiresAt = nullableText(raw.expires_at);
+    const studioJobId = nullableText(raw.studio_job_id);
+    const qa = decodeImageQualityReport(raw.qa);
+    const view = raw.view;
+    if (candidateId === null || runId === null || projectId === null
+      || sourceAssetId === null || designVersion === null || designVersion < 1
+      || previewUrl === null || expiresAt === null || qa === null
+      || (view !== 'front' && view !== 'three_quarter' && view !== 'side')) return null;
+    candidates.push({
+      candidate_id: candidateId, image_run_id: runId, studio_job_id: studioJobId,
+      project_id: projectId, source_asset_id: sourceAssetId, design_version: designVersion,
+      view, qa, status: 'reviewing', accepted_asset_id: null, expires_at: expiresAt,
+      preview_url: previewUrl,
+    });
+  }
+  return { candidates };
+};
+
+const decodeStudioViewCandidateAcceptResult: Decoder<StudioViewCandidateAcceptResult> = (value) => {
+  if (!isRecord(value) || value.status !== 'accepted') return null;
+  const projectId = nullableText(value.project_id);
+  const sourceAssetId = nullableText(value.source_asset_id);
+  const designVersion = number(value.design_version);
+  const assetId = nullableText(value.asset_id);
+  const project = decodeProjectDetail(value.project);
+  return projectId === null || sourceAssetId === null || designVersion === null
+    || assetId === null || project === null || project.root_id !== projectId ? null : {
+      status: 'accepted', project_id: projectId, source_asset_id: sourceAssetId,
+      design_version: designVersion, asset_id: assetId, project,
+    };
+};
+
+const decodeStudioViewCandidateDiscardResult: Decoder<StudioViewCandidateDiscardResult> = (value) => {
+  if (!isRecord(value) || value.status !== 'discarded') return null;
+  const projectId = nullableText(value.project_id);
+  const sourceAssetId = nullableText(value.source_asset_id);
+  const designVersion = number(value.design_version);
+  const candidateId = nullableText(value.candidate_id);
+  return projectId === null || sourceAssetId === null || designVersion === null
+    || candidateId === null ? null : {
+      status: 'discarded', project_id: projectId, source_asset_id: sourceAssetId,
+      design_version: designVersion, candidate_id: candidateId,
+    };
 };
 
 const decodeNumberRecord: Decoder<Record<string, number>> = (value) => {
@@ -3573,6 +3636,72 @@ export function createTrustedApiClient(options: TrustedApiClientOptions) {
       };
     },
 
+    async listStudioViewCandidates(owner: string, projectId: string) {
+      const query = new URLSearchParams({
+        owner,
+        project_id: projectId,
+        status: 'reviewing',
+      });
+      const result = await call(
+        `/studio/view-candidates?${query.toString()}`,
+        decodeStudioViewCandidateListResult,
+      );
+      if (result.error !== null) return result;
+      return {
+        ...result,
+        data: {
+          candidates: result.data.candidates.map((candidate) => ({
+            ...candidate,
+            preview_url: resolveUrl(candidate.preview_url, baseUrl),
+          })),
+        },
+      };
+    },
+
+    async acceptStudioViewCandidate(
+      runId: string,
+      candidateId: string,
+      request: StudioViewCandidateDecisionRequest,
+    ) {
+      const result = await call(
+        `/studio/view-candidates/${encodeURIComponent(runId)}/${encodeURIComponent(candidateId)}/accept`,
+        decodeStudioViewCandidateAcceptResult,
+        {
+          method: 'POST',
+          body: encodeBody({
+            created_by: request.created_by,
+            expected_project_id: request.expected_project_id,
+            expected_source_asset_id: request.expected_source_asset_id,
+            expected_design_version: request.expected_design_version,
+          }),
+        },
+      );
+      return result.error === null ? {
+        ...result,
+        data: { ...result.data, project: projectWithUrls(result.data.project, baseUrl) },
+      } : result;
+    },
+
+    discardStudioViewCandidate(
+      runId: string,
+      candidateId: string,
+      request: StudioViewCandidateDecisionRequest,
+    ) {
+      return call(
+        `/studio/view-candidates/${encodeURIComponent(runId)}/${encodeURIComponent(candidateId)}/discard`,
+        decodeStudioViewCandidateDiscardResult,
+        {
+          method: 'POST',
+          body: encodeBody({
+            created_by: request.created_by,
+            expected_project_id: request.expected_project_id,
+            expected_source_asset_id: request.expected_source_asset_id,
+            expected_design_version: request.expected_design_version,
+          }),
+        },
+      );
+    },
+
     async createPreSpecPresentation(
       projectId: string,
       request: PreSpecPresentationRequest,
@@ -4431,6 +4560,7 @@ export function createTrustedApiClient(options: TrustedApiClientOptions) {
           ...(request.presentation_only === undefined
             ? {}
             : { presentation_only: request.presentation_only }),
+          ...(request.studio_job_id === undefined ? {} : { studio_job_id: request.studio_job_id }),
         },
         decodeBeautyRenderResult,
       );
@@ -4475,6 +4605,7 @@ export function createTrustedApiClient(options: TrustedApiClientOptions) {
           ...(request.presentation_only === undefined
             ? {}
             : { presentation_only: request.presentation_only }),
+          ...(request.studio_job_id === undefined ? {} : { studio_job_id: request.studio_job_id }),
         },
         decodeProductPhotoResult,
       );
@@ -4516,6 +4647,7 @@ export function createTrustedApiClient(options: TrustedApiClientOptions) {
           framing: request.framing ?? 'portrait',
           custom_instruction: request.custom_instruction ?? '',
           starting_variant: request.starting_variant ?? 0,
+          ...(request.studio_job_id === undefined ? {} : { studio_job_id: request.studio_job_id }),
         },
         decodeMarketingPackResult,
       );
@@ -4558,6 +4690,7 @@ export function createTrustedApiClient(options: TrustedApiClientOptions) {
                 },
               }),
           variant: request.variant ?? 0,
+          ...(request.studio_job_id === undefined ? {} : { studio_job_id: request.studio_job_id }),
         },
         decodeDrawingConfirmationResult,
       );

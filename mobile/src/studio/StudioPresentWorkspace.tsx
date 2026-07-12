@@ -1,4 +1,6 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, {
+  useEffect, useMemo, useRef, useState,
+} from 'react';
 import {
   Pressable, ScrollView, StyleSheet, Text, View,
 } from 'react-native';
@@ -12,7 +14,8 @@ import type {
 } from '../trusted/types';
 import { getStudioAction } from './actions';
 import type {
-  ExactStudioLineage, StudioGateway, StudioGatewayError, StudioVisualLineage,
+  ExactStudioLineage, StudioExactPresentationPreview, StudioGateway, StudioGatewayError,
+  StudioVisualLineage,
 } from './gateway';
 import { designerReviewState } from './designerReviewLanguage';
 import { STUDIO_PRESENT_CONTROLS } from './workspaceControls';
@@ -85,6 +88,7 @@ export interface StudioPresentWorkspaceProps {
     | 'discardPresentationCandidate'
     | 'createPreSpecPresentation'
     | 'resumePreSpecPresentations'
+    | 'resumeExactPresentations'
     | 'acceptPreSpecPresentation'
     | 'discardPreSpecPresentation'>;
   lineage: ExactStudioLineage | StudioVisualLineage | null;
@@ -166,6 +170,20 @@ function preSpecCard(result: PreSpecPresentationResult): PresentationCard {
   };
 }
 
+function exactResumeCard(result: StudioExactPresentationPreview): PresentationCard {
+  const candidate = result.candidate;
+  return {
+    id: candidate.candidate_id,
+    title: candidate.capability === 'CLIENT_BEAUTY_RENDER'
+      ? 'Client beauty render' : presetLabel(candidate.preset),
+    imageUrl: candidate.preview_url,
+    detail: `Not saved yet · ${framingLabel(candidate.framing)} · ${designerReviewState(candidate.qa.verdict)}`,
+    status: 'review',
+    candidateId: candidate.candidate_id,
+    preSpec: false,
+  };
+}
+
 export function StudioPresentWorkspace({
   gateway, lineage, createdBy, onProjectUpdated, imageRequestHeaders,
 }: StudioPresentWorkspaceProps) {
@@ -183,6 +201,18 @@ export function StudioPresentWorkspace({
   const [info, setInfo] = useState<string | null>(null);
   const [cards, setCards] = useState<readonly PresentationCard[]>([]);
   const [failures, setFailures] = useState<readonly string[]>([]);
+  const lineageKey = lineage === null ? 'none'
+    : 'sourceDesignVersion' in lineage
+      ? `${lineage.projectId}:${lineage.sourceAssetId}:${lineage.sourceDesignVersion}`
+      : `${lineage.projectId}:${lineage.sourceAssetId}:pre-spec`;
+  const lineageKeyRef = useRef(lineageKey);
+  lineageKeyRef.current = lineageKey;
+  const [uiLineageKey, setUiLineageKey] = useState(lineageKey);
+  const uiMatchesLineage = uiLineageKey === lineageKey;
+  const visibleCards = uiMatchesLineage ? cards : [];
+  const visibleFailures = uiMatchesLineage ? failures : [];
+  const visibleError = uiMatchesLineage ? error : null;
+  const visibleInfo = uiMatchesLineage ? info : null;
 
   const outputCount = destination === 'marketing' ? marketingPresets.length : 1;
   const creditEstimate = outputCount * PRESENT_CREDITS;
@@ -197,19 +227,47 @@ export function StudioPresentWorkspace({
       : 'Selected visual direction · specification not confirmed', [lineage]);
 
   useEffect(() => {
-    if (lineage === null || 'sourceDesignVersion' in lineage
-      || typeof gateway.resumePreSpecPresentations !== 'function') return undefined;
+    setUiLineageKey(lineageKey);
+    setCards([]);
+    setFailures([]);
+    setInfo(null);
+    setError(null);
+    setBusy(false);
+    setDecidingId(null);
+    if (lineage === null) return undefined;
+    const requestedLineageKey = lineageKey;
     let active = true;
-    void gateway.resumePreSpecPresentations(lineage, createdBy).then((result) => {
-      if (!active || result.error !== null || result.data.length === 0) return;
-      setCards((current) => current.length > 0
-        ? current : result.data.map(preSpecCard));
-      setInfo((current) => current ?? (
-        `${result.data.length} saved preview${result.data.length === 1 ? '' : 's'} resumed for review.`
-      ));
-    });
+    if ('sourceDesignVersion' in lineage) {
+      if (typeof gateway.resumeExactPresentations !== 'function') return undefined;
+      void gateway.resumeExactPresentations(lineage, createdBy).then((result) => {
+        if (!active || lineageKeyRef.current !== requestedLineageKey) return;
+        if (result.error !== null) {
+          setError(designerPresentationError(result.error));
+          return;
+        }
+        if (result.data.length === 0) return;
+        setCards((current) => current.length > 0 ? current : result.data.map(exactResumeCard));
+        setInfo((current) => current ?? (
+          `${result.data.length} saved preview${result.data.length === 1 ? '' : 's'} resumed for review.`
+        ));
+      });
+    } else {
+      if (typeof gateway.resumePreSpecPresentations !== 'function') return undefined;
+      void gateway.resumePreSpecPresentations(lineage, createdBy).then((result) => {
+        if (!active || lineageKeyRef.current !== requestedLineageKey) return;
+        if (result.error !== null) {
+          setError(designerPresentationError(result.error));
+          return;
+        }
+        if (result.data.length === 0) return;
+        setCards((current) => current.length > 0 ? current : result.data.map(preSpecCard));
+        setInfo((current) => current ?? (
+          `${result.data.length} saved preview${result.data.length === 1 ? '' : 's'} resumed for review.`
+        ));
+      });
+    }
     return () => { active = false; };
-  }, [createdBy, gateway, lineage]);
+  }, [createdBy, gateway, lineageKey]);
 
   const togglePreset = (value: ProductPhotoPreset): void => {
     setMarketingPresets((current) => current.includes(value)
@@ -218,6 +276,7 @@ export function StudioPresentWorkspace({
 
   const savePresentation = async (card: PresentationCard): Promise<void> => {
     if (card.candidateId === null || decidingId !== null) return;
+    const requestedLineageKey = lineageKey;
     setDecidingId(card.id);
     setError(null);
     const result = await (card.preSpec
@@ -227,6 +286,7 @@ export function StudioPresentWorkspace({
       : gateway.acceptPresentationCandidate({
         candidateId: card.candidateId, createdBy,
       }));
+    if (lineageKeyRef.current !== requestedLineageKey) return;
     setDecidingId(null);
     if (result.error !== null) {
       setError(designerPresentationError(result.error));
@@ -244,6 +304,7 @@ export function StudioPresentWorkspace({
 
   const discardPresentation = async (card: PresentationCard): Promise<void> => {
     if (card.candidateId === null || decidingId !== null) return;
+    const requestedLineageKey = lineageKey;
     setDecidingId(card.id);
     setError(null);
     const result = await (card.preSpec
@@ -253,6 +314,7 @@ export function StudioPresentWorkspace({
       : gateway.discardPresentationCandidate({
         candidateId: card.candidateId, createdBy,
       }));
+    if (lineageKeyRef.current !== requestedLineageKey) return;
     setDecidingId(null);
     if (result.error !== null) {
       setError(designerPresentationError(result.error));
@@ -264,6 +326,7 @@ export function StudioPresentWorkspace({
 
   const generate = async (): Promise<void> => {
     if (lineage === null || busy || outputCount === 0) return;
+    const requestedLineageKey = lineageKey;
     setBusy(true);
     setError(null);
     setInfo(null);
@@ -280,6 +343,7 @@ export function StudioPresentWorkspace({
           framing,
           ...(direction.trim() ? { custom_instruction: direction.trim() } : {}),
         });
+        if (lineageKeyRef.current !== requestedLineageKey) return;
         setBusy(false);
         if (result.error !== null) return setError(designerPresentationError(result.error));
         setCards([preSpecCard(result.data)]);
@@ -298,6 +362,7 @@ export function StudioPresentWorkspace({
           variant: index,
         })
       )));
+      if (lineageKeyRef.current !== requestedLineageKey) return;
       setBusy(false);
       const ready = results.flatMap((result) => result.error === null ? [result.data] : []);
       const failed = results.flatMap((result) => result.error === null
@@ -316,6 +381,7 @@ export function StudioPresentWorkspace({
         ...(direction.trim() ? { instruction: direction.trim() } : {}),
         presentation_only: true,
       });
+      if (lineageKeyRef.current !== requestedLineageKey) return;
       setBusy(false);
       if (result.error !== null) return setError(designerPresentationError(result.error));
       setCards([beautyCard(result.data)]);
@@ -335,6 +401,7 @@ export function StudioPresentWorkspace({
         ...(direction.trim() ? { custom_instruction: direction.trim() } : {}),
         presentation_only: true,
       });
+      if (lineageKeyRef.current !== requestedLineageKey) return;
       setBusy(false);
       if (result.error !== null) return setError(designerPresentationError(result.error));
       setCards([productCard(result.data)]);
@@ -352,6 +419,7 @@ export function StudioPresentWorkspace({
       framing,
       ...(direction.trim() ? { custom_instruction: direction.trim() } : {}),
     });
+    if (lineageKeyRef.current !== requestedLineageKey) return;
     setBusy(false);
     if (result.error !== null) return setError(designerPresentationError(result.error));
     setCards(marketingCards(result.data));
@@ -425,15 +493,15 @@ export function StudioPresentWorkspace({
           ? 'A passing Client output is saved and charged when generation finishes. If review is required, it is charged only when you choose Save. Discarded and unusable results cost 0 credits.'
           : 'You are charged only for the requested outputs you save. Discarded and unusable results cost 0 credits.'}</Text>
       </View>
-      {error !== null && <Notice kind="error" text={error} />}
+      {visibleError !== null && <Notice kind="error" text={visibleError} />}
       <Button title={busy ? 'Generating and checking…' : requestLabel}
         disabled={busy || outputCount === 0} onPress={() => { void generate(); }} />
 
-      {info !== null && <Notice kind="info" text={info} />}
-      {failures.map((failure) => <Notice key={failure} kind="error" text={failure} />)}
-      {cards.length > 0 && <View style={styles.results}>
+      {visibleInfo !== null && <Notice kind="info" text={visibleInfo} />}
+      {visibleFailures.map((failure) => <Notice key={failure} kind="error" text={failure} />)}
+      {visibleCards.length > 0 && <View style={styles.results}>
         <Text style={styles.sectionTitle}>Results</Text>
-        {cards.map((card) => <View key={card.id} style={styles.resultCard}>
+        {visibleCards.map((card) => <View key={card.id} style={styles.resultCard}>
           {card.imageUrl !== null && <Image accessibilityLabel={card.title} source={{ uri: card.imageUrl }} imageRequestHeaders={imageRequestHeaders} style={styles.preview} />}
           <View style={styles.resultCopy}>
             <Text style={styles.resultTitle}>{card.title}</Text>

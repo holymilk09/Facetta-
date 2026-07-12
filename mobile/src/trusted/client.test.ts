@@ -1598,7 +1598,7 @@ describe('trusted API decoders', () => {
       text: async () => JSON.stringify({ candidates: [{
         candidate_id: 'candidate resume', image_run_id: 'run resume',
         project_id: 'project visual', source_asset_id: 'asset visual',
-        source_sha256: sourceHash, destination: 'client',
+        source_sha256: sourceHash, design_version: null, destination: 'client',
         capability: 'CLIENT_PRODUCT_PHOTO', preset: 'catalog_white',
         framing: 'square', qa: { verdict: 'pass', accepted: true,
           review_required: false, checks: [] }, status: 'reviewing',
@@ -1619,5 +1619,51 @@ describe('trusted API decoders', () => {
     expect(String(fetcher.mock.calls[0]?.[0])).toBe(
       'https://facetta.test/studio/presentation-candidates?owner=designer&project_id=project+visual&status=reviewing',
     );
+  });
+
+  test('decodes durable exact View reviews and sends CAS decision fields', async () => {
+    const fetcher = jest.fn<Promise<Response>, [RequestInfo | URL, RequestInit?]>(async (input) => {
+      const url = String(input);
+      const payload = url.includes('/accept') ? {
+        status: 'accepted', project_id: 'project 1', source_asset_id: 'asset 1',
+        design_version: 3, asset_id: 'view asset', project: {
+          id: 'project 1', root_id: 'project 1', title: 'Ring', owner: 'designer',
+          state: 'refining', design_id: 'design 1', spec: {}, active_asset_id: 'asset 1',
+          active_design_version: 3, active_revision: {
+            asset_id: 'asset 1', root_id: 'project 1', capability: 'SPEC_RENDER',
+            provenance: 'studio', revision: 3, design_id: 'design 1', design_version: 3,
+            image_url: '/source.png',
+          }, revisions: [], assets: [], derived_assets: [], factory_ready: false,
+          factory_blockers: [], primary_revision_count: 1, has_factory_drawing: false,
+        },
+      } : { candidates: [{
+        candidate_id: 'candidate view', image_run_id: 'run view', studio_job_id: 'job view',
+        project_id: 'project 1', source_asset_id: 'asset 1', design_version: 3,
+        view: 'front', status: 'reviewing', accepted_asset_id: null,
+        expires_at: '2026-07-14T00:00:00Z', preview_url: '/view-preview.png',
+        qa: { verdict: 'pass', accepted: true, review_required: false, checks: [] },
+      }] };
+      return { ok: true, status: url.includes('/accept') ? 201 : 200,
+        text: async () => JSON.stringify(payload) } as unknown as Response;
+    });
+    const api = createTrustedApiClient({ baseUrl: 'https://facetta.test', fetcher });
+    const listed = await api.listStudioViewCandidates('designer', 'project 1');
+    expect(listed.error).toBeNull();
+    expect(listed.data?.candidates[0]).toMatchObject({
+      candidate_id: 'candidate view', studio_job_id: 'job view', design_version: 3,
+      preview_url: 'https://facetta.test/view-preview.png',
+    });
+    const accepted = await api.acceptStudioViewCandidate('run view', 'candidate view', {
+      created_by: 'designer', expected_project_id: 'project 1',
+      expected_source_asset_id: 'asset 1', expected_design_version: 3,
+    });
+    expect(accepted.error).toBeNull();
+    expect(String(fetcher.mock.calls[1]?.[0])).toBe(
+      'https://facetta.test/studio/view-candidates/run%20view/candidate%20view/accept',
+    );
+    expect(JSON.parse(String(fetcher.mock.calls[1]?.[1]?.body))).toEqual({
+      created_by: 'designer', expected_project_id: 'project 1',
+      expected_source_asset_id: 'asset 1', expected_design_version: 3,
+    });
   });
 });

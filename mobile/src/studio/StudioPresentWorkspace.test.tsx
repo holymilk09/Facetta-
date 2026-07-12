@@ -14,6 +14,85 @@ describe('StudioPresentWorkspace', () => {
     expect(screen.getByText('Present always starts from one saved revision.')).toBeTruthy();
   });
 
+  test('restores exact-revision presentation previews after remount', async () => {
+    const resumeExactPresentations = jest.fn(async () => ({
+      data: [{
+        lineage,
+        candidate: {
+          candidate_id: 'candidate_resumed', image_run_id: 'run_resumed',
+          project_id: 'project_1', source_asset_id: 'asset_4', source_sha256: 'a'.repeat(64),
+          design_version: 4, destination: 'client', preview_url: 'https://test/resumed.png',
+          studio_job_id: 'job_resumed', capability: 'CLIENT_PRODUCT_PHOTO',
+          preset: 'catalog_white', framing: 'square', qa: { verdict: 'pass', checks: [] },
+          status: 'reviewing', accepted_asset_id: null, expires_at: '2026-07-14T00:00:00Z',
+        },
+      }],
+      error: null,
+      status: 200,
+    }));
+    await render(<StudioPresentWorkspace
+      gateway={{
+        resumeExactPresentations, createBeautyPresentation: jest.fn(),
+        createProductPresentation: jest.fn(), createMarketingPresentation: jest.fn(),
+        acceptPresentationCandidate: jest.fn(), discardPresentationCandidate: jest.fn(),
+        createPreSpecPresentation: jest.fn(), resumePreSpecPresentations: jest.fn(),
+        acceptPreSpecPresentation: jest.fn(), discardPreSpecPresentation: jest.fn(),
+      } as any}
+      lineage={lineage}
+      createdBy="designer"
+    />);
+    expect(await screen.findByText('Catalog white')).toBeTruthy();
+    expect(screen.getByText('1 saved preview resumed for review.')).toBeTruthy();
+    expect(resumeExactPresentations).toHaveBeenCalledWith(lineage, 'designer');
+  });
+
+  test('hides revision A cards immediately while deferred revision B resumes', async () => {
+    const lineageB = { projectId: 'project_2', sourceAssetId: 'asset_8', sourceDesignVersion: 5 };
+    const resumed = (candidateId: string, requestedLineage: typeof lineage) => ({
+      data: [{
+        lineage: requestedLineage,
+        candidate: {
+          candidate_id: candidateId, image_run_id: `run_${candidateId}`,
+          project_id: requestedLineage.projectId, source_asset_id: requestedLineage.sourceAssetId,
+          source_sha256: 'a'.repeat(64), design_version: requestedLineage.sourceDesignVersion,
+          destination: 'client', preview_url: `https://test/${candidateId}.png`,
+          studio_job_id: `job_${candidateId}`, capability: 'CLIENT_BEAUTY_RENDER',
+          preset: 'luxury_studio', framing: 'square', qa: { verdict: 'pass', checks: [] },
+          status: 'reviewing', accepted_asset_id: null, expires_at: '2026-07-14T00:00:00Z',
+        },
+      }], error: null, status: 200,
+    });
+    let resolveB: ((value: any) => void) | null = null;
+    const resumeExactPresentations = jest.fn((requested: typeof lineage) => (
+      requested.projectId === 'project_1' ? Promise.resolve(resumed('candidate_a', lineage))
+        : new Promise((resolve) => { resolveB = resolve; })
+    ));
+    const gateway = {
+      resumeExactPresentations, createBeautyPresentation: jest.fn(),
+      createProductPresentation: jest.fn(), createMarketingPresentation: jest.fn(),
+      acceptPresentationCandidate: jest.fn(), discardPresentationCandidate: jest.fn(),
+      createPreSpecPresentation: jest.fn(), resumePreSpecPresentations: jest.fn(),
+      acceptPreSpecPresentation: jest.fn(), discardPreSpecPresentation: jest.fn(),
+    } as any;
+    const rendered = await render(<StudioPresentWorkspace
+      gateway={gateway} lineage={lineage} createdBy="designer"
+    />);
+    expect(await screen.findByText('Results')).toBeTruthy();
+    expect(screen.getByText('1 saved preview resumed for review.')).toBeTruthy();
+
+    await act(async () => {
+      rendered.rerender(<StudioPresentWorkspace
+        gateway={gateway} lineage={lineageB} createdBy="designer"
+      />);
+    });
+    expect(screen.queryByText('Results')).toBeNull();
+    expect(screen.queryByText('1 saved preview resumed for review.')).toBeNull();
+    expect(screen.getByText('Confirmed revision 5')).toBeTruthy();
+
+    await act(async () => { resolveB?.(resumed('candidate_b', lineageB)); });
+    expect(await screen.findByText('Results')).toBeTruthy();
+  });
+
   test('creates a client product photo from the exact source and shows cost first', async () => {
     const onProjectUpdated = jest.fn();
     const createProductPresentation = jest.fn(async () => ({

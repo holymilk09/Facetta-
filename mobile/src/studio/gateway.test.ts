@@ -529,7 +529,10 @@ test('Create, Views, and Present forward typed inputs without model or provider 
 });
 
 test('Views stay temporary, bind to the exact revision, and save only after acceptance', async () => {
-  const feedback: string[] = [];
+  const acceptedProject = project();
+  acceptedProject.derived_assets = [{
+    ...asset('view_asset', 1), capability: 'LINE_ART', parent_asset_id: 'asset_1',
+  }];
   const gateway = createStudioGateway(fakeClient({
     createLineArt: async (projectId, request) => ok({
       status: 'confirmation_required' as const,
@@ -552,11 +555,10 @@ test('Views stay temporary, bind to the exact revision, and save only after acce
       },
       next: 'Confirm the view',
     }, 202),
-    acceptWarningCandidate: async () => ok(project(), 201),
-    recordImageRunFeedback: async (runId, action) => {
-      feedback.push(`${runId}:${action}`);
-      return ok({});
-    },
+    acceptStudioViewCandidate: async () => ok({
+      status: 'accepted' as const, project_id: 'project_1', source_asset_id: 'asset_1',
+      design_version: 1, asset_id: 'view_asset', project: acceptedProject,
+    }, 201),
   }));
 
   const preview = await gateway.previewLineArtView({
@@ -567,14 +569,11 @@ test('Views stay temporary, bind to the exact revision, and save only after acce
   assert.deepEqual(preview.data?.lineage, {
     projectId: 'project_1', sourceAssetId: 'asset_1', sourceDesignVersion: 1,
   });
-  assert.deepEqual(feedback, []);
 
   const accepted = await gateway.acceptLineArtView({
     candidateId: 'candidate_view', createdBy: 'designer_1',
   });
   assert.equal(accepted.data?.project?.active_asset_id, 'asset_1');
-  await new Promise((resolve) => { setTimeout(resolve, 0); });
-  assert.deepEqual(feedback, ['run_view:accepted']);
 });
 
 test('Views fail closed when fidelity checks reject a candidate', async () => {
@@ -603,4 +602,44 @@ test('Views fail closed when fidelity checks reject a candidate', async () => {
   const result = await gateway.acceptLineArtView({ candidateId: 'candidate_fail', createdBy: 'designer_1' });
   assert.equal(result.error?.code, 'VIEW_QUALITY_REJECTED');
   assert.equal(accepted, false);
+});
+
+test('Views resume from durable review state after a fresh gateway instance', async () => {
+  const acceptedProject = project();
+  acceptedProject.derived_assets = [{
+    ...asset('view_resumed_asset', 1), capability: 'LINE_ART', parent_asset_id: 'asset_1',
+  }];
+  const gateway = createStudioGateway(fakeClient({
+    listStudioViewCandidates: async () => ok({ candidates: [{
+      candidate_id: 'candidate_resumed_view', image_run_id: 'run_resumed_view',
+      studio_job_id: 'job_resumed_view', project_id: 'project_1', source_asset_id: 'asset_1',
+      design_version: 1, view: 'front' as const, status: 'reviewing' as const,
+      accepted_asset_id: null, expires_at: '2026-07-14T00:00:00Z',
+      preview_url: 'https://example.test/resumed-view.png',
+      qa: { verdict: 'pass' as const, accepted: true, review_required: false, score: 99,
+        summary: '', failed_checks: [], warnings: [], checks: [] },
+    }] }),
+    listStudioJobs: async () => ok({ jobs: [{
+      job_id: 'job_resumed_view', owner: 'designer_1', action_id: 'views' as const,
+      lane: 'fast_visual' as const, status: 'reviewing' as const, progress: 0.9,
+      active_design_id: 'project_1', source_revision_id: 'asset_1', error_code: null,
+      created_at: '2026-07-13T00:00:00Z', updated_at: '2026-07-13T00:00:01Z',
+      billing: { requested_outputs: 1, credits_per_output: 15, estimated_credits: 15,
+        completed_outputs: 0, charged_outputs: 0, charged_credits: 0, policy: 'accepted outputs only' },
+    }] }),
+    acceptStudioViewCandidate: async () => ok({
+      status: 'accepted' as const, project_id: 'project_1', source_asset_id: 'asset_1',
+      design_version: 1, asset_id: 'view_resumed_asset', project: acceptedProject,
+    }, 201),
+  }));
+  const resumed = await gateway.resumeViews({
+    projectId: 'project_1', sourceAssetId: 'asset_1', sourceDesignVersion: 1,
+  }, 'designer_1');
+  assert.equal(resumed.error, null);
+  assert.equal(resumed.data?.candidateId, 'candidate_resumed_view');
+  const accepted = await gateway.acceptLineArtView({
+    candidateId: 'candidate_resumed_view', createdBy: 'designer_1',
+  });
+  assert.equal(accepted.error, null);
+  assert.equal(accepted.data?.project?.active_asset_id, 'asset_1');
 });

@@ -30,7 +30,8 @@ describe('StudioViewsWorkspace', () => {
       <AuthenticatedImageProvider allowedOrigin="https://test" headers={{ Authorization: 'Bearer first-party-token' }}>
         <StudioViewsWorkspace
           gateway={{
-            previewLineArtView: jest.fn(), acceptLineArtView: jest.fn(), discardLineArtView: jest.fn(),
+            previewLineArtView: jest.fn(), resumeViews: jest.fn(),
+            acceptLineArtView: jest.fn(), discardLineArtView: jest.fn(),
           }}
           lineage={null}
           createdBy="designer"
@@ -94,5 +95,53 @@ describe('StudioViewsWorkspace', () => {
     fireEvent.press(await screen.findByText('Save view'));
     expect(acceptLineArtView).not.toHaveBeenCalled();
     expect(screen.getByText('This view cannot be saved')).toBeTruthy();
+  });
+
+  test('restores a durable temporary view after the workspace remounts', async () => {
+    const resumeViews = jest.fn(async () => ({ data: preview, error: null, status: 200 }));
+    await render(
+      <StudioViewsWorkspace
+        gateway={{
+          resumeViews, previewLineArtView: jest.fn(), acceptLineArtView: jest.fn(),
+          discardLineArtView: jest.fn(),
+        }}
+        lineage={lineage}
+        createdBy="designer"
+        onSaved={jest.fn()}
+      />,
+    );
+    expect(await screen.findByText('Your design is still unchanged.')).toBeTruthy();
+    expect(screen.getByText('A saved view preview was resumed for review.')).toBeTruthy();
+    expect(resumeViews).toHaveBeenCalledWith(lineage, 'designer');
+  });
+
+  test('hides revision A immediately while deferred revision B resumes', async () => {
+    const lineageB = { projectId: 'project_2', sourceAssetId: 'asset_8', sourceDesignVersion: 5 };
+    const previewB = { ...preview, candidateId: 'candidate_b', runId: 'run_b',
+      view: 'side' as const, lineage: lineageB };
+    let resolveB: ((value: any) => void) | null = null;
+    const resumeViews = jest.fn((requested: typeof lineage) => requested.projectId === 'project_1'
+      ? Promise.resolve({ data: preview, error: null, status: 200 })
+      : new Promise((resolve) => { resolveB = resolve; }));
+    const gateway = {
+      resumeViews, previewLineArtView: jest.fn(), acceptLineArtView: jest.fn(),
+      discardLineArtView: jest.fn(),
+    } as any;
+    const rendered = await render(<StudioViewsWorkspace
+      gateway={gateway} lineage={lineage} createdBy="designer" onSaved={jest.fn()}
+    />);
+    expect(await screen.findByText('Your design is still unchanged.')).toBeTruthy();
+
+    await act(async () => {
+      rendered.rerender(<StudioViewsWorkspace
+        gateway={gateway} lineage={lineageB} createdBy="designer" onSaved={jest.fn()}
+      />);
+    });
+    expect(screen.queryByText('Your design is still unchanged.')).toBeNull();
+    expect(screen.queryByText('A saved view preview was resumed for review.')).toBeNull();
+    expect(screen.getByText('Confirmed revision 5')).toBeTruthy();
+
+    await act(async () => { resolveB?.({ data: previewB, error: null, status: 200 }); });
+    expect(await screen.findByLabelText(/Temporary side view/)).toBeTruthy();
   });
 });

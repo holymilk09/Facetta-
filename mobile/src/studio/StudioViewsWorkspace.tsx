@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   Pressable, ScrollView, StyleSheet, Text, View,
 } from 'react-native';
@@ -27,7 +27,8 @@ const VIEWS = [
 type ViewId = typeof VIEWS[number]['id'];
 
 export interface StudioViewsWorkspaceProps {
-  gateway: Pick<StudioGateway, 'previewLineArtView' | 'acceptLineArtView' | 'discardLineArtView'>;
+  gateway: Pick<StudioGateway,
+    'previewLineArtView' | 'resumeViews' | 'acceptLineArtView' | 'discardLineArtView'>;
   lineage: ExactStudioLineage | null;
   createdBy: string;
   onSaved: (project: ProjectDetail) => void;
@@ -42,15 +43,52 @@ export function StudioViewsWorkspace({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const lineageKey = lineage === null ? 'none'
+    : `${lineage.projectId}:${lineage.sourceAssetId}:${lineage.sourceDesignVersion}`;
+  const lineageKeyRef = useRef(lineageKey);
+  lineageKeyRef.current = lineageKey;
+  const [uiLineageKey, setUiLineageKey] = useState(lineageKey);
+  const uiMatchesLineage = uiLineageKey === lineageKey;
+  const visibleNotice = uiMatchesLineage ? notice : null;
+  const visibleError = uiMatchesLineage ? error : null;
+  const previewForLineage = preview !== null && lineage !== null
+    && preview.lineage.projectId === lineage.projectId
+    && preview.lineage.sourceAssetId === lineage.sourceAssetId
+    && preview.lineage.sourceDesignVersion === lineage.sourceDesignVersion
+    ? preview : null;
+
+  useEffect(() => {
+    setUiLineageKey(lineageKey);
+    setPreview(null);
+    setNotice(null);
+    setError(null);
+    setBusy(false);
+    if (lineage === null || typeof gateway.resumeViews !== 'function') return undefined;
+    const requestedLineageKey = lineageKey;
+    let active = true;
+    void gateway.resumeViews(lineage, createdBy).then((result) => {
+      if (!active || lineageKeyRef.current !== requestedLineageKey) return;
+      if (result.error !== null) {
+        setError(designerErrorMessage(result.error, 'views'));
+        return;
+      }
+      if (result.data === null) return;
+      setPreview((current) => current ?? result.data);
+      setNotice((current) => current ?? 'A saved view preview was resumed for review.');
+    });
+    return () => { active = false; };
+  }, [createdBy, gateway, lineageKey]);
 
   const createPreview = async (): Promise<void> => {
     if (lineage === null || busy) return;
+    const requestedLineageKey = lineageKey;
     setBusy(true);
     setError(null);
     setNotice(null);
     const result = await gateway.previewLineArtView({
       ...lineage, createdBy, view,
     });
+    if (lineageKeyRef.current !== requestedLineageKey) return;
     setBusy(false);
     if (result.error !== null) {
       setError(designerErrorMessage(result.error, 'views'));
@@ -60,12 +98,14 @@ export function StudioViewsWorkspace({
   };
 
   const accept = async (): Promise<void> => {
-    if (preview === null || busy || preview.verdict === 'fail') return;
+    if (previewForLineage === null || busy || previewForLineage.verdict === 'fail') return;
+    const requestedLineageKey = lineageKey;
     setBusy(true);
     setError(null);
     const result = await gateway.acceptLineArtView({
-      candidateId: preview.candidateId, createdBy,
+      candidateId: previewForLineage.candidateId, createdBy,
     });
+    if (lineageKeyRef.current !== requestedLineageKey) return;
     setBusy(false);
     if (result.error !== null) {
       setError(designerErrorMessage(result.error, 'views'));
@@ -81,12 +121,14 @@ export function StudioViewsWorkspace({
   };
 
   const discard = async (): Promise<void> => {
-    if (preview === null || busy) return;
+    if (previewForLineage === null || busy) return;
+    const requestedLineageKey = lineageKey;
     setBusy(true);
     setError(null);
     const result = await gateway.discardLineArtView({
-      candidateId: preview.candidateId, createdBy,
+      candidateId: previewForLineage.candidateId, createdBy,
     });
+    if (lineageKeyRef.current !== requestedLineageKey) return;
     setBusy(false);
     if (result.error !== null) {
       setError(designerErrorMessage(result.error, 'views'));
@@ -105,28 +147,28 @@ export function StudioViewsWorkspace({
     );
   }
 
-  if (preview !== null) {
-    const rejected = preview.verdict === 'fail';
+  if (previewForLineage !== null) {
+    const rejected = previewForLineage.verdict === 'fail';
     return (
       <ScrollView contentContainerStyle={styles.workspace}>
         <Text style={styles.eyebrow}>REVIEW VIEW</Text>
         <Text style={styles.title}>Your design is still unchanged.</Text>
         <Text style={styles.body}>
-          This temporary {VIEWS.find((item) => item.id === preview.view)?.label.toLowerCase()} view came from
+          This temporary {VIEWS.find((item) => item.id === previewForLineage.view)?.label.toLowerCase()} view came from
           {' '}the selected source revision. Save keeps it beside the design as a derived view;
           it does not replace the active revision.
         </Text>
         <Image
-          accessibilityLabel={`Temporary ${preview.view} view`}
-          source={{ uri: preview.previewUrl }}
+          accessibilityLabel={`Temporary ${previewForLineage.view} view`}
+          source={{ uri: previewForLineage.previewUrl }}
           imageRequestHeaders={imageRequestHeaders}
           style={styles.preview}
         />
         <View style={styles.reviewCard}>
           <Text style={styles.reviewTitle}>{rejected ? 'This view cannot be saved' : 'Ready for your review'}</Text>
-          {preview.checks.length === 0 ? (
+          {previewForLineage.checks.length === 0 ? (
             <Text style={styles.checkDetail}>No individual check details were returned.</Text>
-          ) : preview.checks.map((check) => (
+          ) : previewForLineage.checks.map((check) => (
             <View key={check.id} style={styles.checkRow}>
               <Text style={[styles.checkVerdict, check.verdict === 'reject' && styles.reject]}>
                 {designerReviewState(check.verdict)}
@@ -138,7 +180,8 @@ export function StudioViewsWorkspace({
             </View>
           ))}
         </View>
-        {error !== null && <Notice kind="error" text={error} />}
+        {visibleNotice !== null && <Notice kind="ok" text={visibleNotice} />}
+        {visibleError !== null && <Notice kind="error" text={visibleError} />}
         <View style={styles.actions}>
           <Button title={busy ? 'Working…' : 'Discard'} kind="ghost" disabled={busy} onPress={() => { void discard(); }} />
           <Button title={busy ? 'Working…' : 'Save view'} disabled={busy || rejected} onPress={() => { void accept(); }} />
@@ -172,8 +215,8 @@ export function StudioViewsWorkspace({
         <Text style={styles.sourceLabel}>Exact source</Text>
         <Text style={styles.sourceValue}>Confirmed revision {lineage.sourceDesignVersion}</Text>
       </View>
-      {notice !== null && <Notice kind="ok" text={notice} />}
-      {error !== null && <Notice kind="error" text={error} />}
+      {visibleNotice !== null && <Notice kind="ok" text={visibleNotice} />}
+      {visibleError !== null && <Notice kind="error" text={visibleError} />}
       <Text style={styles.creditEstimate}>
         1 requested output × {VIEWS_CREDITS_PER_OUTPUT} credits = estimated {VIEWS_CREDITS_PER_OUTPUT} credits
       </Text>
