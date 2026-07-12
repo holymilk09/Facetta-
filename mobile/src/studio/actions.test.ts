@@ -2,7 +2,7 @@
 
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { getVisibleStudioActions } from './actions';
+import { getStudioAction, getStudioRailActions, getVisibleStudioActions } from './actions';
 import {
   decidePreviewCandidate, PreviewCandidate, StudioJob, transitionStudioJob,
 } from './contracts';
@@ -10,6 +10,7 @@ import {
 const emptyContext = {
   activeDesignId: null,
   activeRevisionId: null,
+  hasExactSpecification: false,
   factoryEnabled: false,
   factoryEligible: false,
 };
@@ -30,12 +31,45 @@ test('Factory stays inside More and requires explicit eligibility', () => {
     ...emptyContext,
     activeDesignId: 'dsn_1',
     activeRevisionId: 'rev_1',
+    hasExactSpecification: true,
     factoryEnabled: true,
   };
   assert.deepEqual(getVisibleStudioActions(active, 'more'), []);
   assert.deepEqual(
     getVisibleStudioActions({ ...active, factoryEligible: true }, 'more').map((action) => action.id),
     ['factory'],
+  );
+});
+
+test('the rail hides an empty More menu and exposes it only with an eligible destination', () => {
+  const active = {
+    ...emptyContext,
+    activeDesignId: 'dsn_1',
+    activeRevisionId: 'rev_1',
+    hasExactSpecification: true,
+    factoryEnabled: true,
+  };
+  assert.equal(getStudioRailActions(active).some((action) => action.id === 'more'), false);
+  assert.equal(getStudioRailActions({ ...active, factoryEligible: true }).at(-1)?.id, 'more');
+});
+
+test('pre-spec directions fail closed instead of exposing trusted-spec actions', () => {
+  const selectedCreativeDirection = {
+    ...emptyContext,
+    activeDesignId: 'project_1',
+    activeRevisionId: 'creative_1',
+  };
+  assert.deepEqual(
+    getStudioRailActions(selectedCreativeDirection).map((action) => action.id),
+    ['create', 'vary'],
+  );
+});
+
+test('the current branch action is transparent and does not charge for generation', () => {
+  const branch = getStudioAction('vary');
+  assert.deepEqual(
+    [branch.label, branch.creditEstimate, branch.createsJob, branch.authority],
+    ['Save as a variation', 0, false, 'design_record'],
   );
 });
 

@@ -79,13 +79,23 @@ export function StudioCreateWorkspace({
   const unsupportedReferences = references.filter((reference) => reference.role !== 'master_geometry');
 
   const requestReference = async (role: CreateReferenceRole) => {
-    if (onRequestReference === undefined) return;
-    const reference = await onRequestReference(role);
-    if (reference === null) return;
-    setReferences((current) => [
-      ...current.filter((item) => item.role !== role),
-      { ...reference, role },
-    ]);
+    setError(null);
+    if (onRequestReference === undefined) {
+      setError('Image selection is unavailable here. You can continue with a sentence or try again on a supported device.');
+      return;
+    }
+    try {
+      const reference = await onRequestReference(role);
+      if (reference === null) return;
+      setReferences((current) => [
+        ...current.filter((item) => item.role !== role),
+        { ...reference, role },
+      ]);
+    } catch (cause) {
+      setError(cause instanceof Error
+        ? cause.message
+        : 'The selected image could not be added. Choose another file and try again.');
+    }
   };
 
   const create = async () => {

@@ -6,6 +6,10 @@ const activeDesign = (context: StudioActionContext) => (
   Boolean(context.activeDesignId) && Boolean(context.activeRevisionId)
 );
 
+const exactDesign = (context: StudioActionContext) => (
+  activeDesign(context) && context.hasExactSpecification
+);
+
 export const STUDIO_ACTIONS: readonly StudioActionDefinition[] = [
   {
     id: 'create',
@@ -29,17 +33,17 @@ export const STUDIO_ACTIONS: readonly StudioActionDefinition[] = [
   },
   {
     id: 'vary',
-    label: 'Create a variation',
-    shortLabel: 'Vary',
-    description: 'Branch from the active revision without replacing it.',
-    lane: 'fast_visual',
-    referenceRoles: ['master_geometry', 'material_style', 'brand_direction'],
-    fields: [{ id: 'direction', label: 'Variation direction', kind: 'text', required: true }],
+    label: 'Save as a variation',
+    shortLabel: 'Branch',
+    description: 'Copy the exact active revision into a named sibling without replacing it.',
+    lane: 'instant',
+    referenceRoles: ['master_geometry'],
+    fields: [{ id: 'direction', label: 'Variation name', kind: 'text', required: true }],
     outputType: 'variation_set',
-    creditEstimate: 18,
-    authority: 'visual_preview',
+    creditEstimate: 0,
+    authority: 'design_record',
     requiresActiveDesign: true,
-    createsJob: true,
+    createsJob: false,
     placement: 'primary',
     isAvailable: activeDesign,
   },
@@ -60,7 +64,7 @@ export const STUDIO_ACTIONS: readonly StudioActionDefinition[] = [
     requiresActiveDesign: true,
     createsJob: true,
     placement: 'primary',
-    isAvailable: activeDesign,
+    isAvailable: exactDesign,
   },
   {
     id: 'views',
@@ -76,15 +80,15 @@ export const STUDIO_ACTIONS: readonly StudioActionDefinition[] = [
     requiresActiveDesign: true,
     createsJob: true,
     placement: 'primary',
-    isAvailable: activeDesign,
+    isAvailable: exactDesign,
   },
   {
     id: 'present',
     label: 'Present this design',
     shortLabel: 'Present',
-    description: 'Prepare client, model, scene, and commerce-ready imagery.',
+    description: 'Prepare client beauty views or a reviewable marketing image set.',
     lane: 'fast_visual',
-    referenceRoles: ['master_geometry', 'brand_direction', 'model_reference', 'scene_reference'],
+    referenceRoles: ['master_geometry', 'brand_direction'],
     fields: [
       { id: 'destination', label: 'Presentation destination', kind: 'select', required: true },
       { id: 'brand', label: 'Brand direction', kind: 'reference', required: false, referenceRole: 'brand_direction' },
@@ -95,7 +99,7 @@ export const STUDIO_ACTIONS: readonly StudioActionDefinition[] = [
     requiresActiveDesign: true,
     createsJob: true,
     placement: 'primary',
-    isAvailable: activeDesign,
+    isAvailable: exactDesign,
   },
   {
     id: 'more',
@@ -128,7 +132,7 @@ export const STUDIO_ACTIONS: readonly StudioActionDefinition[] = [
     createsJob: true,
     placement: 'more',
     isAvailable: (context) => (
-      activeDesign(context) && context.factoryEnabled && context.factoryEligible
+      exactDesign(context) && context.factoryEnabled && context.factoryEligible
     ),
   },
 ] as const;
@@ -146,4 +150,14 @@ export function getVisibleStudioActions(
   return STUDIO_ACTIONS.filter(
     (action) => action.placement === placement && action.isAvailable(context),
   );
+}
+
+/** Keep the contextual rail honest: More is absent until it has a destination. */
+export function getStudioRailActions(
+  context: StudioActionContext,
+): readonly StudioActionDefinition[] {
+  const moreAvailable = getVisibleStudioActions(context, 'more').length > 0;
+  return getVisibleStudioActions(context).filter((action) => (
+    action.id !== 'more' || moreAvailable
+  ));
 }

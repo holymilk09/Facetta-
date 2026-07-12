@@ -3,9 +3,8 @@ import { Animated, Easing, Image, Pressable, StyleSheet, Text, View } from 'reac
 import { MotionBackground } from './MotionBackground';
 import { radius, shadows, theme } from './theme';
 
-// Real screenshots of the running app (captured live via Playwright against a
-// seeded local backend — see the PR description for how) plus one Grok
-// photoreal hero for the render step. Not mockups: the actual UI, cropped.
+// Product images illustrating the Studio journey. The tour deliberately avoids
+// provider names and never promotes a generated image to production authority.
 const promptShot = require('../assets/tour-prompt.jpg');
 const adjustShot = require('../assets/tour-adjust.jpg');
 const dimsShot = require('../assets/tour-dims.jpg');
@@ -16,49 +15,49 @@ const libraryShot = require('../assets/tour-library.jpg');
 const SLIDE_MS = 5200;
 const TICK_MS = 60;
 
-const SLIDES = [
+export const WORKFLOW_SLIDES = [
   {
-    kicker: 'Prompt',
-    title: "Tell the agent what\nyou're picturing",
-    body: 'Describe the piece in plain language — carat, stone, metal, vibe. Grok creates the concept; Facetta turns it into a structured, physically validated spec.',
+    kicker: 'Create',
+    title: 'Start with what\nyou already have',
+    body: 'Use a sentence, drawing, photograph, render, or master-geometry reference. Ask for one to four visual directions without filling out a production form.',
     image: promptShot,
   },
   {
-    kicker: 'Refine',
-    title: 'Adjust every detail,\nprecisely',
-    body: "Fine-tune stone, cut, setting, and metal from a jeweler's own controlled vocabulary — never a free-text guess, always the trade language your factory expects.",
+    kicker: 'Choose',
+    title: 'Keep the direction\nthat feels right',
+    body: 'Compare the candidates and save the one you want to develop. Unchosen directions remain available without becoming the active design.',
     image: adjustShot,
   },
   {
-    kicker: 'Dimensions',
-    title: 'Estimated millimeters,\nor your own',
-    body: 'Let carat and cut derive the millimeters automatically, or switch to Pro mode and dial in exact length, width, and depth — the validator keeps every number physically possible.',
+    kicker: 'Refine',
+    title: 'Change one thing.\nKeep the rest.',
+    body: 'On revisions with confirmed design facts, target a component, mark the image, or describe a change in plain language while protecting unrelated parts.',
     image: dimsShot,
   },
   {
-    kicker: 'Production',
-    title: 'A factory sheet,\nevery time',
-    body: 'One tap compiles an annotated technical sheet with every dimension lettered and traceable — ready to download and send straight to the workshop.',
+    kicker: 'Review',
+    title: 'Preview before\nyou apply',
+    body: 'Review every proposed change before acceptance. Apply appends a revision; discard leaves the saved design untouched.',
     image: sheetShot,
   },
   {
-    kicker: 'Presentation',
-    title: 'Stunning renders,\non demand',
-    body: 'See the piece the way your client will — photoreal, editorial, on demand — before a single stone is set.',
+    kicker: 'Preserve',
+    title: 'Every direction\nstays organized',
+    body: 'Design families contain variations, and every variation keeps an immutable revision history you can compare or restore without overwriting.',
     image: renderShot,
   },
   {
-    kicker: 'Library',
-    title: 'Every piece,\norganized',
-    body: 'Every save lives in your library — grouped by client, filtered by type — with every version on the record, forever.',
+    kicker: 'Choose the destination',
+    title: 'Present it now.\nPrepare it later.',
+    body: 'Keep a revision in your library or create client and marketing material from it. Factory review is optional, eligibility-gated, and never a production guarantee.',
     image: libraryShot,
   },
-];
+] as const;
 
 function ProgressBar({ index, elapsed, onJump }: { index: number; elapsed: number; onJump: (i: number) => void }) {
   return (
     <View style={styles.progressRow}>
-      {SLIDES.map((_, i) => {
+      {WORKFLOW_SLIDES.map((_, i) => {
         const pct = i < index ? 100 : i > index ? 0 : Math.min(100, (elapsed / SLIDE_MS) * 100);
         return (
           <Pressable key={i} style={styles.progressTrack} onPress={() => onJump(i)}>
@@ -98,7 +97,7 @@ export function WorkflowShowcase({ onDone }: { onDone: () => void }) {
   const [elapsed, setElapsed] = useState(0);
   const [paused, setPaused] = useState(false);
   const [finished, setFinished] = useState(false);
-  const last = index === SLIDES.length - 1;
+  const last = index === WORKFLOW_SLIDES.length - 1;
 
   useEffect(() => {
     setElapsed(0);
@@ -132,7 +131,7 @@ export function WorkflowShowcase({ onDone }: { onDone: () => void }) {
     setIndex((i) => i - 1);
   };
 
-  const { kicker, title, body, image } = SLIDES[index];
+  const { kicker, title, body, image } = WORKFLOW_SLIDES[index];
 
   return (
     <View style={styles.root}>
@@ -186,7 +185,7 @@ export function WorkflowShowcase({ onDone }: { onDone: () => void }) {
           </Pressable>
         ) : (
           <Text style={styles.stepCount}>
-            {index + 1} / {SLIDES.length}
+            {index + 1} / {WORKFLOW_SLIDES.length}
           </Text>
         )}
       </View>

@@ -41,6 +41,7 @@ export type StudioAuthority = 'visual_preview' | 'design_record' | 'production_r
 export interface StudioActionContext {
   activeDesignId: string | null;
   activeRevisionId: string | null;
+  hasExactSpecification: boolean;
   factoryEnabled: boolean;
   factoryEligible: boolean;
 }

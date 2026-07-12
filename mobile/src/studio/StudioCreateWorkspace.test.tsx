@@ -155,3 +155,40 @@ test('uses only the supported master-geometry drawing input and labels unsupport
   }));
   expect(createFromPrompt).not.toHaveBeenCalled();
 });
+
+test('surfaces picker failures instead of leaving Add as a silent dead end', async () => {
+  const onRequestReference = jest.fn(async () => {
+    throw new Error('Choose a PNG, JPEG, or WebP image. Other file types are not supported.');
+  });
+  await render(React.createElement(StudioCreateWorkspace, {
+    gateway: {
+      createFromPrompt: jest.fn(),
+      createFromDrawing: jest.fn(),
+      selectCreativeDirection: jest.fn(),
+    } as unknown as CreateGateway,
+    owner: 'designer_1',
+    onRequestReference,
+    onSave: jest.fn(),
+  }));
+
+  await fireEvent.press(screen.getAllByText('Add')[0]);
+
+  expect(await screen.findByText(/Choose a PNG, JPEG, or WebP image/)).toBeTruthy();
+  expect(onRequestReference).toHaveBeenCalledWith('master_geometry');
+});
+
+test('explains when image selection is unavailable instead of silently ignoring Add', async () => {
+  await render(React.createElement(StudioCreateWorkspace, {
+    gateway: {
+      createFromPrompt: jest.fn(),
+      createFromDrawing: jest.fn(),
+      selectCreativeDirection: jest.fn(),
+    } as unknown as CreateGateway,
+    owner: 'designer_1',
+    onSave: jest.fn(),
+  }));
+
+  await fireEvent.press(screen.getAllByText('Add')[0]);
+
+  expect(await screen.findByText(/Image selection is unavailable here/)).toBeTruthy();
+});

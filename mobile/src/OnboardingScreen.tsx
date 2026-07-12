@@ -6,8 +6,8 @@ import {
 import { StudioCollageBackground } from './StudioCollageBackground';
 import { radius, shadows, sketchGold, sketchInk, theme } from './theme';
 
-// Grok-rendered vignettes (see facetta.render.generate_image) — photoreal
-// jewelry over the pencil construction lines of a factory sheet.
+// Product vignettes used to introduce the designer journey. The UI copy must
+// stay provider-neutral and must not imply production authority.
 const ringRender = require('../assets/onboarding-ring.jpg');
 const gemRender = require('../assets/onboarding-gem.jpg');
 
@@ -53,17 +53,19 @@ function IllustrationTruth() {
   );
 }
 
-function IllustrationSheet() {
+function IllustrationLibrary() {
   return (
     <View style={styles.vignette}>
       <Float duration={9000} drift={6} tilt={2}>
-        <View style={styles.sheet}>
-          <View style={styles.sheetRule} />
-          <View style={[styles.sheetRule, { width: '55%' }]} />
-          <View style={styles.sheetBody}>
+        <View style={styles.libraryStack}>
+          <View style={styles.libraryCardBack} />
+          <View style={styles.libraryCard}>
             <RingSketch size={54} color={sketchInk(0.5)} stroke={1.5} />
+            <View style={styles.libraryCopy}>
+              <View style={styles.sheetRule} />
+              <View style={[styles.sheetRule, { width: '65%' }]} />
+            </View>
           </View>
-          <View style={[styles.sheetRule, { width: '70%' }]} />
         </View>
       </Float>
       <Pulse style={{ position: 'absolute', top: 20, left: 32 }} duration={3000} delay={400}>
@@ -73,26 +75,26 @@ function IllustrationSheet() {
   );
 }
 
-const STEPS = [
+export const ONBOARDING_STEPS = [
   {
-    kicker: 'Imagine',
-    title: 'Begin with an idea',
-    body: 'Describe the piece in your own words or begin from visual inspiration. Facetta turns creative direction into a jewelry design you can refine.',
+    kicker: 'Create',
+    title: 'Begin from your idea',
+    body: 'Start with a sentence, drawing, photograph, render, or master-geometry reference. Facetta gives you one to four visual directions to consider.',
     illustration: IllustrationDescribe,
   },
   {
-    kicker: 'Refine',
-    title: 'Shape every detail',
-    body: 'Explore stones, cuts, settings, metals, and proportions with AI guidance — while every choice remains structured, editable, and yours.',
+    kicker: 'Choose & refine',
+    title: 'Choose before you refine',
+    body: 'Choose and preserve a direction first. Precision refinement appears for revisions with confirmed design facts, and every change stays a preview until you apply it.',
     illustration: IllustrationTruth,
   },
   {
-    kicker: 'Make',
-    title: 'From vision to workshop',
-    body: 'Move from a beautiful concept to an exact, dimensioned technical sheet built from the same design — ready to share with your factory.',
-    illustration: IllustrationSheet,
+    kicker: 'Preserve',
+    title: 'Keep every useful direction',
+    body: 'Organize design families, variations, and immutable revisions. Prepare client or marketing material anytime; factory review stays optional and appears only when a revision is eligible.',
+    illustration: IllustrationLibrary,
   },
-];
+] as const;
 
 /** Fades + slides its children in on mount; re-keyed per step for transitions. */
 function StepReveal({ children }: { children: React.ReactNode }) {
@@ -129,8 +131,8 @@ function Dots({ count, active }: { count: number; active: number }) {
 
 export function OnboardingScreen({ onDone }: { onDone: () => void }) {
   const [step, setStep] = useState(0);
-  const last = step === STEPS.length - 1;
-  const { kicker, title, body, illustration: Illustration } = STEPS[step];
+  const last = step === ONBOARDING_STEPS.length - 1;
+  const { kicker, title, body, illustration: Illustration } = ONBOARDING_STEPS[step];
 
   return (
     <View style={styles.root}>
@@ -157,7 +159,7 @@ export function OnboardingScreen({ onDone }: { onDone: () => void }) {
       </StepReveal>
 
       <View style={styles.footer}>
-        <Dots count={STEPS.length} active={step} />
+        <Dots count={ONBOARDING_STEPS.length} active={step} />
         <Pressable
           style={[styles.cta, shadows.soft]}
           onPress={() => (last ? onDone() : setStep(step + 1))}>
@@ -249,18 +251,19 @@ const styles = StyleSheet.create({
   dimensionLine: { width: 30, height: 1, backgroundColor: sketchInk(0.4) },
   dimensionTick: { width: 1, height: 10, backgroundColor: sketchInk(0.4) },
   dimensionLabel: { fontSize: 11, color: theme.ink, fontFamily: theme.serif },
-  sheet: {
-    width: 130,
-    height: 160,
-    borderRadius: radius.sm,
-    borderWidth: 1.5,
-    borderColor: sketchInk(0.45),
-    backgroundColor: theme.card,
-    padding: 12,
-    gap: 8,
+  libraryStack: { width: 166, height: 150, justifyContent: 'center', alignItems: 'center' },
+  libraryCardBack: {
+    position: 'absolute', width: 138, height: 124, borderRadius: radius.md,
+    backgroundColor: theme.goldSoft, borderWidth: 1, borderColor: theme.line,
+    transform: [{ translateX: 11 }, { translateY: -9 }, { rotate: '4deg' }],
   },
+  libraryCard: {
+    width: 148, height: 132, borderRadius: radius.md, backgroundColor: 'rgba(255,255,255,0.96)',
+    borderWidth: 1, borderColor: theme.line, padding: 14, alignItems: 'center',
+    justifyContent: 'center', gap: 11,
+  },
+  libraryCopy: { width: '100%', gap: 6 },
   sheetRule: { height: 2, width: '80%', borderRadius: 1, backgroundColor: sketchInk(0.25) },
-  sheetBody: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   versionCard: {
     position: 'absolute',
     width: 110,

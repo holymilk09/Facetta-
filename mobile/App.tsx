@@ -8,14 +8,15 @@ import { createApi, DEFAULT_API_URL } from './src/api';
 import {
   clearSession, hasOnboarded, loadSession, markOnboarded, saveSession, Session,
 } from './src/auth';
-import { BuilderScreen, EditingTarget } from './src/BuilderScreen';
+import type { EditingTarget } from './src/BuilderScreen';
 import { LoginScreen } from './src/LoginScreen';
 import { OnboardingScreen } from './src/OnboardingScreen';
 import { ShareScreen } from './src/ShareScreen';
-import { getStudioAction, getVisibleStudioActions } from './src/studio/actions';
+import { getStudioAction, getStudioRailActions, getVisibleStudioActions } from './src/studio/actions';
 import { StudioActionContext, StudioActionId } from './src/studio/contracts';
 import { StudioCollectionsWorkspace } from './src/studio/StudioCollectionsWorkspace';
 import { StudioCreateWorkspace } from './src/studio/StudioCreateWorkspace';
+import { pickExpoStudioCreateReference } from './src/studio/expoReferencePicker';
 import { StudioRefineWorkspace } from './src/studio/StudioRefineWorkspace';
 import { StudioViewsWorkspace } from './src/studio/StudioViewsWorkspace';
 import { StudioPresentWorkspace } from './src/studio/StudioPresentWorkspace';
@@ -79,12 +80,10 @@ export default function App() {
   const [apiUrl, setApiUrl] = useState(DEFAULT_API_URL);
   const [designer, setDesigner] = useState(session?.designerId ?? 'usr_ana');
   const [editing, setEditing] = useState<EditingTarget | null>(null);
-  const [initialSpec, setInitialSpec] = useState<any | null>(null);
   const [focusDesignId, setFocusDesignId] = useState<string | null>(null);
   const [shareToken, setShareToken] = useState<string | null>(null);
   const [showUtilityMenu, setShowUtilityMenu] = useState(false);
   const [showDevSettings, setShowDevSettings] = useState(false);
-  const [advancedSpecifications, setAdvancedSpecifications] = useState(false);
   const [studioProject, setStudioProject] = useState<ProjectDetail | null>(null);
   const [selectedCreativeAssetId, setSelectedCreativeAssetId] = useState<string | null>(null);
 
@@ -116,13 +115,14 @@ export default function App() {
     activeDesignId,
     activeRevisionId: studioProject?.active_asset_id ?? selectedCreativeAssetId
       ?? (editing ? `${editing.designId}:v${editing.version}` : null),
+    hasExactSpecification: exactStudioLineage !== null,
     // Factory promotion is deliberately unavailable until the API supplies both
     // an enablement flag and an explicit eligibility decision for this revision.
     factoryEnabled: false,
     factoryEligible: false,
-  }), [activeDesignId, editing, selectedCreativeAssetId, studioProject]);
+  }), [activeDesignId, editing, exactStudioLineage, selectedCreativeAssetId, studioProject]);
   const hasActiveRevision = Boolean(actionContext.activeDesignId && actionContext.activeRevisionId);
-  const studioActions = getVisibleStudioActions(actionContext);
+  const studioActions = getStudioRailActions(actionContext);
   const moreActions = getVisibleStudioActions(actionContext, 'more');
   const isStudioHome = tab === 'studio' && studioView === 'home';
 
@@ -132,7 +132,6 @@ export default function App() {
       return;
     }
     setSelectedActionId(actionId);
-    setAdvancedSpecifications(false);
     setShowMoreActions(false);
     setStudioView('action');
     setTab('studio');
@@ -206,20 +205,11 @@ export default function App() {
       {showUtilityMenu && (
         <View style={[styles.utilityMenu, shadows.lifted]}>
           {session && <Text style={styles.sessionEmail}>{session.email}</Text>}
-          <Pressable onPress={() => setShowDevSettings(!showDevSettings)} style={styles.utilityRow}>
-            <Text style={styles.utilityRowText}>Connection settings</Text>
-          </Pressable>
-          <Pressable
-            style={styles.utilityRow}
-            onPress={() => {
-              setAdvancedSpecifications(true);
-              setSelectedActionId('create');
-              setStudioView('action');
-              setTab('studio');
-              setShowUtilityMenu(false);
-            }}>
-            <Text style={styles.utilityRowText}>Advanced Specifications</Text>
-          </Pressable>
+          {__DEV__ && (
+            <Pressable onPress={() => setShowDevSettings(!showDevSettings)} style={styles.utilityRow}>
+              <Text style={styles.utilityRowText}>Developer connection</Text>
+            </Pressable>
+          )}
           <Pressable
             style={styles.utilityRow}
             onPress={() => {
@@ -231,7 +221,7 @@ export default function App() {
           </Pressable>
         </View>
       )}
-      {showDevSettings && (
+      {__DEV__ && showDevSettings && (
         <View style={styles.settings}>
           <TextInput
             style={styles.settingsInput}
@@ -274,14 +264,12 @@ export default function App() {
           </ScrollView>
           {showMoreActions && (
             <View style={[styles.moreMenu, shadows.lifted]}>
-              {moreActions.length > 0 ? moreActions.map((action) => (
+              {moreActions.map((action) => (
                 <Pressable key={action.id} style={styles.moreMenuRow} onPress={() => openStudioAction(action.id)}>
                   <Text style={styles.moreMenuTitle}>{action.shortLabel}</Text>
                   <Text style={styles.moreMenuBody}>{action.description}</Text>
                 </Pressable>
-              )) : (
-                <Text style={styles.moreMenuEmpty}>Optional destinations appear when this revision is eligible.</Text>
-              )}
+              ))}
             </View>
           )}
         </View>
@@ -315,30 +303,36 @@ export default function App() {
             <Text style={styles.dashboardSectionMeta}>POWERED BY YOUR DESIGN</Text>
           </View>
           <View style={styles.studioGrid}>
-            <StudioCard
-              image={cuffImage}
-              eyebrow="SETTING VARIATIONS"
-              title="Explore new directions"
-              body="Keep the idea while changing scale, materials, links, charms, or silhouette."
-              accent="#8de2c2"
-              onPress={() => hasActiveRevision ? openStudioAction('vary') : openStudioAction('create')}
-            />
-            <StudioCard
-              image={modelCommerceImage}
-              eyebrow="MODEL & COMMERCE"
-              title="Show it in the world"
-              body="Model try-on, scene swaps, product heroes, and campaign-ready e-commerce imagery."
-              accent="#a9c8ff"
-              onPress={() => hasActiveRevision ? openStudioAction('present') : openStudioAction('create')}
-            />
-            <StudioCard
-              image={precisionImage}
-              eyebrow="PRECISION EDIT"
-              title="Refine the design"
-              body="Mark up a region, change an angle, or generate controlled variations."
-              accent="#ff9eb5"
-              onPress={() => hasActiveRevision ? openStudioAction('refine') : openStudioAction('create')}
-            />
+            {hasActiveRevision && (
+              <StudioCard
+                image={cuffImage}
+                eyebrow="SETTING VARIATIONS"
+                title="Preserve a new direction"
+                body="Copy this exact revision into a named sibling before you refine it."
+                accent="#8de2c2"
+                onPress={() => openStudioAction('vary')}
+              />
+            )}
+            {exactStudioLineage !== null && (
+              <StudioCard
+                image={modelCommerceImage}
+                eyebrow="CLIENT & MARKETING"
+                title="Prepare presentation imagery"
+                body="Create client-ready beauty views or a reviewable marketing image set from the exact revision."
+                accent="#a9c8ff"
+                onPress={() => openStudioAction('present')}
+              />
+            )}
+            {exactStudioLineage !== null && (
+              <StudioCard
+                image={precisionImage}
+                eyebrow="PRECISION EDIT"
+                title="Refine the design"
+                body="Select a component, describe a change, or mark the exact region to protect the rest."
+                accent="#ff9eb5"
+                onPress={() => openStudioAction('refine')}
+              />
+            )}
             <StudioCard
               image={collectionImage}
               eyebrow="COLLECTIONS"
@@ -349,14 +343,6 @@ export default function App() {
             />
           </View>
 
-          <View style={styles.capabilityStrip}>
-            <Text style={styles.capabilityStripTitle}>More in Facetta</Text>
-            <View style={styles.capabilityChips}>
-              {['Scene swap', 'Model try-on', 'E-commerce pack'].map((item) => (
-                <View key={item} style={styles.capabilityChip}><Text style={styles.capabilityChipText}>{item}</Text></View>
-              ))}
-            </View>
-          </View>
         </ScrollView>
       )}
 
@@ -364,33 +350,18 @@ export default function App() {
         <View style={styles.actionWorkspace}>
           <View style={styles.actionContextBanner}>
             <View style={styles.actionContextCopy}>
-              <Text style={styles.actionContextEyebrow}>
-                {getStudioAction(selectedActionId).lane?.replace('_', ' ').toUpperCase() ?? 'STUDIO'}
-              </Text>
+              <Text style={styles.actionContextEyebrow}>STUDIO</Text>
               <Text style={styles.actionContextBody}>{getStudioAction(selectedActionId).description}</Text>
             </View>
             <Pressable onPress={() => setStudioView('home')}>
               <Text style={styles.actionContextClose}>Close</Text>
             </Pressable>
           </View>
-          {advancedSpecifications ? (
-            <BuilderScreen
-              api={api}
-              designer={designer}
-              editing={editing}
-              initialSpec={initialSpec}
-              isWide={isWide}
-              onSaved={(designId) => {
-                setEditing(null);
-                setInitialSpec(null);
-                setFocusDesignId(designId);
-                setTab('collections');
-              }}
-            />
-          ) : selectedActionId === 'create' ? (
+          {selectedActionId === 'create' ? (
             <StudioCreateWorkspace
               gateway={studioGateway}
               owner={designer}
+              onRequestReference={pickExpoStudioCreateReference}
               onSave={(selection) => {
                 setStudioProject(selection.project);
                 setSelectedCreativeAssetId(selection.selectedAssetId);
