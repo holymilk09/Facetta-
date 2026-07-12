@@ -6,6 +6,9 @@ import { getStudioAction, getStudioRailActions, getVisibleStudioActions } from '
 import {
   decidePreviewCandidate, PreviewCandidate, StudioJob, transitionStudioJob,
 } from './contracts';
+import {
+  STUDIO_CREATE_REFERENCE_CONTROLS, STUDIO_PRESENT_CONTROLS,
+} from './workspaceControls';
 
 const emptyContext = {
   activeDesignId: null,
@@ -90,6 +93,35 @@ test('the current branch action is transparent and does not charge for generatio
     [branch.label, branch.creditEstimate, branch.createsJob, branch.authority],
     ['Save as a variation', 0, false, 'design_record'],
   );
+});
+
+test('action schemas match the controls rendered by Create and Present', () => {
+  const create = getStudioAction('create');
+  const createReferences = create.fields.filter((field) => field.kind === 'reference');
+  assert.deepEqual(
+    createReferences.map((field) => ({ id: field.id, role: field.referenceRole })),
+    STUDIO_CREATE_REFERENCE_CONTROLS.map((control) => ({
+      id: control.fieldId, role: control.role,
+    })),
+  );
+  assert.deepEqual(create.referenceRoles, STUDIO_CREATE_REFERENCE_CONTROLS.map(({ role }) => role));
+
+  const present = getStudioAction('present');
+  assert.deepEqual(
+    present.fields.map(({ id, label }) => ({ id, label })),
+    [
+      {
+        id: STUDIO_PRESENT_CONTROLS.destination.fieldId,
+        label: 'Presentation destination',
+      },
+      {
+        id: STUDIO_PRESENT_CONTROLS.direction.fieldId,
+        label: STUDIO_PRESENT_CONTROLS.direction.label,
+      },
+    ],
+  );
+  assert.equal(present.fields.some((field) => field.kind === 'reference'), false);
+  assert.deepEqual(present.referenceRoles, ['master_geometry']);
 });
 
 test('StudioJob lifecycle rejects terminal-state mutation', () => {

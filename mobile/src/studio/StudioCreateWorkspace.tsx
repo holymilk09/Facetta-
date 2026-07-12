@@ -5,16 +5,19 @@ import {
 import { AuthenticatedImage as Image } from '../AuthenticatedImage';
 
 import type { StudioGateway } from './gateway';
-import type { ReferenceRole } from './contracts';
 import type { AssetSummary, ProjectDetail } from '../trusted/types';
 import { radius, theme } from '../theme';
 import { designerErrorMessage } from './designerErrorMessage';
 import { getStudioAction } from './actions';
+import {
+  STUDIO_CREATE_REFERENCE_CONTROLS, type CreateReferenceRole,
+} from './workspaceControls';
+
+export { STUDIO_CREATE_REFERENCE_CONTROLS } from './workspaceControls';
+export type { CreateReferenceRole } from './workspaceControls';
 
 const CREATE_CREDITS_PER_OUTPUT = getStudioAction('create').creditEstimate ?? 0;
 
-export type CreateReferenceRole = Extract<ReferenceRole,
-  'master_geometry' | 'material_style' | 'construction_detail' | 'brand_direction'>;
 type SecondaryCreateReferenceRole = Exclude<CreateReferenceRole, 'master_geometry'>;
 
 export interface StudioCreateReference {
@@ -45,15 +48,8 @@ export interface StudioCreateWorkspaceProps {
   onSave: (selection: StudioCreateSelection) => void;
 }
 
-const ROLES: readonly { role: CreateReferenceRole; label: string; help: string }[] = [
-  { role: 'master_geometry', label: 'Master geometry', help: 'The source design whose visible form must be preserved.' },
-  { role: 'material_style', label: 'Material & style', help: 'Surface, color, and finish only—not jewelry geometry.' },
-  { role: 'construction_detail', label: 'Construction detail', help: 'Visual guidance for one detail, not a confirmed production fact.' },
-  { role: 'brand_direction', label: 'Brand direction', help: 'Mood and visual language only—not product geometry or branding to copy.' },
-] as const;
-
 const labelForRole = (role: CreateReferenceRole) => (
-  ROLES.find((item) => item.role === role)?.label ?? role
+  STUDIO_CREATE_REFERENCE_CONTROLS.find((item) => item.role === role)?.label ?? role
 );
 
 export function creativeCandidates(project: ProjectDetail): readonly AssetSummary[] {
@@ -262,7 +258,7 @@ export function StudioCreateWorkspace({
       <Text style={styles.sectionTitle}>Optional references</Text>
       <Text style={styles.sectionHelp}>Give every image one role so intent stays unambiguous.</Text>
       <View style={styles.referenceList}>
-        {ROLES.map(({ role, label, help }) => {
+        {STUDIO_CREATE_REFERENCE_CONTROLS.map(({ role, label, help }) => {
           const reference = references.find((item) => item.role === role);
           return (
             <View key={role} style={styles.referenceRow}>

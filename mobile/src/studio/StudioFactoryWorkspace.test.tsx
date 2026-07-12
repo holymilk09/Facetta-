@@ -1,7 +1,9 @@
 import React from 'react';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 
-import { StudioFactoryWorkspace } from './StudioFactoryWorkspace';
+import {
+  deliverAuthenticatedProtectedFile, StudioFactoryWorkspace,
+} from './StudioFactoryWorkspace';
 
 const lineage = {
   projectId: 'project_1', sourceAssetId: 'asset_7', sourceDesignVersion: 4,
@@ -36,8 +38,9 @@ describe('StudioFactoryWorkspace', () => {
     const createStudioJob = jest.fn(async () => ({ data: job('queued'), error: null, status: 201 }));
     const transitionStudioJob = jest.fn(async (_id, request) => ({ data: job(request.status), error: null, status: 200 }));
     const getFactoryPack = jest.fn(async () => ({ data: manifest, error: null, status: 200 }));
+    const deliverProtectedFile = jest.fn(async () => {});
     await render(<StudioFactoryWorkspace api={{ createStudioJob, transitionStudioJob, getFactoryPack } as any}
-      lineage={lineage} createdBy="designer" />);
+      lineage={lineage} createdBy="designer" deliverProtectedFile={deliverProtectedFile} />);
 
     expect(screen.getByText('1 requested output × 28 credits = estimated 28 credits')).toBeTruthy();
     await act(async () => { fireEvent.press(screen.getByText('Prepare production-review material')); });
@@ -49,6 +52,14 @@ describe('StudioFactoryWorkspace', () => {
       status: 'succeeded', completed_outputs: 1,
     }));
     expect(screen.getByText('review-sheet.svg')).toBeTruthy();
+    await act(async () => { fireEvent.press(screen.getByText('Open review-sheet.svg')); });
+    expect(deliverProtectedFile).toHaveBeenCalledWith({
+      url: 'https://test/pack', name: 'review-sheet.svg', mediaType: 'image/svg+xml',
+    });
+    await act(async () => { fireEvent.press(screen.getByText('Download complete review pack')); });
+    expect(deliverProtectedFile).toHaveBeenCalledWith({
+      url: 'https://test/pack', name: 'facetta-factory-review.zip', mediaType: 'application/zip',
+    });
     expect(screen.queryByText(/provider|QA/i)).toBeNull();
   });
 
@@ -58,10 +69,85 @@ describe('StudioFactoryWorkspace', () => {
       createStudioJob: jest.fn(async () => ({ data: job('queued'), error: null, status: 201 })),
       transitionStudioJob,
       getFactoryPack: jest.fn(async () => ({ data: { ...manifest, pinned_asset_id: 'asset_other' }, error: null, status: 200 })),
-    } as any} lineage={lineage} createdBy="designer" />);
+    } as any} lineage={lineage} createdBy="designer" deliverProtectedFile={jest.fn()} />);
     await act(async () => { fireEvent.press(screen.getByText('Prepare production-review material')); });
     expect(await screen.findByText(/did not match the selected revision/i)).toBeTruthy();
     expect(transitionStudioJob).toHaveBeenLastCalledWith('job_1', expect.objectContaining({ status: 'failed' }));
     expect(screen.queryByText('Review material prepared')).toBeNull();
+  });
+
+  test('file delivery failure is retryable without a new job, history mutation, or charge', async () => {
+    const createStudioJob = jest.fn(async () => ({ data: job('queued'), error: null, status: 201 }));
+    const transitionStudioJob = jest.fn(async (_id, request) => ({ data: job(request.status), error: null, status: 200 }));
+    const deliverProtectedFile = jest.fn()
+      .mockRejectedValueOnce(new Error('network'))
+      .mockResolvedValueOnce(undefined);
+    await render(<StudioFactoryWorkspace api={{
+      createStudioJob,
+      transitionStudioJob,
+      getFactoryPack: jest.fn(async () => ({ data: manifest, error: null, status: 200 })),
+    } as any} lineage={lineage} createdBy="designer" deliverProtectedFile={deliverProtectedFile} />);
+
+    await act(async () => { fireEvent.press(screen.getByText('Prepare production-review material')); });
+    await act(async () => { fireEvent.press(screen.getByText('Open review-sheet.svg')); });
+    expect(await screen.findByText(/credit record are unchanged/i)).toBeTruthy();
+    expect(createStudioJob).toHaveBeenCalledTimes(1);
+    expect(transitionStudioJob).toHaveBeenCalledTimes(2);
+
+    await act(async () => { fireEvent.press(screen.getByText('Retry protected file')); });
+    expect(deliverProtectedFile).toHaveBeenCalledTimes(2);
+    expect(createStudioJob).toHaveBeenCalledTimes(1);
+    expect(transitionStudioJob).toHaveBeenCalledTimes(2);
+    expect(screen.queryByText(/credit record are unchanged/i)).toBeNull();
+  });
+
+  test('authenticated delivery fetches same-origin bytes before web or native delivery', async () => {
+    const fetcher = jest.fn(async () => ({
+      ok: true,
+      arrayBuffer: async () => new Uint8Array([1, 2, 3]).buffer,
+    }));
+    const webDownload = jest.fn();
+    await deliverAuthenticatedProtectedFile({
+      url: '/projects/project_1/factory-pack.zip',
+      name: 'review.zip',
+      mediaType: 'application/zip',
+    }, {
+      apiUrl: 'https://api.facetta.test', accessToken: 'secret-session-token',
+      fetcher: fetcher as any, platform: 'web', webDownload,
+    });
+    expect(fetcher).toHaveBeenCalledWith(
+      'https://api.facetta.test/projects/project_1/factory-pack.zip',
+      {
+        redirect: 'error',
+        headers: { Authorization: 'Bearer secret-session-token', Accept: 'application/zip' },
+      },
+    );
+    expect(webDownload).toHaveBeenCalledTimes(1);
+
+    const nativeShare = jest.fn(async () => {});
+    await deliverAuthenticatedProtectedFile({
+      url: 'https://api.facetta.test/artifact.svg',
+      name: 'artifact.svg',
+      mediaType: 'image/svg+xml',
+    }, {
+      apiUrl: 'https://api.facetta.test', accessToken: 'secret-session-token',
+      fetcher: fetcher as any, platform: 'ios', nativeShare,
+    });
+    expect(nativeShare).toHaveBeenCalledTimes(1);
+  });
+
+  test('protected delivery rejects missing auth and off-origin URLs before fetch', async () => {
+    const fetcher = jest.fn();
+    await expect(deliverAuthenticatedProtectedFile({
+      url: '/pack.zip', name: 'pack.zip', mediaType: 'application/zip',
+    }, {
+      apiUrl: 'https://api.facetta.test', accessToken: null, fetcher: fetcher as any,
+    })).rejects.toThrow(/sign in again/i);
+    await expect(deliverAuthenticatedProtectedFile({
+      url: 'https://attacker.test/pack.zip', name: 'pack.zip', mediaType: 'application/zip',
+    }, {
+      apiUrl: 'https://api.facetta.test', accessToken: 'token', fetcher: fetcher as any,
+    })).rejects.toThrow(/does not belong/i);
+    expect(fetcher).not.toHaveBeenCalled();
   });
 });

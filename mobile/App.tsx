@@ -23,7 +23,10 @@ import { StudioRefineWorkspace } from './src/studio/StudioRefineWorkspace';
 import { StudioViewsWorkspace } from './src/studio/StudioViewsWorkspace';
 import { StudioPresentWorkspace } from './src/studio/StudioPresentWorkspace';
 import { StudioVaryWorkspace } from './src/studio/StudioVaryWorkspace';
-import { StudioFactoryWorkspace } from './src/studio/StudioFactoryWorkspace';
+import {
+  deliverAuthenticatedProtectedFile, StudioFactoryWorkspace,
+  StudioProtectedFileRequest,
+} from './src/studio/StudioFactoryWorkspace';
 import { StudioActivityWorkspace } from './src/studio/StudioActivityWorkspace';
 import {
   createStudioGatewayFromOptions, ExactStudioLineage, StudioVisualLineage,
@@ -32,10 +35,18 @@ import { radius, shadows, theme } from './src/theme';
 import { createTrustedApiClient } from './src/trusted/client';
 import type { ProjectDetail } from './src/trusted/types';
 import { WorkflowShowcase } from './src/WorkflowShowcase';
+import { designerErrorMessage } from './src/studio/designerErrorMessage';
 
 type Tab = 'studio' | 'collections' | 'activity' | 'learn';
 type StudioView = 'home' | 'action';
 type Stage = 'onboarding' | 'tour' | 'booting' | 'login' | 'recovery' | 'app';
+type ProjectHydrationDestination = 'collections' | 'refine' | 'views' | 'present';
+
+interface ProjectHydrationRequest {
+  projectId: string;
+  destination: ProjectHydrationDestination;
+  expectedAssetId?: string;
+}
 
 const designImage = require('./assets/studio-asymmetric-paraiba-ring-v1.png');
 
@@ -84,6 +95,11 @@ export default function App() {
   const [showUtilityMenu, setShowUtilityMenu] = useState(false);
   const [studioProject, setStudioProject] = useState<ProjectDetail | null>(null);
   const [selectedCreativeAssetId, setSelectedCreativeAssetId] = useState<string | null>(null);
+  const [projectHydration, setProjectHydration] = useState<{
+    request: ProjectHydrationRequest;
+    loading: boolean;
+    error: string | null;
+  } | null>(null);
   const clearAuthenticatedUi = useCallback(() => {
     clearSession();
     setSession(null);
@@ -200,6 +216,44 @@ export default function App() {
   const moreActions = getVisibleStudioActions(actionContext, 'more');
   const isStudioHome = tab === 'studio' && studioView === 'home';
 
+  const hydrateProject = useCallback(async (request: ProjectHydrationRequest) => {
+    setProjectHydration({ request, loading: true, error: null });
+    const result = await trustedApi.getProject(request.projectId);
+    if (result.error !== null) {
+      setProjectHydration({
+        request,
+        loading: false,
+        error: designerErrorMessage(result.error, 'collections'),
+      });
+      return;
+    }
+    if (result.data.root_id !== request.projectId
+      || (request.expectedAssetId !== undefined
+        && result.data.active_asset_id !== request.expectedAssetId)) {
+      setProjectHydration({
+        request,
+        loading: false,
+        error: 'Facetta could not verify the opened design. Your current selection is unchanged.',
+      });
+      return;
+    }
+    setStudioProject(result.data);
+    setSelectedCreativeAssetId(result.data.active_asset_id);
+    setProjectHydration(null);
+    if (request.destination === 'collections') {
+      setTab('collections');
+      return;
+    }
+    openStudioAction(request.destination);
+  }, [trustedApi]);
+
+  const deliverProtectedFile = useCallback(async (
+    request: StudioProtectedFileRequest,
+  ): Promise<void> => deliverAuthenticatedProtectedFile(request, {
+    apiUrl,
+    accessToken: sessionAccessToken(session),
+  }), [apiUrl, session]);
+
   const openStudioAction = (actionId: StudioActionId) => {
     if (actionId === 'more') {
       setShowMoreActions((visible) => !visible);
@@ -307,6 +361,25 @@ export default function App() {
             }}>
             <Text style={[styles.utilityRowText, { color: theme.danger }]}>Sign out</Text>
           </Pressable>
+        </View>
+      )}
+      {projectHydration !== null && (
+        <View style={styles.hydrationBanner}>
+          {projectHydration.loading ? (
+            <>
+              <ActivityIndicator color={theme.accent} />
+              <Text style={styles.hydrationText}>Opening the selected design…</Text>
+            </>
+          ) : (
+            <>
+              <Text style={styles.hydrationError}>{projectHydration.error}</Text>
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => { void hydrateProject(projectHydration.request); }}>
+                <Text style={styles.hydrationRetry}>Retry</Text>
+              </Pressable>
+            </>
+          )}
         </View>
       )}
       {tab === 'studio' && studioView === 'action' && (
@@ -471,6 +544,7 @@ export default function App() {
               api={trustedApi}
               lineage={exactStudioLineage}
               createdBy={designer}
+              deliverProtectedFile={deliverProtectedFile}
             />
           ) : (
             <View style={styles.workspaceNotice}>
@@ -488,12 +562,7 @@ export default function App() {
           project={studioProject}
           createdBy={designer}
           onOpenProject={(projectId) => {
-            void trustedApi.getProject(projectId).then((result) => {
-              if (result.error === null) {
-                setStudioProject(result.data);
-                setSelectedCreativeAssetId(result.data.active_asset_id);
-              }
-            });
+            void hydrateProject({ projectId, destination: 'collections' });
           }}
           onProjectChanged={(project) => {
             setStudioProject(project);
@@ -511,25 +580,17 @@ export default function App() {
           owner={designer}
           onOpenReview={(job) => {
             if (job.active_design_id === null || job.source_revision_id === null) return;
-            void trustedApi.getProject(job.active_design_id).then((result) => {
-              if (result.error !== null) return;
-              setStudioProject(result.data);
-              setSelectedCreativeAssetId(result.data.active_asset_id);
-              if (result.data.active_asset_id === job.source_revision_id) {
-                openStudioAction('refine');
-              } else {
-                setTab('collections');
-              }
+            if (!(['refine', 'views', 'present'] as const).includes(
+              job.action_id as 'refine' | 'views' | 'present',
+            )) return;
+            void hydrateProject({
+              projectId: job.active_design_id,
+              destination: job.action_id as 'refine' | 'views' | 'present',
+              expectedAssetId: job.source_revision_id,
             });
           }}
           onOpenDesign={(projectId) => {
-            void trustedApi.getProject(projectId).then((result) => {
-              if (result.error === null) {
-                setStudioProject(result.data);
-                setSelectedCreativeAssetId(result.data.active_asset_id);
-                setTab('collections');
-              }
-            });
+            void hydrateProject({ projectId, destination: 'collections' });
           }}
         />
       )}
@@ -636,6 +697,14 @@ const styles = StyleSheet.create({
   sessionEmail: { fontSize: 11, color: theme.faint, paddingHorizontal: 10, paddingVertical: 8 },
   utilityRow: { paddingHorizontal: 10, paddingVertical: 11, borderTopWidth: 1, borderTopColor: theme.line },
   utilityRowText: { fontSize: 14, color: theme.ink },
+  hydrationBanner: {
+    flexDirection: 'row', alignItems: 'center', gap: 10, paddingHorizontal: 18,
+    paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: theme.line,
+    backgroundColor: theme.card,
+  },
+  hydrationText: { color: theme.faint, fontSize: 12 },
+  hydrationError: { flex: 1, color: theme.danger, fontSize: 12, lineHeight: 17 },
+  hydrationRetry: { color: theme.accent, fontSize: 12, fontWeight: '800' },
   actionRail: {
     zIndex: 10,
     borderBottomWidth: 1,

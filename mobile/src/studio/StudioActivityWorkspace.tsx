@@ -128,7 +128,8 @@ export function StudioActivityWorkspace({
       ) : jobs.map((job) => {
         const cancellable = job.status === 'queued' || job.status === 'running';
         const openable = job.active_design_id !== null && onOpenDesign !== undefined;
-        const reviewable = job.status === 'reviewing' && job.action_id === 'refine'
+        const reviewable = job.status === 'reviewing'
+          && ['refine', 'views', 'present'].includes(job.action_id)
           && job.active_design_id !== null && onOpenReview !== undefined;
         return (
           <View key={job.job_id} style={styles.card}>

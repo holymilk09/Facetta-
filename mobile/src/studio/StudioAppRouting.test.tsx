@@ -1,8 +1,22 @@
 /// <reference types="jest" />
 
 import React from 'react';
-import { fireEvent, render, waitFor } from '@testing-library/react-native';
+import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import { clearSession, markOnboarded, saveSession } from '../auth';
+
+const mockGetProject = jest.fn();
+
+const deferred = <T,>() => {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise;
+  });
+  return { promise, resolve };
+};
+
+jest.mock('../trusted/client', () => ({
+  createTrustedApiClient: () => ({ getProject: mockGetProject }),
+}));
 
 jest.mock('./StudioCreateWorkspace', () => {
   const ReactLocal = require('react');
@@ -52,6 +66,42 @@ jest.mock('./StudioRefineWorkspace', () => {
   };
 });
 
+jest.mock('./StudioViewsWorkspace', () => {
+  const ReactLocal = require('react');
+  const { Text } = require('react-native');
+  return { StudioViewsWorkspace: () => ReactLocal.createElement(Text, null, 'Views route reached') };
+});
+
+jest.mock('./StudioPresentWorkspace', () => {
+  const ReactLocal = require('react');
+  const { Text } = require('react-native');
+  return { StudioPresentWorkspace: () => ReactLocal.createElement(Text, null, 'Present route reached') };
+});
+
+jest.mock('./StudioActivityWorkspace', () => {
+  const ReactLocal = require('react');
+  const { Pressable, Text, View } = require('react-native');
+  const review = (action_id: string, onOpenReview: (job: any) => void) => ReactLocal.createElement(
+    Pressable,
+    { onPress: () => onOpenReview({
+      action_id, status: 'reviewing', active_design_id: 'project_hydrated',
+      source_revision_id: 'asset_hydrated',
+    }) },
+    ReactLocal.createElement(Text, null, `Review ${action_id}`),
+  );
+  return {
+    StudioActivityWorkspace: ({ onOpenReview, onOpenDesign }: any) => ReactLocal.createElement(
+      View,
+      null,
+      review('refine', onOpenReview),
+      review('views', onOpenReview),
+      review('present', onOpenReview),
+      ReactLocal.createElement(Pressable, { onPress: () => onOpenDesign('project_hydrated') },
+        ReactLocal.createElement(Text, null, 'Open hydrated design')),
+    ),
+  };
+});
+
 jest.mock('./StudioConfirmWorkspace', () => {
   const ReactLocal = require('react');
   const { Pressable, Text } = require('react-native');
@@ -94,7 +144,35 @@ jest.mock('./StudioFactoryWorkspace', () => {
 
 import App from '../../App';
 
-afterEach(() => clearSession());
+afterEach(() => { clearSession(); mockGetProject.mockReset(); });
+
+const hydratedProject = {
+  id: 'project_hydrated', root_id: 'project_hydrated', title: 'Hydrated design',
+  collection: null, tags: [], owner: 'usr_designer', state: 'refining',
+  design_id: 'design_hydrated', spec: { jewelry_type: 'ring' },
+  active_asset_id: 'asset_hydrated', active_design_version: 2,
+  selected_candidate_asset_id: 'asset_hydrated',
+  active_revision: {
+    asset_id: 'asset_hydrated', root_id: 'project_hydrated', parent_asset_id: null,
+    capability: 'SPEC_RENDER', provenance: 'confirmed_design', revision: 2,
+    design_id: 'design_hydrated', design_version: 2, region: null,
+    instruction: 'Hydrated design', drift: null, pinned: false,
+    media_type: 'image/png', image_url: null, created_by: 'usr_designer',
+    created_at: null, legacy_provenance: false,
+  },
+  pinned_revision: null, revisions: [], assets: [], derived_assets: [], approval: null,
+  factory_ready: false, factory_blockers: [], primary_revision_count: 2,
+  has_factory_drawing: false, cover_asset_id: 'asset_hydrated', created_at: null, updated_at: null,
+};
+
+const authenticate = () => {
+  markOnboarded();
+  saveSession({
+    provider: 'email', email: 'designer@example.com', name: 'Designer',
+    designerId: 'usr_designer', accessToken: 'server-issued-test-token',
+    accessTokenExpiresAt: '2099-01-01T00:00:00Z',
+  });
+};
 
 test('saving a selected direction continues to Refine and authenticates its Studio cover', async () => {
   markOnboarded();
@@ -145,4 +223,55 @@ test('confirming Design v1 returns immediately to Refine without a Collections o
   fireEvent.press(view.getByText('Factory'));
   expect(await view.findByText('Factory route reached for asset_exact_1')).toBeTruthy();
   expect(view.queryByText(/destination will use the exact active revision/i)).toBeNull();
+});
+
+test.each([
+  ['network', { code: 'NETWORK_ERROR', category: 'network', status: 0, retryable: true }, /could not connect/i],
+  ['auth', { code: 'AUTHENTICATION_REQUIRED', category: 'authentication', status: 401, retryable: false }, /session is missing or expired/i],
+  ['not-found', { code: 'NOT_FOUND', category: 'not_found', status: 404, retryable: false }, /could not open that saved work/i],
+] as const)('project hydration exposes recoverable %s errors and Retry', async (_kind, error, message) => {
+  authenticate();
+  const failedHydration = deferred<any>();
+  const retryHydration = deferred<any>();
+  mockGetProject
+    .mockReturnValueOnce(failedHydration.promise)
+    .mockReturnValueOnce(retryHydration.promise);
+  const view = await render(<App />);
+  await waitFor(() => expect(view.getByText('Start from an idea or reference')).toBeTruthy());
+  fireEvent.press(view.getAllByText('Activity').at(-1)!);
+  const review = await view.findByText('Review refine');
+  await act(async () => {
+    fireEvent.press(review);
+    failedHydration.resolve({ data: null, error, status: error.status });
+    await failedHydration.promise;
+  });
+  expect(await view.findByText(message)).toBeTruthy();
+  const retry = view.getByText('Retry');
+  await act(async () => {
+    fireEvent.press(retry);
+    retryHydration.resolve({ data: hydratedProject, error: null, status: 200 });
+    await retryHydration.promise;
+  });
+  expect(await view.findByText('Refine route reached')).toBeTruthy();
+  expect(mockGetProject).toHaveBeenCalledTimes(2);
+});
+
+test.each([
+  ['refine', 'Refine route reached'],
+  ['views', 'Views route reached'],
+  ['present', 'Present route reached'],
+] as const)('Activity reviewing %s hydrates exact lineage into the correct destination', async (action, expected) => {
+  authenticate();
+  const hydration = deferred<any>();
+  mockGetProject.mockReturnValue(hydration.promise);
+  const view = await render(<App />);
+  await waitFor(() => expect(view.getByText('Start from an idea or reference')).toBeTruthy());
+  fireEvent.press(view.getAllByText('Activity').at(-1)!);
+  const review = await view.findByText(`Review ${action}`);
+  await act(async () => {
+    fireEvent.press(review);
+    hydration.resolve({ data: hydratedProject, error: null, status: 200 });
+    await hydration.promise;
+  });
+  expect(await view.findByText(expected)).toBeTruthy();
 });

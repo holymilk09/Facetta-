@@ -1,5 +1,8 @@
 import React, { useState } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import {
+  Platform, ScrollView, Share, StyleSheet, Text, View,
+} from 'react-native';
+import { File, Paths } from 'expo-file-system';
 
 import { Button, Notice } from '../components';
 import { radius, theme } from '../theme';
@@ -14,18 +17,106 @@ const FACTORY_CREDITS = getStudioAction('factory').creditEstimate ?? 0;
 export type StudioFactoryApi = Pick<TrustedApiClient,
   'createStudioJob' | 'transitionStudioJob' | 'getFactoryPack'>;
 
+export interface StudioProtectedFileRequest {
+  url: string;
+  name: string;
+  mediaType: string;
+}
+
+export interface StudioProtectedFileDeliveryOptions {
+  apiUrl: string;
+  accessToken: string | null;
+  fetcher?: typeof fetch;
+  platform?: string;
+  webDownload?: (bytes: ArrayBuffer, request: StudioProtectedFileRequest) => void;
+  nativeShare?: (bytes: ArrayBuffer, request: StudioProtectedFileRequest) => Promise<void>;
+}
+
+/** Fetch protected bytes with the session bearer before any local delivery. */
+export async function deliverAuthenticatedProtectedFile(
+  request: StudioProtectedFileRequest,
+  options: StudioProtectedFileDeliveryOptions,
+): Promise<void> {
+  if (options.accessToken === null) {
+    throw new Error('Sign in again before opening this protected file.');
+  }
+  const apiOrigin = new URL(options.apiUrl).origin;
+  const resolved = new URL(request.url, `${options.apiUrl.replace(/\/$/, '')}/`);
+  if (resolved.origin !== apiOrigin || resolved.username || resolved.password) {
+    throw new Error('This protected file does not belong to the Facetta workspace.');
+  }
+  const response = await (options.fetcher ?? fetch)(resolved.toString(), {
+    redirect: 'error',
+    headers: {
+      Authorization: `Bearer ${options.accessToken}`,
+      Accept: request.mediaType,
+    },
+  });
+  if (!response.ok) {
+    throw new Error('Facetta could not retrieve this protected file. Try again.');
+  }
+  const bytes = await response.arrayBuffer();
+  if ((options.platform ?? Platform.OS) === 'web') {
+    if (options.webDownload !== undefined) {
+      options.webDownload(bytes, request);
+      return;
+    }
+    const objectUrl = URL.createObjectURL(new Blob([bytes], { type: request.mediaType }));
+    try {
+      const anchor = document.createElement('a');
+      anchor.href = objectUrl;
+      anchor.download = request.name;
+      anchor.rel = 'noopener';
+      anchor.click();
+    } finally {
+      URL.revokeObjectURL(objectUrl);
+    }
+    return;
+  }
+  if (options.nativeShare !== undefined) {
+    await options.nativeShare(bytes, request);
+    return;
+  }
+  const safeName = request.name.replace(/[^a-zA-Z0-9._-]/g, '_') || 'facetta-file';
+  const file = new File(Paths.cache, safeName);
+  file.create({ overwrite: true, intermediates: true });
+  file.write(new Uint8Array(bytes));
+  await Share.share({ title: request.name, url: file.uri, message: file.uri });
+}
+
 export interface StudioFactoryWorkspaceProps {
   api: StudioFactoryApi;
   lineage: ExactStudioLineage | null;
   createdBy: string;
+  deliverProtectedFile: (request: StudioProtectedFileRequest) => Promise<void>;
 }
 
 export function StudioFactoryWorkspace({
-  api, lineage, createdBy,
+  api, lineage, createdBy, deliverProtectedFile,
 }: StudioFactoryWorkspaceProps) {
   const [pack, setPack] = useState<FactoryPackManifest | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [deliveryError, setDeliveryError] = useState<string | null>(null);
+  const [pendingDelivery, setPendingDelivery] = useState<StudioProtectedFileRequest | null>(null);
+  const [delivering, setDelivering] = useState<string | null>(null);
+
+  const deliver = async (request: StudioProtectedFileRequest): Promise<void> => {
+    if (delivering !== null) return;
+    setDelivering(request.name);
+    setDeliveryError(null);
+    setPendingDelivery(null);
+    try {
+      await deliverProtectedFile(request);
+    } catch {
+      setPendingDelivery(request);
+      setDeliveryError(
+        'Facetta could not open that protected file. Your review pack and credit record are unchanged.',
+      );
+    } finally {
+      setDelivering(null);
+    }
+  };
 
   const prepare = async (): Promise<void> => {
     if (lineage === null || busy || pack !== null) return;
@@ -131,10 +222,41 @@ export function StudioFactoryWorkspace({
           <Text style={styles.sectionTitle}>Included files</Text>
           {pack.artifacts.map((artifact) => (
             <View key={artifact.name} style={styles.artifactRow}>
-              <Text style={styles.artifactName}>{artifact.name}</Text>
-              <Text style={styles.small}>{artifact.media_type}</Text>
+              <View style={styles.artifactCopy}>
+                <Text style={styles.artifactName}>{artifact.name}</Text>
+                <Text style={styles.small}>{artifact.media_type}</Text>
+              </View>
+              <Button
+                title={delivering === artifact.name ? 'Opening…' : `Open ${artifact.name}`}
+                kind="ghost"
+                disabled={delivering !== null}
+                onPress={() => { void deliver({
+                  url: artifact.url,
+                  name: artifact.name,
+                  mediaType: artifact.media_type,
+                }); }}
+              />
             </View>
           ))}
+          <Button
+            title={delivering === 'facetta-factory-review.zip'
+              ? 'Preparing download…' : 'Download complete review pack'}
+            disabled={delivering !== null}
+            onPress={() => { void deliver({
+              url: pack.bundle_url,
+              name: 'facetta-factory-review.zip',
+              mediaType: 'application/zip',
+            }); }}
+          />
+          {deliveryError !== null && <Notice kind="error" text={deliveryError} />}
+          {pendingDelivery !== null && (
+            <Button
+              title="Retry protected file"
+              kind="ghost"
+              disabled={delivering !== null}
+              onPress={() => { void deliver(pendingDelivery); }}
+            />
+          )}
           <Notice kind="ok" text="The pack is bound to the exact approved revision and recorded in Activity." />
         </View>
       )}
@@ -153,6 +275,10 @@ const styles = StyleSheet.create({
   packCard: { borderWidth: 1, borderColor: theme.line, borderRadius: radius.md, padding: 16, gap: 10, backgroundColor: theme.card },
   packTitle: { color: theme.ink, fontSize: 18, fontWeight: '800' },
   sectionTitle: { color: theme.ink, fontSize: 12, fontWeight: '800', letterSpacing: 1.2, marginTop: 4 },
-  artifactRow: { borderTopWidth: 1, borderTopColor: theme.line, paddingTop: 8, gap: 2 },
+  artifactRow: {
+    borderTopWidth: 1, borderTopColor: theme.line, paddingTop: 8, gap: 8,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+  },
+  artifactCopy: { flex: 1, gap: 2 },
   artifactName: { color: theme.ink, fontWeight: '700' },
 });

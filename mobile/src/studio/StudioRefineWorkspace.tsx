@@ -68,35 +68,51 @@ function hasExactSpecification(
 }
 
 type FactKind = 'text' | 'number' | 'integer' | 'choice';
+type FactGroupId = 'identity' | 'stone' | 'setting' | 'dimensions' | 'construction';
 interface FactDefinition {
   path: StudioFactPath;
   label: string;
   kind: FactKind;
+  group: FactGroupId;
   unit?: string;
   choices?: readonly string[];
 }
 
-const FACTS: readonly FactDefinition[] = [
-  { path: 'metal.material', label: 'Metal material', kind: 'choice', choices: ['gold', 'platinum', 'silver'] },
-  { path: 'metal.color', label: 'Metal color', kind: 'choice', choices: ['yellow', 'rose', 'white'] },
-  { path: 'metal.finish', label: 'Metal finish', kind: 'choice', choices: ['polished', 'satin', 'brushed', 'matte'] },
-  { path: 'metal.karat', label: 'Gold karat', kind: 'integer' },
-  { path: 'stone.species', label: 'Stone species', kind: 'text' },
-  { path: 'stone.cut', label: 'Stone cut', kind: 'text' },
-  { path: 'stone.color.trade', label: 'Stone trade color', kind: 'text' },
-  { path: 'stone.color.gia', label: 'Stone graded color', kind: 'text' },
-  { path: 'stone.carat', label: 'Stone weight', kind: 'number', unit: 'ct' },
-  { path: 'stone.dimensions_mm.length', label: 'Stone length', kind: 'number', unit: 'mm' },
-  { path: 'stone.dimensions_mm.width', label: 'Stone width', kind: 'number', unit: 'mm' },
-  { path: 'stone.dimensions_mm.depth', label: 'Stone depth', kind: 'number', unit: 'mm' },
-  { path: 'setting.style', label: 'Setting style', kind: 'choice', choices: ['prong', 'bezel', 'halo', 'pave', 'channel'] },
-  { path: 'setting.prong_count', label: 'Prong count', kind: 'integer' },
-  { path: 'band.profile', label: 'Band profile', kind: 'choice', choices: ['half_round', 'flat', 'knife_edge', 'comfort_fit'] },
-  { path: 'band.width_mm', label: 'Band width', kind: 'number', unit: 'mm' },
-  { path: 'band.thickness_mm', label: 'Band thickness', kind: 'number', unit: 'mm' },
-  { path: 'ring_size.system', label: 'Ring size system', kind: 'choice', choices: ['US', 'UK', 'EU', 'JP', 'HK'] },
-  { path: 'ring_size.value', label: 'Ring size', kind: 'text' },
+const FACT_GROUPS: readonly { id: FactGroupId; label: string; help: string }[] = [
+  { id: 'identity', label: 'Identity', help: 'Metal identity, finish, and ring size.' },
+  { id: 'stone', label: 'Stone', help: 'Gem identity, cut, color, and weight.' },
+  { id: 'setting', label: 'Setting', help: 'How the stone is held.' },
+  { id: 'dimensions', label: 'Dimensions', help: 'Recorded stone and band measurements.' },
+  { id: 'construction', label: 'Construction', help: 'Band profile and construction form.' },
 ] as const;
+
+const FACTS: readonly FactDefinition[] = [
+  { path: 'metal.material', label: 'Metal material', kind: 'choice', group: 'identity', choices: ['gold', 'platinum', 'silver'] },
+  { path: 'metal.color', label: 'Metal color', kind: 'choice', group: 'identity', choices: ['yellow', 'rose', 'white'] },
+  { path: 'metal.finish', label: 'Metal finish', kind: 'choice', group: 'identity', choices: ['polished', 'satin', 'brushed', 'matte'] },
+  { path: 'metal.karat', label: 'Gold karat', kind: 'integer', group: 'identity' },
+  { path: 'stone.species', label: 'Stone species', kind: 'text', group: 'stone' },
+  { path: 'stone.cut', label: 'Stone cut', kind: 'text', group: 'stone' },
+  { path: 'stone.color.trade', label: 'Stone trade color', kind: 'text', group: 'stone' },
+  { path: 'stone.color.gia', label: 'Stone graded color', kind: 'text', group: 'stone' },
+  { path: 'stone.carat', label: 'Stone weight', kind: 'number', group: 'stone', unit: 'ct' },
+  { path: 'stone.dimensions_mm.length', label: 'Stone length', kind: 'number', group: 'dimensions', unit: 'mm' },
+  { path: 'stone.dimensions_mm.width', label: 'Stone width', kind: 'number', group: 'dimensions', unit: 'mm' },
+  { path: 'stone.dimensions_mm.depth', label: 'Stone depth', kind: 'number', group: 'dimensions', unit: 'mm' },
+  { path: 'setting.style', label: 'Setting style', kind: 'choice', group: 'setting', choices: ['prong', 'bezel', 'halo', 'pave', 'channel'] },
+  { path: 'setting.prong_count', label: 'Prong count', kind: 'integer', group: 'setting' },
+  { path: 'band.profile', label: 'Band profile', kind: 'choice', group: 'construction', choices: ['half_round', 'flat', 'knife_edge', 'comfort_fit'] },
+  { path: 'band.width_mm', label: 'Band width', kind: 'number', group: 'dimensions', unit: 'mm' },
+  { path: 'band.thickness_mm', label: 'Band thickness', kind: 'number', group: 'dimensions', unit: 'mm' },
+  { path: 'ring_size.system', label: 'Ring size system', kind: 'choice', group: 'identity', choices: ['US', 'UK', 'EU', 'JP', 'HK'] },
+  { path: 'ring_size.value', label: 'Ring size', kind: 'text', group: 'identity' },
+] as const;
+
+interface FactChangeReview {
+  definition: FactDefinition;
+  original: JsonValue;
+  value: JsonValue;
+}
 
 function factValue(spec: JsonObject, path: StudioFactPath): JsonValue | undefined {
   let current: JsonValue = spec;
@@ -149,6 +165,9 @@ export function StudioRefineWorkspace({
   const [factProject, setFactProject] = useState<ProjectDetail | null>(null);
   const [factDraft, setFactDraft] = useState<Partial<Record<StudioFactPath, string>>>({});
   const [factsLoading, setFactsLoading] = useState(false);
+  const [advancedFactsOpen, setAdvancedFactsOpen] = useState(false);
+  const [activeFactGroup, setActiveFactGroup] = useState<FactGroupId>('identity');
+  const [factReview, setFactReview] = useState<readonly FactChangeReview[] | null>(null);
   const decisionInFlight = useRef(false);
 
   useEffect(() => {
@@ -185,6 +204,7 @@ export function StudioRefineWorkspace({
     let current = true;
     setFactProject(null);
     setFactDraft({});
+    setFactReview(null);
     if (exactLineage === null || typeof api.getProject !== 'function') {
       setFactsLoading(false);
       return () => { current = false; };
@@ -255,26 +275,30 @@ export function StudioRefineWorkspace({
       && factValue(spec, definition.path) !== null);
   }, [factProject]);
 
-  const saveFacts = async (): Promise<void> => {
-    if (
-      exactLineage === null || factProject?.spec === null || factProject?.spec === undefined
-      || typeof api.reviseStudioFacts !== 'function' || busy || decisionInFlight.current
-    ) return;
-    const changes: { path: StudioFactPath; value: JsonValue }[] = [];
+  const groupedEditableFacts = useMemo(() => Object.fromEntries(
+    FACT_GROUPS.map((group) => [
+      group.id, editableFacts.filter((definition) => definition.group === group.id),
+    ]),
+  ) as Record<FactGroupId, FactDefinition[]>, [editableFacts]);
+
+  const collectFactChanges = (): { changes: FactChangeReview[]; error: string | null } => {
+    if (factProject?.spec === null || factProject?.spec === undefined) {
+      return { changes: [], error: 'Design facts are still loading. Try again in a moment.' };
+    }
+    const changes: FactChangeReview[] = [];
     for (const definition of editableFacts) {
       const original = factValue(factProject.spec, definition.path);
       const raw = factDraft[definition.path]?.trim() ?? '';
-      if (raw.length === 0) {
-        setError(`${definition.label} cannot be empty.`);
-        return;
-      }
+      if (raw.length === 0) return { changes: [], error: `${definition.label} cannot be empty.` };
       let value: JsonValue = raw;
       if (definition.kind === 'number' || definition.kind === 'integer') {
         const parsed = Number(raw);
         if (!Number.isFinite(parsed) || parsed <= 0
             || (definition.kind === 'integer' && !Number.isInteger(parsed))) {
-          setError(`${definition.label} must be a valid positive ${definition.kind === 'integer' ? 'whole number' : 'number'}.`);
-          return;
+          return {
+            changes: [],
+            error: `${definition.label} must be a valid positive ${definition.kind === 'integer' ? 'whole number' : 'number'}.`,
+          };
         }
         value = parsed;
       } else if (definition.path === 'ring_size.value') {
@@ -284,24 +308,52 @@ export function StudioRefineWorkspace({
         if (system !== 'UK') {
           const parsed = Number(raw);
           if (!Number.isFinite(parsed) || parsed <= 0) {
-            setError('Ring size must be a positive number for the selected sizing system.');
-            return;
+            return {
+              changes: [],
+              error: 'Ring size must be a positive number for the selected sizing system.',
+            };
           }
           value = parsed;
         }
       }
       if (JSON.stringify(value) !== JSON.stringify(original)) {
-        changes.push({ path: definition.path, value });
+        changes.push({ definition, original: original ?? null, value });
       }
     }
     if (changes.length === 0) {
-      setError('Nothing changed. Edit at least one design fact before saving.');
-      return;
+      return { changes: [], error: 'Nothing changed. Edit at least one design fact before reviewing.' };
     }
     if (changes.length > 12) {
-      setError('Save up to 12 fact changes at a time.');
+      return { changes: [], error: 'Review up to 12 fact changes at a time.' };
+    }
+    return { changes, error: null };
+  };
+
+  const reviewFacts = (): void => {
+    const result = collectFactChanges();
+    if (result.error !== null) {
+      setError(result.error);
+      setFactReview(null);
       return;
     }
+    setError(null);
+    setFactReview(result.changes);
+  };
+
+  const saveFacts = async (): Promise<void> => {
+    if (
+      exactLineage === null || factProject?.spec === null || factProject?.spec === undefined
+      || typeof api.reviseStudioFacts !== 'function' || busy || decisionInFlight.current
+    ) return;
+    const reviewed = collectFactChanges();
+    if (reviewed.error !== null || factReview === null) {
+      setError(reviewed.error ?? 'Review the changed facts before saving.');
+      setFactReview(null);
+      return;
+    }
+    const changes = reviewed.changes.map(({ definition, value }) => ({
+      path: definition.path, value,
+    }));
     decisionInFlight.current = true;
     setBusy(true);
     setError(null);
@@ -322,7 +374,7 @@ export function StudioRefineWorkspace({
 
   const makePreview = async (): Promise<void> => {
     if (lineage === null || busy) return;
-    if (mode === 'facts') { await saveFacts(); return; }
+    if (mode === 'facts') { reviewFacts(); return; }
     setBusy(true);
     setError(null);
     setUnderstoodAs(null);
@@ -596,9 +648,6 @@ export function StudioRefineWorkspace({
           ['component', 'Component', 'Choose a controlled material or construction option.'],
           ['instruction', 'Describe', 'Describe an appearance-only change in plain language.'],
           ['annotation', 'Mark up', 'Draw directly on the exact active image.'],
-          ...(exactSpecification && typeof api.reviseStudioFacts === 'function'
-            ? [['facts', 'Facts', 'Correct confirmed design facts without changing image pixels.'] as const]
-            : []),
         ] as const).map(([id, label, detail]) => {
           const unavailable = id === 'component' && !exactSpecification;
           return (
@@ -608,7 +657,12 @@ export function StudioRefineWorkspace({
               accessibilityRole="button"
               accessibilityState={{ disabled: unavailable, selected: mode === id }}
               disabled={unavailable}
-              onPress={() => { setMode(id); setError(null); }}
+              onPress={() => {
+                setMode(id);
+                setAdvancedFactsOpen(false);
+                setFactReview(null);
+                setError(null);
+              }}
               style={[styles.modeCard, mode === id && styles.selectedCard, unavailable && styles.disabledCard]}>
               <Text style={styles.pathTitle}>{label}</Text>
               <Text style={styles.pathHelp}>{unavailable
@@ -618,6 +672,27 @@ export function StudioRefineWorkspace({
           );
         })}
       </View>
+
+      {exactSpecification && typeof api.reviseStudioFacts === 'function' && (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Advanced design facts"
+          accessibilityState={{ expanded: advancedFactsOpen }}
+          onPress={() => {
+            const opening = !advancedFactsOpen;
+            setAdvancedFactsOpen(opening);
+            setMode(opening ? 'facts' : 'component');
+            setFactReview(null);
+            setError(null);
+          }}
+          style={[styles.advancedDisclosure, advancedFactsOpen && styles.advancedDisclosureOpen]}>
+          <View style={styles.advancedDisclosureCopy}>
+            <Text style={styles.advancedDisclosureTitle}>Advanced design facts</Text>
+            <Text style={styles.pathHelp}>Correct recorded specifications without changing image pixels.</Text>
+          </View>
+          <Text style={styles.disclosureGlyph}>{advancedFactsOpen ? '−' : '+'}</Text>
+        </Pressable>
+      )}
 
       {!exactSpecification && (
         <Notice kind="info" text="Design facts are not confirmed yet. You can refine appearance or a marked region; component and construction changes unlock after those facts are reviewed." />
@@ -664,9 +739,58 @@ export function StudioRefineWorkspace({
         <Notice kind="info" text="Fact corrections cost 0 credits. Image pixels stay unchanged while Facetta appends a new immutable specification revision." />
         {factsLoading ? <ActivityIndicator color={theme.accent} /> : editableFacts.length === 0 ? (
           <Notice kind="error" text="No designer-editable facts are available on this exact revision." />
-        ) : (
+        ) : factReview !== null ? (
+          <View style={styles.factReviewCard}>
+            <Text style={styles.reviewTitle}>Review only what changed</Text>
+            <Text style={styles.pathHelp}>Saving appends a new immutable specification revision. The image remains unchanged.</Text>
+            {factReview.map(({ definition, original, value }) => (
+              <View key={definition.path} style={styles.factReviewRow}>
+                <Text style={styles.factReviewLabel}>{definition.label}</Text>
+                <Text style={styles.factReviewValue}>
+                  {friendlyFactOption(String(original))} → {friendlyFactOption(String(value))}
+                  {definition.unit ? ` ${definition.unit}` : ''}
+                </Text>
+              </View>
+            ))}
+            <View style={styles.actions}>
+              <Button
+                title="Back to edit"
+                kind="ghost"
+                disabled={busy}
+                onPress={() => { setFactReview(null); setError(null); }}
+              />
+              <Button
+                title={busy ? 'Saving facts…' : 'Save fact revision'}
+                disabled={busy}
+                onPress={() => { void saveFacts(); }}
+              />
+            </View>
+          </View>
+        ) : (<>
+          <View style={styles.factGroupList}>
+            {FACT_GROUPS.map((group) => {
+              const groupFacts = groupedEditableFacts[group.id];
+              if (groupFacts.length === 0) return null;
+              const expanded = activeFactGroup === group.id;
+              return (
+                <Pressable
+                  key={group.id}
+                  accessibilityRole="button"
+                  accessibilityLabel={`${group.label} fact group`}
+                  accessibilityState={{ expanded }}
+                  onPress={() => { setActiveFactGroup(group.id); setError(null); }}
+                  style={[styles.factGroupButton, expanded && styles.selectedCard]}>
+                  <View style={styles.advancedDisclosureCopy}>
+                    <Text style={styles.pathTitle}>{group.label}</Text>
+                    <Text style={styles.pathHelp}>{group.help}</Text>
+                  </View>
+                  <Text style={styles.factCount}>{groupFacts.length}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
           <View style={styles.factGrid}>
-            {editableFacts.map((definition) => {
+            {groupedEditableFacts[activeFactGroup].map((definition) => {
               const value = factDraft[definition.path] ?? '';
               if (definition.kind === 'choice') {
                 const options = definition.choices?.includes(value)
@@ -681,6 +805,7 @@ export function StudioRefineWorkspace({
                     render={friendlyFactOption}
                     onSelect={(next) => {
                       setError(null);
+                      setFactReview(null);
                       setFactDraft((current) => ({ ...current, [definition.path]: next }));
                     }}
                   />
@@ -694,6 +819,7 @@ export function StudioRefineWorkspace({
                     numeric={definition.kind === 'number' || definition.kind === 'integer'}
                     onChange={(next) => {
                       setError(null);
+                      setFactReview(null);
                       setFactDraft((current) => ({ ...current, [definition.path]: next }));
                     }}
                   />
@@ -701,20 +827,22 @@ export function StudioRefineWorkspace({
               );
             })}
           </View>
-        )}
+        </>)}
       </>}
       {error !== null && <Notice kind="error" text={error} />}
       <Text style={styles.creditEstimate}>{mode === 'facts'
         ? '0 credits · specification revision only'
         : `1 requested output × ${REFINE_CREDITS_PER_OUTPUT} credits = estimated ${REFINE_CREDITS_PER_OUTPUT} credits`}</Text>
-      <Button title={mode === 'facts'
-        ? (busy ? 'Saving facts…' : 'Save fact revision')
-        : (busy ? 'Creating preview…' : 'Preview change')} disabled={busy
+      {mode !== 'facts' ? (
+        <Button title={busy ? 'Creating preview…' : 'Preview change'} disabled={busy
           || (mode === 'component' && selected === null)
           || (mode === 'instruction' && !instruction.trim())
-          || (mode === 'annotation' && (sourceImageUrl === null || snapshot.annotations.length === 0))
-          || (mode === 'facts' && (factsLoading || editableFacts.length === 0))}
-        onPress={() => { void makePreview(); }} />
+          || (mode === 'annotation' && (sourceImageUrl === null || snapshot.annotations.length === 0))}
+          onPress={() => { void makePreview(); }} />
+      ) : factReview === null && (
+        <Button title="Review fact changes" disabled={busy || factsLoading || editableFacts.length === 0}
+          onPress={() => { void makePreview(); }} />
+      )}
     </ScrollView>
   );
 }
@@ -729,6 +857,14 @@ const styles = StyleSheet.create({
   pathGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   modeRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 8 },
   modeCard: { width: 210, borderWidth: 1, borderColor: theme.line, borderRadius: radius.md, padding: 12, backgroundColor: theme.card },
+  advancedDisclosure: {
+    borderWidth: 1, borderColor: theme.line, borderRadius: radius.md, padding: 13,
+    backgroundColor: theme.paper, flexDirection: 'row', alignItems: 'center', gap: 12,
+  },
+  advancedDisclosureOpen: { borderColor: theme.accent, backgroundColor: theme.card },
+  advancedDisclosureCopy: { flex: 1 },
+  advancedDisclosureTitle: { color: theme.ink, fontWeight: '700', fontSize: 14, marginBottom: 3 },
+  disclosureGlyph: { color: theme.accent, fontSize: 22, fontWeight: '500' },
   disabledCard: { opacity: 0.48 },
   pathCard: { width: 180, borderWidth: 1, borderColor: theme.line, borderRadius: radius.md, padding: 12, backgroundColor: theme.card },
   selectedCard: { borderColor: theme.accent, borderWidth: 2 },
@@ -753,6 +889,22 @@ const styles = StyleSheet.create({
   checkLabel: { color: theme.ink, fontWeight: '600' },
   checkDetail: { color: theme.faint, fontSize: 12, marginTop: 2 },
   actions: { flexDirection: 'row', flexWrap: 'wrap' },
+  factGroupList: { gap: 8 },
+  factGroupButton: {
+    borderWidth: 1, borderColor: theme.line, borderRadius: radius.md, padding: 12,
+    backgroundColor: theme.card, flexDirection: 'row', alignItems: 'center', gap: 12,
+  },
+  factCount: {
+    color: theme.accent, backgroundColor: theme.blush, borderRadius: 999,
+    minWidth: 28, paddingHorizontal: 8, paddingVertical: 5, textAlign: 'center', fontWeight: '800',
+  },
   factGrid: { gap: 12 },
   factField: { maxWidth: 420 },
+  factReviewCard: {
+    borderWidth: 1, borderColor: theme.accent, borderRadius: radius.md,
+    padding: 14, backgroundColor: theme.card, gap: 10,
+  },
+  factReviewRow: { borderTopWidth: 1, borderTopColor: theme.line, paddingTop: 9, gap: 3 },
+  factReviewLabel: { color: theme.faint, fontSize: 11, fontWeight: '700' },
+  factReviewValue: { color: theme.ink, fontSize: 14, fontWeight: '600' },
 });

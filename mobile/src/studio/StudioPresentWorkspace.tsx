@@ -15,6 +15,9 @@ import type {
   ExactStudioLineage, StudioGateway, StudioGatewayError, StudioVisualLineage,
 } from './gateway';
 import { designerReviewState } from './designerReviewLanguage';
+import { STUDIO_PRESENT_CONTROLS } from './workspaceControls';
+
+export { STUDIO_PRESENT_CONTROLS } from './workspaceControls';
 
 const PRESETS: readonly ProductPhotoPreset[] = [
   'catalog_white', 'luxury_studio', 'dark_editorial', 'macro_detail',
@@ -375,7 +378,7 @@ export function StudioPresentWorkspace({
         <Text style={styles.lineageValue}>{exactRevision}</Text>
       </View>
 
-      <Text style={styles.sectionTitle}>1 · Destination</Text>
+      <Text style={styles.sectionTitle}>1 · {STUDIO_PRESENT_CONTROLS.destination.label}</Text>
       <View style={styles.destinationRow}>
         {(['client', 'marketing'] as const).map((item) => (
           <Pressable key={item} onPress={() => { setDestination(item); setCards([]); setInfo(null); }}
@@ -413,7 +416,7 @@ export function StudioPresentWorkspace({
         </>
       )}
 
-      <Field label="Optional art direction" value={direction} onChange={setDirection} multiline
+      <Field label={STUDIO_PRESENT_CONTROLS.direction.label} value={direction} onChange={setDirection} multiline
         placeholder="Soft daylight, generous negative space, understated styling…" />
 
       <View style={styles.costCard}>

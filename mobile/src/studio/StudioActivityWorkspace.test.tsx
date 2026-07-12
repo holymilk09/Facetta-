@@ -116,4 +116,29 @@ describe('StudioActivityWorkspace', () => {
     expect(onOpenReview).toHaveBeenCalledWith(reviewing);
     expect(view.queryByText('Open design')).toBeNull();
   });
+
+  test.each(['views', 'present'] as const)(
+    'routes a reviewing %s job through its typed review callback',
+    async (actionId) => {
+      const reviewing: StudioJobRecord = {
+        ...running, action_id: actionId, status: 'reviewing', progress: 0.9,
+        source_revision_id: 'asset_exact',
+      };
+      const onOpenReview = jest.fn();
+      const view = await render(<StudioActivityWorkspace
+        api={api({
+          listStudioJobs: jest.fn(async () => ({
+            data: { jobs: [reviewing] }, error: null, status: 200,
+          })),
+        })}
+        owner="usr_designer"
+        onOpenDesign={jest.fn()}
+        onOpenReview={onOpenReview}
+      />);
+
+      await act(async () => { fireEvent.press(await view.findByText('Review result')); });
+      expect(onOpenReview).toHaveBeenCalledWith(reviewing);
+      expect(view.queryByText('Open design')).toBeNull();
+    },
+  );
 });

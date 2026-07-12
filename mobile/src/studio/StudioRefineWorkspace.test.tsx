@@ -444,26 +444,45 @@ describe('StudioRefineWorkspace', () => {
       />,
     );
 
-    const factsMode = await screen.findByText('Facts');
-    fireEvent.press(factsMode);
-    expect(await screen.findByDisplayValue('8')).toBeTruthy();
+    expect(screen.queryByText('Facts')).toBeNull();
+    expect(screen.queryByText('Stone species')).toBeNull();
+    fireEvent.press(await screen.findByLabelText('Advanced design facts'));
+    expect(await screen.findByText('Identity')).toBeTruthy();
+    expect(screen.getByLabelText('Identity fact group').props.accessibilityState.expanded).toBe(true);
+    expect(screen.getByLabelText('Stone fact group').props.accessibilityState.expanded).toBe(false);
+    expect(screen.queryByText('Stone species')).toBeNull();
     expect(screen.getAllByText(/0 credits/i).length).toBeGreaterThan(0);
     expect(screen.getByText(/image pixels stay unchanged/i)).toBeTruthy();
     expect(screen.queryByText(/provider/i)).toBeNull();
     expect(screen.queryByText(/factory/i)).toBeNull();
-    fireEvent.press(screen.getByText('Save fact revision'));
+    fireEvent.press(screen.getByText('Review fact changes'));
     expect(await screen.findByText(/Nothing changed/i)).toBeTruthy();
+    fireEvent.press(screen.getByLabelText('Dimensions fact group'));
+    await waitFor(() => {
+      expect(screen.getByLabelText('Identity fact group').props.accessibilityState.expanded).toBe(false);
+      expect(screen.getByLabelText('Dimensions fact group').props.accessibilityState.expanded).toBe(true);
+    });
+    expect(await screen.findByDisplayValue('8')).toBeTruthy();
     fireEvent.changeText(screen.getByDisplayValue('8'), '-1');
     await waitFor(() => expect(screen.getByDisplayValue('-1')).toBeTruthy());
     expect(screen.queryByText(/Nothing changed/i)).toBeNull();
-    fireEvent.press(screen.getByText('Save fact revision'));
+    fireEvent.press(screen.getByText('Review fact changes'));
     expect(await screen.findByText(/Stone length must be a valid positive number/i)).toBeTruthy();
     expect(reviseStudioFacts).not.toHaveBeenCalled();
     fireEvent.changeText(screen.getByDisplayValue('-1'), '8');
     await waitFor(() => expect(screen.getByDisplayValue('8')).toBeTruthy());
-    fireEvent.press(screen.getByText('Rose'));
-    fireEvent.changeText(screen.getByDisplayValue('8'), '8.2');
+    fireEvent.press(screen.getByLabelText('Identity fact group'));
+    const roseOption = await screen.findByText('Rose');
+    await act(async () => { fireEvent.press(roseOption); await Promise.resolve(); });
+    fireEvent.press(screen.getByLabelText('Dimensions fact group'));
+    const stoneLength = await screen.findByDisplayValue('8');
+    fireEvent.changeText(stoneLength, '8.2');
     await waitFor(() => expect(screen.getByDisplayValue('8.2')).toBeTruthy());
+    fireEvent.press(screen.getByText('Review fact changes'));
+    expect(await screen.findByText('Review only what changed')).toBeTruthy();
+    expect(screen.getByText('Yellow → Rose')).toBeTruthy();
+    expect(screen.getByText('8 → 8.2 mm')).toBeTruthy();
+    expect(reviseStudioFacts).not.toHaveBeenCalled();
     fireEvent.press(screen.getByText('Save fact revision'));
     await waitFor(() => expect(reviseStudioFacts).toHaveBeenCalledWith('project_1', {
       expected_active_asset_id: 'asset_2', expected_design_version: 2,
