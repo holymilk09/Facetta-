@@ -10,4 +10,5 @@ build/
 facetta.db
 node_modules/
 mobile/.expo/
+.codex-previews/
 data/render_cache/

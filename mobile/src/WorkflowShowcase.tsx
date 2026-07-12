@@ -20,7 +20,7 @@ const SLIDES = [
   {
     kicker: 'Prompt',
     title: "Tell the agent what\nyou're picturing",
-    body: 'Describe the piece in plain language — carat, stone, metal, vibe. Claude reads the brief and drafts a structured, validated spec in seconds.',
+    body: 'Describe the piece in plain language — carat, stone, metal, vibe. Grok creates the concept; Facetta turns it into a structured, physically validated spec.',
     image: promptShot,
   },
   {

@@ -7,7 +7,7 @@ import {
   requestPasswordReset, Session, signInWithApple, signInWithEmail, signInWithGoogle,
   signUpWithEmail,
 } from './auth';
-import { MotionBackground } from './MotionBackground';
+import { StudioCollageBackground } from './StudioCollageBackground';
 import { radius, shadows, theme } from './theme';
 
 type Mode = 'signin' | 'signup' | 'forgot';
@@ -55,6 +55,7 @@ export function LoginScreen({
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [emailExpanded, setEmailExpanded] = useState(false);
   const [busy, setBusy] = useState<null | 'apple' | 'google' | 'email'>(null);
   const [error, setError] = useState<string | null>(null);
   const [resetSent, setResetSent] = useState(false);
@@ -72,6 +73,7 @@ export function LoginScreen({
 
   const switchMode = (m: Mode) => {
     setMode(m);
+    setEmailExpanded(m === 'forgot' ? true : emailExpanded);
     setError(null);
     setResetSent(false);
   };
@@ -105,7 +107,7 @@ export function LoginScreen({
 
   return (
     <View style={styles.root}>
-      <MotionBackground />
+      <StudioCollageBackground />
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
@@ -135,11 +137,11 @@ export function LoginScreen({
               },
             ]}>
             <Text style={styles.cardTitle}>
-              {mode === 'signin' ? 'Welcome back' : mode === 'signup' ? 'Create your studio' : 'Reset password'}
+              {mode === 'signin' ? 'Continue to Facetta' : mode === 'signup' ? 'Create your studio' : 'Reset password'}
             </Text>
             <Text style={styles.cardSubtitle}>
               {mode === 'signin'
-                ? 'Sign in to your design studio.'
+                ? 'Choose how you would like to continue.'
                 : mode === 'signup'
                   ? 'A few details and your drawing table is ready.'
                   : 'Enter your email and we will send a reset link.'}
@@ -154,7 +156,10 @@ export function LoginScreen({
                   {busy === 'apple' ? (
                     <ActivityIndicator color={theme.paper} />
                   ) : (
-                    <Text style={styles.appleButtonText}>{APPLE_GLYPH}Continue with Apple</Text>
+                    <View style={styles.providerRow}>
+                      <Text style={styles.appleIcon}>{APPLE_GLYPH.trim()}</Text>
+                      <Text style={styles.appleButtonText}>Continue with Apple</Text>
+                    </View>
                   )}
                 </Pressable>
                 <Pressable
@@ -172,36 +177,51 @@ export function LoginScreen({
                     </View>
                   )}
                 </Pressable>
-
-                <View style={styles.divider}>
-                  <View style={styles.dividerLine} />
-                  <Text style={styles.dividerText}>or with email</Text>
-                  <View style={styles.dividerLine} />
-                </View>
+                <Pressable
+                  style={[styles.socialButton, styles.emailButton, shadows.soft]}
+                  disabled={busy !== null}
+                  onPress={() => setEmailExpanded(true)}>
+                  <View style={styles.providerRow}>
+                    <Text style={styles.emailIcon}>✉</Text>
+                    <Text style={styles.emailButtonText}>Continue with email</Text>
+                  </View>
+                </Pressable>
               </>
             )}
 
-            {mode === 'signup' && (
+            {(emailExpanded || mode === 'forgot') && mode === 'signup' && (
               <RoundedInput label="Name" value={name} onChange={setName} placeholder="Ana Moreau" />
             )}
-            <RoundedInput
-              label="Email"
-              value={email}
-              onChange={setEmail}
-              placeholder="you@studio.com"
-              email
-            />
-            {mode !== 'forgot' && (
-              <RoundedInput
-                label="Password"
-                value={password}
-                onChange={setPassword}
-                placeholder="At least 8 characters"
-                secure
-              />
+            {(emailExpanded || mode === 'forgot') && (
+              <>
+                <View style={styles.emailFormHeader}>
+                  <Text style={styles.emailFormTitle}>Continue with email</Text>
+                  {mode !== 'forgot' && (
+                    <Pressable onPress={() => setEmailExpanded(false)} hitSlop={8}>
+                      <Text style={styles.closeEmail}>Close</Text>
+                    </Pressable>
+                  )}
+                </View>
+                <RoundedInput
+                  label="Email"
+                  value={email}
+                  onChange={setEmail}
+                  placeholder="you@studio.com"
+                  email
+                />
+                {mode !== 'forgot' && (
+                  <RoundedInput
+                    label="Password"
+                    value={password}
+                    onChange={setPassword}
+                    placeholder="At least 8 characters"
+                    secure
+                  />
+                )}
+              </>
             )}
 
-            {mode === 'signin' && (
+            {mode === 'signin' && emailExpanded && (
               <Pressable onPress={() => switchMode('forgot')} hitSlop={8} style={styles.forgotLink}>
                 <Text style={styles.linkText}>Forgot password?</Text>
               </Pressable>
@@ -220,18 +240,20 @@ export function LoginScreen({
               </View>
             )}
 
-            <Pressable
-              style={[styles.primaryButton, shadows.soft, busy && { opacity: 0.6 }]}
-              disabled={busy !== null}
-              onPress={submitEmail}>
-              {busy === 'email' ? (
-                <ActivityIndicator color={theme.paper} />
-              ) : (
-                <Text style={styles.primaryButtonText}>
-                  {mode === 'signin' ? 'Sign in' : mode === 'signup' ? 'Create account' : 'Send reset link'}
-                </Text>
-              )}
-            </Pressable>
+            {(emailExpanded || mode === 'forgot') && (
+              <Pressable
+                style={[styles.primaryButton, shadows.soft, busy && { opacity: 0.6 }]}
+                disabled={busy !== null}
+                onPress={submitEmail}>
+                {busy === 'email' ? (
+                  <ActivityIndicator color={theme.paper} />
+                ) : (
+                  <Text style={styles.primaryButtonText}>
+                    {mode === 'signin' ? 'Sign in' : mode === 'signup' ? 'Create account' : 'Send reset link'}
+                  </Text>
+                )}
+              </Pressable>
+            )}
 
             <View style={styles.switchRow}>
               {mode === 'signin' ? (
@@ -264,7 +286,14 @@ export function LoginScreen({
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: theme.paper },
   scroll: { flexGrow: 1, justifyContent: 'center', alignItems: 'center', padding: 24 },
-  brand: { alignItems: 'center', marginBottom: 26 },
+  brand: {
+    alignItems: 'center',
+    marginBottom: 26,
+    paddingHorizontal: 18,
+    paddingVertical: 12,
+    borderRadius: radius.lg,
+    backgroundColor: 'rgba(253,253,250,0.68)',
+  },
   wordmark: { fontFamily: theme.serif, fontSize: 26, letterSpacing: 8, color: theme.ink },
   tagline: { fontSize: 12, color: theme.faint, fontStyle: 'italic', marginTop: 6 },
   tourLink: { marginTop: 12 },
@@ -272,7 +301,7 @@ const styles = StyleSheet.create({
   card: {
     width: '100%',
     maxWidth: 440,
-    backgroundColor: 'rgba(255,255,255,0.94)',
+    backgroundColor: 'rgba(255,255,255,0.88)',
     borderRadius: radius.xl,
     borderWidth: 1,
     borderColor: theme.line,
@@ -288,6 +317,8 @@ const styles = StyleSheet.create({
     marginBottom: 10,
   },
   appleButton: { backgroundColor: '#000000' },
+  providerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 12 },
+  appleIcon: { color: '#ffffff', fontSize: 20, lineHeight: 22 },
   appleButtonText: { color: '#ffffff', fontSize: 15, fontWeight: '500' },
   googleButton: { backgroundColor: theme.card, borderWidth: 1, borderColor: theme.line },
   googleRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
@@ -302,6 +333,18 @@ const styles = StyleSheet.create({
   },
   googleBadgeText: { fontSize: 13, fontWeight: '700', color: '#4285F4' },
   googleButtonText: { color: theme.ink, fontSize: 15, fontWeight: '500' },
+  emailButton: { backgroundColor: theme.card, borderWidth: 1, borderColor: theme.line },
+  emailIcon: { color: theme.ink, fontSize: 18, lineHeight: 20 },
+  emailButtonText: { color: theme.ink, fontSize: 15, fontWeight: '500' },
+  emailFormHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: 14,
+    marginBottom: 14,
+  },
+  emailFormTitle: { fontFamily: theme.serif, fontSize: 16, color: theme.ink },
+  closeEmail: { fontSize: 13, color: theme.accent },
   divider: { flexDirection: 'row', alignItems: 'center', gap: 10, marginVertical: 14 },
   dividerLine: { flex: 1, height: 1, backgroundColor: theme.line },
   dividerText: { fontSize: 12, color: theme.faint },

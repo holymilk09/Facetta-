@@ -12,14 +12,17 @@
     "react-native-webview": "^13.16.1"
   },
   "devDependencies": {
+    "@types/node": "^26.1.1",
     "@types/react": "~19.2.2",
+    "tsx": "^4.23.0",
     "typescript": "~6.0.3"
   },
   "scripts": {
     "start": "expo start",
     "android": "expo start --android",
     "ios": "expo start --ios",
-    "web": "expo start --web"
+    "web": "expo start --web",
+    "test:studio": "tsx --test src/studio/*.test.ts"
   },
   "private": true
 }

@@ -23,7 +23,14 @@ export function createApi(baseUrl: string) {
       }
       return { ok: res.ok, status: res.status, body };
     } catch (err: any) {
-      return { ok: false, status: 0, body: { detail: String(err?.message ?? err) } };
+      const reason = String(err?.message ?? err);
+      return {
+        ok: false,
+        status: 0,
+        body: {
+          detail: `Cannot reach Facetta at ${baseUrl}. Check the connection and try again. (${reason})`,
+        },
+      };
     }
   };
   const post = (path: string, payload: unknown) =>
@@ -42,8 +49,8 @@ export function createApi(baseUrl: string) {
       post(`/specs/true-size.svg?instructions=${instructions}`, spec),
     platePreview: (spec: unknown, paper = 'ivory') =>
       post(`/specs/plate.svg?paper=${paper}`, spec),
-    fromProse: (prose: string, created_by: string) =>
-      post('/specs/from-prose', { prose, created_by }),
+    fromConcept: (brief: string) =>
+      post('/specs/from-concept', { brief, model: 'grok_direct' }),
     renderRequest: (spec: unknown, lighting: string, worn_on: string, style: string) =>
       post('/specs/render-request', { spec, lighting, worn_on, style }),
     createDesign: (created_by: string, spec: unknown, collection?: string) =>

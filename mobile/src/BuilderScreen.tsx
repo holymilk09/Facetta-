@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Image, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Api } from './api';
 import {
   BRACELET_KINDS, CATEGORIES, CATEGORY_CUTS, Category, DEFAULTS, RING_TEMPLATES,
@@ -14,6 +14,35 @@ const KARATS = [9, 14, 18, 22] as const;
 const METAL_COLORS = ['yellow', 'white', 'rose'] as const;
 const FINISHES = ['high_polish', 'satin', 'matte'] as const;
 const BAND_PROFILES = ['half_round', 'flat', 'knife_edge'] as const;
+const POPULAR_STONES = ['diamond', 'sapphire', 'ruby', 'emerald', 'tourmaline'] as const;
+
+const METAL_PRESETS = [
+  { id: '18k_yellow', material: 'gold', karat: 18, color: 'yellow', label: '18K Yellow', swatch: '#d7b55b' },
+  { id: '18k_white', material: 'gold', karat: 18, color: 'white', label: '18K White', swatch: '#d9d9d3' },
+  { id: '18k_rose', material: 'gold', karat: 18, color: 'rose', label: '18K Rose', swatch: '#d9a08f' },
+  { id: '14k_yellow', material: 'gold', karat: 14, color: 'yellow', label: '14K Yellow', swatch: '#cda64b' },
+  { id: 'platinum', material: 'platinum', karat: null, color: null, label: 'Platinum 950', swatch: '#d8dce0' },
+  { id: 'silver', material: 'silver', karat: null, color: null, label: 'Sterling Silver', swatch: '#c8cdd2' },
+] as const;
+
+// Jeweler-facing copy stays separate from the vocabulary IDs stored in specs.
+// The API still receives exact values such as `prong_4`; customers never need
+// to read database-style underscores or know every production technique.
+const MOUNT_LABELS: Record<string, string> = {
+  default: 'Any suitable setting',
+  prong_4: 'Four claws',
+  prong_6: 'Six claws',
+  v_prong: 'V-claw for pointed stones',
+  bezel: 'Full bezel',
+  semi_bezel: 'Partial bezel',
+  shared_prong: 'Shared claws',
+  pave: 'Pavé',
+  micro_pave: 'Micro-pavé',
+  channel: 'Channel set',
+  flush: 'Flush set',
+  tension: 'Tension set',
+  drop_cap: 'Drop cap',
+};
 
 const CUT_RATIOS: Record<string, { lw: number; dw: number }> = {
   round_brilliant: { lw: 1.0, dw: 0.61 },
@@ -129,7 +158,12 @@ export function BuilderScreen({
   const [notice, setNotice] = useState<{ kind: 'ok' | 'error' | 'info'; text: string } | null>(null);
   const [issues, setIssues] = useState<any[]>([]);
   const [sheetSvg, setSheetSvg] = useState<string | null>(null);
+  const [conceptImage, setConceptImage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [showAllStones, setShowAllStones] = useState(false);
+  const [showStonePrecision, setShowStonePrecision] = useState(false);
+  const [showMetalDetails, setShowMetalDetails] = useState(false);
+  const [showOutputTools, setShowOutputTools] = useState(false);
 
   useEffect(() => {
     api.stones().then((r) => r.ok && setStones(r.body.stones));
@@ -193,15 +227,15 @@ export function BuilderScreen({
     setCategory(cat);
     await selectSpecies(spec.stone.species);
     setMode(spec.mode ?? 'pro');
-    setCut(spec.stone.cut);
-    setTrade(spec.stone.color.trade);
-    setClaritySystem(spec.stone.clarity.system);
-    setGrade(spec.stone.clarity.grade);
+    setCut(spec.stone.cut ?? null);
+    setTrade(spec.stone.color?.trade ?? null);
+    setClaritySystem(spec.stone.clarity?.system ?? null);
+    setGrade(spec.stone.clarity?.grade ?? null);
     setCarat(String(spec.stone.carat));
     setDims({
-      length: String(spec.stone.dimensions_mm.length),
-      width: String(spec.stone.dimensions_mm.width),
-      depth: String(spec.stone.dimensions_mm.depth),
+      length: spec.stone.dimensions_mm?.length == null ? '' : String(spec.stone.dimensions_mm.length),
+      width: spec.stone.dimensions_mm?.width == null ? '' : String(spec.stone.dimensions_mm.width),
+      depth: spec.stone.dimensions_mm?.depth == null ? '' : String(spec.stone.dimensions_mm.depth),
     });
     setOrigin(spec.stone.origin ?? '');
     if (spec.setting) {
@@ -464,6 +498,7 @@ export function BuilderScreen({
     run(async () => {
       const r = await api.sheetPreview(buildSpec());
       if (r.ok) {
+        setConceptImage(null);
         setSheetSvg(r.body);
         setNotice({ kind: 'ok', text: 'Sheet rendered from the validated spec.' });
       } else showIssues(r.body);
@@ -473,6 +508,7 @@ export function BuilderScreen({
     run(async () => {
       const r = await api.prototypePreview(buildSpec());
       if (r.ok) {
+        setConceptImage(null);
         setSheetSvg(r.body);
         setNotice({ kind: 'ok', text: 'Colored prototype — hues straight from the vocabulary.' });
       } else showIssues(r.body);
@@ -482,6 +518,7 @@ export function BuilderScreen({
     run(async () => {
       const r = await api.trueSizePreview(buildSpec(), printGuide === 'with guide');
       if (r.ok) {
+        setConceptImage(null);
         setSheetSvg(r.body);
         setNotice({
           kind: 'ok',
@@ -499,6 +536,7 @@ export function BuilderScreen({
     run(async () => {
       const r = await api.platePreview(buildSpec(), platePaper);
       if (r.ok) {
+        setConceptImage(null);
         setSheetSvg(r.body);
         setNotice({
           kind: 'ok',
@@ -567,10 +605,21 @@ export function BuilderScreen({
 
   const compileProse = () =>
     run(async () => {
-      const r = await api.fromProse(prose, designer);
+      const r = await api.fromConcept(prose);
       if (r.ok) {
-        await applySpec(r.body);
-        setNotice({ kind: 'ok', text: 'Prose compiled into a validated spec — review and save.' });
+        await applySpec(r.body.spec);
+        setSheetSvg(null);
+        setConceptImage(
+          `data:${r.body.media_type ?? 'image/png'};base64,${r.body.concept_image_b64}`,
+        );
+        const correctionCount = Array.isArray(r.body.corrections) ? r.body.corrections.length : 0;
+        setNotice({
+          kind: 'ok',
+          text:
+            `Facetta created the concept and converted it into a validated design record` +
+            (correctionCount ? ` with ${correctionCount} physical correction(s)` : '') +
+            ' — review and save.',
+        });
       } else showIssues(r.body);
     });
 
@@ -581,11 +630,33 @@ export function BuilderScreen({
   };
 
   const gemstoneStones = stones.filter((s) => s.parameter_set === 'gemstone');
+  const visibleStones = showAllStones
+    ? gemstoneStones
+    : POPULAR_STONES
+        .map((id) => gemstoneStones.find((stone) => stone.id === id))
+        .filter(Boolean);
   const allowedCuts = CATEGORY_CUTS[category];
   const cuts = options
     ? options.cuts.filter((c: any) => !allowedCuts || allowedCuts.includes(c.id))
     : [];
   const ready = !!(species && trade);
+  const currentCutLabel = options?.cuts.find((item: any) => item.id === cut)?.name
+    ?? String(cut ?? 'Choose cut').replace(/_/g, ' ');
+  const currentSpeciesLabel = gemstoneStones.find((item) => item.id === species)?.display
+    ?? String(species ?? 'Choose stone');
+  const currentMetalPreset = METAL_PRESETS.find((preset) => (
+    preset.material === metal
+    && (preset.karat === null || preset.karat === karat)
+    && (preset.color === null || preset.color === metalColor)
+  ));
+  const metalSummary = currentMetalPreset?.label
+    ?? (metal === 'gold' ? `${karat}K ${metalColor} gold` : metal);
+
+  const selectMetalPreset = (preset: typeof METAL_PRESETS[number]) => {
+    setMetal(preset.material);
+    if (preset.karat !== null) setKarat(preset.karat);
+    if (preset.color !== null) setMetalColor(preset.color);
+  };
 
   // mounts that can physically hold a stone in this role, from the vocabulary
   const mountOptions = (role: string) => [
@@ -595,11 +666,42 @@ export function BuilderScreen({
       .map((t: any) => t.id)),
   ];
 
+  const mountLabel = (id: string) =>
+    MOUNT_LABELS[id] ?? id.replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase());
+
   const form = (
     <>
       {editing && (
         <Notice kind="info" text={`Editing ${editing.designId} — saving creates version ${editing.version + 1} (v${editing.version} stays untouched).`} />
       )}
+      <Section title="Create with Facetta">
+        <Text style={styles.sectionIntro}>
+          Start with the idea. The controls below are optional guardrails—not a form you must finish first.
+        </Text>
+        <Field
+          label="Describe the piece or change"
+          value={prose}
+          onChange={setProse}
+          multiline
+          placeholder="A Graff-inspired butterfly necklace with diamonds, tsavorite, and yellow sapphire…"
+        />
+        <Button
+          title={busy ? 'Creating…' : 'Generate concept'}
+          onPress={compileProse}
+          disabled={busy || !prose.trim()}
+        />
+      </Section>
+
+      <ChipRow
+        label="Control level"
+        options={['basic', 'pro'] as const}
+        value={mode}
+        onSelect={setMode}
+        render={(value) => value === 'basic' ? 'Guided' : 'Advanced specifications'}
+      />
+
+      {mode === 'pro' && (
+        <>
       <ChipRow
         label="Piece"
         options={CATEGORIES.map((c) => c.id)}
@@ -627,26 +729,42 @@ export function BuilderScreen({
       )}
 
       <Section title={category === 'bracelet' ? 'Station stone' : 'Stone'}>
-        {savedStones.length > 0 && (
-          <ChipRow
-            label="From your stone library — mounting adapts, the piece never rescales"
-            options={savedStones.map((s: any) => s.stone_id) as string[]}
-            value={null}
-            onSelect={applySavedStone}
-            render={(id) => savedStones.find((s: any) => s.stone_id === id)?.label ?? String(id)}
-          />
-        )}
+        <View style={styles.selectionSummary}>
+          <View style={styles.gemPreview}>
+            <View style={[styles.gemPreviewCore, {
+              backgroundColor:
+                species === 'ruby' ? '#a71f36'
+                : species === 'emerald' ? '#167a58'
+                : species === 'diamond' ? '#e7edf2'
+                : species === 'tourmaline' ? '#2db9b2'
+                : '#315bb0',
+            }]} />
+          </View>
+          <View style={styles.summaryCopy}>
+            <Text style={styles.summaryTitle}>
+              {carat || '—'} ct {trade || currentSpeciesLabel}
+            </Text>
+            <Text style={styles.summaryMeta}>{currentCutLabel} · {currentSpeciesLabel}</Text>
+          </View>
+        </View>
+
         <ChipRow
-          label="Species"
-          options={gemstoneStones.map((s) => s.id)}
+          label="Stone family"
+          options={visibleStones.map((s: any) => s.id)}
           value={species}
           onSelect={selectSpecies}
           render={(id) => gemstoneStones.find((s) => s.id === id)?.display ?? id}
         />
+        <Pressable style={styles.textAction} onPress={() => setShowAllStones(!showAllStones)}>
+          <Text style={styles.textActionLabel}>
+            {showAllStones ? 'Show common stones only' : `View all ${gemstoneStones.length} stones`}
+          </Text>
+        </Pressable>
+
         {options && (
           <>
             <ChipRow
-              label="Cut"
+              label="Shape and cut"
               options={cuts.map((c: any) => c.id)}
               value={cut}
               onSelect={setCut}
@@ -654,7 +772,7 @@ export function BuilderScreen({
             />
             {options.colors.length > 0 ? (
               <ChipRow
-                label="Color (trade term — GIA translation stored alongside)"
+                label="Color look"
                 options={options.colors.map((c: any) => c.term)}
                 value={trade}
                 onSelect={setTrade}
@@ -662,44 +780,66 @@ export function BuilderScreen({
             ) : (
               <Field label="Color (GIA description)" value={trade ?? ''} onChange={setTrade} />
             )}
-            <ChipRow
-              label={`Clarity — optional, blank = finest available (${claritySystem ?? ''})`}
-              options={(options.clarity.grades[claritySystem ?? ''] ?? []).map((g: any) => g.grade)}
-              value={grade}
-              onSelect={(g) => setGrade(grade === g ? null : g)}
-            />
-            <Field label="Carat (per stone)" value={carat} onChange={setCarat} numeric />
+            <View style={styles.compactField}>
+              <Field label="Carat per stone" value={carat} onChange={setCarat} numeric />
+            </View>
             {mode === 'pro' && (
               <>
-                <ChipRow
-                  label="Resize"
-                  options={['proportional', 'free'] as const}
-                  value={ratioLock ? 'proportional' : 'free'}
-                  onSelect={(v) => setRatioLock(v === 'proportional')}
-                  render={(v) =>
-                    v === 'proportional' ? 'Proportional — carat follows' : 'Free — each axis alone'
-                  }
-                />
-                <View style={styles.row}>
-                  <View style={styles.rowItem}>
-                    <Field label="Length mm" value={dims.length} onChange={(v) => onDimChange('length', v)} numeric />
+                <Pressable
+                  style={styles.disclosure}
+                  onPress={() => setShowStonePrecision(!showStonePrecision)}>
+                  <View>
+                    <Text style={styles.disclosureTitle}>Precision, sourcing and saved stones</Text>
+                    <Text style={styles.disclosureMeta}>Clarity, dimensions and optional origin</Text>
                   </View>
-                  <View style={styles.rowItem}>
-                    <Field label="Width mm" value={dims.width} onChange={(v) => onDimChange('width', v)} numeric />
+                  <Text style={styles.disclosureIcon}>{showStonePrecision ? '−' : '+'}</Text>
+                </Pressable>
+                {showStonePrecision && (
+                  <View style={styles.disclosureBody}>
+                    {savedStones.length > 0 && (
+                      <ChipRow
+                        label="From your stone library"
+                        options={savedStones.map((s: any) => s.stone_id) as string[]}
+                        value={null}
+                        onSelect={applySavedStone}
+                        render={(id) => savedStones.find((s: any) => s.stone_id === id)?.label ?? String(id)}
+                      />
+                    )}
+                    <ChipRow
+                      label="Clarity (optional)"
+                      options={(options.clarity.grades[claritySystem ?? ''] ?? []).map((g: any) => g.grade)}
+                      value={grade}
+                      onSelect={(g) => setGrade(grade === g ? null : g)}
+                    />
+                    <ChipRow
+                      label="Resize behavior"
+                      options={['proportional', 'free'] as const}
+                      value={ratioLock ? 'proportional' : 'free'}
+                      onSelect={(v) => setRatioLock(v === 'proportional')}
+                      render={(v) => v === 'proportional' ? 'Keep proportions' : 'Edit each axis'}
+                    />
+                    <View style={styles.row}>
+                      <View style={styles.rowItem}>
+                        <Field label="Length mm" value={dims.length} onChange={(v) => onDimChange('length', v)} numeric />
+                      </View>
+                      <View style={styles.rowItem}>
+                        <Field label="Width mm" value={dims.width} onChange={(v) => onDimChange('width', v)} numeric />
+                      </View>
+                      <View style={styles.rowItem}>
+                        <Field label="Depth mm" value={dims.depth} onChange={(v) => onDimChange('depth', v)} numeric />
+                      </View>
+                    </View>
+                    <Button
+                      title="Estimate dimensions from carat"
+                      kind="ghost"
+                      onPress={() => {
+                        const d = deriveDims();
+                        if (d) setDims({ length: String(d.length), width: String(d.width), depth: String(d.depth) });
+                      }}
+                    />
+                    <Field label="Origin (optional)" value={origin} onChange={setOrigin} placeholder="Only when supplied" />
                   </View>
-                  <View style={styles.rowItem}>
-                    <Field label="Depth mm" value={dims.depth} onChange={(v) => onDimChange('depth', v)} numeric />
-                  </View>
-                </View>
-                <Button
-                  title="Derive mm from carat"
-                  kind="ghost"
-                  onPress={() => {
-                    const d = deriveDims();
-                    if (d) setDims({ length: String(d.length), width: String(d.width), depth: String(d.depth) });
-                  }}
-                />
-                <Field label="Origin" value={origin} onChange={setOrigin} placeholder="e.g. Sri Lanka" />
+                )}
               </>
             )}
           </>
@@ -722,7 +862,13 @@ export function BuilderScreen({
             </Section>
           )}
           <Section title="Setting & Band">
-            <ChipRow label="Setting" options={SETTING_STYLES as unknown as string[]} value={settingStyle} onSelect={setSettingStyle} render={(s) => s.replace(/_/g, ' ')} />
+            <ChipRow
+              label="Setting"
+              options={SETTING_STYLES as unknown as string[]}
+              value={settingStyle}
+              onSelect={setSettingStyle}
+              render={(value) => value === '4_prong_basket' ? 'Four-claw basket' : 'Six-claw basket'}
+            />
             <ChipRow label="Profile" options={BAND_PROFILES as unknown as string[]} value={bandProfile} onSelect={setBandProfile} render={(p) => p.replace(/_/g, ' ')} />
             {mode === 'pro' && (
               <View style={styles.row}>
@@ -853,52 +999,111 @@ export function BuilderScreen({
 
       {category !== 'loose' && (
         <Section title="Metal">
-          <ChipRow label="Metal" options={METALS as unknown as string[]} value={metal} onSelect={setMetal} />
+          <View style={styles.selectionSummary}>
+            <View style={[styles.metalPreview, {
+              backgroundColor: currentMetalPreset?.swatch ?? '#d7b55b',
+            }]} />
+            <View style={styles.summaryCopy}>
+              <Text style={styles.summaryTitle}>{metalSummary}</Text>
+              <Text style={styles.summaryMeta}>
+                {finish.replace(/_/g, ' ')} · appearance preview
+              </Text>
+            </View>
+          </View>
+
+          <Text style={styles.fieldLabel}>Alloy and color</Text>
+          <View style={styles.presetGrid}>
+            {METAL_PRESETS.map((preset) => {
+              const selected = currentMetalPreset?.id === preset.id;
+              return (
+                <Pressable
+                  key={preset.id}
+                  onPress={() => selectMetalPreset(preset)}
+                  style={[styles.presetCard, selected && styles.presetCardSelected]}>
+                  <View style={[styles.presetSwatch, { backgroundColor: preset.swatch }]} />
+                  <Text style={[styles.presetLabel, selected && styles.presetLabelSelected]}>
+                    {preset.label}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+
           <ChipRow
-            label="Karat"
-            options={KARATS as unknown as number[]}
-            value={karat}
-            onSelect={setKarat}
-            render={(k) => `${k}k`}
-            disabled={!metalRules.karats.length}
-            disabledNote={`${metal} is not karated`}
+            label="Surface finish"
+            options={FINISHES as unknown as string[]}
+            value={finish}
+            onSelect={setFinish}
+            render={(value) => value.replace(/_/g, ' ')}
           />
-          <ChipRow
-            label="Color"
-            options={METAL_COLORS as unknown as string[]}
-            value={metalColor}
-            onSelect={setMetalColor}
-            disabled={!metalRules.colors.length}
-            disabledNote={`${metal} has one natural color`}
-          />
+
           {mode === 'pro' && (
-            <ChipRow label="Finish" options={FINISHES as unknown as string[]} value={finish} onSelect={setFinish} render={(f) => f.replace(/_/g, ' ')} />
+            <>
+              <Pressable
+                style={styles.disclosure}
+                onPress={() => setShowMetalDetails(!showMetalDetails)}>
+                <View>
+                  <Text style={styles.disclosureTitle}>Custom alloy and factory notes</Text>
+                  <Text style={styles.disclosureMeta}>Use only when the preset is not enough</Text>
+                </View>
+                <Text style={styles.disclosureIcon}>{showMetalDetails ? '−' : '+'}</Text>
+              </Pressable>
+              {showMetalDetails && (
+                <View style={styles.disclosureBody}>
+                  <ChipRow label="Metal family" options={METALS as unknown as string[]} value={metal} onSelect={setMetal} />
+                  <ChipRow
+                    label="Karat"
+                    options={KARATS as unknown as number[]}
+                    value={karat}
+                    onSelect={setKarat}
+                    render={(value) => `${value}k`}
+                    disabled={!metalRules.karats.length}
+                    disabledNote={`${metal} is not karated`}
+                  />
+                  <ChipRow
+                    label="Gold color"
+                    options={METAL_COLORS as unknown as string[]}
+                    value={metalColor}
+                    onSelect={setMetalColor}
+                    disabled={!metalRules.colors.length}
+                    disabledNote={`${metal} has one natural color`}
+                  />
+                  <Field label="Notes to factory" value={notes} onChange={setNotes} multiline />
+                </View>
+              )}
+            </>
           )}
-          {mode === 'pro' && <Field label="Notes to factory" value={notes} onChange={setNotes} multiline />}
         </Section>
       )}
+        </>
+      )}
 
-      <Section title="Mockup — bring it to life">
+      <Section title="Preview the direction">
+        <Text style={styles.sectionIntro}>Choose where the piece appears. Facetta keeps the design itself unchanged.</Text>
+        {mode === 'pro' && (
+          <>
+            <ChipRow
+              label="Style"
+              options={['photo', 'atelier_sketch'] as const}
+              value={renderStyle}
+              onSelect={(s) => {
+                setRenderStyle(s);
+                if (s === 'atelier_sketch') setWornOn('product');
+              }}
+              render={(s) => (s === 'photo' ? 'Photoreal' : 'Atelier sketch')}
+            />
+            <ChipRow
+              label="Lighting"
+              options={['studio', 'natural', 'outdoor', 'editorial'] as const}
+              value={lighting}
+              onSelect={setLighting}
+              disabled={renderStyle === 'atelier_sketch'}
+              disabledNote="sketches carry their own paper-and-pencil look"
+            />
+          </>
+        )}
         <ChipRow
-          label="Style"
-          options={['photo', 'atelier_sketch'] as const}
-          value={renderStyle}
-          onSelect={(s) => {
-            setRenderStyle(s);
-            if (s === 'atelier_sketch') setWornOn('product');
-          }}
-          render={(s) => (s === 'photo' ? 'Photoreal' : 'Atelier sketch')}
-        />
-        <ChipRow
-          label="Lighting"
-          options={['studio', 'natural', 'outdoor', 'editorial'] as const}
-          value={lighting}
-          onSelect={setLighting}
-          disabled={renderStyle === 'atelier_sketch'}
-          disabledNote="sketches carry their own paper-and-pencil look"
-        />
-        <ChipRow
-          label="Worn on"
+          label="Presentation"
           options={
             (category === 'ring'
               ? ['product', 'finger']
@@ -913,7 +1118,7 @@ export function BuilderScreen({
           render={(w) => (w === 'product' ? 'product only' : `on a ${w}`)}
         />
         <Button
-          title="Compile mockup request"
+          title="Prepare preview"
           kind="ghost"
           onPress={compileMockup}
           disabled={busy || !ready}
@@ -926,19 +1131,6 @@ export function BuilderScreen({
           </Text>
         )}
       </Section>
-
-      <Section title="Describe it instead (Claude)">
-        <Field
-          label="Prose"
-          value={prose}
-          onChange={setProse}
-          multiline
-          placeholder="A two carat royal blue oval sapphire in 18k yellow gold, size 6.5…"
-        />
-        <Button title="Compile prose → spec" kind="ghost" onPress={compileProse} disabled={busy || !prose} />
-      </Section>
-
-      <ChipRow options={['basic', 'pro'] as const} value={mode} onSelect={setMode} render={(m) => (m === 'basic' ? 'Basic mode' : 'Pro mode')} />
 
       {collections.length > 0 && !newCollection ? (
         <ChipRow
@@ -973,66 +1165,86 @@ export function BuilderScreen({
         </>
       )}
 
-      {category !== 'loose' && findings?.setting_techniques && (
-        <>
+      {mode === 'pro' && category !== 'loose' && findings?.setting_techniques && (
+          <>
           {(category === 'ring' || category === 'pendant') && (
             <ChipRow
-              label="Center stone mount"
+              label="Center stone setting"
               options={mountOptions('center')}
               value={centerMount}
               onSelect={setCenterMount}
+              render={mountLabel}
             />
           )}
           {(category === 'pendant' || (category === 'ring' && ringTemplate === 'halo_prong')) && (
             <ChipRow
-              label="Surround / halo mount"
+              label="Surround stone setting"
               options={mountOptions('side')}
               value={surroundMount}
               onSelect={setSurroundMount}
+              render={mountLabel}
             />
           )}
           {category === 'pendant' && dropStone && (
             <ChipRow
-              label="Drop mount"
+              label="Drop stone setting"
               options={mountOptions('drop')}
               value={dropMount}
               onSelect={setDropMount}
+              render={mountLabel}
             />
           )}
           {category === 'bracelet' && (
             <ChipRow
-              label="Station mount"
+              label="Bracelet stone setting"
               options={mountOptions('station')}
               value={stationMount}
               onSelect={setStationMount}
+              render={mountLabel}
             />
           )}
-        </>
+          </>
       )}
 
-      <ChipRow
-        label="Plate paper — what the presentation plate is drawn on"
-        options={['ivory', 'white', 'grey', 'midnight', 'black', 'blush']}
-        value={platePaper}
-        onSelect={setPlatePaper}
-      />
-
-      <ChipRow
-        label="1:1 print sheet — on screen everything stays enlarged; printed at 100% it is true to size"
-        options={['with guide', 'clean (for photos)'] as const}
-        value={printGuide}
-        onSelect={setPrintGuide}
-      />
-
-      <View style={styles.actions}>
-        <Button title="Validate" onPress={validate} disabled={busy || !ready} />
-        <Button title="Save stone to library" kind="ghost" onPress={saveStoneToLibrary} disabled={busy || !ready} />
-        <Button title="Preview sheet" onPress={preview} disabled={busy || !ready} />
-        <Button title="Color prototype" onPress={prototype} disabled={busy || !ready} />
-        <Button title="True size (print 1:1)" kind="ghost" onPress={trueSize} disabled={busy || !ready} />
-        <Button title="Presentation plate" kind="ghost" onPress={plate} disabled={busy || !ready} />
-        <Button title={editing ? 'Save new version' : 'Save design'} onPress={save} disabled={busy || !ready} />
-      </View>
+      <Section title="Save and continue">
+        <Text style={styles.sectionIntro}>
+          Keep this direction in your library now. Client, marketing, and factory preparation remain optional destinations.
+        </Text>
+        <View style={styles.actions}>
+          <Button title={editing ? 'Save new revision' : 'Save design'} onPress={save} disabled={busy || !ready} />
+          <Button title="Check details" kind="ghost" onPress={validate} disabled={busy || !ready} />
+        </View>
+        <Pressable style={styles.disclosure} onPress={() => setShowOutputTools(!showOutputTools)}>
+          <View>
+            <Text style={styles.disclosureTitle}>Optional output tools</Text>
+            <Text style={styles.disclosureMeta}>Presentation, true-size review, color plate and stone library</Text>
+          </View>
+          <Text style={styles.disclosureIcon}>{showOutputTools ? '−' : '+'}</Text>
+        </Pressable>
+        {showOutputTools && (
+          <View style={styles.disclosureBody}>
+            <ChipRow
+              label="Presentation background"
+              options={['ivory', 'white', 'grey', 'midnight', 'black', 'blush']}
+              value={platePaper}
+              onSelect={setPlatePaper}
+            />
+            <ChipRow
+              label="True-size sheet"
+              options={['with guide', 'clean (for photos)'] as const}
+              value={printGuide}
+              onSelect={setPrintGuide}
+            />
+            <View style={styles.actions}>
+              <Button title="Save stone" kind="ghost" onPress={saveStoneToLibrary} disabled={busy || !ready} />
+              <Button title="Preview review sheet" kind="ghost" onPress={preview} disabled={busy || !ready} />
+              <Button title="Color plate" kind="ghost" onPress={prototype} disabled={busy || !ready} />
+              <Button title="True size 1:1" kind="ghost" onPress={trueSize} disabled={busy || !ready} />
+              <Button title="Presentation plate" kind="ghost" onPress={plate} disabled={busy || !ready} />
+            </View>
+          </View>
+        )}
+      </Section>
 
       {notice && <Notice kind={notice.kind} text={notice.text} />}
       {issues.map((issue, i) => (
@@ -1045,6 +1257,9 @@ export function BuilderScreen({
         />
       ))}
       {!isWide && sheetSvg && <SheetView svg={sheetSvg} />}
+      {!isWide && conceptImage && (
+        <Image source={{ uri: conceptImage }} style={styles.conceptImage} resizeMode="contain" />
+      )}
       <View style={{ height: 40 }} />
     </>
   );
@@ -1056,11 +1271,13 @@ export function BuilderScreen({
     <View style={styles.wide}>
       <ScrollView style={styles.wideForm} contentContainerStyle={styles.content}>{form}</ScrollView>
       <View style={styles.widePreview}>
-        <Text style={styles.previewTitle}>LIVE SHEET</Text>
+        <Text style={styles.previewTitle}>{conceptImage ? 'GROK CONCEPT' : 'LIVE SHEET'}</Text>
         {sheetSvg ? (
           <SheetView svg={sheetSvg} />
+        ) : conceptImage ? (
+          <Image source={{ uri: conceptImage }} style={styles.conceptImage} resizeMode="contain" />
         ) : (
-          <Text style={styles.hint}>Tap “Preview sheet” to render the technical sheet here.</Text>
+          <Text style={styles.hint}>Generate a concept or open a review sheet to see it here.</Text>
         )}
       </View>
     </View>
@@ -1073,8 +1290,93 @@ const styles = StyleSheet.create({
   row: { flexDirection: 'row', gap: 8 },
   rowItem: { flex: 1 },
   actions: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 4 },
+  sectionIntro: { fontSize: 12, lineHeight: 18, color: theme.faint, marginBottom: 12 },
+  fieldLabel: { fontSize: 12, color: theme.faint, marginBottom: 6 },
+  selectionSummary: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: theme.line,
+    borderRadius: 14,
+    backgroundColor: theme.paper,
+    padding: 10,
+    marginBottom: 12,
+  },
+  gemPreview: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#eef0f4',
+    borderWidth: 1,
+    borderColor: '#d7dae0',
+  },
+  gemPreviewCore: {
+    width: 25,
+    height: 32,
+    borderRadius: 14,
+    borderWidth: 2,
+    borderColor: 'rgba(255,255,255,0.72)',
+    transform: [{ rotate: '12deg' }],
+  },
+  metalPreview: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    borderWidth: 5,
+    borderColor: 'rgba(255,255,255,0.62)',
+  },
+  summaryCopy: { flex: 1, marginLeft: 11 },
+  summaryTitle: { fontFamily: theme.serif, fontSize: 17, color: theme.ink },
+  summaryMeta: { fontSize: 11, color: theme.faint, marginTop: 2, textTransform: 'capitalize' },
+  textAction: { alignSelf: 'flex-start', paddingVertical: 3, marginTop: -5, marginBottom: 11 },
+  textActionLabel: { fontSize: 12, color: theme.accent, textDecorationLine: 'underline' },
+  compactField: { maxWidth: 220 },
+  disclosure: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    borderTopWidth: 1,
+    borderTopColor: theme.line,
+    paddingVertical: 12,
+    marginTop: 2,
+  },
+  disclosureTitle: { fontSize: 13, color: theme.ink, fontWeight: '600' },
+  disclosureMeta: { fontSize: 11, color: theme.faint, marginTop: 2 },
+  disclosureIcon: { fontSize: 22, lineHeight: 24, color: theme.accent, marginLeft: 12 },
+  disclosureBody: {
+    borderTopWidth: 1,
+    borderTopColor: theme.line,
+    paddingTop: 12,
+  },
+  presetGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginBottom: 12 },
+  presetCard: {
+    width: '48%',
+    minHeight: 52,
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: theme.line,
+    borderRadius: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    backgroundColor: theme.paper,
+  },
+  presetCardSelected: { borderColor: theme.ink, backgroundColor: '#f1eee8' },
+  presetSwatch: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(63,63,63,0.18)',
+    marginRight: 8,
+  },
+  presetLabel: { flex: 1, fontSize: 12, color: theme.ink },
+  presetLabelSelected: { fontWeight: '700' },
   hint: { fontSize: 11, color: theme.faint, marginBottom: 8, fontStyle: 'italic' },
   mockupText: { fontSize: 12, color: theme.ink, marginTop: 8, lineHeight: 17 },
+  conceptImage: { flex: 1, width: '100%', minHeight: 420 },
   wide: { flex: 1, flexDirection: 'row' },
   wideForm: { flex: 1.05, borderRightWidth: 1, borderRightColor: theme.line },
   widePreview: { flex: 1, padding: 14 },

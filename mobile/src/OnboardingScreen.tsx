@@ -1,8 +1,9 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Animated, Easing, Image, Pressable, StyleSheet, Text, View } from 'react-native';
 import {
-  Float, GemSketch, MotionBackground, Pulse, RingSketch, SparkleSketch,
+  Float, Pulse, RingSketch, SparkleSketch,
 } from './MotionBackground';
+import { StudioCollageBackground } from './StudioCollageBackground';
 import { radius, shadows, sketchGold, sketchInk, theme } from './theme';
 
 // Grok-rendered vignettes (see facetta.render.generate_image) — photoreal
@@ -72,53 +73,24 @@ function IllustrationSheet() {
   );
 }
 
-function IllustrationShare() {
-  return (
-    <View style={styles.vignette}>
-      <Float duration={8500} drift={6} tilt={2}>
-        <View style={{ width: 150, height: 130 }}>
-          <View style={[styles.versionCard, { top: 18, left: 22, opacity: 0.45 }]}>
-            <Text style={styles.versionLabel}>v1</Text>
-          </View>
-          <View style={[styles.versionCard, { top: 0, left: 0 }, shadows.soft]}>
-            <Text style={styles.versionLabel}>v2</Text>
-            <GemSketch size={40} color={sketchGold(0.8)} stroke={1.5} />
-          </View>
-          <Pulse style={{ position: 'absolute', top: -8, right: 14 }} duration={2600}>
-            <View style={styles.commentDot}>
-              <Text style={styles.commentDotText}>2</Text>
-            </View>
-          </Pulse>
-        </View>
-      </Float>
-    </View>
-  );
-}
-
 const STEPS = [
   {
-    kicker: 'Design',
-    title: 'Describe the piece,\nnot the polygons',
-    body: "Build a design from a jeweler's vocabulary — stone, cut, color, metal, setting. Structured choices, no CAD, no free-text guesswork.",
+    kicker: 'Imagine',
+    title: 'Begin with an idea',
+    body: 'Describe the piece in your own words or begin from visual inspiration. Facetta turns creative direction into a jewelry design you can refine.',
     illustration: IllustrationDescribe,
   },
   {
-    kicker: 'Precision',
-    title: 'Dimensional truth,\nalways',
-    body: 'Every output derives from exact millimeters. Carat and size are cross-checked by stone density, so an impossible spec is caught before anyone cuts metal.',
+    kicker: 'Refine',
+    title: 'Shape every detail',
+    body: 'Explore stones, cuts, settings, metals, and proportions with AI guidance — while every choice remains structured, editable, and yours.',
     illustration: IllustrationTruth,
   },
   {
-    kicker: 'Manufacture',
-    title: 'Factory-ready sheets\nin one tap',
-    body: 'Your parameters compile into an annotated technical sheet any workshop can build from — the same drawing, every time, from the same spec.',
+    kicker: 'Make',
+    title: 'From vision to workshop',
+    body: 'Move from a beautiful concept to an exact, dimensioned technical sheet built from the same design — ready to share with your factory.',
     illustration: IllustrationSheet,
-  },
-  {
-    kicker: 'Collaborate',
-    title: 'Every version,\non the record',
-    body: 'Designs are immutable versions with share links and pinned comments. Designer, factory, and client always reference the same unambiguous state.',
-    illustration: IllustrationShare,
   },
 ];
 
@@ -162,7 +134,7 @@ export function OnboardingScreen({ onDone }: { onDone: () => void }) {
 
   return (
     <View style={styles.root}>
-      <MotionBackground intensity={0.8} />
+      <StudioCollageBackground />
 
       <View style={styles.topBar}>
         <Text style={styles.wordmark}>F A C E T T A</Text>
@@ -217,7 +189,7 @@ const styles = StyleSheet.create({
     width: 240,
     height: 220,
     borderRadius: radius.xl,
-    backgroundColor: theme.card,
+    backgroundColor: 'rgba(255,255,255,0.9)',
     borderWidth: 1,
     borderColor: theme.line,
     alignItems: 'center',
