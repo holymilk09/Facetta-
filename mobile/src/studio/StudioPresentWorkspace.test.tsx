@@ -38,7 +38,8 @@ describe('StudioPresentWorkspace', () => {
       createdBy="designer"
     />);
 
-    expect(screen.getByText('Revision 4 · asset_4')).toBeTruthy();
+    expect(screen.getByText('Confirmed revision 4')).toBeTruthy();
+    expect(screen.queryByText(/asset_4/)).toBeNull();
     expect(screen.getByText('1 requested output · estimated 18 credits')).toBeTruthy();
     fireEvent.press(screen.getByText('Product photo'));
     const generate = await screen.findByText('Create client product photo');
@@ -77,7 +78,8 @@ describe('StudioPresentWorkspace', () => {
 
     fireEvent.press(screen.getByText('Marketing'));
     expect(await screen.findByText('2 requested outputs · estimated 36 credits')).toBeTruthy();
-    expect(screen.getByText('Estimate: 18 credits per requested output. Internal retries and failed quality checks add 0 credits.')).toBeTruthy();
+    expect(screen.getByText('You are charged only for requested outputs that are ready to use. Unusable results cost 0 credits.')).toBeTruthy();
+    expect(screen.queryByText(/failed quality checks/i)).toBeNull();
     await act(async () => { fireEvent.press(screen.getByText('Generate 2 review candidates')); });
 
     await waitFor(() => expect(createMarketingPresentation).toHaveBeenCalledWith('project_1', {
@@ -85,6 +87,7 @@ describe('StudioPresentWorkspace', () => {
       presets: ['catalog_white', 'luxury_studio'], framing: 'square',
     }));
     expect(await screen.findByText('1 of 2 requested outputs are ready for review. Nothing changed your design revision.')).toBeTruthy();
+    expect(screen.getByText(/Design preserved/)).toBeTruthy();
     expect(screen.getByText('Luxury studio: Could not preserve the setting.')).toBeTruthy();
   });
 });

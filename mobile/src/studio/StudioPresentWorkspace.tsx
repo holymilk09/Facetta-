@@ -11,6 +11,7 @@ import type {
 } from '../trusted/types';
 import { getStudioAction } from './actions';
 import type { ExactStudioLineage, StudioGateway } from './gateway';
+import { designerReviewState } from './designerReviewLanguage';
 
 const PRESETS: readonly ProductPhotoPreset[] = [
   'catalog_white', 'luxury_studio', 'dark_editorial', 'macro_detail',
@@ -58,14 +59,14 @@ function beautyCard(result: BeautyRenderResult): PresentationCard {
     id: result.asset_id,
     title: 'Client beauty render',
     imageUrl: assetUrl(result.project, result.asset_id),
-    detail: `Saved presentation · quality ${result.qa.verdict}`,
+    detail: `Saved presentation · ${designerReviewState(result.qa.verdict)}`,
     status: 'saved',
   };
   return {
     id: result.warning_candidate.candidate_id ?? result.image_run_id,
     title: 'Beauty render needs review',
     imageUrl: result.warning_candidate.preview_url,
-    detail: `Temporary candidate · quality ${result.quality_report.verdict}`,
+    detail: `Temporary candidate · ${designerReviewState(result.quality_report.verdict)}`,
     status: 'review',
   };
 }
@@ -75,14 +76,14 @@ function productCard(result: ProductPhotoResult): PresentationCard {
     id: result.asset_id,
     title: presetLabel(result.presentation.preset),
     imageUrl: assetUrl(result.project, result.asset_id),
-    detail: `Saved presentation · ${framingLabel(result.presentation.framing)} · quality ${result.qa.verdict}`,
+    detail: `Saved presentation · ${framingLabel(result.presentation.framing)} · ${designerReviewState(result.qa.verdict)}`,
     status: 'saved',
   };
   return {
     id: result.warning_candidate.candidate_id ?? result.image_run_id,
     title: `${presetLabel(result.presentation.preset)} needs review`,
     imageUrl: result.warning_candidate.preview_url,
-    detail: `Temporary candidate · ${framingLabel(result.presentation.framing)} · quality ${result.quality_report.verdict}`,
+    detail: `Temporary candidate · ${framingLabel(result.presentation.framing)} · ${designerReviewState(result.quality_report.verdict)}`,
     status: 'review',
   };
 }
@@ -92,7 +93,7 @@ function marketingCards(result: MarketingPackResult): PresentationCard[] {
     id: candidate.candidate_id,
     title: presetLabel(candidate.preset),
     imageUrl: candidate.preview_url,
-    detail: `Temporary candidate · ${framingLabel(candidate.framing)} · quality ${candidate.qa.verdict}`,
+    detail: `Temporary candidate · ${framingLabel(candidate.framing)} · ${designerReviewState(candidate.qa.verdict)}`,
     status: 'review',
   }));
 }
@@ -120,7 +121,7 @@ export function StudioPresentWorkspace({
     ? `Generate ${outputCount} review candidate${outputCount === 1 ? '' : 's'}`
     : clientFormat === 'beauty' ? 'Create client beauty render' : 'Create client product photo';
   const exactRevision = useMemo(() => lineage === null ? null
-    : `Revision ${lineage.sourceDesignVersion} · ${lineage.sourceAssetId}`, [lineage]);
+    : `Confirmed revision ${lineage.sourceDesignVersion}`, [lineage]);
 
   const togglePreset = (value: ProductPhotoPreset): void => {
     setMarketingPresets((current) => current.includes(value)
@@ -246,7 +247,7 @@ export function StudioPresentWorkspace({
 
       <View style={styles.costCard}>
         <Text style={styles.costTitle}>{outputCount} requested output{outputCount === 1 ? '' : 's'} · estimated {creditEstimate} credits</Text>
-        <Text style={styles.costCopy}>Estimate: {PRESENT_CREDITS} credits per requested output. Internal retries and failed quality checks add 0 credits.</Text>
+        <Text style={styles.costCopy}>You are charged only for requested outputs that are ready to use. Unusable results cost 0 credits.</Text>
       </View>
       {error !== null && <Notice kind="error" text={error} />}
       <Button title={busy ? 'Generating and checking…' : requestLabel}

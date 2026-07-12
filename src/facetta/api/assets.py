@@ -37,6 +37,7 @@ from facetta.markup_snapshot import (
     MarkupSnapshotImageError,
     composite_markup_snapshot,
 )
+from facetta.project_backbone import is_primary_revision
 from facetta.render import RenderUnavailable, _sniff_media_type
 from facetta.revision_component_map import (
     bind_map_to_raster,
@@ -181,19 +182,9 @@ def _chain(db: Session, root_id: str) -> list[ImageAsset]:
         .order_by(ImageAsset.created_at, ImageAsset.id)))
 
 
-_PRIMARY_REVISION_CAPABILITIES = frozenset({
-    "CREATIVE_RENDER",
-    "JEWELRY_RENDER",
-    "SPEC_RENDER",
-    "IMPORTED_REFERENCE",
-    "LOCALIZED_EDIT",
-    "GLOBAL_RESTYLE",
-    "PRODUCT_PHOTO",
-})
-
-
 def _is_primary_revision(asset: ImageAsset) -> bool:
-    return asset.capability in _PRIMARY_REVISION_CAPABILITIES
+    """Compatibility alias for the one canonical revision classification."""
+    return is_primary_revision(asset)
 
 
 def _version_number(chain: list[ImageAsset], asset_id: str) -> int:
@@ -1683,6 +1674,19 @@ def _exact_linked_design(db: Session, asset: ImageAsset):
     return root.design_id, row.version, result.spec
 
 
+def _requires_creative_spec_promotion(
+    db: Session,
+    asset: ImageAsset,
+) -> bool:
+    """Keep every pre-spec primary outside approval and factory authority."""
+
+    if asset.capability == "CREATIVE_RENDER":
+        return True
+    if asset.capability in {"VARIATION_BRANCH", "RESTORED_REVISION"}:
+        return _exact_linked_design(db, asset) is None
+    return False
+
+
 def _newest_checklist(db: Session, asset_id: str) -> ApprovalChecklist | None:
     return db.execute(
         select(ApprovalChecklist)
@@ -1715,7 +1719,7 @@ def pin_asset(asset_id: str, db: DbSession):
     mode isn't 'optional'): every item must be approved first — the tap-tap
     ritual IS the road to the factory. No checklist → pin behaves as always."""
     asset = _get_asset(db, asset_id)
-    if asset.capability == "CREATIVE_RENDER":
+    if _requires_creative_spec_promotion(db, asset):
         return JSONResponse(status_code=409, content={
             "detail": (
                 "creative candidates must be promoted with a designer-confirmed "
@@ -1766,7 +1770,7 @@ def create_checklist(asset_id: str, request: ChecklistCreateRequest,
     The spec comes from the body, else the chain's design link; with neither
     there is nothing to derive facts from → 409."""
     asset = _get_asset(db, asset_id)
-    if asset.capability == "CREATIVE_RENDER":
+    if _requires_creative_spec_promotion(db, asset):
         return JSONResponse(status_code=409, content={
             "detail": (
                 "creative candidates are review-only; confirm and persist an "

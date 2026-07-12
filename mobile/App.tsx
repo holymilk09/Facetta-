@@ -483,9 +483,9 @@ export default function App() {
             Short, action-specific guidance keeps education available without crowding the Studio canvas.
           </Text>
           {[
-            ['Create a strong reference set', 'Give each upload one role: source design, style, mask, model, or scene.'],
+            ['Start from a useful source', 'Begin with a sentence or add one master-geometry image from a sketch, photograph, or render.'],
             ['Refine without design drift', 'Target one region and keep the active revision immutable until you accept a preview.'],
-            ['Understand quality checks', 'Review pass, warning, and rejection evidence before promoting a candidate.'],
+            ['Make a confident decision', 'Compare the exact source and preview, then apply, branch, or discard without losing history.'],
           ].map(([title, body]) => (
             <View key={title} style={styles.learnCard}>
               <Text style={styles.learnCardTitle}>{title}</Text>

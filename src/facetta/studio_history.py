@@ -377,6 +377,14 @@ def fork_project_variation(
             "the selected variation source is not in this project",
             status_code=404,
         )
+    if project.owner != created_by:
+        # Do not disclose another designer's project or allow its history to
+        # be extended by a caller-controlled attribution field.
+        raise StudioHistoryError(
+            "variation_source_unavailable",
+            "the selected variation source is not in this project",
+            status_code=404,
+        )
     if not is_primary_revision(source):
         raise StudioHistoryError(
             "variation_source_not_revision",
@@ -549,6 +557,12 @@ def restore_project_revision(
     root = db.get(ImageAsset, project_root_id)
     if (project is None or root is None or selected is None
             or selected.root_id != project_root_id):
+        raise StudioHistoryError(
+            "restore_revision_unavailable",
+            "the selected historical revision is not in this project",
+            status_code=404,
+        )
+    if project.owner != created_by:
         raise StudioHistoryError(
             "restore_revision_unavailable",
             "the selected historical revision is not in this project",

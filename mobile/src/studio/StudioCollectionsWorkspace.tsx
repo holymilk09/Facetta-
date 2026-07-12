@@ -20,11 +20,6 @@ import type {
   StudioProjectHistory,
 } from '../trusted/types';
 
-/**
- * The backend currently resolves a family only from a selected Project. It
- * does not expose an all-family listing route, so this workspace deliberately
- * accepts an exact selected Project instead of fabricating a collection index.
- */
 export type StudioCollectionsApi = Pick<TrustedApiClient,
   | 'getDesignFamily'
   | 'listDesignFamilies'
@@ -41,6 +36,8 @@ export interface StudioCollectionsWorkspaceProps {
   onOpenProject: (projectId: string) => void;
   onProjectChanged: (project: ProjectDetail) => void;
   onVariationCreated: (project: ProjectDetail) => void;
+  /** Optional host navigation; the workspace has an internal fallback. */
+  onShowAllFamilies?: () => void;
 }
 
 interface WorkspaceData {
@@ -53,14 +50,47 @@ function variationName(variation: DesignFamilyVariation): string {
     || `Variation ${variation.variation_index}`;
 }
 
-function revisionLineage(revision: StudioHistoryRevision): string {
-  const parent = revision.parent_asset_id === null
-    ? 'original source'
-    : `parent ${revision.parent_asset_id}`;
-  const spec = revision.design_version === null
-    ? 'legacy spec provenance'
-    : `spec ${revision.design_version}`;
-  return `${revision.asset_id} · ${spec} · ${parent}`;
+function variationDisplayName(variation: DesignFamilyVariation): string {
+  return `Variation ${variation.variation_index} · ${variationName(variation)}`;
+}
+
+function dateLabel(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return 'Date unavailable';
+  return new Intl.DateTimeFormat('en', {
+    day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC',
+  }).format(date);
+}
+
+function revisionLineage(
+  revision: StudioHistoryRevision,
+  revisions: StudioHistoryRevision[],
+): string {
+  const sourceAssetId = revision.restored_from_asset_id ?? revision.parent_asset_id;
+  const source = sourceAssetId === null
+    ? null : revisions.find((candidate) => candidate.asset_id === sourceAssetId) ?? null;
+  const relationship = revision.action === 'created' || source === null
+    ? 'Original direction'
+    : revision.action === 'restore'
+      ? `Restored from Revision ${source.revision}`
+      : `Refined from Revision ${source.revision}`;
+  const authority = revision.design_version === null
+    ? 'Visual direction'
+    : 'Design facts confirmed';
+  return `${relationship} · ${authority}`;
+}
+
+function variationLineage(
+  variation: DesignFamilyVariation,
+  family: DesignFamilyDetail,
+): string {
+  if (variation.branched_from_project_root_id === null) return 'Original family direction';
+  const parent = family.variations.find((candidate) => (
+    candidate.root_id === variation.branched_from_project_root_id
+  ));
+  return parent === undefined
+    ? 'Branched from an earlier family direction'
+    : `Branched from ${variationDisplayName(parent)}`;
 }
 
 export function StudioCollectionsWorkspace({
@@ -70,6 +100,7 @@ export function StudioCollectionsWorkspace({
   onOpenProject,
   onProjectChanged,
   onVariationCreated,
+  onShowAllFamilies,
 }: StudioCollectionsWorkspaceProps) {
   const [data, setData] = useState<WorkspaceData | null>(null);
   const [loading, setLoading] = useState(project !== null);
@@ -79,6 +110,7 @@ export function StudioCollectionsWorkspace({
   const [branching, setBranching] = useState(false);
   const [restoringAssetId, setRestoringAssetId] = useState<string | null>(null);
   const [families, setFamilies] = useState<DesignFamilyDetail[] | null>(null);
+  const [viewingAllFamilies, setViewingAllFamilies] = useState(false);
 
   useEffect(() => {
     let current = true;
@@ -86,8 +118,9 @@ export function StudioCollectionsWorkspace({
     setError(null);
     setCompareAssetIds([]);
     setVariationLabel('');
-    if (project === null) {
+    if (project === null || viewingAllFamilies) {
       setLoading(true);
+      setFamilies(null);
       void api.listDesignFamilies(createdBy).then((result) => {
         if (!current) return;
         setLoading(false);
@@ -110,7 +143,7 @@ export function StudioCollectionsWorkspace({
       }
       if (historyResult.data.project_id !== project.root_id
         || historyResult.data.active_asset_id !== project.active_asset_id) {
-        setError('The saved history no longer matches the selected active revision. Reopen the design.');
+        setError('This design changed while its history was opening. Reopen it to continue.');
         setLoading(false);
         return;
       }
@@ -127,7 +160,7 @@ export function StudioCollectionsWorkspace({
           || !familyResult.data.variations.some((variation) => (
             variation.root_id === project.root_id
           ))) {
-          setError('The design family response did not preserve the selected project lineage.');
+          setError('This family no longer contains the selected variation. Return to All families.');
           setLoading(false);
           return;
         }
@@ -137,7 +170,20 @@ export function StudioCollectionsWorkspace({
       setLoading(false);
     });
     return () => { current = false; };
-  }, [api, createdBy, project?.root_id]);
+  }, [api, createdBy, project?.root_id, viewingAllFamilies]);
+
+  const showAllFamilies = (): void => {
+    if (onShowAllFamilies !== undefined) {
+      onShowAllFamilies();
+      return;
+    }
+    setViewingAllFamilies(true);
+  };
+
+  const openFromFamilyIndex = (projectId: string): void => {
+    setViewingAllFamilies(false);
+    onOpenProject(projectId);
+  };
 
   const compared = useMemo(() => {
     if (data === null) return [];
@@ -173,7 +219,7 @@ export function StudioCollectionsWorkspace({
     }
     if (result.data.source_project_id !== project.root_id
       || result.data.source_asset_id !== project.active_asset_id) {
-      setError('The new variation did not preserve the selected active revision lineage.');
+      setError('Facetta could not verify the source revision. No variation was created.');
       return;
     }
     setVariationLabel('');
@@ -201,13 +247,13 @@ export function StudioCollectionsWorkspace({
     }
     if (result.data.restored_from_asset_id !== revision.asset_id
       || result.data.project.active_asset_id !== result.data.new_asset_id) {
-      setError('The restored revision response did not preserve its exact source lineage.');
+      setError('Facetta could not verify the restored revision. Nothing was changed.');
       return;
     }
     onProjectChanged(result.data.project);
   };
 
-  if (project === null) {
+  if (project === null || viewingAllFamilies) {
     if (loading) {
       return (
         <View style={styles.loadingState}>
@@ -218,6 +264,15 @@ export function StudioCollectionsWorkspace({
     }
     return (
       <ScrollView contentContainerStyle={styles.workspace}>
+        {viewingAllFamilies && project !== null && (
+          <View style={styles.backRow}>
+            <Button
+              title="Back to current variation"
+              kind="ghost"
+              onPress={() => setViewingAllFamilies(false)}
+            />
+          </View>
+        )}
         <Text style={styles.eyebrow}>COLLECTIONS</Text>
         <Text style={styles.familyTitle}>Your design families</Text>
         <Text style={styles.sectionCopy}>Choose a direction to open its variations and immutable revision history.</Text>
@@ -241,7 +296,7 @@ export function StudioCollectionsWorkspace({
                 <Pressable
                   key={familyItem.family_id}
                   disabled={representative === undefined}
-                  onPress={() => representative !== undefined && onOpenProject(representative.root_id)}
+                  onPress={() => representative !== undefined && openFromFamilyIndex(representative.root_id)}
                   style={styles.variationCard}>
                   {cover === null ? <View style={[styles.variationCover, styles.coverPlaceholder]} /> : (
                     <Image source={{ uri: api.assetImageUrl(cover) }} style={styles.variationCover} />
@@ -269,20 +324,21 @@ export function StudioCollectionsWorkspace({
   if (data === null) {
     return (
       <ScrollView contentContainerStyle={styles.workspace}>
+        <View style={styles.backRow}>
+          <Button title="All families" kind="ghost" onPress={showAllFamilies} />
+        </View>
         {error !== null && <Notice kind="error" text={error} />}
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Saved history is unavailable</Text>
           <Text style={styles.sectionCopy}>
-            No family or revision data is being inferred. The selected design remains unchanged.
+            Facetta will not guess at missing history. The selected design remains unchanged.
           </Text>
         </View>
         <View style={styles.section}>
           <Text style={styles.branchTitle}>Explore from the selected active revision</Text>
           <Text style={styles.meta}>
-            A new variation can still start from asset {project.active_asset_id ?? 'unavailable'}
-            {project.active_design_version === null
-              ? ' · legacy specification provenance'
-              : ` · spec ${project.active_design_version}`}.
+            A new variation can still begin from the current saved revision. Its exact source
+            remains attached behind the scenes.
           </Text>
           <Field
             label="Variation name"
@@ -312,6 +368,9 @@ export function StudioCollectionsWorkspace({
 
   return (
     <ScrollView contentContainerStyle={styles.workspace}>
+      <View style={styles.backRow}>
+        <Button title="All families" kind="ghost" onPress={showAllFamilies} />
+      </View>
       {error !== null && <Notice kind="error" text={error} />}
 
       <View style={styles.familyHero}>
@@ -369,15 +428,13 @@ export function StudioCollectionsWorkspace({
                     <View style={[styles.variationCover, styles.coverPlaceholder]} />
                   )}
                   <Text style={styles.variationTitle}>
-                    {variationName(variation)}{selected ? ' · Current' : ''}
+                    {variationDisplayName(variation)}{selected ? ' · Current' : ''}
                   </Text>
                   <Text style={styles.meta}>
                     {variation.primary_revision_count} revision{variation.primary_revision_count === 1 ? '' : 's'}
                   </Text>
                   <Text style={styles.lineage}>
-                    {variation.branched_from_asset_id === null
-                      ? `Root project ${variation.root_id}`
-                      : `From ${variation.branched_from_project_root_id} · asset ${variation.branched_from_asset_id}`}
+                    {variationLineage(variation, family)}
                   </Text>
                 </Pressable>
               );
@@ -388,10 +445,10 @@ export function StudioCollectionsWorkspace({
         <View style={styles.branchCard}>
           <Text style={styles.branchTitle}>Explore without changing this direction</Text>
           <Text style={styles.meta}>
-            The new variation begins from active asset {project.active_asset_id ?? 'unavailable'}
-            {project.active_design_version === null
-              ? ' · legacy specification provenance'
-              : ` · spec ${project.active_design_version}`}.
+            The new variation begins from the current Revision {data.history.revisions.find((revision) => (
+              revision.asset_id === activeAssetId
+            ))?.revision ?? data.history.revisions.length}. The exact source remains attached
+            behind the scenes.
           </Text>
           <Field
             label="Variation name"
@@ -417,8 +474,9 @@ export function StudioCollectionsWorkspace({
               <View key={revision.asset_id} style={styles.compareCard}>
                 <Image source={{ uri: revision.image_url }} resizeMode="contain" style={styles.compareImage} />
                 <Text style={styles.variationTitle}>Revision {revision.revision}</Text>
+                <Text style={styles.meta}>{dateLabel(revision.created_at)}</Text>
                 <Text style={styles.sectionCopy}>{revision.change_summary}</Text>
-                <Text style={styles.lineage}>{revisionLineage(revision)}</Text>
+                <Text style={styles.lineage}>{revisionLineage(revision, data.history.revisions)}</Text>
               </View>
             ))}
           </View>
@@ -444,13 +502,9 @@ export function StudioCollectionsWorkspace({
                 <Text style={styles.variationTitle}>
                   Revision {revision.revision}{active ? ' · Active' : ''}
                 </Text>
+                <Text style={styles.meta}>{dateLabel(revision.created_at)}</Text>
                 <Text style={styles.sectionCopy}>{revision.change_summary}</Text>
-                <Text style={styles.lineage}>{revisionLineage(revision)}</Text>
-                {revision.restored_from_asset_id !== null && (
-                  <Text style={styles.lineage}>
-                    Restored from exact asset {revision.restored_from_asset_id}
-                  </Text>
-                )}
+                <Text style={styles.lineage}>{revisionLineage(revision, data.history.revisions)}</Text>
               </View>
               <View style={styles.revisionActions}>
                 <Pressable
@@ -484,6 +538,7 @@ export function StudioCollectionsWorkspace({
 
 const styles = StyleSheet.create({
   workspace: { padding: 16, paddingBottom: 40, backgroundColor: theme.paper },
+  backRow: { alignItems: 'flex-start', marginBottom: 10 },
   loadingState: {
     minHeight: 240, alignItems: 'center', justifyContent: 'center', gap: 10,
     backgroundColor: theme.paper,

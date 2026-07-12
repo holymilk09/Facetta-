@@ -117,7 +117,7 @@ describe('StudioCollectionsWorkspace', () => {
     expect(screen.queryByText(/factory/i)).toBeNull();
   });
 
-  test('shows family cover, exact branch lineage, revision compare, and sibling navigation', async () => {
+  test('shows semantic family lineage, revision compare, and sibling navigation without raw IDs', async () => {
     const client = api();
     const handlers = callbacks();
     await render(
@@ -131,15 +131,41 @@ describe('StudioCollectionsWorkspace', () => {
 
     expect(await screen.findByText('Sapphire orbit ring')).toBeTruthy();
     expect(screen.getByLabelText('Design family cover')).toBeTruthy();
-    expect(screen.getByText('From project_main · asset asset_2')).toBeTruthy();
+    expect(screen.getByText('Original family direction')).toBeTruthy();
+    expect(screen.getByText('Branched from Variation 1 · Original')).toBeTruthy();
+    expect(screen.getByText('Variation 2 · White metal study')).toBeTruthy();
+    expect(screen.queryByText(/project_main|project_white|asset_1|asset_2|family_orbit|design_ring/i)).toBeNull();
     await fireEvent.press(screen.getByLabelText('Open White metal study'));
     expect(handlers.onOpenProject).toHaveBeenCalledWith('project_white');
 
     await fireEvent.press(screen.getByLabelText('Compare revision 1'));
     await fireEvent.press(screen.getByLabelText('Compare revision 2'));
     expect(screen.getByText('Comparing revision 1 and revision 2')).toBeTruthy();
-    expect(screen.getAllByText(/asset_1 · spec 1 · original source/).length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/asset_2 · spec 2 · parent asset_1/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Original direction · Design facts confirmed').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Refined from Revision 1 · Design facts confirmed').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Jul 12, 2026').length).toBeGreaterThan(0);
+    expect(screen.queryByText(/project_main|project_white|asset_1|asset_2|family_orbit|design_ring/i)).toBeNull();
+  });
+
+  test('navigates to All families and back without requiring host-level state changes', async () => {
+    const client = api();
+    const handlers = callbacks();
+    await render(
+      <StudioCollectionsWorkspace
+        api={client}
+        project={project}
+        createdBy="usr_designer"
+        {...handlers}
+      />,
+    );
+    await screen.findByText('Immutable revision history');
+    await fireEvent.press(screen.getByText('All families'));
+    expect(await screen.findByText('Your design families')).toBeTruthy();
+    expect(screen.queryByText('Immutable revision history')).toBeNull();
+
+    await fireEvent.press(screen.getByText('Back to current variation'));
+    expect(await screen.findByText('Immutable revision history')).toBeTruthy();
+    expect(handlers.onOpenProject).not.toHaveBeenCalled();
   });
 
   test('branches and restores only against the exact active lineage', async () => {
@@ -209,9 +235,10 @@ describe('StudioCollectionsWorkspace', () => {
 
     expect(await screen.findByText('Saved history is unavailable')).toBeTruthy();
     expect(screen.getByText(
-      'No family or revision data is being inferred. The selected design remains unchanged.',
+      'Facetta will not guess at missing history. The selected design remains unchanged.',
     )).toBeTruthy();
     expect(client.getDesignFamily).not.toHaveBeenCalled();
+    expect(screen.queryByText(/project_main|asset_2|design_ring/i)).toBeNull();
 
     await fireEvent.changeText(screen.getByPlaceholderText('Rose gold study'), 'Independent study');
     await fireEvent.press(screen.getByText('Create variation'));
@@ -248,7 +275,7 @@ describe('StudioCollectionsWorkspace', () => {
     await fireEvent.press(screen.getByText('Create variation'));
 
     expect(await screen.findByText(
-      'The new variation did not preserve the selected active revision lineage.',
+      'Facetta could not verify the source revision. No variation was created.',
     )).toBeTruthy();
     expect(handlers.onVariationCreated).not.toHaveBeenCalled();
   });

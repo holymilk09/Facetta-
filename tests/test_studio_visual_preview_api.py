@@ -12,8 +12,10 @@ from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from conftest import EXAMPLE_SPEC
 from facetta.api.studio import get_studio_visual_preview_generator
 from facetta.db import (
+    ApprovalChecklist,
     Base,
     Design,
     DesignVersion,
@@ -387,6 +389,60 @@ def test_marked_region_uses_exact_saved_markup_parent(studio_preview_client):
     assert response.status_code == 201, response.text
     assert calls[0]["mask"] is not None
     assert calls[0]["scope"] == "marked_region"
+
+
+def test_pre_spec_branch_and_restore_assets_cannot_gain_approval_authority(
+    studio_preview_client,
+):
+    client, Session = studio_preview_client
+    with Session() as db:
+        branch = ImageAsset(
+            id="ast_prespec_branch",
+            root_id="ast_prespec_branch",
+            parent_asset_id=None,
+            design_id=None,
+            design_version=None,
+            capability="VARIATION_BRANCH",
+            image=CANDIDATE,
+            media_type="image/png",
+            created_by="usr_studio",
+        )
+        branch_project = Project(
+            root_id=branch.id,
+            owner="usr_studio",
+            title="Pre-spec branch",
+            tags=[],
+        )
+        restored = ImageAsset(
+            id="ast_prespec_restore",
+            root_id="ast_selected",
+            parent_asset_id="ast_selected",
+            design_id=None,
+            design_version=None,
+            capability="RESTORED_REVISION",
+            image=SOURCE,
+            media_type="image/png",
+            created_by="usr_studio",
+        )
+        db.add_all([branch, branch_project, restored])
+        db.commit()
+
+    for asset_id in ("ast_prespec_branch", "ast_prespec_restore"):
+        pin = client.post(f"/assets/{asset_id}/pin")
+        assert pin.status_code == 409
+        assert pin.json()["code"] == "creative_candidate_requires_spec_promotion"
+        checklist = client.post(f"/assets/{asset_id}/checklist", json={
+            "created_by": "usr_studio",
+            "mode": "explicit_pin",
+            "spec": EXAMPLE_SPEC,
+        })
+        assert checklist.status_code == 409
+        assert checklist.json()["code"] == "creative_candidate_requires_spec_promotion"
+
+    with Session() as db:
+        assert db.scalar(select(func.count()).select_from(ApprovalChecklist)) == 0
+        assert db.get(ImageAsset, "ast_prespec_branch").pinned_at is None
+        assert db.get(ImageAsset, "ast_prespec_restore").pinned_at is None
 
 
 def test_marked_region_rejects_markup_from_another_actor(studio_preview_client):

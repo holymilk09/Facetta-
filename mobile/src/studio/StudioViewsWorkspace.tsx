@@ -9,6 +9,9 @@ import type { ProjectDetail } from '../trusted/types';
 import type {
   ExactStudioLineage, StudioGateway, StudioViewPreview,
 } from './gateway';
+import {
+  designerCheckDetail, designerCheckLabel, designerReviewState,
+} from './designerReviewLanguage';
 
 const VIEWS = [
   { id: 'front', label: 'Front', detail: 'A clear straight-on geometry view.' },
@@ -104,7 +107,7 @@ export function StudioViewsWorkspace({
         <Text style={styles.title}>Your design is still unchanged.</Text>
         <Text style={styles.body}>
           This temporary {VIEWS.find((item) => item.id === preview.view)?.label.toLowerCase()} view came from
-          {' '}revision {preview.lineage.sourceAssetId}. Save keeps it beside the design as a derived view;
+          {' '}the selected source revision. Save keeps it beside the design as a derived view;
           it does not replace the active revision.
         </Text>
         <Image
@@ -118,10 +121,12 @@ export function StudioViewsWorkspace({
             <Text style={styles.checkDetail}>No individual check details were returned.</Text>
           ) : preview.checks.map((check) => (
             <View key={check.id} style={styles.checkRow}>
-              <Text style={[styles.checkVerdict, check.verdict === 'reject' && styles.reject]}>{check.verdict}</Text>
+              <Text style={[styles.checkVerdict, check.verdict === 'reject' && styles.reject]}>
+                {designerReviewState(check.verdict)}
+              </Text>
               <View style={styles.checkCopy}>
-                <Text style={styles.checkLabel}>{check.label}</Text>
-                {check.detail !== null && <Text style={styles.checkDetail}>{check.detail}</Text>}
+                <Text style={styles.checkLabel}>{designerCheckLabel(check)}</Text>
+                <Text style={styles.checkDetail}>{designerCheckDetail(check)}</Text>
               </View>
             </View>
           ))}
@@ -158,7 +163,7 @@ export function StudioViewsWorkspace({
       </View>
       <View style={styles.sourceCard}>
         <Text style={styles.sourceLabel}>Exact source</Text>
-        <Text style={styles.sourceValue}>Revision {lineage.sourceAssetId} · design version {lineage.sourceDesignVersion}</Text>
+        <Text style={styles.sourceValue}>Confirmed revision {lineage.sourceDesignVersion}</Text>
       </View>
       {notice !== null && <Notice kind="ok" text={notice} />}
       {error !== null && <Notice kind="error" text={error} />}
@@ -185,7 +190,7 @@ const styles = StyleSheet.create({
   reviewCard: { borderWidth: 1, borderColor: theme.line, borderRadius: radius.md, padding: 14, backgroundColor: theme.card, gap: 8 },
   reviewTitle: { color: theme.ink, fontWeight: '800', fontSize: 16 },
   checkRow: { flexDirection: 'row', gap: 10, alignItems: 'flex-start' },
-  checkVerdict: { color: theme.ok, width: 54, fontSize: 11, fontWeight: '800', textTransform: 'uppercase' },
+  checkVerdict: { color: theme.ok, width: 145, fontSize: 10, lineHeight: 14, fontWeight: '800', textTransform: 'uppercase' },
   reject: { color: theme.danger },
   checkCopy: { flex: 1 },
   checkLabel: { color: theme.ink, fontWeight: '600' },

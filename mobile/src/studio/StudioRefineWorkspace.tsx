@@ -17,6 +17,9 @@ import {
 } from '../trusted/AnnotationCanvas';
 import type { ExactStudioLineage, StudioGateway, StudioVisualLineage } from './gateway';
 import type { PreviewCandidate } from './contracts';
+import {
+  designerCheckDetail, designerCheckLabel, designerReviewState,
+} from './designerReviewLanguage';
 
 const PATHS: readonly { id: ComponentCatalogPath; label: string; help: string }[] = [
   { id: 'metal.color', label: 'Metal color', help: 'Change only the visible metal color.' },
@@ -262,7 +265,7 @@ export function StudioRefineWorkspace({
         <Text style={styles.eyebrow}>REVIEW PREVIEW</Text>
         <Text style={styles.title}>Nothing has changed yet.</Text>
         <Text style={styles.body}>
-          Compare this temporary candidate with revision {lineage.sourceAssetId}. Apply will append a new revision;
+          Compare this temporary candidate with the selected source revision. Apply will append a new revision;
           discard will leave history untouched.
         </Text>
         {understoodAs !== null && <Notice kind="info" text={understoodAs} />}
@@ -282,10 +285,12 @@ export function StudioRefineWorkspace({
           <Text style={styles.reviewTitle}>{rejected ? 'Not safe to apply' : 'Ready for your decision'}</Text>
           {preview.candidate.checks.map((check) => (
             <View key={check.id} style={styles.checkRow}>
-              <Text style={[styles.checkVerdict, check.verdict === 'reject' && styles.reject]}>{check.verdict}</Text>
+              <Text style={[styles.checkVerdict, check.verdict === 'reject' && styles.reject]}>
+                {designerReviewState(check.verdict)}
+              </Text>
               <View style={styles.checkCopy}>
-                <Text style={styles.checkLabel}>{check.label}</Text>
-                {check.detail !== null && <Text style={styles.checkDetail}>{check.detail}</Text>}
+                <Text style={styles.checkLabel}>{designerCheckLabel(check)}</Text>
+                <Text style={styles.checkDetail}>{designerCheckDetail(check)}</Text>
               </View>
             </View>
           ))}
@@ -407,7 +412,7 @@ const styles = StyleSheet.create({
   reviewCard: { borderWidth: 1, borderColor: theme.line, borderRadius: radius.md, padding: 14, backgroundColor: theme.card, gap: 8 },
   reviewTitle: { color: theme.ink, fontWeight: '800', fontSize: 16 },
   checkRow: { flexDirection: 'row', gap: 10, alignItems: 'flex-start' },
-  checkVerdict: { color: theme.ok, width: 54, fontSize: 11, fontWeight: '800', textTransform: 'uppercase' },
+  checkVerdict: { color: theme.ok, width: 145, fontSize: 10, lineHeight: 14, fontWeight: '800', textTransform: 'uppercase' },
   reject: { color: theme.danger },
   checkCopy: { flex: 1 },
   checkLabel: { color: theme.ink, fontWeight: '600' },
