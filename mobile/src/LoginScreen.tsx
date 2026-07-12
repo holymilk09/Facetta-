@@ -4,16 +4,13 @@ import {
   ScrollView, StyleSheet, Text, TextInput, View,
 } from 'react-native';
 import {
-  requestPasswordReset, Session, signInWithApple, signInWithEmail, signInWithGoogle,
-  signUpWithEmail,
+  requestPasswordReset, Session, signInWithEmail, signUpWithEmail, updatePassword,
 } from './auth';
+import { supabaseConfigurationError } from './supabase';
 import { StudioCollageBackground } from './StudioCollageBackground';
 import { radius, shadows, theme } from './theme';
 
 type Mode = 'signin' | 'signup' | 'forgot';
-
-// U+F8FF renders as the Apple logo on Apple platforms; elsewhere the label stands alone.
-const APPLE_GLYPH = Platform.select({ ios: ' ', default: '' });
 
 function RoundedInput(props: {
   label: string;
@@ -44,21 +41,64 @@ function RoundedInput(props: {
   );
 }
 
+export function PasswordRecoveryScreen({ onComplete }: { onComplete: () => void }) {
+  const [password, setPassword] = useState('');
+  const [confirmation, setConfirmation] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const submit = async () => {
+    if (busy) return;
+    if (password !== confirmation) {
+      setError('Passwords do not match.');
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      await updatePassword(password);
+      onComplete();
+    } catch (reason: any) {
+      setError(String(reason?.message ?? 'Facetta could not update the password. Try again.'));
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <View style={styles.recoveryRoot}>
+      <View style={[styles.card, shadows.floating]}>
+        <Text style={styles.cardTitle}>Choose a new password</Text>
+        <Text style={styles.cardSubtitle}>Use at least 8 characters.</Text>
+        <RoundedInput label="New password" value={password} onChange={setPassword} placeholder="New password" secure />
+        <RoundedInput label="Confirm password" value={confirmation} onChange={setConfirmation} placeholder="Confirm password" secure />
+        {error !== null && <View style={styles.errorBox}><Text style={styles.errorText}>{error}</Text></View>}
+        <Pressable style={styles.primaryButton} disabled={busy} onPress={() => { void submit(); }}>
+          {busy ? <ActivityIndicator color={theme.paper} /> : <Text style={styles.primaryButtonText}>Update password</Text>}
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
 export function LoginScreen({
   onSignIn,
   onShowTour,
+  authService = { requestPasswordReset, signInWithEmail, signUpWithEmail },
+  configurationError = supabaseConfigurationError,
 }: {
   onSignIn: (session: Session) => void;
   onShowTour?: () => void;
+  authService?: Pick<typeof import('./auth'), 'requestPasswordReset' | 'signInWithEmail' | 'signUpWithEmail'>;
+  configurationError?: string | null;
 }) {
   const [mode, setMode] = useState<Mode>('signin');
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [emailExpanded, setEmailExpanded] = useState(false);
-  const [busy, setBusy] = useState<null | 'apple' | 'google' | 'email'>(null);
+  const [emailExpanded, setEmailExpanded] = useState(true);
+  const [busy, setBusy] = useState<null | 'email'>(null);
   const [error, setError] = useState<string | null>(null);
   const [resetSent, setResetSent] = useState(false);
+  const [confirmationEmail, setConfirmationEmail] = useState<string | null>(null);
 
   // Card entrance: rise + fade, like a sheet placed on the drawing table.
   const entrance = useRef(new Animated.Value(0)).current;
@@ -76,9 +116,10 @@ export function LoginScreen({
     setEmailExpanded(m === 'forgot' ? true : emailExpanded);
     setError(null);
     setResetSent(false);
+    setConfirmationEmail(null);
   };
 
-  const run = async (kind: 'apple' | 'google' | 'email', task: () => Promise<void>) => {
+  const run = async (kind: 'email', task: () => Promise<void>) => {
     if (busy) return;
     setBusy(kind);
     setError(null);
@@ -94,15 +135,20 @@ export function LoginScreen({
   const submitEmail = () =>
     run('email', async () => {
       if (mode === 'forgot') {
-        await requestPasswordReset(email);
+        await authService.requestPasswordReset(email);
         setResetSent(true);
         return;
       }
-      const session =
-        mode === 'signup'
-          ? await signUpWithEmail(name, email, password)
-          : await signInWithEmail(email, password);
-      onSignIn(session);
+      if (mode === 'signup') {
+        const result = await authService.signUpWithEmail(name, email, password);
+        if (result.kind === 'confirmation_required') {
+          setConfirmationEmail(result.email);
+          return;
+        }
+        onSignIn(result.session);
+        return;
+      }
+      onSignIn(await authService.signInWithEmail(email, password));
     });
 
   return (
@@ -141,53 +187,11 @@ export function LoginScreen({
             </Text>
             <Text style={styles.cardSubtitle}>
               {mode === 'signin'
-                ? 'Choose how you would like to continue.'
+                ? 'Sign in with your studio email.'
                 : mode === 'signup'
                   ? 'A few details and your drawing table is ready.'
                   : 'Enter your email and we will send a reset link.'}
             </Text>
-
-            {mode !== 'forgot' && (
-              <>
-                <Pressable
-                  style={[styles.socialButton, styles.appleButton, shadows.soft]}
-                  disabled={busy !== null}
-                  onPress={() => run('apple', async () => onSignIn(await signInWithApple()))}>
-                  {busy === 'apple' ? (
-                    <ActivityIndicator color={theme.paper} />
-                  ) : (
-                    <View style={styles.providerRow}>
-                      <Text style={styles.appleIcon}>{APPLE_GLYPH.trim()}</Text>
-                      <Text style={styles.appleButtonText}>Continue with Apple</Text>
-                    </View>
-                  )}
-                </Pressable>
-                <Pressable
-                  style={[styles.socialButton, styles.googleButton, shadows.soft]}
-                  disabled={busy !== null}
-                  onPress={() => run('google', async () => onSignIn(await signInWithGoogle()))}>
-                  {busy === 'google' ? (
-                    <ActivityIndicator color={theme.ink} />
-                  ) : (
-                    <View style={styles.googleRow}>
-                      <View style={styles.googleBadge}>
-                        <Text style={styles.googleBadgeText}>G</Text>
-                      </View>
-                      <Text style={styles.googleButtonText}>Continue with Google</Text>
-                    </View>
-                  )}
-                </Pressable>
-                <Pressable
-                  style={[styles.socialButton, styles.emailButton, shadows.soft]}
-                  disabled={busy !== null}
-                  onPress={() => setEmailExpanded(true)}>
-                  <View style={styles.providerRow}>
-                    <Text style={styles.emailIcon}>✉</Text>
-                    <Text style={styles.emailButtonText}>Continue with email</Text>
-                  </View>
-                </Pressable>
-              </>
-            )}
 
             {(emailExpanded || mode === 'forgot') && mode === 'signup' && (
               <RoundedInput label="Name" value={name} onChange={setName} placeholder="Ana Moreau" />
@@ -196,11 +200,6 @@ export function LoginScreen({
               <>
                 <View style={styles.emailFormHeader}>
                   <Text style={styles.emailFormTitle}>Continue with email</Text>
-                  {mode !== 'forgot' && (
-                    <Pressable onPress={() => setEmailExpanded(false)} hitSlop={8}>
-                      <Text style={styles.closeEmail}>Close</Text>
-                    </Pressable>
-                  )}
                 </View>
                 <RoundedInput
                   label="Email"
@@ -232,6 +231,18 @@ export function LoginScreen({
                 <Text style={styles.errorText}>{error}</Text>
               </View>
             )}
+            {configurationError !== null && (
+              <View style={styles.errorBox}>
+                <Text style={styles.errorText}>{configurationError}</Text>
+              </View>
+            )}
+            {confirmationEmail !== null && (
+              <View style={styles.okBox}>
+                <Text style={styles.okText}>
+                  Check {confirmationEmail} to confirm your account, then return here to sign in.
+                </Text>
+              </View>
+            )}
             {resetSent && (
               <View style={styles.okBox}>
                 <Text style={styles.okText}>
@@ -242,8 +253,8 @@ export function LoginScreen({
 
             {(emailExpanded || mode === 'forgot') && (
               <Pressable
-                style={[styles.primaryButton, shadows.soft, busy && { opacity: 0.6 }]}
-                disabled={busy !== null}
+                style={[styles.primaryButton, shadows.soft, (busy || configurationError) && { opacity: 0.6 }]}
+                disabled={busy !== null || configurationError !== null}
                 onPress={submitEmail}>
                 {busy === 'email' ? (
                   <ActivityIndicator color={theme.paper} />
@@ -285,6 +296,7 @@ export function LoginScreen({
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: theme.paper },
+  recoveryRoot: { flex: 1, alignItems: 'center', justifyContent: 'center', padding: 24, backgroundColor: theme.paper },
   scroll: { flexGrow: 1, justifyContent: 'center', alignItems: 'center', padding: 24 },
   brand: {
     alignItems: 'center',
@@ -309,33 +321,6 @@ const styles = StyleSheet.create({
   },
   cardTitle: { fontFamily: theme.serif, fontSize: 22, color: theme.ink, marginBottom: 4 },
   cardSubtitle: { fontSize: 13, color: theme.faint, marginBottom: 20 },
-  socialButton: {
-    borderRadius: radius.md,
-    paddingVertical: 13,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginBottom: 10,
-  },
-  appleButton: { backgroundColor: '#000000' },
-  providerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 12 },
-  appleIcon: { color: '#ffffff', fontSize: 20, lineHeight: 22 },
-  appleButtonText: { color: '#ffffff', fontSize: 15, fontWeight: '500' },
-  googleButton: { backgroundColor: theme.card, borderWidth: 1, borderColor: theme.line },
-  googleRow: { flexDirection: 'row', alignItems: 'center', gap: 10 },
-  googleBadge: {
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    borderWidth: 1,
-    borderColor: theme.line,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  googleBadgeText: { fontSize: 13, fontWeight: '700', color: '#4285F4' },
-  googleButtonText: { color: theme.ink, fontSize: 15, fontWeight: '500' },
-  emailButton: { backgroundColor: theme.card, borderWidth: 1, borderColor: theme.line },
-  emailIcon: { color: theme.ink, fontSize: 18, lineHeight: 20 },
-  emailButtonText: { color: theme.ink, fontSize: 15, fontWeight: '500' },
   emailFormHeader: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -344,10 +329,6 @@ const styles = StyleSheet.create({
     marginBottom: 14,
   },
   emailFormTitle: { fontFamily: theme.serif, fontSize: 16, color: theme.ink },
-  closeEmail: { fontSize: 13, color: theme.accent },
-  divider: { flexDirection: 'row', alignItems: 'center', gap: 10, marginVertical: 14 },
-  dividerLine: { flex: 1, height: 1, backgroundColor: theme.line },
-  dividerText: { fontSize: 12, color: theme.faint },
   inputBlock: { marginBottom: 12 },
   inputLabel: { fontSize: 12, color: theme.faint, marginBottom: 5, letterSpacing: 0.4 },
   input: {

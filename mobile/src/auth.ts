@@ -1,12 +1,19 @@
 // Client-side auth flow for the mobile app.
 //
-// Provider SDK/token exchange is not connected yet. Local provider helpers
-// return profile-only sessions and MUST NOT authorize API requests. A real
-// server-issued credential enters only through attachServerCredential:
-//   - signInWithApple  → expo-apple-authentication
-//   - signInWithGoogle → expo-auth-session (Google provider)
+// Supabase Auth owns credential persistence and refresh. Facetta persists only
+// public profile fields; access tokens are copied into runtime state solely so
+// the typed API and protected-image seams can attach the current Bearer token.
+
+import type { AuthChangeEvent, Session as SupabaseSession } from '@supabase/supabase-js';
+import {
+  getSupabaseClient, passwordResetRedirectUrl, supabaseConfigurationError,
+} from './supabase';
 
 export type AuthProvider = 'apple' | 'google' | 'email';
+
+export type SignUpResult =
+  | { kind: 'signed_in'; session: Session }
+  | { kind: 'confirmation_required'; email: string };
 
 export interface Session {
   provider: AuthProvider;
@@ -50,13 +57,6 @@ export function attachServerCredential(
   };
 }
 
-/** usr_ana-style designer id derived from the account email. */
-export function designerIdFromEmail(email: string): string {
-  const local = email.split('@')[0] ?? 'designer';
-  const slug = local.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
-  return `usr_${slug || 'designer'}`;
-}
-
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 export function validateEmail(email: string): string | null {
@@ -80,28 +80,55 @@ function nameFromEmail(email: string): string {
     .join(' ') || 'Designer';
 }
 
-function makeSession(provider: AuthProvider, email: string, name?: string): Session {
+function makeSession(provider: AuthProvider, email: string, designerId: string, name?: string): Session {
   const clean = email.trim().toLowerCase();
   return {
     provider,
     email: clean,
     name: name?.trim() || nameFromEmail(clean),
-    designerId: designerIdFromEmail(clean),
+    designerId,
   };
 }
 
-const wait = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
-
-/** Integration point for expo-apple-authentication. Resolves a local session for now. */
-export async function signInWithApple(): Promise<Session> {
-  await wait(700);
-  return makeSession('apple', 'designer@icloud.com', 'Facetta Designer');
+function requireClient() {
+  const client = getSupabaseClient();
+  if (client === null) throw new Error(supabaseConfigurationError ?? 'Email sign-in is unavailable.');
+  return client;
 }
 
-/** Integration point for expo-auth-session (Google). Resolves a local session for now. */
-export async function signInWithGoogle(): Promise<Session> {
-  await wait(700);
-  return makeSession('google', 'designer@gmail.com', 'Facetta Designer');
+export function safeAuthMessage(code?: string): string {
+  if (code === 'invalid_credentials') return 'The email or password is incorrect.';
+  if (code === 'email_not_confirmed') return 'Confirm your email before signing in.';
+  if (code === 'user_already_exists' || code === 'email_exists') return 'An account already exists for this email.';
+  if (code === 'weak_password') return 'Choose a stronger password with at least 8 characters.';
+  if (code === 'over_request_rate_limit' || code === 'over_email_send_rate_limit') {
+    return 'Too many attempts. Wait a moment and try again.';
+  }
+  return 'Facetta could not complete that sign-in request. Try again.';
+}
+
+function compactDesignerId(subject: string): string {
+  const compact = subject.replace(/-/g, '').toLowerCase();
+  if (!/^[a-f0-9]{32}$/.test(compact)) {
+    throw new Error('Facetta could not verify this account.');
+  }
+  return compact;
+}
+
+export function facettaSessionFromSupabase(session: SupabaseSession): Session {
+  const email = session.user.email?.trim().toLowerCase();
+  if (!email || !session.access_token || typeof session.expires_at !== 'number') {
+    throw new Error('Facetta could not verify this account.');
+  }
+  const fullName = typeof session.user.user_metadata?.full_name === 'string'
+    ? session.user.user_metadata.full_name : undefined;
+  return attachServerCredential(
+    makeSession('email', email, compactDesignerId(session.user.id), fullName),
+    {
+      accessToken: session.access_token,
+      expiresAt: new Date(session.expires_at * 1000).toISOString(),
+    },
+  );
 }
 
 export async function signInWithEmail(email: string, password: string): Promise<Session> {
@@ -109,25 +136,82 @@ export async function signInWithEmail(email: string, password: string): Promise<
   if (emailErr) throw new Error(emailErr);
   const passErr = validatePassword(password);
   if (passErr) throw new Error(passErr);
-  await wait(500);
-  return makeSession('email', email);
+  const { data, error } = await requireClient().auth.signInWithPassword({
+    email: email.trim().toLowerCase(), password,
+  });
+  if (error) throw new Error(safeAuthMessage(error.code));
+  if (data.session === null) throw new Error('Confirm your email before signing in.');
+  return facettaSessionFromSupabase(data.session);
 }
 
-export async function signUpWithEmail(name: string, email: string, password: string): Promise<Session> {
+export async function signUpWithEmail(name: string, email: string, password: string): Promise<SignUpResult> {
   if (!name.trim()) throw new Error('Enter your name.');
   const emailErr = validateEmail(email);
   if (emailErr) throw new Error(emailErr);
   const passErr = validatePassword(password);
   if (passErr) throw new Error(passErr);
-  await wait(500);
-  return makeSession('email', email, name);
+  const cleanEmail = email.trim().toLowerCase();
+  const { data, error } = await requireClient().auth.signUp({
+    email: cleanEmail,
+    password,
+    options: { data: { full_name: name.trim() } },
+  });
+  if (error) throw new Error(safeAuthMessage(error.code));
+  if (data.session === null) return { kind: 'confirmation_required', email: cleanEmail };
+  return { kind: 'signed_in', session: facettaSessionFromSupabase(data.session) };
 }
 
-/** Local reset placeholder — it never claims an authenticated API session. */
 export async function requestPasswordReset(email: string): Promise<void> {
   const emailErr = validateEmail(email);
   if (emailErr) throw new Error(emailErr);
-  await wait(600);
+  const { error } = await requireClient().auth.resetPasswordForEmail(email.trim().toLowerCase(), {
+    redirectTo: passwordResetRedirectUrl(),
+  });
+  if (error) throw new Error(safeAuthMessage(error.code));
+}
+
+export async function updatePassword(password: string): Promise<void> {
+  const passErr = validatePassword(password);
+  if (passErr) throw new Error(passErr);
+  const { error } = await requireClient().auth.updateUser({ password });
+  if (error) throw new Error(safeAuthMessage(error.code));
+}
+
+export async function restoreAuthenticatedSession(): Promise<Session | null> {
+  const runtime = loadAuthenticatedSession();
+  if (runtime !== null) return runtime;
+  const client = getSupabaseClient();
+  if (client === null) return null;
+  const { data, error } = await client.auth.getSession();
+  if (error || data.session === null) return null;
+  try { return facettaSessionFromSupabase(data.session); } catch { return null; }
+}
+
+export function subscribeToAuthStateChange(
+  listener: (event: AuthChangeEvent, session: Session | null) => void,
+): () => void {
+  const client = getSupabaseClient();
+  if (client === null) return () => {};
+  const { data } = client.auth.onAuthStateChange((event, next) => {
+    let mapped: Session | null = null;
+    if (next !== null) {
+      try { mapped = facettaSessionFromSupabase(next); } catch { mapped = null; }
+    }
+    listener(event, mapped);
+  });
+  return () => data.subscription.unsubscribe();
+}
+
+export async function signOutAuthenticatedSession(): Promise<void> {
+  const client = getSupabaseClient();
+  try {
+    if (client !== null) {
+      const { error } = await client.auth.signOut();
+      if (error) await client.auth.signOut({ scope: 'local' });
+    }
+  } finally {
+    clearSession();
+  }
 }
 
 // ---------------------------------------------------------------------------

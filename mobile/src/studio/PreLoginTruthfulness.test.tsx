@@ -54,6 +54,9 @@ describe('truthful pre-login journey', () => {
   test('leads sign-in with the Studio promise instead of a factory-first claim', async () => {
     const view = await render(<LoginScreen onSignIn={jest.fn()} />);
     expect(view.getByText('Create quickly. Refine without losing the design.')).toBeTruthy();
+    expect(view.queryByText('Continue with Apple')).toBeNull();
+    expect(view.queryByText('Continue with Google')).toBeNull();
+    expect(view.getByText(/Email sign-in is not configured for this build/)).toBeTruthy();
     expect(view.queryByText(/factory sheet|dropdowns/i)).toBeNull();
     view.unmount();
   });

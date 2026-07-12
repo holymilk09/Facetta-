@@ -1,16 +1,17 @@
 import { StatusBar } from 'expo-status-bar';
-import React, { useCallback, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  Image, Pressable, SafeAreaView, ScrollView, StyleSheet, Text,
+  ActivityIndicator, Image, Pressable, SafeAreaView, ScrollView, StyleSheet, Text,
   useWindowDimensions, View,
 } from 'react-native';
 import { DEFAULT_API_URL } from './src/api';
 import { AuthenticatedImageProvider } from './src/AuthenticatedImage';
 import {
   clearSession, hasOnboarded, loadAuthenticatedSession, markOnboarded,
-  saveSession, sessionAccessToken, Session,
+  restoreAuthenticatedSession, saveSession, sessionAccessToken, Session,
+  signOutAuthenticatedSession, subscribeToAuthStateChange,
 } from './src/auth';
-import { LoginScreen } from './src/LoginScreen';
+import { LoginScreen, PasswordRecoveryScreen } from './src/LoginScreen';
 import { OnboardingScreen } from './src/OnboardingScreen';
 import { getStudioAction, getStudioRailActions, getVisibleStudioActions } from './src/studio/actions';
 import { StudioActionContext, StudioActionId } from './src/studio/contracts';
@@ -33,7 +34,7 @@ import { WorkflowShowcase } from './src/WorkflowShowcase';
 
 type Tab = 'studio' | 'collections' | 'activity' | 'learn';
 type StudioView = 'home' | 'action';
-type Stage = 'onboarding' | 'tour' | 'login' | 'app';
+type Stage = 'onboarding' | 'tour' | 'booting' | 'login' | 'recovery' | 'app';
 
 const designImage = require('./assets/studio-asymmetric-paraiba-ring-v1.png');
 
@@ -69,10 +70,9 @@ function StudioCard({
 }
 
 export default function App() {
+  const [authLifecycleEnabled, setAuthLifecycleEnabled] = useState(() => hasOnboarded());
   const [session, setSession] = useState<Session | null>(() => loadAuthenticatedSession());
-  const [stage, setStage] = useState<Stage>(() =>
-    loadAuthenticatedSession() ? 'app' : hasOnboarded() ? 'login' : 'onboarding',
-  );
+  const [stage, setStage] = useState<Stage>(() => authLifecycleEnabled ? 'booting' : 'onboarding');
   const [tab, setTab] = useState<Tab>('studio');
   const [studioView, setStudioView] = useState<StudioView>('home');
   const [selectedActionId, setSelectedActionId] = useState<StudioActionId>('create');
@@ -82,7 +82,7 @@ export default function App() {
   const [showUtilityMenu, setShowUtilityMenu] = useState(false);
   const [studioProject, setStudioProject] = useState<ProjectDetail | null>(null);
   const [selectedCreativeAssetId, setSelectedCreativeAssetId] = useState<string | null>(null);
-  const expireAuthenticatedSession = useCallback(() => {
+  const clearAuthenticatedUi = useCallback(() => {
     clearSession();
     setSession(null);
     setDesigner('');
@@ -90,6 +90,43 @@ export default function App() {
     setSelectedCreativeAssetId(null);
     setStage('login');
   }, []);
+  const expireAuthenticatedSession = useCallback(() => {
+    clearAuthenticatedUi();
+    void signOutAuthenticatedSession();
+  }, [clearAuthenticatedUi]);
+  const adoptAuthenticatedSession = useCallback((next: Session) => {
+    saveSession(next);
+    setSession(next);
+    setDesigner(next.designerId);
+    setStage('app');
+  }, []);
+
+  useEffect(() => {
+    if (!authLifecycleEnabled) return () => {};
+    let mounted = true;
+    const unsubscribe = subscribeToAuthStateChange((event, next) => {
+      if (!mounted || event === 'INITIAL_SESSION') return;
+      if (next === null) {
+        clearAuthenticatedUi();
+      } else if (event === 'PASSWORD_RECOVERY') {
+        saveSession(next);
+        setSession(next);
+        setDesigner(next.designerId);
+        setStage('recovery');
+      } else {
+        adoptAuthenticatedSession(next);
+      }
+    });
+    void restoreAuthenticatedSession().then((next) => {
+      if (!mounted) return;
+      if (next === null) clearAuthenticatedUi();
+      else adoptAuthenticatedSession(next);
+    });
+    return () => {
+      mounted = false;
+      unsubscribe();
+    };
+  }, [adoptAuthenticatedSession, authLifecycleEnabled, clearAuthenticatedUi]);
 
   const trustedApi = useMemo(
     () => createTrustedApiClient({
@@ -178,7 +215,8 @@ export default function App() {
         <OnboardingScreen
           onDone={() => {
             markOnboarded();
-            setStage('login');
+            setAuthLifecycleEnabled(true);
+            setStage('booting');
           }}
         />
       </SafeAreaView>
@@ -194,6 +232,16 @@ export default function App() {
     );
   }
 
+  if (stage === 'booting') {
+    return (
+      <SafeAreaView style={[styles.root, styles.booting]}>
+        <StatusBar style="dark" />
+        <ActivityIndicator color={theme.accent} />
+        <Text style={styles.bootingText}>Checking your Facetta session…</Text>
+      </SafeAreaView>
+    );
+  }
+
   if (stage === 'login') {
     return (
       <SafeAreaView style={styles.root}>
@@ -203,13 +251,19 @@ export default function App() {
             if (sessionAccessToken(s) === null) {
               throw new Error('This sign-in method is not connected to Facetta’s authenticated API yet.');
             }
-            saveSession(s);
-            setSession(s);
-            setDesigner(s.designerId);
-            setStage('app');
+            adoptAuthenticatedSession(s);
           }}
           onShowTour={() => setStage('tour')}
         />
+      </SafeAreaView>
+    );
+  }
+
+  if (stage === 'recovery') {
+    return (
+      <SafeAreaView style={styles.root}>
+        <StatusBar style="dark" />
+        <PasswordRecoveryScreen onComplete={() => setStage('app')} />
       </SafeAreaView>
     );
   }
@@ -246,9 +300,7 @@ export default function App() {
           <Pressable
             style={styles.utilityRow}
             onPress={() => {
-              clearSession();
-              setSession(null);
-              setStage('login');
+              void signOutAuthenticatedSession().finally(clearAuthenticatedUi);
             }}>
             <Text style={[styles.utilityRowText, { color: theme.danger }]}>Sign out</Text>
           </Pressable>
@@ -507,6 +559,8 @@ export default function App() {
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: theme.paper },
+  booting: { alignItems: 'center', justifyContent: 'center', gap: 12 },
+  bootingText: { color: theme.faint, fontSize: 13 },
   rootDark: { backgroundColor: '#15121c' },
   header: {
     flexDirection: 'row',

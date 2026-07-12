@@ -1,7 +1,7 @@
 /// <reference types="jest" />
 
 import React from 'react';
-import { render } from '@testing-library/react-native';
+import { render, waitFor } from '@testing-library/react-native';
 
 import App from '../../App';
 import { clearSession, markOnboarded, saveSession } from '../auth';
@@ -9,6 +9,7 @@ import { clearSession, markOnboarded, saveSession } from '../auth';
 afterEach(() => clearSession());
 
 test('signed-in Studio home offers one start decision without a duplicate feature menu', async () => {
+  markOnboarded();
   saveSession({
     provider: 'email', email: 'designer@example.com', name: 'Designer',
     designerId: 'usr_designer',
@@ -17,7 +18,7 @@ test('signed-in Studio home offers one start decision without a duplicate featur
   });
   const view = await render(<App />);
 
-  expect(view.getByText('Start from an idea or reference')).toBeTruthy();
+  await waitFor(() => expect(view.getByText('Start from an idea or reference')).toBeTruthy());
   expect(view.queryByText('Creative studios')).toBeNull();
   expect(view.queryByText('Preserve a new direction')).toBeNull();
   expect(view.queryByText('Prepare presentation imagery')).toBeNull();
@@ -34,7 +35,7 @@ test('a persisted profile without a server credential remains at login', async (
     designerId: 'usr_profile',
   });
   const view = await render(<App />);
-  expect(view.getByText('Continue to Facetta')).toBeTruthy();
+  await waitFor(() => expect(view.getByText('Continue to Facetta')).toBeTruthy());
   expect(view.queryByText('Start from an idea or reference')).toBeNull();
   view.unmount();
 });
@@ -47,7 +48,7 @@ test('an expired server credential remains at login', async () => {
     accessTokenExpiresAt: '2020-01-01T00:00:00Z',
   });
   const view = await render(<App />);
-  expect(view.getByText('Continue to Facetta')).toBeTruthy();
+  await waitFor(() => expect(view.getByText('Continue to Facetta')).toBeTruthy());
   expect(view.queryByText('Start from an idea or reference')).toBeNull();
   view.unmount();
 });
