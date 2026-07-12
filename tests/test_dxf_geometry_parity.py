@@ -114,7 +114,7 @@ def test_current_factory_templates_convert_without_silent_geometry_loss(
         "cut": "marquise",
         "carat": 0.015,
         "dimensions_mm": {"length": 2.5, "width": 1.3, "depth": 0.8},
-        "color": {"trade": "colorless", "gia": "F"},
+        "color": {"trade": "F Colorless", "gia": "colorless"},
         "count": 12,
         "position": "pave_leaves",
     }, {
@@ -122,7 +122,7 @@ def test_current_factory_templates_convert_without_silent_geometry_loss(
         "cut": "round_brilliant",
         "carat": 0.007,
         "dimensions_mm": {"length": 1.2, "width": 1.2, "depth": 0.73},
-        "color": {"trade": "colorless", "gia": "F"},
+        "color": {"trade": "F Colorless", "gia": "colorless"},
         "count": 24,
         "position": "pave_leaves",
     }]

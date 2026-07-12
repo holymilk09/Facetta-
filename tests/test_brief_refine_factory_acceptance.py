@@ -199,7 +199,7 @@ def test_text_brief_scoped_color_refinement_reaches_exact_factory_pack(
                 "region_description": "the oval center diamond only",
                 "change_instruction": (
                     "Change only the center diamond from colorless to fancy "
-                    "vivid yellow; preserve its cut, dimensions, setting, halo, "
+                    "yellow; preserve its cut, dimensions, setting, halo, "
                     "metal, and band."
                 ),
                 "target_section": "stone",
@@ -208,7 +208,7 @@ def test_text_brief_scoped_color_refinement_reaches_exact_factory_pack(
                 "confidence": 0.98,
             }],
             "understood_as": (
-                "Understood as: make only center stone A fancy vivid yellow; "
+                "Understood as: make only center stone A fancy yellow; "
                 "nothing else changes."
             ),
             "needs_clarification": False,
@@ -227,14 +227,15 @@ def test_text_brief_scoped_color_refinement_reaches_exact_factory_pack(
     assert reading["interpretation"] == {
         "target_region": "the oval center diamond only",
         "requested_change": (
-            "Change only the center diamond from colorless to fancy vivid "
-            "yellow; preserve its cut, dimensions, setting, halo, metal, and band."
+            "Change only the center diamond from colorless to fancy yellow; "
+            "preserve its cut, dimensions, setting, halo, metal, and band."
         ),
         "impact": "specification",
         "target_spec_reference": "A",
         "target_section": "stone",
         "target_index": None,
         "target_element_id": None,
+        "target_component_id": None,
         "frozen_elements": [
             "all specification sections outside the named target",
             "all jewelry structure outside the marked region",
@@ -242,7 +243,7 @@ def test_text_brief_scoped_color_refinement_reaches_exact_factory_pack(
         "confidence": 0.98,
         "clarification_question": None,
         "understood_as": (
-            "Understood as: make only center stone A fancy vivid yellow; "
+            "Understood as: make only center stone A fancy yellow; "
             "nothing else changes."
         ),
     }
@@ -264,8 +265,8 @@ def test_text_brief_scoped_color_refinement_reaches_exact_factory_pack(
     def fake_grok_json(system: str, user: str) -> dict[str, object]:
         planner_calls.append((system, user))
         proposed = copy.deepcopy(created["spec"])
-        proposed["stone"]["color"]["trade"] = "Fancy Vivid Yellow"
-        proposed["stone"]["color"]["gia"] = "fancy vivid yellow"
+        proposed["stone"]["color"]["trade"] = "Fancy Yellow"
+        proposed["stone"]["color"]["gia"] = "fancy yellow"
 
         # A deliberately over-helpful language-model proposal.  The real
         # scope guard must report and discard every one of these changes.
@@ -331,7 +332,7 @@ def test_text_brief_scoped_color_refinement_reaches_exact_factory_pack(
                         code="requested_center_color_applied",
                         passed=True,
                         severity=CheckSeverity.HARD,
-                        message="the center is visibly fancy vivid yellow",
+                        message="the center is visibly fancy yellow",
                     ),
                     QualityCheck(
                         code="protected_structure_consistent",
@@ -408,7 +409,7 @@ def test_text_brief_scoped_color_refinement_reaches_exact_factory_pack(
     assert plan.operation is ImageOperation.LOCAL_EDIT
     assert plan.edit_domains == (DesignerEditDomain.CENTER_STONE_COLOR,)
     assert plan.source_spec_facts["stone"]["color"]["trade"] == "D"
-    assert plan.spec_facts["stone"]["color"]["trade"] == "Fancy Vivid Yellow"
+    assert plan.spec_facts["stone"]["color"]["trade"] == "Fancy Yellow"
     assert image_calls[0]["source_image"] == SPEC_RENDER_V1
     assert image_calls[0]["mask_bytes"] is not None
     assert plan.source_hash == _sha256(SPEC_RENDER_V1)
@@ -435,14 +436,14 @@ def test_text_brief_scoped_color_refinement_reaches_exact_factory_pack(
             "path": "stone.color.gia",
             "label": "center stone colour gia",
             "before": "colorless",
-            "after": "fancy vivid yellow",
+            "after": "fancy yellow",
             "kind": "changed",
         },
         {
             "path": "stone.color.trade",
             "label": "center stone colour trade colour",
             "before": "D",
-            "after": "Fancy Vivid Yellow",
+            "after": "Fancy Yellow",
             "kind": "changed",
         },
     ]
@@ -456,8 +457,8 @@ def test_text_brief_scoped_color_refinement_reaches_exact_factory_pack(
     v1 = client.get(f"/designs/{design_id}/versions/1").json()
     v2 = client.get(f"/designs/{design_id}/versions/2").json()
     assert v1["stone"]["color"]["trade"] == "D"
-    assert v2["stone"]["color"]["trade"] == "Fancy Vivid Yellow"
-    assert v2["stone"]["color"]["gia"] == "fancy vivid yellow"
+    assert v2["stone"]["color"]["trade"] == "Fancy Yellow"
+    assert v2["stone"]["color"]["gia"] == "fancy yellow"
     assert v2["stone"]["cut"] == v1["stone"]["cut"]
     assert v2["stone"]["dimensions_mm"] == v1["stone"]["dimensions_mm"]
     assert v2["metal"] == v1["metal"]

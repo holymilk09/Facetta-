@@ -343,6 +343,7 @@ describe('component catalog client contracts', () => {
     const unsafe = {
       ...previewPayload.candidate,
       accept_url: 'https://attacker.invalid/image-runs/run_preview/catalog-candidates/cand_preview/accept',
+      verdict: previewPayload.candidate.verdict as 'pass' | 'warn',
     };
 
     const accepted = await client.acceptCatalogPreview(unsafe, {

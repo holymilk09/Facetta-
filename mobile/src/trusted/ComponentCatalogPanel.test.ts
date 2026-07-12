@@ -10,9 +10,9 @@ import {
 } from './ComponentCatalogPanel';
 import type { TrustedApiClient } from './client';
 import type {
-  CatalogApplyAccepted,
-  CatalogApplyCallResult,
-  CatalogApplyReviewRequired,
+  ApiResult,
+  CatalogPreviewAcceptResult,
+  CatalogPreviewResult,
   ComponentCatalog,
   ComponentCatalogOption,
   ComponentCatalogPath,
@@ -105,28 +105,48 @@ function ringCatalog(path: ComponentCatalogPath): ComponentCatalog {
   };
 }
 
-const accepted: CatalogApplyAccepted = {
+const accepted: CatalogPreviewAcceptResult = {
   status: 'accepted',
-  component_path: 'metal.color',
-  option_id: 'rose',
-  isolation_target: roseOption.isolation_target,
   asset_id: 'ast_2',
   design_version: 2,
   image_run_id: 'run_catalog',
   spec_change: [{ path: 'metal.color', before: 'yellow', after: 'rose', label: 'gold color' }],
+  project: project('ast_2', 2),
+};
+
+const preview: CatalogPreviewResult = {
+  status: 'preview_ready',
+  component_path: 'metal.color',
+  option_id: 'rose',
+  isolation_target: roseOption.isolation_target,
+  source_asset_id: 'ast_root',
+  design_version: 1,
+  image_run_id: 'run_catalog',
+  spec_change: [{ path: 'metal.color', before: 'yellow', after: 'rose', label: 'gold color' }],
+  next_spec: { ...ringSpec, metal: { material: 'gold', karat: 18, color: 'rose' } },
   qa: {
-    verdict: 'pass', accepted: true, review_required: false, score: 97,
+    verdict: 'pass', accepted: false, review_required: true, score: 97,
     summary: 'Image checks passed.', failed_checks: [], warnings: [], checks: [],
   },
   routing: {
     attempt_count: 1, used_retry: false, used_fallback: false,
     cache_hit: false, run_id: 'run_catalog',
   },
-  project: project('ast_2', 2),
+  project: project(),
+  candidate: {
+    run_id: 'run_catalog',
+    candidate_id: 'cand_catalog',
+    preview_url: 'https://facetta.test/catalog-preview.png',
+    accept_url: '/image-runs/run_catalog/catalog-candidates/cand_catalog/accept',
+    discard_url: '/image-runs/run_catalog/catalog-candidates/cand_catalog',
+    verdict: 'pass',
+    expires_in_seconds: 900,
+  },
 };
 
 function clientWith(
-  applyResult: CatalogApplyCallResult = { data: accepted, error: null, status: 201 },
+  previewResult: ApiResult<CatalogPreviewResult> = { data: preview, error: null, status: 201 },
+  acceptResult: ApiResult<CatalogPreviewAcceptResult> = { data: accepted, error: null, status: 201 },
 ) {
   const getComponentCatalog = jest.fn(async (path: ComponentCatalogPath) => ({
     data: ringCatalog(path), error: null, status: 200,
@@ -134,23 +154,21 @@ function clientWith(
   const getStoneVocabulary = jest.fn(async () => ({
     data: [], error: null, status: 200,
   }));
-  const applyCatalogSelection = jest.fn(async () => applyResult);
-  const acceptWarningCandidate = jest.fn(async () => ({
-    data: project('ast_2', 2), error: null, status: 201,
-  }));
-  const recordImageRunFeedback = jest.fn(async () => ({
-    data: { recorded: true }, error: null, status: 201,
+  const previewCatalogSelection = jest.fn(async () => previewResult);
+  const acceptCatalogPreview = jest.fn(async () => acceptResult);
+  const discardCatalogPreview = jest.fn(async () => ({
+    data: { status: 'discarded' as const }, error: null, status: 204,
   }));
   return {
     client: {
       getComponentCatalog,
       getStoneVocabulary,
-      applyCatalogSelection,
-      acceptWarningCandidate,
-      recordImageRunFeedback,
+      previewCatalogSelection,
+      acceptCatalogPreview,
+      discardCatalogPreview,
     } as unknown as TrustedApiClient,
-    getComponentCatalog, applyCatalogSelection, acceptWarningCandidate,
-    recordImageRunFeedback,
+    getComponentCatalog, previewCatalogSelection, acceptCatalogPreview,
+    discardCatalogPreview,
   };
 }
 
@@ -220,12 +238,27 @@ describe('ComponentCatalogPanel', () => {
       error: null,
       status: 200,
     }));
-    const applyCatalogSelection = jest.fn(async () => ({
-      data: accepted, error: null, status: 201,
+    const previewCatalogSelection = jest.fn(async () => ({
+      data: {
+        ...preview,
+        component_path: 'stone.color' as const,
+        option_id: "Pigeon's Blood",
+        isolation_target: 'center stone body only',
+        spec_change: [
+          { path: 'stone.species', before: 'sapphire', after: 'ruby', label: 'species' },
+          { path: 'stone.color', before: ringSpec.stone, after: { trade: "Pigeon's Blood", gia: 'vivid red' }, label: 'color' },
+        ],
+        candidate: { ...preview.candidate, run_id: 'run_ruby', candidate_id: 'cand_ruby' },
+      },
+      error: null,
+      status: 201,
+    }));
+    const acceptCatalogPreview = jest.fn(async () => ({
+      data: { ...accepted, image_run_id: 'run_ruby' }, error: null, status: 201,
     }));
     const client = {
-      getComponentCatalog, getStoneVocabulary, applyCatalogSelection,
-      acceptWarningCandidate: jest.fn(), recordImageRunFeedback: jest.fn(),
+      getComponentCatalog, getStoneVocabulary, previewCatalogSelection,
+      acceptCatalogPreview, discardCatalogPreview: jest.fn(),
     } as unknown as TrustedApiClient;
 
     await render(React.createElement(ComponentCatalogPanel, {
@@ -240,12 +273,16 @@ describe('ComponentCatalogPanel', () => {
     ));
     expect(await screen.findByText("Pigeon's Blood")).toBeTruthy();
     await fireEvent.press(screen.getByText("Pigeon's Blood"));
-    await fireEvent.press(screen.getByText('I confirm this exact visual and design change'));
-    await fireEvent.press(screen.getByText('Apply protected change'));
-    await waitFor(() => expect(applyCatalogSelection).toHaveBeenCalledWith(
+    await fireEvent.press(screen.getByText('Preview protected change'));
+    await waitFor(() => expect(previewCatalogSelection).toHaveBeenCalledWith(
       'ast_root', expect.objectContaining({
         component_path: 'stone.color', option_id: "Pigeon's Blood", stone_species: 'ruby',
       }),
+    ));
+    await fireEvent.press(await screen.findByText('Apply to this variation'));
+    await waitFor(() => expect(acceptCatalogPreview).toHaveBeenCalledWith(
+      expect.objectContaining({ run_id: 'run_ruby', candidate_id: 'cand_ruby' }),
+      { expected_design_version: 1, created_by: 'usr_designer' },
     ));
   });
 
@@ -277,7 +314,7 @@ describe('ComponentCatalogPanel', () => {
     expect(onVariationCreated).toHaveBeenCalledWith(variation);
   });
 
-  test('loads only applicable catalogs and requires explicit confirmation of exact scope', async () => {
+  test('loads only applicable catalogs and applies only the reviewed preview', async () => {
     const api = clientWith();
     const onApplied = jest.fn();
     await render(React.createElement(ComponentCatalogPanel, {
@@ -304,12 +341,10 @@ describe('ComponentCatalogPanel', () => {
     expect(screen.getByText('• metal.material == gold')).toBeTruthy();
     expect(screen.getByText(/warm pink rose-gold hue/)).toBeTruthy();
 
-    await fireEvent.press(screen.getByText('Apply protected change'));
-    expect(api.applyCatalogSelection).not.toHaveBeenCalled();
-    await fireEvent.press(screen.getByText('I confirm this exact visual and design change'));
-    await fireEvent.press(screen.getByText('Apply protected change'));
+    expect(api.previewCatalogSelection).not.toHaveBeenCalled();
+    await fireEvent.press(screen.getByText('Preview protected change'));
 
-    await waitFor(() => expect(api.applyCatalogSelection).toHaveBeenCalledWith(
+    await waitFor(() => expect(api.previewCatalogSelection).toHaveBeenCalledWith(
       'ast_root',
       {
         component_path: 'metal.color',
@@ -319,8 +354,14 @@ describe('ComponentCatalogPanel', () => {
         variant: 0,
       },
     ));
+    expect(onApplied).not.toHaveBeenCalled();
+    expect(screen.getByText('Preview checks passed. Nothing has changed yet.')).toBeTruthy();
+    await fireEvent.press(screen.getByText('Apply to this variation'));
+    await waitFor(() => expect(api.acceptCatalogPreview).toHaveBeenCalledWith(
+      preview.candidate,
+      { expected_design_version: 1, created_by: 'usr_designer' },
+    ));
     expect(onApplied).toHaveBeenCalledWith(accepted);
-    expect(await screen.findByText(/specification version 2/)).toBeTruthy();
   });
 
   test('keeps native mobile review-only even after a designer selects an option', async () => {
@@ -336,9 +377,8 @@ describe('ComponentCatalogPanel', () => {
     await waitFor(() => expect(screen.getByText('Rose Gold')).toBeTruthy());
     await fireEvent.press(screen.getByText('Rose Gold'));
     expect(screen.getByText(/Mobile supports reviewing catalog choices/)).toBeTruthy();
-    await fireEvent.press(screen.getByText('I confirm this exact visual and design change'));
-    await fireEvent.press(screen.getByText('Apply protected change'));
-    expect(api.applyCatalogSelection).not.toHaveBeenCalled();
+    await fireEvent.press(screen.getByText('Preview protected change'));
+    expect(api.previewCatalogSelection).not.toHaveBeenCalled();
   });
 
   test('shows necklace chain choices while category editing remains safely pending', async () => {
@@ -362,9 +402,9 @@ describe('ComponentCatalogPanel', () => {
     const getComponentCatalog = jest.fn(async () => ({
       data: chainCatalog, error: null, status: 200,
     }));
-    const applyCatalogSelection = jest.fn();
+    const previewCatalogSelection = jest.fn();
     const client = {
-      getComponentCatalog, applyCatalogSelection,
+      getComponentCatalog, previewCatalogSelection,
     } as unknown as TrustedApiClient;
     await render(React.createElement(ComponentCatalogPanel, {
       client,
@@ -380,9 +420,8 @@ describe('ComponentCatalogPanel', () => {
     expect(getComponentCatalog).toHaveBeenCalledWith('chain.style');
     await fireEvent.press(screen.getByText('Curb chain'));
     expect(screen.getByText(/protected image editing is not released for this category yet/)).toBeTruthy();
-    expect(screen.queryByText('I confirm this exact visual and design change')).toBeNull();
-    await fireEvent.press(screen.getByText('Apply protected change'));
-    expect(applyCatalogSelection).not.toHaveBeenCalled();
+    await fireEvent.press(screen.getByText('Preview protected change'));
+    expect(previewCatalogSelection).not.toHaveBeenCalled();
     expect(screen.queryByText(/provider|grok|model/i)).toBeNull();
   });
 
@@ -422,13 +461,24 @@ describe('ComponentCatalogPanel', () => {
     const getComponentCatalog = jest.fn(async () => ({
       data: chainCatalog, error: null, status: 200,
     }));
-    const applyCatalogSelection = jest.fn(async () => ({
-      data: { ...accepted, component_path: 'chain.style', option_id: 'curb' },
+    const previewCatalogSelection = jest.fn(async () => ({
+      data: {
+        ...preview,
+        component_path: 'chain.style' as const,
+        option_id: 'curb',
+        isolation_target: chainOption.isolation_target,
+        spec_change: [{ path: 'chain.style', before: 'cable', after: 'curb', label: 'chain type' }],
+        candidate: { ...preview.candidate, run_id: 'run_chain', candidate_id: 'cand_chain' },
+      },
       error: null,
       status: 201,
-    } as CatalogApplyCallResult));
+    }));
+    const acceptCatalogPreview = jest.fn(async () => ({
+      data: { ...accepted, image_run_id: 'run_chain' }, error: null, status: 201,
+    }));
     const client = {
-      getComponentCatalog, applyCatalogSelection,
+      getComponentCatalog, previewCatalogSelection, acceptCatalogPreview,
+      discardCatalogPreview: jest.fn(),
     } as unknown as TrustedApiClient;
 
     await render(React.createElement(ComponentCatalogPanel, {
@@ -457,10 +507,9 @@ describe('ComponentCatalogPanel', () => {
     await waitFor(() => expect(screen.getByText(
       'Target geometry and production reference are complete for validation.',
     )).toBeTruthy());
-    await fireEvent.press(screen.getByText('I confirm this exact visual and design change'));
-    await fireEvent.press(screen.getByText('Apply protected change'));
+    await fireEvent.press(screen.getByText('Preview protected change'));
 
-    await waitFor(() => expect(applyCatalogSelection).toHaveBeenCalledWith(
+    await waitFor(() => expect(previewCatalogSelection).toHaveBeenCalledWith(
       'ast_root',
       expect.objectContaining({
         component_path: 'chain.style',
@@ -483,6 +532,11 @@ describe('ComponentCatalogPanel', () => {
         },
       }),
     ));
+    await fireEvent.press(screen.getByText('Apply to this variation'));
+    await waitFor(() => expect(acceptCatalogPreview).toHaveBeenCalledWith(
+      expect.objectContaining({ run_id: 'run_chain', candidate_id: 'cand_chain' }),
+      { expected_design_version: 1, created_by: 'usr_designer' },
+    ));
   });
 
   test('surfaces a stale selection as a reload state and preserves the current revision', async () => {
@@ -495,13 +549,6 @@ describe('ComponentCatalogPanel', () => {
         category: 'stale_version',
         status: 409,
         retryable: false,
-        catalog_status: 'stale',
-        component_path: 'metal.color',
-        option_id: 'rose',
-        image_run_id: null,
-        applicable_jewelry_types: ['ring'],
-        current_asset_id: 'ast_new',
-        current_design_version: 2,
       },
     });
     await render(React.createElement(ComponentCatalogPanel, {
@@ -513,10 +560,9 @@ describe('ComponentCatalogPanel', () => {
 
     await waitFor(() => expect(screen.getByText('Rose Gold')).toBeTruthy());
     await fireEvent.press(screen.getByText('Rose Gold'));
-    await fireEvent.press(screen.getByText('I confirm this exact visual and design change'));
-    await fireEvent.press(screen.getByText('Apply protected change'));
-    expect(await screen.findByText(/project changed while the catalog was open/i)).toBeTruthy();
-    expect(screen.getByText(/current revision is untouched/i)).toBeTruthy();
+    await fireEvent.press(screen.getByText('Preview protected change'));
+    expect(await screen.findByText('reload first')).toBeTruthy();
+    expect(api.acceptCatalogPreview).not.toHaveBeenCalled();
   });
 
   test('catalog delta exposes deterministic dependent fields without inventing values', () => {
@@ -537,13 +583,10 @@ describe('ComponentCatalogPanel', () => {
   });
 
   test('renders a warning candidate as temporary review evidence', async () => {
-    const { asset_id: _acceptedAssetId, ...acceptedWithoutAsset } = accepted;
-    const review: CatalogApplyReviewRequired = {
-      ...acceptedWithoutAsset,
+    const review: CatalogPreviewResult = {
+      ...preview,
       status: 'review_required',
-      design_version: 1,
       image_run_id: 'run_warning',
-      next_spec: { ...ringSpec, metal: { material: 'gold', karat: 18, color: 'rose' } },
       qa: {
         verdict: 'warn', accepted: false, review_required: true, score: 83,
         summary: 'Review the metal boundary.', failed_checks: [],
@@ -553,13 +596,14 @@ describe('ComponentCatalogPanel', () => {
         attempt_count: 2, used_retry: true, used_fallback: false,
         cache_hit: false, run_id: 'run_warning',
       },
-      project: project(),
-      warning_candidate: {
+      candidate: {
         run_id: 'run_warning',
         candidate_id: 'cand_warning',
         preview_url: 'https://facetta.test/candidate.png',
-        operation: 'LOCAL_EDIT',
-        requested_change: 'Apply rose gold.',
+        accept_url: '/image-runs/run_warning/catalog-candidates/cand_warning/accept',
+        discard_url: '/image-runs/run_warning/catalog-candidates/cand_warning',
+        verdict: 'warn',
+        expires_in_seconds: 900,
       },
     };
     const api = clientWith({ data: review, error: null, status: 202 });
@@ -574,18 +618,15 @@ describe('ComponentCatalogPanel', () => {
 
     await waitFor(() => expect(screen.getByText('Rose Gold')).toBeTruthy());
     await fireEvent.press(screen.getByText('Rose Gold'));
-    await fireEvent.press(screen.getByText('I confirm this exact visual and design change'));
-    await fireEvent.press(screen.getByText('Apply protected change'));
-    expect(await screen.findByText(/has not replaced the active image or specification/)).toBeTruthy();
-    expect(screen.getByLabelText('Catalog warning candidate preview')).toBeTruthy();
+    await fireEvent.press(screen.getByText('Preview protected change'));
+    expect(await screen.findByText(/has not changed the active image or design record/)).toBeTruthy();
+    expect(screen.getByLabelText('Temporary catalog preview')).toBeTruthy();
     expect(screen.getByText('Review the metal boundary.')).toBeTruthy();
-    await fireEvent.press(screen.getByText('Accept after review'));
-    await waitFor(() => expect(api.acceptWarningCandidate).toHaveBeenCalledWith(
-      'run_warning', 'cand_warning', 1, 'usr_designer',
+    await fireEvent.press(screen.getByText('Apply to this variation'));
+    await waitFor(() => expect(api.acceptCatalogPreview).toHaveBeenCalledWith(
+      review.candidate,
+      { expected_design_version: 1, created_by: 'usr_designer' },
     ));
-    expect(api.recordImageRunFeedback).toHaveBeenCalledWith(
-      'run_warning', 'accepted', 'usr_designer',
-    );
     expect(onProjectChanged).toHaveBeenCalledWith(project('ast_2', 2));
   });
 });

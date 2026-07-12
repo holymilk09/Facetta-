@@ -17,8 +17,8 @@
       "depth": 5.4
     },
     "color": {
-      "trade": "Diamond",
-      "gia": "natural colour",
+      "trade": "F Colorless",
+      "gia": "colorless",
       "hue_code": null,
       "tone": null,
       "saturation": null
@@ -105,8 +105,8 @@
         "depth": 3.0
       },
       "color": {
-        "trade": "Diamond",
-        "gia": "natural colour",
+        "trade": "F Colorless",
+        "gia": "colorless",
         "hue_code": null,
         "tone": null,
         "saturation": null

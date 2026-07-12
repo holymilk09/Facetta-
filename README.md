@@ -69,7 +69,7 @@ secrets override `.env` in production with no code change.
 ## Run the tests
 
 ```sh
-uv run pytest
+PYTHONPATH=src uv run pytest -q
 ```
 
 ## Run the API
