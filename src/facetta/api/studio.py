@@ -190,15 +190,10 @@ def studio_history(project_root_id: str, db: DbSession):
     }
 
 
-@router.get("/families/{family_id}")
-def get_design_family(family_id: str, db: DbSession):
-    family = db.get(DesignFamily, family_id)
-    if family is None:
-        raise HTTPException(status_code=404,
-                            detail=f"unknown design family '{family_id}'")
+def _design_family_detail(db: Session, family: DesignFamily) -> dict:
     projects = list(db.scalars(
         select(Project)
-        .where(Project.family_id == family_id)
+        .where(Project.family_id == family.id)
         .order_by(Project.variation_index, Project.created_at)
     ))
     return {
@@ -217,3 +212,27 @@ def get_design_family(family_id: str, db: DbSession):
             "branched_from_asset_id": project.branched_from_asset_id,
         } for project in projects],
     }
+
+
+@router.get("/families")
+def list_design_families(db: DbSession, owner: str | None = None):
+    """List Studio families without flattening their variation boundaries."""
+
+    query = select(DesignFamily)
+    if owner is not None:
+        query = query.where(DesignFamily.owner == owner)
+    families = list(db.scalars(
+        query.order_by(DesignFamily.updated_at.desc(), DesignFamily.id)
+    ))
+    return {
+        "families": [_design_family_detail(db, family) for family in families],
+    }
+
+
+@router.get("/families/{family_id}")
+def get_design_family(family_id: str, db: DbSession):
+    family = db.get(DesignFamily, family_id)
+    if family is None:
+        raise HTTPException(status_code=404,
+                            detail=f"unknown design family '{family_id}'")
+    return _design_family_detail(db, family)

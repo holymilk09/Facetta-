@@ -113,6 +113,7 @@ from facetta.presentation import (
 from facetta.preliminary_sheet import sheet_readiness_blockers
 from facetta.render import RenderUnavailable
 from facetta.spec import Spec
+from facetta.studio_history import ensure_project_family
 from facetta.source_component_coverage import (
     source_component_factory_blockers,
 )
@@ -255,6 +256,7 @@ class ProjectDetail(BaseModel):
     latest_design_version: int | None
     spec: dict[str, object] | None
     active_asset_id: str | None
+    selected_candidate_asset_id: str | None
     active_design_version: int | None
     active_revision: AssetSummary | None
     pinned_revision: AssetSummary | None
@@ -359,6 +361,12 @@ class CreativeCandidatePromoteRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     spec: Spec
+    created_by: Annotated[str, Field(min_length=1, max_length=32)]
+
+
+class CreativeCandidateSelectRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     created_by: Annotated[str, Field(min_length=1, max_length=32)]
 
 
@@ -694,7 +702,14 @@ def project_card(db: Session, project: Project) -> dict:
     chain = project_chain(db, project.root_id)
     primary = [a for a in chain if is_primary_revision(a)]
     kinds = Counter(a.capability for a in chain)
-    cover = _cover_asset(chain)
+    selected = (
+        next((asset for asset in chain
+              if asset.id == project.selected_candidate_asset_id), None)
+        if project.selected_candidate_asset_id is not None
+        and not any(asset.design_version is not None for asset in primary)
+        else None
+    )
+    cover = selected or _cover_asset(chain)
     return {
         "root_id": project.root_id,
         "title": project.title,
@@ -848,6 +863,12 @@ def project_detail(db: Session, project: Project,
     revision_numbers = _revision_numbers(chain)
     primary = [a for a in chain if a.id in revision_numbers]
     active = primary[-1] if primary else None
+    if (project.selected_candidate_asset_id is not None
+            and not any(asset.design_version is not None for asset in primary)):
+        selected = next((asset for asset in primary
+                         if asset.id == project.selected_candidate_asset_id), None)
+        if selected is not None and selected.design_version is None:
+            active = selected
     pinned_candidates = [a for a in primary if a.pinned_at is not None]
     pinned = (max(pinned_candidates, key=lambda a: a.pinned_at)
               if pinned_candidates else None)
@@ -936,6 +957,7 @@ def project_detail(db: Session, project: Project,
         "latest_design_version": latest.version if latest else None,
         "spec": latest.spec if latest else None,
         "active_asset_id": active.id if active else None,
+        "selected_candidate_asset_id": project.selected_candidate_asset_id,
         "active_design_version": (active.design_version if active else None),
         "active_revision": by_id.get(active.id) if active else None,
         "pinned_revision": by_id.get(pinned.id) if pinned else None,
@@ -1081,6 +1103,29 @@ def _owned_creative_candidate(
 
 
 @router.post(
+    "/{project_id}/creative-candidates/{candidate_id}/select",
+    response_model=ProjectDetail,
+    response_model_exclude_none=True,
+)
+def select_project_creative_candidate(
+    project_id: str,
+    candidate_id: str,
+    request: CreativeCandidateSelectRequest,
+    db: DbSession,
+):
+    """Persist the designer's chosen visual without inventing a specification."""
+    project, candidate = _owned_creative_candidate(
+        db, project_id=project_id, candidate_id=candidate_id,
+        actor=request.created_by,
+    )
+    project.selected_candidate_asset_id = candidate.id
+    project.updated_at = utcnow()
+    db.commit()
+    db.refresh(project)
+    return project_detail(db, project)
+
+
+@router.post(
     "/from-prompt", status_code=201, response_model=ProjectDetail,
     response_model_exclude_none=True,
 )
@@ -1145,6 +1190,9 @@ def create_project_from_prompt(
     project = db.get(Project, persisted.root_id)
     if project is None:  # pragma: no cover - transaction invariant
         raise RuntimeError("persisted prompt project is unavailable")
+    ensure_project_family(db, project)
+    db.commit()
+    db.refresh(project)
     return project_detail(db, project)
 
 
@@ -1279,6 +1327,9 @@ def create_project_from_drawing(
     project = db.get(Project, persisted.root_id)
     if project is None:  # pragma: no cover - transaction invariant
         raise RuntimeError("persisted creative project is unavailable")
+    ensure_project_family(db, project)
+    db.commit()
+    db.refresh(project)
     return project_detail(db, project)
 
 

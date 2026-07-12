@@ -9,13 +9,18 @@ import {
   clearSession, hasOnboarded, loadSession, markOnboarded, saveSession, Session,
 } from './src/auth';
 import { BuilderScreen, EditingTarget } from './src/BuilderScreen';
-import { DesignsScreen } from './src/DesignsScreen';
 import { LoginScreen } from './src/LoginScreen';
 import { OnboardingScreen } from './src/OnboardingScreen';
 import { ShareScreen } from './src/ShareScreen';
 import { getStudioAction, getVisibleStudioActions } from './src/studio/actions';
 import { StudioActionContext, StudioActionId } from './src/studio/contracts';
+import { StudioCollectionsWorkspace } from './src/studio/StudioCollectionsWorkspace';
+import { StudioCreateWorkspace } from './src/studio/StudioCreateWorkspace';
+import { StudioRefineWorkspace } from './src/studio/StudioRefineWorkspace';
+import { createStudioGatewayFromOptions, ExactStudioLineage } from './src/studio/gateway';
 import { radius, shadows, theme } from './src/theme';
+import { createTrustedApiClient } from './src/trusted/client';
+import type { ProjectDetail } from './src/trusted/types';
 import { WorkflowShowcase } from './src/WorkflowShowcase';
 
 type Tab = 'studio' | 'collections' | 'activity' | 'learn' | 'share';
@@ -76,19 +81,40 @@ export default function App() {
   const [shareToken, setShareToken] = useState<string | null>(null);
   const [showUtilityMenu, setShowUtilityMenu] = useState(false);
   const [showDevSettings, setShowDevSettings] = useState(false);
+  const [advancedSpecifications, setAdvancedSpecifications] = useState(false);
+  const [studioProject, setStudioProject] = useState<ProjectDetail | null>(null);
+  const [selectedCreativeAssetId, setSelectedCreativeAssetId] = useState<string | null>(null);
 
   const api = useMemo(() => createApi(apiUrl.replace(/\/$/, '')), [apiUrl]);
+  const trustedApi = useMemo(
+    () => createTrustedApiClient({ baseUrl: apiUrl.replace(/\/$/, '') }),
+    [apiUrl],
+  );
+  const studioGateway = useMemo(
+    () => createStudioGatewayFromOptions({ baseUrl: apiUrl.replace(/\/$/, '') }),
+    [apiUrl],
+  );
   const { width } = useWindowDimensions();
   const isWide = width >= 900; // tablet / desktop: two-pane layouts
-  const activeDesignId = editing?.designId ?? focusDesignId;
+  const activeDesignId = studioProject?.root_id ?? editing?.designId ?? focusDesignId;
+  const exactStudioLineage = useMemo<ExactStudioLineage | null>(() => {
+    if (studioProject?.active_asset_id === null || studioProject?.active_asset_id === undefined
+      || studioProject.active_design_version === null) return null;
+    return {
+      projectId: studioProject.root_id,
+      sourceAssetId: studioProject.active_asset_id,
+      sourceDesignVersion: studioProject.active_design_version,
+    };
+  }, [studioProject]);
   const actionContext = useMemo<StudioActionContext>(() => ({
     activeDesignId,
-    activeRevisionId: editing ? `${editing.designId}:v${editing.version}` : null,
+    activeRevisionId: studioProject?.active_asset_id ?? selectedCreativeAssetId
+      ?? (editing ? `${editing.designId}:v${editing.version}` : null),
     // Factory promotion is deliberately unavailable until the API supplies both
     // an enablement flag and an explicit eligibility decision for this revision.
     factoryEnabled: false,
     factoryEligible: false,
-  }), [activeDesignId, editing]);
+  }), [activeDesignId, editing, selectedCreativeAssetId, studioProject]);
   const hasActiveRevision = Boolean(actionContext.activeDesignId && actionContext.activeRevisionId);
   const studioActions = getVisibleStudioActions(actionContext);
   const moreActions = getVisibleStudioActions(actionContext, 'more');
@@ -100,6 +126,7 @@ export default function App() {
       return;
     }
     setSelectedActionId(actionId);
+    setAdvancedSpecifications(false);
     setShowMoreActions(false);
     setStudioView('action');
     setTab('studio');
@@ -175,6 +202,17 @@ export default function App() {
           {session && <Text style={styles.sessionEmail}>{session.email}</Text>}
           <Pressable onPress={() => setShowDevSettings(!showDevSettings)} style={styles.utilityRow}>
             <Text style={styles.utilityRowText}>Connection settings</Text>
+          </Pressable>
+          <Pressable
+            style={styles.utilityRow}
+            onPress={() => {
+              setAdvancedSpecifications(true);
+              setSelectedActionId('create');
+              setStudioView('action');
+              setTab('studio');
+              setShowUtilityMenu(false);
+            }}>
+            <Text style={styles.utilityRowText}>Advanced Specifications</Text>
           </Pressable>
           <Pressable
             style={styles.utilityRow}
@@ -329,37 +367,89 @@ export default function App() {
               <Text style={styles.actionContextClose}>Close</Text>
             </Pressable>
           </View>
-          <BuilderScreen
-            api={api}
-            designer={designer}
-            editing={editing}
-            initialSpec={initialSpec}
-            isWide={isWide}
-            onSaved={(designId) => {
-              setEditing(null);
-              setInitialSpec(null);
-              setFocusDesignId(designId);
-              setTab('collections');
-            }}
-          />
+          {advancedSpecifications ? (
+            <BuilderScreen
+              api={api}
+              designer={designer}
+              editing={editing}
+              initialSpec={initialSpec}
+              isWide={isWide}
+              onSaved={(designId) => {
+                setEditing(null);
+                setInitialSpec(null);
+                setFocusDesignId(designId);
+                setTab('collections');
+              }}
+            />
+          ) : selectedActionId === 'create' ? (
+            <StudioCreateWorkspace
+              gateway={studioGateway}
+              trustedClient={trustedApi}
+              owner={designer}
+              onSave={(selection) => {
+                setStudioProject(selection.project);
+                setSelectedCreativeAssetId(selection.selectedAssetId);
+                setFocusDesignId(selection.project.root_id);
+                setTab('collections');
+              }}
+            />
+          ) : selectedActionId === 'refine' ? (
+            <StudioRefineWorkspace
+              api={trustedApi}
+              gateway={studioGateway}
+              lineage={exactStudioLineage}
+              createdBy={designer}
+              onApplied={(project) => {
+                setStudioProject(project);
+                setSelectedCreativeAssetId(project.active_asset_id);
+              }}
+            />
+          ) : selectedActionId === 'vary' ? (
+            <StudioCollectionsWorkspace
+              api={trustedApi}
+              project={studioProject}
+              createdBy={designer}
+              onOpenProject={(projectId) => {
+                void trustedApi.getProject(projectId).then((result) => {
+                  if (result.error === null) setStudioProject(result.data);
+                });
+              }}
+              onProjectChanged={setStudioProject}
+              onVariationCreated={(project) => {
+                setStudioProject(project);
+                setSelectedCreativeAssetId(project.active_asset_id);
+              }}
+            />
+          ) : (
+            <View style={styles.workspaceNotice}>
+              <Text style={styles.workspaceNoticeTitle}>{getStudioAction(selectedActionId).label}</Text>
+              <Text style={styles.workspaceNoticeBody}>
+                This destination will use the exact active revision. It is hidden from production use until its preview-and-accept contract is complete.
+              </Text>
+            </View>
+          )}
         </View>
       )}
       {tab === 'collections' && (
-        <DesignsScreen
-          api={api}
-          designer={designer}
-          isWide={isWide}
-          focusDesignId={focusDesignId}
-          onEdit={(designId, version, spec) => {
-            setEditing({ designId, version });
-            setInitialSpec(spec);
-            setSelectedActionId('refine');
-            setStudioView('action');
-            setTab('studio');
+        <StudioCollectionsWorkspace
+          api={trustedApi}
+          project={studioProject}
+          createdBy={designer}
+          onOpenProject={(projectId) => {
+            void trustedApi.getProject(projectId).then((result) => {
+              if (result.error === null) {
+                setStudioProject(result.data);
+                setSelectedCreativeAssetId(result.data.active_asset_id);
+              }
+            });
           }}
-          onOpenShare={(token) => {
-            setShareToken(token);
-            setTab('share');
+          onProjectChanged={(project) => {
+            setStudioProject(project);
+            setSelectedCreativeAssetId(project.active_asset_id);
+          }}
+          onVariationCreated={(project) => {
+            setStudioProject(project);
+            setSelectedCreativeAssetId(project.active_asset_id);
           }}
         />
       )}

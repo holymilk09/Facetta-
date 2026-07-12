@@ -17,6 +17,7 @@ from facetta.db import (
     ProjectRevisionRecord,
     _apply_additive_migrations,
 )
+from facetta.api.studio import list_design_families
 
 
 def _session_factory() -> sessionmaker[Session]:
@@ -170,6 +171,60 @@ def test_family_groups_sibling_projects_without_sharing_revision_history():
         assert records[0].interpretation[
             "factory_specification_impact"
         ] is True
+
+
+def test_family_list_preserves_variations_and_filters_by_owner():
+    SessionFactory = _session_factory()
+    with SessionFactory() as db:
+        first_asset = _asset("ast_family_one")
+        second_asset = _asset("ast_family_two")
+        db.add_all([
+            DesignFamily(
+                id="fam_one",
+                owner="usr_studio",
+                title="Emerald directions",
+            ),
+            DesignFamily(
+                id="fam_two",
+                owner="usr_other",
+                title="Private directions",
+            ),
+            first_asset,
+            second_asset,
+            Project(
+                root_id=first_asset.id,
+                owner="usr_studio",
+                title="Original emerald direction",
+                tags=["emerald"],
+                family_id="fam_one",
+                variation_index=1,
+                variation_label="Original",
+            ),
+            Project(
+                root_id=second_asset.id,
+                owner="usr_other",
+                title="Other owner's direction",
+                tags=[],
+                family_id="fam_two",
+                variation_index=1,
+                variation_label="Original",
+            ),
+        ])
+        db.commit()
+
+        result = list_design_families(db=db, owner="usr_studio")
+
+        assert [family["family_id"] for family in result["families"]] == [
+            "fam_one",
+        ]
+        assert result["families"][0]["title"] == "Emerald directions"
+        assert [
+            variation["root_id"]
+            for variation in result["families"][0]["variations"]
+        ] == ["ast_family_one"]
+        assert result["families"][0]["variations"][0][
+            "variation_label"
+        ] == "Original"
 
 
 def test_project_variation_index_must_be_positive_when_present():

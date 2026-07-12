@@ -70,7 +70,13 @@ def _active_primary(db: Session, root_id: str) -> ImageAsset | None:
     return primary[-1] if primary else None
 
 
-def _ensure_family(db: Session, project: Project) -> DesignFamily:
+def ensure_project_family(db: Session, project: Project) -> DesignFamily:
+    """Give every Studio project its Family -> Variation identity.
+
+    Callers own the transaction. Keeping this operation explicit lets project
+    creation and later branching share the same invariant without inventing a
+    family in read paths.
+    """
     if project.family_id is not None:
         family = db.get(DesignFamily, project.family_id)
         if family is None:
@@ -143,7 +149,7 @@ def fork_project_variation(
             status_code=422,
         )
 
-    family = _ensure_family(db, project)
+    family = ensure_project_family(db, project)
     if family.owner != project.owner:
         raise StudioHistoryError(
             "design_family_owner_mismatch",

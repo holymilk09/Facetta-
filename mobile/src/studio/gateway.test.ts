@@ -74,6 +74,7 @@ function fakeClient(overrides: Partial<GatewayClient> = {}): GatewayClient {
   return {
     createProjectFromBrief: unsupported,
     createProjectFromPrompt: unsupported,
+    selectCreativeCandidate: unsupported,
     saveAsVariation: unsupported,
     previewCatalogSelection: unsupported,
     acceptCatalogPreview: unsupported,
@@ -119,6 +120,29 @@ const catalogPreview = (): CatalogPreviewResult => ({
     verdict: 'pass',
     expires_in_seconds: 600,
   },
+});
+
+test('persists a chosen creative direction without inventing specification authority', async () => {
+  const selected = {
+    ...project('candidate_2'),
+    design_id: null,
+    spec: null,
+    active_design_version: null,
+    selected_candidate_asset_id: 'candidate_2',
+  };
+  const gateway = createStudioGateway(fakeClient({
+    selectCreativeCandidate: async (projectId, candidateId, createdBy) => {
+      assert.equal(projectId, 'project_1');
+      assert.equal(candidateId, 'candidate_2');
+      assert.equal(createdBy, 'designer_1');
+      return ok(selected);
+    },
+  }));
+
+  const result = await gateway.selectCreativeDirection('project_1', 'candidate_2', 'designer_1');
+  assert.equal(result.error, null);
+  assert.equal(result.data?.selected_candidate_asset_id, 'candidate_2');
+  assert.equal(result.data?.active_design_version, null);
 });
 
 test('catalog refine preserves lineage and applies only through an explicit decision', async () => {

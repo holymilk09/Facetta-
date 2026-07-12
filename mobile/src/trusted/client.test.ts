@@ -4,6 +4,7 @@ import {
   createTrustedApiClient,
   decodeBeautyRenderResult,
   decodeDesignFamilyDetail,
+  decodeDesignFamilyList,
   decodeFactoryPackManifest,
   decodeDrawingConfirmationResult,
   decodeImageRunSummary,
@@ -548,8 +549,9 @@ describe('trusted API decoders', () => {
       title: 'Lariat',
       collection: 'Exploration',
     });
+    await api.selectCreativeCandidate('ast prompt', 'candidate two', 'usr_designer');
 
-    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(fetcher).toHaveBeenCalledTimes(2);
     expect(fetcher.mock.calls[0]?.[0]).toBe(
       'https://facetta.test/projects/from-prompt');
     expect(JSON.parse(String(fetcher.mock.calls[0]?.[1]?.body))).toEqual({
@@ -559,6 +561,11 @@ describe('trusted API decoders', () => {
       owner: 'usr_designer',
       title: 'Lariat',
       collection: 'Exploration',
+    });
+    expect(fetcher.mock.calls[1]?.[0]).toBe(
+      'https://facetta.test/projects/ast%20prompt/creative-candidates/candidate%20two/select');
+    expect(JSON.parse(String(fetcher.mock.calls[1]?.[1]?.body))).toEqual({
+      created_by: 'usr_designer',
     });
   });
 
@@ -705,6 +712,50 @@ describe('trusted API decoders', () => {
 
     expect(fetcher.mock.calls[0]?.[0]).toBe('https://facetta.test/studio/families/fam%20ring');
     expect(result.data?.variations[0]?.variation_label).toBe('Rose gold direction');
+  });
+
+  test('lists owner families as nested variation groups', async () => {
+    const payload = {
+      families: [{
+        family_id: 'fam ring',
+        owner: 'usr_designer',
+        title: 'Sapphire ring directions',
+        created_at: '2026-07-12T01:00:00Z',
+        updated_at: '2026-07-12T02:00:00Z',
+        variations: [{
+          root_id: 'ast variation',
+          title: 'Rose gold direction',
+          collection: 'Client A',
+          tags: ['sapphire'],
+          owner: 'usr_designer',
+          counts: { SPEC_RENDER: 1 },
+          item_count: 1,
+          primary_revision_count: 1,
+          has_factory_drawing: false,
+          cover_asset_id: 'ast current',
+          created_at: '2026-07-12T01:30:00Z',
+          updated_at: '2026-07-12T02:00:00Z',
+          variation_index: 1,
+          variation_label: 'Original',
+          branched_from_project_root_id: null,
+          branched_from_asset_id: null,
+        }],
+      }],
+    };
+    expect(decodeDesignFamilyList(payload)?.families[0]?.family_id).toBe('fam ring');
+    const fetcher = jest.fn<Promise<Response>, [RequestInfo | URL, RequestInit?]>(async () => ({
+      ok: true,
+      status: 200,
+      text: async () => JSON.stringify(payload),
+    } as unknown as Response));
+    const api = createTrustedApiClient({ baseUrl: 'https://facetta.test', fetcher });
+
+    const result = await api.listDesignFamilies('usr_designer');
+
+    expect(fetcher.mock.calls[0]?.[0]).toBe(
+      'https://facetta.test/studio/families?owner=usr_designer',
+    );
+    expect(result.data?.families[0]?.variations[0]?.variation_label).toBe('Original');
   });
 
   test('loads immutable Studio history with raw intent, interpretation, and restore evidence', async () => {

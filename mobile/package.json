@@ -35,7 +35,8 @@
     },
     "testMatch": [
       "**/src/trusted/**/*.test.ts",
-      "**/src/trusted/**/*.test.tsx"
+      "**/src/trusted/**/*.test.tsx",
+      "**/src/studio/**/*.test.tsx"
     ]
   },
   "private": true

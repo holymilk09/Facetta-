@@ -256,6 +256,8 @@ class Project(Base):
     variation_index: Mapped[int | None] = mapped_column(Integer, nullable=True)
     variation_label: Mapped[str | None] = mapped_column(
         String(120), nullable=True)
+    selected_candidate_asset_id: Mapped[str | None] = mapped_column(
+        ForeignKey("image_assets.id"), nullable=True)
     # A branch keeps the exact Studio project and visual it started from. The
     # child project owns an independent asset chain and immutable spec history.
     branched_from_project_root_id: Mapped[str | None] = mapped_column(
@@ -717,6 +719,9 @@ def _apply_additive_migrations(engine) -> None:
             "INTEGER CHECK (variation_index IS NULL OR variation_index >= 1)"
         ),
         "variation_label": "VARCHAR(120)",
+        "selected_candidate_asset_id": (
+            "VARCHAR(32) REFERENCES image_assets(id)"
+        ),
         "branched_from_project_root_id": (
             "VARCHAR(32) REFERENCES projects(root_id)"
         ),

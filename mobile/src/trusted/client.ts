@@ -63,6 +63,7 @@ import type {
   MarketingPackResult,
   DrawingConfirmationResult,
   DesignFamilyDetail,
+  DesignFamilyList,
   DesignFamilyVariation,
   DraftFactorySheetPreview,
   DraftCatalogSelectionRequest,
@@ -620,6 +621,7 @@ export const decodeProjectDetail: Decoder<ProjectDetail> = (value) => {
     design_id: nullableText(value.design_id) ?? activeRevision?.design_id ?? null,
     spec: decodeJsonObject(value.spec),
     active_asset_id: activeAssetId,
+    selected_candidate_asset_id: nullableText(value.selected_candidate_asset_id),
     active_design_version: number(pick(value, 'active_design_version', 'latest_design_version'))
       ?? activeRevision?.design_version ?? null,
     active_revision: activeRevision,
@@ -789,6 +791,13 @@ export const decodeDesignFamilyDetail: Decoder<DesignFamilyDetail> = (value) => 
     updated_at: updatedAt,
     variations: variations as DesignFamilyVariation[],
   };
+};
+
+export const decodeDesignFamilyList: Decoder<DesignFamilyList> = (value) => {
+  if (!isRecord(value) || !Array.isArray(value.families)) return null;
+  const families = value.families.map(decodeDesignFamilyDetail);
+  if (families.some((family) => family === null)) return null;
+  return { families: families as DesignFamilyDetail[] };
 };
 
 export const decodeRestoreStudioRevisionResult: Decoder<RestoreStudioRevisionResult> = (value) => {
@@ -2789,6 +2798,13 @@ export function createTrustedApiClient(options: TrustedApiClientOptions) {
       });
     },
 
+    selectCreativeCandidate(projectId: string, candidateId: string, createdBy: string) {
+      return projectCall(
+        `/projects/${encodeURIComponent(projectId)}/creative-candidates/${encodeURIComponent(candidateId)}/select`,
+        { method: 'POST', body: encodeBody({ created_by: createdBy }) },
+      );
+    },
+
     promoteCreativeCandidate(
       projectId: string,
       candidateId: string,
@@ -3255,6 +3271,13 @@ export function createTrustedApiClient(options: TrustedApiClientOptions) {
         `/studio/families/${encodeURIComponent(familyId)}`,
         decodeDesignFamilyDetail,
       );
+    },
+
+    listDesignFamilies(owner?: string): Promise<ApiResult<DesignFamilyList>> {
+      const query = owner?.trim()
+        ? `?owner=${encodeURIComponent(owner.trim())}`
+        : '';
+      return call('/studio/families' + query, decodeDesignFamilyList);
     },
 
     async getStudioProjectHistory(

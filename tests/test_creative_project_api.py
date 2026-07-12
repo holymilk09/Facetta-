@@ -23,6 +23,7 @@ from facetta.creative_workflow import (
 from facetta.db import (
     Base,
     Design,
+    DesignFamily,
     DesignVersion,
     ImageAsset,
     ImageRun,
@@ -572,8 +573,25 @@ def test_from_prompt_persists_independent_candidates_without_source_or_spec(
     assert not any(item["capability"] == "CREATIVE_SOURCE"
                    for item in body["assets"])
     assert body["root_id"] == body["revisions"][0]["asset_id"]
+    selected_id = body["revisions"][1]["asset_id"]
+    selected = client.post(
+        f"/projects/{body['root_id']}/creative-candidates/{selected_id}/select",
+        json={"created_by": "usr_designer"},
+    )
+    assert selected.status_code == 200, selected.text
+    selected_body = selected.json()
+    assert selected_body["selected_candidate_asset_id"] == selected_id
+    assert selected_body["active_asset_id"] == selected_id
+    assert selected_body["cover_asset_id"] == selected_id
+    assert "spec" not in selected_body
 
     with Session() as db:
+        saved_project = db.get(Project, body["root_id"])
+        assert saved_project is not None
+        assert saved_project.family_id is not None
+        assert saved_project.variation_index == 1
+        assert saved_project.variation_label == "Original"
+        assert db.get(DesignFamily, saved_project.family_id) is not None
         assert db.scalar(select(func.count()).select_from(Project)) == 1
         assert db.scalar(select(func.count()).select_from(Design)) == 0
         assert db.scalar(select(func.count()).select_from(DesignVersion)) == 0
@@ -624,6 +642,11 @@ def test_from_drawing_persists_variations_without_inventing_a_spec(
     assert len(body["image_run_ids"]) == 2
 
     with Session() as db:
+        saved_project = db.get(Project, body["root_id"])
+        assert saved_project is not None
+        assert saved_project.family_id is not None
+        assert saved_project.variation_index == 1
+        assert saved_project.variation_label == "Original"
         assert db.scalar(select(func.count()).select_from(Project)) == 1
         assert db.scalar(select(func.count()).select_from(Design)) == 0
         assert db.scalar(select(func.count()).select_from(DesignVersion)) == 0

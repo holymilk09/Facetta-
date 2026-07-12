@@ -1,0 +1,255 @@
+/// <reference types="jest" />
+
+import React from 'react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react-native';
+
+import type { ProjectDetail } from '../trusted/types';
+import {
+  StudioCollectionsWorkspace,
+  type StudioCollectionsApi,
+} from './StudioCollectionsWorkspace';
+
+const project: ProjectDetail = {
+  id: 'project_main', root_id: 'project_main', title: 'Sapphire orbit ring',
+  collection: 'Orbit collection', tags: ['sapphire'], owner: 'usr_designer',
+  state: 'refining', design_id: 'design_ring', spec: { jewelry_type: 'ring' },
+  active_asset_id: 'asset_2', active_design_version: 2, active_revision: null,
+  pinned_revision: null, revisions: [], assets: [], derived_assets: [], approval: null,
+  factory_ready: false, factory_blockers: [], primary_revision_count: 2,
+  has_factory_drawing: false, cover_asset_id: 'asset_2', created_at: null, updated_at: null,
+};
+
+const history = {
+  project_id: 'project_main', family_id: 'family_orbit', variation_index: 1,
+  variation_label: 'Original', active_asset_id: 'asset_2',
+  revisions: [
+    {
+      revision: 1, asset_id: 'asset_1', parent_asset_id: null,
+      design_version: 1, capability: 'SPEC_RENDER', image_url: 'https://test/revision-1.png',
+      pinned: false, action: 'created' as const, raw_intent: {}, interpretation: {},
+      change_summary: 'Created the original direction.', restored_from_asset_id: null,
+      created_by: 'usr_designer', created_at: '2026-07-12T01:00:00Z',
+    },
+    {
+      revision: 2, asset_id: 'asset_2', parent_asset_id: 'asset_1',
+      design_version: 2, capability: 'LOCALIZED_EDIT', image_url: 'https://test/revision-2.png',
+      pinned: false, action: 'edit' as const, raw_intent: {}, interpretation: {},
+      change_summary: 'Changed the metal to rose gold.', restored_from_asset_id: null,
+      created_by: 'usr_designer', created_at: '2026-07-12T02:00:00Z',
+    },
+  ],
+};
+
+const family = {
+  family_id: 'family_orbit', owner: 'usr_designer', title: 'Sapphire orbit ring',
+  created_at: '2026-07-12T01:00:00Z', updated_at: '2026-07-12T03:00:00Z',
+  variations: [
+    {
+      root_id: 'project_main', title: 'Sapphire orbit ring', collection: 'Orbit collection',
+      tags: ['sapphire'], owner: 'usr_designer', counts: {}, item_count: 2,
+      primary_revision_count: 2, has_factory_drawing: false, cover_asset_id: 'asset_2',
+      created_at: '2026-07-12T01:00:00Z', updated_at: '2026-07-12T02:00:00Z',
+      variation_index: 1, variation_label: 'Original',
+      branched_from_project_root_id: null, branched_from_asset_id: null,
+    },
+    {
+      root_id: 'project_white', title: 'Sapphire orbit ring', collection: 'Orbit collection',
+      tags: ['sapphire'], owner: 'usr_designer', counts: {}, item_count: 1,
+      primary_revision_count: 1, has_factory_drawing: false, cover_asset_id: 'asset_white',
+      created_at: '2026-07-12T03:00:00Z', updated_at: '2026-07-12T03:00:00Z',
+      variation_index: 2, variation_label: 'White metal study',
+      branched_from_project_root_id: 'project_main', branched_from_asset_id: 'asset_2',
+    },
+  ],
+};
+
+function api(overrides: Partial<StudioCollectionsApi> = {}): StudioCollectionsApi {
+  return {
+    listDesignFamilies: jest.fn(async () => ({ data: { families: [family] }, error: null, status: 200 })),
+    getStudioProjectHistory: jest.fn(async () => ({ data: history, error: null, status: 200 })),
+    getDesignFamily: jest.fn(async () => ({ data: family, error: null, status: 200 })),
+    restoreStudioRevision: jest.fn(async () => ({
+      data: {
+        status: 'restored_as_new_revision' as const,
+        restored_from_asset_id: 'asset_1', new_asset_id: 'asset_3',
+        new_design_version: 3, spec_change: [],
+        project: { ...project, active_asset_id: 'asset_3', active_design_version: 3 },
+      },
+      error: null,
+      status: 201,
+    })),
+    saveAsVariation: jest.fn(async () => ({
+      data: {
+        status: 'variation_created' as const, family_id: 'family_orbit',
+        variation_index: 3, source_project_id: 'project_main', source_asset_id: 'asset_2',
+        project: { ...project, id: 'project_blue', root_id: 'project_blue', active_asset_id: 'asset_blue' },
+      },
+      error: null,
+      status: 201,
+    })),
+    assetImageUrl: jest.fn((assetId: string) => `https://test/assets/${assetId}.png`),
+    ...overrides,
+  } as StudioCollectionsApi;
+}
+
+const callbacks = () => ({
+  onOpenProject: jest.fn(),
+  onProjectChanged: jest.fn(),
+  onVariationCreated: jest.fn(),
+});
+
+describe('StudioCollectionsWorkspace', () => {
+  test('lists canonical design families when no project is selected', async () => {
+    const client = api();
+    const handlers = callbacks();
+    await render(
+      <StudioCollectionsWorkspace
+        api={client}
+        project={null}
+        createdBy="usr_designer"
+        {...handlers}
+      />,
+    );
+
+    expect(await screen.findByText('Sapphire orbit ring')).toBeTruthy();
+    expect(client.getStudioProjectHistory).not.toHaveBeenCalled();
+    expect(client.getDesignFamily).not.toHaveBeenCalled();
+    expect(screen.queryByText(/factory/i)).toBeNull();
+  });
+
+  test('shows family cover, exact branch lineage, revision compare, and sibling navigation', async () => {
+    const client = api();
+    const handlers = callbacks();
+    await render(
+      <StudioCollectionsWorkspace
+        api={client}
+        project={project}
+        createdBy="usr_designer"
+        {...handlers}
+      />,
+    );
+
+    expect(await screen.findByText('Sapphire orbit ring')).toBeTruthy();
+    expect(screen.getByLabelText('Design family cover')).toBeTruthy();
+    expect(screen.getByText('From project_main · asset asset_2')).toBeTruthy();
+    await fireEvent.press(screen.getByLabelText('Open White metal study'));
+    expect(handlers.onOpenProject).toHaveBeenCalledWith('project_white');
+
+    await fireEvent.press(screen.getByLabelText('Compare revision 1'));
+    await fireEvent.press(screen.getByLabelText('Compare revision 2'));
+    expect(screen.getByText('Comparing revision 1 and revision 2')).toBeTruthy();
+    expect(screen.getAllByText(/asset_1 · spec 1 · original source/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/asset_2 · spec 2 · parent asset_1/).length).toBeGreaterThan(0);
+  });
+
+  test('branches and restores only against the exact active lineage', async () => {
+    const client = api();
+    const handlers = callbacks();
+    await render(
+      <StudioCollectionsWorkspace
+        api={client}
+        project={project}
+        createdBy="usr_designer"
+        {...handlers}
+      />,
+    );
+    await screen.findByText('Immutable revision history');
+
+    await fireEvent.changeText(screen.getByPlaceholderText('Rose gold study'), 'Blue sapphire study');
+    await fireEvent.press(screen.getByText('Create variation'));
+    await waitFor(() => expect(client.saveAsVariation).toHaveBeenCalledWith(
+      'project_main',
+      {
+        created_by: 'usr_designer',
+        expected_active_asset_id: 'asset_2',
+        expected_design_version: 2,
+        label: 'Blue sapphire study',
+      },
+    ));
+    expect(handlers.onVariationCreated).toHaveBeenCalledWith(expect.objectContaining({
+      root_id: 'project_blue',
+    }));
+
+    await fireEvent.press(screen.getByText('Restore revision 1 as new'));
+    await waitFor(() => expect(client.restoreStudioRevision).toHaveBeenCalledWith(
+      'project_main',
+      'asset_1',
+      {
+        created_by: 'usr_designer',
+        expected_active_asset_id: 'asset_2',
+        expected_design_version: 2,
+      },
+    ));
+    expect(handlers.onProjectChanged).toHaveBeenCalledWith(expect.objectContaining({
+      active_asset_id: 'asset_3',
+    }));
+  });
+
+  test('does not invent family data when history is unavailable and still branches exactly', async () => {
+    const unavailable = {
+      data: null,
+      error: {
+        code: 'INVALID_RESPONSE', message: 'History response is unavailable.',
+        category: 'decode' as const, status: 200, retryable: false,
+      },
+      status: 200,
+    };
+    const client = api({
+      getStudioProjectHistory: jest.fn(async () => unavailable),
+    });
+    const handlers = callbacks();
+    await render(
+      <StudioCollectionsWorkspace
+        api={client}
+        project={project}
+        createdBy="usr_designer"
+        {...handlers}
+      />,
+    );
+
+    expect(await screen.findByText('Saved history is unavailable')).toBeTruthy();
+    expect(screen.getByText(
+      'No family or revision data is being inferred. The selected design remains unchanged.',
+    )).toBeTruthy();
+    expect(client.getDesignFamily).not.toHaveBeenCalled();
+
+    await fireEvent.changeText(screen.getByPlaceholderText('Rose gold study'), 'Independent study');
+    await fireEvent.press(screen.getByText('Create variation'));
+    await waitFor(() => expect(client.saveAsVariation).toHaveBeenCalledWith(
+      'project_main', expect.objectContaining({
+        expected_active_asset_id: 'asset_2', expected_design_version: 2,
+      }),
+    ));
+  });
+
+  test('rejects a branch response that does not preserve the requested source asset', async () => {
+    const client = api({
+      saveAsVariation: jest.fn(async () => ({
+        data: {
+          status: 'variation_created' as const, family_id: 'family_orbit',
+          variation_index: 3, source_project_id: 'project_main',
+          source_asset_id: 'asset_wrong', project,
+        },
+        error: null,
+        status: 201,
+      })),
+    });
+    const handlers = callbacks();
+    await render(
+      <StudioCollectionsWorkspace
+        api={client}
+        project={project}
+        createdBy="usr_designer"
+        {...handlers}
+      />,
+    );
+    await screen.findByText('Immutable revision history');
+    await fireEvent.changeText(screen.getByPlaceholderText('Rose gold study'), 'Unsafe branch');
+    await fireEvent.press(screen.getByText('Create variation'));
+
+    expect(await screen.findByText(
+      'The new variation did not preserve the selected active revision lineage.',
+    )).toBeTruthy();
+    expect(handlers.onVariationCreated).not.toHaveBeenCalled();
+  });
+});

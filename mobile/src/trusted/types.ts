@@ -222,6 +222,7 @@ export interface ProjectDetail {
   /** Present on canonical project payloads; optional only for legacy snapshots. */
   spec?: JsonObject | null;
   active_asset_id: string | null;
+  selected_candidate_asset_id?: string | null;
   active_design_version: number | null;
   active_revision: AssetSummary | null;
   pinned_revision: AssetSummary | null;
@@ -317,6 +318,10 @@ export interface DesignFamilyDetail {
   created_at: string;
   updated_at: string;
   variations: DesignFamilyVariation[];
+}
+
+export interface DesignFamilyList {
+  families: DesignFamilyDetail[];
 }
 
 export interface RestoreStudioRevisionRequest {

@@ -105,6 +105,7 @@ export interface StudioFactoryEligibility {
 type GatewayTrustedClient = Pick<TrustedApiClient,
   | 'createProjectFromBrief'
   | 'createProjectFromPrompt'
+  | 'selectCreativeCandidate'
   | 'saveAsVariation'
   | 'previewCatalogSelection'
   | 'acceptCatalogPreview'
@@ -246,6 +247,14 @@ export function createStudioGateway(
 
     createFromPrompt(request: CreateProjectFromPromptRequest): Promise<StudioGatewayResult<ProjectDetail>> {
       return client.createProjectFromPrompt(request).then(mapResult);
+    },
+
+    selectCreativeDirection(
+      projectId: string,
+      candidateId: string,
+      createdBy: string,
+    ): Promise<StudioGatewayResult<ProjectDetail>> {
+      return client.selectCreativeCandidate(projectId, candidateId, createdBy).then(mapResult);
     },
 
     async saveCurrentAsVariation(
