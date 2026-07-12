@@ -6,26 +6,80 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from facetta.db import ImageAsset, ImageRun, ImageRunReview
-from facetta.source_component_coverage import SourceCoverageFactoryBlocker
+from facetta.source_component_coverage import (
+    SourceComponentCoverage,
+    SourceCoverageFactoryBlocker,
+)
 
 
-_LINEAGE_RESOLVABLE_CODES = frozenset({
-    "source_component_spec_audit_stale",
-    "source_component_confirmation_stale",
-})
+def source_evidence_anchor_asset(
+    db: Session,
+    *,
+    active_asset: ImageAsset,
+) -> ImageAsset:
+    """Resolve the immutable image whose bytes source confirmations describe.
+
+    Ordinary imported projects use their root reference.  Creative projects
+    keep a drawing (or the first prompt candidate) as the chain root, then
+    promotion appends a byte-identical ``IMPORTED_REFERENCE`` child beneath
+    the selected creative candidate.  Source review is performed against that
+    selected candidate, so later freshness checks must follow the active
+    revision's ancestry to the promoted imported reference instead of silently
+    switching evidence to the unrelated project root.
+
+    The promoted copy is returned rather than trusting the mutable relationship
+    alone.  If its bytes ever stop matching the confirmed evidence hash, normal
+    source-component freshness checks fail closed.
+    """
+    cursor: ImageAsset | None = active_asset
+    seen: set[str] = set()
+    while cursor is not None and cursor.id not in seen:
+        seen.add(cursor.id)
+        if cursor.capability == "IMPORTED_REFERENCE":
+            return cursor
+        cursor = (
+            db.get(ImageAsset, cursor.parent_asset_id)
+            if cursor.parent_asset_id is not None else None
+        )
+    return db.get(ImageAsset, active_asset.root_id) or active_asset
 
 
 def apply_trusted_lineage_to_blockers(
     blockers: tuple[SourceCoverageFactoryBlocker, ...],
     *,
     lineage_verified: bool,
+    source_confirmation_evidence_verified: bool = False,
 ) -> tuple[SourceCoverageFactoryBlocker, ...]:
-    """Clear only hash-staleness blockers after an exact accepted edit path."""
+    """Clear only staleness supported by an exact accepted edit path.
+
+    Spec lineage can carry an existing source audit across an accepted visual
+    spec edit.  A human confirmation additionally remains current only while
+    its source-evidence SHA still matches the resolved source anchor.
+    """
     if not lineage_verified:
         return blockers
     return tuple(
         blocker for blocker in blockers
-        if blocker.code not in _LINEAGE_RESOLVABLE_CODES
+        if not (
+            blocker.code == "source_component_spec_audit_stale"
+            or (
+                blocker.code == "source_component_confirmation_stale"
+                and source_confirmation_evidence_verified
+            )
+        )
+    )
+
+
+def source_confirmation_evidence_matches(
+    coverage: SourceComponentCoverage | None,
+    *,
+    source_hash: str,
+) -> bool:
+    """Return false if any stored human confirmation names other bytes."""
+    return coverage is not None and all(
+        component.designer_confirmation is None
+        or component.designer_confirmation.evidence_sha256 == source_hash
+        for component in coverage.components
     )
 
 

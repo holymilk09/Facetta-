@@ -7,7 +7,9 @@ factory specification; that happens only after a designer chooses a candidate.
 
 from __future__ import annotations
 
+import inspect
 from collections.abc import Callable
+from typing import Protocol, TypeAlias, cast
 
 from facetta.image_agent import (
     ImageAgentResult,
@@ -17,8 +19,67 @@ from facetta.image_agent import (
 )
 
 
-CreativeRenderGenerator = Callable[[bytes, str, int], ImageAgentResult]
+class QualitySourceCreativeRenderGenerator(Protocol):
+    def __call__(
+        self,
+        source_image: bytes,
+        instruction: str,
+        variant: int,
+        *,
+        quality_source_image: bytes | None = None,
+    ) -> ImageAgentResult: ...
+
+
+LegacyCreativeRenderGenerator: TypeAlias = Callable[
+    [bytes, str, int], ImageAgentResult
+]
+CreativeRenderGenerator: TypeAlias = (
+    QualitySourceCreativeRenderGenerator | LegacyCreativeRenderGenerator
+)
 CreativePromptGenerator = Callable[[str, int], ImageAgentResult]
+
+
+def invoke_creative_render_generator(
+    generate: CreativeRenderGenerator,
+    source_image: bytes,
+    instruction: str,
+    variant: int,
+    *,
+    quality_source_image: bytes | None = None,
+) -> ImageAgentResult:
+    """Invoke v2 generators without breaking legacy dependency overrides.
+
+    The canonical production generator exposes the typed quality-source
+    keyword. Older injected callables remain valid for deterministic tests and
+    private integrations. Signature inspection happens before execution so a
+    ``TypeError`` raised *inside* a generator can never trigger a second call.
+    """
+    if quality_source_image is None:
+        return generate(source_image, instruction, variant)
+    try:
+        parameters = inspect.signature(generate).parameters.values()
+    except (TypeError, ValueError):
+        # An opaque callable must honor the current typed contract. Failing
+        # closed is safer than silently dropping fidelity authority.
+        return cast(QualitySourceCreativeRenderGenerator, generate)(
+            source_image,
+            instruction,
+            variant,
+            quality_source_image=quality_source_image,
+        )
+    supports_quality_source = any(
+        parameter.name == "quality_source_image"
+        or parameter.kind is inspect.Parameter.VAR_KEYWORD
+        for parameter in parameters
+    )
+    if supports_quality_source:
+        return cast(QualitySourceCreativeRenderGenerator, generate)(
+            source_image,
+            instruction,
+            variant,
+            quality_source_image=quality_source_image,
+        )
+    return generate(source_image, instruction, variant)
 
 
 def generate_creative_prompt(
@@ -47,18 +108,25 @@ def generate_creative_render(
     source_image: bytes,
     instruction: str,
     variant: int,
+    *,
+    quality_source_image: bytes | None = None,
 ) -> ImageAgentResult:
     plan = build_image_plan(
         ImageOperation.REFERENCE_RENDER,
         instruction,
         source_image=source_image,
+        quality_source_image=quality_source_image,
         variant=variant,
         style_constraints=(
             "fine-jewelry product rendering with believable material response",
             "clean presentation that keeps the entire visible piece reviewable",
         ),
     )
-    return JewelryImageAgent().run(plan, source_image=source_image)
+    return JewelryImageAgent().run(
+        plan,
+        source_image=source_image,
+        quality_source_image=quality_source_image,
+    )
 
 
 def get_creative_render_generator() -> CreativeRenderGenerator:

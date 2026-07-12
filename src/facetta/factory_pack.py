@@ -49,6 +49,8 @@ from facetta.source_component_resolution import (
 from facetta.source_evidence_lineage import (
     apply_trusted_lineage_to_blockers,
     has_trusted_visual_spec_lineage,
+    source_confirmation_evidence_matches,
+    source_evidence_anchor_asset,
 )
 from facetta.svg_sheet import SheetUnsupported, render_sheet
 from facetta.validation import validate_spec
@@ -239,11 +241,15 @@ def build_factory_pack(db: Session, project_id: str) -> FactoryPack:
         )
 
     target_visual_hash = spec_visual_hash(validated.spec)
+    source_evidence_hash = _sha256(bytes(source_evidence_anchor_asset(
+        db,
+        active_asset=active,
+    ).image))
     source_blockers = source_component_factory_blockers(
         validated.spec.source_component_coverage,
         valid_spec_paths=valid_source_component_spec_paths(validated.spec),
         current_spec_visual_hash=target_visual_hash,
-        current_source_hash=_sha256(bytes(root.image)),
+        current_source_hash=source_evidence_hash,
     )
     coverage = validated.spec.source_component_coverage
     source_blockers = apply_trusted_lineage_to_blockers(
@@ -255,6 +261,12 @@ def build_factory_pack(db: Session, project_id: str) -> FactoryPack:
                 coverage.audited_spec_visual_hash if coverage is not None else None
             ),
             target_spec_visual_hash=target_visual_hash,
+        ),
+        source_confirmation_evidence_verified=(
+            source_confirmation_evidence_matches(
+                coverage,
+                source_hash=source_evidence_hash,
+            )
         ),
     )
     if source_blockers:

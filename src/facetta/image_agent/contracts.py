@@ -110,6 +110,7 @@ class ImageAgentPlan(_Contract):
     source_spec_facts: JsonObject | None = None
     source_spec_visual_hash: str | None = None
     source_hash: str | None = None
+    quality_source_hash: str | None = None
     mask_hash: str | None = None
     spec_visual_hash: str
     region_description: str | None = None

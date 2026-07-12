@@ -29,6 +29,7 @@ from facetta.creative_workflow import (
     CreativeRenderGenerator,
     get_creative_prompt_generator,
     get_creative_render_generator,
+    invoke_creative_render_generator,
 )
 from facetta.creative_reference_board import (
     CreativeReferenceImage,
@@ -129,6 +130,8 @@ from facetta.source_component_resolution import (
 from facetta.source_evidence_lineage import (
     apply_trusted_lineage_to_blockers,
     has_trusted_visual_spec_lineage,
+    source_confirmation_evidence_matches,
+    source_evidence_anchor_asset,
 )
 from facetta.validation import validate_spec
 from facetta.vocabulary import get_vocabulary
@@ -928,13 +931,17 @@ def project_detail(db: Session, project: Project,
             } for blocker in unresolved_form_factory_blockers(
                 active_spec.design_form)]
             target_visual_hash = spec_visual_hash(active_spec)
+            source_evidence_hash = hashlib.sha256(
+                bytes(source_evidence_anchor_asset(
+                    db,
+                    active_asset=active,
+                ).image)
+            ).hexdigest()
             source_blockers = source_component_factory_blockers(
                 active_spec.source_component_coverage,
                 valid_spec_paths=valid_source_component_spec_paths(active_spec),
                 current_spec_visual_hash=target_visual_hash,
-                current_source_hash=hashlib.sha256(
-                    bytes((db.get(ImageAsset, project.root_id) or active).image)
-                ).hexdigest(),
+                current_source_hash=source_evidence_hash,
             )
             coverage = active_spec.source_component_coverage
             source_blockers = apply_trusted_lineage_to_blockers(
@@ -947,6 +954,12 @@ def project_detail(db: Session, project: Project,
                         if coverage is not None else None
                     ),
                     target_spec_visual_hash=target_visual_hash,
+                ),
+                source_confirmation_evidence_verified=(
+                    source_confirmation_evidence_matches(
+                        coverage,
+                        source_hash=source_evidence_hash,
+                    )
                 ),
             )
             factory_blockers.extend({
@@ -1335,6 +1348,7 @@ def create_project_from_drawing(
             "views outside this exact crop."
         )
 
+    quality_source = render_source
     render_source_capability: Literal[
         "CREATIVE_SOURCE_REGION", "CREATIVE_REFERENCE_BOARD"
     ] = "CREATIVE_SOURCE_REGION"
@@ -1368,7 +1382,16 @@ def create_project_from_drawing(
     for offset in range(request.variation_count):
         variant = request.starting_variant + offset
         try:
-            result = generate(render_source, effective_instruction, variant)
+            if decoded_references:
+                result = invoke_creative_render_generator(
+                    generate,
+                    render_source,
+                    effective_instruction,
+                    variant,
+                    quality_source_image=quality_source,
+                )
+            else:
+                result = generate(render_source, effective_instruction, variant)
         except ImageAgentError as exc:
             observed_run_ids = [
                 persist_image_agent_result(

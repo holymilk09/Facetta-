@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
+import hashlib
 import io
 from pathlib import Path
 
@@ -419,6 +420,107 @@ class TestPlanning:
         with pytest.raises(ImagePlanValidationError, match="content hash"):
             JewelryImageAgent(FakeProvider(), SequenceEvaluator(report(
                 QualityVerdict.PASS))).run(plan, source_image=b"source-b")
+
+    def test_provider_board_and_quality_source_are_independently_bound(self):
+        board = b"role-labeled-reference-board"
+        master = b"exact-master-geometry"
+        changed_master = b"different-master-geometry"
+        plan = build_image_plan(
+            ImageOperation.REFERENCE_RENDER,
+            "Use the role-labeled board without changing master geometry",
+            source_image=board,
+            quality_source_image=master,
+        )
+        changed = build_image_plan(
+            ImageOperation.REFERENCE_RENDER,
+            "Use the role-labeled board without changing master geometry",
+            source_image=board,
+            quality_source_image=changed_master,
+        )
+
+        assert plan.source_hash == hashlib.sha256(board).hexdigest()
+        assert plan.quality_source_hash == hashlib.sha256(master).hexdigest()
+        assert plan.normalized_intent["quality_source"] == {
+            "sha256": hashlib.sha256(master).hexdigest(),
+            "authority": "source_preflight_and_candidate_fidelity",
+            "provider_source_sha256": hashlib.sha256(board).hexdigest(),
+        }
+        assert plan.input_hash != changed.input_hash
+        assert attempt_cache_key(
+            plan, ImageRoute.GROK_EDIT, "same prompt", "same model",
+        ) != attempt_cache_key(
+            changed, ImageRoute.GROK_EDIT, "same prompt", "same model",
+        )
+
+        with pytest.raises(ImagePlanValidationError, match="quality source"):
+            JewelryImageAgent(
+                FakeProvider(),
+                SequenceEvaluator(report(QualityVerdict.PASS)),
+            ).run(
+                plan,
+                source_image=board,
+                quality_source_image=changed_master,
+            )
+
+    def test_provider_uses_board_while_preflight_and_corrected_qa_use_master(self):
+        board = b"role-labeled-reference-board"
+        master = b"exact-master-geometry"
+        plan = build_image_plan(
+            ImageOperation.REFERENCE_RENDER,
+            "Apply material guidance while preserving master geometry",
+            source_image=board,
+            quality_source_image=master,
+        )
+        provider = FakeProvider()
+
+        class FidelityEvaluator(SequenceEvaluator):
+            def __init__(self):
+                super().__init__(
+                    report(QualityVerdict.FAIL, code="source_design_preserved"),
+                    report(QualityVerdict.PASS),
+                )
+                self.preflight_sources: list[bytes] = []
+
+            def evaluate_source_precondition(self, _plan, source):
+                self.preflight_sources.append(source)
+                return report(QualityVerdict.PASS)
+
+        evaluator = FidelityEvaluator()
+        result = JewelryImageAgent(provider, evaluator).run(
+            plan,
+            source_image=board,
+            quality_source_image=master,
+        )
+
+        assert result.accepted is True
+        assert evaluator.preflight_sources == [master]
+        assert [call[2] for call in evaluator.calls] == [master, master]
+        assert [call["source"] for call in provider.calls] == [board, board]
+        assert "source_design_preserved" in provider.calls[1]["prompt"]
+
+    def test_omitted_quality_source_keeps_existing_source_and_no_source_behavior(self):
+        source = b"ordinary-reference"
+        reference_plan = build_image_plan(
+            ImageOperation.REFERENCE_RENDER,
+            "Polish this reference",
+            source_image=source,
+        )
+        reference_evaluator = SequenceEvaluator(report(QualityVerdict.PASS))
+        JewelryImageAgent(FakeProvider(), reference_evaluator).run(
+            reference_plan,
+            source_image=source,
+        )
+        assert reference_plan.quality_source_hash is None
+        assert "quality_source" not in reference_plan.normalized_intent
+        assert reference_evaluator.calls[0][2] == source
+
+        prompt_plan = build_image_plan(
+            ImageOperation.CREATIVE_GENERATE,
+            "A sculptural gold ring",
+        )
+        prompt_evaluator = SequenceEvaluator(report(QualityVerdict.PASS))
+        JewelryImageAgent(FakeProvider(), prompt_evaluator).run(prompt_plan)
+        assert prompt_evaluator.calls[0][2] is None
 
     def test_reference_backed_spec_render_uses_edit_routes(self):
         plan = build_image_plan(

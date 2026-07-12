@@ -678,14 +678,21 @@ def test_from_drawing_role_board_is_canonical_persisted_and_reopenable(
     material = _role_reference("material_style", (186, 138, 72))
     construction = _role_reference("construction_detail", (84, 102, 128))
     brand = _role_reference("brand_direction", (204, 184, 216))
-    calls: list[tuple[bytes, str, int]] = []
+    calls: list[tuple[bytes, bytes | None, str, int]] = []
 
-    def generate(source: bytes, instruction: str, variant: int):
-        calls.append((source, instruction, variant))
+    def generate(
+        source: bytes,
+        instruction: str,
+        variant: int,
+        *,
+        quality_source_image: bytes | None = None,
+    ):
+        calls.append((source, quality_source_image, instruction, variant))
         plan = build_image_plan(
             ImageOperation.REFERENCE_RENDER,
             instruction,
             source_image=source,
+            quality_source_image=quality_source_image,
             variant=variant,
         )
 
@@ -694,7 +701,11 @@ def test_from_drawing_role_board_is_canonical_persisted_and_reopenable(
                 return ProviderImage(image_bytes=_png((70 + variant, 61, 51)))
 
         class Evaluator:
-            def evaluate(self, *_args, **_kwargs):
+            def evaluate(
+                self, _plan, _candidate, *, source_image, mask_bytes,
+            ):
+                assert source_image == SOURCE
+                assert mask_bytes is None
                 return ImageQualityReport(
                     verdict=QualityVerdict.WARN,
                     checks=(),
@@ -702,7 +713,9 @@ def test_from_drawing_role_board_is_canonical_persisted_and_reopenable(
                 )
 
         return JewelryImageAgent(Provider(), Evaluator()).run(
-            plan, source_image=source,
+            plan,
+            source_image=source,
+            quality_source_image=quality_source_image,
         )
 
     app.dependency_overrides[get_creative_render_generator] = lambda: generate
@@ -714,10 +727,11 @@ def test_from_drawing_role_board_is_canonical_persisted_and_reopenable(
     assert response.status_code == 201, response.text
     body = response.json()
     assert len(calls) == 4
-    assert [call[2] for call in calls] == [7, 8, 9, 10]
+    assert [call[3] for call in calls] == [7, 8, 9, 10]
     assert all(call[0] == calls[0][0] for call in calls)
-    assert all(call[1] == calls[0][1] for call in calls)
-    instruction = calls[0][1]
+    assert all(call[1] == SOURCE for call in calls)
+    assert all(call[2] == calls[0][2] for call in calls)
+    instruction = calls[0][2]
     assert instruction.index("IMAGE 1 — MASTER GEOMETRY") < instruction.index(
         "IMAGE 2 — MATERIAL & STYLE"
     ) < instruction.index("IMAGE 3 — CONSTRUCTION DETAIL") < instruction.index(
@@ -785,6 +799,11 @@ def test_from_drawing_role_board_is_canonical_persisted_and_reopenable(
             run.source_hash == hashlib.sha256(bytes(board_asset.image)).hexdigest()
             for run in runs
         )
+        assert all(
+            run.normalized_intent["quality_source"]["sha256"]
+            == hashlib.sha256(SOURCE).hexdigest()
+            for run in runs
+        )
 
 
 @pytest.mark.parametrize("variation_count", [1, 4])
@@ -795,12 +814,19 @@ def test_role_labeled_references_preserve_candidate_count_boundaries(
     client, _Session = creative_client
     variants: list[int] = []
 
-    def generate(source: bytes, instruction: str, variant: int):
+    def generate(
+        source: bytes,
+        instruction: str,
+        variant: int,
+        *,
+        quality_source_image: bytes | None = None,
+    ):
         variants.append(variant)
         plan = build_image_plan(
             ImageOperation.REFERENCE_RENDER,
             instruction,
             source_image=source,
+            quality_source_image=quality_source_image,
             variant=variant,
         )
 
@@ -815,7 +841,9 @@ def test_role_labeled_references_preserve_candidate_count_boundaries(
                 )
 
         return JewelryImageAgent(Provider(), Evaluator()).run(
-            plan, source_image=source,
+            plan,
+            source_image=source,
+            quality_source_image=quality_source_image,
         )
 
     app.dependency_overrides[get_creative_render_generator] = lambda: generate
@@ -828,6 +856,54 @@ def test_role_labeled_references_preserve_candidate_count_boundaries(
     assert response.status_code == 201, response.text
     assert len(response.json()["revisions"]) == variation_count
     assert variants == list(range(7, 7 + variation_count))
+
+
+def test_role_board_keeps_legacy_three_argument_generator_override_compatible(
+    creative_client,
+):
+    client, _Session = creative_client
+    calls: list[tuple[bytes, str, int]] = []
+
+    def legacy_generate(source: bytes, instruction: str, variant: int):
+        calls.append((source, instruction, variant))
+        plan = build_image_plan(
+            ImageOperation.REFERENCE_RENDER,
+            instruction,
+            source_image=source,
+            variant=variant,
+        )
+
+        class Provider:
+            def execute(self, *_args, **_kwargs):
+                return ProviderImage(image_bytes=_png((81, 62, 43)))
+
+        class Evaluator:
+            def evaluate(self, *_args, **_kwargs):
+                return ImageQualityReport(
+                    verdict=QualityVerdict.WARN,
+                    checks=(),
+                    score=91,
+                )
+
+        return JewelryImageAgent(Provider(), Evaluator()).run(
+            plan,
+            source_image=source,
+        )
+
+    app.dependency_overrides[get_creative_render_generator] = (
+        lambda: legacy_generate
+    )
+    response = client.post("/projects/from-drawing", json={
+        **_request(variation_count=1),
+        "references": [_role_reference(
+            "material_style", (160, 120, 60)
+        )],
+    })
+
+    assert response.status_code == 201, response.text
+    assert len(calls) == 1
+    assert calls[0][2] == 7
+    assert "ROLE-LABELED REFERENCE BOARD" in calls[0][1]
 
 
 def test_from_drawing_isolates_and_persists_exact_multi_view_source_region(
@@ -909,6 +985,87 @@ def test_from_drawing_isolates_and_persists_exact_multi_view_source_region(
         assert candidate.parent_asset_id == crop_source.id
         assert run.source_asset_id == crop_source.id
         assert run.source_hash == hashlib.sha256(expected_crop).hexdigest()
+
+
+def test_role_board_qa_uses_selected_master_crop_not_composite_board(
+    creative_client,
+):
+    client, Session = creative_client
+    expected_crop = crop_normalized_region(
+        SOURCE, x=0.10, y=0.10, width=0.80, height=0.80,
+    )
+    observed: dict[str, bytes] = {}
+
+    def generate(
+        source: bytes,
+        instruction: str,
+        variant: int,
+        *,
+        quality_source_image: bytes | None = None,
+    ):
+        assert quality_source_image is not None
+        observed["provider"] = source
+        observed["quality"] = quality_source_image
+        plan = build_image_plan(
+            ImageOperation.REFERENCE_RENDER,
+            instruction,
+            source_image=source,
+            quality_source_image=quality_source_image,
+            variant=variant,
+        )
+
+        class Provider:
+            def execute(self, *_args, source_image, **_kwargs):
+                assert source_image == source
+                return ProviderImage(image_bytes=_png((91, 72, 51)))
+
+        class Evaluator:
+            def evaluate(
+                self, _plan, _candidate, *, source_image, mask_bytes,
+            ):
+                assert source_image == expected_crop
+                assert mask_bytes is None
+                return ImageQualityReport(
+                    verdict=QualityVerdict.WARN,
+                    checks=(),
+                    score=93,
+                )
+
+        return JewelryImageAgent(Provider(), Evaluator()).run(
+            plan,
+            source_image=source,
+            quality_source_image=quality_source_image,
+        )
+
+    app.dependency_overrides[get_creative_render_generator] = lambda: generate
+    response = client.post("/projects/from-drawing", json={
+        **_request(variation_count=1),
+        "source_region_description": "Front necklace elevation",
+        "source_region": {
+            "x": 0.10,
+            "y": 0.10,
+            "width": 0.80,
+            "height": 0.80,
+        },
+        "references": [_role_reference(
+            "material_style", (160, 120, 60)
+        )],
+    })
+
+    assert response.status_code == 201, response.text
+    assert observed["quality"] == expected_crop
+    assert observed["provider"] != expected_crop
+    with Session() as db:
+        run = db.scalar(select(ImageRun))
+        board = db.scalar(select(ImageAsset).where(
+            ImageAsset.capability == "CREATIVE_REFERENCE_BOARD"
+        ))
+        assert run is not None
+        assert board is not None
+        assert run.source_hash == hashlib.sha256(bytes(board.image)).hexdigest()
+        assert run.normalized_intent["quality_source"]["sha256"] == (
+            hashlib.sha256(expected_crop).hexdigest()
+        )
 
 
 def test_from_drawing_rejects_region_description_without_coordinates(
@@ -997,13 +1154,21 @@ def test_role_reference_generation_failure_leaves_no_project_or_assets(
 ):
     client, Session = creative_client
 
-    def fail(source: bytes, instruction: str, variant: int):
+    def fail(
+        source: bytes,
+        instruction: str,
+        variant: int,
+        *,
+        quality_source_image: bytes | None = None,
+    ):
         assert b"PNG" in source[:16]
+        assert quality_source_image == SOURCE
         assert "ROLE-LABELED REFERENCE BOARD" in instruction
         plan = build_image_plan(
             ImageOperation.REFERENCE_RENDER,
             instruction,
             source_image=source,
+            quality_source_image=quality_source_image,
             variant=variant,
         )
         raise ImageQualityFailure(
@@ -1177,6 +1342,127 @@ def test_creative_candidate_confirmation_uses_exact_server_held_bytes(
     assert confirmation["evidence_sha256"] == hashlib.sha256(
         _png((87, 60, 30))).hexdigest()
     assert body["factory_ready"] is True
+
+
+def test_alternate_drawing_candidate_confirmation_stays_current_after_promotion(
+    creative_client,
+):
+    """Promotion must not re-anchor evidence to the unrelated drawing root."""
+    client, Session = creative_client
+    app.dependency_overrides[get_creative_render_generator] = (
+        lambda: (lambda _source, _instruction, selected: _creative_result(selected)))
+    created = client.post(
+        "/projects/from-drawing", json=_request(variation_count=2))
+    assert created.status_code == 201, created.text
+    created_body = created.json()
+    project_id = created_body["root_id"]
+    selected_bytes = _png((88, 60, 30))
+    with Session() as db:
+        candidate_assets = list(db.scalars(select(ImageAsset).where(
+            ImageAsset.root_id == project_id,
+            ImageAsset.capability == "CREATIVE_RENDER",
+        )))
+        selected = next(
+            asset for asset in candidate_assets
+            if bytes(asset.image) == selected_bytes
+        )
+        selected_id = selected.id
+        assert any(
+            bytes(asset.image) == _png((87, 60, 30))
+            for asset in candidate_assets
+        )
+    assert selected_id in {
+        revision["asset_id"] for revision in created_body["revisions"]
+    }
+
+    raw = audited_import_spec(EXAMPLE_SPEC)
+    raw["source_component_coverage"]["components"][0][
+        "independent_audit"
+    ]["verdict"] = "inconclusive"
+    confirmation = client.post(
+        f"/projects/{project_id}/creative-candidates/{selected_id}/"
+        "source-coverage/confirm",
+        json={
+            "spec": raw,
+            "confirmations": [{
+                "component_id": "assembly.primary",
+                "basis": "visible_source",
+                "confirmed_description": (
+                    "The complete alternate ring assembly is visible."
+                ),
+            }],
+            "created_by": "usr_designer",
+        },
+    )
+    assert confirmation.status_code == 200, confirmation.text
+    confirmed_spec = confirmation.json()["spec"]
+    confirmed_component = confirmed_spec["source_component_coverage"][
+        "components"
+    ][0]
+    assert confirmed_component["designer_confirmation"][
+        "evidence_sha256"
+    ] == hashlib.sha256(selected_bytes).hexdigest()
+
+    promoted = client.post(
+        f"/projects/{project_id}/creative-candidates/{selected_id}/promote",
+        json={
+            "created_by": "usr_designer",
+            "spec": confirmed_spec,
+        },
+    )
+    assert promoted.status_code == 200, promoted.text
+    promoted_body = promoted.json()
+    assert not any(
+        blocker["code"] == "source_component_confirmation_stale"
+        for blocker in promoted_body["factory_blockers"]
+    )
+    active_id = promoted_body["active_asset_id"]
+
+    with Session() as db:
+        selected = db.get(ImageAsset, selected_id)
+        active = db.get(ImageAsset, active_id)
+        root = db.get(ImageAsset, project_id)
+        assert selected is not None and active is not None and root is not None
+        assert active.parent_asset_id == selected.id
+        assert active.capability == "IMPORTED_REFERENCE"
+        assert bytes(active.image) == bytes(selected.image) == selected_bytes
+        assert bytes(root.image) != selected_bytes
+
+    checklist = client.post(f"/assets/{active_id}/checklist", json={
+        "created_by": "usr_designer",
+        "mode": "auto_pin",
+    })
+    assert checklist.status_code == 201, checklist.text
+    for item in checklist.json()["items"]:
+        response = client.post(f"/assets/{active_id}/checklist/respond", json={
+            "item_key": item["key"],
+            "approved": True,
+            "created_by": "usr_designer",
+        })
+        assert response.status_code == 201, response.text
+
+    factory_pack = client.get(f"/projects/{project_id}/factory-pack")
+    assert factory_pack.status_code == 200, factory_pack.text
+    assert factory_pack.json()["asset_id"] == active_id
+
+    # The promoted copy is the evidence anchor, not merely its parent pointer.
+    # Any later byte mismatch must restore the freshness blocker and close the
+    # factory gate rather than inheriting authority from the candidate.
+    with Session() as db:
+        active = db.get(ImageAsset, active_id)
+        root = db.get(ImageAsset, project_id)
+        assert active is not None and root is not None
+        active.image = bytes(root.image)
+        db.commit()
+    reopened = client.get(f"/projects/{project_id}")
+    assert reopened.status_code == 200, reopened.text
+    assert any(
+        blocker["code"] == "source_component_confirmation_stale"
+        for blocker in reopened.json()["factory_blockers"]
+    )
+    blocked_pack = client.get(f"/projects/{project_id}/factory-pack")
+    assert blocked_pack.status_code == 409, blocked_pack.text
+    assert blocked_pack.json()["code"] == "source_component_coverage_incomplete"
 
 
 def test_creative_candidate_mapping_reaudit_receives_stored_candidate_image(

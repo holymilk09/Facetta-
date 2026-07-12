@@ -153,6 +153,7 @@ class JewelryImageAgent:
         plan: ImageAgentPlan,
         *,
         source_image: bytes | None = None,
+        quality_source_image: bytes | None = None,
         mask_bytes: bytes | None = None,
     ) -> ImageAgentResult:
         if mask_bytes is None and plan.mask_hash is None:
@@ -165,14 +166,20 @@ class JewelryImageAgent:
                     provenance=localization.provenance,
                     evidence=localization.evidence,
                 )
-        self._verify_inputs(plan, source_image, mask_bytes)
+        self._verify_inputs(
+            plan, source_image, quality_source_image, mask_bytes)
+        fidelity_source = (
+            quality_source_image
+            if quality_source_image is not None
+            else source_image
+        )
         source_warning_report: ImageQualityReport | None = None
         source_preflight = getattr(
             self.evaluator, "evaluate_source_precondition", None)
-        if callable(source_preflight) and source_image is not None:
+        if callable(source_preflight) and fidelity_source is not None:
             try:
                 source_report, source_retries = _evaluate_with_transport_retry(
-                    lambda: source_preflight(plan, source_image))
+                    lambda: source_preflight(plan, fidelity_source))
             except Exception as exc:
                 raise ImageEvaluationFailure(
                     f"source topology could not be quality-gated: {exc}",
@@ -328,7 +335,7 @@ class JewelryImageAgent:
                     lambda: self.evaluator.evaluate(
                         plan,
                         output.image_bytes,
-                        source_image=source_image,
+                        source_image=fidelity_source,
                         mask_bytes=mask_bytes,
                     )
                 )
@@ -436,12 +443,23 @@ class JewelryImageAgent:
         raise ImageProviderFailure(message, attempts=attempts, plan=plan)
 
     @staticmethod
-    def _verify_inputs(plan: ImageAgentPlan, source_image: bytes | None,
-                       mask_bytes: bytes | None) -> None:
+    def _verify_inputs(
+        plan: ImageAgentPlan,
+        source_image: bytes | None,
+        quality_source_image: bytes | None,
+        mask_bytes: bytes | None,
+    ) -> None:
         if plan.source_hash != (_sha256(source_image) if source_image else None):
             raise ImagePlanValidationError(
                 "source image does not match the content hash in the plan",
                 plan=plan)
+        if plan.quality_source_hash != (
+            _sha256(quality_source_image) if quality_source_image else None
+        ):
+            raise ImagePlanValidationError(
+                "quality source image does not match the content hash in the plan",
+                plan=plan,
+            )
         if plan.mask_hash != (_sha256(mask_bytes) if mask_bytes else None):
             raise ImagePlanValidationError(
                 "markup mask does not match the content hash in the plan",
