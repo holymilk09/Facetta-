@@ -1,0 +1,102 @@
+{
+  "colorized": {
+    "bytes": 147559,
+    "cached": false
+  },
+  "latency_ms": 69641,
+  "lineart": {
+    "cached": false,
+    "differences": [
+      "Extra round emerald stones below central stone (not in reference)",
+      "Different side-stone arrangement and setting details"
+    ],
+    "ok": false
+  },
+  "provider_readiness": {
+    "fal_configured": false,
+    "xai_configured": true
+  },
+  "read": {
+    "assembly": "central square green stone set in leaf-motif pav\u00e9 diamond shoulders wrapping the band, with additional small green stones at north and south positions on the shank",
+    "hand_written": [
+      "Carat sectio",
+      "21",
+      "4.35",
+      "Diamond carat",
+      "A. 14 carat = 0.75",
+      "D. 1.14 carat = 0.35",
+      "D. 1.14 carat = 0.35",
+      "30",
+      "2",
+      "60",
+      "Metal Gold",
+      "diamond Black",
+      "Meta : 310Min",
+      "WO henth : 120 gold",
+      "Diamond width : 2 mm",
+      "R",
+      "115",
+      "15"
+    ],
+    "jewelry_type": "ring",
+    "measurements": [
+      {
+        "confidence": 0.0,
+        "label": "overall height",
+        "raw": "115",
+        "status": "ambiguous",
+        "value": "115"
+      },
+      {
+        "confidence": 0.0,
+        "label": "shank width",
+        "raw": "15",
+        "status": "ambiguous",
+        "value": "15"
+      },
+      {
+        "confidence": 0.0,
+        "label": "Diamond width",
+        "raw": "Diamond width : 2 mm",
+        "status": "designer_confirmed",
+        "value": "2 mm"
+      },
+      {
+        "confidence": 0.0,
+        "label": "Meta",
+        "raw": "Meta : 310Min",
+        "status": "ambiguous",
+        "value": "310Min"
+      }
+    ],
+    "metal": "120 gold",
+    "scale_anchor": null,
+    "scaled": false,
+    "source": "plate",
+    "stones": [
+      {
+        "carat_each": null,
+        "confidence": 0.0,
+        "qty": 1,
+        "size_mm": "TBD",
+        "type": "green square-cut stone (species TBD)"
+      },
+      {
+        "carat_each": null,
+        "confidence": 0.0,
+        "qty": 2,
+        "size_mm": "TBD",
+        "type": "green rectangular-cut stone (species TBD)"
+      },
+      {
+        "carat_each": null,
+        "confidence": 0.0,
+        "qty": 1,
+        "size_mm": "TBD",
+        "type": "diamond pav\u00e9 and baguette (species TBD)"
+      }
+    ]
+  },
+  "source": "image-86.jpg",
+  "view": "front"
+}

@@ -1,0 +1,268 @@
+{
+  "filenames": [
+    "image-65.jpg",
+    "image-66.jpg",
+    "image-67.jpg",
+    "image-68.jpg",
+    "image-69.jpg",
+    "image-70.jpg",
+    "image-71.jpg",
+    "image-72.jpg",
+    "image-73.jpg",
+    "image-74.jpg",
+    "image-75.jpg",
+    "image-76.jpg",
+    "image-77.jpg",
+    "image-78.jpg",
+    "image-79.jpg",
+    "image-80.jpg"
+  ],
+  "latency_ms": 15414,
+  "payload": {
+    "items": [
+      {
+        "complexity": "moderate",
+        "confidence": 0.85,
+        "filename": "image-65.jpg",
+        "input_kind": "finished_jewelry_photo",
+        "multi_design": false,
+        "notes": "branded finished necklace photo",
+        "primary_category": "necklace",
+        "watermark_or_branding": true,
+        "workflow_fit": [
+          "photo_read",
+          "catalog_reference"
+        ]
+      },
+      {
+        "complexity": "moderate",
+        "confidence": 0.85,
+        "filename": "image-66.jpg",
+        "input_kind": "finished_jewelry_photo",
+        "multi_design": false,
+        "notes": "branded finished necklace photo",
+        "primary_category": "necklace",
+        "watermark_or_branding": true,
+        "workflow_fit": [
+          "photo_read",
+          "catalog_reference"
+        ]
+      },
+      {
+        "complexity": "moderate",
+        "confidence": 0.9,
+        "filename": "image-67.jpg",
+        "input_kind": "line_art",
+        "multi_design": true,
+        "notes": "multiple ring sketches",
+        "primary_category": "ring",
+        "watermark_or_branding": false,
+        "workflow_fit": [
+          "lineart_color",
+          "reference_chart"
+        ]
+      },
+      {
+        "complexity": "complex",
+        "confidence": 0.8,
+        "filename": "image-68.jpg",
+        "input_kind": "mixed",
+        "multi_design": true,
+        "notes": "sketches plus finished ring render",
+        "primary_category": "ring",
+        "watermark_or_branding": true,
+        "workflow_fit": [
+          "lineart_color",
+          "photo_read",
+          "catalog_reference"
+        ]
+      },
+      {
+        "complexity": "moderate",
+        "confidence": 0.85,
+        "filename": "image-69.jpg",
+        "input_kind": "finished_jewelry_photo",
+        "multi_design": true,
+        "notes": "multiple finished ring photos",
+        "primary_category": "ring",
+        "watermark_or_branding": true,
+        "workflow_fit": [
+          "photo_read",
+          "catalog_reference"
+        ]
+      },
+      {
+        "complexity": "moderate",
+        "confidence": 0.85,
+        "filename": "image-70.jpg",
+        "input_kind": "finished_jewelry_photo",
+        "multi_design": true,
+        "notes": "multiple finished ring photos",
+        "primary_category": "ring",
+        "watermark_or_branding": true,
+        "workflow_fit": [
+          "photo_read",
+          "catalog_reference"
+        ]
+      },
+      {
+        "complexity": "moderate",
+        "confidence": 0.85,
+        "filename": "image-71.jpg",
+        "input_kind": "finished_jewelry_photo",
+        "multi_design": true,
+        "notes": "multiple finished ring photos",
+        "primary_category": "ring",
+        "watermark_or_branding": true,
+        "workflow_fit": [
+          "photo_read",
+          "catalog_reference"
+        ]
+      },
+      {
+        "complexity": "moderate",
+        "confidence": 0.85,
+        "filename": "image-72.jpg",
+        "input_kind": "finished_jewelry_photo",
+        "multi_design": true,
+        "notes": "multiple finished ring photos",
+        "primary_category": "ring",
+        "watermark_or_branding": true,
+        "workflow_fit": [
+          "photo_read",
+          "catalog_reference"
+        ]
+      },
+      {
+        "complexity": "moderate",
+        "confidence": 0.85,
+        "filename": "image-73.jpg",
+        "input_kind": "finished_jewelry_photo",
+        "multi_design": true,
+        "notes": "multiple finished ring photos",
+        "primary_category": "ring",
+        "watermark_or_branding": true,
+        "workflow_fit": [
+          "photo_read",
+          "catalog_reference"
+        ]
+      },
+      {
+        "complexity": "moderate",
+        "confidence": 0.9,
+        "filename": "image-74.jpg",
+        "input_kind": "line_art",
+        "multi_design": true,
+        "notes": "multiple ring sketches",
+        "primary_category": "ring",
+        "watermark_or_branding": false,
+        "workflow_fit": [
+          "lineart_color",
+          "reference_chart"
+        ]
+      },
+      {
+        "complexity": "complex",
+        "confidence": 0.9,
+        "filename": "image-75.jpg",
+        "input_kind": "reference_chart",
+        "multi_design": true,
+        "notes": "multi-view technical ring chart",
+        "primary_category": "ring",
+        "watermark_or_branding": true,
+        "workflow_fit": [
+          "reference_chart",
+          "technical_benchmark"
+        ]
+      },
+      {
+        "complexity": "moderate",
+        "confidence": 0.85,
+        "filename": "image-76.jpg",
+        "input_kind": "finished_jewelry_photo",
+        "multi_design": true,
+        "notes": "multiple finished ring photos",
+        "primary_category": "ring",
+        "watermark_or_branding": true,
+        "workflow_fit": [
+          "photo_read",
+          "catalog_reference"
+        ]
+      },
+      {
+        "complexity": "moderate",
+        "confidence": 0.85,
+        "filename": "image-77.jpg",
+        "input_kind": "finished_jewelry_photo",
+        "multi_design": true,
+        "notes": "multiple finished ring photos",
+        "primary_category": "ring",
+        "watermark_or_branding": true,
+        "workflow_fit": [
+          "photo_read",
+          "catalog_reference"
+        ]
+      },
+      {
+        "complexity": "moderate",
+        "confidence": 0.9,
+        "filename": "image-78.jpg",
+        "input_kind": "line_art",
+        "multi_design": true,
+        "notes": "multiple ring technical sketches",
+        "primary_category": "ring",
+        "watermark_or_branding": false,
+        "workflow_fit": [
+          "lineart_color",
+          "reference_chart"
+        ]
+      },
+      {
+        "complexity": "moderate",
+        "confidence": 0.85,
+        "filename": "image-79.jpg",
+        "input_kind": "line_art",
+        "multi_design": true,
+        "notes": "technical sketches plus render",
+        "primary_category": "ring",
+        "watermark_or_branding": true,
+        "workflow_fit": [
+          "lineart_color",
+          "reference_chart"
+        ]
+      },
+      {
+        "complexity": "moderate",
+        "confidence": 0.85,
+        "filename": "image-80.jpg",
+        "input_kind": "finished_jewelry_photo",
+        "multi_design": true,
+        "notes": "multiple finished ring photos",
+        "primary_category": "ring",
+        "watermark_or_branding": true,
+        "workflow_fit": [
+          "photo_read",
+          "catalog_reference"
+        ]
+      }
+    ]
+  },
+  "source_hashes": [
+    "8001aea8ca9a44096b97d70df56437e6abbb7d1d50ee6d97424dc1a9c9811049",
+    "dfa7d5af2fbf1c34febb4a66531dc741b41868624d4fe68922495775795db4c2",
+    "8da9ebf5d9c8f6cc14e8014a99445b72ab9c8c92b0e7dd8a9558bea13d926ad5",
+    "19654c69049e35da0a1f19740fabaf292ec9f4a9cd0c968e754d1dc82da6bd25",
+    "1724cdb9f905020cdac11e4a7cc77c64fce816ebef7d2c7359990cf29df5b9ff",
+    "f8f40c0ac9e9a697dcc81d3834e305c6999f3757ff9a31657dda16e45ad453a5",
+    "d74070e685e77855cef9471c1c1a80e5cbe86bba8688c1ab0e6985e6819e089a",
+    "9199ab48214e9ede72397750e777ed48b45c61b940e466956d66356b04a3e2ae",
+    "13aeb9a0380dd1ee4f974bb510ba2d0947bbc2dbc674bd78aedcb42876528a6b",
+    "ca1e42dbbcb2af1d21b02e231ca8cbb66a30e92a88ee3572bf50878f527ae688",
+    "21936fef5d87f8bf449ae7b10793d51c454151d24b519815f9cf28dba4811151",
+    "65c928f7669ce2dc77854dd393e7c32edfab8bdaa368020b9140ab1b79883b45",
+    "7abd7544817c2704ab57052fe67bba411eae6e1f3b4b4dffa3248d3c53092e3b",
+    "b9c4e35bc0f6cfe40417577bd3bb6cde9ed983e0c9e11d24531bba6bef9ea831",
+    "a2ec91a615a2a276d1663e5a32f7400d7bb2ccfe6d03376e1ffcb1b228a9efce",
+    "faf0a38f40ab8e6247675593b6cfc77614e389ef69fcf11bdebea7d36e1014ca"
+  ]
+}

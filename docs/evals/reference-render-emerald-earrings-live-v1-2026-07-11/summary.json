@@ -1,0 +1,198 @@
+{
+  "accepted": false,
+  "attempts": [
+    {
+      "attempt_number": 1,
+      "cache_key": "ef257603c63260c51bed313cb6eca33e33ab452a7231cbb6b3a1d25723f3cd4b",
+      "cached": false,
+      "corrective_instruction": null,
+      "cost": null,
+      "error": null,
+      "error_category": null,
+      "fallback_reason": null,
+      "latency_ms": 19415,
+      "model": "grok_direct",
+      "output_hash": "e222cb0020715608fa66ae416547e36534368208253ee20d1660428e5124796c",
+      "prompt_hash": "f5495f0b9e0bb48060df9ef07175ba7c91072eda43acf532516217ed8a19697e",
+      "provider": "xai",
+      "provider_request_id": null,
+      "qa_checks": [
+        {
+          "code": "decodable_image",
+          "evidence": {
+            "format": "JPEG",
+            "height": 1024,
+            "width": 1024
+          },
+          "message": "candidate is a decodable raster image",
+          "passed": true,
+          "severity": "hard"
+        },
+        {
+          "code": "review_resolution",
+          "evidence": {
+            "height": 1024,
+            "width": 1024
+          },
+          "message": "candidate has reviewable raster dimensions",
+          "passed": true,
+          "severity": "warning"
+        },
+        {
+          "code": "candidate_changed",
+          "evidence": {},
+          "message": "candidate bytes differ from the source",
+          "passed": true,
+          "severity": "hard"
+        },
+        {
+          "code": "coherent_jewelry_render",
+          "evidence": {},
+          "message": "visual evidence matches the requested fact",
+          "passed": true,
+          "severity": "hard"
+        },
+        {
+          "code": "source_design_preserved",
+          "evidence": {},
+          "message": "visual evidence matches the requested fact",
+          "passed": true,
+          "severity": "hard"
+        },
+        {
+          "code": "visible_components_preserved",
+          "evidence": {},
+          "message": "visual evidence matches the requested fact",
+          "passed": true,
+          "severity": "hard"
+        },
+        {
+          "code": "requested_presentation_applied",
+          "evidence": {},
+          "message": "visual evidence matches the requested fact",
+          "passed": true,
+          "severity": "hard"
+        },
+        {
+          "code": "text_or_branding",
+          "evidence": {},
+          "message": "visual evidence matches the requested fact",
+          "passed": true,
+          "severity": "hard"
+        },
+        {
+          "code": "factory_authority",
+          "evidence": {
+            "factory_authoritative": false
+          },
+          "message": "creative render is review-only and cannot establish hidden geometry, dimensions, materials, stone identity, or factory facts",
+          "passed": false,
+          "severity": "warning"
+        }
+      ],
+      "qa_verdict": "warn",
+      "quality_score": 92.0,
+      "route": "grok_edit",
+      "usage": null
+    }
+  ],
+  "candidate_file": "candidate.jpg",
+  "candidate_media_type": "image/jpeg",
+  "candidate_sha256": "e222cb0020715608fa66ae416547e36534368208253ee20d1660428e5124796c",
+  "executed_at": "2026-07-11T15:36:58.952402+00:00",
+  "factory_authoritative": false,
+  "input_hash": "54f3ea2fad77f63ab7430ddbbe9a693bba8541761d7d0c0bfe9c2cac16f4d573",
+  "instruction": "Treat the source views as views of one matched earring design. Create one photorealistic product render showing the complete matched pair of those exact emerald drop earrings on a clean neutral studio background. Preserve the green emerald drops, diamond components, articulation order, pair symmetry, setting style, proportions, and every distinctive visible component; do not add, remove, merge, or redesign parts.",
+  "maximum_attempts": 3,
+  "operation": "REFERENCE_RENDER",
+  "product_asset_persisted": false,
+  "prompt_version": "reference-render.v1",
+  "quality": {
+    "checks": [
+      {
+        "code": "decodable_image",
+        "evidence": {
+          "format": "JPEG",
+          "height": 1024,
+          "width": 1024
+        },
+        "message": "candidate is a decodable raster image",
+        "passed": true,
+        "severity": "hard"
+      },
+      {
+        "code": "review_resolution",
+        "evidence": {
+          "height": 1024,
+          "width": 1024
+        },
+        "message": "candidate has reviewable raster dimensions",
+        "passed": true,
+        "severity": "warning"
+      },
+      {
+        "code": "candidate_changed",
+        "evidence": {},
+        "message": "candidate bytes differ from the source",
+        "passed": true,
+        "severity": "hard"
+      },
+      {
+        "code": "coherent_jewelry_render",
+        "evidence": {},
+        "message": "visual evidence matches the requested fact",
+        "passed": true,
+        "severity": "hard"
+      },
+      {
+        "code": "source_design_preserved",
+        "evidence": {},
+        "message": "visual evidence matches the requested fact",
+        "passed": true,
+        "severity": "hard"
+      },
+      {
+        "code": "visible_components_preserved",
+        "evidence": {},
+        "message": "visual evidence matches the requested fact",
+        "passed": true,
+        "severity": "hard"
+      },
+      {
+        "code": "requested_presentation_applied",
+        "evidence": {},
+        "message": "visual evidence matches the requested fact",
+        "passed": true,
+        "severity": "hard"
+      },
+      {
+        "code": "text_or_branding",
+        "evidence": {},
+        "message": "visual evidence matches the requested fact",
+        "passed": true,
+        "severity": "hard"
+      },
+      {
+        "code": "factory_authority",
+        "evidence": {
+          "factory_authoritative": false
+        },
+        "message": "creative render is review-only and cannot establish hidden geometry, dimensions, materials, stone identity, or factory facts",
+        "passed": false,
+        "severity": "warning"
+      }
+    ],
+    "notes": [
+      "Pair matches primary source drop design: diamond bar, square diamond link, emerald drop, clip style, proportions, and symmetry."
+    ],
+    "score": 92.0,
+    "verdict": "warn"
+  },
+  "result_set": "reference-render-emerald-earrings-live-v1-2026-07-11",
+  "review_required": true,
+  "source": "/Users/mattfb/.codex/attachments/c2fd41d0-b236-43ef-ada9-e9479718c771/image-32.jpg",
+  "source_sha256": "8e241e8bb24dd109b7ad8a1778b07db734cc40240b8528dfe09556eb4109e46f",
+  "status": "review_required",
+  "variant": 2,
+  "verdict": "warn"
+}

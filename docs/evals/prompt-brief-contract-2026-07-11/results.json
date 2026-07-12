@@ -1,0 +1,354 @@
+{
+  "live": false,
+  "mode": "contract",
+  "prompt_contracts": {
+    "concept": {
+      "compiled_prompt": "FACETTA JEWELRY IMAGE CONTRACT concept-generate.v1\nReturn one image only. The final output must contain no non-jewelry captions, labels, logos, signatures, watermarks, platform/social IDs, or invented branding. If any such overlay exists in the source, remove it cleanly; this hygiene cleanup is permitted and is not a jewelry design change. Preserve only a physical engraving explicitly named in the validated specification.\n\n\nTASK: Create one coherent, manufacturable-looking fine-jewelry ring concept from this designer brief: Create one refined engagement ring with a round brilliant diamond center, four-claw basket, 18k yellow gold, a narrow 1.8 mm half-round polished shank, no halo, and no side stones. Use a neutral studio presentation.\nThe image is a creative reference, not dimensional proof.\n\nFROZEN \u2014 THESE MUST NOT CHANGE:\n- one coherent ring design\n- no text, logos, watermarks, or invented branding\n\nSTYLE CONSTRAINTS:\nFine-jewelry product presentation; physically coherent materials.\n\nEXPECTED OUTPUT: one unbranded, client-reviewable ring concept on a neutral studio background",
+      "input_hash": "ac2ece377d7af7e190b167a75a7ad0c8c5426465354426a14a5b1f7aca35fe46",
+      "normalized_intent": {
+        "edit_domains": [],
+        "expected_output": "one unbranded, client-reviewable ring concept on a neutral studio background",
+        "frozen": [
+          "one coherent ring design",
+          "no text, logos, watermarks, or invented branding"
+        ],
+        "instruction": "Create one refined engagement ring with a round brilliant diamond center, four-claw basket, 18k yellow gold, a narrow 1.8 mm half-round polished shank, no halo, and no side stones. Use a neutral studio presentation.",
+        "region_description": null,
+        "spec_delta": [],
+        "style_constraints": []
+      },
+      "operation": "CONCEPT_GENERATE",
+      "prompt_version": "concept-generate.v1"
+    },
+    "expected_versions": {
+      "concept": "concept-generate.v1",
+      "spec_render": "spec-render.v2"
+    },
+    "observed_versions": {
+      "concept": "concept-generate.v1",
+      "spec_render": "spec-render.v2"
+    },
+    "prompt_lengths": {
+      "concept": 1095,
+      "spec_render": 1738
+    },
+    "provider_prompt_limit_chars": 8000,
+    "spec_render": {
+      "compiled_prompt": "FACETTA JEWELRY IMAGE CONTRACT spec-render.v2\nReturn one image only. The final output must contain no non-jewelry captions, labels, logos, signatures, watermarks, platform/social IDs, or invented branding. If any such overlay exists in the source, remove it cleanly; this hygiene cleanup is permitted and is not a jewelry design change. Preserve only a physical engraving explicitly named in the validated specification.\n\n\nTASK: Render exactly the validated ring facts below. Do not substitute a different stone, cut family, visible color, metal, setting, prong structure, component, or assessable stone count. The image is an approved visual reference, never dimensional evidence.\nVALIDATED FACTS: {\"band\":{\"profile\":\"comfort_fit\",\"thickness_mm\":1.6,\"width_mm\":1.8},\"jewelry_type\":\"ring\",\"metal\":{\"color\":\"yellow\",\"finish\":\"high_polish\",\"karat\":18,\"material\":\"gold\"},\"ring_size\":{\"inner_diameter_mm\":16.91,\"system\":\"US\",\"value\":6.5},\"setting\":{\"gallery_height_mm\":3.8,\"prong_count\":4,\"prong_tip_mm\":0.9,\"style\":\"4_prong_basket\"},\"side_stones\":[],\"stone\":{\"carat\":1.639,\"color\":{\"gia\":\"natural colour\",\"trade\":\"Diamond\"},\"count\":1,\"cut\":\"round_brilliant\",\"dimensions_mm\":{\"depth\":4.6,\"length\":7.5,\"width\":7.5},\"position\":\"center\",\"species\":\"diamond\"},\"template\":\"solitaire_prong\"}\n\nFROZEN \u2014 THESE MUST NOT CHANGE:\n- every validated stone, setting, metal, and component fact\n- no text, logos, watermarks, or invented branding\n- the source concept's unique design identity, major proportions, and component arrangement\n\nSTYLE CONSTRAINTS:\nFine-jewelry product presentation; physically coherent materials.\n\nEXPECTED OUTPUT: one photorealistic ring render that preserves concept identity and matches every visible validated specification fact",
+      "input_hash": "b2ab4379f249077115c68779467c12ce3930c43f9f88a73bc1cca192575e44e9",
+      "normalized_intent": {
+        "edit_domains": [],
+        "expected_output": "one photorealistic ring render that preserves concept identity and matches every visible validated specification fact",
+        "frozen": [
+          "every validated stone, setting, metal, and component fact",
+          "no text, logos, watermarks, or invented branding",
+          "the source concept's unique design identity, major proportions, and component arrangement"
+        ],
+        "instruction": "Create the spec-aligned hero render for the approved concept",
+        "region_description": null,
+        "spec_delta": [],
+        "style_constraints": []
+      },
+      "operation": "SPEC_RENDER",
+      "prompt_version": "spec-render.v2",
+      "source_hash": "f266f6accd1d0c23170a5bf05c210b6ee1b71729b50816baee8992cc4e719feb",
+      "spec_visual_hash": "d63eed790c5abe2e"
+    }
+  },
+  "provider_calls": 0,
+  "provider_cost": 0,
+  "request": {
+    "brief": "Create one refined engagement ring with a round brilliant diamond center, four-claw basket, 18k yellow gold, a narrow 1.8 mm half-round polished shank, no halo, and no side stones. Use a neutral studio presentation.",
+    "collection": "Prompt workflow evaluation",
+    "owner": "usr_prompt_test_actor",
+    "tags": [
+      "prompt-to-project",
+      "manual-evaluation"
+    ],
+    "title": "Prompt-to-project evaluation",
+    "variant": 0
+  },
+  "scenarios": {
+    "concept_warning": {
+      "accepted_warning_stages": [],
+      "database_after": {
+        "assets": 0,
+        "designs": 0,
+        "image_attempts": 1,
+        "image_run_reviews": 0,
+        "image_runs": 1,
+        "projects": 0,
+        "versions": 0
+      },
+      "database_before": {
+        "assets": 0,
+        "designs": 0,
+        "image_attempts": 0,
+        "image_run_reviews": 0,
+        "image_runs": 0,
+        "projects": 0,
+        "versions": 0
+      },
+      "founder_approval": false,
+      "http_status": 202,
+      "partial_product_records": false,
+      "status": "stopped_for_concept_review",
+      "warning_boundaries": [
+        {
+          "acceptance_role": "none",
+          "accepted_by_harness": false,
+          "candidate_id": "cand_2b6fae11765d2de3",
+          "designer_approval": false,
+          "founder_approval": false,
+          "gia_cofounder_approval": false,
+          "preview_file": "stage-01-concept-warning-preview.png",
+          "project_records_unchanged": true,
+          "prompt_contract_version": "concept-generate.v1",
+          "run_id": "run_49eab63e860c0729",
+          "stage": "concept"
+        }
+      ]
+    },
+    "pass": {
+      "acceptance_role": "qa_pass",
+      "accepted_warning_stages": [],
+      "active_asset_id": "ast_d311d6638da7b99d",
+      "active_design_version": 1,
+      "artifacts": [
+        {
+          "asset_id": "ast_d311d6638da7b99d",
+          "capability": "SPEC_RENDER",
+          "file": "project-asset-01-SPEC_RENDER.png",
+          "http_status": 200
+        },
+        {
+          "asset_id": "ast_bc60986c3647cccc",
+          "capability": "SOURCE_CONCEPT",
+          "file": "project-asset-02-SOURCE_CONCEPT.png",
+          "http_status": 200
+        }
+      ],
+      "database_after": {
+        "assets": 2,
+        "designs": 1,
+        "image_attempts": 2,
+        "image_run_reviews": 0,
+        "image_runs": 2,
+        "projects": 1,
+        "versions": 1
+      },
+      "database_before": {
+        "assets": 0,
+        "designs": 0,
+        "image_attempts": 0,
+        "image_run_reviews": 0,
+        "image_runs": 0,
+        "projects": 0,
+        "versions": 0
+      },
+      "design_id": "dsn_7819c7a8e6ec5783",
+      "designer_approval": false,
+      "founder_approval": false,
+      "gia_cofounder_approval": false,
+      "http_status": 201,
+      "project_id": "ast_d311d6638da7b99d",
+      "status": "project_created",
+      "warning_boundaries": []
+    },
+    "spec_warning": {
+      "accepted_warning_stages": [],
+      "database_after": {
+        "assets": 0,
+        "designs": 0,
+        "image_attempts": 1,
+        "image_run_reviews": 0,
+        "image_runs": 1,
+        "projects": 0,
+        "versions": 0
+      },
+      "database_before": {
+        "assets": 0,
+        "designs": 0,
+        "image_attempts": 0,
+        "image_run_reviews": 0,
+        "image_runs": 0,
+        "projects": 0,
+        "versions": 0
+      },
+      "founder_approval": false,
+      "http_status": 202,
+      "partial_product_records": false,
+      "status": "stopped_for_spec_render_review",
+      "warning_boundaries": [
+        {
+          "acceptance_role": "none",
+          "accepted_by_harness": false,
+          "candidate_id": "cand_92ebb5f9e803445b",
+          "designer_approval": false,
+          "founder_approval": false,
+          "gia_cofounder_approval": false,
+          "preview_file": "stage-01-spec_render-warning-preview.png",
+          "project_records_unchanged": true,
+          "prompt_contract_version": "spec-render.v2",
+          "run_id": "run_90770e5232528b4c",
+          "stage": "spec_render"
+        }
+      ]
+    },
+    "terminal_failure": {
+      "accepted_warning_stages": [],
+      "database_after": {
+        "assets": 0,
+        "designs": 0,
+        "image_attempts": 3,
+        "image_run_reviews": 0,
+        "image_runs": 1,
+        "projects": 0,
+        "versions": 0
+      },
+      "database_before": {
+        "assets": 0,
+        "designs": 0,
+        "image_attempts": 0,
+        "image_run_reviews": 0,
+        "image_runs": 0,
+        "projects": 0,
+        "versions": 0
+      },
+      "error": {
+        "attempts": [
+          {
+            "attempt_number": 1,
+            "cache_key": "ead4137477bb7801a6778f87db60ab85d400f07e2acbe3e13e57ebce5ad79d3b",
+            "cached": true,
+            "corrective_instruction": null,
+            "cost": 0.0,
+            "error": null,
+            "error_category": null,
+            "fallback_reason": null,
+            "latency_ms": 0,
+            "model": "grok_direct",
+            "output_hash": "eda235b529b25602e8849b0bdce8621d4a0ab0ca7d55e73c6773d863f4a55f1e",
+            "prompt_hash": "11569639f170631148210a53040a17786a5fc95ace1c3d300c1dedda8db7b68a",
+            "provider": "xai",
+            "provider_request_id": "offline-contract",
+            "qa_checks": [
+              {
+                "code": "offline_terminal_hard_gate_failure",
+                "evidence": {
+                  "offline": true
+                },
+                "message": "offline contract candidate failed a hard gate",
+                "passed": false,
+                "severity": "hard"
+              }
+            ],
+            "qa_verdict": "fail",
+            "quality_score": 88.0,
+            "route": "grok_generate",
+            "usage": {
+              "contract_test": true
+            }
+          },
+          {
+            "attempt_number": 2,
+            "cache_key": "2ca5069f558794c034212afbb9141e8c4f7084a21f3a6500bf4261ee8093a7ed",
+            "cached": true,
+            "corrective_instruction": "- offline_terminal_hard_gate_failure: offline contract candidate failed a hard gate. Evidence: {\"offline\": true}",
+            "cost": 0.0,
+            "error": null,
+            "error_category": null,
+            "fallback_reason": null,
+            "latency_ms": 0,
+            "model": "grok_direct",
+            "output_hash": "eda235b529b25602e8849b0bdce8621d4a0ab0ca7d55e73c6773d863f4a55f1e",
+            "prompt_hash": "049af0e71b4883d03bf54939fc7096b3f4c25e035de6fd836a8eecd07ccacdfb",
+            "provider": "xai",
+            "provider_request_id": "offline-contract",
+            "qa_checks": [
+              {
+                "code": "offline_terminal_hard_gate_failure",
+                "evidence": {
+                  "offline": true
+                },
+                "message": "offline contract candidate failed a hard gate",
+                "passed": false,
+                "severity": "hard"
+              }
+            ],
+            "qa_verdict": "fail",
+            "quality_score": 88.0,
+            "route": "grok_generate",
+            "usage": {
+              "contract_test": true
+            }
+          },
+          {
+            "attempt_number": 3,
+            "cache_key": "1d8c77387560f82ab3d58ac9adf99b2d88f439640ec4ae70ec381a23d233281b",
+            "cached": true,
+            "corrective_instruction": "- offline_terminal_hard_gate_failure: offline contract candidate failed a hard gate. Evidence: {\"offline\": true}",
+            "cost": 0.0,
+            "error": null,
+            "error_category": null,
+            "fallback_reason": "grok_qa_failed",
+            "latency_ms": 0,
+            "model": "flux",
+            "output_hash": "eda235b529b25602e8849b0bdce8621d4a0ab0ca7d55e73c6773d863f4a55f1e",
+            "prompt_hash": "049af0e71b4883d03bf54939fc7096b3f4c25e035de6fd836a8eecd07ccacdfb",
+            "provider": "fal",
+            "provider_request_id": "offline-contract",
+            "qa_checks": [
+              {
+                "code": "offline_terminal_hard_gate_failure",
+                "evidence": {
+                  "offline": true
+                },
+                "message": "offline contract candidate failed a hard gate",
+                "passed": false,
+                "severity": "hard"
+              }
+            ],
+            "qa_verdict": "fail",
+            "quality_score": 88.0,
+            "route": "flux_generate",
+            "usage": {
+              "contract_test": true
+            }
+          }
+        ],
+        "category": "quality",
+        "code": "image_quality_failed",
+        "detail": "no candidate passed jewelry QA: offline_terminal_hard_gate_failure",
+        "error_category": "quality_failure",
+        "image_run_id": "run_a07ad69c1fb6c84d",
+        "retryable": false
+      },
+      "founder_approval": false,
+      "http_status": 422,
+      "partial_product_records": false,
+      "product_counts_after": {
+        "assets": 0,
+        "designs": 0,
+        "projects": 0,
+        "versions": 0
+      },
+      "product_counts_before": {
+        "assets": 0,
+        "designs": 0,
+        "projects": 0,
+        "versions": 0
+      },
+      "status": "terminal_failure",
+      "terminal_http_status": 422,
+      "warning_boundaries": []
+    }
+  },
+  "test_acceptance_flags": {
+    "concept_warning": false,
+    "spec_render_warning": false
+  },
+  "test_actor": "usr_prompt_test_actor",
+  "test_actor_is_designer_approval": false,
+  "test_actor_is_founder": false
+}

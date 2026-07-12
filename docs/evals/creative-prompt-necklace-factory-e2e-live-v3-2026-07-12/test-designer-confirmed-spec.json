@@ -1,0 +1,376 @@
+{
+  "band": null,
+  "bracelet": null,
+  "brooch": null,
+  "chain": {
+    "clasp": "lobster",
+    "geometry": {
+      "chain_width_mm": 1.2,
+      "construction": "open_link",
+      "end_ring_outer_diameter_mm": 2.5,
+      "link_thickness_mm": 0.25,
+      "links": [
+        {
+          "inside_length_mm": 1.9,
+          "inside_width_mm": 0.7,
+          "length_mm": 2.4,
+          "role": "standard"
+        }
+      ],
+      "links_soldered": true,
+      "profile_thickness_mm": 0.45
+    },
+    "length_mm": 450.0,
+    "pendant_connection": "split_chain",
+    "production": null,
+    "style": "cable"
+  },
+  "composition": null,
+  "created_at": "2026-07-11T17:17:59.481595Z",
+  "created_by": "usr_internal_designer_e2e",
+  "design_form": {
+    "elements": [
+      {
+        "confirmed_form_description": "One asymmetric two-branch vine assembly carrying five marquise emerald leaf settings, round diamond dew-drop accents, small pav\u00e9 metal leaf motifs, and one long tapered polished metal drop. Preserve the exact candidate topology.",
+        "definition": {
+          "asset_id": "candidate_asset_replaced_at_runtime",
+          "asset_sha256": "0c40e27c0bf8f49314d74cee61d66c76ffbbabef0303e37789854c4bfa98268a",
+          "kind": "visual_reference_only"
+        },
+        "element_id": "vine_assembly",
+        "instance_count": 1,
+        "label": "Asymmetric branching vine and tapered drop",
+        "regions": [
+          {
+            "polygons": [
+              {
+                "points": [
+                  {
+                    "x": 0.1,
+                    "y": 0.27
+                  },
+                  {
+                    "x": 0.92,
+                    "y": 0.27
+                  },
+                  {
+                    "x": 0.92,
+                    "y": 0.97
+                  },
+                  {
+                    "x": 0.1,
+                    "y": 0.97
+                  }
+                ]
+              }
+            ],
+            "view": "front"
+          }
+        ],
+        "role": "pendant_structure",
+        "symmetry": "asymmetric"
+      }
+    ]
+  },
+  "design_id": "dsn_concept",
+  "dimension_provenance": {
+    "chain.geometry.chain_width_mm": {
+      "confidence": 0.35,
+      "method": "reference_vision",
+      "note": "Internal test-designer estimate; verify against chain sample.",
+      "source": "selected prompt candidate",
+      "status": "estimated_from_reference"
+    },
+    "chain.geometry.end_ring_outer_diameter_mm": {
+      "confidence": 0.35,
+      "method": "reference_vision",
+      "note": "Internal test-designer estimate; verify against chain sample.",
+      "source": "selected prompt candidate",
+      "status": "estimated_from_reference"
+    },
+    "chain.geometry.link_thickness_mm": {
+      "confidence": 0.35,
+      "method": "reference_vision",
+      "note": "Internal test-designer estimate; verify against chain sample.",
+      "source": "selected prompt candidate",
+      "status": "estimated_from_reference"
+    },
+    "chain.geometry.links[0].inside_length_mm": {
+      "confidence": 0.35,
+      "method": "reference_vision",
+      "note": "Internal test-designer estimate; verify against chain sample.",
+      "source": "selected prompt candidate",
+      "status": "estimated_from_reference"
+    },
+    "chain.geometry.links[0].inside_width_mm": {
+      "confidence": 0.35,
+      "method": "reference_vision",
+      "note": "Internal test-designer estimate; verify against chain sample.",
+      "source": "selected prompt candidate",
+      "status": "estimated_from_reference"
+    },
+    "chain.geometry.links[0].length_mm": {
+      "confidence": 0.35,
+      "method": "reference_vision",
+      "note": "Internal test-designer estimate; verify against chain sample.",
+      "source": "selected prompt candidate",
+      "status": "estimated_from_reference"
+    },
+    "chain.geometry.profile_thickness_mm": {
+      "confidence": 0.35,
+      "method": "reference_vision",
+      "note": "Internal test-designer estimate; verify against chain sample.",
+      "source": "selected prompt candidate",
+      "status": "estimated_from_reference"
+    },
+    "chain.length_mm": {
+      "confidence": 0.45,
+      "method": "reference_vision",
+      "note": "Reference-derived starting value; verify before production.",
+      "source": "imported finished-jewelry reference",
+      "status": "estimated_from_reference"
+    },
+    "pendant.bail_height_mm": {
+      "confidence": 0.45,
+      "method": "reference_vision",
+      "note": "Reference-derived starting value; verify before production.",
+      "source": "imported finished-jewelry reference",
+      "status": "estimated_from_reference"
+    },
+    "pendant.bail_inner_diameter_mm": {
+      "confidence": 0.45,
+      "method": "reference_vision",
+      "note": "Reference-derived starting value; verify before production.",
+      "source": "imported finished-jewelry reference",
+      "status": "estimated_from_reference"
+    },
+    "setting.prong_tip_mm": {
+      "confidence": 0.45,
+      "method": "reference_vision",
+      "note": "Reference-derived starting value; verify before production.",
+      "source": "imported finished-jewelry reference",
+      "status": "estimated_from_reference"
+    },
+    "side_stones[0].dimensions_mm.depth": {
+      "confidence": 0.45,
+      "method": "reference_vision",
+      "note": "Reference-derived starting value; verify before production.",
+      "source": "imported finished-jewelry reference",
+      "status": "estimated_from_reference"
+    },
+    "side_stones[0].dimensions_mm.length": {
+      "confidence": 0.45,
+      "method": "reference_vision",
+      "note": "Reference-derived starting value; verify before production.",
+      "source": "imported finished-jewelry reference",
+      "status": "estimated_from_reference"
+    },
+    "side_stones[0].dimensions_mm.width": {
+      "confidence": 0.45,
+      "method": "reference_vision",
+      "note": "Reference-derived starting value; verify before production.",
+      "source": "imported finished-jewelry reference",
+      "status": "estimated_from_reference"
+    },
+    "stone.dimensions_mm.depth": {
+      "confidence": 0.45,
+      "method": "reference_vision",
+      "note": "Reference-derived starting value; verify before production.",
+      "source": "imported finished-jewelry reference",
+      "status": "estimated_from_reference"
+    },
+    "stone.dimensions_mm.length": {
+      "confidence": 0.45,
+      "method": "reference_vision",
+      "note": "Reference-derived starting value; verify before production.",
+      "source": "imported finished-jewelry reference",
+      "status": "estimated_from_reference"
+    },
+    "stone.dimensions_mm.width": {
+      "confidence": 0.45,
+      "method": "reference_vision",
+      "note": "Reference-derived starting value; verify before production.",
+      "source": "imported finished-jewelry reference",
+      "status": "estimated_from_reference"
+    }
+  },
+  "drop": null,
+  "jewelry_type": "necklace",
+  "metal": {
+    "color": null,
+    "finish": "high_polish",
+    "karat": null,
+    "material": "platinum"
+  },
+  "mode": "pro",
+  "notes_to_factory": "INTERNAL TEST-DESIGNER DRAFT \u2014 NOT FOR PRODUCTION. Five marquise emerald leaves and round diamond accents are image-visible. All listed dimensions remain estimates. Exact vine geometry is pinned only to the visual candidate, and the chain has no approved production reference; both conditions must remain factory blockers.",
+  "pendant": {
+    "bail_height_mm": 5.0,
+    "bail_inner_diameter_mm": 3.0,
+    "drop_mm": 16.0
+  },
+  "ring_size": null,
+  "schema_version": 1,
+  "setting": {
+    "gallery_height_mm": null,
+    "prong_count": null,
+    "prong_tip_mm": null,
+    "style": "custom_leaf_motif"
+  },
+  "side_stones": [
+    {
+      "carat": 0.011,
+      "clarity": null,
+      "color": {
+        "gia": "natural colour",
+        "hue_code": null,
+        "saturation": null,
+        "tone": null,
+        "trade": "Diamond"
+      },
+      "count": 20,
+      "culet": null,
+      "cut": "round_brilliant",
+      "depth_pct": null,
+      "dimensions_mm": {
+        "depth": 0.85,
+        "length": 1.4,
+        "width": 1.4
+      },
+      "girdle": null,
+      "inscription": null,
+      "lab": null,
+      "mount": null,
+      "origin": null,
+      "phenomena": [],
+      "position": "vine_accents",
+      "species": "diamond",
+      "table_pct": null,
+      "treatment": null
+    }
+  ],
+  "source_component_coverage": {
+    "audited_spec_visual_hash": null,
+    "components": [
+      {
+        "canonical_spec_paths": [
+          "stone"
+        ],
+        "component_id": "stone.center",
+        "designer_confirmation": null,
+        "independent_audit": null,
+        "source_confidence": 0.45,
+        "source_description": "5 emerald marquise stones at vine_leaves",
+        "source_view": "unspecified",
+        "unresolved_reason": null
+      },
+      {
+        "canonical_spec_paths": [
+          "side_stones[0]"
+        ],
+        "component_id": "stone.group.001",
+        "designer_confirmation": null,
+        "independent_audit": null,
+        "source_confidence": 0.45,
+        "source_description": "20 diamond round_brilliant stones at vine_accents",
+        "source_view": "unspecified",
+        "unresolved_reason": null
+      },
+      {
+        "canonical_spec_paths": [
+          "setting",
+          "design_form.elements[vine_assembly]"
+        ],
+        "component_id": "setting.primary",
+        "designer_confirmation": null,
+        "independent_audit": null,
+        "source_confidence": 0.45,
+        "source_description": "custom leaf-motif holders integrated into the vine assembly",
+        "source_view": "unspecified",
+        "unresolved_reason": null
+      },
+      {
+        "canonical_spec_paths": [
+          "metal"
+        ],
+        "component_id": "metal.body",
+        "designer_confirmation": null,
+        "independent_audit": null,
+        "source_confidence": 0.45,
+        "source_description": "platinum metal body",
+        "source_view": "unspecified",
+        "unresolved_reason": null
+      },
+      {
+        "canonical_spec_paths": [
+          "pendant"
+        ],
+        "component_id": "assembly.pendant",
+        "designer_confirmation": null,
+        "independent_audit": null,
+        "source_confidence": 0.45,
+        "source_description": "structured pendant assembly",
+        "source_view": "unspecified",
+        "unresolved_reason": null
+      },
+      {
+        "canonical_spec_paths": [
+          "chain"
+        ],
+        "component_id": "assembly.chain",
+        "designer_confirmation": null,
+        "independent_audit": null,
+        "source_confidence": 0.45,
+        "source_description": "structured chain assembly",
+        "source_view": "unspecified",
+        "unresolved_reason": null
+      },
+      {
+        "canonical_spec_paths": [
+          "template",
+          "design_form.elements[vine_assembly]"
+        ],
+        "component_id": "assembly.primary",
+        "designer_confirmation": null,
+        "independent_audit": null,
+        "source_confidence": 0.45,
+        "source_description": "asymmetric two-branch vine and tapered-drop topology",
+        "source_view": "unspecified",
+        "unresolved_reason": null
+      }
+    ],
+    "source_kind": "imported_reference"
+  },
+  "stone": {
+    "carat": 0.653,
+    "clarity": null,
+    "color": {
+      "gia": "vivid, warm, slightly yellowish green",
+      "hue_code": null,
+      "saturation": null,
+      "tone": null,
+      "trade": "Muzo Green"
+    },
+    "count": 5,
+    "culet": null,
+    "cut": "marquise",
+    "depth_pct": null,
+    "dimensions_mm": {
+      "depth": 3.0,
+      "length": 10.0,
+      "width": 5.0
+    },
+    "girdle": null,
+    "inscription": null,
+    "lab": null,
+    "mount": null,
+    "origin": null,
+    "phenomena": [],
+    "position": "vine_leaves",
+    "species": "emerald",
+    "table_pct": null,
+    "treatment": null
+  },
+  "template": "cluster_pendant",
+  "version": 1
+}

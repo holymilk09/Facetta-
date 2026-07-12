@@ -1,0 +1,70 @@
+{
+  "schema_version": 1,
+  "design_id": "dsn_concept",
+  "version": 1,
+  "created_by": "usr_pending",
+  "created_at": "1970-01-01T00:00:00Z",
+  "jewelry_type": "ring",
+  "template": "solitaire_prong",
+  "mode": "pro",
+  "stone": {
+    "species": "emerald",
+    "cut": "emerald_cut",
+    "carat": 2.263,
+    "dimensions_mm": {
+      "length": 8.0,
+      "width": 8.0,
+      "depth": 5.2
+    },
+    "color": {
+      "trade": "Muzo Green",
+      "gia": "vivid, warm, slightly yellowish green",
+      "hue_code": null,
+      "tone": null,
+      "saturation": null
+    },
+    "clarity": null,
+    "origin": null,
+    "treatment": null,
+    "phenomena": [],
+    "count": 1,
+    "position": "center",
+    "table_pct": null,
+    "depth_pct": null,
+    "girdle": null,
+    "culet": null,
+    "lab": null,
+    "inscription": null,
+    "mount": null
+  },
+  "setting": {
+    "style": "4_prong_basket",
+    "prong_count": 4,
+    "prong_tip_mm": 0.9,
+    "gallery_height_mm": 4.2
+  },
+  "metal": {
+    "material": "gold",
+    "karat": 18,
+    "color": "yellow",
+    "finish": "high_polish"
+  },
+  "band": {
+    "profile": "comfort_fit",
+    "width_mm": 2.2,
+    "thickness_mm": 1.6
+  },
+  "ring_size": {
+    "system": "US",
+    "value": 6.5,
+    "inner_diameter_mm": 16.91
+  },
+  "bracelet": null,
+  "pendant": null,
+  "chain": null,
+  "brooch": null,
+  "drop": null,
+  "composition": null,
+  "side_stones": [],
+  "notes_to_factory": "Concept originated by image generation from the brief: \u201cImported finished-jewelry reference. Return only visible facts. Exact dimensions remain designer-confirmed. Designer notes: Designer confirms the central green square stone and leaf shoulder motif; dimensions are estimated pending correction.\u201d. All dimensions are density-consistent DRAFT proposals scaled from a vision estimate of the centre stone \u2014 the designer confirms exact millimetres before production."
+}

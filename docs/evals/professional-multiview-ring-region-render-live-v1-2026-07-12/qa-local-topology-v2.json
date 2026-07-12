@@ -1,0 +1,126 @@
+{
+  "candidate_sha256": "f05004ada80992c6e002fdac47716f691099f31c2ed59e289682fdad001b3a2f",
+  "designer_accepted": false,
+  "evaluated_at": "2026-07-11T18:35:20.434570+00:00",
+  "product_asset_persisted": false,
+  "purpose": "Post-generation re-audit with local geometry, repeated-element topology, and stone cut-family checks.",
+  "quality": {
+    "checks": [
+      {
+        "code": "decodable_image",
+        "evidence": {
+          "format": "JPEG",
+          "height": 1104,
+          "width": 928
+        },
+        "message": "candidate is a decodable raster image",
+        "passed": true,
+        "severity": "hard"
+      },
+      {
+        "code": "review_resolution",
+        "evidence": {
+          "height": 1104,
+          "width": 928
+        },
+        "message": "candidate has reviewable raster dimensions",
+        "passed": true,
+        "severity": "warning"
+      },
+      {
+        "code": "source_design_preserved",
+        "evidence": {},
+        "message": "candidate materially changed the visible source design identity",
+        "passed": false,
+        "severity": "hard"
+      },
+      {
+        "code": "visible_components_preserved",
+        "evidence": {},
+        "message": "candidate added, removed, replaced, or moved a visible component",
+        "passed": false,
+        "severity": "hard"
+      },
+      {
+        "code": "local_geometry_preserved",
+        "evidence": {},
+        "message": "candidate changed visible local contours, panels, supports, gallery, shoulders, or shank geometry",
+        "passed": false,
+        "severity": "hard"
+      },
+      {
+        "code": "repeated_element_pattern_preserved",
+        "evidence": {},
+        "message": "candidate changed a visible repeated motif's count, shape, order, spacing, or element type",
+        "passed": false,
+        "severity": "hard"
+      },
+      {
+        "code": "stone_shape_and_cut_family_preserved",
+        "evidence": {},
+        "message": "candidate changed a visible center or side stone shape/cut family",
+        "passed": false,
+        "severity": "hard"
+      },
+      {
+        "code": "candidate_changed",
+        "evidence": {},
+        "message": "candidate bytes differ from the source",
+        "passed": true,
+        "severity": "hard"
+      },
+      {
+        "code": "coherent_jewelry_render",
+        "evidence": {},
+        "message": "visual evidence matches the requested fact",
+        "passed": true,
+        "severity": "hard"
+      },
+      {
+        "code": "complete_piece_visible",
+        "evidence": {},
+        "message": "visual evidence matches the requested fact",
+        "passed": true,
+        "severity": "hard"
+      },
+      {
+        "code": "requested_presentation_applied",
+        "evidence": {},
+        "message": "visual evidence matches the requested fact",
+        "passed": true,
+        "severity": "hard"
+      },
+      {
+        "code": "text_or_branding",
+        "evidence": {},
+        "message": "visual evidence matches the requested fact",
+        "passed": true,
+        "severity": "hard"
+      },
+      {
+        "code": "factory_authority",
+        "evidence": {
+          "factory_authoritative": false
+        },
+        "message": "creative render is review-only and cannot establish hidden geometry, dimensions, materials, stone identity, or factory facts",
+        "passed": false,
+        "severity": "warning"
+      }
+    ],
+    "notes": [
+      "source step-cut parallel lines absent in render",
+      "left shoulder green stone position and size differ",
+      "shank baguettes visible in sketch missing on render right side",
+      "exact hand-drawn viewpoint angle not matched",
+      "center stone changed from clear horizontal step-cut lines to radiating brilliant-style facets with central point",
+      "shoulder panel stone counts, shapes and spacing altered (rounds vs mixed trapezoids/rectangles)",
+      "gallery and setting outlines simplified and slightly rounded",
+      "shank stone pattern reduced and geometry changed"
+    ],
+    "score": 42.0,
+    "verdict": "fail"
+  },
+  "score": 42.0,
+  "source_region_sha256": "87957f90c718ec0cdc523afdff1f64b4a9658f06a107cf35c635e603311ea409",
+  "verdict": "fail"
+}

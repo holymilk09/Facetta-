@@ -1,0 +1,277 @@
+{
+  "case": "prong-setting",
+  "instruction": "change the center setting from six prongs to four prongs",
+  "spec_delta": [
+    {
+      "path": "setting.prong_count",
+      "label": "setting prongs",
+      "from": "6",
+      "to": "4",
+      "kind": "changed"
+    },
+    {
+      "path": "setting.style",
+      "label": "setting style",
+      "from": "6_prong_basket",
+      "to": "4_prong_basket",
+      "kind": "changed"
+    }
+  ],
+  "status": "accepted",
+  "verdict": "pass",
+  "score": 95.0,
+  "attempts": [
+    {
+      "attempt_number": 1,
+      "route": "grok_edit",
+      "provider": "xai",
+      "model": "grok_direct",
+      "latency_ms": 22946,
+      "cached": false,
+      "provider_request_id": null,
+      "qa_verdict": "fail",
+      "qa_checks": [
+        {
+          "code": "decodable_image",
+          "passed": true,
+          "severity": "hard",
+          "message": "candidate is a decodable raster image",
+          "evidence": {
+            "width": 864,
+            "height": 1152,
+            "format": "JPEG"
+          }
+        },
+        {
+          "code": "review_resolution",
+          "passed": true,
+          "severity": "warning",
+          "message": "candidate has reviewable raster dimensions",
+          "evidence": {
+            "width": 864,
+            "height": 1152
+          }
+        },
+        {
+          "code": "candidate_changed",
+          "passed": true,
+          "severity": "hard",
+          "message": "candidate bytes differ from the source",
+          "evidence": {}
+        },
+        {
+          "code": "requested_change",
+          "passed": false,
+          "severity": "hard",
+          "message": "the requested change was not visibly applied",
+          "evidence": {}
+        },
+        {
+          "code": "protected_regions",
+          "passed": true,
+          "severity": "hard",
+          "message": "visual evidence matches the requested fact",
+          "evidence": {}
+        },
+        {
+          "code": "unintended_drift",
+          "passed": true,
+          "severity": "warning",
+          "message": "no unintended changes detected",
+          "evidence": {
+            "severity": "none",
+            "changes": []
+          }
+        },
+        {
+          "code": "spec_change",
+          "passed": false,
+          "severity": "hard",
+          "message": "visible local change does not match the validated result spec",
+          "evidence": {}
+        },
+        {
+          "code": "text_or_branding",
+          "passed": true,
+          "severity": "hard",
+          "message": "no text or branding introduced",
+          "evidence": {}
+        }
+      ],
+      "quality_score": 15.0,
+      "corrective_instruction": null,
+      "fallback_reason": null,
+      "output_hash": "0e5e3175c57d98640a880d7f28a1fb7379b1a62e006a88831a0e2cdd68587754",
+      "prompt_hash": "74ca00130108062a4fb6c4b44ea54eff06304957f44d42d8116a15ada60c2d2a",
+      "cache_key": "2eb4f6bac80580c017720fbe7b85255322c34fa4657014c22ea0af3537ba2d27",
+      "usage": null,
+      "cost": null,
+      "error_category": null,
+      "error": null
+    },
+    {
+      "attempt_number": 2,
+      "route": "grok_edit",
+      "provider": "xai",
+      "model": "grok_direct",
+      "latency_ms": 21954,
+      "cached": false,
+      "provider_request_id": null,
+      "qa_verdict": "pass",
+      "qa_checks": [
+        {
+          "code": "decodable_image",
+          "passed": true,
+          "severity": "hard",
+          "message": "candidate is a decodable raster image",
+          "evidence": {
+            "width": 864,
+            "height": 1152,
+            "format": "JPEG"
+          }
+        },
+        {
+          "code": "review_resolution",
+          "passed": true,
+          "severity": "warning",
+          "message": "candidate has reviewable raster dimensions",
+          "evidence": {
+            "width": 864,
+            "height": 1152
+          }
+        },
+        {
+          "code": "candidate_changed",
+          "passed": true,
+          "severity": "hard",
+          "message": "candidate bytes differ from the source",
+          "evidence": {}
+        },
+        {
+          "code": "requested_change",
+          "passed": true,
+          "severity": "hard",
+          "message": "visual evidence matches the requested fact",
+          "evidence": {}
+        },
+        {
+          "code": "protected_regions",
+          "passed": true,
+          "severity": "hard",
+          "message": "visual evidence matches the requested fact",
+          "evidence": {}
+        },
+        {
+          "code": "unintended_drift",
+          "passed": true,
+          "severity": "warning",
+          "message": "no unintended changes detected",
+          "evidence": {
+            "severity": "none",
+            "changes": []
+          }
+        },
+        {
+          "code": "spec_change",
+          "passed": true,
+          "severity": "hard",
+          "message": "visual evidence matches the requested fact",
+          "evidence": {}
+        },
+        {
+          "code": "text_or_branding",
+          "passed": true,
+          "severity": "hard",
+          "message": "no text or branding introduced",
+          "evidence": {}
+        }
+      ],
+      "quality_score": 95.0,
+      "corrective_instruction": "- requested_change: the requested change was not visibly applied.\n- spec_change: visible local change does not match the validated result spec.",
+      "fallback_reason": null,
+      "output_hash": "7bfb3f2dce0018f86526212bde412cdbefb8af98e379abc986447da20a985bcc",
+      "prompt_hash": "52bae4d4ea5aed6bcd45371dcf72e34a957314462c2b5415ddfd06e5f25d7def",
+      "cache_key": "0e0a0c8954214b2ab8cd17f787b831a153353b0d0a0aa9074b663c6b36577aca",
+      "usage": null,
+      "cost": null,
+      "error_category": null,
+      "error": null
+    }
+  ],
+  "quality": {
+    "verdict": "pass",
+    "checks": [
+      {
+        "code": "decodable_image",
+        "passed": true,
+        "severity": "hard",
+        "message": "candidate is a decodable raster image",
+        "evidence": {
+          "width": 864,
+          "height": 1152,
+          "format": "JPEG"
+        }
+      },
+      {
+        "code": "review_resolution",
+        "passed": true,
+        "severity": "warning",
+        "message": "candidate has reviewable raster dimensions",
+        "evidence": {
+          "width": 864,
+          "height": 1152
+        }
+      },
+      {
+        "code": "candidate_changed",
+        "passed": true,
+        "severity": "hard",
+        "message": "candidate bytes differ from the source",
+        "evidence": {}
+      },
+      {
+        "code": "requested_change",
+        "passed": true,
+        "severity": "hard",
+        "message": "visual evidence matches the requested fact",
+        "evidence": {}
+      },
+      {
+        "code": "protected_regions",
+        "passed": true,
+        "severity": "hard",
+        "message": "visual evidence matches the requested fact",
+        "evidence": {}
+      },
+      {
+        "code": "unintended_drift",
+        "passed": true,
+        "severity": "warning",
+        "message": "no unintended changes detected",
+        "evidence": {
+          "severity": "none",
+          "changes": []
+        }
+      },
+      {
+        "code": "spec_change",
+        "passed": true,
+        "severity": "hard",
+        "message": "visual evidence matches the requested fact",
+        "evidence": {}
+      },
+      {
+        "code": "text_or_branding",
+        "passed": true,
+        "severity": "hard",
+        "message": "no text or branding introduced",
+        "evidence": {}
+      }
+    ],
+    "score": 95.0,
+    "notes": [
+      "Center stone now held by exactly 4 prongs (top/bottom/left/right)",
+      "Halo, band, metal finish and all side stones identical to source"
+    ]
+  }
+}

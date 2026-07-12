@@ -1,0 +1,13 @@
+{
+  "case": "round-solitaire-yellow-4-narrow",
+  "status": "accepted",
+  "verdict": "pass",
+  "score": 99.0,
+  "attempts": 2,
+  "attempt_models": [
+    "grok_direct",
+    "grok_direct"
+  ],
+  "failed_checks": [],
+  "image": "candidate.png"
+}

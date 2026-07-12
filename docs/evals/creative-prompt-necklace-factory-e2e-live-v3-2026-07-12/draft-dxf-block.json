@@ -1,0 +1,15 @@
+{
+  "blockers": [
+    {
+      "code": "visual_reference_not_dimensioned",
+      "detail": "Asymmetric branching vine and tapered drop is confirmed only by pinned visual reference; its contour is not dimensioned factory geometry."
+    },
+    {
+      "code": "chain_production_reference_missing",
+      "detail": "The exact stock item, approved sample, dimensioned drawing, or CAD construction record for the chain is not identified."
+    }
+  ],
+  "code": "factory_geometry_incomplete",
+  "detail": "DXF export is unavailable until every visual form and chain construction blocker is resolved",
+  "error_category": "validation_failure"
+}

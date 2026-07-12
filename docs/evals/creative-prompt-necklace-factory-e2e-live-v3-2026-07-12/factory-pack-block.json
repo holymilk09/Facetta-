@@ -1,0 +1,5 @@
+{
+  "category": "approval",
+  "code": "design_form_not_dimensioned",
+  "detail": "Factory release is blocked because these designer-confirmed forms are still visual_reference_only: vine_assembly. Supply or confirm a dimensioned profile or CAD definition before manufacturing."
+}

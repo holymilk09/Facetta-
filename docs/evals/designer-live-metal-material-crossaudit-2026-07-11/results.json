@@ -1,0 +1,1326 @@
+{
+  "fallback_tested": false,
+  "gia_evaluator_review": {
+    "completed": false,
+    "false_negatives": null,
+    "false_positives": null,
+    "reviewer": null
+  },
+  "live": true,
+  "mode": "live",
+  "persistence_evidence": {
+    "method": "not_run",
+    "note": "This image-engine run did not exercise canonical project persistence. Attach a named canonical-API integration result before the persistence release gate can pass.",
+    "rejected_active_asset_count": null,
+    "result_set": null,
+    "verified": false
+  },
+  "release_gates": {
+    "blocking_enabled": false,
+    "note": "Only canonical edit 'metal-material' was executed.",
+    "status": "diagnostic_subset_not_evaluated"
+  },
+  "routing_mode": "grok_only",
+  "rows": [
+    {
+      "agent_error": {
+        "attempts": [
+          {
+            "attempt_number": 1,
+            "cache_key": "b32e0fbfbf82922856082a86498b7252d7bcc8445b1fcde0dd58e544c0583ea4",
+            "cached": false,
+            "corrective_instruction": null,
+            "cost": null,
+            "error": null,
+            "error_category": null,
+            "fallback_reason": null,
+            "latency_ms": 28018,
+            "model": "grok_direct",
+            "output_hash": "3add778b3c6fc0a843edb977a039c35eb6ef352f2eee52dc44b659b5fdef68ba",
+            "prompt_hash": "b993cfe42df0753ef7e6108ad7ea0c3c42bcab7327cb497a6a538eff84cd333f",
+            "provider": "xai",
+            "provider_request_id": null,
+            "qa_checks": [
+              {
+                "code": "decodable_image",
+                "evidence": {
+                  "format": "JPEG",
+                  "height": 1152,
+                  "width": 864
+                },
+                "message": "candidate is a decodable raster image",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "review_resolution",
+                "evidence": {
+                  "height": 1152,
+                  "width": 864
+                },
+                "message": "candidate has reviewable raster dimensions",
+                "passed": true,
+                "severity": "warning"
+              },
+              {
+                "code": "candidate_changed",
+                "evidence": {},
+                "message": "candidate bytes differ from the source",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "jewelry_type",
+                "evidence": {},
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "major_components",
+                "evidence": {},
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "center_species",
+                "evidence": {},
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "cut_family",
+                "evidence": {},
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "center_color",
+                "evidence": {},
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "metal",
+                "evidence": {},
+                "message": "metal material or color does not match the validated spec",
+                "passed": false,
+                "severity": "hard"
+              },
+              {
+                "code": "setting",
+                "evidence": {},
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "stone_count",
+                "evidence": {},
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "render_crosscheck:jewelry_type",
+                "evidence": {
+                  "differences": [
+                    "metal color yellow instead of white",
+                    "prong count 4 instead of 6"
+                  ],
+                  "observed_prong_count": 4,
+                  "observed_side_stone_count": 0
+                },
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "render_crosscheck:center_identity",
+                "evidence": {
+                  "differences": [
+                    "metal color yellow instead of white",
+                    "prong count 4 instead of 6"
+                  ],
+                  "observed_prong_count": 4,
+                  "observed_side_stone_count": 0
+                },
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "render_crosscheck:center_cut",
+                "evidence": {
+                  "differences": [
+                    "metal color yellow instead of white",
+                    "prong count 4 instead of 6"
+                  ],
+                  "observed_prong_count": 4,
+                  "observed_side_stone_count": 0
+                },
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "render_crosscheck:metal",
+                "evidence": {
+                  "differences": [
+                    "metal color yellow instead of white",
+                    "prong count 4 instead of 6"
+                  ],
+                  "observed_prong_count": 4,
+                  "observed_side_stone_count": 0
+                },
+                "message": "independent audit found the wrong metal assignment",
+                "passed": false,
+                "severity": "hard"
+              },
+              {
+                "code": "render_crosscheck:setting_style",
+                "evidence": {
+                  "differences": [
+                    "metal color yellow instead of white",
+                    "prong count 4 instead of 6"
+                  ],
+                  "observed_prong_count": 4,
+                  "observed_side_stone_count": 0
+                },
+                "message": "independent audit found the wrong setting style",
+                "passed": false,
+                "severity": "hard"
+              },
+              {
+                "code": "render_crosscheck:prong_count",
+                "evidence": {
+                  "differences": [
+                    "metal color yellow instead of white",
+                    "prong count 4 instead of 6"
+                  ],
+                  "observed_prong_count": 4,
+                  "observed_side_stone_count": 0
+                },
+                "message": "independent audit found the wrong center-prong count",
+                "passed": false,
+                "severity": "hard"
+              },
+              {
+                "code": "render_crosscheck:side_stone_inventory",
+                "evidence": {
+                  "differences": [
+                    "metal color yellow instead of white",
+                    "prong count 4 instead of 6"
+                  ],
+                  "observed_prong_count": 4,
+                  "observed_side_stone_count": 0
+                },
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "render_crosscheck:major_components",
+                "evidence": {
+                  "differences": [
+                    "metal color yellow instead of white",
+                    "prong count 4 instead of 6"
+                  ],
+                  "observed_prong_count": 4,
+                  "observed_side_stone_count": 0
+                },
+                "message": "independent audit found a missing or added major component",
+                "passed": false,
+                "severity": "hard"
+              },
+              {
+                "code": "text_or_branding",
+                "evidence": {},
+                "message": "no text or branding detected",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "reference_consistency",
+                "evidence": {},
+                "message": "candidate materially changed the source design identity",
+                "passed": false,
+                "severity": "hard"
+              },
+              {
+                "code": "exact_dimensions",
+                "evidence": {},
+                "message": "exact millimeters appears plausible but remains non-authoritative",
+                "passed": true,
+                "severity": "warning"
+              },
+              {
+                "code": "exact_carat",
+                "evidence": {},
+                "message": "exact carat weight appears plausible but remains non-authoritative",
+                "passed": true,
+                "severity": "warning"
+              }
+            ],
+            "qa_verdict": "fail",
+            "quality_score": 55.0,
+            "route": "grok_edit",
+            "usage": null
+          },
+          {
+            "attempt_number": 2,
+            "cache_key": "801bbe0b0bf5166a795c13e77a7ae648bc7bd18548b60da0fe60b47835f0a3fe",
+            "cached": false,
+            "corrective_instruction": "- metal: metal material or color does not match the validated spec.\n- render_crosscheck:metal: independent audit found the wrong metal assignment. Evidence: {\"differences\": [\"metal color yellow instead of white\", \"prong count 4 instead of 6\"], \"observed_prong_count\": 4, \"observed_side_stone_count\": 0}\n- render_crosscheck:setting_style: independent audit found the wrong setting style. Evidence: {\"differences\": [\"metal color yellow instead of white\", \"prong count 4 instead of 6\"], \"observed_prong_count\": 4, \"observed_side_stone_count\": 0}\n- render_crosscheck:prong_count: independent audit found the wrong center-prong count. Evidence: {\"differences\": [\"metal color yellow instead of white\", \"prong count 4 instead of 6\"], \"observed_prong_count\": 4, \"observed_side_stone_count\": 0}\n- render_crosscheck:major_components: independent audit found a missing or added major component. Evidence: {\"differences\": [\"metal color yellow instead of white\", \"prong count 4 instead of 6\"], \"observed_prong_count\": 4, \"observed_side_stone_count\": 0}\n- reference_consistency: candidate materially changed the source design identity.",
+            "cost": null,
+            "error": null,
+            "error_category": null,
+            "fallback_reason": null,
+            "latency_ms": 31838,
+            "model": "grok_direct",
+            "output_hash": "67fcd8c9bc669af1c5ff31c7e874cd39158942d75d2d12a3ba9da2c6a4d1d91a",
+            "prompt_hash": "3e5135b71fb290b0cd815581241b682104d5b09509ffccf714c053b93c96a4a7",
+            "provider": "xai",
+            "provider_request_id": null,
+            "qa_checks": [
+              {
+                "code": "decodable_image",
+                "evidence": {
+                  "format": "JPEG",
+                  "height": 1152,
+                  "width": 864
+                },
+                "message": "candidate is a decodable raster image",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "review_resolution",
+                "evidence": {
+                  "height": 1152,
+                  "width": 864
+                },
+                "message": "candidate has reviewable raster dimensions",
+                "passed": true,
+                "severity": "warning"
+              },
+              {
+                "code": "candidate_changed",
+                "evidence": {},
+                "message": "candidate bytes differ from the source",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "jewelry_type",
+                "evidence": {},
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "major_components",
+                "evidence": {},
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "center_species",
+                "evidence": {},
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "cut_family",
+                "evidence": {},
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "center_color",
+                "evidence": {},
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "metal",
+                "evidence": {},
+                "message": "metal material or color does not match the validated spec",
+                "passed": false,
+                "severity": "hard"
+              },
+              {
+                "code": "setting",
+                "evidence": {},
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "stone_count",
+                "evidence": {},
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "render_crosscheck:jewelry_type",
+                "evidence": {
+                  "differences": [
+                    "metal color yellow instead of white",
+                    "prong count 4 visible instead of 6",
+                    "setting not 6-prong basket"
+                  ],
+                  "observed_prong_count": 4,
+                  "observed_side_stone_count": 0
+                },
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "render_crosscheck:center_identity",
+                "evidence": {
+                  "differences": [
+                    "metal color yellow instead of white",
+                    "prong count 4 visible instead of 6",
+                    "setting not 6-prong basket"
+                  ],
+                  "observed_prong_count": 4,
+                  "observed_side_stone_count": 0
+                },
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "render_crosscheck:center_cut",
+                "evidence": {
+                  "differences": [
+                    "metal color yellow instead of white",
+                    "prong count 4 visible instead of 6",
+                    "setting not 6-prong basket"
+                  ],
+                  "observed_prong_count": 4,
+                  "observed_side_stone_count": 0
+                },
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "render_crosscheck:metal",
+                "evidence": {
+                  "differences": [
+                    "metal color yellow instead of white",
+                    "prong count 4 visible instead of 6",
+                    "setting not 6-prong basket"
+                  ],
+                  "observed_prong_count": 4,
+                  "observed_side_stone_count": 0
+                },
+                "message": "independent audit found the wrong metal assignment",
+                "passed": false,
+                "severity": "hard"
+              },
+              {
+                "code": "render_crosscheck:setting_style",
+                "evidence": {
+                  "differences": [
+                    "metal color yellow instead of white",
+                    "prong count 4 visible instead of 6",
+                    "setting not 6-prong basket"
+                  ],
+                  "observed_prong_count": 4,
+                  "observed_side_stone_count": 0
+                },
+                "message": "independent audit found the wrong setting style",
+                "passed": false,
+                "severity": "hard"
+              },
+              {
+                "code": "render_crosscheck:prong_count",
+                "evidence": {
+                  "differences": [
+                    "metal color yellow instead of white",
+                    "prong count 4 visible instead of 6",
+                    "setting not 6-prong basket"
+                  ],
+                  "observed_prong_count": 4,
+                  "observed_side_stone_count": 0
+                },
+                "message": "independent audit found the wrong center-prong count",
+                "passed": false,
+                "severity": "hard"
+              },
+              {
+                "code": "render_crosscheck:side_stone_inventory",
+                "evidence": {
+                  "differences": [
+                    "metal color yellow instead of white",
+                    "prong count 4 visible instead of 6",
+                    "setting not 6-prong basket"
+                  ],
+                  "observed_prong_count": 4,
+                  "observed_side_stone_count": 0
+                },
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "render_crosscheck:major_components",
+                "evidence": {
+                  "differences": [
+                    "metal color yellow instead of white",
+                    "prong count 4 visible instead of 6",
+                    "setting not 6-prong basket"
+                  ],
+                  "observed_prong_count": 4,
+                  "observed_side_stone_count": 0
+                },
+                "message": "independent audit found a missing or added major component",
+                "passed": false,
+                "severity": "hard"
+              },
+              {
+                "code": "text_or_branding",
+                "evidence": {},
+                "message": "no text or branding detected",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "reference_consistency",
+                "evidence": {},
+                "message": "candidate materially changed the source design identity",
+                "passed": false,
+                "severity": "hard"
+              },
+              {
+                "code": "exact_dimensions",
+                "evidence": {},
+                "message": "exact millimeters appears plausible but remains non-authoritative",
+                "passed": true,
+                "severity": "warning"
+              },
+              {
+                "code": "exact_carat",
+                "evidence": {},
+                "message": "exact carat weight appears plausible but remains non-authoritative",
+                "passed": true,
+                "severity": "warning"
+              }
+            ],
+            "qa_verdict": "fail",
+            "quality_score": 35.0,
+            "route": "grok_edit",
+            "usage": null
+          }
+        ],
+        "category": "quality",
+        "code": "image_quality_failed",
+        "message": "no candidate passed jewelry QA: metal, render_crosscheck:metal, render_crosscheck:setting_style, render_crosscheck:prong_count, render_crosscheck:major_components, reference_consistency",
+        "quality": {
+          "checks": [
+            {
+              "code": "decodable_image",
+              "evidence": {
+                "format": "JPEG",
+                "height": 1152,
+                "width": 864
+              },
+              "message": "candidate is a decodable raster image",
+              "passed": true,
+              "severity": "hard"
+            },
+            {
+              "code": "review_resolution",
+              "evidence": {
+                "height": 1152,
+                "width": 864
+              },
+              "message": "candidate has reviewable raster dimensions",
+              "passed": true,
+              "severity": "warning"
+            },
+            {
+              "code": "candidate_changed",
+              "evidence": {},
+              "message": "candidate bytes differ from the source",
+              "passed": true,
+              "severity": "hard"
+            },
+            {
+              "code": "jewelry_type",
+              "evidence": {},
+              "message": "visual evidence matches the requested fact",
+              "passed": true,
+              "severity": "hard"
+            },
+            {
+              "code": "major_components",
+              "evidence": {},
+              "message": "visual evidence matches the requested fact",
+              "passed": true,
+              "severity": "hard"
+            },
+            {
+              "code": "center_species",
+              "evidence": {},
+              "message": "visual evidence matches the requested fact",
+              "passed": true,
+              "severity": "hard"
+            },
+            {
+              "code": "cut_family",
+              "evidence": {},
+              "message": "visual evidence matches the requested fact",
+              "passed": true,
+              "severity": "hard"
+            },
+            {
+              "code": "center_color",
+              "evidence": {},
+              "message": "visual evidence matches the requested fact",
+              "passed": true,
+              "severity": "hard"
+            },
+            {
+              "code": "metal",
+              "evidence": {},
+              "message": "metal material or color does not match the validated spec",
+              "passed": false,
+              "severity": "hard"
+            },
+            {
+              "code": "setting",
+              "evidence": {},
+              "message": "visual evidence matches the requested fact",
+              "passed": true,
+              "severity": "hard"
+            },
+            {
+              "code": "stone_count",
+              "evidence": {},
+              "message": "visual evidence matches the requested fact",
+              "passed": true,
+              "severity": "hard"
+            },
+            {
+              "code": "render_crosscheck:jewelry_type",
+              "evidence": {
+                "differences": [
+                  "metal color yellow instead of white",
+                  "prong count 4 visible instead of 6",
+                  "setting not 6-prong basket"
+                ],
+                "observed_prong_count": 4,
+                "observed_side_stone_count": 0
+              },
+              "message": "visual evidence matches the requested fact",
+              "passed": true,
+              "severity": "hard"
+            },
+            {
+              "code": "render_crosscheck:center_identity",
+              "evidence": {
+                "differences": [
+                  "metal color yellow instead of white",
+                  "prong count 4 visible instead of 6",
+                  "setting not 6-prong basket"
+                ],
+                "observed_prong_count": 4,
+                "observed_side_stone_count": 0
+              },
+              "message": "visual evidence matches the requested fact",
+              "passed": true,
+              "severity": "hard"
+            },
+            {
+              "code": "render_crosscheck:center_cut",
+              "evidence": {
+                "differences": [
+                  "metal color yellow instead of white",
+                  "prong count 4 visible instead of 6",
+                  "setting not 6-prong basket"
+                ],
+                "observed_prong_count": 4,
+                "observed_side_stone_count": 0
+              },
+              "message": "visual evidence matches the requested fact",
+              "passed": true,
+              "severity": "hard"
+            },
+            {
+              "code": "render_crosscheck:metal",
+              "evidence": {
+                "differences": [
+                  "metal color yellow instead of white",
+                  "prong count 4 visible instead of 6",
+                  "setting not 6-prong basket"
+                ],
+                "observed_prong_count": 4,
+                "observed_side_stone_count": 0
+              },
+              "message": "independent audit found the wrong metal assignment",
+              "passed": false,
+              "severity": "hard"
+            },
+            {
+              "code": "render_crosscheck:setting_style",
+              "evidence": {
+                "differences": [
+                  "metal color yellow instead of white",
+                  "prong count 4 visible instead of 6",
+                  "setting not 6-prong basket"
+                ],
+                "observed_prong_count": 4,
+                "observed_side_stone_count": 0
+              },
+              "message": "independent audit found the wrong setting style",
+              "passed": false,
+              "severity": "hard"
+            },
+            {
+              "code": "render_crosscheck:prong_count",
+              "evidence": {
+                "differences": [
+                  "metal color yellow instead of white",
+                  "prong count 4 visible instead of 6",
+                  "setting not 6-prong basket"
+                ],
+                "observed_prong_count": 4,
+                "observed_side_stone_count": 0
+              },
+              "message": "independent audit found the wrong center-prong count",
+              "passed": false,
+              "severity": "hard"
+            },
+            {
+              "code": "render_crosscheck:side_stone_inventory",
+              "evidence": {
+                "differences": [
+                  "metal color yellow instead of white",
+                  "prong count 4 visible instead of 6",
+                  "setting not 6-prong basket"
+                ],
+                "observed_prong_count": 4,
+                "observed_side_stone_count": 0
+              },
+              "message": "visual evidence matches the requested fact",
+              "passed": true,
+              "severity": "hard"
+            },
+            {
+              "code": "render_crosscheck:major_components",
+              "evidence": {
+                "differences": [
+                  "metal color yellow instead of white",
+                  "prong count 4 visible instead of 6",
+                  "setting not 6-prong basket"
+                ],
+                "observed_prong_count": 4,
+                "observed_side_stone_count": 0
+              },
+              "message": "independent audit found a missing or added major component",
+              "passed": false,
+              "severity": "hard"
+            },
+            {
+              "code": "text_or_branding",
+              "evidence": {},
+              "message": "no text or branding detected",
+              "passed": true,
+              "severity": "hard"
+            },
+            {
+              "code": "reference_consistency",
+              "evidence": {},
+              "message": "candidate materially changed the source design identity",
+              "passed": false,
+              "severity": "hard"
+            },
+            {
+              "code": "exact_dimensions",
+              "evidence": {},
+              "message": "exact millimeters appears plausible but remains non-authoritative",
+              "passed": true,
+              "severity": "warning"
+            },
+            {
+              "code": "exact_carat",
+              "evidence": {},
+              "message": "exact carat weight appears plausible but remains non-authoritative",
+              "passed": true,
+              "severity": "warning"
+            }
+          ],
+          "notes": [
+            "metal color mismatch (white vs yellow gold)",
+            "unrequested metal change from reference"
+          ],
+          "score": 35.0,
+          "verdict": "fail"
+        }
+      },
+      "attempts": 2,
+      "case": "oval-solitaire-white-6-wide",
+      "error_category": "quality",
+      "hard_gate_pass": false,
+      "kind": "render",
+      "reference_attempts": 2,
+      "reference_origin": "generated_spec_aligned_fixture",
+      "reference_required": true,
+      "reference_supplied": true,
+      "score": 0,
+      "starting_point": "imported_reference"
+    },
+    {
+      "agent_error": {
+        "attempts": [
+          {
+            "attempt_number": 1,
+            "cache_key": "84fe1185f149a54da701219c76649e7992b69d135623f55c112c4f9d83134627",
+            "cached": false,
+            "corrective_instruction": null,
+            "cost": null,
+            "error": null,
+            "error_category": null,
+            "fallback_reason": null,
+            "latency_ms": 34061,
+            "model": "grok_direct",
+            "output_hash": "7c3097791612f52f1a187bad09f4256c81f3c5d84f0a7ca5f1b6860983ea2422",
+            "prompt_hash": "e25bbab63fe8330f85befdfd990055cd46c020f31389489ff5c77acab0286a37",
+            "provider": "xai",
+            "provider_request_id": null,
+            "qa_checks": [
+              {
+                "code": "decodable_image",
+                "evidence": {
+                  "format": "JPEG",
+                  "height": 1152,
+                  "width": 864
+                },
+                "message": "candidate is a decodable raster image",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "review_resolution",
+                "evidence": {
+                  "height": 1152,
+                  "width": 864
+                },
+                "message": "candidate has reviewable raster dimensions",
+                "passed": true,
+                "severity": "warning"
+              },
+              {
+                "code": "candidate_changed",
+                "evidence": {},
+                "message": "candidate bytes differ from the source",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "requested_change",
+                "evidence": {},
+                "message": "the requested change was not visibly applied",
+                "passed": false,
+                "severity": "hard"
+              },
+              {
+                "code": "protected_regions",
+                "evidence": {},
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "unintended_drift",
+                "evidence": {
+                  "changes": [],
+                  "severity": "none"
+                },
+                "message": "no unintended changes detected",
+                "passed": true,
+                "severity": "warning"
+              },
+              {
+                "code": "spec_change",
+                "evidence": {
+                  "spec_delta": [
+                    {
+                      "from": "white",
+                      "kind": "removed",
+                      "label": "metal colour",
+                      "path": "metal.color",
+                      "to": "\u2014"
+                    },
+                    {
+                      "from": "18",
+                      "kind": "removed",
+                      "label": "metal karat",
+                      "path": "metal.karat",
+                      "to": "\u2014"
+                    },
+                    {
+                      "from": "gold",
+                      "kind": "changed",
+                      "label": "metal material",
+                      "path": "metal.material",
+                      "to": "platinum"
+                    }
+                  ]
+                },
+                "message": "visible local change does not match the validated result spec",
+                "passed": false,
+                "severity": "hard"
+              },
+              {
+                "code": "edit_domain:metal_identity",
+                "evidence": {
+                  "domain": "metal_identity",
+                  "spec_delta": [
+                    {
+                      "from": "white",
+                      "kind": "removed",
+                      "label": "metal colour",
+                      "path": "metal.color",
+                      "to": "\u2014"
+                    },
+                    {
+                      "from": "18",
+                      "kind": "removed",
+                      "label": "metal karat",
+                      "path": "metal.karat",
+                      "to": "\u2014"
+                    },
+                    {
+                      "from": "gold",
+                      "kind": "changed",
+                      "label": "metal material",
+                      "path": "metal.material",
+                      "to": "platinum"
+                    }
+                  ]
+                },
+                "message": "visible edit does not match the 'metal_identity' result facts",
+                "passed": false,
+                "severity": "hard"
+              },
+              {
+                "code": "crosscheck_requested_change",
+                "evidence": {},
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "crosscheck_frozen_facts",
+                "evidence": {},
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "crosscheck_unintended_drift",
+                "evidence": {
+                  "changes": [],
+                  "severity": "none"
+                },
+                "message": "independent audit found no unintended changes",
+                "passed": true,
+                "severity": "warning"
+              },
+              {
+                "code": "crosscheck_edit_domains",
+                "evidence": {
+                  "domain_mismatches": []
+                },
+                "message": "independent audit matched every required edit domain",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "text_or_branding",
+                "evidence": {},
+                "message": "no text or branding introduced",
+                "passed": true,
+                "severity": "hard"
+              }
+            ],
+            "qa_verdict": "fail",
+            "quality_score": 15.0,
+            "route": "grok_edit",
+            "usage": null
+          },
+          {
+            "attempt_number": 2,
+            "cache_key": "024b9bc2af3ac67ca8c0eb33bc3a0cdc75711531dfb028eab43e8dec364ee7e8",
+            "cached": false,
+            "corrective_instruction": "- requested_change: the requested change was not visibly applied.\n- spec_change: visible local change does not match the validated result spec. Evidence: {\"spec_delta\": [{\"from\": \"white\", \"kind\": \"removed\", \"label\": \"metal colour\", \"path\": \"metal.color\", \"to\": \"\\u2014\"}, {\"from\": \"18\", \"kind\": \"removed\", \"label\": \"metal karat\", \"path\": \"metal.karat\", \"to\": \"\\u2014\"}, {\"from\": \"gold\", \"kind\": \"changed\", \"label\": \"metal material\", \"path\": \"metal.material\", \"to\": \"platinum\"}]}\n- edit_domain:metal_identity: visible edit does not match the 'metal_identity' result facts. Evidence: {\"domain\": \"metal_identity\", \"spec_delta\": [{\"from\": \"white\", \"kind\": \"removed\", \"label\": \"metal colour\", \"path\": \"metal.color\", \"to\": \"\\u2014\"}, {\"from\": \"18\", \"kind\": \"removed\", \"label\": \"metal karat\", \"path\": \"metal.karat\", \"to\": \"\\u2014\"}, {\"from\": \"gold\", \"kind\": \"changed\", \"label\": \"metal material\", \"path\": \"metal.material\", \"to\": \"platinum\"}]}",
+            "cost": null,
+            "error": null,
+            "error_category": null,
+            "fallback_reason": null,
+            "latency_ms": 28530,
+            "model": "grok_direct",
+            "output_hash": "60730d5fa583954f6e517deaaa4589d37c992aeb75586b40d89ba543aeccfa1f",
+            "prompt_hash": "7b7c5e1a23c520c21c5fa704ac916cb836cf4e983016d3d3f5e76ae70353a862",
+            "provider": "xai",
+            "provider_request_id": null,
+            "qa_checks": [
+              {
+                "code": "decodable_image",
+                "evidence": {
+                  "format": "JPEG",
+                  "height": 1152,
+                  "width": 864
+                },
+                "message": "candidate is a decodable raster image",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "review_resolution",
+                "evidence": {
+                  "height": 1152,
+                  "width": 864
+                },
+                "message": "candidate has reviewable raster dimensions",
+                "passed": true,
+                "severity": "warning"
+              },
+              {
+                "code": "candidate_changed",
+                "evidence": {},
+                "message": "candidate bytes differ from the source",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "requested_change",
+                "evidence": {},
+                "message": "the requested change was not visibly applied",
+                "passed": false,
+                "severity": "hard"
+              },
+              {
+                "code": "protected_regions",
+                "evidence": {},
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "unintended_drift",
+                "evidence": {
+                  "changes": [],
+                  "severity": "none"
+                },
+                "message": "no unintended changes detected",
+                "passed": true,
+                "severity": "warning"
+              },
+              {
+                "code": "spec_change",
+                "evidence": {
+                  "spec_delta": [
+                    {
+                      "from": "white",
+                      "kind": "removed",
+                      "label": "metal colour",
+                      "path": "metal.color",
+                      "to": "\u2014"
+                    },
+                    {
+                      "from": "18",
+                      "kind": "removed",
+                      "label": "metal karat",
+                      "path": "metal.karat",
+                      "to": "\u2014"
+                    },
+                    {
+                      "from": "gold",
+                      "kind": "changed",
+                      "label": "metal material",
+                      "path": "metal.material",
+                      "to": "platinum"
+                    }
+                  ]
+                },
+                "message": "visible local change does not match the validated result spec",
+                "passed": false,
+                "severity": "hard"
+              },
+              {
+                "code": "edit_domain:metal_identity",
+                "evidence": {
+                  "domain": "metal_identity",
+                  "spec_delta": [
+                    {
+                      "from": "white",
+                      "kind": "removed",
+                      "label": "metal colour",
+                      "path": "metal.color",
+                      "to": "\u2014"
+                    },
+                    {
+                      "from": "18",
+                      "kind": "removed",
+                      "label": "metal karat",
+                      "path": "metal.karat",
+                      "to": "\u2014"
+                    },
+                    {
+                      "from": "gold",
+                      "kind": "changed",
+                      "label": "metal material",
+                      "path": "metal.material",
+                      "to": "platinum"
+                    }
+                  ]
+                },
+                "message": "visible edit does not match the 'metal_identity' result facts",
+                "passed": false,
+                "severity": "hard"
+              },
+              {
+                "code": "crosscheck_requested_change",
+                "evidence": {},
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "crosscheck_frozen_facts",
+                "evidence": {},
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "crosscheck_unintended_drift",
+                "evidence": {
+                  "changes": [],
+                  "severity": "none"
+                },
+                "message": "independent audit found no unintended changes",
+                "passed": true,
+                "severity": "warning"
+              },
+              {
+                "code": "crosscheck_edit_domains",
+                "evidence": {
+                  "domain_mismatches": []
+                },
+                "message": "independent audit matched every required edit domain",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "text_or_branding",
+                "evidence": {},
+                "message": "no text or branding introduced",
+                "passed": true,
+                "severity": "hard"
+              }
+            ],
+            "qa_verdict": "fail",
+            "quality_score": 15.0,
+            "route": "grok_edit",
+            "usage": null
+          }
+        ],
+        "category": "quality",
+        "code": "image_quality_failed",
+        "message": "no candidate passed jewelry QA: requested_change, spec_change, edit_domain:metal_identity",
+        "quality": {
+          "checks": [
+            {
+              "code": "decodable_image",
+              "evidence": {
+                "format": "JPEG",
+                "height": 1152,
+                "width": 864
+              },
+              "message": "candidate is a decodable raster image",
+              "passed": true,
+              "severity": "hard"
+            },
+            {
+              "code": "review_resolution",
+              "evidence": {
+                "height": 1152,
+                "width": 864
+              },
+              "message": "candidate has reviewable raster dimensions",
+              "passed": true,
+              "severity": "warning"
+            },
+            {
+              "code": "candidate_changed",
+              "evidence": {},
+              "message": "candidate bytes differ from the source",
+              "passed": true,
+              "severity": "hard"
+            },
+            {
+              "code": "requested_change",
+              "evidence": {},
+              "message": "the requested change was not visibly applied",
+              "passed": false,
+              "severity": "hard"
+            },
+            {
+              "code": "protected_regions",
+              "evidence": {},
+              "message": "visual evidence matches the requested fact",
+              "passed": true,
+              "severity": "hard"
+            },
+            {
+              "code": "unintended_drift",
+              "evidence": {
+                "changes": [],
+                "severity": "none"
+              },
+              "message": "no unintended changes detected",
+              "passed": true,
+              "severity": "warning"
+            },
+            {
+              "code": "spec_change",
+              "evidence": {
+                "spec_delta": [
+                  {
+                    "from": "white",
+                    "kind": "removed",
+                    "label": "metal colour",
+                    "path": "metal.color",
+                    "to": "\u2014"
+                  },
+                  {
+                    "from": "18",
+                    "kind": "removed",
+                    "label": "metal karat",
+                    "path": "metal.karat",
+                    "to": "\u2014"
+                  },
+                  {
+                    "from": "gold",
+                    "kind": "changed",
+                    "label": "metal material",
+                    "path": "metal.material",
+                    "to": "platinum"
+                  }
+                ]
+              },
+              "message": "visible local change does not match the validated result spec",
+              "passed": false,
+              "severity": "hard"
+            },
+            {
+              "code": "edit_domain:metal_identity",
+              "evidence": {
+                "domain": "metal_identity",
+                "spec_delta": [
+                  {
+                    "from": "white",
+                    "kind": "removed",
+                    "label": "metal colour",
+                    "path": "metal.color",
+                    "to": "\u2014"
+                  },
+                  {
+                    "from": "18",
+                    "kind": "removed",
+                    "label": "metal karat",
+                    "path": "metal.karat",
+                    "to": "\u2014"
+                  },
+                  {
+                    "from": "gold",
+                    "kind": "changed",
+                    "label": "metal material",
+                    "path": "metal.material",
+                    "to": "platinum"
+                  }
+                ]
+              },
+              "message": "visible edit does not match the 'metal_identity' result facts",
+              "passed": false,
+              "severity": "hard"
+            },
+            {
+              "code": "crosscheck_requested_change",
+              "evidence": {},
+              "message": "visual evidence matches the requested fact",
+              "passed": true,
+              "severity": "hard"
+            },
+            {
+              "code": "crosscheck_frozen_facts",
+              "evidence": {},
+              "message": "visual evidence matches the requested fact",
+              "passed": true,
+              "severity": "hard"
+            },
+            {
+              "code": "crosscheck_unintended_drift",
+              "evidence": {
+                "changes": [],
+                "severity": "none"
+              },
+              "message": "independent audit found no unintended changes",
+              "passed": true,
+              "severity": "warning"
+            },
+            {
+              "code": "crosscheck_edit_domains",
+              "evidence": {
+                "domain_mismatches": []
+              },
+              "message": "independent audit matched every required edit domain",
+              "passed": true,
+              "severity": "hard"
+            },
+            {
+              "code": "text_or_branding",
+              "evidence": {},
+              "message": "no text or branding introduced",
+              "passed": true,
+              "severity": "hard"
+            }
+          ],
+          "notes": [
+            "images are visually identical; metal surfaces show no distinguishable change in color, tone, or finish"
+          ],
+          "score": 15.0,
+          "verdict": "fail"
+        }
+      },
+      "applied": false,
+      "attempts": 2,
+      "case": "metal-material",
+      "error_category": "quality",
+      "expected_valid": true,
+      "golden_case": "oval-solitaire-white-6-wide",
+      "kind": "edit",
+      "score": 0,
+      "severity": "major",
+      "starting_point": "imported_reference"
+    }
+  ],
+  "run": "designer-live-metal-material-crossaudit-2026-07-11"
+}

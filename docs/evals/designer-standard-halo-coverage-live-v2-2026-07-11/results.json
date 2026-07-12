@@ -1,0 +1,479 @@
+{
+  "corpus": "designer-reference-corpus-v1",
+  "coverage_summary": {
+    "all_factory_ready": false,
+    "applicable_cases": 1,
+    "blocking_cases": [
+      {
+        "blocker_count": 7,
+        "case": "oval-sapphire-halo-standard",
+        "status": "invalid"
+      }
+    ],
+    "factory_ready_cases": 0,
+    "factory_ready_rate": 0.0,
+    "gate_definition": "Factory ready only when every visible source component is mapped and independently audited with no blockers.",
+    "status_counts": {
+      "invalid": 1,
+      "pass": 0,
+      "review_required": 0,
+      "unavailable": 0
+    }
+  },
+  "pair_checks": [],
+  "provider_readiness": {
+    "fallback_configured": false,
+    "xai_configured": true
+  },
+  "rows": [
+    {
+      "case": "oval-sapphire-halo-standard",
+      "category": "ring",
+      "coverage_blockers": [
+        {
+          "code": "source_component_not_independently_audited",
+          "component_id": "stone.center",
+          "message": "stone.center has not been independently audited against the imported source.",
+          "required_resolution": "Run and retain an independent component-coverage audit."
+        },
+        {
+          "code": "source_component_not_independently_audited",
+          "component_id": "stone.group.001",
+          "message": "stone.group.001 has not been independently audited against the imported source.",
+          "required_resolution": "Run and retain an independent component-coverage audit."
+        },
+        {
+          "code": "source_component_not_independently_audited",
+          "component_id": "assembly.primary",
+          "message": "assembly.primary has not been independently audited against the imported source.",
+          "required_resolution": "Run and retain an independent component-coverage audit."
+        },
+        {
+          "code": "source_component_unresolved",
+          "component_id": "setting.primary",
+          "message": "setting.primary is visible in the source but unresolved: The source does not explicitly establish the center setting; the compiled setting is a placeholder.",
+          "required_resolution": "Designer must map the component to canonical spec paths or define it through an explicit supported form contract."
+        },
+        {
+          "code": "source_component_not_independently_audited",
+          "component_id": "setting.primary",
+          "message": "setting.primary has not been independently audited against the imported source.",
+          "required_resolution": "Run and retain an independent component-coverage audit."
+        },
+        {
+          "code": "source_component_not_independently_audited",
+          "component_id": "metal.body",
+          "message": "metal.body has not been independently audited against the imported source.",
+          "required_resolution": "Run and retain an independent component-coverage audit."
+        },
+        {
+          "code": "source_component_not_independently_audited",
+          "component_id": "band.shank",
+          "message": "band.shank has not been independently audited against the imported source.",
+          "required_resolution": "Run and retain an independent component-coverage audit."
+        }
+      ],
+      "coverage_error": "blind.001 has contradictory bidirectional mapping",
+      "coverage_status": "invalid",
+      "draft_spec": {
+        "band": {
+          "profile": "half_round",
+          "thickness_mm": 1.6,
+          "width_mm": 2.0
+        },
+        "bracelet": null,
+        "brooch": null,
+        "chain": null,
+        "composition": null,
+        "created_at": "2026-07-11T11:31:14.018220Z",
+        "created_by": "eval_designer",
+        "design_form": {
+          "elements": []
+        },
+        "design_id": "eval_oval-sapphire-halo-standard",
+        "dimension_provenance": {
+          "band.thickness_mm": {
+            "confidence": 0.4,
+            "method": "reference_vision",
+            "note": "Reference-derived starting value; verify before production.",
+            "source": "designer hand drawing / design plate",
+            "status": "estimated_from_reference"
+          },
+          "band.width_mm": {
+            "confidence": 0.4,
+            "method": "reference_vision",
+            "note": "Reference-derived starting value; verify before production.",
+            "source": "designer hand drawing / design plate",
+            "status": "estimated_from_reference"
+          },
+          "ring_size.value": {
+            "confidence": 0.4,
+            "method": "reference_vision",
+            "note": "Reference-derived starting value; verify before production.",
+            "source": "designer hand drawing / design plate",
+            "status": "estimated_from_reference"
+          },
+          "setting.prong_tip_mm": {
+            "confidence": 0.4,
+            "method": "reference_vision",
+            "note": "Reference-derived starting value; verify before production.",
+            "source": "designer hand drawing / design plate",
+            "status": "estimated_from_reference"
+          },
+          "side_stones[0].dimensions_mm.depth": {
+            "confidence": 0.4,
+            "method": "reference_vision",
+            "note": "Reference-derived starting value; verify before production.",
+            "source": "designer hand drawing / design plate",
+            "status": "estimated_from_reference"
+          },
+          "side_stones[0].dimensions_mm.length": {
+            "confidence": 0.4,
+            "method": "reference_vision",
+            "note": "Reference-derived starting value; verify before production.",
+            "source": "designer hand drawing / design plate",
+            "status": "estimated_from_reference"
+          },
+          "side_stones[0].dimensions_mm.width": {
+            "confidence": 0.4,
+            "method": "reference_vision",
+            "note": "Reference-derived starting value; verify before production.",
+            "source": "designer hand drawing / design plate",
+            "status": "estimated_from_reference"
+          },
+          "stone.dimensions_mm.depth": {
+            "confidence": 0.4,
+            "method": "reference_vision",
+            "note": "Reference-derived starting value; verify before production.",
+            "source": "designer hand drawing / design plate",
+            "status": "estimated_from_reference"
+          },
+          "stone.dimensions_mm.length": {
+            "confidence": 0.4,
+            "method": "reference_vision",
+            "note": "Reference-derived starting value; verify before production.",
+            "source": "designer hand drawing / design plate",
+            "status": "estimated_from_reference"
+          },
+          "stone.dimensions_mm.width": {
+            "confidence": 0.4,
+            "method": "reference_vision",
+            "note": "Reference-derived starting value; verify before production.",
+            "source": "designer hand drawing / design plate",
+            "status": "estimated_from_reference"
+          }
+        },
+        "drop": null,
+        "jewelry_type": "ring",
+        "metal": {
+          "color": "white",
+          "finish": "high_polish",
+          "karat": 18,
+          "material": "gold"
+        },
+        "mode": "pro",
+        "notes_to_factory": "DRAFT FROM DESIGN PLATE \u2014 visual estimates and placeholders require designer confirmation before factory release. center stone species is not named; diamond is a placeholder center stone dimensions are not confirmed; using nominal 8 mm placeholder halo stone count is not confirmed; showing one representative stone halo stone species is not named; diamond is a placeholder halo stone dimensions are not confirmed; using nominal 2 mm placeholder setting/prong count is not confirmed; using four-prong placeholder metal karat is not explicit in 'white metal (alloy TBD)'; using 18k placeholder band width is not designer-confirmed; using 2.0 mm placeholder ring size is not established by the plate; using US 6.5 placeholder SOURCE COMPONENT UNRESOLVED setting.primary: The source does not explicitly establish the center setting; the compiled setting is a placeholder. INDEPENDENT SOURCE-COVERAGE AUDIT REQUIRED before factory release: stone.center, stone.group.001, assembly.primary, setting.primary, metal.body, band.shank",
+        "pendant": null,
+        "ring_size": {
+          "inner_diameter_mm": null,
+          "system": "US",
+          "value": 6.5
+        },
+        "schema_version": 1,
+        "setting": {
+          "gallery_height_mm": null,
+          "prong_count": 4,
+          "prong_tip_mm": 0.9,
+          "style": "4_prong_basket"
+        },
+        "side_stones": [
+          {
+            "carat": 0.031,
+            "clarity": null,
+            "color": {
+              "gia": "TBD",
+              "hue_code": null,
+              "saturation": null,
+              "tone": null,
+              "trade": "TBD"
+            },
+            "count": 1,
+            "culet": null,
+            "cut": "round_brilliant",
+            "depth_pct": null,
+            "dimensions_mm": {
+              "depth": 1.22,
+              "length": 2.0,
+              "width": 2.0
+            },
+            "girdle": null,
+            "inscription": null,
+            "lab": null,
+            "mount": null,
+            "origin": null,
+            "phenomena": [],
+            "position": "halo",
+            "species": "diamond",
+            "table_pct": null,
+            "treatment": null
+          }
+        ],
+        "source_component_coverage": {
+          "components": [
+            {
+              "canonical_spec_paths": [
+                "stone"
+              ],
+              "component_id": "stone.center",
+              "independent_audit": null,
+              "source_confidence": 0.0,
+              "source_description": "blue oval faceted stone (species TBD)",
+              "source_view": "plate_composite",
+              "unresolved_reason": null
+            },
+            {
+              "canonical_spec_paths": [
+                "side_stones[0]"
+              ],
+              "component_id": "stone.group.001",
+              "independent_audit": null,
+              "source_confidence": 0.0,
+              "source_description": "small round white stones (species TBD)",
+              "source_view": "plate_composite",
+              "unresolved_reason": null
+            },
+            {
+              "canonical_spec_paths": [
+                "template"
+              ],
+              "component_id": "assembly.primary",
+              "independent_audit": null,
+              "source_confidence": 0.0,
+              "source_description": "ring: central oval blue faceted stone in halo of small round white stones, with plain shank below",
+              "source_view": "plate_composite",
+              "unresolved_reason": null
+            },
+            {
+              "canonical_spec_paths": [],
+              "component_id": "setting.primary",
+              "independent_audit": null,
+              "source_confidence": 0.0,
+              "source_description": "ring: central oval blue faceted stone in halo of small round white stones, with plain shank below",
+              "source_view": "plate_composite",
+              "unresolved_reason": "The source does not explicitly establish the center setting; the compiled setting is a placeholder."
+            },
+            {
+              "canonical_spec_paths": [
+                "metal"
+              ],
+              "component_id": "metal.body",
+              "independent_audit": null,
+              "source_confidence": 0.0,
+              "source_description": "white metal (alloy TBD)",
+              "source_view": "plate_composite",
+              "unresolved_reason": null
+            },
+            {
+              "canonical_spec_paths": [
+                "band"
+              ],
+              "component_id": "band.shank",
+              "independent_audit": null,
+              "source_confidence": 0.0,
+              "source_description": "ring: central oval blue faceted stone in halo of small round white stones, with plain shank below",
+              "source_view": "plate_composite",
+              "unresolved_reason": null
+            }
+          ],
+          "source_kind": "designer_plate"
+        },
+        "stone": {
+          "carat": 2.307,
+          "clarity": null,
+          "color": {
+            "gia": "TBD",
+            "hue_code": null,
+            "saturation": null,
+            "tone": null,
+            "trade": "TBD"
+          },
+          "count": 1,
+          "culet": null,
+          "cut": "oval_brilliant",
+          "depth_pct": null,
+          "dimensions_mm": {
+            "depth": 5.12,
+            "length": 8.0,
+            "width": 8.0
+          },
+          "girdle": null,
+          "inscription": null,
+          "lab": null,
+          "mount": null,
+          "origin": null,
+          "phenomena": [],
+          "position": "center",
+          "species": "diamond",
+          "table_pct": null,
+          "treatment": null
+        },
+        "template": "halo_prong",
+        "version": 1
+      },
+      "input_kind": "multi_view_colored_design_plate",
+      "latency_ms": 39804,
+      "read": {
+        "assembly": "ring: central oval blue faceted stone in halo of small round white stones, with plain shank below",
+        "hand_written": [],
+        "jewelry_type": "ring",
+        "measurements": [],
+        "metal": "white metal (alloy TBD)",
+        "scale_anchor": null,
+        "scaled": false,
+        "source": "plate",
+        "stones": [
+          {
+            "carat_each": null,
+            "confidence": 0.0,
+            "qty": 1,
+            "size_mm": "TBD",
+            "type": "blue oval faceted stone (species TBD)"
+          },
+          {
+            "carat_each": null,
+            "confidence": 0.0,
+            "qty": 1,
+            "size_mm": "TBD",
+            "type": "small round white stones (species TBD)"
+          }
+        ]
+      },
+      "read_score": {
+        "checks": {
+          "authoritative_text": true,
+          "expected_visual_terms": true,
+          "jewelry_type": true,
+          "minimum_stone_groups": true
+        },
+        "multi_design_warning": false,
+        "observed_jewelry_type": "ring",
+        "score": 100.0,
+        "status": "pass",
+        "stone_group_count": 2,
+        "term_hits": [
+          "blue",
+          "oval",
+          "halo"
+        ],
+        "transcription_hits": []
+      },
+      "source": {
+        "available": true,
+        "decodable": true,
+        "format": "JPEG",
+        "hash_matches": true,
+        "path": "/Users/mattfb/.codex/attachments/c2fd41d0-b236-43ef-ada9-e9479718c771/image-112.jpg",
+        "sha256": "9cbab9109aedccddfd3fd964beba815a489c4b8cecae76be7a843137bdf76b08",
+        "size": [
+          1080,
+          1440
+        ]
+      },
+      "source_component_coverage": {
+        "components": [
+          {
+            "canonical_spec_paths": [
+              "stone"
+            ],
+            "component_id": "stone.center",
+            "independent_audit": null,
+            "source_confidence": 0.0,
+            "source_description": "blue oval faceted stone (species TBD)",
+            "source_view": "plate_composite",
+            "unresolved_reason": null
+          },
+          {
+            "canonical_spec_paths": [
+              "side_stones[0]"
+            ],
+            "component_id": "stone.group.001",
+            "independent_audit": null,
+            "source_confidence": 0.0,
+            "source_description": "small round white stones (species TBD)",
+            "source_view": "plate_composite",
+            "unresolved_reason": null
+          },
+          {
+            "canonical_spec_paths": [
+              "template"
+            ],
+            "component_id": "assembly.primary",
+            "independent_audit": null,
+            "source_confidence": 0.0,
+            "source_description": "ring: central oval blue faceted stone in halo of small round white stones, with plain shank below",
+            "source_view": "plate_composite",
+            "unresolved_reason": null
+          },
+          {
+            "canonical_spec_paths": [],
+            "component_id": "setting.primary",
+            "independent_audit": null,
+            "source_confidence": 0.0,
+            "source_description": "ring: central oval blue faceted stone in halo of small round white stones, with plain shank below",
+            "source_view": "plate_composite",
+            "unresolved_reason": "The source does not explicitly establish the center setting; the compiled setting is a placeholder."
+          },
+          {
+            "canonical_spec_paths": [
+              "metal"
+            ],
+            "component_id": "metal.body",
+            "independent_audit": null,
+            "source_confidence": 0.0,
+            "source_description": "white metal (alloy TBD)",
+            "source_view": "plate_composite",
+            "unresolved_reason": null
+          },
+          {
+            "canonical_spec_paths": [
+              "band"
+            ],
+            "component_id": "band.shank",
+            "independent_audit": null,
+            "source_confidence": 0.0,
+            "source_description": "ring: central oval blue faceted stone in halo of small round white stones, with plain shank below",
+            "source_view": "plate_composite",
+            "unresolved_reason": null
+          }
+        ],
+        "source_kind": "designer_plate"
+      },
+      "uncertainties": [
+        "DRAFT FROM DESIGN PLATE \u2014 visual estimates and placeholders require designer confirmation before factory release.",
+        "center stone species is not named; diamond is a placeholder",
+        "center stone dimensions are not confirmed; using nominal 8 mm placeholder",
+        "halo stone count is not confirmed; showing one representative stone",
+        "halo stone species is not named; diamond is a placeholder",
+        "halo stone dimensions are not confirmed; using nominal 2 mm placeholder",
+        "setting/prong count is not confirmed; using four-prong placeholder",
+        "metal karat is not explicit in 'white metal (alloy TBD)'; using 18k placeholder",
+        "band width is not designer-confirmed; using 2.0 mm placeholder",
+        "ring size is not established by the plate; using US 6.5 placeholder",
+        "SOURCE COMPONENT UNRESOLVED setting.primary: The source does not explicitly establish the center setting; the compiled setting is a placeholder.",
+        "INDEPENDENT SOURCE-COVERAGE AUDIT REQUIRED before factory release: stone.center, stone.group.001, assembly.primary, setting.primary, metal.body, band.shank"
+      ],
+      "workflows": [
+        "plate_read",
+        "draft_spec",
+        "lineart",
+        "beauty_render",
+        "localized_edit",
+        "factory_sheet",
+        "product_photography"
+      ]
+    }
+  ],
+  "run": "designer-standard-halo-coverage-live-v2-2026-07-11",
+  "source_policy": "Founder-supplied evaluation references only. Do not publish, train on, or treat as customer-owned production assets. Third-party branding and social watermarks must never appear in accepted outputs.",
+  "stage": "coverage"
+}

@@ -1,0 +1,2042 @@
+{
+  "auto_accepted_warning": false,
+  "candidate_file": "warning-chain-edit.png",
+  "catalog_apply": {
+    "body": {
+      "component_path": "chain.style",
+      "design_version": 1,
+      "image_run_id": "run_18f9d8bf51c0697b",
+      "isolation_target": "the complete visible chain-link run only, excluding the pendant, bail, stones, setting, and clasp",
+      "next_spec": {
+        "chain": {
+          "clasp": "lobster",
+          "geometry": {
+            "chain_width_mm": 1.4,
+            "construction": "open_link",
+            "end_ring_outer_diameter_mm": 2.4,
+            "link_thickness_mm": 0.25,
+            "links": [
+              {
+                "inside_length_mm": 2.0,
+                "inside_width_mm": 0.8,
+                "length_mm": 2.6,
+                "role": "standard"
+              }
+            ],
+            "links_soldered": true,
+            "profile_thickness_mm": 0.45
+          },
+          "length_mm": 450.0,
+          "pendant_connection": "slides_through_bail",
+          "production": {
+            "mode": "custom",
+            "reference": "eval-target-curb-geometry-v1",
+            "reference_kind": "dimensioned_drawing"
+          },
+          "style": "curb"
+        },
+        "created_at": "2026-07-11T12:03:14.644706Z",
+        "created_by": "usr_test_designer",
+        "design_form": {
+          "elements": []
+        },
+        "design_id": "dsn_1bd9f4bf333930c7",
+        "dimension_provenance": {
+          "chain.geometry.chain_width_mm": {
+            "confidence": 1.0,
+            "method": "designer_input",
+            "note": "Confirmed with the target chain manufacturing record.",
+            "source": "designer-confirmed chain catalog target by usr_test_designer",
+            "status": "designer_confirmed"
+          },
+          "chain.geometry.end_ring_outer_diameter_mm": {
+            "confidence": 1.0,
+            "method": "designer_input",
+            "note": "Confirmed with the target chain manufacturing record.",
+            "source": "designer-confirmed chain catalog target by usr_test_designer",
+            "status": "designer_confirmed"
+          },
+          "chain.geometry.link_thickness_mm": {
+            "confidence": 1.0,
+            "method": "designer_input",
+            "note": "Confirmed with the target chain manufacturing record.",
+            "source": "designer-confirmed chain catalog target by usr_test_designer",
+            "status": "designer_confirmed"
+          },
+          "chain.geometry.links[0].inside_length_mm": {
+            "confidence": 1.0,
+            "method": "designer_input",
+            "note": "Confirmed with the target chain manufacturing record.",
+            "source": "designer-confirmed chain catalog target by usr_test_designer",
+            "status": "designer_confirmed"
+          },
+          "chain.geometry.links[0].inside_width_mm": {
+            "confidence": 1.0,
+            "method": "designer_input",
+            "note": "Confirmed with the target chain manufacturing record.",
+            "source": "designer-confirmed chain catalog target by usr_test_designer",
+            "status": "designer_confirmed"
+          },
+          "chain.geometry.links[0].length_mm": {
+            "confidence": 1.0,
+            "method": "designer_input",
+            "note": "Confirmed with the target chain manufacturing record.",
+            "source": "designer-confirmed chain catalog target by usr_test_designer",
+            "status": "designer_confirmed"
+          },
+          "chain.geometry.profile_thickness_mm": {
+            "confidence": 1.0,
+            "method": "designer_input",
+            "note": "Confirmed with the target chain manufacturing record.",
+            "source": "designer-confirmed chain catalog target by usr_test_designer",
+            "status": "designer_confirmed"
+          },
+          "pendant.bail_height_mm": {
+            "confidence": 0.45,
+            "method": "reference_vision",
+            "note": "Test estimate; designer measurement required.",
+            "source": "generated clean single-necklace control",
+            "status": "estimated_from_reference"
+          },
+          "pendant.bail_inner_diameter_mm": {
+            "confidence": 0.45,
+            "method": "reference_vision",
+            "note": "Test estimate; designer measurement required.",
+            "source": "generated clean single-necklace control",
+            "status": "estimated_from_reference"
+          },
+          "pendant.drop_mm": {
+            "confidence": 0.45,
+            "method": "reference_vision",
+            "note": "Test estimate; designer measurement required.",
+            "source": "generated clean single-necklace control",
+            "status": "estimated_from_reference"
+          },
+          "stone.dimensions_mm.depth": {
+            "confidence": 0.45,
+            "method": "reference_vision",
+            "note": "Test estimate; designer measurement required.",
+            "source": "generated clean single-necklace control",
+            "status": "estimated_from_reference"
+          },
+          "stone.dimensions_mm.length": {
+            "confidence": 0.45,
+            "method": "reference_vision",
+            "note": "Test estimate; designer measurement required.",
+            "source": "generated clean single-necklace control",
+            "status": "estimated_from_reference"
+          },
+          "stone.dimensions_mm.width": {
+            "confidence": 0.45,
+            "method": "reference_vision",
+            "note": "Test estimate; designer measurement required.",
+            "source": "generated clean single-necklace control",
+            "status": "estimated_from_reference"
+          }
+        },
+        "jewelry_type": "necklace",
+        "metal": {
+          "color": "yellow",
+          "finish": "high_polish",
+          "karat": 18,
+          "material": "gold"
+        },
+        "mode": "pro",
+        "notes_to_factory": "LIVE WORKFLOW TEST ONLY. Test-actor geometry approximates the visible flower necklace and is not a measurement or license to manufacture the pictured third-party design.",
+        "pendant": {
+          "bail_height_mm": 4.0,
+          "bail_inner_diameter_mm": 3.0,
+          "drop_mm": 18.0
+        },
+        "schema_version": 1,
+        "setting": {
+          "prong_count": 4,
+          "prong_tip_mm": 0.6,
+          "style": "prong_cluster"
+        },
+        "side_stones": [
+          {
+            "carat": 0.05,
+            "color": {
+              "gia": "F",
+              "trade": "colorless"
+            },
+            "count": 5,
+            "cut": "pear",
+            "dimensions_mm": {
+              "depth": 1.3,
+              "length": 3.0,
+              "width": 2.0
+            },
+            "phenomena": [],
+            "position": "flower_petals",
+            "species": "diamond"
+          }
+        ],
+        "stone": {
+          "carat": 0.46,
+          "color": {
+            "gia": "medium vivid green",
+            "trade": "Muzo Green"
+          },
+          "count": 1,
+          "cut": "cushion",
+          "dimensions_mm": {
+            "depth": 3.1,
+            "length": 5.0,
+            "width": 5.0
+          },
+          "phenomena": [],
+          "species": "emerald"
+        },
+        "template": "cluster_pendant",
+        "version": 1
+      },
+      "option_id": "curb",
+      "project": {
+        "active_asset_id": "ast_b27dceb4306f0c3a",
+        "active_design_version": 1,
+        "active_revision": {
+          "asset_id": "ast_b27dceb4306f0c3a",
+          "capability": "IMPORTED_REFERENCE",
+          "created_at": "2026-07-11T12:03:14.644706",
+          "created_by": "usr_test_designer",
+          "design_version": 1,
+          "image_url": "/assets/ast_b27dceb4306f0c3a/image",
+          "instruction": "Designer-confirmed imported reference",
+          "legacy_provenance": false,
+          "media_type": "image/jpeg",
+          "pinned": false,
+          "provenance": "imported_reference",
+          "revision": 1,
+          "root_id": "ast_b27dceb4306f0c3a"
+        },
+        "assets": [
+          {
+            "asset_id": "ast_b27dceb4306f0c3a",
+            "capability": "IMPORTED_REFERENCE",
+            "created_at": "2026-07-11T12:03:14.644706",
+            "created_by": "usr_test_designer",
+            "design_version": 1,
+            "image_url": "/assets/ast_b27dceb4306f0c3a/image",
+            "instruction": "Designer-confirmed imported reference",
+            "legacy_provenance": false,
+            "media_type": "image/jpeg",
+            "pinned": false,
+            "provenance": "imported_reference",
+            "revision": 1,
+            "root_id": "ast_b27dceb4306f0c3a"
+          }
+        ],
+        "collection": "Designer workflow acceptance",
+        "counts": {
+          "IMPORTED_REFERENCE": 1
+        },
+        "cover_asset_id": "ast_b27dceb4306f0c3a",
+        "created_at": "2026-07-11T12:03:14.644706",
+        "derived_assets": [],
+        "design_id": "dsn_1bd9f4bf333930c7",
+        "factory_blockers": [],
+        "factory_ready": false,
+        "has_factory_drawing": false,
+        "id": "ast_b27dceb4306f0c3a",
+        "image_run_ids": [
+          "run_18f9d8bf51c0697b"
+        ],
+        "item_count": 1,
+        "items": [
+          {
+            "asset_id": "ast_b27dceb4306f0c3a",
+            "capability": "IMPORTED_REFERENCE",
+            "created_at": "2026-07-11T12:03:14.644706",
+            "created_by": "usr_test_designer",
+            "design_version": 1,
+            "image_url": "/assets/ast_b27dceb4306f0c3a/image",
+            "instruction": "Designer-confirmed imported reference",
+            "legacy_provenance": false,
+            "media_type": "image/jpeg",
+            "pinned": false,
+            "provenance": "imported_reference",
+            "revision": 1,
+            "root_id": "ast_b27dceb4306f0c3a"
+          }
+        ],
+        "latest_design_version": 1,
+        "owner": "usr_test_designer",
+        "primary_revision_count": 1,
+        "revisions": [
+          {
+            "asset_id": "ast_b27dceb4306f0c3a",
+            "capability": "IMPORTED_REFERENCE",
+            "created_at": "2026-07-11T12:03:14.644706",
+            "created_by": "usr_test_designer",
+            "design_version": 1,
+            "image_url": "/assets/ast_b27dceb4306f0c3a/image",
+            "instruction": "Designer-confirmed imported reference",
+            "legacy_provenance": false,
+            "media_type": "image/jpeg",
+            "pinned": false,
+            "provenance": "imported_reference",
+            "revision": 1,
+            "root_id": "ast_b27dceb4306f0c3a"
+          }
+        ],
+        "root_id": "ast_b27dceb4306f0c3a",
+        "spec": {
+          "band": null,
+          "bracelet": null,
+          "brooch": null,
+          "chain": {
+            "clasp": "lobster",
+            "geometry": {
+              "chain_width_mm": 1.0,
+              "construction": "open_link",
+              "end_ring_outer_diameter_mm": 2.0,
+              "link_thickness_mm": 0.2,
+              "links": [
+                {
+                  "inside_length_mm": 1.5,
+                  "inside_width_mm": 0.6,
+                  "length_mm": 2.0,
+                  "role": "standard"
+                }
+              ],
+              "links_soldered": true,
+              "profile_thickness_mm": 0.35
+            },
+            "length_mm": 450.0,
+            "pendant_connection": "slides_through_bail",
+            "production": {
+              "mode": "custom",
+              "reference": "eval-source-cable-geometry-v1",
+              "reference_kind": "dimensioned_drawing"
+            },
+            "style": "cable"
+          },
+          "composition": null,
+          "created_at": "2026-07-11T12:03:14.644706Z",
+          "created_by": "usr_test_designer",
+          "design_form": {
+            "elements": []
+          },
+          "design_id": "dsn_1bd9f4bf333930c7",
+          "dimension_provenance": {
+            "chain.geometry.chain_width_mm": {
+              "confidence": 0.45,
+              "method": "reference_vision",
+              "note": "Test estimate; designer measurement required.",
+              "source": "generated clean single-necklace control",
+              "status": "estimated_from_reference"
+            },
+            "chain.geometry.end_ring_outer_diameter_mm": {
+              "confidence": 0.45,
+              "method": "reference_vision",
+              "note": "Test estimate; designer measurement required.",
+              "source": "generated clean single-necklace control",
+              "status": "estimated_from_reference"
+            },
+            "chain.geometry.link_thickness_mm": {
+              "confidence": 0.45,
+              "method": "reference_vision",
+              "note": "Test estimate; designer measurement required.",
+              "source": "generated clean single-necklace control",
+              "status": "estimated_from_reference"
+            },
+            "chain.geometry.links[0].inside_length_mm": {
+              "confidence": 0.45,
+              "method": "reference_vision",
+              "note": "Test estimate; designer measurement required.",
+              "source": "generated clean single-necklace control",
+              "status": "estimated_from_reference"
+            },
+            "chain.geometry.links[0].inside_width_mm": {
+              "confidence": 0.45,
+              "method": "reference_vision",
+              "note": "Test estimate; designer measurement required.",
+              "source": "generated clean single-necklace control",
+              "status": "estimated_from_reference"
+            },
+            "chain.geometry.links[0].length_mm": {
+              "confidence": 0.45,
+              "method": "reference_vision",
+              "note": "Test estimate; designer measurement required.",
+              "source": "generated clean single-necklace control",
+              "status": "estimated_from_reference"
+            },
+            "chain.geometry.profile_thickness_mm": {
+              "confidence": 0.45,
+              "method": "reference_vision",
+              "note": "Test estimate; designer measurement required.",
+              "source": "generated clean single-necklace control",
+              "status": "estimated_from_reference"
+            },
+            "pendant.bail_height_mm": {
+              "confidence": 0.45,
+              "method": "reference_vision",
+              "note": "Test estimate; designer measurement required.",
+              "source": "generated clean single-necklace control",
+              "status": "estimated_from_reference"
+            },
+            "pendant.bail_inner_diameter_mm": {
+              "confidence": 0.45,
+              "method": "reference_vision",
+              "note": "Test estimate; designer measurement required.",
+              "source": "generated clean single-necklace control",
+              "status": "estimated_from_reference"
+            },
+            "pendant.drop_mm": {
+              "confidence": 0.45,
+              "method": "reference_vision",
+              "note": "Test estimate; designer measurement required.",
+              "source": "generated clean single-necklace control",
+              "status": "estimated_from_reference"
+            },
+            "stone.dimensions_mm.depth": {
+              "confidence": 0.45,
+              "method": "reference_vision",
+              "note": "Test estimate; designer measurement required.",
+              "source": "generated clean single-necklace control",
+              "status": "estimated_from_reference"
+            },
+            "stone.dimensions_mm.length": {
+              "confidence": 0.45,
+              "method": "reference_vision",
+              "note": "Test estimate; designer measurement required.",
+              "source": "generated clean single-necklace control",
+              "status": "estimated_from_reference"
+            },
+            "stone.dimensions_mm.width": {
+              "confidence": 0.45,
+              "method": "reference_vision",
+              "note": "Test estimate; designer measurement required.",
+              "source": "generated clean single-necklace control",
+              "status": "estimated_from_reference"
+            }
+          },
+          "drop": null,
+          "jewelry_type": "necklace",
+          "metal": {
+            "color": "yellow",
+            "finish": "high_polish",
+            "karat": 18,
+            "material": "gold"
+          },
+          "mode": "pro",
+          "notes_to_factory": "LIVE WORKFLOW TEST ONLY. Test-actor geometry approximates the visible flower necklace and is not a measurement or license to manufacture the pictured third-party design.",
+          "pendant": {
+            "bail_height_mm": 4.0,
+            "bail_inner_diameter_mm": 3.0,
+            "drop_mm": 18.0
+          },
+          "ring_size": null,
+          "schema_version": 1,
+          "setting": {
+            "gallery_height_mm": null,
+            "prong_count": 4,
+            "prong_tip_mm": 0.6,
+            "style": "prong_cluster"
+          },
+          "side_stones": [
+            {
+              "carat": 0.05,
+              "clarity": null,
+              "color": {
+                "gia": "F",
+                "hue_code": null,
+                "saturation": null,
+                "tone": null,
+                "trade": "colorless"
+              },
+              "count": 5,
+              "culet": null,
+              "cut": "pear",
+              "depth_pct": null,
+              "dimensions_mm": {
+                "depth": 1.3,
+                "length": 3.0,
+                "width": 2.0
+              },
+              "girdle": null,
+              "inscription": null,
+              "lab": null,
+              "mount": null,
+              "origin": null,
+              "phenomena": [],
+              "position": "flower_petals",
+              "species": "diamond",
+              "table_pct": null,
+              "treatment": null
+            }
+          ],
+          "source_component_coverage": null,
+          "stone": {
+            "carat": 0.46,
+            "clarity": null,
+            "color": {
+              "gia": "medium vivid green",
+              "hue_code": null,
+              "saturation": null,
+              "tone": null,
+              "trade": "Muzo Green"
+            },
+            "count": 1,
+            "culet": null,
+            "cut": "cushion",
+            "depth_pct": null,
+            "dimensions_mm": {
+              "depth": 3.1,
+              "length": 5.0,
+              "width": 5.0
+            },
+            "girdle": null,
+            "inscription": null,
+            "lab": null,
+            "mount": null,
+            "origin": null,
+            "phenomena": [],
+            "position": null,
+            "species": "emerald",
+            "table_pct": null,
+            "treatment": null
+          },
+          "template": "cluster_pendant",
+          "version": 1
+        },
+        "state": "refining",
+        "tags": [
+          "chain-catalog",
+          "live-eval",
+          "necklace"
+        ],
+        "title": "Flower-necklace chain isolation eval",
+        "updated_at": "2026-07-11T12:03:14.644706"
+      },
+      "qa": {
+        "accepted": false,
+        "checks": [
+          {
+            "code": "decodable_image",
+            "evidence": {
+              "format": "JPEG",
+              "height": 1152,
+              "width": 864
+            },
+            "message": "candidate is a decodable raster image",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "review_resolution",
+            "evidence": {
+              "height": 1152,
+              "width": 864
+            },
+            "message": "candidate has reviewable raster dimensions",
+            "passed": true,
+            "severity": "warning"
+          },
+          {
+            "code": "candidate_changed",
+            "evidence": {},
+            "message": "candidate bytes differ from the source",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "requested_change",
+            "evidence": {},
+            "message": "visual evidence matches the requested fact",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "protected_regions",
+            "evidence": {},
+            "message": "visual evidence matches the requested fact",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "unintended_drift",
+            "evidence": {
+              "changes": [],
+              "severity": "none"
+            },
+            "message": "no unintended changes detected",
+            "passed": true,
+            "severity": "warning"
+          },
+          {
+            "code": "spec_change",
+            "evidence": {
+              "spec_delta": [
+                {
+                  "from": "1 mm",
+                  "kind": "changed",
+                  "label": "chain geometry width",
+                  "path": "chain.geometry.chain_width_mm",
+                  "to": "1.4 mm"
+                },
+                {
+                  "from": "2 mm",
+                  "kind": "changed",
+                  "label": "chain geometry end ring outside diameter",
+                  "path": "chain.geometry.end_ring_outer_diameter_mm",
+                  "to": "2.4 mm"
+                },
+                {
+                  "from": "0.2 mm",
+                  "kind": "changed",
+                  "label": "chain geometry link thickness",
+                  "path": "chain.geometry.link_thickness_mm",
+                  "to": "0.25 mm"
+                },
+                {
+                  "from": "1.5 mm",
+                  "kind": "changed",
+                  "label": "chain geometry links inside length",
+                  "path": "chain.geometry.links.0.inside_length_mm",
+                  "to": "2 mm"
+                },
+                {
+                  "from": "0.6 mm",
+                  "kind": "changed",
+                  "label": "chain geometry links inside width",
+                  "path": "chain.geometry.links.0.inside_width_mm",
+                  "to": "0.8 mm"
+                },
+                {
+                  "from": "2 mm",
+                  "kind": "changed",
+                  "label": "chain geometry links length_mm",
+                  "path": "chain.geometry.links.0.length_mm",
+                  "to": "2.6 mm"
+                },
+                {
+                  "from": "0.35 mm",
+                  "kind": "changed",
+                  "label": "chain geometry profile thickness",
+                  "path": "chain.geometry.profile_thickness_mm",
+                  "to": "0.45 mm"
+                },
+                {
+                  "from": "cable",
+                  "kind": "changed",
+                  "label": "chain style",
+                  "path": "chain.style",
+                  "to": "curb"
+                }
+              ]
+            },
+            "message": "visual evidence matches the requested fact",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "edit_domain:chain_style",
+            "evidence": {
+              "domain": "chain_style",
+              "spec_delta": [
+                {
+                  "from": "1 mm",
+                  "kind": "changed",
+                  "label": "chain geometry width",
+                  "path": "chain.geometry.chain_width_mm",
+                  "to": "1.4 mm"
+                },
+                {
+                  "from": "2 mm",
+                  "kind": "changed",
+                  "label": "chain geometry end ring outside diameter",
+                  "path": "chain.geometry.end_ring_outer_diameter_mm",
+                  "to": "2.4 mm"
+                },
+                {
+                  "from": "0.2 mm",
+                  "kind": "changed",
+                  "label": "chain geometry link thickness",
+                  "path": "chain.geometry.link_thickness_mm",
+                  "to": "0.25 mm"
+                },
+                {
+                  "from": "1.5 mm",
+                  "kind": "changed",
+                  "label": "chain geometry links inside length",
+                  "path": "chain.geometry.links.0.inside_length_mm",
+                  "to": "2 mm"
+                },
+                {
+                  "from": "0.6 mm",
+                  "kind": "changed",
+                  "label": "chain geometry links inside width",
+                  "path": "chain.geometry.links.0.inside_width_mm",
+                  "to": "0.8 mm"
+                },
+                {
+                  "from": "2 mm",
+                  "kind": "changed",
+                  "label": "chain geometry links length_mm",
+                  "path": "chain.geometry.links.0.length_mm",
+                  "to": "2.6 mm"
+                },
+                {
+                  "from": "0.35 mm",
+                  "kind": "changed",
+                  "label": "chain geometry profile thickness",
+                  "path": "chain.geometry.profile_thickness_mm",
+                  "to": "0.45 mm"
+                },
+                {
+                  "from": "cable",
+                  "kind": "changed",
+                  "label": "chain style",
+                  "path": "chain.style",
+                  "to": "curb"
+                }
+              ]
+            },
+            "message": "visual evidence matches the requested fact",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "chain_style_target",
+            "evidence": {},
+            "message": "visual evidence matches the requested fact",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "chain_style_complete_run",
+            "evidence": {},
+            "message": "visual evidence matches the requested fact",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "chain_connections",
+            "evidence": {},
+            "message": "visual evidence matches the requested fact",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "pendant_count",
+            "evidence": {},
+            "message": "visual evidence matches the requested fact",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "pendant_geometry",
+            "evidence": {},
+            "message": "visual evidence matches the requested fact",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "bail",
+            "evidence": {},
+            "message": "visual evidence matches the requested fact",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "stones",
+            "evidence": {},
+            "message": "visual evidence matches the requested fact",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "setting",
+            "evidence": {},
+            "message": "visual evidence matches the requested fact",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "clasp",
+            "evidence": {},
+            "message": "visual evidence matches the requested fact",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "chain_length_and_drape",
+            "evidence": {},
+            "message": "visual evidence matches the requested fact",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "non_chain_geometry",
+            "evidence": {},
+            "message": "visual evidence matches the requested fact",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "clasp_visibility",
+            "evidence": {
+              "candidate_clasp_visible": false,
+              "source_clasp_visible": false
+            },
+            "message": "candidate did not reveal an off-frame source clasp",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "candidate_text_or_branding",
+            "evidence": {},
+            "message": "visual evidence matches the requested fact",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "exact_chain_dimensions",
+            "evidence": {
+              "raster_dimensional_proof": false,
+              "source_chain": {
+                "clasp": "lobster",
+                "geometry": {
+                  "chain_width_mm": 1.0,
+                  "construction": "open_link",
+                  "end_ring_outer_diameter_mm": 2.0,
+                  "link_thickness_mm": 0.2,
+                  "links": [
+                    {
+                      "inside_length_mm": 1.5,
+                      "inside_width_mm": 0.6,
+                      "length_mm": 2.0,
+                      "role": "standard"
+                    }
+                  ],
+                  "links_soldered": true,
+                  "profile_thickness_mm": 0.35
+                },
+                "length_mm": 450.0,
+                "pendant_connection": "slides_through_bail",
+                "style": "cable"
+              },
+              "target_chain": {
+                "clasp": "lobster",
+                "geometry": {
+                  "chain_width_mm": 1.4,
+                  "construction": "open_link",
+                  "end_ring_outer_diameter_mm": 2.4,
+                  "link_thickness_mm": 0.25,
+                  "links": [
+                    {
+                      "inside_length_mm": 2.0,
+                      "inside_width_mm": 0.8,
+                      "length_mm": 2.6,
+                      "role": "standard"
+                    }
+                  ],
+                  "links_soldered": true,
+                  "profile_thickness_mm": 0.45
+                },
+                "length_mm": 450.0,
+                "pendant_connection": "slides_through_bail",
+                "style": "curb"
+              }
+            },
+            "message": "pixels can support chain-style and relative-drape review but cannot prove exact link gauge, pitch, thickness, dimensions, or chain length; the validated spec and designer review are authoritative",
+            "passed": false,
+            "severity": "warning"
+          },
+          {
+            "code": "crosscheck_requested_change",
+            "evidence": {},
+            "message": "visual evidence matches the requested fact",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "crosscheck_frozen_facts",
+            "evidence": {},
+            "message": "visual evidence matches the requested fact",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "crosscheck_unintended_drift",
+            "evidence": {
+              "changes": [],
+              "severity": "none"
+            },
+            "message": "independent audit found no unintended changes",
+            "passed": true,
+            "severity": "warning"
+          },
+          {
+            "code": "crosscheck_edit_domains",
+            "evidence": {
+              "domain_mismatches": []
+            },
+            "message": "independent audit matched every required edit domain",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "text_or_branding",
+            "evidence": {},
+            "message": "no text or branding introduced",
+            "passed": true,
+            "severity": "hard"
+          }
+        ],
+        "failed_checks": [
+          "exact_chain_dimensions"
+        ],
+        "notes": [
+          "Full curb chain applied end-to-end",
+          "All pendant, bail, stones, and geometry frozen and identical",
+          "curb chain applied; pendant/stones/bail/clasp/drape identical"
+        ],
+        "review_required": true,
+        "score": 95.0,
+        "summary": "Image needs explicit designer review.",
+        "verdict": "warn",
+        "warnings": [
+          "pixels can support chain-style and relative-drape review but cannot prove exact link gauge, pitch, thickness, dimensions, or chain length; the validated spec and designer review are authoritative"
+        ]
+      },
+      "routing": {
+        "attempt_count": 1,
+        "cache_hit": false,
+        "run_id": "run_18f9d8bf51c0697b",
+        "used_fallback": false,
+        "used_retry": false
+      },
+      "spec_change": [
+        {
+          "after": 1.4,
+          "before": 1.0,
+          "label": "chain width",
+          "path": "chain.geometry.chain_width_mm"
+        },
+        {
+          "after": 2.4,
+          "before": 2.0,
+          "label": "end ring outside diameter",
+          "path": "chain.geometry.end_ring_outer_diameter_mm"
+        },
+        {
+          "after": 0.25,
+          "before": 0.2,
+          "label": "link thickness",
+          "path": "chain.geometry.link_thickness_mm"
+        },
+        {
+          "after": 2.0,
+          "before": 1.5,
+          "label": "link inside length",
+          "path": "chain.geometry.links[0].inside_length_mm"
+        },
+        {
+          "after": 0.8,
+          "before": 0.6,
+          "label": "link inside width",
+          "path": "chain.geometry.links[0].inside_width_mm"
+        },
+        {
+          "after": 2.6,
+          "before": 2.0,
+          "label": "link length",
+          "path": "chain.geometry.links[0].length_mm"
+        },
+        {
+          "after": 0.45,
+          "before": 0.35,
+          "label": "chain profile thickness",
+          "path": "chain.geometry.profile_thickness_mm"
+        },
+        {
+          "after": "eval-target-curb-geometry-v1",
+          "before": "eval-source-cable-geometry-v1",
+          "label": "chain production reference",
+          "path": "chain.production.reference"
+        },
+        {
+          "after": "curb",
+          "before": "cable",
+          "label": "chain style",
+          "path": "chain.style"
+        }
+      ],
+      "status": "review_required",
+      "warning_candidate": {
+        "candidate_id": "cand_a285f93344a1f3a2",
+        "operation": "LOCAL_EDIT",
+        "preview_url": "/image-runs/run_18f9d8bf51c0697b/candidates/cand_a285f93344a1f3a2/image",
+        "requested_change": "Apply the exact catalog selection chain.style=curb (Curb). Required visible geometry: interlocking oval links twisted and flattened into one plane; continuous flat link face that lies close to the skin. Change only the isolated component and preserve every frozen fact.",
+        "run_id": "run_18f9d8bf51c0697b"
+      }
+    },
+    "http_status": 202
+  },
+  "image_run": {
+    "accepted": false,
+    "accepted_asset_id": null,
+    "attempts": [
+      {
+        "attempt": 1,
+        "attempt_id": "iat_004cb0ba991c3a08",
+        "attempt_number": 1,
+        "cache_hit": false,
+        "cache_key": "5c00c509107608f4d95beb14fafbc73733734f445e94b42198724e3dd4d13b65",
+        "cached": false,
+        "correction": null,
+        "corrective_instruction": null,
+        "cost": null,
+        "created_at": "2026-07-11T12:03:36.727419",
+        "engine_role": "primary",
+        "error_category": null,
+        "failed_checks": [
+          "exact_chain_dimensions"
+        ],
+        "fallback_reason": null,
+        "latency_ms": 22067,
+        "model": "grok_direct",
+        "output_hash": "d0c65925f256900b4bf6aa39d9a37943a59314d1fc22679c23f813e2ea625d03",
+        "prompt_hash": "5e470155f6af78bbe537a2a8af38eadbe994b27a84dfa1801645a3018318d644",
+        "provider": "xai",
+        "provider_request_id": null,
+        "qa_checks": [
+          {
+            "code": "decodable_image",
+            "evidence": {
+              "format": "JPEG",
+              "height": 1152,
+              "width": 864
+            },
+            "message": "candidate is a decodable raster image",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "review_resolution",
+            "evidence": {
+              "height": 1152,
+              "width": 864
+            },
+            "message": "candidate has reviewable raster dimensions",
+            "passed": true,
+            "severity": "warning"
+          },
+          {
+            "code": "candidate_changed",
+            "evidence": {},
+            "message": "candidate bytes differ from the source",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "requested_change",
+            "evidence": {},
+            "message": "visual evidence matches the requested fact",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "protected_regions",
+            "evidence": {},
+            "message": "visual evidence matches the requested fact",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "unintended_drift",
+            "evidence": {
+              "changes": [],
+              "severity": "none"
+            },
+            "message": "no unintended changes detected",
+            "passed": true,
+            "severity": "warning"
+          },
+          {
+            "code": "spec_change",
+            "evidence": {
+              "spec_delta": [
+                {
+                  "from": "1 mm",
+                  "kind": "changed",
+                  "label": "chain geometry width",
+                  "path": "chain.geometry.chain_width_mm",
+                  "to": "1.4 mm"
+                },
+                {
+                  "from": "2 mm",
+                  "kind": "changed",
+                  "label": "chain geometry end ring outside diameter",
+                  "path": "chain.geometry.end_ring_outer_diameter_mm",
+                  "to": "2.4 mm"
+                },
+                {
+                  "from": "0.2 mm",
+                  "kind": "changed",
+                  "label": "chain geometry link thickness",
+                  "path": "chain.geometry.link_thickness_mm",
+                  "to": "0.25 mm"
+                },
+                {
+                  "from": "1.5 mm",
+                  "kind": "changed",
+                  "label": "chain geometry links inside length",
+                  "path": "chain.geometry.links.0.inside_length_mm",
+                  "to": "2 mm"
+                },
+                {
+                  "from": "0.6 mm",
+                  "kind": "changed",
+                  "label": "chain geometry links inside width",
+                  "path": "chain.geometry.links.0.inside_width_mm",
+                  "to": "0.8 mm"
+                },
+                {
+                  "from": "2 mm",
+                  "kind": "changed",
+                  "label": "chain geometry links length_mm",
+                  "path": "chain.geometry.links.0.length_mm",
+                  "to": "2.6 mm"
+                },
+                {
+                  "from": "0.35 mm",
+                  "kind": "changed",
+                  "label": "chain geometry profile thickness",
+                  "path": "chain.geometry.profile_thickness_mm",
+                  "to": "0.45 mm"
+                },
+                {
+                  "from": "cable",
+                  "kind": "changed",
+                  "label": "chain style",
+                  "path": "chain.style",
+                  "to": "curb"
+                }
+              ]
+            },
+            "message": "visual evidence matches the requested fact",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "edit_domain:chain_style",
+            "evidence": {
+              "domain": "chain_style",
+              "spec_delta": [
+                {
+                  "from": "1 mm",
+                  "kind": "changed",
+                  "label": "chain geometry width",
+                  "path": "chain.geometry.chain_width_mm",
+                  "to": "1.4 mm"
+                },
+                {
+                  "from": "2 mm",
+                  "kind": "changed",
+                  "label": "chain geometry end ring outside diameter",
+                  "path": "chain.geometry.end_ring_outer_diameter_mm",
+                  "to": "2.4 mm"
+                },
+                {
+                  "from": "0.2 mm",
+                  "kind": "changed",
+                  "label": "chain geometry link thickness",
+                  "path": "chain.geometry.link_thickness_mm",
+                  "to": "0.25 mm"
+                },
+                {
+                  "from": "1.5 mm",
+                  "kind": "changed",
+                  "label": "chain geometry links inside length",
+                  "path": "chain.geometry.links.0.inside_length_mm",
+                  "to": "2 mm"
+                },
+                {
+                  "from": "0.6 mm",
+                  "kind": "changed",
+                  "label": "chain geometry links inside width",
+                  "path": "chain.geometry.links.0.inside_width_mm",
+                  "to": "0.8 mm"
+                },
+                {
+                  "from": "2 mm",
+                  "kind": "changed",
+                  "label": "chain geometry links length_mm",
+                  "path": "chain.geometry.links.0.length_mm",
+                  "to": "2.6 mm"
+                },
+                {
+                  "from": "0.35 mm",
+                  "kind": "changed",
+                  "label": "chain geometry profile thickness",
+                  "path": "chain.geometry.profile_thickness_mm",
+                  "to": "0.45 mm"
+                },
+                {
+                  "from": "cable",
+                  "kind": "changed",
+                  "label": "chain style",
+                  "path": "chain.style",
+                  "to": "curb"
+                }
+              ]
+            },
+            "message": "visual evidence matches the requested fact",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "chain_style_target",
+            "evidence": {},
+            "message": "visual evidence matches the requested fact",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "chain_style_complete_run",
+            "evidence": {},
+            "message": "visual evidence matches the requested fact",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "chain_connections",
+            "evidence": {},
+            "message": "visual evidence matches the requested fact",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "pendant_count",
+            "evidence": {},
+            "message": "visual evidence matches the requested fact",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "pendant_geometry",
+            "evidence": {},
+            "message": "visual evidence matches the requested fact",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "bail",
+            "evidence": {},
+            "message": "visual evidence matches the requested fact",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "stones",
+            "evidence": {},
+            "message": "visual evidence matches the requested fact",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "setting",
+            "evidence": {},
+            "message": "visual evidence matches the requested fact",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "clasp",
+            "evidence": {},
+            "message": "visual evidence matches the requested fact",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "chain_length_and_drape",
+            "evidence": {},
+            "message": "visual evidence matches the requested fact",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "non_chain_geometry",
+            "evidence": {},
+            "message": "visual evidence matches the requested fact",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "clasp_visibility",
+            "evidence": {
+              "candidate_clasp_visible": false,
+              "source_clasp_visible": false
+            },
+            "message": "candidate did not reveal an off-frame source clasp",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "candidate_text_or_branding",
+            "evidence": {},
+            "message": "visual evidence matches the requested fact",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "exact_chain_dimensions",
+            "evidence": {
+              "raster_dimensional_proof": false,
+              "source_chain": {
+                "clasp": "lobster",
+                "geometry": {
+                  "chain_width_mm": 1.0,
+                  "construction": "open_link",
+                  "end_ring_outer_diameter_mm": 2.0,
+                  "link_thickness_mm": 0.2,
+                  "links": [
+                    {
+                      "inside_length_mm": 1.5,
+                      "inside_width_mm": 0.6,
+                      "length_mm": 2.0,
+                      "role": "standard"
+                    }
+                  ],
+                  "links_soldered": true,
+                  "profile_thickness_mm": 0.35
+                },
+                "length_mm": 450.0,
+                "pendant_connection": "slides_through_bail",
+                "style": "cable"
+              },
+              "target_chain": {
+                "clasp": "lobster",
+                "geometry": {
+                  "chain_width_mm": 1.4,
+                  "construction": "open_link",
+                  "end_ring_outer_diameter_mm": 2.4,
+                  "link_thickness_mm": 0.25,
+                  "links": [
+                    {
+                      "inside_length_mm": 2.0,
+                      "inside_width_mm": 0.8,
+                      "length_mm": 2.6,
+                      "role": "standard"
+                    }
+                  ],
+                  "links_soldered": true,
+                  "profile_thickness_mm": 0.45
+                },
+                "length_mm": 450.0,
+                "pendant_connection": "slides_through_bail",
+                "style": "curb"
+              }
+            },
+            "message": "pixels can support chain-style and relative-drape review but cannot prove exact link gauge, pitch, thickness, dimensions, or chain length; the validated spec and designer review are authoritative",
+            "passed": false,
+            "severity": "warning"
+          },
+          {
+            "code": "crosscheck_requested_change",
+            "evidence": {},
+            "message": "visual evidence matches the requested fact",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "crosscheck_frozen_facts",
+            "evidence": {},
+            "message": "visual evidence matches the requested fact",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "crosscheck_unintended_drift",
+            "evidence": {
+              "changes": [],
+              "severity": "none"
+            },
+            "message": "independent audit found no unintended changes",
+            "passed": true,
+            "severity": "warning"
+          },
+          {
+            "code": "crosscheck_edit_domains",
+            "evidence": {
+              "domain_mismatches": []
+            },
+            "message": "independent audit matched every required edit domain",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "text_or_branding",
+            "evidence": {},
+            "message": "no text or branding introduced",
+            "passed": true,
+            "severity": "hard"
+          }
+        ],
+        "qa_verdict": "warn",
+        "usage": {},
+        "verdict": "warn"
+      }
+    ],
+    "completed_at": "2026-07-11T12:03:36.727419",
+    "created_at": "2026-07-11T12:03:36.727867",
+    "created_by": "usr_test_designer",
+    "error_category": null,
+    "input_hash": "024435fc142d453579424b9dd84a2581b5f74d2a78a00dc4b2a3ff088bb33261",
+    "mask_hash": null,
+    "normalized_intent": {
+      "edit_domains": [
+        "chain_style"
+      ],
+      "expected_output": "only Curb applied inside the complete visible chain-link run only, excluding the pendant, bail, stones, setting, and clasp",
+      "frozen": [
+        "the exact pendant count and the complete pendant design and geometry",
+        "the bail geometry and both chain-to-bail connection positions",
+        "every gemstone identity, count, cut, color, scale, position, and setting",
+        "the clasp type, clasp geometry, and clasp position",
+        "the chain length, endpoints, overall drape, and placement",
+        "the validated metal identity and finish",
+        "all non-chain jewelry geometry",
+        "no text, logos, watermarks, or invented branding",
+        "stone",
+        "side_stones",
+        "setting",
+        "metal",
+        "pendant",
+        "chain.length_mm",
+        "chain.clasp",
+        "chain.pendant_connection",
+        "every specification path outside the exact catalog delta",
+        "camera, framing, scale, lighting, and background"
+      ],
+      "instruction": "Apply the exact catalog selection chain.style=curb (Curb). Required visible geometry: interlocking oval links twisted and flattened into one plane; continuous flat link face that lies close to the skin. Change only the isolated component and preserve every frozen fact.",
+      "region_description": "the complete visible chain-link run only, excluding the pendant, bail, stones, setting, and clasp",
+      "spec_delta": [
+        {
+          "from": "1 mm",
+          "kind": "changed",
+          "label": "chain geometry width",
+          "path": "chain.geometry.chain_width_mm",
+          "to": "1.4 mm"
+        },
+        {
+          "from": "2 mm",
+          "kind": "changed",
+          "label": "chain geometry end ring outside diameter",
+          "path": "chain.geometry.end_ring_outer_diameter_mm",
+          "to": "2.4 mm"
+        },
+        {
+          "from": "0.2 mm",
+          "kind": "changed",
+          "label": "chain geometry link thickness",
+          "path": "chain.geometry.link_thickness_mm",
+          "to": "0.25 mm"
+        },
+        {
+          "from": "1.5 mm",
+          "kind": "changed",
+          "label": "chain geometry links inside length",
+          "path": "chain.geometry.links.0.inside_length_mm",
+          "to": "2 mm"
+        },
+        {
+          "from": "0.6 mm",
+          "kind": "changed",
+          "label": "chain geometry links inside width",
+          "path": "chain.geometry.links.0.inside_width_mm",
+          "to": "0.8 mm"
+        },
+        {
+          "from": "2 mm",
+          "kind": "changed",
+          "label": "chain geometry links length_mm",
+          "path": "chain.geometry.links.0.length_mm",
+          "to": "2.6 mm"
+        },
+        {
+          "from": "0.35 mm",
+          "kind": "changed",
+          "label": "chain geometry profile thickness",
+          "path": "chain.geometry.profile_thickness_mm",
+          "to": "0.45 mm"
+        },
+        {
+          "from": "cable",
+          "kind": "changed",
+          "label": "chain style",
+          "path": "chain.style",
+          "to": "curb"
+        }
+      ],
+      "style_constraints": [
+        "interlocking oval links twisted and flattened into one plane",
+        "continuous flat link face that lies close to the skin"
+      ]
+    },
+    "operation": "LOCAL_EDIT",
+    "output_hash": "d0c65925f256900b4bf6aa39d9a37943a59314d1fc22679c23f813e2ea625d03",
+    "project_id": "ast_b27dceb4306f0c3a",
+    "prompt_contract_version": "local-edit.v6",
+    "prompt_version": "local-edit.v6",
+    "review_decision": null,
+    "review_required": true,
+    "reviewed_at": null,
+    "reviewed_by": null,
+    "run_id": "run_18f9d8bf51c0697b",
+    "source_asset_id": "ast_b27dceb4306f0c3a",
+    "source_hash": "c7548fb2c68d9f7ea7cdde2cf26541783098a369d8d3a554295a7f4275fc6ba0",
+    "spec_visual_hash": "2ff49aa8f311beb8",
+    "status": "review_required",
+    "stored_status": "review_required",
+    "variant": 0,
+    "verdict": "warn"
+  },
+  "live": true,
+  "project": {
+    "active_asset_id": "ast_b27dceb4306f0c3a",
+    "active_design_version": 1,
+    "active_revision": {
+      "asset_id": "ast_b27dceb4306f0c3a",
+      "capability": "IMPORTED_REFERENCE",
+      "created_at": "2026-07-11T12:03:14.644706",
+      "created_by": "usr_test_designer",
+      "design_version": 1,
+      "image_url": "/assets/ast_b27dceb4306f0c3a/image",
+      "instruction": "Designer-confirmed imported reference",
+      "legacy_provenance": false,
+      "media_type": "image/jpeg",
+      "pinned": false,
+      "provenance": "imported_reference",
+      "revision": 1,
+      "root_id": "ast_b27dceb4306f0c3a"
+    },
+    "assets": [
+      {
+        "asset_id": "ast_b27dceb4306f0c3a",
+        "capability": "IMPORTED_REFERENCE",
+        "created_at": "2026-07-11T12:03:14.644706",
+        "created_by": "usr_test_designer",
+        "design_version": 1,
+        "image_url": "/assets/ast_b27dceb4306f0c3a/image",
+        "instruction": "Designer-confirmed imported reference",
+        "legacy_provenance": false,
+        "media_type": "image/jpeg",
+        "pinned": false,
+        "provenance": "imported_reference",
+        "revision": 1,
+        "root_id": "ast_b27dceb4306f0c3a"
+      }
+    ],
+    "collection": "Designer workflow acceptance",
+    "counts": {
+      "IMPORTED_REFERENCE": 1
+    },
+    "cover_asset_id": "ast_b27dceb4306f0c3a",
+    "created_at": "2026-07-11T12:03:14.644706",
+    "derived_assets": [],
+    "design_id": "dsn_1bd9f4bf333930c7",
+    "factory_blockers": [],
+    "factory_ready": false,
+    "has_factory_drawing": false,
+    "id": "ast_b27dceb4306f0c3a",
+    "image_run_ids": [],
+    "item_count": 1,
+    "items": [
+      {
+        "asset_id": "ast_b27dceb4306f0c3a",
+        "capability": "IMPORTED_REFERENCE",
+        "created_at": "2026-07-11T12:03:14.644706",
+        "created_by": "usr_test_designer",
+        "design_version": 1,
+        "image_url": "/assets/ast_b27dceb4306f0c3a/image",
+        "instruction": "Designer-confirmed imported reference",
+        "legacy_provenance": false,
+        "media_type": "image/jpeg",
+        "pinned": false,
+        "provenance": "imported_reference",
+        "revision": 1,
+        "root_id": "ast_b27dceb4306f0c3a"
+      }
+    ],
+    "latest_design_version": 1,
+    "owner": "usr_test_designer",
+    "primary_revision_count": 1,
+    "revisions": [
+      {
+        "asset_id": "ast_b27dceb4306f0c3a",
+        "capability": "IMPORTED_REFERENCE",
+        "created_at": "2026-07-11T12:03:14.644706",
+        "created_by": "usr_test_designer",
+        "design_version": 1,
+        "image_url": "/assets/ast_b27dceb4306f0c3a/image",
+        "instruction": "Designer-confirmed imported reference",
+        "legacy_provenance": false,
+        "media_type": "image/jpeg",
+        "pinned": false,
+        "provenance": "imported_reference",
+        "revision": 1,
+        "root_id": "ast_b27dceb4306f0c3a"
+      }
+    ],
+    "root_id": "ast_b27dceb4306f0c3a",
+    "spec": {
+      "band": null,
+      "bracelet": null,
+      "brooch": null,
+      "chain": {
+        "clasp": "lobster",
+        "geometry": {
+          "chain_width_mm": 1.0,
+          "construction": "open_link",
+          "end_ring_outer_diameter_mm": 2.0,
+          "link_thickness_mm": 0.2,
+          "links": [
+            {
+              "inside_length_mm": 1.5,
+              "inside_width_mm": 0.6,
+              "length_mm": 2.0,
+              "role": "standard"
+            }
+          ],
+          "links_soldered": true,
+          "profile_thickness_mm": 0.35
+        },
+        "length_mm": 450.0,
+        "pendant_connection": "slides_through_bail",
+        "production": {
+          "mode": "custom",
+          "reference": "eval-source-cable-geometry-v1",
+          "reference_kind": "dimensioned_drawing"
+        },
+        "style": "cable"
+      },
+      "composition": null,
+      "created_at": "2026-07-11T12:03:14.644706Z",
+      "created_by": "usr_test_designer",
+      "design_form": {
+        "elements": []
+      },
+      "design_id": "dsn_1bd9f4bf333930c7",
+      "dimension_provenance": {
+        "chain.geometry.chain_width_mm": {
+          "confidence": 0.45,
+          "method": "reference_vision",
+          "note": "Test estimate; designer measurement required.",
+          "source": "generated clean single-necklace control",
+          "status": "estimated_from_reference"
+        },
+        "chain.geometry.end_ring_outer_diameter_mm": {
+          "confidence": 0.45,
+          "method": "reference_vision",
+          "note": "Test estimate; designer measurement required.",
+          "source": "generated clean single-necklace control",
+          "status": "estimated_from_reference"
+        },
+        "chain.geometry.link_thickness_mm": {
+          "confidence": 0.45,
+          "method": "reference_vision",
+          "note": "Test estimate; designer measurement required.",
+          "source": "generated clean single-necklace control",
+          "status": "estimated_from_reference"
+        },
+        "chain.geometry.links[0].inside_length_mm": {
+          "confidence": 0.45,
+          "method": "reference_vision",
+          "note": "Test estimate; designer measurement required.",
+          "source": "generated clean single-necklace control",
+          "status": "estimated_from_reference"
+        },
+        "chain.geometry.links[0].inside_width_mm": {
+          "confidence": 0.45,
+          "method": "reference_vision",
+          "note": "Test estimate; designer measurement required.",
+          "source": "generated clean single-necklace control",
+          "status": "estimated_from_reference"
+        },
+        "chain.geometry.links[0].length_mm": {
+          "confidence": 0.45,
+          "method": "reference_vision",
+          "note": "Test estimate; designer measurement required.",
+          "source": "generated clean single-necklace control",
+          "status": "estimated_from_reference"
+        },
+        "chain.geometry.profile_thickness_mm": {
+          "confidence": 0.45,
+          "method": "reference_vision",
+          "note": "Test estimate; designer measurement required.",
+          "source": "generated clean single-necklace control",
+          "status": "estimated_from_reference"
+        },
+        "pendant.bail_height_mm": {
+          "confidence": 0.45,
+          "method": "reference_vision",
+          "note": "Test estimate; designer measurement required.",
+          "source": "generated clean single-necklace control",
+          "status": "estimated_from_reference"
+        },
+        "pendant.bail_inner_diameter_mm": {
+          "confidence": 0.45,
+          "method": "reference_vision",
+          "note": "Test estimate; designer measurement required.",
+          "source": "generated clean single-necklace control",
+          "status": "estimated_from_reference"
+        },
+        "pendant.drop_mm": {
+          "confidence": 0.45,
+          "method": "reference_vision",
+          "note": "Test estimate; designer measurement required.",
+          "source": "generated clean single-necklace control",
+          "status": "estimated_from_reference"
+        },
+        "stone.dimensions_mm.depth": {
+          "confidence": 0.45,
+          "method": "reference_vision",
+          "note": "Test estimate; designer measurement required.",
+          "source": "generated clean single-necklace control",
+          "status": "estimated_from_reference"
+        },
+        "stone.dimensions_mm.length": {
+          "confidence": 0.45,
+          "method": "reference_vision",
+          "note": "Test estimate; designer measurement required.",
+          "source": "generated clean single-necklace control",
+          "status": "estimated_from_reference"
+        },
+        "stone.dimensions_mm.width": {
+          "confidence": 0.45,
+          "method": "reference_vision",
+          "note": "Test estimate; designer measurement required.",
+          "source": "generated clean single-necklace control",
+          "status": "estimated_from_reference"
+        }
+      },
+      "drop": null,
+      "jewelry_type": "necklace",
+      "metal": {
+        "color": "yellow",
+        "finish": "high_polish",
+        "karat": 18,
+        "material": "gold"
+      },
+      "mode": "pro",
+      "notes_to_factory": "LIVE WORKFLOW TEST ONLY. Test-actor geometry approximates the visible flower necklace and is not a measurement or license to manufacture the pictured third-party design.",
+      "pendant": {
+        "bail_height_mm": 4.0,
+        "bail_inner_diameter_mm": 3.0,
+        "drop_mm": 18.0
+      },
+      "ring_size": null,
+      "schema_version": 1,
+      "setting": {
+        "gallery_height_mm": null,
+        "prong_count": 4,
+        "prong_tip_mm": 0.6,
+        "style": "prong_cluster"
+      },
+      "side_stones": [
+        {
+          "carat": 0.05,
+          "clarity": null,
+          "color": {
+            "gia": "F",
+            "hue_code": null,
+            "saturation": null,
+            "tone": null,
+            "trade": "colorless"
+          },
+          "count": 5,
+          "culet": null,
+          "cut": "pear",
+          "depth_pct": null,
+          "dimensions_mm": {
+            "depth": 1.3,
+            "length": 3.0,
+            "width": 2.0
+          },
+          "girdle": null,
+          "inscription": null,
+          "lab": null,
+          "mount": null,
+          "origin": null,
+          "phenomena": [],
+          "position": "flower_petals",
+          "species": "diamond",
+          "table_pct": null,
+          "treatment": null
+        }
+      ],
+      "source_component_coverage": null,
+      "stone": {
+        "carat": 0.46,
+        "clarity": null,
+        "color": {
+          "gia": "medium vivid green",
+          "hue_code": null,
+          "saturation": null,
+          "tone": null,
+          "trade": "Muzo Green"
+        },
+        "count": 1,
+        "culet": null,
+        "cut": "cushion",
+        "depth_pct": null,
+        "dimensions_mm": {
+          "depth": 3.1,
+          "length": 5.0,
+          "width": 5.0
+        },
+        "girdle": null,
+        "inscription": null,
+        "lab": null,
+        "mount": null,
+        "origin": null,
+        "phenomena": [],
+        "position": null,
+        "species": "emerald",
+        "table_pct": null,
+        "treatment": null
+      },
+      "template": "cluster_pendant",
+      "version": 1
+    },
+    "state": "refining",
+    "tags": [
+      "chain-catalog",
+      "live-eval",
+      "necklace"
+    ],
+    "title": "Flower-necklace chain isolation eval",
+    "updated_at": "2026-07-11T12:03:14.644706"
+  },
+  "run_name": "designer-necklace-chain-control-live-v1-2026-07-11",
+  "source": "generated clean single-necklace control",
+  "source_mode": "generated_single_design_control",
+  "source_policy": "Generated control used only for internal reliability evaluation; not a manufacturing authorization.",
+  "source_spec": {
+    "band": null,
+    "bracelet": null,
+    "brooch": null,
+    "chain": {
+      "clasp": "lobster",
+      "geometry": {
+        "chain_width_mm": 1.0,
+        "construction": "open_link",
+        "end_ring_outer_diameter_mm": 2.0,
+        "link_thickness_mm": 0.2,
+        "links": [
+          {
+            "inside_length_mm": 1.5,
+            "inside_width_mm": 0.6,
+            "length_mm": 2.0,
+            "role": "standard"
+          }
+        ],
+        "links_soldered": true,
+        "profile_thickness_mm": 0.35
+      },
+      "length_mm": 450.0,
+      "pendant_connection": "slides_through_bail",
+      "production": {
+        "mode": "custom",
+        "reference": "eval-source-cable-geometry-v1",
+        "reference_kind": "dimensioned_drawing"
+      },
+      "style": "cable"
+    },
+    "composition": null,
+    "created_at": "2026-07-11T00:00:00Z",
+    "created_by": "usr_test_designer",
+    "design_form": {
+      "elements": []
+    },
+    "design_id": "dsn_eval_founder_flower_necklace",
+    "dimension_provenance": {
+      "chain.geometry.chain_width_mm": {
+        "confidence": 0.45,
+        "method": "reference_vision",
+        "note": "Test estimate; designer measurement required.",
+        "source": "generated clean single-necklace control",
+        "status": "estimated_from_reference"
+      },
+      "chain.geometry.end_ring_outer_diameter_mm": {
+        "confidence": 0.45,
+        "method": "reference_vision",
+        "note": "Test estimate; designer measurement required.",
+        "source": "generated clean single-necklace control",
+        "status": "estimated_from_reference"
+      },
+      "chain.geometry.link_thickness_mm": {
+        "confidence": 0.45,
+        "method": "reference_vision",
+        "note": "Test estimate; designer measurement required.",
+        "source": "generated clean single-necklace control",
+        "status": "estimated_from_reference"
+      },
+      "chain.geometry.links[0].inside_length_mm": {
+        "confidence": 0.45,
+        "method": "reference_vision",
+        "note": "Test estimate; designer measurement required.",
+        "source": "generated clean single-necklace control",
+        "status": "estimated_from_reference"
+      },
+      "chain.geometry.links[0].inside_width_mm": {
+        "confidence": 0.45,
+        "method": "reference_vision",
+        "note": "Test estimate; designer measurement required.",
+        "source": "generated clean single-necklace control",
+        "status": "estimated_from_reference"
+      },
+      "chain.geometry.links[0].length_mm": {
+        "confidence": 0.45,
+        "method": "reference_vision",
+        "note": "Test estimate; designer measurement required.",
+        "source": "generated clean single-necklace control",
+        "status": "estimated_from_reference"
+      },
+      "chain.geometry.profile_thickness_mm": {
+        "confidence": 0.45,
+        "method": "reference_vision",
+        "note": "Test estimate; designer measurement required.",
+        "source": "generated clean single-necklace control",
+        "status": "estimated_from_reference"
+      },
+      "pendant.bail_height_mm": {
+        "confidence": 0.45,
+        "method": "reference_vision",
+        "note": "Test estimate; designer measurement required.",
+        "source": "generated clean single-necklace control",
+        "status": "estimated_from_reference"
+      },
+      "pendant.bail_inner_diameter_mm": {
+        "confidence": 0.45,
+        "method": "reference_vision",
+        "note": "Test estimate; designer measurement required.",
+        "source": "generated clean single-necklace control",
+        "status": "estimated_from_reference"
+      },
+      "pendant.drop_mm": {
+        "confidence": 0.45,
+        "method": "reference_vision",
+        "note": "Test estimate; designer measurement required.",
+        "source": "generated clean single-necklace control",
+        "status": "estimated_from_reference"
+      },
+      "stone.dimensions_mm.depth": {
+        "confidence": 0.45,
+        "method": "reference_vision",
+        "note": "Test estimate; designer measurement required.",
+        "source": "generated clean single-necklace control",
+        "status": "estimated_from_reference"
+      },
+      "stone.dimensions_mm.length": {
+        "confidence": 0.45,
+        "method": "reference_vision",
+        "note": "Test estimate; designer measurement required.",
+        "source": "generated clean single-necklace control",
+        "status": "estimated_from_reference"
+      },
+      "stone.dimensions_mm.width": {
+        "confidence": 0.45,
+        "method": "reference_vision",
+        "note": "Test estimate; designer measurement required.",
+        "source": "generated clean single-necklace control",
+        "status": "estimated_from_reference"
+      }
+    },
+    "drop": null,
+    "jewelry_type": "necklace",
+    "metal": {
+      "color": "yellow",
+      "finish": "high_polish",
+      "karat": 18,
+      "material": "gold"
+    },
+    "mode": "pro",
+    "notes_to_factory": "LIVE WORKFLOW TEST ONLY. Test-actor geometry approximates the visible flower necklace and is not a measurement or license to manufacture the pictured third-party design.",
+    "pendant": {
+      "bail_height_mm": 4.0,
+      "bail_inner_diameter_mm": 3.0,
+      "drop_mm": 18.0
+    },
+    "ring_size": null,
+    "schema_version": 1,
+    "setting": {
+      "gallery_height_mm": null,
+      "prong_count": 4,
+      "prong_tip_mm": 0.6,
+      "style": "prong_cluster"
+    },
+    "side_stones": [
+      {
+        "carat": 0.05,
+        "clarity": null,
+        "color": {
+          "gia": "F",
+          "hue_code": null,
+          "saturation": null,
+          "tone": null,
+          "trade": "colorless"
+        },
+        "count": 5,
+        "culet": null,
+        "cut": "pear",
+        "depth_pct": null,
+        "dimensions_mm": {
+          "depth": 1.3,
+          "length": 3.0,
+          "width": 2.0
+        },
+        "girdle": null,
+        "inscription": null,
+        "lab": null,
+        "mount": null,
+        "origin": null,
+        "phenomena": [],
+        "position": "flower_petals",
+        "species": "diamond",
+        "table_pct": null,
+        "treatment": null
+      }
+    ],
+    "source_component_coverage": null,
+    "stone": {
+      "carat": 0.46,
+      "clarity": null,
+      "color": {
+        "gia": "medium vivid green",
+        "hue_code": null,
+        "saturation": null,
+        "tone": null,
+        "trade": "Muzo Green"
+      },
+      "count": 1,
+      "culet": null,
+      "cut": "cushion",
+      "depth_pct": null,
+      "dimensions_mm": {
+        "depth": 3.1,
+        "length": 5.0,
+        "width": 5.0
+      },
+      "girdle": null,
+      "inscription": null,
+      "lab": null,
+      "mount": null,
+      "origin": null,
+      "phenomena": [],
+      "position": null,
+      "species": "emerald",
+      "table_pct": null,
+      "treatment": null
+    },
+    "template": "cluster_pendant",
+    "version": 1
+  },
+  "test_actor_disclosure": "All source and target measurements and drawing IDs are explicit workflow-test values. They are not designer/founder/GIA approval."
+}

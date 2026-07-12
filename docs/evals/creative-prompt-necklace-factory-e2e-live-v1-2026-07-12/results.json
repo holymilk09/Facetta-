@@ -1,0 +1,29 @@
+{
+  "actor": "usr_internal_designer_e2e",
+  "audit_verdicts": {
+    "assembly.primary": "fail",
+    "audit.unmapped.001": "fail",
+    "audit.unmapped.002": "fail",
+    "audit.unmapped.003": "fail",
+    "audit.unmapped.004": "fail",
+    "audit.unmapped.005": "fail",
+    "audit.unmapped.006": "fail",
+    "audit.unmapped.007": "fail",
+    "band.shank": "fail",
+    "metal.body": "inconclusive",
+    "setting.primary": "inconclusive",
+    "stone.center": "fail"
+  },
+  "candidate": "docs/evals/creative-prompt-necklace-live-v3-2026-07-12/candidate.png",
+  "candidate_sha256": "dd1f8f01c5180bf49c5613e32c4e13861c1fd561a02158ba61d8d3c76a801e37",
+  "draft_spec": "draft-spec.json",
+  "factory_authoritative": false,
+  "founder_approved": false,
+  "gia_cofounder_approved": false,
+  "jewelry_type": "ring",
+  "next": "Review and correct every visible stone/material/component fact; supply or confirm dimensions and chain production details; then rerun with --confirmed-spec.",
+  "source_component_count": 12,
+  "stage": "candidate_draft",
+  "status": "designer_spec_review_required",
+  "template": "solitaire_prong"
+}

@@ -1,0 +1,63 @@
+{
+  "case": "band-width-mask-guided-local-edit",
+  "status": "failed",
+  "category": "provider",
+  "attempts": [
+    {
+      "number": 1,
+      "provider": "xai",
+      "model": "grok_direct",
+      "latency_ms": 21077,
+      "cached": false,
+      "qa_verdict": "fail",
+      "quality_score": 15.0,
+      "failed_checks": [
+        "requested_change",
+        "spec_change"
+      ],
+      "corrective_instruction": null,
+      "fallback_reason": null,
+      "cost": null,
+      "usage": null,
+      "error": null
+    },
+    {
+      "number": 2,
+      "provider": "xai",
+      "model": "grok_direct",
+      "latency_ms": 22001,
+      "cached": false,
+      "qa_verdict": "fail",
+      "quality_score": 15.0,
+      "failed_checks": [
+        "requested_change",
+        "spec_change"
+      ],
+      "corrective_instruction": "- requested_change: the requested change was not visibly applied.\n- spec_change: visible local change does not match the validated result spec.",
+      "fallback_reason": null,
+      "cost": null,
+      "usage": null,
+      "error": null
+    },
+    {
+      "number": 3,
+      "provider": "fal",
+      "model": "flux_kontext",
+      "latency_ms": 0,
+      "cached": false,
+      "qa_verdict": null,
+      "quality_score": null,
+      "failed_checks": [],
+      "corrective_instruction": "- requested_change: the requested change was not visibly applied.\n- spec_change: visible local change does not match the validated result spec.",
+      "fallback_reason": "grok_qa_failed",
+      "cost": null,
+      "usage": null,
+      "error": {
+        "category": "provider",
+        "code": "image_provider_call_failed",
+        "message": "no FAL_KEY configured \u2014 set it in the environment or .env",
+        "retryable": true
+      }
+    }
+  ]
+}

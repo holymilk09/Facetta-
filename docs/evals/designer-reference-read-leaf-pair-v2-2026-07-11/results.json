@@ -1,0 +1,296 @@
+{
+  "corpus": "designer-reference-corpus-v1",
+  "pair_checks": [
+    {
+      "base_case": "leaf-ring-measured-green",
+      "expected_change": "material/species only; geometry frozen",
+      "result": {
+        "base_center_cut": null,
+        "base_stone_group_count": 2,
+        "checks": {
+          "center_cut_stable": true,
+          "jewelry_type_stable": true,
+          "measurement_overlap": false,
+          "stone_group_count_stable": false
+        },
+        "measurement_overlap": 0.375,
+        "status": "fail",
+        "variant_center_cut": null,
+        "variant_stone_group_count": 3
+      },
+      "variant_case": "leaf-ring-measured-pink"
+    }
+  ],
+  "provider_readiness": {
+    "fallback_configured": false,
+    "xai_configured": true
+  },
+  "rows": [
+    {
+      "case": "leaf-ring-measured-green",
+      "category": "ring",
+      "input_kind": "measured_colored_design_plate",
+      "latency_ms": 26160,
+      "read": {
+        "assembly": "central square emerald flanked by pav\u00e9 diamond leaf motifs on a split shank with additional baguette diamonds along the upper band",
+        "hand_written": [
+          "Carat section",
+          "21",
+          "4.35",
+          "Diamond carat",
+          "A.14 carat = 0.75",
+          "D.1.14 carat = 0.35",
+          "D.1.14 carat = 0.35",
+          "30",
+          "2",
+          "60",
+          "Metal Gold",
+          "Diamond Black",
+          "Meta : 310Min",
+          "NO hength : 120 gold",
+          "Diamond width : 2 mm",
+          "R",
+          "115",
+          "15"
+        ],
+        "jewelry_type": "ring",
+        "measurements": [
+          {
+            "confidence": 0.0,
+            "label": "height",
+            "raw": "115",
+            "status": "ambiguous",
+            "value": "115"
+          },
+          {
+            "confidence": 0.0,
+            "label": "base width",
+            "raw": "15",
+            "status": "ambiguous",
+            "value": "15"
+          },
+          {
+            "confidence": 0.0,
+            "label": "shank section width",
+            "raw": "30",
+            "status": "ambiguous",
+            "value": "30"
+          },
+          {
+            "confidence": 0.0,
+            "label": "shank section height",
+            "raw": "2",
+            "status": "ambiguous",
+            "value": "2"
+          },
+          {
+            "confidence": 0.0,
+            "label": "shank section length",
+            "raw": "60",
+            "status": "ambiguous",
+            "value": "60"
+          },
+          {
+            "confidence": 0.0,
+            "label": "band dimension",
+            "raw": "4.35",
+            "status": "ambiguous",
+            "value": "4.35"
+          },
+          {
+            "confidence": 0.0,
+            "label": "band dimension",
+            "raw": "21",
+            "status": "ambiguous",
+            "value": "21"
+          },
+          {
+            "confidence": 0.0,
+            "label": "diamond width",
+            "raw": "2 mm",
+            "status": "designer_confirmed",
+            "value": "2 mm"
+          }
+        ],
+        "metal": "gold (yellow/white two-tone, black diamond notes)",
+        "scale_anchor": null,
+        "scaled": false,
+        "source": "plate",
+        "stones": [
+          {
+            "carat_each": null,
+            "confidence": 0.0,
+            "qty": 1,
+            "size_mm": "TBD",
+            "type": "green square-cut stone (species TBD)"
+          },
+          {
+            "carat_each": null,
+            "confidence": 0.0,
+            "qty": 3,
+            "size_mm": "TBD",
+            "type": "diamond (various cuts)"
+          }
+        ]
+      },
+      "read_score": {
+        "checks": {
+          "authoritative_text": true,
+          "expected_visual_terms": true,
+          "jewelry_type": true,
+          "minimum_stone_groups": true
+        },
+        "multi_design_warning": false,
+        "observed_jewelry_type": "ring",
+        "score": 100.0,
+        "status": "pass",
+        "stone_group_count": 2,
+        "term_hits": [
+          "emerald",
+          "green",
+          "leaf"
+        ],
+        "transcription_hits": [
+          "115",
+          "2 mm",
+          "0.75"
+        ]
+      },
+      "source": {
+        "available": true,
+        "decodable": true,
+        "format": "JPEG",
+        "hash_matches": true,
+        "path": "/Users/mattfb/.codex/attachments/c2fd41d0-b236-43ef-ada9-e9479718c771/image-86.jpg",
+        "sha256": "3aa96aac909bc806b4f93f4f8f995acb03ba41e9ebf5771bad3bed7a5af1289d",
+        "size": [
+          1440,
+          1930
+        ]
+      },
+      "workflows": [
+        "plate_read",
+        "draft_spec",
+        "beauty_render",
+        "lineart",
+        "factory_sheet",
+        "localized_edit"
+      ]
+    },
+    {
+      "case": "leaf-ring-measured-pink",
+      "category": "ring",
+      "input_kind": "measured_colored_design_plate",
+      "latency_ms": 19554,
+      "read": {
+        "assembly": "central pink square-cut stone in yellow gold four-prong setting flanked by symmetrical leaf-motif white gold pav\u00e9 wings with marquise and round diamonds, plain two-tone shank",
+        "hand_written": [
+          "Carat section",
+          "24",
+          "\u03c6.35",
+          "Diamond carat A.14 carat = 0.75 D.1.14 carat = 0.35 D.1.14 carat = 0.35",
+          "30",
+          "2",
+          "60",
+          "Metal Gold Diamond Black Meta : 310Min",
+          "WO hewnsth : 120 gold Diamond width : 2 mm",
+          "R",
+          "115",
+          "15"
+        ],
+        "jewelry_type": "ring",
+        "measurements": [
+          {
+            "confidence": 1.0,
+            "label": "band width",
+            "raw": "Diamond width : 2 mm",
+            "status": "designer_confirmed",
+            "value": "2 mm"
+          },
+          {
+            "confidence": 0.6,
+            "label": "side view height",
+            "raw": "115",
+            "status": "ambiguous",
+            "value": "115"
+          },
+          {
+            "confidence": 0.6,
+            "label": "side view base width",
+            "raw": "15",
+            "status": "ambiguous",
+            "value": "15"
+          }
+        ],
+        "metal": "yellow gold and white gold two-tone",
+        "scale_anchor": null,
+        "scaled": false,
+        "source": "plate",
+        "stones": [
+          {
+            "carat_each": null,
+            "confidence": 0.9,
+            "qty": 1,
+            "size_mm": "TBD",
+            "type": "pink square-cut stone (species TBD)"
+          },
+          {
+            "carat_each": null,
+            "confidence": 0.7,
+            "qty": 2,
+            "size_mm": "TBD",
+            "type": "white marquise-cut diamond"
+          },
+          {
+            "carat_each": null,
+            "confidence": 0.7,
+            "qty": 1,
+            "size_mm": "TBD",
+            "type": "white round brilliant diamond pav\u00e9"
+          }
+        ]
+      },
+      "read_score": {
+        "checks": {
+          "authoritative_text": true,
+          "expected_visual_terms": true,
+          "jewelry_type": true,
+          "minimum_stone_groups": true
+        },
+        "multi_design_warning": false,
+        "observed_jewelry_type": "ring",
+        "score": 100.0,
+        "status": "pass",
+        "stone_group_count": 3,
+        "term_hits": [
+          "pink",
+          "leaf"
+        ],
+        "transcription_hits": [
+          "115",
+          "2 mm",
+          "0.75"
+        ]
+      },
+      "source": {
+        "available": true,
+        "decodable": true,
+        "format": "JPEG",
+        "hash_matches": true,
+        "path": "/Users/mattfb/.codex/attachments/c2fd41d0-b236-43ef-ada9-e9479718c771/image-106.jpg",
+        "sha256": "22926da408316d9ebddddeda3585b06d096d85525e08be4e31a6c2ffad61df48",
+        "size": [
+          1440,
+          1930
+        ]
+      },
+      "workflows": [
+        "plate_read",
+        "localized_edit_ground_truth"
+      ]
+    }
+  ],
+  "run": "designer-reference-read-leaf-pair-v2-2026-07-11",
+  "source_policy": "Founder-supplied evaluation references only. Do not publish, train on, or treat as customer-owned production assets. Third-party branding and social watermarks must never appear in accepted outputs.",
+  "stage": "read"
+}

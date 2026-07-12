@@ -1,0 +1,200 @@
+{
+  "accepted": false,
+  "attempts": [
+    {
+      "attempt_number": 1,
+      "cache_key": "43be778aa1b34f486b58b29d435dfd019a29053473b05d0eceb8f5d9eb7bd5ce",
+      "cached": false,
+      "corrective_instruction": null,
+      "cost": null,
+      "error": null,
+      "error_category": null,
+      "fallback_reason": null,
+      "latency_ms": 19615,
+      "model": "grok_direct",
+      "output_hash": "0a7155abd4f519ed1dd37251ecd88817737e7520c1e26f81f8a19c2c4bcc97ac",
+      "prompt_hash": "fa993697df663787d0543ced22090e3ef2d03adf5aff90f3bad6de65a0d0f0e8",
+      "provider": "xai",
+      "provider_request_id": null,
+      "qa_checks": [
+        {
+          "code": "decodable_image",
+          "evidence": {
+            "format": "JPEG",
+            "height": 1168,
+            "width": 880
+          },
+          "message": "candidate is a decodable raster image",
+          "passed": true,
+          "severity": "hard"
+        },
+        {
+          "code": "review_resolution",
+          "evidence": {
+            "height": 1168,
+            "width": 880
+          },
+          "message": "candidate has reviewable raster dimensions",
+          "passed": true,
+          "severity": "warning"
+        },
+        {
+          "code": "candidate_changed",
+          "evidence": {},
+          "message": "candidate bytes differ from the source",
+          "passed": true,
+          "severity": "hard"
+        },
+        {
+          "code": "coherent_jewelry_render",
+          "evidence": {},
+          "message": "visual evidence matches the requested fact",
+          "passed": true,
+          "severity": "hard"
+        },
+        {
+          "code": "source_design_preserved",
+          "evidence": {},
+          "message": "visual evidence matches the requested fact",
+          "passed": true,
+          "severity": "hard"
+        },
+        {
+          "code": "visible_components_preserved",
+          "evidence": {},
+          "message": "visual evidence matches the requested fact",
+          "passed": true,
+          "severity": "hard"
+        },
+        {
+          "code": "requested_presentation_applied",
+          "evidence": {},
+          "message": "visual evidence matches the requested fact",
+          "passed": true,
+          "severity": "hard"
+        },
+        {
+          "code": "text_or_branding",
+          "evidence": {},
+          "message": "visual evidence matches the requested fact",
+          "passed": true,
+          "severity": "hard"
+        },
+        {
+          "code": "factory_authority",
+          "evidence": {
+            "factory_authoritative": false
+          },
+          "message": "creative render is review-only and cannot establish hidden geometry, dimensions, materials, stone identity, or factory facts",
+          "passed": false,
+          "severity": "warning"
+        }
+      ],
+      "qa_verdict": "warn",
+      "quality_score": 95.0,
+      "route": "grok_edit",
+      "usage": null
+    }
+  ],
+  "candidate_file": "candidate.jpg",
+  "candidate_media_type": "image/jpeg",
+  "candidate_sha256": "0a7155abd4f519ed1dd37251ecd88817737e7520c1e26f81f8a19c2c4bcc97ac",
+  "executed_at": "2026-07-11T15:39:20.104674+00:00",
+  "factory_authoritative": false,
+  "input_hash": "8ff243bac328db2a027c9d8dd78ece776407c33be6e23cd5de09855aa622d8e1",
+  "instruction": "Interpret the two flower motifs and connecting drawn cord as one open lariat necklace design. Create one clean photorealistic product render of that complete necklace on a neutral studio background. Preserve exactly two matching five-petal yellow-gold flower terminals, each with one green center stone and the visible clear pear/round accent-stone arrangement, plus the asymmetric open cord path. Remove paper texture, border, signature, captions, and platform watermark; do not add a third flower or redesign the petals.",
+  "maximum_attempts": 3,
+  "operation": "REFERENCE_RENDER",
+  "product_asset_persisted": false,
+  "prompt_version": "reference-render.v1",
+  "quality": {
+    "checks": [
+      {
+        "code": "decodable_image",
+        "evidence": {
+          "format": "JPEG",
+          "height": 1168,
+          "width": 880
+        },
+        "message": "candidate is a decodable raster image",
+        "passed": true,
+        "severity": "hard"
+      },
+      {
+        "code": "review_resolution",
+        "evidence": {
+          "height": 1168,
+          "width": 880
+        },
+        "message": "candidate has reviewable raster dimensions",
+        "passed": true,
+        "severity": "warning"
+      },
+      {
+        "code": "candidate_changed",
+        "evidence": {},
+        "message": "candidate bytes differ from the source",
+        "passed": true,
+        "severity": "hard"
+      },
+      {
+        "code": "coherent_jewelry_render",
+        "evidence": {},
+        "message": "visual evidence matches the requested fact",
+        "passed": true,
+        "severity": "hard"
+      },
+      {
+        "code": "source_design_preserved",
+        "evidence": {},
+        "message": "visual evidence matches the requested fact",
+        "passed": true,
+        "severity": "hard"
+      },
+      {
+        "code": "visible_components_preserved",
+        "evidence": {},
+        "message": "visual evidence matches the requested fact",
+        "passed": true,
+        "severity": "hard"
+      },
+      {
+        "code": "requested_presentation_applied",
+        "evidence": {},
+        "message": "visual evidence matches the requested fact",
+        "passed": true,
+        "severity": "hard"
+      },
+      {
+        "code": "text_or_branding",
+        "evidence": {},
+        "message": "visual evidence matches the requested fact",
+        "passed": true,
+        "severity": "hard"
+      },
+      {
+        "code": "factory_authority",
+        "evidence": {
+          "factory_authoritative": false
+        },
+        "message": "creative render is review-only and cannot establish hidden geometry, dimensions, materials, stone identity, or factory facts",
+        "passed": false,
+        "severity": "warning"
+      }
+    ],
+    "notes": [
+      "exact two flowers with matching green center + pear/round white stones",
+      "open asymmetric black cord lariat on neutral gray background",
+      "no added elements, no text/watermarks/signatures"
+    ],
+    "score": 95.0,
+    "verdict": "warn"
+  },
+  "result_set": "reference-render-flower-lariat-hand-source-live-v1-2026-07-11",
+  "review_required": true,
+  "source": "/Users/mattfb/.codex/attachments/c2fd41d0-b236-43ef-ada9-e9479718c771/image-33.jpg",
+  "source_sha256": "96b86bdd4e085fc4414f2e7e53366c4668980f8a24562e9dfabe508c9a4c9113",
+  "status": "review_required",
+  "variant": 3,
+  "verdict": "warn"
+}

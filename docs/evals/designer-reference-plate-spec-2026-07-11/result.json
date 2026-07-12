@@ -1,0 +1,205 @@
+{
+  "latency_ms": 16519,
+  "provider_readiness": {
+    "fal_configured": false,
+    "xai_configured": true
+  },
+  "response": {
+    "provenance": "grok_vision_hand_plate_draft",
+    "read": {
+      "assembly": "ring with central square green stone in four-prong yellow gold setting, flanked by symmetrical leaf motifs pav\u00e9-set with diamonds, white gold shank with channel-set stones on upper half",
+      "hand_written": [
+        "Carat section",
+        "21",
+        "\u03c635",
+        "Diamond carat",
+        "A.14 carat = 0.75",
+        "D.1.14 carat = 0.35",
+        "D.1.14 carat = 0.35",
+        "30",
+        "2",
+        "60",
+        "Metal Gold",
+        "diamond Black",
+        "Meta : 310Min",
+        "WO henth : 120 gold",
+        "Diamond width : 2 mm",
+        "R",
+        "115",
+        "15"
+      ],
+      "jewelry_type": "ring",
+      "measurements": [
+        {
+          "confidence": 0.0,
+          "label": "overall height",
+          "raw": "115",
+          "status": "ambiguous",
+          "value": "115"
+        },
+        {
+          "confidence": 0.0,
+          "label": "shank width",
+          "raw": "15",
+          "status": "ambiguous",
+          "value": "15"
+        },
+        {
+          "confidence": 0.0,
+          "label": "band height",
+          "raw": "2",
+          "status": "ambiguous",
+          "value": "2"
+        },
+        {
+          "confidence": 0.0,
+          "label": "diameter",
+          "raw": "30",
+          "status": "ambiguous",
+          "value": "30"
+        },
+        {
+          "confidence": 0.0,
+          "label": "diameter",
+          "raw": "60",
+          "status": "ambiguous",
+          "value": "60"
+        }
+      ],
+      "metal": "Metal Gold / 120 gold / two-tone (yellow/white)",
+      "scale_anchor": null,
+      "scaled": false,
+      "source": "plate",
+      "stones": [
+        {
+          "carat_each": null,
+          "confidence": 0.0,
+          "qty": 1,
+          "size_mm": "TBD",
+          "type": "green square-cut stone (species TBD)"
+        },
+        {
+          "carat_each": null,
+          "confidence": 0.0,
+          "qty": 1,
+          "size_mm": "TBD",
+          "type": "diamond round + marquise + baguette"
+        }
+      ]
+    },
+    "requires_designer_confirmation": true,
+    "spec": {
+      "band": {
+        "profile": "half_round",
+        "thickness_mm": 1.6,
+        "width_mm": 2.0
+      },
+      "bracelet": null,
+      "brooch": null,
+      "chain": null,
+      "composition": null,
+      "created_at": "2026-07-10T17:37:43.469066Z",
+      "created_by": "usr_ana",
+      "design_id": "draft_plate",
+      "drop": null,
+      "jewelry_type": "ring",
+      "metal": {
+        "color": "yellow",
+        "finish": "high_polish",
+        "karat": 18,
+        "material": "gold"
+      },
+      "mode": "pro",
+      "notes_to_factory": "DRAFT FROM DESIGN PLATE \u2014 visual estimates and placeholders require designer confirmation before factory release. center stone species is not named; diamond is a placeholder center stone dimensions are not confirmed; using nominal 8 mm placeholder side stone count is not confirmed; showing one representative stone side stone dimensions are not confirmed; using nominal 2 mm placeholder setting/prong count is not confirmed; using four-prong placeholder metal karat is not explicit in 'Metal Gold / 120 gold / two-tone (yellow/white)'; using 18k placeholder band width is not designer-confirmed; using 2.0 mm placeholder ring size is not established by the plate; using US 6.5 placeholder",
+      "pendant": null,
+      "ring_size": {
+        "inner_diameter_mm": 16.91,
+        "system": "US",
+        "value": 6.5
+      },
+      "schema_version": 1,
+      "setting": {
+        "gallery_height_mm": null,
+        "prong_count": 4,
+        "prong_tip_mm": 0.9,
+        "style": "4_prong_basket"
+      },
+      "side_stones": [
+        {
+          "carat": 0.031,
+          "clarity": null,
+          "color": {
+            "gia": "TBD",
+            "hue_code": null,
+            "saturation": null,
+            "tone": null,
+            "trade": "TBD"
+          },
+          "count": 1,
+          "culet": null,
+          "cut": "round_brilliant",
+          "depth_pct": null,
+          "dimensions_mm": {
+            "depth": 1.22,
+            "length": 2.0,
+            "width": 2.0
+          },
+          "girdle": null,
+          "inscription": null,
+          "lab": null,
+          "mount": null,
+          "origin": null,
+          "phenomena": [],
+          "position": "side",
+          "species": "diamond",
+          "table_pct": null,
+          "treatment": null
+        }
+      ],
+      "stone": {
+        "carat": 2.617,
+        "clarity": null,
+        "color": {
+          "gia": "TBD",
+          "hue_code": null,
+          "saturation": null,
+          "tone": null,
+          "trade": "TBD"
+        },
+        "count": 1,
+        "culet": null,
+        "cut": "cushion",
+        "depth_pct": null,
+        "dimensions_mm": {
+          "depth": 5.28,
+          "length": 8.0,
+          "width": 8.0
+        },
+        "girdle": null,
+        "inscription": null,
+        "lab": null,
+        "mount": null,
+        "origin": null,
+        "phenomena": [],
+        "position": "center",
+        "species": "diamond",
+        "table_pct": null,
+        "treatment": null
+      },
+      "template": "solitaire_prong",
+      "version": 1
+    },
+    "uncertainties": [
+      "DRAFT FROM DESIGN PLATE \u2014 visual estimates and placeholders require designer confirmation before factory release.",
+      "center stone species is not named; diamond is a placeholder",
+      "center stone dimensions are not confirmed; using nominal 8 mm placeholder",
+      "side stone count is not confirmed; showing one representative stone",
+      "side stone dimensions are not confirmed; using nominal 2 mm placeholder",
+      "setting/prong count is not confirmed; using four-prong placeholder",
+      "metal karat is not explicit in 'Metal Gold / 120 gold / two-tone (yellow/white)'; using 18k placeholder",
+      "band width is not designer-confirmed; using 2.0 mm placeholder",
+      "ring size is not established by the plate; using US 6.5 placeholder"
+    ]
+  },
+  "status_code": 200
+}

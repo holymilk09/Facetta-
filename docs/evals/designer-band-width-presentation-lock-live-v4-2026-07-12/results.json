@@ -1,0 +1,1197 @@
+{
+  "fallback_provider": "openai",
+  "fallback_tested": true,
+  "gia_evaluator_review": {
+    "completed": false,
+    "false_negatives": null,
+    "false_positives": null,
+    "reviewer": null
+  },
+  "live": true,
+  "mode": "live",
+  "persistence_evidence": {
+    "method": "not_run",
+    "note": "This image-engine run did not exercise canonical project persistence. Attach a named canonical-API integration result before the persistence release gate can pass.",
+    "rejected_active_asset_count": null,
+    "result_set": null,
+    "verified": false
+  },
+  "release_gates": {
+    "blocking_enabled": false,
+    "note": "Only canonical edit 'band-width' was executed.",
+    "status": "diagnostic_subset_not_evaluated"
+  },
+  "routing_mode": "grok_then_openai",
+  "rows": [
+    {
+      "case": "oval-solitaire-white-6-wide",
+      "kind": "source",
+      "source_override": {
+        "golden_case": "oval-solitaire-white-6-wide",
+        "path": "/Users/mattfb/Documents/Facetta-trusted-workflow/docs/evals/designer-band-width-openai-fallback-live-v2-2026-07-12/oval-solitaire-white-6-wide.png",
+        "provenance": "operator-selected, previously reviewed spec-aligned source; not re-generated or re-audited by this result set",
+        "scope": "single_edit_diagnostic_only",
+        "sha256": "12b71e069880e33b39a7e20d85cd4a868ee868df98c8a199634fb3938802753a"
+      },
+      "starting_point": "imported_reference"
+    },
+    {
+      "agent_error": {
+        "attempts": [
+          {
+            "attempt_number": 1,
+            "cache_key": "d26234259ddd5bf513697dc47c26fe0be379fd9aaf370f7908676b4e757618ce",
+            "cached": true,
+            "corrective_instruction": null,
+            "cost": null,
+            "error": null,
+            "error_category": null,
+            "fallback_reason": null,
+            "latency_ms": 26519,
+            "model": "grok_direct",
+            "output_hash": "4367dfa0bd5e3c246bd748382755d8ac09b5feb531dee9ca592bba19f5f6b906",
+            "prompt_hash": "30db0ce9dd44e091b998607beeab93bfab2bb129efbb538f7e8b21428bd50616",
+            "provider": "xai",
+            "provider_request_id": null,
+            "qa_checks": [
+              {
+                "code": "decodable_image",
+                "evidence": {
+                  "format": "JPEG",
+                  "height": 1024,
+                  "width": 1024
+                },
+                "message": "candidate is a decodable raster image",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "review_resolution",
+                "evidence": {
+                  "height": 1024,
+                  "width": 1024
+                },
+                "message": "candidate has reviewable raster dimensions",
+                "passed": true,
+                "severity": "warning"
+              },
+              {
+                "code": "candidate_changed",
+                "evidence": {},
+                "message": "candidate bytes differ from the source",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "requested_change",
+                "evidence": {
+                  "center_shift": 0.055243,
+                  "change_visible": false,
+                  "checked": true,
+                  "direction": "widen",
+                  "foreground_area_ratio": 0.591798,
+                  "foreground_median_width_ratio": 0.600649,
+                  "framing_stable": false,
+                  "height_ratio": 1.688,
+                  "target_relative_change": 0.1875
+                },
+                "message": "camera/framing changed too much to verify an isolated band-width edit",
+                "passed": false,
+                "severity": "hard"
+              },
+              {
+                "code": "protected_regions",
+                "evidence": {},
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "unintended_drift",
+                "evidence": {
+                  "changes": [],
+                  "severity": "none"
+                },
+                "message": "no unintended changes detected",
+                "passed": true,
+                "severity": "warning"
+              },
+              {
+                "code": "spec_change",
+                "evidence": {
+                  "center_shift": 0.055243,
+                  "change_visible": false,
+                  "checked": true,
+                  "direction": "widen",
+                  "foreground_area_ratio": 0.591798,
+                  "foreground_median_width_ratio": 0.600649,
+                  "framing_stable": false,
+                  "height_ratio": 1.688,
+                  "spec_delta": [
+                    {
+                      "from": "3.2 mm",
+                      "kind": "changed",
+                      "label": "band width",
+                      "path": "band.width_mm",
+                      "to": "3.8 mm"
+                    }
+                  ],
+                  "target_relative_change": 0.1875
+                },
+                "message": "camera/framing changed too much to verify an isolated band-width edit",
+                "passed": false,
+                "severity": "hard"
+              },
+              {
+                "code": "edit_domain:band_geometry",
+                "evidence": {
+                  "center_shift": 0.055243,
+                  "change_visible": false,
+                  "checked": true,
+                  "direction": "widen",
+                  "domain": "band_geometry",
+                  "foreground_area_ratio": 0.591798,
+                  "foreground_median_width_ratio": 0.600649,
+                  "framing_stable": false,
+                  "height_ratio": 1.688,
+                  "spec_delta": [
+                    {
+                      "from": "3.2 mm",
+                      "kind": "changed",
+                      "label": "band width",
+                      "path": "band.width_mm",
+                      "to": "3.8 mm"
+                    }
+                  ],
+                  "target_relative_change": 0.1875
+                },
+                "message": "camera/framing changed too much to verify an isolated band-width edit",
+                "passed": false,
+                "severity": "hard"
+              },
+              {
+                "code": "crosscheck_requested_change",
+                "evidence": {},
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "crosscheck_frozen_facts",
+                "evidence": {},
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "crosscheck_unintended_drift",
+                "evidence": {
+                  "changes": [],
+                  "severity": "none"
+                },
+                "message": "independent audit found no unintended changes",
+                "passed": true,
+                "severity": "warning"
+              },
+              {
+                "code": "crosscheck_edit_domains",
+                "evidence": {
+                  "domain_mismatches": []
+                },
+                "message": "independent audit matched every required edit domain",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "target_spec_crosscheck:jewelry_type",
+                "evidence": {
+                  "differences": [],
+                  "observed_prong_count": 6,
+                  "observed_side_stone_count": 0
+                },
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "target_spec_crosscheck:center_identity",
+                "evidence": {
+                  "differences": [],
+                  "observed_prong_count": 6,
+                  "observed_side_stone_count": 0
+                },
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "target_spec_crosscheck:center_cut",
+                "evidence": {
+                  "differences": [],
+                  "observed_prong_count": 6,
+                  "observed_side_stone_count": 0
+                },
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "target_spec_crosscheck:metal",
+                "evidence": {
+                  "differences": [],
+                  "observed_prong_count": 6,
+                  "observed_side_stone_count": 0
+                },
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "target_spec_crosscheck:setting_style",
+                "evidence": {
+                  "differences": [],
+                  "observed_prong_count": 6,
+                  "observed_side_stone_count": 0
+                },
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "target_spec_crosscheck:prong_count",
+                "evidence": {
+                  "differences": [],
+                  "observed_prong_count": 6,
+                  "observed_side_stone_count": 0
+                },
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "target_spec_crosscheck:side_stone_inventory",
+                "evidence": {
+                  "differences": [],
+                  "observed_prong_count": 6,
+                  "observed_side_stone_count": 0
+                },
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "target_spec_crosscheck:major_components",
+                "evidence": {
+                  "differences": [],
+                  "observed_prong_count": 6,
+                  "observed_side_stone_count": 0
+                },
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "band_edit_presentation_lock",
+                "evidence": {
+                  "center_shift": 0.055243,
+                  "change_visible": false,
+                  "checked": true,
+                  "direction": "widen",
+                  "foreground_area_ratio": 0.591798,
+                  "foreground_median_width_ratio": 0.600649,
+                  "framing_stable": false,
+                  "height_ratio": 1.688,
+                  "target_relative_change": 0.1875
+                },
+                "message": "camera, crop, scale, or framing changed during the band edit; the result is not an isolated adjustment",
+                "passed": false,
+                "severity": "hard"
+              },
+              {
+                "code": "text_or_branding",
+                "evidence": {},
+                "message": "no text or branding introduced",
+                "passed": true,
+                "severity": "hard"
+              }
+            ],
+            "qa_verdict": "fail",
+            "quality_score": 90.0,
+            "route": "grok_edit",
+            "usage": null
+          },
+          {
+            "attempt_number": 2,
+            "cache_key": "71110a66adb349f16aa606d2767f5eeeeffe92fe56fe71a8dbe7b666a7d70bdb",
+            "cached": false,
+            "corrective_instruction": "- requested_change: camera/framing changed too much to verify an isolated band-width edit. Evidence: {\"center_shift\": 0.055243, \"change_visible\": false, \"checked\": true, \"direction\": \"widen\", \"foreground_area_ratio\": 0.591798, \"foreground_median_width_ratio\": 0.600649, \"framing_stable\": false, \"height_ratio\": 1.688, \"target_relative_change\": 0.1875}\n- spec_change: camera/framing changed too much to verify an isolated band-width edit. Evidence: {\"center_shift\": 0.055243, \"change_visible\": false, \"checked\": true, \"direction\": \"widen\", \"foreground_area_ratio\": 0.591798, \"foreground_median_width_ratio\": 0.600649, \"framing_stable\": false, \"height_ratio\": 1.688, \"spec_delta\": [{\"from\": \"3.2 mm\", \"kind\": \"changed\", \"label\": \"band width\", \"path\": \"band.width_mm\", \"to\": \"3.8 mm\"}], \"target_relative_change\": 0.1875}\n- edit_domain:band_geometry: camera/framing changed too much to verify an isolated band-width edit. Evidence: {\"center_shift\": 0.055243, \"change_visible\": false, \"checked\": true, \"direction\": \"widen\", \"domain\": \"band_geometry\", \"foreground_area_ratio\": 0.591798, \"foreground_median_width_ratio\": 0.600649, \"framing_stable\": false, \"height_ratio\": 1.688, \"spec_delta\": [{\"from\": \"3.2 mm\", \"kind\": \"changed\", \"label\": \"band width\", \"path\": \"band.width_mm\", \"to\": \"3.8 mm\"}], \"target_relative_change\": 0.1875}\n- band_edit_presentation_lock: camera, crop, scale, or framing changed during the band edit; the result is not an isolated adjustment. Evidence: {\"center_shift\": 0.055243, \"change_visible\": false, \"checked\": true, \"direction\": \"widen\", \"foreground_area_ratio\": 0.591798, \"foreground_median_width_ratio\": 0.600649, \"framing_stable\": false, \"height_ratio\": 1.688, \"target_relative_change\": 0.1875}",
+            "cost": null,
+            "error": null,
+            "error_category": null,
+            "fallback_reason": null,
+            "latency_ms": 32965,
+            "model": "grok_direct",
+            "output_hash": "fdeec3caca4358d038f78121d65629e6c949131701e00e4664708315cd6c3be0",
+            "prompt_hash": "184ccbf7b64ce5bd9921737a701e44220ed8ea353ed914458c158fa216bbe1dd",
+            "provider": "xai",
+            "provider_request_id": null,
+            "qa_checks": [
+              {
+                "code": "decodable_image",
+                "evidence": {
+                  "format": "JPEG",
+                  "height": 1024,
+                  "width": 1024
+                },
+                "message": "candidate is a decodable raster image",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "review_resolution",
+                "evidence": {
+                  "height": 1024,
+                  "width": 1024
+                },
+                "message": "candidate has reviewable raster dimensions",
+                "passed": true,
+                "severity": "warning"
+              },
+              {
+                "code": "candidate_changed",
+                "evidence": {},
+                "message": "candidate bytes differ from the source",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "requested_change",
+                "evidence": {
+                  "center_shift": 0.022269,
+                  "change_visible": false,
+                  "checked": true,
+                  "direction": "widen",
+                  "foreground_area_ratio": 0.715243,
+                  "foreground_median_width_ratio": 0.756494,
+                  "framing_stable": false,
+                  "height_ratio": 1.568,
+                  "target_relative_change": 0.1875
+                },
+                "message": "camera/framing changed too much to verify an isolated band-width edit",
+                "passed": false,
+                "severity": "hard"
+              },
+              {
+                "code": "protected_regions",
+                "evidence": {},
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "unintended_drift",
+                "evidence": {
+                  "changes": [],
+                  "severity": "none"
+                },
+                "message": "no unintended changes detected",
+                "passed": true,
+                "severity": "warning"
+              },
+              {
+                "code": "spec_change",
+                "evidence": {
+                  "center_shift": 0.022269,
+                  "change_visible": false,
+                  "checked": true,
+                  "direction": "widen",
+                  "foreground_area_ratio": 0.715243,
+                  "foreground_median_width_ratio": 0.756494,
+                  "framing_stable": false,
+                  "height_ratio": 1.568,
+                  "spec_delta": [
+                    {
+                      "from": "3.2 mm",
+                      "kind": "changed",
+                      "label": "band width",
+                      "path": "band.width_mm",
+                      "to": "3.8 mm"
+                    }
+                  ],
+                  "target_relative_change": 0.1875
+                },
+                "message": "camera/framing changed too much to verify an isolated band-width edit",
+                "passed": false,
+                "severity": "hard"
+              },
+              {
+                "code": "edit_domain:band_geometry",
+                "evidence": {
+                  "center_shift": 0.022269,
+                  "change_visible": false,
+                  "checked": true,
+                  "direction": "widen",
+                  "domain": "band_geometry",
+                  "foreground_area_ratio": 0.715243,
+                  "foreground_median_width_ratio": 0.756494,
+                  "framing_stable": false,
+                  "height_ratio": 1.568,
+                  "spec_delta": [
+                    {
+                      "from": "3.2 mm",
+                      "kind": "changed",
+                      "label": "band width",
+                      "path": "band.width_mm",
+                      "to": "3.8 mm"
+                    }
+                  ],
+                  "target_relative_change": 0.1875
+                },
+                "message": "camera/framing changed too much to verify an isolated band-width edit",
+                "passed": false,
+                "severity": "hard"
+              },
+              {
+                "code": "crosscheck_requested_change",
+                "evidence": {},
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "crosscheck_frozen_facts",
+                "evidence": {},
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "crosscheck_unintended_drift",
+                "evidence": {
+                  "changes": [],
+                  "severity": "none"
+                },
+                "message": "independent audit found no unintended changes",
+                "passed": true,
+                "severity": "warning"
+              },
+              {
+                "code": "crosscheck_edit_domains",
+                "evidence": {
+                  "domain_mismatches": []
+                },
+                "message": "independent audit matched every required edit domain",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "target_spec_crosscheck:jewelry_type",
+                "evidence": {
+                  "differences": [],
+                  "observed_prong_count": 6,
+                  "observed_side_stone_count": 0
+                },
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "target_spec_crosscheck:center_identity",
+                "evidence": {
+                  "differences": [],
+                  "observed_prong_count": 6,
+                  "observed_side_stone_count": 0
+                },
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "target_spec_crosscheck:center_cut",
+                "evidence": {
+                  "differences": [],
+                  "observed_prong_count": 6,
+                  "observed_side_stone_count": 0
+                },
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "target_spec_crosscheck:metal",
+                "evidence": {
+                  "differences": [],
+                  "observed_prong_count": 6,
+                  "observed_side_stone_count": 0
+                },
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "target_spec_crosscheck:setting_style",
+                "evidence": {
+                  "differences": [],
+                  "observed_prong_count": 6,
+                  "observed_side_stone_count": 0
+                },
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "target_spec_crosscheck:prong_count",
+                "evidence": {
+                  "differences": [],
+                  "observed_prong_count": 6,
+                  "observed_side_stone_count": 0
+                },
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "target_spec_crosscheck:side_stone_inventory",
+                "evidence": {
+                  "differences": [],
+                  "observed_prong_count": 6,
+                  "observed_side_stone_count": 0
+                },
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "target_spec_crosscheck:major_components",
+                "evidence": {
+                  "differences": [],
+                  "observed_prong_count": 6,
+                  "observed_side_stone_count": 0
+                },
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "band_edit_presentation_lock",
+                "evidence": {
+                  "center_shift": 0.022269,
+                  "change_visible": false,
+                  "checked": true,
+                  "direction": "widen",
+                  "foreground_area_ratio": 0.715243,
+                  "foreground_median_width_ratio": 0.756494,
+                  "framing_stable": false,
+                  "height_ratio": 1.568,
+                  "target_relative_change": 0.1875
+                },
+                "message": "camera, crop, scale, or framing changed during the band edit; the result is not an isolated adjustment",
+                "passed": false,
+                "severity": "hard"
+              },
+              {
+                "code": "text_or_branding",
+                "evidence": {},
+                "message": "no text or branding introduced",
+                "passed": true,
+                "severity": "hard"
+              }
+            ],
+            "qa_verdict": "fail",
+            "quality_score": 90.0,
+            "route": "grok_edit",
+            "usage": null
+          },
+          {
+            "attempt_number": 3,
+            "cache_key": "77b0f79d3df421eb781ee16dce0f9e1e2fd310d5710084b0bd3fcb4b91a3f716",
+            "cached": false,
+            "corrective_instruction": "- requested_change: camera/framing changed too much to verify an isolated band-width edit. Evidence: {\"center_shift\": 0.022269, \"change_visible\": false, \"checked\": true, \"direction\": \"widen\", \"foreground_area_ratio\": 0.715243, \"foreground_median_width_ratio\": 0.756494, \"framing_stable\": false, \"height_ratio\": 1.568, \"target_relative_change\": 0.1875}\n- spec_change: camera/framing changed too much to verify an isolated band-width edit. Evidence: {\"center_shift\": 0.022269, \"change_visible\": false, \"checked\": true, \"direction\": \"widen\", \"foreground_area_ratio\": 0.715243, \"foreground_median_width_ratio\": 0.756494, \"framing_stable\": false, \"height_ratio\": 1.568, \"spec_delta\": [{\"from\": \"3.2 mm\", \"kind\": \"changed\", \"label\": \"band width\", \"path\": \"band.width_mm\", \"to\": \"3.8 mm\"}], \"target_relative_change\": 0.1875}\n- edit_domain:band_geometry: camera/framing changed too much to verify an isolated band-width edit. Evidence: {\"center_shift\": 0.022269, \"change_visible\": false, \"checked\": true, \"direction\": \"widen\", \"domain\": \"band_geometry\", \"foreground_area_ratio\": 0.715243, \"foreground_median_width_ratio\": 0.756494, \"framing_stable\": false, \"height_ratio\": 1.568, \"spec_delta\": [{\"from\": \"3.2 mm\", \"kind\": \"changed\", \"label\": \"band width\", \"path\": \"band.width_mm\", \"to\": \"3.8 mm\"}], \"target_relative_change\": 0.1875}\n- band_edit_presentation_lock: camera, crop, scale, or framing changed during the band edit; the result is not an isolated adjustment. Evidence: {\"center_shift\": 0.022269, \"change_visible\": false, \"checked\": true, \"direction\": \"widen\", \"foreground_area_ratio\": 0.715243, \"foreground_median_width_ratio\": 0.756494, \"framing_stable\": false, \"height_ratio\": 1.568, \"target_relative_change\": 0.1875}",
+            "cost": null,
+            "error": null,
+            "error_category": null,
+            "fallback_reason": "grok_qa_failed",
+            "latency_ms": 73120,
+            "model": "gpt-image-2",
+            "output_hash": "2e2d868e3926d2c015c6c60f978b36c0e84a975cc4fc09b31fae91deca5bb3ac",
+            "prompt_hash": "9cdbc0bc9200cfea56819543c7e010b95ad7b8aa2ac5bb93f6536db8b9afe138",
+            "provider": "openai",
+            "provider_request_id": "req_f18c8f7abce24c359858e141bca720d0",
+            "qa_checks": [
+              {
+                "code": "decodable_image",
+                "evidence": {
+                  "format": "PNG",
+                  "height": 1024,
+                  "width": 1024
+                },
+                "message": "candidate is a decodable raster image",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "review_resolution",
+                "evidence": {
+                  "height": 1024,
+                  "width": 1024
+                },
+                "message": "candidate has reviewable raster dimensions",
+                "passed": true,
+                "severity": "warning"
+              },
+              {
+                "code": "candidate_changed",
+                "evidence": {},
+                "message": "candidate bytes differ from the source",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "requested_change",
+                "evidence": {
+                  "center_shift": 0.015625,
+                  "change_visible": false,
+                  "checked": true,
+                  "direction": "widen",
+                  "foreground_area_ratio": 1.008476,
+                  "foreground_median_width_ratio": 1.113636,
+                  "framing_stable": false,
+                  "height_ratio": 0.936,
+                  "target_relative_change": 0.1875
+                },
+                "message": "camera/framing changed too much to verify an isolated band-width edit",
+                "passed": false,
+                "severity": "hard"
+              },
+              {
+                "code": "protected_regions",
+                "evidence": {},
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "unintended_drift",
+                "evidence": {
+                  "changes": [],
+                  "severity": "none"
+                },
+                "message": "no unintended changes detected",
+                "passed": true,
+                "severity": "warning"
+              },
+              {
+                "code": "spec_change",
+                "evidence": {
+                  "center_shift": 0.015625,
+                  "change_visible": false,
+                  "checked": true,
+                  "direction": "widen",
+                  "foreground_area_ratio": 1.008476,
+                  "foreground_median_width_ratio": 1.113636,
+                  "framing_stable": false,
+                  "height_ratio": 0.936,
+                  "spec_delta": [
+                    {
+                      "from": "3.2 mm",
+                      "kind": "changed",
+                      "label": "band width",
+                      "path": "band.width_mm",
+                      "to": "3.8 mm"
+                    }
+                  ],
+                  "target_relative_change": 0.1875
+                },
+                "message": "camera/framing changed too much to verify an isolated band-width edit",
+                "passed": false,
+                "severity": "hard"
+              },
+              {
+                "code": "edit_domain:band_geometry",
+                "evidence": {
+                  "center_shift": 0.015625,
+                  "change_visible": false,
+                  "checked": true,
+                  "direction": "widen",
+                  "domain": "band_geometry",
+                  "foreground_area_ratio": 1.008476,
+                  "foreground_median_width_ratio": 1.113636,
+                  "framing_stable": false,
+                  "height_ratio": 0.936,
+                  "spec_delta": [
+                    {
+                      "from": "3.2 mm",
+                      "kind": "changed",
+                      "label": "band width",
+                      "path": "band.width_mm",
+                      "to": "3.8 mm"
+                    }
+                  ],
+                  "target_relative_change": 0.1875
+                },
+                "message": "camera/framing changed too much to verify an isolated band-width edit",
+                "passed": false,
+                "severity": "hard"
+              },
+              {
+                "code": "crosscheck_requested_change",
+                "evidence": {},
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "crosscheck_frozen_facts",
+                "evidence": {},
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "crosscheck_unintended_drift",
+                "evidence": {
+                  "changes": [],
+                  "severity": "none"
+                },
+                "message": "independent audit found no unintended changes",
+                "passed": true,
+                "severity": "warning"
+              },
+              {
+                "code": "crosscheck_edit_domains",
+                "evidence": {
+                  "domain_mismatches": []
+                },
+                "message": "independent audit matched every required edit domain",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "target_spec_crosscheck:jewelry_type",
+                "evidence": {
+                  "differences": [],
+                  "observed_prong_count": 4,
+                  "observed_side_stone_count": 0
+                },
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "target_spec_crosscheck:center_identity",
+                "evidence": {
+                  "differences": [],
+                  "observed_prong_count": 4,
+                  "observed_side_stone_count": 0
+                },
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "target_spec_crosscheck:center_cut",
+                "evidence": {
+                  "differences": [],
+                  "observed_prong_count": 4,
+                  "observed_side_stone_count": 0
+                },
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "target_spec_crosscheck:metal",
+                "evidence": {
+                  "differences": [],
+                  "observed_prong_count": 4,
+                  "observed_side_stone_count": 0
+                },
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "target_spec_crosscheck:setting_style",
+                "evidence": {
+                  "differences": [],
+                  "observed_prong_count": 4,
+                  "observed_side_stone_count": 0
+                },
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "target_spec_crosscheck:prong_count",
+                "evidence": {
+                  "differences": [],
+                  "observed_prong_count": 4,
+                  "observed_side_stone_count": 0
+                },
+                "message": "independent audit found the wrong center-prong count",
+                "passed": false,
+                "severity": "hard"
+              },
+              {
+                "code": "target_spec_crosscheck:side_stone_inventory",
+                "evidence": {
+                  "differences": [],
+                  "observed_prong_count": 4,
+                  "observed_side_stone_count": 0
+                },
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "target_spec_crosscheck:major_components",
+                "evidence": {
+                  "differences": [],
+                  "observed_prong_count": 4,
+                  "observed_side_stone_count": 0
+                },
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "band_edit_presentation_lock",
+                "evidence": {
+                  "center_shift": 0.015625,
+                  "change_visible": false,
+                  "checked": true,
+                  "direction": "widen",
+                  "foreground_area_ratio": 1.008476,
+                  "foreground_median_width_ratio": 1.113636,
+                  "framing_stable": false,
+                  "height_ratio": 0.936,
+                  "target_relative_change": 0.1875
+                },
+                "message": "camera, crop, scale, or framing changed during the band edit; the result is not an isolated adjustment",
+                "passed": false,
+                "severity": "hard"
+              },
+              {
+                "code": "text_or_branding",
+                "evidence": {},
+                "message": "no text or branding introduced",
+                "passed": true,
+                "severity": "hard"
+              }
+            ],
+            "qa_verdict": "fail",
+            "quality_score": 15.0,
+            "route": "openai_edit",
+            "usage": {
+              "input_tokens": 2506,
+              "input_tokens_details": {
+                "image_tokens": 1024,
+                "text_tokens": 1482
+              },
+              "output_tokens": 1756,
+              "output_tokens_details": {
+                "image_tokens": 1756,
+                "text_tokens": 0
+              },
+              "total_tokens": 4262
+            }
+          }
+        ],
+        "category": "quality",
+        "code": "image_quality_failed",
+        "message": "no candidate passed jewelry QA: requested_change, spec_change, edit_domain:band_geometry, target_spec_crosscheck:prong_count, band_edit_presentation_lock",
+        "quality": {
+          "checks": [
+            {
+              "code": "decodable_image",
+              "evidence": {
+                "format": "PNG",
+                "height": 1024,
+                "width": 1024
+              },
+              "message": "candidate is a decodable raster image",
+              "passed": true,
+              "severity": "hard"
+            },
+            {
+              "code": "review_resolution",
+              "evidence": {
+                "height": 1024,
+                "width": 1024
+              },
+              "message": "candidate has reviewable raster dimensions",
+              "passed": true,
+              "severity": "warning"
+            },
+            {
+              "code": "candidate_changed",
+              "evidence": {},
+              "message": "candidate bytes differ from the source",
+              "passed": true,
+              "severity": "hard"
+            },
+            {
+              "code": "requested_change",
+              "evidence": {
+                "center_shift": 0.015625,
+                "change_visible": false,
+                "checked": true,
+                "direction": "widen",
+                "foreground_area_ratio": 1.008476,
+                "foreground_median_width_ratio": 1.113636,
+                "framing_stable": false,
+                "height_ratio": 0.936,
+                "target_relative_change": 0.1875
+              },
+              "message": "camera/framing changed too much to verify an isolated band-width edit",
+              "passed": false,
+              "severity": "hard"
+            },
+            {
+              "code": "protected_regions",
+              "evidence": {},
+              "message": "visual evidence matches the requested fact",
+              "passed": true,
+              "severity": "hard"
+            },
+            {
+              "code": "unintended_drift",
+              "evidence": {
+                "changes": [],
+                "severity": "none"
+              },
+              "message": "no unintended changes detected",
+              "passed": true,
+              "severity": "warning"
+            },
+            {
+              "code": "spec_change",
+              "evidence": {
+                "center_shift": 0.015625,
+                "change_visible": false,
+                "checked": true,
+                "direction": "widen",
+                "foreground_area_ratio": 1.008476,
+                "foreground_median_width_ratio": 1.113636,
+                "framing_stable": false,
+                "height_ratio": 0.936,
+                "spec_delta": [
+                  {
+                    "from": "3.2 mm",
+                    "kind": "changed",
+                    "label": "band width",
+                    "path": "band.width_mm",
+                    "to": "3.8 mm"
+                  }
+                ],
+                "target_relative_change": 0.1875
+              },
+              "message": "camera/framing changed too much to verify an isolated band-width edit",
+              "passed": false,
+              "severity": "hard"
+            },
+            {
+              "code": "edit_domain:band_geometry",
+              "evidence": {
+                "center_shift": 0.015625,
+                "change_visible": false,
+                "checked": true,
+                "direction": "widen",
+                "domain": "band_geometry",
+                "foreground_area_ratio": 1.008476,
+                "foreground_median_width_ratio": 1.113636,
+                "framing_stable": false,
+                "height_ratio": 0.936,
+                "spec_delta": [
+                  {
+                    "from": "3.2 mm",
+                    "kind": "changed",
+                    "label": "band width",
+                    "path": "band.width_mm",
+                    "to": "3.8 mm"
+                  }
+                ],
+                "target_relative_change": 0.1875
+              },
+              "message": "camera/framing changed too much to verify an isolated band-width edit",
+              "passed": false,
+              "severity": "hard"
+            },
+            {
+              "code": "crosscheck_requested_change",
+              "evidence": {},
+              "message": "visual evidence matches the requested fact",
+              "passed": true,
+              "severity": "hard"
+            },
+            {
+              "code": "crosscheck_frozen_facts",
+              "evidence": {},
+              "message": "visual evidence matches the requested fact",
+              "passed": true,
+              "severity": "hard"
+            },
+            {
+              "code": "crosscheck_unintended_drift",
+              "evidence": {
+                "changes": [],
+                "severity": "none"
+              },
+              "message": "independent audit found no unintended changes",
+              "passed": true,
+              "severity": "warning"
+            },
+            {
+              "code": "crosscheck_edit_domains",
+              "evidence": {
+                "domain_mismatches": []
+              },
+              "message": "independent audit matched every required edit domain",
+              "passed": true,
+              "severity": "hard"
+            },
+            {
+              "code": "target_spec_crosscheck:jewelry_type",
+              "evidence": {
+                "differences": [],
+                "observed_prong_count": 4,
+                "observed_side_stone_count": 0
+              },
+              "message": "visual evidence matches the requested fact",
+              "passed": true,
+              "severity": "hard"
+            },
+            {
+              "code": "target_spec_crosscheck:center_identity",
+              "evidence": {
+                "differences": [],
+                "observed_prong_count": 4,
+                "observed_side_stone_count": 0
+              },
+              "message": "visual evidence matches the requested fact",
+              "passed": true,
+              "severity": "hard"
+            },
+            {
+              "code": "target_spec_crosscheck:center_cut",
+              "evidence": {
+                "differences": [],
+                "observed_prong_count": 4,
+                "observed_side_stone_count": 0
+              },
+              "message": "visual evidence matches the requested fact",
+              "passed": true,
+              "severity": "hard"
+            },
+            {
+              "code": "target_spec_crosscheck:metal",
+              "evidence": {
+                "differences": [],
+                "observed_prong_count": 4,
+                "observed_side_stone_count": 0
+              },
+              "message": "visual evidence matches the requested fact",
+              "passed": true,
+              "severity": "hard"
+            },
+            {
+              "code": "target_spec_crosscheck:setting_style",
+              "evidence": {
+                "differences": [],
+                "observed_prong_count": 4,
+                "observed_side_stone_count": 0
+              },
+              "message": "visual evidence matches the requested fact",
+              "passed": true,
+              "severity": "hard"
+            },
+            {
+              "code": "target_spec_crosscheck:prong_count",
+              "evidence": {
+                "differences": [],
+                "observed_prong_count": 4,
+                "observed_side_stone_count": 0
+              },
+              "message": "independent audit found the wrong center-prong count",
+              "passed": false,
+              "severity": "hard"
+            },
+            {
+              "code": "target_spec_crosscheck:side_stone_inventory",
+              "evidence": {
+                "differences": [],
+                "observed_prong_count": 4,
+                "observed_side_stone_count": 0
+              },
+              "message": "visual evidence matches the requested fact",
+              "passed": true,
+              "severity": "hard"
+            },
+            {
+              "code": "target_spec_crosscheck:major_components",
+              "evidence": {
+                "differences": [],
+                "observed_prong_count": 4,
+                "observed_side_stone_count": 0
+              },
+              "message": "visual evidence matches the requested fact",
+              "passed": true,
+              "severity": "hard"
+            },
+            {
+              "code": "band_edit_presentation_lock",
+              "evidence": {
+                "center_shift": 0.015625,
+                "change_visible": false,
+                "checked": true,
+                "direction": "widen",
+                "foreground_area_ratio": 1.008476,
+                "foreground_median_width_ratio": 1.113636,
+                "framing_stable": false,
+                "height_ratio": 0.936,
+                "target_relative_change": 0.1875
+              },
+              "message": "camera, crop, scale, or framing changed during the band edit; the result is not an isolated adjustment",
+              "passed": false,
+              "severity": "hard"
+            },
+            {
+              "code": "text_or_branding",
+              "evidence": {},
+              "message": "no text or branding introduced",
+              "passed": true,
+              "severity": "hard"
+            }
+          ],
+          "notes": [
+            "band width visually identical; no widening of lower shank observed",
+            "lower shank band visibly wider; all other elements (stone, prongs, shoulders, upper shank profile, lighting, reflections, background) identical",
+            "6 visible prongs in basket configuration; no side stones; white polished metal; oval blue sapphire center",
+            "4 distinct prongs contact center oval stone (top, left, right, bottom)",
+            "no side stones or halo visible"
+          ],
+          "score": 15.0,
+          "verdict": "fail"
+        }
+      },
+      "applied": false,
+      "attempts": 3,
+      "case": "band-width",
+      "error_category": "quality",
+      "expected_valid": true,
+      "golden_case": "oval-solitaire-white-6-wide",
+      "kind": "edit",
+      "score": 0,
+      "severity": "major",
+      "starting_point": "imported_reference"
+    }
+  ],
+  "run": "designer-band-width-presentation-lock-live-v4-2026-07-12",
+  "source_override": {
+    "golden_case": "oval-solitaire-white-6-wide",
+    "path": "/Users/mattfb/Documents/Facetta-trusted-workflow/docs/evals/designer-band-width-openai-fallback-live-v2-2026-07-12/oval-solitaire-white-6-wide.png",
+    "provenance": "operator-selected, previously reviewed spec-aligned source; not re-generated or re-audited by this result set",
+    "scope": "single_edit_diagnostic_only",
+    "sha256": "12b71e069880e33b39a7e20d85cd4a868ee868df98c8a199634fb3938802753a"
+  }
+}

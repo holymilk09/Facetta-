@@ -1,0 +1,815 @@
+{
+  "automated_test_confirmation": {
+    "body": {
+      "active_asset_id": "ast_258e3e9b68cc07e0",
+      "active_design_version": 1,
+      "active_revision": {
+        "asset_id": "ast_258e3e9b68cc07e0",
+        "capability": "IMPORTED_REFERENCE",
+        "created_at": "2026-07-11T01:51:01.529585",
+        "created_by": "usr_test_designer",
+        "design_version": 1,
+        "image_url": "/assets/ast_258e3e9b68cc07e0/image",
+        "instruction": "Designer-confirmed imported reference",
+        "legacy_provenance": false,
+        "media_type": "image/jpeg",
+        "pinned": false,
+        "provenance": "imported_reference",
+        "revision": 1,
+        "root_id": "ast_258e3e9b68cc07e0"
+      },
+      "assets": [
+        {
+          "asset_id": "ast_258e3e9b68cc07e0",
+          "capability": "IMPORTED_REFERENCE",
+          "created_at": "2026-07-11T01:51:01.529585",
+          "created_by": "usr_test_designer",
+          "design_version": 1,
+          "image_url": "/assets/ast_258e3e9b68cc07e0/image",
+          "instruction": "Designer-confirmed imported reference",
+          "legacy_provenance": false,
+          "media_type": "image/jpeg",
+          "pinned": false,
+          "provenance": "imported_reference",
+          "revision": 1,
+          "root_id": "ast_258e3e9b68cc07e0"
+        },
+        {
+          "asset_id": "ast_c2466d338cacff74",
+          "capability": "LINE_ART",
+          "created_at": "2026-07-11T01:51:16.121130",
+          "created_by": "usr_test_designer",
+          "design_version": 1,
+          "image_url": "/assets/ast_c2466d338cacff74/image",
+          "instruction": "Convert this exact approved ring into one clean black technical line-art three-quarter view. Remove photography, paint, paper texture, shadows, annotations, and background only.",
+          "legacy_provenance": false,
+          "media_type": "image/jpeg",
+          "parent_asset_id": "ast_258e3e9b68cc07e0",
+          "pinned": false,
+          "provenance": "designer_confirmed_line_art",
+          "region": "entire confirmed three_quarter line-art view",
+          "root_id": "ast_258e3e9b68cc07e0"
+        }
+      ],
+      "collection": "Unfiled",
+      "counts": {
+        "IMPORTED_REFERENCE": 1,
+        "LINE_ART": 1
+      },
+      "cover_asset_id": "ast_258e3e9b68cc07e0",
+      "created_at": "2026-07-11T01:51:01.529585",
+      "derived_assets": [
+        {
+          "asset_id": "ast_c2466d338cacff74",
+          "capability": "LINE_ART",
+          "created_at": "2026-07-11T01:51:16.121130",
+          "created_by": "usr_test_designer",
+          "design_version": 1,
+          "image_url": "/assets/ast_c2466d338cacff74/image",
+          "instruction": "Convert this exact approved ring into one clean black technical line-art three-quarter view. Remove photography, paint, paper texture, shadows, annotations, and background only.",
+          "legacy_provenance": false,
+          "media_type": "image/jpeg",
+          "parent_asset_id": "ast_258e3e9b68cc07e0",
+          "pinned": false,
+          "provenance": "designer_confirmed_line_art",
+          "region": "entire confirmed three_quarter line-art view",
+          "root_id": "ast_258e3e9b68cc07e0"
+        }
+      ],
+      "design_id": "dsn_25832057021eef8a",
+      "factory_ready": false,
+      "has_factory_drawing": false,
+      "id": "ast_258e3e9b68cc07e0",
+      "image_run_ids": [
+        "run_98be172c666659d5"
+      ],
+      "item_count": 2,
+      "items": [
+        {
+          "asset_id": "ast_258e3e9b68cc07e0",
+          "capability": "IMPORTED_REFERENCE",
+          "created_at": "2026-07-11T01:51:01.529585",
+          "created_by": "usr_test_designer",
+          "design_version": 1,
+          "image_url": "/assets/ast_258e3e9b68cc07e0/image",
+          "instruction": "Designer-confirmed imported reference",
+          "legacy_provenance": false,
+          "media_type": "image/jpeg",
+          "pinned": false,
+          "provenance": "imported_reference",
+          "revision": 1,
+          "root_id": "ast_258e3e9b68cc07e0"
+        },
+        {
+          "asset_id": "ast_c2466d338cacff74",
+          "capability": "LINE_ART",
+          "created_at": "2026-07-11T01:51:16.121130",
+          "created_by": "usr_test_designer",
+          "design_version": 1,
+          "image_url": "/assets/ast_c2466d338cacff74/image",
+          "instruction": "Convert this exact approved ring into one clean black technical line-art three-quarter view. Remove photography, paint, paper texture, shadows, annotations, and background only.",
+          "legacy_provenance": false,
+          "media_type": "image/jpeg",
+          "parent_asset_id": "ast_258e3e9b68cc07e0",
+          "pinned": false,
+          "provenance": "designer_confirmed_line_art",
+          "region": "entire confirmed three_quarter line-art view",
+          "root_id": "ast_258e3e9b68cc07e0"
+        }
+      ],
+      "latest_design_version": 1,
+      "owner": "usr_test_designer",
+      "primary_revision_count": 1,
+      "revisions": [
+        {
+          "asset_id": "ast_258e3e9b68cc07e0",
+          "capability": "IMPORTED_REFERENCE",
+          "created_at": "2026-07-11T01:51:01.529585",
+          "created_by": "usr_test_designer",
+          "design_version": 1,
+          "image_url": "/assets/ast_258e3e9b68cc07e0/image",
+          "instruction": "Designer-confirmed imported reference",
+          "legacy_provenance": false,
+          "media_type": "image/jpeg",
+          "pinned": false,
+          "provenance": "imported_reference",
+          "revision": 1,
+          "root_id": "ast_258e3e9b68cc07e0"
+        }
+      ],
+      "root_id": "ast_258e3e9b68cc07e0",
+      "spec": {
+        "band": {
+          "profile": "comfort_fit",
+          "thickness_mm": 1.6,
+          "width_mm": 2.2
+        },
+        "bracelet": null,
+        "brooch": null,
+        "chain": null,
+        "composition": null,
+        "created_at": "2026-07-11T01:51:01.529585Z",
+        "created_by": "usr_test_designer",
+        "design_id": "dsn_25832057021eef8a",
+        "drop": null,
+        "jewelry_type": "ring",
+        "metal": {
+          "color": "yellow",
+          "finish": "high_polish",
+          "karat": 18,
+          "material": "gold"
+        },
+        "mode": "pro",
+        "notes_to_factory": "Concept originated by image generation from the brief: \u201cImported finished-jewelry reference. Return only visible facts. Exact dimensions remain designer-confirmed. Designer notes: Designer confirms the central green square stone and leaf shoulder motif; dimensions are estimated pending correction.\u201d. All dimensions are density-consistent DRAFT proposals scaled from a vision estimate of the centre stone \u2014 the designer confirms exact millimetres before production.",
+        "pendant": null,
+        "ring_size": {
+          "inner_diameter_mm": 16.91,
+          "system": "US",
+          "value": 6.5
+        },
+        "schema_version": 1,
+        "setting": {
+          "gallery_height_mm": 4.2,
+          "prong_count": 4,
+          "prong_tip_mm": 0.9,
+          "style": "4_prong_basket"
+        },
+        "side_stones": [],
+        "stone": {
+          "carat": 2.263,
+          "clarity": null,
+          "color": {
+            "gia": "vivid, warm, slightly yellowish green",
+            "hue_code": null,
+            "saturation": null,
+            "tone": null,
+            "trade": "Muzo Green"
+          },
+          "count": 1,
+          "culet": null,
+          "cut": "emerald_cut",
+          "depth_pct": null,
+          "dimensions_mm": {
+            "depth": 5.2,
+            "length": 8.0,
+            "width": 8.0
+          },
+          "girdle": null,
+          "inscription": null,
+          "lab": null,
+          "mount": null,
+          "origin": null,
+          "phenomena": [],
+          "position": "center",
+          "species": "emerald",
+          "table_pct": null,
+          "treatment": null
+        },
+        "template": "solitaire_prong",
+        "version": 1
+      },
+      "state": "refining",
+      "tags": [],
+      "title": "Leaf ring line-art material-guard live test",
+      "updated_at": "2026-07-11T01:51:16.120908"
+    },
+    "status_code": 201
+  },
+  "color": {
+    "body": {
+      "asset_id": "ast_db14b8636d5549ef",
+      "image_run_id": "run_edbd9e850511139b",
+      "project": {
+        "active_asset_id": "ast_258e3e9b68cc07e0",
+        "active_design_version": 1,
+        "active_revision": {
+          "asset_id": "ast_258e3e9b68cc07e0",
+          "capability": "IMPORTED_REFERENCE",
+          "created_at": "2026-07-11T01:51:01.529585",
+          "created_by": "usr_test_designer",
+          "design_version": 1,
+          "drift": null,
+          "image_url": "/assets/ast_258e3e9b68cc07e0/image",
+          "instruction": "Designer-confirmed imported reference",
+          "legacy_provenance": false,
+          "media_type": "image/jpeg",
+          "parent_asset_id": null,
+          "pinned": false,
+          "provenance": "imported_reference",
+          "region": null,
+          "revision": 1,
+          "root_id": "ast_258e3e9b68cc07e0"
+        },
+        "approval": null,
+        "assets": [
+          {
+            "asset_id": "ast_258e3e9b68cc07e0",
+            "capability": "IMPORTED_REFERENCE",
+            "created_at": "2026-07-11T01:51:01.529585",
+            "created_by": "usr_test_designer",
+            "design_version": 1,
+            "drift": null,
+            "image_url": "/assets/ast_258e3e9b68cc07e0/image",
+            "instruction": "Designer-confirmed imported reference",
+            "legacy_provenance": false,
+            "media_type": "image/jpeg",
+            "parent_asset_id": null,
+            "pinned": false,
+            "provenance": "imported_reference",
+            "region": null,
+            "revision": 1,
+            "root_id": "ast_258e3e9b68cc07e0"
+          },
+          {
+            "asset_id": "ast_c2466d338cacff74",
+            "capability": "LINE_ART",
+            "created_at": "2026-07-11T01:51:16.121130",
+            "created_by": "usr_test_designer",
+            "design_version": 1,
+            "drift": null,
+            "image_url": "/assets/ast_c2466d338cacff74/image",
+            "instruction": "Convert this exact approved ring into one clean black technical line-art three-quarter view. Remove photography, paint, paper texture, shadows, annotations, and background only.",
+            "legacy_provenance": false,
+            "media_type": "image/jpeg",
+            "parent_asset_id": "ast_258e3e9b68cc07e0",
+            "pinned": false,
+            "provenance": "designer_confirmed_line_art",
+            "region": "entire confirmed three_quarter line-art view",
+            "revision": null,
+            "root_id": "ast_258e3e9b68cc07e0"
+          },
+          {
+            "asset_id": "ast_db14b8636d5549ef",
+            "capability": "COLORED_LINE_ART",
+            "created_at": "2026-07-11T01:51:40.706063",
+            "created_by": "usr_test_designer",
+            "design_version": 1,
+            "drift": null,
+            "image_url": "/assets/ast_db14b8636d5549ef/image",
+            "instruction": "Apply controlled jeweler's color to this designer-confirmed line drawing using only the validated specification. center: emerald emerald cut in Muzo Green; side groups: no additional confirmed side-stone groups. Metal: 18k yellow gold.",
+            "legacy_provenance": false,
+            "media_type": "image/jpeg",
+            "parent_asset_id": "ast_c2466d338cacff74",
+            "pinned": false,
+            "provenance": "spec_colored_line_art",
+            "region": null,
+            "revision": null,
+            "root_id": "ast_258e3e9b68cc07e0"
+          }
+        ],
+        "collection": "Unfiled",
+        "counts": {
+          "COLORED_LINE_ART": 1,
+          "IMPORTED_REFERENCE": 1,
+          "LINE_ART": 1
+        },
+        "cover_asset_id": "ast_258e3e9b68cc07e0",
+        "created_at": "2026-07-11T01:51:01.529585",
+        "derived_assets": [
+          {
+            "asset_id": "ast_c2466d338cacff74",
+            "capability": "LINE_ART",
+            "created_at": "2026-07-11T01:51:16.121130",
+            "created_by": "usr_test_designer",
+            "design_version": 1,
+            "drift": null,
+            "image_url": "/assets/ast_c2466d338cacff74/image",
+            "instruction": "Convert this exact approved ring into one clean black technical line-art three-quarter view. Remove photography, paint, paper texture, shadows, annotations, and background only.",
+            "legacy_provenance": false,
+            "media_type": "image/jpeg",
+            "parent_asset_id": "ast_258e3e9b68cc07e0",
+            "pinned": false,
+            "provenance": "designer_confirmed_line_art",
+            "region": "entire confirmed three_quarter line-art view",
+            "revision": null,
+            "root_id": "ast_258e3e9b68cc07e0"
+          },
+          {
+            "asset_id": "ast_db14b8636d5549ef",
+            "capability": "COLORED_LINE_ART",
+            "created_at": "2026-07-11T01:51:40.706063",
+            "created_by": "usr_test_designer",
+            "design_version": 1,
+            "drift": null,
+            "image_url": "/assets/ast_db14b8636d5549ef/image",
+            "instruction": "Apply controlled jeweler's color to this designer-confirmed line drawing using only the validated specification. center: emerald emerald cut in Muzo Green; side groups: no additional confirmed side-stone groups. Metal: 18k yellow gold.",
+            "legacy_provenance": false,
+            "media_type": "image/jpeg",
+            "parent_asset_id": "ast_c2466d338cacff74",
+            "pinned": false,
+            "provenance": "spec_colored_line_art",
+            "region": null,
+            "revision": null,
+            "root_id": "ast_258e3e9b68cc07e0"
+          }
+        ],
+        "design_id": "dsn_25832057021eef8a",
+        "factory_ready": false,
+        "has_factory_drawing": false,
+        "id": "ast_258e3e9b68cc07e0",
+        "image_run_ids": [
+          "run_98be172c666659d5",
+          "run_edbd9e850511139b"
+        ],
+        "item_count": 3,
+        "items": [
+          {
+            "asset_id": "ast_258e3e9b68cc07e0",
+            "capability": "IMPORTED_REFERENCE",
+            "created_at": "2026-07-11T01:51:01.529585",
+            "created_by": "usr_test_designer",
+            "design_version": 1,
+            "drift": null,
+            "image_url": "/assets/ast_258e3e9b68cc07e0/image",
+            "instruction": "Designer-confirmed imported reference",
+            "legacy_provenance": false,
+            "media_type": "image/jpeg",
+            "parent_asset_id": null,
+            "pinned": false,
+            "provenance": "imported_reference",
+            "region": null,
+            "revision": 1,
+            "root_id": "ast_258e3e9b68cc07e0"
+          },
+          {
+            "asset_id": "ast_c2466d338cacff74",
+            "capability": "LINE_ART",
+            "created_at": "2026-07-11T01:51:16.121130",
+            "created_by": "usr_test_designer",
+            "design_version": 1,
+            "drift": null,
+            "image_url": "/assets/ast_c2466d338cacff74/image",
+            "instruction": "Convert this exact approved ring into one clean black technical line-art three-quarter view. Remove photography, paint, paper texture, shadows, annotations, and background only.",
+            "legacy_provenance": false,
+            "media_type": "image/jpeg",
+            "parent_asset_id": "ast_258e3e9b68cc07e0",
+            "pinned": false,
+            "provenance": "designer_confirmed_line_art",
+            "region": "entire confirmed three_quarter line-art view",
+            "revision": null,
+            "root_id": "ast_258e3e9b68cc07e0"
+          },
+          {
+            "asset_id": "ast_db14b8636d5549ef",
+            "capability": "COLORED_LINE_ART",
+            "created_at": "2026-07-11T01:51:40.706063",
+            "created_by": "usr_test_designer",
+            "design_version": 1,
+            "drift": null,
+            "image_url": "/assets/ast_db14b8636d5549ef/image",
+            "instruction": "Apply controlled jeweler's color to this designer-confirmed line drawing using only the validated specification. center: emerald emerald cut in Muzo Green; side groups: no additional confirmed side-stone groups. Metal: 18k yellow gold.",
+            "legacy_provenance": false,
+            "media_type": "image/jpeg",
+            "parent_asset_id": "ast_c2466d338cacff74",
+            "pinned": false,
+            "provenance": "spec_colored_line_art",
+            "region": null,
+            "revision": null,
+            "root_id": "ast_258e3e9b68cc07e0"
+          }
+        ],
+        "latest_design_version": 1,
+        "owner": "usr_test_designer",
+        "pinned_revision": null,
+        "primary_revision_count": 1,
+        "revisions": [
+          {
+            "asset_id": "ast_258e3e9b68cc07e0",
+            "capability": "IMPORTED_REFERENCE",
+            "created_at": "2026-07-11T01:51:01.529585",
+            "created_by": "usr_test_designer",
+            "design_version": 1,
+            "drift": null,
+            "image_url": "/assets/ast_258e3e9b68cc07e0/image",
+            "instruction": "Designer-confirmed imported reference",
+            "legacy_provenance": false,
+            "media_type": "image/jpeg",
+            "parent_asset_id": null,
+            "pinned": false,
+            "provenance": "imported_reference",
+            "region": null,
+            "revision": 1,
+            "root_id": "ast_258e3e9b68cc07e0"
+          }
+        ],
+        "root_id": "ast_258e3e9b68cc07e0",
+        "spec": {
+          "band": {
+            "profile": "comfort_fit",
+            "thickness_mm": 1.6,
+            "width_mm": 2.2
+          },
+          "bracelet": null,
+          "brooch": null,
+          "chain": null,
+          "composition": null,
+          "created_at": "2026-07-11T01:51:01.529585Z",
+          "created_by": "usr_test_designer",
+          "design_id": "dsn_25832057021eef8a",
+          "drop": null,
+          "jewelry_type": "ring",
+          "metal": {
+            "color": "yellow",
+            "finish": "high_polish",
+            "karat": 18,
+            "material": "gold"
+          },
+          "mode": "pro",
+          "notes_to_factory": "Concept originated by image generation from the brief: \u201cImported finished-jewelry reference. Return only visible facts. Exact dimensions remain designer-confirmed. Designer notes: Designer confirms the central green square stone and leaf shoulder motif; dimensions are estimated pending correction.\u201d. All dimensions are density-consistent DRAFT proposals scaled from a vision estimate of the centre stone \u2014 the designer confirms exact millimetres before production.",
+          "pendant": null,
+          "ring_size": {
+            "inner_diameter_mm": 16.91,
+            "system": "US",
+            "value": 6.5
+          },
+          "schema_version": 1,
+          "setting": {
+            "gallery_height_mm": 4.2,
+            "prong_count": 4,
+            "prong_tip_mm": 0.9,
+            "style": "4_prong_basket"
+          },
+          "side_stones": [],
+          "stone": {
+            "carat": 2.263,
+            "clarity": null,
+            "color": {
+              "gia": "vivid, warm, slightly yellowish green",
+              "hue_code": null,
+              "saturation": null,
+              "tone": null,
+              "trade": "Muzo Green"
+            },
+            "count": 1,
+            "culet": null,
+            "cut": "emerald_cut",
+            "depth_pct": null,
+            "dimensions_mm": {
+              "depth": 5.2,
+              "length": 8.0,
+              "width": 8.0
+            },
+            "girdle": null,
+            "inscription": null,
+            "lab": null,
+            "mount": null,
+            "origin": null,
+            "phenomena": [],
+            "position": "center",
+            "species": "emerald",
+            "table_pct": null,
+            "treatment": null
+          },
+          "template": "solitaire_prong",
+          "version": 1
+        },
+        "state": "refining",
+        "tags": [],
+        "title": "Leaf ring line-art material-guard live test",
+        "updated_at": "2026-07-11T01:51:40.707284"
+      },
+      "qa": {
+        "accepted": true,
+        "checks": [
+          {
+            "code": "decodable_image",
+            "evidence": {
+              "format": "JPEG",
+              "height": 1136,
+              "width": 912
+            },
+            "message": "candidate is a decodable raster image",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "review_resolution",
+            "evidence": {
+              "height": 1136,
+              "width": 912
+            },
+            "message": "candidate has reviewable raster dimensions",
+            "passed": true,
+            "severity": "warning"
+          },
+          {
+            "code": "candidate_changed",
+            "evidence": {},
+            "message": "candidate bytes differ from the source",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "requested_change",
+            "evidence": {},
+            "message": "visual evidence matches the requested fact",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "protected_regions",
+            "evidence": {},
+            "message": "visual evidence matches the requested fact",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "unintended_drift",
+            "evidence": {
+              "changes": [],
+              "severity": "none"
+            },
+            "message": "no unintended changes detected",
+            "passed": true,
+            "severity": "warning"
+          },
+          {
+            "code": "geometry_preserved",
+            "evidence": {},
+            "message": "visual evidence matches the requested fact",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "text_or_branding",
+            "evidence": {},
+            "message": "no text or branding introduced",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "approved_source_material_identity",
+            "evidence": {
+              "checked": true,
+              "differences": [],
+              "severity": "none"
+            },
+            "message": "all visible stone and metal zones match the approved source",
+            "passed": true,
+            "severity": "hard"
+          }
+        ],
+        "failed_checks": [],
+        "notes": [
+          "Center emerald cut stone rendered Muzo Green",
+          "18k yellow gold metal applied to entire ring",
+          "All leaf, prong, and band geometry identical to source line art",
+          "Side stones present exactly as drawn; no new elements added"
+        ],
+        "review_required": false,
+        "score": 90.0,
+        "summary": "Image checks passed.",
+        "verdict": "pass",
+        "warnings": []
+      },
+      "routing": {
+        "attempt_count": 1,
+        "cache_hit": false,
+        "run_id": "run_edbd9e850511139b",
+        "used_fallback": false,
+        "used_retry": false
+      },
+      "status": "accepted"
+    },
+    "latency_ms": 24590,
+    "status_code": 201
+  },
+  "line_art": {
+    "body": {
+      "candidate": {
+        "asset_capability": "LINE_ART",
+        "candidate_id": "cand_3a6ff6f35572899c",
+        "operation": "VISUAL_ONLY_EDIT",
+        "preview_url": "/image-runs/run_98be172c666659d5/candidates/cand_3a6ff6f35572899c/image",
+        "qa": {
+          "accepted": false,
+          "checks": [
+            {
+              "code": "decodable_image",
+              "evidence": {
+                "format": "JPEG",
+                "height": 1136,
+                "width": 912
+              },
+              "message": "candidate is a decodable raster image",
+              "passed": true,
+              "severity": "hard"
+            },
+            {
+              "code": "review_resolution",
+              "evidence": {
+                "height": 1136,
+                "width": 912
+              },
+              "message": "candidate has reviewable raster dimensions",
+              "passed": true,
+              "severity": "warning"
+            },
+            {
+              "code": "candidate_changed",
+              "evidence": {},
+              "message": "candidate bytes differ from the source",
+              "passed": true,
+              "severity": "hard"
+            },
+            {
+              "code": "requested_change",
+              "evidence": {},
+              "message": "visual evidence matches the requested fact",
+              "passed": true,
+              "severity": "hard"
+            },
+            {
+              "code": "protected_regions",
+              "evidence": {},
+              "message": "visual evidence matches the requested fact",
+              "passed": true,
+              "severity": "hard"
+            },
+            {
+              "code": "unintended_drift",
+              "evidence": {
+                "changes": [],
+                "severity": "none"
+              },
+              "message": "no unintended changes detected",
+              "passed": true,
+              "severity": "warning"
+            },
+            {
+              "code": "geometry_preserved",
+              "evidence": {},
+              "message": "visual evidence matches the requested fact",
+              "passed": true,
+              "severity": "hard"
+            },
+            {
+              "code": "text_or_branding",
+              "evidence": {},
+              "message": "no text or branding introduced",
+              "passed": true,
+              "severity": "hard"
+            }
+          ],
+          "failed_checks": [],
+          "notes": [
+            "Clean black line-art conversion achieved; three-quarter view preserved; leaf motifs, 4-prong setting, emerald-cut stone outline, and comfort-fit band geometry all match source exactly; no color, shadows, or background remain."
+          ],
+          "review_required": true,
+          "score": 95.0,
+          "summary": "Image needs explicit designer review.",
+          "verdict": "pass",
+          "warnings": []
+        },
+        "requested_change": "Convert this exact approved ring into one clean black technical line-art three-quarter view. Remove photography, paint, paper texture, shadows, annotations, and background only.",
+        "run_id": "run_98be172c666659d5"
+      },
+      "image_run_id": "run_98be172c666659d5",
+      "next": "designer confirms geometry, then colorize the persisted LINE_ART asset",
+      "project_id": "ast_258e3e9b68cc07e0",
+      "quality_report": {
+        "accepted": false,
+        "checks": [
+          {
+            "code": "decodable_image",
+            "evidence": {
+              "format": "JPEG",
+              "height": 1136,
+              "width": 912
+            },
+            "message": "candidate is a decodable raster image",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "review_resolution",
+            "evidence": {
+              "height": 1136,
+              "width": 912
+            },
+            "message": "candidate has reviewable raster dimensions",
+            "passed": true,
+            "severity": "warning"
+          },
+          {
+            "code": "candidate_changed",
+            "evidence": {},
+            "message": "candidate bytes differ from the source",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "requested_change",
+            "evidence": {},
+            "message": "visual evidence matches the requested fact",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "protected_regions",
+            "evidence": {},
+            "message": "visual evidence matches the requested fact",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "unintended_drift",
+            "evidence": {
+              "changes": [],
+              "severity": "none"
+            },
+            "message": "no unintended changes detected",
+            "passed": true,
+            "severity": "warning"
+          },
+          {
+            "code": "geometry_preserved",
+            "evidence": {},
+            "message": "visual evidence matches the requested fact",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "text_or_branding",
+            "evidence": {},
+            "message": "no text or branding introduced",
+            "passed": true,
+            "severity": "hard"
+          }
+        ],
+        "failed_checks": [],
+        "notes": [
+          "Clean black line-art conversion achieved; three-quarter view preserved; leaf motifs, 4-prong setting, emerald-cut stone outline, and comfort-fit band geometry all match source exactly; no color, shadows, or background remain."
+        ],
+        "review_required": true,
+        "score": 95.0,
+        "summary": "Image needs explicit designer review.",
+        "verdict": "pass",
+        "warnings": []
+      },
+      "routing": {
+        "attempt_count": 1,
+        "cache_hit": false,
+        "run_id": "run_98be172c666659d5",
+        "used_fallback": false,
+        "used_retry": false
+      },
+      "status": "confirmation_required",
+      "view": "three_quarter"
+    },
+    "latency_ms": 14576,
+    "status_code": 202
+  },
+  "note": "Automated line-art confirmation proves mechanics only. Current color candidate is expected to be rejected because approved-source diamond leaf stones became gold due to an incomplete sparse spec.",
+  "project_creation": {
+    "active_asset_id": "ast_258e3e9b68cc07e0",
+    "root_id": "ast_258e3e9b68cc07e0",
+    "status_code": 201
+  },
+  "provider_readiness": {
+    "fal_configured": false,
+    "xai_configured": true
+  },
+  "source": "/Users/mattfb/Documents/Facetta-trusted-workflow/docs/evals/designer-product-photo-live-2026-07-11/warning-product-photo.png",
+  "source_sha256": "bb8a6034ed384c09433269d266acef582875f29e43ab70fb9119a2a7f7871c00"
+}

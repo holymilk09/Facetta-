@@ -1,0 +1,943 @@
+{
+  "source": "/Users/mattfb/.codex/attachments/c2fd41d0-b236-43ef-ada9-e9479718c771/image-86.jpg",
+  "source_sha256": "3aa96aac909bc806b4f93f4f8f995acb03ba41e9ebf5771bad3bed7a5af1289d",
+  "from_image": {
+    "status_code": 201,
+    "body": {
+      "id": "ast_49d45bcdb2c8ab9a",
+      "root_id": "ast_49d45bcdb2c8ab9a",
+      "title": "Emerald leaf ring \u2014 designer reference",
+      "collection": "Unfiled",
+      "tags": [],
+      "owner": "usr_gia",
+      "counts": {
+        "IMPORTED_REFERENCE": 1
+      },
+      "item_count": 1,
+      "primary_revision_count": 1,
+      "has_factory_drawing": false,
+      "cover_asset_id": "ast_49d45bcdb2c8ab9a",
+      "created_at": "2026-07-10T17:27:19.504117",
+      "updated_at": "2026-07-10T17:27:19.504117",
+      "state": "refining",
+      "design_id": "dsn_12d33a819ed4d487",
+      "latest_design_version": 1,
+      "spec": {
+        "schema_version": 1,
+        "design_id": "dsn_12d33a819ed4d487",
+        "version": 1,
+        "created_by": "usr_gia",
+        "created_at": "2026-07-10T17:27:19.504117Z",
+        "jewelry_type": "ring",
+        "template": "solitaire_prong",
+        "mode": "pro",
+        "stone": {
+          "species": "emerald",
+          "cut": "emerald_cut",
+          "carat": 2.263,
+          "dimensions_mm": {
+            "length": 8.0,
+            "width": 8.0,
+            "depth": 5.2
+          },
+          "color": {
+            "trade": "Muzo Green",
+            "gia": "vivid, warm, slightly yellowish green",
+            "hue_code": null,
+            "tone": null,
+            "saturation": null
+          },
+          "clarity": null,
+          "origin": null,
+          "treatment": null,
+          "phenomena": [],
+          "count": 1,
+          "position": "center",
+          "table_pct": null,
+          "depth_pct": null,
+          "girdle": null,
+          "culet": null,
+          "lab": null,
+          "inscription": null,
+          "mount": null
+        },
+        "setting": {
+          "style": "4_prong_basket",
+          "prong_count": 4,
+          "prong_tip_mm": 0.9,
+          "gallery_height_mm": 4.2
+        },
+        "metal": {
+          "material": "gold",
+          "karat": 18,
+          "color": "yellow",
+          "finish": "high_polish"
+        },
+        "band": {
+          "profile": "comfort_fit",
+          "width_mm": 2.2,
+          "thickness_mm": 1.6
+        },
+        "ring_size": {
+          "system": "US",
+          "value": 6.5,
+          "inner_diameter_mm": 16.91
+        },
+        "bracelet": null,
+        "pendant": null,
+        "chain": null,
+        "brooch": null,
+        "drop": null,
+        "composition": null,
+        "side_stones": [],
+        "notes_to_factory": "Concept originated by image generation from the brief: \u201cImported finished-jewelry reference. Return only visible facts. Exact dimensions remain designer-confirmed. Designer notes: Designer confirms the central green square stone and leaf shoulder motif; dimensions are estimated pending correction.\u201d. All dimensions are density-consistent DRAFT proposals scaled from a vision estimate of the centre stone \u2014 the designer confirms exact millimetres before production."
+      },
+      "active_asset_id": "ast_49d45bcdb2c8ab9a",
+      "active_design_version": 1,
+      "active_revision": {
+        "asset_id": "ast_49d45bcdb2c8ab9a",
+        "root_id": "ast_49d45bcdb2c8ab9a",
+        "capability": "IMPORTED_REFERENCE",
+        "provenance": "imported_reference",
+        "revision": 1,
+        "design_version": 1,
+        "instruction": "Designer-confirmed imported reference",
+        "pinned": false,
+        "media_type": "image/jpeg",
+        "image_url": "/assets/ast_49d45bcdb2c8ab9a/image",
+        "created_by": "usr_gia",
+        "created_at": "2026-07-10T17:27:19.504117",
+        "legacy_provenance": false
+      },
+      "revisions": [
+        {
+          "asset_id": "ast_49d45bcdb2c8ab9a",
+          "root_id": "ast_49d45bcdb2c8ab9a",
+          "capability": "IMPORTED_REFERENCE",
+          "provenance": "imported_reference",
+          "revision": 1,
+          "design_version": 1,
+          "instruction": "Designer-confirmed imported reference",
+          "pinned": false,
+          "media_type": "image/jpeg",
+          "image_url": "/assets/ast_49d45bcdb2c8ab9a/image",
+          "created_by": "usr_gia",
+          "created_at": "2026-07-10T17:27:19.504117",
+          "legacy_provenance": false
+        }
+      ],
+      "derived_assets": [],
+      "assets": [
+        {
+          "asset_id": "ast_49d45bcdb2c8ab9a",
+          "root_id": "ast_49d45bcdb2c8ab9a",
+          "capability": "IMPORTED_REFERENCE",
+          "provenance": "imported_reference",
+          "revision": 1,
+          "design_version": 1,
+          "instruction": "Designer-confirmed imported reference",
+          "pinned": false,
+          "media_type": "image/jpeg",
+          "image_url": "/assets/ast_49d45bcdb2c8ab9a/image",
+          "created_by": "usr_gia",
+          "created_at": "2026-07-10T17:27:19.504117",
+          "legacy_provenance": false
+        }
+      ],
+      "items": [
+        {
+          "asset_id": "ast_49d45bcdb2c8ab9a",
+          "root_id": "ast_49d45bcdb2c8ab9a",
+          "capability": "IMPORTED_REFERENCE",
+          "provenance": "imported_reference",
+          "revision": 1,
+          "design_version": 1,
+          "instruction": "Designer-confirmed imported reference",
+          "pinned": false,
+          "media_type": "image/jpeg",
+          "image_url": "/assets/ast_49d45bcdb2c8ab9a/image",
+          "created_by": "usr_gia",
+          "created_at": "2026-07-10T17:27:19.504117",
+          "legacy_provenance": false
+        }
+      ],
+      "factory_ready": false,
+      "image_run_ids": []
+    }
+  },
+  "project_render": {
+    "status_code": 201,
+    "body": {
+      "status": "accepted",
+      "project": {
+        "root_id": "ast_49d45bcdb2c8ab9a",
+        "title": "Emerald leaf ring \u2014 designer reference",
+        "collection": "Unfiled",
+        "tags": [],
+        "owner": "usr_gia",
+        "counts": {
+          "IMPORTED_REFERENCE": 1,
+          "SPEC_RENDER": 1
+        },
+        "item_count": 2,
+        "primary_revision_count": 2,
+        "has_factory_drawing": false,
+        "cover_asset_id": "ast_da4da03e8f2e640b",
+        "created_at": "2026-07-10T17:27:19.504117",
+        "updated_at": "2026-07-10T17:27:41.366265",
+        "id": "ast_49d45bcdb2c8ab9a",
+        "state": "refining",
+        "design_id": "dsn_12d33a819ed4d487",
+        "latest_design_version": 1,
+        "spec": {
+          "schema_version": 1,
+          "design_id": "dsn_12d33a819ed4d487",
+          "version": 1,
+          "created_by": "usr_gia",
+          "created_at": "2026-07-10T17:27:19.504117Z",
+          "jewelry_type": "ring",
+          "template": "solitaire_prong",
+          "mode": "pro",
+          "stone": {
+            "species": "emerald",
+            "cut": "emerald_cut",
+            "carat": 2.263,
+            "dimensions_mm": {
+              "length": 8.0,
+              "width": 8.0,
+              "depth": 5.2
+            },
+            "color": {
+              "trade": "Muzo Green",
+              "gia": "vivid, warm, slightly yellowish green",
+              "hue_code": null,
+              "tone": null,
+              "saturation": null
+            },
+            "clarity": null,
+            "origin": null,
+            "treatment": null,
+            "phenomena": [],
+            "count": 1,
+            "position": "center",
+            "table_pct": null,
+            "depth_pct": null,
+            "girdle": null,
+            "culet": null,
+            "lab": null,
+            "inscription": null,
+            "mount": null
+          },
+          "setting": {
+            "style": "4_prong_basket",
+            "prong_count": 4,
+            "prong_tip_mm": 0.9,
+            "gallery_height_mm": 4.2
+          },
+          "metal": {
+            "material": "gold",
+            "karat": 18,
+            "color": "yellow",
+            "finish": "high_polish"
+          },
+          "band": {
+            "profile": "comfort_fit",
+            "width_mm": 2.2,
+            "thickness_mm": 1.6
+          },
+          "ring_size": {
+            "system": "US",
+            "value": 6.5,
+            "inner_diameter_mm": 16.91
+          },
+          "bracelet": null,
+          "pendant": null,
+          "chain": null,
+          "brooch": null,
+          "drop": null,
+          "composition": null,
+          "side_stones": [],
+          "notes_to_factory": "Concept originated by image generation from the brief: \u201cImported finished-jewelry reference. Return only visible facts. Exact dimensions remain designer-confirmed. Designer notes: Designer confirms the central green square stone and leaf shoulder motif; dimensions are estimated pending correction.\u201d. All dimensions are density-consistent DRAFT proposals scaled from a vision estimate of the centre stone \u2014 the designer confirms exact millimetres before production."
+        },
+        "active_asset_id": "ast_da4da03e8f2e640b",
+        "active_design_version": 1,
+        "active_revision": {
+          "asset_id": "ast_da4da03e8f2e640b",
+          "root_id": "ast_49d45bcdb2c8ab9a",
+          "parent_asset_id": "ast_49d45bcdb2c8ab9a",
+          "capability": "SPEC_RENDER",
+          "provenance": "generated_spec_aligned",
+          "revision": 2,
+          "design_version": 1,
+          "region": null,
+          "instruction": "Create a beautiful photorealistic product render faithful to this designer-confirmed emerald leaf ring reference and its validated specification. Preserve the leaf-side character.",
+          "drift": null,
+          "pinned": false,
+          "media_type": "image/jpeg",
+          "image_url": "/assets/ast_da4da03e8f2e640b/image",
+          "created_by": "usr_gia",
+          "created_at": "2026-07-10T17:27:41.364996",
+          "legacy_provenance": false
+        },
+        "pinned_revision": null,
+        "revisions": [
+          {
+            "asset_id": "ast_49d45bcdb2c8ab9a",
+            "root_id": "ast_49d45bcdb2c8ab9a",
+            "parent_asset_id": null,
+            "capability": "IMPORTED_REFERENCE",
+            "provenance": "imported_reference",
+            "revision": 1,
+            "design_version": 1,
+            "region": null,
+            "instruction": "Designer-confirmed imported reference",
+            "drift": null,
+            "pinned": false,
+            "media_type": "image/jpeg",
+            "image_url": "/assets/ast_49d45bcdb2c8ab9a/image",
+            "created_by": "usr_gia",
+            "created_at": "2026-07-10T17:27:19.504117",
+            "legacy_provenance": false
+          },
+          {
+            "asset_id": "ast_da4da03e8f2e640b",
+            "root_id": "ast_49d45bcdb2c8ab9a",
+            "parent_asset_id": "ast_49d45bcdb2c8ab9a",
+            "capability": "SPEC_RENDER",
+            "provenance": "generated_spec_aligned",
+            "revision": 2,
+            "design_version": 1,
+            "region": null,
+            "instruction": "Create a beautiful photorealistic product render faithful to this designer-confirmed emerald leaf ring reference and its validated specification. Preserve the leaf-side character.",
+            "drift": null,
+            "pinned": false,
+            "media_type": "image/jpeg",
+            "image_url": "/assets/ast_da4da03e8f2e640b/image",
+            "created_by": "usr_gia",
+            "created_at": "2026-07-10T17:27:41.364996",
+            "legacy_provenance": false
+          }
+        ],
+        "derived_assets": [],
+        "assets": [
+          {
+            "asset_id": "ast_49d45bcdb2c8ab9a",
+            "root_id": "ast_49d45bcdb2c8ab9a",
+            "parent_asset_id": null,
+            "capability": "IMPORTED_REFERENCE",
+            "provenance": "imported_reference",
+            "revision": 1,
+            "design_version": 1,
+            "region": null,
+            "instruction": "Designer-confirmed imported reference",
+            "drift": null,
+            "pinned": false,
+            "media_type": "image/jpeg",
+            "image_url": "/assets/ast_49d45bcdb2c8ab9a/image",
+            "created_by": "usr_gia",
+            "created_at": "2026-07-10T17:27:19.504117",
+            "legacy_provenance": false
+          },
+          {
+            "asset_id": "ast_da4da03e8f2e640b",
+            "root_id": "ast_49d45bcdb2c8ab9a",
+            "parent_asset_id": "ast_49d45bcdb2c8ab9a",
+            "capability": "SPEC_RENDER",
+            "provenance": "generated_spec_aligned",
+            "revision": 2,
+            "design_version": 1,
+            "region": null,
+            "instruction": "Create a beautiful photorealistic product render faithful to this designer-confirmed emerald leaf ring reference and its validated specification. Preserve the leaf-side character.",
+            "drift": null,
+            "pinned": false,
+            "media_type": "image/jpeg",
+            "image_url": "/assets/ast_da4da03e8f2e640b/image",
+            "created_by": "usr_gia",
+            "created_at": "2026-07-10T17:27:41.364996",
+            "legacy_provenance": false
+          }
+        ],
+        "items": [
+          {
+            "asset_id": "ast_49d45bcdb2c8ab9a",
+            "root_id": "ast_49d45bcdb2c8ab9a",
+            "parent_asset_id": null,
+            "capability": "IMPORTED_REFERENCE",
+            "provenance": "imported_reference",
+            "revision": 1,
+            "design_version": 1,
+            "region": null,
+            "instruction": "Designer-confirmed imported reference",
+            "drift": null,
+            "pinned": false,
+            "media_type": "image/jpeg",
+            "image_url": "/assets/ast_49d45bcdb2c8ab9a/image",
+            "created_by": "usr_gia",
+            "created_at": "2026-07-10T17:27:19.504117",
+            "legacy_provenance": false
+          },
+          {
+            "asset_id": "ast_da4da03e8f2e640b",
+            "root_id": "ast_49d45bcdb2c8ab9a",
+            "parent_asset_id": "ast_49d45bcdb2c8ab9a",
+            "capability": "SPEC_RENDER",
+            "provenance": "generated_spec_aligned",
+            "revision": 2,
+            "design_version": 1,
+            "region": null,
+            "instruction": "Create a beautiful photorealistic product render faithful to this designer-confirmed emerald leaf ring reference and its validated specification. Preserve the leaf-side character.",
+            "drift": null,
+            "pinned": false,
+            "media_type": "image/jpeg",
+            "image_url": "/assets/ast_da4da03e8f2e640b/image",
+            "created_by": "usr_gia",
+            "created_at": "2026-07-10T17:27:41.364996",
+            "legacy_provenance": false
+          }
+        ],
+        "approval": null,
+        "factory_ready": false,
+        "image_run_ids": [
+          "run_e019da80e303fc32"
+        ]
+      },
+      "asset_id": "ast_da4da03e8f2e640b",
+      "image_run_id": "run_e019da80e303fc32",
+      "qa": {
+        "verdict": "pass",
+        "checks": [
+          {
+            "code": "decodable_image",
+            "passed": true,
+            "severity": "hard",
+            "message": "candidate is a decodable raster image",
+            "evidence": {
+              "width": 880,
+              "height": 1184,
+              "format": "JPEG"
+            }
+          },
+          {
+            "code": "review_resolution",
+            "passed": true,
+            "severity": "warning",
+            "message": "candidate has reviewable raster dimensions",
+            "evidence": {
+              "width": 880,
+              "height": 1184
+            }
+          },
+          {
+            "code": "candidate_changed",
+            "passed": true,
+            "severity": "hard",
+            "message": "candidate bytes differ from the source",
+            "evidence": {}
+          },
+          {
+            "code": "jewelry_type",
+            "passed": true,
+            "severity": "hard",
+            "message": "visual evidence matches the requested fact",
+            "evidence": {}
+          },
+          {
+            "code": "major_components",
+            "passed": true,
+            "severity": "hard",
+            "message": "visual evidence matches the requested fact",
+            "evidence": {}
+          },
+          {
+            "code": "center_species",
+            "passed": true,
+            "severity": "hard",
+            "message": "visual evidence matches the requested fact",
+            "evidence": {}
+          },
+          {
+            "code": "cut_family",
+            "passed": true,
+            "severity": "hard",
+            "message": "visual evidence matches the requested fact",
+            "evidence": {}
+          },
+          {
+            "code": "center_color",
+            "passed": true,
+            "severity": "hard",
+            "message": "visual evidence matches the requested fact",
+            "evidence": {}
+          },
+          {
+            "code": "metal",
+            "passed": true,
+            "severity": "hard",
+            "message": "visual evidence matches the requested fact",
+            "evidence": {}
+          },
+          {
+            "code": "setting",
+            "passed": true,
+            "severity": "hard",
+            "message": "visual evidence matches the requested fact",
+            "evidence": {}
+          },
+          {
+            "code": "stone_count",
+            "passed": true,
+            "severity": "hard",
+            "message": "visual evidence matches the requested fact",
+            "evidence": {}
+          },
+          {
+            "code": "text_or_branding",
+            "passed": true,
+            "severity": "hard",
+            "message": "no text or branding detected",
+            "evidence": {}
+          },
+          {
+            "code": "reference_consistency",
+            "passed": true,
+            "severity": "hard",
+            "message": "visual evidence matches the requested fact",
+            "evidence": {}
+          },
+          {
+            "code": "exact_dimensions",
+            "passed": true,
+            "severity": "warning",
+            "message": "exact millimeters appears plausible but remains non-authoritative",
+            "evidence": {}
+          },
+          {
+            "code": "exact_carat",
+            "passed": true,
+            "severity": "warning",
+            "message": "exact carat weight appears plausible but remains non-authoritative",
+            "evidence": {}
+          }
+        ],
+        "score": 92.0,
+        "notes": [
+          "yellow gold leaf shoulders match reference and spec",
+          "square emerald center with 4-prong setting",
+          "no two-tone or white gold elements present"
+        ]
+      }
+    }
+  },
+  "checklist": {
+    "status_code": 201,
+    "body": {
+      "checklist_id": "chk_b86d208937ff3ab0",
+      "asset_id": "ast_da4da03e8f2e640b",
+      "version": 2,
+      "design_id": "dsn_12d33a819ed4d487",
+      "design_version": 1,
+      "mode": "auto_pin",
+      "items": [
+        {
+          "key": "stone",
+          "ref": "A",
+          "section": "stone",
+          "index": null,
+          "label": "Center stone",
+          "fact": "2.26 ct emerald \u00b7 emerald cut \u00b7 8 \u00d7 8 \u00d7 5.2 mm",
+          "question": "Is the center stone right?"
+        },
+        {
+          "key": "setting",
+          "ref": null,
+          "section": "setting",
+          "index": null,
+          "label": "Setting",
+          "fact": "4 Prong Basket \u00b7 gallery 4.2 mm",
+          "question": "Is the setting right?"
+        },
+        {
+          "key": "metal",
+          "ref": null,
+          "section": "metal",
+          "index": null,
+          "label": "Metal & finish",
+          "fact": "18k Yellow Gold \u00b7 high polish",
+          "question": "Are the metal and finish right?"
+        },
+        {
+          "key": "band",
+          "ref": null,
+          "section": "band",
+          "index": null,
+          "label": "Band",
+          "fact": "comfort fit \u00b7 2.2 \u00d7 1.6 mm",
+          "question": "Is the band right?"
+        },
+        {
+          "key": "ring_size",
+          "ref": null,
+          "section": "ring_size",
+          "index": null,
+          "label": "Ring size",
+          "fact": "US 6.5 \u00b7 \u2300 16.9 mm",
+          "question": "Is the ring size right?"
+        }
+      ],
+      "status": {
+        "total": 5,
+        "answered": 0,
+        "approved": 0,
+        "declined": [],
+        "outstanding": [
+          "stone",
+          "setting",
+          "metal",
+          "band",
+          "ring_size"
+        ],
+        "all_approved": false
+      }
+    }
+  },
+  "approvals": [
+    {
+      "status_code": 201,
+      "body": {
+        "checklist_id": "chk_b86d208937ff3ab0",
+        "item_key": "stone",
+        "approved": true,
+        "status": {
+          "total": 5,
+          "answered": 1,
+          "approved": 1,
+          "declined": [],
+          "outstanding": [
+            "setting",
+            "metal",
+            "band",
+            "ring_size"
+          ],
+          "all_approved": false
+        },
+        "pinned": false
+      }
+    },
+    {
+      "status_code": 201,
+      "body": {
+        "checklist_id": "chk_b86d208937ff3ab0",
+        "item_key": "setting",
+        "approved": true,
+        "status": {
+          "total": 5,
+          "answered": 2,
+          "approved": 2,
+          "declined": [],
+          "outstanding": [
+            "metal",
+            "band",
+            "ring_size"
+          ],
+          "all_approved": false
+        },
+        "pinned": false
+      }
+    },
+    {
+      "status_code": 201,
+      "body": {
+        "checklist_id": "chk_b86d208937ff3ab0",
+        "item_key": "metal",
+        "approved": true,
+        "status": {
+          "total": 5,
+          "answered": 3,
+          "approved": 3,
+          "declined": [],
+          "outstanding": [
+            "band",
+            "ring_size"
+          ],
+          "all_approved": false
+        },
+        "pinned": false
+      }
+    },
+    {
+      "status_code": 201,
+      "body": {
+        "checklist_id": "chk_b86d208937ff3ab0",
+        "item_key": "band",
+        "approved": true,
+        "status": {
+          "total": 5,
+          "answered": 4,
+          "approved": 4,
+          "declined": [],
+          "outstanding": [
+            "ring_size"
+          ],
+          "all_approved": false
+        },
+        "pinned": false
+      }
+    },
+    {
+      "status_code": 201,
+      "body": {
+        "checklist_id": "chk_b86d208937ff3ab0",
+        "item_key": "ring_size",
+        "approved": true,
+        "status": {
+          "total": 5,
+          "answered": 5,
+          "approved": 5,
+          "declined": [],
+          "outstanding": [],
+          "all_approved": true
+        },
+        "pinned": true,
+        "pinned_version": 2,
+        "message": "All 5 checks approved \u2014 pinned version 2 for factory"
+      }
+    }
+  ],
+  "factory_pack": {
+    "status_code": 200,
+    "manifest": {
+      "schema_version": "facetta.factory-pack.v1",
+      "project_id": "ast_49d45bcdb2c8ab9a",
+      "design_id": "dsn_12d33a819ed4d487",
+      "design_version": 1,
+      "asset_id": "ast_da4da03e8f2e640b",
+      "visual_revision": 2,
+      "approver": "usr_gia",
+      "approved_at": "2026-07-10T17:27:41.387640",
+      "pinned_at": "2026-07-10T17:27:41.388327",
+      "checklist": {
+        "id": "chk_b86d208937ff3ab0",
+        "mode": "auto_pin",
+        "status": {
+          "total": 5,
+          "answered": 5,
+          "approved": 5,
+          "declined": [],
+          "outstanding": [],
+          "all_approved": true
+        },
+        "results": [
+          {
+            "item_key": "stone",
+            "label": "Center stone",
+            "fact": "2.26 ct emerald \u00b7 emerald cut \u00b7 8 \u00d7 8 \u00d7 5.2 mm",
+            "approved": true,
+            "note": null,
+            "approved_by": "usr_gia",
+            "approved_at": "2026-07-10T17:27:41.376067"
+          },
+          {
+            "item_key": "setting",
+            "label": "Setting",
+            "fact": "4 Prong Basket \u00b7 gallery 4.2 mm",
+            "approved": true,
+            "note": null,
+            "approved_by": "usr_gia",
+            "approved_at": "2026-07-10T17:27:41.378927"
+          },
+          {
+            "item_key": "metal",
+            "label": "Metal & finish",
+            "fact": "18k Yellow Gold \u00b7 high polish",
+            "approved": true,
+            "note": null,
+            "approved_by": "usr_gia",
+            "approved_at": "2026-07-10T17:27:41.382168"
+          },
+          {
+            "item_key": "band",
+            "label": "Band",
+            "fact": "comfort fit \u00b7 2.2 \u00d7 1.6 mm",
+            "approved": true,
+            "note": null,
+            "approved_by": "usr_gia",
+            "approved_at": "2026-07-10T17:27:41.384995"
+          },
+          {
+            "item_key": "ring_size",
+            "label": "Ring size",
+            "fact": "US 6.5 \u00b7 \u2300 16.9 mm",
+            "approved": true,
+            "note": null,
+            "approved_by": "usr_gia",
+            "approved_at": "2026-07-10T17:27:41.387640"
+          }
+        ]
+      },
+      "qa_summary": {
+        "status": "accepted",
+        "image_run_id": "run_e019da80e303fc32",
+        "operation": "SPEC_RENDER",
+        "prompt_version": "spec-render.v1",
+        "attempt_count": 1,
+        "verdict": "pass",
+        "checks": [
+          {
+            "code": "decodable_image",
+            "passed": true,
+            "severity": "hard",
+            "message": "candidate is a decodable raster image",
+            "evidence": {
+              "width": 880,
+              "height": 1184,
+              "format": "JPEG"
+            }
+          },
+          {
+            "code": "review_resolution",
+            "passed": true,
+            "severity": "warning",
+            "message": "candidate has reviewable raster dimensions",
+            "evidence": {
+              "width": 880,
+              "height": 1184
+            }
+          },
+          {
+            "code": "candidate_changed",
+            "passed": true,
+            "severity": "hard",
+            "message": "candidate bytes differ from the source",
+            "evidence": {}
+          },
+          {
+            "code": "jewelry_type",
+            "passed": true,
+            "severity": "hard",
+            "message": "visual evidence matches the requested fact",
+            "evidence": {}
+          },
+          {
+            "code": "major_components",
+            "passed": true,
+            "severity": "hard",
+            "message": "visual evidence matches the requested fact",
+            "evidence": {}
+          },
+          {
+            "code": "center_species",
+            "passed": true,
+            "severity": "hard",
+            "message": "visual evidence matches the requested fact",
+            "evidence": {}
+          },
+          {
+            "code": "cut_family",
+            "passed": true,
+            "severity": "hard",
+            "message": "visual evidence matches the requested fact",
+            "evidence": {}
+          },
+          {
+            "code": "center_color",
+            "passed": true,
+            "severity": "hard",
+            "message": "visual evidence matches the requested fact",
+            "evidence": {}
+          },
+          {
+            "code": "metal",
+            "passed": true,
+            "severity": "hard",
+            "message": "visual evidence matches the requested fact",
+            "evidence": {}
+          },
+          {
+            "code": "setting",
+            "passed": true,
+            "severity": "hard",
+            "message": "visual evidence matches the requested fact",
+            "evidence": {}
+          },
+          {
+            "code": "stone_count",
+            "passed": true,
+            "severity": "hard",
+            "message": "visual evidence matches the requested fact",
+            "evidence": {}
+          },
+          {
+            "code": "text_or_branding",
+            "passed": true,
+            "severity": "hard",
+            "message": "no text or branding detected",
+            "evidence": {}
+          },
+          {
+            "code": "reference_consistency",
+            "passed": true,
+            "severity": "hard",
+            "message": "visual evidence matches the requested fact",
+            "evidence": {}
+          },
+          {
+            "code": "exact_dimensions",
+            "passed": true,
+            "severity": "warning",
+            "message": "exact millimeters appears plausible but remains non-authoritative",
+            "evidence": {}
+          },
+          {
+            "code": "exact_carat",
+            "passed": true,
+            "severity": "warning",
+            "message": "exact carat weight appears plausible but remains non-authoritative",
+            "evidence": {}
+          }
+        ]
+      },
+      "authority": {
+        "factory_truth": [
+          "validated-spec.json",
+          "facetta-sheet.svg",
+          "facetta-sheet.dxf"
+        ],
+        "visual_reference_only": [
+          "approved-reference.jpg"
+        ],
+        "note": "Only deterministic artifacts derived from the validated specification are authoritative factory truth."
+      },
+      "files": [
+        {
+          "name": "validated-spec.json",
+          "sha256": "37a960668603069b20c745f75bda5995ccd61c5f6ce7a5549d7ae5804292c57b",
+          "bytes": 1908,
+          "authoritative": true
+        },
+        {
+          "name": "facetta-sheet.svg",
+          "sha256": "96563309010133c7977f21832549d58e1a8cefb76f588ee8661bf66fb1f56928",
+          "bytes": 20691,
+          "authoritative": true
+        },
+        {
+          "name": "facetta-sheet.dxf",
+          "sha256": "9dbec87fd1ac9d55bd6ff1ab32cf897f2cc43b9b7fa9d188adc1beaf97f26539",
+          "bytes": 18828,
+          "authoritative": true
+        },
+        {
+          "name": "approved-reference.jpg",
+          "sha256": "74782b355a4f2c06b833b4b5d9aa256092fb2da2adbd51357e3a7098dc0f0a41",
+          "bytes": 250354,
+          "authoritative": false
+        }
+      ]
+    }
+  },
+  "factory_pack_zip": {
+    "status_code": 200,
+    "bytes": 258519,
+    "content_type": "application/zip"
+  }
+}

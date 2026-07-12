@@ -1,0 +1,639 @@
+{
+  "auto_accepted_warning": false,
+  "candidate_file": null,
+  "catalog_apply": {
+    "body": {
+      "attempts": [
+        {
+          "attempt_number": 1,
+          "cache_key": "2f73e485172ec87d7625181f835d5aa9fd91184edb746cb6b1b3e5b0c3b259b8",
+          "cached": false,
+          "corrective_instruction": null,
+          "cost": null,
+          "error": {
+            "category": "provider",
+            "code": "image_provider_call_failed",
+            "message": "render provider failed: Client error '400 Bad Request' for url 'https://api.x.ai/v1/images/edits'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400",
+            "retryable": true
+          },
+          "error_category": "provider",
+          "fallback_reason": null,
+          "latency_ms": 1645,
+          "model": "grok_direct",
+          "output_hash": null,
+          "prompt_hash": "f88325791efee1031dd71699d9041c584dd7fd4847b896f6629d3b5e989387a1",
+          "provider": "xai",
+          "provider_request_id": null,
+          "qa_checks": [],
+          "qa_verdict": null,
+          "quality_score": null,
+          "route": "grok_edit",
+          "usage": null
+        },
+        {
+          "attempt_number": 2,
+          "cache_key": "cbe36177e236ce9d8f6cc08802cff0cac62e416534cce9d4cc2c03b0f37265b0",
+          "cached": false,
+          "corrective_instruction": "The previous provider call returned no usable candidate. Re-execute the exact original contract without changing scope.",
+          "cost": null,
+          "error": {
+            "category": "provider",
+            "code": "image_provider_call_failed",
+            "message": "render provider failed: Client error '400 Bad Request' for url 'https://api.x.ai/v1/images/edits'\nFor more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/400",
+            "retryable": true
+          },
+          "error_category": "provider",
+          "fallback_reason": null,
+          "latency_ms": 1501,
+          "model": "grok_direct",
+          "output_hash": null,
+          "prompt_hash": "b317c0167a2ddfe0254e3a50c4271dac9f6370d74bb89ab39e46acdd2fe65ae7",
+          "provider": "xai",
+          "provider_request_id": null,
+          "qa_checks": [],
+          "qa_verdict": null,
+          "quality_score": null,
+          "route": "grok_edit",
+          "usage": null
+        },
+        {
+          "attempt_number": 3,
+          "cache_key": "8a54b4ae167afa6148cde2a7451371759b2e46aba7f7510f4ceff8031686052b",
+          "cached": false,
+          "corrective_instruction": "The previous provider call returned no usable candidate. Re-execute the exact original contract without changing scope.",
+          "cost": null,
+          "error": {
+            "category": "provider",
+            "code": "image_provider_call_failed",
+            "message": "no FAL_KEY configured \u2014 set it in the environment or .env",
+            "retryable": true
+          },
+          "error_category": "provider",
+          "fallback_reason": "grok_provider_failed",
+          "latency_ms": 0,
+          "model": "flux_kontext",
+          "output_hash": null,
+          "prompt_hash": "b317c0167a2ddfe0254e3a50c4271dac9f6370d74bb89ab39e46acdd2fe65ae7",
+          "provider": "fal",
+          "provider_request_id": null,
+          "qa_checks": [],
+          "qa_verdict": null,
+          "quality_score": null,
+          "route": "flux_kontext_edit",
+          "usage": null
+        }
+      ],
+      "category": "provider",
+      "code": "image_provider_failed",
+      "component_path": "chain.style",
+      "detail": "no FAL_KEY configured \u2014 set it in the environment or .env",
+      "error_category": "provider_failure",
+      "image_run_id": "run_29329549c8b62abe",
+      "option_id": "curb",
+      "retryable": false
+    },
+    "http_status": 503
+  },
+  "image_run": null,
+  "live": true,
+  "project": {
+    "active_asset_id": "ast_ac187ebb8aa2d77b",
+    "active_design_version": 1,
+    "active_revision": {
+      "asset_id": "ast_ac187ebb8aa2d77b",
+      "capability": "IMPORTED_REFERENCE",
+      "created_at": "2026-07-11T11:49:52.074777",
+      "created_by": "usr_test_designer",
+      "design_version": 1,
+      "image_url": "/assets/ast_ac187ebb8aa2d77b/image",
+      "instruction": "Designer-confirmed imported reference",
+      "legacy_provenance": false,
+      "media_type": "image/jpeg",
+      "pinned": false,
+      "provenance": "imported_reference",
+      "revision": 1,
+      "root_id": "ast_ac187ebb8aa2d77b"
+    },
+    "assets": [
+      {
+        "asset_id": "ast_ac187ebb8aa2d77b",
+        "capability": "IMPORTED_REFERENCE",
+        "created_at": "2026-07-11T11:49:52.074777",
+        "created_by": "usr_test_designer",
+        "design_version": 1,
+        "image_url": "/assets/ast_ac187ebb8aa2d77b/image",
+        "instruction": "Designer-confirmed imported reference",
+        "legacy_provenance": false,
+        "media_type": "image/jpeg",
+        "pinned": false,
+        "provenance": "imported_reference",
+        "revision": 1,
+        "root_id": "ast_ac187ebb8aa2d77b"
+      }
+    ],
+    "collection": "Founder reference acceptance",
+    "counts": {
+      "IMPORTED_REFERENCE": 1
+    },
+    "cover_asset_id": "ast_ac187ebb8aa2d77b",
+    "created_at": "2026-07-11T11:49:52.074777",
+    "derived_assets": [],
+    "design_id": "dsn_569f7f0227c14cc4",
+    "factory_blockers": [],
+    "factory_ready": false,
+    "has_factory_drawing": false,
+    "id": "ast_ac187ebb8aa2d77b",
+    "image_run_ids": [],
+    "item_count": 1,
+    "items": [
+      {
+        "asset_id": "ast_ac187ebb8aa2d77b",
+        "capability": "IMPORTED_REFERENCE",
+        "created_at": "2026-07-11T11:49:52.074777",
+        "created_by": "usr_test_designer",
+        "design_version": 1,
+        "image_url": "/assets/ast_ac187ebb8aa2d77b/image",
+        "instruction": "Designer-confirmed imported reference",
+        "legacy_provenance": false,
+        "media_type": "image/jpeg",
+        "pinned": false,
+        "provenance": "imported_reference",
+        "revision": 1,
+        "root_id": "ast_ac187ebb8aa2d77b"
+      }
+    ],
+    "latest_design_version": 1,
+    "owner": "usr_test_designer",
+    "primary_revision_count": 1,
+    "revisions": [
+      {
+        "asset_id": "ast_ac187ebb8aa2d77b",
+        "capability": "IMPORTED_REFERENCE",
+        "created_at": "2026-07-11T11:49:52.074777",
+        "created_by": "usr_test_designer",
+        "design_version": 1,
+        "image_url": "/assets/ast_ac187ebb8aa2d77b/image",
+        "instruction": "Designer-confirmed imported reference",
+        "legacy_provenance": false,
+        "media_type": "image/jpeg",
+        "pinned": false,
+        "provenance": "imported_reference",
+        "revision": 1,
+        "root_id": "ast_ac187ebb8aa2d77b"
+      }
+    ],
+    "root_id": "ast_ac187ebb8aa2d77b",
+    "spec": {
+      "band": null,
+      "bracelet": null,
+      "brooch": null,
+      "chain": {
+        "clasp": "lobster",
+        "geometry": {
+          "chain_width_mm": 1.0,
+          "construction": "open_link",
+          "end_ring_outer_diameter_mm": 2.0,
+          "link_thickness_mm": 0.2,
+          "links": [
+            {
+              "inside_length_mm": 1.5,
+              "inside_width_mm": 0.6,
+              "length_mm": 2.0,
+              "role": "standard"
+            }
+          ],
+          "links_soldered": true,
+          "profile_thickness_mm": 0.35
+        },
+        "length_mm": 450.0,
+        "pendant_connection": "slides_through_bail",
+        "production": {
+          "mode": "custom",
+          "reference": "eval-source-cable-geometry-v1",
+          "reference_kind": "dimensioned_drawing"
+        },
+        "style": "cable"
+      },
+      "composition": null,
+      "created_at": "2026-07-11T11:49:52.074777Z",
+      "created_by": "usr_test_designer",
+      "design_form": {
+        "elements": []
+      },
+      "design_id": "dsn_569f7f0227c14cc4",
+      "dimension_provenance": {
+        "chain.geometry.chain_width_mm": {
+          "confidence": 0.45,
+          "method": "reference_vision",
+          "note": "Test estimate; designer measurement required.",
+          "source": "founder eval image-33.jpg",
+          "status": "estimated_from_reference"
+        },
+        "chain.geometry.end_ring_outer_diameter_mm": {
+          "confidence": 0.45,
+          "method": "reference_vision",
+          "note": "Test estimate; designer measurement required.",
+          "source": "founder eval image-33.jpg",
+          "status": "estimated_from_reference"
+        },
+        "chain.geometry.link_thickness_mm": {
+          "confidence": 0.45,
+          "method": "reference_vision",
+          "note": "Test estimate; designer measurement required.",
+          "source": "founder eval image-33.jpg",
+          "status": "estimated_from_reference"
+        },
+        "chain.geometry.links[0].inside_length_mm": {
+          "confidence": 0.45,
+          "method": "reference_vision",
+          "note": "Test estimate; designer measurement required.",
+          "source": "founder eval image-33.jpg",
+          "status": "estimated_from_reference"
+        },
+        "chain.geometry.links[0].inside_width_mm": {
+          "confidence": 0.45,
+          "method": "reference_vision",
+          "note": "Test estimate; designer measurement required.",
+          "source": "founder eval image-33.jpg",
+          "status": "estimated_from_reference"
+        },
+        "chain.geometry.links[0].length_mm": {
+          "confidence": 0.45,
+          "method": "reference_vision",
+          "note": "Test estimate; designer measurement required.",
+          "source": "founder eval image-33.jpg",
+          "status": "estimated_from_reference"
+        },
+        "chain.geometry.profile_thickness_mm": {
+          "confidence": 0.45,
+          "method": "reference_vision",
+          "note": "Test estimate; designer measurement required.",
+          "source": "founder eval image-33.jpg",
+          "status": "estimated_from_reference"
+        },
+        "pendant.bail_height_mm": {
+          "confidence": 0.45,
+          "method": "reference_vision",
+          "note": "Test estimate; designer measurement required.",
+          "source": "founder eval image-33.jpg",
+          "status": "estimated_from_reference"
+        },
+        "pendant.bail_inner_diameter_mm": {
+          "confidence": 0.45,
+          "method": "reference_vision",
+          "note": "Test estimate; designer measurement required.",
+          "source": "founder eval image-33.jpg",
+          "status": "estimated_from_reference"
+        },
+        "pendant.drop_mm": {
+          "confidence": 0.45,
+          "method": "reference_vision",
+          "note": "Test estimate; designer measurement required.",
+          "source": "founder eval image-33.jpg",
+          "status": "estimated_from_reference"
+        },
+        "stone.dimensions_mm.depth": {
+          "confidence": 0.45,
+          "method": "reference_vision",
+          "note": "Test estimate; designer measurement required.",
+          "source": "founder eval image-33.jpg",
+          "status": "estimated_from_reference"
+        },
+        "stone.dimensions_mm.length": {
+          "confidence": 0.45,
+          "method": "reference_vision",
+          "note": "Test estimate; designer measurement required.",
+          "source": "founder eval image-33.jpg",
+          "status": "estimated_from_reference"
+        },
+        "stone.dimensions_mm.width": {
+          "confidence": 0.45,
+          "method": "reference_vision",
+          "note": "Test estimate; designer measurement required.",
+          "source": "founder eval image-33.jpg",
+          "status": "estimated_from_reference"
+        }
+      },
+      "drop": null,
+      "jewelry_type": "necklace",
+      "metal": {
+        "color": "yellow",
+        "finish": "high_polish",
+        "karat": 18,
+        "material": "gold"
+      },
+      "mode": "pro",
+      "notes_to_factory": "LIVE WORKFLOW TEST ONLY. Test-actor geometry approximates the visible flower necklace and is not a measurement or license to manufacture the pictured third-party design.",
+      "pendant": {
+        "bail_height_mm": 4.0,
+        "bail_inner_diameter_mm": 3.0,
+        "drop_mm": 18.0
+      },
+      "ring_size": null,
+      "schema_version": 1,
+      "setting": {
+        "gallery_height_mm": null,
+        "prong_count": 4,
+        "prong_tip_mm": 0.6,
+        "style": "prong_cluster"
+      },
+      "side_stones": [
+        {
+          "carat": 0.05,
+          "clarity": null,
+          "color": {
+            "gia": "F",
+            "hue_code": null,
+            "saturation": null,
+            "tone": null,
+            "trade": "colorless"
+          },
+          "count": 5,
+          "culet": null,
+          "cut": "pear",
+          "depth_pct": null,
+          "dimensions_mm": {
+            "depth": 1.3,
+            "length": 3.0,
+            "width": 2.0
+          },
+          "girdle": null,
+          "inscription": null,
+          "lab": null,
+          "mount": null,
+          "origin": null,
+          "phenomena": [],
+          "position": "flower_petals",
+          "species": "diamond",
+          "table_pct": null,
+          "treatment": null
+        }
+      ],
+      "source_component_coverage": null,
+      "stone": {
+        "carat": 0.46,
+        "clarity": null,
+        "color": {
+          "gia": "medium vivid green",
+          "hue_code": null,
+          "saturation": null,
+          "tone": null,
+          "trade": "Muzo Green"
+        },
+        "count": 1,
+        "culet": null,
+        "cut": "cushion",
+        "depth_pct": null,
+        "dimensions_mm": {
+          "depth": 3.1,
+          "length": 5.0,
+          "width": 5.0
+        },
+        "girdle": null,
+        "inscription": null,
+        "lab": null,
+        "mount": null,
+        "origin": null,
+        "phenomena": [],
+        "position": null,
+        "species": "emerald",
+        "table_pct": null,
+        "treatment": null
+      },
+      "template": "cluster_pendant",
+      "version": 1
+    },
+    "state": "refining",
+    "tags": [
+      "chain-catalog",
+      "live-eval",
+      "necklace"
+    ],
+    "title": "Founder flower-necklace chain isolation eval",
+    "updated_at": "2026-07-11T11:49:52.074777"
+  },
+  "run_name": "designer-necklace-chain-catalog-live-2026-07-11",
+  "source": "/Users/mattfb/.codex/attachments/c2fd41d0-b236-43ef-ada9-e9479718c771/image-33.jpg",
+  "source_policy": "Founder-supplied test reference only; no training, publication, ownership claim, or manufacturing authorization.",
+  "source_spec": {
+    "band": null,
+    "bracelet": null,
+    "brooch": null,
+    "chain": {
+      "clasp": "lobster",
+      "geometry": {
+        "chain_width_mm": 1.0,
+        "construction": "open_link",
+        "end_ring_outer_diameter_mm": 2.0,
+        "link_thickness_mm": 0.2,
+        "links": [
+          {
+            "inside_length_mm": 1.5,
+            "inside_width_mm": 0.6,
+            "length_mm": 2.0,
+            "role": "standard"
+          }
+        ],
+        "links_soldered": true,
+        "profile_thickness_mm": 0.35
+      },
+      "length_mm": 450.0,
+      "pendant_connection": "slides_through_bail",
+      "production": {
+        "mode": "custom",
+        "reference": "eval-source-cable-geometry-v1",
+        "reference_kind": "dimensioned_drawing"
+      },
+      "style": "cable"
+    },
+    "composition": null,
+    "created_at": "2026-07-11T00:00:00Z",
+    "created_by": "usr_test_designer",
+    "design_form": {
+      "elements": []
+    },
+    "design_id": "dsn_eval_founder_flower_necklace",
+    "dimension_provenance": {
+      "chain.geometry.chain_width_mm": {
+        "confidence": 0.45,
+        "method": "reference_vision",
+        "note": "Test estimate; designer measurement required.",
+        "source": "founder eval image-33.jpg",
+        "status": "estimated_from_reference"
+      },
+      "chain.geometry.end_ring_outer_diameter_mm": {
+        "confidence": 0.45,
+        "method": "reference_vision",
+        "note": "Test estimate; designer measurement required.",
+        "source": "founder eval image-33.jpg",
+        "status": "estimated_from_reference"
+      },
+      "chain.geometry.link_thickness_mm": {
+        "confidence": 0.45,
+        "method": "reference_vision",
+        "note": "Test estimate; designer measurement required.",
+        "source": "founder eval image-33.jpg",
+        "status": "estimated_from_reference"
+      },
+      "chain.geometry.links[0].inside_length_mm": {
+        "confidence": 0.45,
+        "method": "reference_vision",
+        "note": "Test estimate; designer measurement required.",
+        "source": "founder eval image-33.jpg",
+        "status": "estimated_from_reference"
+      },
+      "chain.geometry.links[0].inside_width_mm": {
+        "confidence": 0.45,
+        "method": "reference_vision",
+        "note": "Test estimate; designer measurement required.",
+        "source": "founder eval image-33.jpg",
+        "status": "estimated_from_reference"
+      },
+      "chain.geometry.links[0].length_mm": {
+        "confidence": 0.45,
+        "method": "reference_vision",
+        "note": "Test estimate; designer measurement required.",
+        "source": "founder eval image-33.jpg",
+        "status": "estimated_from_reference"
+      },
+      "chain.geometry.profile_thickness_mm": {
+        "confidence": 0.45,
+        "method": "reference_vision",
+        "note": "Test estimate; designer measurement required.",
+        "source": "founder eval image-33.jpg",
+        "status": "estimated_from_reference"
+      },
+      "pendant.bail_height_mm": {
+        "confidence": 0.45,
+        "method": "reference_vision",
+        "note": "Test estimate; designer measurement required.",
+        "source": "founder eval image-33.jpg",
+        "status": "estimated_from_reference"
+      },
+      "pendant.bail_inner_diameter_mm": {
+        "confidence": 0.45,
+        "method": "reference_vision",
+        "note": "Test estimate; designer measurement required.",
+        "source": "founder eval image-33.jpg",
+        "status": "estimated_from_reference"
+      },
+      "pendant.drop_mm": {
+        "confidence": 0.45,
+        "method": "reference_vision",
+        "note": "Test estimate; designer measurement required.",
+        "source": "founder eval image-33.jpg",
+        "status": "estimated_from_reference"
+      },
+      "stone.dimensions_mm.depth": {
+        "confidence": 0.45,
+        "method": "reference_vision",
+        "note": "Test estimate; designer measurement required.",
+        "source": "founder eval image-33.jpg",
+        "status": "estimated_from_reference"
+      },
+      "stone.dimensions_mm.length": {
+        "confidence": 0.45,
+        "method": "reference_vision",
+        "note": "Test estimate; designer measurement required.",
+        "source": "founder eval image-33.jpg",
+        "status": "estimated_from_reference"
+      },
+      "stone.dimensions_mm.width": {
+        "confidence": 0.45,
+        "method": "reference_vision",
+        "note": "Test estimate; designer measurement required.",
+        "source": "founder eval image-33.jpg",
+        "status": "estimated_from_reference"
+      }
+    },
+    "drop": null,
+    "jewelry_type": "necklace",
+    "metal": {
+      "color": "yellow",
+      "finish": "high_polish",
+      "karat": 18,
+      "material": "gold"
+    },
+    "mode": "pro",
+    "notes_to_factory": "LIVE WORKFLOW TEST ONLY. Test-actor geometry approximates the visible flower necklace and is not a measurement or license to manufacture the pictured third-party design.",
+    "pendant": {
+      "bail_height_mm": 4.0,
+      "bail_inner_diameter_mm": 3.0,
+      "drop_mm": 18.0
+    },
+    "ring_size": null,
+    "schema_version": 1,
+    "setting": {
+      "gallery_height_mm": null,
+      "prong_count": 4,
+      "prong_tip_mm": 0.6,
+      "style": "prong_cluster"
+    },
+    "side_stones": [
+      {
+        "carat": 0.05,
+        "clarity": null,
+        "color": {
+          "gia": "F",
+          "hue_code": null,
+          "saturation": null,
+          "tone": null,
+          "trade": "colorless"
+        },
+        "count": 5,
+        "culet": null,
+        "cut": "pear",
+        "depth_pct": null,
+        "dimensions_mm": {
+          "depth": 1.3,
+          "length": 3.0,
+          "width": 2.0
+        },
+        "girdle": null,
+        "inscription": null,
+        "lab": null,
+        "mount": null,
+        "origin": null,
+        "phenomena": [],
+        "position": "flower_petals",
+        "species": "diamond",
+        "table_pct": null,
+        "treatment": null
+      }
+    ],
+    "source_component_coverage": null,
+    "stone": {
+      "carat": 0.46,
+      "clarity": null,
+      "color": {
+        "gia": "medium vivid green",
+        "hue_code": null,
+        "saturation": null,
+        "tone": null,
+        "trade": "Muzo Green"
+      },
+      "count": 1,
+      "culet": null,
+      "cut": "cushion",
+      "depth_pct": null,
+      "dimensions_mm": {
+        "depth": 3.1,
+        "length": 5.0,
+        "width": 5.0
+      },
+      "girdle": null,
+      "inscription": null,
+      "lab": null,
+      "mount": null,
+      "origin": null,
+      "phenomena": [],
+      "position": null,
+      "species": "emerald",
+      "table_pct": null,
+      "treatment": null
+    },
+    "template": "cluster_pendant",
+    "version": 1
+  },
+  "test_actor_disclosure": "All source and target measurements and drawing IDs are explicit workflow-test values. They are not designer/founder/GIA approval."
+}

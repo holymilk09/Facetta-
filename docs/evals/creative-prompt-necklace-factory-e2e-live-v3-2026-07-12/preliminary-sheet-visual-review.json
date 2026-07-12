@@ -1,0 +1,17 @@
+{
+  "artifact": "draft-facetta-sheet-preview.png",
+  "factory_authoritative": false,
+  "founder_approved": false,
+  "gia_cofounder_approved": false,
+  "review": {
+    "generic_template_geometry_visible": false,
+    "headline_clear": true,
+    "old_factory_production_footer_visible": false,
+    "production_block_reasons_readable": true,
+    "result": "pass",
+    "top_banner_overlap": false
+  },
+  "reviewer_role": "internal_operator_visual_qa",
+  "scope": "preliminary sheet safety and legibility only",
+  "status": "preliminary_not_for_production"
+}

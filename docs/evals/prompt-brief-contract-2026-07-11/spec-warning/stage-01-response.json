@@ -1,0 +1,26 @@
+{
+  "body": {
+    "image_run_id": "run_90770e5232528b4c",
+    "project": null,
+    "quality_report": {
+      "offline_contract": true,
+      "stage": "spec_render",
+      "verdict": "warn"
+    },
+    "status": "review_required",
+    "warning_candidate": {
+      "candidate_id": "cand_92ebb5f9e803445b",
+      "creation_stage": "spec_render",
+      "operation": "SPEC_RENDER",
+      "preview_url": "/projects/from-brief/candidates/cand_92ebb5f9e803445b/image",
+      "qa": {
+        "offline_contract": true,
+        "stage": "spec_render",
+        "verdict": "warn"
+      },
+      "requested_change": "Create one refined engagement ring with a round brilliant diamond center, four-claw basket, 18k yellow gold, a narrow 1.8 mm half-round polished shank, no halo, and no side stones. Use a neutral studio presentation.",
+      "run_id": "run_90770e5232528b4c"
+    }
+  },
+  "http_status": 202
+}

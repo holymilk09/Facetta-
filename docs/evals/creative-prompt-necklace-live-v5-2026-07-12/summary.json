@@ -1,0 +1,200 @@
+{
+  "accepted": false,
+  "attempts": [
+    {
+      "attempt_number": 1,
+      "cache_key": "15acd6401041ca58df384e2fea8f7dec7ab190e8d8d732bd63f561d858650f20",
+      "cached": false,
+      "corrective_instruction": null,
+      "cost": null,
+      "error": null,
+      "error_category": null,
+      "fallback_reason": null,
+      "latency_ms": 20029,
+      "model": "grok_direct",
+      "output_hash": "0c40e27c0bf8f49314d74cee61d66c76ffbbabef0303e37789854c4bfa98268a",
+      "prompt_hash": "d3a4d3ddd218d14cd6db0f8c67772365357b0f86de44a5e5ee31be40c18e88c9",
+      "provider": "xai",
+      "provider_request_id": null,
+      "qa_checks": [
+        {
+          "code": "decodable_image",
+          "evidence": {
+            "format": "JPEG",
+            "height": 1152,
+            "width": 864
+          },
+          "message": "candidate is a decodable raster image",
+          "passed": true,
+          "severity": "hard"
+        },
+        {
+          "code": "review_resolution",
+          "evidence": {
+            "height": 1152,
+            "width": 864
+          },
+          "message": "candidate has reviewable raster dimensions",
+          "passed": true,
+          "severity": "warning"
+        },
+        {
+          "code": "coherent_jewelry_render",
+          "evidence": {},
+          "message": "visual evidence matches the requested fact",
+          "passed": true,
+          "severity": "hard"
+        },
+        {
+          "code": "complete_piece_visible",
+          "evidence": {},
+          "message": "complete-piece framing could not be visually confirmed",
+          "passed": false,
+          "severity": "warning"
+        },
+        {
+          "code": "requested_presentation_applied",
+          "evidence": {},
+          "message": "visual evidence matches the requested fact",
+          "passed": true,
+          "severity": "hard"
+        },
+        {
+          "code": "explicit_counts_match",
+          "evidence": {},
+          "message": "visual evidence matches the requested fact",
+          "passed": true,
+          "severity": "hard"
+        },
+        {
+          "code": "explicit_stone_facts_match",
+          "evidence": {},
+          "message": "visual evidence matches the requested fact",
+          "passed": true,
+          "severity": "hard"
+        },
+        {
+          "code": "text_or_branding",
+          "evidence": {},
+          "message": "visual evidence matches the requested fact",
+          "passed": true,
+          "severity": "hard"
+        },
+        {
+          "code": "factory_authority",
+          "evidence": {
+            "factory_authoritative": false
+          },
+          "message": "creative render is review-only and cannot establish hidden geometry, dimensions, materials, stone identity, or factory facts",
+          "passed": false,
+          "severity": "warning"
+        }
+      ],
+      "qa_verdict": "warn",
+      "quality_score": 95.0,
+      "route": "grok_generate",
+      "usage": null
+    }
+  ],
+  "candidate_file": "candidate.jpg",
+  "candidate_media_type": "image/jpeg",
+  "candidate_sha256": "0c40e27c0bf8f49314d74cee61d66c76ffbbabef0303e37789854c4bfa98268a",
+  "designer_prompt": "Create one complete platinum floral lariat necklace, fully visible inside the frame with the entire cable chain, both endpoints, and clasp. Build two articulated vine branches around exactly five and only five marquise emerald leaves at five distinct positions: emerald 1 on the upper-left branch, emerald 2 on the lower-left branch, emerald 3 on the upper-right branch, emerald 4 on the middle-right branch, and emerald 5 on the lower central vine. Add only small round brilliant diamond dew-drop accents; every white gemstone must be round, never leaf, marquise, or pear shaped. Finish with exactly one long polished tapered platinum drop below the vines. Clean warm-gray studio background; no text, logos, extra jewelry, extra emeralds, missing emeralds, or cropped chain.",
+  "executed_at": "2026-07-11T17:16:29.486652+00:00",
+  "factory_authoritative": false,
+  "input_hash": "96e408368ee2c0741e936b33bd25203489fe32c96fb6328c81557e2a0465be71",
+  "jewelry_type": "jewelry",
+  "maximum_attempts": 3,
+  "operation": "CREATIVE_GENERATE",
+  "product_asset_persisted": false,
+  "prompt_version": "creative-generate.v3",
+  "quality": {
+    "checks": [
+      {
+        "code": "decodable_image",
+        "evidence": {
+          "format": "JPEG",
+          "height": 1152,
+          "width": 864
+        },
+        "message": "candidate is a decodable raster image",
+        "passed": true,
+        "severity": "hard"
+      },
+      {
+        "code": "review_resolution",
+        "evidence": {
+          "height": 1152,
+          "width": 864
+        },
+        "message": "candidate has reviewable raster dimensions",
+        "passed": true,
+        "severity": "warning"
+      },
+      {
+        "code": "coherent_jewelry_render",
+        "evidence": {},
+        "message": "visual evidence matches the requested fact",
+        "passed": true,
+        "severity": "hard"
+      },
+      {
+        "code": "complete_piece_visible",
+        "evidence": {},
+        "message": "complete-piece framing could not be visually confirmed",
+        "passed": false,
+        "severity": "warning"
+      },
+      {
+        "code": "requested_presentation_applied",
+        "evidence": {},
+        "message": "visual evidence matches the requested fact",
+        "passed": true,
+        "severity": "hard"
+      },
+      {
+        "code": "explicit_counts_match",
+        "evidence": {},
+        "message": "visual evidence matches the requested fact",
+        "passed": true,
+        "severity": "hard"
+      },
+      {
+        "code": "explicit_stone_facts_match",
+        "evidence": {},
+        "message": "visual evidence matches the requested fact",
+        "passed": true,
+        "severity": "hard"
+      },
+      {
+        "code": "text_or_branding",
+        "evidence": {},
+        "message": "visual evidence matches the requested fact",
+        "passed": true,
+        "severity": "hard"
+      },
+      {
+        "code": "factory_authority",
+        "evidence": {
+          "factory_authoritative": false
+        },
+        "message": "creative render is review-only and cannot establish hidden geometry, dimensions, materials, stone identity, or factory facts",
+        "passed": false,
+        "severity": "warning"
+      }
+    ],
+    "notes": [
+      "exactly five marquise emeralds at specified positions",
+      "all white stones round brilliant",
+      "full chain, clasp and tapered drop visible"
+    ],
+    "score": 95.0,
+    "verdict": "warn"
+  },
+  "result_set": "creative-prompt-necklace-live-v5-2026-07-12",
+  "review_required": true,
+  "specification_created": false,
+  "status": "review_required",
+  "variant": 23,
+  "verdict": "warn"
+}

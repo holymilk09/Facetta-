@@ -1,0 +1,267 @@
+{
+  "filenames": [
+    "image-1.jpg",
+    "image-2.jpg",
+    "image-3.jpg",
+    "image-4.jpg",
+    "image-5.jpg",
+    "image-6.jpg",
+    "image-7.jpg",
+    "image-8.jpg",
+    "image-9.jpg",
+    "image-10.jpg",
+    "image-11.jpg",
+    "image-12.jpg",
+    "image-13.jpg",
+    "image-14.jpg",
+    "image-15.jpg",
+    "image-16.jpg"
+  ],
+  "latency_ms": 15937,
+  "payload": {
+    "items": [
+      {
+        "complexity": "moderate",
+        "confidence": 0.75,
+        "filename": "image-1.jpg",
+        "input_kind": "finished_jewelry_photo",
+        "multi_design": true,
+        "notes": "multiple finished gold rings and bracelets",
+        "primary_category": "mixed",
+        "watermark_or_branding": false,
+        "workflow_fit": [
+          "photo_read",
+          "catalog_reference"
+        ]
+      },
+      {
+        "complexity": "moderate",
+        "confidence": 0.8,
+        "filename": "image-2.jpg",
+        "input_kind": "colored_design_plate",
+        "multi_design": true,
+        "notes": "multiple colored bracelet designs",
+        "primary_category": "bracelet",
+        "watermark_or_branding": false,
+        "workflow_fit": [
+          "plate_read",
+          "lineart_color"
+        ]
+      },
+      {
+        "complexity": "moderate",
+        "confidence": 0.8,
+        "filename": "image-3.jpg",
+        "input_kind": "colored_design_plate",
+        "multi_design": true,
+        "notes": "multiple colored bracelet designs",
+        "primary_category": "bracelet",
+        "watermark_or_branding": false,
+        "workflow_fit": [
+          "plate_read",
+          "lineart_color"
+        ]
+      },
+      {
+        "complexity": "moderate",
+        "confidence": 0.7,
+        "filename": "image-4.jpg",
+        "input_kind": "mixed",
+        "multi_design": true,
+        "notes": "mixed necklace renders and drawings with platform watermark",
+        "primary_category": "necklace",
+        "watermark_or_branding": true,
+        "workflow_fit": [
+          "photo_read",
+          "lineart_color",
+          "catalog_reference"
+        ]
+      },
+      {
+        "complexity": "complex",
+        "confidence": 0.85,
+        "filename": "image-5.jpg",
+        "input_kind": "technical_sheet",
+        "multi_design": false,
+        "notes": "annotated technical drawing of gem bracelet",
+        "primary_category": "bracelet",
+        "watermark_or_branding": true,
+        "workflow_fit": [
+          "technical_benchmark",
+          "lineart_color"
+        ]
+      },
+      {
+        "complexity": "complex",
+        "confidence": 0.85,
+        "filename": "image-6.jpg",
+        "input_kind": "technical_sheet",
+        "multi_design": false,
+        "notes": "annotated exploded technical views",
+        "primary_category": "bracelet",
+        "watermark_or_branding": true,
+        "workflow_fit": [
+          "technical_benchmark",
+          "lineart_color"
+        ]
+      },
+      {
+        "complexity": "complex",
+        "confidence": 0.8,
+        "filename": "image-7.jpg",
+        "input_kind": "finished_jewelry_photo",
+        "multi_design": false,
+        "notes": "large floral brooch photo with annotations",
+        "primary_category": "brooch",
+        "watermark_or_branding": true,
+        "workflow_fit": [
+          "photo_read",
+          "beauty_render"
+        ]
+      },
+      {
+        "complexity": "simple",
+        "confidence": 0.9,
+        "filename": "image-8.jpg",
+        "input_kind": "finished_jewelry_photo",
+        "multi_design": false,
+        "notes": "single butterfly pendant product photo",
+        "primary_category": "pendant",
+        "watermark_or_branding": true,
+        "workflow_fit": [
+          "photo_read",
+          "beauty_render"
+        ]
+      },
+      {
+        "complexity": "moderate",
+        "confidence": 0.85,
+        "filename": "image-9.jpg",
+        "input_kind": "line_art",
+        "multi_design": false,
+        "notes": "hand drawing of pendant on hand",
+        "primary_category": "pendant",
+        "watermark_or_branding": true,
+        "workflow_fit": [
+          "lineart_color",
+          "localized_edit"
+        ]
+      },
+      {
+        "complexity": "moderate",
+        "confidence": 0.9,
+        "filename": "image-10.jpg",
+        "input_kind": "line_art",
+        "multi_design": false,
+        "notes": "single line-art butterfly pendant",
+        "primary_category": "pendant",
+        "watermark_or_branding": false,
+        "workflow_fit": [
+          "lineart_color"
+        ]
+      },
+      {
+        "complexity": "moderate",
+        "confidence": 0.85,
+        "filename": "image-11.jpg",
+        "input_kind": "colored_design_plate",
+        "multi_design": false,
+        "notes": "floral pendant design plate with notes",
+        "primary_category": "pendant",
+        "watermark_or_branding": false,
+        "workflow_fit": [
+          "plate_read",
+          "lineart_color"
+        ]
+      },
+      {
+        "complexity": "complex",
+        "confidence": 0.85,
+        "filename": "image-12.jpg",
+        "input_kind": "colored_design_plate",
+        "multi_design": false,
+        "notes": "octopus themed necklace design plate",
+        "primary_category": "necklace",
+        "watermark_or_branding": false,
+        "workflow_fit": [
+          "plate_read",
+          "lineart_color"
+        ]
+      },
+      {
+        "complexity": "complex",
+        "confidence": 0.85,
+        "filename": "image-13.jpg",
+        "input_kind": "colored_design_plate",
+        "multi_design": false,
+        "notes": "octopus themed necklace design plate",
+        "primary_category": "necklace",
+        "watermark_or_branding": false,
+        "workflow_fit": [
+          "plate_read",
+          "lineart_color"
+        ]
+      },
+      {
+        "complexity": "moderate",
+        "confidence": 0.8,
+        "filename": "image-14.jpg",
+        "input_kind": "colored_design_plate",
+        "multi_design": false,
+        "notes": "single pendant design with gem labels",
+        "primary_category": "pendant",
+        "watermark_or_branding": false,
+        "workflow_fit": [
+          "plate_read",
+          "lineart_color"
+        ]
+      },
+      {
+        "complexity": "complex",
+        "confidence": 0.85,
+        "filename": "image-15.jpg",
+        "input_kind": "technical_sheet",
+        "multi_design": false,
+        "notes": "annotated brooch technical drawing",
+        "primary_category": "brooch",
+        "watermark_or_branding": true,
+        "workflow_fit": [
+          "technical_benchmark",
+          "lineart_color"
+        ]
+      },
+      {
+        "complexity": "moderate",
+        "confidence": 0.85,
+        "filename": "image-16.jpg",
+        "input_kind": "colored_design_plate",
+        "multi_design": false,
+        "notes": "floral pendant design plate with notes",
+        "primary_category": "pendant",
+        "watermark_or_branding": false,
+        "workflow_fit": [
+          "plate_read",
+          "lineart_color"
+        ]
+      }
+    ]
+  },
+  "source_hashes": [
+    "7a4898a08e8a43ad183f8fdee434952be29bb4e4aae79be1c4730945f8242f68",
+    "3a60c05527f5cb1678d051a85a7aa157e20e0e971817fe48d8aeafc24238e0ac",
+    "3cf57931143df1652c66883fc67dc9b5a316f437490f1c0020a8570036ffd997",
+    "e25d73014781cb2db1513c2d123806473303e33a241c928f2530c3848d781759",
+    "c07f248010ed3320f148f7eb62f631371df3f36ad859d991ed015069bc19e681",
+    "1e995f98ab45b97f48f146eb92b2738dbd1ca26d50a51b0b5a09e1d0ac391267",
+    "a9c41d77fe401683501fa233fa17f891fe78bda4dd09aea552ace9b5b575b4c4",
+    "8186672822d6bd8f34c13a5aae38b826ed3265b18284ae6ec32330c9649c5954",
+    "53849c54a6c473c6ea91cd5c4984ca85c9047b1541bf2c43804b14c591c47b84",
+    "8e106a6b605a4febcde9f46b93d81d25b09880e0fbb57d93802f63db4f983bd8",
+    "06bb5e9a36726aaea52678d26ea87008feb501e6e940b26d67aec2d6a9528906",
+    "6f25117ba4ec3ec908d90d3a70353997e5c441bed83115da482c5b2757c39be8",
+    "c224340631da02a34ad38d5de8b83990cee4d41abdb51550acd88fd73ee1e8de",
+    "393cfadeb6790454a119ed75d984fed63d8d0675085c6ec793012d8e8655848e",
+    "346520cabdce3913b3a6573dabfdaa00d9a6a92561feef6e623655c2c9f4f7f4",
+    "6b4fdd1f23096f6f16533308e1fb2c7bbcbce369eeeeba10ff44b4713e5e792d"
+  ]
+}

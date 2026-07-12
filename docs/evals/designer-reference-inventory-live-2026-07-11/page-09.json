@@ -1,0 +1,267 @@
+{
+  "filenames": [
+    "image-129.jpg",
+    "image-130.jpg",
+    "image-131.jpg",
+    "image-132.jpg",
+    "image-133.jpg",
+    "image-134.jpg",
+    "image-135.jpg",
+    "image-136.jpg",
+    "image-137.jpg",
+    "image-138.jpg",
+    "image-139.jpg",
+    "image-140.jpg",
+    "image-141.jpg",
+    "image-142.jpg",
+    "image-143.jpg",
+    "image-144.jpg"
+  ],
+  "latency_ms": 14884,
+  "payload": {
+    "items": [
+      {
+        "complexity": "moderate",
+        "confidence": 0.9,
+        "filename": "image-129.jpg",
+        "input_kind": "reference_chart",
+        "multi_design": true,
+        "notes": "gem education taxonomy grid",
+        "primary_category": "reference_chart",
+        "watermark_or_branding": true,
+        "workflow_fit": [
+          "reference_chart",
+          "exclude_as_source"
+        ]
+      },
+      {
+        "complexity": "simple",
+        "confidence": 0.9,
+        "filename": "image-130.jpg",
+        "input_kind": "reference_chart",
+        "multi_design": true,
+        "notes": "karat gold percentage chart",
+        "primary_category": "reference_chart",
+        "watermark_or_branding": true,
+        "workflow_fit": [
+          "reference_chart",
+          "exclude_as_source"
+        ]
+      },
+      {
+        "complexity": "moderate",
+        "confidence": 0.9,
+        "filename": "image-131.jpg",
+        "input_kind": "reference_chart",
+        "multi_design": true,
+        "notes": "diamond shapes and cuts grid",
+        "primary_category": "reference_chart",
+        "watermark_or_branding": true,
+        "workflow_fit": [
+          "reference_chart",
+          "exclude_as_source"
+        ]
+      },
+      {
+        "complexity": "simple",
+        "confidence": 0.85,
+        "filename": "image-132.jpg",
+        "input_kind": "reference_chart",
+        "multi_design": true,
+        "notes": "blue stone shape comparison grid",
+        "primary_category": "loose_stone",
+        "watermark_or_branding": true,
+        "workflow_fit": [
+          "reference_chart",
+          "exclude_as_source"
+        ]
+      },
+      {
+        "complexity": "simple",
+        "confidence": 0.85,
+        "filename": "image-133.jpg",
+        "input_kind": "reference_chart",
+        "multi_design": true,
+        "notes": "diamond shape grid",
+        "primary_category": "loose_stone",
+        "watermark_or_branding": true,
+        "workflow_fit": [
+          "reference_chart",
+          "exclude_as_source"
+        ]
+      },
+      {
+        "complexity": "simple",
+        "confidence": 0.85,
+        "filename": "image-134.jpg",
+        "input_kind": "reference_chart",
+        "multi_design": true,
+        "notes": "green stone shapes with brush",
+        "primary_category": "loose_stone",
+        "watermark_or_branding": true,
+        "workflow_fit": [
+          "reference_chart",
+          "exclude_as_source"
+        ]
+      },
+      {
+        "complexity": "simple",
+        "confidence": 0.85,
+        "filename": "image-135.jpg",
+        "input_kind": "reference_chart",
+        "multi_design": true,
+        "notes": "pink stone shapes grid",
+        "primary_category": "loose_stone",
+        "watermark_or_branding": true,
+        "workflow_fit": [
+          "reference_chart",
+          "exclude_as_source"
+        ]
+      },
+      {
+        "complexity": "moderate",
+        "confidence": 0.85,
+        "filename": "image-136.jpg",
+        "input_kind": "reference_chart",
+        "multi_design": true,
+        "notes": "multi-color multi-shape stone grid",
+        "primary_category": "loose_stone",
+        "watermark_or_branding": true,
+        "workflow_fit": [
+          "reference_chart",
+          "exclude_as_source"
+        ]
+      },
+      {
+        "complexity": "complex",
+        "confidence": 0.8,
+        "filename": "image-137.jpg",
+        "input_kind": "finished_jewelry_photo",
+        "multi_design": true,
+        "notes": "assorted finished jewelry collage",
+        "primary_category": "mixed",
+        "watermark_or_branding": true,
+        "workflow_fit": [
+          "catalog_reference",
+          "exclude_as_source"
+        ]
+      },
+      {
+        "complexity": "complex",
+        "confidence": 0.8,
+        "filename": "image-138.jpg",
+        "input_kind": "finished_jewelry_photo",
+        "multi_design": true,
+        "notes": "many rings product montage",
+        "primary_category": "ring",
+        "watermark_or_branding": true,
+        "workflow_fit": [
+          "catalog_reference",
+          "exclude_as_source"
+        ]
+      },
+      {
+        "complexity": "moderate",
+        "confidence": 0.9,
+        "filename": "image-139.jpg",
+        "input_kind": "reference_chart",
+        "multi_design": true,
+        "notes": "12 popular diamond cuts chart",
+        "primary_category": "reference_chart",
+        "watermark_or_branding": true,
+        "workflow_fit": [
+          "reference_chart",
+          "exclude_as_source"
+        ]
+      },
+      {
+        "complexity": "complex",
+        "confidence": 0.8,
+        "filename": "image-140.jpg",
+        "input_kind": "finished_jewelry_photo",
+        "multi_design": false,
+        "notes": "two ornate multi-stone rings",
+        "primary_category": "ring",
+        "watermark_or_branding": true,
+        "workflow_fit": [
+          "beauty_render",
+          "exclude_as_source"
+        ]
+      },
+      {
+        "complexity": "moderate",
+        "confidence": 0.9,
+        "filename": "image-141.jpg",
+        "input_kind": "reference_chart",
+        "multi_design": true,
+        "notes": "rose diamond cuts educational chart",
+        "primary_category": "reference_chart",
+        "watermark_or_branding": true,
+        "workflow_fit": [
+          "reference_chart",
+          "exclude_as_source"
+        ]
+      },
+      {
+        "complexity": "moderate",
+        "confidence": 0.9,
+        "filename": "image-142.jpg",
+        "input_kind": "reference_chart",
+        "multi_design": true,
+        "notes": "15 round diamond cuts chart",
+        "primary_category": "reference_chart",
+        "watermark_or_branding": true,
+        "workflow_fit": [
+          "reference_chart",
+          "exclude_as_source"
+        ]
+      },
+      {
+        "complexity": "moderate",
+        "confidence": 0.9,
+        "filename": "image-143.jpg",
+        "input_kind": "reference_chart",
+        "multi_design": true,
+        "notes": "setting techniques diagram chart",
+        "primary_category": "reference_chart",
+        "watermark_or_branding": true,
+        "workflow_fit": [
+          "reference_chart",
+          "exclude_as_source"
+        ]
+      },
+      {
+        "complexity": "moderate",
+        "confidence": 0.9,
+        "filename": "image-144.jpg",
+        "input_kind": "reference_chart",
+        "multi_design": true,
+        "notes": "15 square diamond cuts chart",
+        "primary_category": "reference_chart",
+        "watermark_or_branding": true,
+        "workflow_fit": [
+          "reference_chart",
+          "exclude_as_source"
+        ]
+      }
+    ]
+  },
+  "source_hashes": [
+    "4732d12109e6133081ab762490d269fc1f957d3039d7f4d2144d970032310375",
+    "33e8b4a7020b0f608d162080eb6de7df083d01e6bbe4739398c95907ec2b0e6d",
+    "0693ec60cc90dd79253b94eb412635699e42e3a28b35e45efe72503f562c6040",
+    "f75d68291e5052ee06ab6c36961bca29b279229320c8849b10d3d645d665a5d6",
+    "33ff6439525a25564816ab696fec208541e8a1255866720eb0782ab003546f0b",
+    "5691be2a9f2e9755cd2bce70a59469c499882c69878df5f7680a3c6d7f1f6521",
+    "330408759d7ddfe2ac9d476c4b5b701da7739116ed43216daea795bb30146963",
+    "892aeb434e3dfa531ee70f4bea04178fe50d952117db5df8d072604f3e08890f",
+    "328fe727af59c310658222e12dc4d59cfd9f7ca8af6f9105a6aff6fd95643377",
+    "b43630f43ce1dbb2830c2d8793d2db86cfceae3ac0b3d15903009f6aed1e763b",
+    "0c8139bf979d6c4a38ec48403fa6075dd848a53597fa9c0bc903f2e5a421b721",
+    "2e5198ee72f641105420cdeb8a31a60ed9f1acd6a60cdefa023f1623383be02b",
+    "c2724e71104feb7784b49ef9f2a8b7f442e2e6670c58d8828d93038481604df4",
+    "72ebeb69f26d5faa2c00d78fd008912beafa40b767bd08f068a84c3565857e2f",
+    "58e705a9d5eb8babc77c26ea81ae6281ed43f77b3c7f38162d085fa8fed47b1f",
+    "47acdccde428638a759b35b5cb443903a1133f17f582574f54347c32898ec8fd"
+  ]
+}

@@ -1,0 +1,84 @@
+{
+  "body": {
+    "accepted": false,
+    "accepted_asset_id": null,
+    "attempts": [
+      {
+        "attempt": 1,
+        "attempt_id": "iat_58e3811a68d23236",
+        "attempt_number": 1,
+        "cache_hit": true,
+        "cache_key": "ead4137477bb7801a6778f87db60ab85d400f07e2acbe3e13e57ebce5ad79d3b",
+        "cached": true,
+        "correction": null,
+        "corrective_instruction": null,
+        "cost": 0.0,
+        "created_at": "2026-07-11T13:12:25.790040",
+        "engine_role": "primary",
+        "error_category": null,
+        "failed_checks": [
+          "offline_designer_review_required"
+        ],
+        "fallback_reason": null,
+        "latency_ms": 0,
+        "model": "grok_direct",
+        "output_hash": "5643c559001d885d9762c5ce3cac5b555e587bed93f5c87a4c5929c4f117e572",
+        "prompt_hash": "11569639f170631148210a53040a17786a5fc95ace1c3d300c1dedda8db7b68a",
+        "provider": "xai",
+        "provider_request_id": "offline-contract",
+        "qa_checks": [
+          {
+            "code": "offline_designer_review_required",
+            "evidence": {
+              "offline": true
+            },
+            "message": "offline contract candidate requires designer review",
+            "passed": false,
+            "severity": "warning"
+          }
+        ],
+        "qa_verdict": "warn",
+        "usage": {
+          "contract_test": true
+        },
+        "verdict": "warn"
+      }
+    ],
+    "completed_at": "2026-07-11T13:12:25.790040",
+    "created_at": "2026-07-11T13:12:25.790394",
+    "created_by": "usr_prompt_test_actor",
+    "error_category": null,
+    "input_hash": "a41f322136e8515fa7e9335ab3efa363390fa1502d0c340a2defa40d3c722a76",
+    "mask_hash": null,
+    "normalized_intent": {
+      "edit_domains": [],
+      "expected_output": "one client-reviewable ring concept image",
+      "frozen": [
+        "one coherent ring design",
+        "no text, logos, watermarks, or invented branding"
+      ],
+      "instruction": "Create one refined engagement ring with a round brilliant diamond center, four-claw basket, 18k yellow gold, a narrow 1.8 mm half-round polished shank, no halo, and no side stones. Use a neutral studio presentation.",
+      "region_description": null,
+      "spec_delta": [],
+      "style_constraints": []
+    },
+    "operation": "CONCEPT_GENERATE",
+    "output_hash": "5643c559001d885d9762c5ce3cac5b555e587bed93f5c87a4c5929c4f117e572",
+    "project_id": null,
+    "prompt_contract_version": "concept-generate.v1",
+    "prompt_version": "concept-generate.v1",
+    "review_decision": null,
+    "review_required": true,
+    "reviewed_at": null,
+    "reviewed_by": null,
+    "run_id": "run_49eab63e860c0729",
+    "source_asset_id": null,
+    "source_hash": null,
+    "spec_visual_hash": "309e2c7264bc2646",
+    "status": "review_required",
+    "stored_status": "review_required",
+    "variant": 0,
+    "verdict": "warn"
+  },
+  "http_status": 200
+}

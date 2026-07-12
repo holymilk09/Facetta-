@@ -1,0 +1,202 @@
+{
+  "status": "failed",
+  "category": "quality",
+  "attempts": [
+    {
+      "attempt_number": 1,
+      "route": "grok_edit",
+      "provider": "xai",
+      "model": "grok_direct",
+      "latency_ms": 17349,
+      "cached": false,
+      "provider_request_id": null,
+      "qa_verdict": "fail",
+      "qa_checks": [
+        {
+          "code": "decodable_image",
+          "passed": true,
+          "severity": "hard",
+          "message": "candidate is a decodable raster image",
+          "evidence": {
+            "width": 864,
+            "height": 1152,
+            "format": "JPEG"
+          }
+        },
+        {
+          "code": "review_resolution",
+          "passed": true,
+          "severity": "warning",
+          "message": "candidate has reviewable raster dimensions",
+          "evidence": {
+            "width": 864,
+            "height": 1152
+          }
+        },
+        {
+          "code": "candidate_changed",
+          "passed": true,
+          "severity": "hard",
+          "message": "candidate bytes differ from the source",
+          "evidence": {}
+        },
+        {
+          "code": "requested_change",
+          "passed": false,
+          "severity": "hard",
+          "message": "the requested change was not visibly applied",
+          "evidence": {}
+        },
+        {
+          "code": "protected_regions",
+          "passed": true,
+          "severity": "hard",
+          "message": "visual evidence matches the requested fact",
+          "evidence": {}
+        },
+        {
+          "code": "unintended_drift",
+          "passed": true,
+          "severity": "warning",
+          "message": "no unintended changes detected",
+          "evidence": {
+            "severity": "none",
+            "changes": []
+          }
+        },
+        {
+          "code": "spec_change",
+          "passed": false,
+          "severity": "hard",
+          "message": "visible local change does not match the validated result spec",
+          "evidence": {}
+        },
+        {
+          "code": "text_or_branding",
+          "passed": true,
+          "severity": "hard",
+          "message": "no text or branding introduced",
+          "evidence": {}
+        },
+        {
+          "code": "outside_mask_drift",
+          "passed": true,
+          "severity": "hard",
+          "message": "outside-mask drift is within the calibrated threshold",
+          "evidence": {
+            "drift": 0.006623,
+            "threshold": 0.18
+          }
+        }
+      ],
+      "quality_score": 15.0,
+      "corrective_instruction": null,
+      "fallback_reason": null,
+      "output_hash": "19a0a391def5c0ae3a59f4f178a3ef339abb8fb4e2644c1bcc9073f4dd475545",
+      "prompt_hash": "11527b123e8939d5f067f45b1889ca69d4716669ff029f43ef0b6074f4d53f06",
+      "cache_key": "a4ca456f20870a66452ef3da858d2a0fd209606e5f84931829742a27087be246",
+      "usage": null,
+      "cost": null,
+      "error_category": null,
+      "error": null
+    },
+    {
+      "attempt_number": 2,
+      "route": "grok_edit",
+      "provider": "xai",
+      "model": "grok_direct",
+      "latency_ms": 15606,
+      "cached": false,
+      "provider_request_id": null,
+      "qa_verdict": "fail",
+      "qa_checks": [
+        {
+          "code": "decodable_image",
+          "passed": true,
+          "severity": "hard",
+          "message": "candidate is a decodable raster image",
+          "evidence": {
+            "width": 864,
+            "height": 1152,
+            "format": "JPEG"
+          }
+        },
+        {
+          "code": "review_resolution",
+          "passed": true,
+          "severity": "warning",
+          "message": "candidate has reviewable raster dimensions",
+          "evidence": {
+            "width": 864,
+            "height": 1152
+          }
+        },
+        {
+          "code": "candidate_changed",
+          "passed": true,
+          "severity": "hard",
+          "message": "candidate bytes differ from the source",
+          "evidence": {}
+        },
+        {
+          "code": "requested_change",
+          "passed": false,
+          "severity": "hard",
+          "message": "the requested change was not visibly applied",
+          "evidence": {}
+        },
+        {
+          "code": "protected_regions",
+          "passed": true,
+          "severity": "hard",
+          "message": "visual evidence matches the requested fact",
+          "evidence": {}
+        },
+        {
+          "code": "unintended_drift",
+          "passed": true,
+          "severity": "warning",
+          "message": "no unintended changes detected",
+          "evidence": {
+            "severity": "none",
+            "changes": []
+          }
+        },
+        {
+          "code": "spec_change",
+          "passed": false,
+          "severity": "hard",
+          "message": "visible local change does not match the validated result spec",
+          "evidence": {}
+        },
+        {
+          "code": "text_or_branding",
+          "passed": true,
+          "severity": "hard",
+          "message": "no text or branding introduced",
+          "evidence": {}
+        },
+        {
+          "code": "outside_mask_drift",
+          "passed": true,
+          "severity": "hard",
+          "message": "outside-mask drift is within the calibrated threshold",
+          "evidence": {
+            "drift": 0.00697,
+            "threshold": 0.18
+          }
+        }
+      ],
+      "quality_score": 10.0,
+      "corrective_instruction": "- requested_change: the requested change was not visibly applied.\n- spec_change: visible local change does not match the validated result spec.",
+      "fallback_reason": null,
+      "output_hash": "00c490801c2afd8acec1510c0e55248cbcd58321512db2acb495f54bf3dc9d17",
+      "prompt_hash": "ecba4e5a59bc7f3ebe0eca58a1c4ab7abef8d3a5cd7609e75f44d5b94929b243",
+      "cache_key": "8b4265e40b85cef0248ef557b086a730e9a1dc4a8d8946fa0d1b477501506ff6",
+      "usage": null,
+      "cost": null,
+      "error_category": null,
+      "error": null
+    }
+  ]
+}

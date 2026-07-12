@@ -1,0 +1,18 @@
+{
+  "audit": "expectation_free_component_count",
+  "candidate_source": "../designer-live-center-shape-targetspec-2026-07-11/oval-solitaire-white-6-wide--reference.png",
+  "candidate_sha256": "fc821ad9a3dd57c0a2793771d62ab9561c6d7b1eb15186a9159b0f40db3bd611",
+  "expected_center_prong_count": 6,
+  "observed_center_prong_count": 4,
+  "center_prong_count_complete": true,
+  "prong_count_matches": false,
+  "observed_side_stone_count": 0,
+  "side_stone_count_complete": true,
+  "side_stone_inventory_matches": true,
+  "notes": [
+    "Four distinct prongs visibly contact the center stone.",
+    "The expectation-aware audit had reported a six-prong basket; the blind count overrides that biased match."
+  ],
+  "release_evidence": false,
+  "review_status": "diagnostic_false_negative_confirmed"
+}

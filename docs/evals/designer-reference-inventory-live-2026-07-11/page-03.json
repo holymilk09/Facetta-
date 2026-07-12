@@ -1,0 +1,264 @@
+{
+  "filenames": [
+    "image-33.jpg",
+    "image-34.jpg",
+    "image-35.jpg",
+    "image-36.jpg",
+    "image-37.jpg",
+    "image-38.jpg",
+    "image-39.jpg",
+    "image-40.jpg",
+    "image-41.jpg",
+    "image-42.jpg",
+    "image-43.jpg",
+    "image-44.jpg",
+    "image-45.jpg",
+    "image-46.jpg",
+    "image-47.jpg",
+    "image-48.jpg"
+  ],
+  "latency_ms": 13750,
+  "payload": {
+    "items": [
+      {
+        "complexity": "simple",
+        "confidence": 0.85,
+        "filename": "image-33.jpg",
+        "input_kind": "hand_drawing",
+        "multi_design": false,
+        "notes": "hand sketch with color accents",
+        "primary_category": "necklace",
+        "watermark_or_branding": true,
+        "workflow_fit": [
+          "plate_read"
+        ]
+      },
+      {
+        "complexity": "complex",
+        "confidence": 0.9,
+        "filename": "image-34.jpg",
+        "input_kind": "finished_jewelry_photo",
+        "multi_design": false,
+        "notes": "finished piece with annotations and logos",
+        "primary_category": "necklace",
+        "watermark_or_branding": true,
+        "workflow_fit": [
+          "photo_read",
+          "catalog_reference"
+        ]
+      },
+      {
+        "complexity": "complex",
+        "confidence": 0.9,
+        "filename": "image-35.jpg",
+        "input_kind": "finished_jewelry_photo",
+        "multi_design": false,
+        "notes": "finished piece with annotations and logos",
+        "primary_category": "necklace",
+        "watermark_or_branding": true,
+        "workflow_fit": [
+          "photo_read",
+          "catalog_reference"
+        ]
+      },
+      {
+        "complexity": "complex",
+        "confidence": 0.85,
+        "filename": "image-36.jpg",
+        "input_kind": "finished_jewelry_photo",
+        "multi_design": false,
+        "notes": "necklace and earrings set, logos present",
+        "primary_category": "necklace",
+        "watermark_or_branding": true,
+        "workflow_fit": [
+          "photo_read",
+          "catalog_reference"
+        ]
+      },
+      {
+        "complexity": "complex",
+        "confidence": 0.85,
+        "filename": "image-37.jpg",
+        "input_kind": "technical_sheet",
+        "multi_design": false,
+        "notes": "design render with annotations",
+        "primary_category": "necklace",
+        "watermark_or_branding": true,
+        "workflow_fit": [
+          "technical_benchmark",
+          "catalog_reference"
+        ]
+      },
+      {
+        "complexity": "complex",
+        "confidence": 0.9,
+        "filename": "image-38.jpg",
+        "input_kind": "finished_jewelry_photo",
+        "multi_design": false,
+        "notes": "finished piece with color notes",
+        "primary_category": "necklace",
+        "watermark_or_branding": true,
+        "workflow_fit": [
+          "photo_read",
+          "technical_benchmark"
+        ]
+      },
+      {
+        "complexity": "moderate",
+        "confidence": 0.95,
+        "filename": "image-39.jpg",
+        "input_kind": "reference_chart",
+        "multi_design": true,
+        "notes": "grid of multiple necklace designs",
+        "primary_category": "necklace",
+        "watermark_or_branding": false,
+        "workflow_fit": [
+          "reference_chart",
+          "exclude_as_source"
+        ]
+      },
+      {
+        "complexity": "complex",
+        "confidence": 0.85,
+        "filename": "image-40.jpg",
+        "input_kind": "finished_jewelry_photo",
+        "multi_design": false,
+        "notes": "necklace with loose stones and annotations",
+        "primary_category": "necklace",
+        "watermark_or_branding": true,
+        "workflow_fit": [
+          "photo_read",
+          "catalog_reference"
+        ]
+      },
+      {
+        "complexity": "complex",
+        "confidence": 0.85,
+        "filename": "image-41.jpg",
+        "input_kind": "technical_sheet",
+        "multi_design": false,
+        "notes": "render with measurements and notes",
+        "primary_category": "necklace",
+        "watermark_or_branding": true,
+        "workflow_fit": [
+          "technical_benchmark"
+        ]
+      },
+      {
+        "complexity": "complex",
+        "confidence": 0.85,
+        "filename": "image-42.jpg",
+        "input_kind": "finished_jewelry_photo",
+        "multi_design": false,
+        "notes": "finished piece with sketches",
+        "primary_category": "necklace",
+        "watermark_or_branding": true,
+        "workflow_fit": [
+          "photo_read",
+          "technical_benchmark"
+        ]
+      },
+      {
+        "complexity": "complex",
+        "confidence": 0.9,
+        "filename": "image-43.jpg",
+        "input_kind": "finished_jewelry_photo",
+        "multi_design": false,
+        "notes": "finished piece with dimension lines",
+        "primary_category": "necklace",
+        "watermark_or_branding": true,
+        "workflow_fit": [
+          "photo_read",
+          "technical_benchmark"
+        ]
+      },
+      {
+        "complexity": "complex",
+        "confidence": 0.85,
+        "filename": "image-44.jpg",
+        "input_kind": "finished_jewelry_photo",
+        "multi_design": false,
+        "notes": "finished piece with annotations",
+        "primary_category": "necklace",
+        "watermark_or_branding": true,
+        "workflow_fit": [
+          "photo_read",
+          "technical_benchmark"
+        ]
+      },
+      {
+        "complexity": "moderate",
+        "confidence": 0.9,
+        "filename": "image-45.jpg",
+        "input_kind": "finished_jewelry_photo",
+        "multi_design": false,
+        "notes": "finished necklace photo",
+        "primary_category": "necklace",
+        "watermark_or_branding": true,
+        "workflow_fit": [
+          "photo_read",
+          "catalog_reference"
+        ]
+      },
+      {
+        "complexity": "complex",
+        "confidence": 0.85,
+        "filename": "image-46.jpg",
+        "input_kind": "technical_sheet",
+        "multi_design": false,
+        "notes": "sketch sheet with measurements",
+        "primary_category": "necklace",
+        "watermark_or_branding": true,
+        "workflow_fit": [
+          "technical_benchmark"
+        ]
+      },
+      {
+        "complexity": "complex",
+        "confidence": 0.85,
+        "filename": "image-47.jpg",
+        "input_kind": "finished_jewelry_photo",
+        "multi_design": false,
+        "notes": "finished piece with annotations",
+        "primary_category": "necklace",
+        "watermark_or_branding": true,
+        "workflow_fit": [
+          "photo_read",
+          "technical_benchmark"
+        ]
+      },
+      {
+        "complexity": "complex",
+        "confidence": 0.9,
+        "filename": "image-48.jpg",
+        "input_kind": "finished_jewelry_photo",
+        "multi_design": false,
+        "notes": "finished necklace set with logos",
+        "primary_category": "necklace",
+        "watermark_or_branding": true,
+        "workflow_fit": [
+          "photo_read",
+          "catalog_reference"
+        ]
+      }
+    ]
+  },
+  "source_hashes": [
+    "96b86bdd4e085fc4414f2e7e53366c4668980f8a24562e9dfabe508c9a4c9113",
+    "1cce6fe66badd6a04321d53050b395a01c88aae9223770606853febcd3adb575",
+    "92f5fe5c81417c4282e534937b23e9dc823f9b525519fce5b04322c669b8b88f",
+    "07ece9c6dd322afd864c5431c24c3d05ba828fab2e8b05d1c2083b2ae16003f4",
+    "dbf46aaec7bc1243b2cb4f858a18570405aad68a2573e97ae4a4e134af113402",
+    "24c8f130e3bdfd1523d61bcefd2026cbf490f8f49a141015b9054974e1e8d7a5",
+    "7c7a92cad8456e60206a838e4158b478e261c9ac1f3870d61ebff03888f68e61",
+    "ccda5cfd6ffc0cf12f5d1e45b02ccb6e66baa676f621b3649bffedf8436ae293",
+    "9d3c1fc42fc5543e026be307d4aa4c4590c30e42a37cc5e1cfae91604b026a11",
+    "3374dacc97a1be0338dd8128968649ba6d9a1c9927b8ef1583a7ec24ea66ffd9",
+    "c36e42083289c515a2c1d5517efd05b74f5dad1bde53a8e9704a3fd6d4a1ea7e",
+    "975e44d816096b3c6035b7e6a15bdf44a142283d946e707217842e51e75a3c2f",
+    "da2b99ac496ecfbbfdaccfaa709f65bf462add4ec497c2518080184cc48f8560",
+    "f25d990532f78679ef51b568a0ec7c98cc555d438b8c4801d92a31d07f52800e",
+    "e4efb5b466386584d07b45fb1a23c4482e4bf2c0ba469cb4615b3d228b30f450",
+    "f55e1c3c9c5c7160371e854aaf17436bca5e37e99e23023fc33c0e752258940d"
+  ]
+}

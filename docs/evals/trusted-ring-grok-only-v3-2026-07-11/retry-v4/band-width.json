@@ -1,0 +1,194 @@
+{
+  "case": "band-width",
+  "instruction": "increase the lower shank band width from 3.2 mm to 3.8 mm (a visibly wider band)",
+  "spec_delta": [
+    {
+      "path": "band.width_mm",
+      "label": "band width",
+      "from": "3.2 mm",
+      "to": "3.8 mm",
+      "kind": "changed"
+    }
+  ],
+  "status": "failed",
+  "category": "quality",
+  "message": "no candidate passed jewelry QA: requested_change, spec_change",
+  "attempts": [
+    {
+      "attempt_number": 1,
+      "route": "grok_edit",
+      "provider": "xai",
+      "model": "grok_direct",
+      "latency_ms": 14149,
+      "cached": false,
+      "provider_request_id": null,
+      "qa_verdict": "fail",
+      "qa_checks": [
+        {
+          "code": "decodable_image",
+          "passed": true,
+          "severity": "hard",
+          "message": "candidate is a decodable raster image",
+          "evidence": {
+            "width": 864,
+            "height": 1152,
+            "format": "JPEG"
+          }
+        },
+        {
+          "code": "review_resolution",
+          "passed": true,
+          "severity": "warning",
+          "message": "candidate has reviewable raster dimensions",
+          "evidence": {
+            "width": 864,
+            "height": 1152
+          }
+        },
+        {
+          "code": "candidate_changed",
+          "passed": true,
+          "severity": "hard",
+          "message": "candidate bytes differ from the source",
+          "evidence": {}
+        },
+        {
+          "code": "requested_change",
+          "passed": false,
+          "severity": "hard",
+          "message": "the requested change was not visibly applied",
+          "evidence": {}
+        },
+        {
+          "code": "protected_regions",
+          "passed": true,
+          "severity": "hard",
+          "message": "visual evidence matches the requested fact",
+          "evidence": {}
+        },
+        {
+          "code": "unintended_drift",
+          "passed": true,
+          "severity": "warning",
+          "message": "no unintended changes detected",
+          "evidence": {
+            "severity": "none",
+            "changes": []
+          }
+        },
+        {
+          "code": "spec_change",
+          "passed": false,
+          "severity": "hard",
+          "message": "visible local change does not match the validated result spec",
+          "evidence": {}
+        },
+        {
+          "code": "text_or_branding",
+          "passed": true,
+          "severity": "hard",
+          "message": "no text or branding introduced",
+          "evidence": {}
+        }
+      ],
+      "quality_score": 15.0,
+      "corrective_instruction": null,
+      "fallback_reason": null,
+      "output_hash": "fe47350c89eb512b4360327422007af4ac10d6ad9dfd1d4f95f548c6c0290d66",
+      "prompt_hash": "eba4430a17e95a242b8677a99886caa8e851e2f33fe16b99cc093ec6dcad6bd8",
+      "cache_key": "ec2f7ec2623818e778e161ed5ce85a32d1a60d3070cde005250a8c753591a55a",
+      "usage": null,
+      "cost": null,
+      "error_category": null,
+      "error": null
+    },
+    {
+      "attempt_number": 2,
+      "route": "grok_edit",
+      "provider": "xai",
+      "model": "grok_direct",
+      "latency_ms": 17026,
+      "cached": false,
+      "provider_request_id": null,
+      "qa_verdict": "fail",
+      "qa_checks": [
+        {
+          "code": "decodable_image",
+          "passed": true,
+          "severity": "hard",
+          "message": "candidate is a decodable raster image",
+          "evidence": {
+            "width": 864,
+            "height": 1152,
+            "format": "JPEG"
+          }
+        },
+        {
+          "code": "review_resolution",
+          "passed": true,
+          "severity": "warning",
+          "message": "candidate has reviewable raster dimensions",
+          "evidence": {
+            "width": 864,
+            "height": 1152
+          }
+        },
+        {
+          "code": "candidate_changed",
+          "passed": true,
+          "severity": "hard",
+          "message": "candidate bytes differ from the source",
+          "evidence": {}
+        },
+        {
+          "code": "requested_change",
+          "passed": false,
+          "severity": "hard",
+          "message": "the requested change was not visibly applied",
+          "evidence": {}
+        },
+        {
+          "code": "protected_regions",
+          "passed": true,
+          "severity": "hard",
+          "message": "visual evidence matches the requested fact",
+          "evidence": {}
+        },
+        {
+          "code": "unintended_drift",
+          "passed": true,
+          "severity": "warning",
+          "message": "no unintended changes detected",
+          "evidence": {
+            "severity": "none",
+            "changes": []
+          }
+        },
+        {
+          "code": "spec_change",
+          "passed": false,
+          "severity": "hard",
+          "message": "visible local change does not match the validated result spec",
+          "evidence": {}
+        },
+        {
+          "code": "text_or_branding",
+          "passed": true,
+          "severity": "hard",
+          "message": "no text or branding introduced",
+          "evidence": {}
+        }
+      ],
+      "quality_score": 15.0,
+      "corrective_instruction": "- requested_change: the requested change was not visibly applied.\n- spec_change: visible local change does not match the validated result spec.",
+      "fallback_reason": null,
+      "output_hash": "356182b5c0d4f3bc50cd9916a69666891d60ccc266032c3778aff59d7e91920b",
+      "prompt_hash": "7f7d75f5c30dc56fddb50ed3fc2662c75a2d2579d016be61ad2d2fa7e8f54d0c",
+      "cache_key": "0c94e08724f87ec8a9e50aab6d89db71b49b5a232acbfc791728d8c3e8daf1b9",
+      "usage": null,
+      "cost": null,
+      "error_category": null,
+      "error": null
+    }
+  ]
+}

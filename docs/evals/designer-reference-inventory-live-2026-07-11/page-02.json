@@ -1,0 +1,261 @@
+{
+  "filenames": [
+    "image-17.jpg",
+    "image-18.jpg",
+    "image-19.jpg",
+    "image-20.jpg",
+    "image-21.jpg",
+    "image-22.jpg",
+    "image-23.jpg",
+    "image-24.jpg",
+    "image-25.jpg",
+    "image-26.jpg",
+    "image-27.jpg",
+    "image-28.jpg",
+    "image-29.jpg",
+    "image-30.jpg",
+    "image-31.jpg",
+    "image-32.jpg"
+  ],
+  "latency_ms": 12872,
+  "payload": {
+    "items": [
+      {
+        "complexity": "simple",
+        "confidence": 0.9,
+        "filename": "image-17.jpg",
+        "input_kind": "finished_jewelry_photo",
+        "multi_design": false,
+        "notes": "single finished product photo",
+        "primary_category": "earrings",
+        "watermark_or_branding": true,
+        "workflow_fit": [
+          "photo_read",
+          "beauty_render"
+        ]
+      },
+      {
+        "complexity": "moderate",
+        "confidence": 0.85,
+        "filename": "image-18.jpg",
+        "input_kind": "colored_design_plate",
+        "multi_design": true,
+        "notes": "multiple numbered design variants",
+        "primary_category": "earrings",
+        "watermark_or_branding": true,
+        "workflow_fit": [
+          "plate_read",
+          "lineart_color"
+        ]
+      },
+      {
+        "complexity": "moderate",
+        "confidence": 0.85,
+        "filename": "image-19.jpg",
+        "input_kind": "colored_design_plate",
+        "multi_design": true,
+        "notes": "multiple colored and line designs",
+        "primary_category": "earrings",
+        "watermark_or_branding": true,
+        "workflow_fit": [
+          "plate_read",
+          "lineart_color"
+        ]
+      },
+      {
+        "complexity": "simple",
+        "confidence": 0.9,
+        "filename": "image-20.jpg",
+        "input_kind": "line_art",
+        "multi_design": true,
+        "notes": "line drawings only",
+        "primary_category": "earrings",
+        "watermark_or_branding": false,
+        "workflow_fit": [
+          "lineart_color"
+        ]
+      },
+      {
+        "complexity": "simple",
+        "confidence": 0.9,
+        "filename": "image-21.jpg",
+        "input_kind": "finished_jewelry_photo",
+        "multi_design": false,
+        "notes": "single finished product photo",
+        "primary_category": "earrings",
+        "watermark_or_branding": true,
+        "workflow_fit": [
+          "photo_read",
+          "beauty_render"
+        ]
+      },
+      {
+        "complexity": "moderate",
+        "confidence": 0.85,
+        "filename": "image-22.jpg",
+        "input_kind": "colored_design_plate",
+        "multi_design": true,
+        "notes": "multiple colored designs on ear models",
+        "primary_category": "earrings",
+        "watermark_or_branding": true,
+        "workflow_fit": [
+          "plate_read",
+          "lineart_color"
+        ]
+      },
+      {
+        "complexity": "moderate",
+        "confidence": 0.8,
+        "filename": "image-23.jpg",
+        "input_kind": "technical_sheet",
+        "multi_design": true,
+        "notes": "sketches with construction notes",
+        "primary_category": "earrings",
+        "watermark_or_branding": true,
+        "workflow_fit": [
+          "technical_benchmark"
+        ]
+      },
+      {
+        "complexity": "moderate",
+        "confidence": 0.85,
+        "filename": "image-24.jpg",
+        "input_kind": "colored_design_plate",
+        "multi_design": true,
+        "notes": "colored stones on sketched ears",
+        "primary_category": "earrings",
+        "watermark_or_branding": true,
+        "workflow_fit": [
+          "plate_read"
+        ]
+      },
+      {
+        "complexity": "complex",
+        "confidence": 0.8,
+        "filename": "image-25.jpg",
+        "input_kind": "mixed",
+        "multi_design": true,
+        "notes": "composite of photos and drawings",
+        "primary_category": "earrings",
+        "watermark_or_branding": true,
+        "workflow_fit": [
+          "reference_chart",
+          "exclude_as_source"
+        ]
+      },
+      {
+        "complexity": "moderate",
+        "confidence": 0.85,
+        "filename": "image-26.jpg",
+        "input_kind": "technical_sheet",
+        "multi_design": true,
+        "notes": "multiple views and settings",
+        "primary_category": "earrings",
+        "watermark_or_branding": true,
+        "workflow_fit": [
+          "technical_benchmark"
+        ]
+      },
+      {
+        "complexity": "simple",
+        "confidence": 0.85,
+        "filename": "image-27.jpg",
+        "input_kind": "line_art",
+        "multi_design": true,
+        "notes": "numbered sketch variants",
+        "primary_category": "earrings",
+        "watermark_or_branding": true,
+        "workflow_fit": [
+          "lineart_color"
+        ]
+      },
+      {
+        "complexity": "moderate",
+        "confidence": 0.85,
+        "filename": "image-28.jpg",
+        "input_kind": "colored_design_plate",
+        "multi_design": true,
+        "notes": "multiple colored designs on sketches",
+        "primary_category": "earrings",
+        "watermark_or_branding": true,
+        "workflow_fit": [
+          "plate_read"
+        ]
+      },
+      {
+        "complexity": "complex",
+        "confidence": 0.8,
+        "filename": "image-29.jpg",
+        "input_kind": "mixed",
+        "multi_design": true,
+        "notes": "composite technical plate",
+        "primary_category": "earrings",
+        "watermark_or_branding": true,
+        "workflow_fit": [
+          "reference_chart",
+          "exclude_as_source"
+        ]
+      },
+      {
+        "complexity": "moderate",
+        "confidence": 0.85,
+        "filename": "image-30.jpg",
+        "input_kind": "colored_design_plate",
+        "multi_design": true,
+        "notes": "heart motif variants",
+        "primary_category": "earrings",
+        "watermark_or_branding": true,
+        "workflow_fit": [
+          "plate_read",
+          "lineart_color"
+        ]
+      },
+      {
+        "complexity": "moderate",
+        "confidence": 0.9,
+        "filename": "image-31.jpg",
+        "input_kind": "technical_sheet",
+        "multi_design": true,
+        "notes": "dimensioned technical drawings",
+        "primary_category": "earrings",
+        "watermark_or_branding": true,
+        "workflow_fit": [
+          "technical_benchmark",
+          "factory_sheet"
+        ]
+      },
+      {
+        "complexity": "complex",
+        "confidence": 0.8,
+        "filename": "image-32.jpg",
+        "input_kind": "colored_design_plate",
+        "multi_design": true,
+        "notes": "multiple unrelated necklace and earring designs",
+        "primary_category": "mixed",
+        "watermark_or_branding": true,
+        "workflow_fit": [
+          "reference_chart",
+          "exclude_as_source"
+        ]
+      }
+    ]
+  },
+  "source_hashes": [
+    "8a9d7875a86698e242139483afeeb6db0e095b5a3d381a9a1301952756b0d9e3",
+    "9cff98a9c1087de51a2c183f7241182fa4a6e2da3db0a17242b7de7efd03b797",
+    "412d6174a3918e830941050ecf60107ad8b6068ffca025b144b8f06934e0f7c9",
+    "4fce7583881e19c17b11ebaf011aa58107a15fa7c38b8c455d279939854afa36",
+    "45267c6f9b37a287696fb4337950be12520a0b463092166f9173c5546a09973e",
+    "219b1d47f331aef301a6dcc71dcbaf14703fe0b46153de6641e33f9a43cced70",
+    "68cebdc5b5b8c363ce8a0d7e5898bf2863e8ba7198c97364af97c6256e60ec01",
+    "b2d5cb0605942275ed81e04acad886f4b3263ff1fffd508e61139d3b5d2e9d01",
+    "284e812187780f88db5105ca983c8fd034eba8e13db6f5d921afea3426b4a481",
+    "3023be2d291e40f37e7cf38b35496574ec68710821e11c5914059fefda7045ed",
+    "38cd63157c89469066a2a1701bf52ee59af8d2b067adf19875998a0c755e31c1",
+    "d1b0bc81992fc84180096b467cccb67c102427b78522094f6cdb89b41a81882b",
+    "7535459f8e6a544db92b0c2925e494192e3be0cbcc3c3fa03cddc1d4e51c6e44",
+    "01c1d062bae84228124f2d402f0ad758b9d40edd9c54b8b56729dfe60fcc28ae",
+    "48e80f7ef329d65ccc8d60c8af488b43f28768373e3b32a80fd5aa9336c285fc",
+    "8e241e8bb24dd109b7ad8a1778b07db734cc40240b8528dfe09556eb4109e46f"
+  ]
+}
