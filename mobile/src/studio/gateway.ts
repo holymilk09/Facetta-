@@ -19,6 +19,8 @@ import type {
   MarketingPackRequest,
   MarketingPackResult,
   MarkupApplyRequest,
+  PreSpecPresentationRequest,
+  PreSpecPresentationResult,
   ProductPhotoRequest,
   ProductPhotoResult,
   ProjectCreationResult,
@@ -157,6 +159,11 @@ export interface StudioPresentationDecisionResult {
   project: ProjectDetail;
 }
 
+export interface StudioPreSpecPresentationDecisionResult {
+  candidateId: string;
+  project: ProjectDetail;
+}
+
 export interface StudioFactoryEligibility {
   enabled: boolean;
   eligible: boolean;
@@ -193,6 +200,10 @@ type GatewayTrustedClient = Pick<TrustedApiClient,
   | 'createVisualPreview'
   | 'acceptVisualPreview'
   | 'discardVisualPreview'
+  | 'listPreSpecPresentations'
+  | 'createPreSpecPresentation'
+  | 'acceptPreSpecPresentation'
+  | 'discardPreSpecPresentation'
 >;
 
 export interface StudioGatewayOptions {
@@ -320,6 +331,15 @@ export function createStudioGateway(
     runId: string;
     preview: StudioVisualPreview;
     studioJob: ActiveStudioJob | null;
+  }>();
+  const preSpecPresentationCandidates = new Map<string, {
+    runId: string;
+    candidateId: string;
+    sourceHash: string;
+    capability: 'CLIENT_BEAUTY_RENDER' | 'CLIENT_PRODUCT_PHOTO' | 'MARKETING_IMAGE';
+    lineage: StudioVisualLineage;
+    studioJob: ActiveStudioJob | null;
+    status: 'pending_review' | 'accepted' | 'discarded';
   }>();
 
   const requireCandidate = (candidateId: string) => catalogCandidates.get(candidateId) ?? null;
@@ -1215,6 +1235,215 @@ export function createStudioGateway(
       const dismissed = await cancelJob(stored.studioJob);
       if (dismissed.error !== null) return dismissed;
       return { data: { preview: stored.preview, project: null }, error: null, status: feedback.status };
+    },
+
+    async resumePreSpecPresentations(
+      lineage: StudioVisualLineage,
+      createdBy: string,
+    ): Promise<StudioGatewayResult<PreSpecPresentationResult[]>> {
+      const result = await client.listPreSpecPresentations(
+        createdBy, lineage.projectId,
+      );
+      if (result.error !== null) {
+        return { data: null, error: mapError(result.error), status: result.status };
+      }
+      const resumed: PreSpecPresentationResult[] = [];
+      for (const candidate of result.data.candidates) {
+        if (candidate.project_id !== lineage.projectId
+          || candidate.source_asset_id !== lineage.sourceAssetId
+          || !/^[0-9a-f]{64}$/.test(candidate.source_sha256)
+          || preSpecPresentationCandidates.has(candidate.candidate_id)) continue;
+        preSpecPresentationCandidates.set(candidate.candidate_id, {
+          runId: candidate.image_run_id,
+          candidateId: candidate.candidate_id,
+          sourceHash: candidate.source_sha256,
+          capability: candidate.capability,
+          lineage,
+          studioJob: candidate.studio_job_id === null ? null : {
+            jobId: candidate.studio_job_id,
+            owner: createdBy,
+          },
+          status: 'pending_review',
+        });
+        resumed.push({
+          status: 'review_required',
+          project_id: candidate.project_id,
+          source_asset_id: candidate.source_asset_id,
+          source_sha256: candidate.source_sha256,
+          design_version: null,
+          destination: candidate.destination,
+          client_format: candidate.capability === 'CLIENT_BEAUTY_RENDER'
+            ? 'beauty' : 'product',
+          candidate,
+        });
+      }
+      return { data: resumed, error: null, status: result.status };
+    },
+
+    async createPreSpecPresentation(
+      projectId: string,
+      request: PreSpecPresentationRequest,
+    ): Promise<StudioGatewayResult<PreSpecPresentationResult>> {
+      const lineage: StudioVisualLineage = {
+        projectId,
+        sourceAssetId: request.expected_active_asset_id,
+      };
+      const started = await startJob('present', request.created_by, 1, lineage);
+      if (started.error !== null) return started;
+      const result = await callTracked(
+        started.data,
+        () => client.createPreSpecPresentation(projectId, {
+          ...request,
+          ...(started.data === null ? {} : { studio_job_id: started.data.jobId }),
+        }),
+      );
+      if (result.error !== null) return result;
+      const candidate = result.data.candidate;
+      if (result.data.project_id !== projectId
+        || result.data.source_asset_id !== lineage.sourceAssetId
+        || result.data.design_version !== null
+        || !/^[0-9a-f]{64}$/.test(result.data.source_sha256)
+        || (started.data !== null
+          && candidate.studio_job_id !== started.data.jobId)
+        || preSpecPresentationCandidates.has(candidate.candidate_id)) {
+        await failJob(started.data, 'INVALID_PRE_SPEC_PRESENTATION_LINEAGE', 0.95);
+        return gatewayError(
+          'INVALID_PRE_SPEC_PRESENTATION_LINEAGE',
+          'The presentation preview did not match the selected visual.',
+          'invalid_response', result.status,
+        );
+      }
+      preSpecPresentationCandidates.set(candidate.candidate_id, {
+        runId: candidate.image_run_id,
+        candidateId: candidate.candidate_id,
+        sourceHash: result.data.source_sha256,
+        capability: candidate.capability,
+        lineage,
+        studioJob: started.data,
+        status: 'pending_review',
+      });
+      return result;
+    },
+
+    async acceptPreSpecPresentation(
+      request: StudioCandidateDecisionRequest,
+    ): Promise<StudioGatewayResult<StudioPreSpecPresentationDecisionResult>> {
+      const stored = preSpecPresentationCandidates.get(request.candidateId);
+      if (stored === undefined) return gatewayError(
+        'PRESENTATION_NOT_FOUND', 'This presentation preview is no longer available.',
+        'validation', 404,
+      );
+      if (stored.status !== 'pending_review') return gatewayError(
+        'PRESENTATION_NOT_REVIEWABLE', 'This presentation already has a final decision.',
+        'conflict', 409,
+      );
+      const before = await client.getProject(stored.lineage.projectId);
+      if (before.error !== null) {
+        return { data: null, error: mapError(before.error), status: before.status };
+      }
+      if (before.data.active_design_version !== null
+        || before.data.active_asset_id !== stored.lineage.sourceAssetId
+        || before.data.selected_candidate_asset_id !== stored.lineage.sourceAssetId) {
+        await failJob(stored.studioJob, 'STALE_PRESENTATION_SOURCE', 0.95);
+        return gatewayError(
+          'STALE_PRESENTATION_SOURCE',
+          'The selected visual changed while this presentation was awaiting review.',
+          'conflict', 409,
+        );
+      }
+      const accepted = await client.acceptPreSpecPresentation(
+        stored.runId, stored.candidateId, {
+          created_by: request.createdBy,
+          expected_active_asset_id: stored.lineage.sourceAssetId,
+          expected_source_sha256: stored.sourceHash,
+        },
+      );
+      if (accepted.error !== null) {
+        await failJob(stored.studioJob, accepted.error.code, 0.95);
+        return { data: null, error: mapError(accepted.error), status: accepted.status };
+      }
+      const saved = accepted.data.project.derived_assets.find((asset) => (
+        asset.asset_id === accepted.data.asset_id
+        && asset.parent_asset_id === stored.lineage.sourceAssetId
+        && asset.design_version === null
+        && asset.capability === stored.capability
+      ));
+      if (accepted.data.project_id !== stored.lineage.projectId
+        || accepted.data.source_asset_id !== stored.lineage.sourceAssetId
+        || accepted.data.source_sha256 !== stored.sourceHash
+        || accepted.data.design_version !== null
+        || accepted.data.project.active_asset_id !== stored.lineage.sourceAssetId
+        || accepted.data.project.active_design_version !== null
+        || saved === undefined) {
+        await failJob(stored.studioJob, 'INVALID_PRE_SPEC_PRESENTATION_ACCEPT', 0.95);
+        return gatewayError(
+          'INVALID_PRE_SPEC_PRESENTATION_ACCEPT',
+          'Saving the presentation did not preserve the selected visual.',
+          'invalid_response', accepted.status,
+        );
+      }
+      stored.status = 'accepted';
+      return {
+        data: { candidateId: stored.candidateId, project: accepted.data.project },
+        error: null,
+        status: accepted.status,
+      };
+    },
+
+    async discardPreSpecPresentation(
+      request: StudioCandidateDecisionRequest,
+    ): Promise<StudioGatewayResult<StudioPreSpecPresentationDecisionResult>> {
+      const stored = preSpecPresentationCandidates.get(request.candidateId);
+      if (stored === undefined) return gatewayError(
+        'PRESENTATION_NOT_FOUND', 'This presentation preview is no longer available.',
+        'validation', 404,
+      );
+      if (stored.status !== 'pending_review') return gatewayError(
+        'PRESENTATION_NOT_REVIEWABLE', 'This presentation already has a final decision.',
+        'conflict', 409,
+      );
+      const before = await client.getProject(stored.lineage.projectId);
+      if (before.error !== null) {
+        return { data: null, error: mapError(before.error), status: before.status };
+      }
+      if (before.data.active_design_version !== null
+        || before.data.active_asset_id !== stored.lineage.sourceAssetId
+        || before.data.selected_candidate_asset_id !== stored.lineage.sourceAssetId) {
+        await failJob(stored.studioJob, 'STALE_PRESENTATION_SOURCE', 0.95);
+        return gatewayError(
+          'STALE_PRESENTATION_SOURCE',
+          'The selected visual changed while this presentation was awaiting review.',
+          'conflict', 409,
+        );
+      }
+      const discarded = await client.discardPreSpecPresentation(
+        stored.runId, stored.candidateId, {
+          created_by: request.createdBy,
+          expected_active_asset_id: stored.lineage.sourceAssetId,
+          expected_source_sha256: stored.sourceHash,
+        },
+      );
+      if (discarded.error !== null) {
+        return { data: null, error: mapError(discarded.error), status: discarded.status };
+      }
+      if (discarded.data.project_id !== stored.lineage.projectId
+        || discarded.data.source_asset_id !== stored.lineage.sourceAssetId
+        || discarded.data.source_sha256 !== stored.sourceHash
+        || discarded.data.design_version !== null
+        || discarded.data.candidate_id !== stored.candidateId) {
+        await failJob(stored.studioJob, 'INVALID_PRE_SPEC_PRESENTATION_DISCARD', 0.95);
+        return gatewayError(
+          'INVALID_PRE_SPEC_PRESENTATION_DISCARD',
+          'Discarding the presentation could not be confirmed.',
+          'invalid_response', discarded.status,
+        );
+      }
+      stored.status = 'discarded';
+      return {
+        data: { candidateId: stored.candidateId, project: before.data },
+        error: null,
+        status: discarded.status,
+      };
     },
 
     async createBeautyPresentation(

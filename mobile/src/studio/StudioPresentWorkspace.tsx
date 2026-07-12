@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   Image, Pressable, ScrollView, StyleSheet, Text, View,
 } from 'react-native';
@@ -7,10 +7,12 @@ import { Button, ChipRow, Field, Notice } from '../components';
 import { radius, theme } from '../theme';
 import type {
   BeautyRenderResult, MarketingPackResult, ProductPhotoFraming, ProductPhotoPreset,
-  ProductPhotoResult, ProjectDetail,
+  PreSpecPresentationResult, ProductPhotoResult, ProjectDetail,
 } from '../trusted/types';
 import { getStudioAction } from './actions';
-import type { ExactStudioLineage, StudioGateway, StudioGatewayError } from './gateway';
+import type {
+  ExactStudioLineage, StudioGateway, StudioGatewayError, StudioVisualLineage,
+} from './gateway';
 import { designerReviewState } from './designerReviewLanguage';
 
 const PRESETS: readonly ProductPhotoPreset[] = [
@@ -56,6 +58,7 @@ interface PresentationCard {
   detail: string;
   status: 'saved' | 'review';
   candidateId: string | null;
+  preSpec: boolean;
 }
 
 export interface StudioPresentWorkspaceProps {
@@ -64,8 +67,12 @@ export interface StudioPresentWorkspaceProps {
     | 'createProductPresentation'
     | 'createMarketingPresentation'
     | 'acceptPresentationCandidate'
-    | 'discardPresentationCandidate'>;
-  lineage: ExactStudioLineage | null;
+    | 'discardPresentationCandidate'
+    | 'createPreSpecPresentation'
+    | 'resumePreSpecPresentations'
+    | 'acceptPreSpecPresentation'
+    | 'discardPreSpecPresentation'>;
+  lineage: ExactStudioLineage | StudioVisualLineage | null;
   createdBy: string;
   onProjectUpdated?: (project: ProjectDetail) => void;
 }
@@ -83,6 +90,7 @@ function beautyCard(result: BeautyRenderResult): PresentationCard {
     detail: `Saved presentation · ${designerReviewState(result.qa.verdict)}`,
     status: 'saved',
     candidateId: null,
+    preSpec: false,
   };
   return {
     id: result.warning_candidate.candidate_id ?? result.image_run_id,
@@ -91,6 +99,7 @@ function beautyCard(result: BeautyRenderResult): PresentationCard {
     detail: `Not saved yet · ${designerReviewState(result.quality_report.verdict)}`,
     status: 'review',
     candidateId: result.warning_candidate.candidate_id,
+    preSpec: false,
   };
 }
 
@@ -102,6 +111,7 @@ function productCard(result: ProductPhotoResult): PresentationCard {
     detail: `Saved presentation · ${framingLabel(result.presentation.framing)} · ${designerReviewState(result.qa.verdict)}`,
     status: 'saved',
     candidateId: null,
+    preSpec: false,
   };
   return {
     id: result.warning_candidate.candidate_id ?? result.image_run_id,
@@ -110,6 +120,7 @@ function productCard(result: ProductPhotoResult): PresentationCard {
     detail: `Not saved yet · ${framingLabel(result.presentation.framing)} · ${designerReviewState(result.quality_report.verdict)}`,
     status: 'review',
     candidateId: result.warning_candidate.candidate_id,
+    preSpec: false,
   };
 }
 
@@ -121,7 +132,22 @@ function marketingCards(result: MarketingPackResult): PresentationCard[] {
     detail: `Not saved yet · ${framingLabel(candidate.framing)} · ${designerReviewState(candidate.qa.verdict)}`,
     status: 'review',
     candidateId: candidate.candidate_id,
+    preSpec: false,
   }));
+}
+
+function preSpecCard(result: PreSpecPresentationResult): PresentationCard {
+  const candidate = result.candidate;
+  return {
+    id: candidate.candidate_id,
+    title: candidate.capability === 'CLIENT_BEAUTY_RENDER'
+      ? 'Client beauty render' : presetLabel(candidate.preset),
+    imageUrl: candidate.preview_url,
+    detail: `Not saved yet · ${framingLabel(candidate.framing)} · ${designerReviewState(candidate.qa.verdict)}`,
+    status: 'review',
+    candidateId: candidate.candidate_id,
+    preSpec: true,
+  };
 }
 
 export function StudioPresentWorkspace({
@@ -148,7 +174,24 @@ export function StudioPresentWorkspace({
     ? `Generate ${outputCount} presentation preview${outputCount === 1 ? '' : 's'}`
     : clientFormat === 'beauty' ? 'Create client beauty render' : 'Create client product photo';
   const exactRevision = useMemo(() => lineage === null ? null
-    : `Confirmed revision ${lineage.sourceDesignVersion}`, [lineage]);
+    : 'sourceDesignVersion' in lineage
+      ? `Confirmed revision ${lineage.sourceDesignVersion}`
+      : 'Selected visual direction · specification not confirmed', [lineage]);
+
+  useEffect(() => {
+    if (lineage === null || 'sourceDesignVersion' in lineage
+      || typeof gateway.resumePreSpecPresentations !== 'function') return undefined;
+    let active = true;
+    void gateway.resumePreSpecPresentations(lineage, createdBy).then((result) => {
+      if (!active || result.error !== null || result.data.length === 0) return;
+      setCards((current) => current.length > 0
+        ? current : result.data.map(preSpecCard));
+      setInfo((current) => current ?? (
+        `${result.data.length} saved preview${result.data.length === 1 ? '' : 's'} resumed for review.`
+      ));
+    });
+    return () => { active = false; };
+  }, [createdBy, gateway, lineage]);
 
   const togglePreset = (value: ProductPhotoPreset): void => {
     setMarketingPresets((current) => current.includes(value)
@@ -159,10 +202,13 @@ export function StudioPresentWorkspace({
     if (card.candidateId === null || decidingId !== null) return;
     setDecidingId(card.id);
     setError(null);
-    const result = await gateway.acceptPresentationCandidate({
-      candidateId: card.candidateId,
-      createdBy,
-    });
+    const result = await (card.preSpec
+      ? gateway.acceptPreSpecPresentation({
+        candidateId: card.candidateId, createdBy,
+      })
+      : gateway.acceptPresentationCandidate({
+        candidateId: card.candidateId, createdBy,
+      }));
     setDecidingId(null);
     if (result.error !== null) {
       setError(designerPresentationError(result.error));
@@ -182,10 +228,13 @@ export function StudioPresentWorkspace({
     if (card.candidateId === null || decidingId !== null) return;
     setDecidingId(card.id);
     setError(null);
-    const result = await gateway.discardPresentationCandidate({
-      candidateId: card.candidateId,
-      createdBy,
-    });
+    const result = await (card.preSpec
+      ? gateway.discardPreSpecPresentation({
+        candidateId: card.candidateId, createdBy,
+      })
+      : gateway.discardPresentationCandidate({
+        candidateId: card.candidateId, createdBy,
+      }));
     setDecidingId(null);
     if (result.error !== null) {
       setError(designerPresentationError(result.error));
@@ -202,6 +251,44 @@ export function StudioPresentWorkspace({
     setInfo(null);
     setCards([]);
     setFailures([]);
+    if (!('sourceDesignVersion' in lineage)) {
+      if (destination === 'client') {
+        const result = await gateway.createPreSpecPresentation(lineage.projectId, {
+          created_by: createdBy,
+          expected_active_asset_id: lineage.sourceAssetId,
+          destination: 'client',
+          client_format: clientFormat,
+          preset: clientFormat === 'beauty' ? 'luxury_studio' : preset,
+          framing,
+          ...(direction.trim() ? { custom_instruction: direction.trim() } : {}),
+        });
+        setBusy(false);
+        if (result.error !== null) return setError(designerPresentationError(result.error));
+        setCards([preSpecCard(result.data)]);
+        setInfo('Preview ready. Save it as client material or discard it; your selected visual is unchanged.');
+        return;
+      }
+      const results = await Promise.all(marketingPresets.map((selectedPreset, index) => (
+        gateway.createPreSpecPresentation(lineage.projectId, {
+          created_by: createdBy,
+          expected_active_asset_id: lineage.sourceAssetId,
+          destination: 'marketing',
+          client_format: 'product',
+          preset: selectedPreset,
+          framing,
+          ...(direction.trim() ? { custom_instruction: direction.trim() } : {}),
+          variant: index,
+        })
+      )));
+      setBusy(false);
+      const ready = results.flatMap((result) => result.error === null ? [result.data] : []);
+      const failed = results.flatMap((result) => result.error === null
+        ? [] : [designerPresentationError(result.error)]);
+      setCards(ready.map(preSpecCard));
+      setFailures(failed);
+      setInfo(`${ready.length} of ${marketingPresets.length} requested outputs are ready for review. Your selected visual is unchanged.`);
+      return;
+    }
     if (destination === 'client' && clientFormat === 'beauty') {
       const result = await gateway.createBeautyPresentation(lineage.projectId, {
         created_by: createdBy,
@@ -257,7 +344,7 @@ export function StudioPresentWorkspace({
   if (lineage === null) return (
     <View style={styles.empty}>
       <Text style={styles.title}>Choose a saved direction first</Text>
-      <Text style={styles.body}>Present always starts from one exact immutable revision.</Text>
+      <Text style={styles.body}>Present always starts from one saved revision.</Text>
     </View>
   );
 

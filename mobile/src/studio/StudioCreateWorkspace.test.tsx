@@ -101,7 +101,7 @@ test('requests 1-4 prompt candidates, lets the designer choose, then saves only 
     title: 'A sculptural aquamarine collar.',
   }));
   expect(await screen.findByText('Which outcome should stay in your Studio?')).toBeTruthy();
-  expect(screen.getByText(/not specifications, measurements, or factory facts/i)).toBeTruthy();
+  expect(screen.getByText(/visual directions.+not measurements or production instructions/i)).toBeTruthy();
   await fireEvent.press(screen.getByLabelText('Direction 3'));
   await fireEvent.press(screen.getByText('Save selected direction'));
   await waitFor(() => expect(selectCreativeDirection).toHaveBeenCalledWith(

@@ -11,7 +11,7 @@ describe('StudioPresentWorkspace', () => {
   test('fails closed without an exact immutable revision', async () => {
     await render(<StudioPresentWorkspace gateway={{} as any} lineage={null} createdBy="designer" />);
     expect(screen.getByText('Choose a saved direction first')).toBeTruthy();
-    expect(screen.getByText('Present always starts from one exact immutable revision.')).toBeTruthy();
+    expect(screen.getByText('Present always starts from one saved revision.')).toBeTruthy();
   });
 
   test('creates a client product photo from the exact source and shows cost first', async () => {
@@ -173,5 +173,134 @@ describe('StudioPresentWorkspace', () => {
       'This preview belongs to an earlier design revision. Generate it again from the selected revision.',
     )).toBeTruthy();
     expect(screen.queryByText(/source_spec_visual_hash|run_secret/)).toBeNull();
+  });
+
+  test('creates and saves Client material from a selected pre-spec visual', async () => {
+    const visualLineage = { projectId: 'project_visual', sourceAssetId: 'asset_visual' };
+    const createPreSpecPresentation = jest.fn(async () => ({
+      data: {
+        status: 'review_required', project_id: 'project_visual',
+        source_asset_id: 'asset_visual', source_sha256: 'a'.repeat(64),
+        design_version: null, destination: 'client', client_format: 'beauty',
+        candidate: {
+          candidate_id: 'candidate_client', image_run_id: 'run_client',
+          preview_url: 'https://test/client.png', capability: 'CLIENT_BEAUTY_RENDER',
+          preset: 'luxury_studio', framing: 'square', qa: { verdict: 'pass' },
+        },
+      },
+      error: null,
+      status: 201,
+    }));
+    const acceptPreSpecPresentation = jest.fn(async () => ({
+      data: { candidateId: 'candidate_client', project: { root_id: 'project_visual' } },
+      error: null,
+      status: 201,
+    }));
+    await render(<StudioPresentWorkspace
+      gateway={{
+        createPreSpecPresentation, acceptPreSpecPresentation,
+        discardPreSpecPresentation: jest.fn(), createBeautyPresentation: jest.fn(),
+        createProductPresentation: jest.fn(), createMarketingPresentation: jest.fn(),
+        acceptPresentationCandidate: jest.fn(), discardPresentationCandidate: jest.fn(),
+      } as any}
+      lineage={visualLineage}
+      createdBy="designer"
+    />);
+
+    expect(screen.getByText('Selected visual direction · specification not confirmed')).toBeTruthy();
+    await act(async () => { fireEvent.press(screen.getByText('Create client beauty render')); });
+    await waitFor(() => expect(createPreSpecPresentation).toHaveBeenCalledWith('project_visual', {
+      created_by: 'designer', expected_active_asset_id: 'asset_visual',
+      destination: 'client', client_format: 'beauty', preset: 'luxury_studio',
+      framing: 'square',
+    }));
+    expect(await screen.findByText('Not saved · choose what to keep')).toBeTruthy();
+    await act(async () => { fireEvent.press(screen.getByText('Save presentation')); });
+    expect(acceptPreSpecPresentation).toHaveBeenCalledWith({
+      candidateId: 'candidate_client', createdBy: 'designer',
+    });
+    expect(screen.queryByText(/factory|production-ready/i)).toBeNull();
+  });
+
+  test('generates a selectable pre-spec Marketing set and discards through visual lineage', async () => {
+    const calls: any[] = [];
+    const createPreSpecPresentation = jest.fn(async (_projectId: string, request: any) => {
+      calls.push(request);
+      return {
+        data: {
+          status: 'review_required', project_id: 'project_visual',
+          source_asset_id: 'asset_visual', source_sha256: 'b'.repeat(64),
+          design_version: null, destination: 'marketing', client_format: 'product',
+          candidate: {
+            candidate_id: `candidate_${request.preset}`, image_run_id: `run_${request.preset}`,
+            preview_url: `https://test/${request.preset}.png`, capability: 'MARKETING_IMAGE',
+            preset: request.preset, framing: 'square', qa: { verdict: 'pass' },
+          },
+        },
+        error: null,
+        status: 201,
+      };
+    });
+    const discardPreSpecPresentation = jest.fn(async ({ candidateId }) => ({
+      data: { candidateId, project: { root_id: 'project_visual' } },
+      error: null, status: 200,
+    }));
+    await render(<StudioPresentWorkspace
+      gateway={{
+        createPreSpecPresentation, discardPreSpecPresentation,
+        acceptPreSpecPresentation: jest.fn(), createBeautyPresentation: jest.fn(),
+        createProductPresentation: jest.fn(), createMarketingPresentation: jest.fn(),
+        acceptPresentationCandidate: jest.fn(), discardPresentationCandidate: jest.fn(),
+      } as any}
+      lineage={{ projectId: 'project_visual', sourceAssetId: 'asset_visual' }}
+      createdBy="designer"
+    />);
+
+    await act(async () => { fireEvent.press(screen.getByText('Marketing')); });
+    expect(screen.getByText('You are charged only for the requested outputs you save. Discarded and unusable results cost 0 credits.')).toBeTruthy();
+    const generate = await screen.findByText('Generate 2 presentation previews');
+    await act(async () => { fireEvent.press(generate); });
+    await waitFor(() => expect(calls).toHaveLength(2));
+    expect(calls.map((call) => call.preset)).toEqual(['catalog_white', 'luxury_studio']);
+    expect(await screen.findByText('2 of 2 requested outputs are ready for review. Your selected visual is unchanged.')).toBeTruthy();
+    const discardButtons = screen.getAllByText('Discard');
+    await act(async () => { fireEvent.press(discardButtons[0]); });
+    expect(discardPreSpecPresentation).toHaveBeenCalledWith({
+      candidateId: 'candidate_catalog_white', createdBy: 'designer',
+    });
+    expect(screen.getByText('Luxury studio')).toBeTruthy();
+  });
+
+  test('resumes durable pre-spec previews after the workspace remounts', async () => {
+    const resumePreSpecPresentations = jest.fn(async () => ({
+      data: [{
+        status: 'review_required', project_id: 'project_visual',
+        source_asset_id: 'asset_visual', source_sha256: 'c'.repeat(64),
+        design_version: null, destination: 'client', client_format: 'product',
+        candidate: {
+          candidate_id: 'candidate_resumed', image_run_id: 'run_resumed',
+          preview_url: 'https://test/resumed.png', studio_job_id: 'job_resumed',
+          capability: 'CLIENT_PRODUCT_PHOTO', preset: 'catalog_white',
+          framing: 'square', qa: { verdict: 'pass' },
+        },
+      }],
+      error: null,
+      status: 200,
+    }));
+    await render(<StudioPresentWorkspace
+      gateway={{
+        resumePreSpecPresentations, createPreSpecPresentation: jest.fn(),
+        acceptPreSpecPresentation: jest.fn(), discardPreSpecPresentation: jest.fn(),
+        createBeautyPresentation: jest.fn(), createProductPresentation: jest.fn(),
+        createMarketingPresentation: jest.fn(), acceptPresentationCandidate: jest.fn(),
+        discardPresentationCandidate: jest.fn(),
+      } as any}
+      lineage={{ projectId: 'project_visual', sourceAssetId: 'asset_visual' }}
+      createdBy="designer"
+    />);
+
+    expect(await screen.findByText('1 saved preview resumed for review.')).toBeTruthy();
+    expect(screen.getByText('Catalog white')).toBeTruthy();
+    expect(screen.getByText('Not saved · choose what to keep')).toBeTruthy();
   });
 });

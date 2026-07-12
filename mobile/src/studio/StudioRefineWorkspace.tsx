@@ -254,7 +254,7 @@ export function StudioRefineWorkspace({
     return (
       <View style={styles.empty}>
         <Text style={styles.title}>Choose a saved direction first</Text>
-        <Text style={styles.body}>Refine always starts from one exact immutable revision.</Text>
+        <Text style={styles.body}>Refine always starts from one saved revision.</Text>
       </View>
     );
   }
@@ -337,7 +337,7 @@ export function StudioRefineWorkspace({
       </View>
 
       {!exactSpecification && (
-        <Notice kind="info" text="This direction is still pre-spec. You can safely refine appearance or a marked region; component and construction changes remain locked until design facts are confirmed." />
+        <Notice kind="info" text="Design facts are not confirmed yet. You can refine appearance or a marked region; component and construction changes unlock after those facts are reviewed." />
       )}
 
       {mode === 'component' && <>

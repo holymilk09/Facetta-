@@ -334,7 +334,7 @@ export default function App() {
           ) : selectedActionId === 'present' ? (
             <StudioPresentWorkspace
               gateway={studioGateway}
-              lineage={exactStudioLineage}
+              lineage={exactStudioLineage ?? visualStudioLineage}
               createdBy={designer}
               onProjectUpdated={setStudioProject}
             />
@@ -409,7 +409,7 @@ export default function App() {
           </Text>
           {[
             ['Start from a useful source', 'Begin with a sentence or add one master-geometry image from a sketch, photograph, or render.'],
-            ['Refine without design drift', 'Target one region and keep the active revision immutable until you accept a preview.'],
+            ['Refine without design drift', 'Target one region and keep the saved revision unchanged until you accept a preview.'],
             ['Make a confident decision', 'Compare the exact source and preview, then apply, branch, or discard without losing history.'],
           ].map(([title, body]) => (
             <View key={title} style={styles.learnCard}>

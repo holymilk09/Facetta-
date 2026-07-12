@@ -155,7 +155,7 @@ export function StudioCreateWorkspace({
         <Text style={styles.eyebrow}>CHOOSE A DIRECTION</Text>
         <Text style={styles.title}>Which outcome should stay in your Studio?</Text>
         <Text style={styles.body}>
-          These are creative candidates—not specifications, measurements, or factory facts.
+          These are visual directions—not measurements or production instructions.
         </Text>
         <View style={styles.candidateGrid}>
           {candidates.map((candidate, index) => {

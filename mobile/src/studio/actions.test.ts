@@ -53,7 +53,7 @@ test('the rail hides an empty More menu and exposes it only with an eligible des
   assert.equal(getStudioRailActions({ ...active, factoryEligible: true }).at(-1)?.id, 'more');
 });
 
-test('pre-spec directions expose visual Refine without exposing spec-backed destinations', () => {
+test('pre-spec directions expose Refine and Present while keeping Views spec-backed', () => {
   const selectedCreativeDirection = {
     ...emptyContext,
     activeDesignId: 'project_1',
@@ -61,7 +61,7 @@ test('pre-spec directions expose visual Refine without exposing spec-backed dest
   };
   assert.deepEqual(
     getStudioRailActions(selectedCreativeDirection).map((action) => action.id),
-    ['create', 'vary', 'refine'],
+    ['create', 'vary', 'refine', 'present'],
   );
 });
 

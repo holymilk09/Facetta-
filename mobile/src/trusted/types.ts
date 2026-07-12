@@ -557,6 +557,82 @@ export interface PresentationCandidateDiscardResult {
   candidate_id: string;
 }
 
+export interface PreSpecPresentationRequest {
+  created_by: string;
+  expected_active_asset_id: string;
+  destination: 'client' | 'marketing';
+  client_format?: 'beauty' | 'product';
+  preset: ProductPhotoPreset;
+  framing?: ProductPhotoFraming;
+  custom_instruction?: string;
+  variant?: number;
+  /** Server-created Activity job bound to this exact requested output. */
+  studio_job_id?: string;
+}
+
+export interface PreSpecPresentationCandidate {
+  candidate_id: string;
+  image_run_id: string;
+  preview_url: string;
+  studio_job_id: string | null;
+  capability: PresentationAssetCapability;
+  preset: ProductPhotoPreset;
+  framing: ProductPhotoFraming;
+  qa: ImageQualityReport;
+}
+
+export interface PreSpecPresentationResumeCandidate extends PreSpecPresentationCandidate {
+  project_id: string;
+  source_asset_id: string;
+  source_sha256: string;
+  destination: 'client' | 'marketing';
+  status: 'reviewing';
+  accepted_asset_id: null;
+  expires_at: string;
+}
+
+export interface PreSpecPresentationListResult {
+  candidates: PreSpecPresentationResumeCandidate[];
+}
+
+/** Review-only output from an exact visual which has no confirmed spec. */
+export interface PreSpecPresentationResult {
+  status: 'review_required';
+  project_id: string;
+  source_asset_id: string;
+  source_sha256: string;
+  design_version: null;
+  destination: 'client' | 'marketing';
+  client_format: 'beauty' | 'product';
+  candidate: PreSpecPresentationCandidate;
+}
+
+export interface PreSpecPresentationDecisionRequest {
+  created_by: string;
+  expected_active_asset_id: string;
+  expected_source_sha256: string;
+}
+
+export interface PreSpecPresentationAcceptResult {
+  status: 'accepted';
+  project_id: string;
+  source_asset_id: string;
+  source_sha256: string;
+  design_version: null;
+  asset_id: string;
+  capability: PresentationAssetCapability;
+  project: ProjectDetail;
+}
+
+export interface PreSpecPresentationDiscardResult {
+  status: 'discarded';
+  project_id: string;
+  source_asset_id: string;
+  source_sha256: string;
+  design_version: null;
+  candidate_id: string;
+}
+
 export interface PromoteCreativeCandidateRequest {
   confirmed_spec: JsonObject;
   created_by: string;

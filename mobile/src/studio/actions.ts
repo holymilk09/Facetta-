@@ -34,7 +34,7 @@ export const STUDIO_ACTIONS: readonly StudioActionDefinition[] = [
   {
     id: 'vary',
     label: 'Save as a variation',
-    shortLabel: 'Branch',
+    shortLabel: 'Vary',
     description: 'Copy the exact active revision into a named sibling without replacing it.',
     lane: 'instant',
     referenceRoles: ['master_geometry'],
@@ -99,7 +99,7 @@ export const STUDIO_ACTIONS: readonly StudioActionDefinition[] = [
     requiresActiveDesign: true,
     createsJob: true,
     placement: 'primary',
-    isAvailable: exactDesign,
+    isAvailable: activeDesign,
   },
   {
     id: 'more',

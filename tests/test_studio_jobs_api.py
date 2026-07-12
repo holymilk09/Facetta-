@@ -10,8 +10,13 @@ from sqlalchemy import create_engine, inspect
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from facetta.db import Base, StudioJobRecord, get_db
+from facetta.db import Base, StudioJobRecord, get_db, utcnow
 from facetta.main import app
+from facetta.studio_jobs import (
+    STUDIO_JOB_ACTIONS,
+    StudioJobAccountingError,
+    record_accepted_studio_job_outputs,
+)
 
 
 @pytest.fixture()
@@ -41,12 +46,14 @@ def _create(
     *,
     owner: str = "usr_designer",
     outputs: int = 2,
-    credits: int = 7,
+    credits: int = 15,
+    action_id: str = "create",
+    lane: str = "fast_visual",
 ) -> dict:
     response = client.post("/studio/jobs", json={
         "owner": owner,
-        "action_id": "create",
-        "lane": "fast_visual",
+        "action_id": action_id,
+        "lane": lane,
         "active_design_id": None,
         "source_revision_id": None,
         "requested_outputs": outputs,
@@ -87,21 +94,22 @@ def test_fresh_schema_contains_persistent_studio_jobs():
     }
 
 
-def test_job_lifecycle_is_persistent_and_bills_only_completed_outputs(client):
-    job = _create(client, outputs=3, credits=8)
+def test_job_lifecycle_is_persistent_and_client_completion_never_charges(client):
+    job = _create(client, outputs=3)
     job_id = job["job_id"]
 
     assert job["status"] == "queued"
     assert job["billing"] == {
         "requested_outputs": 3,
-        "credits_per_output": 8,
-        "estimated_credits": 24,
+        "credits_per_output": 15,
+        "estimated_credits": 45,
         "completed_outputs": 0,
         "charged_outputs": 0,
         "charged_credits": 0,
         "policy": (
-            "Only requested outputs that complete successfully are charged. "
-            "Internal retries and failed review attempts are included."
+            "Only requested outputs accepted by a backend decision are charged. "
+            "Client completion reports, internal retries, and failed review "
+            "attempts are not charged."
         ),
     }
     # Activity responses must not leak execution-provider vocabulary.
@@ -119,8 +127,9 @@ def test_job_lifecycle_is_persistent_and_bills_only_completed_outputs(client):
     result = succeeded.json()
     assert result["status"] == "succeeded"
     assert result["progress"] == 1
-    assert result["billing"]["charged_outputs"] == 2
-    assert result["billing"]["charged_credits"] == 16
+    assert result["billing"]["completed_outputs"] == 2
+    assert result["billing"]["charged_outputs"] == 0
+    assert result["billing"]["charged_credits"] == 0
 
     persisted = client.get(
         f"/studio/jobs/{job_id}", params={"owner": "usr_designer"},
@@ -149,6 +158,100 @@ def test_owner_filtering_and_cross_owner_reads_fail_closed(client):
     assert missing_owner.status_code == 422
 
 
+def test_create_rejects_client_authored_lane_or_price(client):
+    payload = {
+        "owner": "usr_designer",
+        "action_id": "create",
+        "lane": "fast_visual",
+        "active_design_id": None,
+        "source_revision_id": None,
+        "requested_outputs": 1,
+        "credits_per_output": 0,
+    }
+    free = client.post("/studio/jobs", json=payload)
+    assert free.status_code == 422
+    assert "credits_per_output" in free.json()["detail"]
+
+    wrong_lane = client.post("/studio/jobs", json={
+        **payload,
+        "lane": "instant",
+        "credits_per_output": 15,
+    })
+    assert wrong_lane.status_code == 422
+    assert "lane" in wrong_lane.json()["detail"]
+
+
+def test_server_registry_is_canonical_for_every_studio_action(client):
+    for action_id, definition in STUDIO_JOB_ACTIONS.items():
+        created = _create(
+            client,
+            outputs=1,
+            action_id=action_id,
+            lane=definition.lane,
+            credits=definition.credits_per_output,
+        )
+        assert created["lane"] == definition.lane
+        assert created["billing"]["credits_per_output"] == (
+            definition.credits_per_output
+        )
+
+
+def test_backend_acceptance_helper_is_the_only_charge_authority():
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    now = utcnow()
+    with Session(engine, expire_on_commit=False) as db:
+        db.add(StudioJobRecord(
+            id="job_backend_accept",
+            owner="usr_designer",
+            action_id="present",
+            lane="fast_visual",
+            status="reviewing",
+            progress=0.9,
+            requested_outputs=2,
+            credits_per_output=18,
+            completed_outputs=0,
+            charged_outputs=0,
+            created_at=now,
+            updated_at=now,
+        ))
+        db.commit()
+
+        accepted = record_accepted_studio_job_outputs(
+            db,
+            job_id="job_backend_accept",
+            owner="usr_designer",
+            completed_outputs=1,
+            active_design_id="project_selected",
+            source_revision_id="presentation_saved",
+        )
+        assert accepted.status == "succeeded"
+        assert accepted.completed_outputs == 1
+        assert accepted.charged_outputs == 1
+        assert accepted.credits_per_output == 18
+        repeated = record_accepted_studio_job_outputs(
+            db,
+            job_id="job_backend_accept",
+            owner="usr_designer",
+            completed_outputs=1,
+            active_design_id="project_selected",
+            source_revision_id="presentation_saved",
+        )
+        assert repeated is accepted
+        with pytest.raises(StudioJobAccountingError, match="already bound"):
+            record_accepted_studio_job_outputs(
+                db,
+                job_id="job_backend_accept",
+                owner="usr_designer",
+                completed_outputs=1,
+                active_design_id="different_project",
+                source_revision_id="presentation_saved",
+            )
+        # The helper flushes but deliberately leaves transaction ownership to
+        # the backend decision that accepts the canonical output.
+        db.rollback()
+
+
 def test_progress_and_charge_invariants_reject_inconsistent_updates(client):
     job_id = _create(client, outputs=1)["job_id"]
     assert _transition(client, job_id, "running", 0.6).status_code == 200
@@ -164,6 +267,15 @@ def test_progress_and_charge_invariants_reject_inconsistent_updates(client):
         client, job_id, "succeeded", 1, completed_outputs=2,
     )
     assert too_many.status_code == 422
+
+    self_charge = client.patch(f"/studio/jobs/{job_id}", json={
+        "owner": "usr_designer",
+        "status": "succeeded",
+        "progress": 1,
+        "completed_outputs": 1,
+        "charged_outputs": 1,
+    })
+    assert self_charge.status_code == 422
 
 
 def test_creation_job_lineage_can_bind_once_but_never_drift(client):

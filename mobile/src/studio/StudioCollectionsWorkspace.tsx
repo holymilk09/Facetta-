@@ -276,7 +276,7 @@ export function StudioCollectionsWorkspace({
         )}
         <Text style={styles.eyebrow}>COLLECTIONS</Text>
         <Text style={styles.familyTitle}>Your design families</Text>
-        <Text style={styles.sectionCopy}>Choose a direction to open its variations and immutable revision history.</Text>
+        <Text style={styles.sectionCopy}>Choose a direction to open its variations and saved revision history.</Text>
         {error !== null && <Notice kind="error" text={error} />}
         {error !== null ? (
           <View style={styles.emptyState}>
@@ -317,7 +317,7 @@ export function StudioCollectionsWorkspace({
     return (
       <View style={styles.loadingState}>
         <ActivityIndicator color={theme.accent} />
-        <Text style={styles.meta}>Loading this design family and exact history…</Text>
+        <Text style={styles.meta}>Loading this design family and saved history…</Text>
       </View>
     );
   }
@@ -338,7 +338,7 @@ export function StudioCollectionsWorkspace({
         <View style={styles.section}>
           <Text style={styles.branchTitle}>Explore from the selected active revision</Text>
           <Text style={styles.meta}>
-            A new variation can still begin from the current saved revision. Its exact source
+            A new variation can still begin from the current saved revision. Its starting point
             remains attached behind the scenes.
           </Text>
           <Field
@@ -401,7 +401,7 @@ export function StudioCollectionsWorkspace({
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Variations</Text>
         <Text style={styles.sectionCopy}>
-          Independent directions share a family, but each keeps its own exact revision chain.
+          Independent directions share a family, but each keeps its own revision history.
         </Text>
         {family === null ? (
           <View style={styles.inlineEmpty}>
@@ -448,7 +448,7 @@ export function StudioCollectionsWorkspace({
           <Text style={styles.meta}>
             The new variation begins from the current Revision {data.history.revisions.find((revision) => (
               revision.asset_id === activeAssetId
-            ))?.revision ?? data.history.revisions.length}. The exact source remains attached
+            ))?.revision ?? data.history.revisions.length}. The starting point remains attached
             behind the scenes.
           </Text>
           <Field
@@ -485,13 +485,13 @@ export function StudioCollectionsWorkspace({
       )}
 
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Immutable revision history</Text>
+        <Text style={styles.sectionTitle}>Saved revision history</Text>
         <Text style={styles.sectionCopy}>
           Compare two revisions. Restoring copies an earlier revision forward as a new one; nothing is overwritten.
         </Text>
         {data.history.revisions.length === 0 ? (
           <View style={styles.inlineEmpty}>
-            <Text style={styles.meta}>No immutable visual revisions are recorded for this design yet.</Text>
+            <Text style={styles.meta}>No saved visual revisions are recorded for this design yet.</Text>
           </View>
         ) : data.history.revisions.map((revision) => {
           const active = revision.asset_id === activeAssetId;

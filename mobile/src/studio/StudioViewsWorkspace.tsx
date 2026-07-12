@@ -95,7 +95,7 @@ export function StudioViewsWorkspace({
     return (
       <View style={styles.empty}>
         <Text style={styles.title}>Choose a saved direction first</Text>
-        <Text style={styles.body}>Views are always generated from one exact immutable revision.</Text>
+        <Text style={styles.body}>Views always start from one saved revision.</Text>
       </View>
     );
   }

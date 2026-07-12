@@ -20,7 +20,7 @@ from threading import Lock
 
 from sqlalchemy import (
     JSON, Boolean, CheckConstraint, DateTime, Float, ForeignKey, Index, Integer,
-    LargeBinary, String, Text, create_engine, event, text,
+    LargeBinary, String, Text, UniqueConstraint, create_engine, event, text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.engine import make_url
@@ -295,8 +295,89 @@ class StudioJobRecord(Base):
             name="ck_studio_job_completed_outputs",
         ),
         CheckConstraint(
-            "charged_outputs = completed_outputs",
-            name="ck_studio_job_charge_matches_completed",
+            "charged_outputs >= 0 AND charged_outputs <= completed_outputs",
+            name="ck_studio_job_charge_within_completed",
+        ),
+        CheckConstraint(
+            "charged_outputs = 0 OR status = 'succeeded'",
+            name="ck_studio_job_charge_requires_success",
+        ),
+    )
+
+
+class StudioPresentationCandidateRecord(Base):
+    """Durable, review-only Client/Marketing output for one exact visual.
+
+    The raster is intentionally stored before acceptance so a browser refresh
+    or API process restart cannot silently lose a designer's review work.  A
+    terminal decision records its resulting asset/review identity on this row;
+    it never mutates the selected Studio revision.
+    """
+
+    __tablename__ = "studio_presentation_candidates"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    image_run_id: Mapped[str] = mapped_column(
+        ForeignKey("image_runs.id"), nullable=False, index=True)
+    owner: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    project_root_id: Mapped[str] = mapped_column(
+        ForeignKey("projects.root_id"), nullable=False, index=True)
+    source_asset_id: Mapped[str] = mapped_column(
+        ForeignKey("image_assets.id"), nullable=False, index=True)
+    source_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    output_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    image: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    media_type: Mapped[str] = mapped_column(String(24), nullable=False)
+    destination: Mapped[str] = mapped_column(String(16), nullable=False)
+    capability: Mapped[str] = mapped_column(String(32), nullable=False)
+    requested_change: Mapped[str] = mapped_column(Text, nullable=False)
+    preset: Mapped[str] = mapped_column(String(32), nullable=False)
+    framing: Mapped[str] = mapped_column(String(16), nullable=False)
+    qa: Mapped[dict] = mapped_column(SpecJSON, nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, index=True)
+    studio_job_id: Mapped[str | None] = mapped_column(
+        ForeignKey("studio_jobs.id"), nullable=True, index=True)
+    accepted_asset_id: Mapped[str | None] = mapped_column(
+        ForeignKey("image_assets.id"), nullable=True)
+    review_id: Mapped[str | None] = mapped_column(
+        ForeignKey("image_run_reviews.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow)
+    expires_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, index=True)
+    resolved_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint(
+            "image_run_id", name="uq_studio_presentation_candidate_run"),
+        UniqueConstraint(
+            "studio_job_id", name="uq_studio_presentation_candidate_job"),
+        CheckConstraint(
+            "destination IN ('client', 'marketing')",
+            name="ck_studio_presentation_candidate_destination",
+        ),
+        CheckConstraint(
+            "capability IN ('CLIENT_BEAUTY_RENDER', "
+            "'CLIENT_PRODUCT_PHOTO', 'MARKETING_IMAGE')",
+            name="ck_studio_presentation_candidate_capability",
+        ),
+        CheckConstraint(
+            "status IN ('reviewing', 'accepted', 'discarded', 'expired')",
+            name="ck_studio_presentation_candidate_status",
+        ),
+        CheckConstraint(
+            "length(source_sha256) = 64 AND length(output_sha256) = 64",
+            name="ck_studio_presentation_candidate_hashes",
+        ),
+        CheckConstraint(
+            "(status = 'accepted' AND accepted_asset_id IS NOT NULL "
+            "AND review_id IS NOT NULL AND resolved_at IS NOT NULL) OR "
+            "(status IN ('discarded', 'expired') AND accepted_asset_id IS NULL "
+            "AND resolved_at IS NOT NULL) OR "
+            "(status = 'reviewing' AND accepted_asset_id IS NULL "
+            "AND review_id IS NULL AND resolved_at IS NULL)",
+            name="ck_studio_presentation_candidate_resolution",
         ),
     )
 

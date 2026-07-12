@@ -158,13 +158,13 @@ describe('StudioCollectionsWorkspace', () => {
         {...handlers}
       />,
     );
-    await screen.findByText('Immutable revision history');
+    await screen.findByText('Saved revision history');
     await fireEvent.press(screen.getByText('All families'));
     expect(await screen.findByText('Your design families')).toBeTruthy();
-    expect(screen.queryByText('Immutable revision history')).toBeNull();
+    expect(screen.queryByText('Saved revision history')).toBeNull();
 
     await fireEvent.press(screen.getByText('Back to current variation'));
-    expect(await screen.findByText('Immutable revision history')).toBeTruthy();
+    expect(await screen.findByText('Saved revision history')).toBeTruthy();
     expect(handlers.onOpenProject).not.toHaveBeenCalled();
   });
 
@@ -179,7 +179,7 @@ describe('StudioCollectionsWorkspace', () => {
         {...handlers}
       />,
     );
-    await screen.findByText('Immutable revision history');
+    await screen.findByText('Saved revision history');
 
     await fireEvent.changeText(screen.getByPlaceholderText('Rose gold study'), 'Blue sapphire study');
     await fireEvent.press(screen.getByText('Create variation'));
@@ -270,7 +270,7 @@ describe('StudioCollectionsWorkspace', () => {
         {...handlers}
       />,
     );
-    await screen.findByText('Immutable revision history');
+    await screen.findByText('Saved revision history');
     await fireEvent.changeText(screen.getByPlaceholderText('Rose gold study'), 'Unsafe branch');
     await fireEvent.press(screen.getByText('Create variation'));
 

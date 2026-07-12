@@ -149,7 +149,7 @@ describe('StudioRefineWorkspace', () => {
 
     expect(getComponentCatalog).not.toHaveBeenCalled();
     expect(screen.getByLabelText('Component refine mode').props.accessibilityState.disabled).toBe(true);
-    expect(screen.getByText(/still pre-spec/i)).toBeTruthy();
+    expect(screen.getByText(/Design facts are not confirmed yet/i)).toBeTruthy();
     await act(async () => {
       fireEvent.changeText(
         screen.getByPlaceholderText(/make the presentation softer/i),

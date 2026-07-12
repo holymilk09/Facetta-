@@ -875,7 +875,7 @@ describe('trusted API decoders', () => {
   });
 
   test('preserves structured stale-version errors when a restore races newer work', async () => {
-    const fetcher = jest.fn(async () => ({
+    const fetcher = jest.fn<Promise<Response>, [RequestInfo | URL, RequestInit?]>(async () => ({
       ok: false,
       status: 409,
       text: async () => JSON.stringify({
@@ -1530,5 +1530,94 @@ describe('trusted API decoders', () => {
     expect(JSON.parse(String(fetcher.mock.calls[2]?.[1]?.body))).toMatchObject({
       active_design_id: 'project one', source_revision_id: 'candidate one',
     });
+  });
+
+  test('binds pre-spec presentation preview and discard to exact asset hash', async () => {
+    const sourceHash = 'f'.repeat(64);
+    const fetcher = jest.fn<Promise<Response>, [RequestInfo | URL, RequestInit?]>(async (input) => {
+      const url = String(input);
+      const payload = url.endsWith('/discard') ? {
+        status: 'discarded', project_id: 'project visual',
+        source_asset_id: 'asset visual', source_sha256: sourceHash,
+        design_version: null, candidate_id: 'candidate visual',
+      } : {
+        status: 'review_required', project_id: 'project visual',
+        source_asset_id: 'asset visual', source_sha256: sourceHash,
+        design_version: null, destination: 'marketing', client_format: 'product',
+        candidate: {
+          candidate_id: 'candidate visual', image_run_id: 'run visual',
+          preview_url: '/studio/image-runs/run%20visual/presentation-candidates/candidate%20visual/image',
+          capability: 'MARKETING_IMAGE', preset: 'dark_editorial', framing: 'square',
+          qa: { verdict: 'pass', accepted: true, review_required: false, checks: [] },
+        },
+      };
+      return {
+        ok: true, status: url.endsWith('/discard') ? 200 : 201,
+        text: async () => JSON.stringify(payload),
+      } as unknown as Response;
+    });
+    const api = createTrustedApiClient({ baseUrl: 'https://facetta.test', fetcher });
+
+    const preview = await api.createPreSpecPresentation('project visual', {
+      created_by: 'designer', expected_active_asset_id: 'asset visual',
+      destination: 'marketing', preset: 'dark_editorial', framing: 'square',
+    });
+    expect(preview.error).toBeNull();
+    expect(preview.data?.source_sha256).toBe(sourceHash);
+    expect(preview.data?.candidate.preview_url).toBe(
+      'https://facetta.test/studio/image-runs/run%20visual/presentation-candidates/candidate%20visual/image',
+    );
+    expect(JSON.parse(String(fetcher.mock.calls[0]?.[1]?.body))).toEqual({
+      created_by: 'designer', expected_active_asset_id: 'asset visual',
+      destination: 'marketing', client_format: 'product', preset: 'dark_editorial',
+      framing: 'square', custom_instruction: '', variant: 0,
+    });
+
+    const discarded = await api.discardPreSpecPresentation(
+      'run visual', 'candidate visual', {
+        created_by: 'designer', expected_active_asset_id: 'asset visual',
+        expected_source_sha256: sourceHash,
+      },
+    );
+    expect(discarded.error).toBeNull();
+    expect(discarded.data?.design_version).toBeNull();
+    expect(fetcher.mock.calls[1]?.[0]).toBe(
+      'https://facetta.test/studio/image-runs/run%20visual/presentation-candidates/candidate%20visual/discard',
+    );
+    expect(JSON.parse(String(fetcher.mock.calls[1]?.[1]?.body))).toEqual({
+      created_by: 'designer', expected_active_asset_id: 'asset visual',
+      expected_source_sha256: sourceHash,
+    });
+  });
+
+  test('decodes owner-scoped durable presentation reviews for resume', async () => {
+    const sourceHash = 'e'.repeat(64);
+    const fetcher = jest.fn<Promise<Response>, [RequestInfo | URL, RequestInit?]>(async () => ({
+      ok: true,
+      status: 200,
+      text: async () => JSON.stringify({ candidates: [{
+        candidate_id: 'candidate resume', image_run_id: 'run resume',
+        project_id: 'project visual', source_asset_id: 'asset visual',
+        source_sha256: sourceHash, destination: 'client',
+        capability: 'CLIENT_PRODUCT_PHOTO', preset: 'catalog_white',
+        framing: 'square', qa: { verdict: 'pass', accepted: true,
+          review_required: false, checks: [] }, status: 'reviewing',
+        studio_job_id: 'job resume', accepted_asset_id: null,
+        expires_at: '2026-07-13T12:00:00Z',
+        preview_url: '/studio/image-runs/run%20resume/presentation-candidates/candidate%20resume/image?owner=designer',
+      }] }),
+    } as unknown as Response));
+    const api = createTrustedApiClient({ baseUrl: 'https://facetta.test', fetcher });
+
+    const resumed = await api.listPreSpecPresentations('designer', 'project visual');
+    expect(resumed.error).toBeNull();
+    expect(resumed.data?.candidates[0]).toMatchObject({
+      candidate_id: 'candidate resume', source_sha256: sourceHash,
+      studio_job_id: 'job resume', status: 'reviewing',
+      preview_url: 'https://facetta.test/studio/image-runs/run%20resume/presentation-candidates/candidate%20resume/image?owner=designer',
+    });
+    expect(String(fetcher.mock.calls[0]?.[0])).toBe(
+      'https://facetta.test/studio/presentation-candidates?owner=designer&project_id=project+visual&status=reviewing',
+    );
   });
 });

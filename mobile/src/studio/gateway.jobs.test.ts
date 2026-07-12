@@ -348,6 +348,95 @@ test('marketing presentation decisions resolve independently and charge only sav
   assert.equal(jobs.transitions.at(-1)?.request.completed_outputs, 1);
 });
 
+test('pre-spec presentation jobs charge only saved derived outputs', async () => {
+  const jobs = tracking();
+  const sourceHash = 'c'.repeat(64);
+  const source = {
+    ...asset('candidate_1'), design_id: null, design_version: null,
+  };
+  let current: ProjectDetail = {
+    ...project(1), design_id: null, spec: null, active_design_version: null,
+    selected_candidate_asset_id: 'candidate_1', active_revision: source,
+    assets: [source], derived_assets: [], revisions: [{
+      revision: 1, asset: source, spec_version: null, spec_change: [],
+      ignored_fields: [], qa: null, routing: null, created_at: null,
+    }],
+  };
+  let counter = 0;
+  const gateway = createStudioGateway({
+    ...jobs.client,
+    createPreSpecPresentation: async (_projectId: string, request: any) => {
+      counter += 1;
+      return ok({
+        status: 'review_required' as const, project_id: 'project_1',
+        source_asset_id: 'candidate_1', source_sha256: sourceHash,
+        design_version: null, destination: request.destination,
+        client_format: request.client_format ?? 'product',
+        candidate: {
+          candidate_id: `candidate_present_${counter}`,
+          image_run_id: `run_present_${counter}`,
+          preview_url: `https://test/present_${counter}.png`,
+          studio_job_id: request.studio_job_id ?? null,
+          capability: request.destination === 'client'
+            ? 'CLIENT_PRODUCT_PHOTO' as const : 'MARKETING_IMAGE' as const,
+          preset: request.preset, framing: request.framing ?? 'square', qa: quality,
+        },
+      }, 201);
+    },
+    getProject: async () => ok(current),
+    acceptPreSpecPresentation: async (_runId: string, _candidateId: string) => {
+      const saved = {
+        ...asset('presentation_saved', 'CLIENT_PRODUCT_PHOTO'),
+        parent_asset_id: 'candidate_1', revision: null,
+        design_id: null, design_version: null,
+      };
+      current = {
+        ...current, assets: [...current.assets, saved], derived_assets: [saved],
+      };
+      return ok({
+        status: 'accepted' as const, project_id: 'project_1',
+        source_asset_id: 'candidate_1', source_sha256: sourceHash,
+        design_version: null, asset_id: saved.asset_id,
+        capability: 'CLIENT_PRODUCT_PHOTO' as const, project: current,
+      }, 201);
+    },
+    discardPreSpecPresentation: async (_runId: string, candidateId: string) => ok({
+      status: 'discarded' as const, project_id: 'project_1',
+      source_asset_id: 'candidate_1', source_sha256: sourceHash,
+      design_version: null, candidate_id: candidateId,
+    }),
+  } as any, { trackJobs: true });
+
+  await gateway.createPreSpecPresentation('project_1', {
+    created_by: 'designer_1', expected_active_asset_id: 'candidate_1',
+    destination: 'client', preset: 'catalog_white',
+  });
+  await gateway.createPreSpecPresentation('project_1', {
+    created_by: 'designer_1', expected_active_asset_id: 'candidate_1',
+    destination: 'marketing', preset: 'dark_editorial',
+  });
+  assert.equal(jobs.creates.length, 2);
+  assert.equal(jobs.transitions.filter((call) => (
+    call.request.status === 'reviewing'
+  )).length, 0);
+
+  const saved = await gateway.acceptPreSpecPresentation({
+    candidateId: 'candidate_present_1', createdBy: 'designer_1',
+  });
+  assert.equal(saved.error, null);
+  assert.equal(saved.data?.project.active_asset_id, 'candidate_1');
+  assert.equal(saved.data?.project.active_design_version, null);
+  assert.equal(jobs.transitions.some((call) => (
+    call.request.status === 'succeeded'
+  )), false);
+
+  const discarded = await gateway.discardPreSpecPresentation({
+    candidateId: 'candidate_present_2', createdBy: 'designer_1',
+  });
+  assert.equal(discarded.error, null);
+  assert.equal(jobs.cancellations.length, 0);
+});
+
 test('presentation decisions fail closed if the selected revision changes before review', async () => {
   const jobs = tracking();
   let acceptCalls = 0;

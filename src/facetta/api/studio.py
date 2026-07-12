@@ -42,6 +42,12 @@ from facetta.image_run_store import (
 )
 from facetta.media import sniff_media_type
 from facetta.project_backbone import is_primary_revision
+from facetta.presentation import (
+    PresentationScopeError,
+    ProductPhotoFraming,
+    ProductPhotoPreset,
+    compile_product_photo_brief,
+)
 from facetta.specagent import mask_from_markup
 from facetta.studio_history import (
     StudioHistoryError,
@@ -50,11 +56,23 @@ from facetta.studio_history import (
     fork_project_variation,
     restore_project_revision,
 )
+from facetta.studio_jobs import studio_job_action_definition
 from facetta.studio_visual_candidates import (
     StudioVisualCandidateUnavailable,
     get_studio_visual_candidate,
     remove_studio_visual_candidate,
     store_studio_visual_candidate,
+)
+from facetta.studio_presentation_candidates import (
+    StudioPresentationCandidateUnavailable,
+    StudioPresentationError,
+    accept_studio_presentation_candidate,
+    discard_studio_presentation_candidate,
+    fail_reserved_studio_presentation_job,
+    get_studio_presentation_candidate,
+    list_studio_presentation_candidates,
+    reserve_studio_presentation_job,
+    store_studio_presentation_candidate,
 )
 from facetta.trusted_revision import (
     WarningRevisionError,
@@ -159,6 +177,34 @@ class ReviewVisualPreviewRequest(BaseModel):
     expected_active_asset_id: Annotated[str, Field(min_length=1, max_length=32)]
 
 
+class CreatePreSpecPresentationRequest(BaseModel):
+    """One explicitly review-only Client or Marketing presentation preview."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    created_by: Annotated[str, Field(min_length=1, max_length=32)]
+    expected_active_asset_id: Annotated[str, Field(min_length=1, max_length=32)]
+    destination: Literal["client", "marketing"]
+    client_format: Literal["beauty", "product"] = "product"
+    preset: ProductPhotoPreset = "catalog_white"
+    framing: ProductPhotoFraming = "square"
+    custom_instruction: Annotated[str, Field(max_length=600)] = ""
+    variant: Annotated[int, Field(ge=0, le=100)] = 0
+    studio_job_id: Annotated[str, Field(min_length=1, max_length=32)]
+
+
+class ReviewPreSpecPresentationRequest(BaseModel):
+    """Client-supplied optimistic guards for one terminal decision."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    created_by: Annotated[str, Field(min_length=1, max_length=32)]
+    expected_active_asset_id: Annotated[str, Field(min_length=1, max_length=32)]
+    expected_source_sha256: Annotated[
+        str, Field(pattern=r"^[0-9a-f]{64}$")
+    ]
+
+
 VisualPreviewGenerator = Callable[
     [bytes, str, Literal["appearance", "marked_region"], bytes | None, int],
     ImageAgentResult,
@@ -225,6 +271,51 @@ VisualPreviewGeneratorDep = Annotated[
     VisualPreviewGenerator, Depends(get_studio_visual_preview_generator)]
 
 
+PreSpecPresentationGenerator = Callable[
+    [bytes, str, tuple[str, ...], str, int], ImageAgentResult,
+]
+
+
+def generate_pre_spec_presentation_preview(
+    source_image: bytes,
+    intent: str,
+    style_constraints: tuple[str, ...],
+    expected_output: str,
+    variant: int,
+) -> ImageAgentResult:
+    """Create a source-faithful presentation without claiming spec authority."""
+
+    plan = build_image_plan(
+        ImageOperation.REFERENCE_RENDER,
+        (
+            "PRE-SPEC PRESENTATION ONLY. Restage this exact visible jewelry "
+            "direction without redesigning it. Preserve the exact silhouette, "
+            "topology, component count, proportions, stone shapes, stone "
+            "placement, setting, and visible construction. " + intent
+        ),
+        source_image=source_image,
+        frozen=(
+            "exact visible jewelry geometry and silhouette",
+            "exact visible topology, component count, proportions, and placement",
+            "every visible stone shape, setting, and construction detail",
+        ),
+        style_constraints=style_constraints,
+        expected_output=expected_output,
+        variant=variant,
+    )
+    return JewelryImageAgent().run(plan, source_image=source_image)
+
+
+def get_pre_spec_presentation_generator() -> PreSpecPresentationGenerator:
+    return generate_pre_spec_presentation_preview
+
+
+PreSpecPresentationGeneratorDep = Annotated[
+    PreSpecPresentationGenerator,
+    Depends(get_pre_spec_presentation_generator),
+]
+
+
 _JOB_TRANSITIONS: dict[str, frozenset[str]] = {
     "queued": frozenset({"running", "canceled", "failed"}),
     "running": frozenset({"reviewing", "canceled", "failed"}),
@@ -235,8 +326,9 @@ _JOB_TRANSITIONS: dict[str, frozenset[str]] = {
 }
 
 _BILLING_POLICY = (
-    "Only requested outputs that complete successfully are charged. "
-    "Internal retries and failed review attempts are included."
+    "Only requested outputs accepted by a backend decision are charged. "
+    "Client completion reports, internal retries, and failed review attempts "
+    "are not charged."
 )
 
 
@@ -284,18 +376,32 @@ def _owned_job(db: Session, job_id: str, owner: str) -> StudioJobRecord:
 
 @router.post("/jobs", status_code=201)
 def create_studio_job(request: CreateStudioJobRequest, db: DbSession):
+    action = studio_job_action_definition(request.action_id)
+    if request.lane != action.lane:
+        raise HTTPException(
+            status_code=422,
+            detail=f"lane does not match server definition for {request.action_id}",
+        )
+    if request.credits_per_output != action.credits_per_output:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "credits_per_output does not match server definition for "
+                f"{request.action_id}"
+            ),
+        )
     now = utcnow()
     job = StudioJobRecord(
         id=new_id("job"),
         owner=request.owner,
         action_id=request.action_id,
-        lane=request.lane,
+        lane=action.lane,
         status="queued",
         progress=0,
         active_design_id=request.active_design_id,
         source_revision_id=request.source_revision_id,
         requested_outputs=request.requested_outputs,
-        credits_per_output=request.credits_per_output,
+        credits_per_output=action.credits_per_output,
         completed_outputs=0,
         charged_outputs=0,
         created_at=now,
@@ -367,7 +473,9 @@ def transition_studio_job(
             )
         job.progress = 1
         job.completed_outputs = completed
-        job.charged_outputs = completed
+        # A public lifecycle report is not an acceptance or billing authority.
+        # Only record_accepted_studio_job_outputs may create a charge.
+        job.charged_outputs = 0
         job.error_code = None
     else:
         if completed not in (None, 0):
@@ -755,6 +863,374 @@ def discard_visual_preview(
         "status": "discarded",
         "project_id": discarded.project_root_id,
         "source_asset_id": discarded.source_asset_id,
+        "candidate_id": candidate_id,
+    }
+
+
+def _pre_spec_presentation_error(
+    exc: StudioPresentationError,
+) -> JSONResponse:
+    return JSONResponse(status_code=exc.status_code, content={
+        "code": exc.code,
+        "category": (
+            "stale_version" if exc.code.startswith("stale_")
+            else "validation" if exc.status_code == 422
+            else "conflict"
+        ),
+        "detail": exc.detail,
+    })
+
+
+@router.post(
+    "/projects/{project_id}/presentation-previews",
+    status_code=201,
+)
+def create_pre_spec_presentation_preview(
+    project_id: str,
+    request: CreatePreSpecPresentationRequest,
+    db: DbSession,
+    generate: PreSpecPresentationGeneratorDep,
+):
+    """Create a temporary Client or Marketing image from one exact visual.
+
+    This route is intentionally separate from spec-aligned product photography.
+    Even a QA-passing output remains temporary until the designer saves it.
+    """
+
+    try:
+        project, source = _selected_pre_spec_visual(
+            db,
+            project_root_id=project_id,
+            expected_active_asset_id=request.expected_active_asset_id,
+            created_by=request.created_by,
+        )
+        brief = compile_product_photo_brief(
+            request.preset,
+            request.framing,
+            request.custom_instruction,
+        )
+    except StudioHistoryError as exc:
+        return _error(exc)
+    except PresentationScopeError as exc:
+        return JSONResponse(status_code=422, content={
+            "code": "presentation_scope_violation",
+            "category": "validation",
+            "detail": str(exc),
+        })
+
+    client_beauty = (
+        request.destination == "client" and request.client_format == "beauty"
+    )
+    intent = brief.intent
+    if client_beauty:
+        intent = (
+            "Create one polished client-review beauty image with restrained, "
+            "high-jewelry art direction. " + intent
+        )
+    expected_output = (
+        "one polished client-review image of the exact selected visual; "
+        "presentation changed, jewelry unchanged, no manufacturing authority"
+        if request.destination == "client" else
+        "one polished marketing image of the exact selected visual; "
+        "presentation changed, jewelry unchanged, no manufacturing authority"
+    )
+    try:
+        reserve_studio_presentation_job(
+            db,
+            job_id=request.studio_job_id,
+            owner=request.created_by,
+            project_root_id=project.root_id,
+            source_asset_id=source.id,
+        )
+    except StudioPresentationError as exc:
+        return _pre_spec_presentation_error(exc)
+    try:
+        result = generate(
+            bytes(source.image),
+            intent,
+            brief.style_constraints,
+            expected_output,
+            request.variant,
+        )
+    except ImageAgentError as exc:
+        run_id = (
+            persist_image_agent_failure(
+                db, exc.plan, exc,
+                project_root_id=project.root_id,
+                source_asset_id=source.id,
+                created_by=request.created_by,
+            ) if exc.plan is not None else None
+        )
+        fail_reserved_studio_presentation_job(
+            db,
+            job_id=request.studio_job_id,
+            owner=request.created_by,
+            error_code=exc.code,
+        )
+        return image_agent_error_response(exc, image_run_id=run_id)
+    except Exception:
+        fail_reserved_studio_presentation_job(
+            db,
+            job_id=request.studio_job_id,
+            owner=request.created_by,
+            error_code="unexpected_generation_failure",
+        )
+        raise
+
+    source_hash = hashlib.sha256(bytes(source.image)).hexdigest()
+    if (result.plan.operation is not ImageOperation.REFERENCE_RENDER
+            or result.plan.source_hash != source_hash
+            or result.plan.source_spec_visual_hash is not None):
+        run_id = persist_image_agent_result(
+            db,
+            result,
+            project_root_id=project.root_id,
+            source_asset_id=source.id,
+            created_by=request.created_by,
+            status_override="failed",
+        )
+        fail_reserved_studio_presentation_job(
+            db,
+            job_id=request.studio_job_id,
+            owner=request.created_by,
+            error_code="presentation_lineage_incomplete",
+        )
+        return JSONResponse(status_code=500, content={
+            "code": "presentation_lineage_incomplete",
+            "category": "internal",
+            "detail": "the preview is not bound to the exact pre-spec source",
+            "image_run_id": run_id,
+        })
+    if not result.accepted and not result.review_required:
+        run_id = persist_image_agent_result(
+            db, result,
+            project_root_id=project.root_id,
+            source_asset_id=source.id,
+            created_by=request.created_by,
+        )
+        fail_reserved_studio_presentation_job(
+            db,
+            job_id=request.studio_job_id,
+            owner=request.created_by,
+            error_code="presentation_failed_quality",
+        )
+        return JSONResponse(status_code=422, content={
+            "code": "presentation_failed_quality",
+            "category": "quality",
+            "detail": "the result did not preserve the selected design closely enough",
+            "image_run_id": run_id,
+            "qa": _visual_preview_qa(result),
+        })
+
+    run_id = persist_image_agent_result(
+        db, result,
+        project_root_id=project.root_id,
+        source_asset_id=source.id,
+        created_by=request.created_by,
+        status_override=(
+            "preview_ready" if result.accepted else "review_required"
+        ),
+    )
+    capability = (
+        "CLIENT_BEAUTY_RENDER" if client_beauty else
+        "CLIENT_PRODUCT_PHOTO" if request.destination == "client" else
+        "MARKETING_IMAGE"
+    )
+    qa = _visual_preview_qa(result)
+    try:
+        candidate = store_studio_presentation_candidate(
+            db,
+            run_id=run_id,
+            project_root_id=project.root_id,
+            source_asset_id=source.id,
+            source_hash=source_hash,
+            image_bytes=result.image_bytes,
+            media_type=sniff_media_type(result.image_bytes),
+            destination=request.destination,
+            capability=capability,
+            requested_change=intent,
+            preset=request.preset,
+            framing=request.framing,
+            qa=qa,
+            created_by=request.created_by,
+            studio_job_id=request.studio_job_id,
+        )
+    except StudioPresentationError as exc:
+        fail_reserved_studio_presentation_job(
+            db,
+            job_id=request.studio_job_id,
+            owner=request.created_by,
+            error_code=exc.code,
+        )
+        return _pre_spec_presentation_error(exc)
+    return {
+        "status": "review_required",
+        "project_id": project.root_id,
+        "source_asset_id": source.id,
+        "source_sha256": source_hash,
+        "design_version": None,
+        "destination": request.destination,
+        "client_format": request.client_format,
+        "candidate": {
+            "candidate_id": candidate.candidate_id,
+            "image_run_id": run_id,
+            "preview_url": (
+                f"/studio/image-runs/{run_id}/presentation-candidates/"
+                f"{candidate.candidate_id}/image?owner={request.created_by}"
+            ),
+            "studio_job_id": candidate.studio_job_id,
+            "capability": capability,
+            "preset": request.preset,
+            "framing": request.framing,
+            "qa": qa,
+        },
+    }
+
+
+@router.get("/presentation-candidates")
+def list_pre_spec_presentation_candidates(
+    db: DbSession,
+    owner: Annotated[str, Query(min_length=1, max_length=32)],
+    project_id: Annotated[str, Query(min_length=1, max_length=32)] | None = None,
+    status: Literal[
+        "reviewing", "accepted", "discarded", "expired",
+    ] | None = "reviewing",
+):
+    """Resume durable presentation reviews after refresh or process restart."""
+
+    candidates = list_studio_presentation_candidates(
+        db,
+        owner=owner,
+        project_root_id=project_id,
+        status=status,
+    )
+    return {"candidates": [{
+        "candidate_id": item.candidate_id,
+        "image_run_id": item.run_id,
+        "project_id": item.project_root_id,
+        "source_asset_id": item.source_asset_id,
+        "source_sha256": item.source_hash,
+        "destination": item.destination,
+        "capability": item.capability,
+        "preset": item.preset,
+        "framing": item.framing,
+        "qa": item.qa,
+        "status": item.status,
+        "studio_job_id": item.studio_job_id,
+        "accepted_asset_id": item.accepted_asset_id,
+        "expires_at": item.expires_at.isoformat(),
+        "preview_url": (
+            f"/studio/image-runs/{item.run_id}/presentation-candidates/"
+            f"{item.candidate_id}/image?owner={owner}"
+        ),
+    } for item in candidates]}
+
+
+@router.get(
+    "/image-runs/{run_id}/presentation-candidates/{candidate_id}/image"
+)
+def get_pre_spec_presentation_image(
+    run_id: str,
+    candidate_id: str,
+    db: DbSession,
+    owner: Annotated[str, Query(min_length=1, max_length=32)],
+):
+    try:
+        candidate = get_studio_presentation_candidate(
+            db, run_id, candidate_id, owner=owner)
+    except StudioPresentationCandidateUnavailable as exc:
+        return JSONResponse(status_code=exc.status_code, content={
+            "code": "presentation_candidate_unavailable",
+            "category": "conflict",
+            "detail": str(exc),
+        })
+    if candidate.status != "reviewing":
+        return JSONResponse(status_code=410, content={
+            "code": "presentation_candidate_unavailable",
+            "category": "conflict",
+            "detail": f"the presentation preview was already {candidate.status}",
+        })
+    return Response(
+        content=candidate.image_bytes,
+        media_type=candidate.media_type,
+        headers={"Cache-Control": "private, no-store"},
+    )
+
+
+@router.post(
+    "/image-runs/{run_id}/presentation-candidates/{candidate_id}/accept",
+    status_code=201,
+)
+def accept_pre_spec_presentation(
+    run_id: str,
+    candidate_id: str,
+    request: ReviewPreSpecPresentationRequest,
+    db: DbSession,
+):
+    try:
+        candidate = get_studio_presentation_candidate(
+            db, run_id, candidate_id, owner=request.created_by)
+        accepted = accept_studio_presentation_candidate(
+            db, candidate,
+            expected_active_asset_id=request.expected_active_asset_id,
+            expected_source_sha256=request.expected_source_sha256,
+            created_by=request.created_by,
+        )
+    except StudioPresentationCandidateUnavailable as exc:
+        return JSONResponse(status_code=exc.status_code, content={
+            "code": "presentation_candidate_unavailable",
+            "category": "conflict",
+            "detail": str(exc),
+        })
+    except StudioPresentationError as exc:
+        return _pre_spec_presentation_error(exc)
+    project = db.get(Project, accepted.project_root_id)
+    if project is None:  # pragma: no cover - transaction invariant
+        raise HTTPException(status_code=500, detail="saved presentation unavailable")
+    return {
+        "status": "accepted",
+        "project_id": accepted.project_root_id,
+        "source_asset_id": accepted.source_asset_id,
+        "source_sha256": accepted.source_hash,
+        "design_version": None,
+        "asset_id": accepted.asset_id,
+        "capability": accepted.capability,
+        "project": project_detail(db, project),
+    }
+
+
+@router.post(
+    "/image-runs/{run_id}/presentation-candidates/{candidate_id}/discard"
+)
+def discard_pre_spec_presentation(
+    run_id: str,
+    candidate_id: str,
+    request: ReviewPreSpecPresentationRequest,
+    db: DbSession,
+):
+    try:
+        candidate = get_studio_presentation_candidate(
+            db, run_id, candidate_id, owner=request.created_by)
+        discard_studio_presentation_candidate(
+            db, candidate,
+            expected_active_asset_id=request.expected_active_asset_id,
+            expected_source_sha256=request.expected_source_sha256,
+            created_by=request.created_by,
+        )
+    except StudioPresentationCandidateUnavailable as exc:
+        return JSONResponse(status_code=exc.status_code, content={
+            "code": "presentation_candidate_unavailable",
+            "category": "conflict",
+            "detail": str(exc),
+        })
+    except StudioPresentationError as exc:
+        return _pre_spec_presentation_error(exc)
+    return {
+        "status": "discarded",
+        "project_id": candidate.project_root_id,
+        "source_asset_id": candidate.source_asset_id,
+        "source_sha256": candidate.source_hash,
+        "design_version": None,
         "candidate_id": candidate_id,
     }
 
