@@ -2,6 +2,7 @@ export type StudioActionId =
   | 'create'
   | 'vary'
   | 'refine'
+  | 'confirm'
   | 'views'
   | 'present'
   | 'more'
@@ -42,6 +43,8 @@ export interface StudioActionContext {
   activeDesignId: string | null;
   activeRevisionId: string | null;
   hasExactSpecification: boolean;
+  /** A selected visual that has not yet been paired with confirmed design facts. */
+  hasSelectedPreSpecVisual: boolean;
   factoryEnabled: boolean;
   factoryEligible: boolean;
 }

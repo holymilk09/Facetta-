@@ -68,6 +68,69 @@ export interface StudioVisualLineage {
   sourceAssetId: string;
 }
 
+export type StudioDesignFactAuthority = 'suggested' | 'estimated' | 'designer_supplied';
+
+export interface StudioProjectedFact {
+  key: string;
+  label: string;
+  value: string;
+  authority: StudioDesignFactAuthority;
+}
+
+export interface StudioProjectedFactGroup {
+  key: 'design' | 'center_stone' | 'setting' | 'metal' | 'ring_fit' | 'accents';
+  label: string;
+  facts: readonly StudioProjectedFact[];
+}
+
+export interface StudioDesignConfirmationReview {
+  reviewId: string;
+  designerAcknowledged: boolean;
+  factGroups: readonly StudioProjectedFactGroup[];
+  unresolvedQuestions: readonly string[];
+  sourceReview: {
+    eligible: boolean;
+    state: 'not_ready' | 'ready' | 'complete';
+    reason: string;
+  };
+}
+
+export interface StudioDesignConfirmationAudit {
+  auditId: string;
+  status: 'pass' | 'fail';
+  issues: readonly string[];
+  review: StudioDesignConfirmationReview;
+}
+
+export interface StudioDesignConfirmationReceipt {
+  confirmationId: string;
+  auditId: string;
+  project: ProjectDetail;
+}
+
+/**
+ * Typed boundary for the future confirmation DTO. A transport may be mocked
+ * during Studio integration without weakening the visual lineage contract.
+ */
+export interface StudioDesignConfirmationGateway {
+  loadDesignConfirmation(request: StudioVisualLineage & {
+    createdBy: string;
+    notes?: string;
+  }): Promise<StudioGatewayResult<StudioDesignConfirmationReview>>;
+  auditDesignConfirmation(
+    review: StudioDesignConfirmationReview,
+  ): Promise<StudioGatewayResult<StudioDesignConfirmationAudit>>;
+  saveDesignConfirmation(
+    audit: StudioDesignConfirmationAudit,
+  ): Promise<StudioGatewayResult<StudioDesignConfirmationReceipt>>;
+}
+
+export function createStudioDesignConfirmationGateway(
+  transport: StudioDesignConfirmationGateway,
+): StudioDesignConfirmationGateway {
+  return transport;
+}
+
 export type StudioVisualPreviewRequest = StudioVisualLineage & {
   createdBy: string;
   instruction: string;
@@ -204,6 +267,8 @@ type GatewayTrustedClient = Pick<TrustedApiClient,
   | 'createPreSpecPresentation'
   | 'acceptPreSpecPresentation'
   | 'discardPreSpecPresentation'
+  | 'confirmCreativeCandidateDesign'
+  | 'promoteCreativeCandidate'
 >;
 
 export interface StudioGatewayOptions {
@@ -296,6 +361,7 @@ export function createStudioGateway(
   const factoryEnabled = options.factoryEnabled ?? false;
   const trackJobs = options.trackJobs ?? false;
   const now = options.now ?? (() => new Date());
+  let confirmationReviewSequence = 0;
   const creativeJobs = new Map<string, ActiveStudioJob & { completedOutputs: number }>();
   const catalogCandidates = new Map<string, {
     trusted: CatalogPreviewCandidate;
@@ -327,6 +393,23 @@ export function createStudioGateway(
     capability: 'CLIENT_BEAUTY_RENDER' | 'CLIENT_PRODUCT_PHOTO' | 'MARKETING_IMAGE';
     group: PresentationGroup;
   }>();
+  const designConfirmations = new Map<string, {
+    lineage: StudioVisualLineage;
+    createdBy: string;
+    candidateSha256: string;
+    specVisualHash: string;
+    confirmationToken: string;
+    expiresAt: string;
+    originalValues: Map<string, string>;
+  }>();
+  const pruneExpiredConfirmations = (): void => {
+    const timestamp = now().getTime();
+    designConfirmations.forEach((confirmation, reviewId) => {
+      if (Date.parse(confirmation.expiresAt) <= timestamp) {
+        designConfirmations.delete(reviewId);
+      }
+    });
+  };
   const visualCandidates = new Map<string, {
     runId: string;
     preview: StudioVisualPreview;
@@ -555,6 +638,127 @@ export function createStudioGateway(
   };
 
   return {
+    async loadDesignConfirmation(request: StudioVisualLineage & {
+      createdBy: string; notes?: string;
+    }): Promise<StudioGatewayResult<StudioDesignConfirmationReview>> {
+      pruneExpiredConfirmations();
+      const result = await client.confirmCreativeCandidateDesign(
+        request.projectId, request.sourceAssetId,
+        { created_by: request.createdBy, notes: request.notes, run_independent_audit: true },
+      );
+      if (result.error !== null) return { data: null, error: mapError(result.error), status: result.status };
+      if (result.data.candidate_id !== request.sourceAssetId) return gatewayError(
+        'CONFIRM_SOURCE_MISMATCH', 'The reviewed details did not match the selected visual.',
+        'conflict', 409,
+      );
+      if (Date.parse(result.data.expires_at) <= now().getTime()) return gatewayError(
+        'CONFIRM_REVIEW_EXPIRED', 'Reload the selected visual before reviewing these details.',
+        'conflict', 409,
+      );
+      confirmationReviewSequence += 1;
+      const reviewId = [
+        request.projectId, request.sourceAssetId,
+        result.data.candidate_sha256, result.data.spec_visual_hash,
+        confirmationReviewSequence,
+      ].join(':');
+      const factGroups = result.data.fact_groups.map((group) => ({
+        key: group.key, label: group.label,
+        facts: group.facts.map((fact) => ({ ...fact })),
+      }));
+      designConfirmations.set(reviewId, {
+        lineage: request,
+        createdBy: request.createdBy,
+        candidateSha256: result.data.candidate_sha256,
+        specVisualHash: result.data.spec_visual_hash,
+        confirmationToken: result.data.confirmation_token,
+        expiresAt: result.data.expires_at,
+        originalValues: new Map(factGroups.flatMap((group) => group.facts.map(
+          (fact) => [`${group.key}.${fact.key}`, fact.value] as const,
+        ))),
+      });
+      return {
+        data: {
+          reviewId, factGroups,
+          designerAcknowledged: false,
+          unresolvedQuestions: result.data.unresolved_source_questions,
+          sourceReview: result.data.audit_eligibility,
+        },
+        error: null,
+        status: result.status,
+      };
+    },
+
+    async auditDesignConfirmation(
+      review: StudioDesignConfirmationReview,
+    ): Promise<StudioGatewayResult<StudioDesignConfirmationAudit>> {
+      pruneExpiredConfirmations();
+      const stored = designConfirmations.get(review.reviewId);
+      if (!stored) return gatewayError(
+        'CONFIRM_REVIEW_EXPIRED', 'Reload the selected visual before saving these details.',
+        'conflict', 409,
+      );
+      const changedValues = review.factGroups.flatMap((group) => group.facts.filter(
+        (fact) => stored.originalValues.get(`${group.key}.${fact.key}`) !== fact.value,
+      ));
+      const issues = [
+        ...(review.designerAcknowledged ? [] : [
+          'Acknowledge that these are image-derived suggestions before creating Design v1.',
+        ]),
+        ...(review.sourceReview.eligible && review.sourceReview.state === 'complete'
+          ? [] : [review.sourceReview.reason]),
+        ...(review.unresolvedQuestions.length === 0 ? [] : [
+          'Resolve every source question before saving confirmed design details.',
+        ]),
+        ...(changedValues.length === 0 ? [] : [
+          'Changed measurements need a new source review before they can be saved.',
+        ]),
+      ];
+      return {
+        data: {
+          auditId: review.reviewId,
+          status: issues.length === 0 ? 'pass' : 'fail',
+          issues,
+          review,
+        },
+        error: null,
+        status: 200,
+      };
+    },
+
+    async saveDesignConfirmation(
+      audit: StudioDesignConfirmationAudit,
+    ): Promise<StudioGatewayResult<StudioDesignConfirmationReceipt>> {
+      if (audit.status !== 'pass'
+        || !audit.review.designerAcknowledged
+        || !audit.review.sourceReview.eligible
+        || audit.review.sourceReview.state !== 'complete'
+        || audit.review.unresolvedQuestions.length > 0) return gatewayError(
+        'CONFIRM_AUDIT_REQUIRED', 'Review the remaining design questions before saving.',
+        'validation', 422,
+      );
+      pruneExpiredConfirmations();
+      const stored = designConfirmations.get(audit.auditId);
+      if (!stored) return gatewayError(
+        'CONFIRM_REVIEW_EXPIRED', 'Reload the selected visual before saving these details.',
+        'conflict', 409,
+      );
+      const promoted = await client.promoteCreativeCandidate(
+        stored.lineage.projectId,
+        stored.lineage.sourceAssetId,
+        {
+          created_by: stored.createdBy,
+          confirmation_token: stored.confirmationToken,
+        },
+      );
+      if (promoted.error !== null) return { data: null, error: mapError(promoted.error), status: promoted.status };
+      designConfirmations.delete(audit.auditId);
+      return {
+        data: { confirmationId: audit.auditId, auditId: audit.auditId, project: promoted.data },
+        error: null,
+        status: promoted.status,
+      };
+    },
+
     createFromBrief(request: CreateProjectFromBriefRequest): Promise<StudioGatewayResult<ProjectCreationResult>> {
       return client.createProjectFromBrief(request).then(mapResult);
     },

@@ -11,6 +11,7 @@ const emptyContext = {
   activeDesignId: null,
   activeRevisionId: null,
   hasExactSpecification: false,
+  hasSelectedPreSpecVisual: false,
   factoryEnabled: false,
   factoryEligible: false,
 };
@@ -58,11 +59,29 @@ test('pre-spec directions expose Refine and Present while keeping Views spec-bac
     ...emptyContext,
     activeDesignId: 'project_1',
     activeRevisionId: 'creative_1',
+    hasSelectedPreSpecVisual: true,
   };
   assert.deepEqual(
     getStudioRailActions(selectedCreativeDirection).map((action) => action.id),
-    ['create', 'vary', 'refine', 'present'],
+    ['create', 'vary', 'refine', 'confirm', 'present'],
   );
+});
+
+test('Confirm appears only for the selected pre-spec visual and never exposes Factory', () => {
+  const preSpec = {
+    ...emptyContext,
+    activeDesignId: 'project_1',
+    activeRevisionId: 'asset_1',
+    hasSelectedPreSpecVisual: true,
+  };
+  assert.equal(getStudioRailActions(preSpec).some((action) => action.id === 'confirm'), true);
+  assert.equal(getVisibleStudioActions(preSpec, 'more').some((action) => action.id === 'factory'), false);
+  assert.equal(getStudioRailActions({
+    ...preSpec, hasSelectedPreSpecVisual: false,
+  }).some((action) => action.id === 'confirm'), false);
+  assert.equal(getStudioRailActions({
+    ...preSpec, hasExactSpecification: true,
+  }).some((action) => action.id === 'confirm'), false);
 });
 
 test('the current branch action is transparent and does not charge for generation', () => {

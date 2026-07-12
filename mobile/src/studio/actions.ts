@@ -67,6 +67,30 @@ export const STUDIO_ACTIONS: readonly StudioActionDefinition[] = [
     isAvailable: activeDesign,
   },
   {
+    id: 'confirm',
+    label: 'Confirm design details',
+    shortLabel: 'Confirm',
+    description: 'Record the ring identity and the dimensions you know, while keeping estimates clearly separate.',
+    lane: 'instant',
+    referenceRoles: ['master_geometry', 'construction_detail'],
+    fields: [
+      { id: 'design_name', label: 'Design name', kind: 'text', required: true },
+      { id: 'ring_size', label: 'Ring size', kind: 'text', required: false },
+      { id: 'top_width', label: 'Top width', kind: 'text', required: false },
+      { id: 'band_width', label: 'Band width', kind: 'text', required: false },
+      { id: 'stone_dimensions', label: 'Stone dimensions', kind: 'text', required: false },
+    ],
+    outputType: 'none',
+    creditEstimate: 0,
+    authority: 'design_record',
+    requiresActiveDesign: true,
+    createsJob: false,
+    placement: 'primary',
+    isAvailable: (context) => activeDesign(context)
+      && context.hasSelectedPreSpecVisual
+      && !context.hasExactSpecification,
+  },
+  {
     id: 'views',
     label: 'Generate views',
     shortLabel: 'Views',

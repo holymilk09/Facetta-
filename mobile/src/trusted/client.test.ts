@@ -504,8 +504,8 @@ describe('trusted API decoders', () => {
       source_region: { x: 0.2, y: 0.1, width: 0.6, height: 0.5 },
     });
     await api.promoteCreativeCandidate('project one', 'candidate one', {
-      confirmed_spec: { jewelry_type: 'ring', template: 'solitaire_prong' },
       created_by: 'usr_designer',
+      confirmation_token: 'confirmation-token-1234567890123456',
     });
 
     expect(fetcher).toHaveBeenCalledTimes(2);
@@ -521,8 +521,8 @@ describe('trusted API decoders', () => {
     expect(fetcher.mock.calls[1]?.[0]).toBe(
       'https://facetta.test/projects/project%20one/creative-candidates/candidate%20one/promote');
     expect(JSON.parse(String(fetcher.mock.calls[1]?.[1]?.body))).toEqual({
-      spec: { jewelry_type: 'ring', template: 'solitaire_prong' },
       created_by: 'usr_designer',
+      confirmation_token: 'confirmation-token-1234567890123456',
     });
   });
 

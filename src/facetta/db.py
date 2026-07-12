@@ -436,6 +436,42 @@ class Project(Base):
     )
 
 
+class StudioConfirmationDraft(Base):
+    """One-time server-held design facts for a selected Studio candidate."""
+
+    __tablename__ = "studio_confirmation_drafts"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    token_sha256: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    owner: Mapped[str] = mapped_column(String(32), index=True)
+    project_root_id: Mapped[str] = mapped_column(
+        ForeignKey("projects.root_id"), index=True)
+    candidate_asset_id: Mapped[str] = mapped_column(
+        ForeignKey("image_assets.id"), index=True)
+    candidate_sha256: Mapped[str] = mapped_column(String(64))
+    spec_visual_hash: Mapped[str] = mapped_column(String(16))
+    spec: Mapped[dict] = mapped_column(SpecJSON)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    consumed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)
+
+    __table_args__ = (
+        CheckConstraint(
+            "length(token_sha256) = 64 AND length(candidate_sha256) = 64",
+            name="ck_studio_confirmation_draft_sha256",
+        ),
+        CheckConstraint(
+            "length(spec_visual_hash) = 16",
+            name="ck_studio_confirmation_draft_spec_hash",
+        ),
+        CheckConstraint(
+            "expires_at > created_at",
+            name="ck_studio_confirmation_draft_expiry",
+        ),
+    )
+
+
 class ProjectRevisionRecord(Base):
     """Immutable designer-intent evidence for one exact primary visual asset.
 

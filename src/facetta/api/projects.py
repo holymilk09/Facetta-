@@ -10,15 +10,16 @@ from __future__ import annotations
 import base64
 import binascii
 import hashlib
+import secrets
 from collections import Counter
 from collections.abc import Callable
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, ConfigDict, Field, model_validator
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
 from facetta.chain_geometry import chain_factory_blockers
@@ -56,7 +57,9 @@ from facetta.db import (
     ImageAsset,
     ImageRun,
     Project,
+    StudioConfirmationDraft,
     get_db,
+    new_id,
     utcnow,
 )
 from facetta.disclaimer import is_stampable, stamp_b64
@@ -119,6 +122,10 @@ from facetta.preliminary_sheet import sheet_readiness_blockers
 from facetta.render import RenderUnavailable
 from facetta.spec import Spec
 from facetta.studio_history import ensure_project_family
+from facetta.studio_confirm import (
+    StudioConfirmDesignResponse,
+    build_studio_confirm_design_response,
+)
 from facetta.source_component_coverage import (
     source_component_factory_blockers,
 )
@@ -209,6 +216,7 @@ class AssetSummary(BaseModel):
     drift: float | None
     pinned: bool
     media_type: str
+    sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
     image_url: str
     created_by: str
     created_at: datetime
@@ -389,8 +397,8 @@ class ProjectFromPromptRequest(BaseModel):
 class CreativeCandidatePromoteRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    spec: Spec
     created_by: Annotated[str, Field(min_length=1, max_length=32)]
+    confirmation_token: Annotated[str, Field(min_length=32, max_length=256)]
 
 
 class CreativeCandidateSelectRequest(BaseModel):
@@ -812,6 +820,7 @@ def _asset_summary(
         "drift": asset.drift,
         "pinned": asset.pinned_at is not None,
         "media_type": asset.media_type,
+        "sha256": hashlib.sha256(bytes(asset.image)).hexdigest(),
         "image_url": f"/assets/{asset.id}/image",
         "created_by": asset.created_by,
         "created_at": asset.created_at,
@@ -1155,10 +1164,32 @@ def select_project_creative_candidate(
     db: DbSession,
 ):
     """Persist the designer's chosen visual without inventing a specification."""
-    project, candidate = _owned_creative_candidate(
-        db, project_id=project_id, candidate_id=candidate_id,
-        actor=request.created_by,
+    project = db.scalar(
+        select(Project).where(Project.root_id == project_id).with_for_update()
     )
+    candidate = db.scalar(
+        select(ImageAsset).where(ImageAsset.id == candidate_id).with_for_update()
+    )
+    if project is None or candidate is None:
+        raise HTTPException(status_code=404, detail="creative candidate not found")
+    if project.owner != request.created_by:
+        raise HTTPException(
+            status_code=403,
+            detail="only the project owner may review a creative candidate",
+        )
+    root = candidate if candidate.id == project_id else db.get(ImageAsset, project_id)
+    if root is None or root.design_id is not None:
+        raise HTTPException(
+            status_code=409,
+            detail="candidate selection is available only before design confirmation",
+        )
+    if (candidate.root_id != project.root_id
+            or candidate.capability != "CREATIVE_RENDER"
+            or candidate.design_version is not None):
+        raise HTTPException(
+            status_code=409,
+            detail="the selected asset is not a pre-spec creative candidate",
+        )
     project.selected_candidate_asset_id = candidate.id
     project.updated_at = utcnow()
     db.commit()
@@ -1495,6 +1526,69 @@ def draft_project_creative_candidate(
 
 
 @router.post(
+    "/{project_id}/creative-candidates/{candidate_id}/confirm-design",
+    response_model=StudioConfirmDesignResponse,
+    response_model_exclude_none=True,
+)
+def confirm_project_creative_candidate_design(
+    project_id: str,
+    candidate_id: str,
+    request: CreativeCandidateDraftRequest,
+    db: DbSession,
+):
+    """Read one candidate into designer facts without persisting a design."""
+    _project, candidate = _owned_creative_candidate(
+        db,
+        project_id=project_id,
+        candidate_id=candidate_id,
+        actor=request.created_by,
+    )
+    candidate_bytes = bytes(candidate.image)
+    draft = from_photo(PhotoRequest(
+        image_base64=base64.b64encode(candidate_bytes).decode("ascii"),
+        media_type=candidate.media_type,
+        notes=request.notes,
+        created_by=request.created_by,
+        run_independent_audit=request.run_independent_audit,
+    ))
+    if isinstance(draft, JSONResponse):
+        return draft
+    if not isinstance(draft, Spec):
+        raise RuntimeError("candidate design reader returned an invalid contract")
+    token = secrets.token_urlsafe(32)
+    now = utcnow()
+    expires_at = now + timedelta(minutes=30)
+    candidate_sha256 = hashlib.sha256(candidate_bytes).hexdigest()
+    visual_hash = spec_visual_hash(draft)
+    # Expired unused drafts have no provenance value. Consumed drafts remain
+    # durable evidence and are never removed by this opportunistic cleanup.
+    db.execute(delete(StudioConfirmationDraft).where(
+        StudioConfirmationDraft.expires_at <= now,
+        StudioConfirmationDraft.consumed_at.is_(None),
+    ))
+    db.add(StudioConfirmationDraft(
+        id=new_id("scd"),
+        token_sha256=hashlib.sha256(token.encode("utf-8")).hexdigest(),
+        owner=_project.owner,
+        project_root_id=_project.root_id,
+        candidate_asset_id=candidate.id,
+        candidate_sha256=candidate_sha256,
+        spec_visual_hash=visual_hash,
+        spec=draft.model_dump(mode="json"),
+        created_at=now,
+        expires_at=expires_at,
+    ))
+    db.commit()
+    return build_studio_confirm_design_response(
+        confirmation_token=token,
+        expires_at=expires_at,
+        candidate_id=candidate.id,
+        candidate_sha256=candidate_sha256,
+        spec=draft,
+    )
+
+
+@router.post(
     "/{project_id}/creative-candidates/{candidate_id}/"
     "dimensioned-profile/confirm",
     response_model=CreativeCandidateProfileConfirmResponse,
@@ -1701,23 +1795,13 @@ def promote_project_creative_candidate(
             "error_category": "authorization_failure",
             "detail": "only the project owner may promote a creative candidate",
         })
-    spec, error = _validate_confirmed_import_spec(request.spec)
-    if error:
-        return error
-    selected_candidate = db.get(ImageAsset, candidate_id)
-    coverage_error = _confirmed_import_coverage_error(
-        spec,
-        bytes(selected_candidate.image) if selected_candidate is not None else None,
-    )
-    if coverage_error is not None:
-        return coverage_error
     try:
         promote_creative_candidate(
             db,
             root_id=project_id,
             candidate_asset_id=candidate_id,
-            spec=spec,
             created_by=request.created_by,
+            confirmation_token=request.confirmation_token,
         )
     except ValueError as exc:
         return JSONResponse(status_code=409, content={

@@ -9,10 +9,11 @@ fails.
 
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Callable, Literal
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.orm import Session
 
 from facetta.db import (
@@ -22,11 +23,16 @@ from facetta.db import (
     ImageRun,
     ImageRunReview,
     Project,
+    ProjectRevisionRecord,
+    StudioConfirmationDraft,
     new_id,
     utcnow,
 )
+from facetta.image_identity import spec_visual_hash
 from facetta.media import sniff_media_type
 from facetta.spec import Spec
+from facetta.source_component_coverage import source_component_factory_blockers
+from facetta.source_component_resolution import valid_source_component_spec_paths
 
 if TYPE_CHECKING:
     from facetta.image_agent import ImageAgentResult
@@ -84,6 +90,26 @@ class DesignAlreadyLinked(ValueError):
         self.root_id = root_id
         super().__init__(
             f"design '{design_id}' already belongs to project '{root_id}'")
+
+
+def claim_creative_project_design(
+    db: Session,
+    *,
+    root_id: str,
+    design_id: str,
+) -> bool:
+    """Atomically claim one pre-spec root for exactly one confirmed design."""
+    claim = db.execute(
+        update(ImageAsset)
+        .where(
+            ImageAsset.id == root_id,
+            ImageAsset.root_id == root_id,
+            ImageAsset.design_id.is_(None),
+        )
+        .values(design_id=design_id)
+        .execution_options(synchronize_session=False)
+    )
+    return claim.rowcount == 1
 
 
 def ensure_design_chain_available(
@@ -702,8 +728,8 @@ def promote_creative_candidate(
     *,
     root_id: str,
     candidate_asset_id: str,
-    spec: Spec,
     created_by: str,
+    confirmation_token: str,
 ) -> PersistedCreativePromotionResult:
     """Create spec v1 from one explicitly selected creative candidate.
 
@@ -711,11 +737,55 @@ def promote_creative_candidate(
     primary revision receives the exact specification binding, making the
     transition visible and preventing approval of an unconfirmed alternative.
     """
-    project = db.get(Project, root_id)
-    root = db.get(ImageAsset, root_id)
-    candidate = db.get(ImageAsset, candidate_asset_id)
+    # Serialize confirmation against both the mutable project selection and
+    # the exact candidate bytes the designer reviewed.  SQLite ignores
+    # ``FOR UPDATE`` but still gets the same comparisons inside the single
+    # write transaction; production databases additionally acquire row locks.
+    token_sha256 = hashlib.sha256(confirmation_token.encode("utf-8")).hexdigest()
+    draft = db.scalar(
+        select(StudioConfirmationDraft)
+        .where(StudioConfirmationDraft.token_sha256 == token_sha256)
+        .with_for_update()
+    )
+    if draft is None:
+        raise ValueError("confirmation draft is invalid or unavailable")
+    project = db.scalar(
+        select(Project)
+        .where(Project.root_id == root_id)
+        .with_for_update()
+    )
+    candidate = db.scalar(
+        select(ImageAsset)
+        .where(ImageAsset.id == candidate_asset_id)
+        .with_for_update()
+    )
+    root = (
+        candidate
+        if candidate is not None and candidate.id == root_id
+        else db.scalar(
+            select(ImageAsset)
+            .where(ImageAsset.id == root_id)
+            .with_for_update()
+        )
+    )
     if project is None or root is None:
         raise ValueError("creative project does not exist")
+    now = utcnow()
+    expires_at = draft.expires_at
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=now.tzinfo)
+    if draft.consumed_at is not None:
+        raise ValueError("confirmation draft has already been used")
+    if expires_at <= now:
+        raise ValueError("confirmation draft has expired")
+    if draft.owner != created_by:
+        raise ValueError("confirmation draft belongs to another designer")
+    if draft.project_root_id != root_id:
+        raise ValueError("confirmation draft belongs to another project")
+    if draft.candidate_asset_id != candidate_asset_id:
+        raise ValueError("confirmation draft belongs to another candidate")
+    if project.selected_candidate_asset_id != candidate_asset_id:
+        raise ValueError("the selected creative candidate changed before confirmation")
     if root.design_id is not None:
         raise ValueError("creative project has already been promoted")
     if (candidate is None
@@ -723,7 +793,28 @@ def promote_creative_candidate(
             or candidate.capability != "CREATIVE_RENDER"):
         raise ValueError("selected asset is not a creative candidate in this project")
 
-    now = utcnow()
+    candidate_sha256 = hashlib.sha256(bytes(candidate.image)).hexdigest()
+    if candidate_sha256 != draft.candidate_sha256:
+        raise ValueError(
+            "the selected creative candidate bytes changed before confirmation"
+        )
+    spec = Spec.model_validate(draft.spec)
+    current_spec_visual_hash = spec_visual_hash(spec)
+    if current_spec_visual_hash != draft.spec_visual_hash:
+        raise ValueError("the confirmed design facts changed before promotion")
+    coverage = spec.source_component_coverage
+    blockers = (
+        source_component_factory_blockers(
+            coverage,
+            valid_spec_paths=valid_source_component_spec_paths(spec),
+            current_spec_visual_hash=current_spec_visual_hash,
+            current_source_hash=candidate_sha256,
+        )
+        if coverage is not None else (object(),)
+    )
+    if blockers:
+        raise ValueError("confirmation draft source review is incomplete or stale")
+
     design_id = new_id("dsn")
     stored_spec = spec.model_dump(mode="json")
     stored_spec.update({
@@ -758,10 +849,44 @@ def promote_creative_candidate(
         created_by=created_by,
         created_at=now,
     )
-    root.design_id = design_id
+    record = ProjectRevisionRecord(
+        id=new_id("prr"),
+        asset_id=promoted.id,
+        action="edit",
+        raw_intent={
+            "kind": "confirm_design",
+            "selected_candidate_asset_id": candidate.id,
+            "candidate_sha256": candidate_sha256,
+            "spec_visual_hash": current_spec_visual_hash,
+        },
+        interpretation={
+            "operation": "promote_creative_candidate",
+            "design_id": design_id,
+            "design_version": 1,
+            "source_asset_id": candidate.id,
+            "factory_authority": False,
+        },
+        change_summary=(
+            "Confirmed design facts for the selected visual and created "
+            "specification version 1; factory readiness remains separate."
+        ),
+        created_by=created_by,
+        created_at=now,
+    )
     project.updated_at = now
+    draft.consumed_at = now
     try:
-        db.add_all([design, version, promoted])
+        # Insert the target design first so databases with immediate foreign
+        # keys can accept the root claim. The conditional update is the
+        # cross-database single-winner primitive: unlike row locks, it also
+        # protects SQLite where ``FOR UPDATE`` is ignored.
+        db.add_all([design, version])
+        db.flush()
+        if not claim_creative_project_design(
+            db, root_id=root_id, design_id=design_id
+        ):
+            raise ValueError("creative project has already been promoted")
+        db.add_all([promoted, record])
         ensure_design_chain_available(db, design_id, root_id)
         db.flush()
         db.commit()

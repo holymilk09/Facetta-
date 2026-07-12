@@ -6,6 +6,8 @@ import base64
 import copy
 import hashlib
 import io
+from datetime import timedelta
+from unittest.mock import patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -28,7 +30,10 @@ from facetta.db import (
     ImageAsset,
     ImageRun,
     Project,
+    ProjectRevisionRecord,
+    StudioConfirmationDraft,
     get_db,
+    utcnow,
 )
 from facetta.image_agent import (
     CheckSeverity,
@@ -49,7 +54,9 @@ from facetta.image_agent.prompts import (
     compile_initial_prompt,
 )
 from facetta.image_region import crop_normalized_region
+from facetta.image_identity import spec_visual_hash
 from facetta.main import app
+from facetta.project_backbone import claim_creative_project_design
 from facetta.spec import Spec
 
 
@@ -500,6 +507,30 @@ def _prompt_request(*, variation_count: int = 3) -> dict[str, object]:
         "title": "Emerald lariat exploration",
         "collection": "Exploration",
         "tags": ["prompt-led", "necklace"],
+    }
+
+
+def _promotion_payload(
+    client: TestClient,
+    project_id: str,
+    candidate_id: str,
+    spec: dict,
+) -> dict[str, object]:
+    with patch(
+        "facetta.api.projects.from_photo",
+        return_value=Spec.model_validate(spec),
+    ):
+        confirmation = client.post(
+            f"/projects/{project_id}/creative-candidates/{candidate_id}/"
+            "confirm-design",
+            json={"created_by": "usr_designer"},
+        )
+    assert confirmation.status_code == 200, confirmation.text
+    body = confirmation.json()
+    assert "continuation_spec" not in body
+    return {
+        "created_by": "usr_designer",
+        "confirmation_token": body["confirmation_token"],
     }
 
 
@@ -1239,6 +1270,136 @@ def test_selected_creative_candidate_can_be_read_without_persisting_spec(
         assert db.scalar(select(func.count()).select_from(DesignVersion)) == 0
 
 
+def test_confirm_design_projects_typed_designer_facts_and_exact_hashes(
+    creative_client, monkeypatch,
+):
+    client, Session = creative_client
+    candidate_bytes = _png((87, 60, 30))
+    app.dependency_overrides[get_creative_render_generator] = (
+        lambda: (lambda _source, _instruction, selected: _creative_result(selected))
+    )
+    created = client.post(
+        "/projects/from-drawing", json=_request(variation_count=1)
+    ).json()
+    candidate_id = created["revisions"][0]["asset_id"]
+    raw = audited_import_spec(EXAMPLE_SPEC)
+    raw["dimension_provenance"] = {
+        "stone.dimensions_mm.length": {
+            "status": "estimated_from_reference",
+            "method": "reference_vision",
+            "source": "selected visual",
+            "confidence": 0.8,
+        },
+        "band.width_mm": {
+            "status": "designer_confirmed",
+            "method": "designer_input",
+            "source": "designer confirmation",
+        },
+    }
+    expected = Spec.model_validate(raw)
+    monkeypatch.setattr("facetta.api.projects.from_photo", lambda _request: expected)
+
+    response = client.post(
+        f"/projects/{created['id']}/creative-candidates/{candidate_id}/"
+        "confirm-design",
+        json={
+            "notes": "Keep the exact shoulder geometry.",
+            "created_by": "usr_designer",
+            "run_independent_audit": True,
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["candidate_id"] == candidate_id
+    assert body["candidate_sha256"] == hashlib.sha256(candidate_bytes).hexdigest()
+    assert len(body["spec_visual_hash"]) == 16
+    facts = {
+        fact["key"]: fact
+        for group in body["fact_groups"]
+        for fact in group["facts"]
+    }
+    assert facts["length"]["authority"] == "estimated"
+    assert facts["band_width"]["authority"] == "designer_supplied"
+    assert facts["species"]["authority"] == "suggested"
+    assert body["audit_eligibility"] == {
+        "eligible": True,
+        "state": "complete",
+        "reason": (
+            "The selected visual and confirmed facts have current evidence."
+        ),
+    }
+    assert body["unresolved_source_questions"] == []
+    assert "continuation_spec" not in body
+    assert len(body["confirmation_token"]) >= 32
+    assert body["expires_at"]
+    with Session() as db:
+        assert db.scalar(select(func.count()).select_from(Design)) == 0
+        assert db.scalar(select(func.count()).select_from(DesignVersion)) == 0
+        assert db.scalar(select(func.count()).select_from(
+            StudioConfirmationDraft)) == 1
+
+
+def test_confirm_design_exposes_source_questions_without_internal_control_copy(
+    creative_client, monkeypatch,
+):
+    client, Session = creative_client
+    app.dependency_overrides[get_creative_render_generator] = (
+        lambda: (lambda _source, _instruction, selected: _creative_result(selected))
+    )
+    created = client.post(
+        "/projects/from-drawing", json=_request(variation_count=1)
+    ).json()
+    candidate_id = created["revisions"][0]["asset_id"]
+    assert client.post(
+        f"/projects/{created['id']}/creative-candidates/{candidate_id}/select",
+        json={"created_by": "usr_designer"},
+    ).status_code == 200
+    raw = audited_import_spec(EXAMPLE_SPEC)
+    component = raw["source_component_coverage"]["components"][0]
+    component["canonical_spec_paths"] = []
+    component["unresolved_reason"] = "The lower gallery is hidden."
+    component["independent_audit"] = None
+    expected = Spec.model_validate(raw)
+    monkeypatch.setattr("facetta.api.projects.from_photo", lambda _request: expected)
+
+    response = client.post(
+        f"/projects/{created['id']}/creative-candidates/{candidate_id}/"
+        "confirm-design",
+        json={"created_by": "usr_designer"},
+    )
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["audit_eligibility"]["eligible"] is False
+    assert body["audit_eligibility"]["state"] == "not_ready"
+    assert body["unresolved_source_questions"] == [
+        "Confirm Complete synthetic jewelry assembly: "
+        "The lower gallery is hidden."
+    ]
+    public_projection = {
+        "fact_groups": body["fact_groups"],
+        "unresolved_source_questions": body["unresolved_source_questions"],
+        "audit_eligibility": body["audit_eligibility"],
+    }
+    projection_text = str(public_projection).lower()
+    assert "provider" not in projection_text
+    assert "factory" not in projection_text
+    promotion = client.post(
+        f"/projects/{created['id']}/creative-candidates/{candidate_id}/promote",
+        json={
+            "created_by": "usr_designer",
+            "confirmation_token": body["confirmation_token"],
+        },
+    )
+    assert promotion.status_code == 409
+    assert "source review is incomplete or stale" in promotion.json()["detail"]
+    with Session() as db:
+        assert db.scalar(select(func.count()).select_from(Design)) == 0
+        assert db.scalar(select(func.count()).select_from(DesignVersion)) == 0
+    assert "qa" not in projection_text
+
+
 def test_designer_confirms_profile_against_exact_server_candidate_bytes(
     creative_client,
 ):
@@ -1374,6 +1535,11 @@ def test_alternate_drawing_candidate_confirmation_stays_current_after_promotion(
     assert selected_id in {
         revision["asset_id"] for revision in created_body["revisions"]
     }
+    selected_response = client.post(
+        f"/projects/{project_id}/creative-candidates/{selected_id}/select",
+        json={"created_by": "usr_designer"},
+    )
+    assert selected_response.status_code == 200, selected_response.text
 
     raw = audited_import_spec(EXAMPLE_SPEC)
     raw["source_component_coverage"]["components"][0][
@@ -1403,12 +1569,11 @@ def test_alternate_drawing_candidate_confirmation_stays_current_after_promotion(
         "evidence_sha256"
     ] == hashlib.sha256(selected_bytes).hexdigest()
 
+    promotion_payload = _promotion_payload(
+        client, project_id, selected_id, confirmed_spec)
     promoted = client.post(
         f"/projects/{project_id}/creative-candidates/{selected_id}/promote",
-        json={
-            "created_by": "usr_designer",
-            "spec": confirmed_spec,
-        },
+        json=promotion_payload,
     )
     assert promoted.status_code == 200, promoted.text
     promoted_body = promoted.json()
@@ -1535,20 +1700,28 @@ def test_designer_can_promote_exactly_one_candidate_to_immutable_spec_v1(
     created = client.post("/projects/from-drawing", json=_request())
     body = created.json()
     project_id = body["root_id"]
-    selected_id = body["revisions"][0]["asset_id"]
+    # Confirming a direction must follow the persisted selection, including
+    # when the designer chose a non-first candidate.
+    selected_id = body["revisions"][1]["asset_id"]
+    selected = client.post(
+        f"/projects/{project_id}/creative-candidates/{selected_id}/select",
+        json={"created_by": "usr_designer"},
+    )
+    assert selected.status_code == 200, selected.text
+    confirmed_spec = audited_import_spec(EXAMPLE_SPEC)
 
+    promotion_payload = _promotion_payload(
+        client, project_id, selected_id, confirmed_spec)
     promoted = client.post(
         f"/projects/{project_id}/creative-candidates/{selected_id}/promote",
-        json={
-            "created_by": "usr_designer",
-            "spec": audited_import_spec(EXAMPLE_SPEC),
-        },
+        json=promotion_payload,
     )
     assert promoted.status_code == 200, promoted.text
     result = promoted.json()
     assert result["design_id"].startswith("dsn_")
     assert result["latest_design_version"] == 1
     assert result["active_design_version"] == 1
+    assert result["factory_ready"] is False
     assert result["active_revision"]["capability"] == "IMPORTED_REFERENCE"
     assert result["active_revision"]["parent_asset_id"] == selected_id
     creative = [item for item in result["revisions"]
@@ -1557,6 +1730,19 @@ def test_designer_can_promote_exactly_one_candidate_to_immutable_spec_v1(
     assert all(item["provenance"] == "pre_spec_creative_candidate"
                for item in creative)
     assert all(item["legacy_provenance"] is False for item in creative)
+    second_id = body["revisions"][0]["asset_id"]
+
+    replay = client.post(
+        f"/projects/{project_id}/creative-candidates/{selected_id}/promote",
+        json=promotion_payload,
+    )
+    assert replay.status_code == 409
+    assert "already been used" in replay.json()["detail"]
+    post_promotion_select = client.post(
+        f"/projects/{project_id}/creative-candidates/{second_id}/select",
+        json={"created_by": "usr_designer"},
+    )
+    assert post_promotion_select.status_code == 409
 
     checklist = client.post(
         f"/assets/{result['active_asset_id']}/checklist",
@@ -1565,11 +1751,8 @@ def test_designer_can_promote_exactly_one_candidate_to_immutable_spec_v1(
     assert checklist.status_code == 201, checklist.text
 
     second = client.post(
-        f"/projects/{project_id}/creative-candidates/{body['revisions'][1]['asset_id']}/promote",
-        json={
-            "created_by": "usr_designer",
-            "spec": audited_import_spec(EXAMPLE_SPEC),
-        },
+        f"/projects/{project_id}/creative-candidates/{second_id}/promote",
+        json=_promotion_payload(client, project_id, second_id, confirmed_spec),
     )
     assert second.status_code == 409
     assert second.json()["code"] == "creative_candidate_promotion_conflict"
@@ -1577,6 +1760,254 @@ def test_designer_can_promote_exactly_one_candidate_to_immutable_spec_v1(
     with Session() as db:
         assert db.scalar(select(func.count()).select_from(Design)) == 1
         assert db.scalar(select(func.count()).select_from(DesignVersion)) == 1
+        assert db.scalar(select(func.count()).select_from(
+            ProjectRevisionRecord)) == 1
+        assert db.scalar(select(func.count()).select_from(ImageAsset).where(
+            ImageAsset.capability == "IMPORTED_REFERENCE")) == 1
+        record = db.scalar(select(ProjectRevisionRecord))
+        assert record is not None
+        assert record.asset_id == result["active_asset_id"]
+        assert record.action == "edit"
+        assert record.raw_intent["kind"] == "confirm_design"
+        assert record.raw_intent["selected_candidate_asset_id"] == selected_id
+        assert record.interpretation["factory_authority"] is False
+
+
+def test_two_sessions_observe_exactly_one_atomic_root_claim(creative_client):
+    client, Session = creative_client
+    app.dependency_overrides[get_creative_render_generator] = (
+        lambda: (lambda _source, _instruction, variant: _creative_result(variant)))
+    body = client.post("/projects/from-drawing", json=_request()).json()
+    root_id = body["root_id"]
+    first_id = "dsn_atomic_first"
+    second_id = "dsn_atomic_second"
+    now = utcnow()
+
+    with Session() as first, Session() as second:
+        # The losing session observes the old row before the winner commits.
+        assert second.get(ImageAsset, root_id).design_id is None
+        first.add(Design(
+            id=first_id, created_by="usr_designer", created_at=now,
+            collection="Exploration",
+        ))
+        first.flush()
+        assert claim_creative_project_design(
+            first, root_id=root_id, design_id=first_id)
+        first.commit()
+
+        second.add(Design(
+            id=second_id, created_by="usr_designer", created_at=now,
+            collection="Exploration",
+        ))
+        second.flush()
+        assert not claim_creative_project_design(
+            second, root_id=root_id, design_id=second_id)
+        second.rollback()
+
+    with Session() as db:
+        assert db.get(ImageAsset, root_id).design_id == first_id
+        assert db.get(Design, second_id) is None
+
+
+def test_creative_candidate_confirmation_cas_drift_has_no_partial_writes(
+    creative_client,
+):
+    client, Session = creative_client
+    app.dependency_overrides[get_creative_render_generator] = (
+        lambda: (lambda _source, _instruction, variant: _creative_result(variant)))
+    created = client.post("/projects/from-drawing", json=_request())
+    assert created.status_code == 201, created.text
+    body = created.json()
+    project_id = body["root_id"]
+    selected_id = body["revisions"][1]["asset_id"]
+    other_id = body["revisions"][0]["asset_id"]
+    selected = client.post(
+        f"/projects/{project_id}/creative-candidates/{selected_id}/select",
+        json={"created_by": "usr_designer"},
+    )
+    assert selected.status_code == 200, selected.text
+    confirmed_spec = audited_import_spec(EXAMPLE_SPEC)
+    payload = _promotion_payload(client, project_id, selected_id, confirmed_spec)
+    changed = client.post(
+        f"/projects/{project_id}/creative-candidates/{other_id}/select",
+        json={"created_by": "usr_designer"},
+    )
+    assert changed.status_code == 200, changed.text
+
+    response = client.post(
+        f"/projects/{project_id}/creative-candidates/{selected_id}/promote",
+        json=payload,
+    )
+    assert response.status_code == 409, response.text
+    assert response.json()["code"] == "creative_candidate_promotion_conflict"
+
+    with Session() as db:
+        project = db.get(Project, project_id)
+        root = db.get(ImageAsset, project_id)
+        assert project is not None and root is not None
+        assert root.design_id is None
+        assert db.scalar(select(func.count()).select_from(Design)) == 0
+        assert db.scalar(select(func.count()).select_from(DesignVersion)) == 0
+        assert db.scalar(select(func.count()).select_from(
+            ProjectRevisionRecord)) == 0
+        assert db.scalar(select(func.count()).select_from(ImageAsset).where(
+            ImageAsset.capability == "IMPORTED_REFERENCE")) == 0
+
+
+@pytest.mark.parametrize(
+    "attack", [
+        "expired", "tampered", "wrong_owner", "wrong_project", "wrong_candidate"
+    ])
+def test_opaque_confirmation_token_rejects_invalid_binding_without_writes(
+    creative_client,
+    attack: str,
+):
+    client, Session = creative_client
+    app.dependency_overrides[get_creative_render_generator] = (
+        lambda: (lambda _source, _instruction, variant: _creative_result(variant)))
+    body = client.post("/projects/from-drawing", json=_request()).json()
+    project_id = body["root_id"]
+    selected_id = body["revisions"][1]["asset_id"]
+    other_id = body["revisions"][0]["asset_id"]
+    assert client.post(
+        f"/projects/{project_id}/creative-candidates/{selected_id}/select",
+        json={"created_by": "usr_designer"},
+    ).status_code == 200
+    payload = _promotion_payload(
+        client, project_id, selected_id, audited_import_spec(EXAMPLE_SPEC))
+    path_project = project_id
+    path_candidate = selected_id
+    if attack == "expired":
+        token_hash = hashlib.sha256(
+            payload["confirmation_token"].encode("utf-8")
+        ).hexdigest()
+        with Session() as db:
+            draft = db.scalar(select(StudioConfirmationDraft).where(
+                StudioConfirmationDraft.token_sha256 == token_hash))
+            assert draft is not None
+            draft.expires_at = draft.created_at + timedelta(microseconds=1)
+            db.commit()
+    elif attack == "tampered":
+        payload["confirmation_token"] = "invalid-" + payload["confirmation_token"]
+    elif attack == "wrong_owner":
+        payload["created_by"] = "usr_intruder"
+    elif attack == "wrong_project":
+        other = client.post("/projects/from-drawing", json={
+            **_request(),
+            "title": "Other project",
+        }).json()
+        path_project = other["root_id"]
+        path_candidate = other["revisions"][0]["asset_id"]
+        assert client.post(
+            f"/projects/{path_project}/creative-candidates/"
+            f"{path_candidate}/select",
+            json={"created_by": "usr_designer"},
+        ).status_code == 200
+    else:
+        path_candidate = other_id
+
+    response = client.post(
+        f"/projects/{path_project}/creative-candidates/{path_candidate}/promote",
+        json=payload,
+    )
+    assert response.status_code in {403, 409}, response.text
+    with Session() as db:
+        assert db.scalar(select(func.count()).select_from(Design)) == 0
+        assert db.scalar(select(func.count()).select_from(DesignVersion)) == 0
+        assert db.scalar(select(func.count()).select_from(
+            ProjectRevisionRecord)) == 0
+
+
+def test_promote_rejects_client_spec_even_with_recomputed_hash(
+    creative_client,
+):
+    client, Session = creative_client
+    app.dependency_overrides[get_creative_render_generator] = (
+        lambda: (lambda _source, _instruction, variant: _creative_result(variant)))
+    body = client.post("/projects/from-drawing", json=_request()).json()
+    project_id = body["root_id"]
+    selected_id = body["revisions"][0]["asset_id"]
+    assert client.post(
+        f"/projects/{project_id}/creative-candidates/{selected_id}/select",
+        json={"created_by": "usr_designer"},
+    ).status_code == 200
+    spec = audited_import_spec(EXAMPLE_SPEC)
+    payload = _promotion_payload(client, project_id, selected_id, spec)
+    modified = copy.deepcopy(spec)
+    modified["band"]["width_mm"] = modified["band"]["width_mm"] + 0.5
+    payload["spec"] = modified
+    payload["expected_spec_visual_hash"] = spec_visual_hash(
+        Spec.model_validate(modified))
+
+    response = client.post(
+        f"/projects/{project_id}/creative-candidates/{selected_id}/promote",
+        json=payload,
+    )
+    assert response.status_code == 422
+    with Session() as db:
+        assert db.scalar(select(func.count()).select_from(Design)) == 0
+        assert db.scalar(select(func.count()).select_from(DesignVersion)) == 0
+
+
+def test_confirm_design_cleans_expired_unused_drafts_but_keeps_consumed(
+    creative_client,
+):
+    client, Session = creative_client
+    app.dependency_overrides[get_creative_render_generator] = (
+        lambda: (lambda _source, _instruction, variant: _creative_result(variant)))
+    body = client.post("/projects/from-drawing", json=_request()).json()
+    project_id = body["root_id"]
+    selected_id = body["revisions"][0]["asset_id"]
+    assert client.post(
+        f"/projects/{project_id}/creative-candidates/{selected_id}/select",
+        json={"created_by": "usr_designer"},
+    ).status_code == 200
+    spec = audited_import_spec(EXAMPLE_SPEC)
+    expired_payload = _promotion_payload(client, project_id, selected_id, spec)
+    expired_hash = hashlib.sha256(
+        expired_payload["confirmation_token"].encode("utf-8")
+    ).hexdigest()
+    with Session() as db:
+        expired = db.scalar(select(StudioConfirmationDraft).where(
+            StudioConfirmationDraft.token_sha256 == expired_hash))
+        assert expired is not None
+        expired.expires_at = expired.created_at + timedelta(microseconds=1)
+        db.commit()
+
+    live_payload = _promotion_payload(client, project_id, selected_id, spec)
+    live_hash = hashlib.sha256(
+        live_payload["confirmation_token"].encode("utf-8")
+    ).hexdigest()
+    with Session() as db:
+        assert db.scalar(select(StudioConfirmationDraft).where(
+            StudioConfirmationDraft.token_sha256 == expired_hash)) is None
+
+    promoted = client.post(
+        f"/projects/{project_id}/creative-candidates/{selected_id}/promote",
+        json=live_payload,
+    )
+    assert promoted.status_code == 200, promoted.text
+    with Session() as db:
+        consumed = db.scalar(select(StudioConfirmationDraft).where(
+            StudioConfirmationDraft.token_sha256 == live_hash))
+        assert consumed is not None and consumed.consumed_at is not None
+        consumed.expires_at = consumed.created_at + timedelta(microseconds=1)
+        db.commit()
+
+    other = client.post("/projects/from-drawing", json={
+        **_request(), "title": "Cleanup trigger",
+    }).json()
+    other_id = other["revisions"][0]["asset_id"]
+    assert client.post(
+        f"/projects/{other['root_id']}/creative-candidates/{other_id}/select",
+        json={"created_by": "usr_designer"},
+    ).status_code == 200
+    _promotion_payload(client, other["root_id"], other_id, spec)
+    with Session() as db:
+        preserved = db.scalar(select(StudioConfirmationDraft).where(
+            StudioConfirmationDraft.token_sha256 == live_hash))
+        assert preserved is not None
+        assert preserved.consumed_at is not None
 
 
 def test_prompt_root_candidate_promotes_into_the_same_trusted_spec_path(
@@ -1591,13 +2022,17 @@ def test_prompt_root_candidate_promotes_into_the_same_trusted_spec_path(
     body = created.json()
     selected_id = body["root_id"]
     assert selected_id == body["revisions"][0]["asset_id"]
+    selected = client.post(
+        f"/projects/{body['root_id']}/creative-candidates/{selected_id}/select",
+        json={"created_by": "usr_designer"},
+    )
+    assert selected.status_code == 200, selected.text
+    confirmed_spec = audited_import_spec(EXAMPLE_SPEC)
 
     promoted = client.post(
         f"/projects/{body['root_id']}/creative-candidates/{selected_id}/promote",
-        json={
-            "created_by": "usr_designer",
-            "spec": audited_import_spec(EXAMPLE_SPEC),
-        },
+        json=_promotion_payload(
+            client, body["root_id"], selected_id, confirmed_spec),
     )
     assert promoted.status_code == 200, promoted.text
     result = promoted.json()

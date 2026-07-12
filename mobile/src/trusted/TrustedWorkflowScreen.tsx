@@ -738,18 +738,10 @@ export function TrustedWorkflowScreen({
       : `${result.data.blockers.length} source blocker${result.data.blockers.length === 1 ? '' : 's'} remain.`);
   };
 
-  const promoteCreativeCandidate = async (): Promise<void> => {
-    if (creativeCandidateId === null
-      || !sourceCoverageAllowsCreation(
-        creativeDraftCoverage,
-        creativeDraftSpecChangedAfterAudit,
-      )) return;
-    const spec = parseSpec(creativeDraftSpec);
-    if (spec === null) {
-      setLocalNotice('The selected candidate specification must be valid JSON.');
-      return;
-    }
-    await workflow.promoteCreativeCandidate(creativeCandidateId, spec);
+  const explainStudioConfirmMigration = (): void => {
+    setLocalNotice(
+      'This legacy draft cannot create Design v1 because its corrected specification is not bound to the new confirmation record. Open Studio, select this visual, and choose Confirm. Your legacy draft has not been saved as design truth.',
+    );
   };
 
   const active = state.project?.active_revision;
@@ -1225,8 +1217,8 @@ export function TrustedWorkflowScreen({
               <Text style={styles.nextStepTitle}>Facetta read this concept</Text>
               <Text style={styles.guidanceCopy}>
                 {creativeDraftCoverage.blockers.length > 0
-                  ? `${creativeDraftCoverage.blockers.length} details need confirmation before this becomes an editable trusted design. The concept itself remains saved.`
-                  : 'The visible design facts are accounted for. Review the summary, then save it as an editable trusted design.'}
+                  ? `${creativeDraftCoverage.blockers.length} details still need review. This legacy draft cannot create Design v1; the concept itself remains saved.`
+                  : 'Review this legacy summary for reference. To create Design v1, continue in Studio Confirm. Corrections made here are not transferred silently.'}
               </Text>
               <Button
                 title={showCandidateFacts ? 'Hide design details' : 'Review design details'}
@@ -1329,16 +1321,9 @@ export function TrustedWorkflowScreen({
                 )}
               </WorkspaceDisclosure>
               <Button
-                title={state.busy === 'create'
-                  ? 'Saving trusted design…'
-                  : 'Save as editable trusted design'}
-                disabled={state.busy !== null
-                  || !sourceCoverageAllowsCreation(
-                    creativeDraftCoverage,
-                    creativeDraftSpecChangedAfterAudit,
-                  )
-                  || parseSpec(creativeDraftSpec) === null}
-                onPress={() => void promoteCreativeCandidate()}
+                title="How to continue in Studio"
+                disabled={state.busy !== null || creativeCandidateId === null}
+                onPress={explainStudioConfirmMigration}
               />
             </View>
           )}

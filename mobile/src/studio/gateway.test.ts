@@ -271,6 +271,109 @@ test('Factory remains disabled until explicitly enabled and backend-eligible', a
   assert.equal(enabledResult.data?.pinnedAssetId, 'asset_1');
 });
 
+test('Confirm keeps the opaque token private and separates duplicate project reviews', async () => {
+  let promoteRequest: any = null;
+  const promoted = project('asset_confirmed');
+  const gateway = createStudioGateway(fakeClient({
+    confirmCreativeCandidateDesign: async () => ({
+      data: {
+        confirmation_token: 'confirmation-token-1234567890123456',
+        expires_at: '2099-01-01T00:00:00Z',
+        candidate_id: 'candidate_1', candidate_sha256: 'a'.repeat(64),
+        spec_visual_hash: 'b'.repeat(16),
+        fact_groups: [{ key: 'ring_fit', label: 'Sizing and proportions', facts: [
+          { key: 'ring_size', label: 'Ring size', value: 'US 6.5', authority: 'estimated' },
+        ] }],
+        unresolved_source_questions: [],
+        audit_eligibility: { eligible: true, state: 'complete', reason: 'Ready.' },
+      }, error: null, status: 200,
+    }),
+    promoteCreativeCandidate: async (_projectId, _candidateId, request) => {
+      promoteRequest = request;
+      return { data: promoted, error: null, status: 201 };
+    },
+  }));
+  const loaded = await gateway.loadDesignConfirmation({
+    projectId: 'project_1', sourceAssetId: 'candidate_1', createdBy: 'designer_1',
+  });
+  assert.equal(loaded.error, null);
+  if (loaded.error !== null) return;
+  assert.equal('confirmation_token' in loaded.data, false);
+  const duplicate = await gateway.loadDesignConfirmation({
+    projectId: 'project_2', sourceAssetId: 'candidate_1', createdBy: 'designer_1',
+  });
+  assert.equal(duplicate.error, null);
+  if (duplicate.error !== null) return;
+  assert.notEqual(loaded.data.reviewId, duplicate.data.reviewId);
+  const audit = await gateway.auditDesignConfirmation({
+    ...loaded.data, designerAcknowledged: true,
+  });
+  assert.equal(audit.error, null);
+  if (audit.error !== null) return;
+  const saved = await gateway.saveDesignConfirmation(audit.data);
+  assert.equal(saved.error, null);
+  assert.equal(promoteRequest.confirmation_token, 'confirmation-token-1234567890123456');
+  assert.equal(Object.keys(promoteRequest).sort().join(','), 'confirmation_token,created_by');
+});
+
+test('Confirm cannot pass or save until source review is complete and question-free', async () => {
+  let promoted = false;
+  const gateway = createStudioGateway(fakeClient({
+    confirmCreativeCandidateDesign: async () => ({
+      data: {
+        confirmation_token: 'confirmation-token-1234567890123456',
+        expires_at: '2099-01-01T00:00:00Z',
+        candidate_id: 'candidate_1', candidate_sha256: 'a'.repeat(64),
+        spec_visual_hash: 'b'.repeat(16), fact_groups: [],
+        unresolved_source_questions: ['Confirm the band profile.'],
+        audit_eligibility: { eligible: true, state: 'ready', reason: 'Source review remains.' },
+      }, error: null, status: 200,
+    }),
+    promoteCreativeCandidate: async () => { promoted = true; return { data: project(), error: null, status: 201 }; },
+  }));
+  const loaded = await gateway.loadDesignConfirmation({
+    projectId: 'project_1', sourceAssetId: 'candidate_1', createdBy: 'designer_1',
+  });
+  assert.equal(loaded.error, null);
+  if (loaded.error !== null) return;
+  const audited = await gateway.auditDesignConfirmation(loaded.data);
+  assert.equal(audited.error, null);
+  if (audited.error !== null) return;
+  assert.equal(audited.data.status, 'fail');
+  const forged = await gateway.saveDesignConfirmation({ ...audited.data, status: 'pass' });
+  assert.notEqual(forged.error, null);
+  assert.equal(promoted, false);
+});
+
+test('Confirm removes expired opaque drafts before later access', async () => {
+  let current = new Date('2026-07-13T00:00:00Z');
+  const gateway = createStudioGateway(fakeClient({
+    confirmCreativeCandidateDesign: async (_projectId, candidateId) => ({
+      data: {
+        confirmation_token: `confirmation-token-${candidateId}-1234567890123456`,
+        expires_at: '2026-07-13T00:05:00Z',
+        candidate_id: candidateId, candidate_sha256: 'a'.repeat(64),
+        spec_visual_hash: 'b'.repeat(16), fact_groups: [],
+        unresolved_source_questions: [],
+        audit_eligibility: { eligible: true, state: 'complete', reason: 'Ready.' },
+      }, error: null, status: 200,
+    }),
+  }), { now: () => current });
+  const first = await gateway.loadDesignConfirmation({
+    projectId: 'project_1', sourceAssetId: 'candidate_1', createdBy: 'designer_1',
+  });
+  assert.equal(first.error, null);
+  if (first.error !== null) return;
+  current = new Date('2026-07-13T00:06:00Z');
+  await gateway.loadDesignConfirmation({
+    projectId: 'project_2', sourceAssetId: 'candidate_2', createdBy: 'designer_1',
+  });
+  const stale = await gateway.auditDesignConfirmation({
+    ...first.data, designerAcknowledged: true,
+  });
+  assert.equal(stale.error?.code, 'CONFIRM_REVIEW_EXPIRED');
+});
+
 test('Create, Views, and Present forward typed inputs without model or provider controls', async () => {
   const calls: string[] = [];
   const gateway = createStudioGateway(fakeClient({

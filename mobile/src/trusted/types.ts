@@ -131,6 +131,7 @@ export interface AssetSummary {
   drift: number | null;
   pinned: boolean;
   media_type: string;
+  sha256?: string | null;
   image_url: string | null;
   created_by: string | null;
   created_at: string | null;
@@ -634,14 +635,44 @@ export interface PreSpecPresentationDiscardResult {
 }
 
 export interface PromoteCreativeCandidateRequest {
-  confirmed_spec: JsonObject;
   created_by: string;
+  confirmation_token: string;
 }
 
 export interface ExtractCreativeCandidateDraftRequest {
   notes?: string;
   created_by: string;
   run_independent_audit?: boolean;
+}
+
+export type StudioConfirmFactAuthority = 'suggested' | 'estimated' | 'designer_supplied';
+
+export interface StudioConfirmFact {
+  key: string;
+  label: string;
+  value: string;
+  authority: StudioConfirmFactAuthority;
+}
+
+export interface StudioConfirmFactGroup {
+  key: 'design' | 'center_stone' | 'setting' | 'metal' | 'ring_fit' | 'accents';
+  label: string;
+  facts: StudioConfirmFact[];
+}
+
+export interface StudioConfirmDesignResponse {
+  confirmation_token: string;
+  expires_at: string;
+  candidate_id: string;
+  candidate_sha256: string;
+  spec_visual_hash: string;
+  fact_groups: StudioConfirmFactGroup[];
+  unresolved_source_questions: string[];
+  audit_eligibility: {
+    eligible: boolean;
+    state: 'not_ready' | 'ready' | 'complete';
+    reason: string;
+  };
 }
 
 export interface BeautyRenderRequest {

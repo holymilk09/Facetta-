@@ -14,6 +14,7 @@ import { getStudioAction, getStudioRailActions, getVisibleStudioActions } from '
 import { StudioActionContext, StudioActionId } from './src/studio/contracts';
 import { StudioCollectionsWorkspace } from './src/studio/StudioCollectionsWorkspace';
 import { StudioCreateWorkspace } from './src/studio/StudioCreateWorkspace';
+import { StudioConfirmWorkspace } from './src/studio/StudioConfirmWorkspace';
 import { pickExpoStudioCreateReference } from './src/studio/expoReferencePicker';
 import { StudioRefineWorkspace } from './src/studio/StudioRefineWorkspace';
 import { StudioViewsWorkspace } from './src/studio/StudioViewsWorkspace';
@@ -112,15 +113,24 @@ export default function App() {
       sourceAssetId: studioProject.active_asset_id,
     };
   }, [studioProject]);
+  const confirmStudioLineage = useMemo<StudioVisualLineage | null>(() => {
+    if (studioProject === null || studioProject.design_id !== null) return null;
+    const candidateId = studioProject.selected_candidate_asset_id ?? selectedCreativeAssetId;
+    if (candidateId === null || candidateId === undefined) return null;
+    const candidate = studioProject.assets.find((asset) => asset.asset_id === candidateId);
+    if (candidate?.capability !== 'CREATIVE_RENDER') return null;
+    return { projectId: studioProject.root_id, sourceAssetId: candidateId };
+  }, [selectedCreativeAssetId, studioProject]);
   const actionContext = useMemo<StudioActionContext>(() => ({
     activeDesignId,
     activeRevisionId: studioProject?.active_asset_id ?? selectedCreativeAssetId,
     hasExactSpecification: exactStudioLineage !== null,
+    hasSelectedPreSpecVisual: confirmStudioLineage !== null && exactStudioLineage === null,
     // Factory promotion is deliberately unavailable until the API supplies both
     // an enablement flag and an explicit eligibility decision for this revision.
     factoryEnabled: false,
     factoryEligible: false,
-  }), [activeDesignId, exactStudioLineage, selectedCreativeAssetId, studioProject]);
+  }), [activeDesignId, confirmStudioLineage, exactStudioLineage, selectedCreativeAssetId, studioProject]);
   const hasActiveRevision = Boolean(actionContext.activeDesignId && actionContext.activeRevisionId);
   const studioActions = getStudioRailActions(actionContext);
   const moreActions = getVisibleStudioActions(actionContext, 'more');
@@ -330,6 +340,16 @@ export default function App() {
               lineage={exactStudioLineage}
               createdBy={designer}
               onSaved={setStudioProject}
+            />
+          ) : selectedActionId === 'confirm' ? (
+            <StudioConfirmWorkspace
+              gateway={studioGateway}
+              lineage={confirmStudioLineage}
+              createdBy={designer}
+              onSaved={(receipt) => {
+                setStudioProject(receipt.project);
+                setSelectedCreativeAssetId(receipt.project.active_asset_id);
+              }}
             />
           ) : selectedActionId === 'present' ? (
             <StudioPresentWorkspace

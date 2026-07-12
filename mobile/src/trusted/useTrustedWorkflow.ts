@@ -56,7 +56,6 @@ export interface TrustedWorkflowController {
   createFromPrompt: (request: Omit<CreateProjectFromPromptRequest, 'owner'>) => Promise<void>;
   createFromDrawing: (request: Omit<CreateProjectFromDrawingRequest, 'owner'>) => Promise<void>;
   createFromImage: (request: Omit<CreateProjectFromImageRequest, 'owner'>) => Promise<void>;
-  promoteCreativeCandidate: (candidateId: string, confirmedSpec: JsonObject) => Promise<void>;
   openProject: (projectId: string) => Promise<void>;
   refreshProject: () => Promise<void>;
   selectPhase: (phase: WorkflowPhase) => void;
@@ -361,37 +360,6 @@ export function useTrustedWorkflow(
     if (projectId === null) return;
     await loadProject(projectId, 'refresh');
   }, [loadProject]);
-
-  const promoteCreativeCandidate = useCallback(async (
-    candidateId: string,
-    confirmedSpec: JsonObject,
-  ): Promise<void> => {
-    const current = stateRef.current.project;
-    if (current === null || current.design_id !== null) {
-      dispatch({
-        type: 'operation_failed',
-        operation: 'create',
-        error: localError(
-          'CREATIVE_PROJECT_REQUIRED',
-          'Open a pre-spec creative project before promoting a candidate.',
-          'conflict',
-        ),
-      });
-      return;
-    }
-    dispatch({ type: 'operation_started', operation: 'create' });
-    const result = await api.promoteCreativeCandidate(
-      current.id,
-      candidateId,
-      { confirmed_spec: confirmedSpec, created_by: options.designer },
-    );
-    if (result.error !== null) {
-      dispatch({ type: 'operation_failed', operation: 'create', error: result.error });
-      return;
-    }
-    saveTrustedProjectId(result.data.id);
-    dispatch({ type: 'project_loaded', project: result.data, source: 'refresh' });
-  }, [api, options.designer]);
 
   const refreshAfterStale = useCallback(async (): Promise<void> => {
     const projectId = stateRef.current.project_id;
@@ -1137,7 +1105,6 @@ export function useTrustedWorkflow(
     createFromPrompt,
     createFromDrawing,
     createFromImage,
-    promoteCreativeCandidate,
     openProject,
     refreshProject,
     selectPhase,

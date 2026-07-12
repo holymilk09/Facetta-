@@ -118,6 +118,7 @@ import type {
   StudioJobRecord,
   StudioJobStatus,
   StudioProjectHistory,
+  StudioConfirmDesignResponse,
   CreateStudioJobRequest,
   TransitionStudioJobRequest,
   VisualPreviewApplyResult,
@@ -417,6 +418,7 @@ export const decodeAssetSummary: Decoder<AssetSummary> = (value) => {
     drift: number(value.drift),
     pinned: boolean(value.pinned),
     media_type: text(value.media_type, 'image/png'),
+    sha256: nullableText(value.sha256),
     image_url: nullableText(pick(value, 'image_url', 'url')),
     created_by: nullableText(value.created_by),
     created_at: nullableText(value.created_at),
@@ -2030,6 +2032,54 @@ export const decodePhotoDraftResult: Decoder<PhotoDraftResult> = (value) => {
   return { spec, source_coverage: sourceCoverage };
 };
 
+const decodeStudioConfirmDesignResponse: Decoder<StudioConfirmDesignResponse> = (value) => {
+  if (!isRecord(value)) return null;
+  const candidateId = nullableText(value.candidate_id);
+  const confirmationToken = nullableText(value.confirmation_token);
+  const expiresAt = nullableText(value.expires_at);
+  const candidateSha256 = nullableText(value.candidate_sha256);
+  const visualHash = nullableText(value.spec_visual_hash);
+  const eligibility = isRecord(value.audit_eligibility) ? value.audit_eligibility : null;
+  const state = eligibility?.state;
+  if (candidateId === null || confirmationToken === null || expiresAt === null
+    || confirmationToken.length < 32 || candidateSha256 === null || visualHash === null
+    || !/^[0-9a-f]{64}$/.test(candidateSha256) || !/^[0-9a-f]{16}$/.test(visualHash)
+    || Number.isNaN(Date.parse(expiresAt)) || eligibility === null
+    || (state !== 'not_ready' && state !== 'ready' && state !== 'complete')) return null;
+  const factGroups = recordList(value.fact_groups).flatMap((group) => {
+    const key = group.key;
+    const label = nullableText(group.label);
+    if ((key !== 'design' && key !== 'center_stone' && key !== 'setting'
+      && key !== 'metal' && key !== 'ring_fit' && key !== 'accents') || label === null) return [];
+    const facts = recordList(group.facts).flatMap((fact) => {
+      const factKey = nullableText(fact.key);
+      const factLabel = nullableText(fact.label);
+      const factValue = nullableText(fact.value);
+      const authority = fact.authority;
+      if (factKey === null || factLabel === null || factValue === null
+        || (authority !== 'suggested' && authority !== 'estimated'
+          && authority !== 'designer_supplied')) return [];
+      return [{ key: factKey, label: factLabel, value: factValue, authority }];
+    });
+    if (facts.length !== recordList(group.facts).length) return [];
+    return [{ key: key as StudioConfirmDesignResponse['fact_groups'][number]['key'], label, facts: facts as StudioConfirmDesignResponse['fact_groups'][number]['facts'] }];
+  });
+  if (factGroups.length !== recordList(value.fact_groups).length) return null;
+  return {
+    confirmation_token: confirmationToken,
+    expires_at: expiresAt,
+    candidate_id: candidateId,
+    candidate_sha256: candidateSha256,
+    spec_visual_hash: visualHash,
+    fact_groups: factGroups,
+    unresolved_source_questions: stringList(value.unresolved_source_questions),
+    audit_eligibility: {
+      eligible: boolean(eligibility.eligible), state,
+      reason: text(eligibility.reason, 'Review the remaining design questions.'),
+    },
+  };
+};
+
 export const decodeSourceCoverageResolutionResult: Decoder<
 SourceCoverageResolutionResult
 > = (value) => {
@@ -3386,10 +3436,27 @@ export function createTrustedApiClient(options: TrustedApiClientOptions) {
         {
           method: 'POST',
           body: encodeBody({
-            spec: request.confirmed_spec,
             created_by: request.created_by,
+            confirmation_token: request.confirmation_token,
           }),
         },
+      );
+    },
+
+    confirmCreativeCandidateDesign(
+      projectId: string,
+      candidateId: string,
+      request: ExtractCreativeCandidateDraftRequest,
+    ) {
+      return jsonCall(
+        `/projects/${encodeURIComponent(projectId)}/creative-candidates/${encodeURIComponent(candidateId)}/confirm-design`,
+        'POST',
+        {
+          notes: request.notes ?? '',
+          created_by: request.created_by,
+          run_independent_audit: request.run_independent_audit ?? true,
+        },
+        decodeStudioConfirmDesignResponse,
       );
     },
 
