@@ -14,12 +14,14 @@ from jwt.exceptions import PyJWKClientConnectionError
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
+from sqlalchemy import func, select
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from conftest import HALO_SPEC
 from facetta.db import (
-    Base, Design, DesignFamily, FeedbackEvent, ImageAsset, ImageRun, Project,
-    get_db, utcnow,
+    ApprovalChecklist, ApprovalResponse, Base, Design, DesignFamily,
+    FeedbackEvent, ImageAsset, ImageRun, Project, get_db, utcnow,
 )
 from facetta.auth import validate_auth_configuration
 from facetta.main import app
@@ -139,6 +141,19 @@ def auth_client(monkeypatch):
             created_by="usr_other",
             created_at=now,
         )
+        approval_asset = ImageAsset(
+            id="ast_auth_approval",
+            root_id="ast_auth_approval",
+            parent_asset_id=None,
+            design_id=None,
+            design_version=None,
+            capability="JEWELRY_RENDER",
+            instruction="Approval actor fixture",
+            image=b"approval-image",
+            media_type="image/png",
+            created_by="usr_owner",
+            created_at=now,
+        )
         project = Project(
             root_id=root.id,
             owner="usr_owner",
@@ -148,7 +163,9 @@ def auth_client(monkeypatch):
             created_at=now,
             updated_at=now,
         )
-        db.add_all([root, orphan, ownerless, other_orphan, project])
+        db.add_all([
+            root, orphan, ownerless, other_orphan, approval_asset, project,
+        ])
         db.add_all([
             Design(
                 id="dsn_owner", created_by="usr_owner", created_at=now,
@@ -275,6 +292,68 @@ def test_owner_and_created_by_fields_cannot_spoof_principal(auth_client):
     )
     assert markup.status_code == 403
     assert markup.json()["detail"]["code"] == "principal_actor_mismatch"
+
+
+def test_approval_audit_actor_is_the_authenticated_principal(auth_client):
+    client, Session = auth_client
+    owner = {"Authorization": f"Bearer {OWNER_TOKEN}"}
+    spoofed_create = client.post(
+        "/assets/ast_auth_root/checklist",
+        headers=owner,
+        json={"created_by": "usr_other"},
+    )
+    assert spoofed_create.status_code == 403
+    assert spoofed_create.json()["detail"]["code"] == "principal_actor_mismatch"
+    with Session() as db:
+        assert db.scalar(select(func.count()).select_from(ApprovalChecklist)) == 0
+        db.add(ApprovalChecklist(
+            id="chk_auth_actor",
+            asset_id="ast_auth_root",
+            mode="explicit_pin",
+            items=[{
+                "key": "stone", "label": "Stone", "fact": "round",
+                "section": "center_stone",
+            }],
+            created_by="usr_owner",
+        ))
+        db.commit()
+
+    canonical_create = client.post(
+        "/assets/ast_auth_approval/checklist",
+        headers=owner,
+        json={"spec": HALO_SPEC, "mode": "explicit_pin"},
+    )
+    assert canonical_create.status_code == 201, canonical_create.text
+    with Session() as db:
+        checklist = db.get(
+            ApprovalChecklist, canonical_create.json()["checklist_id"],
+        )
+        assert checklist is not None
+        assert checklist.created_by == "usr_owner"
+
+    spoofed_response = client.post(
+        "/assets/ast_auth_root/checklist/respond",
+        headers=owner,
+        json={
+            "item_key": "stone", "approved": True,
+            "created_by": "usr_other",
+        },
+    )
+    assert spoofed_response.status_code == 403
+    assert spoofed_response.json()["detail"]["code"] == "principal_actor_mismatch"
+    with Session() as db:
+        assert db.scalar(select(func.count()).select_from(ApprovalResponse)) == 0
+
+    canonical = client.post(
+        "/assets/ast_auth_root/checklist/respond",
+        headers=owner,
+        json={"item_key": "stone", "approved": True},
+    )
+    assert canonical.status_code == 201, canonical.text
+    with Session() as db:
+        response = db.scalar(select(ApprovalResponse))
+        assert response is not None
+        assert response.created_by == "usr_owner"
 
 
 def test_authenticated_owner_can_read_own_project(auth_client):

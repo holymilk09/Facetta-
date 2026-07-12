@@ -155,6 +155,28 @@ def _lock_approval_generation_for_write(
         ) from exc
 
 
+def _approval_actor(
+    principal: AuthenticatedPrincipal,
+    supplied_actor: str | None,
+    asset: ImageAsset,
+) -> str:
+    """Use authenticated identity for approval evidence in deployed modes."""
+
+    if principal.local_unbound:
+        return supplied_actor or asset.created_by or "usr_pending"
+    assert principal.subject is not None
+    return principal_actor(principal, supplied_actor or principal.subject)
+
+
+def _approval_spec_payload(spec: Spec) -> dict:
+    """Comparable jewelry truth without immutable-record identity metadata."""
+
+    payload = spec.model_dump(mode="json")
+    for field in ("design_id", "version", "created_by", "created_at"):
+        payload.pop(field, None)
+    return payload
+
+
 def _store_asset(db: Session, image: bytes, capability: str,
                  parent: ImageAsset | None = None, *,
                  asset_id: str | None = None,
@@ -1825,7 +1847,7 @@ def _checklist_state(db: Session, checklist: ApprovalChecklist) -> dict:
 
 
 @router.post("/{asset_id}/pin", deprecated=True)
-def pin_asset(asset_id: str, db: DbSession):
+def pin_asset(asset_id: str, db: DbSession, principal: PrincipalDep):
     """Pin this version for factory: the manufacturing technical drawing is
     generated from the chain's pinned asset, never silently from 'latest'.
     Pinning a new version supersedes the previous pin (latest pin wins).
@@ -1834,6 +1856,7 @@ def pin_asset(asset_id: str, db: DbSession):
     mode isn't 'optional'): every item must be approved first — the tap-tap
     ritual IS the road to the factory. No checklist → pin behaves as always."""
     asset = _get_asset(db, asset_id)
+    _approval_actor(principal, None, asset)
     _lock_approval_generation_for_write(db, asset)
     if _requires_creative_spec_promotion(db, asset):
         return JSONResponse(status_code=409, content={
@@ -1874,18 +1897,19 @@ class ChecklistCreateRequest(BaseModel):
 
     spec: Spec | None = None      # else resolved via the chain's design link
     mode: Literal["auto_pin", "explicit_pin", "optional"] = DEFAULT_MODE
-    created_by: str = "usr_pending"
+    created_by: Annotated[str, Field(min_length=1, max_length=32)] | None = None
 
 
 @router.post("/{asset_id}/checklist", status_code=201)
 def create_checklist(asset_id: str, request: ChecklistCreateRequest,
-                     db: DbSession):
+                     db: DbSession, principal: PrincipalDep):
     """Start the tap-to-approve ritual for this exact version. Items are
     facts derived from the piece's own spec sections — jewelry-type aware by
     construction (a ring asks about its band; a necklace about its chain).
     The spec comes from the body, else the chain's design link; with neither
     there is nothing to derive facts from → 409."""
     asset = _get_asset(db, asset_id)
+    actor = _approval_actor(principal, request.created_by, asset)
     _lock_approval_generation_for_write(db, asset)
     if _requires_creative_spec_promotion(db, asset):
         return JSONResponse(status_code=409, content={
@@ -1907,6 +1931,18 @@ def create_checklist(asset_id: str, request: ChecklistCreateRequest,
             return JSONResponse(status_code=422, content={
                 "detail": [issue.as_detail() for issue in result.issues]})
         validated = result.spec
+        if (linked is not None
+                and _approval_spec_payload(validated)
+                != _approval_spec_payload(linked[2])):
+            return JSONResponse(status_code=409, content={
+                "detail": (
+                    "the submitted checklist specification does not match "
+                    "this revision's exact immutable specification"
+                ),
+                "code": "checklist_spec_mismatch",
+            })
+        if linked is not None:
+            validated = linked[2]
     else:
         if linked:
             _, _, validated = linked
@@ -1930,7 +1966,7 @@ def create_checklist(asset_id: str, request: ChecklistCreateRequest,
                         if asset.design_version is not None else
                         (linked[1] if linked else None)),
         mode=request.mode, items=items,
-        created_by=request.created_by)
+        created_by=actor)
     db.add(checklist)
     db.commit()
     return {"checklist_id": checklist.id, "asset_id": asset.id,
@@ -1975,19 +2011,20 @@ class ChecklistRespondRequest(BaseModel):
     approved: bool
     note: Annotated[str, Field(max_length=2000)] = ""
     interpret: bool = False       # ask the agent for its understood-as echo
-    created_by: str = "usr_pending"
+    created_by: Annotated[str, Field(min_length=1, max_length=32)] | None = None
     assistant_name: str | None = None
 
 
 @router.post("/{asset_id}/checklist/respond", status_code=201)
 def respond_checklist(asset_id: str, request: ChecklistRespondRequest,
-                      db: DbSession):
+                      db: DbSession, principal: PrincipalDep):
     """One tap. YES approves the fact. NO requires the change note (the WHOOP
     journal rule) and comes back with an agent-ready change request prefill —
     and, with interpret=true, the agent's understood-as echo the designer
     confirms BEFORE anything executes. In auto_pin mode the last YES pins the
     version for factory. Append-only: every tap is an audit row."""
     asset = _get_asset(db, asset_id)
+    actor = _approval_actor(principal, request.created_by, asset)
     _lock_approval_generation_for_write(db, asset)
     checklist = _newest_checklist(db, asset_id)
     if checklist is None:
@@ -2011,7 +2048,7 @@ def respond_checklist(asset_id: str, request: ChecklistRespondRequest,
     row = ApprovalResponse(
         checklist_id=checklist.id, item_key=request.item_key,
         approved=request.approved, note=note or None,
-        created_by=request.created_by)
+        created_by=actor)
     db.add(row)
     if request.approved:
         db.flush()
@@ -2039,7 +2076,7 @@ def respond_checklist(asset_id: str, request: ChecklistRespondRequest,
             linked[1] if linked else checklist.design_version)
         apply_body: dict = {
             "annotations": [annotation],
-            "created_by": request.created_by,
+            "created_by": actor,
         }
         if expected_design_version is not None:
             apply_body["expected_design_version"] = expected_design_version

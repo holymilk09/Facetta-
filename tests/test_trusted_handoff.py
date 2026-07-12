@@ -1,6 +1,7 @@
 """Exact-revision approval, image-run evidence, and factory-pack handoff."""
 
 import base64
+import copy
 import hashlib
 import io
 import json
@@ -16,6 +17,7 @@ from sqlalchemy.pool import StaticPool
 
 from conftest import HALO_SPEC, NECKLACE_SPEC, audited_import_spec
 from facetta.db import (
+    ApprovalChecklist,
     Base,
     Design,
     DesignVersion,
@@ -223,6 +225,43 @@ def test_factory_pack_requires_and_exports_exact_approval(trusted_client):
         schedule = archive.read("facetta-schedule-1.svg").decode()
         assert "FACTORY FACT SCHEDULE" in schedule
         assert f"PAGE 1 / {len(schedule_names)}" in schedule
+
+
+def test_exact_checklist_rejects_a_different_valid_spec_atomically(
+    trusted_client,
+):
+    client, Session = trusted_client
+    project, _source = _project(client)
+    asset_id = project["active_revision"]["asset_id"]
+    mismatched = copy.deepcopy(audited_import_spec(HALO_SPEC))
+    mismatched["band"]["width_mm"] += 0.1
+
+    rejected = client.post(f"/assets/{asset_id}/checklist", json={
+        "created_by": "usr_gia",
+        "mode": "auto_pin",
+        "spec": mismatched,
+    })
+    assert rejected.status_code == 409, rejected.text
+    assert rejected.json()["code"] == "checklist_spec_mismatch"
+    with Session() as db:
+        assert db.scalar(select(func.count()).select_from(ApprovalChecklist)) == 0
+    blocked = client.get(f"/projects/{project['root_id']}/factory-pack")
+    assert blocked.status_code == 409
+    assert blocked.json()["code"] == "approval_required"
+
+    omitted = client.post(f"/assets/{asset_id}/checklist", json={
+        "created_by": "usr_gia", "mode": "explicit_pin",
+    })
+    assert omitted.status_code == 201, omitted.text
+
+    other, _ = _project(client)
+    other_asset = other["active_revision"]["asset_id"]
+    matching = client.post(f"/assets/{other_asset}/checklist", json={
+        "created_by": "usr_gia",
+        "mode": "explicit_pin",
+        "spec": audited_import_spec(HALO_SPEC),
+    })
+    assert matching.status_code == 201, matching.text
 
 
 def test_factory_pack_uses_confirmed_custom_profile_not_hidden_template(
