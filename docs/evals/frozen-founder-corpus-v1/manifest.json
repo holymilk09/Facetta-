@@ -1,0 +1,1269 @@
+{
+  "schema_version": "facetta-frozen-corpus.v1",
+  "corpus_id": "founder-reference-144-v1",
+  "expected_source_count": 144,
+  "source_policy": "Founder-supplied evaluation references only; no training or publication; semantic labels require a separate review.",
+  "inventory_provenance": {
+    "preflight_run": "designer-reference-all-144-preflight-2026-07-11",
+    "advisory_inventory_run": "designer-reference-inventory-live-2026-07-11",
+    "advisory_labels_are_quality_evidence": false
+  },
+  "sources": [
+    {
+      "filename": "image-1.jpg",
+      "sha256": "7a4898a08e8a43ad183f8fdee434952be29bb4e4aae79be1c4730945f8242f68",
+      "bytes": 292852,
+      "width": 1280,
+      "height": 1708,
+      "format": "JPEG"
+    },
+    {
+      "filename": "image-2.jpg",
+      "sha256": "3a60c05527f5cb1678d051a85a7aa157e20e0e971817fe48d8aeafc24238e0ac",
+      "bytes": 330502,
+      "width": 1280,
+      "height": 1708,
+      "format": "JPEG"
+    },
+    {
+      "filename": "image-3.jpg",
+      "sha256": "3cf57931143df1652c66883fc67dc9b5a316f437490f1c0020a8570036ffd997",
+      "bytes": 273763,
+      "width": 1280,
+      "height": 1708,
+      "format": "JPEG"
+    },
+    {
+      "filename": "image-4.jpg",
+      "sha256": "e25d73014781cb2db1513c2d123806473303e33a241c928f2530c3848d781759",
+      "bytes": 282923,
+      "width": 1280,
+      "height": 1708,
+      "format": "JPEG"
+    },
+    {
+      "filename": "image-5.jpg",
+      "sha256": "c07f248010ed3320f148f7eb62f631371df3f36ad859d991ed015069bc19e681",
+      "bytes": 462112,
+      "width": 1242,
+      "height": 2192,
+      "format": "JPEG"
+    },
+    {
+      "filename": "image-6.jpg",
+      "sha256": "1e995f98ab45b97f48f146eb92b2738dbd1ca26d50a51b0b5a09e1d0ac391267",
+      "bytes": 1231138,
+      "width": 1440,
+      "height": 2080,
+      "format": "JPEG"
+    },
+    {
+      "filename": "image-7.jpg",
+      "sha256": "a9c41d77fe401683501fa233fa17f891fe78bda4dd09aea552ace9b5b575b4c4",
+      "bytes": 634679,
+      "width": 1080,
+      "height": 1350,
+      "format": "JPEG"
+    },
+    {
+      "filename": "image-8.jpg",
+      "sha256": "8186672822d6bd8f34c13a5aae38b826ed3265b18284ae6ec32330c9649c5954",
+      "bytes": 255706,
+      "width": 1284,
+      "height": 1478,
+      "format": "JPEG"
+    },
+    {
+      "filename": "image-9.jpg",
+      "sha256": "53849c54a6c473c6ea91cd5c4984ca85c9047b1541bf2c43804b14c591c47b84",
+      "bytes": 114936,
+      "width": 1284,
+      "height": 1318,
+      "format": "JPEG"
+    },
+    {
+      "filename": "image-10.jpg",
+      "sha256": "8e106a6b605a4febcde9f46b93d81d25b09880e0fbb57d93802f63db4f983bd8",
+      "bytes": 93777,
+      "width": 1284,
+      "height": 1264,
+      "format": "JPEG"
+    },
+    {
+      "filename": "image-11.jpg",
+      "sha256": "06bb5e9a36726aaea52678d26ea87008feb501e6e940b26d67aec2d6a9528906",
+      "bytes": 527502,
+      "width": 1280,
+      "height": 1706,
+      "format": "JPEG"
+    },
+    {
+      "filename": "image-12.jpg",
+      "sha256": "6f25117ba4ec3ec908d90d3a70353997e5c441bed83115da482c5b2757c39be8",
+      "bytes": 534286,
+      "width": 1440,
+      "height": 1934,
+      "format": "JPEG"
+    },
+    {
+      "filename": "image-13.jpg",
+      "sha256": "c224340631da02a34ad38d5de8b83990cee4d41abdb51550acd88fd73ee1e8de",
+      "bytes": 487025,
+      "width": 1440,
+      "height": 1934,
+      "format": "JPEG"
+    },
+    {
+      "filename": "image-14.jpg",
+      "sha256": "393cfadeb6790454a119ed75d984fed63d8d0675085c6ec793012d8e8655848e",
+      "bytes": 360559,
+      "width": 1206,
+      "height": 1505,
+      "format": "JPEG"
+    },
+    {
+      "filename": "image-15.jpg",
+      "sha256": "346520cabdce3913b3a6573dabfdaa00d9a6a92561feef6e623655c2c9f4f7f4",
+      "bytes": 555297,
+      "width": 1080,
+      "height": 1350,
+      "format": "JPEG"
+    },
+    {
+      "filename": "image-16.jpg",
+      "sha256": "6b4fdd1f23096f6f16533308e1fb2c7bbcbce369eeeeba10ff44b4713e5e792d",
+      "bytes": 283585,
+      "width": 1280,
+      "height": 1706,
+      "format": "JPEG"
+    },
+    {
+      "filename": "image-17.jpg",
+      "sha256": "8a9d7875a86698e242139483afeeb6db0e095b5a3d381a9a1301952756b0d9e3",
+      "bytes": 107974,
+      "width": 1284,
+      "height": 1382,
+      "format": "JPEG"
+    },
+    {
+      "filename": "image-18.jpg",
+      "sha256": "9cff98a9c1087de51a2c183f7241182fa4a6e2da3db0a17242b7de7efd03b797",
+      "bytes": 320079,
+      "width": 1080,
+      "height": 1350,
+      "format": "JPEG"
+    },
+    {
+      "filename": "image-19.jpg",
+      "sha256": "412d6174a3918e830941050ecf60107ad8b6068ffca025b144b8f06934e0f7c9",
+      "bytes": 265480,
+      "width": 1440,
+      "height": 1920,
+      "format": "JPEG"
+    },
+    {
+      "filename": "image-20.jpg",
+      "sha256": "4fce7583881e19c17b11ebaf011aa58107a15fa7c38b8c455d279939854afa36",
+      "bytes": 89383,
+      "width": 1284,
+      "height": 1332,
+      "format": "JPEG"
+    },
+    {
+      "filename": "image-21.jpg",
+      "sha256": "45267c6f9b37a287696fb4337950be12520a0b463092166f9173c5546a09973e",
+      "bytes": 204042,
+      "width": 1284,
+      "height": 1304,
+      "format": "JPEG"
+    },
+    {
+      "filename": "image-22.jpg",
+      "sha256": "219b1d47f331aef301a6dcc71dcbaf14703fe0b46153de6641e33f9a43cced70",
+      "bytes": 434403,
+      "width": 1080,
+      "height": 1440,
+      "format": "JPEG"
+    },
+    {
+      "filename": "image-23.jpg",
+      "sha256": "68cebdc5b5b8c363ce8a0d7e5898bf2863e8ba7198c97364af97c6256e60ec01",
+      "bytes": 379091,
+      "width": 1080,
+      "height": 1440,
+      "format": "JPEG"
+    },
+    {
+      "filename": "image-24.jpg",
+      "sha256": "b2d5cb0605942275ed81e04acad886f4b3263ff1fffd508e61139d3b5d2e9d01",
+      "bytes": 388264,
+      "width": 1080,
+      "height": 1440,
+      "format": "JPEG"
+    },
+    {
+      "filename": "image-25.jpg",
+      "sha256": "284e812187780f88db5105ca983c8fd034eba8e13db6f5d921afea3426b4a481",
+      "bytes": 398540,
+      "width": 1200,
+      "height": 1698,
+      "format": "JPEG"
+    },
+    {
+      "filename": "image-26.jpg",
+      "sha256": "3023be2d291e40f37e7cf38b35496574ec68710821e11c5914059fefda7045ed",
+      "bytes": 325824,
+      "width": 1080,
+      "height": 1350,
+      "format": "JPEG"
+    },
+    {
+      "filename": "image-27.jpg",
+      "sha256": "38cd63157c89469066a2a1701bf52ee59af8d2b067adf19875998a0c755e31c1",
+      "bytes": 390171,
+      "width": 1080,
+      "height": 1440,
+      "format": "JPEG"
+    },
+    {
+      "filename": "image-28.jpg",
+      "sha256": "d1b0bc81992fc84180096b467cccb67c102427b78522094f6cdb89b41a81882b",
+      "bytes": 343994,
+      "width": 1080,
+      "height": 1350,
+      "format": "JPEG"
+    },
+    {
+      "filename": "image-29.jpg",
+      "sha256": "7535459f8e6a544db92b0c2925e494192e3be0cbcc3c3fa03cddc1d4e51c6e44",
+      "bytes": 377967,
+      "width": 1284,
+      "height": 1268,
+      "format": "JPEG"
+    },
+    {
+      "filename": "image-30.jpg",
+      "sha256": "01c1d062bae84228124f2d402f0ad758b9d40edd9c54b8b56729dfe60fcc28ae",
+      "bytes": 407694,
+      "width": 1080,
+      "height": 1440,
+      "format": "JPEG"
+    },
+    {
+      "filename": "image-31.jpg",
+      "sha256": "48e80f7ef329d65ccc8d60c8af488b43f28768373e3b32a80fd5aa9336c285fc",
+      "bytes": 272345,
+      "width": 1080,
+      "height": 1350,
+      "format": "JPEG"
+    },
+    {
+      "filename": "image-32.jpg",
+      "sha256": "8e241e8bb24dd109b7ad8a1778b07db734cc40240b8528dfe09556eb4109e46f",
+      "bytes": 499034,
+      "width": 1440,
+      "height": 1440,
+      "format": "JPEG"
+    },
+    {
+      "filename": "image-33.jpg",
+      "sha256": "96b86bdd4e085fc4414f2e7e53366c4668980f8a24562e9dfabe508c9a4c9113",
+      "bytes": 307009,
+      "width": 1280,
+      "height": 1706,
+      "format": "JPEG"
+    },
+    {
+      "filename": "image-34.jpg",
+      "sha256": "1cce6fe66badd6a04321d53050b395a01c88aae9223770606853febcd3adb575",
+      "bytes": 167052,
+      "width": 736,
+      "height": 1042,
+      "format": "JPEG"
+    },
+    {
+      "filename": "image-35.jpg",
+      "sha256": "92f5fe5c81417c4282e534937b23e9dc823f9b525519fce5b04322c669b8b88f",
+      "bytes": 172141,
+      "width": 736,
+      "height": 1042,
+      "format": "JPEG"
+    },
+    {
+      "filename": "image-36.jpg",
+      "sha256": "07ece9c6dd322afd864c5431c24c3d05ba828fab2e8b05d1c2083b2ae16003f4",
+      "bytes": 195829,
+      "width": 736,
+      "height": 1042,
+      "format": "JPEG"
+    },
+    {
+      "filename": "image-37.jpg",
+      "sha256": "dbf46aaec7bc1243b2cb4f858a18570405aad68a2573e97ae4a4e134af113402",
+      "bytes": 544830,
+      "width": 1080,
+      "height": 1350,
+      "format": "JPEG"
+    },
+    {
+      "filename": "image-38.jpg",
+      "sha256": "24c8f130e3bdfd1523d61bcefd2026cbf490f8f49a141015b9054974e1e8d7a5",
+      "bytes": 520787,
+      "width": 1080,
+      "height": 1350,
+      "format": "JPEG"
+    },
+    {
+      "filename": "image-39.jpg",
+      "sha256": "7c7a92cad8456e60206a838e4158b478e261c9ac1f3870d61ebff03888f68e61",
+      "bytes": 233324,
+      "width": 1280,
+      "height": 1708,
+      "format": "JPEG"
+    },
+    {
+      "filename": "image-40.jpg",
+      "sha256": "ccda5cfd6ffc0cf12f5d1e45b02ccb6e66baa676f621b3649bffedf8436ae293",
+      "bytes": 218455,
+      "width": 800,
+      "height": 1132,
+      "format": "JPEG"
+    },
+    {
+      "filename": "image-41.jpg",
+      "sha256": "9d3c1fc42fc5543e026be307d4aa4c4590c30e42a37cc5e1cfae91604b026a11",
+      "bytes": 372679,
+      "width": 1080,
+      "height": 1350,
+      "format": "JPEG"
+    },
+    {
+      "filename": "image-42.jpg",
+      "sha256": "3374dacc97a1be0338dd8128968649ba6d9a1c9927b8ef1583a7ec24ea66ffd9",
+      "bytes": 384456,
+      "width": 1080,
+      "height": 1350,
+      "format": "JPEG"
+    },
+    {
+      "filename": "image-43.jpg",
+      "sha256": "c36e42083289c515a2c1d5517efd05b74f5dad1bde53a8e9704a3fd6d4a1ea7e",
+      "bytes": 524501,
+      "width": 1080,
+      "height": 1350,
+      "format": "JPEG"
+    },
+    {
+      "filename": "image-44.jpg",
+      "sha256": "975e44d816096b3c6035b7e6a15bdf44a142283d946e707217842e51e75a3c2f",
+      "bytes": 822819,
+      "width": 1440,
+      "height": 1800,
+      "format": "JPEG"
+    },
+    {
+      "filename": "image-45.jpg",
+      "sha256": "da2b99ac496ecfbbfdaccfaa709f65bf462add4ec497c2518080184cc48f8560",
+      "bytes": 169709,
+      "width": 736,
+      "height": 920,
+      "format": "JPEG"
+    },
+    {
+      "filename": "image-46.jpg",
+      "sha256": "f25d990532f78679ef51b568a0ec7c98cc555d438b8c4801d92a31d07f52800e",
+      "bytes": 540656,
+      "width": 1080,
+      "height": 1346,
+      "format": "JPEG"
+    },
+    {
+      "filename": "image-47.jpg",
+      "sha256": "e4efb5b466386584d07b45fb1a23c4482e4bf2c0ba469cb4615b3d228b30f450",
+      "bytes": 163836,
+      "width": 736,
+      "height": 1042,
+      "format": "JPEG"
+    },
+    {
+      "filename": "image-48.jpg",
+      "sha256": "f55e1c3c9c5c7160371e854aaf17436bca5e37e99e23023fc33c0e752258940d",
+      "bytes": 582260,
+      "width": 1080,
+      "height": 1350,
+      "format": "JPEG"
+    },
+    {
+      "filename": "image-49.jpg",
+      "sha256": "6cf7633ee678a1accddcaca976f66eeec34fa1f36b09c711c51d804c144aac62",
+      "bytes": 519423,
+      "width": 1080,
+      "height": 1350,
+      "format": "JPEG"
+    },
+    {
+      "filename": "image-50.jpg",
+      "sha256": "946693dc56ed04cad1dcd2b00baa4eee14561bca2ba323dedad9e500824ac412",
+      "bytes": 410295,
+      "width": 1080,
+      "height": 1440,
+      "format": "JPEG"
+    },
+    {
+      "filename": "image-51.jpg",
+      "sha256": "037efb459a5e941b37cd780f27f40c9f7d491bb49a8d00ba875226f2fb3e74cd",
+      "bytes": 959965,
+      "width": 1440,
+      "height": 1800,
+      "format": "JPEG"
+    },
+    {
+      "filename": "image-52.jpg",
+      "sha256": "3809220af936c9c6db8eebcae98152f14d7a9683f25bf4b0a441c2dcfcaec4a2",
+      "bytes": 757912,
+      "width": 1440,
+      "height": 1800,
+      "format": "JPEG"
+    },
+    {
+      "filename": "image-53.jpg",
+      "sha256": "26bfb3b12c3997112945c5fe52950f5e64c96c0bbc5b4a675963996a9586117a",
+      "bytes": 648353,
+      "width": 1440,
+      "height": 1922,
+      "format": "JPEG"
+    },
+    {
+      "filename": "image-54.jpg",
+      "sha256": "3f7bf113b2feacc63a3995deb6824789f20b338f48ddd0435e2efda5e69f5344",
+      "bytes": 520285,
+      "width": 1080,
+      "height": 1350,
+      "format": "JPEG"
+    },
+    {
+      "filename": "image-55.jpg",
+      "sha256": "621003819d48823bb9d18acda8f76bdd7ce2a14fae03aa57bfb34a646fba7644",
+      "bytes": 507669,
+      "width": 1206,
+      "height": 1589,
+      "format": "JPEG"
+    },
+    {
+      "filename": "image-56.jpg",
+      "sha256": "2738ee2f7030a2af8645c98848bba59aeb80887de57290c238eaa93284a69503",
+      "bytes": 606079,
+      "width": 1080,
+      "height": 1350,
+      "format": "JPEG"
+    },
+    {
+      "filename": "image-57.jpg",
+      "sha256": "d2723ba7056a7ce35044417cf0bf7f6166e906b9840b5124f13738c35aae12f2",
+      "bytes": 489410,
+      "width": 1080,
+      "height": 1350,
+      "format": "JPEG"
+    },
+    {
+      "filename": "image-58.jpg",
+      "sha256": "c1344888c27914b0dfb52720c5d34acd553b1618eba426d4add96cb876ab9f02",
+      "bytes": 332731,
+      "width": 1080,
+      "height": 1350,
+      "format": "JPEG"
+    },
+    {
+      "filename": "image-59.jpg",
+      "sha256": "0b297669d03b680ccb280ee0afae58dd5888a6a42d0e07b2cf07e5898a6129df",
+      "bytes": 576919,
+      "width": 1080,
+      "height": 1350,
+      "format": "JPEG"
+    },
+    {
+      "filename": "image-60.jpg",
+      "sha256": "3613031355bcbb2ddb3e320c27bf25a23eb053fdf063714aadc4a0637bf3bc62",
+      "bytes": 368233,
+      "width": 1080,
+      "height": 1528,
+      "format": "JPEG"
+    },
+    {
+      "filename": "image-61.jpg",
+      "sha256": "ea90ff9a52e7467a90b684c0bd1caf68123560178503d25f2a881774bae7d9a4",
+      "bytes": 402397,
+      "width": 1080,
+      "height": 1350,
+      "format": "JPEG"
+    },
+    {
+      "filename": "image-62.jpg",
+      "sha256": "c92f870cd09209a4035dd64fec5e5d845be1dbda32ecbe71d776726ea48295f0",
+      "bytes": 545129,
+      "width": 1080,
+      "height": 1350,
+      "format": "JPEG"
+    },
+    {
+      "filename": "image-63.jpg",
+      "sha256": "87b1adf3c4fedc69f9260afd614ea2d34f0414fad59d94abb45c428cfc9efea2",
+      "bytes": 381608,
+      "width": 1080,
+      "height": 1350,
+      "format": "JPEG"
+    },
+    {
+      "filename": "image-64.jpg",
+      "sha256": "9204ba92f55917c140330461f501ec9241545a359015ec400c0b575f22c6542b",
+      "bytes": 404653,
+      "width": 1080,
+      "height": 1350,
+      "format": "JPEG"
+    },
+    {
+      "filename": "image-65.jpg",
+      "sha256": "8001aea8ca9a44096b97d70df56437e6abbb7d1d50ee6d97424dc1a9c9811049",
+      "bytes": 353934,
+      "width": 1080,
+      "height": 1350,
+      "format": "JPEG"
+    },
+    {
+      "filename": "image-66.jpg",
+      "sha256": "dfa7d5af2fbf1c34febb4a66531dc741b41868624d4fe68922495775795db4c2",
+      "bytes": 304028,
+      "width": 1280,
+      "height": 1706,
+      "format": "JPEG"
+    },
+    {
+      "filename": "image-67.jpg",
+      "sha256": "8da9ebf5d9c8f6cc14e8014a99445b72ab9c8c92b0e7dd8a9558bea13d926ad5",
+      "bytes": 409646,
+      "width": 1440,
+      "height": 2036,
+      "format": "JPEG"
+    },
+    {
+      "filename": "image-68.jpg",
+      "sha256": "19654c69049e35da0a1f19740fabaf292ec9f4a9cd0c968e754d1dc82da6bd25",
+      "bytes": 306892,
+      "width": 1440,
+      "height": 1920,
+      "format": "JPEG"
+    },
+    {
+      "filename": "image-69.jpg",
+      "sha256": "1724cdb9f905020cdac11e4a7cc77c64fce816ebef7d2c7359990cf29df5b9ff",
+      "bytes": 239325,
+      "width": 1440,
+      "height": 1078,
+      "format": "JPEG"
+    },
+    {
+      "filename": "image-70.jpg",
+      "sha256": "f8f40c0ac9e9a697dcc81d3834e305c6999f3757ff9a31657dda16e45ad453a5",
+      "bytes": 261826,
+      "width": 1280,
+      "height": 1706,
+      "format": "JPEG"
+    },
+    {
+      "filename": "image-71.jpg",
+      "sha256": "d74070e685e77855cef9471c1c1a80e5cbe86bba8688c1ab0e6985e6819e089a",
+      "bytes": 249856,
+      "width": 1080,
+      "height": 1080,
+      "format": "JPEG"
+    },
+    {
+      "filename": "image-72.jpg",
+      "sha256": "9199ab48214e9ede72397750e777ed48b45c61b940e466956d66356b04a3e2ae",
+      "bytes": 291446,
+      "width": 1080,
+      "height": 1080,
+      "format": "JPEG"
+    },
+    {
+      "filename": "image-73.jpg",
+      "sha256": "13aeb9a0380dd1ee4f974bb510ba2d0947bbc2dbc674bd78aedcb42876528a6b",
+      "bytes": 162217,
+      "width": 1280,
+      "height": 1706,
+      "format": "JPEG"
+    },
+    {
+      "filename": "image-74.jpg",
+      "sha256": "ca1e42dbbcb2af1d21b02e231ca8cbb66a30e92a88ee3572bf50878f527ae688",
+      "bytes": 282452,
+      "width": 1440,
+      "height": 1920,
+      "format": "JPEG"
+    },
+    {
+      "filename": "image-75.jpg",
+      "sha256": "21936fef5d87f8bf449ae7b10793d51c454151d24b519815f9cf28dba4811151",
+      "bytes": 506156,
+      "width": 1440,
+      "height": 1920,
+      "format": "JPEG"
+    },
+    {
+      "filename": "image-76.jpg",
+      "sha256": "65c928f7669ce2dc77854dd393e7c32edfab8bdaa368020b9140ab1b79883b45",
+      "bytes": 216916,
+      "width": 1284,
+      "height": 1270,
+      "format": "JPEG"
+    },
+    {
+      "filename": "image-77.jpg",
+      "sha256": "7abd7544817c2704ab57052fe67bba411eae6e1f3b4b4dffa3248d3c53092e3b",
+      "bytes": 190573,
+      "width": 1080,
+      "height": 1350,
+      "format": "JPEG"
+    },
+    {
+      "filename": "image-78.jpg",
+      "sha256": "b9c4e35bc0f6cfe40417577bd3bb6cde9ed983e0c9e11d24531bba6bef9ea831",
+      "bytes": 418458,
+      "width": 1440,
+      "height": 2036,
+      "format": "JPEG"
+    },
+    {
+      "filename": "image-79.jpg",
+      "sha256": "a2ec91a615a2a276d1663e5a32f7400d7bb2ccfe6d03376e1ffcb1b228a9efce",
+      "bytes": 188793,
+      "width": 1080,
+      "height": 1440,
+      "format": "JPEG"
+    },
+    {
+      "filename": "image-80.jpg",
+      "sha256": "faf0a38f40ab8e6247675593b6cfc77614e389ef69fcf11bdebea7d36e1014ca",
+      "bytes": 211408,
+      "width": 1080,
+      "height": 1080,
+      "format": "JPEG"
+    },
+    {
+      "filename": "image-81.jpg",
+      "sha256": "4145d5e5b7c319ef432668f798e416e2692744f6545660c0db0a97f028901da0",
+      "bytes": 243352,
+      "width": 1296,
+      "height": 1728,
+      "format": "JPEG"
+    },
+    {
+      "filename": "image-82.jpg",
+      "sha256": "a869bea9575ec8d011ed0d1bc7bfbf95fbce02ffb252056ccfb0f38c2376d4b3",
+      "bytes": 396653,
+      "width": 1284,
+      "height": 1274,
+      "format": "JPEG"
+    },
+    {
+      "filename": "image-83.jpg",
+      "sha256": "ff36ff917afc730929385fe2f8a464ce7ab0e8c1ad2cfd74a4c1ced0b02496a9",
+      "bytes": 197451,
+      "width": 1280,
+      "height": 1706,
+      "format": "JPEG"
+    },
+    {
+      "filename": "image-84.jpg",
+      "sha256": "0b5692518539bc3e9cb665b2e0d910ebf1ad7cd10b5723e6160c9ab8dfe51d3b",
+      "bytes": 322155,
+      "width": 1280,
+      "height": 1706,
+      "format": "JPEG"
+    },
+    {
+      "filename": "image-85.jpg",
+      "sha256": "37cdfc2ce18063a58798de220fab6d6925a6bf5ef6354c7182266ac2274d30e5",
+      "bytes": 402362,
+      "width": 1440,
+      "height": 2036,
+      "format": "JPEG"
+    },
+    {
+      "filename": "image-86.jpg",
+      "sha256": "3aa96aac909bc806b4f93f4f8f995acb03ba41e9ebf5771bad3bed7a5af1289d",
+      "bytes": 455398,
+      "width": 1440,
+      "height": 1930,
+      "format": "JPEG"
+    },
+    {
+      "filename": "image-87.jpg",
+      "sha256": "ca18a5b98e8b9582cf3a310d3b86dd8e5f60bc9c3a7fcab3ff960ee18a800bc6",
+      "bytes": 231744,
+      "width": 1080,
+      "height": 1080,
+      "format": "JPEG"
+    },
+    {
+      "filename": "image-88.jpg",
+      "sha256": "07bd5e847e14ed4bc94c166f3aa52271ea2d18617937e0dcce879bdd84344827",
+      "bytes": 399146,
+      "width": 1440,
+      "height": 2036,
+      "format": "JPEG"
+    },
+    {
+      "filename": "image-89.jpg",
+      "sha256": "b162566f45236680767c78f5c8436b1fc3fc18a2452cb7b65eb77c64697e2c35",
+      "bytes": 257827,
+      "width": 1080,
+      "height": 1350,
+      "format": "JPEG"
+    },
+    {
+      "filename": "image-90.jpg",
+      "sha256": "162554cf37f76d2be5a6b0b575497e1241ac5c528354eea6ce42f9edb04d2b23",
+      "bytes": 351804,
+      "width": 1284,
+      "height": 1262,
+      "format": "JPEG"
+    },
+    {
+      "filename": "image-91.jpg",
+      "sha256": "fabeb5edda505eb25d99a07d636288302c8600c3f4c6b9ddd943451af451791f",
+      "bytes": 384913,
+      "width": 1080,
+      "height": 1440,
+      "format": "JPEG"
+    },
+    {
+      "filename": "image-92.jpg",
+      "sha256": "09ce09fdcc98851652f74d2738be3567c57564d2278a2a1fffdd080381fe1767",
+      "bytes": 250604,
+      "width": 1080,
+      "height": 1440,
+      "format": "JPEG"
+    },
+    {
+      "filename": "image-93.jpg",
+      "sha256": "c7ef0dace2b762383322da727dbace4540d1d4769830d93299b7b5c5ac6e3848",
+      "bytes": 301359,
+      "width": 1284,
+      "height": 1278,
+      "format": "JPEG"
+    },
+    {
+      "filename": "image-94.jpg",
+      "sha256": "7e403b342b10734b6d75f38b977cbbf0b51ef862ed021452ee130dbbc6283b3e",
+      "bytes": 494457,
+      "width": 1440,
+      "height": 1920,
+      "format": "JPEG"
+    },
+    {
+      "filename": "image-95.jpg",
+      "sha256": "49ab8a4c908b587e3b9ad363729e793e33bca5e2c05f8a108dbc161d5867a92f",
+      "bytes": 606991,
+      "width": 1280,
+      "height": 1706,
+      "format": "JPEG"
+    },
+    {
+      "filename": "image-96.jpg",
+      "sha256": "d1014b4052d9c6b824d45d2b55ce3643d75cf77e1b8e456ab9e6888eaf7548d3",
+      "bytes": 500892,
+      "width": 1440,
+      "height": 1920,
+      "format": "JPEG"
+    },
+    {
+      "filename": "image-97.jpg",
+      "sha256": "31d84176ea87d81f4412bbd0381a1753e525d4b89181ba366640d936c19b7eaf",
+      "bytes": 120557,
+      "width": 750,
+      "height": 702,
+      "format": "JPEG"
+    },
+    {
+      "filename": "image-98.jpg",
+      "sha256": "ae903d13b586d4e316367858acbbe257ce4a6f11d1b9309c0a2cc3f7a50e473a",
+      "bytes": 455625,
+      "width": 1440,
+      "height": 1930,
+      "format": "JPEG"
+    },
+    {
+      "filename": "image-99.jpg",
+      "sha256": "002fb2b19becaf82e10785dd2ae2cebb82a6d80a5f75c386db8f7a2e2ab43712",
+      "bytes": 352778,
+      "width": 1280,
+      "height": 1706,
+      "format": "JPEG"
+    },
+    {
+      "filename": "image-100.jpg",
+      "sha256": "2abcae071ddcfde1aab531c27bfc28ee6189b6d8033a3e41fbd0fe497d71dbed",
+      "bytes": 203724,
+      "width": 1440,
+      "height": 1078,
+      "format": "JPEG"
+    },
+    {
+      "filename": "image-101.jpg",
+      "sha256": "40f607052404ef5832221800d1fe6821c9eac8498b4eb539d8126043906aeced",
+      "bytes": 326260,
+      "width": 1280,
+      "height": 1706,
+      "format": "JPEG"
+    },
+    {
+      "filename": "image-102.jpg",
+      "sha256": "ac7c8fdb8efd2c59c2e833d624cea2bb92fc1cd7c02686e5fd8cb870af340e54",
+      "bytes": 391918,
+      "width": 1440,
+      "height": 1930,
+      "format": "JPEG"
+    },
+    {
+      "filename": "image-103.jpg",
+      "sha256": "3bcfbd25d6d11ee3a1ec0e9be1b182078a1a8b824262940431c09d59a2e75fea",
+      "bytes": 151622,
+      "width": 1440,
+      "height": 1078,
+      "format": "JPEG"
+    },
+    {
+      "filename": "image-104.jpg",
+      "sha256": "7e7df7d262c5810b7b29f399b7371a14c64ac3bf6570bfa905d42f256965f0a8",
+      "bytes": 222690,
+      "width": 1440,
+      "height": 1078,
+      "format": "JPEG"
+    },
+    {
+      "filename": "image-105.jpg",
+      "sha256": "464dd21c424f06002f7962f4e4ec87c4761f4163360ccb5dd83c616f604d2993",
+      "bytes": 196309,
+      "width": 1440,
+      "height": 1078,
+      "format": "JPEG"
+    },
+    {
+      "filename": "image-106.jpg",
+      "sha256": "22926da408316d9ebddddeda3585b06d096d85525e08be4e31a6c2ffad61df48",
+      "bytes": 414112,
+      "width": 1440,
+      "height": 1930,
+      "format": "JPEG"
+    },
+    {
+      "filename": "image-107.jpg",
+      "sha256": "bd0820ff714cdd7ba88784a1f81e668fa7f22b62138848c0798212d5e0cfc7e9",
+      "bytes": 582095,
+      "width": 1440,
+      "height": 1930,
+      "format": "JPEG"
+    },
+    {
+      "filename": "image-108.jpg",
+      "sha256": "2aafe436ad71f664ef07a82536c6f06ec7e71e79de83420138f96e15f1f63f21",
+      "bytes": 427759,
+      "width": 1440,
+      "height": 1930,
+      "format": "JPEG"
+    },
+    {
+      "filename": "image-109.jpg",
+      "sha256": "5d4656c56323376b9a552e95fc1739fc9e197917952caa6affa4a1caa0b7605a",
+      "bytes": 348301,
+      "width": 1440,
+      "height": 1920,
+      "format": "JPEG"
+    },
+    {
+      "filename": "image-110.jpg",
+      "sha256": "ace83869a676f6b633ad54d55558dd2f62216ec687c9a65e079cfab2d11bd1f3",
+      "bytes": 442062,
+      "width": 1440,
+      "height": 1930,
+      "format": "JPEG"
+    },
+    {
+      "filename": "image-111.jpg",
+      "sha256": "8c78a3c6486df6d06792ea060ca4dc33aded38f71ea152cc2cdaef61b2252d80",
+      "bytes": 311243,
+      "width": 1440,
+      "height": 2070,
+      "format": "JPEG"
+    },
+    {
+      "filename": "image-112.jpg",
+      "sha256": "9cbab9109aedccddfd3fd964beba815a489c4b8cecae76be7a843137bdf76b08",
+      "bytes": 348016,
+      "width": 1080,
+      "height": 1440,
+      "format": "JPEG"
+    },
+    {
+      "filename": "image-113.jpg",
+      "sha256": "663f532c0898208366dfd2b3cd0835b45527508c757a94db23a1d9abfed56f51",
+      "bytes": 132485,
+      "width": 1280,
+      "height": 1706,
+      "format": "JPEG"
+    },
+    {
+      "filename": "image-114.jpg",
+      "sha256": "d98bd9cf9592095f83d920ef4145f7b93159f6ff9d029788c2a151608f6e55c7",
+      "bytes": 493285,
+      "width": 1440,
+      "height": 1920,
+      "format": "JPEG"
+    },
+    {
+      "filename": "image-115.jpg",
+      "sha256": "16ba7f0addbad9e76ed523c574579ced742f9ab5cceddd90a0b842be5bc94538",
+      "bytes": 119669,
+      "width": 1284,
+      "height": 1264,
+      "format": "JPEG"
+    },
+    {
+      "filename": "image-116.jpg",
+      "sha256": "54b0d0c9c1cb799c89480e931966c556b830ca866babf7446cc8b51a2b39057f",
+      "bytes": 83537,
+      "width": 1284,
+      "height": 1266,
+      "format": "JPEG"
+    },
+    {
+      "filename": "image-117.jpg",
+      "sha256": "4136fb440dc8e88c450052a00cf12f449e62f36d3b50e6fa78604647150a0c45",
+      "bytes": 111729,
+      "width": 1284,
+      "height": 1254,
+      "format": "JPEG"
+    },
+    {
+      "filename": "image-118.jpg",
+      "sha256": "f5ae603ec790eb3d6175cfcb5406a86290a058b7ab943290a793081883db133e",
+      "bytes": 97555,
+      "width": 1284,
+      "height": 1262,
+      "format": "JPEG"
+    },
+    {
+      "filename": "image-119.jpg",
+      "sha256": "9d84ee2f94efbace001aa797928267932da6277ddb71b2a03c9be993177f034f",
+      "bytes": 164313,
+      "width": 1440,
+      "height": 1078,
+      "format": "JPEG"
+    },
+    {
+      "filename": "image-120.jpg",
+      "sha256": "9e60d5d8135add55cc811d72776af3019fdbb4c71049b63f81d886c6264bef81",
+      "bytes": 248728,
+      "width": 1080,
+      "height": 1080,
+      "format": "JPEG"
+    },
+    {
+      "filename": "image-121.jpg",
+      "sha256": "9b56d1a500439a9bd90dc79a5d4c7b41cfd797b861143d4990d7300af1ec5db0",
+      "bytes": 251851,
+      "width": 1280,
+      "height": 1706,
+      "format": "JPEG"
+    },
+    {
+      "filename": "image-122.jpg",
+      "sha256": "202b9d7d8404d0aefe65ce182db9b3ea2c0969d6bcca63be9d14fe707914c3a0",
+      "bytes": 182332,
+      "width": 1280,
+      "height": 1706,
+      "format": "JPEG"
+    },
+    {
+      "filename": "image-123.jpg",
+      "sha256": "3d72c0b93abc807a3678f89cc9b8ae8546fb1d0510cf6e137822c516436d889d",
+      "bytes": 288357,
+      "width": 896,
+      "height": 1200,
+      "format": "JPEG"
+    },
+    {
+      "filename": "image-124.jpg",
+      "sha256": "15a21c443b006b4c82bb044ce31d90c0b34203b0dae90b42f0b0765b1acbe0df",
+      "bytes": 258354,
+      "width": 1440,
+      "height": 1440,
+      "format": "JPEG"
+    },
+    {
+      "filename": "image-125.jpg",
+      "sha256": "e393606ccbd327f28cf014f096469ab6ac0dd5739296882e162c2c71ecd10879",
+      "bytes": 744977,
+      "width": 1440,
+      "height": 2160,
+      "format": "JPEG"
+    },
+    {
+      "filename": "image-126.jpg",
+      "sha256": "9be46f45f87a6e5edd72b4fa8659db020e9c49ed1d7db15a331098eac632681c",
+      "bytes": 506115,
+      "width": 1440,
+      "height": 1920,
+      "format": "JPEG"
+    },
+    {
+      "filename": "image-127.jpg",
+      "sha256": "ca3b05cb4ce0fd6149c1a43711ff50dab37fc4e4638a5b5ef222faa82132fcc2",
+      "bytes": 176885,
+      "width": 878,
+      "height": 878,
+      "format": "JPEG"
+    },
+    {
+      "filename": "image-128.jpg",
+      "sha256": "820103be00703733b35b3a447e760818e17779c603f5567344d26f64ac099296",
+      "bytes": 166939,
+      "width": 1206,
+      "height": 1240,
+      "format": "JPEG"
+    },
+    {
+      "filename": "image-129.jpg",
+      "sha256": "4732d12109e6133081ab762490d269fc1f957d3039d7f4d2144d970032310375",
+      "bytes": 230816,
+      "width": 1080,
+      "height": 1440,
+      "format": "JPEG"
+    },
+    {
+      "filename": "image-130.jpg",
+      "sha256": "33e8b4a7020b0f608d162080eb6de7df083d01e6bbe4739398c95907ec2b0e6d",
+      "bytes": 242096,
+      "width": 1080,
+      "height": 1440,
+      "format": "JPEG"
+    },
+    {
+      "filename": "image-131.jpg",
+      "sha256": "0693ec60cc90dd79253b94eb412635699e42e3a28b35e45efe72503f562c6040",
+      "bytes": 136036,
+      "width": 870,
+      "height": 870,
+      "format": "JPEG"
+    },
+    {
+      "filename": "image-132.jpg",
+      "sha256": "f75d68291e5052ee06ab6c36961bca29b279229320c8849b10d3d645d665a5d6",
+      "bytes": 136269,
+      "width": 1234,
+      "height": 1234,
+      "format": "JPEG"
+    },
+    {
+      "filename": "image-133.jpg",
+      "sha256": "33ff6439525a25564816ab696fec208541e8a1255866720eb0782ab003546f0b",
+      "bytes": 132691,
+      "width": 1256,
+      "height": 1256,
+      "format": "JPEG"
+    },
+    {
+      "filename": "image-134.jpg",
+      "sha256": "5691be2a9f2e9755cd2bce70a59469c499882c69878df5f7680a3c6d7f1f6521",
+      "bytes": 161385,
+      "width": 1176,
+      "height": 1176,
+      "format": "JPEG"
+    },
+    {
+      "filename": "image-135.jpg",
+      "sha256": "330408759d7ddfe2ac9d476c4b5b701da7739116ed43216daea795bb30146963",
+      "bytes": 127849,
+      "width": 1256,
+      "height": 1256,
+      "format": "JPEG"
+    },
+    {
+      "filename": "image-136.jpg",
+      "sha256": "892aeb434e3dfa531ee70f4bea04178fe50d952117db5df8d072604f3e08890f",
+      "bytes": 209759,
+      "width": 1440,
+      "height": 1440,
+      "format": "JPEG"
+    },
+    {
+      "filename": "image-137.jpg",
+      "sha256": "328fe727af59c310658222e12dc4d59cfd9f7ca8af6f9105a6aff6fd95643377",
+      "bytes": 524550,
+      "width": 1440,
+      "height": 1440,
+      "format": "JPEG"
+    },
+    {
+      "filename": "image-138.jpg",
+      "sha256": "b43630f43ce1dbb2830c2d8793d2db86cfceae3ac0b3d15903009f6aed1e763b",
+      "bytes": 544121,
+      "width": 1440,
+      "height": 1920,
+      "format": "JPEG"
+    },
+    {
+      "filename": "image-139.jpg",
+      "sha256": "0c8139bf979d6c4a38ec48403fa6075dd848a53597fa9c0bc903f2e5a421b721",
+      "bytes": 241477,
+      "width": 1046,
+      "height": 1046,
+      "format": "JPEG"
+    },
+    {
+      "filename": "image-140.jpg",
+      "sha256": "2e5198ee72f641105420cdeb8a31a60ed9f1acd6a60cdefa023f1623383be02b",
+      "bytes": 217971,
+      "width": 1440,
+      "height": 1078,
+      "format": "JPEG"
+    },
+    {
+      "filename": "image-141.jpg",
+      "sha256": "c2724e71104feb7784b49ef9f2a8b7f442e2e6670c58d8828d93038481604df4",
+      "bytes": 313715,
+      "width": 1284,
+      "height": 1272,
+      "format": "JPEG"
+    },
+    {
+      "filename": "image-142.jpg",
+      "sha256": "72ebeb69f26d5faa2c00d78fd008912beafa40b767bd08f068a84c3565857e2f",
+      "bytes": 354783,
+      "width": 1284,
+      "height": 1264,
+      "format": "JPEG"
+    },
+    {
+      "filename": "image-143.jpg",
+      "sha256": "58e705a9d5eb8babc77c26ea81ae6281ed43f77b3c7f38162d085fa8fed47b1f",
+      "bytes": 201512,
+      "width": 1080,
+      "height": 1440,
+      "format": "JPEG"
+    },
+    {
+      "filename": "image-144.jpg",
+      "sha256": "47acdccde428638a759b35b5cb443903a1133f17f582574f54347c32898ec8fd",
+      "bytes": 347332,
+      "width": 1284,
+      "height": 1272,
+      "format": "JPEG"
+    }
+  ],
+  "evaluation_slice": {
+    "category": "ring",
+    "selection_basis": "Advisory primary_category=ring only; this declares workload scope and is not quality evidence.",
+    "ring_source_filenames": [
+      "image-100.jpg",
+      "image-101.jpg",
+      "image-102.jpg",
+      "image-103.jpg",
+      "image-104.jpg",
+      "image-105.jpg",
+      "image-106.jpg",
+      "image-107.jpg",
+      "image-108.jpg",
+      "image-109.jpg",
+      "image-110.jpg",
+      "image-111.jpg",
+      "image-112.jpg",
+      "image-113.jpg",
+      "image-114.jpg",
+      "image-115.jpg",
+      "image-116.jpg",
+      "image-117.jpg",
+      "image-118.jpg",
+      "image-119.jpg",
+      "image-120.jpg",
+      "image-121.jpg",
+      "image-122.jpg",
+      "image-123.jpg",
+      "image-126.jpg",
+      "image-138.jpg",
+      "image-140.jpg",
+      "image-67.jpg",
+      "image-68.jpg",
+      "image-69.jpg",
+      "image-70.jpg",
+      "image-71.jpg",
+      "image-72.jpg",
+      "image-73.jpg",
+      "image-74.jpg",
+      "image-75.jpg",
+      "image-76.jpg",
+      "image-77.jpg",
+      "image-78.jpg",
+      "image-79.jpg",
+      "image-80.jpg",
+      "image-81.jpg",
+      "image-82.jpg",
+      "image-83.jpg",
+      "image-84.jpg",
+      "image-85.jpg",
+      "image-86.jpg",
+      "image-87.jpg",
+      "image-88.jpg",
+      "image-89.jpg",
+      "image-90.jpg",
+      "image-91.jpg",
+      "image-92.jpg",
+      "image-93.jpg",
+      "image-94.jpg",
+      "image-95.jpg",
+      "image-97.jpg",
+      "image-99.jpg"
+    ],
+    "render_case_ids": [
+      "round-solitaire-yellow-4-narrow",
+      "oval-solitaire-white-6-wide",
+      "emerald-halo-rose-4-exact",
+      "cushion-halo-white-6-wide",
+      "marquise-solitaire-yellow-4",
+      "oval-halo-yellow-6-imported",
+      "round-leaf-yellow-4-imported"
+    ],
+    "operation_ids": [
+      "center-cut-shape",
+      "center-species-color",
+      "band-width",
+      "metal-color",
+      "metal-material",
+      "prong-setting",
+      "halo-add",
+      "halo-remove",
+      "halo-count",
+      "leaf-motif-shape",
+      "background-only"
+    ],
+    "operation_classes": {
+      "quick_appearance": [
+        "center-species-color",
+        "metal-color",
+        "background-only"
+      ],
+      "structural": [
+        "center-cut-shape",
+        "band-width",
+        "metal-material",
+        "prong-setting",
+        "halo-add",
+        "halo-remove",
+        "halo-count",
+        "leaf-motif-shape"
+      ]
+    },
+    "evidence_status": "not_run"
+  }
+}

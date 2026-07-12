@@ -1,0 +1,29 @@
+{
+  "schema_version": "facetta-frozen-gate-config.v1",
+  "config_id": "founder-ring-90-85-90-v1",
+  "corpus_id": "founder-reference-144-v1",
+  "manifest_sha256": "b7710d4c76ed6f903d6957e067fa17863e680ee2a728a69612c2fd4a9488c9e6",
+  "frozen_components": {
+    "ring_contract": "src/facetta/ring_evals.py@sha256:9714660e3bdf0e8bede5cfc126874277e9a6c74e5351d9d268d622632b103419",
+    "prompt_bundle": "src/facetta/image_agent/prompts.py@sha256:d2626badb8fc8276413884041ba481f091bab0d5d0a63a34bc00870ceb84aecb",
+    "evaluator_bundle": "src/facetta/evals.py@sha256:65d0bc281910d14f9881b25465ad8856cab62bf0927b76923d86a27617db5431",
+    "routing": "grok-primary-openai-fallback.v1",
+    "live_runner": "scripts/run_trusted_ring_eval.py@sha256:51d74e301c1761d9ad224f4f4fc1dc048fd0655c7c5ac7bc2304eb0725cdfe79"
+  },
+  "thresholds": {
+    "render_hard_gate_pass_rate": 0.9,
+    "mean_render_conformance": 85,
+    "mean_edit_fidelity": 90,
+    "max_attempts": 3,
+    "max_outside_mask_drift": 0.18
+  },
+  "evidence_requirements": {
+    "canonical_persistence": true,
+    "zero_rejected_candidates_persisted": true,
+    "replayable_source_candidate_mask_for_each_edit": true,
+    "gia_trained_reviewer": true,
+    "reviewer_false_positive_false_negative_counts": true
+  },
+  "reviewer_public_key": null,
+  "current_evidence_status": "not_run"
+}
