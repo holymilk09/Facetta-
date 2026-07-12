@@ -199,6 +199,13 @@ def principal_actor(
     return principal.subject
 
 
+async def require_authenticated_principal(
+    request: Request,
+) -> AuthenticatedPrincipal:
+    """Authenticate a request that does not touch tenant-owned persistence."""
+    return _authenticate(request)
+
+
 async def require_principal_boundary(
     request: Request,
     db: Session = Depends(get_db),
@@ -227,7 +234,10 @@ async def require_asset_project_boundary(
     principal: AuthenticatedPrincipal = Depends(require_principal_boundary),
 ) -> None:
     """Authorize an asset path through its canonical project root owner."""
-    asset_id = request.path_params.get("asset_id")
+    asset_id = (
+        request.path_params.get("asset_id")
+        or request.path_params.get("active_asset_id")
+    )
     if not asset_id or principal.local_unbound:
         return
     asset = db.get(ImageAsset, asset_id)
@@ -250,7 +260,7 @@ async def require_image_run_boundary(
         return
     run = db.get(ImageRun, run_id)
     if run is None:
-        return
+        raise _error(403, "image_run_access_denied", "the principal does not own this image-run evidence")
     project = db.get(Project, run.project_root_id) if run.project_root_id else None
     owner = project.owner if project is not None else run.created_by
     if owner != principal.subject:

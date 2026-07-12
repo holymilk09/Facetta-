@@ -264,6 +264,17 @@ def test_owner_and_created_by_fields_cannot_spoof_principal(auth_client):
     assert confirm.status_code == 403
     assert confirm.json()["detail"]["code"] == "principal_actor_mismatch"
 
+    markup = client.post(
+        "/assets/ast_auth_root/markup/read",
+        headers={"Authorization": f"Bearer {OWNER_TOKEN}"},
+        json={
+            "marked_image_base64": "aW1hZ2U=",
+            "created_by": "usr_other",
+        },
+    )
+    assert markup.status_code == 403
+    assert markup.json()["detail"]["code"] == "principal_actor_mismatch"
+
 
 def test_authenticated_owner_can_read_own_project(auth_client):
     client, _Session = auth_client
@@ -273,6 +284,28 @@ def test_authenticated_owner_can_read_own_project(auth_client):
     )
     assert response.status_code == 200, response.text
     assert response.json()["owner"] == "usr_owner"
+
+
+def test_production_markup_cannot_skip_temporary_preview(
+    auth_client,
+    monkeypatch,
+):
+    client, _Session = auth_client
+    monkeypatch.setenv("FACETTA_ENV", "production")
+    response = client.post(
+        "/assets/ast_auth_root/markup/apply",
+        headers={"Authorization": f"Bearer {OWNER_TOKEN}"},
+        json={
+            "annotations": [{
+                "region_description": "center stone",
+                "change_instruction": "make it blue",
+            }],
+            "created_by": "usr_owner",
+            "preview_only": False,
+        },
+    )
+    assert response.status_code == 409
+    assert response.json()["code"] == "studio_preview_required"
 
 
 def test_supabase_jwt_maps_uuid_subject_to_canonical_owner(
@@ -593,6 +626,43 @@ def test_trusted_image_run_evidence_denies_other_principal(auth_client):
     )
     assert response.status_code == 403
     assert response.json()["detail"]["code"] == "image_run_access_denied"
+
+
+def test_catalog_provider_and_candidate_routes_share_canonical_ownership(
+    auth_client,
+):
+    client, _Session = auth_client
+    other = {"Authorization": f"Bearer {OTHER_TOKEN}"}
+    preview = client.post(
+        "/assets/ast_auth_root/catalog/preview",
+        headers=other,
+        json={
+            "component_path": "metal.color",
+            "option_id": "rose",
+            "expected_design_version": 1,
+            "created_by": "usr_other",
+        },
+    )
+    assert preview.status_code == 403
+    assert preview.json()["detail"]["code"] == "asset_access_denied"
+    spoof = client.post(
+        "/assets/ast_auth_root/catalog/preview",
+        headers={"Authorization": f"Bearer {OWNER_TOKEN}"},
+        json={
+            "component_path": "metal.color",
+            "option_id": "rose",
+            "expected_design_version": 1,
+            "created_by": "usr_other",
+        },
+    )
+    assert spoof.status_code == 403
+    assert spoof.json()["detail"]["code"] == "principal_actor_mismatch"
+    candidate = client.get(
+        "/image-runs/run_owner/catalog-candidates/missing/image",
+        headers=other,
+    )
+    assert candidate.status_code == 403
+    assert candidate.json()["detail"]["code"] == "image_run_access_denied"
 
 
 def test_render_actor_design_link_and_insights_are_tenant_scoped(

@@ -39,12 +39,26 @@ FACETTA_ENV=production
 FACETTA_AUTH_MODE=supabase
 FACETTA_SUPABASE_URL=https://YOUR_PROJECT_REF.supabase.co
 FACETTA_SUPABASE_AUDIENCE=authenticated
+FACETTA_CORS_ORIGINS=https://studio.example.com
 ```
 
 The JWKS URL is derived from the validated project URL and cached for no longer
 than ten minutes. Only ES256 and RS256 are accepted; shared-secret HS256 tokens
 are not supported. `opaque`, `local`, and `test` are explicit non-production
 compatibility modes. Production startup rejects them.
+
+The production application surface omits legacy Designs, Library, Users,
+Saved Stones, and share-administration routers; it also disables OpenAPI/Swagger
+and wildcard CORS. Only the eight specification adapters consumed by Studio
+are mounted and require the same principal boundary; provider-heavy legacy
+build/render routes are absent. The production Assets surface is limited to
+authenticated image reads and Studio's temporary markup read/preview seam;
+direct render, view, restyle, video, pin, and technical-drawing routes are not
+mounted. Catalog preview/candidate routes additionally authorize the canonical
+asset project or image run and bind `created_by` to the verified principal;
+deprecated direct catalog apply is not mounted. Legacy routers remain mounted
+only in test/development until their callers and historical compatibility
+readers have migrated.
 
 For an emergency signing-key event, restart every API process to clear its
 in-memory JWKS cache, then follow the Supabase key-revocation procedure. The

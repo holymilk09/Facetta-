@@ -13,6 +13,13 @@ from sqlalchemy.orm import Session
 
 from facetta.api.error_mapping import image_agent_error_response
 from facetta.api.projects import ProjectDetail, project_chain, project_detail
+from facetta.auth import (
+    AuthenticatedPrincipal,
+    principal_actor,
+    require_asset_project_boundary,
+    require_image_run_boundary,
+    require_principal_boundary,
+)
 from facetta.catalog_preview_candidates import (
     CatalogPreviewUnavailable,
     discard_catalog_preview_candidate,
@@ -55,9 +62,23 @@ from facetta.validation import validate_spec
 from facetta.vocabulary import get_vocabulary
 from facetta.warning_candidates import store_markup_warning_candidate
 
-router = APIRouter(prefix="/assets", tags=["assets"])
-preview_router = APIRouter(tags=["assets"])
+router = APIRouter(
+    prefix="/assets",
+    tags=["assets"],
+    dependencies=[
+        Depends(require_principal_boundary),
+        Depends(require_asset_project_boundary),
+    ],
+)
+preview_router = APIRouter(
+    tags=["assets"],
+    dependencies=[
+        Depends(require_principal_boundary),
+        Depends(require_image_run_boundary),
+    ],
+)
 DbSession = Annotated[Session, Depends(get_db)]
+PrincipalDep = Annotated[AuthenticatedPrincipal, Depends(require_principal_boundary)]
 
 
 class CatalogApplyRequest(BaseModel):
@@ -671,6 +692,7 @@ def preview_catalog_revision(
     active_asset_id: str,
     request: CatalogApplyRequest,
     db: DbSession,
+    principal: PrincipalDep,
 ):
     """Evaluate a catalog change and retain only a temporary candidate.
 
@@ -678,6 +700,7 @@ def preview_catalog_revision(
     jewelry QA finish before this route stores durable ImageRun evidence; no
     ImageAsset or DesignVersion is created here.
     """
+    actor = principal_actor(principal, request.created_by)
     try:
         prepared = _prepare_catalog_revision(db, active_asset_id, request)
     except CatalogApplyError as exc:
@@ -702,7 +725,7 @@ def preview_catalog_revision(
                 exc,
                 project_root_id=context.project.root_id,
                 source_asset_id=context.asset.id,
-                created_by=request.created_by,
+                created_by=actor,
             )
         return image_agent_error_response(
             exc,
@@ -731,7 +754,7 @@ def preview_catalog_revision(
         result,
         project_root_id=context.project.root_id,
         source_asset_id=context.asset.id,
-        created_by=request.created_by,
+        created_by=actor,
         status_override=(
             "preview_ready" if result.accepted else "review_required"),
     )
@@ -762,7 +785,7 @@ def preview_catalog_revision(
         spec_change=raw_changes,
         qa=qa,
         routing=routing,
-        created_by=request.created_by,
+        created_by=actor,
     )
     base_url = (
         f"/image-runs/{run_id}/catalog-candidates/{candidate.candidate_id}"
@@ -845,14 +868,16 @@ def accept_catalog_preview(
     candidate_id: str,
     request: CatalogPreviewAcceptRequest,
     db: DbSession,
+    principal: PrincipalDep,
 ):
+    actor = principal_actor(principal, request.created_by)
     try:
         candidate = get_catalog_preview_candidate(run_id, candidate_id)
         accepted = accept_catalog_preview_revision(
             db,
             candidate,
             expected_design_version=request.expected_design_version,
-            created_by=request.created_by,
+            created_by=actor,
         )
     except CatalogPreviewUnavailable as exc:
         return JSONResponse(status_code=410, content={
@@ -900,8 +925,10 @@ def apply_catalog_revision(
     active_asset_id: str,
     request: CatalogApplyRequest,
     db: DbSession,
+    principal: PrincipalDep,
 ):
     """Apply one deterministic catalog choice through the trusted image loop."""
+    actor = principal_actor(principal, request.created_by)
     try:
         prepared = _prepare_catalog_revision(db, active_asset_id, request)
     except CatalogApplyError as exc:
@@ -927,7 +954,7 @@ def apply_catalog_revision(
                 exc,
                 project_root_id=context.project.root_id,
                 source_asset_id=context.asset.id,
-                created_by=request.created_by,
+                created_by=actor,
             )
         return image_agent_error_response(
             exc,
@@ -948,7 +975,7 @@ def apply_catalog_revision(
             result,
             project_root_id=context.project.root_id,
             source_asset_id=context.asset.id,
-            created_by=request.created_by,
+            created_by=actor,
         )
         routing = _routing_payload(result, run_id)
         candidate = store_markup_warning_candidate(
@@ -968,7 +995,7 @@ def apply_catalog_revision(
             ignored_fields=(),
             qa=qa,
             routing=routing,
-            created_by=request.created_by,
+            created_by=actor,
         )
         response = CatalogApplyResponse(
             status="review_required",
@@ -1007,7 +1034,7 @@ def apply_catalog_revision(
             image_run=result,
             instruction=instruction,
             region=selection.isolation_target,
-            created_by=request.created_by,
+            created_by=actor,
             drift=_candidate_drift(result),
         )
     except TrustedSpecRevisionError as exc:

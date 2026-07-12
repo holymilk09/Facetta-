@@ -33,6 +33,7 @@ from facetta.checklist import (
     DEFAULT_MODE, approval_footer_line, build_checklist_items,
     checklist_status,
 )
+from facetta.config import env_value
 from facetta.db import (
     ApprovalChecklist, ApprovalResponse, DesignVersion, FeedbackEvent,
     ImageAsset, Project, get_db, new_id, utcnow,
@@ -491,7 +492,12 @@ class MarkupReadRequest(BaseModel):
 
 
 @router.post("/{asset_id}/markup/read")
-def markup_read(asset_id: str, request: MarkupReadRequest, db: DbSession):
+def markup_read(
+    asset_id: str,
+    request: MarkupReadRequest,
+    db: DbSession,
+    principal: PrincipalDep,
+):
     """Phase 1 of a markup edit: the agent READS the designer's marks (canvas
     shapes, arrows, freehand handwriting) against the clean render and echoes
     back what it understood — nothing executes here. The designer confirms or
@@ -500,6 +506,7 @@ def markup_read(asset_id: str, request: MarkupReadRequest, db: DbSession):
     question — a region or intent is never guessed."""
     from facetta.assistant import DEFAULT_ASSISTANT_NAME
 
+    actor = principal_actor(principal, request.created_by)
     asset = _get_asset(db, asset_id)
     if request.markup_snapshot is not None:
         try:
@@ -568,7 +575,7 @@ def markup_read(asset_id: str, request: MarkupReadRequest, db: DbSession):
     # the marked upload is filed as an audit leaf — never an edit base
     notes = _store_asset(db, marked, "MARKUP_NOTES", asset,
                          instruction=reading["understood_as"],
-                         created_by=request.created_by)
+                         created_by=actor)
     first = reading["annotations"][0]
     targets_spec = bool(first.get("target_section") or first.get("target_ref"))
     interpretation = {
@@ -637,7 +644,12 @@ class MarkupApplyRequest(BaseModel):
 
 
 @router.post("/{asset_id}/markup/apply", status_code=201)
-def markup_apply(asset_id: str, request: MarkupApplyRequest, db: DbSession):
+def markup_apply(
+    asset_id: str,
+    request: MarkupApplyRequest,
+    db: DbSession,
+    principal: PrincipalDep,
+):
     """Phase 2: execute confirmed annotations.
 
     Trusted-workspace requests carry ``expected_design_version`` and execute
@@ -648,6 +660,22 @@ def markup_apply(asset_id: str, request: MarkupApplyRequest, db: DbSession):
     remain in lockstep.  The accepted image and immutable DesignVersion then
     commit atomically.
     """
+    actor = principal_actor(principal, request.created_by)
+    request = request.model_copy(update={"created_by": actor})
+    if (
+        (env_value("FACETTA_ENV") or "production").strip().lower()
+        == "production"
+        and request.preview_only is not True
+    ):
+        return JSONResponse(status_code=409, content={
+            "detail": (
+                "production refinements must remain temporary until explicit "
+                "Studio acceptance"
+            ),
+            "code": "studio_preview_required",
+            "category": "conflict",
+        })
+
     from facetta.agent import Annotation, AnnotationUnresolved
     from facetta.grokedit import GrokEditUnavailable, grok_plan_scoped_edit
 
