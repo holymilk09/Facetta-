@@ -30,6 +30,13 @@ from facetta.factory_sheet_plan import FactorySheetFactPlan
 from facetta.trusted_revision import (
     WarningRevisionError, accept_warning_revision, discard_warning_revision,
 )
+from facetta.studio_markup_candidates import (
+    StudioMarkupCandidateUnavailable,
+    StudioMarkupError,
+    accept_studio_markup_candidate,
+    discard_studio_markup_candidate,
+    get_studio_markup_candidate,
+)
 from facetta.warning_candidates import (
     discard_markup_warning_candidate,
     WarningCandidateUnavailable, get_markup_warning_candidate,
@@ -291,8 +298,33 @@ def get_image_run(run_id: str, db: DbSession):
 def get_warning_candidate_image(
     run_id: str,
     candidate_id: str,
+    db: DbSession,
     principal: PrincipalDep,
 ):
+    run = db.get(ImageRun, run_id)
+    owner = (
+        run.created_by if principal.local_unbound and run is not None
+        else principal.subject
+    )
+    durable = None
+    if owner is not None:
+        try:
+            durable = get_studio_markup_candidate(
+                db, run_id, candidate_id, owner=owner)
+        except StudioMarkupCandidateUnavailable:
+            pass
+    if durable is not None:
+        if durable.status != "reviewing":
+            return JSONResponse(status_code=410, content={
+                "code": "warning_candidate_unavailable",
+                "category": "conflict",
+                "detail": f"the warning candidate was already {durable.status}",
+            })
+        return Response(
+            content=durable.image_bytes,
+            media_type=durable.media_type,
+            headers={"Cache-Control": "private, no-store"},
+        )
     try:
         candidate = get_markup_warning_candidate(run_id, candidate_id)
     except WarningCandidateUnavailable as exc:
@@ -364,6 +396,35 @@ def accept_warning_candidate(
     principal: PrincipalDep,
 ):
     principal_actor(principal, request.created_by)
+    durable = None
+    try:
+        durable = get_studio_markup_candidate(
+            db, run_id, candidate_id, owner=request.created_by)
+    except StudioMarkupCandidateUnavailable:
+        pass
+    if durable is not None:
+        try:
+            accept_studio_markup_candidate(
+                db,
+                durable,
+                expected_active_asset_id=durable.source_asset_id,
+                expected_design_version=request.expected_design_version,
+                created_by=request.created_by,
+            )
+        except (StudioMarkupError, WarningRevisionError) as exc:
+            return JSONResponse(status_code=exc.status_code, content={
+                "code": exc.code,
+                "category": (
+                    "stale_version" if exc.code.startswith("stale_")
+                    else "validation" if exc.status_code == 422
+                    else "conflict"
+                ),
+                "detail": exc.detail,
+            })
+        project = db.get(Project, durable.project_root_id)
+        if project is None:  # pragma: no cover
+            raise HTTPException(status_code=500, detail="accepted project unavailable")
+        return project_detail(db, project)
     try:
         candidate = get_markup_warning_candidate(run_id, candidate_id)
         if candidate.promotion_kind == "presentation_only":
@@ -409,6 +470,37 @@ def discard_warning_candidate(
     principal: PrincipalDep,
 ):
     principal_actor(principal, request.created_by)
+    durable = None
+    try:
+        durable = get_studio_markup_candidate(
+            db, run_id, candidate_id, owner=request.created_by)
+    except StudioMarkupCandidateUnavailable:
+        pass
+    if durable is not None:
+        try:
+            discard_studio_markup_candidate(
+                db,
+                durable,
+                expected_active_asset_id=durable.source_asset_id,
+                expected_design_version=durable.design_version,
+                created_by=request.created_by,
+            )
+        except (StudioMarkupError, WarningRevisionError) as exc:
+            return JSONResponse(status_code=exc.status_code, content={
+                "code": exc.code,
+                "category": (
+                    "stale_version" if exc.code.startswith("stale_")
+                    else "validation" if exc.status_code == 422
+                    else "authorization" if exc.status_code == 403
+                    else "conflict"
+                ),
+                "detail": exc.detail,
+            })
+        return {
+            "status": "discarded",
+            "run_id": durable.run_id,
+            "candidate_id": durable.candidate_id,
+        }
     try:
         candidate = get_markup_warning_candidate(run_id, candidate_id)
         if candidate.promotion_kind == "presentation_only":

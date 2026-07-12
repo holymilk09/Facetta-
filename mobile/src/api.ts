@@ -1,5 +1,4 @@
-export const DEFAULT_API_URL =
-  process.env.EXPO_PUBLIC_API_URL ?? 'http://localhost:8000';
+export { DEFAULT_API_URL } from './config';
 
 export interface ApiResult {
   ok: boolean;

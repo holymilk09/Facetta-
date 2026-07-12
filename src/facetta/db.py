@@ -538,6 +538,89 @@ class StudioViewCandidateRecord(Base):
     )
 
 
+class StudioMarkupCandidateRecord(Base):
+    """Durable exact-revision Refine candidate awaiting one decision.
+
+    Mark-up and natural-language refinements used to retain their candidate
+    bytes only in a process-local cache.  This row is the restart-safe review
+    authority; canonical image/spec history is still created only by an
+    explicit Apply or Save-as-Variation decision.
+    """
+
+    __tablename__ = "studio_markup_candidates"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    image_run_id: Mapped[str] = mapped_column(
+        ForeignKey("image_runs.id"), nullable=False, unique=True, index=True)
+    owner: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    project_root_id: Mapped[str] = mapped_column(
+        ForeignKey("projects.root_id"), nullable=False, index=True)
+    source_asset_id: Mapped[str] = mapped_column(
+        ForeignKey("image_assets.id"), nullable=False, index=True)
+    expected_active_asset_id: Mapped[str] = mapped_column(
+        ForeignKey("image_assets.id"), nullable=False)
+    design_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    source_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    output_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    source_spec_visual_hash: Mapped[str] = mapped_column(
+        String(64), nullable=False)
+    target_spec_visual_hash: Mapped[str] = mapped_column(
+        String(64), nullable=False)
+    image: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    media_type: Mapped[str] = mapped_column(String(24), nullable=False)
+    operation: Mapped[str] = mapped_column(String(32), nullable=False)
+    asset_capability: Mapped[str] = mapped_column(String(32), nullable=False)
+    requested_change: Mapped[str] = mapped_column(Text, nullable=False)
+    region_description: Mapped[str] = mapped_column(Text, nullable=False)
+    payload: Mapped[dict] = mapped_column(SpecJSON, nullable=False)
+    status: Mapped[str] = mapped_column(String(24), nullable=False, index=True)
+    studio_job_id: Mapped[str | None] = mapped_column(
+        ForeignKey("studio_jobs.id"), nullable=True, unique=True, index=True)
+    terminal_asset_id: Mapped[str | None] = mapped_column(
+        ForeignKey("image_assets.id"), nullable=True)
+    review_id: Mapped[str | None] = mapped_column(
+        ForeignKey("image_run_reviews.id"), nullable=True)
+    decided_by: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow)
+    expires_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, index=True)
+    resolved_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)
+
+    __table_args__ = (
+        CheckConstraint(
+            "design_version >= 1",
+            name="ck_studio_markup_candidate_design_version",
+        ),
+        CheckConstraint(
+            "status IN ('reviewing', 'applied', 'saved_as_variation', "
+            "'discarded', 'expired')",
+            name="ck_studio_markup_candidate_status",
+        ),
+        CheckConstraint(
+            "length(source_sha256) = 64 AND length(output_sha256) = 64 "
+            "AND length(source_spec_visual_hash) = 16 "
+            "AND length(target_spec_visual_hash) = 16",
+            name="ck_studio_markup_candidate_hashes",
+        ),
+        CheckConstraint(
+            "(status IN ('applied', 'saved_as_variation') "
+            "AND terminal_asset_id IS NOT NULL AND review_id IS NOT NULL "
+            "AND decided_by IS NOT NULL AND resolved_at IS NOT NULL) OR "
+            "(status = 'discarded' AND terminal_asset_id IS NULL "
+            "AND review_id IS NOT NULL AND decided_by IS NOT NULL "
+            "AND resolved_at IS NOT NULL) OR "
+            "(status = 'expired' AND terminal_asset_id IS NULL "
+            "AND decided_by IS NULL AND resolved_at IS NOT NULL) OR "
+            "(status = 'reviewing' AND terminal_asset_id IS NULL "
+            "AND review_id IS NULL AND decided_by IS NULL "
+            "AND resolved_at IS NULL)",
+            name="ck_studio_markup_candidate_resolution",
+        ),
+    )
+
+
 class PreviewCandidateRecord(Base):
     """Durable, non-canonical Studio/catalog output awaiting a decision.
 

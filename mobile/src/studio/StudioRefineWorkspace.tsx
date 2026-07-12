@@ -45,10 +45,12 @@ export interface StudioRefineWorkspaceProps {
     | 'previewMarkupRefine' | 'applyMarkupRefine' | 'discardMarkupRefine'
     | 'previewVisualRefine' | 'applyVisualRefine' | 'discardVisualRefine'>
     & Partial<Pick<StudioGateway,
-      'resumeRefine' | 'saveCatalogPreviewAsVariation' | 'saveVisualPreviewAsVariation'>>;
+      'resumeRefine' | 'saveCatalogPreviewAsVariation' | 'saveMarkupPreviewAsVariation'
+      | 'saveVisualPreviewAsVariation'>>;
   lineage: ExactStudioLineage | StudioVisualLineage | null;
   createdBy: string;
   sourceImageUrl?: string | null;
+  initialAdvancedFactsOpen?: boolean;
   onApplied: (project: ProjectDetail) => void;
   onVariationCreated?: (project: ProjectDetail) => void;
   imageRequestHeaders?: Readonly<Record<string, string>>;
@@ -133,13 +135,15 @@ function friendlyFactOption(value: string): string {
 }
 
 export function StudioRefineWorkspace({
-  api, gateway, lineage, createdBy, sourceImageUrl = null, onApplied, onVariationCreated,
+  api, gateway, lineage, createdBy, sourceImageUrl = null, initialAdvancedFactsOpen = false,
+  onApplied, onVariationCreated,
   imageRequestHeaders,
 }: StudioRefineWorkspaceProps) {
   const exactLineage = hasExactSpecification(lineage) ? lineage : null;
   const exactSpecification = exactLineage !== null;
   const [mode, setMode] = useState<'component' | 'instruction' | 'annotation' | 'facts'>(
-    exactSpecification ? 'component' : 'instruction',
+    exactSpecification && initialAdvancedFactsOpen ? 'facts'
+      : exactSpecification ? 'component' : 'instruction',
   );
   const [path, setPath] = useState<ComponentCatalogPath>('metal.color');
   const [catalog, setCatalog] = useState<ComponentCatalog | null>(null);
@@ -165,10 +169,17 @@ export function StudioRefineWorkspace({
   const [factProject, setFactProject] = useState<ProjectDetail | null>(null);
   const [factDraft, setFactDraft] = useState<Partial<Record<StudioFactPath, string>>>({});
   const [factsLoading, setFactsLoading] = useState(false);
-  const [advancedFactsOpen, setAdvancedFactsOpen] = useState(false);
+  const [advancedFactsOpen, setAdvancedFactsOpen] = useState(
+    exactSpecification && initialAdvancedFactsOpen,
+  );
   const [activeFactGroup, setActiveFactGroup] = useState<FactGroupId>('identity');
   const [factReview, setFactReview] = useState<readonly FactChangeReview[] | null>(null);
+  const [sourceReady, setSourceReady] = useState(false);
   const decisionInFlight = useRef(false);
+
+  useEffect(() => {
+    setSourceReady(false);
+  }, [sourceImageUrl, lineage?.sourceAssetId]);
 
   useEffect(() => {
     let current = true;
@@ -508,7 +519,7 @@ export function StudioRefineWorkspace({
   };
 
   const saveAsVariation = async (): Promise<void> => {
-    if (preview === null || busy || decisionInFlight.current || preview.kind === 'markup') return;
+    if (preview === null || busy || decisionInFlight.current) return;
     const label = variationName.trim();
     if (label.length === 0) {
       setError('Give this variation a short name before saving it.');
@@ -517,8 +528,10 @@ export function StudioRefineWorkspace({
     setBusy(true);
     setError(null);
     const saveCatalog = gateway.saveCatalogPreviewAsVariation;
+    const saveMarkup = gateway.saveMarkupPreviewAsVariation;
     const saveVisual = gateway.saveVisualPreviewAsVariation;
     if ((preview.kind === 'catalog' && saveCatalog === undefined)
+        || (preview.kind === 'markup' && saveMarkup === undefined)
         || (preview.kind === 'visual' && saveVisual === undefined)) {
       setError('Saving this preview as a variation is temporarily unavailable.');
       return;
@@ -528,6 +541,10 @@ export function StudioRefineWorkspace({
       ? await saveCatalog!({
           candidateId: preview.candidate.id, createdBy, label,
         })
+      : preview.kind === 'markup'
+        ? await saveMarkup!({
+            candidateId: preview.candidate.id, createdBy, label,
+          })
       : await saveVisual!({
           candidateId: preview.candidate.id, createdBy, label,
         });
@@ -556,7 +573,9 @@ export function StudioRefineWorkspace({
     const rejected = preview.candidate.verdict === 'reject';
     const variationSupported = preview.kind === 'catalog'
       ? gateway.saveCatalogPreviewAsVariation !== undefined
-      : preview.kind === 'visual' && gateway.saveVisualPreviewAsVariation !== undefined;
+      : preview.kind === 'markup'
+        ? gateway.saveMarkupPreviewAsVariation !== undefined
+        : gateway.saveVisualPreviewAsVariation !== undefined;
     return (
       <ScrollView contentContainerStyle={styles.workspace}>
         <Text style={styles.eyebrow}>REVIEW PREVIEW</Text>
@@ -570,7 +589,14 @@ export function StudioRefineWorkspace({
           {sourceImageUrl !== null && (
             <View style={styles.comparePane}>
               <Text style={styles.compareLabel}>SOURCE</Text>
-              <Image accessibilityLabel="Exact source revision" source={{ uri: sourceImageUrl }} imageRequestHeaders={imageRequestHeaders} style={styles.preview} />
+              <Image
+                accessibilityLabel="Exact source revision"
+                source={{ uri: sourceImageUrl }}
+                imageRequestHeaders={imageRequestHeaders}
+                onLoad={() => setSourceReady(true)}
+                onError={() => setSourceReady(false)}
+                style={styles.preview}
+              />
             </View>
           )}
           <View style={styles.comparePane}>
@@ -578,6 +604,14 @@ export function StudioRefineWorkspace({
             <Image accessibilityLabel="Temporary refinement preview" source={{ uri: preview.candidate.assetUrl }} imageRequestHeaders={imageRequestHeaders} style={styles.preview} />
           </View>
         </View>
+        {!sourceReady && (
+          <Notice
+            kind="error"
+            text={sourceImageUrl === null
+              ? 'The exact source revision is unavailable. Reopen the design before accepting this preview.'
+              : 'Wait for the exact source revision to load before accepting this preview.'}
+          />
+        )}
         <View style={styles.reviewCard}>
           <Text style={styles.reviewTitle}>{rejected ? 'Not safe to apply' : 'Ready for your decision'}</Text>
           {preview.candidate.checks.map((check) => (
@@ -613,7 +647,7 @@ export function StudioRefineWorkspace({
               />
               <Button
                 title={busy ? 'Saving…' : 'Save named variation'}
-                disabled={busy || variationName.trim().length === 0 || rejected}
+                disabled={busy || variationName.trim().length === 0 || rejected || !sourceReady}
                 onPress={() => { void saveAsVariation(); }}
               />
             </View>
@@ -625,11 +659,11 @@ export function StudioRefineWorkspace({
             <Button
               title="Save as Variation"
               kind="ghost"
-              disabled={busy || rejected}
+              disabled={busy || rejected || !sourceReady}
               onPress={() => { setNamingVariation(true); setError(null); }}
             />
           )}
-          <Button title={busy ? 'Working…' : 'Apply as new revision'} disabled={busy || rejected} onPress={() => { void apply(); }} />
+          <Button title={busy ? 'Working…' : 'Apply as new revision'} disabled={busy || rejected || !sourceReady} onPress={() => { void apply(); }} />
         </View>
       </ScrollView>
     );

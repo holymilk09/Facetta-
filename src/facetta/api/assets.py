@@ -692,6 +692,10 @@ class MarkupApplyRequest(BaseModel):
     # Studio holds even QA-passed edits outside canonical history until the
     # designer explicitly applies the temporary candidate.
     preview_only: bool = False
+    # Optional durable Studio lifecycle binding. Compatibility callers may
+    # omit it; Studio passes it so Apply/Discard/Variation settles Activity in
+    # the same transaction as the terminal candidate decision.
+    studio_job_id: Annotated[str, Field(min_length=1, max_length=32)] | None = None
 
 
 @router.post("/{asset_id}/markup/apply", status_code=201)
@@ -1215,7 +1219,13 @@ def markup_apply(
                     created_by=request.created_by,
                 )
                 routing_summary["run_id"] = run_id
+                from time import monotonic
+
+                from facetta.studio_markup_candidates import (
+                    store_studio_markup_candidate,
+                )
                 from facetta.warning_candidates import (
+                    MarkupWarningCandidate,
                     store_markup_warning_candidate,
                 )
 
@@ -1224,7 +1234,8 @@ def markup_apply(
                     for check in image_agent_result.quality.checks
                     if check.code == "outside_mask_drift"
                 ), None)
-                candidate = store_markup_warning_candidate(
+                compatibility_candidate = MarkupWarningCandidate(
+                    candidate_id=new_id("cand"),
                     run_id=run_id,
                     project_root_id=asset.root_id,
                     source_asset_id=current.id,
@@ -1250,6 +1261,43 @@ def markup_apply(
                     qa=qa_report,
                     routing=routing_summary,
                     created_by=request.created_by,
+                    expires_at=monotonic() + (2 * 60 * 60),
+                )
+                # Existing trusted-workflow callers use the legacy warning
+                # review URLs and do not own a StudioJob. Keep that short-lived
+                # compatibility path intact while Studio requests opt into the
+                # durable, restart-safe review authority explicitly.
+                candidate = (
+                    store_studio_markup_candidate(
+                        db,
+                        compatibility_candidate,
+                        studio_job_id=request.studio_job_id,
+                    )
+                    if request.studio_job_id is not None
+                    else store_markup_warning_candidate(
+                        run_id=compatibility_candidate.run_id,
+                        project_root_id=compatibility_candidate.project_root_id,
+                        source_asset_id=compatibility_candidate.source_asset_id,
+                        expected_active_asset_id=(
+                            compatibility_candidate.expected_active_asset_id
+                        ),
+                        reserved_asset_id=compatibility_candidate.reserved_asset_id,
+                        expected_design_version=(
+                            compatibility_candidate.expected_design_version
+                        ),
+                        image_bytes=compatibility_candidate.image_bytes,
+                        media_type=compatibility_candidate.media_type,
+                        operation=compatibility_candidate.operation,
+                        asset_capability=compatibility_candidate.asset_capability,
+                        requested_change=compatibility_candidate.requested_change,
+                        region_description=compatibility_candidate.region_description,
+                        drift=compatibility_candidate.drift,
+                        next_spec=compatibility_candidate.next_spec,
+                        ignored_fields=compatibility_candidate.ignored_fields,
+                        qa=compatibility_candidate.qa,
+                        routing=compatibility_candidate.routing,
+                        created_by=compatibility_candidate.created_by,
+                    )
                 )
                 return {
                     "final_asset_id": None,
@@ -1274,6 +1322,12 @@ def markup_apply(
                         "qa": qa_report,
                         "operation": operation.value,
                         "requested_change": note.change_instruction,
+                        "studio_job_id": getattr(candidate, "studio_job_id", None),
+                        "save_as_variation_url": (
+                            f"/studio/markup-candidates/{run_id}/"
+                            f"{candidate.candidate_id}/save-as-variation"
+                            if request.studio_job_id is not None else None
+                        ),
                     },
                     "steps": steps,
                 }

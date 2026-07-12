@@ -6,6 +6,7 @@ export type StudioActionId =
   | 'views'
   | 'present'
   | 'more'
+  | 'specifications'
   | 'factory';
 
 export type StudioLane = 'instant' | 'fast_visual' | 'trusted_structural';

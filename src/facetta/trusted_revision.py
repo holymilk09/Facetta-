@@ -472,6 +472,7 @@ def accept_warning_revision(
     *,
     expected_design_version: int,
     created_by: str,
+    commit: bool = True,
 ) -> AcceptedWarningRevision:
     """Promote one QA-warning candidate after explicit designer review.
 
@@ -647,7 +648,10 @@ def accept_warning_revision(
     project.updated_at = utcnow()
     db.add_all([child, review])
     try:
-        db.commit()
+        if commit:
+            db.commit()
+        else:
+            db.flush()
     except Exception:
         db.rollback()
         raise
@@ -666,6 +670,7 @@ def discard_warning_revision(
     *,
     expected_design_version: int,
     created_by: str,
+    commit: bool = True,
 ) -> DiscardedWarningCandidate:
     """Record a terminal rejection against the candidate's exact lineage."""
 
@@ -718,7 +723,10 @@ def discard_warning_revision(
     )
     db.add(review)
     try:
-        db.commit()
+        if commit:
+            db.commit()
+        else:
+            db.flush()
     except IntegrityError as exc:
         db.rollback()
         raise WarningRevisionError(

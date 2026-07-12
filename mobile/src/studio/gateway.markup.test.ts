@@ -119,3 +119,70 @@ test('discard makes a markup candidate terminal without changing the project', a
   const replay = await gateway.applyMarkupRefine({ candidateId: 'candidate_2', createdBy: 'designer_1' });
   assert.equal(replay.error?.code, 'CANDIDATE_NOT_REVIEWABLE');
 });
+
+test('a fresh gateway resumes durable markup and saves it as a sibling variation', async () => {
+  const source = project('asset_1');
+  const variation = {
+    ...project('variation_1'), id: 'variation_1', root_id: 'variation_1',
+    active_asset_id: 'variation_1', cover_asset_id: 'variation_1',
+  } as ProjectDetail;
+  let saved = 0;
+  const client = {
+    ...baseClient(),
+    listStudioJobs: async () => ok({ jobs: [{
+      job_id: 'job_refine_1', owner: 'designer_1', action_id: 'refine',
+      lane: 'trusted_structural', status: 'reviewing', progress: 0.9,
+      active_design_id: 'project_1', source_revision_id: 'asset_1',
+      requested_outputs: 1, completed_outputs: 0, charged_outputs: 0,
+      credits_per_output: 20, estimated_credits: 20, charged_credits: 0,
+      attempt_count: 1, error_code: null, created_at: '2026-07-12T00:00:00Z',
+      updated_at: '2026-07-12T00:00:01Z', billing: {
+        requested_outputs: 1, completed_outputs: 0, charged_outputs: 0,
+        credits_per_output: 20, estimated_credits: 20, charged_credits: 0,
+        internal_retries_charged: false,
+      },
+    }] }),
+    listStudioMarkupCandidates: async () => ok({ candidates: [{
+      candidate_id: 'candidate_durable', image_run_id: 'run_durable',
+      project_root_id: 'project_1', source_asset_id: 'asset_1',
+      expected_active_asset_id: 'asset_1', design_version: 1,
+      operation: 'LOCAL_EDIT', requested_change: 'soften the halo',
+      region_description: 'halo', qa: quality, status: 'reviewing',
+      studio_job_id: 'job_refine_1', expires_at: '2099-01-01T00:00:00Z',
+      preview_url: 'https://test/studio/markup-candidates/run_durable/candidate_durable/image',
+      accept_url: '/studio/markup-candidates/run_durable/candidate_durable/accept',
+      discard_url: '/studio/markup-candidates/run_durable/candidate_durable/discard',
+      save_as_variation_url: '/studio/markup-candidates/run_durable/candidate_durable/save-as-variation',
+    }] }),
+    getProject: async (projectId: string) => {
+      assert.equal(projectId, 'project_1');
+      return ok(source);
+    },
+    saveStudioMarkupPreviewAsVariation: async (_candidate: unknown, request: any) => {
+      saved += 1;
+      assert.equal(request.label, 'Soft halo');
+      return ok({
+        status: 'saved_as_variation' as const, family_id: 'family_1',
+        variation_index: 2, project: variation,
+      }, 201);
+    },
+  };
+  const gateway = createStudioGateway(client as any, {
+    trackJobs: true, now: () => new Date('2026-07-12T00:00:00Z'),
+  });
+  const resumed = await gateway.resumeRefine({
+    projectId: 'project_1', sourceAssetId: 'asset_1', sourceDesignVersion: 1,
+  }, 'designer_1');
+  assert.equal(resumed.error, null);
+  assert.equal(resumed.data?.kind, 'markup');
+  assert.equal(resumed.data?.candidate.id, 'candidate_durable');
+
+  const result = await gateway.saveMarkupPreviewAsVariation({
+    candidateId: 'candidate_durable', createdBy: 'designer_1', label: ' Soft halo ',
+  });
+  assert.equal(result.error, null);
+  assert.equal(result.data?.project.root_id, 'variation_1');
+  assert.equal(result.data?.candidate.status, 'saved_as_variation');
+  assert.equal(saved, 1);
+  assert.equal(source.active_asset_id, 'asset_1');
+});

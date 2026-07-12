@@ -1409,6 +1409,50 @@ export interface MarkupApplyRequest {
   created_by: string;
   variant?: number;
   preview_only?: boolean;
+  studio_job_id?: string;
+}
+
+/** Durable exact-revision markup/describe candidate awaiting one decision. */
+export interface StudioMarkupResumeCandidate {
+  candidate_id: string;
+  image_run_id: string;
+  project_root_id: string;
+  source_asset_id: string;
+  expected_active_asset_id: string;
+  design_version: number;
+  operation: string;
+  requested_change: string;
+  region_description: string;
+  qa: ImageQualityReport;
+  status: 'reviewing';
+  studio_job_id: string | null;
+  expires_at: string;
+  preview_url: string;
+  accept_url: string;
+  discard_url: string;
+  save_as_variation_url: string;
+}
+
+export interface StudioMarkupCandidateListResult {
+  candidates: StudioMarkupResumeCandidate[];
+}
+
+export interface StudioMarkupDecisionRequest {
+  expected_active_asset_id: string;
+  expected_design_version: number;
+  created_by: string;
+}
+
+export interface StudioMarkupAcceptResult {
+  status: 'applied';
+  candidate_id: string;
+  asset_id: string;
+  project: ProjectDetail;
+}
+
+export interface StudioMarkupDiscardResult {
+  status: 'discarded';
+  candidate_id: string;
 }
 
 export interface ImageWarningCandidate {

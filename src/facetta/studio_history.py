@@ -102,6 +102,10 @@ def fork_preview_candidate_variation(
         StudioVisualCandidateUnavailable,
         lock_studio_visual_candidate_for_decision,
     )
+    from facetta.studio_markup_candidates import (
+        StudioMarkupCandidateUnavailable,
+        lock_studio_markup_candidate_for_decision,
+    )
 
     label = variation_label.strip()
     if not label:
@@ -125,13 +129,46 @@ def fork_preview_candidate_variation(
                 )
             )
             next_spec = candidate.next_spec
+        elif kind == "studio_markup":
+            candidate, candidate_record = (
+                lock_studio_markup_candidate_for_decision(
+                    db, run_id, candidate_id, owner=created_by,
+                )
+            )
+            next_spec = candidate.next_spec
+            if next_spec is None:
+                # Appearance-only exact refinements still fork the source's
+                # confirmed design truth. A sibling must not silently become
+                # a pre-spec project merely because its pixels changed while
+                # its specification stayed identical.
+                source_root = db.get(ImageAsset, candidate.project_root_id)
+                source_version = (
+                    db.get(DesignVersion, (
+                        source_root.design_id, candidate.design_version,
+                    ))
+                    if source_root is not None
+                    and source_root.design_id is not None else None
+                )
+                if source_version is None:
+                    raise StudioHistoryError(
+                        "preview_candidate_spec_unavailable",
+                        "the exact source specification is unavailable",
+                        status_code=404,
+                    )
+                from facetta.spec import Spec
+
+                next_spec = Spec.model_validate(source_version.spec)
         else:
             raise StudioHistoryError(
                 "preview_candidate_kind_invalid",
                 "the preview candidate kind is invalid",
                 status_code=422,
             )
-    except (StudioVisualCandidateUnavailable, CatalogPreviewUnavailable) as exc:
+    except (
+        StudioVisualCandidateUnavailable,
+        CatalogPreviewUnavailable,
+        StudioMarkupCandidateUnavailable,
+    ) as exc:
         raise StudioHistoryError(
             "preview_candidate_unavailable", str(exc), status_code=410,
         ) from exc
@@ -271,6 +308,27 @@ def fork_preview_candidate_variation(
     family.updated_at = now
     project.updated_at = now
     db.add_all([new_asset, new_project, review, revision])
+    studio_job_id = getattr(candidate, "studio_job_id", None)
+    if studio_job_id is not None:
+        from facetta.studio_jobs import (
+            StudioJobAccountingError,
+            record_accepted_studio_job_outputs,
+        )
+
+        try:
+            record_accepted_studio_job_outputs(
+                db,
+                job_id=studio_job_id,
+                owner=created_by,
+                completed_outputs=1,
+                active_design_id=project.root_id,
+                source_revision_id=source.id,
+            )
+        except StudioJobAccountingError as exc:
+            db.rollback()
+            raise StudioHistoryError(
+                "variation_job_resolution_conflict", str(exc),
+            ) from exc
     try:
         db.commit()
     except IntegrityError as exc:

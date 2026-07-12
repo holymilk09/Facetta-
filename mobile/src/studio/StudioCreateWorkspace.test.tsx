@@ -127,6 +127,44 @@ test('requests 1-4 prompt candidates, lets the designer choose, then saves only 
   }));
 });
 
+test('reopens a durable reviewing Create job and settles that exact job on selection', async () => {
+  const createFromPrompt = jest.fn();
+  const createFromDrawing = jest.fn();
+  const selectCreativeDirection = jest.fn(async (_projectId, candidateId) => ({
+    data: {
+      ...creativeProject(3),
+      selected_candidate_asset_id: candidateId,
+      active_asset_id: candidateId,
+    },
+    error: null,
+    status: 200,
+  }));
+  const onSave = jest.fn();
+  await render(
+    <StudioCreateWorkspace
+      gateway={{
+        createFromPrompt, createFromDrawing, selectCreativeDirection,
+      } as CreateGateway}
+      owner="designer_1"
+      resumeProject={creativeProject(3)}
+      resumeStudioJobId="studio_job_create"
+      onSave={onSave}
+    />,
+  );
+
+  expect(await screen.findByText('Which direction should become active?')).toBeTruthy();
+  expect(createFromPrompt).not.toHaveBeenCalled();
+  expect(createFromDrawing).not.toHaveBeenCalled();
+  await fireEvent.press(screen.getByLabelText('Direction 2'));
+  await fireEvent.press(screen.getByText('Save selected direction'));
+  await waitFor(() => expect(selectCreativeDirection).toHaveBeenCalledWith(
+    'project_1', 'candidate_2', 'designer_1', 'studio_job_create',
+  ));
+  expect(onSave).toHaveBeenCalledWith(expect.objectContaining({
+    selectedAssetId: 'candidate_2',
+  }));
+});
+
 test('keeps an already-created direction set when the designer starts another brief', async () => {
   const createFromPrompt = jest.fn(async () => ({
     data: creativeProject(2), error: null, status: 201,

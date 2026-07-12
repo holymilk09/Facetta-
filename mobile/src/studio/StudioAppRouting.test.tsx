@@ -21,9 +21,17 @@ jest.mock('../trusted/client', () => ({
 jest.mock('./StudioCreateWorkspace', () => {
   const ReactLocal = require('react');
   const { Pressable, Text } = require('react-native');
-  const { DEFAULT_API_URL } = require('../api');
+  const { DEFAULT_API_URL } = require('../config');
   return {
-    StudioCreateWorkspace: ({ onSave }: { onSave: (selection: any) => void }) => (
+    StudioCreateWorkspace: ({ onSave, resumeProject, resumeStudioJobId }: {
+      onSave: (selection: any) => void;
+      resumeProject?: any;
+      resumeStudioJobId?: string | null;
+    }) => resumeProject ? ReactLocal.createElement(
+      Text,
+      null,
+      `Create review reached for ${resumeProject.root_id} via ${resumeStudioJobId}`,
+    ) : (
       ReactLocal.createElement(Pressable, { accessibilityRole: 'button', onPress: () => onSave({
       project: {
         id: 'project_1', root_id: 'project_1', title: 'Saved direction',
@@ -62,7 +70,12 @@ jest.mock('./StudioRefineWorkspace', () => {
   const ReactLocal = require('react');
   const { Text } = require('react-native');
   return {
-    StudioRefineWorkspace: () => ReactLocal.createElement(Text, null, 'Refine route reached'),
+    StudioRefineWorkspace: ({ initialAdvancedFactsOpen }: { initialAdvancedFactsOpen?: boolean }) => (
+      ReactLocal.createElement(
+        Text, null,
+        initialAdvancedFactsOpen ? 'Advanced specifications route reached' : 'Refine route reached',
+      )
+    ),
   };
 });
 
@@ -84,8 +97,9 @@ jest.mock('./StudioActivityWorkspace', () => {
   const review = (action_id: string, onOpenReview: (job: any) => void) => ReactLocal.createElement(
     Pressable,
     { onPress: () => onOpenReview({
+      job_id: `job_${action_id}`,
       action_id, status: 'reviewing', active_design_id: 'project_hydrated',
-      source_revision_id: 'asset_hydrated',
+      source_revision_id: action_id === 'create' ? null : 'asset_hydrated',
     }) },
     ReactLocal.createElement(Text, null, `Review ${action_id}`),
   );
@@ -93,6 +107,7 @@ jest.mock('./StudioActivityWorkspace', () => {
     StudioActivityWorkspace: ({ onOpenReview, onOpenDesign }: any) => ReactLocal.createElement(
       View,
       null,
+      review('create', onOpenReview),
       review('refine', onOpenReview),
       review('views', onOpenReview),
       review('present', onOpenReview),
@@ -219,8 +234,12 @@ test('confirming Design v1 returns immediately to Refine without a Collections o
   expect(view.queryByText(/Factory/i)).toBeNull();
   expect(view.getByLabelText('More actions')).toBeTruthy();
   fireEvent.press(view.getByLabelText('More actions'));
+  expect(await view.findByText('Specifications')).toBeTruthy();
   expect(await view.findByText('Factory')).toBeTruthy();
-  fireEvent.press(view.getByText('Factory'));
+  fireEvent.press(view.getByText('Specifications'));
+  expect(await view.findByText('Advanced specifications route reached')).toBeTruthy();
+  fireEvent.press(view.getByLabelText('More actions'));
+  fireEvent.press(await view.findByText('Factory'));
   expect(await view.findByText('Factory route reached for asset_exact_1')).toBeTruthy();
   expect(view.queryByText(/destination will use the exact active revision/i)).toBeNull();
 });
@@ -274,4 +293,23 @@ test.each([
     await hydration.promise;
   });
   expect(await view.findByText(expected)).toBeTruthy();
+});
+
+test('Activity reviewing Create rehydrates the saved candidate chooser and durable job id', async () => {
+  authenticate();
+  const hydration = deferred<any>();
+  mockGetProject.mockReturnValue(hydration.promise);
+  const view = await render(<App />);
+  await waitFor(() => expect(view.getByText('Start from an idea or reference')).toBeTruthy());
+  fireEvent.press(view.getAllByText('Activity').at(-1)!);
+  const review = await view.findByText('Review create');
+  await act(async () => {
+    fireEvent.press(review);
+    hydration.resolve({ data: hydratedProject, error: null, status: 200 });
+    await hydration.promise;
+  });
+  expect(await view.findByText(
+    'Create review reached for project_hydrated via job_create',
+  )).toBeTruthy();
+  expect(mockGetProject).toHaveBeenCalledWith('project_hydrated');
 });

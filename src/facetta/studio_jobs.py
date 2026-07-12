@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import json
+from importlib.resources import files
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -42,103 +44,36 @@ class StudioJobActionDefinition:
     ui_schema: tuple[StudioJobUiField, ...]
 
 
-STUDIO_JOB_ACTIONS: dict[str, StudioJobActionDefinition] = {
-    "create": StudioJobActionDefinition(
-        lane="fast_visual",
-        credits_per_output=15,
-        input_requirements=("brief",),
-        context_requirements=(),
-        output_type="design_revision",
-        authority="design_record",
-        ui_schema=(
-            StudioJobUiField("brief", "Design brief", "text", True),
-            StudioJobUiField(
-                "master", "Master geometry", "reference", False,
-                "master_geometry",
+def _load_studio_job_actions() -> dict[str, StudioJobActionDefinition]:
+    raw = json.loads(
+        files("facetta").joinpath("studio_action_manifest.json").read_text(
+            encoding="utf-8",
+        ),
+    )
+    return {
+        action_id: StudioJobActionDefinition(
+            lane=value["lane"],
+            credits_per_output=value["credits_per_output"],
+            input_requirements=tuple(value["input_requirements"]),
+            context_requirements=tuple(value["context_requirements"]),
+            output_type=value["output_type"],
+            authority=value["authority"],
+            ui_schema=tuple(
+                StudioJobUiField(
+                    id=field["id"],
+                    label=field["label"],
+                    kind=field["kind"],
+                    required=field["required"],
+                    reference_role=field.get("reference_role"),
+                )
+                for field in value["ui_schema"]
             ),
-            StudioJobUiField(
-                "style", "Material or style", "reference", False,
-                "material_style",
-            ),
-        ),
-    ),
-    "vary": StudioJobActionDefinition(
-        lane="instant",
-        credits_per_output=0,
-        input_requirements=("direction",),
-        context_requirements=("active_project", "active_revision"),
-        output_type="variation_set",
-        authority="design_record",
-        ui_schema=(
-            StudioJobUiField("direction", "Variation name", "text", True),
-        ),
-    ),
-    "refine": StudioJobActionDefinition(
-        lane="trusted_structural",
-        credits_per_output=20,
-        input_requirements=("instruction",),
-        context_requirements=("active_project", "active_revision"),
-        output_type="design_revision",
-        authority="design_record",
-        ui_schema=(
-            StudioJobUiField(
-                "instruction", "Change instruction", "text", True,
-            ),
-            StudioJobUiField(
-                "mask", "Target region", "reference", False, "edit_mask",
-            ),
-        ),
-    ),
-    "views": StudioJobActionDefinition(
-        lane="fast_visual",
-        credits_per_output=15,
-        input_requirements=("view_set",),
-        context_requirements=(
-            "active_project", "active_revision", "exact_specification",
-        ),
-        output_type="view_set",
-        authority="visual_preview",
-        ui_schema=(
-            StudioJobUiField("view_set", "Views", "select", True),
-        ),
-    ),
-    "present": StudioJobActionDefinition(
-        lane="fast_visual",
-        credits_per_output=18,
-        input_requirements=("destination",),
-        context_requirements=("active_project", "active_revision"),
-        output_type="presentation_pack",
-        authority="visual_preview",
-        ui_schema=(
-            StudioJobUiField(
-                "destination", "Presentation destination", "select", True,
-            ),
-            StudioJobUiField(
-                "brand", "Brand direction", "reference", False,
-                "brand_direction",
-            ),
-        ),
-    ),
-    "factory": StudioJobActionDefinition(
-        lane="trusted_structural",
-        credits_per_output=28,
-        input_requirements=("confirmed_facts",),
-        context_requirements=(
-            "active_project",
-            "active_revision",
-            "exact_specification",
-            "factory_eligible",
-        ),
-        output_type="factory_review_pack",
-        authority="production_review",
-        ui_schema=(
-            StudioJobUiField(
-                "confirmed_facts", "Confirmed production facts", "toggle",
-                True,
-            ),
-        ),
-    ),
-}
+        )
+        for action_id, value in raw.items()
+    }
+
+
+STUDIO_JOB_ACTIONS = _load_studio_job_actions()
 
 
 class StudioJobAccountingError(ValueError):
@@ -320,6 +255,68 @@ def studio_job_action_definition(action_id: str) -> StudioJobActionDefinition:
         raise StudioJobAccountingError(
             f"unknown Studio job action '{action_id}'"
         ) from exc
+
+
+def settle_create_studio_job_selection(
+    db: Session,
+    *,
+    job_id: str,
+    owner: str,
+    project_root_id: str,
+    source_revision_id: str,
+    available_outputs: int,
+) -> StudioJobRecord:
+    """Atomically settle one durable Create review after candidate selection.
+
+    Candidate generation and designer selection can occur in different client
+    processes.  The reviewing job is therefore the server-held CAS token: it
+    must already be bound to this project, and its selected source may be bound
+    only once.  The caller owns the surrounding Project/candidate transaction
+    and commits the selection together with this settlement.
+    """
+
+    job = db.scalar(select(StudioJobRecord).where(
+        StudioJobRecord.id == job_id,
+    ).with_for_update())
+    if job is None or job.owner != owner:
+        raise StudioJobAccountingError(f"unknown Studio job '{job_id}'")
+    if job.action_id != "create":
+        raise StudioJobAccountingError("Studio job is not a Create review")
+    if job.active_design_id != project_root_id:
+        raise StudioJobAccountingError(
+            "Create job is not bound to the selected project"
+        )
+    if job.source_revision_id not in (None, source_revision_id):
+        raise StudioJobAccountingError(
+            "Create job is already bound to another selected direction"
+        )
+    if available_outputs < 1:
+        raise StudioJobAccountingError(
+            "Create selection requires at least one persisted output"
+        )
+    completed_outputs = min(job.requested_outputs, available_outputs)
+    if job.status == "succeeded":
+        if (
+            job.source_revision_id == source_revision_id
+            and job.completed_outputs == completed_outputs
+            and job.charged_outputs == completed_outputs
+        ):
+            return job
+        raise StudioJobAccountingError(
+            "Create job was already settled with different output evidence"
+        )
+    if job.status != "reviewing":
+        raise StudioJobAccountingError(
+            f"Create job cannot settle selection from {job.status}"
+        )
+    return record_accepted_studio_job_outputs(
+        db,
+        job_id=job.id,
+        owner=owner,
+        completed_outputs=completed_outputs,
+        active_design_id=project_root_id,
+        source_revision_id=source_revision_id,
+    )
 
 
 def record_accepted_studio_job_outputs(

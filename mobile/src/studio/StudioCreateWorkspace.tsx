@@ -42,6 +42,9 @@ export interface StudioCreateWorkspaceProps {
   owner: string;
   initialSentence?: string;
   initialReferences?: readonly StudioCreateReference[];
+  /** Durable review state reopened from a reviewing Create Activity job. */
+  resumeProject?: ProjectDetail | null;
+  resumeStudioJobId?: string | null;
   onRequestReference?: (
     role: CreateReferenceRole,
   ) => StudioCreateReference | null | Promise<StudioCreateReference | null>;
@@ -65,14 +68,26 @@ export function StudioCreateWorkspace({
   owner,
   initialSentence = '',
   initialReferences = [],
+  resumeProject = null,
+  resumeStudioJobId = null,
   onRequestReference,
   onSave,
 }: StudioCreateWorkspaceProps) {
   const [sentence, setSentence] = useState(initialSentence);
   const [references, setReferences] = useState<StudioCreateReference[]>([...initialReferences]);
   const [candidateCount, setCandidateCount] = useState<1 | 2 | 3 | 4>(2);
-  const [project, setProject] = useState<ProjectDetail | null>(null);
-  const [selectedAssetId, setSelectedAssetId] = useState<string | null>(null);
+  const [project, setProject] = useState<ProjectDetail | null>(resumeProject);
+  const resumedCandidates = resumeProject === null ? [] : creativeCandidates(resumeProject);
+  const resumedSelection = resumeProject?.selected_candidate_asset_id;
+  const [selectedAssetId, setSelectedAssetId] = useState<string | null>(() => (
+    resumedSelection !== null && resumedSelection !== undefined
+      && resumedCandidates.some((candidate) => candidate.asset_id === resumedSelection)
+      ? resumedSelection
+      : resumedCandidates[0]?.asset_id ?? null
+  ));
+  const [selectionStudioJobId, setSelectionStudioJobId] = useState<string | null>(
+    resumeStudioJobId,
+  );
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -113,6 +128,7 @@ export function StudioCreateWorkspace({
     setError(null);
     setProject(null);
     setSelectedAssetId(null);
+    setSelectionStudioJobId(null);
     const sourceTitle = prompt || masterReference?.label || 'Untitled reference study';
     const title = sourceTitle.length > 64 ? `${sourceTitle.slice(0, 61)}…` : sourceTitle;
     const result = masterReference === null
@@ -190,7 +206,11 @@ export function StudioCreateWorkspace({
         </View>
         {error !== null && <Text style={styles.error}>{error}</Text>}
         <View style={styles.footerActions}>
-          <Pressable style={styles.secondaryButton} onPress={() => setProject(null)}>
+          <Pressable style={styles.secondaryButton} onPress={() => {
+            setProject(null);
+            setSelectedAssetId(null);
+            setSelectionStudioJobId(null);
+          }}>
             <Text style={styles.secondaryButtonText}>Keep these directions &amp; start another</Text>
           </Pressable>
           <Pressable
@@ -202,9 +222,13 @@ export function StudioCreateWorkspace({
               if (selectedAssetId === null || busy) return;
               setBusy(true);
               setError(null);
-              const result = await gateway.selectCreativeDirection(
-                project.root_id, selectedAssetId, owner,
-              );
+              const result = selectionStudioJobId === null
+                ? await gateway.selectCreativeDirection(
+                    project.root_id, selectedAssetId, owner,
+                  )
+                : await gateway.selectCreativeDirection(
+                    project.root_id, selectedAssetId, owner, selectionStudioJobId,
+                  );
               setBusy(false);
               if (result.error !== null) {
                 setError(designerErrorMessage(result.error, 'create'));

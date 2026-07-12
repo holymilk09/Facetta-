@@ -308,25 +308,31 @@ def test_server_registry_is_canonical_for_every_studio_action(client):
 
 def test_server_registry_matches_designer_action_contract():
     expected = {
-        "create": ("brief", "design_revision", "design_record"),
+        "create": ("brief_or_reference", "design_revision", "design_record"),
         "vary": ("direction", "variation_set", "design_record"),
         "refine": ("instruction", "design_revision", "design_record"),
         "views": ("view_set", "view_set", "visual_preview"),
         "present": (
             "destination", "presentation_pack", "visual_preview",
         ),
-        "factory": (
-            "confirmed_facts", "factory_review_pack", "production_review",
-        ),
+        "factory": (None, "factory_review_pack", "production_review"),
     }
     for action_id, (required_input, output_type, authority) in expected.items():
         definition = STUDIO_JOB_ACTIONS[action_id]
-        assert required_input in definition.input_requirements
+        if required_input is not None:
+            assert required_input in definition.input_requirements
         assert output_type == definition.output_type
         assert authority == definition.authority
-        assert required_input in {
-            field.id for field in definition.ui_schema if field.required
-        }
+        if required_input not in {None, "brief_or_reference"}:
+            assert required_input in {
+                field.id for field in definition.ui_schema if field.required
+            }
+    create = STUDIO_JOB_ACTIONS["create"]
+    assert create.input_requirements == ("brief_or_reference",)
+    assert {field.reference_role for field in create.ui_schema} >= {
+        "master_geometry", "material_style", "construction_detail",
+        "brand_direction",
+    }
 
 
 @pytest.mark.parametrize(

@@ -91,13 +91,19 @@ const quality = {
 test('tracked prompt and drawing creation charge only after direction acceptance', async () => {
   const jobs = tracking();
   let drawingCalls = 0;
+  const selections: { projectId: string; candidateId: string; createdBy: string; studioJobId?: string }[] = [];
   const gateway = createStudioGateway({
     ...jobs.client,
     createProjectFromPrompt: async () => ok(project(2), 201),
     createProjectFromDrawing: async () => { drawingCalls += 1; return ok(project(2), 201); },
-    selectCreativeCandidate: async () => ok({
-      ...project(2), selected_candidate_asset_id: 'candidate_2', active_asset_id: 'candidate_2',
-    }),
+    selectCreativeCandidate: async (
+      projectId: string, candidateId: string, createdBy: string, studioJobId?: string,
+    ) => {
+      selections.push({ projectId, candidateId, createdBy, studioJobId });
+      return ok({
+        ...project(2), selected_candidate_asset_id: 'candidate_2', active_asset_id: 'candidate_2',
+      });
+    },
   } as any, { trackJobs: true });
 
   const created = await gateway.createFromPrompt({
@@ -116,9 +122,13 @@ test('tracked prompt and drawing creation charge only after direction acceptance
   assert.equal(jobs.transitions.some((call) => call.request.completed_outputs !== undefined), false);
 
   await gateway.selectCreativeDirection('project_1', 'candidate_2', 'designer_1');
-  assert.equal(jobs.transitions.at(-1)?.request.status, 'succeeded');
-  assert.equal(jobs.transitions.at(-1)?.request.completed_outputs, 2);
-  assert.equal(jobs.transitions.at(-1)?.request.source_revision_id, 'candidate_2');
+  assert.deepEqual(selections[0], {
+    projectId: 'project_1', candidateId: 'candidate_2', createdBy: 'designer_1',
+    studioJobId: 'studio_job_1',
+  });
+  assert.deepEqual(jobs.transitions.map((call) => call.request.status), [
+    'running', 'reviewing',
+  ]);
 
   const drawing = await gateway.createFromDrawing({
     image_base64: 'c2tldGNo', media_type: 'image/png', instruction: 'Preserve it',
@@ -128,6 +138,26 @@ test('tracked prompt and drawing creation charge only after direction acceptance
   assert.equal(drawingCalls, 1);
   assert.equal(jobs.creates[1]?.requested_outputs, 2);
   assert.equal(jobs.transitions.at(-1)?.request.status, 'reviewing');
+});
+
+test('a restarted gateway settles the durable reviewing Create job supplied by Activity', async () => {
+  const selections: { studioJobId?: string }[] = [];
+  const gateway = createStudioGateway({
+    selectCreativeCandidate: async (
+      _projectId: string, candidateId: string, _createdBy: string, studioJobId?: string,
+    ) => {
+      selections.push({ studioJobId });
+      return ok({
+        ...project(2), selected_candidate_asset_id: candidateId, active_asset_id: candidateId,
+      });
+    },
+  } as any, { trackJobs: true });
+
+  const result = await gateway.selectCreativeDirection(
+    'project_1', 'candidate_2', 'designer_1', 'studio_job_rehydrated',
+  );
+  assert.equal(result.error, null);
+  assert.deepEqual(selections, [{ studioJobId: 'studio_job_rehydrated' }]);
 });
 
 test('tracked generation failures close the job without charging output', async () => {

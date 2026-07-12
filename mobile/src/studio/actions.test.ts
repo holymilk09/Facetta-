@@ -38,23 +38,28 @@ test('Factory stays inside More and requires explicit eligibility', () => {
     hasExactSpecification: true,
     factoryEnabled: true,
   };
-  assert.deepEqual(getVisibleStudioActions(active, 'more'), []);
+  assert.deepEqual(
+    getVisibleStudioActions(active, 'more').map((action) => action.id),
+    ['specifications'],
+  );
   assert.deepEqual(
     getVisibleStudioActions({ ...active, factoryEligible: true }, 'more').map((action) => action.id),
-    ['factory'],
+    ['specifications', 'factory'],
   );
 });
 
-test('the rail hides an empty More menu and exposes it only with an eligible destination', () => {
+test('the rail hides an empty More menu and exposes secondary exact-design destinations', () => {
   const active = {
     ...emptyContext,
     activeDesignId: 'dsn_1',
     activeRevisionId: 'rev_1',
-    hasExactSpecification: true,
+    hasExactSpecification: false,
     factoryEnabled: true,
   };
   assert.equal(getStudioRailActions(active).some((action) => action.id === 'more'), false);
-  assert.equal(getStudioRailActions({ ...active, factoryEligible: true }).at(-1)?.id, 'more');
+  assert.equal(getStudioRailActions({
+    ...active, hasExactSpecification: true,
+  }).at(-1)?.id, 'more');
 });
 
 test('pre-spec directions expose Refine and Present while keeping Views spec-backed', () => {

@@ -552,8 +552,11 @@ describe('trusted API decoders', () => {
       collection: 'Exploration',
     });
     await api.selectCreativeCandidate('ast prompt', 'candidate two', 'usr_designer');
+    await api.selectCreativeCandidate(
+      'ast prompt', 'candidate three', 'usr_designer', 'studio job create',
+    );
 
-    expect(fetcher).toHaveBeenCalledTimes(2);
+    expect(fetcher).toHaveBeenCalledTimes(3);
     expect(fetcher.mock.calls[0]?.[0]).toBe(
       'https://facetta.test/projects/from-prompt');
     expect(JSON.parse(String(fetcher.mock.calls[0]?.[1]?.body))).toEqual({
@@ -568,6 +571,12 @@ describe('trusted API decoders', () => {
       'https://facetta.test/projects/ast%20prompt/creative-candidates/candidate%20two/select');
     expect(JSON.parse(String(fetcher.mock.calls[1]?.[1]?.body))).toEqual({
       created_by: 'usr_designer',
+    });
+    expect(fetcher.mock.calls[2]?.[0]).toBe(
+      'https://facetta.test/projects/ast%20prompt/creative-candidates/candidate%20three/select');
+    expect(JSON.parse(String(fetcher.mock.calls[2]?.[1]?.body))).toEqual({
+      created_by: 'usr_designer',
+      studio_job_id: 'studio job create',
     });
   });
 
@@ -1664,6 +1673,62 @@ describe('trusted API decoders', () => {
     expect(JSON.parse(String(fetcher.mock.calls[1]?.[1]?.body))).toEqual({
       created_by: 'designer', expected_project_id: 'project 1',
       expected_source_asset_id: 'asset 1', expected_design_version: 3,
+    });
+  });
+
+  test('decodes durable markup reviews and sends exact accept lineage', async () => {
+    const candidatePayload = {
+      candidate_id: 'candidate markup', image_run_id: 'run markup',
+      project_root_id: 'project 1', source_asset_id: 'asset 1',
+      expected_active_asset_id: 'asset 1', design_version: 3,
+      operation: 'LOCAL_EDIT', requested_change: 'soften halo',
+      region_description: 'halo', status: 'reviewing', studio_job_id: 'job refine',
+      expires_at: '2026-07-14T00:00:00Z',
+      qa: { verdict: 'pass', accepted: true, review_required: false, checks: [] },
+      preview_url: '/studio/markup-candidates/run%20markup/candidate%20markup/image',
+      accept_url: '/studio/markup-candidates/run%20markup/candidate%20markup/accept',
+      discard_url: '/studio/markup-candidates/run%20markup/candidate%20markup/discard',
+      save_as_variation_url: '/studio/markup-candidates/run%20markup/candidate%20markup/save-as-variation',
+    };
+    const fetcher = jest.fn<Promise<Response>, [RequestInfo | URL, RequestInit?]>(async (input) => {
+      const url = String(input);
+      const payload = url.endsWith('/accept') ? {
+        status: 'applied', candidate_id: 'candidate markup', asset_id: 'asset 2',
+        project: {
+          id: 'project 1', root_id: 'project 1', title: 'Ring', owner: 'designer',
+          state: 'refining', design_id: 'design 1', spec: {}, active_asset_id: 'asset 2',
+          active_design_version: 4, active_revision: {
+            asset_id: 'asset 2', root_id: 'project 1', capability: 'LOCALIZED_EDIT',
+            provenance: 'studio', revision: 4, design_id: 'design 1', design_version: 4,
+            image_url: '/asset-2.png',
+          }, revisions: [], assets: [], derived_assets: [], factory_ready: false,
+          factory_blockers: [], primary_revision_count: 2, has_factory_drawing: false,
+        },
+      } : { candidates: [candidatePayload] };
+      return { ok: true, status: url.endsWith('/accept') ? 201 : 200,
+        text: async () => JSON.stringify(payload) } as unknown as Response;
+    });
+    const api = createTrustedApiClient({ baseUrl: 'https://facetta.test', fetcher });
+    const listed = await api.listStudioMarkupCandidates('project 1');
+    expect(listed.error).toBeNull();
+    expect(listed.data?.candidates[0]).toMatchObject({
+      candidate_id: 'candidate markup', studio_job_id: 'job refine',
+      preview_url: 'https://facetta.test/studio/markup-candidates/run%20markup/candidate%20markup/image',
+    });
+    const accepted = await api.acceptStudioMarkupCandidate(
+      listed.data!.candidates[0], {
+        expected_active_asset_id: 'asset 1', expected_design_version: 3,
+        created_by: 'designer',
+      },
+    );
+    expect(accepted.error).toBeNull();
+    expect(accepted.data?.project.active_asset_id).toBe('asset 2');
+    expect(String(fetcher.mock.calls[1]?.[0])).toBe(
+      'https://facetta.test/studio/markup-candidates/run%20markup/candidate%20markup/accept',
+    );
+    expect(JSON.parse(String(fetcher.mock.calls[1]?.[1]?.body))).toEqual({
+      expected_active_asset_id: 'asset 1', expected_design_version: 3,
+      created_by: 'designer',
     });
   });
 });

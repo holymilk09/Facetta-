@@ -32,6 +32,7 @@ from facetta.db import (
     Project,
     ProjectRevisionRecord,
     StudioConfirmationDraft,
+    StudioJobRecord,
     get_db,
     utcnow,
 )
@@ -510,6 +511,38 @@ def _prompt_request(*, variation_count: int = 3) -> dict[str, object]:
     }
 
 
+def _reviewing_create_job(
+    client: TestClient,
+    *,
+    project_id: str,
+    requested_outputs: int,
+    owner: str = "usr_designer",
+) -> str:
+    created = client.post("/studio/jobs", json={
+        "owner": owner,
+        "action_id": "create",
+        "lane": "fast_visual",
+        "requested_outputs": requested_outputs,
+        "credits_per_output": 15,
+    })
+    assert created.status_code == 201, created.text
+    job_id = created.json()["job_id"]
+    running = client.patch(f"/studio/jobs/{job_id}", json={
+        "owner": owner,
+        "status": "running",
+        "progress": 0.05,
+    })
+    assert running.status_code == 200, running.text
+    reviewing = client.patch(f"/studio/jobs/{job_id}", json={
+        "owner": owner,
+        "status": "reviewing",
+        "progress": 0.9,
+        "active_design_id": project_id,
+    })
+    assert reviewing.status_code == 200, reviewing.text
+    return job_id
+
+
 def _promotion_payload(
     client: TestClient,
     project_id: str,
@@ -645,6 +678,198 @@ def test_from_prompt_persists_independent_candidates_without_source_or_spec(
             "CREATIVE_GENERATE", "CREATIVE_GENERATE", "CREATIVE_GENERATE"]
         assert [run.variant for run in runs] == [4, 5, 6]
         assert all(run.source_asset_id is None for run in runs)
+
+
+def test_creative_selection_atomically_settles_reviewing_create_job_after_restart(
+    creative_client,
+):
+    client, Session = creative_client
+    app.dependency_overrides[get_creative_prompt_generator] = (
+        lambda: (lambda _instruction, variant: _prompt_creative_result(variant))
+    )
+    created = client.post(
+        "/projects/from-prompt", json=_prompt_request(variation_count=3)
+    )
+    assert created.status_code == 201, created.text
+    project = created.json()
+    selected_id = project["revisions"][1]["asset_id"]
+    job_id = _reviewing_create_job(
+        client,
+        project_id=project["root_id"],
+        requested_outputs=4,
+    )
+
+    # A new HTTP client has no gateway-local Create map. Settlement depends
+    # only on durable project, candidate, and StudioJob rows.
+    with TestClient(app) as restarted_client:
+        selected = restarted_client.post(
+            f"/projects/{project['root_id']}/creative-candidates/"
+            f"{selected_id}/select",
+            json={"created_by": "usr_designer", "studio_job_id": job_id},
+        )
+        assert selected.status_code == 200, selected.text
+        assert selected.json()["selected_candidate_asset_id"] == selected_id
+
+        # Identical retries are idempotent and cannot double-charge.
+        retried = restarted_client.post(
+            f"/projects/{project['root_id']}/creative-candidates/"
+            f"{selected_id}/select",
+            json={"created_by": "usr_designer", "studio_job_id": job_id},
+        )
+        assert retried.status_code == 200, retried.text
+
+    with Session() as db:
+        saved = db.get(Project, project["root_id"])
+        job = db.get(StudioJobRecord, job_id)
+        assert saved is not None
+        assert saved.selected_candidate_asset_id == selected_id
+        assert job is not None
+        assert job.status == "succeeded"
+        assert job.active_design_id == project["root_id"]
+        assert job.source_revision_id == selected_id
+        # Only three persisted usable directions exist, despite four requested.
+        assert job.completed_outputs == 3
+        assert job.charged_outputs == 3
+
+
+def test_creative_selection_job_cas_rejects_stale_project_and_prior_selection(
+    creative_client,
+):
+    client, Session = creative_client
+    app.dependency_overrides[get_creative_prompt_generator] = (
+        lambda: (lambda _instruction, variant: _prompt_creative_result(variant))
+    )
+    first = client.post(
+        "/projects/from-prompt", json=_prompt_request(variation_count=2)
+    ).json()
+    second_request = _prompt_request(variation_count=2)
+    second_request["title"] = "Second exploration"
+    second_request["starting_variant"] = 20
+    second = client.post("/projects/from-prompt", json=second_request).json()
+    first_job_id = _reviewing_create_job(
+        client, project_id=first["root_id"], requested_outputs=2,
+    )
+    second_candidate = second["revisions"][1]["asset_id"]
+
+    wrong_project = client.post(
+        f"/projects/{second['root_id']}/creative-candidates/"
+        f"{second_candidate}/select",
+        json={"created_by": "usr_designer", "studio_job_id": first_job_id},
+    )
+    assert wrong_project.status_code == 409
+    assert "not bound to the selected project" in wrong_project.json()["detail"]
+
+    first_candidates = [item["asset_id"] for item in first["revisions"]]
+    legacy_selection = client.post(
+        f"/projects/{first['root_id']}/creative-candidates/"
+        f"{first_candidates[0]}/select",
+        json={"created_by": "usr_designer"},
+    )
+    assert legacy_selection.status_code == 200, legacy_selection.text
+    stale_selection = client.post(
+        f"/projects/{first['root_id']}/creative-candidates/"
+        f"{first_candidates[1]}/select",
+        json={"created_by": "usr_designer", "studio_job_id": first_job_id},
+    )
+    assert stale_selection.status_code == 409
+    assert "already selected another" in stale_selection.json()["detail"]
+
+    with Session() as db:
+        first_project = db.get(Project, first["root_id"])
+        second_project = db.get(Project, second["root_id"])
+        job = db.get(StudioJobRecord, first_job_id)
+        assert first_project is not None
+        assert first_project.selected_candidate_asset_id == first_candidates[0]
+        assert second_project is not None
+        assert second_project.selected_candidate_asset_id is None
+        assert job is not None
+        assert job.status == "reviewing"
+        assert job.source_revision_id is None
+        assert job.completed_outputs == 0
+        assert job.charged_outputs == 0
+
+
+def test_creative_selection_rejects_wrong_job_source_without_partial_writes(
+    creative_client,
+):
+    client, Session = creative_client
+    app.dependency_overrides[get_creative_prompt_generator] = (
+        lambda: (lambda _instruction, variant: _prompt_creative_result(variant))
+    )
+    created = client.post(
+        "/projects/from-prompt", json=_prompt_request(variation_count=2)
+    ).json()
+    candidate_ids = [item["asset_id"] for item in created["revisions"]]
+    job_id = _reviewing_create_job(
+        client, project_id=created["root_id"], requested_outputs=2,
+    )
+    bound = client.patch(f"/studio/jobs/{job_id}", json={
+        "owner": "usr_designer",
+        "status": "succeeded",
+        "progress": 1,
+        "completed_outputs": 2,
+        "source_revision_id": candidate_ids[0],
+    })
+    assert bound.status_code == 200, bound.text
+
+    response = client.post(
+        f"/projects/{created['root_id']}/creative-candidates/"
+        f"{candidate_ids[1]}/select",
+        json={"created_by": "usr_designer", "studio_job_id": job_id},
+    )
+    assert response.status_code == 409
+    assert "another selected direction" in response.json()["detail"]
+
+    with Session() as db:
+        project = db.get(Project, created["root_id"])
+        job = db.get(StudioJobRecord, job_id)
+        assert project is not None
+        assert project.selected_candidate_asset_id is None
+        assert job is not None
+        assert job.source_revision_id == candidate_ids[0]
+        # Public lifecycle transitions never create a charge.
+        assert job.charged_outputs == 0
+
+
+def test_creative_selection_rejects_foreign_create_job_without_partial_writes(
+    creative_client,
+):
+    client, Session = creative_client
+    app.dependency_overrides[get_creative_prompt_generator] = (
+        lambda: (lambda _instruction, variant: _prompt_creative_result(variant))
+    )
+    created = client.post(
+        "/projects/from-prompt", json=_prompt_request(variation_count=1)
+    ).json()
+    candidate_id = created["revisions"][0]["asset_id"]
+    foreign_job_id = _reviewing_create_job(
+        client,
+        project_id=created["root_id"],
+        requested_outputs=1,
+        owner="usr_other",
+    )
+
+    response = client.post(
+        f"/projects/{created['root_id']}/creative-candidates/"
+        f"{candidate_id}/select",
+        json={
+            "created_by": "usr_designer",
+            "studio_job_id": foreign_job_id,
+        },
+    )
+    assert response.status_code == 409
+    assert "unknown Studio job" in response.json()["detail"]
+
+    with Session() as db:
+        project = db.get(Project, created["root_id"])
+        job = db.get(StudioJobRecord, foreign_job_id)
+        assert project is not None
+        assert project.selected_candidate_asset_id is None
+        assert job is not None
+        assert job.owner == "usr_other"
+        assert job.status == "reviewing"
+        assert job.completed_outputs == 0
+        assert job.charged_outputs == 0
 
 
 def test_from_prompt_validates_variation_bounds(creative_client):

@@ -127,6 +127,10 @@ from facetta.preliminary_sheet import sheet_readiness_blockers
 from facetta.render import RenderUnavailable
 from facetta.spec import Spec
 from facetta.studio_history import ensure_project_family
+from facetta.studio_jobs import (
+    StudioJobAccountingError,
+    settle_create_studio_job_selection,
+)
 from facetta.studio_presentation_candidates import (
     StudioPresentationError,
     fail_exact_studio_presentation_job,
@@ -427,6 +431,7 @@ class CreativeCandidateSelectRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     created_by: Annotated[str, Field(min_length=1, max_length=32)]
+    studio_job_id: Annotated[str, Field(min_length=1, max_length=32)] | None = None
 
 
 class CreativeCandidateDraftRequest(BaseModel):
@@ -1219,8 +1224,34 @@ def select_project_creative_candidate(
             status_code=409,
             detail="the selected asset is not a pre-spec creative candidate",
         )
-    project.selected_candidate_asset_id = candidate.id
-    project.updated_at = utcnow()
+    if (
+        request.studio_job_id is not None
+        and project.selected_candidate_asset_id not in (None, candidate.id)
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail="the project already selected another creative candidate",
+        )
+    if request.studio_job_id is not None:
+        available_outputs = len(list(db.scalars(select(ImageAsset.id).where(
+            ImageAsset.root_id == project.root_id,
+            ImageAsset.capability == "CREATIVE_RENDER",
+            ImageAsset.design_version.is_(None),
+        ))))
+        try:
+            settle_create_studio_job_selection(
+                db,
+                job_id=request.studio_job_id,
+                owner=request.created_by,
+                project_root_id=project.root_id,
+                source_revision_id=candidate.id,
+                available_outputs=available_outputs,
+            )
+        except StudioJobAccountingError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+    if project.selected_candidate_asset_id != candidate.id:
+        project.selected_candidate_asset_id = candidate.id
+        project.updated_at = utcnow()
     db.commit()
     db.refresh(project)
     return project_detail(db, project)

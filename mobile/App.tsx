@@ -4,7 +4,7 @@ import {
   ActivityIndicator, Pressable, SafeAreaView, ScrollView, StyleSheet, Text,
   useWindowDimensions, View,
 } from 'react-native';
-import { DEFAULT_API_URL } from './src/api';
+import { DEFAULT_API_URL } from './src/config';
 import { AuthenticatedImage as Image, AuthenticatedImageProvider } from './src/AuthenticatedImage';
 import {
   clearSession, hasOnboarded, loadAuthenticatedSession, markOnboarded,
@@ -40,12 +40,19 @@ import { designerErrorMessage } from './src/studio/designerErrorMessage';
 type Tab = 'studio' | 'collections' | 'activity' | 'learn';
 type StudioView = 'home' | 'action';
 type Stage = 'onboarding' | 'tour' | 'booting' | 'login' | 'recovery' | 'app';
-type ProjectHydrationDestination = 'collections' | 'refine' | 'views' | 'present';
+type ProjectHydrationDestination = 'collections' | 'create' | 'refine' | 'views' | 'present'
+  | 'specifications';
 
 interface ProjectHydrationRequest {
   projectId: string;
   destination: ProjectHydrationDestination;
   expectedAssetId?: string;
+  studioJobId?: string;
+}
+
+interface CreateReviewState {
+  project: ProjectDetail;
+  studioJobId: string;
 }
 
 const designImage = require('./assets/studio-asymmetric-paraiba-ring-v1.png');
@@ -95,6 +102,7 @@ export default function App() {
   const [showUtilityMenu, setShowUtilityMenu] = useState(false);
   const [studioProject, setStudioProject] = useState<ProjectDetail | null>(null);
   const [selectedCreativeAssetId, setSelectedCreativeAssetId] = useState<string | null>(null);
+  const [createReview, setCreateReview] = useState<CreateReviewState | null>(null);
   const [projectHydration, setProjectHydration] = useState<{
     request: ProjectHydrationRequest;
     loading: boolean;
@@ -106,6 +114,7 @@ export default function App() {
     setDesigner('');
     setStudioProject(null);
     setSelectedCreativeAssetId(null);
+    setCreateReview(null);
     setStage('login');
   }, []);
   const expireAuthenticatedSession = useCallback(() => {
@@ -237,6 +246,20 @@ export default function App() {
       });
       return;
     }
+    if (request.destination === 'create') {
+      if (request.studioJobId === undefined) {
+        setProjectHydration({
+          request,
+          loading: false,
+          error: 'Facetta could not verify the Create review in Activity. Your saved directions are unchanged.',
+        });
+        return;
+      }
+      setCreateReview({ project: result.data, studioJobId: request.studioJobId });
+      setProjectHydration(null);
+      openStudioAction('create', true);
+      return;
+    }
     setStudioProject(result.data);
     setSelectedCreativeAssetId(result.data.active_asset_id);
     setProjectHydration(null);
@@ -254,11 +277,12 @@ export default function App() {
     accessToken: sessionAccessToken(session),
   }), [apiUrl, session]);
 
-  const openStudioAction = (actionId: StudioActionId) => {
+  const openStudioAction = (actionId: StudioActionId, preserveCreateReview = false) => {
     if (actionId === 'more') {
       setShowMoreActions((visible) => !visible);
       return;
     }
+    if (!preserveCreateReview) setCreateReview(null);
     setSelectedActionId(actionId);
     setShowMoreActions(false);
     setStudioView('action');
@@ -471,22 +495,30 @@ export default function App() {
           </View>
           {selectedActionId === 'create' ? (
             <StudioCreateWorkspace
+              key={createReview === null
+                ? 'new-create'
+                : `resume-create:${createReview.project.root_id}:${createReview.studioJobId}`}
               gateway={studioGateway}
               owner={designer}
+              resumeProject={createReview?.project ?? null}
+              resumeStudioJobId={createReview?.studioJobId ?? null}
               onRequestReference={pickExpoStudioCreateReference}
               onSave={(selection) => {
+                setCreateReview(null);
                 setStudioProject(selection.project);
                 setSelectedCreativeAssetId(selection.selectedAssetId);
                 openStudioAction('refine');
               }}
             />
-          ) : selectedActionId === 'refine' ? (
+          ) : selectedActionId === 'refine' || selectedActionId === 'specifications' ? (
             <StudioRefineWorkspace
+              key={selectedActionId}
               api={trustedApi}
               gateway={studioGateway}
               lineage={exactStudioLineage ?? visualStudioLineage}
               createdBy={designer}
               sourceImageUrl={studioProject?.active_revision?.image_url ?? null}
+              initialAdvancedFactsOpen={selectedActionId === 'specifications'}
               onApplied={(project) => {
                 setStudioProject(project);
                 setSelectedCreativeAssetId(project.active_asset_id);
@@ -579,7 +611,16 @@ export default function App() {
           api={trustedApi}
           owner={designer}
           onOpenReview={(job) => {
-            if (job.active_design_id === null || job.source_revision_id === null) return;
+            if (job.active_design_id === null) return;
+            if (job.action_id === 'create') {
+              void hydrateProject({
+                projectId: job.active_design_id,
+                destination: 'create',
+                studioJobId: job.job_id,
+              });
+              return;
+            }
+            if (job.source_revision_id === null) return;
             if (!(['refine', 'views', 'present'] as const).includes(
               job.action_id as 'refine' | 'views' | 'present',
             )) return;

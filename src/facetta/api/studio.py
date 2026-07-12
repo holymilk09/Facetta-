@@ -77,6 +77,14 @@ from facetta.studio_visual_candidates import (
     remove_studio_visual_candidate,
     store_studio_visual_candidate,
 )
+from facetta.studio_markup_candidates import (
+    StudioMarkupCandidateUnavailable,
+    StudioMarkupError,
+    accept_studio_markup_candidate,
+    discard_studio_markup_candidate,
+    get_studio_markup_candidate,
+    list_studio_markup_candidates,
+)
 from facetta.studio_presentation_candidates import (
     StudioPresentationCandidateUnavailable,
     StudioPresentationError,
@@ -220,6 +228,14 @@ class ReviewVisualPreviewRequest(BaseModel):
 
     created_by: Annotated[str, Field(min_length=1, max_length=32)]
     expected_active_asset_id: Annotated[str, Field(min_length=1, max_length=32)]
+
+
+class ReviewMarkupCandidateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    created_by: Annotated[str, Field(min_length=1, max_length=32)]
+    expected_active_asset_id: Annotated[str, Field(min_length=1, max_length=32)]
+    expected_design_version: Annotated[int, Field(ge=1)]
 
 
 class CreatePreSpecPresentationRequest(BaseModel):
@@ -1111,6 +1127,197 @@ def reopen_visual_previews(
         "qa": candidate.qa,
         "expires_at": candidate.expires_at.isoformat(),
     } for candidate in candidates]}
+
+
+def _markup_candidate_error(
+    exc: StudioMarkupError | StudioMarkupCandidateUnavailable,
+) -> JSONResponse:
+    status_code = getattr(exc, "status_code", 410)
+    code = getattr(exc, "code", "markup_candidate_unavailable")
+    detail = getattr(exc, "detail", str(exc))
+    return JSONResponse(status_code=status_code, content={
+        "code": code,
+        "category": (
+            "validation" if status_code == 422
+            else "authorization" if status_code == 403
+            else "conflict"
+        ),
+        "detail": detail,
+    })
+
+
+def _markup_candidate_payload(candidate) -> dict:
+    base = (
+        f"/studio/markup-candidates/{candidate.run_id}/"
+        f"{candidate.candidate_id}"
+    )
+    return {
+        "candidate_id": candidate.candidate_id,
+        "image_run_id": candidate.run_id,
+        "project_root_id": candidate.project_root_id,
+        "source_asset_id": candidate.source_asset_id,
+        "expected_active_asset_id": candidate.expected_active_asset_id,
+        "design_version": candidate.design_version,
+        "source_sha256": candidate.source_hash,
+        "output_sha256": candidate.output_hash,
+        "operation": candidate.operation,
+        "requested_change": candidate.requested_change,
+        "region_description": candidate.region_description,
+        "qa": candidate.qa,
+        "routing": candidate.routing,
+        "status": candidate.status,
+        "studio_job_id": candidate.studio_job_id,
+        "expires_at": candidate.expires_at.isoformat(),
+        "preview_url": f"{base}/image",
+        "accept_url": f"{base}/accept",
+        "discard_url": f"{base}/discard",
+        "save_as_variation_url": f"{base}/save-as-variation",
+    }
+
+
+@router.get("/projects/{project_root_id}/markup-candidates")
+def list_exact_markup_candidates(
+    project_root_id: str,
+    db: DbSession,
+    principal: PrincipalDep,
+):
+    project = db.get(Project, project_root_id)
+    if project is None:
+        raise HTTPException(status_code=404, detail="project unavailable")
+    if not principal.local_unbound and project.owner != principal.subject:
+        raise HTTPException(status_code=404, detail="project unavailable")
+    candidates = list_studio_markup_candidates(
+        db, owner=project.owner, project_root_id=project_root_id,
+    )
+    return {"candidates": [
+        _markup_candidate_payload(candidate) for candidate in candidates
+    ]}
+
+
+@router.get("/markup-candidates/{run_id}/{candidate_id}/image")
+def get_exact_markup_candidate_image(
+    run_id: str,
+    candidate_id: str,
+    db: DbSession,
+    principal: PrincipalDep,
+):
+    run = db.get(ImageRun, run_id)
+    owner = (
+        run.created_by if principal.local_unbound and run is not None
+        else principal.subject
+    )
+    if owner is None:
+        raise HTTPException(status_code=404, detail="markup candidate unavailable")
+    try:
+        candidate = get_studio_markup_candidate(
+            db, run_id, candidate_id, owner=owner)
+    except StudioMarkupCandidateUnavailable as exc:
+        return _markup_candidate_error(exc)
+    if candidate.status != "reviewing":
+        return _markup_candidate_error(StudioMarkupCandidateUnavailable(
+            f"the Studio markup candidate was already {candidate.status}"))
+    return Response(
+        content=candidate.image_bytes,
+        media_type=candidate.media_type,
+        headers={"Cache-Control": "private, no-store"},
+    )
+
+
+@router.post(
+    "/markup-candidates/{run_id}/{candidate_id}/accept", status_code=201,
+)
+def accept_exact_markup_candidate(
+    run_id: str,
+    candidate_id: str,
+    request: ReviewMarkupCandidateRequest,
+    db: DbSession,
+    principal: PrincipalDep,
+):
+    principal_actor(principal, request.created_by)
+    try:
+        candidate = get_studio_markup_candidate(
+            db, run_id, candidate_id, owner=request.created_by)
+        asset_id = accept_studio_markup_candidate(
+            db,
+            candidate,
+            expected_active_asset_id=request.expected_active_asset_id,
+            expected_design_version=request.expected_design_version,
+            created_by=request.created_by,
+        )
+    except (StudioMarkupCandidateUnavailable, StudioMarkupError) as exc:
+        return _markup_candidate_error(exc)
+    except WarningRevisionError as exc:
+        return _presentation_candidate_error(exc)
+    project = db.get(Project, candidate.project_root_id)
+    if project is None:  # pragma: no cover
+        raise HTTPException(status_code=500, detail="accepted project unavailable")
+    return {
+        "status": "applied",
+        "candidate_id": candidate_id,
+        "asset_id": asset_id,
+        "project": project_detail(db, project),
+    }
+
+
+@router.post("/markup-candidates/{run_id}/{candidate_id}/discard")
+def discard_exact_markup_candidate(
+    run_id: str,
+    candidate_id: str,
+    request: ReviewMarkupCandidateRequest,
+    db: DbSession,
+    principal: PrincipalDep,
+):
+    principal_actor(principal, request.created_by)
+    try:
+        candidate = get_studio_markup_candidate(
+            db, run_id, candidate_id, owner=request.created_by)
+        discard_studio_markup_candidate(
+            db,
+            candidate,
+            expected_active_asset_id=request.expected_active_asset_id,
+            expected_design_version=request.expected_design_version,
+            created_by=request.created_by,
+        )
+    except (StudioMarkupCandidateUnavailable, StudioMarkupError) as exc:
+        return _markup_candidate_error(exc)
+    except WarningRevisionError as exc:
+        return _presentation_candidate_error(exc)
+    return {"status": "discarded", "candidate_id": candidate_id}
+
+
+@router.post(
+    "/markup-candidates/{run_id}/{candidate_id}/save-as-variation",
+    status_code=201,
+)
+def save_exact_markup_candidate_as_variation(
+    run_id: str,
+    candidate_id: str,
+    request: SavePreviewVariationRequest,
+    db: DbSession,
+    principal: PrincipalDep,
+):
+    principal_actor(principal, request.created_by)
+    try:
+        result = fork_preview_candidate_variation(
+            db,
+            kind="studio_markup",
+            run_id=run_id,
+            candidate_id=candidate_id,
+            variation_label=request.label,
+            created_by=request.created_by,
+        )
+    except StudioHistoryError as exc:
+        return _error(exc)
+    project = db.get(Project, result.project_root_id)
+    if project is None:  # pragma: no cover
+        raise HTTPException(status_code=500, detail="variation unavailable")
+    return {
+        "status": "saved_as_variation",
+        "candidate_id": candidate_id,
+        "family_id": result.family_id,
+        "variation_index": result.variation_index,
+        "project": project_detail(db, project),
+    }
 
 
 def _pre_spec_presentation_error(

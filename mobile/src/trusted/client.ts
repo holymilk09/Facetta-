@@ -61,6 +61,11 @@ import type {
   MarkupInterpretation,
   MarkupReadRequest,
   MarkupReadResponse,
+  StudioMarkupAcceptResult,
+  StudioMarkupCandidateListResult,
+  StudioMarkupDecisionRequest,
+  StudioMarkupDiscardResult,
+  StudioMarkupResumeCandidate,
   MarketingPackRequest,
   MarketingPackResult,
   DrawingConfirmationResult,
@@ -2588,6 +2593,72 @@ const decodeProjectComments: Decoder<ProjectComment[]> = (value) => {
     .filter((comment): comment is ProjectComment => comment !== null);
 };
 
+const decodeStudioMarkupResumeCandidate: Decoder<StudioMarkupResumeCandidate> = (value) => {
+  if (!isRecord(value) || value.status !== 'reviewing') return null;
+  const candidateId = nullableText(value.candidate_id);
+  const runId = nullableText(value.image_run_id);
+  const projectId = nullableText(value.project_root_id);
+  const sourceAssetId = nullableText(value.source_asset_id);
+  const expectedAssetId = nullableText(value.expected_active_asset_id);
+  const designVersion = number(value.design_version);
+  const operation = nullableText(value.operation);
+  const requestedChange = nullableText(value.requested_change);
+  const regionDescription = nullableText(value.region_description);
+  const qa = decodeImageQualityReport(value.qa);
+  const expiresAt = nullableText(value.expires_at);
+  const previewUrl = nullableText(value.preview_url);
+  const acceptUrl = nullableText(value.accept_url);
+  const discardUrl = nullableText(value.discard_url);
+  const variationUrl = nullableText(value.save_as_variation_url);
+  const studioJobId = nullableText(value.studio_job_id);
+  if (
+    candidateId === null || runId === null || projectId === null
+    || sourceAssetId === null || expectedAssetId === null
+    || designVersion === null || !Number.isInteger(designVersion) || designVersion < 1
+    || operation === null || requestedChange === null || regionDescription === null
+    || qa === null || expiresAt === null || previewUrl === null || acceptUrl === null
+    || discardUrl === null || variationUrl === null
+  ) return null;
+  const root = `/studio/markup-candidates/${encodeURIComponent(runId)}/${encodeURIComponent(candidateId)}`;
+  if (
+    endpointPath(previewUrl) !== `${root}/image`
+    || endpointPath(acceptUrl) !== `${root}/accept`
+    || endpointPath(discardUrl) !== `${root}/discard`
+    || endpointPath(variationUrl) !== `${root}/save-as-variation`
+  ) return null;
+  return {
+    candidate_id: candidateId, image_run_id: runId, project_root_id: projectId,
+    source_asset_id: sourceAssetId, expected_active_asset_id: expectedAssetId,
+    design_version: designVersion, operation, requested_change: requestedChange,
+    region_description: regionDescription, qa, status: 'reviewing',
+    studio_job_id: studioJobId, expires_at: expiresAt, preview_url: previewUrl,
+    accept_url: acceptUrl, discard_url: discardUrl,
+    save_as_variation_url: variationUrl,
+  };
+};
+
+const decodeStudioMarkupCandidateList: Decoder<StudioMarkupCandidateListResult> = (value) => {
+  if (!isRecord(value) || !Array.isArray(value.candidates)) return null;
+  const candidates = value.candidates.map(decodeStudioMarkupResumeCandidate);
+  return candidates.every((candidate) => candidate !== null)
+    ? { candidates: candidates as StudioMarkupResumeCandidate[] } : null;
+};
+
+const decodeStudioMarkupAcceptResult: Decoder<StudioMarkupAcceptResult> = (value) => {
+  if (!isRecord(value) || value.status !== 'applied') return null;
+  const candidateId = nullableText(value.candidate_id);
+  const assetId = nullableText(value.asset_id);
+  const project = decodeProjectDetail(value.project);
+  return candidateId === null || assetId === null || project === null
+    ? null : { status: 'applied', candidate_id: candidateId, asset_id: assetId, project };
+};
+
+const decodeStudioMarkupDiscardResult: Decoder<StudioMarkupDiscardResult> = (value) => {
+  if (!isRecord(value) || value.status !== 'discarded') return null;
+  const candidateId = nullableText(value.candidate_id);
+  return candidateId === null ? null : { status: 'discarded', candidate_id: candidateId };
+};
+
 export const decodeMarkupApplyResponse: Decoder<MarkupApplyResponse> = (value) => {
   if (!isRecord(value)) return null;
   let revision = decodeProjectRevision(value.revision);
@@ -3438,10 +3509,21 @@ export function createTrustedApiClient(options: TrustedApiClientOptions) {
       });
     },
 
-    selectCreativeCandidate(projectId: string, candidateId: string, createdBy: string) {
+    selectCreativeCandidate(
+      projectId: string,
+      candidateId: string,
+      createdBy: string,
+      studioJobId?: string,
+    ) {
       return projectCall(
         `/projects/${encodeURIComponent(projectId)}/creative-candidates/${encodeURIComponent(candidateId)}/select`,
-        { method: 'POST', body: encodeBody({ created_by: createdBy }) },
+        {
+          method: 'POST',
+          body: encodeBody({
+            created_by: createdBy,
+            ...(studioJobId === undefined ? {} : { studio_job_id: studioJobId }),
+          }),
+        },
       );
     },
 
@@ -4809,6 +4891,7 @@ export function createTrustedApiClient(options: TrustedApiClientOptions) {
         created_by: request.created_by,
         variant: request.variant ?? 0,
         preview_only: request.preview_only ?? false,
+        ...(request.studio_job_id === undefined ? {} : { studio_job_id: request.studio_job_id }),
       }, decodeMarkupApplyResponse);
       if (result.error !== null) {
         return result;
@@ -4828,6 +4911,67 @@ export function createTrustedApiClient(options: TrustedApiClientOptions) {
           },
         },
       };
+    },
+
+    async listStudioMarkupCandidates(
+      projectId: string,
+    ): Promise<ApiResult<StudioMarkupCandidateListResult>> {
+      const result = await call(
+        `/studio/projects/${encodeURIComponent(projectId)}/markup-candidates`,
+        decodeStudioMarkupCandidateList,
+      );
+      if (result.error !== null) return result;
+      return {
+        ...result,
+        data: {
+          candidates: result.data.candidates.map((candidate) => ({
+            ...candidate,
+            preview_url: resolveUrl(candidate.preview_url, baseUrl),
+          })),
+        },
+      };
+    },
+
+    async acceptStudioMarkupCandidate(
+      candidate: StudioMarkupResumeCandidate,
+      request: StudioMarkupDecisionRequest,
+    ): Promise<ApiResult<StudioMarkupAcceptResult>> {
+      const result = await jsonCall(
+        `/studio/markup-candidates/${encodeURIComponent(candidate.image_run_id)}`
+          + `/${encodeURIComponent(candidate.candidate_id)}/accept`,
+        'POST', request as unknown as JsonObject, decodeStudioMarkupAcceptResult,
+      );
+      return result.error === null ? {
+        ...result,
+        data: { ...result.data, project: projectWithUrls(result.data.project, baseUrl) },
+      } : result;
+    },
+
+    discardStudioMarkupCandidate(
+      candidate: StudioMarkupResumeCandidate,
+      request: StudioMarkupDecisionRequest,
+    ): Promise<ApiResult<StudioMarkupDiscardResult>> {
+      return jsonCall(
+        `/studio/markup-candidates/${encodeURIComponent(candidate.image_run_id)}`
+          + `/${encodeURIComponent(candidate.candidate_id)}/discard`,
+        'POST', request as unknown as JsonObject, decodeStudioMarkupDiscardResult,
+      );
+    },
+
+    async saveStudioMarkupPreviewAsVariation(
+      candidate: StudioMarkupResumeCandidate,
+      request: PreviewVariationRequest,
+    ): Promise<ApiResult<PreviewVariationResult>> {
+      const result = await jsonCall(
+        `/studio/markup-candidates/${encodeURIComponent(candidate.image_run_id)}`
+          + `/${encodeURIComponent(candidate.candidate_id)}/save-as-variation`,
+        'POST', { created_by: request.created_by, label: request.label },
+        decodePreviewVariationResult,
+      );
+      return result.error === null ? {
+        ...result,
+        data: { ...result.data, project: projectWithUrls(result.data.project, baseUrl) },
+      } : result;
     },
 
     getImageRun(runId: string) {
