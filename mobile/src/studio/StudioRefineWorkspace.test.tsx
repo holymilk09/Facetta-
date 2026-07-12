@@ -28,9 +28,13 @@ describe('StudioRefineWorkspace', () => {
   test('fails closed when there is no exact immutable revision', async () => {
     await render(
       <StudioRefineWorkspace
-        api={{ getComponentCatalog: jest.fn(async () => ({ data: catalog, error: null, status: 200 })) }}
+        api={{
+          getComponentCatalog: jest.fn(async () => ({ data: catalog, error: null, status: 200 })),
+          readMarkup: jest.fn(),
+        }}
         gateway={{
           previewCatalogRefine: jest.fn(), applyCatalogRefine: jest.fn(), discardCatalogRefine: jest.fn(),
+          previewMarkupRefine: jest.fn(), applyMarkupRefine: jest.fn(), discardMarkupRefine: jest.fn(),
         }}
         lineage={null}
         createdBy="designer"
@@ -63,7 +67,10 @@ describe('StudioRefineWorkspace', () => {
     }));
     await render(
       <StudioRefineWorkspace
-        api={{ getComponentCatalog: jest.fn(async () => ({ data: catalog, error: null, status: 200 })) }}
+        api={{
+          getComponentCatalog: jest.fn(async () => ({ data: catalog, error: null, status: 200 })),
+          readMarkup: jest.fn(),
+        }}
         gateway={{ previewCatalogRefine, applyCatalogRefine, discardCatalogRefine: jest.fn() } as any}
         lineage={{ projectId: 'project_1', sourceAssetId: 'asset_2', sourceDesignVersion: 2 }}
         createdBy="designer"
@@ -76,5 +83,51 @@ describe('StudioRefineWorkspace', () => {
     expect(onApplied).not.toHaveBeenCalled();
     await act(async () => { fireEvent.press(screen.getByText('Apply as new revision')); });
     await waitFor(() => expect(onApplied).toHaveBeenCalledWith(project));
+  });
+
+  test('plain language is constrained to appearance and still previews first', async () => {
+    const previewMarkupRefine = jest.fn(async () => ({
+      data: {
+        lineage: { projectId: 'project_1', sourceAssetId: 'asset_2', sourceDesignVersion: 2 },
+        annotation: {},
+        candidate: {
+          id: 'candidate_plain', jobId: 'run_plain', sourceRevisionId: 'asset_2',
+          assetUrl: 'https://test/plain.png', verdict: 'pass' as const,
+          status: 'pending_review' as const, checks: [], temporary: true,
+          expiresAt: null, decision: null, decidedAt: null, canonicalRevisionId: null,
+        },
+      }, error: null, status: 201,
+    }));
+    await render(
+      <StudioRefineWorkspace
+        api={{
+          getComponentCatalog: jest.fn(async () => ({ data: catalog, error: null, status: 200 })),
+          readMarkup: jest.fn(),
+        }}
+        gateway={{
+          previewCatalogRefine: jest.fn(), applyCatalogRefine: jest.fn(), discardCatalogRefine: jest.fn(),
+          previewMarkupRefine, applyMarkupRefine: jest.fn(), discardMarkupRefine: jest.fn(),
+        } as any}
+        lineage={{ projectId: 'project_1', sourceAssetId: 'asset_2', sourceDesignVersion: 2 }}
+        createdBy="designer"
+        onApplied={jest.fn()}
+      />,
+    );
+    fireEvent.press(screen.getByLabelText('Describe refine mode'));
+    expect(await screen.findByText(/changes presentation only/i)).toBeTruthy();
+    fireEvent.changeText(
+      screen.getByPlaceholderText(/make the presentation softer/i),
+      'Make the background warmer',
+    );
+    await waitFor(() => expect(screen.getByDisplayValue('Make the background warmer')).toBeTruthy());
+    await act(async () => { fireEvent.press(screen.getByText('Preview change')); });
+    await waitFor(() => expect(previewMarkupRefine).toHaveBeenCalledWith(expect.objectContaining({
+      sourceAssetId: 'asset_2',
+      annotation: expect.objectContaining({
+        impact: 'visual_only',
+        change_instruction: 'Make the background warmer',
+      }),
+    })));
+    expect(await screen.findByText('Nothing has changed yet.')).toBeTruthy();
   });
 });

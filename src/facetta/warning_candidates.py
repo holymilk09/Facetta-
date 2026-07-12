@@ -253,6 +253,27 @@ def get_markup_warning_candidate(
         return candidate
 
 
+def discard_markup_warning_candidate(
+    run_id: str,
+    candidate_id: str,
+    *,
+    created_by: str,
+) -> MarkupWarningCandidate:
+    """Make a temporary candidate permanently unavailable to acceptance."""
+    now = monotonic()
+    with _lock:
+        _prune(now)
+        candidate = _candidates.get(candidate_id)
+        if candidate is None or candidate.run_id != run_id:
+            raise WarningCandidateUnavailable(
+                "the warning candidate expired or is no longer available")
+        if candidate.created_by != created_by:
+            raise WarningCandidateUnavailable(
+                "only the candidate creator may discard it")
+        _candidates.pop(candidate_id, None)
+        return candidate
+
+
 def store_brief_warning_candidate(
     *,
     run_id: str,

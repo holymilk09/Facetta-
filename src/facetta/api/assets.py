@@ -611,6 +611,9 @@ class MarkupApplyRequest(BaseModel):
     expected_design_version: Annotated[int, Field(ge=1)] | None = None
     created_by: str = "usr_pending"
     variant: int = 0  # regenerate: fresh takes on the SAME marks, not the cache
+    # Studio holds even QA-passed edits outside canonical history until the
+    # designer explicitly applies the temporary candidate.
+    preview_only: bool = False
 
 
 @router.post("/{asset_id}/markup/apply", status_code=201)
@@ -1078,7 +1081,7 @@ def markup_apply(asset_id: str, request: MarkupApplyRequest, db: DbSession):
                     attempt.cached for attempt in image_agent_result.run.attempts),
                 "run_id": None,
             }
-            if image_agent_result.review_required:
+            if image_agent_result.review_required or request.preview_only:
                 if note.target_component_id is not None:
                     # A warning candidate has not become a revision and its
                     # component identities have not been accepted. Until the
@@ -1086,17 +1089,28 @@ def markup_apply(asset_id: str, request: MarkupApplyRequest, db: DbSession):
                     # fail closed instead of later promoting an unmapped asset.
                     return JSONResponse(status_code=422, content={
                         "detail": (
-                            "component-aware edits require image QA to pass; "
-                            "refine the selection or instruction and retry"
+                            "component-aware edits cannot enter temporary review "
+                            "until candidate component maps can be promoted "
+                            "atomically; use the component catalog or retry"
                         ),
                         "code": "component_edit_qa_review_required",
                         "category": "quality",
                         "qa": qa_report,
                         "steps": steps,
                     })
+                stored_preview_result = image_agent_result
+                if request.preview_only and not image_agent_result.review_required:
+                    from facetta.image_agent import ImageRunStatus
+                    stored_preview_result = image_agent_result.model_copy(update={
+                        "accepted": False,
+                        "review_required": True,
+                        "run": image_agent_result.run.model_copy(update={
+                            "status": ImageRunStatus.REVIEW_REQUIRED,
+                        }),
+                    })
                 run_id = persist_image_agent_result(
                     db,
-                    image_agent_result,
+                    stored_preview_result,
                     project_root_id=asset.root_id,
                     source_asset_id=current.id,
                     created_by=request.created_by,

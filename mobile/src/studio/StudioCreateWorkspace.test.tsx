@@ -5,7 +5,6 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react-nativ
 
 import type { StudioGateway } from './gateway';
 import { StudioCreateReference, StudioCreateWorkspace } from './StudioCreateWorkspace';
-import type { TrustedApiClient } from '../trusted/client';
 import type { AssetSummary, ProjectDetail } from '../trusted/types';
 
 const candidate = (index: number): AssetSummary => ({
@@ -67,8 +66,9 @@ const creativeProject = (count: number): ProjectDetail => {
   };
 };
 
-type CreateGateway = Pick<StudioGateway, 'createFromPrompt' | 'selectCreativeDirection'>;
-type DrawingClient = Pick<TrustedApiClient, 'createProjectFromDrawing'>;
+type CreateGateway = Pick<StudioGateway,
+  'createFromPrompt' | 'createFromDrawing' | 'selectCreativeDirection'
+>;
 
 test('requests 1-4 prompt candidates, lets the designer choose, then saves only that direction', async () => {
   const createFromPrompt = jest.fn(async () => ({
@@ -81,8 +81,9 @@ test('requests 1-4 prompt candidates, lets the designer choose, then saves only 
   }));
   const onSave = jest.fn();
   await render(React.createElement(StudioCreateWorkspace, {
-    gateway: { createFromPrompt, selectCreativeDirection } as CreateGateway,
-    trustedClient: { createProjectFromDrawing: jest.fn() } as unknown as DrawingClient,
+    gateway: {
+      createFromPrompt, createFromDrawing: jest.fn(), selectCreativeDirection,
+    } as CreateGateway,
     owner: 'designer_1',
     onSave,
   }));
@@ -127,8 +128,11 @@ test('uses only the supported master-geometry drawing input and labels unsupport
   const createFromPrompt = jest.fn();
   const onRequestReference = jest.fn(async (role) => role === 'master_geometry' ? master : material);
   await render(React.createElement(StudioCreateWorkspace, {
-    gateway: { createFromPrompt, selectCreativeDirection: jest.fn() } as unknown as CreateGateway,
-    trustedClient: { createProjectFromDrawing } as unknown as DrawingClient,
+    gateway: {
+      createFromPrompt,
+      createFromDrawing: createProjectFromDrawing,
+      selectCreativeDirection: jest.fn(),
+    } as unknown as CreateGateway,
     owner: 'designer_1',
     onRequestReference,
     onSave: jest.fn(),

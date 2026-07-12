@@ -79,10 +79,14 @@ function fakeClient(overrides: Partial<GatewayClient> = {}): GatewayClient {
     previewCatalogSelection: unsupported,
     acceptCatalogPreview: unsupported,
     discardCatalogPreview: unsupported,
+    applyMarkup: unsupported,
+    discardWarningCandidate: unsupported,
     createLineArt: unsupported,
     createBeautyRender: unsupported,
     createProductPhoto: unsupported,
     createMarketingPack: unsupported,
+    acceptWarningCandidate: unsupported,
+    recordImageRunFeedback: unsupported,
     getProject: unsupported,
     getFactoryPack: unsupported,
     ...overrides,
@@ -320,4 +324,81 @@ test('Create, Views, and Present forward typed inputs without model or provider 
     'product:asset_1:1:catalog_white',
     'marketing:asset_1:1:2',
   ]);
+});
+
+test('Views stay temporary, bind to the exact revision, and save only after acceptance', async () => {
+  const feedback: string[] = [];
+  const gateway = createStudioGateway(fakeClient({
+    createLineArt: async (projectId, request) => ok({
+      status: 'confirmation_required' as const,
+      project_id: projectId,
+      image_run_id: 'run_view',
+      quality_report: {
+        verdict: 'pass' as const, accepted: true, review_required: false, score: 1,
+        summary: 'Geometry preserved', failed_checks: [], warnings: [],
+        checks: [{ key: 'geometry', label: 'Geometry', verdict: 'pass' as const, severity: 'hard' as const, message: 'Matched source' }],
+      },
+      routing: { attempt_count: 1, used_retry: false, used_fallback: false, cache_hit: false, run_id: 'run_view' },
+      view: request.view,
+      candidate: {
+        run_id: 'run_view', candidate_id: 'candidate_view',
+        preview_url: 'https://example.test/view.png', qa: {
+          verdict: 'pass' as const, accepted: true, review_required: false, score: 1,
+          summary: 'Geometry preserved', failed_checks: [], warnings: [], checks: [],
+        },
+        operation: 'VISUAL_ONLY_EDIT' as const, requested_change: 'Front line art', asset_capability: 'LINE_ART',
+      },
+      next: 'Confirm the view',
+    }, 202),
+    acceptWarningCandidate: async () => ok(project(), 201),
+    recordImageRunFeedback: async (runId, action) => {
+      feedback.push(`${runId}:${action}`);
+      return ok({});
+    },
+  }));
+
+  const preview = await gateway.previewLineArtView({
+    projectId: 'project_1', sourceAssetId: 'asset_1', sourceDesignVersion: 1,
+    createdBy: 'designer_1', view: 'front',
+  });
+  assert.equal(preview.data?.previewUrl, 'https://example.test/view.png');
+  assert.deepEqual(preview.data?.lineage, {
+    projectId: 'project_1', sourceAssetId: 'asset_1', sourceDesignVersion: 1,
+  });
+  assert.deepEqual(feedback, []);
+
+  const accepted = await gateway.acceptLineArtView({
+    candidateId: 'candidate_view', createdBy: 'designer_1',
+  });
+  assert.equal(accepted.data?.project?.active_asset_id, 'asset_1');
+  await new Promise((resolve) => { setTimeout(resolve, 0); });
+  assert.deepEqual(feedback, ['run_view:accepted']);
+});
+
+test('Views fail closed when fidelity checks reject a candidate', async () => {
+  let accepted = false;
+  const gateway = createStudioGateway(fakeClient({
+    createLineArt: async () => ok({
+      status: 'confirmation_required' as const, project_id: 'project_1', image_run_id: 'run_fail',
+      quality_report: {
+        verdict: 'fail' as const, accepted: false, review_required: true, score: 0,
+        summary: 'Drift', failed_checks: ['geometry'], warnings: [], checks: [],
+      },
+      routing: { attempt_count: 1, used_retry: false, used_fallback: false, cache_hit: false, run_id: 'run_fail' },
+      view: 'side' as const,
+      candidate: {
+        run_id: 'run_fail', candidate_id: 'candidate_fail', preview_url: 'https://example.test/fail.png',
+        qa: { verdict: 'fail' as const, accepted: false, review_required: true, score: 0, summary: 'Drift', failed_checks: ['geometry'], warnings: [], checks: [] },
+        operation: 'VISUAL_ONLY_EDIT' as const, requested_change: 'Side line art', asset_capability: 'LINE_ART',
+      }, next: 'Do not accept',
+    }, 202),
+    acceptWarningCandidate: async () => { accepted = true; return ok(project(), 201); },
+  }));
+  await gateway.previewLineArtView({
+    projectId: 'project_1', sourceAssetId: 'asset_1', sourceDesignVersion: 1,
+    createdBy: 'designer_1', view: 'side',
+  });
+  const result = await gateway.acceptLineArtView({ candidateId: 'candidate_fail', createdBy: 'designer_1' });
+  assert.equal(result.error?.code, 'VIEW_QUALITY_REJECTED');
+  assert.equal(accepted, false);
 });

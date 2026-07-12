@@ -16,6 +16,8 @@ import {
   decodeProjectCreationResult,
   decodeProjectDetail,
   decodeSaveAsVariationResult,
+  decodeStudioJobList,
+  decodeStudioJobRecord,
   decodeStudioProjectHistory,
   decodeSourceCoverageResolutionResult,
 } from './client';
@@ -1452,5 +1454,81 @@ describe('trusted API decoders', () => {
     expect(url).toBe('https://facetta.test/specs/sheet.svg');
     expect(init?.method).toBe('POST');
     expect(JSON.parse(String(init?.body))).toEqual(spec);
+  });
+
+  test('decodes outcome-billed Studio jobs and rejects inconsistent charges', () => {
+    const payload = {
+      job_id: 'job_create', owner: 'usr_designer', action_id: 'create',
+      lane: 'fast_visual', status: 'succeeded', progress: 1,
+      active_design_id: 'design_ring', source_revision_id: 'asset_source',
+      error_code: null, created_at: '2026-07-12T01:00:00Z',
+      updated_at: '2026-07-12T01:01:00Z',
+      billing: {
+        requested_outputs: 4, credits_per_output: 7, estimated_credits: 28,
+        completed_outputs: 3, charged_outputs: 3, charged_credits: 21,
+        policy: 'Only requested completed outputs are charged.',
+      },
+    };
+    expect(decodeStudioJobRecord(payload)?.billing.charged_credits).toBe(21);
+    expect(decodeStudioJobList({ jobs: [payload] })?.jobs).toHaveLength(1);
+    expect(decodeStudioJobRecord({
+      ...payload,
+      billing: { ...payload.billing, charged_credits: 28 },
+    })).toBeNull();
+  });
+
+  test('uses owner-scoped Studio Activity routes and cancel command', async () => {
+    const job = {
+      job_id: 'job one', owner: 'usr_designer', action_id: 'refine',
+      lane: 'trusted_structural', status: 'running', progress: 0.4,
+      active_design_id: 'design_ring', source_revision_id: 'asset_source',
+      error_code: null, created_at: '2026-07-12T01:00:00Z',
+      updated_at: '2026-07-12T01:01:00Z',
+      billing: {
+        requested_outputs: 1, credits_per_output: 9, estimated_credits: 9,
+        completed_outputs: 0, charged_outputs: 0, charged_credits: 0,
+        policy: 'Internal retries are included.',
+      },
+    };
+    const fetcher = jest.fn<Promise<Response>, [RequestInfo | URL, RequestInit?]>(async (input, init) => {
+      const body = init?.body === undefined ? null : JSON.parse(String(init.body));
+      const payload = init?.method === 'PATCH'
+        ? {
+            ...job, status: body.status, progress: body.progress,
+            active_design_id: body.active_design_id,
+            source_revision_id: body.source_revision_id,
+          }
+        : String(input).includes('/cancel')
+          ? { ...job, status: 'canceled' }
+          : { jobs: [job] };
+      return {
+        ok: true, status: 200, text: async () => JSON.stringify(payload),
+      } as unknown as Response;
+    });
+    const api = createTrustedApiClient({ baseUrl: 'https://facetta.test', fetcher });
+
+    const listed = await api.listStudioJobs('usr_designer', 'running');
+    expect(listed.data?.jobs[0]?.job_id).toBe('job one');
+    expect(fetcher.mock.calls[0]?.[0]).toBe(
+      'https://facetta.test/studio/jobs?owner=usr_designer&status=running',
+    );
+
+    const canceled = await api.cancelStudioJob('job one', 'usr_designer');
+    expect(canceled.data?.status).toBe('canceled');
+    expect(fetcher.mock.calls[1]?.[0]).toBe(
+      'https://facetta.test/studio/jobs/job%20one/cancel',
+    );
+    expect(JSON.parse(String(fetcher.mock.calls[1]?.[1]?.body))).toEqual({
+      owner: 'usr_designer',
+    });
+
+    const bound = await api.transitionStudioJob('job one', {
+      owner: 'usr_designer', status: 'reviewing', progress: 0.9,
+      active_design_id: 'project one', source_revision_id: 'candidate one',
+    });
+    expect(bound.data?.active_design_id).toBe('project one');
+    expect(JSON.parse(String(fetcher.mock.calls[2]?.[1]?.body))).toMatchObject({
+      active_design_id: 'project one', source_revision_id: 'candidate one',
+    });
   });
 });

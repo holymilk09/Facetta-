@@ -233,6 +233,74 @@ class DesignFamily(Base):
     )
 
 
+class StudioJobRecord(Base):
+    """Designer-facing lifecycle for one requested Studio generation.
+
+    Provider attempts and internal QA retries deliberately do not live in this
+    table.  Activity is an outcome ledger: billing can only reference completed
+    outputs the designer requested, never the machinery used to produce them.
+    """
+
+    __tablename__ = "studio_jobs"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    owner: Mapped[str] = mapped_column(String(32), index=True)
+    action_id: Mapped[str] = mapped_column(String(24))
+    lane: Mapped[str] = mapped_column(String(24))
+    status: Mapped[str] = mapped_column(String(16), index=True)
+    progress: Mapped[float] = mapped_column(Float, default=0.0)
+    active_design_id: Mapped[str | None] = mapped_column(
+        String(32), nullable=True, index=True)
+    source_revision_id: Mapped[str | None] = mapped_column(
+        String(32), nullable=True)
+    requested_outputs: Mapped[int] = mapped_column(Integer)
+    credits_per_output: Mapped[int] = mapped_column(Integer)
+    completed_outputs: Mapped[int] = mapped_column(Integer, default=0)
+    charged_outputs: Mapped[int] = mapped_column(Integer, default=0)
+    error_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow)
+
+    __table_args__ = (
+        CheckConstraint(
+            "action_id IN ('create', 'vary', 'refine', 'views', "
+            "'present', 'factory')",
+            name="ck_studio_job_action",
+        ),
+        CheckConstraint(
+            "lane IN ('instant', 'fast_visual', 'trusted_structural')",
+            name="ck_studio_job_lane",
+        ),
+        CheckConstraint(
+            "status IN ('queued', 'running', 'reviewing', 'succeeded', "
+            "'failed', 'canceled')",
+            name="ck_studio_job_status",
+        ),
+        CheckConstraint(
+            "progress >= 0 AND progress <= 1",
+            name="ck_studio_job_progress",
+        ),
+        CheckConstraint(
+            "requested_outputs >= 1 AND requested_outputs <= 4",
+            name="ck_studio_job_requested_outputs",
+        ),
+        CheckConstraint(
+            "credits_per_output >= 0",
+            name="ck_studio_job_credit_rate",
+        ),
+        CheckConstraint(
+            "completed_outputs >= 0 AND completed_outputs <= requested_outputs",
+            name="ck_studio_job_completed_outputs",
+        ),
+        CheckConstraint(
+            "charged_outputs = completed_outputs",
+            name="ck_studio_job_charge_matches_completed",
+        ),
+    )
+
+
 class Project(Base):
     """A design project = one asset chain (a hero render and all its edits,
     views, videos, and factory drawings), filed for the designer.

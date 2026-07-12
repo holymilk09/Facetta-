@@ -25,6 +25,7 @@ from facetta.trusted_revision import (
     WarningRevisionError, accept_warning_revision,
 )
 from facetta.warning_candidates import (
+    discard_markup_warning_candidate,
     WarningCandidateUnavailable, get_markup_warning_candidate,
 )
 
@@ -94,6 +95,12 @@ class WarningCandidateAcceptRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     expected_design_version: Annotated[int, Field(ge=1)]
+    created_by: Annotated[str, Field(min_length=1, max_length=32)]
+
+
+class WarningCandidateDiscardRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     created_by: Annotated[str, Field(min_length=1, max_length=32)]
 
 
@@ -360,6 +367,31 @@ def accept_warning_candidate(
     if project is None:
         raise HTTPException(status_code=404, detail="accepted project not found")
     return project_detail(db, project)
+
+
+@router.post(
+    "/image-runs/{run_id}/candidates/{candidate_id}/discard",
+)
+def discard_warning_candidate(
+    run_id: str,
+    candidate_id: str,
+    request: WarningCandidateDiscardRequest,
+):
+    try:
+        candidate = discard_markup_warning_candidate(
+            run_id, candidate_id, created_by=request.created_by,
+        )
+    except WarningCandidateUnavailable as exc:
+        return JSONResponse(status_code=410, content={
+            "code": "warning_candidate_unavailable",
+            "category": "conflict",
+            "detail": str(exc),
+        })
+    return {
+        "status": "discarded",
+        "run_id": candidate.run_id,
+        "candidate_id": candidate.candidate_id,
+    }
 
 
 def _pack_or_error(db: Session, project_id: str):

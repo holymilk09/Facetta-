@@ -377,6 +377,75 @@ class TestMarkupEndpoints:
         assert run["status"] == "accepted"
         assert run["accepted_asset_id"] == body["final_asset_id"]
 
+    def test_studio_pass_remains_temporary_until_apply_and_discard_is_terminal(
+            self, client, monkeypatch):
+        from facetta.image_agent import (
+            CheckSeverity, ImageQualityReport, JewelryImageAgent,
+            ProviderImage, QualityCheck, QualityVerdict,
+        )
+
+        class Provider:
+            def execute(self, plan, route, prompt, *, source_image,
+                        mask_bytes):
+                return ProviderImage(image_bytes=_png((76, 68, 61)))
+
+        class PassingEvaluator:
+            def evaluate(self, plan, candidate, *, source_image, mask_bytes):
+                return ImageQualityReport(
+                    verdict=QualityVerdict.PASS,
+                    checks=(QualityCheck(
+                        code="geometry_preserved", passed=True,
+                        severity=CheckSeverity.HARD,
+                        message="jewelry geometry stayed fixed"),),
+                    score=98,
+                )
+
+        monkeypatch.setattr(
+            assets_mod, "_trusted_image_agent",
+            lambda: JewelryImageAgent(Provider(), PassingEvaluator()))
+        aid, design_id = _linked_asset(client)
+        before_history = client.get(f"/assets/{aid}/history").json()["history"]
+
+        response = client.post(f"/assets/{aid}/markup/apply", json={
+            "expected_design_version": 1,
+            "update_spec": False,
+            "preview_only": True,
+            "created_by": "usr_designer",
+            "annotations": [{
+                "region_description": "the full presentation background",
+                "change_instruction": "make the background warmer",
+            }],
+        })
+
+        assert response.status_code == 201, response.text
+        body = response.json()
+        assert body["revision"] is None
+        assert body["final_asset_id"] is None
+        assert body["qa"]["verdict"] == "pass"
+        candidate = body["warning_candidate"]
+        assert candidate["candidate_id"]
+        assert client.get(f"/assets/{aid}/history").json()["history"] == before_history
+        assert len(client.get(f"/designs/{design_id}").json()["versions"]) == 1
+        run = client.get(f"/image-runs/{body['image_run_id']}").json()
+        assert run["status"] == "review_required"
+        assert run["accepted_asset_id"] is None
+
+        discarded = client.post(
+            f"/image-runs/{candidate['run_id']}/candidates/"
+            f"{candidate['candidate_id']}/discard",
+            json={"created_by": "usr_designer"},
+        )
+        assert discarded.status_code == 200, discarded.text
+        assert discarded.json()["status"] == "discarded"
+        replay = client.post(
+            f"/image-runs/{candidate['run_id']}/candidates/"
+            f"{candidate['candidate_id']}/accept",
+            json={"expected_design_version": 1,
+                  "created_by": "usr_designer"},
+        )
+        assert replay.status_code == 410
+        assert client.get(f"/assets/{aid}/history").json()["history"] == before_history
+
     def test_stale_expected_version_returns_409_before_image_work(
             self, client, monkeypatch):
         aid, design_id = _linked_asset(client)

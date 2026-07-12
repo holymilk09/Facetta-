@@ -474,6 +474,7 @@ class ProjectRenderRequest(BaseModel):
         "specification and preserve the imported design identity."
     )
     variant: Annotated[int, Field(ge=0, le=100)] = 0
+    presentation_only: bool = False
 
 
 class ProductPhotoRequest(BaseModel):
@@ -488,6 +489,7 @@ class ProductPhotoRequest(BaseModel):
     framing: Literal["source", "square", "portrait"] = "portrait"
     custom_instruction: Annotated[str, Field(max_length=600)] = ""
     variant: Annotated[int, Field(ge=0, le=100)] = 0
+    presentation_only: bool = False
 
 
 class MarketingPackRequest(BaseModel):
@@ -2121,16 +2123,30 @@ def render_project_revision(
                 "requested_change": request.instruction,
             },
         })
-    persisted = persist_project_primary_revision(
-        db,
-        root_id=root_id,
-        image=result.image_bytes,
-        capability="SPEC_RENDER",
-        instruction=request.instruction,
-        design_version=latest.version,
-        created_by=request.created_by,
-        image_run=result,
-        source_asset_id=source.id,
+    persisted = (
+        persist_project_derived_asset(
+            db,
+            root_id=root_id,
+            parent_asset_id=source.id,
+            image=result.image_bytes,
+            capability="CLIENT_BEAUTY_RENDER",
+            instruction=request.instruction,
+            design_version=latest.version,
+            created_by=request.created_by,
+            image_run=result,
+        )
+        if request.presentation_only else
+        persist_project_primary_revision(
+            db,
+            root_id=root_id,
+            image=result.image_bytes,
+            capability="SPEC_RENDER",
+            instruction=request.instruction,
+            design_version=latest.version,
+            created_by=request.created_by,
+            image_run=result,
+            source_asset_id=source.id,
+        )
     )
     return {
         "status": "accepted",
@@ -2320,15 +2336,29 @@ def create_product_photo(
             },
         })
 
-    persisted = persist_project_primary_revision(
-        db,
-        root_id=root_id,
-        image=result.image_bytes,
-        capability="PRODUCT_PHOTO",
-        instruction=brief.intent,
-        design_version=latest.version,
-        created_by=request.created_by,
-        image_run=result,
+    persisted = (
+        persist_project_derived_asset(
+            db,
+            root_id=root_id,
+            parent_asset_id=source.id,
+            image=result.image_bytes,
+            capability="CLIENT_PRODUCT_PHOTO",
+            instruction=brief.intent,
+            design_version=latest.version,
+            created_by=request.created_by,
+            image_run=result,
+        )
+        if request.presentation_only else
+        persist_project_primary_revision(
+            db,
+            root_id=root_id,
+            image=result.image_bytes,
+            capability="PRODUCT_PHOTO",
+            instruction=brief.intent,
+            design_version=latest.version,
+            created_by=request.created_by,
+            image_run=result,
+        )
     )
     return {
         "status": "accepted",

@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-from typing import Annotated
+from datetime import timezone
+from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
@@ -16,7 +17,10 @@ from facetta.db import (
     ImageAsset,
     Project,
     ProjectRevisionRecord,
+    StudioJobRecord,
     get_db,
+    new_id,
+    utcnow,
 )
 from facetta.project_backbone import is_primary_revision
 from facetta.studio_history import (
@@ -45,6 +49,232 @@ class RestoreRevisionRequest(BaseModel):
     created_by: Annotated[str, Field(min_length=1, max_length=32)]
     expected_active_asset_id: Annotated[str, Field(min_length=1, max_length=32)]
     expected_design_version: Annotated[int, Field(ge=1)] | None = None
+
+
+StudioJobStatus = Literal[
+    "queued", "running", "reviewing", "succeeded", "failed", "canceled",
+]
+StudioJobAction = Literal[
+    "create", "vary", "refine", "views", "present", "factory",
+]
+StudioJobLane = Literal["instant", "fast_visual", "trusted_structural"]
+
+
+class CreateStudioJobRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    owner: Annotated[str, Field(min_length=1, max_length=32)]
+    action_id: StudioJobAction
+    lane: StudioJobLane
+    active_design_id: Annotated[str, Field(min_length=1, max_length=32)] | None = None
+    source_revision_id: Annotated[str, Field(min_length=1, max_length=32)] | None = None
+    requested_outputs: Annotated[int, Field(ge=1, le=4)]
+    credits_per_output: Annotated[int, Field(ge=0, le=100000)]
+
+
+class TransitionStudioJobRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    owner: Annotated[str, Field(min_length=1, max_length=32)]
+    status: StudioJobStatus
+    progress: Annotated[float, Field(ge=0, le=1)]
+    completed_outputs: Annotated[int, Field(ge=0, le=4)] | None = None
+    error_code: Annotated[str, Field(min_length=1, max_length=64)] | None = None
+    active_design_id: Annotated[str, Field(min_length=1, max_length=32)] | None = None
+    source_revision_id: Annotated[str, Field(min_length=1, max_length=32)] | None = None
+
+
+class CancelStudioJobRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    owner: Annotated[str, Field(min_length=1, max_length=32)]
+
+
+_JOB_TRANSITIONS: dict[str, frozenset[str]] = {
+    "queued": frozenset({"running", "canceled", "failed"}),
+    "running": frozenset({"reviewing", "canceled", "failed"}),
+    "reviewing": frozenset({"succeeded", "failed"}),
+    "succeeded": frozenset(),
+    "failed": frozenset(),
+    "canceled": frozenset(),
+}
+
+_BILLING_POLICY = (
+    "Only requested outputs that complete successfully are charged. "
+    "Internal retries and failed review attempts are included."
+)
+
+
+def _studio_job(job: StudioJobRecord) -> dict:
+    def timestamp(value):
+        # SQLite does not retain timezone metadata; API timestamps remain UTC
+        # and stable before and after a persistence round-trip.
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=timezone.utc)
+        return value.isoformat()
+
+    return {
+        "job_id": job.id,
+        "owner": job.owner,
+        "action_id": job.action_id,
+        "lane": job.lane,
+        "status": job.status,
+        "progress": job.progress,
+        "active_design_id": job.active_design_id,
+        "source_revision_id": job.source_revision_id,
+        "error_code": job.error_code,
+        "created_at": timestamp(job.created_at),
+        "updated_at": timestamp(job.updated_at),
+        "billing": {
+            "requested_outputs": job.requested_outputs,
+            "credits_per_output": job.credits_per_output,
+            "estimated_credits": (
+                job.requested_outputs * job.credits_per_output
+            ),
+            "completed_outputs": job.completed_outputs,
+            "charged_outputs": job.charged_outputs,
+            "charged_credits": job.charged_outputs * job.credits_per_output,
+            "policy": _BILLING_POLICY,
+        },
+    }
+
+
+def _owned_job(db: Session, job_id: str, owner: str) -> StudioJobRecord:
+    job = db.get(StudioJobRecord, job_id)
+    if job is None or job.owner != owner:
+        # Do not disclose another owner's job identity.
+        raise HTTPException(status_code=404, detail=f"unknown Studio job '{job_id}'")
+    return job
+
+
+@router.post("/jobs", status_code=201)
+def create_studio_job(request: CreateStudioJobRequest, db: DbSession):
+    now = utcnow()
+    job = StudioJobRecord(
+        id=new_id("job"),
+        owner=request.owner,
+        action_id=request.action_id,
+        lane=request.lane,
+        status="queued",
+        progress=0,
+        active_design_id=request.active_design_id,
+        source_revision_id=request.source_revision_id,
+        requested_outputs=request.requested_outputs,
+        credits_per_output=request.credits_per_output,
+        completed_outputs=0,
+        charged_outputs=0,
+        created_at=now,
+        updated_at=now,
+    )
+    db.add(job)
+    db.commit()
+    return _studio_job(job)
+
+
+@router.get("/jobs")
+def list_studio_jobs(
+    db: DbSession,
+    owner: Annotated[str, Query(min_length=1, max_length=32)],
+    status: StudioJobStatus | None = None,
+):
+    query = select(StudioJobRecord).where(StudioJobRecord.owner == owner)
+    if status is not None:
+        query = query.where(StudioJobRecord.status == status)
+    jobs = list(db.scalars(
+        query.order_by(StudioJobRecord.created_at.desc(), StudioJobRecord.id)
+    ))
+    return {"jobs": [_studio_job(job) for job in jobs]}
+
+
+@router.get("/jobs/{job_id}")
+def get_studio_job(
+    job_id: str,
+    db: DbSession,
+    owner: Annotated[str, Query(min_length=1, max_length=32)],
+):
+    return _studio_job(_owned_job(db, job_id, owner))
+
+
+@router.patch("/jobs/{job_id}")
+def transition_studio_job(
+    job_id: str,
+    request: TransitionStudioJobRequest,
+    db: DbSession,
+):
+    job = _owned_job(db, job_id, request.owner)
+    if request.status not in _JOB_TRANSITIONS[job.status]:
+        raise HTTPException(
+            status_code=409,
+            detail=f"invalid Studio job transition: {job.status} -> {request.status}",
+        )
+    if request.progress < job.progress:
+        raise HTTPException(status_code=409, detail="Studio job progress cannot move backward")
+    for field in ("active_design_id", "source_revision_id"):
+        incoming = getattr(request, field)
+        current = getattr(job, field)
+        if incoming is not None and current is not None and incoming != current:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Studio job {field} is already bound and cannot change",
+            )
+
+    completed = request.completed_outputs
+    if request.status == "succeeded":
+        if completed is None or completed < 1:
+            raise HTTPException(
+                status_code=422,
+                detail="successful Studio jobs require completed_outputs",
+            )
+        if completed > job.requested_outputs:
+            raise HTTPException(
+                status_code=422,
+                detail="completed outputs cannot exceed requested outputs",
+            )
+        job.progress = 1
+        job.completed_outputs = completed
+        job.charged_outputs = completed
+        job.error_code = None
+    else:
+        if completed not in (None, 0):
+            raise HTTPException(
+                status_code=422,
+                detail="only successful Studio jobs can report completed outputs",
+            )
+        job.progress = request.progress
+        job.completed_outputs = 0
+        job.charged_outputs = 0
+        job.error_code = (
+            request.error_code if request.status == "failed" else None
+        )
+    job.status = request.status
+    if request.active_design_id is not None:
+        job.active_design_id = request.active_design_id
+    if request.source_revision_id is not None:
+        job.source_revision_id = request.source_revision_id
+    job.updated_at = utcnow()
+    db.commit()
+    return _studio_job(job)
+
+
+@router.post("/jobs/{job_id}/cancel")
+def cancel_studio_job(
+    job_id: str,
+    request: CancelStudioJobRequest,
+    db: DbSession,
+):
+    job = _owned_job(db, job_id, request.owner)
+    if "canceled" not in _JOB_TRANSITIONS[job.status]:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Studio job cannot be canceled from {job.status}",
+        )
+    job.status = "canceled"
+    job.completed_outputs = 0
+    job.charged_outputs = 0
+    job.error_code = None
+    job.updated_at = utcnow()
+    db.commit()
+    return _studio_job(job)
 
 
 def _error(exc: StudioHistoryError) -> JSONResponse:

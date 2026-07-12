@@ -324,6 +324,76 @@ export interface DesignFamilyList {
   families: DesignFamilyDetail[];
 }
 
+export type StudioJobStatus =
+  | 'queued'
+  | 'running'
+  | 'reviewing'
+  | 'succeeded'
+  | 'failed'
+  | 'canceled';
+
+export type StudioJobAction =
+  | 'create'
+  | 'vary'
+  | 'refine'
+  | 'views'
+  | 'present'
+  | 'factory';
+
+export type StudioJobLane = 'instant' | 'fast_visual' | 'trusted_structural';
+
+export interface StudioJobBilling {
+  requested_outputs: number;
+  credits_per_output: number;
+  estimated_credits: number;
+  completed_outputs: number;
+  charged_outputs: number;
+  charged_credits: number;
+  policy: string;
+}
+
+/** Designer-facing Activity record. Provider and retry details are excluded. */
+export interface StudioJobRecord {
+  job_id: string;
+  owner: string;
+  action_id: StudioJobAction;
+  lane: StudioJobLane;
+  status: StudioJobStatus;
+  progress: number;
+  active_design_id: string | null;
+  source_revision_id: string | null;
+  error_code: string | null;
+  created_at: string;
+  updated_at: string;
+  billing: StudioJobBilling;
+}
+
+export interface StudioJobList {
+  jobs: StudioJobRecord[];
+}
+
+export interface CreateStudioJobRequest {
+  owner: string;
+  action_id: StudioJobAction;
+  lane: StudioJobLane;
+  active_design_id?: string | null;
+  source_revision_id?: string | null;
+  requested_outputs: number;
+  credits_per_output: number;
+}
+
+export interface TransitionStudioJobRequest {
+  owner: string;
+  status: StudioJobStatus;
+  progress: number;
+  completed_outputs?: number | null;
+  error_code?: string | null;
+  /** Late-bound once for jobs that begin before a Project exists. */
+  active_design_id?: string | null;
+  /** Late-bound once when a designer selects the exact accepted direction. */
+  source_revision_id?: string | null;
+}
+
 export interface RestoreStudioRevisionRequest {
   created_by: string;
   expected_active_asset_id: string;
@@ -412,6 +482,7 @@ export interface BeautyRenderRequest {
   expected_design_version: number;
   instruction?: string;
   variant?: number;
+  presentation_only?: boolean;
 }
 
 export interface BeautyRenderAccepted {
@@ -666,6 +737,7 @@ export interface ProductPhotoRequest {
   framing?: ProductPhotoFraming;
   custom_instruction?: string;
   variant?: number;
+  presentation_only?: boolean;
 }
 
 export interface MarketingPackRequest {
@@ -1048,6 +1120,7 @@ export interface MarkupApplyRequest {
   expected_design_version: number;
   created_by: string;
   variant?: number;
+  preview_only?: boolean;
 }
 
 export interface ImageWarningCandidate {

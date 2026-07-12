@@ -292,6 +292,30 @@ def test_project_render_persists_qa_approved_revision_and_rejects_stale_version(
         asset = db.get(ImageAsset, body["asset_id"])
         assert asset.design_version == 1
 
+    presentation_project = client.post(
+        "/projects/from-image", json=_image_request(example_spec),
+    ).json()
+    presentation = client.post(
+        f"/projects/{presentation_project['root_id']}/render",
+        json={
+            "created_by": "usr_ana",
+            "expected_asset_id": presentation_project["active_asset_id"],
+            "expected_design_version": 1,
+            "presentation_only": True,
+        },
+    )
+    assert presentation.status_code == 201, presentation.text
+    presentation_body = presentation.json()
+    assert presentation_body["project"]["active_asset_id"] == presentation_project["active_asset_id"]
+    derived_ids = {
+        item["asset_id"] for item in presentation_body["project"]["derived_assets"]
+    }
+    assert presentation_body["asset_id"] in derived_ids
+    assert next(
+        item["capability"] for item in presentation_body["project"]["derived_assets"]
+        if item["asset_id"] == presentation_body["asset_id"]
+    ) == "CLIENT_BEAUTY_RENDER"
+
 
 def test_product_photo_is_visual_only_and_warning_acceptance_keeps_spec_version(
     project_client, example_spec, monkeypatch,
@@ -441,6 +465,33 @@ def test_product_photo_pass_atomically_persists_visual_revision(
         assert run.operation == "VISUAL_ONLY_EDIT"
         assert run.accepted_asset_id == body["asset_id"]
         assert delivered.content == bytes(db.get(ImageAsset, body["asset_id"]).image)
+
+    presentation_project = client.post(
+        "/projects/from-image", json=_image_request(example_spec),
+    ).json()
+    presentation = client.post(
+        f"/projects/{presentation_project['root_id']}/product-photo",
+        json={
+            "created_by": "usr_ana",
+            "expected_asset_id": presentation_project["active_asset_id"],
+            "expected_design_version": 1,
+            "preset": "catalog_white",
+            "framing": "square",
+            "presentation_only": True,
+        },
+    )
+    assert presentation.status_code == 201, presentation.text
+    presentation_body = presentation.json()
+    assert presentation_body["project"]["active_asset_id"] == presentation_project["active_asset_id"]
+    assert presentation_body["project"]["primary_revision_count"] == 1
+    derived_ids = {
+        item["asset_id"] for item in presentation_body["project"]["derived_assets"]
+    }
+    assert presentation_body["asset_id"] in derived_ids
+    assert next(
+        item["capability"] for item in presentation_body["project"]["derived_assets"]
+        if item["asset_id"] == presentation_body["asset_id"]
+    ) == "CLIENT_PRODUCT_PHOTO"
 
 
 def test_line_art_requires_confirmation_then_color_persists_as_derived(

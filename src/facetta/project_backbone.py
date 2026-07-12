@@ -55,6 +55,7 @@ PROVENANCE_BY_CAPABILITY = {
     "LOCALIZED_EDIT": "localized_edit",
     "GLOBAL_RESTYLE": "visual_only_edit",
     "PRODUCT_PHOTO": "ecommerce_product_photo",
+    "CLIENT_PRODUCT_PHOTO": "client_presentation_photo",
     "MARKETING_IMAGE": "ecommerce_marketing_derivative",
     "LINE_ART": "designer_confirmed_line_art",
     "COLORED_LINE_ART": "spec_colored_line_art",

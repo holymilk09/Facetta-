@@ -101,7 +101,15 @@ import type {
   StoneVocabularyEntry,
   StoneVocabularyOptions,
   StudioHistoryRevision,
+  StudioJobAction,
+  StudioJobBilling,
+  StudioJobLane,
+  StudioJobList,
+  StudioJobRecord,
+  StudioJobStatus,
   StudioProjectHistory,
+  CreateStudioJobRequest,
+  TransitionStudioJobRequest,
 } from './types';
 
 type UnknownRecord = Record<string, unknown>;
@@ -798,6 +806,87 @@ export const decodeDesignFamilyList: Decoder<DesignFamilyList> = (value) => {
   const families = value.families.map(decodeDesignFamilyDetail);
   if (families.some((family) => family === null)) return null;
   return { families: families as DesignFamilyDetail[] };
+};
+
+const STUDIO_JOB_STATUSES = new Set<StudioJobStatus>([
+  'queued', 'running', 'reviewing', 'succeeded', 'failed', 'canceled',
+]);
+const STUDIO_JOB_ACTIONS = new Set<StudioJobAction>([
+  'create', 'vary', 'refine', 'views', 'present', 'factory',
+]);
+const STUDIO_JOB_LANES = new Set<StudioJobLane>([
+  'instant', 'fast_visual', 'trusted_structural',
+]);
+
+const decodeStudioJobBilling: Decoder<StudioJobBilling> = (value) => {
+  if (!isRecord(value)) return null;
+  const requestedOutputs = number(value.requested_outputs);
+  const creditsPerOutput = number(value.credits_per_output);
+  const estimatedCredits = number(value.estimated_credits);
+  const completedOutputs = number(value.completed_outputs);
+  const chargedOutputs = number(value.charged_outputs);
+  const chargedCredits = number(value.charged_credits);
+  const policy = nullableText(value.policy);
+  if (
+    requestedOutputs === null || requestedOutputs < 1 || requestedOutputs > 4
+    || creditsPerOutput === null || creditsPerOutput < 0
+    || estimatedCredits !== requestedOutputs * creditsPerOutput
+    || completedOutputs === null || completedOutputs < 0 || completedOutputs > requestedOutputs
+    || chargedOutputs !== completedOutputs
+    || chargedCredits !== chargedOutputs * creditsPerOutput
+    || policy === null
+  ) return null;
+  return {
+    requested_outputs: requestedOutputs,
+    credits_per_output: creditsPerOutput,
+    estimated_credits: estimatedCredits,
+    completed_outputs: completedOutputs,
+    charged_outputs: chargedOutputs,
+    charged_credits: chargedCredits,
+    policy,
+  };
+};
+
+export const decodeStudioJobRecord: Decoder<StudioJobRecord> = (value) => {
+  if (!isRecord(value)) return null;
+  const jobId = nullableText(value.job_id);
+  const owner = nullableText(value.owner);
+  const actionId = nullableText(value.action_id) as StudioJobAction | null;
+  const lane = nullableText(value.lane) as StudioJobLane | null;
+  const status = nullableText(value.status) as StudioJobStatus | null;
+  const progress = number(value.progress);
+  const createdAt = nullableText(value.created_at);
+  const updatedAt = nullableText(value.updated_at);
+  const billing = decodeStudioJobBilling(value.billing);
+  if (
+    jobId === null || owner === null
+    || actionId === null || !STUDIO_JOB_ACTIONS.has(actionId)
+    || lane === null || !STUDIO_JOB_LANES.has(lane)
+    || status === null || !STUDIO_JOB_STATUSES.has(status)
+    || progress === null || progress < 0 || progress > 1
+    || createdAt === null || updatedAt === null || billing === null
+  ) return null;
+  return {
+    job_id: jobId,
+    owner,
+    action_id: actionId,
+    lane,
+    status,
+    progress,
+    active_design_id: nullableText(value.active_design_id),
+    source_revision_id: nullableText(value.source_revision_id),
+    error_code: nullableText(value.error_code),
+    created_at: createdAt,
+    updated_at: updatedAt,
+    billing,
+  };
+};
+
+export const decodeStudioJobList: Decoder<StudioJobList> = (value) => {
+  if (!isRecord(value) || !Array.isArray(value.jobs)) return null;
+  const jobs = value.jobs.map(decodeStudioJobRecord);
+  if (jobs.some((job) => job === null)) return null;
+  return { jobs: jobs as StudioJobRecord[] };
 };
 
 export const decodeRestoreStudioRevisionResult: Decoder<RestoreStudioRevisionResult> = (value) => {
@@ -3280,6 +3369,62 @@ export function createTrustedApiClient(options: TrustedApiClientOptions) {
       return call('/studio/families' + query, decodeDesignFamilyList);
     },
 
+    createStudioJob(request: CreateStudioJobRequest): Promise<ApiResult<StudioJobRecord>> {
+      return call('/studio/jobs', decodeStudioJobRecord, {
+        method: 'POST',
+        body: encodeBody({
+          owner: request.owner,
+          action_id: request.action_id,
+          lane: request.lane,
+          active_design_id: request.active_design_id ?? null,
+          source_revision_id: request.source_revision_id ?? null,
+          requested_outputs: request.requested_outputs,
+          credits_per_output: request.credits_per_output,
+        }),
+      });
+    },
+
+    listStudioJobs(
+      owner: string,
+      status?: StudioJobStatus,
+    ): Promise<ApiResult<StudioJobList>> {
+      const params = new URLSearchParams({ owner });
+      if (status !== undefined) params.set('status', status);
+      return call(`/studio/jobs?${params.toString()}`, decodeStudioJobList);
+    },
+
+    getStudioJob(jobId: string, owner: string): Promise<ApiResult<StudioJobRecord>> {
+      return call(
+        `/studio/jobs/${encodeURIComponent(jobId)}?owner=${encodeURIComponent(owner)}`,
+        decodeStudioJobRecord,
+      );
+    },
+
+    transitionStudioJob(
+      jobId: string,
+      request: TransitionStudioJobRequest,
+    ): Promise<ApiResult<StudioJobRecord>> {
+      return call(`/studio/jobs/${encodeURIComponent(jobId)}`, decodeStudioJobRecord, {
+        method: 'PATCH', body: encodeBody({
+          owner: request.owner,
+          status: request.status,
+          progress: request.progress,
+          completed_outputs: request.completed_outputs ?? null,
+          error_code: request.error_code ?? null,
+          active_design_id: request.active_design_id ?? null,
+          source_revision_id: request.source_revision_id ?? null,
+        }),
+      });
+    },
+
+    cancelStudioJob(jobId: string, owner: string): Promise<ApiResult<StudioJobRecord>> {
+      return call(
+        `/studio/jobs/${encodeURIComponent(jobId)}/cancel`,
+        decodeStudioJobRecord,
+        { method: 'POST', body: encodeBody({ owner }) },
+      );
+    },
+
     async getStudioProjectHistory(
       projectRootId: string,
     ): Promise<ApiResult<StudioProjectHistory>> {
@@ -3339,6 +3484,9 @@ export function createTrustedApiClient(options: TrustedApiClientOptions) {
           instruction: request.instruction
             ?? 'Create a beauty render faithful to the current designer-confirmed specification and preserve the imported design identity.',
           variant: request.variant ?? 0,
+          ...(request.presentation_only === undefined
+            ? {}
+            : { presentation_only: request.presentation_only }),
         },
         decodeBeautyRenderResult,
       );
@@ -3380,6 +3528,9 @@ export function createTrustedApiClient(options: TrustedApiClientOptions) {
           framing: request.framing ?? 'portrait',
           custom_instruction: request.custom_instruction ?? '',
           variant: request.variant ?? 0,
+          ...(request.presentation_only === undefined
+            ? {}
+            : { presentation_only: request.presentation_only }),
         },
         decodeProductPhotoResult,
       );
@@ -3580,6 +3731,7 @@ export function createTrustedApiClient(options: TrustedApiClientOptions) {
         expected_design_version: request.expected_design_version,
         created_by: request.created_by,
         variant: request.variant ?? 0,
+        preview_only: request.preview_only ?? false,
       }, decodeMarkupApplyResponse);
       if (result.error !== null) {
         return result;
@@ -3637,6 +3789,26 @@ export function createTrustedApiClient(options: TrustedApiClientOptions) {
             expected_design_version: expectedDesignVersion,
             created_by: createdBy,
           }),
+        },
+      );
+    },
+
+    discardWarningCandidate(
+      runId: string,
+      candidateId: string,
+      createdBy: string,
+    ) {
+      return jsonCall(
+        `/image-runs/${encodeURIComponent(runId)}/candidates/${encodeURIComponent(candidateId)}/discard`,
+        'POST',
+        { created_by: createdBy },
+        (value) => {
+          if (!isRecord(value) || value.status !== 'discarded') return null;
+          const decodedRunId = nullableText(value.run_id);
+          const decodedCandidateId = nullableText(value.candidate_id);
+          return decodedRunId === runId && decodedCandidateId === candidateId
+            ? { status: 'discarded' as const, run_id: decodedRunId, candidate_id: decodedCandidateId }
+            : null;
         },
       );
     },

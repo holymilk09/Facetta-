@@ -1,0 +1,121 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+
+import { createStudioGateway } from './gateway';
+import type { ProjectDetail } from '../trusted/types';
+
+const ok = <T>(data: T, status = 200) => ({ data, error: null, status } as const);
+
+const project = (assetId: string): ProjectDetail => ({
+  id: 'project_1', root_id: 'project_1', title: 'Orbit', collection: null,
+  tags: [], owner: 'designer_1', state: 'refining', design_id: 'design_1', spec: {},
+  active_asset_id: assetId, active_design_version: 1, active_revision: {
+    asset_id: assetId, root_id: 'project_1', parent_asset_id: null,
+    capability: 'LOCALIZED_EDIT', provenance: 'studio', revision: 2,
+    design_id: 'design_1', design_version: 1, region: null, instruction: null,
+    drift: null, pinned: false, media_type: 'image/png', image_url: 'https://test/image.png',
+    created_by: 'designer_1', created_at: null, legacy_provenance: false,
+  },
+  pinned_revision: null, revisions: [], assets: [], derived_assets: [], approval: null,
+  factory_ready: false, factory_blockers: [], primary_revision_count: 2,
+  has_factory_drawing: false, cover_asset_id: assetId, created_at: null, updated_at: null,
+});
+
+const quality = {
+  verdict: 'pass', accepted: true, review_required: false, score: 1,
+  summary: 'Pass', failed_checks: [], warnings: [], checks: [{
+    key: 'geometry', label: 'Geometry', verdict: 'pass', severity: 'hard', message: 'Preserved',
+  }],
+};
+
+const baseClient = () => ({
+  createProjectFromBrief: async () => { throw new Error('unexpected'); },
+  createProjectFromPrompt: async () => { throw new Error('unexpected'); },
+  selectCreativeCandidate: async () => { throw new Error('unexpected'); },
+  saveAsVariation: async () => { throw new Error('unexpected'); },
+  previewCatalogSelection: async () => { throw new Error('unexpected'); },
+  acceptCatalogPreview: async () => { throw new Error('unexpected'); },
+  discardCatalogPreview: async () => { throw new Error('unexpected'); },
+  createLineArt: async () => { throw new Error('unexpected'); },
+  createBeautyRender: async () => { throw new Error('unexpected'); },
+  createProductPhoto: async () => { throw new Error('unexpected'); },
+  createMarketingPack: async () => { throw new Error('unexpected'); },
+  recordImageRunFeedback: async () => { throw new Error('unexpected'); },
+  getProject: async () => { throw new Error('unexpected'); },
+  getFactoryPack: async () => { throw new Error('unexpected'); },
+});
+
+test('markup refinement stays temporary until explicit apply', async () => {
+  let acceptCalls = 0;
+  const client = {
+    ...baseClient(),
+    applyMarkup: async (_assetId: string, request: any) => {
+      assert.equal(request.preview_only, true);
+      return ok({
+        revision: null, spec_version: 1, spec_change: [], ignored_fields: [],
+        qa: quality, routing: { attempt_count: 1, used_retry: false, used_fallback: false, cache_hit: false, run_id: 'run_1' },
+        image_run_id: 'run_1', warning_candidate: {
+          run_id: 'run_1', candidate_id: 'candidate_1', preview_url: 'https://test/preview.png',
+          qa: quality, operation: 'LOCAL_EDIT', requested_change: 'make the halo lighter', asset_capability: 'LOCALIZED_EDIT',
+        },
+      }, 201);
+    },
+    acceptWarningCandidate: async () => {
+      acceptCalls += 1;
+      return ok(project('asset_2'), 201);
+    },
+    discardWarningCandidate: async () => { throw new Error('unexpected'); },
+  };
+  const gateway = createStudioGateway(client as any, { now: () => new Date('2026-07-12T00:00:00Z') });
+  const preview = await gateway.previewMarkupRefine({
+    projectId: 'project_1', sourceAssetId: 'asset_1', sourceDesignVersion: 1,
+    createdBy: 'designer_1', annotation: {
+      region_description: 'halo', change_instruction: 'make the halo lighter',
+      impact: 'visual_only', target_section: null, target_ref: null, index: null,
+      target_element_id: null, form_view: 'three_quarter', mask_base64: null,
+    },
+  });
+  assert.equal(preview.error, null);
+  assert.equal(preview.data?.candidate.temporary, true);
+  assert.equal(acceptCalls, 0);
+
+  const applied = await gateway.applyMarkupRefine({ candidateId: 'candidate_1', createdBy: 'designer_1' });
+  assert.equal(applied.error, null);
+  assert.equal(applied.data?.project?.active_asset_id, 'asset_2');
+  assert.equal(acceptCalls, 1);
+});
+
+test('discard makes a markup candidate terminal without changing the project', async () => {
+  let discarded = 0;
+  const client = {
+    ...baseClient(),
+    applyMarkup: async () => ok({
+      revision: null, spec_version: 1, spec_change: [], ignored_fields: [], qa: quality,
+      routing: { attempt_count: 1, used_retry: false, used_fallback: false, cache_hit: false, run_id: 'run_2' },
+      image_run_id: 'run_2', warning_candidate: {
+        run_id: 'run_2', candidate_id: 'candidate_2', preview_url: 'https://test/preview.png',
+        qa: quality, operation: 'LOCAL_EDIT', requested_change: 'warmer background', asset_capability: 'LOCALIZED_EDIT',
+      },
+    }, 201),
+    acceptWarningCandidate: async () => { throw new Error('unexpected'); },
+    discardWarningCandidate: async () => {
+      discarded += 1;
+      return ok({ status: 'discarded' as const, run_id: 'run_2', candidate_id: 'candidate_2' });
+    },
+  };
+  const gateway = createStudioGateway(client as any);
+  await gateway.previewMarkupRefine({
+    projectId: 'project_1', sourceAssetId: 'asset_1', sourceDesignVersion: 1,
+    createdBy: 'designer_1', annotation: {
+      region_description: 'background', change_instruction: 'warmer background',
+      impact: 'visual_only', target_section: null, target_ref: null, index: null,
+      target_element_id: null, form_view: 'three_quarter', mask_base64: null,
+    },
+  });
+  const result = await gateway.discardMarkupRefine({ candidateId: 'candidate_2', createdBy: 'designer_1' });
+  assert.equal(result.data?.project, null);
+  assert.equal(result.data?.candidate.status, 'discarded');
+  assert.equal(discarded, 1);
+  const replay = await gateway.applyMarkupRefine({ candidateId: 'candidate_2', createdBy: 'designer_1' });
+  assert.equal(replay.error?.code, 'CANDIDATE_NOT_REVIEWABLE');
+});

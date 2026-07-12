@@ -17,6 +17,9 @@ import { StudioActionContext, StudioActionId } from './src/studio/contracts';
 import { StudioCollectionsWorkspace } from './src/studio/StudioCollectionsWorkspace';
 import { StudioCreateWorkspace } from './src/studio/StudioCreateWorkspace';
 import { StudioRefineWorkspace } from './src/studio/StudioRefineWorkspace';
+import { StudioViewsWorkspace } from './src/studio/StudioViewsWorkspace';
+import { StudioPresentWorkspace } from './src/studio/StudioPresentWorkspace';
+import { StudioActivityWorkspace } from './src/studio/StudioActivityWorkspace';
 import { createStudioGatewayFromOptions, ExactStudioLineage } from './src/studio/gateway';
 import { radius, shadows, theme } from './src/theme';
 import { createTrustedApiClient } from './src/trusted/client';
@@ -91,7 +94,10 @@ export default function App() {
     [apiUrl],
   );
   const studioGateway = useMemo(
-    () => createStudioGatewayFromOptions({ baseUrl: apiUrl.replace(/\/$/, '') }),
+    () => createStudioGatewayFromOptions(
+      { baseUrl: apiUrl.replace(/\/$/, '') },
+      { trackJobs: true },
+    ),
     [apiUrl],
   );
   const { width } = useWindowDimensions();
@@ -384,7 +390,6 @@ export default function App() {
           ) : selectedActionId === 'create' ? (
             <StudioCreateWorkspace
               gateway={studioGateway}
-              trustedClient={trustedApi}
               owner={designer}
               onSave={(selection) => {
                 setStudioProject(selection.project);
@@ -399,10 +404,25 @@ export default function App() {
               gateway={studioGateway}
               lineage={exactStudioLineage}
               createdBy={designer}
+              sourceImageUrl={studioProject?.active_revision?.image_url ?? null}
               onApplied={(project) => {
                 setStudioProject(project);
                 setSelectedCreativeAssetId(project.active_asset_id);
               }}
+            />
+          ) : selectedActionId === 'views' ? (
+            <StudioViewsWorkspace
+              gateway={studioGateway}
+              lineage={exactStudioLineage}
+              createdBy={designer}
+              onSaved={setStudioProject}
+            />
+          ) : selectedActionId === 'present' ? (
+            <StudioPresentWorkspace
+              gateway={studioGateway}
+              lineage={exactStudioLineage}
+              createdBy={designer}
+              onProjectUpdated={setStudioProject}
             />
           ) : selectedActionId === 'vary' ? (
             <StudioCollectionsWorkspace
@@ -456,17 +476,19 @@ export default function App() {
       {tab === 'share' && <ShareScreen api={api} token={shareToken} />}
 
       {tab === 'activity' && (
-        <ScrollView style={styles.workspacePage} contentContainerStyle={styles.workspacePageContent}>
-          <Text style={styles.workspaceEyebrow}>JOBS & HISTORY</Text>
-          <Text style={styles.workspaceTitle}>One place to follow every generation.</Text>
-          <Text style={styles.workspaceBody}>
-            Queued, running, reviewing, succeeded, failed, and canceled Studio jobs will appear here without interrupting creative work.
-          </Text>
-          <View style={styles.workspaceNotice}>
-            <Text style={styles.workspaceNoticeTitle}>No active jobs</Text>
-            <Text style={styles.workspaceNoticeBody}>Start in Studio. Progress and quality checks will remain visible here.</Text>
-          </View>
-        </ScrollView>
+        <StudioActivityWorkspace
+          api={trustedApi}
+          owner={designer}
+          onOpenDesign={(projectId) => {
+            void trustedApi.getProject(projectId).then((result) => {
+              if (result.error === null) {
+                setStudioProject(result.data);
+                setSelectedCreativeAssetId(result.data.active_asset_id);
+                setTab('collections');
+              }
+            });
+          }}
+        />
       )}
 
       {tab === 'learn' && (

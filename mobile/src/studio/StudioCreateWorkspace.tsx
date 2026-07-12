@@ -5,7 +5,6 @@ import {
 
 import type { StudioGateway } from './gateway';
 import type { ReferenceRole } from './contracts';
-import type { TrustedApiClient } from '../trusted/client';
 import type { AssetSummary, ProjectDetail } from '../trusted/types';
 import { radius, theme } from '../theme';
 
@@ -28,8 +27,9 @@ export interface StudioCreateSelection {
 }
 
 export interface StudioCreateWorkspaceProps {
-  gateway: Pick<StudioGateway, 'createFromPrompt' | 'selectCreativeDirection'>;
-  trustedClient: Pick<TrustedApiClient, 'createProjectFromDrawing'>;
+  gateway: Pick<StudioGateway,
+    'createFromPrompt' | 'createFromDrawing' | 'selectCreativeDirection'
+  >;
   owner: string;
   initialSentence?: string;
   initialReferences?: readonly StudioCreateReference[];
@@ -60,7 +60,6 @@ export function creativeCandidates(project: ProjectDetail): readonly AssetSummar
 
 export function StudioCreateWorkspace({
   gateway,
-  trustedClient,
   owner,
   initialSentence = '',
   initialReferences = [],
@@ -104,7 +103,7 @@ export function StudioCreateWorkspace({
           owner,
           title,
         })
-      : await trustedClient.createProjectFromDrawing({
+      : await gateway.createFromDrawing({
           image_base64: masterReference.imageBase64,
           media_type: masterReference.mediaType,
           instruction: prompt,
