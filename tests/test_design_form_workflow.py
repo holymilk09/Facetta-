@@ -20,7 +20,7 @@ import pytest
 from fastapi.testclient import TestClient
 from PIL import Image, ImageDraw
 from pydantic import ValidationError
-from sqlalchemy import create_engine, select
+from sqlalchemy import create_engine, select, update
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -803,7 +803,16 @@ def test_legacy_project_without_design_form_remains_readable_and_factory_ready(
         row = db.get(DesignVersion, (created["design_id"], 1))
         historical = dict(row.spec)
         historical.pop("design_form")
-        row.spec = historical
+        # Bypass the ORM immutability guard only to emulate a row written by
+        # an older application version before this additive field existed.
+        db.execute(
+            update(DesignVersion)
+            .where(
+                DesignVersion.design_id == created["design_id"],
+                DesignVersion.version == 1,
+            )
+            .values(spec=historical)
+        )
         db.commit()
 
     loaded = client.get(f"/projects/{created['root_id']}")

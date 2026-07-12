@@ -2,15 +2,29 @@
 
 from __future__ import annotations
 
+import copy
 from collections.abc import Iterator
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, inspect
+from sqlalchemy import create_engine, func, inspect, select
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from facetta.db import Base, StudioJobRecord, get_db, utcnow
+from conftest import EXAMPLE_SPEC
+
+from facetta.db import (
+    ApprovalChecklist,
+    ApprovalResponse,
+    Base,
+    Design,
+    DesignVersion,
+    ImageAsset,
+    Project,
+    StudioJobRecord,
+    get_db,
+    utcnow,
+)
 from facetta.main import app
 from facetta.studio_jobs import (
     STUDIO_JOB_ACTIONS,
@@ -36,6 +50,7 @@ def client() -> Iterator[TestClient]:
     app.dependency_overrides[get_db] = override_db
     try:
         with TestClient(app) as test_client:
+            test_client.app_state["session_factory"] = sessions
             yield test_client
     finally:
         app.dependency_overrides.clear()
@@ -49,18 +64,95 @@ def _create(
     credits: int = 15,
     action_id: str = "create",
     lane: str = "fast_visual",
+    active_design_id: str | None = None,
+    source_revision_id: str | None = None,
 ) -> dict:
     response = client.post("/studio/jobs", json={
         "owner": owner,
         "action_id": action_id,
         "lane": lane,
-        "active_design_id": None,
-        "source_revision_id": None,
+        "active_design_id": active_design_id,
+        "source_revision_id": source_revision_id,
         "requested_outputs": outputs,
         "credits_per_output": credits,
     })
     assert response.status_code == 201
     return response.json()
+
+
+def _seed_project(
+    client: TestClient,
+    *,
+    project_id: str,
+    owner: str = "usr_designer",
+    exact_specification: bool = False,
+    factory_eligible: bool = False,
+) -> tuple[str, str]:
+    sessions = client.app_state["session_factory"]
+    # A Project root_id is the primary chain root's exact asset id.
+    asset_id = project_id
+    design_id = f"dsn_{project_id}"
+    now = utcnow()
+    with sessions() as db:
+        if exact_specification or factory_eligible:
+            db.add(Design(id=design_id, created_by=owner))
+        if exact_specification:
+            spec = copy.deepcopy(EXAMPLE_SPEC)
+            spec.update({
+                "design_id": design_id,
+                "version": 1,
+                "created_by": owner,
+            })
+            db.add(DesignVersion(
+                design_id=design_id,
+                version=1,
+                spec=spec,
+                created_by=owner,
+            ))
+        db.add(ImageAsset(
+            id=asset_id,
+            root_id=asset_id,
+            parent_asset_id=None,
+            design_id=(
+                design_id if exact_specification or factory_eligible else None
+            ),
+            design_version=1 if exact_specification else None,
+            capability="JEWELRY_RENDER",
+            image=b"studio-job-test-image",
+            media_type="image/png",
+            pinned_at=now if factory_eligible else None,
+            created_by=owner,
+            created_at=now,
+        ))
+        db.add(Project(
+            root_id=project_id,
+            owner=owner,
+            title="Studio job context",
+            tags=[],
+        ))
+        if factory_eligible:
+            db.add(ApprovalChecklist(
+                id=f"chk_{project_id}",
+                asset_id=asset_id,
+                design_id=design_id,
+                design_version=1 if exact_specification else None,
+                mode="explicit_pin",
+                items=[{
+                    "key": "stone",
+                    "label": "Stone",
+                    "fact": "round center stone",
+                    "section": "center_stone",
+                }],
+                created_by=owner,
+            ))
+            db.add(ApprovalResponse(
+                checklist_id=f"chk_{project_id}",
+                item_key="stone",
+                approved=True,
+                created_by=owner,
+            ))
+        db.commit()
+    return project_id, asset_id
 
 
 def _transition(
@@ -182,18 +274,356 @@ def test_create_rejects_client_authored_lane_or_price(client):
 
 
 def test_server_registry_is_canonical_for_every_studio_action(client):
+    pre_spec = _seed_project(client, project_id="project_prespec")
+    exact = _seed_project(
+        client, project_id="project_exact", exact_specification=True,
+    )
+    eligible = _seed_project(
+        client,
+        project_id="project_factory",
+        exact_specification=True,
+        factory_eligible=True,
+    )
     for action_id, definition in STUDIO_JOB_ACTIONS.items():
+        context = (
+            eligible if action_id == "factory"
+            else exact if "exact_specification" in definition.context_requirements
+            else pre_spec if definition.context_requirements
+            else (None, None)
+        )
         created = _create(
             client,
             outputs=1,
             action_id=action_id,
             lane=definition.lane,
             credits=definition.credits_per_output,
+            active_design_id=context[0],
+            source_revision_id=context[1],
         )
         assert created["lane"] == definition.lane
         assert created["billing"]["credits_per_output"] == (
             definition.credits_per_output
         )
+
+
+def test_server_registry_matches_designer_action_contract():
+    expected = {
+        "create": ("brief", "design_revision", "design_record"),
+        "vary": ("direction", "variation_set", "design_record"),
+        "refine": ("instruction", "design_revision", "design_record"),
+        "views": ("view_set", "view_set", "visual_preview"),
+        "present": (
+            "destination", "presentation_pack", "visual_preview",
+        ),
+        "factory": (
+            "confirmed_facts", "factory_review_pack", "production_review",
+        ),
+    }
+    for action_id, (required_input, output_type, authority) in expected.items():
+        definition = STUDIO_JOB_ACTIONS[action_id]
+        assert required_input in definition.input_requirements
+        assert output_type == definition.output_type
+        assert authority == definition.authority
+        assert required_input in {
+            field.id for field in definition.ui_schema if field.required
+        }
+
+
+@pytest.mark.parametrize(
+    "action_id", ["vary", "refine", "views", "present", "factory"],
+)
+def test_design_jobs_reject_missing_active_project_context(client, action_id):
+    definition = STUDIO_JOB_ACTIONS[action_id]
+    response = client.post("/studio/jobs", json={
+        "owner": "usr_designer",
+        "action_id": action_id,
+        "lane": definition.lane,
+        "active_design_id": None,
+        "source_revision_id": None,
+        "requested_outputs": 1,
+        "credits_per_output": definition.credits_per_output,
+    })
+    assert response.status_code == 422
+    assert "active project and revision" in response.json()["detail"]
+
+
+def test_design_jobs_fail_closed_for_foreign_or_stale_context(client):
+    foreign = _seed_project(
+        client, project_id="project_foreign", owner="usr_other",
+    )
+    definition = STUDIO_JOB_ACTIONS["refine"]
+    hidden = client.post("/studio/jobs", json={
+        "owner": "usr_designer",
+        "action_id": "refine",
+        "lane": definition.lane,
+        "active_design_id": foreign[0],
+        "source_revision_id": foreign[1],
+        "requested_outputs": 1,
+        "credits_per_output": definition.credits_per_output,
+    })
+    assert hidden.status_code == 404
+
+    owned = _seed_project(client, project_id="project_owned")
+    stale = client.post("/studio/jobs", json={
+        "owner": "usr_designer",
+        "action_id": "refine",
+        "lane": definition.lane,
+        "active_design_id": owned[0],
+        "source_revision_id": "ast_stale_revision",
+        "requested_outputs": 1,
+        "credits_per_output": definition.credits_per_output,
+    })
+    assert stale.status_code == 409
+    assert "not the project's active revision" in stale.json()["detail"]
+
+
+def test_exact_specification_action_rejects_pre_spec_revision(client):
+    project_id, asset_id = _seed_project(
+        client, project_id="project_no_exact_spec",
+    )
+    definition = STUDIO_JOB_ACTIONS["views"]
+    response = client.post("/studio/jobs", json={
+        "owner": "usr_designer",
+        "action_id": "views",
+        "lane": definition.lane,
+        "active_design_id": project_id,
+        "source_revision_id": asset_id,
+        "requested_outputs": 1,
+        "credits_per_output": definition.credits_per_output,
+    })
+    assert response.status_code == 422
+    assert "exact validated specification" in response.json()["detail"]
+
+
+def test_factory_job_uses_persisted_exact_revision_eligibility(client):
+    factory = STUDIO_JOB_ACTIONS["factory"]
+    exact = _seed_project(
+        client, project_id="project_not_eligible", exact_specification=True,
+    )
+    ineligible = client.post("/studio/jobs", json={
+        "owner": "usr_designer",
+        "action_id": "factory",
+        "lane": factory.lane,
+        "active_design_id": exact[0],
+        "source_revision_id": exact[1],
+        "requested_outputs": 1,
+        "credits_per_output": factory.credits_per_output,
+    })
+    assert ineligible.status_code == 409
+    assert "not eligible" in ineligible.json()["detail"]
+
+    # A legacy pinned/checklisted image can report factory_ready, but it has no
+    # immutable spec binding and therefore cannot authorize a Factory job.
+    legacy = _seed_project(
+        client,
+        project_id="project_legacy_ready",
+        factory_eligible=True,
+    )
+    no_exact_binding = client.post("/studio/jobs", json={
+        "owner": "usr_designer",
+        "action_id": "factory",
+        "lane": factory.lane,
+        "active_design_id": legacy[0],
+        "source_revision_id": legacy[1],
+        "requested_outputs": 1,
+        "credits_per_output": factory.credits_per_output,
+    })
+    assert no_exact_binding.status_code == 422
+    assert "exact validated specification" in no_exact_binding.json()["detail"]
+
+    eligible = _seed_project(
+        client,
+        project_id="project_eligible",
+        exact_specification=True,
+        factory_eligible=True,
+    )
+    queued = _create(
+        client,
+        outputs=1,
+        action_id="factory",
+        lane=factory.lane,
+        credits=factory.credits_per_output,
+        active_design_id=eligible[0],
+        source_revision_id=eligible[1],
+    )
+    assert queued["status"] == "queued"
+    assert queued["active_design_id"] == eligible[0]
+    assert queued["source_revision_id"] == eligible[1]
+
+
+def test_factory_job_rechecks_under_lock_before_insert(client, monkeypatch):
+    factory = STUDIO_JOB_ACTIONS["factory"]
+    project_id, source_id = _seed_project(
+        client,
+        project_id="project_factory_race",
+        exact_specification=True,
+        factory_eligible=True,
+    )
+    sessions = client.app_state["session_factory"]
+
+    def land_revision_n_plus_one():
+        with sessions() as writer:
+            writer.add(ImageAsset(
+                id="ast_factory_race_n2",
+                root_id=project_id,
+                parent_asset_id=source_id,
+                design_version=1,
+                capability="JEWELRY_RENDER",
+                image=b"new-active-revision",
+                media_type="image/png",
+                created_by="usr_designer",
+                created_at=utcnow(),
+            ))
+            writer.commit()
+
+    monkeypatch.setattr(
+        "facetta.api.studio._factory_job_pre_insert_hook",
+        land_revision_n_plus_one,
+    )
+    rejected = client.post("/studio/jobs", json={
+        "owner": "usr_designer",
+        "action_id": "factory",
+        "lane": factory.lane,
+        "active_design_id": project_id,
+        "source_revision_id": source_id,
+        "requested_outputs": 1,
+        "credits_per_output": factory.credits_per_output,
+    })
+    assert rejected.status_code == 409, rejected.text
+    assert "no longer the active revision" in rejected.json()["detail"]
+    with sessions() as db:
+        assert db.scalar(select(func.count()).select_from(StudioJobRecord)) == 0
+
+
+def test_factory_job_revalidates_again_before_running_provider_work(client):
+    factory = STUDIO_JOB_ACTIONS["factory"]
+    project_id, source_id = _seed_project(
+        client,
+        project_id="project_factory_execution_race",
+        exact_specification=True,
+        factory_eligible=True,
+    )
+    queued = _create(
+        client,
+        outputs=1,
+        action_id="factory",
+        lane=factory.lane,
+        credits=factory.credits_per_output,
+        active_design_id=project_id,
+        source_revision_id=source_id,
+    )
+    sessions = client.app_state["session_factory"]
+    with sessions() as writer:
+        writer.add(ImageAsset(
+            id="ast_factory_execution_n2",
+            root_id=project_id,
+            parent_asset_id=source_id,
+            design_version=1,
+            capability="JEWELRY_RENDER",
+            image=b"new-active-before-provider",
+            media_type="image/png",
+            created_by="usr_designer",
+            created_at=utcnow(),
+        ))
+        writer.commit()
+
+    blocked = _transition(client, queued["job_id"], "running", 0.1)
+    assert blocked.status_code == 409
+    with sessions() as db:
+        job = db.get(StudioJobRecord, queued["job_id"])
+        assert job is not None
+        assert job.status == "failed"
+        assert job.error_code == "stale_factory_context"
+        assert job.completed_outputs == 0
+        assert job.charged_outputs == 0
+
+
+def test_factory_approval_generation_serializes_both_race_orders(client):
+    """Whichever actor gets the Project lock first determines a safe result.
+
+    Factory-first freezes the exact positive generation. Writer-first appends
+    the negative generation, which Factory must observe and reject.
+    """
+
+    factory = STUDIO_JOB_ACTIONS["factory"]
+    project_id, source_id = _seed_project(
+        client,
+        project_id="project_factory_approval_race",
+        exact_specification=True,
+        factory_eligible=True,
+    )
+    queued = _create(
+        client,
+        outputs=1,
+        action_id="factory",
+        lane=factory.lane,
+        credits=factory.credits_per_output,
+        active_design_id=project_id,
+        source_revision_id=source_id,
+    )
+
+    # Factory won the serialization point: neither a negative response, a new
+    # checklist generation, nor a re-pin can alter its approval truth.
+    for path, body in (
+        (
+            f"/assets/{source_id}/checklist/respond",
+            {"item_key": "stone", "approved": False, "note": "change it"},
+        ),
+        (f"/assets/{source_id}/checklist", {}),
+        (f"/assets/{source_id}/pin", None),
+    ):
+        blocked = client.post(path, json=body) if body is not None else client.post(path)
+        assert blocked.status_code == 409, blocked.text
+        assert blocked.json()["detail"]["code"] == (
+            "factory_approval_generation_locked"
+        )
+
+    sessions = client.app_state["session_factory"]
+    with sessions() as db:
+        assert db.scalar(select(func.count()).select_from(
+            ApprovalResponse,
+        )) == 1
+        assert db.scalar(select(func.count()).select_from(
+            ApprovalChecklist,
+        )) == 1
+
+    canceled = _transition(client, queued["job_id"], "canceled", 1)
+    assert canceled.status_code == 200, canceled.text
+
+    # Writer won the next serialization point: the negative append is durable,
+    # and the next Factory request revalidates that newer generation.
+    declined = client.post(
+        f"/assets/{source_id}/checklist/respond",
+        json={"item_key": "stone", "approved": False, "note": "change it"},
+    )
+    assert declined.status_code == 201, declined.text
+    rejected = client.post("/studio/jobs", json={
+        "owner": "usr_designer",
+        "action_id": "factory",
+        "lane": factory.lane,
+        "active_design_id": project_id,
+        "source_revision_id": source_id,
+        "requested_outputs": 1,
+        "credits_per_output": factory.credits_per_output,
+    })
+    assert rejected.status_code == 409, rejected.text
+    assert "not eligible" in rejected.json()["detail"]
+
+
+def test_factory_job_rejects_caller_authored_eligibility(client):
+    factory = STUDIO_JOB_ACTIONS["factory"]
+    response = client.post("/studio/jobs", json={
+        "owner": "usr_designer",
+        "action_id": "factory",
+        "lane": factory.lane,
+        "active_design_id": None,
+        "source_revision_id": None,
+        "requested_outputs": 1,
+        "credits_per_output": factory.credits_per_output,
+        "factory_eligible": True,
+    })
+    assert response.status_code == 422
+    assert response.json()["detail"][0]["type"] == "extra_forbidden"
 
 
 def test_backend_acceptance_helper_is_the_only_charge_authority():

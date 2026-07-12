@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import base64
 import io
 
 import pytest
@@ -22,8 +21,10 @@ from facetta.db import (
     ImageAsset,
     ImageRun,
     ImageRunReview,
+    ImmutableImageAssetError,
     Project,
     ProjectRevisionRecord,
+    PreviewCandidateRecord,
     get_db,
 )
 from facetta.image_agent import (
@@ -182,6 +183,17 @@ def test_preview_does_not_mutate_canonical_history_and_apply_is_atomic(
     assert image.status_code == 200
     assert image.content == CANDIDATE
     assert image.headers["cache-control"] == "private, no-store"
+    reopened = client.get("/studio/projects/ast_selected/visual-candidates")
+    assert reopened.status_code == 200
+    assert [item["candidate_id"] for item in reopened.json()["candidates"]] == [
+        body["candidate"]["candidate_id"]
+    ]
+    with Session() as db:
+        durable = db.get(
+            PreviewCandidateRecord, body["candidate"]["candidate_id"])
+        assert durable is not None
+        assert durable.status == "reviewing"
+        assert bytes(durable.image) == CANDIDATE
 
     accepted = client.post(
         f"/studio/image-runs/{body['image_run_id']}/visual-candidates/"
@@ -220,6 +232,13 @@ def test_preview_does_not_mutate_canonical_history_and_apply_is_atomic(
         assert record.interpretation["factory_authority"] is False
         assert db.scalar(select(func.count()).select_from(Design)) == 0
         assert db.scalar(select(func.count()).select_from(DesignVersion)) == 0
+        durable = db.get(
+            PreviewCandidateRecord, body["candidate"]["candidate_id"])
+        assert durable is not None
+        assert durable.status == "applied"
+        assert durable.terminal_asset_id == child.id
+        assert durable.review_id == review.id
+        assert bytes(durable.image) == b""
 
     assert client.get(body["candidate"]["preview_url"]).status_code == 410
 
@@ -251,6 +270,13 @@ def test_discard_is_terminal_and_creates_no_canonical_revision(
         "reviews": 1,
         "records": 0,
     }
+    with Session() as db:
+        durable = db.get(PreviewCandidateRecord, candidate_id)
+        assert durable is not None
+        assert durable.status == "discarded"
+        assert durable.decided_by == "usr_studio"
+        assert durable.review_id is not None
+        assert bytes(durable.image) == b""
     assert client.post(
         f"/studio/image-runs/{run_id}/visual-candidates/{candidate_id}/accept",
         json={
@@ -258,6 +284,86 @@ def test_discard_is_terminal_and_creates_no_canonical_revision(
             "expected_active_asset_id": "ast_selected",
         },
     ).status_code == 410
+
+
+def test_visual_preview_saves_directly_as_independent_variation(
+    studio_preview_client,
+):
+    client, Session = studio_preview_client
+    app.dependency_overrides[get_studio_visual_preview_generator] = (
+        lambda: _generator([])
+    )
+    preview = _preview(client).json()
+    candidate_id = preview["candidate"]["candidate_id"]
+    run_id = preview["image_run_id"]
+
+    saved = client.post(
+        f"/studio/image-runs/{run_id}/visual-candidates/{candidate_id}/"
+        "save-as-variation",
+        json={"created_by": "usr_studio", "label": "Warm metal"},
+    )
+    assert saved.status_code == 201, saved.text
+    body = saved.json()
+    assert body["status"] == "saved_as_variation"
+    sibling_id = body["project"]["root_id"]
+    with Session() as db:
+        original = db.get(Project, "ast_selected")
+        sibling = db.get(Project, sibling_id)
+        asset = db.get(ImageAsset, sibling_id)
+        durable = db.get(PreviewCandidateRecord, candidate_id)
+        review = db.scalar(select(ImageRunReview).where(
+            ImageRunReview.run_id == run_id
+        ))
+        assert original is not None and sibling is not None and asset is not None
+        assert original.selected_candidate_asset_id == "ast_selected"
+        assert sibling.family_id == original.family_id
+        assert sibling.variation_label == "Warm metal"
+        assert sibling.branched_from_project_root_id == original.root_id
+        assert bytes(asset.image) == CANDIDATE
+        assert asset.design_id is None and asset.design_version is None
+        assert durable is not None
+        assert durable.status == "saved_as_variation"
+        assert durable.terminal_asset_id == sibling_id
+        assert review is not None and review.accepted_asset_id == sibling_id
+    repeated = client.post(
+        f"/studio/image-runs/{run_id}/visual-candidates/{candidate_id}/"
+        "save-as-variation",
+        json={"created_by": "usr_studio", "label": "Duplicate"},
+    )
+    assert repeated.status_code == 410
+
+
+def test_visual_apply_resolution_failure_rolls_back_canonical_append(
+    studio_preview_client, monkeypatch,
+):
+    client, Session = studio_preview_client
+    app.dependency_overrides[get_studio_visual_preview_generator] = (
+        lambda: _generator([])
+    )
+    preview = _preview(client).json()
+    monkeypatch.setattr(
+        "facetta.api.studio.remove_studio_visual_candidate",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            RuntimeError("resolution failed")
+        ),
+    )
+    with pytest.raises(RuntimeError, match="resolution failed"):
+        client.post(
+            f"/studio/image-runs/{preview['image_run_id']}/visual-candidates/"
+            f"{preview['candidate']['candidate_id']}/accept",
+            json={
+                "created_by": "usr_studio",
+                "expected_active_asset_id": "ast_selected",
+            },
+        )
+    with Session() as db:
+        assert db.scalar(select(func.count()).select_from(ImageAsset)) == 1
+        assert db.scalar(select(func.count()).select_from(ImageRunReview)) == 0
+        assert db.scalar(select(func.count()).select_from(
+            ProjectRevisionRecord)) == 0
+        durable = db.get(
+            PreviewCandidateRecord, preview["candidate"]["candidate_id"])
+        assert durable is not None and durable.status == "reviewing"
 
 
 def test_apply_rejects_stale_selected_visual_and_source_hash(
@@ -290,23 +396,18 @@ def test_apply_rejects_stale_selected_visual_and_source_hash(
             "expected_active_asset_id": "ast_selected",
         },
     )
-    assert stale.status_code == 409
-    assert stale.json()["code"] == "stale_asset_revision"
+    assert stale.status_code == 410
+    assert stale.json()["code"] == "visual_preview_unavailable"
 
     with Session() as db:
         db.get(Project, "ast_selected").selected_candidate_asset_id = "ast_selected"
-        db.get(ImageAsset, "ast_selected").image = _png((1, 2, 3))
         db.commit()
-    tampered = client.post(
-        f"/studio/image-runs/{first['image_run_id']}/visual-candidates/"
-        f"{first['candidate']['candidate_id']}/accept",
-        json={
-            "created_by": "usr_studio",
-            "expected_active_asset_id": "ast_selected",
-        },
-    )
-    assert tampered.status_code == 422
-    assert tampered.json()["code"] == "visual_preview_source_hash_mismatch"
+        db.get(ImageAsset, "ast_selected").image = _png((1, 2, 3))
+        with pytest.raises(
+            ImmutableImageAssetError, match="image assets are immutable",
+        ):
+            db.commit()
+        db.rollback()
 
 
 def test_structural_scope_is_rejected_before_generation(studio_preview_client):
@@ -348,8 +449,8 @@ def test_owner_and_durable_run_lineage_fail_closed(studio_preview_client):
             "expected_active_asset_id": "ast_selected",
         },
     )
-    assert rejected.status_code == 422
-    assert rejected.json()["code"] == "visual_preview_run_mismatch"
+    assert rejected.status_code == 410
+    assert rejected.json()["code"] == "visual_preview_unavailable"
     with Session() as db:
         assert db.scalar(select(func.count()).select_from(ImageAsset)) == 1
         assert db.scalar(select(func.count()).select_from(ImageRunReview)) == 0

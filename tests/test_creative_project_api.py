@@ -12,7 +12,7 @@ from unittest.mock import patch
 import pytest
 from fastapi.testclient import TestClient
 from PIL import Image
-from sqlalchemy import create_engine, func, select
+from sqlalchemy import create_engine, func, select, update
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -1392,11 +1392,16 @@ def test_confirm_design_exposes_source_questions_without_internal_control_copy(
             "confirmation_token": body["confirmation_token"],
         },
     )
-    assert promotion.status_code == 409
-    assert "source review is incomplete or stale" in promotion.json()["detail"]
+    assert promotion.status_code == 200, promotion.text
+    promoted = promotion.json()
+    blocker_codes = {
+        blocker["code"] for blocker in promoted["factory_blockers"]
+    }
+    assert "source_component_unresolved" in blocker_codes
+    assert promoted["factory_ready"] is False
     with Session() as db:
-        assert db.scalar(select(func.count()).select_from(Design)) == 0
-        assert db.scalar(select(func.count()).select_from(DesignVersion)) == 0
+        assert db.scalar(select(func.count()).select_from(Design)) == 1
+        assert db.scalar(select(func.count()).select_from(DesignVersion)) == 1
     assert "qa" not in projection_text
 
 
@@ -1617,7 +1622,13 @@ def test_alternate_drawing_candidate_confirmation_stays_current_after_promotion(
         active = db.get(ImageAsset, active_id)
         root = db.get(ImageAsset, project_id)
         assert active is not None and root is not None
-        active.image = bytes(root.image)
+        # Simulate storage corruption outside the normal ORM path. Canonical
+        # ImageAsset assignment is guarded and cannot be used for this fixture.
+        db.execute(
+            update(ImageAsset)
+            .where(ImageAsset.id == active.id)
+            .values(image=bytes(root.image))
+        )
         db.commit()
     reopened = client.get(f"/projects/{project_id}")
     assert reopened.status_code == 200, reopened.text

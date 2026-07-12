@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import io
 
 import pytest
@@ -14,7 +15,10 @@ from sqlalchemy.pool import StaticPool
 from conftest import EXAMPLE_SPEC
 
 from facetta.api.studio import get_studio_visual_preview_generator
-from facetta.creative_workflow import get_creative_prompt_generator
+from facetta.creative_workflow import (
+    get_creative_prompt_generator,
+    get_creative_render_generator,
+)
 from facetta.db import (
     ApprovalChecklist,
     Base,
@@ -45,7 +49,13 @@ def _png(color: tuple[int, int, int]) -> bytes:
     return output.getvalue()
 
 
-def _accepted_result(plan, image: bytes, *, source: bytes | None = None):
+def _accepted_result(
+    plan,
+    image: bytes,
+    *,
+    source: bytes | None = None,
+    quality_source: bytes | None = None,
+):
     class Provider:
         def execute(self, *_args, **_kwargs):
             return ProviderImage(image_bytes=image)
@@ -61,6 +71,7 @@ def _accepted_result(plan, image: bytes, *, source: bytes | None = None):
     return JewelryImageAgent(Provider(), Evaluator()).run(
         plan,
         source_image=source,
+        quality_source_image=quality_source,
     )
 
 
@@ -305,3 +316,264 @@ def test_complete_prespec_studio_journey_preserves_every_direction(
         assert {record.action for record in records} == {
             "created", "edit", "restore",
         }
+
+
+def test_ten_mixed_source_projects_reopen_branch_compare_and_restore(
+    prespec_journey_client,
+):
+    """Founder corpus stays useful without entering the Factory control plane."""
+
+    client, Session = prespec_journey_client
+    owner = "usr_mixed_journey"
+
+    def prompt_provider(prompt: str, variant: int):
+        image = _png((45 + variant, 75 + variant, 105 + variant))
+        plan = build_image_plan(
+            ImageOperation.CREATIVE_GENERATE,
+            prompt,
+            variant=variant,
+        )
+        return _accepted_result(plan, image)
+
+    def reference_provider(
+        source: bytes,
+        instruction: str,
+        variant: int,
+        *,
+        quality_source_image: bytes | None = None,
+    ):
+        image = _png((65 + variant, 95 + variant, 125 + variant))
+        plan = build_image_plan(
+            ImageOperation.REFERENCE_RENDER,
+            instruction,
+            source_image=source,
+            quality_source_image=quality_source_image,
+            variant=variant,
+        )
+        return _accepted_result(
+            plan,
+            image,
+            source=source,
+            quality_source=quality_source_image,
+        )
+
+    app.dependency_overrides[get_creative_prompt_generator] = (
+        lambda: prompt_provider
+    )
+    app.dependency_overrides[get_creative_render_generator] = (
+        lambda: reference_provider
+    )
+
+    def role_reference(role: str, color: tuple[int, int, int]):
+        return {
+            "role": role,
+            "image_base64": base64.b64encode(_png(color)).decode(),
+            "media_type": "image/png",
+        }
+
+    corpus: list[dict[str, object]] = [
+        {
+            "kind": "brief",
+            "text": "A quiet oval signet ring with a softened knife-edge band",
+        },
+        {
+            "kind": "brief",
+            "text": "A slim pearl pendant inspired by one falling raindrop",
+        },
+        {
+            "kind": "brief",
+            "text": "A sculptural bypass ring with two asymmetric leaves",
+        },
+        {
+            "kind": "prompt",
+            "text": (
+                "An Art Deco platinum cocktail ring, emerald-cut blue "
+                "sapphire, stepped diamond shoulders, restrained symmetry"
+            ),
+        },
+        {
+            "kind": "prompt",
+            "text": (
+                "A contemporary yellow-gold pendant using negative space, "
+                "one cabochon moonstone, architectural gallery"
+            ),
+        },
+        {
+            "kind": "drawing",
+            "source": _png((32, 42, 52)),
+            "instruction": "Render this pencil ring sketch faithfully.",
+        },
+        {
+            "kind": "drawing",
+            "source": _png((62, 72, 82)),
+            "instruction": "Preserve this photographed pendant silhouette.",
+        },
+        {
+            "kind": "drawing",
+            "source": _png((92, 102, 112)),
+            "instruction": "Render this drawing-style brooch reference.",
+        },
+        {
+            "kind": "role_labeled",
+            "source": _png((122, 132, 142)),
+            "instruction": "Keep the master geometry; use references by role.",
+            "references": [
+                role_reference("material_style", (172, 132, 82)),
+                role_reference("brand_direction", (192, 182, 212)),
+            ],
+        },
+        {
+            "kind": "role_labeled",
+            "source": _png((152, 162, 172)),
+            "instruction": "Keep the exact master; apply only advisory roles.",
+            "references": [
+                role_reference("material_style", (202, 162, 102)),
+                role_reference("construction_detail", (72, 92, 122)),
+                role_reference("brand_direction", (212, 202, 222)),
+            ],
+        },
+    ]
+
+    original_project_ids: set[str] = set()
+    branch_project_ids: set[str] = set()
+    immutable_images: dict[str, bytes] = {}
+
+    for index, case in enumerate(corpus):
+        starting_variant = 20 + (index * 2)
+        common = {
+            "variation_count": 2,
+            "starting_variant": starting_variant,
+            "owner": owner,
+            "title": f"Mixed source study {index + 1}",
+            "collection": "Ten-project acceptance",
+            "tags": [str(case["kind"]), "no-factory"],
+        }
+        if case["kind"] in {"brief", "prompt"}:
+            response = client.post("/projects/from-prompt", json={
+                **common,
+                "prompt": case["text"],
+            })
+        else:
+            source = case["source"]
+            assert isinstance(source, bytes)
+            response = client.post("/projects/from-drawing", json={
+                **common,
+                "image_base64": base64.b64encode(source).decode(),
+                "media_type": "image/png",
+                "instruction": case["instruction"],
+                "references": case.get("references", []),
+            })
+        assert response.status_code == 201, response.text
+        created = response.json()
+        project_id = created["root_id"]
+        original_project_ids.add(project_id)
+        assert created["factory_ready"] is False
+        assert created.get("design_id") is None
+        assert created.get("spec") is None
+        assert len(created["revisions"]) == 2
+        capabilities = {asset["capability"] for asset in created["assets"]}
+        if case["kind"] in {"drawing", "role_labeled"}:
+            assert "CREATIVE_SOURCE" in capabilities
+        if case["kind"] == "role_labeled":
+            assert "CREATIVE_REFERENCE_BOARD" in capabilities
+            assert "CREATIVE_REFERENCE_MATERIAL_STYLE" in capabilities
+            assert "CREATIVE_REFERENCE_BRAND_DIRECTION" in capabilities
+            if len(case["references"]) == 3:
+                assert "CREATIVE_REFERENCE_CONSTRUCTION_DETAIL" in capabilities
+
+        first_id = created["revisions"][0]["asset_id"]
+        selected_id = created["revisions"][1]["asset_id"]
+        first_image = _stored_image(Session, first_id)
+        selected_image = _stored_image(Session, selected_id)
+        immutable_images[first_id] = first_image
+        immutable_images[selected_id] = selected_image
+        assert first_image != selected_image
+        assert created["revisions"][0]["sha256"] != (
+            created["revisions"][1]["sha256"]
+        )
+
+        selected = client.post(
+            f"/projects/{project_id}/creative-candidates/{selected_id}/select",
+            json={"created_by": owner},
+        )
+        assert selected.status_code == 200, selected.text
+        assert selected.json()["active_asset_id"] == selected_id
+
+        # Save/reopen and history comparison use persisted API reads, not the
+        # creation response retained by this test.
+        reopened = client.get(f"/projects/{project_id}")
+        assert reopened.status_code == 200, reopened.text
+        assert reopened.json()["active_asset_id"] == selected_id
+        before = client.get(f"/studio/projects/{project_id}/history")
+        assert before.status_code == 200, before.text
+        before_history = before.json()
+        assert before_history["active_asset_id"] == selected_id
+        assert [item["asset_id"] for item in before_history["revisions"]] == [
+            first_id, selected_id,
+        ]
+
+        branch_response = client.post(
+            f"/studio/projects/{project_id}/variations",
+            json={
+                "created_by": owner,
+                "expected_active_asset_id": selected_id,
+                "expected_design_version": None,
+                "label": f"Direction {index + 1}B",
+            },
+        )
+        assert branch_response.status_code == 201, branch_response.text
+        branch = branch_response.json()
+        branch_project = branch["project"]
+        branch_project_ids.add(branch_project["root_id"])
+        assert branch["source_project_id"] == project_id
+        assert branch["source_asset_id"] == selected_id
+        assert branch_project["factory_ready"] is False
+        assert _stored_image(
+            Session, branch_project["active_asset_id"],
+        ) == selected_image
+
+        restore_response = client.post(
+            f"/studio/projects/{project_id}/revisions/{first_id}/restore",
+            json={
+                "created_by": owner,
+                "expected_active_asset_id": selected_id,
+                "expected_design_version": None,
+            },
+        )
+        assert restore_response.status_code == 201, restore_response.text
+        restored = restore_response.json()
+        restored_id = restored["new_asset_id"]
+        assert restored_id not in {first_id, selected_id}
+        assert restored["restored_from_asset_id"] == first_id
+        assert restored["new_design_version"] is None
+        assert _stored_image(Session, restored_id) == first_image
+
+        after = client.get(f"/studio/projects/{project_id}/history").json()
+        assert after["active_asset_id"] == restored_id
+        assert len(after["revisions"]) == 3
+        restored_history = after["revisions"][-1]
+        assert restored_history["asset_id"] == restored_id
+        assert restored_history["parent_asset_id"] == selected_id
+        assert restored_history["restored_from_asset_id"] == first_id
+        assert restored_history["action"] == "restore"
+        assert _stored_image(Session, first_id) == first_image
+        assert _stored_image(Session, selected_id) == selected_image
+
+    assert len(original_project_ids) == 10
+    assert len(branch_project_ids) == 10
+    assert original_project_ids.isdisjoint(branch_project_ids)
+
+    with Session() as db:
+        projects = list(db.scalars(select(Project)))
+        assert len(projects) == 20
+        assert db.scalar(select(func.count()).select_from(Design)) == 0
+        assert db.scalar(select(func.count()).select_from(DesignVersion)) == 0
+        assert db.scalar(select(func.count()).select_from(ApprovalChecklist)) == 0
+        assets = list(db.scalars(select(ImageAsset)))
+        assert all(asset.design_id is None for asset in assets)
+        assert all(asset.design_version is None for asset in assets)
+        assert all(asset.pinned_at is None for asset in assets)
+        for asset_id, expected in immutable_images.items():
+            stored = db.get(ImageAsset, asset_id)
+            assert stored is not None
+            assert bytes(stored.image) == expected

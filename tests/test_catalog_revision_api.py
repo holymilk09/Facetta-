@@ -20,6 +20,7 @@ from facetta.db import (
     ImageAsset,
     ImageRun,
     ImageRunReview,
+    PreviewCandidateRecord,
     Project,
     get_db,
 )
@@ -234,6 +235,15 @@ def test_catalog_pass_preview_is_temporary_until_explicit_apply(
     assert body["project"]["active_asset_id"] == project["active_asset_id"]
     assert _counts(SessionFactory) == {"versions": 1, "assets": 1, "runs": 1}
     assert client.get(body["candidate"]["preview_url"]).status_code == 200
+    reopened = client.get(
+        f"/assets/{project['active_asset_id']}/catalog/previews")
+    assert reopened.status_code == 200, reopened.text
+    assert [item["candidate_id"] for item in reopened.json()["candidates"]] == [
+        body["candidate"]["candidate_id"]
+    ]
+    assert reopened.json()["candidates"][0]["next_spec"]["metal"][
+        "color"
+    ] == "rose"
 
     accepted = client.post(body["candidate"]["accept_url"], json={
         "expected_design_version": 1,
@@ -255,6 +265,13 @@ def test_catalog_pass_preview_is_temporary_until_explicit_apply(
         assert run.accepted_asset_id is None
         assert review is not None
         assert review.accepted_asset_id == accepted_body["asset_id"]
+        durable = db.get(
+            PreviewCandidateRecord, body["candidate"]["candidate_id"])
+        assert durable is not None
+        assert durable.status == "applied"
+        assert durable.terminal_asset_id == accepted_body["asset_id"]
+        assert durable.review_id == review.id
+        assert bytes(durable.image) == b""
 
 
 def test_catalog_warning_preview_can_be_applied_without_regeneration(
@@ -286,6 +303,84 @@ def test_catalog_warning_preview_can_be_applied_without_regeneration(
     assert _counts(SessionFactory) == {"versions": 2, "assets": 2, "runs": 1}
 
 
+def test_catalog_preview_saves_exact_spec_directly_as_variation(
+    catalog_client, example_spec, monkeypatch,
+):
+    client, SessionFactory = catalog_client
+    project = _create_project(client, example_spec)
+    monkeypatch.setattr(
+        "facetta.api.catalog._trusted_image_agent",
+        lambda: _ResultAgent(QualityVerdict.PASS),
+    )
+    preview = client.post(
+        f"/assets/{project['active_asset_id']}/catalog/preview",
+        json=_request(),
+    ).json()
+    saved = client.post(
+        f"/image-runs/{preview['image_run_id']}/catalog-candidates/"
+        f"{preview['candidate']['candidate_id']}/save-as-variation",
+        json={"created_by": "usr_catalog", "label": "Rose direction"},
+    )
+    assert saved.status_code == 201, saved.text
+    body = saved.json()
+    assert body["status"] == "saved_as_variation"
+    assert body["design_version"] == 1
+    assert body["project"]["spec"]["metal"]["color"] == "rose"
+    sibling_id = body["project"]["root_id"]
+    with SessionFactory() as db:
+        original = db.get(Project, project["root_id"])
+        sibling = db.get(Project, sibling_id)
+        asset = db.get(ImageAsset, sibling_id)
+        durable = db.get(
+            PreviewCandidateRecord, preview["candidate"]["candidate_id"])
+        review = db.scalar(select(ImageRunReview).where(
+            ImageRunReview.run_id == preview["image_run_id"]
+        ))
+        assert original is not None and sibling is not None and asset is not None
+        assert project["active_asset_id"] == original.root_id
+        assert sibling.family_id == original.family_id
+        assert sibling.variation_label == "Rose direction"
+        assert asset.design_id == body["design_id"]
+        assert asset.design_version == 1
+        assert durable is not None
+        assert durable.status == "saved_as_variation"
+        assert durable.terminal_asset_id == sibling_id
+        assert review is not None and review.accepted_asset_id == sibling_id
+
+
+def test_catalog_apply_resolution_failure_rolls_back_asset_spec_and_review(
+    catalog_client, example_spec, monkeypatch,
+):
+    client, SessionFactory = catalog_client
+    project = _create_project(client, example_spec)
+    monkeypatch.setattr(
+        "facetta.api.catalog._trusted_image_agent",
+        lambda: _ResultAgent(QualityVerdict.PASS),
+    )
+    preview = client.post(
+        f"/assets/{project['active_asset_id']}/catalog/preview",
+        json=_request(),
+    ).json()
+    monkeypatch.setattr(
+        "facetta.api.catalog.resolve_catalog_preview_candidate",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            RuntimeError("resolution failed")
+        ),
+    )
+    with pytest.raises(RuntimeError, match="resolution failed"):
+        client.post(preview["candidate"]["accept_url"], json={
+            "expected_design_version": 1,
+            "created_by": "usr_catalog",
+        })
+    with SessionFactory() as db:
+        assert db.scalar(select(func.count()).select_from(ImageAsset)) == 1
+        assert db.scalar(select(func.count()).select_from(DesignVersion)) == 1
+        assert db.scalar(select(func.count()).select_from(ImageRunReview)) == 0
+        durable = db.get(
+            PreviewCandidateRecord, preview["candidate"]["candidate_id"])
+        assert durable is not None and durable.status == "reviewing"
+
+
 def test_catalog_preview_accept_rejects_stale_exact_source_without_rerun(
     catalog_client, example_spec, monkeypatch,
 ):
@@ -310,8 +405,8 @@ def test_catalog_preview_accept_rejects_stale_exact_source_without_rerun(
         "expected_design_version": 1,
         "created_by": "usr_catalog",
     })
-    assert stale.status_code == 409, stale.text
-    assert stale.json()["code"] == "stale_asset_revision"
+    assert stale.status_code == 410, stale.text
+    assert stale.json()["code"] == "catalog_preview_unavailable"
     assert len(agent.plans) == 2
     assert _counts(SessionFactory) == {"versions": 2, "assets": 2, "runs": 2}
 
@@ -339,6 +434,14 @@ def test_catalog_preview_discard_removes_only_temporary_bytes(
     assert unavailable.status_code == 410
     assert unavailable.json()["code"] == "catalog_preview_unavailable"
     assert _counts(SessionFactory) == {"versions": 1, "assets": 1, "runs": 1}
+    with SessionFactory() as db:
+        durable = db.get(
+            PreviewCandidateRecord, body["candidate"]["candidate_id"])
+        assert durable is not None
+        assert durable.status == "discarded"
+        assert durable.decided_by == "usr_catalog"
+        assert durable.terminal_asset_id is None
+        assert bytes(durable.image) == b""
 
 
 def test_catalog_preview_expiry_keeps_evidence_but_no_product_candidate(
@@ -361,6 +464,13 @@ def test_catalog_preview_expiry_keeps_evidence_but_no_product_candidate(
     assert expired.status_code == 410
     assert expired.json()["code"] == "catalog_preview_unavailable"
     assert _counts(SessionFactory) == {"versions": 1, "assets": 1, "runs": 1}
+    with SessionFactory() as db:
+        durable = db.get(
+            PreviewCandidateRecord, body["candidate"]["candidate_id"])
+        assert durable is not None
+        assert durable.status == "expired"
+        assert durable.resolved_at is not None
+        assert bytes(durable.image) == b""
 
 
 def test_catalog_preview_hard_failure_has_evidence_and_no_candidate(

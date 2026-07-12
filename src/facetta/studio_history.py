@@ -35,6 +35,39 @@ class StudioHistoryError(RuntimeError):
         self.status_code = status_code
 
 
+def _sha256(asset: ImageAsset) -> str:
+    return hashlib.sha256(bytes(asset.image)).hexdigest()
+
+
+def _verified_revision_hash(
+    db: Session,
+    asset: ImageAsset,
+    *,
+    mismatch_code: str,
+) -> str:
+    """Return canonical bytes' hash, rejecting recorded-lineage drift.
+
+    Historical projects created before hash-bound revision records remain
+    readable. Once a revision has a recorded output hash, branching and
+    restoration fail closed if its bytes no longer match that evidence.
+    """
+
+    actual = _sha256(asset)
+    record = db.scalar(select(ProjectRevisionRecord).where(
+        ProjectRevisionRecord.asset_id == asset.id
+    ))
+    if record is None:
+        return actual
+    expected = (record.interpretation or {}).get("output_sha256")
+    if expected is not None and expected != actual:
+        raise StudioHistoryError(
+            mismatch_code,
+            "the selected revision bytes no longer match recorded lineage",
+            status_code=422,
+        )
+    return actual
+
+
 @dataclass(frozen=True)
 class VariationBranchResult:
     family_id: str
@@ -43,6 +76,220 @@ class VariationBranchResult:
     design_id: str | None
     design_version: int | None
     variation_index: int
+
+
+def fork_preview_candidate_variation(
+    db: Session,
+    *,
+    kind: str,
+    run_id: str,
+    candidate_id: str,
+    variation_label: str,
+    created_by: str,
+) -> VariationBranchResult:
+    """Save reviewed candidate bytes directly into an independent sibling.
+
+    The active project is never first mutated or advanced. Candidate lineage,
+    the sibling asset/project, optional catalog Design v1, revision evidence,
+    review decision, and terminal candidate state commit as one transaction.
+    """
+
+    from facetta.catalog_preview_candidates import (
+        CatalogPreviewUnavailable,
+        lock_catalog_preview_candidate_for_decision,
+    )
+    from facetta.studio_visual_candidates import (
+        StudioVisualCandidateUnavailable,
+        lock_studio_visual_candidate_for_decision,
+    )
+
+    label = variation_label.strip()
+    if not label:
+        raise StudioHistoryError(
+            "variation_label_required",
+            "name the variation before saving it",
+            status_code=422,
+        )
+    try:
+        if kind == "studio_visual":
+            candidate, candidate_record = (
+                lock_studio_visual_candidate_for_decision(
+                    db, run_id, candidate_id, owner=created_by,
+                )
+            )
+            next_spec = None
+        elif kind == "catalog_revision":
+            candidate, candidate_record = (
+                lock_catalog_preview_candidate_for_decision(
+                    db, run_id, candidate_id, owner=created_by,
+                )
+            )
+            next_spec = candidate.next_spec
+        else:
+            raise StudioHistoryError(
+                "preview_candidate_kind_invalid",
+                "the preview candidate kind is invalid",
+                status_code=422,
+            )
+    except (StudioVisualCandidateUnavailable, CatalogPreviewUnavailable) as exc:
+        raise StudioHistoryError(
+            "preview_candidate_unavailable", str(exc), status_code=410,
+        ) from exc
+
+    project = db.scalar(select(Project).where(
+        Project.root_id == candidate.project_root_id
+    ).with_for_update())
+    source = db.get(ImageAsset, candidate.source_asset_id)
+    run = db.get(ImageRun, run_id)
+    if (
+        project is None
+        or source is None
+        or run is None
+        or project.owner != created_by
+        or source.root_id != project.root_id
+        or run.project_root_id != project.root_id
+        or run.source_asset_id != source.id
+        or run.created_by != created_by
+        or run.status not in {"preview_ready", "review_required"}
+        or run.accepted_asset_id is not None
+    ):
+        raise StudioHistoryError(
+            "preview_candidate_unavailable",
+            "the preview candidate lineage is unavailable",
+            status_code=410,
+        )
+
+    family = ensure_project_family(db, project)
+    if family.owner != created_by:
+        raise StudioHistoryError(
+            "design_family_owner_mismatch",
+            "the project and design family have different owners",
+            status_code=422,
+        )
+    highest = db.scalar(select(func.max(Project.variation_index)).where(
+        Project.family_id == family.id
+    )) or 1
+    variation_index = highest + 1
+    now = utcnow()
+    new_root_id = new_id("ast")
+    design_id: str | None = None
+    design_version: int | None = None
+    if next_spec is not None:
+        design_id = new_id("dsn")
+        design_version = 1
+        stored_spec = next_spec.model_dump(mode="json")
+        stored_spec.update({
+            "design_id": design_id,
+            "version": 1,
+            "created_by": created_by,
+            "created_at": now.isoformat().replace("+00:00", "Z"),
+        })
+        db.add_all([
+            Design(
+                id=design_id,
+                created_by=created_by,
+                created_at=now,
+                collection=project.collection,
+            ),
+            DesignVersion(
+                design_id=design_id,
+                version=1,
+                spec=stored_spec,
+                created_by=created_by,
+                created_at=now,
+            ),
+        ])
+
+    new_asset = ImageAsset(
+        id=new_root_id,
+        root_id=new_root_id,
+        parent_asset_id=None,
+        design_id=design_id,
+        design_version=design_version,
+        capability="VARIATION_BRANCH",
+        instruction=f"Saved reviewed candidate as variation from {source.id}",
+        image=candidate.image_bytes,
+        media_type=candidate.media_type,
+        created_by=created_by,
+        created_at=now,
+    )
+    new_project = Project(
+        root_id=new_root_id,
+        owner=created_by,
+        collection=project.collection,
+        title=project.title,
+        tags=list(project.tags or []),
+        family_id=family.id,
+        variation_index=variation_index,
+        variation_label=label,
+        selected_candidate_asset_id=(
+            new_root_id if next_spec is None else None
+        ),
+        branched_from_project_root_id=project.root_id,
+        branched_from_asset_id=source.id,
+        created_at=now,
+        updated_at=now,
+    )
+    review = ImageRunReview(
+        id=new_id("irr"),
+        run_id=run_id,
+        decision="accepted",
+        accepted_asset_id=new_root_id,
+        created_by=created_by,
+        created_at=now,
+    )
+    revision = ProjectRevisionRecord(
+        id=new_id("prr"),
+        asset_id=new_root_id,
+        action="created",
+        raw_intent={
+            "kind": "save_preview_as_variation",
+            "preview_kind": kind,
+            "source_project_id": project.root_id,
+            "source_asset_id": source.id,
+            "image_run_id": run_id,
+            "label": label,
+        },
+        interpretation={
+            "operation": "fork_reviewed_preview",
+            "source_sha256": candidate.source_hash,
+            "output_sha256": candidate.output_hash,
+            "independent_revision_history": True,
+            "specification_created": next_spec is not None,
+            "factory_authority": False,
+        },
+        change_summary=f"Saved reviewed preview as variation '{label}'.",
+        created_by=created_by,
+        created_at=now,
+    )
+    candidate_record.status = "saved_as_variation"
+    candidate_record.terminal_asset_id = new_root_id
+    candidate_record.review_id = review.id
+    candidate_record.decided_by = created_by
+    candidate_record.resolved_at = now
+    candidate_record.image = b""
+    family.updated_at = now
+    project.updated_at = now
+    db.add_all([new_asset, new_project, review, revision])
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise StudioHistoryError(
+            "variation_conflict",
+            "another preview decision or variation was saved first",
+        ) from exc
+    except Exception:
+        db.rollback()
+        raise
+    return VariationBranchResult(
+        family_id=family.id,
+        project_root_id=new_root_id,
+        asset_id=new_root_id,
+        design_id=design_id,
+        design_version=design_version,
+        variation_index=variation_index,
+    )
 
 
 @dataclass(frozen=True)
@@ -79,7 +326,9 @@ def _validate_pre_spec_visual_candidate(
 ) -> tuple[Project, ImageAsset, ImageRun]:
     """Recheck the candidate's complete pre-spec authority boundary."""
 
-    project = db.get(Project, candidate.project_root_id)
+    project = db.scalar(select(Project).where(
+        Project.root_id == candidate.project_root_id
+    ).with_for_update())
     source = db.get(ImageAsset, candidate.source_asset_id)
     root = db.get(ImageAsset, candidate.project_root_id)
     run = db.get(ImageRun, candidate.run_id)
@@ -153,6 +402,7 @@ def apply_pre_spec_visual_candidate(
     candidate: StudioVisualCandidate,
     expected_active_asset_id: str,
     created_by: str,
+    commit: bool = True,
 ) -> ApplyPreSpecVisualResult:
     """Append one accepted visual while preserving an honest null spec."""
 
@@ -205,6 +455,8 @@ def apply_pre_spec_visual_candidate(
             "specification_created": False,
             "factory_authority": False,
             "source_hash": candidate.source_hash,
+            "source_sha256": candidate.source_hash,
+            "output_sha256": hashlib.sha256(candidate.image_bytes).hexdigest(),
         },
         change_summary=(
             "Applied a reviewed pre-spec visual refinement; no specification "
@@ -234,7 +486,10 @@ def apply_pre_spec_visual_candidate(
                 "stale_asset_revision",
                 "the selected visual changed before the preview could be applied",
             )
-        db.commit()
+        if commit:
+            db.commit()
+        else:
+            db.flush()
     except StudioHistoryError:
         raise
     except IntegrityError as exc:
@@ -260,6 +515,7 @@ def discard_pre_spec_visual_candidate(
     candidate: StudioVisualCandidate,
     expected_active_asset_id: str,
     created_by: str,
+    commit: bool = True,
 ) -> DiscardPreSpecVisualResult:
     """Persist a terminal rejection without creating any project asset."""
 
@@ -278,7 +534,10 @@ def discard_pre_spec_visual_candidate(
     )
     db.add(review)
     try:
-        db.commit()
+        if commit:
+            db.commit()
+        else:
+            db.flush()
     except IntegrityError as exc:
         db.rollback()
         raise StudioHistoryError(
@@ -368,7 +627,9 @@ def fork_project_variation(
 ) -> VariationBranchResult:
     """Copy one exact revision into an independent sibling project."""
 
-    project = db.get(Project, project_root_id)
+    project = db.scalar(select(Project).where(
+        Project.root_id == project_root_id
+    ).with_for_update())
     source = db.get(ImageAsset, source_asset_id)
     active = _active_primary(db, project_root_id)
     if project is None or source is None or source.root_id != project_root_id:
@@ -414,6 +675,10 @@ def fork_project_variation(
             "name the variation before saving it",
             status_code=422,
         )
+
+    source_sha256 = _verified_revision_hash(
+        db, source, mismatch_code="variation_source_hash_mismatch",
+    )
 
     family = ensure_project_family(db, project)
     if family.owner != project.owner:
@@ -511,6 +776,8 @@ def fork_project_variation(
             "operation": "fork_variation",
             "source_preserved_exactly": True,
             "independent_revision_history": True,
+            "source_sha256": source_sha256,
+            "output_sha256": source_sha256,
         },
         change_summary=f"Saved '{label}' as an independent variation.",
         created_by=created_by,
@@ -551,7 +818,9 @@ def restore_project_revision(
 ) -> RestoreRevisionResult:
     """Append a copy of a historical revision as the new active revision."""
 
-    project = db.get(Project, project_root_id)
+    project = db.scalar(select(Project).where(
+        Project.root_id == project_root_id
+    ).with_for_update())
     selected = db.get(ImageAsset, restore_asset_id)
     active = _active_primary(db, project_root_id)
     root = db.get(ImageAsset, project_root_id)
@@ -590,6 +859,13 @@ def restore_project_revision(
             "the selected revision is already active",
             status_code=422,
         )
+
+    selected_sha256 = _verified_revision_hash(
+        db, selected, mismatch_code="restore_source_hash_mismatch",
+    )
+    active_sha256 = _verified_revision_hash(
+        db, active, mismatch_code="restore_parent_hash_mismatch",
+    )
 
     now = utcnow()
     next_version: int | None = None
@@ -662,6 +938,9 @@ def restore_project_revision(
             "history_deleted": False,
             "visual_bytes_restored_exactly": True,
             "specification_restored": design_id is not None,
+            "source_sha256": selected_sha256,
+            "output_sha256": selected_sha256,
+            "parent_sha256": active_sha256,
         },
         change_summary=summary,
         restored_from_asset_id=selected.id,

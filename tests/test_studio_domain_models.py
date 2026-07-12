@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+
 import pytest
 from sqlalchemy import create_engine, inspect, select, text
 from sqlalchemy.exc import IntegrityError
@@ -9,12 +11,17 @@ from sqlalchemy.orm import Session, sessionmaker
 
 from facetta.db import (
     Base,
+    Design,
     DesignFamily,
+    DesignVersion,
     ImageAsset,
+    ImmutableDesignVersionError,
+    ImmutableImageAssetError,
     ImmutableProjectRevisionRecordError,
     InvalidProjectRevisionAssetError,
     Project,
     ProjectRevisionRecord,
+    PreviewCandidateRecord,
     _apply_additive_migrations,
 )
 from facetta.api.studio import list_design_families
@@ -81,6 +88,7 @@ def test_fresh_schema_contains_studio_tables_and_project_metadata():
     assert {
         DesignFamily.__tablename__,
         ProjectRevisionRecord.__tablename__,
+        PreviewCandidateRecord.__tablename__,
     } <= set(inspector.get_table_names())
     project_columns = {
         column["name"] for column in inspector.get_columns("projects")}
@@ -358,6 +366,73 @@ def test_restore_record_binds_the_new_primary_to_its_exact_source():
         assert stored is not None
         assert stored.action == "restore"
         assert stored.restored_from_asset_id == "ast_old"
+        assert stored.interpretation["source_sha256"] == hashlib.sha256(
+            b"image"
+        ).hexdigest()
+        assert stored.interpretation["output_sha256"] == hashlib.sha256(
+            b"image"
+        ).hexdigest()
+
+
+def test_design_versions_reject_update_and_delete():
+    SessionFactory = _session_factory()
+    with SessionFactory() as db:
+        db.add_all([
+            Design(id="dsn_immutable", created_by="usr_studio"),
+            DesignVersion(
+                design_id="dsn_immutable", version=1,
+                spec={"metal": "platinum"}, created_by="usr_studio",
+            ),
+        ])
+        db.commit()
+
+    with SessionFactory() as db:
+        version = db.get(DesignVersion, ("dsn_immutable", 1))
+        assert version is not None
+        version.spec = {"metal": "gold"}
+        with pytest.raises(ImmutableDesignVersionError, match="immutable"):
+            db.commit()
+        db.rollback()
+
+    with SessionFactory() as db:
+        version = db.get(DesignVersion, ("dsn_immutable", 1))
+        assert version is not None
+        db.delete(version)
+        with pytest.raises(
+            ImmutableDesignVersionError, match="cannot be deleted",
+        ):
+            db.commit()
+        db.rollback()
+
+
+def test_image_assets_reject_canonical_mutation_and_delete_but_allow_pinning():
+    SessionFactory = _session_factory()
+    with SessionFactory() as db:
+        db.add(_asset("ast_immutable"))
+        db.commit()
+
+    with SessionFactory() as db:
+        asset = db.get(ImageAsset, "ast_immutable")
+        assert asset is not None
+        asset.image = b"rewritten"
+        with pytest.raises(ImmutableImageAssetError, match="append"):
+            db.commit()
+        db.rollback()
+
+    with SessionFactory() as db:
+        asset = db.get(ImageAsset, "ast_immutable")
+        assert asset is not None
+        asset.pinned_at = asset.created_at
+        db.commit()
+        assert asset.pinned_at == asset.created_at
+
+    with SessionFactory() as db:
+        asset = db.get(ImageAsset, "ast_immutable")
+        assert asset is not None
+        db.delete(asset)
+        with pytest.raises(ImmutableImageAssetError, match="cannot be deleted"):
+            db.commit()
+        db.rollback()
 
 
 def test_revision_records_reject_update_and_delete():

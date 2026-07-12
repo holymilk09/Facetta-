@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import time
 from uuid import UUID, uuid4
@@ -577,7 +578,7 @@ def test_family_list_and_detail_are_scoped_to_principal(auth_client):
 def test_history_asset_and_visual_candidate_reads_deny_other_principal(
     auth_client,
 ):
-    client, _Session = auth_client
+    client, Session = auth_client
     headers = {"Authorization": f"Bearer {OTHER_TOKEN}"}
     history = client.get(
         "/studio/projects/ast_auth_root/history", headers=headers)
@@ -587,20 +588,31 @@ def test_history_asset_and_visual_candidate_reads_deny_other_principal(
     assert asset.status_code == 403
     assert asset.json()["detail"]["code"] == "asset_access_denied"
 
-    candidate = store_studio_visual_candidate(
-        run_id="run_auth_visual",
-        verdict="pass",
-        project_root_id="ast_auth_root",
-        source_asset_id="ast_auth_root",
-        expected_selected_candidate_asset_id="ast_auth_root",
-        source_hash="a" * 64,
-        image_bytes=b"private-preview",
-        media_type="image/png",
-        requested_change="polish",
-        scope="appearance",
-        qa={},
-        created_by="usr_owner",
-    )
+    with Session() as db:
+        source = db.get(ImageAsset, "ast_auth_root")
+        run = db.get(ImageRun, "run_owner")
+        assert source is not None and run is not None
+        source_hash = hashlib.sha256(bytes(source.image)).hexdigest()
+        run.project_root_id = "ast_auth_root"
+        run.source_asset_id = "ast_auth_root"
+        run.source_hash = source_hash
+        run.created_by = "usr_owner"
+        db.commit()
+        candidate = store_studio_visual_candidate(
+            db,
+            run_id="run_owner",
+            verdict="pass",
+            project_root_id="ast_auth_root",
+            source_asset_id="ast_auth_root",
+            expected_selected_candidate_asset_id="ast_auth_root",
+            source_hash=source_hash,
+            image_bytes=b"private-preview",
+            media_type="image/png",
+            requested_change="polish",
+            scope="appearance",
+            qa={},
+            created_by="usr_owner",
+        )
     preview = client.get(
         f"/studio/image-runs/{candidate.run_id}/visual-candidates/"
         f"{candidate.candidate_id}/image",

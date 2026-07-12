@@ -16,7 +16,7 @@ load_env_file()
 
 from facetta.api import (  # noqa: E402 - env must load before router imports
     assets, catalog, designs, library, projects, share, specs, stones, studio,
-    trusted, users, vocabulary,
+    studio_facts, trusted, users, vocabulary,
 )
 from facetta.auth import (  # noqa: E402
     require_authenticated_principal,
@@ -48,10 +48,14 @@ PRODUCTION_ASSET_PATHS = frozenset({
     "/assets/{asset_id}/markup/read",
     "/assets/{asset_id}/markup/apply",
     "/assets/{asset_id}/image",
+    "/assets/{asset_id}/checklist",
+    "/assets/{asset_id}/checklist/respond",
+    "/assets/{asset_id}/pin",
 })
 
 PRODUCTION_CATALOG_PATHS = frozenset({
     "/assets/{active_asset_id}/catalog/preview",
+    "/assets/{active_asset_id}/catalog/previews",
 })
 
 
@@ -119,6 +123,7 @@ def create_app() -> FastAPI:
     application.include_router(catalog.preview_router)
     application.include_router(projects.router)
     application.include_router(studio.router)
+    application.include_router(studio_facts.router)
     application.include_router(trusted.router)
     if not production:
         application.include_router(designs.router)

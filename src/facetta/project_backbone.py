@@ -31,8 +31,6 @@ from facetta.db import (
 from facetta.image_identity import spec_visual_hash
 from facetta.media import sniff_media_type
 from facetta.spec import Spec
-from facetta.source_component_coverage import source_component_factory_blockers
-from facetta.source_component_resolution import valid_source_component_spec_paths
 
 if TYPE_CHECKING:
     from facetta.image_agent import ImageAgentResult
@@ -285,7 +283,9 @@ def persist_project_primary_revision(
     """Commit one accepted visual revision and its run evidence atomically."""
     if capability not in PRIMARY_REVISION_CAPABILITIES:
         raise ValueError(f"'{capability}' is not a primary revision")
-    project = db.get(Project, root_id)
+    project = db.scalar(select(Project).where(
+        Project.root_id == root_id
+    ).with_for_update())
     root = db.get(ImageAsset, root_id)
     if project is None or root is None or root.design_id is None:
         raise ValueError("project root is not linked to a design")
@@ -736,6 +736,9 @@ def promote_creative_candidate(
     The original candidate stays pre-spec provenance. A byte-identical new
     primary revision receives the exact specification binding, making the
     transition visible and preventing approval of an unconfirmed alternative.
+    Source-review questions remain on the specification as optional Factory
+    blockers; they do not prevent a designer from preserving and refining a
+    Studio direction.
     """
     # Serialize confirmation against both the mutable project selection and
     # the exact candidate bytes the designer reviewed.  SQLite ignores
@@ -802,19 +805,6 @@ def promote_creative_candidate(
     current_spec_visual_hash = spec_visual_hash(spec)
     if current_spec_visual_hash != draft.spec_visual_hash:
         raise ValueError("the confirmed design facts changed before promotion")
-    coverage = spec.source_component_coverage
-    blockers = (
-        source_component_factory_blockers(
-            coverage,
-            valid_spec_paths=valid_source_component_spec_paths(spec),
-            current_spec_visual_hash=current_spec_visual_hash,
-            current_source_hash=candidate_sha256,
-        )
-        if coverage is not None else (object(),)
-    )
-    if blockers:
-        raise ValueError("confirmation draft source review is incomplete or stale")
-
     design_id = new_id("dsn")
     stored_spec = spec.model_dump(mode="json")
     stored_spec.update({

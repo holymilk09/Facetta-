@@ -13,6 +13,7 @@ the driver this project installs, so it works unchanged. See README → Database
 
 from __future__ import annotations
 
+import hashlib
 import secrets
 from datetime import datetime, timezone
 from functools import lru_cache
@@ -20,7 +21,8 @@ from threading import Lock
 
 from sqlalchemy import (
     JSON, Boolean, CheckConstraint, DateTime, Float, ForeignKey, Index, Integer,
-    LargeBinary, String, Text, UniqueConstraint, create_engine, event, text,
+    LargeBinary, String, Text, UniqueConstraint, create_engine, event, inspect,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.engine import make_url
@@ -94,6 +96,24 @@ class DesignVersion(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class ImmutableDesignVersionError(RuntimeError):
+    """Raised when code tries to rewrite immutable specification truth."""
+
+
+@event.listens_for(DesignVersion, "before_update")
+def _reject_design_version_update(_mapper, _connection, _target) -> None:
+    raise ImmutableDesignVersionError(
+        "design versions are immutable; append a new specification version"
+    )
+
+
+@event.listens_for(DesignVersion, "before_delete")
+def _reject_design_version_delete(_mapper, _connection, _target) -> None:
+    raise ImmutableDesignVersionError(
+        "design versions are immutable and cannot be deleted"
+    )
+
+
 class SavedStone(Base):
     """The user's curated stone library: real stones on file (often with lab
     reports) that get tried in different designs. Swapping a saved stone into
@@ -160,6 +180,38 @@ class ImageAsset(Base):
             postgresql_where=text(
                 "design_id IS NOT NULL AND parent_asset_id IS NULL"),
         ),
+    )
+
+
+class ImmutableImageAssetError(RuntimeError):
+    """Raised when canonical visual bytes or lineage are rewritten."""
+
+
+_IMAGE_ASSET_CANONICAL_FIELDS = frozenset({
+    "id", "root_id", "parent_asset_id", "design_id", "design_version",
+    "capability", "instruction", "region", "drift", "image", "media_type",
+    "created_by", "created_at",
+})
+
+
+@event.listens_for(ImageAsset, "before_update")
+def _reject_image_asset_canonical_update(_mapper, _connection, target) -> None:
+    state = inspect(target)
+    changed = sorted(
+        field for field in _IMAGE_ASSET_CANONICAL_FIELDS
+        if state.attrs[field].history.has_changes()
+    )
+    if changed:
+        raise ImmutableImageAssetError(
+            "image assets are immutable; append a new visual revision "
+            f"instead of changing {', '.join(changed)}"
+        )
+
+
+@event.listens_for(ImageAsset, "before_delete")
+def _reject_image_asset_delete(_mapper, _connection, _target) -> None:
+    raise ImmutableImageAssetError(
+        "image assets are immutable and cannot be deleted"
     )
 
 
@@ -382,6 +434,80 @@ class StudioPresentationCandidateRecord(Base):
     )
 
 
+class PreviewCandidateRecord(Base):
+    """Durable, non-canonical Studio/catalog output awaiting a decision.
+
+    Candidate bytes and typed payload stay outside ``ImageAsset`` and
+    ``DesignVersion`` until Apply succeeds.  Exact hashes bind review work to
+    the source revision across process restarts and browser refreshes.
+    """
+
+    __tablename__ = "preview_candidates"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    image_run_id: Mapped[str] = mapped_column(
+        ForeignKey("image_runs.id"), nullable=False, unique=True, index=True)
+    owner: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    project_root_id: Mapped[str] = mapped_column(
+        ForeignKey("projects.root_id"), nullable=False, index=True)
+    source_asset_id: Mapped[str] = mapped_column(
+        ForeignKey("image_assets.id"), nullable=False, index=True)
+    expected_active_asset_id: Mapped[str] = mapped_column(
+        ForeignKey("image_assets.id"), nullable=False)
+    expected_design_version: Mapped[int | None] = mapped_column(
+        Integer, nullable=True)
+    source_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    output_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    image: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    media_type: Mapped[str] = mapped_column(String(24), nullable=False)
+    kind: Mapped[str] = mapped_column(String(24), nullable=False, index=True)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, index=True)
+    payload: Mapped[dict] = mapped_column(SpecJSON, nullable=False)
+    terminal_asset_id: Mapped[str | None] = mapped_column(
+        ForeignKey("image_assets.id"), nullable=True)
+    review_id: Mapped[str | None] = mapped_column(
+        ForeignKey("image_run_reviews.id"), nullable=True)
+    decided_by: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow)
+    expires_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, index=True)
+    resolved_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)
+
+    __table_args__ = (
+        CheckConstraint(
+            "kind IN ('studio_visual', 'catalog_revision')",
+            name="ck_preview_candidate_kind",
+        ),
+        CheckConstraint(
+            "status IN ('reviewing', 'applied', 'saved_as_variation', "
+            "'discarded', 'expired')",
+            name="ck_preview_candidate_status",
+        ),
+        CheckConstraint(
+            "length(source_sha256) = 64 AND length(output_sha256) = 64",
+            name="ck_preview_candidate_hashes",
+        ),
+        CheckConstraint(
+            "(status = 'reviewing' AND terminal_asset_id IS NULL "
+            "AND review_id IS NULL AND decided_by IS NULL "
+            "AND resolved_at IS NULL) OR "
+            "(status = 'applied' AND terminal_asset_id IS NOT NULL "
+            "AND review_id IS NOT NULL AND decided_by IS NOT NULL "
+            "AND resolved_at IS NOT NULL) OR "
+            "(status = 'saved_as_variation' AND terminal_asset_id IS NOT NULL "
+            "AND review_id IS NOT NULL AND decided_by IS NOT NULL "
+            "AND resolved_at IS NOT NULL) OR "
+            "(status = 'discarded' AND terminal_asset_id IS NULL "
+            "AND decided_by IS NOT NULL AND resolved_at IS NOT NULL) OR "
+            "(status = 'expired' AND terminal_asset_id IS NULL "
+            "AND decided_by IS NULL AND resolved_at IS NOT NULL)",
+            name="ck_preview_candidate_resolution",
+        ),
+    )
+
+
 class Project(Base):
     """A design project = one asset chain (a hero render and all its edits,
     views, videos, and factory drawings), filed for the designer.
@@ -539,14 +665,58 @@ def _validate_project_revision_record_asset(
     # the project backbone's one canonical primary-capability set.
     from facetta.project_backbone import PRIMARY_REVISION_CAPABILITIES
 
-    capability = connection.execute(
-        text("SELECT capability FROM image_assets WHERE id = :asset_id"),
+    asset = connection.execute(
+        text(
+            "SELECT capability, parent_asset_id, image FROM image_assets "
+            "WHERE id = :asset_id"
+        ),
         {"asset_id": target.asset_id},
-    ).scalar_one_or_none()
-    if capability not in PRIMARY_REVISION_CAPABILITIES:
+    ).mappings().one_or_none()
+    if asset is None or asset["capability"] not in PRIMARY_REVISION_CAPABILITIES:
         raise InvalidProjectRevisionAssetError(
             "project revision records require an existing primary visual asset"
         )
+
+    raw_intent = dict(target.raw_intent or {})
+    interpretation = dict(target.interpretation or {})
+    source_asset_id = (
+        raw_intent.get("source_asset_id")
+        or raw_intent.get("selected_asset_id")
+        or interpretation.get("source_asset_id")
+        or target.restored_from_asset_id
+        or asset["parent_asset_id"]
+        or target.asset_id
+    )
+    # A root ``created`` record may have no upstream asset by definition. Its
+    # source hash therefore self-binds to the exact bytes that established the
+    # canonical baseline. Historical callers remain compatible, while every
+    # later edit/branch/restore resolves an explicit parent or source asset.
+    source_image = connection.execute(
+        text("SELECT image FROM image_assets WHERE id = :asset_id"),
+        {"asset_id": source_asset_id},
+    ).scalar_one_or_none()
+    if source_image is None:
+        raise InvalidProjectRevisionAssetError(
+            "project revision records require an existing lineage source asset"
+        )
+    source_sha256 = hashlib.sha256(bytes(source_image)).hexdigest()
+    output_sha256 = hashlib.sha256(bytes(asset["image"])).hexdigest()
+    supplied_source = interpretation.get("source_sha256")
+    supplied_output = interpretation.get("output_sha256")
+    if supplied_source is not None and supplied_source != source_sha256:
+        raise InvalidProjectRevisionAssetError(
+            "project revision source hash does not match canonical bytes"
+        )
+    if supplied_output is not None and supplied_output != output_sha256:
+        raise InvalidProjectRevisionAssetError(
+            "project revision output hash does not match canonical bytes"
+        )
+    interpretation.update({
+        "source_asset_id": source_asset_id,
+        "source_sha256": source_sha256,
+        "output_sha256": output_sha256,
+    })
+    target.interpretation = interpretation
 
 
 @event.listens_for(ProjectRevisionRecord, "before_update")

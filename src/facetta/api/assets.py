@@ -128,6 +128,33 @@ def _get_asset(db: Session, asset_id: str) -> ImageAsset:
     return row
 
 
+def _lock_approval_generation_for_write(
+    db: Session,
+    asset: ImageAsset,
+) -> None:
+    """Acquire the Factory CAS lock before mutating approval truth."""
+
+    from facetta.studio_jobs import (
+        ApprovalGenerationLockedError,
+        lock_project_approval_generation,
+    )
+
+    try:
+        lock_project_approval_generation(
+            db,
+            project_root_id=asset.root_id,
+            for_mutation=True,
+        )
+    except ApprovalGenerationLockedError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "factory_approval_generation_locked",
+                "message": str(exc),
+            },
+        ) from exc
+
+
 def _store_asset(db: Session, image: bytes, capability: str,
                  parent: ImageAsset | None = None, *,
                  asset_id: str | None = None,
@@ -135,6 +162,7 @@ def _store_asset(db: Session, image: bytes, capability: str,
                  drift: float | None = None,
                  design_id: str | None = None,
                  design_version: int | None = None,
+                 media_type: str | None = None,
                  created_by: str = "usr_pending",
                  commit: bool = True) -> ImageAsset:
     """Store one immutable asset.
@@ -153,7 +181,8 @@ def _store_asset(db: Session, image: bytes, capability: str,
         design_id=design_id if parent is None else None,
         design_version=design_version,
         capability=capability, instruction=instruction, region=region,
-        drift=drift, image=image, media_type=_sniff_media_type(image),
+        drift=drift, image=image,
+        media_type=media_type or _sniff_media_type(image),
         created_by=created_by)
     if parent is None:
         asset.root_id = asset.id
@@ -1503,9 +1532,8 @@ def create_spin_video(asset_id: str, request: AssetVideoRequest, db: DbSession):
     if result.data is not None:
         child = _store_asset(db, result.data, "SPIN_VIDEO", hero,
                              instruction=request.motion,
+                             media_type="video/mp4",
                              created_by=request.created_by)
-        child.media_type = "video/mp4"
-        db.commit()
     return {
         "parent_asset_id": hero.id,
         "asset_id": child.id if child else None,
@@ -1541,7 +1569,8 @@ def link_design(
     version automatically."""
     from facetta.db import Design
     from facetta.project_backbone import (
-        DesignAlreadyLinked, ensure_design_chain_available,
+        DesignAlreadyLinked, claim_creative_project_design,
+        ensure_design_chain_available,
     )
 
     asset = _get_asset(db, asset_id)
@@ -1566,7 +1595,14 @@ def link_design(
             "detail": str(exc),
             "code": "design_already_linked",
             "existing_root_id": exc.root_id})
-    root.design_id = request.design_id
+    if not claim_creative_project_design(
+        db, root_id=root.id, design_id=request.design_id,
+    ):
+        return JSONResponse(status_code=409, content={
+            "detail": "the project was linked by another request",
+            "code": "design_link_conflict",
+            "existing_root_id": root.id,
+        })
     db.commit()
     return {"root_id": root.id, "design_id": request.design_id,
             "design_version": None,
@@ -1798,6 +1834,7 @@ def pin_asset(asset_id: str, db: DbSession):
     mode isn't 'optional'): every item must be approved first — the tap-tap
     ritual IS the road to the factory. No checklist → pin behaves as always."""
     asset = _get_asset(db, asset_id)
+    _lock_approval_generation_for_write(db, asset)
     if _requires_creative_spec_promotion(db, asset):
         return JSONResponse(status_code=409, content={
             "detail": (
@@ -1849,6 +1886,7 @@ def create_checklist(asset_id: str, request: ChecklistCreateRequest,
     The spec comes from the body, else the chain's design link; with neither
     there is nothing to derive facts from → 409."""
     asset = _get_asset(db, asset_id)
+    _lock_approval_generation_for_write(db, asset)
     if _requires_creative_spec_promotion(db, asset):
         return JSONResponse(status_code=409, content={
             "detail": (
@@ -1950,6 +1988,7 @@ def respond_checklist(asset_id: str, request: ChecklistRespondRequest,
     confirms BEFORE anything executes. In auto_pin mode the last YES pins the
     version for factory. Append-only: every tap is an audit row."""
     asset = _get_asset(db, asset_id)
+    _lock_approval_generation_for_write(db, asset)
     checklist = _newest_checklist(db, asset_id)
     if checklist is None:
         raise HTTPException(status_code=404,
@@ -1966,13 +2005,18 @@ def respond_checklist(asset_id: str, request: ChecklistRespondRequest,
             "detail": "a NO needs the change note — say what should change "
                       "so the agent can execute it"})
 
-    # the tap is never lost to a network hiccup: save first, interpret after
+    # A negative tap is committed before its optional network interpretation,
+    # so it immediately invalidates Factory eligibility. Positive taps have no
+    # network step and commit atomically with status calculation and auto-pin.
     row = ApprovalResponse(
         checklist_id=checklist.id, item_key=request.item_key,
         approved=request.approved, note=note or None,
         created_by=request.created_by)
     db.add(row)
-    db.commit()
+    if request.approved:
+        db.flush()
+    else:
+        db.commit()
 
     out: dict = {"checklist_id": checklist.id, "item_key": request.item_key,
                  "approved": request.approved}
@@ -2043,7 +2087,6 @@ def respond_checklist(asset_id: str, request: ChecklistRespondRequest,
     if (checklist.mode == "auto_pin" and status["all_approved"]
             and asset.pinned_at is None):
         asset.pinned_at = utcnow()
-        db.commit()
         chain = _chain(db, asset.root_id)
         out["pinned"] = True
         out["pinned_version"] = _version_number(chain, asset.id)
@@ -2051,6 +2094,8 @@ def respond_checklist(asset_id: str, request: ChecklistRespondRequest,
                           f"version {out['pinned_version']} for factory")
     else:
         out["pinned"] = asset.pinned_at is not None
+    if request.approved:
+        db.commit()
     return out
 
 

@@ -17,8 +17,8 @@ from PIL import Image
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from facetta.api.projects import project_card, project_detail
 from facetta.api.error_mapping import image_agent_error_response
+from facetta.api.projects import project_card, project_detail
 from facetta.auth import (
     AuthenticatedPrincipal,
     principal_actor,
@@ -26,7 +26,9 @@ from facetta.auth import (
 )
 from facetta.db import (
     DesignFamily,
+    DesignVersion,
     ImageAsset,
+    ImageRun,
     Project,
     ProjectRevisionRecord,
     StudioJobRecord,
@@ -58,13 +60,20 @@ from facetta.studio_history import (
     StudioHistoryError,
     apply_pre_spec_visual_candidate,
     discard_pre_spec_visual_candidate,
+    fork_preview_candidate_variation,
     fork_project_variation,
     restore_project_revision,
 )
-from facetta.studio_jobs import studio_job_action_definition
+from facetta.studio_jobs import (
+    FactoryJobContextError,
+    lock_factory_job_context,
+    revalidate_factory_job_for_execution,
+    studio_job_action_definition,
+)
 from facetta.studio_visual_candidates import (
     StudioVisualCandidateUnavailable,
     get_studio_visual_candidate,
+    list_studio_visual_candidates,
     remove_studio_visual_candidate,
     store_studio_visual_candidate,
 )
@@ -107,6 +116,13 @@ class SaveVariationRequest(BaseModel):
     created_by: Annotated[str, Field(min_length=1, max_length=32)]
     expected_active_asset_id: Annotated[str, Field(min_length=1, max_length=32)]
     expected_design_version: Annotated[int, Field(ge=1)] | None = None
+    label: Annotated[str, Field(min_length=1, max_length=120)]
+
+
+class SavePreviewVariationRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    created_by: Annotated[str, Field(min_length=1, max_length=32)]
     label: Annotated[str, Field(min_length=1, max_length=120)]
 
 
@@ -342,6 +358,10 @@ _BILLING_POLICY = (
 )
 
 
+def _factory_job_pre_insert_hook() -> None:
+    """Deterministic test seam between optimistic and locked validation."""
+
+
 def _studio_job(job: StudioJobRecord) -> dict:
     def timestamp(value):
         # SQLite does not retain timezone metadata; API timestamps remain UTC
@@ -384,6 +404,58 @@ def _owned_job(db: Session, job_id: str, owner: str) -> StudioJobRecord:
     return job
 
 
+def _require_studio_job_context(
+    db: Session,
+    request: CreateStudioJobRequest,
+) -> None:
+    """Validate server-owned action context before reserving any work."""
+
+    action = studio_job_action_definition(request.action_id)
+    requirements = frozenset(action.context_requirements)
+    if "active_project" not in requirements:
+        return
+    if request.active_design_id is None or request.source_revision_id is None:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"{request.action_id} requires an active project and revision"
+            ),
+        )
+    project = db.get(Project, request.active_design_id)
+    if project is None or project.owner != request.owner:
+        raise HTTPException(
+            status_code=404,
+            detail=f"unknown Studio project '{request.active_design_id}'",
+        )
+    detail = project_detail(db, project)
+    if detail["active_asset_id"] != request.source_revision_id:
+        raise HTTPException(
+            status_code=409,
+            detail="source_revision_id is not the project's active revision",
+        )
+    if "exact_specification" not in requirements:
+        return
+    design_id = detail["design_id"]
+    design_version = detail["active_design_version"]
+    if (
+        design_id is None
+        or design_version is None
+        or db.get(DesignVersion, (design_id, design_version)) is None
+    ):
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"{request.action_id} requires the active revision's exact "
+                "validated specification"
+            ),
+        )
+    if "factory_eligible" in requirements and not detail["factory_ready"]:
+        raise HTTPException(
+            status_code=409,
+            detail="the active revision is not eligible for Factory review",
+        )
+
+
 @router.post("/jobs", status_code=201)
 def create_studio_job(
     request: CreateStudioJobRequest,
@@ -405,6 +477,19 @@ def create_studio_job(
                 f"{request.action_id}"
             ),
         )
+    _require_studio_job_context(db, request)
+    if request.action_id == "factory":
+        _factory_job_pre_insert_hook()
+        try:
+            lock_factory_job_context(
+                db,
+                owner=request.owner,
+                project_root_id=request.active_design_id or "",
+                source_revision_id=request.source_revision_id or "",
+            )
+        except FactoryJobContextError as exc:
+            db.rollback()
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
     now = utcnow()
     job = StudioJobRecord(
         id=new_id("job"),
@@ -464,6 +549,17 @@ def transition_studio_job(
 ):
     principal_actor(principal, request.owner)
     job = _owned_job(db, job_id, request.owner)
+    if (
+        job.action_id == "factory"
+        and job.status == "queued"
+        and request.status == "running"
+    ):
+        try:
+            job = revalidate_factory_job_for_execution(
+                db, job_id=job_id, owner=request.owner,
+            )
+        except FactoryJobContextError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
     if request.status not in _JOB_TRANSITIONS[job.status]:
         raise HTTPException(
             status_code=409,
@@ -765,6 +861,7 @@ def create_visual_preview(
     )
     qa = _visual_preview_qa(result)
     candidate = store_studio_visual_candidate(
+        db,
         run_id=run_id,
         verdict=verdict,
         project_root_id=project.root_id,
@@ -788,6 +885,10 @@ def create_visual_preview(
                 f"/studio/image-runs/{run_id}/visual-candidates/"
                 f"{candidate.candidate_id}/image"
             ),
+            "save_as_variation_url": (
+                f"/studio/image-runs/{run_id}/visual-candidates/"
+                f"{candidate.candidate_id}/save-as-variation"
+            ),
             "verdict": verdict,
             "qa": qa,
         },
@@ -803,21 +904,24 @@ def create_visual_preview(
 def get_visual_preview_image(
     run_id: str,
     candidate_id: str,
+    db: DbSession,
     principal: PrincipalDep,
 ):
+    run = db.get(ImageRun, run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail="visual preview unavailable")
+    if not principal.local_unbound and run.created_by != principal.subject:
+        raise HTTPException(status_code=404, detail="visual preview unavailable")
     try:
-        candidate = get_studio_visual_candidate(run_id, candidate_id)
+        candidate = get_studio_visual_candidate(
+            db, run_id, candidate_id, owner=run.created_by,
+        )
     except StudioVisualCandidateUnavailable as exc:
         return JSONResponse(status_code=410, content={
             "code": "visual_preview_unavailable",
             "category": "conflict",
             "detail": str(exc),
         })
-    if (
-        not principal.local_unbound
-        and candidate.created_by != principal.subject
-    ):
-        raise HTTPException(status_code=404, detail="visual preview unavailable")
     return Response(
         content=candidate.image_bytes,
         media_type=candidate.media_type,
@@ -838,14 +942,24 @@ def accept_visual_preview(
 ):
     principal_actor(principal, request.created_by)
     try:
-        candidate = get_studio_visual_candidate(run_id, candidate_id)
+        candidate = get_studio_visual_candidate(
+            db, run_id, candidate_id, owner=request.created_by,
+        )
         accepted = apply_pre_spec_visual_candidate(
             db,
             candidate=candidate,
             expected_active_asset_id=request.expected_active_asset_id,
             created_by=request.created_by,
+            commit=False,
         )
-        remove_studio_visual_candidate(run_id, candidate_id)
+        remove_studio_visual_candidate(
+            db, run_id, candidate_id,
+            owner=request.created_by,
+            review_id=accepted.review_id,
+            terminal_asset_id=accepted.asset_id,
+            commit=False,
+        )
+        db.commit()
     except StudioVisualCandidateUnavailable as exc:
         return JSONResponse(status_code=410, content={
             "code": "visual_preview_unavailable",
@@ -879,14 +993,23 @@ def discard_visual_preview(
 ):
     principal_actor(principal, request.created_by)
     try:
-        candidate = get_studio_visual_candidate(run_id, candidate_id)
+        candidate = get_studio_visual_candidate(
+            db, run_id, candidate_id, owner=request.created_by,
+        )
         discarded = discard_pre_spec_visual_candidate(
             db,
             candidate=candidate,
             expected_active_asset_id=request.expected_active_asset_id,
             created_by=request.created_by,
+            commit=False,
         )
-        remove_studio_visual_candidate(run_id, candidate_id)
+        remove_studio_visual_candidate(
+            db, run_id, candidate_id,
+            owner=request.created_by,
+            review_id=discarded.review_id,
+            commit=False,
+        )
+        db.commit()
     except StudioVisualCandidateUnavailable as exc:
         return JSONResponse(status_code=410, content={
             "code": "visual_preview_unavailable",
@@ -901,6 +1024,74 @@ def discard_visual_preview(
         "source_asset_id": discarded.source_asset_id,
         "candidate_id": candidate_id,
     }
+
+
+@router.post(
+    "/image-runs/{run_id}/visual-candidates/{candidate_id}/save-as-variation",
+    status_code=201,
+)
+def save_visual_preview_as_variation(
+    run_id: str,
+    candidate_id: str,
+    request: SavePreviewVariationRequest,
+    db: DbSession,
+    principal: PrincipalDep,
+):
+    principal_actor(principal, request.created_by)
+    try:
+        result = fork_preview_candidate_variation(
+            db,
+            kind="studio_visual",
+            run_id=run_id,
+            candidate_id=candidate_id,
+            variation_label=request.label,
+            created_by=request.created_by,
+        )
+    except StudioHistoryError as exc:
+        return _error(exc)
+    project = db.get(Project, result.project_root_id)
+    if project is None:  # pragma: no cover
+        raise HTTPException(status_code=500, detail="variation unavailable")
+    return {
+        "status": "saved_as_variation",
+        "family_id": result.family_id,
+        "variation_index": result.variation_index,
+        "project": project_detail(db, project),
+    }
+
+
+@router.get("/projects/{project_root_id}/visual-candidates")
+def reopen_visual_previews(
+    project_root_id: str,
+    db: DbSession,
+    principal: PrincipalDep,
+):
+    project = db.get(Project, project_root_id)
+    if project is None:
+        raise HTTPException(status_code=404, detail="project unavailable")
+    if not principal.local_unbound and project.owner != principal.subject:
+        raise HTTPException(status_code=404, detail="project unavailable")
+    candidates = list_studio_visual_candidates(
+        db, project_root_id=project_root_id, owner=project.owner,
+    )
+    return {"candidates": [{
+        "candidate_id": candidate.candidate_id,
+        "image_run_id": candidate.run_id,
+        "source_asset_id": candidate.source_asset_id,
+        "preview_url": (
+            f"/studio/image-runs/{candidate.run_id}/visual-candidates/"
+            f"{candidate.candidate_id}/image"
+        ),
+        "save_as_variation_url": (
+            f"/studio/image-runs/{candidate.run_id}/visual-candidates/"
+            f"{candidate.candidate_id}/save-as-variation"
+        ),
+        "verdict": candidate.verdict,
+        "requested_change": candidate.requested_change,
+        "scope": candidate.scope,
+        "qa": candidate.qa,
+        "expires_at": candidate.expires_at.isoformat(),
+    } for candidate in candidates]}
 
 
 def _pre_spec_presentation_error(

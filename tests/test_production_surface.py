@@ -30,7 +30,16 @@ def test_production_hides_legacy_admin_and_protects_spec_adapters(monkeypatch):
             ("post", "/assets/known/markup/read"),
             ("post", "/assets/known/markup/apply"),
             ("get", "/assets/known/image"),
+            ("post", "/assets/known/checklist"),
+            ("get", "/assets/known/checklist"),
+            ("post", "/assets/known/checklist/respond"),
+            ("post", "/assets/known/pin"),
             ("post", "/assets/known/catalog/preview"),
+            ("get", "/assets/known/catalog/previews"),
+            ("get", "/studio/projects/known/visual-candidates"),
+            ("post", "/studio/projects/known/facts/revise"),
+            ("post", "/studio/image-runs/known/visual-candidates/known/save-as-variation"),
+            ("post", "/image-runs/known/catalog-candidates/known/save-as-variation"),
         ):
             protected = (
                 client.post(path, json={}) if method == "post"
@@ -52,7 +61,6 @@ def test_production_hides_legacy_admin_and_protects_spec_adapters(monkeypatch):
             ("post", "/assets/known/localized-edit"),
             ("post", "/assets/known/global-restyle"),
             ("post", "/assets/known/video"),
-            ("post", "/assets/known/pin"),
             ("post", "/assets/known/technical-drawing"),
         ):
             hidden = (

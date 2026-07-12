@@ -318,6 +318,14 @@ The route inventory uses four classifications:
 The complete, OpenAPI-checked list is in
 [`trusted-workflow-route-inventory.md`](trusted-workflow-route-inventory.md).
 
+The Internet-facing production asset surface exposes only exact revision image
+reads, confirmed markup read/apply, and the four approval operations: create or
+read the newest checklist, append a response, and explicitly pin. Checklist
+creation, response append, and pin all acquire the same Project row lock as
+Factory job compare-and-swap. A queued, running, or reviewing Factory job makes
+that approval generation immutable; the next generation can begin only after
+the job is terminal.
+
 ## Canonical service/import direction
 
 Dependencies should point inward in this order:

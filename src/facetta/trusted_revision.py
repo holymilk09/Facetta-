@@ -507,7 +507,9 @@ def accept_warning_revision(
 
     run = db.get(ImageRun, candidate.run_id)
     source = db.get(ImageAsset, candidate.source_asset_id)
-    project = db.get(Project, candidate.project_root_id)
+    project = db.scalar(select(Project).where(
+        Project.root_id == candidate.project_root_id
+    ).with_for_update())
     root = db.get(ImageAsset, candidate.project_root_id)
     if run is None or run.status != "review_required":
         raise WarningRevisionError(
@@ -740,6 +742,7 @@ def accept_catalog_preview_revision(
     *,
     expected_design_version: int,
     created_by: str,
+    commit: bool = True,
 ) -> AcceptedCatalogPreviewRevision:
     """Atomically apply a previously evaluated pass-or-warn catalog preview.
 
@@ -769,7 +772,9 @@ def accept_catalog_preview_revision(
 
     run = db.get(ImageRun, candidate.run_id)
     source = db.get(ImageAsset, candidate.source_asset_id)
-    project = db.get(Project, candidate.project_root_id)
+    project = db.scalar(select(Project).where(
+        Project.root_id == candidate.project_root_id
+    ).with_for_update())
     root = db.get(ImageAsset, candidate.project_root_id)
     if (run is None or run.status not in {"preview_ready", "review_required"}
             or run.accepted_asset_id is not None):
@@ -890,7 +895,10 @@ def accept_catalog_preview_revision(
     project.updated_at = now
     db.add_all([version, child, review])
     try:
-        db.commit()
+        if commit:
+            db.commit()
+        else:
+            db.flush()
     except IntegrityError as exc:
         db.rollback()
         raise WarningRevisionError(

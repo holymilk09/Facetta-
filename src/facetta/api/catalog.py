@@ -24,6 +24,8 @@ from facetta.catalog_preview_candidates import (
     CatalogPreviewUnavailable,
     discard_catalog_preview_candidate,
     get_catalog_preview_candidate,
+    list_catalog_preview_candidates,
+    resolve_catalog_preview_candidate,
     store_catalog_preview_candidate,
 )
 from facetta.chain_geometry import chain_factory_blockers
@@ -35,7 +37,7 @@ from facetta.component_catalog import (
     get_component_catalog,
     get_component_catalog_descriptor,
 )
-from facetta.db import DesignVersion, ImageAsset, Project, get_db
+from facetta.db import DesignVersion, ImageAsset, ImageRun, Project, get_db
 from facetta.dimension_provenance import confirm_designer_dimension_subtree
 from facetta.image_agent import (
     ImageAgentError,
@@ -52,6 +54,7 @@ from facetta.json_types import JsonObject, JsonValue
 from facetta.media import sniff_media_type
 from facetta.project_backbone import is_primary_revision
 from facetta.spec import ChainGeometry, ChainProduction, Spec
+from facetta.studio_history import StudioHistoryError, fork_preview_candidate_variation
 from facetta.trusted_revision import (
     TrustedSpecRevisionError,
     WarningRevisionError,
@@ -107,6 +110,13 @@ class CatalogPreviewAcceptRequest(BaseModel):
     created_by: Annotated[str, Field(min_length=1, max_length=32)]
 
 
+class CatalogPreviewVariationRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    created_by: Annotated[str, Field(min_length=1, max_length=32)]
+    label: Annotated[str, Field(min_length=1, max_length=120)]
+
+
 class CatalogSpecChange(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -134,6 +144,7 @@ class CatalogPreviewCandidateSummary(BaseModel):
     preview_url: str
     accept_url: str
     discard_url: str
+    save_as_variation_url: str
     verdict: Literal["pass", "warn"]
     expires_in_seconds: int = 7200
 
@@ -765,6 +776,7 @@ def preview_catalog_revision(
     raw_changes: tuple[JsonObject, ...] = tuple(
         dict(change) for change in selection.spec_change)
     candidate = store_catalog_preview_candidate(
+        db,
         run_id=run_id,
         verdict=verdict,
         project_root_id=context.project.root_id,
@@ -813,6 +825,7 @@ def preview_catalog_revision(
             preview_url=f"{base_url}/image",
             accept_url=f"{base_url}/accept",
             discard_url=base_url,
+            save_as_variation_url=f"{base_url}/save-as-variation",
             verdict=verdict,
         ),
     )
@@ -824,11 +837,70 @@ def preview_catalog_revision(
     return response
 
 
+@router.get("/{active_asset_id}/catalog/previews")
+def reopen_catalog_previews(
+    active_asset_id: str,
+    db: DbSession,
+    principal: PrincipalDep,
+):
+    asset = db.get(ImageAsset, active_asset_id)
+    project = db.get(Project, asset.root_id) if asset is not None else None
+    if project is None or (
+        not principal.local_unbound and project.owner != principal.subject
+    ):
+        return JSONResponse(status_code=404, content={
+            "code": "project_not_found",
+            "category": "conflict",
+            "detail": "the catalog preview project is unavailable",
+        })
+    candidates = list_catalog_preview_candidates(
+        db, project_root_id=project.root_id, owner=project.owner,
+    )
+    return {"candidates": [{
+        "candidate_id": candidate.candidate_id,
+        "image_run_id": candidate.run_id,
+        "source_asset_id": candidate.source_asset_id,
+        "component_path": candidate.component_path,
+        "option_id": candidate.option_id,
+        "requested_change": candidate.requested_change,
+        "verdict": candidate.verdict,
+        "preview_url": (
+            f"/image-runs/{candidate.run_id}/catalog-candidates/"
+            f"{candidate.candidate_id}/image"
+        ),
+        "save_as_variation_url": (
+            f"/image-runs/{candidate.run_id}/catalog-candidates/"
+            f"{candidate.candidate_id}/save-as-variation"
+        ),
+        "next_spec": candidate.next_spec.model_dump(mode="json"),
+        "spec_change": list(candidate.spec_change),
+        "qa": candidate.qa,
+        "routing": candidate.routing,
+        "expires_at": candidate.expires_at.isoformat(),
+    } for candidate in candidates]}
+
+
 @preview_router.get(
     "/image-runs/{run_id}/catalog-candidates/{candidate_id}/image")
-def get_catalog_preview_image(run_id: str, candidate_id: str):
+def get_catalog_preview_image(
+    run_id: str,
+    candidate_id: str,
+    db: DbSession,
+    principal: PrincipalDep,
+):
+    run = db.get(ImageRun, run_id)
+    if run is None or (
+        not principal.local_unbound and run.created_by != principal.subject
+    ):
+        return JSONResponse(status_code=404, content={
+            "code": "catalog_preview_unavailable",
+            "category": "conflict",
+            "detail": "the catalog preview is unavailable",
+        })
     try:
-        candidate = get_catalog_preview_candidate(run_id, candidate_id)
+        candidate = get_catalog_preview_candidate(
+            db, run_id, candidate_id, owner=run.created_by,
+        )
     except CatalogPreviewUnavailable as exc:
         return JSONResponse(status_code=410, content={
             "code": "catalog_preview_unavailable",
@@ -846,9 +918,25 @@ def get_catalog_preview_image(run_id: str, candidate_id: str):
     "/image-runs/{run_id}/catalog-candidates/{candidate_id}",
     status_code=204,
 )
-def discard_catalog_preview(run_id: str, candidate_id: str):
+def discard_catalog_preview(
+    run_id: str,
+    candidate_id: str,
+    db: DbSession,
+    principal: PrincipalDep,
+):
+    run = db.get(ImageRun, run_id)
+    if run is None or (
+        not principal.local_unbound and run.created_by != principal.subject
+    ):
+        return JSONResponse(status_code=404, content={
+            "code": "catalog_preview_unavailable",
+            "category": "conflict",
+            "detail": "the catalog preview is unavailable",
+        })
     try:
-        discard_catalog_preview_candidate(run_id, candidate_id)
+        discard_catalog_preview_candidate(
+            db, run_id, candidate_id, owner=run.created_by,
+        )
     except CatalogPreviewUnavailable as exc:
         return JSONResponse(status_code=410, content={
             "code": "catalog_preview_unavailable",
@@ -872,13 +960,25 @@ def accept_catalog_preview(
 ):
     actor = principal_actor(principal, request.created_by)
     try:
-        candidate = get_catalog_preview_candidate(run_id, candidate_id)
+        candidate = get_catalog_preview_candidate(
+            db, run_id, candidate_id, owner=actor,
+        )
         accepted = accept_catalog_preview_revision(
             db,
             candidate,
             expected_design_version=request.expected_design_version,
             created_by=actor,
+            commit=False,
         )
+        resolve_catalog_preview_candidate(
+            db, run_id, candidate_id,
+            owner=actor,
+            status="applied",
+            review_id=accepted.review_id,
+            terminal_asset_id=accepted.asset_id,
+            commit=False,
+        )
+        db.commit()
     except CatalogPreviewUnavailable as exc:
         return JSONResponse(status_code=410, content={
             "code": "catalog_preview_unavailable",
@@ -912,6 +1012,48 @@ def accept_catalog_preview(
         ),
         project=ProjectDetail.model_validate(project_detail(db, project)),
     )
+
+
+@preview_router.post(
+    "/image-runs/{run_id}/catalog-candidates/{candidate_id}/save-as-variation",
+    status_code=201,
+)
+def save_catalog_preview_as_variation(
+    run_id: str,
+    candidate_id: str,
+    request: CatalogPreviewVariationRequest,
+    db: DbSession,
+    principal: PrincipalDep,
+):
+    actor = principal_actor(principal, request.created_by)
+    try:
+        result = fork_preview_candidate_variation(
+            db,
+            kind="catalog_revision",
+            run_id=run_id,
+            candidate_id=candidate_id,
+            variation_label=request.label,
+            created_by=actor,
+        )
+    except StudioHistoryError as exc:
+        return JSONResponse(status_code=exc.status_code, content={
+            "code": exc.code,
+            "category": "conflict",
+            "detail": exc.detail,
+        })
+    project = db.get(Project, result.project_root_id)
+    if project is None:  # pragma: no cover
+        return _error_response(CatalogApplyError(
+            "project_not_found", "the variation is unavailable", status_code=500,
+        ))
+    return {
+        "status": "saved_as_variation",
+        "family_id": result.family_id,
+        "variation_index": result.variation_index,
+        "design_id": result.design_id,
+        "design_version": result.design_version,
+        "project": ProjectDetail.model_validate(project_detail(db, project)),
+    }
 
 
 @router.post(
