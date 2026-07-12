@@ -493,6 +493,7 @@ export type CreateVisualPreviewRequest = CreateVisualPreviewRequestBase & (
 export interface VisualPreviewCandidate {
   candidate_id: string;
   preview_url: string;
+  save_as_variation_url: string;
   verdict: ImageQualityVerdict;
   qa: ImageQualityReport;
 }
@@ -503,6 +504,23 @@ export interface VisualPreviewResult {
   source_asset_id: string;
   image_run_id: string;
   candidate: VisualPreviewCandidate;
+}
+
+export interface VisualPreviewListItem {
+  candidate_id: string;
+  image_run_id: string;
+  source_asset_id: string;
+  preview_url: string;
+  save_as_variation_url: string;
+  verdict: 'pass' | 'warn';
+  requested_change: string;
+  scope: 'appearance' | 'marked_region';
+  qa: ImageQualityReport;
+  expires_at: string;
+}
+
+export interface VisualPreviewListResult {
+  candidates: VisualPreviewListItem[];
 }
 
 export interface VisualPreviewDecisionRequest {
@@ -524,6 +542,53 @@ export interface VisualPreviewDiscardResult {
   status: 'discarded';
   project_id: string;
   candidate_id: string;
+}
+
+export interface PreviewVariationRequest {
+  created_by: string;
+  label: string;
+}
+
+/** A preview fork is a new sibling project; it never advances the source project. */
+export interface PreviewVariationResult {
+  status: 'saved_as_variation';
+  family_id: string;
+  variation_index: number;
+  design_id?: string;
+  design_version?: number;
+  project: ProjectDetail;
+}
+
+export type StudioFactPath =
+  | 'metal.material' | 'metal.color' | 'metal.finish' | 'metal.karat'
+  | 'stone.species' | 'stone.cut' | 'stone.color.trade' | 'stone.color.gia'
+  | 'stone.carat' | 'stone.dimensions_mm.length' | 'stone.dimensions_mm.width'
+  | 'stone.dimensions_mm.depth' | 'setting.style' | 'setting.prong_count'
+  | 'band.profile' | 'band.width_mm' | 'band.thickness_mm'
+  | 'ring_size.system' | 'ring_size.value';
+
+export interface StudioFactChangeRequest {
+  path: StudioFactPath;
+  value: JsonValue;
+}
+
+export interface ReviseStudioFactsRequest {
+  expected_active_asset_id: string;
+  expected_design_version: number;
+  created_by: string;
+  changes: StudioFactChangeRequest[];
+}
+
+export interface ReviseStudioFactsResult {
+  status: 'applied' | 'no_change';
+  project_root_id: string;
+  source_asset_id: string;
+  asset_id: string;
+  design_id: string;
+  previous_design_version: number;
+  design_version: number;
+  spec_change: SpecChange[];
+  project_detail: ProjectDetail;
 }
 
 export type PresentationAssetCapability =
@@ -1164,6 +1229,7 @@ export interface CatalogPreviewCandidate {
   preview_url: string;
   accept_url: string;
   discard_url: string;
+  save_as_variation_url: string;
   verdict: 'pass' | 'warn';
   expires_in_seconds: number;
 }
@@ -1182,6 +1248,23 @@ export interface CatalogPreviewResult {
   routing: ImageRoutingSummary;
   project: ProjectDetail;
   candidate: CatalogPreviewCandidate;
+}
+
+export interface CatalogPreviewListItem {
+  candidate: CatalogPreviewCandidate;
+  source_asset_id: string;
+  component_path: ComponentCatalogPath;
+  option_id: string;
+  requested_change: string;
+  next_spec: JsonObject;
+  spec_change: SpecChange[];
+  qa: ImageQualityReport;
+  routing: ImageRoutingSummary;
+  expires_at: string;
+}
+
+export interface CatalogPreviewListResult {
+  candidates: CatalogPreviewListItem[];
 }
 
 export interface CatalogPreviewAcceptRequest {

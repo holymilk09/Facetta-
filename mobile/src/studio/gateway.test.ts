@@ -121,6 +121,7 @@ const catalogPreview = (): CatalogPreviewResult => ({
     preview_url: 'https://example.test/preview.png',
     accept_url: 'https://example.test/accept',
     discard_url: 'https://example.test/discard',
+    save_as_variation_url: 'https://example.test/save-as-variation',
     verdict: 'pass',
     expires_in_seconds: 600,
   },
@@ -147,6 +148,56 @@ test('persists a chosen creative direction without inventing specification autho
   assert.equal(result.error, null);
   assert.equal(result.data?.selected_candidate_asset_id, 'candidate_2');
   assert.equal(result.data?.active_design_version, null);
+});
+
+test('saves an exact catalog preview as a named sibling without advancing its source', async () => {
+  let saveCalls = 0;
+  const sibling = {
+    ...project('variation_2', 1), id: 'variation_2', root_id: 'variation_2',
+    active_asset_id: 'variation_2', active_revision: {
+      ...asset('variation_2', 1), root_id: 'variation_2', asset_id: 'variation_2',
+      design_id: 'design_variation', design_version: 1,
+    },
+    design_id: 'design_variation', spec: {},
+  } as ProjectDetail;
+  const gateway = createStudioGateway(fakeClient({
+    previewCatalogSelection: async () => ok(catalogPreview(), 201),
+    saveCatalogPreviewAsVariation: async (_candidate, request) => {
+      saveCalls += 1;
+      assert.deepEqual(request, { created_by: 'designer_1', label: 'Rose halo' });
+      return ok({
+        status: 'saved_as_variation' as const, family_id: 'family_1', variation_index: 2,
+        design_id: 'design_variation', design_version: 1, project: sibling,
+      }, 201);
+    },
+    getProject: async () => ok(project()),
+  }));
+  const preview = await gateway.previewCatalogRefine({
+    projectId: 'project_1', sourceAssetId: 'asset_1', sourceDesignVersion: 1,
+    createdBy: 'designer_1', componentPath: 'metal.color', optionId: 'rose',
+  });
+  assert.equal(preview.error, null);
+
+  const blank = await gateway.saveCatalogPreviewAsVariation({
+    candidateId: 'candidate_1', createdBy: 'designer_1', label: '   ',
+  });
+  assert.equal(blank.error?.code, 'VARIATION_LABEL_REQUIRED');
+  assert.equal(saveCalls, 0);
+
+  const saved = await gateway.saveCatalogPreviewAsVariation({
+    candidateId: 'candidate_1', createdBy: 'designer_1', label: '  Rose halo  ',
+  });
+  assert.equal(saved.error, null);
+  assert.equal(saved.data?.candidate.status, 'saved_as_variation');
+  assert.equal(saved.data?.project.root_id, 'variation_2');
+  assert.equal(saved.data?.familyId, 'family_1');
+  assert.equal(saveCalls, 1);
+
+  const repeated = await gateway.saveCatalogPreviewAsVariation({
+    candidateId: 'candidate_1', createdBy: 'designer_1', label: 'Duplicate',
+  });
+  assert.equal(repeated.error?.code, 'CANDIDATE_NOT_FOUND');
+  assert.equal(saveCalls, 1);
 });
 
 test('catalog refine preserves lineage and applies only through an explicit decision', async () => {
@@ -200,6 +251,52 @@ test('catalog refine preserves lineage and applies only through an explicit deci
     candidateId: preview.data.candidate.id, createdBy: 'designer_1',
   });
   assert.equal(repeated.error?.code, 'CANDIDATE_NOT_REVIEWABLE');
+});
+
+test('resumes the latest exact-lineage catalog preview and hydrates Apply', async () => {
+  let acceptedCandidate = '';
+  const gateway = createStudioGateway(fakeClient({
+    listCatalogPreviews: async () => ok({ candidates: [{
+      candidate: {
+        run_id: 'run_resume', candidate_id: 'candidate_resume',
+        preview_url: 'https://example.test/resume.png',
+        accept_url: 'https://example.test/resume/accept',
+        discard_url: 'https://example.test/resume', verdict: 'pass', expires_in_seconds: 3600,
+        save_as_variation_url: 'https://example.test/resume/save-as-variation',
+      },
+      source_asset_id: 'asset_1', component_path: 'metal.color', option_id: 'rose',
+      requested_change: 'Apply rose gold', next_spec: {}, spec_change: [],
+      qa: {
+        verdict: 'pass', accepted: true, review_required: false, score: 1,
+        summary: 'Pass', failed_checks: [], warnings: [],
+        checks: [{ key: 'identity', label: 'Identity', verdict: 'pass', severity: 'hard', message: 'Preserved' }],
+      },
+      routing: { attempt_count: 1, used_retry: false, used_fallback: false, cache_hit: false, run_id: 'run_resume' },
+      expires_at: '2099-01-01T00:00:00Z',
+    }] }),
+    acceptCatalogPreview: async (candidate) => {
+      acceptedCandidate = candidate.candidate_id;
+      return ok({
+        status: 'accepted' as const, asset_id: 'asset_2', design_version: 2,
+        image_run_id: 'run_resume', spec_change: [], project: project('asset_2', 2),
+      }, 201);
+    },
+  }));
+
+  const resumed = await gateway.resumeRefine({
+    projectId: 'project_1', sourceAssetId: 'asset_1', sourceDesignVersion: 1,
+  }, 'designer_1');
+  assert.equal(resumed.error, null);
+  if (resumed.error !== null || resumed.data === null) return;
+  assert.equal(resumed.data.kind, 'catalog');
+  assert.equal(resumed.data.candidate.id, 'candidate_resume');
+
+  const applied = await gateway.applyCatalogRefine({
+    candidateId: 'candidate_resume', createdBy: 'designer_1',
+  });
+  assert.equal(applied.error, null);
+  assert.equal(acceptedCandidate, 'candidate_resume');
+  assert.equal(applied.data?.project?.active_asset_id, 'asset_2');
 });
 
 test('discard is terminal and never calls the accept endpoint', async () => {
@@ -316,7 +413,7 @@ test('Confirm keeps the opaque token private and separates duplicate project rev
   assert.equal(Object.keys(promoteRequest).sort().join(','), 'confirmation_token,created_by');
 });
 
-test('Confirm cannot pass or save until source review is complete and question-free', async () => {
+test('Confirm preserves Factory source questions without blocking Studio Design v1', async () => {
   let promoted = false;
   const gateway = createStudioGateway(fakeClient({
     confirmCreativeCandidateDesign: async () => ({
@@ -336,13 +433,15 @@ test('Confirm cannot pass or save until source review is complete and question-f
   });
   assert.equal(loaded.error, null);
   if (loaded.error !== null) return;
-  const audited = await gateway.auditDesignConfirmation(loaded.data);
+  const audited = await gateway.auditDesignConfirmation({
+    ...loaded.data, designerAcknowledged: true,
+  });
   assert.equal(audited.error, null);
   if (audited.error !== null) return;
-  assert.equal(audited.data.status, 'fail');
-  const forged = await gateway.saveDesignConfirmation({ ...audited.data, status: 'pass' });
-  assert.notEqual(forged.error, null);
-  assert.equal(promoted, false);
+  assert.equal(audited.data.status, 'pass');
+  const saved = await gateway.saveDesignConfirmation(audited.data);
+  assert.equal(saved.error, null);
+  assert.equal(promoted, true);
 });
 
 test('Confirm removes expired opaque drafts before later access', async () => {

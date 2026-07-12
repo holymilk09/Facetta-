@@ -16,14 +16,17 @@ export interface StudioVaryWorkspaceProps {
   lineage: StudioVariationLineage | null;
   createdBy: string;
   onCreated: (project: ProjectDetail) => void;
+  onContinueRefining?: () => void;
+  onOpenCollections?: () => void;
 }
 
 export function StudioVaryWorkspace({
-  gateway, lineage, createdBy, onCreated,
+  gateway, lineage, createdBy, onCreated, onContinueRefining, onOpenCollections,
 }: StudioVaryWorkspaceProps) {
   const [label, setLabel] = useState('');
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [createdLabel, setCreatedLabel] = useState<string | null>(null);
 
   if (lineage === null) {
     return (
@@ -50,7 +53,30 @@ export function StudioVaryWorkspace({
       return;
     }
     onCreated(result.data.project);
+    setCreatedLabel(nextLabel);
   };
+
+  if (createdLabel !== null) {
+    return (
+      <View style={styles.successState}>
+        <Text style={styles.eyebrow}>VARIATION SAVED</Text>
+        <Text style={styles.title}>{createdLabel} is ready.</Text>
+        <Text style={styles.body}>The source direction and its history are unchanged. Continue with this new variation or review the family in Collections.</Text>
+        <View style={styles.successActions}>
+          {onContinueRefining !== undefined && (
+            <Pressable accessibilityRole="button" onPress={onContinueRefining} style={styles.primaryButton}>
+              <Text style={styles.primaryButtonText}>Continue refining</Text>
+            </Pressable>
+          )}
+          {onOpenCollections !== undefined && (
+            <Pressable accessibilityRole="button" onPress={onOpenCollections} style={styles.secondaryButton}>
+              <Text style={styles.secondaryButtonText}>Open Collections</Text>
+            </Pressable>
+          )}
+        </View>
+      </View>
+    );
+  }
 
   return (
     <ScrollView style={styles.root} contentContainerStyle={styles.content}>
@@ -88,6 +114,8 @@ export function StudioVaryWorkspace({
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: theme.paper },
   content: { width: '100%', maxWidth: 640, alignSelf: 'center', padding: 20, paddingBottom: 60 },
+  successState: { padding: 24, backgroundColor: theme.paper, gap: 10 },
+  successActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, alignItems: 'center' },
   empty: { padding: 24, backgroundColor: theme.paper, gap: 8 },
   eyebrow: { color: '#6f52d9', fontSize: 10, fontWeight: '800', letterSpacing: 1.4 },
   title: { color: theme.ink, fontFamily: theme.serif, fontSize: 28, lineHeight: 35, marginTop: 8 },
@@ -100,5 +128,7 @@ const styles = StyleSheet.create({
   error: { color: theme.danger, fontSize: 12, lineHeight: 17, marginTop: 12 },
   primaryButton: { alignItems: 'center', borderRadius: radius.pill, backgroundColor: '#6f52d9', paddingHorizontal: 18, paddingVertical: 14, marginTop: 20 },
   primaryButtonText: { color: '#ffffff', fontSize: 13, fontWeight: '800' },
+  secondaryButton: { alignItems: 'center', borderRadius: radius.pill, borderWidth: 1, borderColor: theme.line, paddingHorizontal: 18, paddingVertical: 14, marginTop: 20 },
+  secondaryButtonText: { color: theme.ink, fontSize: 13, fontWeight: '800' },
   disabled: { opacity: 0.42 },
 });

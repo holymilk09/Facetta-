@@ -84,7 +84,7 @@ export function StudioConfirmWorkspace({ gateway, lineage, createdBy, onSaved }:
   return <ScrollView style={styles.root} contentContainerStyle={styles.content}>
     <Text style={styles.eyebrow}>CONFIRM DESIGN</Text>
     <Text style={styles.title}>Review suggestions derived from this ring image.</Text>
-    <Text style={styles.body}>Facetta estimated these facts and dimensions from the selected visual. They may be wrong. To correct a value, use Advanced Specifications before creating immutable Design v1. This does not make the ring production-ready.</Text>
+    <Text style={styles.body}>Facetta estimated these starting facts from the selected visual. They may be wrong. Preserve this direction as Design v1, then refine any fact as a new revision without losing the original. This does not make the ring production-ready.</Text>
     <View style={styles.sourceCard}><Text style={styles.sourceLabel}>Starting visual</Text><Text style={styles.sourceValue}>Exact selected visual</Text></View>
     {busy && currentReview === null ? <Text style={styles.body}>Loading design details…</Text> : null}
     {currentReview?.factGroups.map((group, index) => <View key={group.key} style={styles.group}>
@@ -98,10 +98,10 @@ export function StudioConfirmWorkspace({ gateway, lineage, createdBy, onSaved }:
       </View>)}
     </View>)}
     {currentReview && <View style={styles.group}>
-      <Text style={styles.groupStep}>OPEN QUESTIONS</Text>
-      {currentReview.unresolvedQuestions.length === 0 ? <Text style={styles.body}>No unresolved source questions.</Text>
+      <Text style={styles.groupStep}>QUESTIONS KEPT FOR LATER</Text>
+      {currentReview.unresolvedQuestions.length === 0 ? <Text style={styles.body}>No unresolved source questions were found.</Text>
         : currentReview.unresolvedQuestions.map((question) => <Text key={question} style={styles.question}>• {question}</Text>)}
-      <Text style={styles.reviewReason}>{currentReview.sourceReview.reason}</Text>
+      <Text style={styles.body}>These questions do not block Studio creation or refinement. They remain attached to this direction for later review.</Text>
     </View>}
     {currentReview && <Pressable
       accessibilityRole="checkbox"
@@ -116,11 +116,11 @@ export function StudioConfirmWorkspace({ gateway, lineage, createdBy, onSaved }:
       <Text style={styles.ackText}>I reviewed these image-derived suggestions and accept them as the starting facts for Design v1.</Text>
     </Pressable>}
     {currentAudit?.status === 'fail' && <Notice kind="error" text={currentAudit.issues.join(' ')} />}
-    {currentAudit?.status === 'pass' && <Notice kind="ok" text="Ready to create immutable Design v1 from these acknowledged suggestions." />}
+    {currentAudit?.status === 'pass' && <Notice kind="ok" text="Ready to preserve this direction as Design v1. You can refine it next without overwriting the original." />}
     {error && <Notice kind="error" text={error} />}
     <View style={styles.actions}>
-      <Button title={busy ? 'Checking…' : 'Check Design v1 readiness'} kind="ghost" disabled={busy || currentReview === null || !currentReview.designerAcknowledged} onPress={() => void runReview()} />
-      <Button title={busy ? 'Creating…' : 'Create immutable Design v1'} disabled={busy || currentAudit?.status !== 'pass'} onPress={() => void save()} />
+      <Button title={busy ? 'Checking…' : 'Review starting design'} kind="ghost" disabled={busy || currentReview === null || !currentReview.designerAcknowledged} onPress={() => void runReview()} />
+      <Button title={busy ? 'Creating…' : 'Create Design v1'} disabled={busy || currentAudit?.status !== 'pass'} onPress={() => void save()} />
     </View>
   </ScrollView>;
 }

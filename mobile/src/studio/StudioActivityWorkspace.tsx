@@ -22,6 +22,7 @@ export interface StudioActivityWorkspaceProps {
   api: StudioActivityApi;
   owner: string;
   onOpenDesign?: (designId: string) => void;
+  onOpenReview?: (job: StudioJobRecord) => void;
 }
 
 const ACTION_LABELS: Record<StudioJobAction, string> = {
@@ -62,6 +63,7 @@ export function StudioActivityWorkspace({
   api,
   owner,
   onOpenDesign,
+  onOpenReview,
 }: StudioActivityWorkspaceProps) {
   const [jobs, setJobs] = useState<StudioJobRecord[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -126,6 +128,8 @@ export function StudioActivityWorkspace({
       ) : jobs.map((job) => {
         const cancellable = job.status === 'queued' || job.status === 'running';
         const openable = job.active_design_id !== null && onOpenDesign !== undefined;
+        const reviewable = job.status === 'reviewing' && job.action_id === 'refine'
+          && job.active_design_id !== null && onOpenReview !== undefined;
         return (
           <View key={job.job_id} style={styles.card}>
             <View style={styles.cardHeader}>
@@ -151,7 +155,15 @@ export function StudioActivityWorkspace({
             )}
 
             <View style={styles.actions}>
-              {openable && (
+              {reviewable && (
+                <Pressable
+                  accessibilityRole="button"
+                  onPress={() => onOpenReview?.(job)}
+                  style={styles.textAction}>
+                  <Text style={styles.textActionLabel}>Review result</Text>
+                </Pressable>
+              )}
+              {openable && !reviewable && (
                 <Pressable
                   accessibilityRole="button"
                   onPress={() => onOpenDesign?.(job.active_design_id as string)}

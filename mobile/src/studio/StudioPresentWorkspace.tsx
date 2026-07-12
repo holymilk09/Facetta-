@@ -7,7 +7,7 @@ import { AuthenticatedImage as Image } from '../AuthenticatedImage';
 import { Button, ChipRow, Field, Notice } from '../components';
 import { radius, theme } from '../theme';
 import type {
-  BeautyRenderResult, MarketingPackResult, ProductPhotoFraming, ProductPhotoPreset,
+  BeautyRenderResult, MarketingPackFailure, MarketingPackResult, ProductPhotoFraming, ProductPhotoPreset,
   PreSpecPresentationResult, ProductPhotoResult, ProjectDetail,
 } from '../trusted/types';
 import { getStudioAction } from './actions';
@@ -36,6 +36,17 @@ const designerPresentationError = (error: StudioGatewayError): string => {
     return 'This presentation preview is no longer available. Generate a new preview from the selected revision.';
   }
   return 'Facetta could not finish this presentation action. Please try again.';
+};
+
+export const designerPresentationFailure = (failure: MarketingPackFailure): string => {
+  const category = failure.error_category.toLowerCase();
+  if (category === 'quality' || category === 'evaluation') {
+    return 'This output did not preserve the selected design closely enough. Nothing was saved or charged.';
+  }
+  if (category === 'provider' || category === 'network' || category === 'unavailable') {
+    return 'Facetta could not finish this output. Nothing was saved or charged; try it again.';
+  }
+  return 'Facetta could not verify this output, so nothing was saved or charged.';
 };
 
 const presetLabel = (preset: ProductPhotoPreset): string => ({
@@ -172,6 +183,8 @@ export function StudioPresentWorkspace({
 
   const outputCount = destination === 'marketing' ? marketingPresets.length : 1;
   const creditEstimate = outputCount * PRESENT_CREDITS;
+  const passingClientAutoSaves = destination === 'client' && lineage !== null
+    && 'sourceDesignVersion' in lineage;
   const requestLabel = destination === 'marketing'
     ? `Generate ${outputCount} presentation preview${outputCount === 1 ? '' : 's'}`
     : clientFormat === 'beauty' ? 'Create client beauty render' : 'Create client product photo';
@@ -339,7 +352,9 @@ export function StudioPresentWorkspace({
     setBusy(false);
     if (result.error !== null) return setError(designerPresentationError(result.error));
     setCards(marketingCards(result.data));
-    setFailures(result.data.failures.map((failure) => `${presetLabel(failure.preset)}: ${failure.detail}`));
+    setFailures(result.data.failures.map((failure) => (
+      `${presetLabel(failure.preset)}: ${designerPresentationFailure(failure)}`
+    )));
     setInfo(`${result.data.candidate_count} of ${result.data.requested_count} requested outputs are ready for review. Nothing changed your design revision.`);
   };
 
@@ -403,7 +418,9 @@ export function StudioPresentWorkspace({
 
       <View style={styles.costCard}>
         <Text style={styles.costTitle}>{outputCount} requested output{outputCount === 1 ? '' : 's'} · estimated {creditEstimate} credits</Text>
-        <Text style={styles.costCopy}>You are charged only for the requested outputs you save. Discarded and unusable results cost 0 credits.</Text>
+        <Text style={styles.costCopy}>{passingClientAutoSaves
+          ? 'A passing Client output is saved and charged when generation finishes. If review is required, it is charged only when you choose Save. Discarded and unusable results cost 0 credits.'
+          : 'You are charged only for the requested outputs you save. Discarded and unusable results cost 0 credits.'}</Text>
       </View>
       {error !== null && <Notice kind="error" text={error} />}
       <Button title={busy ? 'Generating and checking…' : requestLabel}

@@ -14,6 +14,9 @@ import {
   designerCheckDetail, designerCheckLabel, designerReviewState,
 } from './designerReviewLanguage';
 import { designerErrorMessage } from './designerErrorMessage';
+import { getStudioAction } from './actions';
+
+const VIEWS_CREDITS_PER_OUTPUT = getStudioAction('views').creditEstimate ?? 0;
 
 const VIEWS = [
   { id: 'front', label: 'Front', detail: 'A clear straight-on geometry view.' },
@@ -171,6 +174,9 @@ export function StudioViewsWorkspace({
       </View>
       {notice !== null && <Notice kind="ok" text={notice} />}
       {error !== null && <Notice kind="error" text={error} />}
+      <Text style={styles.creditEstimate}>
+        1 requested output × {VIEWS_CREDITS_PER_OUTPUT} credits = estimated {VIEWS_CREDITS_PER_OUTPUT} credits
+      </Text>
       <Button title={busy ? 'Creating preview…' : 'Preview view'} disabled={busy} onPress={() => { void createPreview(); }} />
     </ScrollView>
   );
@@ -182,6 +188,7 @@ const styles = StyleSheet.create({
   eyebrow: { color: theme.accent, fontSize: 11, fontWeight: '800', letterSpacing: 2 },
   title: { color: theme.ink, fontFamily: theme.serif, fontSize: 28, lineHeight: 34 },
   body: { color: theme.faint, fontSize: 14, lineHeight: 21, maxWidth: 680 },
+  creditEstimate: { color: theme.faint, fontSize: 12, lineHeight: 18 },
   viewGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
   viewCard: { width: 200, minHeight: 96, borderWidth: 1, borderColor: theme.line, borderRadius: radius.md, padding: 14, backgroundColor: theme.card },
   selectedCard: { borderColor: theme.accent, borderWidth: 2 },

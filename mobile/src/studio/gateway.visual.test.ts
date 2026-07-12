@@ -96,6 +96,7 @@ test('pre-spec visual refinement stays temporary until Apply appends an image-on
         project_id: projectId, source_asset_id: 'asset_source', image_run_id: 'run_visual',
         candidate: {
           candidate_id: 'candidate_visual', preview_url: 'https://facetta.test/preview.png',
+          save_as_variation_url: 'https://facetta.test/studio/image-runs/run_visual/visual-candidates/candidate_visual/save-as-variation',
           verdict: 'pass' as const, qa: quality(),
         },
       }, 201);
@@ -140,6 +141,7 @@ test('discard is terminal and never returns a changed project', async () => {
       project_id: 'project_visual', source_asset_id: 'asset_source', image_run_id: 'run_discard',
       candidate: {
         candidate_id: 'candidate_discard', preview_url: 'https://facetta.test/preview.png',
+        save_as_variation_url: 'https://facetta.test/studio/image-runs/run_discard/visual-candidates/candidate_discard/save-as-variation',
         verdict: 'warn' as const, qa: quality('warn'),
       },
     }, 201),
@@ -173,6 +175,7 @@ test('failed-fidelity visual candidates cannot become canonical', async () => {
       project_id: 'project_visual', source_asset_id: 'asset_source', image_run_id: 'run_failed',
       candidate: {
         candidate_id: 'candidate_failed', preview_url: 'https://facetta.test/failed.png',
+        save_as_variation_url: 'https://facetta.test/studio/image-runs/run_failed/visual-candidates/candidate_failed/save-as-variation',
         verdict: 'fail' as const, qa: quality('fail'),
       },
     }, 202),
@@ -191,6 +194,67 @@ test('failed-fidelity visual candidates cannot become canonical', async () => {
   assert.equal(acceptCalls, 0);
 });
 
+test('saves a visual preview as one named sibling and leaves source active', async () => {
+  let saves = 0;
+  const variationAsset = {
+    ...asset('variation_visual', null, 1), root_id: 'variation_visual',
+    asset_id: 'variation_visual', capability: 'VARIATION_BRANCH',
+  };
+  const sibling = {
+    ...project('asset_source'), id: 'variation_visual', root_id: 'variation_visual',
+    active_asset_id: 'variation_visual', active_revision: variationAsset,
+    revisions: [{
+      revision: 1, asset: variationAsset, spec_version: null, spec_change: [],
+      ignored_fields: [], qa: null, routing: null, created_at: null,
+    }],
+    assets: [variationAsset], cover_asset_id: 'variation_visual',
+  } as ProjectDetail;
+  const client = {
+    ...baseClient(),
+    createVisualPreview: async () => ok({
+      project_id: 'project_visual', source_asset_id: 'asset_source', image_run_id: 'run_variation',
+      candidate: {
+        candidate_id: 'candidate_variation', preview_url: 'https://facetta.test/variation.png',
+        save_as_variation_url: 'https://facetta.test/studio/image-runs/run_variation/visual-candidates/candidate_variation/save-as-variation',
+        verdict: 'pass' as const, qa: quality(),
+      },
+    }, 201),
+    saveVisualPreviewAsVariation: async (
+      runId: string, candidateId: string, capabilityUrl: string, request: any,
+    ) => {
+      saves += 1;
+      assert.equal(runId, 'run_variation');
+      assert.equal(candidateId, 'candidate_variation');
+      assert.match(capabilityUrl, /save-as-variation$/);
+      assert.deepEqual(request, { created_by: 'designer_1', label: 'Warm direction' });
+      return ok({
+        status: 'saved_as_variation' as const, family_id: 'family_visual',
+        variation_index: 2, project: sibling,
+      }, 201);
+    },
+    getProject: async () => ok(project('asset_source')),
+  };
+  const gateway = createStudioGateway(client as any, {
+    now: () => new Date('2026-07-12T00:00:00Z'),
+  });
+  await gateway.previewVisualRefine({
+    projectId: 'project_visual', sourceAssetId: 'asset_source', createdBy: 'designer_1',
+    instruction: 'warm the gold', scope: 'appearance',
+  });
+  const saved = await gateway.saveVisualPreviewAsVariation({
+    candidateId: 'candidate_variation', createdBy: 'designer_1', label: ' Warm direction ',
+  });
+  assert.equal(saved.error, null);
+  assert.equal(saved.data?.candidate.status, 'saved_as_variation');
+  assert.equal(saved.data?.project.root_id, 'variation_visual');
+  assert.equal(saves, 1);
+  const repeated = await gateway.saveVisualPreviewAsVariation({
+    candidateId: 'candidate_variation', createdBy: 'designer_1', label: 'Duplicate',
+  });
+  assert.equal(repeated.error?.code, 'CANDIDATE_NOT_FOUND');
+  assert.equal(saves, 1);
+});
+
 test('marked-region refinement can reference server-validated markup instead of sending a raw mask', async () => {
   let received: unknown = null;
   const client = {
@@ -201,6 +265,7 @@ test('marked-region refinement can reference server-validated markup instead of 
         project_id: 'project_visual', source_asset_id: 'asset_source', image_run_id: 'run_markup',
         candidate: {
           candidate_id: 'candidate_markup', preview_url: 'https://facetta.test/markup.png',
+          save_as_variation_url: 'https://facetta.test/studio/image-runs/run_markup/visual-candidates/candidate_markup/save-as-variation',
           verdict: 'pass' as const, qa: quality(),
         },
       }, 201);

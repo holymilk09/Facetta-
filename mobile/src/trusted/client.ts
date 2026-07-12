@@ -17,6 +17,7 @@ import type {
   CatalogPreviewAcceptResult,
   CatalogPreviewCandidate,
   CatalogPreviewDiscardResult,
+  CatalogPreviewListResult,
   CatalogPreviewResult,
   CatalogWarningCandidate,
   ChecklistCreateRequest,
@@ -89,6 +90,8 @@ import type {
   PreSpecPresentationListResult,
   PreSpecPresentationRequest,
   PreSpecPresentationResult,
+  PreviewVariationRequest,
+  PreviewVariationResult,
   PhotoDraftResult,
   ProductPhotoFraming,
   ProductPhotoPresentation,
@@ -97,6 +100,8 @@ import type {
   ProductPhotoResult,
   PromoteCreativeCandidateRequest,
   ResolveSourceCoverageRequest,
+  ReviseStudioFactsRequest,
+  ReviseStudioFactsResult,
   SaveAsVariationRequest,
   SaveAsVariationResult,
   RestoreStudioRevisionRequest,
@@ -125,6 +130,7 @@ import type {
   VisualPreviewDecisionRequest,
   VisualPreviewDiscardResult,
   VisualPreviewResult,
+  VisualPreviewListResult,
 } from './types';
 
 type UnknownRecord = Record<string, unknown>;
@@ -697,11 +703,12 @@ export const decodeVisualPreviewResult: Decoder<VisualPreviewResult> = (value) =
   const imageRunId = nullableText(value.image_run_id);
   const candidateId = nullableText(value.candidate.candidate_id);
   const previewUrl = nullableText(value.candidate.preview_url);
+  const saveAsVariationUrl = nullableText(value.candidate.save_as_variation_url);
   const verdict = value.candidate.verdict;
   const qa = decodeImageQualityReport(value.candidate.qa);
   if (
     projectId === null || sourceAssetId === null || imageRunId === null
-    || candidateId === null || previewUrl === null || qa === null
+    || candidateId === null || previewUrl === null || saveAsVariationUrl === null || qa === null
     || (verdict !== 'pass' && verdict !== 'warn' && verdict !== 'fail')
     || verdict !== qa.verdict
   ) return null;
@@ -712,10 +719,43 @@ export const decodeVisualPreviewResult: Decoder<VisualPreviewResult> = (value) =
     candidate: {
       candidate_id: candidateId,
       preview_url: previewUrl,
+      save_as_variation_url: saveAsVariationUrl,
       verdict,
       qa,
     },
   };
+};
+
+export const decodeVisualPreviewListResult: Decoder<VisualPreviewListResult> = (value) => {
+  if (!isRecord(value) || !Array.isArray(value.candidates)) return null;
+  const candidates = value.candidates.map((item) => {
+    if (!isRecord(item)) return null;
+    const candidateId = nullableText(item.candidate_id);
+    const imageRunId = nullableText(item.image_run_id);
+    const sourceAssetId = nullableText(item.source_asset_id);
+    const previewUrl = nullableText(item.preview_url);
+    const saveAsVariationUrl = nullableText(item.save_as_variation_url);
+    const requestedChange = nullableText(item.requested_change);
+    const expiresAt = nullableText(item.expires_at);
+    const qa = decodeImageQualityReport(item.qa);
+    const scope = item.scope;
+    const verdict = item.verdict;
+    if (
+      candidateId === null || imageRunId === null || sourceAssetId === null
+      || previewUrl === null || saveAsVariationUrl === null || requestedChange === null || expiresAt === null
+      || Number.isNaN(Date.parse(expiresAt)) || qa === null
+      || (scope !== 'appearance' && scope !== 'marked_region')
+      || (verdict !== 'pass' && verdict !== 'warn') || qa.verdict !== verdict
+    ) return null;
+    return {
+      candidate_id: candidateId, image_run_id: imageRunId,
+      source_asset_id: sourceAssetId, preview_url: previewUrl,
+      save_as_variation_url: saveAsVariationUrl,
+      verdict, requested_change: requestedChange, scope, qa, expires_at: expiresAt,
+    };
+  });
+  return candidates.some((item) => item === null)
+    ? null : { candidates: candidates as VisualPreviewListResult['candidates'] };
 };
 
 export const decodeVisualPreviewApplyResult: Decoder<VisualPreviewApplyResult> = (value) => {
@@ -750,6 +790,60 @@ export const decodeVisualPreviewDiscardResult: Decoder<VisualPreviewDiscardResul
   const candidateId = nullableText(value.candidate_id);
   return projectId === null || candidateId === null ? null : {
     status: 'discarded', project_id: projectId, candidate_id: candidateId,
+  };
+};
+
+export const decodePreviewVariationResult: Decoder<PreviewVariationResult> = (value) => {
+  if (!isRecord(value) || value.status !== 'saved_as_variation') return null;
+  const familyId = nullableText(value.family_id);
+  const variationIndex = number(value.variation_index);
+  const designId = nullableText(value.design_id);
+  const designVersion = number(value.design_version);
+  const project = decodeProjectDetail(value.project);
+  if (
+    familyId === null || variationIndex === null || !Number.isInteger(variationIndex)
+    || variationIndex < 1 || project === null
+    || ((designId === null) !== (designVersion === null))
+    || (designVersion !== null && (!Number.isInteger(designVersion) || designVersion < 1))
+  ) return null;
+  return {
+    status: 'saved_as_variation', family_id: familyId, variation_index: variationIndex, project,
+    ...(designId === null ? {} : { design_id: designId, design_version: designVersion as number }),
+  };
+};
+
+export const decodeReviseStudioFactsResult: Decoder<ReviseStudioFactsResult> = (value) => {
+  if (!isRecord(value) || (value.status !== 'applied' && value.status !== 'no_change')) return null;
+  const projectRootId = nullableText(value.project_root_id);
+  const sourceAssetId = nullableText(value.source_asset_id);
+  const assetId = nullableText(value.asset_id);
+  const designId = nullableText(value.design_id);
+  const previousDesignVersion = number(value.previous_design_version);
+  const designVersion = number(value.design_version);
+  const specChange = Array.isArray(value.spec_change) && value.spec_change.length === 0
+    ? [] : decodeCatalogSpecChanges(value.spec_change);
+  const project = decodeProjectDetail(value.project_detail);
+  if (
+    projectRootId === null || sourceAssetId === null || assetId === null || designId === null
+    || previousDesignVersion === null || designVersion === null
+    || !Number.isInteger(previousDesignVersion) || previousDesignVersion < 1
+    || !Number.isInteger(designVersion) || designVersion < 1
+    || specChange === null || project === null || project.root_id !== projectRootId
+    || project.active_asset_id !== assetId || project.design_id !== designId
+    || project.active_design_version !== designVersion
+    || (value.status === 'applied' && (
+      assetId === sourceAssetId || designVersion !== previousDesignVersion + 1
+      || specChange.length === 0
+    ))
+    || (value.status === 'no_change' && (
+      assetId !== sourceAssetId || designVersion !== previousDesignVersion
+      || specChange.length !== 0
+    ))
+  ) return null;
+  return {
+    status: value.status, project_root_id: projectRootId, source_asset_id: sourceAssetId,
+    asset_id: assetId, design_id: designId, previous_design_version: previousDesignVersion,
+    design_version: designVersion, spec_change: specChange, project_detail: project,
   };
 };
 
@@ -1692,10 +1786,11 @@ const decodeCatalogPreviewCandidate: Decoder<CatalogPreviewCandidate> = (value) 
   const previewUrl = nullableText(value.preview_url);
   const acceptUrl = nullableText(value.accept_url);
   const discardUrl = nullableText(value.discard_url);
+  const saveAsVariationUrl = nullableText(value.save_as_variation_url);
   const expiresInSeconds = number(value.expires_in_seconds);
   if (
     runId === null || candidateId === null || previewUrl === null
-    || acceptUrl === null || discardUrl === null
+    || acceptUrl === null || discardUrl === null || saveAsVariationUrl === null
     || (value.verdict !== 'pass' && value.verdict !== 'warn')
     || expiresInSeconds === null || !Number.isInteger(expiresInSeconds)
     || expiresInSeconds < 1
@@ -1705,6 +1800,7 @@ const decodeCatalogPreviewCandidate: Decoder<CatalogPreviewCandidate> = (value) 
     endpointPath(previewUrl) !== `${root}/image`
     || endpointPath(acceptUrl) !== `${root}/accept`
     || endpointPath(discardUrl) !== root
+    || endpointPath(saveAsVariationUrl) !== `${root}/save-as-variation`
   ) return null;
   return {
     run_id: runId,
@@ -1712,6 +1808,7 @@ const decodeCatalogPreviewCandidate: Decoder<CatalogPreviewCandidate> = (value) 
     preview_url: previewUrl,
     accept_url: acceptUrl,
     discard_url: discardUrl,
+    save_as_variation_url: saveAsVariationUrl,
     verdict: value.verdict,
     expires_in_seconds: expiresInSeconds,
   };
@@ -1776,6 +1873,62 @@ export const decodeCatalogPreviewResult: Decoder<CatalogPreviewResult> = (value)
     project,
     candidate,
   };
+};
+
+interface CatalogPreviewListWireItem {
+  candidate_id: string;
+  image_run_id: string;
+  source_asset_id: string;
+  preview_url: string;
+  save_as_variation_url: string;
+  verdict: 'pass' | 'warn';
+  component_path: ComponentCatalogPath;
+  option_id: string;
+  requested_change: string;
+  next_spec: JsonObject;
+  spec_change: SpecChange[];
+  qa: ImageQualityReport;
+  routing: ImageRoutingSummary;
+  expires_at: string;
+}
+
+const decodeCatalogPreviewListWire: Decoder<{ candidates: CatalogPreviewListWireItem[] }> = (value) => {
+  if (!isRecord(value) || !Array.isArray(value.candidates)) return null;
+  const candidates = value.candidates.map((item): CatalogPreviewListWireItem | null => {
+    if (!isRecord(item)) return null;
+    const candidateId = nullableText(item.candidate_id);
+    const imageRunId = nullableText(item.image_run_id);
+    const sourceAssetId = nullableText(item.source_asset_id);
+    const previewUrl = nullableText(item.preview_url);
+    const saveAsVariationUrl = nullableText(item.save_as_variation_url);
+    const componentPath = knownComponentCatalogPath(item.component_path);
+    const optionId = nullableText(item.option_id);
+    const requestedChange = nullableText(item.requested_change);
+    const nextSpec = decodeJsonObject(item.next_spec);
+    const specChange = decodeCatalogSpecChanges(item.spec_change);
+    const qa = decodeImageQualityReport(item.qa);
+    const routing = decodeRouting(item.routing);
+    const expiresAt = nullableText(item.expires_at);
+    const verdict = item.verdict;
+    if (
+      candidateId === null || imageRunId === null || sourceAssetId === null
+      || previewUrl === null || saveAsVariationUrl === null || componentPath === null || optionId === null
+      || requestedChange === null || nextSpec === null || specChange === null
+      || qa === null || routing === null || routing.run_id !== imageRunId
+      || expiresAt === null || Number.isNaN(Date.parse(expiresAt))
+      || (verdict !== 'pass' && verdict !== 'warn') || qa.verdict !== verdict
+    ) return null;
+    return {
+      candidate_id: candidateId, image_run_id: imageRunId,
+      source_asset_id: sourceAssetId, preview_url: previewUrl,
+      save_as_variation_url: saveAsVariationUrl, verdict,
+      component_path: componentPath, option_id: optionId,
+      requested_change: requestedChange, next_spec: nextSpec,
+      spec_change: specChange, qa, routing, expires_at: expiresAt,
+    };
+  });
+  return candidates.some((item) => item === null)
+    ? null : { candidates: candidates as CatalogPreviewListWireItem[] };
 };
 
 export const decodeCatalogPreviewAcceptResult: Decoder<
@@ -2810,6 +2963,14 @@ export function classifyCatalogApplyFailure(error: ApiError): CatalogApplyFailur
 
 const encodeBody = (body: JsonObject): string => JSON.stringify(body);
 
+const STUDIO_FACT_PATHS = new Set<string>([
+  'metal.material', 'metal.color', 'metal.finish', 'metal.karat',
+  'stone.species', 'stone.cut', 'stone.color.trade', 'stone.color.gia', 'stone.carat',
+  'stone.dimensions_mm.length', 'stone.dimensions_mm.width', 'stone.dimensions_mm.depth',
+  'setting.style', 'setting.prong_count', 'band.profile', 'band.width_mm',
+  'band.thickness_mm', 'ring_size.system', 'ring_size.value',
+]);
+
 function resolveUrl(url: string, baseUrl: string): string {
   return /^https?:\/\//i.test(url) || url.startsWith('data:')
     ? url
@@ -2859,26 +3020,32 @@ function normalizedCatalogPreviewCandidate(
   const previewUrl = normalize(candidate.preview_url, `${root}/image`);
   const acceptUrl = normalize(candidate.accept_url, `${root}/accept`);
   const discardUrl = normalize(candidate.discard_url, root);
+  const saveAsVariationUrl = normalize(
+    candidate.save_as_variation_url, `${root}/save-as-variation`,
+  );
   return previewUrl === null || acceptUrl === null || discardUrl === null
+    || saveAsVariationUrl === null
     ? null
     : {
         ...candidate,
         preview_url: previewUrl,
         accept_url: acceptUrl,
         discard_url: discardUrl,
+        save_as_variation_url: saveAsVariationUrl,
       };
 }
 
-function normalizedVisualPreviewUrl(
+function normalizedVisualPreviewCapability(
   raw: string,
   runId: string,
   candidateId: string,
   baseUrl: string,
+  suffix: '/image' | '/save-as-variation',
 ): string | null {
   try {
     const base = new URL(baseUrl);
     const resolved = new URL(raw, `${baseUrl}/`);
-    const expectedPath = `/studio/image-runs/${encodeURIComponent(runId)}/visual-candidates/${encodeURIComponent(candidateId)}/image`;
+    const expectedPath = `/studio/image-runs/${encodeURIComponent(runId)}/visual-candidates/${encodeURIComponent(candidateId)}${suffix}`;
     if (
       (resolved.protocol !== 'http:' && resolved.protocol !== 'https:')
       || resolved.origin !== base.origin
@@ -3237,13 +3404,21 @@ export function createTrustedApiClient(options: TrustedApiClientOptions) {
         },
       );
       if (result.error !== null) return result;
-      const previewUrl = normalizedVisualPreviewUrl(
+      const previewUrl = normalizedVisualPreviewCapability(
         result.data.candidate.preview_url,
         result.data.image_run_id,
         result.data.candidate.candidate_id,
         baseUrl,
+        '/image',
       );
-      if (previewUrl === null) return {
+      const saveAsVariationUrl = normalizedVisualPreviewCapability(
+        result.data.candidate.save_as_variation_url,
+        result.data.image_run_id,
+        result.data.candidate.candidate_id,
+        baseUrl,
+        '/save-as-variation',
+      );
+      if (previewUrl === null || saveAsVariationUrl === null) return {
         data: null,
         error: {
           code: 'INVALID_RESPONSE',
@@ -3261,8 +3436,41 @@ export function createTrustedApiClient(options: TrustedApiClientOptions) {
           candidate: {
             ...result.data.candidate,
             preview_url: previewUrl,
+            save_as_variation_url: saveAsVariationUrl,
           },
         },
+      };
+    },
+
+    async listVisualPreviews(projectId: string): Promise<ApiResult<VisualPreviewListResult>> {
+      const result = await call(
+        `/studio/projects/${encodeURIComponent(projectId)}/visual-candidates`,
+        decodeVisualPreviewListResult,
+      );
+      if (result.error !== null) return result;
+      const candidates = result.data.candidates.map((candidate) => ({
+        ...candidate,
+        preview_url: normalizedVisualPreviewCapability(
+          candidate.preview_url, candidate.image_run_id, candidate.candidate_id, baseUrl, '/image',
+        ),
+        save_as_variation_url: normalizedVisualPreviewCapability(
+          candidate.save_as_variation_url, candidate.image_run_id, candidate.candidate_id,
+          baseUrl, '/save-as-variation',
+        ),
+      }));
+      if (candidates.some((candidate) => (
+        candidate.preview_url === null || candidate.save_as_variation_url === null
+      ))) return {
+        data: null,
+        error: {
+          code: 'INVALID_RESPONSE', message: 'The pending preview returned an invalid image capability.',
+          category: 'decode', status: result.status, retryable: false,
+        },
+        status: result.status,
+      };
+      return {
+        ...result,
+        data: { candidates: candidates as VisualPreviewListResult['candidates'] },
       };
     },
 
@@ -3304,6 +3512,43 @@ export function createTrustedApiClient(options: TrustedApiClientOptions) {
           }),
         },
       );
+    },
+
+    async saveVisualPreviewAsVariation(
+      runId: string,
+      candidateId: string,
+      capabilityUrl: string,
+      request: PreviewVariationRequest,
+    ): Promise<ApiResult<PreviewVariationResult>> {
+      const normalized = normalizedVisualPreviewCapability(
+        capabilityUrl, runId, candidateId, baseUrl, '/save-as-variation',
+      );
+      if (normalized === null) return {
+        data: null,
+        error: {
+          code: 'INVALID_CANDIDATE_URL',
+          message: 'The visual preview variation capability does not belong to this API.',
+          category: 'validation', status: 0, retryable: false,
+        },
+        status: 0,
+      };
+      const label = request.label.trim();
+      if (label.length === 0) return {
+        data: null,
+        error: {
+          code: 'INVALID_VARIATION_LABEL', message: 'Name the variation before saving it.',
+          category: 'validation', status: 0, retryable: false,
+        },
+        status: 0,
+      };
+      const result = await jsonCall(
+        `/studio/image-runs/${encodeURIComponent(runId)}/visual-candidates/${encodeURIComponent(candidateId)}/save-as-variation`,
+        'POST', { created_by: request.created_by, label }, decodePreviewVariationResult,
+      );
+      return result.error === null ? {
+        ...result,
+        data: { ...result.data, project: projectWithUrls(result.data.project, baseUrl) },
+      } : result;
     },
 
     async listPreSpecPresentations(owner: string, projectId: string) {
@@ -3790,6 +4035,52 @@ export function createTrustedApiClient(options: TrustedApiClientOptions) {
       };
     },
 
+    async listCatalogPreviews(activeAssetId: string): Promise<ApiResult<CatalogPreviewListResult>> {
+      const result = await call(
+        `/assets/${encodeURIComponent(activeAssetId)}/catalog/previews`,
+        decodeCatalogPreviewListWire,
+      );
+      if (result.error !== null) return result;
+      const candidates = result.data.candidates.map((item) => {
+        const root = catalogCandidatePath(item.image_run_id, item.candidate_id);
+        const expiresInSeconds = Math.floor((Date.parse(item.expires_at) - Date.now()) / 1000);
+        const candidate = normalizedCatalogPreviewCandidate({
+          run_id: item.image_run_id,
+          candidate_id: item.candidate_id,
+          preview_url: item.preview_url,
+          accept_url: `${root}/accept`,
+          discard_url: root,
+          save_as_variation_url: item.save_as_variation_url,
+          verdict: item.verdict,
+          expires_in_seconds: Math.max(1, expiresInSeconds),
+        }, baseUrl);
+        return candidate === null || expiresInSeconds < 1 ? null : {
+          candidate,
+          source_asset_id: item.source_asset_id,
+          component_path: item.component_path,
+          option_id: item.option_id,
+          requested_change: item.requested_change,
+          next_spec: item.next_spec,
+          spec_change: item.spec_change,
+          qa: item.qa,
+          routing: item.routing,
+          expires_at: item.expires_at,
+        };
+      });
+      if (candidates.some((candidate) => candidate === null)) return {
+        data: null,
+        error: {
+          code: 'INVALID_RESPONSE', message: 'The pending catalog preview failed capability validation.',
+          category: 'decode', status: result.status, retryable: false,
+        },
+        status: result.status,
+      };
+      return {
+        ...result,
+        data: { candidates: candidates as CatalogPreviewListResult['candidates'] },
+      };
+    },
+
     async acceptCatalogPreview(
       candidate: CatalogPreviewCandidate,
       request: CatalogPreviewAcceptRequest,
@@ -3899,8 +4190,86 @@ export function createTrustedApiClient(options: TrustedApiClientOptions) {
       }
     },
 
+    async saveCatalogPreviewAsVariation(
+      candidate: CatalogPreviewCandidate,
+      request: PreviewVariationRequest,
+    ): Promise<ApiResult<PreviewVariationResult>> {
+      const normalized = normalizedCatalogPreviewCandidate(candidate, baseUrl);
+      if (normalized === null) return {
+        data: null,
+        error: {
+          code: 'INVALID_CANDIDATE_URL',
+          message: 'The catalog preview variation capability does not belong to this API.',
+          category: 'validation', status: 0, retryable: false,
+        },
+        status: 0,
+      };
+      const label = request.label.trim();
+      if (label.length === 0) return {
+        data: null,
+        error: {
+          code: 'INVALID_VARIATION_LABEL', message: 'Name the variation before saving it.',
+          category: 'validation', status: 0, retryable: false,
+        },
+        status: 0,
+      };
+      const result = await jsonCall(
+        catalogCandidatePath(candidate.run_id, candidate.candidate_id, '/save-as-variation'),
+        'POST', { created_by: request.created_by, label }, decodePreviewVariationResult,
+      );
+      return result.error === null ? {
+        ...result,
+        data: { ...result.data, project: projectWithUrls(result.data.project, baseUrl) },
+      } : result;
+    },
+
     getProject(projectId: string) {
       return projectCall(`/projects/${encodeURIComponent(projectId)}`);
+    },
+
+    async reviseStudioFacts(
+      projectRootId: string,
+      request: ReviseStudioFactsRequest,
+    ): Promise<ApiResult<ReviseStudioFactsResult>> {
+      const paths = request.changes.map((change) => change.path);
+      const valid = projectRootId.trim().length > 0
+        && request.expected_active_asset_id.trim().length > 0
+        && Number.isInteger(request.expected_design_version)
+        && request.expected_design_version >= 1
+        && request.created_by.trim().length > 0
+        && request.changes.length >= 1 && request.changes.length <= 12
+        && new Set(paths).size === paths.length
+        && request.changes.every((change) => (
+          STUDIO_FACT_PATHS.has(change.path)
+          && change.value !== null
+          && (typeof change.value !== 'string' || change.value.trim().length > 0)
+          && (typeof change.value !== 'number' || Number.isFinite(change.value))
+        ));
+      if (!valid) return {
+        data: null,
+        error: {
+          code: 'INVALID_FACT_REVISION',
+          message: 'Review the changed design facts before saving.',
+          category: 'validation', status: 0, retryable: false,
+        },
+        status: 0,
+      };
+      const result = await jsonCall(
+        `/studio/projects/${encodeURIComponent(projectRootId)}/facts/revise`,
+        'POST', {
+          expected_active_asset_id: request.expected_active_asset_id,
+          expected_design_version: request.expected_design_version,
+          created_by: request.created_by,
+          changes: request.changes as unknown as JsonValue[],
+        }, decodeReviseStudioFactsResult,
+      );
+      return result.error === null ? {
+        ...result,
+        data: {
+          ...result.data,
+          project_detail: projectWithUrls(result.data.project_detail, baseUrl),
+        },
+      } : result;
     },
 
     async saveAsVariation(

@@ -9,6 +9,9 @@ import type { ReferenceRole } from './contracts';
 import type { AssetSummary, ProjectDetail } from '../trusted/types';
 import { radius, theme } from '../theme';
 import { designerErrorMessage } from './designerErrorMessage';
+import { getStudioAction } from './actions';
+
+const CREATE_CREDITS_PER_OUTPUT = getStudioAction('create').creditEstimate ?? 0;
 
 export type CreateReferenceRole = Extract<ReferenceRole,
   'master_geometry' | 'material_style' | 'construction_detail' | 'brand_direction'>;
@@ -154,9 +157,12 @@ export function StudioCreateWorkspace({
     return (
       <ScrollView style={styles.root} contentContainerStyle={styles.content}>
         <Text style={styles.eyebrow}>CHOOSE A DIRECTION</Text>
-        <Text style={styles.title}>Which outcome should stay in your Studio?</Text>
+        <Text style={styles.title}>Which direction should become active?</Text>
         <Text style={styles.body}>
           These are visual directions—not measurements or production instructions.
+        </Text>
+        <Text style={styles.retainedCopy}>
+          Every direction in this set is already retained in Collections. Starting another sentence keeps them and creates a separate set.
         </Text>
         <View style={styles.candidateGrid}>
           {candidates.map((candidate, index) => {
@@ -189,7 +195,7 @@ export function StudioCreateWorkspace({
         {error !== null && <Text style={styles.error}>{error}</Text>}
         <View style={styles.footerActions}>
           <Pressable style={styles.secondaryButton} onPress={() => setProject(null)}>
-            <Text style={styles.secondaryButtonText}>Try another sentence</Text>
+            <Text style={styles.secondaryButtonText}>Keep these directions &amp; start another</Text>
           </Pressable>
           <Pressable
             accessibilityRole="button"
@@ -302,6 +308,9 @@ export function StudioCreateWorkspace({
       )}
 
       {error !== null && <Text style={styles.error}>{error}</Text>}
+      <Text style={styles.creditEstimate}>
+        {candidateCount} requested output{candidateCount === 1 ? '' : 's'} × {CREATE_CREDITS_PER_OUTPUT} credits = estimated {candidateCount * CREATE_CREDITS_PER_OUTPUT} credits
+      </Text>
       <Pressable
         accessibilityRole="button"
         accessibilityState={{ disabled: !canCreate }}
@@ -320,6 +329,7 @@ const styles = StyleSheet.create({
   eyebrow: { color: '#6f52d9', fontSize: 10, fontWeight: '800', letterSpacing: 1.4 },
   title: { color: theme.ink, fontFamily: theme.serif, fontSize: 30, lineHeight: 37, marginTop: 8 },
   body: { color: theme.faint, fontSize: 14, lineHeight: 21, marginTop: 8, maxWidth: 560 },
+  retainedCopy: { color: theme.faint, fontSize: 12, lineHeight: 18, marginTop: 10, maxWidth: 560 },
   prompt: { minHeight: 112, borderWidth: 1, borderColor: theme.line, borderRadius: radius.lg, backgroundColor: theme.card, color: theme.ink, fontSize: 16, lineHeight: 23, padding: 16, marginTop: 22, textAlignVertical: 'top' },
   sectionTitle: { color: theme.ink, fontSize: 14, fontWeight: '700', marginTop: 22 },
   sectionHelp: { color: theme.faint, fontSize: 11, lineHeight: 16, marginTop: 4 },
@@ -339,6 +349,7 @@ const styles = StyleSheet.create({
   limitTitle: { color: '#745513', fontSize: 12, fontWeight: '700' },
   limitBody: { color: '#745513', fontSize: 10, lineHeight: 16, marginTop: 4 },
   error: { color: theme.danger, fontSize: 12, lineHeight: 17, marginTop: 14 },
+  creditEstimate: { color: theme.faint, fontSize: 12, lineHeight: 18, marginTop: 18 },
   primaryButton: { alignItems: 'center', borderRadius: radius.pill, backgroundColor: '#6f52d9', paddingHorizontal: 18, paddingVertical: 14, marginTop: 20 },
   primaryButtonText: { color: '#ffffff', fontSize: 13, fontWeight: '800' },
   secondaryButton: { alignItems: 'center', borderRadius: radius.pill, borderWidth: 1, borderColor: theme.line, paddingHorizontal: 18, paddingVertical: 13, marginTop: 20 },

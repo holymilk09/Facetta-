@@ -59,6 +59,7 @@ describe('StudioViewsWorkspace', () => {
       </AuthenticatedImageProvider>,
     );
 
+    expect(screen.getByText('1 requested output × 15 credits = estimated 15 credits')).toBeTruthy();
     await act(async () => { fireEvent.press(screen.getByText('Front')); });
     await act(async () => { fireEvent.press(screen.getByText('Preview view')); });
     expect(await screen.findByText('Your design is still unchanged.')).toBeTruthy();

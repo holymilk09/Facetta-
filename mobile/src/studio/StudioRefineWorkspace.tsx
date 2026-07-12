@@ -1,15 +1,15 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View,
 } from 'react-native';
 import { AuthenticatedImage as Image } from '../AuthenticatedImage';
 
-import { Button, Field, Notice } from '../components';
+import { Button, ChipRow, Field, Notice } from '../components';
 import { radius, theme } from '../theme';
 import type { TrustedApiClient } from '../trusted/client';
 import type {
   ComponentCatalog, ComponentCatalogOption, ComponentCatalogPath,
-  ConfirmedMarkupAnnotation, ProjectDetail,
+  ConfirmedMarkupAnnotation, JsonObject, JsonValue, ProjectDetail, StudioFactPath,
 } from '../trusted/types';
 import {
   ANNOTATION_SNAPSHOT_SCHEMA_VERSION,
@@ -22,6 +22,9 @@ import {
   designerCheckDetail, designerCheckLabel, designerReviewState,
 } from './designerReviewLanguage';
 import { designerErrorMessage } from './designerErrorMessage';
+import { getStudioAction } from './actions';
+
+const REFINE_CREDITS_PER_OUTPUT = getStudioAction('refine').creditEstimate ?? 0;
 
 const PATHS: readonly { id: ComponentCatalogPath; label: string; help: string }[] = [
   { id: 'metal.color', label: 'Metal color', help: 'Change only the visible metal color.' },
@@ -32,18 +35,22 @@ const PATHS: readonly { id: ComponentCatalogPath; label: string; help: string }[
   { id: 'chain.style', label: 'Chain', help: 'Preview a supported chain direction.' },
 ] as const;
 
-export type StudioRefineApi = Pick<TrustedApiClient, 'getComponentCatalog' | 'readMarkup'>;
+export type StudioRefineApi = Pick<TrustedApiClient, 'getComponentCatalog' | 'readMarkup'>
+  & Partial<Pick<TrustedApiClient, 'getProject' | 'reviseStudioFacts'>>;
 
 export interface StudioRefineWorkspaceProps {
   api: StudioRefineApi;
   gateway: Pick<StudioGateway,
     | 'previewCatalogRefine' | 'applyCatalogRefine' | 'discardCatalogRefine'
     | 'previewMarkupRefine' | 'applyMarkupRefine' | 'discardMarkupRefine'
-    | 'previewVisualRefine' | 'applyVisualRefine' | 'discardVisualRefine'>;
+    | 'previewVisualRefine' | 'applyVisualRefine' | 'discardVisualRefine'>
+    & Partial<Pick<StudioGateway,
+      'resumeRefine' | 'saveCatalogPreviewAsVariation' | 'saveVisualPreviewAsVariation'>>;
   lineage: ExactStudioLineage | StudioVisualLineage | null;
   createdBy: string;
   sourceImageUrl?: string | null;
   onApplied: (project: ProjectDetail) => void;
+  onVariationCreated?: (project: ProjectDetail) => void;
   imageRequestHeaders?: Readonly<Record<string, string>>;
 }
 
@@ -60,12 +67,62 @@ function hasExactSpecification(
   return lineage !== null && 'sourceDesignVersion' in lineage;
 }
 
+type FactKind = 'text' | 'number' | 'integer' | 'choice';
+interface FactDefinition {
+  path: StudioFactPath;
+  label: string;
+  kind: FactKind;
+  unit?: string;
+  choices?: readonly string[];
+}
+
+const FACTS: readonly FactDefinition[] = [
+  { path: 'metal.material', label: 'Metal material', kind: 'choice', choices: ['gold', 'platinum', 'silver'] },
+  { path: 'metal.color', label: 'Metal color', kind: 'choice', choices: ['yellow', 'rose', 'white'] },
+  { path: 'metal.finish', label: 'Metal finish', kind: 'choice', choices: ['polished', 'satin', 'brushed', 'matte'] },
+  { path: 'metal.karat', label: 'Gold karat', kind: 'integer' },
+  { path: 'stone.species', label: 'Stone species', kind: 'text' },
+  { path: 'stone.cut', label: 'Stone cut', kind: 'text' },
+  { path: 'stone.color.trade', label: 'Stone trade color', kind: 'text' },
+  { path: 'stone.color.gia', label: 'Stone graded color', kind: 'text' },
+  { path: 'stone.carat', label: 'Stone weight', kind: 'number', unit: 'ct' },
+  { path: 'stone.dimensions_mm.length', label: 'Stone length', kind: 'number', unit: 'mm' },
+  { path: 'stone.dimensions_mm.width', label: 'Stone width', kind: 'number', unit: 'mm' },
+  { path: 'stone.dimensions_mm.depth', label: 'Stone depth', kind: 'number', unit: 'mm' },
+  { path: 'setting.style', label: 'Setting style', kind: 'choice', choices: ['prong', 'bezel', 'halo', 'pave', 'channel'] },
+  { path: 'setting.prong_count', label: 'Prong count', kind: 'integer' },
+  { path: 'band.profile', label: 'Band profile', kind: 'choice', choices: ['half_round', 'flat', 'knife_edge', 'comfort_fit'] },
+  { path: 'band.width_mm', label: 'Band width', kind: 'number', unit: 'mm' },
+  { path: 'band.thickness_mm', label: 'Band thickness', kind: 'number', unit: 'mm' },
+  { path: 'ring_size.system', label: 'Ring size system', kind: 'choice', choices: ['US', 'UK', 'EU', 'JP', 'HK'] },
+  { path: 'ring_size.value', label: 'Ring size', kind: 'text' },
+] as const;
+
+function factValue(spec: JsonObject, path: StudioFactPath): JsonValue | undefined {
+  let current: JsonValue = spec;
+  for (const key of path.split('.')) {
+    if (current === null || Array.isArray(current) || typeof current !== 'object'
+        || !(key in current)) return undefined;
+    current = current[key] as JsonValue;
+  }
+  return current;
+}
+
+function factText(value: JsonValue): string {
+  return typeof value === 'string' || typeof value === 'number' ? String(value) : '';
+}
+
+function friendlyFactOption(value: string): string {
+  return value.replaceAll('_', ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
 export function StudioRefineWorkspace({
-  api, gateway, lineage, createdBy, sourceImageUrl = null, onApplied, imageRequestHeaders,
+  api, gateway, lineage, createdBy, sourceImageUrl = null, onApplied, onVariationCreated,
+  imageRequestHeaders,
 }: StudioRefineWorkspaceProps) {
   const exactLineage = hasExactSpecification(lineage) ? lineage : null;
   const exactSpecification = exactLineage !== null;
-  const [mode, setMode] = useState<'component' | 'instruction' | 'annotation'>(
+  const [mode, setMode] = useState<'component' | 'instruction' | 'annotation' | 'facts'>(
     exactSpecification ? 'component' : 'instruction',
   );
   const [path, setPath] = useState<ComponentCatalogPath>('metal.color');
@@ -84,8 +141,15 @@ export function StudioRefineWorkspace({
     annotations: [],
   });
   const [loading, setLoading] = useState(false);
+  const [resuming, setResuming] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [namingVariation, setNamingVariation] = useState(false);
+  const [variationName, setVariationName] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [factProject, setFactProject] = useState<ProjectDetail | null>(null);
+  const [factDraft, setFactDraft] = useState<Partial<Record<StudioFactPath, string>>>({});
+  const [factsLoading, setFactsLoading] = useState(false);
+  const decisionInFlight = useRef(false);
 
   useEffect(() => {
     let current = true;
@@ -118,14 +182,147 @@ export function StudioRefineWorkspace({
   }, [exactSpecification, mode]);
 
   useEffect(() => {
+    let current = true;
+    setFactProject(null);
+    setFactDraft({});
+    if (exactLineage === null || typeof api.getProject !== 'function') {
+      setFactsLoading(false);
+      return () => { current = false; };
+    }
+    setFactsLoading(true);
+    void api.getProject(exactLineage.projectId).then((result) => {
+      if (!current) return;
+      setFactsLoading(false);
+      if (result.error !== null) {
+        setError(designerErrorMessage(result.error, 'refine'));
+        return;
+      }
+      if (
+        result.data.active_asset_id !== exactLineage.sourceAssetId
+        || result.data.active_design_version !== exactLineage.sourceDesignVersion
+        || result.data.spec === null || result.data.spec === undefined
+      ) {
+        setError('This design changed before its facts could be loaded. Reopen the latest revision.');
+        return;
+      }
+      setFactProject(result.data);
+      const draft: Partial<Record<StudioFactPath, string>> = {};
+      FACTS.forEach((definition) => {
+        const value = factValue(result.data.spec as JsonObject, definition.path);
+        if (value !== undefined && value !== null) draft[definition.path] = factText(value);
+      });
+      setFactDraft(draft);
+    });
+    return () => { current = false; };
+  }, [api, exactLineage?.projectId, exactLineage?.sourceAssetId,
+    exactLineage?.sourceDesignVersion]);
+
+  useEffect(() => {
+    let current = true;
+    setPreview(null);
+    setUnderstoodAs(null);
+    if (lineage === null || typeof gateway.resumeRefine !== 'function') {
+      setResuming(false);
+      return () => { current = false; };
+    }
+    setResuming(true);
+    void gateway.resumeRefine(lineage, createdBy).then((result) => {
+      if (!current) return;
+      setResuming(false);
+      if (result.error !== null) {
+        setError(designerErrorMessage(result.error, 'refine'));
+        return;
+      }
+      if (result.data !== null) {
+        setPreview({ candidate: result.data.candidate, kind: result.data.kind });
+        setUnderstoodAs(result.data.understoodAs);
+      }
+    });
+    return () => { current = false; };
+  }, [createdBy, gateway, lineage?.projectId, lineage?.sourceAssetId,
+    exactLineage?.sourceDesignVersion]);
+
+  useEffect(() => {
     setSnapshot((current) => ({ ...current, source_uri: sourceImageUrl ?? '' }));
   }, [sourceImageUrl]);
 
   const selected = useMemo(() => catalog?.options.find((option) => option.id === optionId) ?? null,
     [catalog, optionId]);
+  const editableFacts = useMemo(() => {
+    const spec = factProject?.spec;
+    if (spec === null || spec === undefined) return [];
+    return FACTS.filter((definition) => factValue(spec, definition.path) !== undefined
+      && factValue(spec, definition.path) !== null);
+  }, [factProject]);
+
+  const saveFacts = async (): Promise<void> => {
+    if (
+      exactLineage === null || factProject?.spec === null || factProject?.spec === undefined
+      || typeof api.reviseStudioFacts !== 'function' || busy || decisionInFlight.current
+    ) return;
+    const changes: { path: StudioFactPath; value: JsonValue }[] = [];
+    for (const definition of editableFacts) {
+      const original = factValue(factProject.spec, definition.path);
+      const raw = factDraft[definition.path]?.trim() ?? '';
+      if (raw.length === 0) {
+        setError(`${definition.label} cannot be empty.`);
+        return;
+      }
+      let value: JsonValue = raw;
+      if (definition.kind === 'number' || definition.kind === 'integer') {
+        const parsed = Number(raw);
+        if (!Number.isFinite(parsed) || parsed <= 0
+            || (definition.kind === 'integer' && !Number.isInteger(parsed))) {
+          setError(`${definition.label} must be a valid positive ${definition.kind === 'integer' ? 'whole number' : 'number'}.`);
+          return;
+        }
+        value = parsed;
+      } else if (definition.path === 'ring_size.value') {
+        const system = factDraft['ring_size.system'] ?? factText(
+          factValue(factProject.spec, 'ring_size.system') ?? '',
+        );
+        if (system !== 'UK') {
+          const parsed = Number(raw);
+          if (!Number.isFinite(parsed) || parsed <= 0) {
+            setError('Ring size must be a positive number for the selected sizing system.');
+            return;
+          }
+          value = parsed;
+        }
+      }
+      if (JSON.stringify(value) !== JSON.stringify(original)) {
+        changes.push({ path: definition.path, value });
+      }
+    }
+    if (changes.length === 0) {
+      setError('Nothing changed. Edit at least one design fact before saving.');
+      return;
+    }
+    if (changes.length > 12) {
+      setError('Save up to 12 fact changes at a time.');
+      return;
+    }
+    decisionInFlight.current = true;
+    setBusy(true);
+    setError(null);
+    const result = await api.reviseStudioFacts(exactLineage.projectId, {
+      expected_active_asset_id: exactLineage.sourceAssetId,
+      expected_design_version: exactLineage.sourceDesignVersion,
+      created_by: createdBy,
+      changes,
+    });
+    decisionInFlight.current = false;
+    setBusy(false);
+    if (result.error !== null) {
+      setError(designerErrorMessage(result.error, 'refine'));
+      return;
+    }
+    onApplied(result.data.project_detail);
+  };
 
   const makePreview = async (): Promise<void> => {
     if (lineage === null || busy) return;
+    if (mode === 'facts') { await saveFacts(); return; }
     setBusy(true);
     setError(null);
     setUnderstoodAs(null);
@@ -214,7 +411,8 @@ export function StudioRefineWorkspace({
   };
 
   const apply = async (): Promise<void> => {
-    if (preview === null || busy || preview.candidate.verdict === 'reject') return;
+    if (preview === null || busy || decisionInFlight.current || preview.candidate.verdict === 'reject') return;
+    decisionInFlight.current = true;
     setBusy(true);
     setError(null);
     const result = preview.kind === 'catalog'
@@ -223,6 +421,7 @@ export function StudioRefineWorkspace({
         ? await gateway.applyMarkupRefine({ candidateId: preview.candidate.id, createdBy })
         : await gateway.applyVisualRefine({ candidateId: preview.candidate.id, createdBy });
     setBusy(false);
+    decisionInFlight.current = false;
     if (result.error !== null) {
       setError(designerErrorMessage(result.error, 'refine'));
       return;
@@ -236,7 +435,8 @@ export function StudioRefineWorkspace({
   };
 
   const discard = async (): Promise<void> => {
-    if (preview === null || busy) return;
+    if (preview === null || busy || decisionInFlight.current) return;
+    decisionInFlight.current = true;
     setBusy(true);
     setError(null);
     const result = preview.kind === 'catalog'
@@ -245,11 +445,50 @@ export function StudioRefineWorkspace({
         ? await gateway.discardMarkupRefine({ candidateId: preview.candidate.id, createdBy })
         : await gateway.discardVisualRefine({ candidateId: preview.candidate.id, createdBy });
     setBusy(false);
+    decisionInFlight.current = false;
     if (result.error !== null) {
       setError(designerErrorMessage(result.error, 'refine'));
       return;
     }
     setPreview(null);
+    setNamingVariation(false);
+    setVariationName('');
+  };
+
+  const saveAsVariation = async (): Promise<void> => {
+    if (preview === null || busy || decisionInFlight.current || preview.kind === 'markup') return;
+    const label = variationName.trim();
+    if (label.length === 0) {
+      setError('Give this variation a short name before saving it.');
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    const saveCatalog = gateway.saveCatalogPreviewAsVariation;
+    const saveVisual = gateway.saveVisualPreviewAsVariation;
+    if ((preview.kind === 'catalog' && saveCatalog === undefined)
+        || (preview.kind === 'visual' && saveVisual === undefined)) {
+      setError('Saving this preview as a variation is temporarily unavailable.');
+      return;
+    }
+    decisionInFlight.current = true;
+    const result = preview.kind === 'catalog'
+      ? await saveCatalog!({
+          candidateId: preview.candidate.id, createdBy, label,
+        })
+      : await saveVisual!({
+          candidateId: preview.candidate.id, createdBy, label,
+        });
+    setBusy(false);
+    decisionInFlight.current = false;
+    if (result.error !== null) {
+      setError(designerErrorMessage(result.error, 'refine'));
+      return;
+    }
+    setPreview(null);
+    setNamingVariation(false);
+    setVariationName('');
+    onVariationCreated?.(result.data.project);
   };
 
   if (lineage === null) {
@@ -263,13 +502,16 @@ export function StudioRefineWorkspace({
 
   if (preview !== null) {
     const rejected = preview.candidate.verdict === 'reject';
+    const variationSupported = preview.kind === 'catalog'
+      ? gateway.saveCatalogPreviewAsVariation !== undefined
+      : preview.kind === 'visual' && gateway.saveVisualPreviewAsVariation !== undefined;
     return (
       <ScrollView contentContainerStyle={styles.workspace}>
         <Text style={styles.eyebrow}>REVIEW PREVIEW</Text>
         <Text style={styles.title}>Nothing has changed yet.</Text>
         <Text style={styles.body}>
           Compare this temporary candidate with the selected source revision. Apply will append a new revision;
-          discard will leave history untouched.
+          save as variation will start a sibling direction; discard will leave history untouched.
         </Text>
         {understoodAs !== null && <Notice kind="info" text={understoodAs} />}
         <View style={styles.compareRow}>
@@ -299,8 +541,42 @@ export function StudioRefineWorkspace({
           ))}
         </View>
         {error !== null && <Notice kind="error" text={error} />}
+        {namingVariation && variationSupported && (
+          <View style={styles.variationCard}>
+            <Field
+              label="Variation name"
+              value={variationName}
+              onChange={setVariationName}
+              placeholder="e.g. Rose gold halo"
+            />
+            <Text style={styles.checkDetail}>
+              This saves the preview into a new sibling project. The source revision stays unchanged.
+            </Text>
+            <View style={styles.actions}>
+              <Button
+                title="Cancel"
+                kind="ghost"
+                disabled={busy}
+                onPress={() => { setNamingVariation(false); setVariationName(''); setError(null); }}
+              />
+              <Button
+                title={busy ? 'Saving…' : 'Save named variation'}
+                disabled={busy || variationName.trim().length === 0 || rejected}
+                onPress={() => { void saveAsVariation(); }}
+              />
+            </View>
+          </View>
+        )}
         <View style={styles.actions}>
           <Button title={busy ? 'Working…' : 'Discard'} kind="ghost" disabled={busy} onPress={() => { void discard(); }} />
+          {variationSupported && !namingVariation && (
+            <Button
+              title="Save as Variation"
+              kind="ghost"
+              disabled={busy || rejected}
+              onPress={() => { setNamingVariation(true); setError(null); }}
+            />
+          )}
           <Button title={busy ? 'Working…' : 'Apply as new revision'} disabled={busy || rejected} onPress={() => { void apply(); }} />
         </View>
       </ScrollView>
@@ -313,11 +589,16 @@ export function StudioRefineWorkspace({
       <Text style={styles.title}>Change one thing. Keep the rest.</Text>
       <Text style={styles.body}>Choose how to target one change. Every route creates a temporary candidate before anything enters design history.</Text>
 
+      {resuming && <Notice kind="info" text="Checking for a pending preview from this exact revision…" />}
+
       <View style={styles.modeRow}>
         {([
           ['component', 'Component', 'Choose a controlled material or construction option.'],
           ['instruction', 'Describe', 'Describe an appearance-only change in plain language.'],
           ['annotation', 'Mark up', 'Draw directly on the exact active image.'],
+          ...(exactSpecification && typeof api.reviseStudioFacts === 'function'
+            ? [['facts', 'Facts', 'Correct confirmed design facts without changing image pixels.'] as const]
+            : []),
         ] as const).map(([id, label, detail]) => {
           const unavailable = id === 'component' && !exactSpecification;
           return (
@@ -379,11 +660,60 @@ export function StudioRefineWorkspace({
         <AnnotationCanvas sourceUri={sourceImageUrl} value={snapshot} onChange={setSnapshot} drawingEnabled />
         <Text style={styles.pathHelp}>Mark one region and add text or an arrow describing one change. Facetta will show its interpretation before Apply.</Text>
       </>)}
+      {mode === 'facts' && <>
+        <Notice kind="info" text="Fact corrections cost 0 credits. Image pixels stay unchanged while Facetta appends a new immutable specification revision." />
+        {factsLoading ? <ActivityIndicator color={theme.accent} /> : editableFacts.length === 0 ? (
+          <Notice kind="error" text="No designer-editable facts are available on this exact revision." />
+        ) : (
+          <View style={styles.factGrid}>
+            {editableFacts.map((definition) => {
+              const value = factDraft[definition.path] ?? '';
+              if (definition.kind === 'choice') {
+                const options = definition.choices?.includes(value)
+                  ? definition.choices
+                  : [value, ...(definition.choices ?? [])].filter(Boolean);
+                return (
+                  <ChipRow
+                    key={definition.path}
+                    label={definition.label}
+                    options={options}
+                    value={value}
+                    render={friendlyFactOption}
+                    onSelect={(next) => {
+                      setError(null);
+                      setFactDraft((current) => ({ ...current, [definition.path]: next }));
+                    }}
+                  />
+                );
+              }
+              return (
+                <View key={definition.path} style={styles.factField}>
+                  <Field
+                    label={`${definition.label}${definition.unit ? ` (${definition.unit})` : ''}`}
+                    value={value}
+                    numeric={definition.kind === 'number' || definition.kind === 'integer'}
+                    onChange={(next) => {
+                      setError(null);
+                      setFactDraft((current) => ({ ...current, [definition.path]: next }));
+                    }}
+                  />
+                </View>
+              );
+            })}
+          </View>
+        )}
+      </>}
       {error !== null && <Notice kind="error" text={error} />}
-      <Button title={busy ? 'Creating preview…' : 'Preview change'} disabled={busy
-        || (mode === 'component' && selected === null)
-        || (mode === 'instruction' && !instruction.trim())
-        || (mode === 'annotation' && (sourceImageUrl === null || snapshot.annotations.length === 0))}
+      <Text style={styles.creditEstimate}>{mode === 'facts'
+        ? '0 credits · specification revision only'
+        : `1 requested output × ${REFINE_CREDITS_PER_OUTPUT} credits = estimated ${REFINE_CREDITS_PER_OUTPUT} credits`}</Text>
+      <Button title={mode === 'facts'
+        ? (busy ? 'Saving facts…' : 'Save fact revision')
+        : (busy ? 'Creating preview…' : 'Preview change')} disabled={busy
+          || (mode === 'component' && selected === null)
+          || (mode === 'instruction' && !instruction.trim())
+          || (mode === 'annotation' && (sourceImageUrl === null || snapshot.annotations.length === 0))
+          || (mode === 'facts' && (factsLoading || editableFacts.length === 0))}
         onPress={() => { void makePreview(); }} />
     </ScrollView>
   );
@@ -408,11 +738,13 @@ const styles = StyleSheet.create({
   optionCard: { borderWidth: 1, borderColor: theme.line, borderRadius: radius.md, padding: 13, backgroundColor: theme.card },
   optionTitle: { color: theme.ink, fontWeight: '700', fontSize: 15 },
   optionDetail: { color: theme.faint, fontSize: 12, lineHeight: 18, marginTop: 4 },
+  creditEstimate: { color: theme.faint, fontSize: 12, lineHeight: 18, marginTop: 6 },
   compareRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
   comparePane: { flexGrow: 1, flexBasis: 280, gap: 6 },
   compareLabel: { color: theme.faint, fontSize: 10, fontWeight: '800', letterSpacing: 1.2 },
   preview: { width: '100%', aspectRatio: 1.25, borderRadius: radius.lg, backgroundColor: theme.line },
   reviewCard: { borderWidth: 1, borderColor: theme.line, borderRadius: radius.md, padding: 14, backgroundColor: theme.card, gap: 8 },
+  variationCard: { borderWidth: 1, borderColor: theme.accent, borderRadius: radius.md, padding: 14, backgroundColor: theme.card, gap: 8 },
   reviewTitle: { color: theme.ink, fontWeight: '800', fontSize: 16 },
   checkRow: { flexDirection: 'row', gap: 10, alignItems: 'flex-start' },
   checkVerdict: { color: theme.ok, width: 145, fontSize: 10, lineHeight: 14, fontWeight: '800', textTransform: 'uppercase' },
@@ -421,4 +753,6 @@ const styles = StyleSheet.create({
   checkLabel: { color: theme.ink, fontWeight: '600' },
   checkDetail: { color: theme.faint, fontSize: 12, marginTop: 2 },
   actions: { flexDirection: 'row', flexWrap: 'wrap' },
+  factGrid: { gap: 12 },
+  factField: { maxWidth: 420 },
 });

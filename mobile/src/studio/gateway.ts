@@ -16,6 +16,7 @@ import type {
   DrawingConfirmationResult,
   FactoryPackManifest,
   ImageQualityReport,
+  JsonObject,
   MarketingPackRequest,
   MarketingPackResult,
   MarkupApplyRequest,
@@ -161,6 +162,12 @@ export interface StudioMarkupPreview {
   annotation: MarkupApplyRequest['annotation'];
 }
 
+export interface StudioResumedRefinePreview {
+  candidate: PreviewCandidate;
+  kind: 'catalog' | 'visual';
+  understoodAs: string;
+}
+
 export interface StudioVariationRequest extends StudioVisualLineage {
   sourceDesignVersion: number | null;
   createdBy: string;
@@ -187,6 +194,17 @@ export interface StudioMarkupPreviewRequest extends ExactStudioLineage {
 export interface StudioCandidateDecisionRequest {
   candidateId: string;
   createdBy: string;
+}
+
+export interface StudioCandidateVariationRequest extends StudioCandidateDecisionRequest {
+  label: string;
+}
+
+export interface StudioCandidateVariationResult {
+  candidate: PreviewCandidate;
+  project: ProjectDetail;
+  familyId: string;
+  variationIndex: number;
 }
 
 export interface StudioCandidateDecisionResult {
@@ -243,8 +261,10 @@ type GatewayTrustedClient = Pick<TrustedApiClient,
   | 'selectCreativeCandidate'
   | 'saveAsVariation'
   | 'previewCatalogSelection'
+  | 'listCatalogPreviews'
   | 'acceptCatalogPreview'
   | 'discardCatalogPreview'
+  | 'saveCatalogPreviewAsVariation'
   | 'applyMarkup'
   | 'acceptWarningCandidate'
   | 'discardWarningCandidate'
@@ -258,11 +278,14 @@ type GatewayTrustedClient = Pick<TrustedApiClient,
   | 'getProject'
   | 'getFactoryPack'
   | 'createStudioJob'
+  | 'listStudioJobs'
   | 'transitionStudioJob'
   | 'cancelStudioJob'
   | 'createVisualPreview'
+  | 'listVisualPreviews'
   | 'acceptVisualPreview'
   | 'discardVisualPreview'
+  | 'saveVisualPreviewAsVariation'
   | 'listPreSpecPresentations'
   | 'createPreSpecPresentation'
   | 'acceptPreSpecPresentation'
@@ -354,6 +377,33 @@ function expiresAt(now: Date, seconds: number): string {
   return new Date(now.getTime() + seconds * 1000).toISOString();
 }
 
+function sameJson(left: unknown, right: unknown): boolean {
+  if (left === right) return true;
+  if (Array.isArray(left) || Array.isArray(right)) {
+    return Array.isArray(left) && Array.isArray(right)
+      && left.length === right.length
+      && left.every((value, index) => sameJson(value, right[index]));
+  }
+  if (left !== null && right !== null && typeof left === 'object' && typeof right === 'object') {
+    const leftRecord = left as Record<string, unknown>;
+    const rightRecord = right as Record<string, unknown>;
+    const keys = Object.keys(leftRecord);
+    return keys.length === Object.keys(rightRecord).length
+      && keys.every((key) => Object.prototype.hasOwnProperty.call(rightRecord, key)
+        && sameJson(leftRecord[key], rightRecord[key]));
+  }
+  return false;
+}
+
+function preservesProposedSpec(projectSpec: JsonObject | null | undefined, proposed: JsonObject): boolean {
+  if (projectSpec === null || projectSpec === undefined) return false;
+  const generated = new Set(['design_id', 'version', 'created_by', 'created_at']);
+  return Object.keys(proposed).every((key) => (
+    generated.has(key) || (Object.prototype.hasOwnProperty.call(projectSpec, key)
+      && sameJson(projectSpec[key], proposed[key]))
+  ));
+}
+
 export function createStudioGateway(
   client: GatewayTrustedClient,
   options: StudioGatewayOptions = {},
@@ -367,6 +417,7 @@ export function createStudioGateway(
     trusted: CatalogPreviewCandidate;
     preview: PreviewCandidate;
     lineage: ExactStudioLineage;
+    proposedSpec: JsonObject;
     studioJob: ActiveStudioJob | null;
   }>();
   const markupCandidates = new Map<string, {
@@ -412,6 +463,7 @@ export function createStudioGateway(
   };
   const visualCandidates = new Map<string, {
     runId: string;
+    saveAsVariationUrl: string;
     preview: StudioVisualPreview;
     studioJob: ActiveStudioJob | null;
   }>();
@@ -704,13 +756,8 @@ export function createStudioGateway(
         ...(review.designerAcknowledged ? [] : [
           'Acknowledge that these are image-derived suggestions before creating Design v1.',
         ]),
-        ...(review.sourceReview.eligible && review.sourceReview.state === 'complete'
-          ? [] : [review.sourceReview.reason]),
-        ...(review.unresolvedQuestions.length === 0 ? [] : [
-          'Resolve every source question before saving confirmed design details.',
-        ]),
         ...(changedValues.length === 0 ? [] : [
-          'Changed measurements need a new source review before they can be saved.',
+          'Create Design v1 first, then refine changed facts as a new immutable revision.',
         ]),
       ];
       return {
@@ -729,11 +776,8 @@ export function createStudioGateway(
       audit: StudioDesignConfirmationAudit,
     ): Promise<StudioGatewayResult<StudioDesignConfirmationReceipt>> {
       if (audit.status !== 'pass'
-        || !audit.review.designerAcknowledged
-        || !audit.review.sourceReview.eligible
-        || audit.review.sourceReview.state !== 'complete'
-        || audit.review.unresolvedQuestions.length > 0) return gatewayError(
-        'CONFIRM_AUDIT_REQUIRED', 'Review the remaining design questions before saving.',
+        || !audit.review.designerAcknowledged) return gatewayError(
+        'CONFIRM_AUDIT_REQUIRED', 'Review the image-derived starting facts before saving.',
         'validation', 422,
       );
       pruneExpiredConfirmations();
@@ -858,6 +902,114 @@ export function createStudioGateway(
       return result;
     },
 
+    async resumeRefine(
+      lineage: ExactStudioLineage | StudioVisualLineage,
+      createdBy: string,
+    ): Promise<StudioGatewayResult<StudioResumedRefinePreview | null>> {
+      const jobs = trackJobs
+        ? await client.listStudioJobs(createdBy, 'reviewing') : null;
+      const matchingJob = jobs?.error === null
+        ? [...jobs.data.jobs].reverse().find((job) => (
+            job.action_id === 'refine'
+            && job.active_design_id === lineage.projectId
+            && job.source_revision_id === lineage.sourceAssetId
+          )) ?? null
+        : null;
+      const studioJob = matchingJob === null ? null : {
+        jobId: matchingJob.job_id, owner: createdBy,
+      };
+
+      if ('sourceDesignVersion' in lineage) {
+        const result = await client.listCatalogPreviews(lineage.sourceAssetId);
+        if (result.error !== null) return {
+          data: null, error: mapError(result.error), status: result.status,
+        };
+        if (result.data.candidates.some((item) => item.source_asset_id !== lineage.sourceAssetId)) {
+          return gatewayError(
+            'RESUME_REFINE_LINEAGE_MISMATCH',
+            'A pending preview no longer matches the selected revision.',
+            'conflict', 409,
+          );
+        }
+        const latest = [...result.data.candidates].sort((left, right) => (
+          Date.parse(left.expires_at) - Date.parse(right.expires_at)
+          || left.candidate.candidate_id.localeCompare(right.candidate.candidate_id)
+        )).at(-1);
+        if (latest === undefined) return { data: null, error: null, status: result.status };
+        const candidate: PreviewCandidate = {
+          id: latest.candidate.candidate_id,
+          jobId: latest.candidate.run_id,
+          sourceRevisionId: lineage.sourceAssetId,
+          assetUrl: latest.candidate.preview_url,
+          verdict: latest.candidate.verdict,
+          status: 'pending_review',
+          checks: qualityPreviewChecks(latest.qa),
+          temporary: true,
+          expiresAt: latest.expires_at,
+          decision: null, decidedAt: null, canonicalRevisionId: null,
+        };
+        catalogCandidates.set(candidate.id, {
+          trusted: latest.candidate, preview: candidate, lineage,
+          proposedSpec: latest.next_spec, studioJob,
+        });
+        return {
+          data: {
+            candidate, kind: 'catalog',
+            understoodAs: 'A pending component preview was restored for review.',
+          },
+          error: null,
+          status: result.status,
+        };
+      }
+
+      const result = await client.listVisualPreviews(lineage.projectId);
+      if (result.error !== null) return {
+        data: null, error: mapError(result.error), status: result.status,
+      };
+      if (result.data.candidates.some((item) => item.source_asset_id !== lineage.sourceAssetId)) {
+        return gatewayError(
+          'RESUME_REFINE_LINEAGE_MISMATCH',
+          'A pending preview no longer matches the selected visual.',
+          'conflict', 409,
+        );
+      }
+      const latest = [...result.data.candidates].sort((left, right) => (
+        Date.parse(left.expires_at) - Date.parse(right.expires_at)
+        || left.candidate_id.localeCompare(right.candidate_id)
+      )).at(-1);
+      if (latest === undefined) return { data: null, error: null, status: result.status };
+      const candidate: PreviewCandidate = {
+        id: latest.candidate_id,
+        jobId: latest.image_run_id,
+        sourceRevisionId: lineage.sourceAssetId,
+        assetUrl: latest.preview_url,
+        verdict: latest.verdict,
+        status: 'pending_review',
+        checks: qualityPreviewChecks(latest.qa),
+        temporary: true,
+        expiresAt: latest.expires_at,
+        decision: null, decidedAt: null, canonicalRevisionId: null,
+      };
+      visualCandidates.set(candidate.id, {
+        runId: latest.image_run_id,
+        saveAsVariationUrl: latest.save_as_variation_url,
+        preview: {
+          candidate, lineage,
+          instruction: latest.requested_change,
+          scope: latest.scope,
+        },
+        studioJob,
+      });
+      return {
+        data: {
+          candidate, kind: 'visual',
+          understoodAs: 'A pending visual preview was restored for review.',
+        },
+        error: null,
+        status: result.status,
+      };
+    },
+
     async previewVisualRefine(
       request: StudioVisualPreviewRequest,
     ): Promise<StudioGatewayResult<StudioVisualPreview>> {
@@ -948,6 +1100,7 @@ export function createStudioGateway(
       };
       visualCandidates.set(candidate.id, {
         runId: result.data.image_run_id,
+        saveAsVariationUrl: trustedCandidate.save_as_variation_url,
         preview,
         studioJob: started.data,
       });
@@ -1037,6 +1190,62 @@ export function createStudioGateway(
       return { data: { candidate, project: null }, error: null, status: result.status };
     },
 
+    async saveVisualPreviewAsVariation(
+      request: StudioCandidateVariationRequest,
+    ): Promise<StudioGatewayResult<StudioCandidateVariationResult>> {
+      const stored = visualCandidates.get(request.candidateId);
+      if (stored === undefined) return gatewayError(
+        'CANDIDATE_NOT_FOUND', 'This visual preview is no longer available.', 'validation', 404,
+      );
+      const label = request.label.trim();
+      if (label.length === 0) return gatewayError(
+        'VARIATION_LABEL_REQUIRED', 'Name the variation before saving it.', 'validation', 422,
+      );
+      if (stored.preview.candidate.status !== 'pending_review') return gatewayError(
+        'CANDIDATE_NOT_REVIEWABLE', 'This visual preview already has a final decision.', 'conflict', 409,
+      );
+      if (stored.preview.candidate.verdict === 'reject') return gatewayError(
+        'CANDIDATE_REJECTED', 'A preview that failed fidelity checks cannot become a variation.',
+        'quality', 422,
+      );
+      const lineage = stored.preview.lineage;
+      const result = await callTracked(stored.studioJob, () => client.saveVisualPreviewAsVariation(
+        stored.runId, stored.preview.candidate.id, stored.saveAsVariationUrl,
+        { created_by: request.createdBy, label },
+      ));
+      if (result.error !== null) return result;
+      const source = await client.getProject(lineage.projectId);
+      if (
+        source.error !== null
+        || source.data.active_asset_id !== lineage.sourceAssetId
+        || source.data.active_design_version !== null
+        || result.data.project.root_id === lineage.projectId
+        || result.data.project.active_asset_id !== result.data.project.root_id
+        || result.data.project.active_design_version !== null
+      ) {
+        await failJob(stored.studioJob, 'INVALID_VISUAL_VARIATION_LINEAGE', 0.95);
+        return gatewayError(
+          'INVALID_VISUAL_VARIATION_LINEAGE',
+          'The saved variation did not preserve the selected source revision.',
+          'invalid_response', result.status,
+        );
+      }
+      const candidate = decidePreviewCandidate(
+        stored.preview.candidate, 'save_as_variation', now().toISOString(),
+        result.data.project.active_asset_id,
+      );
+      const succeeded = await transitionJob(stored.studioJob, 'succeeded', 1, 1);
+      if (succeeded.error !== null) return succeeded;
+      visualCandidates.delete(request.candidateId);
+      return {
+        data: {
+          candidate, project: result.data.project, familyId: result.data.family_id,
+          variationIndex: result.data.variation_index,
+        },
+        error: null, status: result.status,
+      };
+    },
+
     async previewCatalogRefine(
       request: StudioCatalogPreviewRequest,
     ): Promise<StudioGatewayResult<StudioCatalogPreview>> {
@@ -1093,6 +1302,7 @@ export function createStudioGateway(
         trusted: result.data.candidate,
         preview: candidate,
         lineage,
+        proposedSpec: result.data.next_spec,
         studioJob: started.data,
       });
       const reviewing = await transitionJob(started.data, 'reviewing', 0.9);
@@ -1170,6 +1380,58 @@ export function createStudioGateway(
       const dismissed = await cancelJob(stored.studioJob);
       if (dismissed.error !== null) return dismissed;
       return { data: { candidate, project: null }, error: null, status: result.status };
+    },
+
+    async saveCatalogPreviewAsVariation(
+      request: StudioCandidateVariationRequest,
+    ): Promise<StudioGatewayResult<StudioCandidateVariationResult>> {
+      const stored = requireCandidate(request.candidateId);
+      if (stored === null) return gatewayError(
+        'CANDIDATE_NOT_FOUND', 'This preview is no longer available.', 'validation', 404,
+      );
+      const label = request.label.trim();
+      if (label.length === 0) return gatewayError(
+        'VARIATION_LABEL_REQUIRED', 'Name the variation before saving it.', 'validation', 422,
+      );
+      if (stored.preview.status !== 'pending_review') return gatewayError(
+        'CANDIDATE_NOT_REVIEWABLE', 'This preview already has a final decision.', 'conflict', 409,
+      );
+      const result = await callTracked(stored.studioJob, () => client.saveCatalogPreviewAsVariation(
+        stored.trusted, { created_by: request.createdBy, label },
+      ));
+      if (result.error !== null) return result;
+      const source = await client.getProject(stored.lineage.projectId);
+      if (
+        source.error !== null
+        || source.data.active_asset_id !== stored.lineage.sourceAssetId
+        || source.data.active_design_version !== stored.lineage.sourceDesignVersion
+        || result.data.project.root_id === stored.lineage.projectId
+        || result.data.project.active_asset_id !== result.data.project.root_id
+        || result.data.project.active_design_version !== 1
+        || result.data.design_version !== 1
+        || !preservesProposedSpec(result.data.project.spec, stored.proposedSpec)
+      ) {
+        await failJob(stored.studioJob, 'INVALID_CATALOG_VARIATION_LINEAGE', 0.95);
+        return gatewayError(
+          'INVALID_CATALOG_VARIATION_LINEAGE',
+          'The saved variation did not preserve the proposed specification and source revision.',
+          'invalid_response', result.status,
+        );
+      }
+      const candidate = decidePreviewCandidate(
+        stored.preview, 'save_as_variation', now().toISOString(),
+        result.data.project.active_asset_id,
+      );
+      const succeeded = await transitionJob(stored.studioJob, 'succeeded', 1, 1);
+      if (succeeded.error !== null) return succeeded;
+      catalogCandidates.delete(request.candidateId);
+      return {
+        data: {
+          candidate, project: result.data.project, familyId: result.data.family_id,
+          variationIndex: result.data.variation_index,
+        },
+        error: null, status: result.status,
+      };
     },
 
     async previewMarkupRefine(

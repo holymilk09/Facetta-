@@ -29,6 +29,22 @@ const preSpecProject = {
   },
 } as ProjectDetail;
 
+const exactFactProject = {
+  ...project,
+  spec: {
+    jewelry_type: 'ring',
+    metal: { material: 'gold', karat: 18, color: 'yellow', finish: 'polished' },
+    stone: {
+      species: 'sapphire', cut: 'oval', carat: 1.2,
+      dimensions_mm: { length: 8, width: 6, depth: 3.8 },
+      color: { trade: 'royal_blue', gia: 'blue' },
+    },
+    setting: { style: 'prong', prong_count: 4 },
+    band: { profile: 'half_round', width_mm: 2.1, thickness_mm: 1.8 },
+    ring_size: { system: 'US', value: 6.5, inner_diameter_mm: 16.9 },
+  },
+} as ProjectDetail;
+
 const catalog = {
   component_path: 'metal.color' as const,
   display: 'Metal color', applicable_jewelry_types: ['ring'],
@@ -109,6 +125,7 @@ describe('StudioRefineWorkspace', () => {
       />,
     );
 
+    expect(screen.getByText('1 requested output × 20 credits = estimated 20 credits')).toBeTruthy();
     await act(async () => { fireEvent.press(await screen.findByText('Preview change')); });
     expect(await screen.findByText('Nothing has changed yet.')).toBeTruthy();
     expect(onApplied).not.toHaveBeenCalled();
@@ -288,5 +305,185 @@ describe('StudioRefineWorkspace', () => {
       }),
     })));
     expect(await screen.findByText('Nothing has changed yet.')).toBeTruthy();
+  });
+
+  test('reopens an exact-lineage pending preview for authenticated source comparison and Apply', async () => {
+    const onApplied = jest.fn();
+    const resumeRefine = jest.fn(async () => ({
+      data: {
+        kind: 'catalog' as const,
+        understoodAs: 'A pending component preview was restored for review.',
+        candidate: {
+          id: 'candidate_resumed', jobId: 'run_resumed', sourceRevisionId: 'asset_2',
+          assetUrl: 'https://test/resumed.png', verdict: 'pass' as const,
+          status: 'pending_review' as const, checks: [], temporary: true,
+          expiresAt: '2099-01-01T00:00:00Z', decision: null,
+          decidedAt: null, canonicalRevisionId: null,
+        },
+      },
+      error: null,
+      status: 200,
+    }));
+    const applyCatalogRefine = jest.fn(async () => ({
+      data: { candidate: {}, project }, error: null, status: 201,
+    }));
+    await renderWithAuth(
+      <StudioRefineWorkspace
+        api={{
+          getComponentCatalog: jest.fn(async () => ({ data: catalog, error: null, status: 200 })),
+          readMarkup: jest.fn(),
+        }}
+        gateway={{
+          resumeRefine, previewCatalogRefine: jest.fn(), applyCatalogRefine,
+          discardCatalogRefine: jest.fn(), previewMarkupRefine: jest.fn(),
+          applyMarkupRefine: jest.fn(), discardMarkupRefine: jest.fn(),
+          previewVisualRefine: jest.fn(), applyVisualRefine: jest.fn(),
+          discardVisualRefine: jest.fn(),
+        } as any}
+        lineage={{ projectId: 'project_1', sourceAssetId: 'asset_2', sourceDesignVersion: 2 }}
+        createdBy="designer"
+        sourceImageUrl="https://test/source.png"
+        imageRequestHeaders={{ Authorization: 'Bearer test-session-token' }}
+        onApplied={onApplied}
+      />,
+    );
+
+    expect(await screen.findByText(/pending component preview was restored/i)).toBeTruthy();
+    expect(screen.getByLabelText('Exact source revision').props.source.headers).toEqual({
+      Authorization: 'Bearer test-session-token',
+    });
+    expect(screen.getByLabelText('Temporary refinement preview').props.source.headers).toEqual({
+      Authorization: 'Bearer test-session-token',
+    });
+    await act(async () => { fireEvent.press(screen.getByText('Apply as new revision')); });
+    expect(applyCatalogRefine).toHaveBeenCalledWith({
+      candidateId: 'candidate_resumed', createdBy: 'designer',
+    });
+    expect(onApplied).toHaveBeenCalledWith(project);
+  });
+
+  test('asks for a name and saves one catalog preview variation without applying the source', async () => {
+    const onApplied = jest.fn();
+    const onVariationCreated = jest.fn();
+    const variationProject = {
+      ...project, id: 'variation_2', root_id: 'variation_2',
+      active_asset_id: 'variation_2', cover_asset_id: 'variation_2',
+    } as ProjectDetail;
+    const resumeRefine = jest.fn(async () => ({
+      data: {
+        kind: 'catalog' as const,
+        understoodAs: 'A pending component preview was restored for review.',
+        candidate: {
+          id: 'candidate_variation', jobId: 'run_variation', sourceRevisionId: 'asset_2',
+          assetUrl: 'https://test/variation-preview.png', verdict: 'pass' as const,
+          status: 'pending_review' as const, checks: [], temporary: true,
+          expiresAt: '2099-01-01T00:00:00Z', decision: null,
+          decidedAt: null, canonicalRevisionId: null,
+        },
+      }, error: null, status: 200,
+    }));
+    const saveCatalogPreviewAsVariation = jest.fn(() => new Promise(() => {}));
+    await renderWithAuth(
+      <StudioRefineWorkspace
+        api={{
+          getComponentCatalog: jest.fn(async () => ({ data: catalog, error: null, status: 200 })),
+          readMarkup: jest.fn(),
+        }}
+        gateway={{
+          resumeRefine, saveCatalogPreviewAsVariation,
+          previewCatalogRefine: jest.fn(), applyCatalogRefine: jest.fn(),
+          discardCatalogRefine: jest.fn(), previewMarkupRefine: jest.fn(),
+          applyMarkupRefine: jest.fn(), discardMarkupRefine: jest.fn(),
+          previewVisualRefine: jest.fn(), applyVisualRefine: jest.fn(),
+          discardVisualRefine: jest.fn(),
+        } as any}
+        lineage={{ projectId: 'project_1', sourceAssetId: 'asset_2', sourceDesignVersion: 2 }}
+        createdBy="designer"
+        sourceImageUrl="https://test/source.png"
+        onApplied={onApplied}
+        onVariationCreated={onVariationCreated}
+      />,
+    );
+
+    expect(await screen.findByText('Save as Variation')).toBeTruthy();
+    fireEvent.press(screen.getByText('Save as Variation'));
+    expect(await screen.findByText(/source revision stays unchanged/i)).toBeTruthy();
+    expect(saveCatalogPreviewAsVariation).not.toHaveBeenCalled();
+    fireEvent.changeText(screen.getByPlaceholderText('e.g. Rose gold halo'), '  Rose halo  ');
+    expect(await screen.findByDisplayValue('  Rose halo  ')).toBeTruthy();
+    fireEvent.press(screen.getByText('Save named variation'));
+    expect(saveCatalogPreviewAsVariation).toHaveBeenCalledTimes(1);
+    expect(saveCatalogPreviewAsVariation).toHaveBeenCalledWith({
+      candidateId: 'candidate_variation', createdBy: 'designer', label: 'Rose halo',
+    });
+    expect(onApplied).not.toHaveBeenCalled();
+    expect(onVariationCreated).not.toHaveBeenCalled();
+  });
+
+  test('corrects a categorical fact and stone dimension with zero-credit immutable lineage', async () => {
+    const revisedProject = {
+      ...exactFactProject, active_asset_id: 'asset_3', active_design_version: 3,
+    } as ProjectDetail;
+    let resolveRevision: ((value: any) => void) | null = null;
+    const reviseStudioFacts = jest.fn(() => new Promise<any>((resolve) => {
+      resolveRevision = resolve;
+    }));
+    const onApplied = jest.fn();
+    await renderWithAuth(
+      <StudioRefineWorkspace
+        api={{
+          getComponentCatalog: jest.fn(async () => ({ data: catalog, error: null, status: 200 })),
+          readMarkup: jest.fn(), getProject: jest.fn(async () => ({
+            data: exactFactProject, error: null, status: 200,
+          })), reviseStudioFacts,
+        }}
+        gateway={{} as any}
+        lineage={{ projectId: 'project_1', sourceAssetId: 'asset_2', sourceDesignVersion: 2 }}
+        createdBy="designer"
+        onApplied={onApplied}
+      />,
+    );
+
+    const factsMode = await screen.findByText('Facts');
+    fireEvent.press(factsMode);
+    expect(await screen.findByDisplayValue('8')).toBeTruthy();
+    expect(screen.getAllByText(/0 credits/i).length).toBeGreaterThan(0);
+    expect(screen.getByText(/image pixels stay unchanged/i)).toBeTruthy();
+    expect(screen.queryByText(/provider/i)).toBeNull();
+    expect(screen.queryByText(/factory/i)).toBeNull();
+    fireEvent.press(screen.getByText('Save fact revision'));
+    expect(await screen.findByText(/Nothing changed/i)).toBeTruthy();
+    fireEvent.changeText(screen.getByDisplayValue('8'), '-1');
+    await waitFor(() => expect(screen.getByDisplayValue('-1')).toBeTruthy());
+    expect(screen.queryByText(/Nothing changed/i)).toBeNull();
+    fireEvent.press(screen.getByText('Save fact revision'));
+    expect(await screen.findByText(/Stone length must be a valid positive number/i)).toBeTruthy();
+    expect(reviseStudioFacts).not.toHaveBeenCalled();
+    fireEvent.changeText(screen.getByDisplayValue('-1'), '8');
+    await waitFor(() => expect(screen.getByDisplayValue('8')).toBeTruthy());
+    fireEvent.press(screen.getByText('Rose'));
+    fireEvent.changeText(screen.getByDisplayValue('8'), '8.2');
+    await waitFor(() => expect(screen.getByDisplayValue('8.2')).toBeTruthy());
+    fireEvent.press(screen.getByText('Save fact revision'));
+    await waitFor(() => expect(reviseStudioFacts).toHaveBeenCalledWith('project_1', {
+      expected_active_asset_id: 'asset_2', expected_design_version: 2,
+      created_by: 'designer', changes: [
+        { path: 'metal.color', value: 'rose' },
+        { path: 'stone.dimensions_mm.length', value: 8.2 },
+      ],
+    }));
+    await act(async () => {
+      resolveRevision?.({
+        data: {
+          status: 'applied', project_root_id: 'project_1', source_asset_id: 'asset_2',
+          asset_id: 'asset_3', design_id: 'design_1', previous_design_version: 2,
+          design_version: 3, spec_change: [], project_detail: revisedProject,
+        }, error: null, status: 200,
+      });
+      await Promise.resolve();
+    });
+    await waitFor(() => expect(onApplied).toHaveBeenCalledWith(revisedProject));
+    expect(onApplied).toHaveBeenCalledWith(revisedProject);
+    expect(await screen.findByText('Save fact revision')).toBeTruthy();
   });
 });

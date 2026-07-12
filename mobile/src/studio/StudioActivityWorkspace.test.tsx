@@ -94,4 +94,26 @@ describe('StudioActivityWorkspace', () => {
     expect(await view.findByText('Facetta could not connect. Check your connection and try again.')).toBeTruthy();
     expect(view.queryByText('Nothing is running yet')).toBeNull();
   });
+
+  test('routes a reviewing Refine job back to its pending decision', async () => {
+    const reviewing: StudioJobRecord = {
+      ...running, action_id: 'refine', status: 'reviewing', progress: 0.9,
+      source_revision_id: 'asset_exact',
+    };
+    const onOpenReview = jest.fn();
+    const view = await render(<StudioActivityWorkspace
+      api={api({
+        listStudioJobs: jest.fn(async () => ({
+          data: { jobs: [reviewing] }, error: null, status: 200,
+        })),
+      })}
+      owner="usr_designer"
+      onOpenDesign={jest.fn()}
+      onOpenReview={onOpenReview}
+    />);
+
+    await act(async () => { fireEvent.press(await view.findByText('Review result')); });
+    expect(onOpenReview).toHaveBeenCalledWith(reviewing);
+    expect(view.queryByText('Open design')).toBeNull();
+  });
 });

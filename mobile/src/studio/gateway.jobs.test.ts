@@ -161,6 +161,7 @@ test('catalog preview keeps image-run and Studio-job identities separate through
       project: project(1), candidate: {
         run_id: 'image_run_catalog', candidate_id: 'candidate_catalog',
         preview_url: 'https://test/preview.png', accept_url: '/accept', discard_url: '/discard',
+        save_as_variation_url: '/save-as-variation',
         verdict: 'pass', expires_in_seconds: 600,
       },
     }, 201),
@@ -184,6 +185,48 @@ test('catalog preview keeps image-run and Studio-job identities separate through
   assert.equal(applied.error, null);
   assert.equal(jobs.transitions.at(-1)?.request.status, 'succeeded');
   assert.equal(jobs.transitions.at(-1)?.request.completed_outputs, 1);
+});
+
+test('saving a catalog preview variation resolves Activity once with one completed output', async () => {
+  const jobs = tracking();
+  const sibling = {
+    ...project(1), id: 'variation_2', root_id: 'variation_2',
+    active_asset_id: 'variation_2', active_design_version: 1,
+    active_revision: { ...asset('variation_2', 'VARIATION_BRANCH'), root_id: 'variation_2' },
+    design_id: 'design_variation', spec: {}, cover_asset_id: 'variation_2',
+  };
+  const gateway = createStudioGateway({
+    ...jobs.client,
+    previewCatalogSelection: async () => ok({
+      status: 'preview_ready', component_path: 'metal.color', option_id: 'rose',
+      isolation_target: 'metal', source_asset_id: 'candidate_1', design_version: 1,
+      image_run_id: 'image_run_variation', spec_change: [], next_spec: {}, qa: quality,
+      routing: { attempt_count: 1, used_retry: false, used_fallback: false, cache_hit: false, run_id: 'image_run_variation' },
+      project: project(1), candidate: {
+        run_id: 'image_run_variation', candidate_id: 'candidate_variation',
+        preview_url: 'https://test/preview.png', accept_url: '/accept', discard_url: '/discard',
+        save_as_variation_url: '/save-as-variation', verdict: 'pass', expires_in_seconds: 600,
+      },
+    }, 201),
+    saveCatalogPreviewAsVariation: async () => ok({
+      status: 'saved_as_variation', family_id: 'family_1', variation_index: 2,
+      design_id: 'design_variation', design_version: 1, project: sibling,
+    }, 201),
+    getProject: async () => ok(project(1)),
+  } as any, { trackJobs: true });
+
+  await gateway.previewCatalogRefine({
+    projectId: 'project_1', sourceAssetId: 'candidate_1', sourceDesignVersion: 1,
+    createdBy: 'designer_1', componentPath: 'metal.color', optionId: 'rose',
+  });
+  const saved = await gateway.saveCatalogPreviewAsVariation({
+    candidateId: 'candidate_variation', createdBy: 'designer_1', label: 'Rose halo',
+  });
+  assert.equal(saved.error, null);
+  const completions = jobs.transitions.filter((call) => call.request.status === 'succeeded');
+  assert.equal(completions.length, 1);
+  assert.equal(completions[0]?.jobId, 'studio_job_1');
+  assert.equal(completions[0]?.request.completed_outputs, 1);
 });
 
 test('discarded view closes reviewing Activity as canceled with zero outputs', async () => {

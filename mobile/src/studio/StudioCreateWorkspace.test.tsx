@@ -99,6 +99,7 @@ test('requests 1-4 prompt candidates, lets the designer choose, then saves only 
   expect(screen.queryByText(/structured specification/i)).toBeNull();
   await fireEvent.changeText(screen.getByLabelText('Design sentence'), 'A sculptural aquamarine collar.');
   await fireEvent.press(screen.getByText('4').parent!);
+  expect(screen.getByText('4 requested outputs × 15 credits = estimated 60 credits')).toBeTruthy();
   await fireEvent.press(screen.getByText('Create 4 directions'));
 
   await waitFor(() => expect(createFromPrompt).toHaveBeenCalledWith({
@@ -107,7 +108,10 @@ test('requests 1-4 prompt candidates, lets the designer choose, then saves only 
     owner: 'designer_1',
     title: 'A sculptural aquamarine collar.',
   }));
-  expect(await screen.findByText('Which outcome should stay in your Studio?')).toBeTruthy();
+  expect(await screen.findByText('Which direction should become active?')).toBeTruthy();
+  expect(screen.getByText(/Every direction in this set is already retained/i)).toBeTruthy();
+  expect(screen.getByText(/already retained in Collections/i)).toBeTruthy();
+  expect(screen.getByText('Keep these directions & start another')).toBeTruthy();
   expect(screen.getByLabelText('Direction 1 preview').props.source.headers).toEqual({
     Authorization: 'Bearer first-party-token',
   });
@@ -121,6 +125,26 @@ test('requests 1-4 prompt candidates, lets the designer choose, then saves only 
     selectedAssetId: 'candidate_3',
     sentence: 'A sculptural aquamarine collar.',
   }));
+});
+
+test('keeps an already-created direction set when the designer starts another brief', async () => {
+  const createFromPrompt = jest.fn(async () => ({
+    data: creativeProject(2), error: null, status: 201,
+  }));
+  await render(<StudioCreateWorkspace
+    gateway={{
+      createFromPrompt, createFromDrawing: jest.fn(), selectCreativeDirection: jest.fn(),
+    } as CreateGateway}
+    owner="designer_1"
+    initialSentence="First direction"
+    onSave={jest.fn()}
+  />);
+
+  await fireEvent.press(screen.getByText('Create 2 directions'));
+  expect(await screen.findByText(/already retained in Collections/i)).toBeTruthy();
+  await fireEvent.press(screen.getByText('Keep these directions & start another'));
+  expect(await screen.findByLabelText('Design sentence')).toBeTruthy();
+  expect(screen.queryByText(/already retained in Collections/i)).toBeNull();
 });
 
 test('sends every enabled role with the master geometry input', async () => {

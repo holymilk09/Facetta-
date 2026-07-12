@@ -33,7 +33,7 @@ function deferred<T>() {
 test('fails closed without an exact selected visual', async () => {
   await render(<StudioConfirmWorkspace gateway={gateway()} lineage={null} createdBy="designer" onSaved={jest.fn()} />);
   expect(screen.getByText('Choose a saved visual first')).toBeTruthy();
-  expect(screen.queryByText('Create immutable Design v1')).toBeNull();
+  expect(screen.queryByText('Create Design v1')).toBeNull();
 });
 
 test('loads projected facts and renders all designer authority labels without internal payloads', async () => {
@@ -48,20 +48,23 @@ test('loads projected facts and renders all designer authority labels without in
   expect(screen.getAllByText('Estimate').length).toBeGreaterThan(0);
   expect(screen.getAllByText('Measured or supplied').length).toBeGreaterThan(0);
   expect(screen.getByText(/Confirm the band profile/i)).toBeTruthy();
+  expect(screen.getByText('QUESTIONS KEPT FOR LATER')).toBeTruthy();
+  expect(screen.getByText(/remain attached to this direction for later review/i)).toBeTruthy();
+  expect(screen.queryByText(/Factory/i)).toBeNull();
   expect(screen.queryByLabelText('Jewelry type: Measured or supplied')).toBeNull();
-  expect(screen.queryByText(/hidden_review|continuation|project_1|asset_7|provider|factory|QA/i)).toBeNull();
+  expect(screen.queryByText(/hidden_review|continuation|project_1|asset_7|provider|QA/i)).toBeNull();
 });
 
 test('cannot review or save without explicit acknowledgement of image-derived suggestions', async () => {
   const g = gateway();
   await render(<StudioConfirmWorkspace gateway={g} lineage={lineage} createdBy="designer" onSaved={jest.fn()} />);
   await waitFor(() => expect(screen.getByText('Jewelry type')).toBeTruthy());
-  await fireEvent.press(screen.getByText('Check Design v1 readiness'));
-  await fireEvent.press(screen.getByText('Create immutable Design v1'));
+  await fireEvent.press(screen.getByText('Review starting design'));
+  await fireEvent.press(screen.getByText('Create Design v1'));
   expect(g.auditDesignConfirmation).not.toHaveBeenCalled();
   expect(g.saveDesignConfirmation).not.toHaveBeenCalled();
   expect(screen.getByText(/image-derived suggestions/i)).toBeTruthy();
-  expect(screen.getByText(/Advanced Specifications/i)).toBeTruthy();
+  expect(screen.getByText(/refine any fact as a new revision/i)).toBeTruthy();
 });
 
 test('failed audit disables Save', async () => {
@@ -73,9 +76,9 @@ test('failed audit disables Save', async () => {
   await render(<StudioConfirmWorkspace gateway={g} lineage={lineage} createdBy="designer" onSaved={jest.fn()} />);
   await waitFor(() => expect(screen.getByText('Jewelry type')).toBeTruthy());
   await fireEvent.press(screen.getByLabelText('I reviewed the image-derived suggestions'));
-  await fireEvent.press(screen.getByText('Check Design v1 readiness'));
+  await fireEvent.press(screen.getByText('Review starting design'));
   await waitFor(() => expect(screen.getByText(/Answer the remaining/i)).toBeTruthy());
-  await fireEvent.press(screen.getByText('Create immutable Design v1'));
+  await fireEvent.press(screen.getByText('Create Design v1'));
   expect(save).not.toHaveBeenCalled();
 });
 
@@ -84,9 +87,9 @@ test('audits the read-only projection, saves, and invokes callback', async () =>
   await render(<StudioConfirmWorkspace gateway={g} lineage={lineage} createdBy="designer" onSaved={onSaved} />);
   await waitFor(() => expect(screen.getByText('Jewelry type')).toBeTruthy());
   await fireEvent.press(screen.getByLabelText('I reviewed the image-derived suggestions'));
-  await fireEvent.press(screen.getByText('Check Design v1 readiness'));
-  await waitFor(() => expect(screen.getByText(/Ready to create immutable/i)).toBeTruthy());
-  await fireEvent.press(screen.getByText('Create immutable Design v1'));
+  await fireEvent.press(screen.getByText('Review starting design'));
+  await waitFor(() => expect(screen.getByText(/Ready to preserve this direction/i)).toBeTruthy());
+  await fireEvent.press(screen.getByText('Create Design v1'));
   await waitFor(() => expect(onSaved).toHaveBeenCalledWith(expect.objectContaining({ confirmationId: 'confirmation_1' })));
   const audited = g.auditDesignConfirmation.mock.calls[0][0];
   expect(audited.factGroups[0].facts[0].authority).toBe('suggested');
@@ -120,12 +123,12 @@ test('switching lineage invalidates a prior audit and ignores its late response'
   const view = await render(<StudioConfirmWorkspace gateway={g} lineage={{ projectId: 'project_a', sourceAssetId: 'candidate_a' }} createdBy="designer" onSaved={jest.fn()} />);
   await waitFor(() => expect(screen.getByText('Jewelry type')).toBeTruthy());
   await fireEvent.press(screen.getByLabelText('I reviewed the image-derived suggestions'));
-  await fireEvent.press(screen.getByText('Check Design v1 readiness'));
+  await fireEvent.press(screen.getByText('Review starting design'));
   await view.rerender(<StudioConfirmWorkspace gateway={g} lineage={{ projectId: 'project_b', sourceAssetId: 'candidate_b' }} createdBy="designer" onSaved={jest.fn()} />);
   await waitFor(() => expect(screen.getByText('Jewelry type')).toBeTruthy());
   await act(async () => lateAudit.resolve({ data: { auditId: 'review_project_a', status: 'pass', issues: [], review: { ...review, reviewId: 'review_project_a' } }, error: null, status: 200 }));
-  expect(screen.queryByText(/Ready to create immutable/i)).toBeNull();
-  await fireEvent.press(screen.getByText('Create immutable Design v1'));
+  expect(screen.queryByText(/Ready to preserve this direction/i)).toBeNull();
+  await fireEvent.press(screen.getByText('Create Design v1'));
   expect(save).not.toHaveBeenCalled();
 });
 
@@ -142,6 +145,6 @@ test('a failed B load cannot leave A facts or a prior save path visible', async 
   await view.rerender(<StudioConfirmWorkspace gateway={g} lineage={{ projectId: 'project_b', sourceAssetId: 'candidate_b' }} createdBy="designer" onSaved={jest.fn()} />);
   await waitFor(() => expect(screen.getByText(/could not review/i)).toBeTruthy());
   expect(screen.queryByText('Jewelry type')).toBeNull();
-  await fireEvent.press(screen.getByText('Create immutable Design v1'));
+  await fireEvent.press(screen.getByText('Create Design v1'));
   expect(save).not.toHaveBeenCalled();
 });

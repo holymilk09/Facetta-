@@ -1,11 +1,11 @@
 import { StatusBar } from 'expo-status-bar';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  ActivityIndicator, Image, Pressable, SafeAreaView, ScrollView, StyleSheet, Text,
+  ActivityIndicator, Pressable, SafeAreaView, ScrollView, StyleSheet, Text,
   useWindowDimensions, View,
 } from 'react-native';
 import { DEFAULT_API_URL } from './src/api';
-import { AuthenticatedImageProvider } from './src/AuthenticatedImage';
+import { AuthenticatedImage as Image, AuthenticatedImageProvider } from './src/AuthenticatedImage';
 import {
   clearSession, hasOnboarded, loadAuthenticatedSession, markOnboarded,
   restoreAuthenticatedSession, saveSession, sessionAccessToken, Session,
@@ -23,6 +23,7 @@ import { StudioRefineWorkspace } from './src/studio/StudioRefineWorkspace';
 import { StudioViewsWorkspace } from './src/studio/StudioViewsWorkspace';
 import { StudioPresentWorkspace } from './src/studio/StudioPresentWorkspace';
 import { StudioVaryWorkspace } from './src/studio/StudioVaryWorkspace';
+import { StudioFactoryWorkspace } from './src/studio/StudioFactoryWorkspace';
 import { StudioActivityWorkspace } from './src/studio/StudioActivityWorkspace';
 import {
   createStudioGatewayFromOptions, ExactStudioLineage, StudioVisualLineage,
@@ -39,9 +40,10 @@ type Stage = 'onboarding' | 'tour' | 'booting' | 'login' | 'recovery' | 'app';
 const designImage = require('./assets/studio-asymmetric-paraiba-ring-v1.png');
 
 function StudioCard({
-  image, eyebrow, title, body, accent, wide, onPress,
+  image, imageLabel, eyebrow, title, body, accent, wide, onPress,
 }: {
   image: any;
+  imageLabel: string;
   eyebrow: string;
   title: string;
   body: string;
@@ -52,7 +54,7 @@ function StudioCard({
   return (
     <Pressable style={[styles.studioCard, wide && styles.studioCardWide]} onPress={onPress}>
       <View style={styles.studioImage}>
-        <Image source={image} style={styles.studioArtwork} resizeMode="cover" />
+        <Image accessibilityLabel={imageLabel} source={image} style={styles.studioArtwork} resizeMode="cover" />
         <View style={styles.studioShade} />
         <View style={styles.studioCardCopy}>
           <View style={[styles.studioEyebrow, { backgroundColor: accent }]}>
@@ -187,10 +189,11 @@ export default function App() {
     activeRevisionId: studioProject?.active_asset_id ?? selectedCreativeAssetId,
     hasExactSpecification: exactStudioLineage !== null,
     hasSelectedPreSpecVisual: confirmStudioLineage !== null && exactStudioLineage === null,
-    // Factory promotion is deliberately unavailable until the API supplies both
-    // an enablement flag and an explicit eligibility decision for this revision.
-    factoryEnabled: false,
-    factoryEligible: false,
+    // Factory stays absent from ordinary Studio work. The backend project
+    // decision is the only signal that can reveal this optional destination;
+    // job creation rechecks the exact revision and eligibility server-side.
+    factoryEnabled: studioProject?.factory_ready === true,
+    factoryEligible: studioProject?.factory_ready === true,
   }), [activeDesignId, confirmStudioLineage, exactStudioLineage, selectedCreativeAssetId, studioProject]);
   const hasActiveRevision = Boolean(actionContext.activeDesignId && actionContext.activeRevisionId);
   const studioActions = getStudioRailActions(actionContext);
@@ -359,6 +362,7 @@ export default function App() {
               image={studioProject?.active_revision?.image_url
                 ? { uri: studioProject.active_revision.image_url }
                 : designImage}
+              imageLabel="Current design cover"
               eyebrow="CURRENT DESIGN"
               title={studioProject?.title ?? 'Resume your design'}
               body="Continue from the current saved revision. Every Studio action will use this exact starting point."
@@ -369,6 +373,7 @@ export default function App() {
           )}
           <StudioCard
             image={designImage}
+            imageLabel="New design inspiration"
             eyebrow="NEW DESIGN"
             title="Start from an idea or reference"
             body="Begin with a sentence, drawing, photograph, render, or master-geometry image."
@@ -399,7 +404,7 @@ export default function App() {
               onSave={(selection) => {
                 setStudioProject(selection.project);
                 setSelectedCreativeAssetId(selection.selectedAssetId);
-                setTab('collections');
+                openStudioAction('refine');
               }}
             />
           ) : selectedActionId === 'refine' ? (
@@ -410,6 +415,10 @@ export default function App() {
               createdBy={designer}
               sourceImageUrl={studioProject?.active_revision?.image_url ?? null}
               onApplied={(project) => {
+                setStudioProject(project);
+                setSelectedCreativeAssetId(project.active_asset_id);
+              }}
+              onVariationCreated={(project) => {
                 setStudioProject(project);
                 setSelectedCreativeAssetId(project.active_asset_id);
               }}
@@ -431,6 +440,7 @@ export default function App() {
               onSaved={(receipt) => {
                 setStudioProject(receipt.project);
                 setSelectedCreativeAssetId(receipt.project.active_asset_id);
+                openStudioAction('refine');
               }}
             />
           ) : selectedActionId === 'present' ? (
@@ -453,6 +463,14 @@ export default function App() {
                 setStudioProject(project);
                 setSelectedCreativeAssetId(project.active_asset_id);
               }}
+              onContinueRefining={() => openStudioAction('refine')}
+              onOpenCollections={() => setTab('collections')}
+            />
+          ) : selectedActionId === 'factory' ? (
+            <StudioFactoryWorkspace
+              api={trustedApi}
+              lineage={exactStudioLineage}
+              createdBy={designer}
             />
           ) : (
             <View style={styles.workspaceNotice}>
@@ -491,6 +509,19 @@ export default function App() {
         <StudioActivityWorkspace
           api={trustedApi}
           owner={designer}
+          onOpenReview={(job) => {
+            if (job.active_design_id === null || job.source_revision_id === null) return;
+            void trustedApi.getProject(job.active_design_id).then((result) => {
+              if (result.error !== null) return;
+              setStudioProject(result.data);
+              setSelectedCreativeAssetId(result.data.active_asset_id);
+              if (result.data.active_asset_id === job.source_revision_id) {
+                openStudioAction('refine');
+              } else {
+                setTab('collections');
+              }
+            });
+          }}
           onOpenDesign={(projectId) => {
             void trustedApi.getProject(projectId).then((result) => {
               if (result.error === null) {

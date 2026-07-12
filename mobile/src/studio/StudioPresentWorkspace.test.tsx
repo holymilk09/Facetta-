@@ -49,6 +49,8 @@ describe('StudioPresentWorkspace', () => {
     expect(screen.getByText('Confirmed revision 4')).toBeTruthy();
     expect(screen.queryByText(/asset_4/)).toBeNull();
     expect(screen.getByText('1 requested output · estimated 18 credits')).toBeTruthy();
+    expect(screen.getByText(/passing Client output is saved and charged when generation finishes/i)).toBeTruthy();
+    expect(screen.getByText(/If review is required, it is charged only when you choose Save/i)).toBeTruthy();
     fireEvent.press(screen.getByText('Product photo'));
     const generate = await screen.findByText('Create client product photo');
     await act(async () => { fireEvent.press(generate); });
@@ -114,7 +116,11 @@ describe('StudioPresentWorkspace', () => {
           preset: 'catalog_white', framing: 'square', image_run_id: 'run_1',
           candidate_id: 'candidate_1', preview_url: 'https://test/market.png', qa: { verdict: 'pass' }, routing: {},
         }],
-        failures: [{ preset: 'luxury_studio', detail: 'Could not preserve the setting.' }],
+        failures: [{
+          preset: 'luxury_studio', image_run_id: null,
+          error_category: 'provider', code: 'openai_provider_not_configured',
+          detail: 'OpenAI transport failed for model gpt-image-secret.',
+        }],
       },
       error: null,
       status: 201,
@@ -134,6 +140,7 @@ describe('StudioPresentWorkspace', () => {
     fireEvent.press(screen.getByText('Marketing'));
     expect(await screen.findByText('2 requested outputs · estimated 36 credits')).toBeTruthy();
     expect(screen.getByText('You are charged only for the requested outputs you save. Discarded and unusable results cost 0 credits.')).toBeTruthy();
+    expect(screen.queryByText(/passing Client output is saved and charged/i)).toBeNull();
     expect(screen.queryByText(/failed quality checks/i)).toBeNull();
     await act(async () => { fireEvent.press(screen.getByText('Generate 2 presentation previews')); });
 
@@ -143,7 +150,10 @@ describe('StudioPresentWorkspace', () => {
     }));
     expect(await screen.findByText('1 of 2 requested outputs are ready for review. Nothing changed your design revision.')).toBeTruthy();
     expect(screen.getByText(/Design preserved/)).toBeTruthy();
-    expect(screen.getByText('Luxury studio: Could not preserve the setting.')).toBeTruthy();
+    expect(screen.getByText(
+      'Luxury studio: Facetta could not finish this output. Nothing was saved or charged; try it again.',
+    )).toBeTruthy();
+    expect(screen.queryByText(/OpenAI|gpt-image|provider_not_configured/i)).toBeNull();
     await act(async () => { fireEvent.press(screen.getByText('Discard')); });
     expect(await screen.findByText('Presentation discarded. Your selected design revision is unchanged.')).toBeTruthy();
     expect(screen.queryByText('Catalog white needs review')).toBeNull();

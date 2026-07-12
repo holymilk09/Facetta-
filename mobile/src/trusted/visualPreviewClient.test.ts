@@ -39,6 +39,7 @@ const previewPayload = {
   candidate: {
     candidate_id: 'candidate visual',
     preview_url: '/studio/image-runs/run%20visual/visual-candidates/candidate%20visual/image',
+    save_as_variation_url: '/studio/image-runs/run%20visual/visual-candidates/candidate%20visual/save-as-variation',
     verdict: 'pass', qa,
   },
 };
@@ -112,5 +113,51 @@ describe('pre-spec visual preview client', () => {
       created_by: 'designer', expected_active_asset_id: 'asset source',
     });
   });
-});
 
+  test('lists only typed same-origin pending visual candidates', async () => {
+    const fetcher = jest.fn(async () => ({
+      ok: true, status: 200,
+      text: async () => JSON.stringify({ candidates: [{
+        candidate_id: 'candidate visual', image_run_id: 'run visual',
+        source_asset_id: 'asset source',
+        preview_url: '/studio/image-runs/run%20visual/visual-candidates/candidate%20visual/image',
+        save_as_variation_url: '/studio/image-runs/run%20visual/visual-candidates/candidate%20visual/save-as-variation',
+        verdict: 'pass', requested_change: 'Warm the center stone',
+        scope: 'appearance', qa, expires_at: '2099-01-01T00:00:00Z',
+      }] }),
+    } as Response));
+    const client = createTrustedApiClient({ baseUrl: 'https://facetta.test', fetcher });
+    const result = await client.listVisualPreviews('project visual');
+    expect(result.error).toBeNull();
+    expect(result.data?.candidates[0]?.preview_url).toBe(
+      'https://facetta.test/studio/image-runs/run%20visual/visual-candidates/candidate%20visual/image',
+    );
+    expect(fetcher).toHaveBeenCalledWith(
+      'https://facetta.test/studio/projects/project%20visual/visual-candidates',
+      expect.objectContaining({ headers: { Accept: 'application/json' } }),
+    );
+  });
+
+  test('uses the validated visual variation capability and trims its explicit label', async () => {
+    const fetcher = jest.fn(async (_input: RequestInfo | URL, init?: RequestInit) => ({
+      ok: true, status: 201,
+      text: async () => JSON.stringify({
+        status: 'saved_as_variation', family_id: 'family_visual', variation_index: 2,
+        project: projectPayload,
+      }),
+    } as Response));
+    const client = createTrustedApiClient({ baseUrl: 'https://facetta.test', fetcher });
+    const result = await client.saveVisualPreviewAsVariation(
+      'run visual', 'candidate visual', previewPayload.candidate.save_as_variation_url,
+      { created_by: 'designer', label: '  Warm direction  ' },
+    );
+    expect(result.error).toBeNull();
+    expect(fetcher).toHaveBeenCalledWith(
+      'https://facetta.test/studio/image-runs/run%20visual/visual-candidates/candidate%20visual/save-as-variation',
+      expect.objectContaining({ method: 'POST' }),
+    );
+    expect(JSON.parse(String(fetcher.mock.calls[0]?.[1]?.body))).toEqual({
+      created_by: 'designer', label: 'Warm direction',
+    });
+  });
+});

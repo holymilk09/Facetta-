@@ -6,7 +6,8 @@ export type DesignerErrorAction =
   | 'present'
   | 'collections'
   | 'activity'
-  | 'confirm';
+  | 'confirm'
+  | 'factory';
 
 export interface DesignerSafeError {
   code?: string;
@@ -24,6 +25,7 @@ const ACTION_FAILURE: Record<DesignerErrorAction, string> = {
   collections: 'Facetta could not open that saved work. Try again.',
   activity: 'Facetta could not update Activity. Try again.',
   confirm: 'Facetta could not review those design suggestions. Nothing was saved.',
+  factory: 'Facetta could not prepare the production-review material. Nothing was charged.',
 };
 
 /**

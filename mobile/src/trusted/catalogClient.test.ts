@@ -155,6 +155,7 @@ const previewPayload = {
     preview_url: '/image-runs/run_preview/catalog-candidates/cand_preview/image',
     accept_url: '/image-runs/run_preview/catalog-candidates/cand_preview/accept',
     discard_url: '/image-runs/run_preview/catalog-candidates/cand_preview',
+    save_as_variation_url: '/image-runs/run_preview/catalog-candidates/cand_preview/save-as-variation',
     verdict: 'pass',
     expires_in_seconds: 7200,
   },
@@ -304,6 +305,7 @@ describe('component catalog client contracts', () => {
       preview_url: 'https://facetta.test/image-runs/run_preview/catalog-candidates/cand_preview/image',
       accept_url: 'https://facetta.test/image-runs/run_preview/catalog-candidates/cand_preview/accept',
       discard_url: 'https://facetta.test/image-runs/run_preview/catalog-candidates/cand_preview',
+      save_as_variation_url: 'https://facetta.test/image-runs/run_preview/catalog-candidates/cand_preview/save-as-variation',
     });
     if (preview.data === null) throw new Error('preview fixture must decode');
 
@@ -662,7 +664,7 @@ describe('component catalog client contracts', () => {
       'category_pending',
     ],
   ])('turns catalog API conflicts into a typed client state', async (payload, state) => {
-    const fetcher = jest.fn(async () => ({
+    const fetcher = jest.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => ({
       ok: false,
       status: 409,
       text: async () => JSON.stringify(payload),
@@ -699,6 +701,57 @@ describe('component catalog client contracts', () => {
       code: 'INVALID_RESPONSE',
       category: 'decode',
       catalog_status: 'error',
+    });
+  });
+
+  test('reopens a typed catalog preview with normalized decision capabilities', async () => {
+    const fetcher = jest.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => ({
+      ok: true, status: 200,
+      text: async () => JSON.stringify({ candidates: [{
+        candidate_id: 'cand warning', image_run_id: 'run warning',
+        source_asset_id: 'ast_root', component_path: 'metal.color', option_id: 'rose',
+        requested_change: 'Apply rose gold', verdict: 'warn',
+        preview_url: '/image-runs/run%20warning/catalog-candidates/cand%20warning/image',
+        save_as_variation_url: '/image-runs/run%20warning/catalog-candidates/cand%20warning/save-as-variation',
+        next_spec: reviewPayload.next_spec, spec_change: reviewPayload.spec_change,
+        qa: qa('warn'), routing: { ...reviewPayload.routing, run_id: 'run warning' },
+        expires_at: '2099-01-01T00:00:00Z',
+      }] }),
+    } as Response));
+    const client = createTrustedApiClient({ baseUrl: 'https://facetta.test', fetcher });
+    const result = await client.listCatalogPreviews('ast_root');
+    expect(result.error).toBeNull();
+    expect(result.data?.candidates[0]?.candidate).toMatchObject({
+      run_id: 'run warning', candidate_id: 'cand warning',
+      preview_url: 'https://facetta.test/image-runs/run%20warning/catalog-candidates/cand%20warning/image',
+      accept_url: 'https://facetta.test/image-runs/run%20warning/catalog-candidates/cand%20warning/accept',
+      discard_url: 'https://facetta.test/image-runs/run%20warning/catalog-candidates/cand%20warning',
+      save_as_variation_url: 'https://facetta.test/image-runs/run%20warning/catalog-candidates/cand%20warning/save-as-variation',
+    });
+  });
+
+  test('posts an exact catalog preview to its typed save-as-variation endpoint', async () => {
+    const fetcher = jest.fn(async (_input: RequestInfo | URL, _init?: RequestInit) => ({
+      ok: true, status: 201,
+      text: async () => JSON.stringify({
+        status: 'saved_as_variation', family_id: 'family_catalog', variation_index: 2,
+        design_id: 'dsn_variation', design_version: 1,
+        project: projectPayload('ast_2', 1),
+      }),
+    } as Response));
+    const client = createTrustedApiClient({ baseUrl: 'https://facetta.test', fetcher });
+    const result = await client.saveCatalogPreviewAsVariation({
+      ...previewPayload.candidate, verdict: 'pass' as const,
+    }, {
+      created_by: 'usr_designer', label: '  Rose halo  ',
+    });
+    expect(result.error).toBeNull();
+    expect(fetcher).toHaveBeenCalledWith(
+      'https://facetta.test/image-runs/run_preview/catalog-candidates/cand_preview/save-as-variation',
+      expect.objectContaining({ method: 'POST' }),
+    );
+    expect(JSON.parse(String(fetcher.mock.calls[0]?.[1]?.body))).toEqual({
+      created_by: 'usr_designer', label: 'Rose halo',
     });
   });
 });
