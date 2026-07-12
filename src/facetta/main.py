@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -16,8 +18,15 @@ from facetta.api import (  # noqa: E402 - env must load before router imports
     assets, catalog, designs, library, projects, share, specs, stones, studio,
     trusted, users, vocabulary,
 )
+from facetta.auth import validate_auth_configuration  # noqa: E402
 
-app = FastAPI(title="Facetta", version=__version__)
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    validate_auth_configuration()
+    yield
+
+app = FastAPI(title="Facetta", version=__version__, lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,

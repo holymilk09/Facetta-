@@ -3,7 +3,13 @@
 from __future__ import annotations
 
 import json
+import time
+from uuid import UUID, uuid4
 
+from cryptography.hazmat.primitives.asymmetric import ec, rsa
+import jwt
+from jwt import PyJWKClient, algorithms
+from jwt.exceptions import PyJWKClientConnectionError
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine
@@ -14,12 +20,59 @@ from facetta.db import (
     Base, Design, DesignFamily, FeedbackEvent, ImageAsset, ImageRun, Project,
     get_db, utcnow,
 )
+from facetta.auth import validate_auth_configuration
 from facetta.main import app
 from facetta.studio_visual_candidates import store_studio_visual_candidate
 
 
 OWNER_TOKEN = "owner-session-token-1234"
 OTHER_TOKEN = "other-session-token-1234"
+SUPABASE_URL = "https://facetta-test.supabase.co"
+
+
+def _supabase_access_token(
+    private_key,
+    subject: str,
+    *,
+    algorithm: str = "RS256",
+    kid: str = "facetta-test-key",
+    **overrides,
+) -> str:
+    now = int(time.time())
+    claims = {
+        "iss": f"{SUPABASE_URL}/auth/v1",
+        "aud": "authenticated",
+        "exp": now + 600,
+        "iat": now,
+        "sub": subject,
+        "role": "authenticated",
+        "session_id": str(uuid4()),
+        "is_anonymous": False,
+    }
+    claims.update(overrides)
+    claims = {key: value for key, value in claims.items() if value is not None}
+    return jwt.encode(
+        claims,
+        private_key,
+        algorithm=algorithm,
+        headers={"kid": kid},
+    )
+
+
+def _public_jwk(public_key, algorithm: str, kid: str) -> dict:
+    converter = (
+        algorithms.RSAAlgorithm if algorithm == "RS256"
+        else algorithms.ECAlgorithm
+    )
+    jwk = converter.to_jwk(public_key, as_dict=True)
+    jwk.update({"alg": algorithm, "kid": kid, "use": "sig"})
+    return jwk
+
+
+def _mock_jwks(monkeypatch, keys: list[dict]) -> None:
+    client = PyJWKClient("https://jwks.invalid", cache_jwk_set=False)
+    client.fetch_data = lambda: {"keys": keys}
+    monkeypatch.setattr("facetta.auth._jwks_client", lambda _issuer: client)
 
 
 @pytest.fixture
@@ -140,7 +193,7 @@ def auth_client(monkeypatch):
         with Session() as db:
             yield db
 
-    monkeypatch.setenv("FACETTA_AUTH_MODE", "required")
+    monkeypatch.setenv("FACETTA_AUTH_MODE", "opaque")
     monkeypatch.setenv("FACETTA_AUTH_PRINCIPALS_JSON", json.dumps({
         OWNER_TOKEN: "usr_owner",
         OTHER_TOKEN: "usr_other",
@@ -220,6 +273,252 @@ def test_authenticated_owner_can_read_own_project(auth_client):
     )
     assert response.status_code == 200, response.text
     assert response.json()["owner"] == "usr_owner"
+
+
+def test_supabase_jwt_maps_uuid_subject_to_canonical_owner(
+    auth_client,
+    monkeypatch,
+):
+    client, Session = auth_client
+    private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    subject = str(uuid4())
+    canonical_subject = UUID(subject).hex
+    with Session() as db:
+        project = db.get(Project, "ast_auth_root")
+        assert project is not None
+        project.owner = canonical_subject
+        db.commit()
+    monkeypatch.setenv("FACETTA_AUTH_MODE", "supabase")
+    monkeypatch.setenv("FACETTA_SUPABASE_URL", SUPABASE_URL)
+    monkeypatch.setenv("FACETTA_SUPABASE_AUDIENCE", "authenticated")
+    monkeypatch.setattr(
+        "facetta.auth._supabase_signing_key",
+        lambda _token, _issuer: private_key.public_key(),
+    )
+    token = _supabase_access_token(private_key, subject)
+    response = client.get(
+        "/projects/ast_auth_root",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["owner"] == canonical_subject
+    assert len(canonical_subject) == 32
+
+
+@pytest.mark.parametrize("algorithm", ["RS256", "ES256"])
+def test_supabase_jwt_uses_real_jwks_key_selection(
+    auth_client,
+    monkeypatch,
+    algorithm,
+):
+    client, Session = auth_client
+    private_key = (
+        rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        if algorithm == "RS256"
+        else ec.generate_private_key(ec.SECP256R1())
+    )
+    subject = str(uuid4())
+    canonical_subject = UUID(subject).hex
+    with Session() as db:
+        project = db.get(Project, "ast_auth_root")
+        assert project is not None
+        project.owner = canonical_subject
+        db.commit()
+    monkeypatch.setenv("FACETTA_AUTH_MODE", "supabase")
+    monkeypatch.setenv("FACETTA_SUPABASE_URL", SUPABASE_URL)
+    _mock_jwks(
+        monkeypatch,
+        [_public_jwk(private_key.public_key(), algorithm, "current-key")],
+    )
+    token = _supabase_access_token(
+        private_key,
+        subject,
+        algorithm=algorithm,
+        kid="current-key",
+    )
+    response = client.get(
+        "/projects/ast_auth_root",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert response.status_code == 200, response.text
+
+
+def test_supabase_unknown_kid_is_invalid_but_empty_jwks_is_retryable(
+    auth_client,
+    monkeypatch,
+):
+    client, _Session = auth_client
+    private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    monkeypatch.setenv("FACETTA_AUTH_MODE", "supabase")
+    monkeypatch.setenv("FACETTA_SUPABASE_URL", SUPABASE_URL)
+    token = _supabase_access_token(private_key, str(uuid4()), kid="unknown")
+    _mock_jwks(
+        monkeypatch,
+        [_public_jwk(private_key.public_key(), "RS256", "known")],
+    )
+    unknown = client.get(
+        "/projects/ast_auth_root",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert unknown.status_code == 401
+    assert unknown.json()["detail"]["code"] == "invalid_authentication_token"
+    _mock_jwks(monkeypatch, [])
+    empty = client.get(
+        "/projects/ast_auth_root",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert empty.status_code == 503
+    assert empty.json()["detail"]["code"] == (
+        "authentication_verifier_unavailable"
+    )
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"iss": "https://attacker.example/auth/v1"},
+        {"aud": "service_role"},
+        {"role": "service_role"},
+        {"session_id": None},
+        {"session_id": "not-a-uuid"},
+        {"is_anonymous": None},
+        {"is_anonymous": True},
+        {"exp": 1},
+        {"nbf": int(time.time()) + 600},
+        {"sub": "not-a-uuid"},
+    ],
+)
+def test_supabase_jwt_rejects_untrusted_claims(
+    auth_client,
+    monkeypatch,
+    overrides,
+):
+    client, _Session = auth_client
+    private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    monkeypatch.setenv("FACETTA_AUTH_MODE", "supabase")
+    monkeypatch.setenv("FACETTA_SUPABASE_URL", SUPABASE_URL)
+    monkeypatch.setattr(
+        "facetta.auth._supabase_signing_key",
+        lambda _token, _issuer: private_key.public_key(),
+    )
+    token = _supabase_access_token(private_key, str(uuid4()), **overrides)
+    response = client.get(
+        "/projects/ast_auth_root",
+        headers={"Authorization": f"Bearer {token}"},
+    )
+    assert response.status_code == 401
+    assert response.json()["detail"]["code"] == "invalid_authentication_token"
+
+
+def test_supabase_jwt_rejects_wrong_signature(auth_client, monkeypatch):
+    client, _Session = auth_client
+    signer = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    other = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    monkeypatch.setenv("FACETTA_AUTH_MODE", "supabase")
+    monkeypatch.setenv("FACETTA_SUPABASE_URL", SUPABASE_URL)
+    monkeypatch.setattr(
+        "facetta.auth._supabase_signing_key",
+        lambda _token, _issuer: other.public_key(),
+    )
+    response = client.get(
+        "/projects/ast_auth_root",
+        headers={
+            "Authorization": (
+                f"Bearer {_supabase_access_token(signer, str(uuid4()))}"
+            ),
+        },
+    )
+    assert response.status_code == 401
+    assert response.json()["detail"]["code"] == "invalid_authentication_token"
+
+
+def test_supabase_jwks_outage_is_retryable_and_does_not_erase_identity(
+    auth_client,
+    monkeypatch,
+):
+    client, _Session = auth_client
+    private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    monkeypatch.setenv("FACETTA_AUTH_MODE", "supabase")
+    monkeypatch.setenv("FACETTA_SUPABASE_URL", SUPABASE_URL)
+
+    def unavailable(_token, _issuer):
+        raise PyJWKClientConnectionError("temporary JWKS outage")
+
+    monkeypatch.setattr("facetta.auth._supabase_signing_key", unavailable)
+    response = client.get(
+        "/projects/ast_auth_root",
+        headers={
+            "Authorization": (
+                f"Bearer {_supabase_access_token(private_key, str(uuid4()))}"
+            ),
+        },
+    )
+    assert response.status_code == 503
+    assert response.json()["detail"]["code"] == (
+        "authentication_verifier_unavailable"
+    )
+
+
+@pytest.mark.parametrize("mode", ["test", "local", "opaque", "required"])
+def test_production_rejects_non_supabase_auth_modes(monkeypatch, mode):
+    monkeypatch.setenv("FACETTA_ENV", "production")
+    monkeypatch.setenv("FACETTA_AUTH_MODE", mode)
+    with pytest.raises(RuntimeError, match="production requires"):
+        validate_auth_configuration()
+
+
+def test_production_accepts_complete_supabase_auth_configuration(monkeypatch):
+    monkeypatch.setenv("FACETTA_ENV", "production")
+    monkeypatch.setenv("FACETTA_AUTH_MODE", "supabase")
+    monkeypatch.setenv("FACETTA_SUPABASE_URL", SUPABASE_URL)
+    validate_auth_configuration()
+
+
+def test_application_lifespan_refuses_unsafe_production_mode(monkeypatch):
+    monkeypatch.setenv("FACETTA_ENV", "production")
+    monkeypatch.setenv("FACETTA_AUTH_MODE", "opaque")
+    with pytest.raises(RuntimeError, match="production requires"):
+        with TestClient(app):
+            pass
+
+
+@pytest.mark.parametrize("environment", ["prod", "staging", ""])
+def test_unknown_or_missing_environment_fails_closed(monkeypatch, environment):
+    monkeypatch.setenv("FACETTA_ENV", environment)
+    monkeypatch.setenv("FACETTA_AUTH_MODE", "test")
+    with pytest.raises(RuntimeError):
+        validate_auth_configuration()
+
+
+@pytest.mark.parametrize("audience", ["", "service_role", "anon"])
+def test_supabase_mode_requires_authenticated_audience(monkeypatch, audience):
+    monkeypatch.setenv("FACETTA_ENV", "production")
+    monkeypatch.setenv("FACETTA_AUTH_MODE", "supabase")
+    monkeypatch.setenv("FACETTA_SUPABASE_URL", SUPABASE_URL)
+    monkeypatch.setenv("FACETTA_SUPABASE_AUDIENCE", audience)
+    if audience == "":
+        # Empty env values fall back to the documented default.
+        validate_auth_configuration()
+    else:
+        with pytest.raises(RuntimeError, match="audience=authenticated"):
+            validate_auth_configuration()
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "http://facetta-test.supabase.co",
+        "http://localhost:54321",
+        "https://facetta-test.supabase.co/auth/v1",
+        "https://user@facetta-test.supabase.co",
+        "https://facetta-test.supabase.co?redirect=https://attacker.example",
+    ],
+)
+def test_supabase_mode_rejects_untrusted_project_urls(monkeypatch, url):
+    monkeypatch.setenv("FACETTA_AUTH_MODE", "supabase")
+    monkeypatch.setenv("FACETTA_SUPABASE_URL", url)
+    with pytest.raises(RuntimeError, match="valid FACETTA_SUPABASE_URL"):
+        validate_auth_configuration()
 
 
 def test_family_list_and_detail_are_scoped_to_principal(auth_client):

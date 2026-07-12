@@ -6,6 +6,7 @@ import pytest
 # API tests explicitly exercise the local/test boundary unless a test opts
 # into required bearer authentication.
 os.environ.setdefault("FACETTA_AUTH_MODE", "test")
+os.environ.setdefault("FACETTA_ENV", "test")
 
 from facetta.image_identity import spec_visual_hash
 from facetta.spec import Spec

@@ -5,8 +5,16 @@ from __future__ import annotations
 import hmac
 import json
 from dataclasses import dataclass
+from functools import lru_cache
+from urllib.parse import urlparse
+from uuid import UUID
 
 from fastapi import Depends, HTTPException, Request
+import jwt
+from jwt import PyJWKClient, PyJWTError
+from jwt.exceptions import (
+    PyJWKClientConnectionError, PyJWKClientError, PyJWKSetError,
+)
 from sqlalchemy.orm import Session
 
 from facetta.config import env_value
@@ -19,10 +27,28 @@ class AuthenticatedPrincipal:
     local_unbound: bool = False
 
 
+def validate_auth_configuration() -> None:
+    """Reject unsafe or incomplete authentication before serving traffic."""
+    mode = (env_value("FACETTA_AUTH_MODE") or "required").strip().lower()
+    environment = (env_value("FACETTA_ENV") or "production").strip().lower()
+    allowed = {"required", "supabase", "opaque", "local", "test"}
+    if environment not in {"development", "test", "production"}:
+        raise RuntimeError("FACETTA_ENV is not recognized")
+    if mode not in allowed:
+        raise RuntimeError("FACETTA_AUTH_MODE is not recognized")
+    if mode == "supabase" and _supabase_issuer() is None:
+        raise RuntimeError("Supabase authentication requires a valid FACETTA_SUPABASE_URL")
+    audience = (env_value("FACETTA_SUPABASE_AUDIENCE") or "authenticated").strip()
+    if mode == "supabase" and audience != "authenticated":
+        raise RuntimeError("Supabase authentication requires audience=authenticated")
+    if environment == "production" and mode != "supabase":
+        raise RuntimeError("production requires FACETTA_AUTH_MODE=supabase")
+
+
 def _error(status: int, code: str, detail: str) -> HTTPException:
     return HTTPException(status_code=status, detail={
         "code": code,
-        "error_category": "authentication" if status == 401 else "authorization",
+        "error_category": "authentication" if status in {401, 503} else "authorization",
         "detail": detail,
     })
 
@@ -44,14 +70,112 @@ def _configured_principals() -> dict[str, str]:
     }
 
 
+def _supabase_issuer() -> str | None:
+    raw = (env_value("FACETTA_SUPABASE_URL") or "").strip().rstrip("/")
+    if not raw:
+        return None
+    parsed = urlparse(raw)
+    environment = (env_value("FACETTA_ENV") or "production").strip().lower()
+    allow_http = (
+        (env_value("FACETTA_SUPABASE_ALLOW_HTTP") or "").lower() == "true"
+        and environment in {"development", "test"}
+    )
+    if parsed.scheme != "https" and not (
+        allow_http and parsed.scheme == "http" and parsed.hostname in {"localhost", "127.0.0.1"}
+    ):
+        return None
+    if (
+        not parsed.netloc
+        or parsed.path not in {"", "/"}
+        or parsed.params or parsed.query or parsed.fragment
+        or parsed.username is not None or parsed.password is not None
+    ):
+        return None
+    return f"{raw}/auth/v1"
+
+
+@lru_cache(maxsize=4)
+def _jwks_client(issuer: str) -> PyJWKClient:
+    # Supabase's edge caches JWKS for ten minutes. Do not extend that trust
+    # window in-process or rotations/revocations take longer to reach this API.
+    return PyJWKClient(
+        f"{issuer}/.well-known/jwks.json",
+        cache_keys=False,
+        lifespan=600,
+        timeout=5,
+    )
+
+
+def _supabase_signing_key(token: str, issuer: str):
+    return _jwks_client(issuer).get_signing_key_from_jwt(token).key
+
+
+def _authenticate_supabase(token: str) -> AuthenticatedPrincipal:
+    issuer = _supabase_issuer()
+    if issuer is None:
+        raise _error(503, "authentication_configuration_error", "authentication is unavailable")
+    audience = (env_value("FACETTA_SUPABASE_AUDIENCE") or "authenticated").strip()
+    if audience != "authenticated":
+        raise _error(503, "authentication_configuration_error", "authentication is unavailable")
+    try:
+        signing_key = _supabase_signing_key(token, issuer)
+    except PyJWKClientConnectionError:
+        raise _error(503, "authentication_verifier_unavailable", "authentication is temporarily unavailable")
+    except (PyJWKSetError, json.JSONDecodeError):
+        raise _error(503, "authentication_verifier_unavailable", "authentication is temporarily unavailable")
+    except PyJWKClientError as exc:
+        if "Unable to find a signing key that matches" in str(exc):
+            raise _error(401, "invalid_authentication_token", "the bearer session token is invalid")
+        raise _error(503, "authentication_verifier_unavailable", "authentication is temporarily unavailable")
+    except (PyJWTError, OSError, ValueError):
+        raise _error(401, "invalid_authentication_token", "the bearer session token is invalid")
+    try:
+        claims = jwt.decode(
+            token,
+            signing_key,
+            algorithms=["ES256", "RS256"],
+            audience=audience,
+            issuer=issuer,
+            options={
+                "require": [
+                    "aud", "exp", "iat", "iss", "role", "sub",
+                    "session_id", "is_anonymous",
+                ],
+            },
+        )
+    except (PyJWTError, OSError, ValueError):
+        raise _error(401, "invalid_authentication_token", "the bearer session token is invalid")
+    subject = claims.get("sub")
+    role = claims.get("role")
+    session_id = claims.get("session_id")
+    if (
+        not isinstance(subject, str) or not subject
+        or role != "authenticated"
+        or not isinstance(session_id, str) or not session_id
+        or claims.get("is_anonymous") is not False
+    ):
+        raise _error(401, "invalid_authentication_token", "the bearer session token is invalid")
+    try:
+        canonical_subject = UUID(subject).hex
+        UUID(session_id)
+    except (ValueError, AttributeError):
+        raise _error(401, "invalid_authentication_token", "the bearer session token is invalid")
+    return AuthenticatedPrincipal(subject=canonical_subject)
+
+
 def _authenticate(request: Request) -> AuthenticatedPrincipal:
     mode = (env_value("FACETTA_AUTH_MODE") or "required").strip().lower()
+    if mode not in {"required", "supabase", "opaque", "local", "test"}:
+        raise _error(503, "authentication_configuration_error", "authentication is unavailable")
     header = request.headers.get("authorization")
     if mode in {"local", "test"} and not header:
         return AuthenticatedPrincipal(subject=None, local_unbound=True)
     if not header or not header.startswith("Bearer "):
         raise _error(401, "authentication_required", "a bearer session token is required")
     supplied = header.removeprefix("Bearer ").strip()
+    supabase_configured = bool((env_value("FACETTA_SUPABASE_URL") or "").strip())
+    if mode == "supabase" or (mode == "required" and supabase_configured):
+        return _authenticate_supabase(supplied)
     for token, subject in _configured_principals().items():
         if hmac.compare_digest(supplied, token):
             return AuthenticatedPrincipal(subject=subject)

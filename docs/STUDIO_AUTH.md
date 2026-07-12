@@ -7,11 +7,16 @@ All `/projects/*`, `/studio/*`, Studio-consumed `/assets/*`, and trusted
 Authorization: Bearer <first-party-session-token>
 ```
 
-The server resolves that opaque token to one canonical principal using
-`FACETTA_AUTH_PRINCIPALS_JSON`. Request `owner` and `created_by` fields remain
-audit metadata; when present, they must equal the authenticated principal.
-They never establish access. Project reads and mutations also require the
-principal to own the stored project.
+In production the server verifies a Supabase access JWT locally against the
+project's asymmetric JWKS. It requires an exact issuer and audience, a valid
+signature and lifetime, `role=authenticated`, a non-anonymous session, and UUID
+`sub` and `session_id` claims. The Supabase subject is represented losslessly as
+32 lowercase hexadecimal characters so it fits the existing canonical owner
+fields. Email, profile metadata, and provider claims never grant authority.
+
+Request `owner` and `created_by` fields remain audit metadata; when present,
+they must equal the verified principal. They never establish access. Project
+reads and mutations also require the principal to own the stored project.
 
 Resource authorization is resolved from canonical records, not URL labels:
 
@@ -26,18 +31,44 @@ Resource authorization is resolved from canonical records, not URL labels:
 Unknown or ownerless legacy resources fail closed. Every `image_url` emitted
 by Studio requires the same bearer header; it is not a public CDN URL.
 
-Authentication fails closed by default. `FACETTA_AUTH_MODE=local` and `test`
-are explicit non-public bypasses only. Public beta deployments must leave the
-mode at `required` and inject the token mapping through deployment secrets.
+Authentication fails closed by default; an omitted environment is treated as
+production. Production requires:
+
+```dotenv
+FACETTA_ENV=production
+FACETTA_AUTH_MODE=supabase
+FACETTA_SUPABASE_URL=https://YOUR_PROJECT_REF.supabase.co
+FACETTA_SUPABASE_AUDIENCE=authenticated
+```
+
+The JWKS URL is derived from the validated project URL and cached for no longer
+than ten minutes. Only ES256 and RS256 are accepted; shared-secret HS256 tokens
+are not supported. `opaque`, `local`, and `test` are explicit non-production
+compatibility modes. Production startup rejects them.
+
+For an emergency signing-key event, restart every API process to clear its
+in-memory JWKS cache, then follow the Supabase key-revocation procedure. The
+Supabase edge also caches public keys, so plan for its documented rotation
+window rather than promising instantaneous backend revocation. Keep access
+tokens short-lived: ordinary sign-out or session deletion does not invalidate a
+previously issued offline-verified access JWT before its expiry. Factory-grade
+sensitive operations will need an online `session_id` check before public use.
 
 Stable failures:
 
 - `401 authentication_required`: bearer header missing or malformed.
-- `401 invalid_authentication_token`: token unknown or revoked.
+- `401 invalid_authentication_token`: signature or required claims are invalid,
+  or the token is expired.
+- `503 authentication_verifier_unavailable`: JWKS is temporarily unavailable;
+  preserve the client session and allow retry.
+- `503 authentication_configuration_error`: authentication is misconfigured.
 - `403 principal_actor_mismatch`: body/query audit actor attempts spoofing.
 - `403 project_access_denied`: authenticated user does not own the project.
 - `403 asset_access_denied`: authenticated user does not own the asset.
 - `403 image_run_access_denied`: authenticated user does not own the run.
 
-This boundary does not mint sessions. The first-party login/session service is
-responsible for issuing and delivering the opaque token to the mobile client.
+This boundary does not mint sessions. Supabase Auth owns login, refresh, expiry,
+and session issuance. A legacy owner such as `usr_owner` will not automatically
+match a real Supabase subject; beta cutover therefore requires either a clean
+database or a reviewed transactional owner backfill. Never map ownership from
+mutable email or user metadata.
