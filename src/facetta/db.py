@@ -376,6 +376,8 @@ class StudioPresentationCandidateRecord(Base):
         ForeignKey("projects.root_id"), nullable=False, index=True)
     source_asset_id: Mapped[str] = mapped_column(
         ForeignKey("image_assets.id"), nullable=False, index=True)
+    expected_active_asset_id: Mapped[str | None] = mapped_column(
+        ForeignKey("image_assets.id"), nullable=True)
     source_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
     output_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
     image: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
@@ -387,6 +389,9 @@ class StudioPresentationCandidateRecord(Base):
     framing: Mapped[str] = mapped_column(String(16), nullable=False)
     qa: Mapped[dict] = mapped_column(SpecJSON, nullable=False)
     status: Mapped[str] = mapped_column(String(16), nullable=False, index=True)
+    # Null preserves every pre-spec candidate. Exact Studio presentation
+    # candidates bind to the immutable specification represented by source.
+    design_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
     studio_job_id: Mapped[str | None] = mapped_column(
         ForeignKey("studio_jobs.id"), nullable=True, index=True)
     accepted_asset_id: Mapped[str | None] = mapped_column(
@@ -430,6 +435,105 @@ class StudioPresentationCandidateRecord(Base):
             "(status = 'reviewing' AND accepted_asset_id IS NULL "
             "AND review_id IS NULL AND resolved_at IS NULL)",
             name="ck_studio_presentation_candidate_resolution",
+        ),
+    )
+
+
+class StudioPresentationCandidateJobLink(Base):
+    """Many-output Present job membership without rewriting legacy rows.
+
+    ``StudioPresentationCandidateRecord.studio_job_id`` remains the compatible
+    one-output pre-spec binding. Exact multi-output jobs use this additive link
+    so one requested pack can settle and bill all accepted outputs together.
+    """
+
+    __tablename__ = "studio_presentation_candidate_job_links"
+
+    candidate_id: Mapped[str] = mapped_column(
+        ForeignKey("studio_presentation_candidates.id"), primary_key=True)
+    studio_job_id: Mapped[str] = mapped_column(
+        ForeignKey("studio_jobs.id"), nullable=False, index=True)
+    output_ordinal: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow)
+
+    __table_args__ = (
+        UniqueConstraint(
+            "studio_job_id", "output_ordinal",
+            name="uq_studio_presentation_job_output_ordinal",
+        ),
+        CheckConstraint(
+            "output_ordinal >= 0 AND output_ordinal <= 3",
+            name="ck_studio_presentation_output_ordinal",
+        ),
+    )
+
+
+class StudioViewCandidateRecord(Base):
+    """Durable review candidate for an exact, derived Studio View."""
+
+    __tablename__ = "studio_view_candidates"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    image_run_id: Mapped[str] = mapped_column(
+        ForeignKey("image_runs.id"), nullable=False, unique=True, index=True)
+    owner: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    project_root_id: Mapped[str] = mapped_column(
+        ForeignKey("projects.root_id"), nullable=False, index=True)
+    source_asset_id: Mapped[str] = mapped_column(
+        ForeignKey("image_assets.id"), nullable=False, index=True)
+    source_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    output_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    spec_visual_hash: Mapped[str] = mapped_column(String(16), nullable=False)
+    design_version: Mapped[int] = mapped_column(Integer, nullable=False)
+    view: Mapped[str] = mapped_column(String(24), nullable=False)
+    image: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    media_type: Mapped[str] = mapped_column(String(24), nullable=False)
+    requested_change: Mapped[str] = mapped_column(Text, nullable=False)
+    qa: Mapped[dict] = mapped_column(SpecJSON, nullable=False)
+    routing: Mapped[dict] = mapped_column(SpecJSON, nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, index=True)
+    studio_job_id: Mapped[str | None] = mapped_column(
+        ForeignKey("studio_jobs.id"), nullable=True, index=True)
+    accepted_asset_id: Mapped[str | None] = mapped_column(
+        ForeignKey("image_assets.id"), nullable=True)
+    review_id: Mapped[str | None] = mapped_column(
+        ForeignKey("image_run_reviews.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow)
+    expires_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, index=True)
+    resolved_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)
+
+    __table_args__ = (
+        CheckConstraint(
+            "view IN ('front', 'three_quarter', 'side')",
+            name="ck_studio_view_candidate_view",
+        ),
+        CheckConstraint(
+            "status IN ('reviewing', 'accepted', 'discarded', 'expired')",
+            name="ck_studio_view_candidate_status",
+        ),
+        CheckConstraint(
+            "length(source_sha256) = 64 AND length(output_sha256) = 64 "
+            "AND length(spec_visual_hash) = 16",
+            name="ck_studio_view_candidate_hashes",
+        ),
+        CheckConstraint(
+            "design_version >= 1",
+            name="ck_studio_view_candidate_design_version",
+        ),
+        CheckConstraint(
+            "(status = 'accepted' AND accepted_asset_id IS NOT NULL "
+            "AND review_id IS NOT NULL AND resolved_at IS NOT NULL) OR "
+            "(status = 'discarded' AND accepted_asset_id IS NULL "
+            "AND review_id IS NOT NULL AND resolved_at IS NOT NULL) OR "
+            "(status = 'expired' AND accepted_asset_id IS NULL "
+            "AND resolved_at IS NOT NULL) OR "
+            "(status = 'reviewing' AND accepted_asset_id IS NULL "
+            "AND review_id IS NULL AND resolved_at IS NULL)",
+            name="ck_studio_view_candidate_resolution",
         ),
     )
 
@@ -1176,6 +1280,27 @@ def _apply_additive_migrations(engine) -> None:
             conn.execute(text(
                 "ALTER TABLE feedback_events "
                 "ADD COLUMN subject_kind VARCHAR(16) DEFAULT 'asset'"))
+
+    # Exact Present candidates add only an optional immutable-spec binding.
+    # Historical pre-spec candidates remain valid with NULL design_version;
+    # the many-output job link and View candidate ledger are new tables made
+    # by create_all before this compatibility pass.
+    if inspector.has_table("studio_presentation_candidates"):
+        presentation_columns = {
+            c["name"]
+            for c in inspector.get_columns("studio_presentation_candidates")
+        }
+        for column, declaration in {
+            "design_version": "INTEGER",
+            "expected_active_asset_id": (
+                "VARCHAR(32) REFERENCES image_assets(id)"
+            ),
+        }.items():
+            if column not in presentation_columns:
+                with engine.begin() as conn:
+                    conn.execute(text(
+                        "ALTER TABLE studio_presentation_candidates "
+                        f"ADD COLUMN {column} {declaration}"))
 
 
 def normalize_database_url(url: str) -> str:

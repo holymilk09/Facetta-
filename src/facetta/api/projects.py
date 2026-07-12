@@ -127,6 +127,18 @@ from facetta.preliminary_sheet import sheet_readiness_blockers
 from facetta.render import RenderUnavailable
 from facetta.spec import Spec
 from facetta.studio_history import ensure_project_family
+from facetta.studio_presentation_candidates import (
+    StudioPresentationError,
+    fail_exact_studio_presentation_job,
+    reserve_exact_studio_presentation_job,
+    store_studio_presentation_candidate,
+)
+from facetta.studio_view_candidates import (
+    StudioViewError,
+    fail_studio_view_job,
+    reserve_studio_view_job,
+    store_studio_view_candidate,
+)
 from facetta.studio_confirm import (
     StudioConfirmDesignResponse,
     build_studio_confirm_design_response,
@@ -522,6 +534,7 @@ class ProjectRenderRequest(BaseModel):
     )
     variant: Annotated[int, Field(ge=0, le=100)] = 0
     presentation_only: bool = False
+    studio_job_id: Annotated[str, Field(min_length=1, max_length=32)] | None = None
 
 
 class ProductPhotoRequest(BaseModel):
@@ -537,6 +550,7 @@ class ProductPhotoRequest(BaseModel):
     custom_instruction: Annotated[str, Field(max_length=600)] = ""
     variant: Annotated[int, Field(ge=0, le=100)] = 0
     presentation_only: bool = False
+    studio_job_id: Annotated[str, Field(min_length=1, max_length=32)] | None = None
 
 
 class MarketingPackRequest(BaseModel):
@@ -551,6 +565,7 @@ class MarketingPackRequest(BaseModel):
     framing: Literal["source", "square", "portrait"] = "portrait"
     custom_instruction: Annotated[str, Field(max_length=600)] = ""
     starting_variant: Annotated[int, Field(ge=0, le=100)] = 0
+    studio_job_id: Annotated[str, Field(min_length=1, max_length=32)] | None = None
 
     @model_validator(mode="after")
     def unique_presets(self) -> MarketingPackRequest:
@@ -567,6 +582,7 @@ class MarketingPackCandidate(BaseModel):
     preview_url: str
     qa: JsonObject
     routing: JsonObject
+    studio_job_id: str | None = None
 
 
 class MarketingPackFailure(BaseModel):
@@ -655,6 +671,7 @@ class ProjectLineArtRequest(BaseModel):
     ] | None = None
     source_region: NormalizedSourceRegion | None = None
     variant: Annotated[int, Field(ge=0, le=100)] = 0
+    studio_job_id: Annotated[str, Field(min_length=1, max_length=32)] | None = None
 
 
 class ProjectColorizeLineArtRequest(BaseModel):
@@ -2191,6 +2208,11 @@ def render_project_revision(
     if project is None:
         raise HTTPException(status_code=404,
                             detail=f"no project for chain '{root_id}'")
+    if request.studio_job_id is not None and not request.presentation_only:
+        return JSONResponse(status_code=422, content={
+            "code": "presentation_job_requires_presentation_only",
+            "detail": "a Present job cannot create a primary beauty revision",
+        })
     chain = project_chain(db, root_id)
     primary = [asset for asset in chain if is_primary_revision(asset)]
     active = primary[-1] if primary else None
@@ -2309,6 +2331,20 @@ def render_project_revision(
                 for blocker in coverage_blockers
             ],
         })
+    if request.studio_job_id is not None:
+        try:
+            reserve_exact_studio_presentation_job(
+                db,
+                job_id=request.studio_job_id,
+                owner=request.created_by,
+                project_root_id=root_id,
+                source_asset_id=source.id,
+                requested_outputs=1,
+            )
+        except StudioPresentationError as exc:
+            return JSONResponse(status_code=exc.status_code, content={
+                "code": exc.code, "detail": exc.detail,
+            })
     plan = build_image_plan(
         ImageOperation.SPEC_RENDER,
         request.instruction,
@@ -2323,38 +2359,104 @@ def render_project_revision(
         run_id = persist_image_agent_failure(
             db, plan, exc, project_root_id=root_id,
             source_asset_id=source.id, created_by=request.created_by)
+        if request.studio_job_id is not None:
+            fail_exact_studio_presentation_job(
+                db,
+                job_id=request.studio_job_id,
+                owner=request.created_by,
+                error_code="presentation_provider_failed",
+            )
         return image_agent_error_response(exc, image_run_id=run_id)
-    if not result.accepted:
+    if request.studio_job_id is not None and _failed_hard_quality(result):
         run_id = persist_image_agent_result(
-            db, result, project_root_id=root_id, source_asset_id=source.id,
-            created_by=request.created_by)
-        qa = _quality_payload(result)
-        routing = _routing_payload(result, run_id)
-        candidate = store_markup_warning_candidate(
-            run_id=run_id,
-            project_root_id=root_id,
-            source_asset_id=source.id,
-            expected_active_asset_id=active.id,
-            expected_design_version=latest.version,
-            image_bytes=result.image_bytes,
-            media_type=sniff_media_type(result.image_bytes),
-            operation=ImageOperation.SPEC_RENDER.value,
-            asset_capability=(
-                "CLIENT_BEAUTY_RENDER"
-                if request.presentation_only else "SPEC_RENDER"
-            ),
-            requested_change=request.instruction,
-            region_description="entire designer-confirmed ring",
-            drift=None,
-            next_spec=None,
-            ignored_fields=(),
-            qa=qa,
-            routing=routing,
-            created_by=request.created_by,
-            promotion_kind=(
-                "presentation_only" if request.presentation_only else "standard"
-            ),
+            db, result, project_root_id=root_id,
+            source_asset_id=source.id, created_by=request.created_by)
+        fail_exact_studio_presentation_job(
+            db, job_id=request.studio_job_id, owner=request.created_by,
+            error_code="presentation_failed_quality",
         )
+        return JSONResponse(status_code=422, content={
+            "code": "presentation_failed_quality",
+            "detail": "the presentation failed automated quality checks",
+            "image_run_id": run_id,
+        })
+    review_result = (
+        _designer_review_result(result)
+        if request.studio_job_id is not None else result
+    )
+    if not review_result.accepted:
+        run_id = persist_image_agent_result(
+            db, review_result, project_root_id=root_id, source_asset_id=source.id,
+            created_by=request.created_by)
+        qa = _quality_payload(review_result)
+        routing = _routing_payload(review_result, run_id)
+        if request.studio_job_id is not None:
+            try:
+                candidate = store_studio_presentation_candidate(
+                    db,
+                    run_id=run_id,
+                    project_root_id=root_id,
+                    source_asset_id=source.id,
+                    source_hash=hashlib.sha256(bytes(source.image)).hexdigest(),
+                    image_bytes=review_result.image_bytes,
+                    media_type=sniff_media_type(review_result.image_bytes),
+                    destination="client",
+                    capability="CLIENT_BEAUTY_RENDER",
+                    requested_change=request.instruction,
+                    preset="beauty",
+                    framing="source",
+                    qa=qa,
+                    created_by=request.created_by,
+                    studio_job_id=request.studio_job_id,
+                    design_version=latest.version,
+                    output_ordinal=0,
+                    expected_active_asset_id=active.id,
+                )
+            except StudioPresentationError as exc:
+                fail_exact_studio_presentation_job(
+                    db,
+                    job_id=request.studio_job_id,
+                    owner=request.created_by,
+                    error_code="presentation_candidate_store_failed",
+                )
+                return JSONResponse(status_code=exc.status_code, content={
+                    "code": exc.code,
+                    "detail": exc.detail,
+                })
+            preview_url = (
+                f"/studio/image-runs/{run_id}/presentation-candidates/"
+                f"{candidate.candidate_id}/image?owner={request.created_by}"
+            )
+        else:
+            candidate = store_markup_warning_candidate(
+                run_id=run_id,
+                project_root_id=root_id,
+                source_asset_id=source.id,
+                expected_active_asset_id=active.id,
+                expected_design_version=latest.version,
+                image_bytes=review_result.image_bytes,
+                media_type=sniff_media_type(review_result.image_bytes),
+                operation=ImageOperation.SPEC_RENDER.value,
+                asset_capability=(
+                    "CLIENT_BEAUTY_RENDER"
+                    if request.presentation_only else "SPEC_RENDER"
+                ),
+                requested_change=request.instruction,
+                region_description="entire designer-confirmed ring",
+                drift=None,
+                next_spec=None,
+                ignored_fields=(),
+                qa=qa,
+                routing=routing,
+                created_by=request.created_by,
+                promotion_kind=(
+                    "presentation_only"
+                    if request.presentation_only else "standard"
+                ),
+            )
+            preview_url = (
+                f"/image-runs/{run_id}/candidates/{candidate.candidate_id}/image"
+            )
         return JSONResponse(status_code=202, content={
             "status": "review_required",
             "project_id": root_id,
@@ -2365,14 +2467,15 @@ def render_project_revision(
             "warning_candidate": {
                 "run_id": run_id,
                 "candidate_id": candidate.candidate_id,
-                "preview_url": (
-                    f"/image-runs/{run_id}/candidates/"
-                    f"{candidate.candidate_id}/image"
-                ),
+                "preview_url": preview_url,
                 "operation": ImageOperation.SPEC_RENDER.value,
-                "asset_capability": "SPEC_RENDER",
+                "asset_capability": (
+                    "CLIENT_BEAUTY_RENDER"
+                    if request.presentation_only else "SPEC_RENDER"
+                ),
                 "qa": qa,
                 "requested_change": request.instruction,
+                "studio_job_id": request.studio_job_id,
             },
         })
     persisted = (
@@ -2426,6 +2529,16 @@ def _quality_payload(result) -> dict[str, object]:
     }
 
 
+def _failed_hard_quality(result: ImageAgentResult) -> bool:
+    return (
+        result.quality.verdict.value == "fail"
+        or any(
+            not check.passed and check.severity.value == "hard"
+            for check in result.quality.checks
+        )
+    )
+
+
 def _routing_payload(result, run_id: str | None = None) -> dict[str, object]:
     attempts = result.run.attempts
     return {
@@ -2467,6 +2580,11 @@ def create_product_photo(
     if project is None:
         raise HTTPException(status_code=404,
                             detail=f"no project for chain '{root_id}'")
+    if request.studio_job_id is not None and not request.presentation_only:
+        return JSONResponse(status_code=422, content={
+            "code": "presentation_job_requires_presentation_only",
+            "detail": "a Present job cannot create a primary photo revision",
+        })
     chain = project_chain(db, root_id)
     primary = [asset for asset in chain if is_primary_revision(asset)]
     source = primary[-1] if primary else None
@@ -2506,6 +2624,21 @@ def create_product_photo(
             "detail": str(exc),
         })
 
+    if request.studio_job_id is not None:
+        try:
+            reserve_exact_studio_presentation_job(
+                db,
+                job_id=request.studio_job_id,
+                owner=request.created_by,
+                project_root_id=root_id,
+                source_asset_id=source.id,
+                requested_outputs=1,
+            )
+        except StudioPresentationError as exc:
+            return JSONResponse(status_code=exc.status_code, content={
+                "code": exc.code, "detail": exc.detail,
+            })
+
     from facetta.image_agent import ImageOperation, JewelryImageAgent, build_image_plan
 
     validated = validate_spec(Spec.model_validate(latest.spec), get_vocabulary())
@@ -2536,39 +2669,105 @@ def create_product_photo(
         run_id = persist_image_agent_failure(
             db, plan, exc, project_root_id=root_id,
             source_asset_id=source.id, created_by=request.created_by)
+        if request.studio_job_id is not None:
+            fail_exact_studio_presentation_job(
+                db,
+                job_id=request.studio_job_id,
+                owner=request.created_by,
+                error_code="presentation_provider_failed",
+            )
         return image_agent_error_response(exc, image_run_id=run_id)
 
-    qa = _quality_payload(result)
-    if result.review_required:
+    if request.studio_job_id is not None and _failed_hard_quality(result):
         run_id = persist_image_agent_result(
             db, result, project_root_id=root_id,
             source_asset_id=source.id, created_by=request.created_by)
-        routing = _routing_payload(result, run_id)
-        candidate = store_markup_warning_candidate(
-            run_id=run_id,
-            project_root_id=root_id,
-            source_asset_id=source.id,
-            expected_active_asset_id=source.id,
-            expected_design_version=latest.version,
-            image_bytes=result.image_bytes,
-            media_type=sniff_media_type(result.image_bytes),
-            operation=ImageOperation.VISUAL_ONLY_EDIT.value,
-            asset_capability=(
-                "CLIENT_PRODUCT_PHOTO"
-                if request.presentation_only else "PRODUCT_PHOTO"
-            ),
-            requested_change=brief.intent,
-            region_description="entire product presentation; jewelry design frozen",
-            drift=None,
-            next_spec=None,
-            ignored_fields=(),
-            qa=qa,
-            routing=routing,
-            created_by=request.created_by,
-            promotion_kind=(
-                "presentation_only" if request.presentation_only else "standard"
-            ),
+        fail_exact_studio_presentation_job(
+            db, job_id=request.studio_job_id, owner=request.created_by,
+            error_code="presentation_failed_quality",
         )
+        return JSONResponse(status_code=422, content={
+            "code": "presentation_failed_quality",
+            "detail": "the presentation failed automated quality checks",
+            "image_run_id": run_id,
+        })
+    review_result = (
+        _designer_review_result(result)
+        if request.studio_job_id is not None else result
+    )
+    qa = _quality_payload(review_result)
+    if review_result.review_required:
+        run_id = persist_image_agent_result(
+            db, review_result, project_root_id=root_id,
+            source_asset_id=source.id, created_by=request.created_by)
+        routing = _routing_payload(review_result, run_id)
+        if request.studio_job_id is not None:
+            try:
+                candidate = store_studio_presentation_candidate(
+                    db,
+                    run_id=run_id,
+                    project_root_id=root_id,
+                    source_asset_id=source.id,
+                    source_hash=hashlib.sha256(bytes(source.image)).hexdigest(),
+                    image_bytes=review_result.image_bytes,
+                    media_type=sniff_media_type(review_result.image_bytes),
+                    destination="client",
+                    capability="CLIENT_PRODUCT_PHOTO",
+                    requested_change=brief.intent,
+                    preset=request.preset,
+                    framing=request.framing,
+                    qa=qa,
+                    created_by=request.created_by,
+                    studio_job_id=request.studio_job_id,
+                    design_version=latest.version,
+                    output_ordinal=0,
+                    expected_active_asset_id=source.id,
+                )
+            except StudioPresentationError as exc:
+                fail_exact_studio_presentation_job(
+                    db,
+                    job_id=request.studio_job_id,
+                    owner=request.created_by,
+                    error_code="presentation_candidate_store_failed",
+                )
+                return JSONResponse(status_code=exc.status_code, content={
+                    "code": exc.code,
+                    "detail": exc.detail,
+                })
+            preview_url = (
+                f"/studio/image-runs/{run_id}/presentation-candidates/"
+                f"{candidate.candidate_id}/image?owner={request.created_by}"
+            )
+        else:
+            candidate = store_markup_warning_candidate(
+                run_id=run_id,
+                project_root_id=root_id,
+                source_asset_id=source.id,
+                expected_active_asset_id=source.id,
+                expected_design_version=latest.version,
+                image_bytes=review_result.image_bytes,
+                media_type=sniff_media_type(review_result.image_bytes),
+                operation=ImageOperation.VISUAL_ONLY_EDIT.value,
+                asset_capability=(
+                    "CLIENT_PRODUCT_PHOTO"
+                    if request.presentation_only else "PRODUCT_PHOTO"
+                ),
+                requested_change=brief.intent,
+                region_description=(
+                    "entire product presentation; jewelry design frozen"),
+                drift=None,
+                next_spec=None,
+                ignored_fields=(),
+                qa=qa,
+                routing=routing,
+                created_by=request.created_by,
+                promotion_kind=(
+                    "presentation_only" if request.presentation_only else "standard"
+                ),
+            )
+            preview_url = (
+                f"/image-runs/{run_id}/candidates/{candidate.candidate_id}/image"
+            )
         return JSONResponse(status_code=202, content={
             "status": "review_required",
             "project_id": root_id,
@@ -2584,13 +2783,11 @@ def create_product_photo(
             "warning_candidate": {
                 "run_id": run_id,
                 "candidate_id": candidate.candidate_id,
-                "preview_url": (
-                    f"/image-runs/{run_id}/candidates/"
-                    f"{candidate.candidate_id}/image"
-                ),
+                "preview_url": preview_url,
                 "qa": qa,
                 "operation": ImageOperation.VISUAL_ONLY_EDIT.value,
                 "requested_change": brief.intent,
+                "studio_job_id": request.studio_job_id,
             },
         })
 
@@ -2701,6 +2898,21 @@ def create_marketing_pack(
             "detail": str(exc),
         })
 
+    if request.studio_job_id is not None:
+        try:
+            reserve_exact_studio_presentation_job(
+                db,
+                job_id=request.studio_job_id,
+                owner=request.created_by,
+                project_root_id=root_id,
+                source_asset_id=source.id,
+                requested_outputs=len(request.presets),
+            )
+        except StudioPresentationError as exc:
+            return JSONResponse(status_code=exc.status_code, content={
+                "code": exc.code, "detail": exc.detail,
+            })
+
     candidates: list[dict[str, object]] = []
     failures: list[dict[str, object]] = []
     actual_attempts = 0
@@ -2734,6 +2946,19 @@ def create_marketing_pack(
             })
             continue
 
+        if request.studio_job_id is not None and _failed_hard_quality(result):
+            run_id = persist_image_agent_result(
+                db, result, project_root_id=root_id,
+                source_asset_id=source.id, created_by=request.created_by)
+            failures.append({
+                "preset": preset,
+                "image_run_id": run_id,
+                "error_category": "quality_failure",
+                "code": "presentation_failed_quality",
+                "detail": "the presentation failed automated quality checks",
+            })
+            continue
+
         # Marketing output is never promoted merely because automated QA
         # passed. The designer explicitly selects each deliverable.
         review_result = _designer_review_result(result)
@@ -2747,40 +2972,84 @@ def create_marketing_pack(
             created_by=request.created_by,
         )
         routing = _routing_payload(review_result, run_id)
-        candidate = store_markup_warning_candidate(
-            run_id=run_id,
-            project_root_id=root_id,
-            source_asset_id=source.id,
-            expected_active_asset_id=source.id,
-            expected_design_version=latest.version,
-            image_bytes=review_result.image_bytes,
-            media_type=sniff_media_type(review_result.image_bytes),
-            operation="VISUAL_ONLY_EDIT",
-            asset_capability="MARKETING_IMAGE",
-            requested_change=brief.intent,
-            region_description=(
-                "entire ecommerce presentation; approved jewelry frozen"),
-            drift=None,
-            next_spec=None,
-            ignored_fields=(),
-            qa=qa,
-            routing=routing,
-            created_by=request.created_by,
-            promotion_kind="presentation_only",
-        )
+        if request.studio_job_id is not None:
+            try:
+                candidate = store_studio_presentation_candidate(
+                    db,
+                    run_id=run_id,
+                    project_root_id=root_id,
+                    source_asset_id=source.id,
+                    source_hash=hashlib.sha256(bytes(source.image)).hexdigest(),
+                    image_bytes=review_result.image_bytes,
+                    media_type=sniff_media_type(review_result.image_bytes),
+                    destination="marketing",
+                    capability="MARKETING_IMAGE",
+                    requested_change=brief.intent,
+                    preset=preset,
+                    framing=request.framing,
+                    qa=qa,
+                    created_by=request.created_by,
+                    studio_job_id=request.studio_job_id,
+                    design_version=latest.version,
+                    output_ordinal=offset,
+                    expected_active_asset_id=source.id,
+                )
+            except StudioPresentationError as exc:
+                failures.append({
+                    "preset": preset,
+                    "image_run_id": run_id,
+                    "error_category": "validation_failure",
+                    "code": exc.code,
+                    "detail": exc.detail,
+                })
+                continue
+            preview_url = (
+                f"/studio/image-runs/{run_id}/presentation-candidates/"
+                f"{candidate.candidate_id}/image?owner={request.created_by}"
+            )
+        else:
+            candidate = store_markup_warning_candidate(
+                run_id=run_id,
+                project_root_id=root_id,
+                source_asset_id=source.id,
+                expected_active_asset_id=source.id,
+                expected_design_version=latest.version,
+                image_bytes=review_result.image_bytes,
+                media_type=sniff_media_type(review_result.image_bytes),
+                operation="VISUAL_ONLY_EDIT",
+                asset_capability="MARKETING_IMAGE",
+                requested_change=brief.intent,
+                region_description=(
+                    "entire ecommerce presentation; approved jewelry frozen"),
+                drift=None,
+                next_spec=None,
+                ignored_fields=(),
+                qa=qa,
+                routing=routing,
+                created_by=request.created_by,
+                promotion_kind="presentation_only",
+            )
+            preview_url = (
+                f"/image-runs/{run_id}/candidates/{candidate.candidate_id}/image"
+            )
         candidates.append({
             "preset": preset,
             "framing": request.framing,
             "image_run_id": run_id,
             "candidate_id": candidate.candidate_id,
-            "preview_url": (
-                f"/image-runs/{run_id}/candidates/"
-                f"{candidate.candidate_id}/image"
-            ),
+            "preview_url": preview_url,
             "qa": qa,
             "routing": routing,
+            "studio_job_id": request.studio_job_id,
         })
 
+    if request.studio_job_id is not None and not candidates:
+        fail_exact_studio_presentation_job(
+            db,
+            job_id=request.studio_job_id,
+            owner=request.created_by,
+            error_code="presentation_outputs_failed",
+        )
     return {
         "status": "review_required" if candidates else "failed",
         "project_id": root_id,
@@ -3060,6 +3329,19 @@ def create_project_line_art(
         expected_output=brief.expected_output,
         variant=request.variant,
     )
+    if request.studio_job_id is not None:
+        try:
+            reserve_studio_view_job(
+                db,
+                job_id=request.studio_job_id,
+                owner=request.created_by,
+                project_root_id=root_id,
+                source_asset_id=source.id,
+            )
+        except StudioViewError as exc:
+            return JSONResponse(status_code=exc.status_code, content={
+                "code": exc.code, "detail": exc.detail,
+            })
     try:
         result = JewelryImageAgent(
             evaluator=ConfirmedLineArtQualityEvaluator(),
@@ -3068,37 +3350,96 @@ def create_project_line_art(
         run_id = persist_image_agent_failure(
             db, plan, exc, project_root_id=root_id,
             source_asset_id=source.id, created_by=request.created_by)
+        if request.studio_job_id is not None:
+            fail_studio_view_job(
+                db, job_id=request.studio_job_id, owner=request.created_by,
+                error_code="view_provider_failed",
+            )
         return image_agent_error_response(exc, image_run_id=run_id)
 
+    if request.studio_job_id is not None and _failed_hard_quality(result):
+        run_id = persist_image_agent_result(
+            db, result, project_root_id=root_id,
+            source_asset_id=source.id, created_by=request.created_by)
+        fail_studio_view_job(
+            db, job_id=request.studio_job_id, owner=request.created_by,
+            error_code="view_failed_quality",
+        )
+        return JSONResponse(status_code=422, content={
+            "code": "view_failed_quality",
+            "detail": "the generated View failed automated quality checks",
+            "image_run_id": run_id,
+        })
     result = _designer_review_result(result)
     run_id = persist_image_agent_result(
         db, result, project_root_id=root_id,
         source_asset_id=source.id, created_by=request.created_by)
     qa = _quality_payload(result)
     routing = _routing_payload(result, run_id)
-    candidate = store_markup_warning_candidate(
-        run_id=run_id,
-        project_root_id=root_id,
-        source_asset_id=source.id,
-        expected_active_asset_id=source.id,
-        expected_design_version=latest.version,
-        image_bytes=result.image_bytes,
-        media_type=sniff_media_type(result.image_bytes),
-        operation=ImageOperation.VISUAL_ONLY_EDIT.value,
-        asset_capability="LINE_ART",
-        requested_change=brief.intent,
-        region_description=(
-            f"designer-selected source region to confirmed {request.view} "
-            "line-art view" if selection_payload else
-            f"entire confirmed {request.view} line-art view"
-        ),
-        drift=None,
-        next_spec=None,
-        ignored_fields=(),
-        qa=qa,
-        routing=routing,
-        created_by=request.created_by,
-    )
+    if request.studio_job_id is not None:
+        try:
+            candidate = store_studio_view_candidate(
+                db,
+                run_id=run_id,
+                project_root_id=root_id,
+                source_asset_id=source.id,
+                source_hash=hashlib.sha256(bytes(source.image)).hexdigest(),
+                output_bytes=result.image_bytes,
+                media_type=sniff_media_type(result.image_bytes),
+                design_version=latest.version,
+                spec_hash=spec_visual_hash(validated.spec),
+                view=request.view,
+                requested_change=brief.intent,
+                qa=qa,
+                routing=routing,
+                created_by=request.created_by,
+                studio_job_id=request.studio_job_id,
+            )
+        except StudioViewError as exc:
+            fail_studio_view_job(
+                db,
+                job_id=request.studio_job_id,
+                owner=request.created_by,
+                error_code="view_candidate_store_failed",
+            )
+            return JSONResponse(status_code=exc.status_code, content={
+                "code": exc.code,
+                "category": (
+                    "validation" if exc.status_code == 422 else "conflict"
+                ),
+                "detail": exc.detail,
+            })
+        preview_url = (
+            f"/studio/view-candidates/{run_id}/"
+            f"{candidate.candidate_id}/image?owner={request.created_by}"
+        )
+    else:
+        candidate = store_markup_warning_candidate(
+            run_id=run_id,
+            project_root_id=root_id,
+            source_asset_id=source.id,
+            expected_active_asset_id=source.id,
+            expected_design_version=latest.version,
+            image_bytes=result.image_bytes,
+            media_type=sniff_media_type(result.image_bytes),
+            operation=ImageOperation.VISUAL_ONLY_EDIT.value,
+            asset_capability="LINE_ART",
+            requested_change=brief.intent,
+            region_description=(
+                f"designer-selected source region to confirmed {request.view} "
+                "line-art view" if selection_payload else
+                f"entire confirmed {request.view} line-art view"
+            ),
+            drift=None,
+            next_spec=None,
+            ignored_fields=(),
+            qa=qa,
+            routing=routing,
+            created_by=request.created_by,
+        )
+        preview_url = (
+            f"/image-runs/{run_id}/candidates/{candidate.candidate_id}/image"
+        )
     return {
         "status": "confirmation_required",
         "project_id": root_id,
@@ -3110,14 +3451,12 @@ def create_project_line_art(
         "candidate": {
             "run_id": run_id,
             "candidate_id": candidate.candidate_id,
-            "preview_url": (
-                f"/image-runs/{run_id}/candidates/"
-                f"{candidate.candidate_id}/image"
-            ),
+            "preview_url": preview_url,
             "operation": ImageOperation.VISUAL_ONLY_EDIT.value,
             "asset_capability": "LINE_ART",
             "qa": qa,
             "requested_change": brief.intent,
+            "studio_job_id": request.studio_job_id,
         },
         "next": (
             "designer confirms geometry, then render directly from the "

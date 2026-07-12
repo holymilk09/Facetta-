@@ -88,6 +88,14 @@ from facetta.studio_presentation_candidates import (
     reserve_studio_presentation_job,
     store_studio_presentation_candidate,
 )
+from facetta.studio_view_candidates import (
+    StudioViewCandidateUnavailable,
+    StudioViewError,
+    accept_studio_view_candidate,
+    discard_studio_view_candidate,
+    get_studio_view_candidate,
+    list_studio_view_candidates,
+)
 from facetta.trusted_revision import (
     WarningRevisionError,
     accept_warning_revision,
@@ -175,6 +183,17 @@ class CancelStudioJobRequest(BaseModel):
 
 class ResolvePresentationCandidateRequest(BaseModel):
     """Exact lineage required for a terminal presentation decision."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    created_by: Annotated[str, Field(min_length=1, max_length=32)]
+    expected_project_id: Annotated[str, Field(min_length=1, max_length=32)]
+    expected_source_asset_id: Annotated[str, Field(min_length=1, max_length=32)]
+    expected_design_version: Annotated[int, Field(ge=1)]
+
+
+class ResolveViewCandidateRequest(BaseModel):
+    """Exact project, source, and specification guards for a View decision."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -1314,6 +1333,163 @@ def create_pre_spec_presentation_preview(
     }
 
 
+def _view_candidate_error(exc: StudioViewError) -> JSONResponse:
+    return JSONResponse(status_code=exc.status_code, content={
+        "code": exc.code,
+        "category": (
+            "stale_version" if exc.code.startswith("stale_")
+            else "validation" if exc.status_code == 422
+            else "authorization" if exc.status_code == 403
+            else "conflict"
+        ),
+        "detail": exc.detail,
+    })
+
+
+@router.get("/view-candidates")
+def list_exact_view_candidates(
+    db: DbSession,
+    owner: Annotated[str, Query(min_length=1, max_length=32)],
+    principal: PrincipalDep,
+    project_id: Annotated[str, Query(min_length=1, max_length=32)] | None = None,
+    status: Literal[
+        "reviewing", "accepted", "discarded", "expired",
+    ] | None = "reviewing",
+):
+    principal_actor(principal, owner)
+    candidates = list_studio_view_candidates(
+        db, owner=owner, project_root_id=project_id, status=status)
+    return {"candidates": [{
+        "candidate_id": item.candidate_id,
+        "image_run_id": item.run_id,
+        "studio_job_id": item.studio_job_id,
+        "project_id": item.project_root_id,
+        "source_asset_id": item.source_asset_id,
+        "source_sha256": item.source_hash,
+        "design_version": item.design_version,
+        "view": item.view,
+        "qa": item.qa,
+        "status": item.status,
+        "accepted_asset_id": item.accepted_asset_id,
+        "expires_at": item.expires_at.isoformat(),
+        "preview_url": (
+            f"/studio/view-candidates/{item.run_id}/"
+            f"{item.candidate_id}/image?owner={owner}"
+        ),
+    } for item in candidates]}
+
+
+@router.get("/view-candidates/{run_id}/{candidate_id}/image")
+def get_exact_view_candidate_image(
+    run_id: str,
+    candidate_id: str,
+    db: DbSession,
+    owner: Annotated[str, Query(min_length=1, max_length=32)],
+    principal: PrincipalDep,
+):
+    principal_actor(principal, owner)
+    try:
+        candidate = get_studio_view_candidate(
+            db, run_id, candidate_id, owner=owner)
+    except StudioViewCandidateUnavailable as exc:
+        return JSONResponse(status_code=exc.status_code, content={
+            "code": "view_candidate_unavailable",
+            "category": "conflict",
+            "detail": str(exc),
+        })
+    if candidate.status != "reviewing":
+        return JSONResponse(status_code=410, content={
+            "code": "view_candidate_unavailable",
+            "category": "conflict",
+            "detail": f"the Studio View was already {candidate.status}",
+        })
+    return Response(
+        content=candidate.image_bytes,
+        media_type=candidate.media_type,
+        headers={"Cache-Control": "private, no-store"},
+    )
+
+
+@router.post(
+    "/view-candidates/{run_id}/{candidate_id}/accept", status_code=201,
+)
+def accept_exact_view_candidate(
+    run_id: str,
+    candidate_id: str,
+    request: ResolveViewCandidateRequest,
+    db: DbSession,
+    principal: PrincipalDep,
+):
+    principal_actor(principal, request.created_by)
+    try:
+        candidate = get_studio_view_candidate(
+            db, run_id, candidate_id, owner=request.created_by)
+        asset_id = accept_studio_view_candidate(
+            db,
+            candidate,
+            expected_project_id=request.expected_project_id,
+            expected_source_asset_id=request.expected_source_asset_id,
+            expected_design_version=request.expected_design_version,
+            created_by=request.created_by,
+        )
+    except StudioViewCandidateUnavailable as exc:
+        return JSONResponse(status_code=exc.status_code, content={
+            "code": "view_candidate_unavailable",
+            "category": "conflict",
+            "detail": str(exc),
+        })
+    except StudioViewError as exc:
+        return _view_candidate_error(exc)
+    project = db.get(Project, candidate.project_root_id)
+    if project is None:  # pragma: no cover - transaction invariant
+        raise HTTPException(status_code=500, detail="saved Studio View unavailable")
+    return {
+        "status": "accepted",
+        "project_id": candidate.project_root_id,
+        "source_asset_id": candidate.source_asset_id,
+        "design_version": candidate.design_version,
+        "asset_id": asset_id,
+        "project": project_detail(db, project),
+    }
+
+
+@router.post("/view-candidates/{run_id}/{candidate_id}/discard")
+def discard_exact_view_candidate(
+    run_id: str,
+    candidate_id: str,
+    request: ResolveViewCandidateRequest,
+    db: DbSession,
+    principal: PrincipalDep,
+):
+    principal_actor(principal, request.created_by)
+    try:
+        candidate = get_studio_view_candidate(
+            db, run_id, candidate_id, owner=request.created_by)
+        discard_studio_view_candidate(
+            db,
+            candidate,
+            expected_project_id=request.expected_project_id,
+            expected_source_asset_id=request.expected_source_asset_id,
+            expected_design_version=request.expected_design_version,
+            created_by=request.created_by,
+        )
+    except StudioViewCandidateUnavailable as exc:
+        return JSONResponse(status_code=exc.status_code, content={
+            "code": "view_candidate_unavailable",
+            "category": "conflict",
+            "detail": str(exc),
+        })
+    except StudioViewError as exc:
+        return _view_candidate_error(exc)
+    return {
+        "status": "discarded",
+        "project_id": candidate.project_root_id,
+        "source_asset_id": candidate.source_asset_id,
+        "design_version": candidate.design_version,
+        "candidate_id": candidate_id,
+    }
+
+
 @router.get("/presentation-candidates")
 def list_pre_spec_presentation_candidates(
     db: DbSession,
@@ -1339,6 +1515,7 @@ def list_pre_spec_presentation_candidates(
         "project_id": item.project_root_id,
         "source_asset_id": item.source_asset_id,
         "source_sha256": item.source_hash,
+        "design_version": item.design_version,
         "destination": item.destination,
         "capability": item.capability,
         "preset": item.preset,
@@ -1530,6 +1707,50 @@ def accept_presentation_candidate(
     """Save a reviewed deliverable without changing canonical design state."""
 
     principal_actor(principal, request.created_by)
+    durable = None
+    try:
+        durable = get_studio_presentation_candidate(
+            db, run_id, candidate_id, owner=request.created_by)
+    except StudioPresentationCandidateUnavailable:
+        pass
+    if durable is not None:
+        if (
+            durable.design_version != request.expected_design_version
+            or durable.project_root_id != request.expected_project_id
+            or durable.source_asset_id != request.expected_source_asset_id
+        ):
+            return _presentation_candidate_error(WarningRevisionError(
+                "stale_design_version",
+                "the durable presentation belongs to a different exact revision",
+            ))
+        try:
+            accepted = accept_studio_presentation_candidate(
+                db,
+                durable,
+                expected_active_asset_id=(
+                    durable.expected_active_asset_id
+                    or request.expected_source_asset_id
+                ),
+                expected_source_sha256=durable.source_hash,
+                created_by=request.created_by,
+            )
+        except StudioPresentationError as exc:
+            return _pre_spec_presentation_error(exc)
+        asset = db.get(ImageAsset, accepted.asset_id)
+        project = db.get(Project, durable.project_root_id)
+        if asset is None or project is None:  # pragma: no cover
+            raise HTTPException(
+                status_code=500, detail="saved presentation unavailable")
+        return {
+            "status": "accepted",
+            "project_id": project.root_id,
+            "source_asset_id": durable.source_asset_id,
+            "source_design_version": durable.design_version,
+            "asset_id": asset.id,
+            "capability": asset.capability,
+            "project": project_detail(db, project),
+        }
+
     try:
         candidate = get_markup_warning_candidate(run_id, candidate_id)
         _require_presentation_candidate_lineage(candidate, request)
@@ -1575,6 +1796,43 @@ def discard_presentation_candidate(
     """Persist a terminal rejection without creating a presentation asset."""
 
     principal_actor(principal, request.created_by)
+    durable = None
+    try:
+        durable = get_studio_presentation_candidate(
+            db, run_id, candidate_id, owner=request.created_by)
+    except StudioPresentationCandidateUnavailable:
+        pass
+    if durable is not None:
+        if (
+            durable.design_version != request.expected_design_version
+            or durable.project_root_id != request.expected_project_id
+            or durable.source_asset_id != request.expected_source_asset_id
+        ):
+            return _presentation_candidate_error(WarningRevisionError(
+                "stale_design_version",
+                "the durable presentation belongs to a different exact revision",
+            ))
+        try:
+            discard_studio_presentation_candidate(
+                db,
+                durable,
+                expected_active_asset_id=(
+                    durable.expected_active_asset_id
+                    or request.expected_source_asset_id
+                ),
+                expected_source_sha256=durable.source_hash,
+                created_by=request.created_by,
+            )
+        except StudioPresentationError as exc:
+            return _pre_spec_presentation_error(exc)
+        return {
+            "status": "discarded",
+            "project_id": durable.project_root_id,
+            "source_asset_id": durable.source_asset_id,
+            "source_design_version": durable.design_version,
+            "candidate_id": candidate_id,
+        }
+
     try:
         candidate = get_markup_warning_candidate(run_id, candidate_id)
         _require_presentation_candidate_lineage(candidate, request)

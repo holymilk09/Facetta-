@@ -13,20 +13,25 @@ from datetime import datetime, timedelta, timezone
 import hashlib
 from typing import Literal
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from facetta.db import (
+    DesignVersion,
     ImageAsset,
     ImageRun,
     ImageRunReview,
     Project,
     StudioJobRecord,
     StudioPresentationCandidateRecord,
+    StudioPresentationCandidateJobLink,
     new_id,
     utcnow,
 )
+from facetta.image_identity import spec_visual_hash
+from facetta.project_backbone import is_primary_revision
+from facetta.spec import Spec
 from facetta.json_types import JsonObject
 from facetta.studio_jobs import (
     StudioJobAccountingError,
@@ -68,6 +73,7 @@ class StudioPresentationCandidate:
     run_id: str
     project_root_id: str
     source_asset_id: str
+    expected_active_asset_id: str | None
     source_hash: str
     output_hash: str
     image_bytes: bytes
@@ -80,6 +86,7 @@ class StudioPresentationCandidate:
     qa: JsonObject
     created_by: str
     status: PreSpecPresentationStatus
+    design_version: int | None
     expires_at: datetime
     studio_job_id: str | None
     accepted_asset_id: str | None
@@ -99,12 +106,17 @@ def _utc(value: datetime) -> datetime:
     return value if value.tzinfo is not None else value.replace(tzinfo=timezone.utc)
 
 
-def _candidate(record: StudioPresentationCandidateRecord) -> StudioPresentationCandidate:
+def _candidate(
+    record: StudioPresentationCandidateRecord,
+    *,
+    linked_job_id: str | None = None,
+) -> StudioPresentationCandidate:
     return StudioPresentationCandidate(
         candidate_id=record.id,
         run_id=record.image_run_id,
         project_root_id=record.project_root_id,
         source_asset_id=record.source_asset_id,
+        expected_active_asset_id=record.expected_active_asset_id,
         source_hash=record.source_sha256,
         output_hash=record.output_sha256,
         image_bytes=bytes(record.image),
@@ -117,11 +129,22 @@ def _candidate(record: StudioPresentationCandidateRecord) -> StudioPresentationC
         qa=record.qa,
         created_by=record.owner,
         status=record.status,  # type: ignore[arg-type]
+        design_version=record.design_version,
         expires_at=_utc(record.expires_at),
-        studio_job_id=record.studio_job_id,
+        studio_job_id=record.studio_job_id or linked_job_id,
         accepted_asset_id=record.accepted_asset_id,
         review_id=record.review_id,
     )
+
+
+def _linked_job_id(
+    db: Session, record: StudioPresentationCandidateRecord,
+) -> str | None:
+    if record.studio_job_id is not None:
+        return record.studio_job_id
+    return db.scalar(select(StudioPresentationCandidateJobLink.studio_job_id).where(
+        StudioPresentationCandidateJobLink.candidate_id == record.id
+    ))
 
 
 def _owned_record(
@@ -151,7 +174,11 @@ def _owned_record(
         record.status = "expired"
         record.image = b""
         record.resolved_at = utcnow()
-        if record.studio_job_id is not None:
+        linked_job_id = _linked_job_id(db, record)
+        if record.design_version is not None and linked_job_id is not None:
+            _settle_exact_present_job(
+                db, job_id=linked_job_id, owner=record.owner)
+        elif record.studio_job_id is not None:
             job = db.get(StudioJobRecord, record.studio_job_id)
             if job is not None and job.status not in {"succeeded", "failed", "canceled"}:
                 job.status = "canceled"
@@ -166,6 +193,63 @@ def _owned_record(
     return record
 
 
+def _settle_exact_present_job(
+    db: Session,
+    *,
+    job_id: str,
+    owner: str,
+) -> None:
+    """Finalize one multi-output Present job only after every output resolves."""
+
+    job = db.get(StudioJobRecord, job_id)
+    if job is None or job.owner != owner:
+        raise StudioPresentationError(
+            "presentation_job_unavailable",
+            "the presentation job is unavailable",
+            status_code=404,
+        )
+    rows = list(db.execute(select(
+        StudioPresentationCandidateRecord.status,
+        StudioPresentationCandidateRecord.project_root_id,
+        StudioPresentationCandidateRecord.source_asset_id,
+    ).join(
+        StudioPresentationCandidateJobLink,
+        StudioPresentationCandidateJobLink.candidate_id
+        == StudioPresentationCandidateRecord.id,
+    ).where(
+        StudioPresentationCandidateJobLink.studio_job_id == job_id,
+    )).all())
+    if not rows or any(row.status == "reviewing" for row in rows):
+        return
+    accepted = sum(row.status == "accepted" for row in rows)
+    if accepted:
+        try:
+            record_accepted_studio_job_outputs(
+                db,
+                job_id=job_id,
+                owner=owner,
+                completed_outputs=accepted,
+                active_design_id=rows[0].project_root_id,
+                source_revision_id=rows[0].source_asset_id,
+            )
+        except StudioJobAccountingError as exc:
+            raise StudioPresentationError(
+                "presentation_job_resolution_conflict", str(exc)
+            ) from exc
+    else:
+        if job.status == "succeeded":
+            raise StudioPresentationError(
+                "presentation_job_resolution_conflict",
+                "the presentation job already has accepted output",
+            )
+        job.status = "canceled"
+        job.progress = 1
+        job.completed_outputs = 0
+        job.charged_outputs = 0
+        job.error_code = None
+        job.updated_at = utcnow()
+
+
 def _require_present_job(
     db: Session,
     *,
@@ -173,6 +257,7 @@ def _require_present_job(
     owner: str,
     project_root_id: str,
     source_asset_id: str,
+    output_ordinal: int | None = None,
 ) -> StudioJobRecord:
     job = db.get(StudioJobRecord, job_id)
     if job is None or job.owner != owner:
@@ -186,7 +271,13 @@ def _require_present_job(
         job.action_id != "present"
         or job.lane != canonical.lane
         or job.credits_per_output != canonical.credits_per_output
-        or job.requested_outputs != 1
+        or (
+            output_ordinal is None and job.requested_outputs != 1
+        )
+        or (
+            output_ordinal is not None
+            and not 0 <= output_ordinal < job.requested_outputs
+        )
     ):
         raise StudioPresentationError(
             "presentation_job_invalid",
@@ -273,6 +364,79 @@ def reserve_studio_presentation_job(
     db.commit()
 
 
+def reserve_exact_studio_presentation_job(
+    db: Session,
+    *,
+    job_id: str,
+    owner: str,
+    project_root_id: str,
+    source_asset_id: str,
+    requested_outputs: int,
+) -> None:
+    """Bind an exact multi-output Present job before provider work."""
+
+    job = db.scalar(select(StudioJobRecord).where(
+        StudioJobRecord.id == job_id).with_for_update())
+    canonical = studio_job_action_definition("present")
+    if job is None or job.owner != owner:
+        raise StudioPresentationError(
+            "presentation_job_unavailable",
+            "the presentation job is unavailable",
+            status_code=404,
+        )
+    if (
+        job.action_id != "present"
+        or job.lane != canonical.lane
+        or job.credits_per_output != canonical.credits_per_output
+        or job.requested_outputs != requested_outputs
+    ):
+        raise StudioPresentationError(
+            "presentation_job_invalid",
+            "the Present job output count or pricing is not canonical",
+            status_code=422,
+        )
+    if job.status != "running":
+        raise StudioPresentationError(
+            "presentation_job_terminal",
+            f"the Present job cannot generate from {job.status}",
+        )
+    for field, expected in (
+        ("active_design_id", project_root_id),
+        ("source_revision_id", source_asset_id),
+    ):
+        current = getattr(job, field)
+        if current is not None and current != expected:
+            raise StudioPresentationError(
+                "presentation_job_lineage_mismatch",
+                "the Present job belongs to a different exact revision",
+                status_code=422,
+            )
+        setattr(job, field, expected)
+    job.updated_at = utcnow()
+    db.commit()
+
+
+def fail_exact_studio_presentation_job(
+    db: Session, *, job_id: str, owner: str, error_code: str,
+) -> None:
+    job = db.scalar(select(StudioJobRecord).where(
+        StudioJobRecord.id == job_id).with_for_update())
+    if job is None or job.owner != owner or job.status not in {"running", "reviewing"}:
+        return
+    linked = db.scalar(select(func.count()).select_from(
+        StudioPresentationCandidateJobLink).where(
+            StudioPresentationCandidateJobLink.studio_job_id == job_id))
+    if linked:
+        return
+    job.status = "failed"
+    job.progress = 1
+    job.completed_outputs = 0
+    job.charged_outputs = 0
+    job.error_code = error_code[:64]
+    job.updated_at = utcnow()
+    db.commit()
+
+
 def fail_reserved_studio_presentation_job(
     db: Session,
     *,
@@ -312,6 +476,9 @@ def store_studio_presentation_candidate(
     qa: JsonObject,
     created_by: str,
     studio_job_id: str | None = None,
+    design_version: int | None = None,
+    output_ordinal: int | None = None,
+    expected_active_asset_id: str | None = None,
 ) -> StudioPresentationCandidate:
     if destination == "client" and capability not in {
         "CLIENT_BEAUTY_RENDER", "CLIENT_PRODUCT_PHOTO",
@@ -326,6 +493,7 @@ def store_studio_presentation_candidate(
             owner=created_by,
             project_root_id=project_root_id,
             source_asset_id=source_asset_id,
+            output_ordinal=output_ordinal,
         )
     now = utcnow()
     record = StudioPresentationCandidateRecord(
@@ -334,6 +502,7 @@ def store_studio_presentation_candidate(
         owner=created_by,
         project_root_id=project_root_id,
         source_asset_id=source_asset_id,
+        expected_active_asset_id=expected_active_asset_id,
         source_sha256=source_hash,
         output_sha256=hashlib.sha256(image_bytes).hexdigest(),
         image=image_bytes,
@@ -345,11 +514,24 @@ def store_studio_presentation_candidate(
         framing=framing,
         qa=qa,
         status="reviewing",
-        studio_job_id=studio_job_id,
+        studio_job_id=(studio_job_id if design_version is None else None),
+        design_version=design_version,
         created_at=now,
         expires_at=now + _TTL,
     )
     db.add(record)
+    if studio_job_id is not None and design_version is not None:
+        if output_ordinal is None:
+            raise StudioPresentationError(
+                "presentation_job_invalid",
+                "exact Present job outputs require a deterministic ordinal",
+                status_code=422,
+            )
+        db.add(StudioPresentationCandidateJobLink(
+            candidate_id=record.id,
+            studio_job_id=studio_job_id,
+            output_ordinal=output_ordinal,
+        ))
     try:
         db.commit()
     except IntegrityError as exc:
@@ -358,7 +540,7 @@ def store_studio_presentation_candidate(
             "presentation_candidate_conflict",
             "a presentation preview already exists for this generation",
         ) from exc
-    return _candidate(record)
+    return _candidate(record, linked_job_id=studio_job_id)
 
 
 def get_studio_presentation_candidate(
@@ -368,7 +550,8 @@ def get_studio_presentation_candidate(
     *,
     owner: str,
 ) -> StudioPresentationCandidate:
-    return _candidate(_owned_record(db, run_id, candidate_id, owner=owner))
+    record = _owned_record(db, run_id, candidate_id, owner=owner)
+    return _candidate(record, linked_job_id=_linked_job_id(db, record))
 
 
 def list_studio_presentation_candidates(
@@ -398,7 +581,8 @@ def list_studio_presentation_candidates(
                 db, record.image_run_id, record.id, owner=owner)
         except StudioPresentationCandidateUnavailable:
             continue
-        candidates.append(_candidate(fresh))
+        candidates.append(_candidate(
+            fresh, linked_job_id=_linked_job_id(db, fresh)))
     return candidates
 
 
@@ -441,37 +625,114 @@ def _require_exact_source(
             "the exact source visual or generation evidence is unavailable",
             status_code=404,
         )
-    if (
-        root.design_id is not None
-        or source.design_id is not None
-        or source.design_version is not None
-    ):
-        raise StudioPresentationError(
-            "presentation_requires_pre_spec_project",
-            "this route cannot create material from specification-linked work",
-            status_code=422,
-        )
     current_hash = hashlib.sha256(bytes(source.image)).hexdigest()
-    if (
-        source.root_id != project.root_id
-        or source.capability != "CREATIVE_RENDER"
-        or project.selected_candidate_asset_id != source.id
-        or expected_active_asset_id != source.id
-        or expected_source_sha256 != current_hash
-        or candidate.source_hash != current_hash
-    ):
-        raise StudioPresentationError(
-            "stale_asset_revision",
-            "the selected visual changed while this presentation was under review",
+    if candidate.design_version is None:
+        if (
+            root.design_id is not None
+            or source.design_id is not None
+            or source.design_version is not None
+        ):
+            raise StudioPresentationError(
+                "presentation_requires_pre_spec_project",
+                "this pre-spec route cannot resolve specification-linked work",
+                status_code=422,
+            )
+        if (
+            source.root_id != project.root_id
+            or source.capability != "CREATIVE_RENDER"
+            or project.selected_candidate_asset_id != source.id
+            or expected_active_asset_id != source.id
+            or expected_source_sha256 != current_hash
+            or candidate.source_hash != current_hash
+        ):
+            raise StudioPresentationError(
+                "stale_asset_revision",
+                "the selected visual changed while this presentation was under review",
+            )
+    else:
+        chain = list(db.scalars(select(ImageAsset).where(
+            ImageAsset.root_id == project.root_id,
+        ).order_by(ImageAsset.created_at, ImageAsset.id)))
+        chain.sort(key=lambda asset: (
+            asset.id != project.root_id, asset.created_at, asset.id))
+        primary = [asset for asset in chain if is_primary_revision(asset)]
+        active = primary[-1] if primary else None
+        latest = (
+            db.scalar(select(func.max(DesignVersion.version)).where(
+                DesignVersion.design_id == root.design_id))
+            if root.design_id else None
         )
+        version = (
+            db.get(DesignVersion, (root.design_id, candidate.design_version))
+            if root.design_id else None
+        )
+        if (
+            active is None
+            or active.id != (candidate.expected_active_asset_id or source.id)
+            or expected_active_asset_id
+            != (candidate.expected_active_asset_id or source.id)
+            or expected_source_sha256 != current_hash
+            or candidate.source_hash != current_hash
+        ):
+            raise StudioPresentationError(
+                "stale_asset_revision",
+                "the active visual changed while this presentation was under review",
+            )
+        if (
+            source.design_version != candidate.design_version
+            or latest != candidate.design_version
+            or version is None
+        ):
+            raise StudioPresentationError(
+                "stale_design_version",
+                "the exact specification changed while this presentation was under review",
+            )
+        expected_spec_hash = spec_visual_hash(Spec.model_validate(version.spec))
+        expected_operation = (
+            "SPEC_RENDER" if candidate.capability == "CLIENT_BEAUTY_RENDER"
+            else "VISUAL_ONLY_EDIT"
+        )
+        source_spec_ok = (
+            run.source_spec_visual_hash in {None, expected_spec_hash}
+            if expected_operation == "SPEC_RENDER"
+            else run.source_spec_visual_hash == expected_spec_hash
+        )
+        if (
+            run.spec_visual_hash != expected_spec_hash
+            or not source_spec_ok
+            or run.operation != expected_operation
+        ):
+            raise StudioPresentationError(
+                "presentation_candidate_lineage_mismatch",
+                "the presentation is not bound to the exact specification",
+                status_code=422,
+            )
+    checks = candidate.qa.get("checks")
+    hard_failure = isinstance(checks, list) and any(
+        isinstance(check, dict)
+        and check.get("passed") is False
+        and check.get("severity") == "hard"
+        for check in checks
+    )
     if (
         run.project_root_id != project.root_id
         or run.source_asset_id != source.id
         or run.source_hash != current_hash
-        or run.operation != "REFERENCE_RENDER"
+        or (
+            candidate.design_version is None
+            and run.operation != "REFERENCE_RENDER"
+        )
         or run.created_by != created_by
         or run.status not in {"preview_ready", "review_required"}
         or hashlib.sha256(candidate.image_bytes).hexdigest() != candidate.output_hash
+        or (
+            candidate.design_version is not None
+            and (
+                candidate.qa.get("review_required") is not True
+                or candidate.qa.get("verdict") == "fail"
+                or hard_failure
+            )
+        )
     ):
         raise StudioPresentationError(
             "presentation_candidate_lineage_mismatch",
@@ -516,18 +777,22 @@ def accept_studio_presentation_candidate(
 ) -> SavedStudioPresentation:
     """Atomically persist the derived image, decision, and accepted charge."""
     if (
-        expected_active_asset_id != candidate.source_asset_id
+        expected_active_asset_id
+        != (candidate.expected_active_asset_id or candidate.source_asset_id)
         or expected_source_sha256 != candidate.source_hash
     ):
         raise StudioPresentationError(
             "stale_asset_revision",
             "the decision does not identify this candidate's exact source visual",
         )
+    db.scalar(select(Project).where(
+        Project.root_id == candidate.project_root_id).with_for_update())
     record = _owned_record(
         db, candidate.run_id, candidate.candidate_id,
         owner=created_by, for_update=True,
     )
-    candidate = _candidate(record)
+    candidate = _candidate(
+        record, linked_job_id=_linked_job_id(db, record))
     if candidate.status == "accepted":
         return _resolved_acceptance(db, candidate)
     if candidate.status != "reviewing":
@@ -555,7 +820,7 @@ def accept_studio_presentation_candidate(
         root_id=project.root_id,
         parent_asset_id=source.id,
         design_id=None,
-        design_version=None,
+        design_version=candidate.design_version,
         capability=candidate.capability,
         instruction=candidate.requested_change,
         region=f"{candidate.destination} presentation; jewelry design frozen",
@@ -582,16 +847,22 @@ def accept_studio_presentation_candidate(
     db.add_all([asset, review])
     if candidate.studio_job_id is not None:
         try:
-            record_accepted_studio_job_outputs(
-                db,
-                job_id=candidate.studio_job_id,
-                owner=created_by,
-                completed_outputs=1,
-                active_design_id=project.root_id,
-                source_revision_id=source.id,
-            )
-        except StudioJobAccountingError as exc:
+            if candidate.design_version is None:
+                record_accepted_studio_job_outputs(
+                    db,
+                    job_id=candidate.studio_job_id,
+                    owner=created_by,
+                    completed_outputs=1,
+                    active_design_id=project.root_id,
+                    source_revision_id=source.id,
+                )
+            else:
+                _settle_exact_present_job(
+                    db, job_id=candidate.studio_job_id, owner=created_by)
+        except (StudioJobAccountingError, StudioPresentationError) as exc:
             db.rollback()
+            if isinstance(exc, StudioPresentationError):
+                raise
             raise StudioPresentationError(
                 "presentation_job_resolution_conflict", str(exc)
             ) from exc
@@ -622,18 +893,22 @@ def discard_studio_presentation_candidate(
 ) -> None:
     """Atomically persist rejection and cancel any bound uncharged job."""
     if (
-        expected_active_asset_id != candidate.source_asset_id
+        expected_active_asset_id
+        != (candidate.expected_active_asset_id or candidate.source_asset_id)
         or expected_source_sha256 != candidate.source_hash
     ):
         raise StudioPresentationError(
             "stale_asset_revision",
             "the decision does not identify this candidate's exact source visual",
         )
+    db.scalar(select(Project).where(
+        Project.root_id == candidate.project_root_id).with_for_update())
     record = _owned_record(
         db, candidate.run_id, candidate.candidate_id,
         owner=created_by, for_update=True,
     )
-    candidate = _candidate(record)
+    candidate = _candidate(
+        record, linked_job_id=_linked_job_id(db, record))
     if candidate.status == "discarded":
         return
     if candidate.status != "reviewing":
@@ -669,7 +944,10 @@ def discard_studio_presentation_candidate(
     record.review_id = review.id
     record.resolved_at = now
     db.add(review)
-    if candidate.studio_job_id is not None:
+    if candidate.studio_job_id is not None and candidate.design_version is not None:
+        _settle_exact_present_job(
+            db, job_id=candidate.studio_job_id, owner=created_by)
+    elif candidate.studio_job_id is not None:
         job = db.get(StudioJobRecord, candidate.studio_job_id)
         if job is None or job.owner != created_by:
             db.rollback()
