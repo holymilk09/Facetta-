@@ -464,6 +464,60 @@ export interface CreateProjectFromPromptRequest {
   tags?: string[];
 }
 
+/**
+ * A visual-only refinement can exist before a project has a confirmed design
+ * specification. The active asset id is therefore the optimistic concurrency
+ * token; a nullable design version must never be invented for this route.
+ */
+interface CreateVisualPreviewRequestBase {
+  created_by: string;
+  expected_active_asset_id: string;
+  instruction: string;
+  variant?: number;
+}
+
+export type CreateVisualPreviewRequest = CreateVisualPreviewRequestBase & (
+  | { scope: 'appearance'; mask_base64?: never; markup_asset_id?: never }
+  | { scope: 'marked_region'; mask_base64: string; markup_asset_id?: never }
+  | { scope: 'marked_region'; markup_asset_id: string; mask_base64?: never }
+);
+
+export interface VisualPreviewCandidate {
+  candidate_id: string;
+  preview_url: string;
+  verdict: ImageQualityVerdict;
+  qa: ImageQualityReport;
+}
+
+/** A temporary candidate. Creating it does not append project history. */
+export interface VisualPreviewResult {
+  project_id: string;
+  source_asset_id: string;
+  image_run_id: string;
+  candidate: VisualPreviewCandidate;
+}
+
+export interface VisualPreviewDecisionRequest {
+  created_by: string;
+  expected_active_asset_id: string;
+}
+
+/** Applying a pre-spec preview appends an image revision, never a fake spec. */
+export interface VisualPreviewApplyResult {
+  status: 'applied';
+  project_id: string;
+  source_asset_id: string;
+  new_asset_id: string;
+  design_version: null;
+  project: ProjectDetail;
+}
+
+export interface VisualPreviewDiscardResult {
+  status: 'discarded';
+  project_id: string;
+  candidate_id: string;
+}
+
 export interface PromoteCreativeCandidateRequest {
   confirmed_spec: JsonObject;
   created_by: string;

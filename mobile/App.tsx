@@ -21,7 +21,9 @@ import { StudioRefineWorkspace } from './src/studio/StudioRefineWorkspace';
 import { StudioViewsWorkspace } from './src/studio/StudioViewsWorkspace';
 import { StudioPresentWorkspace } from './src/studio/StudioPresentWorkspace';
 import { StudioActivityWorkspace } from './src/studio/StudioActivityWorkspace';
-import { createStudioGatewayFromOptions, ExactStudioLineage } from './src/studio/gateway';
+import {
+  createStudioGatewayFromOptions, ExactStudioLineage, StudioVisualLineage,
+} from './src/studio/gateway';
 import { radius, shadows, theme } from './src/theme';
 import { createTrustedApiClient } from './src/trusted/client';
 import type { ProjectDetail } from './src/trusted/types';
@@ -109,6 +111,15 @@ export default function App() {
       projectId: studioProject.root_id,
       sourceAssetId: studioProject.active_asset_id,
       sourceDesignVersion: studioProject.active_design_version,
+    };
+  }, [studioProject]);
+  const visualStudioLineage = useMemo<StudioVisualLineage | null>(() => {
+    if (studioProject?.active_asset_id === null || studioProject?.active_asset_id === undefined) {
+      return null;
+    }
+    return {
+      projectId: studioProject.root_id,
+      sourceAssetId: studioProject.active_asset_id,
     };
   }, [studioProject]);
   const actionContext = useMemo<StudioActionContext>(() => ({
@@ -323,12 +334,14 @@ export default function App() {
                 onPress={() => openStudioAction('present')}
               />
             )}
-            {exactStudioLineage !== null && (
+            {hasActiveRevision && (
               <StudioCard
                 image={precisionImage}
                 eyebrow="PRECISION EDIT"
                 title="Refine the design"
-                body="Select a component, describe a change, or mark the exact region to protect the rest."
+                body={exactStudioLineage === null
+                  ? 'Describe an appearance change or mark one region; structural controls stay locked until facts are confirmed.'
+                  : 'Select a component, describe a change, or mark the exact region to protect the rest.'}
                 accent="#ff9eb5"
                 onPress={() => openStudioAction('refine')}
               />
@@ -373,7 +386,7 @@ export default function App() {
             <StudioRefineWorkspace
               api={trustedApi}
               gateway={studioGateway}
-              lineage={exactStudioLineage}
+              lineage={exactStudioLineage ?? visualStudioLineage}
               createdBy={designer}
               sourceImageUrl={studioProject?.active_revision?.image_url ?? null}
               onApplied={(project) => {

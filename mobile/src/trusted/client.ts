@@ -35,6 +35,7 @@ import type {
   CreateProjectFromDrawingRequest,
   CreateProjectFromImageRequest,
   CreateProjectFromPromptRequest,
+  CreateVisualPreviewRequest,
   ExtractImageDraftRequest,
   ExtractCreativeCandidateDraftRequest,
   ExtractPlateDraftRequest,
@@ -110,6 +111,10 @@ import type {
   StudioProjectHistory,
   CreateStudioJobRequest,
   TransitionStudioJobRequest,
+  VisualPreviewApplyResult,
+  VisualPreviewDecisionRequest,
+  VisualPreviewDiscardResult,
+  VisualPreviewResult,
 } from './types';
 
 type UnknownRecord = Record<string, unknown>;
@@ -668,6 +673,69 @@ export const decodeSaveAsVariationResult: Decoder<SaveAsVariationResult> = (valu
     source_project_id: sourceProjectId,
     source_asset_id: sourceAssetId,
     project,
+  };
+};
+
+export const decodeVisualPreviewResult: Decoder<VisualPreviewResult> = (value) => {
+  if (!isRecord(value) || !isRecord(value.candidate)) return null;
+  const projectId = nullableText(value.project_id);
+  const sourceAssetId = nullableText(value.source_asset_id);
+  const imageRunId = nullableText(value.image_run_id);
+  const candidateId = nullableText(value.candidate.candidate_id);
+  const previewUrl = nullableText(value.candidate.preview_url);
+  const verdict = value.candidate.verdict;
+  const qa = decodeImageQualityReport(value.candidate.qa);
+  if (
+    projectId === null || sourceAssetId === null || imageRunId === null
+    || candidateId === null || previewUrl === null || qa === null
+    || (verdict !== 'pass' && verdict !== 'warn' && verdict !== 'fail')
+    || verdict !== qa.verdict
+  ) return null;
+  return {
+    project_id: projectId,
+    source_asset_id: sourceAssetId,
+    image_run_id: imageRunId,
+    candidate: {
+      candidate_id: candidateId,
+      preview_url: previewUrl,
+      verdict,
+      qa,
+    },
+  };
+};
+
+export const decodeVisualPreviewApplyResult: Decoder<VisualPreviewApplyResult> = (value) => {
+  if (!isRecord(value) || value.status !== 'applied' || value.design_version !== null) return null;
+  const projectId = nullableText(value.project_id);
+  const sourceAssetId = nullableText(value.source_asset_id);
+  const newAssetId = nullableText(value.new_asset_id);
+  const project = decodeProjectDetail(value.project);
+  if (
+    projectId === null || sourceAssetId === null || newAssetId === null
+    || sourceAssetId === newAssetId || project === null
+    || project.root_id !== projectId || project.active_asset_id !== newAssetId
+    || project.active_design_version !== null
+    || project.active_revision?.asset_id !== newAssetId
+    || project.active_revision.design_version !== null
+    || !project.revisions.some((revision) => revision.asset.asset_id === sourceAssetId)
+    || !project.revisions.some((revision) => revision.asset.asset_id === newAssetId)
+  ) return null;
+  return {
+    status: 'applied',
+    project_id: projectId,
+    source_asset_id: sourceAssetId,
+    new_asset_id: newAssetId,
+    design_version: null,
+    project,
+  };
+};
+
+export const decodeVisualPreviewDiscardResult: Decoder<VisualPreviewDiscardResult> = (value) => {
+  if (!isRecord(value) || value.status !== 'discarded') return null;
+  const projectId = nullableText(value.project_id);
+  const candidateId = nullableText(value.candidate_id);
+  return projectId === null || candidateId === null ? null : {
+    status: 'discarded', project_id: projectId, candidate_id: candidateId,
   };
 };
 
@@ -2585,6 +2653,29 @@ function normalizedCatalogPreviewCandidate(
       };
 }
 
+function normalizedVisualPreviewUrl(
+  raw: string,
+  runId: string,
+  candidateId: string,
+  baseUrl: string,
+): string | null {
+  try {
+    const base = new URL(baseUrl);
+    const resolved = new URL(raw, `${baseUrl}/`);
+    const expectedPath = `/studio/image-runs/${encodeURIComponent(runId)}/visual-candidates/${encodeURIComponent(candidateId)}/image`;
+    if (
+      (resolved.protocol !== 'http:' && resolved.protocol !== 'https:')
+      || resolved.origin !== base.origin
+      || resolved.username.length > 0 || resolved.password.length > 0
+      || resolved.search.length > 0 || resolved.hash.length > 0
+      || resolved.pathname !== expectedPath
+    ) return null;
+    return resolved.toString();
+  } catch {
+    return null;
+  }
+}
+
 function projectWithUrls(project: ProjectDetail, baseUrl: string): ProjectDetail {
   const addUrl = (asset: AssetSummary): AssetSummary => {
     const rawUrl = asset.image_url;
@@ -2891,6 +2982,97 @@ export function createTrustedApiClient(options: TrustedApiClientOptions) {
       return projectCall(
         `/projects/${encodeURIComponent(projectId)}/creative-candidates/${encodeURIComponent(candidateId)}/select`,
         { method: 'POST', body: encodeBody({ created_by: createdBy }) },
+      );
+    },
+
+    async createVisualPreview(projectId: string, request: CreateVisualPreviewRequest) {
+      const result = await call(
+        `/studio/projects/${encodeURIComponent(projectId)}/visual-previews`,
+        decodeVisualPreviewResult,
+        {
+          method: 'POST',
+          body: encodeBody({
+            created_by: request.created_by,
+            expected_active_asset_id: request.expected_active_asset_id,
+            instruction: request.instruction,
+            scope: request.scope,
+            ...(request.scope === 'marked_region' && 'mask_base64' in request
+              ? { mask_base64: request.mask_base64 }
+              : {}),
+            ...(request.scope === 'marked_region' && 'markup_asset_id' in request
+              ? { markup_asset_id: request.markup_asset_id }
+              : {}),
+            ...(request.variant === undefined ? {} : { variant: request.variant }),
+          }),
+        },
+      );
+      if (result.error !== null) return result;
+      const previewUrl = normalizedVisualPreviewUrl(
+        result.data.candidate.preview_url,
+        result.data.image_run_id,
+        result.data.candidate.candidate_id,
+        baseUrl,
+      );
+      if (previewUrl === null) return {
+        data: null,
+        error: {
+          code: 'INVALID_RESPONSE',
+          message: 'The visual preview returned an invalid candidate image capability.',
+          category: 'decode' as const,
+          status: result.status,
+          retryable: false,
+        },
+        status: result.status,
+      };
+      return {
+        ...result,
+        data: {
+          ...result.data,
+          candidate: {
+            ...result.data.candidate,
+            preview_url: previewUrl,
+          },
+        },
+      };
+    },
+
+    async acceptVisualPreview(
+      runId: string,
+      candidateId: string,
+      request: VisualPreviewDecisionRequest,
+    ) {
+      const result = await call(
+        `/studio/image-runs/${encodeURIComponent(runId)}/visual-candidates/${encodeURIComponent(candidateId)}/accept`,
+        decodeVisualPreviewApplyResult,
+        {
+          method: 'POST',
+          body: encodeBody({
+            created_by: request.created_by,
+            expected_active_asset_id: request.expected_active_asset_id,
+          }),
+        },
+      );
+      return result.error === null ? {
+        ...result,
+        data: { ...result.data, project: projectWithUrls(result.data.project, baseUrl) },
+      } : result;
+    },
+
+    discardVisualPreview(
+      runId: string,
+      candidateId: string,
+      request: VisualPreviewDecisionRequest,
+    ) {
+      return call(
+        `/studio/image-runs/${encodeURIComponent(runId)}/visual-candidates/${encodeURIComponent(candidateId)}/discard`,
+        decodeVisualPreviewDiscardResult,
+        {
+          method: 'POST',
+          body: encodeBody({
+            created_by: request.created_by,
+            expected_active_asset_id: request.expected_active_asset_id,
+          }),
+        },
       );
     },
 

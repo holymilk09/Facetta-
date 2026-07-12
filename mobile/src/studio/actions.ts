@@ -51,7 +51,7 @@ export const STUDIO_ACTIONS: readonly StudioActionDefinition[] = [
     id: 'refine',
     label: 'Refine this design',
     shortLabel: 'Refine',
-    description: 'Change a selected region while protecting the rest of the design.',
+    description: 'Preview a targeted change while protecting the rest of the design.',
     lane: 'trusted_structural',
     referenceRoles: ['master_geometry', 'construction_detail', 'edit_mask'],
     fields: [
@@ -64,7 +64,7 @@ export const STUDIO_ACTIONS: readonly StudioActionDefinition[] = [
     requiresActiveDesign: true,
     createsJob: true,
     placement: 'primary',
-    isAvailable: exactDesign,
+    isAvailable: activeDesign,
   },
   {
     id: 'views',

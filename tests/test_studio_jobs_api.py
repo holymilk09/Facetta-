@@ -213,6 +213,17 @@ def test_failed_and_canceled_jobs_never_charge(client):
     assert canceled.status_code == 200
     assert canceled.json()["billing"]["charged_credits"] == 0
 
+    reviewing_id = _create(client)["job_id"]
+    assert _transition(client, reviewing_id, "running", 0.1).status_code == 200
+    assert _transition(client, reviewing_id, "reviewing", 0.9).status_code == 200
+    dismissed = client.post(
+        f"/studio/jobs/{reviewing_id}/cancel",
+        json={"owner": "usr_designer"},
+    )
+    assert dismissed.status_code == 200
+    assert dismissed.json()["status"] == "canceled"
+    assert dismissed.json()["billing"]["charged_credits"] == 0
+
     cancel_again = client.post(
         f"/studio/jobs/{canceled_id}/cancel",
         json={"owner": "usr_designer"},

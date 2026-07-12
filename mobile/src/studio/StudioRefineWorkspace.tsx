@@ -15,7 +15,7 @@ import {
   AnnotationCanvas,
   type AnnotationCanvasSnapshot,
 } from '../trusted/AnnotationCanvas';
-import type { ExactStudioLineage, StudioGateway } from './gateway';
+import type { ExactStudioLineage, StudioGateway, StudioVisualLineage } from './gateway';
 import type { PreviewCandidate } from './contracts';
 
 const PATHS: readonly { id: ComponentCatalogPath; label: string; help: string }[] = [
@@ -33,8 +33,9 @@ export interface StudioRefineWorkspaceProps {
   api: StudioRefineApi;
   gateway: Pick<StudioGateway,
     | 'previewCatalogRefine' | 'applyCatalogRefine' | 'discardCatalogRefine'
-    | 'previewMarkupRefine' | 'applyMarkupRefine' | 'discardMarkupRefine'>;
-  lineage: ExactStudioLineage | null;
+    | 'previewMarkupRefine' | 'applyMarkupRefine' | 'discardMarkupRefine'
+    | 'previewVisualRefine' | 'applyVisualRefine' | 'discardVisualRefine'>;
+  lineage: ExactStudioLineage | StudioVisualLineage | null;
   createdBy: string;
   sourceImageUrl?: string | null;
   onApplied: (project: ProjectDetail) => void;
@@ -47,16 +48,26 @@ function optionDetail(option: ComponentCatalogOption): string {
   return `${option.isolation_target}. ${frozen}`;
 }
 
+function hasExactSpecification(
+  lineage: ExactStudioLineage | StudioVisualLineage | null,
+): lineage is ExactStudioLineage {
+  return lineage !== null && 'sourceDesignVersion' in lineage;
+}
+
 export function StudioRefineWorkspace({
   api, gateway, lineage, createdBy, sourceImageUrl = null, onApplied,
 }: StudioRefineWorkspaceProps) {
-  const [mode, setMode] = useState<'component' | 'instruction' | 'annotation'>('component');
+  const exactLineage = hasExactSpecification(lineage) ? lineage : null;
+  const exactSpecification = exactLineage !== null;
+  const [mode, setMode] = useState<'component' | 'instruction' | 'annotation'>(
+    exactSpecification ? 'component' : 'instruction',
+  );
   const [path, setPath] = useState<ComponentCatalogPath>('metal.color');
   const [catalog, setCatalog] = useState<ComponentCatalog | null>(null);
   const [optionId, setOptionId] = useState<string | null>(null);
   const [preview, setPreview] = useState<{
     candidate: PreviewCandidate;
-    kind: 'catalog' | 'markup';
+    kind: 'catalog' | 'markup' | 'visual';
   } | null>(null);
   const [instruction, setInstruction] = useState('');
   const [understoodAs, setUnderstoodAs] = useState<string | null>(null);
@@ -72,6 +83,12 @@ export function StudioRefineWorkspace({
 
   useEffect(() => {
     let current = true;
+    if (!exactSpecification) {
+      setLoading(false);
+      setCatalog(null);
+      setOptionId(null);
+      return () => { current = false; };
+    }
     setLoading(true);
     setCatalog(null);
     setOptionId(null);
@@ -88,7 +105,11 @@ export function StudioRefineWorkspace({
       setOptionId(result.data.options[0]?.id ?? null);
     });
     return () => { current = false; };
-  }, [api, path, lineage?.sourceAssetId]);
+  }, [api, exactSpecification, path, lineage?.sourceAssetId]);
+
+  useEffect(() => {
+    if (!exactSpecification && mode === 'component') setMode('instruction');
+  }, [exactSpecification, mode]);
 
   useEffect(() => {
     setSnapshot((current) => ({ ...current, source_uri: sourceImageUrl ?? '' }));
@@ -103,9 +124,14 @@ export function StudioRefineWorkspace({
     setError(null);
     setUnderstoodAs(null);
     if (mode === 'component') {
+      if (!exactSpecification) {
+        setBusy(false);
+        setError('Confirm design facts before making structural component changes.');
+        return;
+      }
       if (selected === null) { setBusy(false); return; }
       const result = await gateway.previewCatalogRefine({
-        ...lineage, createdBy, componentPath: path, optionId: selected.id,
+        ...exactLineage, createdBy, componentPath: path, optionId: selected.id,
       });
       setBusy(false);
       if (result.error !== null) { setError(result.error.message); return; }
@@ -129,10 +155,16 @@ export function StudioRefineWorkspace({
         markup_snapshot: snapshot, created_by: createdBy,
       });
       if (read.error !== null) { setBusy(false); setError(read.error.message); return; }
-      if (read.data.expected_design_version !== lineage.sourceDesignVersion) {
+      if (exactLineage !== null
+          && read.data.expected_design_version !== exactLineage.sourceDesignVersion) {
         setBusy(false); setError('The annotation was interpreted against a different revision. Reopen the design.'); return;
       }
       const interpretation = read.data.interpretation;
+      if (!exactSpecification && interpretation.impact !== 'visual_only') {
+        setBusy(false);
+        setError('This mark changes jewelry structure or construction. Confirm design facts before previewing it.');
+        return;
+      }
       annotation = {
         region_description: interpretation.target_region,
         change_instruction: interpretation.requested_change,
@@ -149,12 +181,30 @@ export function StudioRefineWorkspace({
     } else if (!instruction.trim()) {
       setBusy(false); return;
     }
-    const result = await gateway.previewMarkupRefine({
-      ...lineage, createdBy, annotation, markupAssetId,
-    });
+    const result = exactLineage !== null
+      ? await gateway.previewMarkupRefine({
+          ...exactLineage, createdBy, annotation, markupAssetId,
+        })
+      : await gateway.previewVisualRefine(mode === 'annotation'
+        ? {
+            ...lineage,
+            createdBy,
+            instruction: annotation.change_instruction,
+            scope: 'marked_region',
+            markupAssetId: markupAssetId ?? '',
+          }
+        : {
+            ...lineage,
+            createdBy,
+            instruction: annotation.change_instruction,
+            scope: 'appearance',
+          });
     setBusy(false);
     if (result.error !== null) { setError(result.error.message); return; }
-    setPreview({ candidate: result.data.candidate, kind: 'markup' });
+    setPreview({
+      candidate: result.data.candidate,
+      kind: exactLineage !== null ? 'markup' : 'visual',
+    });
   };
 
   const apply = async (): Promise<void> => {
@@ -163,7 +213,9 @@ export function StudioRefineWorkspace({
     setError(null);
     const result = preview.kind === 'catalog'
       ? await gateway.applyCatalogRefine({ candidateId: preview.candidate.id, createdBy })
-      : await gateway.applyMarkupRefine({ candidateId: preview.candidate.id, createdBy });
+      : preview.kind === 'markup'
+        ? await gateway.applyMarkupRefine({ candidateId: preview.candidate.id, createdBy })
+        : await gateway.applyVisualRefine({ candidateId: preview.candidate.id, createdBy });
     setBusy(false);
     if (result.error !== null) {
       setError(result.error.message);
@@ -183,7 +235,9 @@ export function StudioRefineWorkspace({
     setError(null);
     const result = preview.kind === 'catalog'
       ? await gateway.discardCatalogRefine({ candidateId: preview.candidate.id, createdBy })
-      : await gateway.discardMarkupRefine({ candidateId: preview.candidate.id, createdBy });
+      : preview.kind === 'markup'
+        ? await gateway.discardMarkupRefine({ candidateId: preview.candidate.id, createdBy })
+        : await gateway.discardVisualRefine({ candidateId: preview.candidate.id, createdBy });
     setBusy(false);
     if (result.error !== null) {
       setError(result.error.message);
@@ -212,7 +266,18 @@ export function StudioRefineWorkspace({
           discard will leave history untouched.
         </Text>
         {understoodAs !== null && <Notice kind="info" text={understoodAs} />}
-        <Image accessibilityLabel="Temporary refinement preview" source={{ uri: preview.candidate.assetUrl }} style={styles.preview} />
+        <View style={styles.compareRow}>
+          {sourceImageUrl !== null && (
+            <View style={styles.comparePane}>
+              <Text style={styles.compareLabel}>SOURCE</Text>
+              <Image accessibilityLabel="Exact source revision" source={{ uri: sourceImageUrl }} style={styles.preview} />
+            </View>
+          )}
+          <View style={styles.comparePane}>
+            <Text style={styles.compareLabel}>PREVIEW</Text>
+            <Image accessibilityLabel="Temporary refinement preview" source={{ uri: preview.candidate.assetUrl }} style={styles.preview} />
+          </View>
+        </View>
         <View style={styles.reviewCard}>
           <Text style={styles.reviewTitle}>{rejected ? 'Not safe to apply' : 'Ready for your decision'}</Text>
           {preview.candidate.checks.map((check) => (
@@ -245,18 +310,29 @@ export function StudioRefineWorkspace({
           ['component', 'Component', 'Choose a controlled material or construction option.'],
           ['instruction', 'Describe', 'Describe an appearance-only change in plain language.'],
           ['annotation', 'Mark up', 'Draw directly on the exact active image.'],
-        ] as const).map(([id, label, detail]) => (
-          <Pressable
-            key={id}
-            accessibilityLabel={`${label} refine mode`}
-            accessibilityRole="button"
-            onPress={() => { setMode(id); setError(null); }}
-            style={[styles.modeCard, mode === id && styles.selectedCard]}>
-            <Text style={styles.pathTitle}>{label}</Text>
-            <Text style={styles.pathHelp}>{detail}</Text>
-          </Pressable>
-        ))}
+        ] as const).map(([id, label, detail]) => {
+          const unavailable = id === 'component' && !exactSpecification;
+          return (
+            <Pressable
+              key={id}
+              accessibilityLabel={`${label} refine mode`}
+              accessibilityRole="button"
+              accessibilityState={{ disabled: unavailable, selected: mode === id }}
+              disabled={unavailable}
+              onPress={() => { setMode(id); setError(null); }}
+              style={[styles.modeCard, mode === id && styles.selectedCard, unavailable && styles.disabledCard]}>
+              <Text style={styles.pathTitle}>{label}</Text>
+              <Text style={styles.pathHelp}>{unavailable
+                ? 'Confirm design facts before making structural component changes.'
+                : detail}</Text>
+            </Pressable>
+          );
+        })}
       </View>
+
+      {!exactSpecification && (
+        <Notice kind="info" text="This direction is still pre-spec. You can safely refine appearance or a marked region; component and construction changes remain locked until design facts are confirmed." />
+      )}
 
       {mode === 'component' && <>
         <Text style={styles.sectionTitle}>1 · Component</Text>
@@ -284,11 +360,13 @@ export function StudioRefineWorkspace({
       {mode === 'instruction' && <>
         <Field label="Appearance change" value={instruction} onChange={setInstruction} multiline
           placeholder="Make the presentation softer and more luminous while keeping every jewelry detail fixed…" />
-        <Notice kind="info" text="Plain-language mode changes presentation only. Use Component or Mark up for structure, stones, settings, or materials." />
+        <Notice kind="info" text={exactSpecification
+          ? 'Plain-language mode changes presentation only. Use Component or Mark up for structure, stones, settings, or materials.'
+          : 'Plain-language mode changes appearance only. Structural, stone, setting, and construction changes stay locked until design facts are confirmed.'} />
       </>}
 
       {mode === 'annotation' && (sourceImageUrl === null ? (
-        <Notice kind="error" text="The exact active image is unavailable for annotation. Reopen the design or use Component." />
+        <Notice kind="error" text="The exact active image is unavailable for annotation. Reopen the design or use Describe." />
       ) : <>
         <AnnotationCanvas sourceUri={sourceImageUrl} value={snapshot} onChange={setSnapshot} drawingEnabled />
         <Text style={styles.pathHelp}>Mark one region and add text or an arrow describing one change. Facetta will show its interpretation before Apply.</Text>
@@ -313,6 +391,7 @@ const styles = StyleSheet.create({
   pathGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   modeRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 8 },
   modeCard: { width: 210, borderWidth: 1, borderColor: theme.line, borderRadius: radius.md, padding: 12, backgroundColor: theme.card },
+  disabledCard: { opacity: 0.48 },
   pathCard: { width: 180, borderWidth: 1, borderColor: theme.line, borderRadius: radius.md, padding: 12, backgroundColor: theme.card },
   selectedCard: { borderColor: theme.accent, borderWidth: 2 },
   pathTitle: { color: theme.ink, fontWeight: '700', marginBottom: 4 },
@@ -321,7 +400,10 @@ const styles = StyleSheet.create({
   optionCard: { borderWidth: 1, borderColor: theme.line, borderRadius: radius.md, padding: 13, backgroundColor: theme.card },
   optionTitle: { color: theme.ink, fontWeight: '700', fontSize: 15 },
   optionDetail: { color: theme.faint, fontSize: 12, lineHeight: 18, marginTop: 4 },
-  preview: { width: '100%', maxWidth: 720, aspectRatio: 1.25, borderRadius: radius.lg, backgroundColor: theme.line },
+  compareRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
+  comparePane: { flexGrow: 1, flexBasis: 280, gap: 6 },
+  compareLabel: { color: theme.faint, fontSize: 10, fontWeight: '800', letterSpacing: 1.2 },
+  preview: { width: '100%', aspectRatio: 1.25, borderRadius: radius.lg, backgroundColor: theme.line },
   reviewCard: { borderWidth: 1, borderColor: theme.line, borderRadius: radius.md, padding: 14, backgroundColor: theme.card, gap: 8 },
   reviewTitle: { color: theme.ink, fontWeight: '800', fontSize: 16 },
   checkRow: { flexDirection: 'row', gap: 10, alignItems: 'flex-start' },

@@ -43,6 +43,7 @@ interface JobCall {
 function tracking() {
   const creates: any[] = [];
   const transitions: JobCall[] = [];
+  const cancellations: { jobId: string; owner: string }[] = [];
   let counter = 0;
   const record = (id: string, request: any, status: StudioJobRecord['status']): StudioJobRecord => ({
     job_id: id, owner: request.owner, action_id: request.action_id ?? 'create',
@@ -63,6 +64,7 @@ function tracking() {
   return {
     creates,
     transitions,
+    cancellations,
     client: {
       createStudioJob: async (request: any) => {
         creates.push(request);
@@ -72,6 +74,10 @@ function tracking() {
       transitionStudioJob: async (jobId: string, request: any) => {
         transitions.push({ jobId, request });
         return ok(record(jobId, request, request.status));
+      },
+      cancelStudioJob: async (jobId: string, owner: string) => {
+        cancellations.push({ jobId, owner });
+        return ok(record(jobId, { owner }, 'canceled'));
       },
     },
   };
@@ -180,7 +186,7 @@ test('catalog preview keeps image-run and Studio-job identities separate through
   assert.equal(jobs.transitions.at(-1)?.request.completed_outputs, 1);
 });
 
-test('discarded view closes reviewing Activity as designer-discarded with zero outputs', async () => {
+test('discarded view closes reviewing Activity as canceled with zero outputs', async () => {
   const jobs = tracking();
   const gateway = createStudioGateway({
     ...jobs.client,
@@ -204,9 +210,9 @@ test('discarded view closes reviewing Activity as designer-discarded with zero o
     candidateId: 'candidate_view', createdBy: 'designer_1',
   });
   assert.equal(discarded.error, null);
-  assert.equal(jobs.transitions.at(-1)?.request.status, 'failed');
-  assert.equal(jobs.transitions.at(-1)?.request.error_code, 'DESIGNER_DISCARDED');
-  assert.equal(jobs.transitions.at(-1)?.request.completed_outputs, undefined);
+  assert.deepEqual(jobs.cancellations.at(-1), {
+    jobId: 'studio_job_1', owner: 'designer_1',
+  });
 });
 
 test('Present distinguishes accepted, review-only, and failed generation outcomes', async () => {

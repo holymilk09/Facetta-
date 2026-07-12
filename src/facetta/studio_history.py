@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from sqlalchemy import func, select
+import hashlib
+
+from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -13,6 +15,8 @@ from facetta.db import (
     DesignFamily,
     DesignVersion,
     ImageAsset,
+    ImageRun,
+    ImageRunReview,
     Project,
     ProjectRevisionRecord,
     new_id,
@@ -20,6 +24,7 @@ from facetta.db import (
 )
 from facetta.project_backbone import is_primary_revision
 from facetta.specdiff import diff_specs, summarize_changes
+from facetta.studio_visual_candidates import StudioVisualCandidate
 
 
 class StudioHistoryError(RuntimeError):
@@ -50,6 +55,246 @@ class RestoreRevisionResult:
     spec_change: tuple[dict[str, object], ...]
 
 
+@dataclass(frozen=True)
+class ApplyPreSpecVisualResult:
+    project_root_id: str
+    source_asset_id: str
+    asset_id: str
+    review_id: str
+
+
+@dataclass(frozen=True)
+class DiscardPreSpecVisualResult:
+    project_root_id: str
+    source_asset_id: str
+    review_id: str
+
+
+def _validate_pre_spec_visual_candidate(
+    db: Session,
+    *,
+    candidate: StudioVisualCandidate,
+    expected_active_asset_id: str,
+    created_by: str,
+) -> tuple[Project, ImageAsset, ImageRun]:
+    """Recheck the candidate's complete pre-spec authority boundary."""
+
+    project = db.get(Project, candidate.project_root_id)
+    source = db.get(ImageAsset, candidate.source_asset_id)
+    root = db.get(ImageAsset, candidate.project_root_id)
+    run = db.get(ImageRun, candidate.run_id)
+    if project is None or source is None or root is None or run is None:
+        raise StudioHistoryError(
+            "visual_preview_unavailable",
+            "the preview's project, source, or image run is unavailable",
+            status_code=404,
+        )
+    if project.owner != created_by or candidate.created_by != created_by:
+        raise StudioHistoryError(
+            "visual_preview_unavailable",
+            "the visual preview is not available to this designer",
+            status_code=404,
+        )
+    if root.design_id is not None or source.design_version is not None:
+        raise StudioHistoryError(
+            "visual_preview_requires_pre_spec_project",
+            "this Studio visual route cannot edit specification-linked work",
+            status_code=422,
+        )
+    if (source.root_id != project.root_id
+            or source.capability != "CREATIVE_RENDER"):
+        raise StudioHistoryError(
+            "visual_preview_source_invalid",
+            "the preview source is not a canonical pre-spec visual",
+            status_code=422,
+        )
+    if (expected_active_asset_id
+            != candidate.expected_selected_candidate_asset_id
+            or candidate.source_asset_id != expected_active_asset_id):
+        raise StudioHistoryError(
+            "stale_asset_revision",
+            "the preview was not reviewed against this selected visual",
+        )
+    if project.selected_candidate_asset_id != expected_active_asset_id:
+        raise StudioHistoryError(
+            "stale_asset_revision",
+            "the selected visual changed while the preview was under review",
+        )
+    source_hash = hashlib.sha256(bytes(source.image)).hexdigest()
+    if source_hash != candidate.source_hash:
+        raise StudioHistoryError(
+            "visual_preview_source_hash_mismatch",
+            "the selected source bytes no longer match the preview lineage",
+            status_code=422,
+        )
+    if (run.project_root_id != project.root_id
+            or run.source_asset_id != source.id
+            or run.source_hash != source_hash
+            or run.created_by != created_by
+            or run.accepted_asset_id is not None
+            or run.status not in {"preview_ready", "review_required"}):
+        raise StudioHistoryError(
+            "visual_preview_run_mismatch",
+            "the preview run is not bound to this exact project and source",
+            status_code=422,
+        )
+    if db.scalar(select(ImageRunReview).where(
+            ImageRunReview.run_id == run.id)) is not None:
+        raise StudioHistoryError(
+            "visual_preview_already_reviewed",
+            "the visual preview already has a terminal review decision",
+        )
+    return project, source, run
+
+
+def apply_pre_spec_visual_candidate(
+    db: Session,
+    *,
+    candidate: StudioVisualCandidate,
+    expected_active_asset_id: str,
+    created_by: str,
+) -> ApplyPreSpecVisualResult:
+    """Append one accepted visual while preserving an honest null spec."""
+
+    project, source, run = _validate_pre_spec_visual_candidate(
+        db,
+        candidate=candidate,
+        expected_active_asset_id=expected_active_asset_id,
+        created_by=created_by,
+    )
+    now = utcnow()
+    child = ImageAsset(
+        id=new_id("ast"),
+        root_id=project.root_id,
+        parent_asset_id=source.id,
+        design_id=None,
+        design_version=None,
+        capability="CREATIVE_RENDER",
+        instruction=candidate.requested_change,
+        region=(
+            "designer-marked region"
+            if candidate.scope == "marked_region" else None
+        ),
+        drift=None,
+        image=candidate.image_bytes,
+        media_type=candidate.media_type,
+        created_by=created_by,
+        created_at=now,
+    )
+    review = ImageRunReview(
+        id=new_id("irr"),
+        run_id=run.id,
+        decision="accepted",
+        accepted_asset_id=child.id,
+        created_by=created_by,
+        created_at=now,
+    )
+    record = ProjectRevisionRecord(
+        id=new_id("prr"),
+        asset_id=child.id,
+        action="edit",
+        raw_intent={
+            "kind": "pre_spec_visual_refinement",
+            "scope": candidate.scope,
+            "instruction": candidate.requested_change,
+            "source_asset_id": source.id,
+            "image_run_id": run.id,
+        },
+        interpretation={
+            "operation": "append_reviewed_visual",
+            "specification_created": False,
+            "factory_authority": False,
+            "source_hash": candidate.source_hash,
+        },
+        change_summary=(
+            "Applied a reviewed pre-spec visual refinement; no specification "
+            "or factory authority was created."
+        ),
+        created_by=created_by,
+        created_at=now,
+    )
+    try:
+        db.add_all([child, review, record])
+        # Flush the append-only rows inside this transaction before the raw
+        # compare-and-set update references the new asset. This is required
+        # for databases with immediate foreign-key enforcement.
+        db.flush()
+        cas = db.execute(
+            update(Project)
+            .where(
+                Project.root_id == project.root_id,
+                Project.owner == created_by,
+                Project.selected_candidate_asset_id == expected_active_asset_id,
+            )
+            .values(selected_candidate_asset_id=child.id, updated_at=now)
+        )
+        if cas.rowcount != 1:
+            db.rollback()
+            raise StudioHistoryError(
+                "stale_asset_revision",
+                "the selected visual changed before the preview could be applied",
+            )
+        db.commit()
+    except StudioHistoryError:
+        raise
+    except IntegrityError as exc:
+        db.rollback()
+        raise StudioHistoryError(
+            "visual_preview_apply_conflict",
+            "another review decision was saved before this preview",
+        ) from exc
+    except Exception:
+        db.rollback()
+        raise
+    return ApplyPreSpecVisualResult(
+        project_root_id=project.root_id,
+        source_asset_id=source.id,
+        asset_id=child.id,
+        review_id=review.id,
+    )
+
+
+def discard_pre_spec_visual_candidate(
+    db: Session,
+    *,
+    candidate: StudioVisualCandidate,
+    expected_active_asset_id: str,
+    created_by: str,
+) -> DiscardPreSpecVisualResult:
+    """Persist a terminal rejection without creating any project asset."""
+
+    project, source, run = _validate_pre_spec_visual_candidate(
+        db,
+        candidate=candidate,
+        expected_active_asset_id=expected_active_asset_id,
+        created_by=created_by,
+    )
+    review = ImageRunReview(
+        id=new_id("irr"),
+        run_id=run.id,
+        decision="discarded",
+        accepted_asset_id=None,
+        created_by=created_by,
+    )
+    db.add(review)
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise StudioHistoryError(
+            "visual_preview_discard_conflict",
+            "another review decision was saved before this preview",
+        ) from exc
+    except Exception:
+        db.rollback()
+        raise
+    return DiscardPreSpecVisualResult(
+        project_root_id=project.root_id,
+        source_asset_id=source.id,
+        review_id=review.id,
+    )
+
+
 def _project_chain(db: Session, root_id: str) -> list[ImageAsset]:
     rows = list(db.scalars(
         select(ImageAsset)
@@ -67,7 +312,20 @@ def _active_primary(db: Session, root_id: str) -> ImageAsset | None:
         asset for asset in _project_chain(db, root_id)
         if is_primary_revision(asset)
     ]
-    return primary[-1] if primary else None
+    if not primary:
+        return None
+    project = db.get(Project, root_id)
+    if (project is not None
+            and project.selected_candidate_asset_id is not None
+            and not any(asset.design_version is not None for asset in primary)):
+        selected = next((
+            asset for asset in primary
+            if asset.id == project.selected_candidate_asset_id
+            and asset.design_version is None
+        ), None)
+        if selected is not None:
+            return selected
+    return primary[-1]
 
 
 def ensure_project_family(db: Session, project: Project) -> DesignFamily:
@@ -397,6 +655,11 @@ def restore_project_revision(
         created_at=now,
     )
     project.updated_at = now
+    if design_id is None:
+        # Pre-spec projects use the selected-candidate pointer as their exact
+        # active visual. A restore must advance that pointer to the appended
+        # child or reads would silently snap back to the old candidate.
+        project.selected_candidate_asset_id = restored_asset.id
     db.add_all([restored_asset, record])
     try:
         db.commit()

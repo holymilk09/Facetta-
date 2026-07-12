@@ -12,6 +12,7 @@ import type {
   CreateProjectFromBriefRequest,
   CreateProjectFromDrawingRequest,
   CreateProjectFromPromptRequest,
+  CreateVisualPreviewRequest,
   DrawingConfirmationResult,
   FactoryPackManifest,
   ImageQualityReport,
@@ -57,6 +58,29 @@ export interface ExactStudioLineage {
   projectId: string;
   sourceAssetId: string;
   sourceDesignVersion: number;
+}
+
+/** Immutable visual lineage before a specification has been confirmed. */
+export interface StudioVisualLineage {
+  projectId: string;
+  sourceAssetId: string;
+}
+
+export type StudioVisualPreviewRequest = StudioVisualLineage & {
+  createdBy: string;
+  instruction: string;
+  variant?: number;
+} & (
+  | { scope: 'appearance'; maskBase64?: never; markupAssetId?: never }
+  | { scope: 'marked_region'; maskBase64: string; markupAssetId?: never }
+  | { scope: 'marked_region'; markupAssetId: string; maskBase64?: never }
+);
+
+export interface StudioVisualPreview {
+  candidate: PreviewCandidate;
+  lineage: StudioVisualLineage;
+  instruction: string;
+  scope: CreateVisualPreviewRequest['scope'];
 }
 
 export interface StudioCatalogPreview {
@@ -157,6 +181,10 @@ type GatewayTrustedClient = Pick<TrustedApiClient,
   | 'getFactoryPack'
   | 'createStudioJob'
   | 'transitionStudioJob'
+  | 'cancelStudioJob'
+  | 'createVisualPreview'
+  | 'acceptVisualPreview'
+  | 'discardVisualPreview'
 >;
 
 export interface StudioGatewayOptions {
@@ -268,6 +296,11 @@ export function createStudioGateway(
     status: 'pending_review' | 'accepted' | 'discarded';
     studioJob: ActiveStudioJob | null;
   }>();
+  const visualCandidates = new Map<string, {
+    runId: string;
+    preview: StudioVisualPreview;
+    studioJob: ActiveStudioJob | null;
+  }>();
 
   const requireCandidate = (candidateId: string) => catalogCandidates.get(candidateId) ?? null;
 
@@ -283,7 +316,7 @@ export function createStudioGateway(
     actionId: StudioJobAction,
     owner: string,
     requestedOutputs: number,
-    lineage?: ExactStudioLineage,
+    lineage?: StudioVisualLineage,
   ): Promise<StudioGatewayResult<ActiveStudioJob | null>> => {
     if (!trackJobs) return { data: null, error: null, status: 0 };
     const action = getStudioAction(actionId);
@@ -361,6 +394,20 @@ export function createStudioGateway(
     // Preserve the action's original error. Activity repair is retryable, but
     // it must never disguise why generation itself failed.
     await transitionJob(job, 'failed', progress, undefined, code);
+  };
+
+  const cancelJob = async (
+    job: ActiveStudioJob | null,
+  ): Promise<StudioGatewayResult<StudioJobRecord | null>> => {
+    if (job === null) return { data: null, error: null, status: 0 };
+    try {
+      const result = await client.cancelStudioJob(job.jobId, job.owner);
+      return result.error === null
+        ? result
+        : { data: null, error: mapError(result.error), status: result.status };
+    } catch (error) {
+      return trackingError(error);
+    }
   };
 
   const callTracked = async <T>(
@@ -527,6 +574,185 @@ export function createStudioGateway(
       return result;
     },
 
+    async previewVisualRefine(
+      request: StudioVisualPreviewRequest,
+    ): Promise<StudioGatewayResult<StudioVisualPreview>> {
+      const instruction = request.instruction.trim();
+      if (instruction.length === 0) return gatewayError(
+        'VISUAL_INSTRUCTION_REQUIRED',
+        'Describe the visual change before creating a preview.',
+        'validation', 422,
+      );
+      if (
+        request.scope === 'marked_region'
+        && (typeof request.maskBase64 === 'string'
+          ? request.maskBase64 : request.markupAssetId).trim().length === 0
+      ) {
+        return gatewayError(
+          'VISUAL_MASK_REQUIRED',
+          'Mark the region that should change before creating this preview.',
+          'validation', 422,
+        );
+      }
+      const lineage: StudioVisualLineage = {
+        projectId: request.projectId,
+        sourceAssetId: request.sourceAssetId,
+      };
+      const started = await startJob('refine', request.createdBy, 1, lineage);
+      if (started.error !== null) return started;
+      const trustedRequest: CreateVisualPreviewRequest = request.scope === 'appearance'
+        ? {
+            created_by: request.createdBy,
+            expected_active_asset_id: request.sourceAssetId,
+            instruction,
+            scope: 'appearance',
+            ...(request.variant === undefined ? {} : { variant: request.variant }),
+          }
+        : typeof request.maskBase64 === 'string'
+          ? {
+            created_by: request.createdBy,
+            expected_active_asset_id: request.sourceAssetId,
+            instruction,
+            scope: 'marked_region',
+            mask_base64: request.maskBase64,
+            ...(request.variant === undefined ? {} : { variant: request.variant }),
+          }
+          : {
+            created_by: request.createdBy,
+            expected_active_asset_id: request.sourceAssetId,
+            instruction,
+            scope: 'marked_region',
+            markup_asset_id: request.markupAssetId,
+            ...(request.variant === undefined ? {} : { variant: request.variant }),
+          };
+      const result = await callTracked(
+        started.data,
+        () => client.createVisualPreview(request.projectId, trustedRequest),
+      );
+      if (result.error !== null) return result;
+      if (
+        result.data.project_id !== request.projectId
+        || result.data.source_asset_id !== request.sourceAssetId
+      ) {
+        await failJob(started.data, 'INVALID_VISUAL_PREVIEW_LINEAGE', 0.9);
+        return gatewayError(
+          'INVALID_VISUAL_PREVIEW_LINEAGE',
+          'The visual preview did not match the requested immutable image revision.',
+          'invalid_response', result.status,
+        );
+      }
+      const trustedCandidate = result.data.candidate;
+      const candidate: PreviewCandidate = {
+        id: trustedCandidate.candidate_id,
+        jobId: result.data.image_run_id,
+        sourceRevisionId: request.sourceAssetId,
+        assetUrl: trustedCandidate.preview_url,
+        verdict: trustedCandidate.verdict === 'fail' ? 'reject' : trustedCandidate.verdict,
+        status: 'pending_review',
+        checks: qualityPreviewChecks(trustedCandidate.qa),
+        temporary: true,
+        expiresAt: null,
+        decision: null,
+        decidedAt: null,
+        canonicalRevisionId: null,
+      };
+      const preview: StudioVisualPreview = {
+        candidate,
+        lineage,
+        instruction,
+        scope: request.scope,
+      };
+      visualCandidates.set(candidate.id, {
+        runId: result.data.image_run_id,
+        preview,
+        studioJob: started.data,
+      });
+      const reviewing = await transitionJob(started.data, 'reviewing', 0.9);
+      if (reviewing.error !== null) return reviewing;
+      return { data: preview, error: null, status: result.status };
+    },
+
+    async applyVisualRefine(
+      request: StudioCandidateDecisionRequest,
+    ): Promise<StudioGatewayResult<StudioCandidateDecisionResult>> {
+      const stored = visualCandidates.get(request.candidateId);
+      if (stored === undefined) return gatewayError(
+        'CANDIDATE_NOT_FOUND', 'This visual preview is no longer available.', 'validation', 404,
+      );
+      if (stored.preview.candidate.status !== 'pending_review') return gatewayError(
+        'CANDIDATE_NOT_REVIEWABLE', 'This visual preview already has a final decision.', 'conflict', 409,
+      );
+      if (stored.preview.candidate.verdict === 'reject') return gatewayError(
+        'CANDIDATE_REJECTED', 'A preview that failed fidelity checks cannot become design history.',
+        'quality', 422,
+      );
+      const lineage = stored.preview.lineage;
+      const result = await callTracked(stored.studioJob, () => client.acceptVisualPreview(
+        stored.runId,
+        stored.preview.candidate.id,
+        { created_by: request.createdBy, expected_active_asset_id: lineage.sourceAssetId },
+      ));
+      if (result.error !== null) return result;
+      if (
+        result.data.project_id !== lineage.projectId
+        || result.data.source_asset_id !== lineage.sourceAssetId
+        || result.data.new_asset_id === lineage.sourceAssetId
+        || result.data.project.active_asset_id !== result.data.new_asset_id
+        || result.data.project.active_design_version !== null
+      ) {
+        await failJob(stored.studioJob, 'INVALID_VISUAL_ACCEPT_LINEAGE', 0.95);
+        return gatewayError(
+          'INVALID_VISUAL_ACCEPT_LINEAGE',
+          'Applying the preview did not append the expected pre-spec image revision.',
+          'invalid_response', result.status,
+        );
+      }
+      const candidate = decidePreviewCandidate(
+        stored.preview.candidate, 'apply', now().toISOString(), result.data.new_asset_id,
+      );
+      stored.preview = { ...stored.preview, candidate };
+      const succeeded = await transitionJob(stored.studioJob, 'succeeded', 1, 1);
+      if (succeeded.error !== null) return succeeded;
+      return { data: { candidate, project: result.data.project }, error: null, status: result.status };
+    },
+
+    async discardVisualRefine(
+      request: StudioCandidateDecisionRequest,
+    ): Promise<StudioGatewayResult<StudioCandidateDecisionResult>> {
+      const stored = visualCandidates.get(request.candidateId);
+      if (stored === undefined) return gatewayError(
+        'CANDIDATE_NOT_FOUND', 'This visual preview is no longer available.', 'validation', 404,
+      );
+      if (stored.preview.candidate.status !== 'pending_review') return gatewayError(
+        'CANDIDATE_NOT_REVIEWABLE', 'This visual preview already has a final decision.', 'conflict', 409,
+      );
+      const lineage = stored.preview.lineage;
+      const result = await callTracked(stored.studioJob, () => client.discardVisualPreview(
+        stored.runId,
+        stored.preview.candidate.id,
+        { created_by: request.createdBy, expected_active_asset_id: lineage.sourceAssetId },
+      ));
+      if (result.error !== null) return result;
+      if (
+        result.data.project_id !== lineage.projectId
+        || result.data.candidate_id !== stored.preview.candidate.id
+      ) {
+        await failJob(stored.studioJob, 'INVALID_VISUAL_DISCARD_LINEAGE', 0.95);
+        return gatewayError(
+          'INVALID_VISUAL_DISCARD_LINEAGE',
+          'The discarded preview did not match the pending candidate.',
+          'invalid_response', result.status,
+        );
+      }
+      const candidate = decidePreviewCandidate(
+        stored.preview.candidate, 'discard', now().toISOString(),
+      );
+      stored.preview = { ...stored.preview, candidate };
+      const dismissed = await cancelJob(stored.studioJob);
+      if (dismissed.error !== null) return dismissed;
+      return { data: { candidate, project: null }, error: null, status: result.status };
+    },
+
     async previewCatalogRefine(
       request: StudioCatalogPreviewRequest,
     ): Promise<StudioGatewayResult<StudioCatalogPreview>> {
@@ -657,9 +883,7 @@ export function createStudioGateway(
       if (result.error !== null) return result;
       const candidate = decidePreviewCandidate(stored.preview, 'discard', now().toISOString());
       stored.preview = candidate;
-      const dismissed = await transitionJob(
-        stored.studioJob, 'failed', 0.9, undefined, 'DESIGNER_DISCARDED',
-      );
+      const dismissed = await cancelJob(stored.studioJob);
       if (dismissed.error !== null) return dismissed;
       return { data: { candidate, project: null }, error: null, status: result.status };
     },
@@ -787,9 +1011,7 @@ export function createStudioGateway(
       if (result.error !== null) return result;
       const candidate = decidePreviewCandidate(stored.preview, 'discard', now().toISOString());
       stored.preview = candidate;
-      const dismissed = await transitionJob(
-        stored.studioJob, 'failed', 0.9, undefined, 'DESIGNER_DISCARDED',
-      );
+      const dismissed = await cancelJob(stored.studioJob);
       if (dismissed.error !== null) return dismissed;
       return { data: { candidate, project: null }, error: null, status: result.status };
     },
@@ -930,9 +1152,7 @@ export function createStudioGateway(
       ));
       if (feedback.error !== null) return feedback;
       stored.status = 'discarded';
-      const dismissed = await transitionJob(
-        stored.studioJob, 'failed', 0.9, undefined, 'DESIGNER_DISCARDED',
-      );
+      const dismissed = await cancelJob(stored.studioJob);
       if (dismissed.error !== null) return dismissed;
       return { data: { preview: stored.preview, project: null }, error: null, status: feedback.status };
     },
