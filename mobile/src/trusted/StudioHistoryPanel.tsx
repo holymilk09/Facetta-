@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
-import { Image, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Pressable, StyleSheet, Text, View } from 'react-native';
+import { AuthenticatedImage as Image } from '../AuthenticatedImage';
 
 import { Button, Notice } from '../components';
 import { theme } from '../theme';

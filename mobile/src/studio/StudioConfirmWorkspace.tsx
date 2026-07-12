@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { Button, Notice } from '../components';
 import { radius, theme } from '../theme';
+import { designerErrorMessage } from './designerErrorMessage';
 import type {
   StudioDesignConfirmationAudit, StudioDesignConfirmationGateway, StudioDesignConfirmationReview,
   StudioDesignConfirmationReceipt, StudioDesignFactAuthority, StudioVisualLineage,
@@ -47,7 +48,7 @@ export function StudioConfirmWorkspace({ gateway, lineage, createdBy, onSaved }:
     void gateway.loadDesignConfirmation({ ...lineage, createdBy }).then((result) => {
       if (!active) return;
       setBusy(false);
-      if (result.error !== null) setError('The design details could not be loaded. Your visual remains unchanged.');
+      if (result.error !== null) setError(designerErrorMessage(result.error, 'confirm'));
       else {
         setReview(result.data);
         setLoadedFor(`${lineage.projectId}:${lineage.sourceAssetId}`);
@@ -67,7 +68,7 @@ export function StudioConfirmWorkspace({ gateway, lineage, createdBy, onSaved }:
     const result = await gateway.auditDesignConfirmation(currentReview);
     if (currentLineageKeyRef.current !== lineageKey) return;
     setBusy(false);
-    if (result.error !== null) setError('These details could not be reviewed. Nothing was saved.');
+    if (result.error !== null) setError(designerErrorMessage(result.error, 'confirm'));
     else setAudit(result.data);
   };
   const save = async () => {
@@ -76,7 +77,7 @@ export function StudioConfirmWorkspace({ gateway, lineage, createdBy, onSaved }:
     const result = await gateway.saveDesignConfirmation(currentAudit);
     if (currentLineageKeyRef.current !== lineageKey) return;
     setBusy(false);
-    if (result.error !== null) setError('These details could not be saved. Your visual remains unchanged.');
+    if (result.error !== null) setError(designerErrorMessage(result.error, 'confirm'));
     else onSaved(result.data);
   };
 

@@ -1,13 +1,13 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
-  Image,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
+import { AuthenticatedImage as Image } from '../AuthenticatedImage';
 
 import { Button, Field, Notice } from '../components';
 import { theme } from '../theme';

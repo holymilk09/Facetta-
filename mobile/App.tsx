@@ -1,12 +1,14 @@
 import { StatusBar } from 'expo-status-bar';
-import React, { useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import {
   Image, Pressable, SafeAreaView, ScrollView, StyleSheet, Text,
   useWindowDimensions, View,
 } from 'react-native';
 import { DEFAULT_API_URL } from './src/api';
+import { AuthenticatedImageProvider } from './src/AuthenticatedImage';
 import {
-  clearSession, hasOnboarded, loadSession, markOnboarded, saveSession, Session,
+  clearSession, hasOnboarded, loadAuthenticatedSession, markOnboarded,
+  saveSession, sessionAccessToken, Session,
 } from './src/auth';
 import { LoginScreen } from './src/LoginScreen';
 import { OnboardingScreen } from './src/OnboardingScreen';
@@ -67,32 +69,54 @@ function StudioCard({
 }
 
 export default function App() {
-  const [session, setSession] = useState<Session | null>(() => loadSession());
+  const [session, setSession] = useState<Session | null>(() => loadAuthenticatedSession());
   const [stage, setStage] = useState<Stage>(() =>
-    loadSession() ? 'app' : hasOnboarded() ? 'login' : 'onboarding',
+    loadAuthenticatedSession() ? 'app' : hasOnboarded() ? 'login' : 'onboarding',
   );
   const [tab, setTab] = useState<Tab>('studio');
   const [studioView, setStudioView] = useState<StudioView>('home');
   const [selectedActionId, setSelectedActionId] = useState<StudioActionId>('create');
   const [showMoreActions, setShowMoreActions] = useState(false);
   const apiUrl = DEFAULT_API_URL;
-  const [designer, setDesigner] = useState(session?.designerId ?? 'usr_ana');
+  const [designer, setDesigner] = useState(session?.designerId ?? '');
   const [showUtilityMenu, setShowUtilityMenu] = useState(false);
   const [studioProject, setStudioProject] = useState<ProjectDetail | null>(null);
   const [selectedCreativeAssetId, setSelectedCreativeAssetId] = useState<string | null>(null);
+  const expireAuthenticatedSession = useCallback(() => {
+    clearSession();
+    setSession(null);
+    setDesigner('');
+    setStudioProject(null);
+    setSelectedCreativeAssetId(null);
+    setStage('login');
+  }, []);
 
   const trustedApi = useMemo(
-    () => createTrustedApiClient({ baseUrl: apiUrl.replace(/\/$/, '') }),
-    [apiUrl],
+    () => createTrustedApiClient({
+      baseUrl: apiUrl.replace(/\/$/, ''),
+      getAccessToken: () => sessionAccessToken(session),
+      requireAccessToken: true,
+      onAuthenticationFailure: expireAuthenticatedSession,
+    }),
+    [apiUrl, expireAuthenticatedSession, session],
   );
   const studioGateway = useMemo(
     () => createStudioGatewayFromOptions(
-      { baseUrl: apiUrl.replace(/\/$/, '') },
+      {
+        baseUrl: apiUrl.replace(/\/$/, ''),
+        getAccessToken: () => sessionAccessToken(session),
+        requireAccessToken: true,
+        onAuthenticationFailure: expireAuthenticatedSession,
+      },
       { trackJobs: true },
     ),
-    [apiUrl],
+    [apiUrl, expireAuthenticatedSession, session],
   );
   const { width } = useWindowDimensions();
+  const authenticatedImageHeaders = useMemo(() => {
+    const token = sessionAccessToken(session);
+    return token === null ? undefined : { Authorization: `Bearer ${token}` };
+  }, [session]);
   const isWide = width >= 900; // tablet / desktop: two-pane layouts
   const activeDesignId = studioProject?.root_id ?? null;
   const exactStudioLineage = useMemo<ExactStudioLineage | null>(() => {
@@ -176,6 +200,9 @@ export default function App() {
         <StatusBar style="dark" />
         <LoginScreen
           onSignIn={(s) => {
+            if (sessionAccessToken(s) === null) {
+              throw new Error('This sign-in method is not connected to Facetta’s authenticated API yet.');
+            }
             saveSession(s);
             setSession(s);
             setDesigner(s.designerId);
@@ -188,6 +215,7 @@ export default function App() {
   }
 
   return (
+    <AuthenticatedImageProvider headers={authenticatedImageHeaders} allowedOrigin={apiUrl}>
     <SafeAreaView style={[styles.root, isStudioHome && styles.rootDark]}>
       <StatusBar style={isStudioHome ? 'light' : 'dark'} />
       <View style={[styles.header, isStudioHome && styles.headerDark]}>
@@ -333,6 +361,7 @@ export default function App() {
                 setStudioProject(project);
                 setSelectedCreativeAssetId(project.active_asset_id);
               }}
+              imageRequestHeaders={authenticatedImageHeaders}
             />
           ) : selectedActionId === 'views' ? (
             <StudioViewsWorkspace
@@ -340,6 +369,7 @@ export default function App() {
               lineage={exactStudioLineage}
               createdBy={designer}
               onSaved={setStudioProject}
+              imageRequestHeaders={authenticatedImageHeaders}
             />
           ) : selectedActionId === 'confirm' ? (
             <StudioConfirmWorkspace
@@ -357,6 +387,7 @@ export default function App() {
               lineage={exactStudioLineage ?? visualStudioLineage}
               createdBy={designer}
               onProjectUpdated={setStudioProject}
+              imageRequestHeaders={authenticatedImageHeaders}
             />
           ) : selectedActionId === 'vary' ? (
             <StudioVaryWorkspace
@@ -470,6 +501,7 @@ export default function App() {
         ))}
       </View>
     </SafeAreaView>
+    </AuthenticatedImageProvider>
   );
 }
 

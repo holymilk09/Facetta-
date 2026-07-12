@@ -1,6 +1,5 @@
 import React, { useMemo, useRef, useState } from 'react';
 import {
-  Image,
   type LayoutChangeEvent,
   type NativeSyntheticEvent,
   Pressable,
@@ -10,6 +9,7 @@ import {
   type GestureResponderEvent,
   View,
 } from 'react-native';
+import { AuthenticatedImage as Image } from '../AuthenticatedImage';
 
 import { theme } from '../theme';
 

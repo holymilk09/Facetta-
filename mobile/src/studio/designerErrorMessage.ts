@@ -5,7 +5,8 @@ export type DesignerErrorAction =
   | 'views'
   | 'present'
   | 'collections'
-  | 'activity';
+  | 'activity'
+  | 'confirm';
 
 export interface DesignerSafeError {
   code?: string;
@@ -22,6 +23,7 @@ const ACTION_FAILURE: Record<DesignerErrorAction, string> = {
   present: 'Facetta could not prepare that presentation image. Your design is unchanged.',
   collections: 'Facetta could not open that saved work. Try again.',
   activity: 'Facetta could not update Activity. Try again.',
+  confirm: 'Facetta could not review those design suggestions. Nothing was saved.',
 };
 
 /**
@@ -34,6 +36,12 @@ export function designerErrorMessage(
 ): string {
   const code = (error.code ?? '').toLowerCase();
   const category = (error.category ?? '').toLowerCase();
+  if (category === 'authentication' || error.status === 401) {
+    return 'Your Facetta session is missing or expired. Sign in again before continuing.';
+  }
+  if (category === 'authorization' || error.status === 403) {
+    return 'This design is not available to the signed-in account.';
+  }
   if (code.includes('stale') || error.status === 409) {
     return 'This design changed while you were working. Reopen it before trying again.';
   }

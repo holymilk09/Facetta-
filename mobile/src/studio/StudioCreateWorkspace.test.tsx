@@ -6,6 +6,7 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react-nativ
 import type { StudioGateway } from './gateway';
 import { StudioCreateReference, StudioCreateWorkspace } from './StudioCreateWorkspace';
 import type { AssetSummary, ProjectDetail } from '../trusted/types';
+import { AuthenticatedImageProvider } from '../AuthenticatedImage';
 
 const candidate = (index: number): AssetSummary => ({
   asset_id: `candidate_${index}`,
@@ -80,13 +81,19 @@ test('requests 1-4 prompt candidates, lets the designer choose, then saves only 
     status: 200,
   }));
   const onSave = jest.fn();
-  await render(React.createElement(StudioCreateWorkspace, {
-    gateway: {
-      createFromPrompt, createFromDrawing: jest.fn(), selectCreativeDirection,
-    } as CreateGateway,
-    owner: 'designer_1',
-    onSave,
-  }));
+  await render(
+    <AuthenticatedImageProvider
+      allowedOrigin="https://facetta.test"
+      headers={{ Authorization: 'Bearer first-party-token' }}>
+      <StudioCreateWorkspace
+        gateway={{
+          createFromPrompt, createFromDrawing: jest.fn(), selectCreativeDirection,
+        } as CreateGateway}
+        owner="designer_1"
+        onSave={onSave}
+      />
+    </AuthenticatedImageProvider>,
+  );
 
   expect(screen.queryByText(/factory facts/i)).toBeNull();
   expect(screen.queryByText(/structured specification/i)).toBeNull();
@@ -101,6 +108,9 @@ test('requests 1-4 prompt candidates, lets the designer choose, then saves only 
     title: 'A sculptural aquamarine collar.',
   }));
   expect(await screen.findByText('Which outcome should stay in your Studio?')).toBeTruthy();
+  expect(screen.getByLabelText('Direction 1 preview').props.source.headers).toEqual({
+    Authorization: 'Bearer first-party-token',
+  });
   expect(screen.getByText(/visual directions.+not measurements or production instructions/i)).toBeTruthy();
   await fireEvent.press(screen.getByLabelText('Direction 3'));
   await fireEvent.press(screen.getByText('Save selected direction'));

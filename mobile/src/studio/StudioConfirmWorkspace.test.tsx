@@ -140,7 +140,7 @@ test('a failed B load cannot leave A facts or a prior save path visible', async 
   const view = await render(<StudioConfirmWorkspace gateway={g} lineage={{ projectId: 'project_a', sourceAssetId: 'candidate_a' }} createdBy="designer" onSaved={jest.fn()} />);
   await waitFor(() => expect(screen.getByText('Jewelry type')).toBeTruthy());
   await view.rerender(<StudioConfirmWorkspace gateway={g} lineage={{ projectId: 'project_b', sourceAssetId: 'candidate_b' }} createdBy="designer" onSaved={jest.fn()} />);
-  await waitFor(() => expect(screen.getByText(/could not be loaded/i)).toBeTruthy());
+  await waitFor(() => expect(screen.getByText(/could not review/i)).toBeTruthy());
   expect(screen.queryByText('Jewelry type')).toBeNull();
   await fireEvent.press(screen.getByText('Create immutable Design v1'));
   expect(save).not.toHaveBeenCalled();

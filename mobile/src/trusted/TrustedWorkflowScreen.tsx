@@ -1,7 +1,6 @@
 import React, { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
-  Image,
   Linking,
   Pressable,
   ScrollView,
@@ -10,6 +9,7 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native';
+import { AuthenticatedImage as Image } from '../AuthenticatedImage';
 import { Button, ChipRow, Field, Notice, Section } from '../components';
 import { theme } from '../theme';
 import {

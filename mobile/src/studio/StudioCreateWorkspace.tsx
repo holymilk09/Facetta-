@@ -1,7 +1,8 @@
 import React, { useMemo, useState } from 'react';
 import {
-  Image, Pressable, ScrollView, StyleSheet, Text, TextInput, View,
+  Pressable, ScrollView, StyleSheet, Text, TextInput, View,
 } from 'react-native';
+import { AuthenticatedImage as Image } from '../AuthenticatedImage';
 
 import type { StudioGateway } from './gateway';
 import type { ReferenceRole } from './contracts';
@@ -171,7 +172,11 @@ export function StudioCreateWorkspace({
                 {candidate.image_url === null ? (
                   <View style={styles.imageFallback}><Text style={styles.imageFallbackText}>Preview unavailable</Text></View>
                 ) : (
-                  <Image source={{ uri: candidate.image_url }} style={styles.candidateImage} />
+                  <Image
+                    accessibilityLabel={`Direction ${index + 1} preview`}
+                    source={{ uri: candidate.image_url }}
+                    style={styles.candidateImage}
+                  />
                 )}
                 <View style={styles.candidateCopy}>
                   <Text style={styles.candidateTitle}>Direction {index + 1}</Text>

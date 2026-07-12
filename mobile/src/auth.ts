@@ -1,8 +1,8 @@
 // Client-side auth flow for the mobile app.
 //
-// There is no auth backend yet, so provider sign-in resolves locally and the
-// session simply drives the designer identity used by the API. The two social
-// entry points are the integration seams for real SDKs later:
+// Provider SDK/token exchange is not connected yet. Local provider helpers
+// return profile-only sessions and MUST NOT authorize API requests. A real
+// server-issued credential enters only through attachServerCredential:
 //   - signInWithApple  → expo-apple-authentication
 //   - signInWithGoogle → expo-auth-session (Google provider)
 
@@ -13,6 +13,41 @@ export interface Session {
   email: string;
   name: string;
   designerId: string;
+  /** Server-issued first-party credential. Never derive this from designerId. */
+  accessToken?: string;
+  accessTokenExpiresAt?: string;
+}
+
+export interface SessionCredential {
+  accessToken: string;
+  expiresAt: string;
+}
+
+export function sessionAccessToken(
+  session: Session | null,
+  now: number = Date.now(),
+): string | null {
+  if (session === null || typeof session.accessToken !== 'string'
+    || typeof session.accessTokenExpiresAt !== 'string'
+    || session.accessToken.trim().length === 0) return null;
+  const expiresAt = Date.parse(session.accessTokenExpiresAt);
+  return Number.isFinite(expiresAt) && expiresAt > now ? session.accessToken : null;
+}
+
+/** Provider/server integration seam. Credentials must come from Facetta's auth service. */
+export function attachServerCredential(
+  session: Session,
+  credential: SessionCredential,
+): Session {
+  if (credential.accessToken.trim().length === 0
+    || !Number.isFinite(Date.parse(credential.expiresAt))) {
+    throw new Error('The server returned an invalid sign-in credential.');
+  }
+  return {
+    ...session,
+    accessToken: credential.accessToken,
+    accessTokenExpiresAt: credential.expiresAt,
+  };
 }
 
 /** usr_ana-style designer id derived from the account email. */
@@ -88,7 +123,7 @@ export async function signUpWithEmail(name: string, email: string, password: str
   return makeSession('email', email, name);
 }
 
-/** Mock reset request — always succeeds so it never leaks whether an account exists. */
+/** Local reset placeholder — it never claims an authenticated API session. */
 export async function requestPasswordReset(email: string): Promise<void> {
   const emailErr = validateEmail(email);
   if (emailErr) throw new Error(emailErr);
@@ -134,6 +169,7 @@ function removeItem(key: string) {
 
 const ONBOARDED_KEY = 'facetta.onboarded';
 const SESSION_KEY = 'facetta.session';
+let runtimeCredential: SessionCredential | null = null;
 
 export const hasOnboarded = () => getItem(ONBOARDED_KEY) === '1';
 export const markOnboarded = () => setItem(ONBOARDED_KEY, '1');
@@ -143,12 +179,32 @@ export function loadSession(): Session | null {
   if (!raw) return null;
   try {
     const s = JSON.parse(raw);
-    if (s && typeof s.email === 'string' && typeof s.designerId === 'string') return s as Session;
+    if (s && typeof s.email === 'string' && typeof s.designerId === 'string') {
+      return runtimeCredential === null ? s as Session : {
+        ...s,
+        accessToken: runtimeCredential.accessToken,
+        accessTokenExpiresAt: runtimeCredential.expiresAt,
+      } as Session;
+    }
   } catch {
     // corrupt — discard
   }
   return null;
 }
 
-export const saveSession = (s: Session) => setItem(SESSION_KEY, JSON.stringify(s));
-export const clearSession = () => removeItem(SESSION_KEY);
+export function loadAuthenticatedSession(): Session | null {
+  const session = loadSession();
+  return sessionAccessToken(session) === null ? null : session;
+}
+
+export const saveSession = (s: Session) => {
+  runtimeCredential = sessionAccessToken(s) === null ? null : {
+    accessToken: s.accessToken!, expiresAt: s.accessTokenExpiresAt!,
+  };
+  const { accessToken: _token, accessTokenExpiresAt: _expires, ...publicSession } = s;
+  setItem(SESSION_KEY, JSON.stringify(publicSession));
+};
+export const clearSession = () => {
+  runtimeCredential = null;
+  removeItem(SESSION_KEY);
+};

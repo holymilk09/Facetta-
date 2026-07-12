@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  ActivityIndicator, Image, Pressable, ScrollView, StyleSheet, Text, View,
+  ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View,
 } from 'react-native';
+import { AuthenticatedImage as Image } from '../AuthenticatedImage';
 
 import { Button, Field, Notice } from '../components';
 import { radius, theme } from '../theme';
@@ -43,6 +44,7 @@ export interface StudioRefineWorkspaceProps {
   createdBy: string;
   sourceImageUrl?: string | null;
   onApplied: (project: ProjectDetail) => void;
+  imageRequestHeaders?: Readonly<Record<string, string>>;
 }
 
 function optionDetail(option: ComponentCatalogOption): string {
@@ -59,7 +61,7 @@ function hasExactSpecification(
 }
 
 export function StudioRefineWorkspace({
-  api, gateway, lineage, createdBy, sourceImageUrl = null, onApplied,
+  api, gateway, lineage, createdBy, sourceImageUrl = null, onApplied, imageRequestHeaders,
 }: StudioRefineWorkspaceProps) {
   const exactLineage = hasExactSpecification(lineage) ? lineage : null;
   const exactSpecification = exactLineage !== null;
@@ -274,12 +276,12 @@ export function StudioRefineWorkspace({
           {sourceImageUrl !== null && (
             <View style={styles.comparePane}>
               <Text style={styles.compareLabel}>SOURCE</Text>
-              <Image accessibilityLabel="Exact source revision" source={{ uri: sourceImageUrl }} style={styles.preview} />
+              <Image accessibilityLabel="Exact source revision" source={{ uri: sourceImageUrl }} imageRequestHeaders={imageRequestHeaders} style={styles.preview} />
             </View>
           )}
           <View style={styles.comparePane}>
             <Text style={styles.compareLabel}>PREVIEW</Text>
-            <Image accessibilityLabel="Temporary refinement preview" source={{ uri: preview.candidate.assetUrl }} style={styles.preview} />
+            <Image accessibilityLabel="Temporary refinement preview" source={{ uri: preview.candidate.assetUrl }} imageRequestHeaders={imageRequestHeaders} style={styles.preview} />
           </View>
         </View>
         <View style={styles.reviewCard}>

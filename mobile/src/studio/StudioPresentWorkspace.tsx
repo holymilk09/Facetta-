@@ -1,7 +1,8 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import {
-  Image, Pressable, ScrollView, StyleSheet, Text, View,
+  Pressable, ScrollView, StyleSheet, Text, View,
 } from 'react-native';
+import { AuthenticatedImage as Image } from '../AuthenticatedImage';
 
 import { Button, ChipRow, Field, Notice } from '../components';
 import { radius, theme } from '../theme';
@@ -75,6 +76,7 @@ export interface StudioPresentWorkspaceProps {
   lineage: ExactStudioLineage | StudioVisualLineage | null;
   createdBy: string;
   onProjectUpdated?: (project: ProjectDetail) => void;
+  imageRequestHeaders?: Readonly<Record<string, string>>;
 }
 
 function assetUrl(project: ProjectDetail, assetId: string): string | null {
@@ -151,7 +153,7 @@ function preSpecCard(result: PreSpecPresentationResult): PresentationCard {
 }
 
 export function StudioPresentWorkspace({
-  gateway, lineage, createdBy, onProjectUpdated,
+  gateway, lineage, createdBy, onProjectUpdated, imageRequestHeaders,
 }: StudioPresentWorkspaceProps) {
   const [destination, setDestination] = useState<Destination>('client');
   const [clientFormat, setClientFormat] = useState<ClientFormat>('beauty');
@@ -412,7 +414,7 @@ export function StudioPresentWorkspace({
       {cards.length > 0 && <View style={styles.results}>
         <Text style={styles.sectionTitle}>Results</Text>
         {cards.map((card) => <View key={card.id} style={styles.resultCard}>
-          {card.imageUrl !== null && <Image accessibilityLabel={card.title} source={{ uri: card.imageUrl }} style={styles.preview} />}
+          {card.imageUrl !== null && <Image accessibilityLabel={card.title} source={{ uri: card.imageUrl }} imageRequestHeaders={imageRequestHeaders} style={styles.preview} />}
           <View style={styles.resultCopy}>
             <Text style={styles.resultTitle}>{card.title}</Text>
             <Text style={styles.cardCopy}>{card.detail}</Text>

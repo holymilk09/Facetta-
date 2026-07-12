@@ -12,6 +12,12 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from facetta.api.projects import ProjectDetail, project_detail
+from facetta.auth import (
+    AuthenticatedPrincipal,
+    principal_actor,
+    require_image_run_boundary,
+    require_principal_boundary,
+)
 from facetta.db import (
     FeedbackEvent, ImageAttempt, ImageRun, ImageRunReview, Project, get_db,
 )
@@ -29,8 +35,15 @@ from facetta.warning_candidates import (
     WarningCandidateUnavailable, get_markup_warning_candidate,
 )
 
-router = APIRouter(tags=["trusted-workflow"])
+router = APIRouter(
+    tags=["trusted-workflow"],
+    dependencies=[
+        Depends(require_principal_boundary),
+        Depends(require_image_run_boundary),
+    ],
+)
 DbSession = Annotated[Session, Depends(get_db)]
+PrincipalDep = Annotated[AuthenticatedPrincipal, Depends(require_principal_boundary)]
 
 
 class ImageAttemptSummary(BaseModel):
@@ -275,7 +288,11 @@ def get_image_run(run_id: str, db: DbSession):
 
 
 @router.get("/image-runs/{run_id}/candidates/{candidate_id}/image")
-def get_warning_candidate_image(run_id: str, candidate_id: str):
+def get_warning_candidate_image(
+    run_id: str,
+    candidate_id: str,
+    principal: PrincipalDep,
+):
     try:
         candidate = get_markup_warning_candidate(run_id, candidate_id)
     except WarningCandidateUnavailable as exc:
@@ -284,6 +301,8 @@ def get_warning_candidate_image(run_id: str, candidate_id: str):
             "category": "conflict",
             "detail": str(exc),
         })
+    if not principal.local_unbound and candidate.created_by != principal.subject:
+        raise HTTPException(status_code=404, detail="warning candidate unavailable")
     return Response(
         content=candidate.image_bytes,
         media_type=candidate.media_type,
@@ -296,7 +315,9 @@ def create_image_run_feedback(
     run_id: str,
     request: ImageRunFeedbackRequest,
     db: DbSession,
+    principal: PrincipalDep,
 ):
+    principal_actor(principal, request.created_by)
     run = db.get(ImageRun, run_id)
     if run is None:
         raise HTTPException(status_code=404,
@@ -340,7 +361,9 @@ def accept_warning_candidate(
     candidate_id: str,
     request: WarningCandidateAcceptRequest,
     db: DbSession,
+    principal: PrincipalDep,
 ):
+    principal_actor(principal, request.created_by)
     try:
         candidate = get_markup_warning_candidate(run_id, candidate_id)
         if candidate.promotion_kind == "presentation_only":
@@ -383,7 +406,9 @@ def discard_warning_candidate(
     candidate_id: str,
     request: WarningCandidateDiscardRequest,
     db: DbSession,
+    principal: PrincipalDep,
 ):
+    principal_actor(principal, request.created_by)
     try:
         candidate = get_markup_warning_candidate(run_id, candidate_id)
         if candidate.promotion_kind == "presentation_only":

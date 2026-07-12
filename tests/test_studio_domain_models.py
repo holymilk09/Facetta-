@@ -18,6 +18,7 @@ from facetta.db import (
     _apply_additive_migrations,
 )
 from facetta.api.studio import list_design_families
+from facetta.auth import AuthenticatedPrincipal
 
 
 def _session_factory() -> sessionmaker[Session]:
@@ -212,7 +213,11 @@ def test_family_list_preserves_variations_and_filters_by_owner():
         ])
         db.commit()
 
-        result = list_design_families(db=db, owner="usr_studio")
+        result = list_design_families(
+            db=db,
+            principal=AuthenticatedPrincipal(subject=None, local_unbound=True),
+            owner="usr_studio",
+        )
 
         assert [family["family_id"] for family in result["families"]] == [
             "fam_one",

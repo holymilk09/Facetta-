@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import {
-  Image, Pressable, ScrollView, StyleSheet, Text, View,
+  Pressable, ScrollView, StyleSheet, Text, View,
 } from 'react-native';
+import { AuthenticatedImage as Image } from '../AuthenticatedImage';
 
 import { Button, Notice } from '../components';
 import { radius, theme } from '../theme';
@@ -27,10 +28,11 @@ export interface StudioViewsWorkspaceProps {
   lineage: ExactStudioLineage | null;
   createdBy: string;
   onSaved: (project: ProjectDetail) => void;
+  imageRequestHeaders?: Readonly<Record<string, string>>;
 }
 
 export function StudioViewsWorkspace({
-  gateway, lineage, createdBy, onSaved,
+  gateway, lineage, createdBy, onSaved, imageRequestHeaders,
 }: StudioViewsWorkspaceProps) {
   const [view, setView] = useState<ViewId>('three_quarter');
   const [preview, setPreview] = useState<StudioViewPreview | null>(null);
@@ -114,6 +116,7 @@ export function StudioViewsWorkspace({
         <Image
           accessibilityLabel={`Temporary ${preview.view} view`}
           source={{ uri: preview.previewUrl }}
+          imageRequestHeaders={imageRequestHeaders}
           style={styles.preview}
         />
         <View style={styles.reviewCard}>

@@ -8,6 +8,7 @@ import {
   StudioCollectionsWorkspace,
   type StudioCollectionsApi,
 } from './StudioCollectionsWorkspace';
+import { AuthenticatedImageProvider } from '../AuthenticatedImage';
 
 const project: ProjectDetail = {
   id: 'project_main', root_id: 'project_main', title: 'Sapphire orbit ring',
@@ -121,16 +122,22 @@ describe('StudioCollectionsWorkspace', () => {
     const client = api();
     const handlers = callbacks();
     await render(
-      <StudioCollectionsWorkspace
-        api={client}
-        project={project}
-        createdBy="usr_designer"
-        {...handlers}
-      />,
+      <AuthenticatedImageProvider
+        allowedOrigin="https://test"
+        headers={{ Authorization: 'Bearer first-party-token' }}>
+        <StudioCollectionsWorkspace
+          api={client}
+          project={project}
+          createdBy="usr_designer"
+          {...handlers}
+        />
+      </AuthenticatedImageProvider>,
     );
 
     expect(await screen.findByText('Sapphire orbit ring')).toBeTruthy();
-    expect(screen.getByLabelText('Design family cover')).toBeTruthy();
+    expect(screen.getByLabelText('Design family cover').props.source.headers).toEqual({
+      Authorization: 'Bearer first-party-token',
+    });
     expect(screen.getByText('Original family direction')).toBeTruthy();
     expect(screen.getByText('Branched from Variation 1 · Original')).toBeTruthy();
     expect(screen.getByText('Variation 2 · White metal study')).toBeTruthy();

@@ -3,6 +3,7 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-
 
 import type { ProjectDetail } from '../trusted/types';
 import { StudioViewsWorkspace } from './StudioViewsWorkspace';
+import { AuthenticatedImageProvider } from '../AuthenticatedImage';
 
 const lineage = {
   projectId: 'project_1', sourceAssetId: 'asset_7', sourceDesignVersion: 4,
@@ -26,14 +27,16 @@ const preview = {
 describe('StudioViewsWorkspace', () => {
   test('fails closed without an exact saved revision', async () => {
     await render(
-      <StudioViewsWorkspace
-        gateway={{
-          previewLineArtView: jest.fn(), acceptLineArtView: jest.fn(), discardLineArtView: jest.fn(),
-        }}
-        lineage={null}
-        createdBy="designer"
-        onSaved={jest.fn()}
-      />,
+      <AuthenticatedImageProvider allowedOrigin="https://test" headers={{ Authorization: 'Bearer first-party-token' }}>
+        <StudioViewsWorkspace
+          gateway={{
+            previewLineArtView: jest.fn(), acceptLineArtView: jest.fn(), discardLineArtView: jest.fn(),
+          }}
+          lineage={null}
+          createdBy="designer"
+          onSaved={jest.fn()}
+        />
+      </AuthenticatedImageProvider>,
     );
     expect(screen.getByText('Choose a saved direction first')).toBeTruthy();
   });
@@ -45,18 +48,24 @@ describe('StudioViewsWorkspace', () => {
       data: { preview, project }, error: null, status: 201,
     }));
     await render(
-      <StudioViewsWorkspace
-        gateway={{ previewLineArtView, acceptLineArtView, discardLineArtView: jest.fn() } as any}
-        lineage={lineage}
-        createdBy="designer"
-        onSaved={onSaved}
-      />,
+      <AuthenticatedImageProvider allowedOrigin="https://test" headers={{ Authorization: 'Bearer first-party-token' }}>
+        <StudioViewsWorkspace
+          gateway={{ previewLineArtView, acceptLineArtView, discardLineArtView: jest.fn() } as any}
+          lineage={lineage}
+          createdBy="designer"
+          onSaved={onSaved}
+          imageRequestHeaders={{ Authorization: 'Bearer first-party-token' }}
+        />
+      </AuthenticatedImageProvider>,
     );
 
     await act(async () => { fireEvent.press(screen.getByText('Front')); });
     await act(async () => { fireEvent.press(screen.getByText('Preview view')); });
     expect(await screen.findByText('Your design is still unchanged.')).toBeTruthy();
     expect(previewLineArtView).toHaveBeenCalledWith({ ...lineage, createdBy: 'designer', view: 'front' });
+    expect(screen.getByLabelText('Temporary front view').props.source.headers).toEqual({
+      Authorization: 'Bearer first-party-token',
+    });
     expect(onSaved).not.toHaveBeenCalled();
 
     await act(async () => { fireEvent.press(screen.getByText('Save view')); });

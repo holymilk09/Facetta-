@@ -23,6 +23,12 @@ from sqlalchemy.orm import Session
 from facetta.api.error_mapping import (
     image_agent_error_response, render_unavailable_response,
 )
+from facetta.auth import (
+    AuthenticatedPrincipal,
+    principal_actor,
+    require_asset_project_boundary,
+    require_principal_boundary,
+)
 from facetta.checklist import (
     DEFAULT_MODE, approval_footer_line, build_checklist_items,
     checklist_status,
@@ -61,9 +67,17 @@ from facetta.specdiff import diff_specs, summarize_changes
 from facetta.validation import validate_spec
 from facetta.vocabulary import get_vocabulary
 
-router = APIRouter(prefix="/assets", tags=["assets"])
+router = APIRouter(
+    prefix="/assets",
+    tags=["assets"],
+    dependencies=[
+        Depends(require_principal_boundary),
+        Depends(require_asset_project_boundary),
+    ],
+)
 
 DbSession = Annotated[Session, Depends(get_db)]
+PrincipalDep = Annotated[AuthenticatedPrincipal, Depends(require_principal_boundary)]
 
 
 def _provider_error(exc: RenderUnavailable) -> JSONResponse:
@@ -300,21 +314,36 @@ def _view_children(db: Session, hero: ImageAsset, angles: list[str],
 
 
 @router.post("/render", status_code=201, deprecated=True)
-def create_render_asset(request: AssetRenderRequest, db: DbSession):
+def create_render_asset(
+    request: AssetRenderRequest,
+    db: DbSession,
+    principal: PrincipalDep,
+):
     """MODE A into the chain: a new root asset the iteration loop grows from.
     Pass `angles` to also get extra camera views of the same design in one
     request — each is derived from this hero render (design-locked), so the
     designer gets a consistent turntable without re-generating (which would
     invent a different piece per angle)."""
+    actor = principal_actor(principal, request.created_by)
     design_version = None
     if request.design_id is not None:
         from facetta.db import Design
         from facetta.project_backbone import (
             DesignAlreadyLinked, ensure_design_chain_available,
         )
-        if db.get(Design, request.design_id) is None:
+        design = db.get(Design, request.design_id)
+        if design is None:
             raise HTTPException(status_code=404,
                                 detail=f"unknown design '{request.design_id}'")
+        if (
+            not principal.local_unbound
+            and design.created_by != principal.subject
+        ):
+            raise HTTPException(status_code=403, detail={
+                "code": "design_access_denied",
+                "error_category": "authorization",
+                "detail": "the principal does not own the target design",
+            })
         try:
             ensure_design_chain_available(db, request.design_id)
         except DesignAlreadyLinked as exc:
@@ -334,10 +363,10 @@ def create_render_asset(request: AssetRenderRequest, db: DbSession):
             db, image, "JEWELRY_RENDER",
             instruction=request.piece_description,
             design_id=request.design_id, design_version=design_version,
-            created_by=request.created_by, commit=False)
+            created_by=actor, commit=False)
         _ensure_project(db, hero, commit=False)  # same transaction as the root
         db.commit()
-        views = _view_children(db, hero, request.angles, request.created_by,
+        views = _view_children(db, hero, request.angles, actor,
                                request.skin_tone,
                                request.check_consistency) if request.angles else []
     except RenderUnavailable as exc:
@@ -1472,7 +1501,12 @@ class LinkDesignRequest(BaseModel):
 
 
 @router.patch("/{asset_id}/link-design")
-def link_design(asset_id: str, request: LinkDesignRequest, db: DbSession):
+def link_design(
+    asset_id: str,
+    request: LinkDesignRequest,
+    db: DbSession,
+    principal: PrincipalDep,
+):
     """Join an existing chain to the spec universe: sets design_id on the
     chain ROOT (acting on any asset in the chain). Once linked, markup edits
     also move the design's spec and the factory sheet letters the latest
@@ -1483,9 +1517,19 @@ def link_design(asset_id: str, request: LinkDesignRequest, db: DbSession):
     )
 
     asset = _get_asset(db, asset_id)
-    if db.get(Design, request.design_id) is None:
+    design = db.get(Design, request.design_id)
+    if design is None:
         raise HTTPException(status_code=404,
                             detail=f"unknown design '{request.design_id}'")
+    if (
+        not principal.local_unbound
+        and design.created_by != principal.subject
+    ):
+        raise HTTPException(status_code=403, detail={
+            "code": "design_access_denied",
+            "error_category": "authorization",
+            "detail": "the principal does not own the target design",
+        })
     root = db.get(ImageAsset, asset.root_id) or asset
     try:
         ensure_design_chain_available(db, request.design_id, root.id)
@@ -1598,8 +1642,15 @@ def get_asset_component_mask(
 
 
 @router.get("/{asset_id}/image")
-def get_asset_image(asset_id: str, db: DbSession):
+def get_asset_image(asset_id: str, db: DbSession, principal: PrincipalDep):
     asset = _get_asset(db, asset_id)
+    project = db.get(Project, asset.root_id)
+    if (
+        project is not None
+        and not principal.local_unbound
+        and project.owner != principal.subject
+    ):
+        raise HTTPException(status_code=404, detail="asset image not found")
     content = bytes(asset.image)
     if asset.capability not in _UNSTAMPED_CAPS and is_stampable(asset.media_type):
         content = stamp_image(content)
@@ -2135,11 +2186,17 @@ class FeedbackRequest(BaseModel):
 
 
 @router.post("/{asset_id}/feedback", status_code=201)
-def record_feedback(asset_id: str, request: FeedbackRequest, db: DbSession):
+def record_feedback(
+    asset_id: str,
+    request: FeedbackRequest,
+    db: DbSession,
+    principal: PrincipalDep,
+):
     """One designer verdict on one generated image — append-only."""
+    actor = principal_actor(principal, request.created_by)
     asset = _get_asset(db, asset_id)
     row = FeedbackEvent(asset_id=asset.id, action=request.action,
-                        note=request.note, created_by=request.created_by)
+                        note=request.note, created_by=actor)
     db.add(row)
     db.commit()
     return {"asset_id": asset.id, "action": request.action,
@@ -2147,15 +2204,25 @@ def record_feedback(asset_id: str, request: FeedbackRequest, db: DbSession):
 
 
 @router.get("/insights/instruction-stats")
-def instruction_stats(db: DbSession):
+def instruction_stats(db: DbSession, principal: PrincipalDep):
     """The flywheel readout: per capability (and per instruction within it),
     how often the designer accepted vs regenerated vs rejected. This is the
     dataset the prompt-tuning step will read — served raw, judged by humans."""
-    rows = db.execute(
+    query = (
         select(FeedbackEvent.action, ImageAsset.capability,
                ImageAsset.instruction)
         .join(ImageAsset, ImageAsset.id == FeedbackEvent.asset_id)
-    ).all()
+        .outerjoin(Project, Project.root_id == ImageAsset.root_id)
+    )
+    if not principal.local_unbound:
+        query = query.where(
+            (Project.owner == principal.subject)
+            | (
+                Project.root_id.is_(None)
+                & (ImageAsset.created_by == principal.subject)
+            )
+        )
+    rows = db.execute(query).all()
     by_capability: dict[str, dict] = {}
     for action, capability, instruction in rows:
         cap = by_capability.setdefault(capability or "UNKNOWN", {

@@ -39,6 +39,11 @@ from facetta.creative_reference_board import (
 from facetta.api.error_mapping import (
     image_agent_error_response, render_unavailable_response,
 )
+from facetta.auth import (
+    AuthenticatedPrincipal,
+    principal_actor,
+    require_principal_boundary,
+)
 from facetta.api.specs import (
     PhotoRequest,
     SourceCoverageAuditSummary,
@@ -159,9 +164,14 @@ _UNSTAMPED_CAPS = {
     "COLORED_LINE_ART",
 }
 
-router = APIRouter(prefix="/projects", tags=["projects"])
+router = APIRouter(
+    prefix="/projects",
+    tags=["projects"],
+    dependencies=[Depends(require_principal_boundary)],
+)
 
 DbSession = Annotated[Session, Depends(get_db)]
+PrincipalDep = Annotated[AuthenticatedPrincipal, Depends(require_principal_boundary)]
 BriefGeneratorDep = Annotated[
     BriefProjectGenerator, Depends(get_brief_project_generator)]
 CreativeGeneratorDep = Annotated[
@@ -1162,8 +1172,10 @@ def select_project_creative_candidate(
     candidate_id: str,
     request: CreativeCandidateSelectRequest,
     db: DbSession,
+    principal: PrincipalDep,
 ):
     """Persist the designer's chosen visual without inventing a specification."""
+    principal_actor(principal, request.created_by)
     project = db.scalar(
         select(Project).where(Project.root_id == project_id).with_for_update()
     )
@@ -1205,6 +1217,7 @@ def create_project_from_prompt(
     request: ProjectFromPromptRequest,
     db: DbSession,
     generate: CreativePromptGeneratorDep,
+    principal: PrincipalDep,
 ):
     """Create several category-neutral visual concepts before specification.
 
@@ -1212,6 +1225,7 @@ def create_project_from_prompt(
     remain designer-review candidates and cannot enter approval or factory
     export until one is selected and bound to a confirmed exact specification.
     """
+    principal_actor(principal, request.owner)
     generated = []
     for offset in range(request.variation_count):
         variant = request.starting_variant + offset
@@ -1276,7 +1290,9 @@ def create_project_from_drawing(
     request: ProjectFromDrawingRequest,
     db: DbSession,
     generate: CreativeGeneratorDep,
+    principal: PrincipalDep,
 ):
+    principal_actor(principal, request.owner)
     """Create reviewable beauty renders without inventing a factory spec.
 
     Provider and QA work completes before the one product transaction. A hard
@@ -1535,8 +1551,10 @@ def confirm_project_creative_candidate_design(
     candidate_id: str,
     request: CreativeCandidateDraftRequest,
     db: DbSession,
+    principal: PrincipalDep,
 ):
     """Read one candidate into designer facts without persisting a design."""
+    principal_actor(principal, request.created_by)
     _project, candidate = _owned_creative_candidate(
         db,
         project_id=project_id,
@@ -1784,8 +1802,10 @@ def promote_project_creative_candidate(
     candidate_id: str,
     request: CreativeCandidatePromoteRequest,
     db: DbSession,
+    principal: PrincipalDep,
 ):
     """Bind one chosen candidate to designer-confirmed immutable spec v1."""
+    principal_actor(principal, request.created_by)
     project = db.get(Project, project_id)
     if project is None:
         raise HTTPException(status_code=404, detail="creative project not found")
@@ -1816,8 +1836,13 @@ def promote_project_creative_candidate(
     "/from-image", status_code=201, response_model=ProjectDetail,
     response_model_exclude_none=True,
 )
-def create_project_from_image(request: ProjectFromImageRequest, db: DbSession):
+def create_project_from_image(
+    request: ProjectFromImageRequest,
+    db: DbSession,
+    principal: PrincipalDep,
+):
     """Persist a designer-confirmed ring or pendant-necklace reference."""
+    principal_actor(principal, request.owner)
     try:
         image = base64.b64decode(request.image_base64, validate=True)
     except (binascii.Error, ValueError):
@@ -1994,8 +2019,10 @@ def create_project_from_brief(
     request: ProjectFromBriefRequest,
     db: DbSession,
     generate: BriefGeneratorDep,
+    principal: PrincipalDep,
 ):
     """Create a ring through the injected, QA-gated jewelry image agent."""
+    principal_actor(principal, request.owner)
     try:
         generated: BriefProjectGeneration = generate(
             request.brief, request.variant)
@@ -2029,7 +2056,7 @@ def create_project_from_brief(
 
 
 @router.get("/from-brief/candidates/{candidate_id}/image")
-def get_brief_warning_image(candidate_id: str):
+def get_brief_warning_image(candidate_id: str, principal: PrincipalDep):
     try:
         candidate = get_brief_warning_candidate(candidate_id)
     except WarningCandidateUnavailable as exc:
@@ -2038,6 +2065,8 @@ def get_brief_warning_image(candidate_id: str):
             "category": "conflict",
             "detail": str(exc),
         })
+    if not principal.local_unbound and candidate.owner != principal.subject:
+        raise HTTPException(status_code=404, detail="warning candidate unavailable")
     return Response(
         content=candidate.image_bytes,
         media_type=candidate.media_type,
@@ -2055,7 +2084,9 @@ def accept_brief_warning(
     candidate_id: str,
     request: BriefWarningAcceptRequest,
     db: DbSession,
+    principal: PrincipalDep,
 ):
+    principal_actor(principal, request.created_by)
     try:
         candidate = get_brief_warning_candidate(candidate_id)
     except WarningCandidateUnavailable as exc:

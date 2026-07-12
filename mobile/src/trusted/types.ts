@@ -1551,6 +1551,8 @@ export type ApiErrorCategory =
   | 'conflict'
   | 'not_found'
   | 'decode'
+  | 'authentication'
+  | 'authorization'
   | 'unknown';
 
 export interface ApiError {

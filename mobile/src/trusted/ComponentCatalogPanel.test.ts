@@ -3,6 +3,7 @@
 import React from 'react';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 
+import { AuthenticatedImageProvider } from '../AuthenticatedImage';
 import {
   catalogFactoryDelta,
   ComponentCatalogPanel,
@@ -172,10 +173,21 @@ function clientWith(
   };
 }
 
+function renderWithAuth(ui: React.ReactElement) {
+  return render(React.createElement(
+    AuthenticatedImageProvider,
+    {
+      allowedOrigin: 'https://facetta.test',
+      headers: { Authorization: 'Bearer test-session-token' },
+      children: ui,
+    },
+  ));
+}
+
 describe('ComponentCatalogPanel', () => {
   test('prioritizes material and stone quick choices before structural changes', async () => {
     const api = clientWith();
-    await render(React.createElement(ComponentCatalogPanel, {
+    await renderWithAuth(React.createElement(ComponentCatalogPanel, {
       client: api.client,
       project: project(),
       spec: ringSpec,
@@ -261,7 +273,7 @@ describe('ComponentCatalogPanel', () => {
       acceptCatalogPreview, discardCatalogPreview: jest.fn(),
     } as unknown as TrustedApiClient;
 
-    await render(React.createElement(ComponentCatalogPanel, {
+    await renderWithAuth(React.createElement(ComponentCatalogPanel, {
       client, project: project(), spec: ringSpec, createdBy: 'usr_designer',
     }));
     await waitFor(() => expect(screen.getByText(/Royal Blue/)).toBeTruthy());
@@ -300,7 +312,7 @@ describe('ComponentCatalogPanel', () => {
     }));
     const onVariationCreated = jest.fn();
     const client = { ...api.client, saveAsVariation } as TrustedApiClient;
-    await render(React.createElement(ComponentCatalogPanel, {
+    await renderWithAuth(React.createElement(ComponentCatalogPanel, {
       client, project: project(), spec: ringSpec, createdBy: 'usr_designer', onVariationCreated,
     }));
 
@@ -317,7 +329,7 @@ describe('ComponentCatalogPanel', () => {
   test('loads only applicable catalogs and applies only the reviewed preview', async () => {
     const api = clientWith();
     const onApplied = jest.fn();
-    await render(React.createElement(ComponentCatalogPanel, {
+    await renderWithAuth(React.createElement(ComponentCatalogPanel, {
       client: api.client,
       project: project(),
       spec: ringSpec,
@@ -366,7 +378,7 @@ describe('ComponentCatalogPanel', () => {
 
   test('keeps native mobile review-only even after a designer selects an option', async () => {
     const api = clientWith();
-    await render(React.createElement(ComponentCatalogPanel, {
+    await renderWithAuth(React.createElement(ComponentCatalogPanel, {
       client: api.client,
       project: project(),
       spec: ringSpec,
@@ -406,7 +418,7 @@ describe('ComponentCatalogPanel', () => {
     const client = {
       getComponentCatalog, previewCatalogSelection,
     } as unknown as TrustedApiClient;
-    await render(React.createElement(ComponentCatalogPanel, {
+    await renderWithAuth(React.createElement(ComponentCatalogPanel, {
       client,
       project: project(),
       spec: {
@@ -481,7 +493,7 @@ describe('ComponentCatalogPanel', () => {
       discardCatalogPreview: jest.fn(),
     } as unknown as TrustedApiClient;
 
-    await render(React.createElement(ComponentCatalogPanel, {
+    await renderWithAuth(React.createElement(ComponentCatalogPanel, {
       client,
       project: necklaceProject,
       spec: necklaceSpec,
@@ -551,7 +563,7 @@ describe('ComponentCatalogPanel', () => {
         retryable: false,
       },
     });
-    await render(React.createElement(ComponentCatalogPanel, {
+    await renderWithAuth(React.createElement(ComponentCatalogPanel, {
       client: api.client,
       project: project(),
       spec: ringSpec,
@@ -608,7 +620,7 @@ describe('ComponentCatalogPanel', () => {
     };
     const api = clientWith({ data: review, error: null, status: 202 });
     const onProjectChanged = jest.fn();
-    await render(React.createElement(ComponentCatalogPanel, {
+    await renderWithAuth(React.createElement(ComponentCatalogPanel, {
       client: api.client,
       project: project(),
       spec: ringSpec,

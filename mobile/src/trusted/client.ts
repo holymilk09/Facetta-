@@ -134,6 +134,9 @@ export interface TrustedApiClientOptions {
   baseUrl: string;
   fetcher?: typeof fetch;
   getAccessToken?: () => string | null | Promise<string | null>;
+  /** Fail locally instead of sending an unauthenticated trusted request. */
+  requireAccessToken?: boolean;
+  onAuthenticationFailure?: (error: ApiError) => void;
 }
 
 const isRecord = (value: unknown): value is UnknownRecord =>
@@ -2721,6 +2724,8 @@ function errorCategory(status: number, code: string, message: string): ApiErrorC
   const normalized = `${code} ${message}`.toLowerCase();
   if (status === 0) return 'network';
   if (status === 404) return 'not_found';
+  if (status === 401) return 'authentication';
+  if (status === 403) return 'authorization';
   if (normalized.includes('stale') || normalized.includes('expected_design_version')) {
     return 'stale_version';
   }
@@ -2733,7 +2738,11 @@ function errorCategory(status: number, code: string, message: string): ApiErrorC
 
 function apiError(status: number, value: unknown, fallback: string): ApiError {
   const record = isRecord(value) ? value : {};
-  const nested = isRecord(record.error) ? record.error : record;
+  const nested = isRecord(record.error)
+    ? record.error
+    : isRecord(record.detail)
+      ? record.detail
+      : record;
   const code = text(
     pick(nested, 'code', 'error_category'),
     status === 0 ? 'NETWORK_ERROR' : `HTTP_${status}`,
@@ -2758,6 +2767,7 @@ function apiError(status: number, value: unknown, fallback: string): ApiError {
     || categoryValue === 'stale_version' || categoryValue === 'quality'
     || categoryValue === 'provider' || categoryValue === 'conflict'
     || categoryValue === 'not_found' || categoryValue === 'decode'
+    || categoryValue === 'authentication' || categoryValue === 'authorization'
     || categoryValue === 'unknown'
     ? categoryValue
     : errorCategory(status, code, message);
@@ -2911,6 +2921,22 @@ function projectWithUrls(project: ProjectDetail, baseUrl: string): ProjectDetail
 export function createTrustedApiClient(options: TrustedApiClientOptions) {
   const baseUrl = options.baseUrl.replace(/\/$/, '');
   const fetcher = options.fetcher ?? fetch;
+  const authenticationRequired = <T>(): ApiResult<T> => {
+    const error: ApiError = {
+      code: 'AUTHENTICATION_REQUIRED',
+      message: 'Sign in with a valid Facetta session before continuing.',
+      category: 'authentication',
+      status: 401,
+      retryable: false,
+    };
+    options.onAuthenticationFailure?.(error);
+    return { data: null, error, status: 401 };
+  };
+  const failedResponse = <T>(status: number, value: unknown, fallback: string): ApiResult<T> => {
+    const error = apiError(status, value, fallback);
+    if (status === 401) options.onAuthenticationFailure?.(error);
+    return { data: null, error, status };
+  };
 
   async function call<T>(
     path: string,
@@ -2920,6 +2946,10 @@ export function createTrustedApiClient(options: TrustedApiClientOptions) {
     let token: string | null = null;
     try {
       token = await options.getAccessToken?.() ?? null;
+      if (token !== null && token.trim().length === 0) token = null;
+      if (options.requireAccessToken === true && token === null) {
+        return authenticationRequired<T>();
+      }
       const response = await fetcher(`${baseUrl}${path}`, {
         ...init,
         headers: {
@@ -2939,11 +2969,7 @@ export function createTrustedApiClient(options: TrustedApiClientOptions) {
         }
       }
       if (!response.ok) {
-        return {
-          data: null,
-          error: apiError(response.status, parsed, `Request failed (${response.status}).`),
-          status: response.status,
-        };
+        return failedResponse(response.status, parsed, `Request failed (${response.status}).`);
       }
 
       const envelope = isRecord(parsed) && 'data' in parsed && 'error' in parsed ? parsed : null;
@@ -2997,6 +3023,10 @@ export function createTrustedApiClient(options: TrustedApiClientOptions) {
     let token: string | null = null;
     try {
       token = await options.getAccessToken?.() ?? null;
+      if (token !== null && token.trim().length === 0) token = null;
+      if (options.requireAccessToken === true && token === null) {
+        return authenticationRequired<DraftFactorySheetPreview>();
+      }
       const response = await fetcher(`${baseUrl}${path}`, {
         method: 'POST',
         headers: {
@@ -3014,15 +3044,9 @@ export function createTrustedApiClient(options: TrustedApiClientOptions) {
         } catch {
           // Preserve a plain-text server failure for structured client mapping.
         }
-        return {
-          data: null,
-          error: apiError(
-            response.status,
-            parsed,
-            `Factory-sheet preview failed (${response.status}).`,
-          ),
-          status: response.status,
-        };
+        return failedResponse(
+          response.status, parsed, `Factory-sheet preview failed (${response.status}).`,
+        );
       }
       if (!responseText.trimStart().startsWith('<svg')) {
         return {
@@ -3835,6 +3859,10 @@ export function createTrustedApiClient(options: TrustedApiClientOptions) {
       let token: string | null = null;
       try {
         token = await options.getAccessToken?.() ?? null;
+        if (token !== null && token.trim().length === 0) token = null;
+        if (options.requireAccessToken === true && token === null) {
+          return authenticationRequired<CatalogPreviewDiscardResult>();
+        }
         const path = catalogCandidatePath(candidate.run_id, candidate.candidate_id);
         const response = await fetcher(`${baseUrl}${path}`, {
           method: 'DELETE',
@@ -3853,11 +3881,9 @@ export function createTrustedApiClient(options: TrustedApiClientOptions) {
         } catch {
           // Preserve plain-text response for the shared structured error mapper.
         }
-        return {
-          data: null,
-          error: apiError(response.status, parsed, `Request failed (${response.status}).`),
-          status: response.status,
-        };
+        return failedResponse(
+          response.status, parsed, `Request failed (${response.status}).`,
+        );
       } catch (cause: unknown) {
         return {
           data: null,

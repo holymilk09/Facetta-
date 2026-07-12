@@ -19,6 +19,11 @@ from sqlalchemy.orm import Session
 
 from facetta.api.projects import project_card, project_detail
 from facetta.api.error_mapping import image_agent_error_response
+from facetta.auth import (
+    AuthenticatedPrincipal,
+    principal_actor,
+    require_principal_boundary,
+)
 from facetta.db import (
     DesignFamily,
     ImageAsset,
@@ -87,8 +92,13 @@ from facetta.warning_candidates import (
 )
 
 
-router = APIRouter(prefix="/studio", tags=["studio"])
+router = APIRouter(
+    prefix="/studio",
+    tags=["studio"],
+    dependencies=[Depends(require_principal_boundary)],
+)
 DbSession = Annotated[Session, Depends(get_db)]
+PrincipalDep = Annotated[AuthenticatedPrincipal, Depends(require_principal_boundary)]
 
 
 class SaveVariationRequest(BaseModel):
@@ -375,7 +385,12 @@ def _owned_job(db: Session, job_id: str, owner: str) -> StudioJobRecord:
 
 
 @router.post("/jobs", status_code=201)
-def create_studio_job(request: CreateStudioJobRequest, db: DbSession):
+def create_studio_job(
+    request: CreateStudioJobRequest,
+    db: DbSession,
+    principal: PrincipalDep,
+):
+    principal_actor(principal, request.owner)
     action = studio_job_action_definition(request.action_id)
     if request.lane != action.lane:
         raise HTTPException(
@@ -416,8 +431,10 @@ def create_studio_job(request: CreateStudioJobRequest, db: DbSession):
 def list_studio_jobs(
     db: DbSession,
     owner: Annotated[str, Query(min_length=1, max_length=32)],
+    principal: PrincipalDep,
     status: StudioJobStatus | None = None,
 ):
+    principal_actor(principal, owner)
     query = select(StudioJobRecord).where(StudioJobRecord.owner == owner)
     if status is not None:
         query = query.where(StudioJobRecord.status == status)
@@ -432,7 +449,9 @@ def get_studio_job(
     job_id: str,
     db: DbSession,
     owner: Annotated[str, Query(min_length=1, max_length=32)],
+    principal: PrincipalDep,
 ):
+    principal_actor(principal, owner)
     return _studio_job(_owned_job(db, job_id, owner))
 
 
@@ -441,7 +460,9 @@ def transition_studio_job(
     job_id: str,
     request: TransitionStudioJobRequest,
     db: DbSession,
+    principal: PrincipalDep,
 ):
+    principal_actor(principal, request.owner)
     job = _owned_job(db, job_id, request.owner)
     if request.status not in _JOB_TRANSITIONS[job.status]:
         raise HTTPException(
@@ -504,7 +525,9 @@ def cancel_studio_job(
     job_id: str,
     request: CancelStudioJobRequest,
     db: DbSession,
+    principal: PrincipalDep,
 ):
+    principal_actor(principal, request.owner)
     job = _owned_job(db, job_id, request.owner)
     if "canceled" not in _JOB_TRANSITIONS[job.status]:
         raise HTTPException(
@@ -777,7 +800,11 @@ def create_visual_preview(
 @router.get(
     "/image-runs/{run_id}/visual-candidates/{candidate_id}/image"
 )
-def get_visual_preview_image(run_id: str, candidate_id: str):
+def get_visual_preview_image(
+    run_id: str,
+    candidate_id: str,
+    principal: PrincipalDep,
+):
     try:
         candidate = get_studio_visual_candidate(run_id, candidate_id)
     except StudioVisualCandidateUnavailable as exc:
@@ -786,6 +813,11 @@ def get_visual_preview_image(run_id: str, candidate_id: str):
             "category": "conflict",
             "detail": str(exc),
         })
+    if (
+        not principal.local_unbound
+        and candidate.created_by != principal.subject
+    ):
+        raise HTTPException(status_code=404, detail="visual preview unavailable")
     return Response(
         content=candidate.image_bytes,
         media_type=candidate.media_type,
@@ -802,7 +834,9 @@ def accept_visual_preview(
     candidate_id: str,
     request: ReviewVisualPreviewRequest,
     db: DbSession,
+    principal: PrincipalDep,
 ):
+    principal_actor(principal, request.created_by)
     try:
         candidate = get_studio_visual_candidate(run_id, candidate_id)
         accepted = apply_pre_spec_visual_candidate(
@@ -841,7 +875,9 @@ def discard_visual_preview(
     candidate_id: str,
     request: ReviewVisualPreviewRequest,
     db: DbSession,
+    principal: PrincipalDep,
 ):
+    principal_actor(principal, request.created_by)
     try:
         candidate = get_studio_visual_candidate(run_id, candidate_id)
         discarded = discard_pre_spec_visual_candidate(
@@ -1091,6 +1127,7 @@ def create_pre_spec_presentation_preview(
 def list_pre_spec_presentation_candidates(
     db: DbSession,
     owner: Annotated[str, Query(min_length=1, max_length=32)],
+    principal: PrincipalDep,
     project_id: Annotated[str, Query(min_length=1, max_length=32)] | None = None,
     status: Literal[
         "reviewing", "accepted", "discarded", "expired",
@@ -1098,6 +1135,7 @@ def list_pre_spec_presentation_candidates(
 ):
     """Resume durable presentation reviews after refresh or process restart."""
 
+    principal_actor(principal, owner)
     candidates = list_studio_presentation_candidates(
         db,
         owner=owner,
@@ -1134,7 +1172,9 @@ def get_pre_spec_presentation_image(
     candidate_id: str,
     db: DbSession,
     owner: Annotated[str, Query(min_length=1, max_length=32)],
+    principal: PrincipalDep,
 ):
+    principal_actor(principal, owner)
     try:
         candidate = get_studio_presentation_candidate(
             db, run_id, candidate_id, owner=owner)
@@ -1166,7 +1206,9 @@ def accept_pre_spec_presentation(
     candidate_id: str,
     request: ReviewPreSpecPresentationRequest,
     db: DbSession,
+    principal: PrincipalDep,
 ):
+    principal_actor(principal, request.created_by)
     try:
         candidate = get_studio_presentation_candidate(
             db, run_id, candidate_id, owner=request.created_by)
@@ -1207,7 +1249,9 @@ def discard_pre_spec_presentation(
     candidate_id: str,
     request: ReviewPreSpecPresentationRequest,
     db: DbSession,
+    principal: PrincipalDep,
 ):
+    principal_actor(principal, request.created_by)
     try:
         candidate = get_studio_presentation_candidate(
             db, run_id, candidate_id, owner=request.created_by)
@@ -1290,9 +1334,11 @@ def accept_presentation_candidate(
     candidate_id: str,
     request: ResolvePresentationCandidateRequest,
     db: DbSession,
+    principal: PrincipalDep,
 ):
     """Save a reviewed deliverable without changing canonical design state."""
 
+    principal_actor(principal, request.created_by)
     try:
         candidate = get_markup_warning_candidate(run_id, candidate_id)
         _require_presentation_candidate_lineage(candidate, request)
@@ -1333,9 +1379,11 @@ def discard_presentation_candidate(
     candidate_id: str,
     request: ResolvePresentationCandidateRequest,
     db: DbSession,
+    principal: PrincipalDep,
 ):
     """Persist a terminal rejection without creating a presentation asset."""
 
+    principal_actor(principal, request.created_by)
     try:
         candidate = get_markup_warning_candidate(run_id, candidate_id)
         _require_presentation_candidate_lineage(candidate, request)
@@ -1543,12 +1591,19 @@ def _design_family_detail(db: Session, family: DesignFamily) -> dict:
 
 
 @router.get("/families")
-def list_design_families(db: DbSession, owner: str | None = None):
+def list_design_families(
+    db: DbSession,
+    principal: PrincipalDep,
+    owner: str | None = None,
+):
     """List Studio families without flattening their variation boundaries."""
 
-    query = select(DesignFamily)
     if owner is not None:
-        query = query.where(DesignFamily.owner == owner)
+        principal_actor(principal, owner)
+    effective_owner = owner if principal.local_unbound else principal.subject
+    query = select(DesignFamily)
+    if effective_owner is not None:
+        query = query.where(DesignFamily.owner == effective_owner)
     families = list(db.scalars(
         query.order_by(DesignFamily.updated_at.desc(), DesignFamily.id)
     ))
@@ -1558,9 +1613,19 @@ def list_design_families(db: DbSession, owner: str | None = None):
 
 
 @router.get("/families/{family_id}")
-def get_design_family(family_id: str, db: DbSession):
+def get_design_family(
+    family_id: str,
+    db: DbSession,
+    principal: PrincipalDep,
+):
     family = db.get(DesignFamily, family_id)
-    if family is None:
+    if (
+        family is None
+        or (
+            not principal.local_unbound
+            and family.owner != principal.subject
+        )
+    ):
         raise HTTPException(status_code=404,
                             detail=f"unknown design family '{family_id}'")
     return _design_family_detail(db, family)

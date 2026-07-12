@@ -1,6 +1,7 @@
 import React from 'react';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 
+import { AuthenticatedImageProvider } from '../AuthenticatedImage';
 import { StudioRefineWorkspace } from './StudioRefineWorkspace';
 import type { ProjectDetail } from '../trusted/types';
 
@@ -43,9 +44,19 @@ const responderEvent = (locationX: number, locationY: number) => ({
   nativeEvent: { locationX, locationY },
 });
 
+function renderWithAuth(ui: React.ReactElement) {
+  return render(
+    <AuthenticatedImageProvider
+      allowedOrigin="https://test"
+      headers={{ Authorization: 'Bearer test-session-token' }}>
+      {ui}
+    </AuthenticatedImageProvider>,
+  );
+}
+
 describe('StudioRefineWorkspace', () => {
   test('fails closed when there is no exact immutable revision', async () => {
-    await render(
+    await renderWithAuth(
       <StudioRefineWorkspace
         api={{
           getComponentCatalog: jest.fn(async () => ({ data: catalog, error: null, status: 200 })),
@@ -85,7 +96,7 @@ describe('StudioRefineWorkspace', () => {
     const applyCatalogRefine = jest.fn(async () => ({
       data: { candidate: {}, project }, error: null, status: 201,
     }));
-    await render(
+    await renderWithAuth(
       <StudioRefineWorkspace
         api={{
           getComponentCatalog: jest.fn(async () => ({ data: catalog, error: null, status: 200 })),
@@ -132,7 +143,7 @@ describe('StudioRefineWorkspace', () => {
       }, error: null, status: 201,
     }));
     const onApplied = jest.fn();
-    await render(
+    await renderWithAuth(
       <StudioRefineWorkspace
         api={{ getComponentCatalog, readMarkup: jest.fn() }}
         gateway={{
@@ -197,7 +208,7 @@ describe('StudioRefineWorkspace', () => {
         },
       }, error: null, status: 201,
     }));
-    await render(
+    await renderWithAuth(
       <StudioRefineWorkspace
         api={{ getComponentCatalog: jest.fn(), readMarkup }}
         gateway={{
@@ -246,7 +257,7 @@ describe('StudioRefineWorkspace', () => {
         },
       }, error: null, status: 201,
     }));
-    await render(
+    await renderWithAuth(
       <StudioRefineWorkspace
         api={{
           getComponentCatalog: jest.fn(async () => ({ data: catalog, error: null, status: 200 })),
