@@ -1,4 +1,5 @@
 import os
+from copy import deepcopy
 from pathlib import Path
 
 import pytest
@@ -137,7 +138,46 @@ def test_halo_ring_sheet_matches_golden(halo_spec):
     # sheet v2: gemstone key with circled refs and true totals
     assert "GEMSTONE KEY &amp; PRODUCTION NOTES" in svg
     assert "TOTAL SET WEIGHT" in svg
-    assert "CONFIDENTIAL — FACTORY PRODUCTION ONLY" in svg
+    assert "CONFIDENTIAL — FACTORY REVIEW REFERENCE" in svg
+    assert "SCHEMATIC DIMENSIONAL DIAGRAM — NOT PRODUCTION GEOMETRY" in svg
+
+
+def test_leaf_shoulder_sheet_draws_every_confirmed_stone(example_spec):
+    raw = deepcopy(example_spec)
+    raw["template"] = "leaf_shoulder_prong"
+    raw["side_stones"] = [
+        {
+            "species": "diamond",
+            "cut": "marquise",
+            "carat": 0.015,
+            "dimensions_mm": {"length": 2.5, "width": 1.3, "depth": 0.8},
+            "color": {"trade": "colorless", "gia": "F"},
+            "count": 12,
+            "position": "pave_leaves",
+        },
+        {
+            "species": "diamond",
+            "cut": "round_brilliant",
+            "carat": 0.007,
+            "dimensions_mm": {"length": 1.2, "width": 1.2, "depth": 0.73},
+            "color": {"trade": "colorless", "gia": "F"},
+            "count": 24,
+            "position": "pave_leaves",
+        },
+    ]
+    svg = render_sheet(_validated(raw))
+
+    assert "DIMENSIONAL DIAGRAM — DIAMOND LEAF SHOULDER RING" in svg
+    assert svg.count('data-stone-ref="B"') == 12
+    assert svg.count('data-stone-ref="C"') == 24
+    assert "TOTAL SET WEIGHT" in svg
+    assert "12" in svg and "24" in svg
+
+
+def test_leaf_shoulder_sheet_requires_leaf_inventory(example_spec):
+    example_spec["template"] = "leaf_shoulder_prong"
+    with pytest.raises(SheetUnsupported, match="pave_leaves"):
+        render_sheet(_validated(example_spec))
 
 
 def test_love_bangle_sheet_matches_golden(bangle_spec):

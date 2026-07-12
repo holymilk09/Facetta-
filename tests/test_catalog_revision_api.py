@@ -1,0 +1,951 @@
+"""Persisted catalog selections use one deterministic spec/image transaction."""
+
+from __future__ import annotations
+
+import base64
+import io
+from copy import deepcopy
+
+import pytest
+from fastapi.testclient import TestClient
+from PIL import Image
+from sqlalchemy import create_engine, func, select
+from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.pool import StaticPool
+
+from conftest import NECKLACE_SPEC, audited_import_spec
+from facetta.db import (
+    Base,
+    DesignVersion,
+    ImageAsset,
+    ImageRun,
+    ImageRunReview,
+    Project,
+    get_db,
+)
+from facetta.catalog_preview_candidates import (
+    clear_catalog_preview_candidates_for_tests,
+)
+from facetta.component_catalog import get_component_catalog
+from facetta.image_agent import (
+    CheckSeverity,
+    DesignerEditDomain,
+    ImageQualityFailure,
+    ImageQualityReport,
+    JewelryImageAgent,
+    ProviderImage,
+    QualityCheck,
+    QualityVerdict,
+)
+from facetta.main import app
+from facetta.warning_candidates import clear_warning_candidates_for_tests
+
+
+def _png(color: tuple[int, int, int] = (210, 210, 210)) -> bytes:
+    out = io.BytesIO()
+    Image.new("RGB", (40, 40), color).save(out, format="PNG")
+    return out.getvalue()
+
+
+@pytest.fixture
+def catalog_client():
+    engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    Base.metadata.create_all(engine)
+    TestSession = sessionmaker(bind=engine, autoflush=False)
+
+    def override():
+        session = TestSession()
+        try:
+            yield session
+        finally:
+            session.close()
+
+    clear_warning_candidates_for_tests()
+    clear_catalog_preview_candidates_for_tests()
+    app.dependency_overrides[get_db] = override
+    try:
+        yield TestClient(app), TestSession
+    finally:
+        app.dependency_overrides.clear()
+        clear_warning_candidates_for_tests()
+        clear_catalog_preview_candidates_for_tests()
+
+
+def _create_project(client: TestClient, example_spec: dict) -> dict:
+    response = client.post("/projects/from-image", json={
+        "image_base64": base64.b64encode(_png()).decode(),
+        "media_type": "image/png",
+        "spec": audited_import_spec(example_spec),
+        "owner": "usr_catalog",
+        "title": "Catalog ring",
+    })
+    assert response.status_code == 201, response.text
+    return response.json()
+
+
+def _open_link_geometry(*, width: float = 2.0) -> dict:
+    thickness = 0.35 if width == 2.0 else 0.4
+    inside_width = width - 2 * thickness
+    inside_length = 3.1 if width == 2.0 else 3.2
+    return {
+        "construction": "open_link",
+        "chain_width_mm": width,
+        "profile_thickness_mm": 0.6 if width == 2.0 else 0.65,
+        "end_ring_outer_diameter_mm": 1.8 if width == 2.0 else 2.0,
+        "link_thickness_mm": thickness,
+        "links_soldered": True,
+        "links": [{
+            "role": "standard",
+            "length_mm": inside_length + 2 * thickness,
+            "inside_length_mm": inside_length,
+            "inside_width_mm": inside_width,
+        }],
+    }
+
+
+def _production(reference: str) -> dict:
+    return {
+        "mode": "stock",
+        "reference_kind": "supplier_sku",
+        "reference": reference,
+    }
+
+
+def _necklace_spec(*, complete: bool = True) -> dict:
+    spec = deepcopy(NECKLACE_SPEC)
+    if complete:
+        spec["chain"].update({
+            "geometry": _open_link_geometry(),
+            "production": _production("SOURCE-CABLE-2MM"),
+            "pendant_connection": "slides_through_bail",
+        })
+    return spec
+
+
+def _create_necklace_project(client: TestClient, *, complete: bool = True) -> dict:
+    return _create_project(client, _necklace_spec(complete=complete))
+
+
+def _request(**overrides) -> dict:
+    body = {
+        "component_path": "metal.color",
+        "option_id": "rose",
+        "expected_design_version": 1,
+        "created_by": "usr_catalog",
+        "variant": 0,
+    }
+    body.update(overrides)
+    return body
+
+
+def _chain_request(**overrides) -> dict:
+    body = {
+        "component_path": "chain.style",
+        "option_id": "curb",
+        "expected_design_version": 1,
+        "created_by": "usr_catalog",
+        "variant": 0,
+        "chain_geometry": _open_link_geometry(width=2.2),
+        "chain_production": _production("TARGET-CURB-2.2MM"),
+    }
+    body.update(overrides)
+    return body
+
+
+def _counts(SessionFactory: sessionmaker) -> dict[str, int]:
+    with SessionFactory() as db:
+        return {
+            "versions": db.scalar(
+                select(func.count()).select_from(DesignVersion)),
+            "assets": db.scalar(select(func.count()).select_from(ImageAsset)),
+            "runs": db.scalar(select(func.count()).select_from(ImageRun)),
+        }
+
+
+class _ResultAgent:
+    def __init__(self, verdict: QualityVerdict) -> None:
+        self.verdict = verdict
+        self.plans = []
+
+    def run(self, plan, *, source_image=None, mask_bytes=None):
+        self.plans.append(plan)
+
+        class Provider:
+            def execute(self, *_args, **_kwargs):
+                return ProviderImage(image_bytes=_png((220, 170, 175)))
+
+        verdict = self.verdict
+
+        class Evaluator:
+            def evaluate(self, *_args, **_kwargs):
+                if verdict is QualityVerdict.PASS:
+                    return ImageQualityReport(
+                        verdict=verdict,
+                        checks=(QualityCheck(
+                            code="catalog_component_conformance",
+                            passed=True,
+                            severity=CheckSeverity.HARD,
+                            message="selected catalog geometry is isolated",
+                        ),),
+                        score=97,
+                    )
+                return ImageQualityReport(
+                    verdict=verdict,
+                    checks=(QualityCheck(
+                        code="metal_identity_visual_ambiguity",
+                        passed=False,
+                        severity=CheckSeverity.WARNING,
+                        message="designer should confirm the rose-metal read",
+                    ),),
+                    score=86,
+                )
+
+        return JewelryImageAgent(Provider(), Evaluator()).run(
+            plan,
+            source_image=source_image,
+            mask_bytes=mask_bytes,
+        )
+
+
+def test_catalog_pass_preview_is_temporary_until_explicit_apply(
+    catalog_client, example_spec, monkeypatch,
+):
+    client, SessionFactory = catalog_client
+    project = _create_project(client, example_spec)
+    agent = _ResultAgent(QualityVerdict.PASS)
+    monkeypatch.setattr(
+        "facetta.api.catalog._trusted_image_agent", lambda: agent)
+
+    preview = client.post(
+        f"/assets/{project['active_asset_id']}/catalog/preview",
+        json=_request(),
+    )
+
+    assert preview.status_code == 201, preview.text
+    body = preview.json()
+    assert body["status"] == "preview_ready"
+    assert body["candidate"]["verdict"] == "pass"
+    assert body["design_version"] == 1
+    assert body["next_spec"]["metal"]["color"] == "rose"
+    assert body["project"]["active_asset_id"] == project["active_asset_id"]
+    assert _counts(SessionFactory) == {"versions": 1, "assets": 1, "runs": 1}
+    assert client.get(body["candidate"]["preview_url"]).status_code == 200
+
+    accepted = client.post(body["candidate"]["accept_url"], json={
+        "expected_design_version": 1,
+        "created_by": "usr_catalog",
+    })
+
+    assert accepted.status_code == 201, accepted.text
+    accepted_body = accepted.json()
+    assert accepted_body["status"] == "accepted"
+    assert accepted_body["design_version"] == 2
+    assert accepted_body["project"]["spec"]["metal"]["color"] == "rose"
+    assert len(agent.plans) == 1, "Apply must not rerun the image provider"
+    assert _counts(SessionFactory) == {"versions": 2, "assets": 2, "runs": 1}
+    with SessionFactory() as db:
+        run = db.get(ImageRun, body["image_run_id"])
+        review = db.scalar(select(ImageRunReview).where(
+            ImageRunReview.run_id == run.id))
+        assert run.status == "preview_ready"
+        assert run.accepted_asset_id is None
+        assert review is not None
+        assert review.accepted_asset_id == accepted_body["asset_id"]
+
+
+def test_catalog_warning_preview_can_be_applied_without_regeneration(
+    catalog_client, example_spec, monkeypatch,
+):
+    client, SessionFactory = catalog_client
+    project = _create_project(client, example_spec)
+    agent = _ResultAgent(QualityVerdict.WARN)
+    monkeypatch.setattr(
+        "facetta.api.catalog._trusted_image_agent", lambda: agent)
+
+    preview = client.post(
+        f"/assets/{project['active_asset_id']}/catalog/preview",
+        json=_request(),
+    )
+    assert preview.status_code == 202, preview.text
+    body = preview.json()
+    assert body["status"] == "review_required"
+    assert body["candidate"]["verdict"] == "warn"
+    assert _counts(SessionFactory) == {"versions": 1, "assets": 1, "runs": 1}
+
+    accepted = client.post(body["candidate"]["accept_url"], json={
+        "expected_design_version": 1,
+        "created_by": "usr_catalog",
+    })
+    assert accepted.status_code == 201, accepted.text
+    assert accepted.json()["project"]["spec"]["metal"]["color"] == "rose"
+    assert len(agent.plans) == 1
+    assert _counts(SessionFactory) == {"versions": 2, "assets": 2, "runs": 1}
+
+
+def test_catalog_preview_accept_rejects_stale_exact_source_without_rerun(
+    catalog_client, example_spec, monkeypatch,
+):
+    client, SessionFactory = catalog_client
+    project = _create_project(client, example_spec)
+    agent = _ResultAgent(QualityVerdict.PASS)
+    monkeypatch.setattr(
+        "facetta.api.catalog._trusted_image_agent", lambda: agent)
+    preview = client.post(
+        f"/assets/{project['active_asset_id']}/catalog/preview",
+        json=_request(),
+    ).json()
+
+    newer = client.post(
+        f"/assets/{project['active_asset_id']}/catalog/apply",
+        json=_request(option_id="white"),
+    )
+    assert newer.status_code == 201, newer.text
+    assert _counts(SessionFactory) == {"versions": 2, "assets": 2, "runs": 2}
+
+    stale = client.post(preview["candidate"]["accept_url"], json={
+        "expected_design_version": 1,
+        "created_by": "usr_catalog",
+    })
+    assert stale.status_code == 409, stale.text
+    assert stale.json()["code"] == "stale_asset_revision"
+    assert len(agent.plans) == 2
+    assert _counts(SessionFactory) == {"versions": 2, "assets": 2, "runs": 2}
+
+
+def test_catalog_preview_discard_removes_only_temporary_bytes(
+    catalog_client, example_spec, monkeypatch,
+):
+    client, SessionFactory = catalog_client
+    project = _create_project(client, example_spec)
+    agent = _ResultAgent(QualityVerdict.PASS)
+    monkeypatch.setattr(
+        "facetta.api.catalog._trusted_image_agent", lambda: agent)
+    body = client.post(
+        f"/assets/{project['active_asset_id']}/catalog/preview",
+        json=_request(),
+    ).json()
+
+    discarded = client.delete(body["candidate"]["discard_url"])
+    assert discarded.status_code == 204
+    assert client.get(body["candidate"]["preview_url"]).status_code == 410
+    unavailable = client.post(body["candidate"]["accept_url"], json={
+        "expected_design_version": 1,
+        "created_by": "usr_catalog",
+    })
+    assert unavailable.status_code == 410
+    assert unavailable.json()["code"] == "catalog_preview_unavailable"
+    assert _counts(SessionFactory) == {"versions": 1, "assets": 1, "runs": 1}
+
+
+def test_catalog_preview_expiry_keeps_evidence_but_no_product_candidate(
+    catalog_client, example_spec, monkeypatch,
+):
+    client, SessionFactory = catalog_client
+    project = _create_project(client, example_spec)
+    agent = _ResultAgent(QualityVerdict.PASS)
+    monkeypatch.setattr(
+        "facetta.api.catalog._trusted_image_agent", lambda: agent)
+    monkeypatch.setattr(
+        "facetta.catalog_preview_candidates._TTL_SECONDS", -1)
+
+    body = client.post(
+        f"/assets/{project['active_asset_id']}/catalog/preview",
+        json=_request(),
+    ).json()
+
+    expired = client.get(body["candidate"]["preview_url"])
+    assert expired.status_code == 410
+    assert expired.json()["code"] == "catalog_preview_unavailable"
+    assert _counts(SessionFactory) == {"versions": 1, "assets": 1, "runs": 1}
+
+
+def test_catalog_preview_hard_failure_has_evidence_and_no_candidate(
+    catalog_client, example_spec, monkeypatch,
+):
+    client, SessionFactory = catalog_client
+    project = _create_project(client, example_spec)
+    calls = []
+
+    class FailingAgent:
+        def run(self, plan, **_kwargs):
+            calls.append(plan)
+            report = ImageQualityReport(
+                verdict=QualityVerdict.FAIL,
+                checks=(QualityCheck(
+                    code="outside_mask_drift",
+                    passed=False,
+                    severity=CheckSeverity.HARD,
+                    message="protected jewelry changed outside the target",
+                ),),
+                score=20,
+            )
+            raise ImageQualityFailure(
+                "no candidate passed jewelry QA: outside_mask_drift",
+                report=report,
+                plan=plan,
+            )
+
+    monkeypatch.setattr(
+        "facetta.api.catalog._trusted_image_agent", lambda: FailingAgent())
+    failed = client.post(
+        f"/assets/{project['active_asset_id']}/catalog/preview",
+        json=_request(),
+    )
+
+    assert failed.status_code == 422, failed.text
+    body = failed.json()
+    assert body["code"] == "image_quality_failed"
+    assert "candidate" not in body
+    assert len(calls) == 1
+    assert _counts(SessionFactory) == {"versions": 1, "assets": 1, "runs": 1}
+    with SessionFactory() as db:
+        run = db.get(ImageRun, body["image_run_id"])
+        assert run.status == "failed"
+        assert run.accepted_asset_id is None
+
+
+def test_catalog_preview_accept_database_failure_rolls_back_atomic_pair(
+    catalog_client, example_spec, monkeypatch,
+):
+    client, SessionFactory = catalog_client
+    project = _create_project(client, example_spec)
+    agent = _ResultAgent(QualityVerdict.PASS)
+    monkeypatch.setattr(
+        "facetta.api.catalog._trusted_image_agent", lambda: agent)
+    body = client.post(
+        f"/assets/{project['active_asset_id']}/catalog/preview",
+        json=_request(),
+    ).json()
+    baseline = _counts(SessionFactory)
+
+    def fail_commit(_session: Session) -> None:
+        raise RuntimeError("simulated preview acceptance transaction failure")
+
+    monkeypatch.setattr(SessionFactory.class_, "commit", fail_commit)
+    with pytest.raises(
+        RuntimeError,
+        match="simulated preview acceptance transaction failure",
+    ):
+        client.post(body["candidate"]["accept_url"], json={
+            "expected_design_version": 1,
+            "created_by": "usr_catalog",
+        })
+    assert _counts(SessionFactory) == baseline
+
+
+def test_catalog_pass_uses_exact_specs_and_persists_one_atomic_revision(
+    catalog_client, example_spec, monkeypatch,
+):
+    client, SessionFactory = catalog_client
+    project = _create_project(client, example_spec)
+    agent = _ResultAgent(QualityVerdict.PASS)
+    monkeypatch.setattr(
+        "facetta.api.catalog._trusted_image_agent", lambda: agent)
+
+    response = client.post(
+        f"/assets/{project['active_asset_id']}/catalog/apply",
+        json=_request(),
+    )
+    assert response.status_code == 201, response.text
+    body = response.json()
+    assert body["status"] == "accepted"
+    assert body["design_version"] == 2
+    assert body["spec_change"] == [{
+        "path": "metal.color",
+        "before": "yellow",
+        "after": "rose",
+        "label": "gold color",
+    }]
+    assert body["project"]["active_asset_id"] == body["asset_id"]
+    assert body["project"]["active_design_version"] == 2
+    assert body["project"]["spec"]["metal"]["color"] == "rose"
+
+    assert len(agent.plans) == 1
+    plan = agent.plans[0]
+    assert plan.source_spec_facts["metal"]["color"] == "yellow"
+    assert plan.spec_facts["metal"]["color"] == "rose"
+    assert plan.region_description.startswith("all visible metal surfaces")
+    assert "metal.material" in plan.frozen
+    assert "uniform color" in plan.intent
+    rose = next(option for option in get_component_catalog("metal.color")
+                if option.id == "rose")
+    assert plan.style_constraints == rose.visual_geometry
+    assert plan.normalized_intent["spec_delta"][0]["path"] == "metal.color"
+
+    assert _counts(SessionFactory) == {"versions": 2, "assets": 2, "runs": 1}
+    with SessionFactory() as db:
+        run = db.get(ImageRun, body["image_run_id"])
+        child = db.get(ImageAsset, body["asset_id"])
+        version = db.get(DesignVersion, (project["design_id"], 2))
+        assert run is not None and run.accepted_asset_id == child.id
+        assert run.source_asset_id == project["active_asset_id"]
+        assert child.parent_asset_id == project["active_asset_id"]
+        assert child.design_version == 2
+        assert version.spec["metal"]["color"] == "rose"
+
+
+def test_catalog_center_stone_color_persists_one_paired_species_revision(
+    catalog_client, halo_spec, monkeypatch,
+):
+    """A quick color choice is one image/spec revision, never two writes.
+
+    The UI sends the selected palette species explicitly.  That permits a
+    designer to go from a diamond to Royal Blue sapphire with one action while
+    preventing an unscoped color string from being promoted as a fact.
+    """
+    client, SessionFactory = catalog_client
+    project = _create_project(client, halo_spec)
+    agent = _ResultAgent(QualityVerdict.PASS)
+    monkeypatch.setattr(
+        "facetta.api.catalog._trusted_image_agent", lambda: agent)
+
+    response = client.post(
+        f"/assets/{project['active_asset_id']}/catalog/apply",
+        json=_request(
+            component_path="stone.color",
+            option_id="Royal Blue",
+            stone_species="sapphire",
+        ),
+    )
+
+    assert response.status_code == 201, response.text
+    body = response.json()
+    assert body["status"] == "accepted"
+    assert body["design_version"] == 2
+    assert [change["path"] for change in body["spec_change"]] == [
+        "stone.species",
+        "stone.color",
+        "stone.carat",
+        "stone.clarity",
+    ]
+    assert body["project"]["spec"]["stone"]["species"] == "sapphire"
+    assert body["project"]["spec"]["stone"]["color"]["trade"] == "Royal Blue"
+    assert body["project"]["spec"]["stone"]["clarity"] is None
+
+    assert len(agent.plans) == 1
+    plan = agent.plans[0]
+    assert plan.source_spec_facts["stone"]["species"] == "diamond"
+    assert plan.spec_facts["stone"]["species"] == "sapphire"
+    assert "center-stone" in plan.region_description
+    assert "stone.dimensions_mm" in plan.frozen
+
+    assert _counts(SessionFactory) == {"versions": 2, "assets": 2, "runs": 1}
+    with SessionFactory() as db:
+        source = db.get(DesignVersion, (project["design_id"], 1))
+        version = db.get(DesignVersion, (project["design_id"], 2))
+        assert source.spec["stone"]["species"] == "diamond"
+        assert version.spec["stone"]["species"] == "sapphire"
+        assert version.spec["stone"]["color"]["trade"] == "Royal Blue"
+
+
+@pytest.mark.parametrize(
+    ("payload", "status", "code"),
+    [
+        (_request(expected_design_version=2), 409, "stale_design_version"),
+        (_request(option_id="ultraviolet"), 422, "catalog_selection_invalid"),
+        (_request(option_id="yellow"), 422, "catalog_selection_no_change"),
+        (
+            _request(component_path="chain.style", option_id="curb"),
+            422,
+            "catalog_not_applicable",
+        ),
+    ],
+)
+def test_stale_unsafe_and_inapplicable_selections_never_call_provider_or_write(
+    catalog_client, example_spec, monkeypatch, payload, status, code,
+):
+    client, SessionFactory = catalog_client
+    project = _create_project(client, example_spec)
+    agent = _ResultAgent(QualityVerdict.PASS)
+    monkeypatch.setattr(
+        "facetta.api.catalog._trusted_image_agent", lambda: agent)
+
+    response = client.post(
+        f"/assets/{project['active_asset_id']}/catalog/apply",
+        json=payload,
+    )
+    assert response.status_code == status, response.text
+    assert response.json()["code"] == code
+    assert agent.plans == []
+    assert _counts(SessionFactory) == {"versions": 1, "assets": 1, "runs": 0}
+
+
+def test_catalog_warning_keeps_next_spec_temporary_until_explicit_review(
+    catalog_client, example_spec, monkeypatch,
+):
+    client, SessionFactory = catalog_client
+    project = _create_project(client, example_spec)
+    agent = _ResultAgent(QualityVerdict.WARN)
+    monkeypatch.setattr(
+        "facetta.api.catalog._trusted_image_agent", lambda: agent)
+
+    warned = client.post(
+        f"/assets/{project['active_asset_id']}/catalog/apply",
+        json=_request(),
+    )
+    assert warned.status_code == 202, warned.text
+    body = warned.json()
+    assert body["status"] == "review_required"
+    assert "asset_id" not in body
+    assert body["design_version"] == 1
+    assert body["next_spec"]["metal"]["color"] == "rose"
+    assert body["project"]["active_asset_id"] == project["active_asset_id"]
+    assert body["project"]["active_design_version"] == 1
+    assert _counts(SessionFactory) == {"versions": 1, "assets": 1, "runs": 1}
+
+    candidate = body["warning_candidate"]
+    assert client.get(candidate["preview_url"]).status_code == 200
+    accepted = client.post(
+        f"/image-runs/{candidate['run_id']}/candidates/"
+        f"{candidate['candidate_id']}/accept",
+        json={
+            "expected_design_version": 1,
+            "created_by": "usr_catalog",
+        },
+    )
+    assert accepted.status_code == 201, accepted.text
+    accepted_project = accepted.json()
+    assert accepted_project["active_design_version"] == 2
+    assert accepted_project["spec"]["metal"]["color"] == "rose"
+    assert _counts(SessionFactory) == {"versions": 2, "assets": 2, "runs": 1}
+
+
+def test_catalog_quality_failure_writes_evidence_only(
+    catalog_client, example_spec, monkeypatch,
+):
+    client, SessionFactory = catalog_client
+    project = _create_project(client, example_spec)
+    calls = []
+
+    class FailingAgent:
+        def run(self, plan, **_kwargs):
+            calls.append(plan)
+            report = ImageQualityReport(
+                verdict=QualityVerdict.FAIL,
+                checks=(QualityCheck(
+                    code="metal_geometry_drift",
+                    passed=False,
+                    severity=CheckSeverity.HARD,
+                    message="the candidate changed ring geometry",
+                ),),
+                score=35,
+            )
+            raise ImageQualityFailure(
+                "no candidate passed jewelry QA: metal_geometry_drift",
+                report=report,
+                plan=plan,
+            )
+
+    monkeypatch.setattr(
+        "facetta.api.catalog._trusted_image_agent", lambda: FailingAgent())
+    response = client.post(
+        f"/assets/{project['active_asset_id']}/catalog/apply",
+        json=_request(),
+    )
+    assert response.status_code == 422, response.text
+    assert response.json()["code"] == "image_quality_failed"
+    assert len(calls) == 1
+    assert _counts(SessionFactory) == {"versions": 1, "assets": 1, "runs": 1}
+    with SessionFactory() as db:
+        run = db.get(ImageRun, response.json()["image_run_id"])
+        assert run.status == "failed"
+        assert run.accepted_asset_id is None
+
+
+def test_catalog_database_failure_rolls_back_image_spec_and_run_together(
+    catalog_client, example_spec, monkeypatch,
+):
+    client, SessionFactory = catalog_client
+    project = _create_project(client, example_spec)
+    agent = _ResultAgent(QualityVerdict.PASS)
+    monkeypatch.setattr(
+        "facetta.api.catalog._trusted_image_agent", lambda: agent)
+    baseline = _counts(SessionFactory)
+
+    def fail_commit(_session: Session) -> None:
+        raise RuntimeError("simulated catalog transaction failure")
+
+    monkeypatch.setattr(SessionFactory.class_, "commit", fail_commit)
+    with pytest.raises(RuntimeError, match="simulated catalog transaction failure"):
+        client.post(
+            f"/assets/{project['active_asset_id']}/catalog/apply",
+            json=_request(),
+        )
+    assert _counts(SessionFactory) == baseline
+
+
+def test_old_primary_asset_is_rejected_before_provider(
+    catalog_client, example_spec, monkeypatch,
+):
+    client, SessionFactory = catalog_client
+    project = _create_project(client, example_spec)
+    first_agent = _ResultAgent(QualityVerdict.PASS)
+    monkeypatch.setattr(
+        "facetta.api.catalog._trusted_image_agent", lambda: first_agent)
+    accepted = client.post(
+        f"/assets/{project['active_asset_id']}/catalog/apply",
+        json=_request(),
+    )
+    assert accepted.status_code == 201
+
+    second_agent = _ResultAgent(QualityVerdict.PASS)
+    monkeypatch.setattr(
+        "facetta.api.catalog._trusted_image_agent", lambda: second_agent)
+    stale = client.post(
+        f"/assets/{project['active_asset_id']}/catalog/apply",
+        json=_request(option_id="white", expected_design_version=2),
+    )
+    assert stale.status_code == 409
+    assert stale.json()["code"] == "stale_asset_revision"
+    assert second_agent.plans == []
+    assert _counts(SessionFactory) == {"versions": 2, "assets": 2, "runs": 1}
+
+
+def test_catalog_selection_preserves_every_non_catalog_spec_fact(
+    catalog_client, example_spec, monkeypatch,
+):
+    client, SessionFactory = catalog_client
+    source = deepcopy(example_spec)
+    project = _create_project(client, source)
+    agent = _ResultAgent(QualityVerdict.PASS)
+    monkeypatch.setattr(
+        "facetta.api.catalog._trusted_image_agent", lambda: agent)
+
+    response = client.post(
+        f"/assets/{project['active_asset_id']}/catalog/apply",
+        json=_request(),
+    )
+    assert response.status_code == 201
+    with SessionFactory() as db:
+        stored = db.get(DesignVersion, (project["design_id"], 2)).spec
+        before = db.get(DesignVersion, (project["design_id"], 1)).spec
+        before = deepcopy(before)
+        before["metal"]["color"] = "rose"
+        for field in ("design_id", "version", "created_by", "created_at"):
+            before.pop(field, None)
+            stored.pop(field, None)
+        assert stored == before
+        assert db.get(Project, project["root_id"]) is not None
+
+
+def test_confirmed_necklace_import_and_chain_catalog_pass_are_one_exact_pair(
+    catalog_client, monkeypatch,
+):
+    client, SessionFactory = catalog_client
+    project = _create_necklace_project(client)
+    assert project["spec"]["jewelry_type"] == "necklace"
+    assert project["factory_blockers"] == []
+    source_asset_id = project["active_asset_id"]
+    agent = _ResultAgent(QualityVerdict.PASS)
+    monkeypatch.setattr(
+        "facetta.api.catalog._trusted_image_agent", lambda: agent)
+
+    response = client.post(
+        f"/assets/{source_asset_id}/catalog/apply",
+        json=_chain_request(),
+    )
+
+    assert response.status_code == 201, response.text
+    body = response.json()
+    assert body["status"] == "accepted"
+    assert body["component_path"] == "chain.style"
+    assert body["design_version"] == 2
+    assert body["project"]["active_asset_id"] == body["asset_id"]
+    target_chain = body["project"]["spec"]["chain"]
+    assert target_chain["style"] == "curb"
+    assert target_chain["geometry"] == _open_link_geometry(width=2.2)
+    assert target_chain["production"] == _production("TARGET-CURB-2.2MM")
+    assert target_chain["pendant_connection"] == "slides_through_bail"
+    paths = {change["path"] for change in body["spec_change"]}
+    assert {
+        "chain.style",
+        "chain.geometry.chain_width_mm",
+        "chain.geometry.profile_thickness_mm",
+        "chain.production.reference",
+    } <= paths
+
+    assert len(agent.plans) == 1
+    plan = agent.plans[0]
+    assert plan.jewelry_type == "necklace"
+    assert plan.edit_domains == (DesignerEditDomain.CHAIN_STYLE,)
+    assert plan.spec_facts["chain"]["style"] == "curb"
+    assert plan.spec_facts["chain"]["geometry"] == _open_link_geometry(width=2.2)
+    assert "production" not in plan.spec_facts["chain"]
+    assert "production" not in plan.source_spec_facts["chain"]
+    visual_paths = {
+        change["path"] for change in plan.normalized_intent["spec_delta"]
+    }
+    assert "chain.style" in visual_paths
+    assert any(path.startswith("chain.geometry") for path in visual_paths)
+    assert not any(path.startswith("chain.production") for path in visual_paths)
+    assert "chain.length_mm" in plan.frozen
+    assert "chain.clasp" in plan.frozen
+    assert "pendant" in plan.frozen
+
+    assert _counts(SessionFactory) == {"versions": 2, "assets": 2, "runs": 1}
+    with SessionFactory() as db:
+        source_version = db.get(DesignVersion, (project["design_id"], 1))
+        target_version = db.get(DesignVersion, (project["design_id"], 2))
+        child = db.get(ImageAsset, body["asset_id"])
+        run = db.get(ImageRun, body["image_run_id"])
+        assert source_version.spec["chain"]["style"] == "cable"
+        assert source_version.spec["chain"]["production"]["reference"] == (
+            "SOURCE-CABLE-2MM")
+        assert target_version.spec["chain"] == target_chain
+        provenance = target_version.spec["dimension_provenance"]
+        geometry_paths = {
+            path for path in provenance if path.startswith("chain.geometry.")
+        }
+        assert {
+            "chain.geometry.chain_width_mm",
+            "chain.geometry.profile_thickness_mm",
+            "chain.geometry.links[0].inside_length_mm",
+            "chain.geometry.links[0].inside_width_mm",
+        } <= geometry_paths
+        assert all(
+            provenance[path]["status"] == "designer_confirmed"
+            and provenance[path]["method"] == "designer_input"
+            and "usr_catalog" in provenance[path]["source"]
+            for path in geometry_paths
+        )
+        assert child.parent_asset_id == source_asset_id
+        assert child.design_version == 2
+        assert run.source_asset_id == source_asset_id
+        assert run.accepted_asset_id == child.id
+
+
+@pytest.mark.parametrize(
+    ("payload_factory", "complete_source", "code"),
+    [
+        (
+            lambda: {
+                key: value for key, value in _chain_request().items()
+                if key not in {"chain_geometry", "chain_production"}
+            },
+            True,
+            "chain_target_data_required",
+        ),
+        (
+            lambda: _chain_request(
+                option_id="rope",
+                chain_production=_production("TARGET-ROPE-2.2MM"),
+            ),
+            True,
+            "chain_target_incompatible",
+        ),
+        (
+            lambda: _chain_request(
+                chain_geometry=_open_link_geometry(),
+                chain_production=_production("SOURCE-CABLE-2MM"),
+            ),
+            True,
+            "chain_target_production_reused",
+        ),
+        (
+            lambda: _chain_request(expected_design_version=2),
+            True,
+            "stale_design_version",
+        ),
+        (
+            _chain_request,
+            False,
+            "chain_connection_required",
+        ),
+    ],
+)
+def test_chain_catalog_preflight_failures_never_call_provider_or_write(
+    catalog_client,
+    monkeypatch,
+    payload_factory,
+    complete_source,
+    code,
+):
+    client, SessionFactory = catalog_client
+    project = _create_necklace_project(client, complete=complete_source)
+    agent = _ResultAgent(QualityVerdict.PASS)
+    monkeypatch.setattr(
+        "facetta.api.catalog._trusted_image_agent", lambda: agent)
+
+    response = client.post(
+        f"/assets/{project['active_asset_id']}/catalog/apply",
+        json=payload_factory(),
+    )
+
+    assert response.status_code in {409, 422}, response.text
+    assert response.json()["code"] == code
+    assert agent.plans == []
+    assert _counts(SessionFactory) == {"versions": 1, "assets": 1, "runs": 0}
+
+
+def test_chain_catalog_warning_stays_temporary_then_accepts_exact_target(
+    catalog_client,
+    monkeypatch,
+):
+    client, SessionFactory = catalog_client
+    project = _create_necklace_project(client)
+    agent = _ResultAgent(QualityVerdict.WARN)
+    monkeypatch.setattr(
+        "facetta.api.catalog._trusted_image_agent", lambda: agent)
+
+    warned = client.post(
+        f"/assets/{project['active_asset_id']}/catalog/apply",
+        json=_chain_request(),
+    )
+
+    assert warned.status_code == 202, warned.text
+    body = warned.json()
+    assert body["status"] == "review_required"
+    assert "asset_id" not in body
+    assert body["design_version"] == 1
+    assert body["next_spec"]["chain"]["style"] == "curb"
+    assert body["next_spec"]["chain"]["geometry"] == (
+        _open_link_geometry(width=2.2))
+    assert body["next_spec"]["chain"]["production"] == (
+        _production("TARGET-CURB-2.2MM"))
+    warned_provenance = body["next_spec"]["dimension_provenance"]
+    assert warned_provenance[
+        "chain.geometry.chain_width_mm"]["status"] == "designer_confirmed"
+    assert body["project"]["active_asset_id"] == project["active_asset_id"]
+    assert body["project"]["active_design_version"] == 1
+    assert _counts(SessionFactory) == {"versions": 1, "assets": 1, "runs": 1}
+
+    candidate = body["warning_candidate"]
+    accepted = client.post(
+        f"/image-runs/{candidate['run_id']}/candidates/"
+        f"{candidate['candidate_id']}/accept",
+        json={
+            "expected_design_version": 1,
+            "created_by": "usr_catalog",
+        },
+    )
+    assert accepted.status_code == 201, accepted.text
+    accepted_project = accepted.json()
+    assert accepted_project["active_design_version"] == 2
+    assert accepted_project["spec"]["chain"] == body["next_spec"]["chain"]
+    assert accepted_project["spec"]["dimension_provenance"] == (
+        warned_provenance)
+    assert accepted_project["active_asset_id"] != project["active_asset_id"]
+    assert _counts(SessionFactory) == {"versions": 2, "assets": 2, "runs": 1}
+
+
+def test_from_image_necklace_must_remain_the_supported_confirmed_template(
+    catalog_client,
+):
+    client, _ = catalog_client
+    invalid = _necklace_spec()
+    invalid["template"] = "solitaire_prong"
+
+    response = client.post("/projects/from-image", json={
+        "image_base64": base64.b64encode(_png()).decode(),
+        "media_type": "image/png",
+        "spec": invalid,
+        "owner": "usr_catalog",
+        "title": "Invalid necklace",
+    })
+
+    assert response.status_code == 422
+    assert "cluster_pendant" in response.json()["detail"]

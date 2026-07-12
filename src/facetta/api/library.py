@@ -11,65 +11,24 @@ stay in the asset chain.
 
 from __future__ import annotations
 
-import base64
 from collections import Counter
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from facetta.db import ImageAsset, Project, get_db
-from facetta.disclaimer import is_stampable, stamp_b64
-
-# a factory technical drawing carries its own dimension-honesty disclaimer; the
-# "preview may vary" caption is for client-facing photoreal renders only
-_UNSTAMPED_CAPS = {"MANUFACTURING_TECHNICAL_DRAWING"}
+from facetta.api.projects import project_card, project_chain
+from facetta.db import Project, get_db
 
 router = APIRouter(tags=["library"])
 
 DbSession = Annotated[Session, Depends(get_db)]
 
 
-def _chain(db: Session, root_id: str) -> list[ImageAsset]:
-    return list(db.scalars(
-        select(ImageAsset).where(ImageAsset.root_id == root_id)
-        .order_by(ImageAsset.created_at, ImageAsset.id)))
-
-
-def _cover_asset(chain: list[ImageAsset]) -> ImageAsset | None:
-    """The card thumbnail: the pinned version if any, else the most recent
-    still image, else the root."""
-    pinned = [a for a in chain if a.pinned_at is not None]
-    if pinned:
-        return max(pinned, key=lambda a: a.pinned_at)
-    images = [a for a in chain if a.media_type.startswith("image/")]
-    return (images[-1] if images else (chain[-1] if chain else None))
-
-
-def _project_card(db: Session, project: Project) -> dict:
-    chain = _chain(db, project.root_id)
-    kinds = Counter(a.capability for a in chain)
-    cover = _cover_asset(chain)
-    return {
-        "root_id": project.root_id,
-        "title": project.title,
-        "collection": project.collection or "Unfiled",
-        "tags": project.tags or [],
-        "owner": project.owner,
-        "counts": dict(kinds),
-        "item_count": len(chain),
-        "has_factory_drawing": any(
-            a.capability == "MANUFACTURING_TECHNICAL_DRAWING" for a in chain),
-        "cover_asset_id": cover.id if cover else None,
-        "created_at": project.created_at.isoformat(),
-        "updated_at": project.updated_at.isoformat(),
-    }
-
-
 def _searchable_text(db: Session, project: Project) -> str:
     parts = [project.title, project.collection or "", " ".join(project.tags or [])]
-    parts += [a.instruction or "" for a in _chain(db, project.root_id)]
+    parts += [a.instruction or "" for a in project_chain(db, project.root_id)]
     return " ".join(parts).lower()
 
 
@@ -105,7 +64,7 @@ def search_library(db: DbSession, owner: str | None = None,
     total = len(projects)
     page = projects[offset:offset + limit]
     return {"total": total, "limit": limit, "offset": offset,
-            "projects": [_project_card(db, p) for p in page]}
+            "projects": [project_card(db, p) for p in page]}
 
 
 @router.get("/library/collections")
@@ -133,32 +92,3 @@ def list_tags(db: DbSession, owner: str | None = None):
     for p in db.scalars(stmt):
         counts.update(p.tags or [])
     return {"tags": [{"tag": t, "count": n} for t, n in counts.most_common()]}
-
-
-@router.get("/projects/{root_id}")
-def get_project(root_id: str, db: DbSession, include_images: bool = False):
-    """One project: its metadata plus every asset in the chain grouped by
-    kind (renders, edits, views, videos, drawings). ?include_images=true
-    inlines the base64 for each asset."""
-    project = db.get(Project, root_id)
-    if project is None:
-        raise HTTPException(status_code=404,
-                            detail=f"no project for chain '{root_id}'")
-    chain = _chain(db, root_id)
-
-    def item(a: ImageAsset) -> dict:
-        d = {"asset_id": a.id, "capability": a.capability,
-             "parent_asset_id": a.parent_asset_id, "region": a.region,
-             "instruction": a.instruction, "drift": a.drift,
-             "pinned": a.pinned_at is not None, "media_type": a.media_type,
-             "created_at": a.created_at.isoformat()}
-        if include_images:
-            raw = bytes(a.image)
-            d["image_b64"] = (
-                stamp_b64(raw) if (a.capability not in _UNSTAMPED_CAPS
-                                   and is_stampable(a.media_type))
-                else base64.b64encode(raw).decode())
-        return d
-
-    return {**_project_card(db, project),
-            "items": [item(a) for a in chain]}

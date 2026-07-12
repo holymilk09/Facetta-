@@ -98,6 +98,61 @@ def test_provider_failure_is_502(example_spec, monkeypatch, tmp_path):
         render_finished_image(_validated(example_spec), "photo", "studio")
 
 
+def test_xai_edit_payload_matches_current_json_api_contract():
+    payload = render_mod._grok_direct_edit_payload(
+        "change only the chain", "data:image/jpeg;base64,abc", {})
+
+    assert payload == {
+        "model": "grok-imagine-image-quality",
+        "prompt": "change only the chain",
+        "image": {
+            "url": "data:image/jpeg;base64,abc",
+            "type": "image_url",
+        },
+    }
+    # xAI's edit endpoint currently returns a URL; asking for OpenAI-style
+    # inline b64_json makes the otherwise valid JSON request fail with 400.
+    assert "response_format" not in payload
+
+
+def test_xai_generation_payload_uses_documented_url_response_contract():
+    payload = render_mod.GENERATION_MODELS["grok_direct"]["payload"](
+        "one clean necklace")
+
+    assert payload == {
+        "model": "grok-imagine-image-quality",
+        "prompt": "one clean necklace",
+        "n": 1,
+    }
+    assert "response_format" not in payload
+
+
+def test_xai_http_error_retains_safe_provider_detail(monkeypatch):
+    monkeypatch.setattr(render_mod, "_provider_key", lambda env: "test:key")
+    import httpx
+
+    request = httpx.Request("POST", "https://api.x.ai/v1/images/edits")
+    response = httpx.Response(
+        400,
+        request=request,
+        json={"error": {
+            "code": "invalid_request",
+            "message": "response_format is not supported",
+        }},
+    )
+
+    monkeypatch.setattr(httpx, "post", lambda *args, **kwargs: response)
+    with pytest.raises(render_mod.RenderUnavailable) as caught:
+        render_mod._call_engine(
+            "grok_direct", "edit this", "data:image/png;base64,abc", {})
+
+    message = str(caught.value)
+    assert "HTTP 400" in message
+    assert "response_format is not supported" in message
+    assert "test:key" not in message
+    assert "base64,abc" not in message
+
+
 def test_model_choice_is_part_of_the_cache_key(example_spec):
     spec = _validated(example_spec)
     assert render_cache_key(spec, "photo", "studio", "flux_kontext") != \

@@ -1,4 +1,4 @@
-"""Annotated technical sheet renderer: spec object -> SVG.
+"""Annotated schematic dimensional-diagram renderer: spec object -> SVG.
 
 Deterministic by construction — every coordinate derives from the spec's mm
 values; the only date on the sheet is the version's created_at. Same spec in,
@@ -24,7 +24,13 @@ import math
 from dataclasses import dataclass
 
 from facetta import gemcad
-from facetta.spec import Spec
+from facetta.dimension_provenance import estimate_marker
+from facetta.spec import (
+    OpenLinkChainGeometry,
+    SmoothChainGeometry,
+    Spec,
+    StrandedChainGeometry,
+)
 from facetta.validation import (
     NestingClearance, ellipse_perimeter_mm, estimate_metal_g, pendant_drop_mm,
 )
@@ -45,6 +51,7 @@ FONT = "Georgia, 'Times New Roman', serif"
 SUPPORTED_CUTS = ("round_brilliant", "oval_brilliant", "emerald_cut", "cushion")  # solitaire / halo center cuts
 BANGLE_STATION_CUTS = ("princess", "asscher")
 ISOLATE_RED = "#c0392b"  # the edit agent's "isolate this stone" highlight
+REVIEW_WARNING = "#9b2f2f"
 
 # continuous-metal centre mounts: the sheet draws a collar hugging the girdle
 # instead of individual claws, so a bezel reads as a bezel — not four dots.
@@ -121,6 +128,11 @@ def _bezel_collar_side(xl: float, xr: float, y_girdle: float,
 
 def _fmt(value: float) -> str:
     return f"{value:.1f}".rstrip("0").rstrip(".")
+
+
+def _fmt_chain(value: float) -> str:
+    """Chain stock commonly uses hundredths of a millimeter; do not erase it."""
+    return f"{value:.2f}".rstrip("0").rstrip(".")
 
 
 def _text(x: float, y: float, s: str, *, size: float = 3.2, anchor: str = "middle",
@@ -274,12 +286,15 @@ def _top_view(spec: Spec, cx: float, cy: float, *, mode: str = "full",
         x_dim = cx + max(rx, band_w / 2) + 8
         parts += [
             _ext(cx - rx, cy, cx - rx, y_dim - 1), _ext(cx + rx, cy, cx + rx, y_dim - 1),
-            *_dim_h(cx - rx, cx + rx, y_dim, f"{dim_w} mm"),
+            *_dim_h(cx - rx, cx + rx, y_dim,
+                    f"{dim_w} mm{estimate_marker(spec, 'stone.dimensions_mm.width')}"),
             _ext(cx, cy - ry, x_dim + 1, cy - ry), _ext(cx, cy + ry, x_dim + 1, cy + ry),
-            *_dim_v(x_dim, cy - ry, cy + ry, f"{dim_l} mm"),
+            *_dim_v(x_dim, cy - ry, cy + ry,
+                    f"{dim_l} mm{estimate_marker(spec, 'stone.dimensions_mm.length')}"),
             _ext(left_x, bottom - band_w / 2, left_x, bottom + 6),
             _ext(right_x, bottom - band_w / 2, right_x, bottom + 6),
-            *_dim_h(left_x, right_x, bottom + 5, f"{dim_b} mm"),
+            *_dim_h(left_x, right_x, bottom + 5,
+                    f"{dim_b} mm{estimate_marker(spec, 'band.width_mm')}"),
             _text(cx, bottom + 14, "TOP VIEW", size=3.6, style=' letter-spacing="1.2"'),
         ]
         if highlight_ref == "A":  # the centre stone is schedule ref A
@@ -379,14 +394,17 @@ def _side_view(spec: Spec, cx: float, cy: float, *, mode: str = "full") -> list[
         x_dim2 = x_dim + 26
         parts += [
             # inner diameter across the hoop
-            *_dim_h(cx - inner_r, cx + inner_r, ring_cy, f"⌀ {dim_id} mm"),
+            *_dim_h(cx - inner_r, cx + inner_r, ring_cy,
+                    f"⌀ {dim_id} mm{estimate_marker(spec, 'ring_size.inner_diameter_mm')}"),
             # gallery height on the near right, stone depth further out
             _ext(xr, y_girdle, x_dim + 1, y_girdle),
             _ext(cx, ring_top, x_dim + 1, ring_top),  # anchored on the hoop's top point
-            *_dim_v(x_dim, y_girdle, ring_top, f"{dim_g} mm gallery"),
+            *_dim_v(x_dim, y_girdle, ring_top,
+                    f"{dim_g} mm gallery{estimate_marker(spec, 'setting.gallery_height_mm')}"),
             _ext(txr, y_table, x_dim2 + 1, y_table),
             _ext(cx, y_culet, x_dim2 + 1, y_culet),
-            *_dim_v(x_dim2, y_table, y_culet, f"{dim_d} mm"),
+            *_dim_v(x_dim2, y_table, y_culet,
+                    f"{dim_d} mm{estimate_marker(spec, 'stone.dimensions_mm.depth')}"),
             _text(cx, ring_cy + outer_r + 12, "SIDE PROFILE", size=3.6, style=' letter-spacing="1.2"'),
         ]
     return parts
@@ -419,9 +437,11 @@ def _title_block(spec: Spec, scale_label: str = "3:1",
     color_line = (f"{stone.color.trade}  ·  {stone.clarity.grade}" if stone.clarity
                   else f"{stone.color.trade}  ·  finest available")
     weight = estimate_metal_g(spec)
+    has_estimates = bool(estimate_marker(spec, *spec.dimension_provenance))
+    compact_meta = not has_estimates and len(spec.created_by) <= 20
     meta = (f"UNITS mm  ·  SCALE {scale_label}"
             + (f"  ·  EST. {weight} g" if weight else "")
-            + f"  ·  {spec.created_by}")
+            + (f"  ·  {spec.created_by}" if compact_meta else ""))
 
     parts = [
         f'<rect x="{x:.2f}" y="{y:.2f}" width="{w:g}" height="40" fill="{PAPER}" '
@@ -449,11 +469,19 @@ def _title_block(spec: Spec, scale_label: str = "3:1",
         parts.append(_text(x + 3, ty, s, size=size, anchor="start",
                            style=' font-weight="bold"' if bold else ""))
     parts.append(_text(x + 3, ty + 4.0, meta, size=2.7, anchor="start", color=FAINT))
+    if has_estimates:
+        parts.append(_text(
+            x + 3, ty + 7.1, "ESTIMATED DIMS — VERIFY", size=2.15,
+            anchor="start", color=FAINT,
+        ))
 
     # signature block: a designer's hand, only when they've supplied a mark.
     # A ruled line with an italic signature above it — the same gesture as
     # signing a physical work order sent to a factory.
     sy = y + 40 - 3.2
+    creator = spec.created_by
+    if len(creator) > 28:
+        creator = creator[:27].rstrip() + "…"
     if signature:
         parts += [
             _line(x + 3, sy - 1.5, x + 42, sy - 1.5, w=STROKE_DIM, color=FAINT),
@@ -462,6 +490,10 @@ def _title_block(spec: Spec, scale_label: str = "3:1",
             _text(x + 3, sy + 1.4, "SIGNED", size=2.1, anchor="start", color=FAINT,
                   style=' letter-spacing="1.0"'),
         ]
+    if not compact_meta:
+        creator_x = x + 45 if signature else x + 3
+        parts.append(_text(creator_x, sy, f"BY {creator}",
+                           size=2.15, anchor="start", color=FAINT))
     parts.append(_text(x + w - 3, sy, spec.created_at.date().isoformat(),
                        size=2.7, anchor="end", color=FAINT))
     return parts
@@ -550,6 +582,7 @@ def _frame(spec: Spec, title: str, scale_label: str, body: list[str],
     painted raster is the paper.
     """
     fill = "none" if background else "url(#grid)"
+    display_title = title.replace("TECHNICAL SHEET", "DIMENSIONAL DIAGRAM")
     parts = [
         f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {SHEET_W:g} {SHEET_H:g}" '
         f'width="{SHEET_W:g}mm" height="{SHEET_H:g}mm" font-family="{FONT}">',
@@ -570,10 +603,24 @@ def _frame(spec: Spec, title: str, scale_label: str, body: list[str],
     parts += [
         f'<rect x="{MARGIN:g}" y="{MARGIN:g}" width="{SHEET_W - 2 * MARGIN:g}" '
         f'height="{SHEET_H - 2 * MARGIN:g}" fill="{fill}" stroke="{INK}" stroke-width="{STROKE_MAIN}"/>',
-        _text(SHEET_W / 2, MARGIN + 8, title, size=4.6, style=' letter-spacing="1.6"'),
+        _text(SHEET_W / 2, MARGIN + 8, display_title, size=4.6,
+              style=' letter-spacing="1.6"'),
         _line(MARGIN + 3, MARGIN + 11.5, SHEET_W - MARGIN - 3, MARGIN + 11.5,
               w=STROKE_DIM, color=FAINT),  # header rule under the sheet title
     ]
+    parts.append(_text(
+        SHEET_W / 2, MARGIN + 15,
+        "SCHEMATIC DIMENSIONAL DIAGRAM — NOT PRODUCTION GEOMETRY",
+        size=2.7, color=REVIEW_WARNING,
+        style=' font-weight="bold" letter-spacing="0.45"',
+    ))
+    if estimate_marker(spec, *spec.dimension_provenance):
+        parts.append(_text(
+            SHEET_W / 2, MARGIN + 19,
+            "ESTIMATED DIMENSIONS — REFERENCE VALUES, NOT MEASUREMENTS; VERIFY OR ADJUST BEFORE PRODUCTION",
+            size=2.6, color=ISOLATE_RED,
+            style=' font-weight="bold" letter-spacing="0.5"',
+        ))
     if datum_y is not None:
         parts.append(_line(MARGIN + 3, datum_y, SHEET_W - MARGIN - 3, datum_y,
                            w=STROKE_DIM, color=FAINT, dash="6 1.5 1 1.5"))
@@ -583,7 +630,7 @@ def _frame(spec: Spec, title: str, scale_label: str, body: list[str],
     if spec.notes_to_factory:
         parts += _notes_block(spec.notes_to_factory)
     parts.append(_text(SHEET_W - MARGIN, SHEET_H - 3.2,
-                       "CONFIDENTIAL — FACTORY PRODUCTION ONLY", size=2.8,
+                       "CONFIDENTIAL — FACTORY REVIEW REFERENCE", size=2.8,
                        anchor="end", color=FAINT, style=' letter-spacing="1.2"'))
     parts.append("</svg>")
     return "\n".join(parts) + "\n"
@@ -703,6 +750,207 @@ def _render_solitaire(spec: Spec, highlight_ref: str | None = None,
                   branding=branding)
 
 
+def _leaf_groups(spec: Spec):
+    return [stone for stone in spec.side_stones
+            if stone.position == "pave_leaves"]
+
+
+def _split_sides(count: int) -> tuple[int, int]:
+    return (count + 1) // 2, count // 2
+
+
+def _leaf_outline(cx: float, cy: float, width: float, length: float,
+                  angle: float) -> str:
+    """Pointed metal leaf envelope around one shoulder-stone station."""
+    rx, ry = width / 2, length / 2
+    path = (
+        f"M {cx:.2f} {cy - ry:.2f} "
+        f"Q {cx + rx:.2f} {cy:.2f} {cx:.2f} {cy + ry:.2f} "
+        f"Q {cx - rx:.2f} {cy:.2f} {cx:.2f} {cy - ry:.2f} Z"
+    )
+    return (
+        f'<path d="{path}" transform="rotate({angle:.1f} {cx:.2f} {cy:.2f})" '
+        f'fill="url(#hatch)" stroke="{INK}" stroke-width="{STROKE_MAIN}"/>'
+    )
+
+
+def _leaf_shoulder_top_view(
+    spec: Spec,
+    cx: float,
+    cy: float,
+    *,
+    highlight_ref: str | None = None,
+) -> list[str]:
+    """Count-true face view for a mirrored diamond-set leaf shoulder ring.
+
+    Every side-stone instance is emitted with its schedule reference in a data
+    attribute. Tests and downstream exports can therefore prove that the view
+    depicts the same inventory as the immutable specification.
+    """
+    parts = _top_view(spec, cx, cy, highlight_ref=highlight_ref)
+    groups = _leaf_groups(spec)
+    if not groups:
+        raise SheetUnsupported(
+            "leaf_shoulder_prong needs side_stones at position 'pave_leaves'")
+    center_rx = spec.stone.dimensions_mm.width * SCALE / 2
+    marquise = next((stone for stone in groups if stone.cut == "marquise"), None)
+    anchor_counts = _split_sides(marquise.count if marquise else 6)
+    anchors: dict[int, list[tuple[float, float, float]]] = {-1: [], 1: []}
+    for side, count in zip((-1, 1), anchor_counts):
+        for index in range(max(1, count)):
+            offset = index - (count - 1) / 2
+            x = cx + side * (center_rx + 6.4 + 1.15 * abs(offset))
+            y = cy + offset * 5.4
+            angle = side * (24 + 4 * offset)
+            anchors[side].append((x, y, angle))
+        far_x, far_y, _ = anchors[side][-1]
+        parts.append(
+            f'<path d="M {cx + side * center_rx:.2f} {cy:.2f} '
+            f'Q {cx + side * (center_rx + 12):.2f} {cy:.2f} '
+            f'{far_x:.2f} {far_y:.2f}" fill="none" stroke="{INK}" '
+            f'stroke-width="{STROKE_MAIN}"/>'
+        )
+
+    for group in groups:
+        ref = _ref_letter(spec, group)
+        left_count, right_count = _split_sides(group.count)
+        for side, count in zip((-1, 1), (left_count, right_count)):
+            side_anchors = anchors[side]
+            for index in range(count):
+                slot = index % len(side_anchors)
+                layer = index // len(side_anchors)
+                ax, ay, angle = side_anchors[slot]
+                if group.cut == "marquise":
+                    x, y = ax, ay
+                    draw_angle = angle
+                    outline_w = group.dimensions_mm.width * SCALE + 2.6
+                    outline_l = group.dimensions_mm.length * SCALE + 2.6
+                    parts.append(_leaf_outline(
+                        x, y, outline_w, outline_l, draw_angle))
+                else:
+                    pair_sign = -1 if layer % 2 == 0 else 1
+                    tangent = math.radians(angle)
+                    spread = (group.dimensions_mm.width * SCALE / 2 + 1.3)
+                    x = ax + pair_sign * spread * math.cos(tangent)
+                    y = ay + pair_sign * spread * math.sin(tangent)
+                    draw_angle = angle
+                parts.append(
+                    f'<g data-stone-ref="{ref}" data-position="pave_leaves" '
+                    f'transform="rotate({draw_angle:.1f} {x:.2f} {y:.2f})">'
+                )
+                parts += _facet_face_up(
+                    x,
+                    y,
+                    group.cut,
+                    group.dimensions_mm.width * SCALE,
+                    group.dimensions_mm.length * SCALE,
+                )
+                parts.append("</g>")
+
+    top = min(y for side in anchors.values() for _, y, _ in side)
+    right = max(x for side in anchors.values() for x, _, _ in side)
+    for group_index, group in enumerate(groups):
+        ref = _ref_letter(spec, group)
+        fy = top - 12 - group_index * 6
+        parts += _pointer(right, top, right + 10, fy)
+        parts += _circled_ref(right + 12.6, fy, ref)
+    return parts
+
+
+def _leaf_shoulder_front_view(spec: Spec, cx: float, cy: float) -> list[str]:
+    parts = _front_view(spec, cx, cy)
+    groups = _leaf_groups(spec)
+    if not groups:
+        return parts
+    stone = spec.stone.dimensions_mm
+    span = stone.width * SCALE
+    inner_r = spec.ring_size.inner_diameter_mm * SCALE / 2
+    outer_r = inner_r + spec.band.thickness_mm * SCALE
+    ring_top = cy - outer_r
+    y = ring_top - (spec.setting.gallery_height_mm or 0.0) * SCALE + 3.0
+    representative = next(
+        (group for group in groups if group.cut == "marquise"), groups[0])
+    for side in (-1, 1):
+        parts.append(
+            f'<path d="M {cx + side * span / 2:.2f} {y:.2f} '
+            f'Q {cx + side * (span / 2 + 8):.2f} {y - 2:.2f} '
+            f'{cx + side * (span / 2 + 15):.2f} {y + 3:.2f}" '
+            f'fill="none" stroke="{INK}" stroke-width="{STROKE_MAIN}"/>'
+        )
+        for index in range(3):
+            x = cx + side * (span / 2 + 3.0 + index * 3.7)
+            parts.append(_leaf_outline(x, y + index * 1.4, 4.8, 8.0,
+                                       side * (58 - index * 9)))
+            parts.append(
+                f'<g data-projection-ref="{_ref_letter(spec, representative)}">'
+            )
+            parts += _facet_face_up(
+                x, y + index * 1.4, representative.cut,
+                representative.dimensions_mm.width * SCALE,
+                representative.dimensions_mm.length * SCALE,
+            )
+            parts.append("</g>")
+    return parts
+
+
+def _leaf_shoulder_side_view(spec: Spec, cx: float, cy: float) -> list[str]:
+    parts = _side_view(spec, cx, cy)
+    groups = _leaf_groups(spec)
+    if not groups:
+        return parts
+    representative = next(
+        (group for group in groups if group.cut == "marquise"), groups[0])
+    inner_r = spec.ring_size.inner_diameter_mm * SCALE / 2
+    outer_r = inner_r + spec.band.thickness_mm * SCALE
+    for side in (-1, 1):
+        for index in range(3):
+            angle = -math.pi / 2 + side * (0.42 + index * 0.17)
+            x = cx + outer_r * math.cos(angle)
+            y = cy + outer_r * math.sin(angle)
+            rotation = math.degrees(angle) + 90
+            parts.append(_leaf_outline(x, y, 4.6, 7.2, rotation))
+            parts.append(
+                f'<g data-projection-ref="{_ref_letter(spec, representative)}" '
+                f'transform="rotate({rotation:.1f} {x:.2f} {y:.2f})">'
+            )
+            parts += _facet_face_up(
+                x, y, representative.cut,
+                representative.dimensions_mm.width * SCALE,
+                representative.dimensions_mm.length * SCALE,
+            )
+            parts.append("</g>")
+    return parts
+
+
+def _render_leaf_shoulder(
+    spec: Spec,
+    highlight_ref: str | None = None,
+    branding: Branding | None = None,
+) -> str:
+    if spec.stone.cut not in SUPPORTED_CUTS:
+        raise SheetUnsupported(
+            f"leaf-shoulder center cut '{spec.stone.cut}' not supported; "
+            f"supported: {list(SUPPORTED_CUTS)}")
+    _require_ring_sections(spec, "leaf shoulder ring")
+    if not _leaf_groups(spec):
+        raise SheetUnsupported(
+            "leaf_shoulder_prong needs side_stones at position 'pave_leaves'")
+    body = (
+        _leaf_shoulder_top_view(spec, 58, BASELINE,
+                                highlight_ref=highlight_ref)
+        + _leaf_shoulder_front_view(spec, 138, BASELINE)
+        + _leaf_shoulder_side_view(spec, 208, BASELINE)
+        + _stone_schedule(spec, MARGIN + 4, 158, circled=True, totals=True)
+    )
+    return _frame(
+        spec,
+        "TECHNICAL SHEET — DIAMOND LEAF SHOULDER RING",
+        "3:1",
+        body,
+        branding=branding,
+    )
+
+
 def _find_stone(spec: Spec, *positions: str):
     return next((s for s in spec.side_stones if s.position in positions), None)
 
@@ -764,7 +1012,7 @@ def _diagram_face_up(cx: float, cy: float, layout, w_pp: float, l_pp: float,
     parts = [_poly([pp(p) for p in layout.outline], fill, stroke, STROKE_MAIN)]
     if lit:  # true per-facet shading: brightness from the real facet normal
         for fct in layout.facets:
-            b = sum(n * l for n, l in zip(fct.normal, _LIGHT))
+            b = sum(normal * light for normal, light in zip(fct.normal, _LIGHT))
             if b > 0.60:
                 parts.append(_lit_poly([pp(p) for p in fct.points], "#ffffff",
                                        round(min((b - 0.60) * 0.55, 0.30), 3)))
@@ -1394,6 +1642,96 @@ def _chain_callout(spec: Spec, cx: float, bail_top_y: float) -> list[str]:
               f"{chain.clasp.replace('_', ' ')} clasp",
               size=3.0, anchor="start", color=FAINT),
     ]
+    geometry = chain.geometry
+    if geometry is not None:
+        common_marker = estimate_marker(
+            spec,
+            "chain.geometry.chain_width_mm",
+            "chain.geometry.profile_thickness_mm",
+            "chain.geometry.end_ring_outer_diameter_mm",
+        )
+        parts.append(_text(
+            MARGIN + 6,
+            35,
+            (
+                f"width {_fmt_chain(geometry.chain_width_mm)} · profile "
+                f"{_fmt_chain(geometry.profile_thickness_mm)} · end-ring OD "
+                f"{_fmt_chain(geometry.end_ring_outer_diameter_mm)} mm"
+                f"{common_marker}"
+            ),
+            size=2.6,
+            anchor="start",
+            color=FAINT,
+        ))
+        if isinstance(geometry, OpenLinkChainGeometry):
+            link_marker = estimate_marker(
+                spec,
+                "chain.geometry.link_thickness_mm",
+                *(
+                    path
+                    for index in range(len(geometry.links))
+                    for path in (
+                        f"chain.geometry.links[{index}].length_mm",
+                        f"chain.geometry.links[{index}].inside_length_mm",
+                        f"chain.geometry.links[{index}].inside_width_mm",
+                    )
+                ),
+            )
+            links = "; ".join(
+                f"{link.role} L {_fmt_chain(link.length_mm)}, ID "
+                f"{_fmt_chain(link.inside_length_mm)} × "
+                f"{_fmt_chain(link.inside_width_mm)}"
+                for link in geometry.links
+            )
+            solder = "soldered" if geometry.links_soldered else "unsoldered"
+            detail = (
+                f"{links} mm · link thickness "
+                f"{_fmt_chain(geometry.link_thickness_mm)} mm · "
+                f"{solder}{link_marker}"
+            )
+        elif isinstance(geometry, StrandedChainGeometry):
+            marker = estimate_marker(
+                spec, "chain.geometry.strand_wire_diameter_mm")
+            detail = (
+                f"{geometry.strand_count} strands · strand wire ⌀ "
+                f"{_fmt_chain(geometry.strand_wire_diameter_mm)} mm{marker}"
+            )
+        elif isinstance(geometry, SmoothChainGeometry):
+            marker = estimate_marker(spec, "chain.geometry.plate_thickness_mm")
+            detail = (
+                f"smooth plate construction · plate "
+                f"{_fmt_chain(geometry.plate_thickness_mm)} mm{marker}"
+            )
+        else:  # pragma: no cover - discriminated union is exhaustive
+            detail = ""
+        parts.append(_text(
+            MARGIN + 6, 39, detail, size=2.5, anchor="start", color=FAINT))
+    if chain.pendant_connection is not None:
+        parts.append(_text(
+            MARGIN + 6,
+            43,
+            "pendant connection: "
+            + chain.pendant_connection.replace("_", " "),
+            size=2.5,
+            anchor="start",
+            color=FAINT,
+        ))
+    if chain.production is not None:
+        reference = chain.production.reference
+        if len(reference) > 72:
+            reference = reference[:69] + "..."
+        parts.append(_text(
+            MARGIN + 6,
+            47,
+            (
+                f"{chain.production.mode} · "
+                f"{chain.production.reference_kind.replace('_', ' ')}: "
+                f"{reference}"
+            ),
+            size=2.5,
+            anchor="start",
+            color=FAINT,
+        ))
     return parts
 
 
@@ -1988,9 +2326,16 @@ def _stone_schedule(spec: Spec, x0: float, y0: float, *, circled: bool = False,
     def desc(stone) -> str:
         return f"{stone.species} {stone.cut.replace('_', ' ')}"
 
-    def dims(stone) -> str:
+    def dims(stone, index: int) -> str:
         d = stone.dimensions_mm
-        return f"{_fmt(d.length)} × {_fmt(d.width)} × {_fmt(d.depth)}"
+        prefix = "stone" if index == 0 else f"side_stones[{index - 1}]"
+        marker = estimate_marker(
+            spec,
+            f"{prefix}.dimensions_mm.length",
+            f"{prefix}.dimensions_mm.width",
+            f"{prefix}.dimensions_mm.depth",
+        )
+        return f"{_fmt(d.length)} × {_fmt(d.width)} × {_fmt(d.depth)}{marker}"
 
     stones = [spec.stone] + spec.side_stones
     rows = [(chr(65 + i), s) for i, s in enumerate(stones)]
@@ -2010,7 +2355,7 @@ def _stone_schedule(spec: Spec, x0: float, y0: float, *, circled: bool = False,
         parts.append(_text(x0 + 85, y0 + 5.0, "TOTAL", size=2.4,
                            anchor="start", color=FAINT))
     y = y0 + 5.0
-    for ref, stone in rows:
+    for index, (ref, stone) in enumerate(rows):
         y += 4.4 if circled else 3.9
         if circled:
             parts += _circled_ref(x0 + 2.2, y - 1.0, ref)
@@ -2019,7 +2364,7 @@ def _stone_schedule(spec: Spec, x0: float, y0: float, *, circled: bool = False,
         parts += [
             _text(x0 + 9, y, str(stone.count), size=2.6, anchor="start"),
             _text(x0 + 17, y, desc(stone), size=2.6, anchor="start"),
-            _text(x0 + 50, y, dims(stone), size=2.6, anchor="start"),
+            _text(x0 + 50, y, dims(stone, index), size=2.6, anchor="start"),
             _text(x0 + 72, y, f"{stone.carat:.2f}", size=2.6, anchor="start"),
         ]
         if totals:
@@ -2362,6 +2707,7 @@ def _render_drop_earring(spec: Spec, highlight_ref: str | None = None,
 TEMPLATES = {
     "solitaire_prong": _render_solitaire,
     "halo_prong": _render_halo,
+    "leaf_shoulder_prong": _render_leaf_shoulder,
     "love_bangle": _render_bangle,
     "cluster_pendant": _render_pendant,
     "cuff": _render_cuff,
@@ -2388,9 +2734,19 @@ def render_sheet(spec: Spec, highlight_ref: str | None = None,
         raise SheetUnsupported(
             f"template '{spec.template}' not supported yet; supported: {list(TEMPLATES)}"
         )
-    if spec.template in ("solitaire_prong", "halo_prong", "deco_drop_earring"):
-        return render(spec, highlight_ref, branding)
-    return render(spec)
+    if spec.template in (
+        "solitaire_prong", "halo_prong", "leaf_shoulder_prong",
+        "deco_drop_earring",
+    ):
+        sheet = render(spec, highlight_ref, branding)
+    else:
+        sheet = render(spec)
+    # Imported locally to keep the base renderer independent from the custom
+    # form domain while still ensuring every factory-pack caller receives the
+    # same dimensioned-profile substitution.
+    from facetta.dimensioned_form_sheet import render_dimensioned_form_overlay
+
+    return render_dimensioned_form_overlay(sheet, spec)
 
 
 # templates whose views separate into geometry/annotation layers, so an image
@@ -2400,6 +2756,7 @@ BLUEPRINT_TEMPLATES = ("solitaire_prong", "halo_prong")
 _SHEET_TITLE = {
     "solitaire_prong": "TECHNICAL SHEET — SOLITAIRE RING",
     "halo_prong": "TECHNICAL SHEET — HALO RING",
+    "leaf_shoulder_prong": "TECHNICAL SHEET — DIAMOND LEAF SHOULDER RING",
 }
 
 
@@ -2695,6 +3052,7 @@ def _true_loose_stone(spec: Spec) -> list[str]:
 TRUE_SIZE_TEMPLATES = {
     "solitaire_prong": _true_ring,
     "halo_prong": _true_ring,
+    "leaf_shoulder_prong": _true_ring,
     "love_bangle": _true_bangle,
     "cuff": _true_cuff,
     "link_bracelet": _true_link_bracelet,

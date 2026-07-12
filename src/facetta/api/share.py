@@ -27,7 +27,11 @@ class ShareCreate(BaseModel):
     scope: Literal["view", "comment"] = "comment"
 
 
-@router.post("/designs/{design_id}/versions/{version}/share", status_code=201)
+@router.post(
+    "/designs/{design_id}/versions/{version}/share",
+    status_code=201,
+    deprecated=True,
+)
 def create_share_link(design_id: str, version: int, share: ShareCreate, db: DbSession):
     _get_version(db, design_id, version)
     link = ShareLink(token=secrets.token_urlsafe(16), design_id=design_id,
@@ -50,7 +54,7 @@ def _get_link(db: Session, token: str) -> ShareLink:
     return link
 
 
-@router.get("/share/{token}")
+@router.get("/share/{token}", deprecated=True)
 def open_share_link(token: str, db: DbSession):
     link = _get_link(db, token)
     row = _get_version(db, link.design_id, link.version)
@@ -63,7 +67,7 @@ def open_share_link(token: str, db: DbSession):
     }
 
 
-@router.get("/share/{token}/sheet.svg")
+@router.get("/share/{token}/sheet.svg", deprecated=True)
 def share_sheet(token: str, db: DbSession):
     link = _get_link(db, token)
     row = _get_version(db, link.design_id, link.version)
@@ -74,7 +78,7 @@ def share_sheet(token: str, db: DbSession):
     return Response(content=svg, media_type="image/svg+xml")
 
 
-@router.post("/share/{token}/comments", status_code=201)
+@router.post("/share/{token}/comments", status_code=201, deprecated=True)
 def share_comment(token: str, comment: CommentCreate, db: DbSession):
     link = _get_link(db, token)
     if link.scope != "comment":

@@ -13,6 +13,9 @@ from typing import Annotated, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from .design_form import DesignForm
+from .source_component_coverage import SourceComponentCoverage
+
 Mm = Annotated[float, Field(strict=True, gt=0, description="Linear dimension in mm")]
 Carat = Annotated[float, Field(strict=True, gt=0, description="Weight in ct")]
 
@@ -105,10 +108,111 @@ class Bracelet(StrictModel):
     link_count: Annotated[int, Field(ge=4, le=60)] | None = None  # articulated bracelet
 
 
+class ChainLinkDimensions(StrictModel):
+    """One repeat in an open-link chain, measured as a finished link.
+
+    ``length_mm`` is the outside link length.  The inside dimensions describe
+    the usable opening rather than asking a factory to reverse-engineer it
+    from a generated image.  Figaro chains carry both a standard and a long
+    repeat; the other first-slice open-link families carry one standard repeat.
+    """
+
+    role: Literal["standard", "long"] = "standard"
+    length_mm: Annotated[float, Field(strict=True, ge=0.8, le=40.0)]
+    inside_length_mm: Annotated[float, Field(strict=True, ge=0.2, le=35.0)]
+    inside_width_mm: Annotated[float, Field(strict=True, ge=0.2, le=20.0)]
+
+
+class OpenLinkChainGeometry(StrictModel):
+    construction: Literal["open_link"]
+    chain_width_mm: Annotated[float, Field(strict=True, ge=0.5, le=20.0)]
+    profile_thickness_mm: Annotated[
+        float, Field(strict=True, ge=0.2, le=12.0)
+    ]
+    end_ring_outer_diameter_mm: Annotated[
+        float, Field(strict=True, ge=1.0, le=20.0)
+    ]
+    link_thickness_mm: Annotated[
+        float, Field(strict=True, ge=0.15, le=6.0)
+    ]
+    links_soldered: bool
+    links: Annotated[
+        list[ChainLinkDimensions], Field(min_length=1, max_length=2)
+    ]
+
+
+class StrandedChainGeometry(StrictModel):
+    """Overall and constituent dimensions for rope-like chain families.
+
+    These values control the visual envelope but are not presented as a full
+    fabrication recipe.  A stock/sample or CAD/dimensioned-drawing production
+    reference remains mandatory at factory release.
+    """
+
+    construction: Literal["stranded"]
+    chain_width_mm: Annotated[float, Field(strict=True, ge=0.5, le=20.0)]
+    profile_thickness_mm: Annotated[
+        float, Field(strict=True, ge=0.2, le=12.0)
+    ]
+    end_ring_outer_diameter_mm: Annotated[
+        float, Field(strict=True, ge=1.0, le=20.0)
+    ]
+    strand_wire_diameter_mm: Annotated[
+        float, Field(strict=True, ge=0.1, le=4.0)
+    ]
+    strand_count: Annotated[int, Field(ge=2, le=32)]
+
+
+class SmoothChainGeometry(StrictModel):
+    """Finished profile for plate-built smooth chains such as snake chain."""
+
+    construction: Literal["smooth_plate"]
+    chain_width_mm: Annotated[float, Field(strict=True, ge=0.5, le=20.0)]
+    profile_thickness_mm: Annotated[
+        float, Field(strict=True, ge=0.2, le=12.0)
+    ]
+    end_ring_outer_diameter_mm: Annotated[
+        float, Field(strict=True, ge=1.0, le=20.0)
+    ]
+    plate_thickness_mm: Annotated[
+        float, Field(strict=True, ge=0.05, le=3.0)
+    ]
+
+
+ChainGeometry = Annotated[
+    OpenLinkChainGeometry | StrandedChainGeometry | SmoothChainGeometry,
+    Field(discriminator="construction"),
+]
+
+
+class ChainProduction(StrictModel):
+    """How the factory obtains the exact chain represented by the spec.
+
+    A style name plus a few dimensions is not a complete rope/snake recipe.
+    Stock chains therefore name a supplier/sample; custom chains name the
+    dimensioned drawing or CAD record that is authoritative for construction.
+    """
+
+    mode: Literal["stock", "custom"]
+    reference_kind: Literal[
+        "supplier_sku", "approved_sample", "dimensioned_drawing", "cad_asset"
+    ]
+    reference: Annotated[str, Field(min_length=1, max_length=200)]
+
+
 class Chain(StrictModel):
     style: str  # vocabulary findings.chain_styles id
     length_mm: Annotated[float, Field(strict=True, ge=300, le=900)]
     clasp: str  # vocabulary findings.clasp_types id
+    # Additive and nullable so historical JSON remains readable.  New trusted
+    # factory release requires both records through chain_factory_blockers().
+    geometry: ChainGeometry | None = None
+    production: ChainProduction | None = None
+    # Whether the carrier must physically pass through the bail or is joined
+    # at fixed points.  Bail-clearance validation is valid only for the first.
+    pendant_connection: Literal[
+        "slides_through_bail", "fixed_to_bail", "split_chain"
+    ] | None = None
 
 
 class Pendant(StrictModel):
@@ -158,6 +262,28 @@ class Composition(StrictModel):
         default_factory=list)
 
 
+class DimensionProvenance(StrictModel):
+    """How one numeric factory dimension entered the immutable record.
+
+    The dictionary key on :class:`Spec` is the canonical dotted field path,
+    for example ``stone.dimensions_mm.length`` or ``band.width_mm``.  An
+    estimate is useful as a prototyping starting point, but is never silently
+    promoted to a measured value.  A designer adjustment creates a new spec
+    version with ``designer_confirmed`` provenance.
+    """
+
+    status: Literal["designer_confirmed", "estimated_from_reference"]
+    method: Literal[
+        "designer_input",
+        "reference_vision",
+        "scaled_reference",
+        "nominal_reference",
+    ]
+    source: Annotated[str, Field(min_length=1, max_length=160)]
+    confidence: Annotated[float, Field(ge=0, le=1)] | None = None
+    note: Annotated[str, Field(max_length=500)] | None = None
+
+
 class Spec(StrictModel):
     schema_version: Literal[1]
     design_id: str
@@ -180,3 +306,10 @@ class Spec(StrictModel):
     composition: Composition | None = None
     side_stones: list[Stone] = Field(default_factory=list)
     notes_to_factory: str | None = None
+    dimension_provenance: dict[str, DimensionProvenance] = Field(
+        default_factory=dict)
+    design_form: DesignForm = Field(default_factory=DesignForm)
+    # ``None`` means the immutable record predates explicit source-component
+    # accounting.  New imported-source compilers attach a non-empty contract;
+    # legacy database history remains readable without guessed backfills.
+    source_component_coverage: SourceComponentCoverage | None = None

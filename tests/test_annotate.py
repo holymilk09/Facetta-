@@ -67,6 +67,44 @@ class TestResolveTarget:
         assert resolve_target(spec, Annotation(section="metal", instruction="x")) == ("metal", None)
         assert resolve_target(spec, Annotation(section="band", instruction="x")) == ("band", None)
 
+    def test_full_side_stone_inventory_is_an_explicit_collection_target(self):
+        spec = Spec.model_validate(RUBY)
+        assert resolve_target(
+            spec,
+            Annotation(
+                section="side_stones",
+                instruction="remove the outer halo and add two shoulder stones",
+            ),
+        ) == ("side_stones", None)
+
+    @pytest.mark.parametrize(
+        "instruction",
+        (
+            "change the center stone shape to emerald cut",
+            "make the center a marquise",
+            "use a pear silhouette",
+        ),
+    )
+    def test_center_shape_change_includes_required_setting_adaptation(
+            self, instruction):
+        spec = Spec.model_validate(RUBY)
+        assert resolve_target(
+            spec,
+            Annotation(ref="A", instruction=instruction),
+        ) == ("stone_assembly", None)
+
+    def test_color_wording_does_not_accidentally_become_a_shape_change(self):
+        spec = Spec.model_validate(RUBY)
+        # The word "around" contains "round" but is not a request for a
+        # round-cut stone. Shape detection must use complete words.
+        assert resolve_target(
+            spec,
+            Annotation(
+                section="stone",
+                instruction="make the color around the center more saturated",
+            ),
+        ) == ("stone", None)
+
     def test_unresolvable_annotation_raises(self):
         spec = Spec.model_validate(RUBY)
         with pytest.raises(AnnotationUnresolved):
@@ -115,6 +153,55 @@ class TestScopeGuard:
         assert any("side_stones[0].count" in c for c in changed)
         assert any("side_stones[1]" in i for i in ignored)
         assert any("stone" in i for i in ignored)
+
+    def test_full_side_stone_inventory_can_add_and_remove_groups_only(self):
+        current = Spec.model_validate(RUBY)
+        proposed = copy.deepcopy(RUBY)
+        proposed["side_stones"] = [
+            {**proposed["side_stones"][0], "count": 10},
+            {
+                **proposed["side_stones"][1],
+                "count": 4,
+                "position": "shoulder_accent",
+            },
+        ]
+        proposed["metal"]["material"] = "gold"          # OUT of scope
+        proposed["metal"]["karat"] = 18
+        proposed["band"]["width_mm"] = 3.5             # OUT of scope
+        edited = Spec.model_validate(proposed)
+
+        guarded, changed, ignored = scope_guard(
+            current, ("side_stones", None), edited)
+
+        assert guarded.side_stones == edited.side_stones
+        assert len(guarded.side_stones) == 2
+        assert guarded.metal == current.metal
+        assert guarded.band == current.band
+        assert any("side_stones" in path for path in changed)
+        assert any("metal" in path for path in ignored)
+        assert any("band.width_mm" in path for path in ignored)
+
+    def test_center_shape_scope_keeps_only_stone_and_setting(self):
+        current = Spec.model_validate(RUBY)
+        proposed = copy.deepcopy(RUBY)
+        proposed["stone"]["cut"] = "emerald_cut"
+        proposed["setting"]["style"] = "4_prong_cathedral"
+        proposed["setting"]["gallery_height_mm"] = 5.4
+        proposed["band"]["width_mm"] = 3.0              # OUT of scope
+        proposed["metal"]["finish"] = "satin"          # OUT of scope
+        edited = Spec.model_validate(proposed)
+
+        guarded, changed, ignored = scope_guard(
+            current, ("stone_assembly", None), edited)
+
+        assert guarded.stone == edited.stone
+        assert guarded.setting == edited.setting
+        assert guarded.band == current.band
+        assert guarded.metal == current.metal
+        assert any("stone.cut" in path for path in changed)
+        assert any("setting" in path for path in changed)
+        assert any("band.width_mm" in path for path in ignored)
+        assert any("metal.finish" in path for path in ignored)
 
 
 def _mock_plan(monkeypatch, result: EditResult):

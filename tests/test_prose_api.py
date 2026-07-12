@@ -1,6 +1,5 @@
 import copy
 
-import pytest
 from fastapi.testclient import TestClient
 
 import facetta.prose as prose_layer

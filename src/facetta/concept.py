@@ -27,9 +27,10 @@ from pydantic import BaseModel, ConfigDict
 
 from facetta.render import RenderUnavailable, generate_image
 from facetta.spec import (
-    Band, Drop, Metal, RingSize, Setting, Spec, Stone, StoneColor,
+    Band, Chain, Drop, Metal, Pendant, RingSize, Setting, Spec, Stone, StoneColor,
     StoneDimensions,
 )
+from facetta.media import sniff_media_type
 from facetta.validation import (
     HALO_MARGIN_MM, STONE_GAP_MM, _surround_fit, validate_spec,
 )
@@ -82,6 +83,12 @@ class DesignRead(BaseModel):
     metal_material: str = "platinum"
     metal_color: str | None = None
     setting_style: str = "prong"     # how the centre is held (see _SETTING_MAP)
+    main_stone_count: int = 1
+    main_stone_position: str = "center"
+    accent_species: str | None = None
+    accent_cut: str | None = None
+    accent_count: int = 0
+    chain_style: str | None = None
 
 
 class ConceptInvalid(Exception):
@@ -137,13 +144,22 @@ metal_material (pick one): {metals}
 setting_style (pick one): bezel, semi_bezel, prong_4, prong_6, v_prong, tension
 
 Return a JSON object exactly matching:
-{{"jewelry_type": "ring"|"pendant"|"earring", "halo": true|false,
+{{"jewelry_type": "ring"|"pendant"|"necklace"|"earring", "halo": true|false,
   "species": id, "cut": id, "center_length_mm": number, "center_width_mm": number,
   "metal_material": id, "metal_color": "yellow"|"white"|"rose"|null,
-  "setting_style": id}}
+  "setting_style": id, "main_stone_count": integer,
+  "main_stone_position": "center"|"halo"|"vine_leaves"|"stations"|"drop",
+  "accent_species": id|null, "accent_cut": id|null,
+  "accent_count": integer, "chain_style": "cable"|"curb"|"figaro"|"rope"|"snake"|null}}
 
-center_length_mm/center_width_mm are your best estimate of the main stone in
-millimetres (a typical cocktail-ring centre is 8-13 mm). halo=true only if a
+First identify the jewelry category from the whole silhouette and honor an
+explicit category in the designer brief when the image agrees. Never turn a
+necklace, pendant chain, bracelet, or earring into a ring merely because it has
+gemstones. center_length_mm/center_width_mm are your best estimate of ONE
+representative main stone in millimetres. main_stone_count is the exact visible
+count of that repeated main-stone group, not the total of all gems. Accent fields
+describe one visually distinct secondary gemstone group; use null/0 when none
+is visible. chain_style is only for a visible necklace/pendant carrier. halo=true only if a
 ring of small stones encircles the centre. setting_style is how the centre
 stone is held: 'bezel' if a continuous metal rim wraps the whole girdle,
 'semi_bezel' if metal wraps only two sides, otherwise the claw count you see
@@ -154,7 +170,7 @@ the JSON."""
 def read_design(image_bytes: bytes, brief: str = "",
                 vocab: Vocabulary | None = None) -> DesignRead:
     """Vision reads the concept into a sparse, controlled-vocabulary spec.
-    Uses xAI (Grok) vision by default; falls back to Claude if configured."""
+    Uses xAI (Grok) Vision; deterministic completion owns physical values."""
     import base64
 
     vocab = vocab or get_vocabulary()
@@ -163,7 +179,7 @@ def read_design(image_bytes: bytes, brief: str = "",
         cuts=", ".join(vocab.cut_ids()),
         metals=", ".join(m["id"] for m in vocab.metals()))
     b64 = base64.b64encode(image_bytes).decode()
-    media = "image/jpeg" if image_bytes[:3] == b"\xff\xd8\xff" else "image/png"
+    media = sniff_media_type(image_bytes)
 
     key = _provider_key("XAI_KEY")
     if not key:
@@ -219,6 +235,8 @@ def complete_design(read: DesignRead, brief: str = "",
     vocab = vocab or get_vocabulary()
     if read.jewelry_type == "earring":
         return _complete_earring(read, brief, vocab)
+    if read.jewelry_type == "necklace":
+        return _complete_necklace(read, brief, vocab)
     corrections: list[str] = []
 
     cut = _CUT_MAP.get(read.cut, read.cut)
@@ -316,6 +334,128 @@ def complete_design(read: DesignRead, brief: str = "",
         applied = _apply_corrections(spec, result.issues, corrections)
         if not applied:
             break
+    return spec, corrections
+
+
+def _complete_necklace(
+    read: DesignRead,
+    brief: str,
+    vocab: Vocabulary,
+) -> tuple[Spec, list[str]]:
+    """Complete a visible pendant-necklace read without coercing it to a ring.
+
+    Dimensions remain reviewable estimates. Chain manufacturing geometry and
+    production references are deliberately absent until the designer supplies
+    them, so this draft cannot become factory-ready by convention alone.
+    """
+    corrections: list[str] = []
+    species = read.species if vocab.species(read.species) else "diamond"
+    cut = read.cut if vocab.cut(read.cut) else _CUT_MAP.get(read.cut, "oval_brilliant")
+    count = max(1, min(int(read.main_stone_count), 512))
+    length = max(float(read.center_length_mm), float(read.center_width_mm))
+    width = min(float(read.center_length_mm), float(read.center_width_mm))
+    depth = round(width * _DEPTH_FRAC.get(cut, 0.60), 1)
+    carat, _ = _round_stone(vocab, species, cut, width, length, depth)
+    main = Stone(
+        species=species,
+        cut=cut,
+        carat=max(carat, 0.001),
+        dimensions_mm=StoneDimensions(
+            length=length, width=width, depth=depth),
+        color=_species_color(vocab, species),
+        count=count,
+        position=(read.main_stone_position or "pendant"),
+    )
+    corrections.append(
+        f"main necklace group recorded as {count} {cut} {species} stones; "
+        "all dimensions remain reference estimates"
+    )
+
+    side_stones: list[Stone] = []
+    if read.accent_species and read.accent_count > 0:
+        accent_species = (
+            read.accent_species
+            if vocab.species(read.accent_species) else "diamond"
+        )
+        accent_cut = (
+            read.accent_cut
+            if read.accent_cut and vocab.cut(read.accent_cut)
+            else "round_brilliant"
+        )
+        accent_width = max(1.0, round(width * 0.28, 1))
+        accent_depth = round(
+            accent_width * _DEPTH_FRAC.get(accent_cut, 0.61), 2)
+        accent_carat, _ = _round_stone(
+            vocab,
+            accent_species,
+            accent_cut,
+            accent_width,
+            accent_width,
+            accent_depth,
+        )
+        side_stones.append(Stone(
+            species=accent_species,
+            cut=accent_cut,
+            carat=max(accent_carat, 0.001),
+            dimensions_mm=StoneDimensions(
+                length=accent_width,
+                width=accent_width,
+                depth=accent_depth,
+            ),
+            color=_species_color(vocab, accent_species),
+            count=max(1, min(int(read.accent_count), 512)),
+            position="vine_accents",
+        ))
+
+    material = read.metal_material if any(
+        metal["id"] == read.metal_material for metal in vocab.metals()
+    ) else "platinum"
+    metal = (
+        Metal(
+            material="gold",
+            karat=18,
+            color=read.metal_color or "yellow",
+            finish="high_polish",
+        )
+        if material == "gold"
+        else Metal(material=material, finish="high_polish")
+    )
+    chain_styles = {str(item["id"]) for item in vocab.chain_styles()}
+    chain_style = read.chain_style if read.chain_style in chain_styles else "cable"
+    if chain_style != read.chain_style:
+        corrections.append(
+            "carrier chain style was not visually reliable and defaults to "
+            "cable for designer correction"
+        )
+    spec = Spec(
+        schema_version=1,
+        design_id="dsn_concept",
+        version=1,
+        created_by="usr_pending",
+        created_at="1970-01-01T00:00:00Z",
+        jewelry_type="necklace",
+        template="cluster_pendant",
+        mode="pro",
+        stone=main,
+        side_stones=side_stones,
+        setting=Setting(style="prong_cluster", prong_count=4, prong_tip_mm=0.8),
+        metal=metal,
+        pendant=Pendant(
+            bail_inner_diameter_mm=3.0,
+            bail_height_mm=5.0,
+        ),
+        chain=Chain(
+            style=chain_style,
+            length_mm=450.0,
+            clasp="lobster",
+        ),
+        notes_to_factory=(
+            f"Necklace draft read from visual reference: “{brief}”. Stone, "
+            "pendant, chain length, clasp, setting, and all dimensions require "
+            "designer review. Exact chain geometry, pendant connection, and a "
+            "production reference remain intentionally unset."
+        ),
+    )
     return spec, corrections
 
 

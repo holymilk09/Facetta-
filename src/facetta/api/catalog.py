@@ -1,0 +1,1034 @@
+"""Persisted, catalog-directed revisions for trusted ring/necklace projects."""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Annotated, Literal
+
+from fastapi import APIRouter, Depends
+from fastapi.responses import JSONResponse, Response
+from pydantic import BaseModel, ConfigDict, Field
+from sqlalchemy import select
+from sqlalchemy.orm import Session
+
+from facetta.api.error_mapping import image_agent_error_response
+from facetta.api.projects import ProjectDetail, project_chain, project_detail
+from facetta.catalog_preview_candidates import (
+    CatalogPreviewUnavailable,
+    discard_catalog_preview_candidate,
+    get_catalog_preview_candidate,
+    store_catalog_preview_candidate,
+)
+from facetta.chain_geometry import chain_factory_blockers
+from facetta.component_catalog import (
+    CatalogSelectionResult,
+    CatalogSelectionError,
+    ComponentCatalogOption,
+    apply_catalog_selection,
+    get_component_catalog,
+    get_component_catalog_descriptor,
+)
+from facetta.db import DesignVersion, ImageAsset, Project, get_db
+from facetta.dimension_provenance import confirm_designer_dimension_subtree
+from facetta.image_agent import (
+    ImageAgentError,
+    ImageAgentResult,
+    ImageOperation,
+    JewelryImageAgent,
+    build_image_plan,
+)
+from facetta.image_run_store import (
+    persist_image_agent_failure,
+    persist_image_agent_result,
+)
+from facetta.json_types import JsonObject, JsonValue
+from facetta.media import sniff_media_type
+from facetta.project_backbone import is_primary_revision
+from facetta.spec import ChainGeometry, ChainProduction, Spec
+from facetta.trusted_revision import (
+    TrustedSpecRevisionError,
+    WarningRevisionError,
+    accept_catalog_preview_revision,
+    persist_spec_image_revision,
+)
+from facetta.validation import validate_spec
+from facetta.vocabulary import get_vocabulary
+from facetta.warning_candidates import store_markup_warning_candidate
+
+router = APIRouter(prefix="/assets", tags=["assets"])
+preview_router = APIRouter(tags=["assets"])
+DbSession = Annotated[Session, Depends(get_db)]
+
+
+class CatalogApplyRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    component_path: Annotated[str, Field(min_length=1, max_length=80)]
+    option_id: Annotated[str, Field(min_length=1, max_length=80)]
+    expected_design_version: Annotated[int, Field(ge=1)]
+    created_by: Annotated[str, Field(min_length=1, max_length=32)]
+    variant: Annotated[int, Field(ge=0, le=100)] = 0
+    # A quick center-stone palette is scoped to one species. Supplying this
+    # field with component_path=stone.color changes material identity and
+    # controlled color together, so the immutable revision never carries a
+    # color term from the previous species.
+    stone_species: Annotated[str | None, Field(min_length=1, max_length=80)] = None
+    # Required only for chain.style. A visual family selection cannot invent
+    # its fabrication facts or silently retain a source-style stock record.
+    chain_geometry: ChainGeometry | None = None
+    chain_production: ChainProduction | None = None
+
+
+class CatalogPreviewAcceptRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    expected_design_version: Annotated[int, Field(ge=1)]
+    created_by: Annotated[str, Field(min_length=1, max_length=32)]
+
+
+class CatalogSpecChange(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    path: str
+    before: JsonValue
+    after: JsonValue
+    label: str
+
+
+class CatalogWarningCandidate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    run_id: str
+    candidate_id: str
+    preview_url: str
+    operation: Literal["LOCAL_EDIT"] = "LOCAL_EDIT"
+    requested_change: str
+
+
+class CatalogPreviewCandidateSummary(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    run_id: str
+    candidate_id: str
+    preview_url: str
+    accept_url: str
+    discard_url: str
+    verdict: Literal["pass", "warn"]
+    expires_in_seconds: int = 7200
+
+
+class CatalogPreviewResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    status: Literal["preview_ready", "review_required"]
+    component_path: str
+    option_id: str
+    isolation_target: str
+    source_asset_id: str
+    design_version: int
+    image_run_id: str
+    spec_change: tuple[CatalogSpecChange, ...]
+    next_spec: Spec
+    qa: JsonObject
+    routing: JsonObject
+    project: ProjectDetail
+    candidate: CatalogPreviewCandidateSummary
+
+
+class CatalogPreviewAcceptResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    status: Literal["accepted"] = "accepted"
+    asset_id: str
+    design_version: int
+    image_run_id: str
+    spec_change: tuple[CatalogSpecChange, ...]
+    project: ProjectDetail
+
+
+class CatalogApplyResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    status: Literal["accepted", "review_required"]
+    component_path: str
+    option_id: str
+    isolation_target: str
+    asset_id: str | None = None
+    design_version: int
+    image_run_id: str
+    spec_change: tuple[CatalogSpecChange, ...]
+    next_spec: Spec | None = None
+    qa: JsonObject
+    routing: JsonObject
+    project: ProjectDetail
+    warning_candidate: CatalogWarningCandidate | None = None
+
+
+class CatalogApplyError(RuntimeError):
+    def __init__(
+        self,
+        code: str,
+        detail: str,
+        *,
+        status_code: int = 422,
+        category: str = "validation",
+        context: JsonObject | None = None,
+    ) -> None:
+        super().__init__(detail)
+        self.code = code
+        self.detail = detail
+        self.status_code = status_code
+        self.category = category
+        self.context = context or {}
+
+
+@dataclass(frozen=True)
+class _CatalogContext:
+    asset: ImageAsset
+    project: Project
+    design_id: str
+    design_version: int
+    spec: Spec
+
+
+@dataclass(frozen=True)
+class _PreparedCatalogRevision:
+    context: _CatalogContext
+    option: ComponentCatalogOption
+    selection: CatalogSelectionResult
+    instruction: str
+
+
+def _trusted_image_agent() -> JewelryImageAgent:
+    return JewelryImageAgent()
+
+
+def _error_response(error: CatalogApplyError) -> JSONResponse:
+    return JSONResponse(status_code=error.status_code, content={
+        "code": error.code,
+        "category": error.category,
+        "detail": error.detail,
+        **error.context,
+    })
+
+
+def _catalog_context(
+    db: Session,
+    asset_id: str,
+    expected_design_version: int,
+) -> _CatalogContext:
+    asset = db.get(ImageAsset, asset_id)
+    if asset is None:
+        raise CatalogApplyError(
+            "asset_not_found",
+            f"unknown asset {asset_id!r}",
+            status_code=404,
+        )
+    project = db.get(Project, asset.root_id)
+    root = db.get(ImageAsset, asset.root_id)
+    if project is None or root is None or root.design_id is None:
+        raise CatalogApplyError(
+            "project_design_unavailable",
+            "catalog changes require a persisted, design-linked project",
+            status_code=409,
+            category="conflict",
+        )
+    primary = [
+        candidate for candidate in project_chain(db, project.root_id)
+        if is_primary_revision(candidate)
+    ]
+    active = primary[-1] if primary else None
+    if active is None or active.id != asset.id:
+        raise CatalogApplyError(
+            "stale_asset_revision",
+            "catalog changes must start from the active primary visual; reload first",
+            status_code=409,
+            category="stale_version",
+            context={"current_asset_id": active.id if active else None},
+        )
+    latest = db.execute(
+        select(DesignVersion)
+        .where(DesignVersion.design_id == root.design_id)
+        .order_by(DesignVersion.version.desc())
+    ).scalars().first()
+    if latest is None:
+        raise CatalogApplyError(
+            "spec_version_unavailable",
+            "the linked design has no immutable specification version",
+            status_code=404,
+        )
+    if (latest.version != expected_design_version
+            or asset.design_version != expected_design_version):
+        raise CatalogApplyError(
+            "stale_design_version",
+            "the image or specification changed while this selection was open; reload first",
+            status_code=409,
+            category="stale_version",
+            context={
+                "expected_design_version": expected_design_version,
+                "current_design_version": latest.version,
+                "asset_design_version": asset.design_version,
+            },
+        )
+    try:
+        spec = Spec.model_validate(latest.spec)
+    except Exception as exc:
+        raise CatalogApplyError(
+            "spec_invalid",
+            "the active specification cannot be read safely",
+        ) from exc
+    validated = validate_spec(spec, get_vocabulary())
+    if not validated.ok:
+        raise CatalogApplyError(
+            "spec_invalid",
+            "the active specification does not pass validation",
+            context={
+                "issues": [issue.as_detail() for issue in validated.issues],
+            },
+        )
+    # Validation is a gate, never a catalog author. Preserve the exact stored
+    # spec as the sole input to the deterministic selection compiler.
+    return _CatalogContext(
+        asset=asset,
+        project=project,
+        design_id=root.design_id,
+        design_version=latest.version,
+        spec=spec,
+    )
+
+
+def _catalog_option(
+    component_path: str,
+    option_id: str,
+    *,
+    stone_species: str | None = None,
+) -> ComponentCatalogOption:
+    options = get_component_catalog(
+        component_path,
+        stone_species=stone_species,
+    )
+    option = next((candidate for candidate in options
+                   if candidate.id == option_id), None)
+    if option is None:
+        raise CatalogSelectionError(
+            component_path,
+            option_id,
+            tuple(candidate.id for candidate in options),
+        )
+    return option
+
+
+def _instruction(
+    component_path: str,
+    option: ComponentCatalogOption,
+) -> str:
+    geometry = "; ".join(option.visual_geometry)
+    return (
+        f"Apply the exact catalog selection {component_path}={option.id} "
+        f"({option.display}). Required visible geometry: {geometry}. "
+        "Change only the isolated component and preserve every frozen fact."
+    )
+
+
+_CHAIN_CHANGE_LABELS = {
+    "chain.style": "chain style",
+    "chain.geometry.construction": "chain construction",
+    "chain.geometry.chain_width_mm": "chain width",
+    "chain.geometry.profile_thickness_mm": "chain profile thickness",
+    "chain.geometry.end_ring_outer_diameter_mm": "end ring outside diameter",
+    "chain.geometry.link_thickness_mm": "link thickness",
+    "chain.geometry.links_soldered": "links soldered",
+    "chain.geometry.strand_wire_diameter_mm": "strand wire diameter",
+    "chain.geometry.strand_count": "strand count",
+    "chain.geometry.plate_thickness_mm": "plate thickness",
+    "chain.production.mode": "chain production mode",
+    "chain.production.reference_kind": "chain production reference type",
+    "chain.production.reference": "chain production reference",
+}
+
+
+def _chain_change_label(path: str) -> str:
+    known = _CHAIN_CHANGE_LABELS.get(path)
+    if known is not None:
+        return known
+    if path.startswith("chain.geometry.links["):
+        leaf = path.rsplit(".", 1)[-1]
+        labels = {
+            "role": "link role",
+            "length_mm": "link length",
+            "inside_length_mm": "link inside length",
+            "inside_width_mm": "link inside width",
+        }
+        return labels.get(leaf, leaf.replace("_", " "))
+    return path.replace("chain.", "chain ").replace("_", " ")
+
+
+def _raw_chain_changes(before: Spec, after: Spec) -> tuple[JsonObject, ...]:
+    """Return exact raw leaf changes for the chain target record."""
+    out: list[JsonObject] = []
+
+    def walk(left: JsonValue, right: JsonValue, path: str) -> None:
+        if isinstance(left, dict) or isinstance(right, dict):
+            old = left if isinstance(left, dict) else {}
+            new = right if isinstance(right, dict) else {}
+            for key in sorted(set(old) | set(new)):
+                child = f"{path}.{key}" if path else key
+                walk(old.get(key), new.get(key), child)
+            return
+        if isinstance(left, list) or isinstance(right, list):
+            old = left if isinstance(left, list) else []
+            new = right if isinstance(right, list) else []
+            for index in range(max(len(old), len(new))):
+                old_value = old[index] if index < len(old) else None
+                new_value = new[index] if index < len(new) else None
+                walk(old_value, new_value, f"{path}[{index}]")
+            return
+        if left == right:
+            return
+        out.append({
+            "path": path,
+            "before": left,
+            "after": right,
+            "label": _chain_change_label(path),
+        })
+
+    before_chain = before.model_dump(mode="json")["chain"]
+    after_chain = after.model_dump(mode="json")["chain"]
+    walk(before_chain, after_chain, "chain")
+    return tuple(out)
+
+
+def _prepare_chain_selection(
+    source: Spec,
+    request: CatalogApplyRequest,
+    option: ComponentCatalogOption,
+) -> CatalogSelectionResult:
+    chain = source.chain
+    if source.jewelry_type != "necklace" or chain is None:
+        raise CatalogApplyError(
+            "catalog_not_applicable",
+            "chain.style requires a persisted necklace with a carrier chain",
+        )
+    if option.id == chain.style:
+        raise CatalogApplyError(
+            "catalog_selection_no_change",
+            "the active specification already has this exact chain style",
+        )
+    missing = [
+        name for name, value in (
+            ("chain_geometry", request.chain_geometry),
+            ("chain_production", request.chain_production),
+        )
+        if value is None
+    ]
+    if missing:
+        raise CatalogApplyError(
+            "chain_target_data_required",
+            "a chain-style selection requires designer-confirmed target "
+            "geometry and an exact stock/sample or custom drawing/CAD record",
+            context={
+                "missing_fields": missing,
+                "required_fields": ["chain_geometry", "chain_production"],
+            },
+        )
+    if chain.pendant_connection is None:
+        raise CatalogApplyError(
+            "chain_connection_required",
+            "confirm how the chain connects to the pendant before changing style",
+            context={"required_field": "chain.pendant_connection"},
+        )
+    target_geometry = request.chain_geometry
+    target_production = request.chain_production
+    assert target_geometry is not None and target_production is not None
+    if (chain.production is not None
+            and target_production == chain.production
+            and target_production.reference_kind
+            in {"supplier_sku", "approved_sample"}):
+        raise CatalogApplyError(
+            "chain_target_production_reused",
+            "a source-style supplier SKU or approved sample cannot become the "
+            "target style's production reference; select the exact target item",
+            context={
+                "source_style": chain.style,
+                "target_style": option.id,
+                "reference_kind": target_production.reference_kind,
+            },
+        )
+
+    raw = source.model_dump(mode="json")
+    target_chain = raw["chain"]
+    assert isinstance(target_chain, dict)
+    target_chain["geometry"] = target_geometry.model_dump(mode="json")
+    target_chain["production"] = target_production.model_dump(mode="json")
+    staged = Spec.model_validate(raw)
+    try:
+        selected = apply_catalog_selection(
+            staged,
+            component_path="chain.style",
+            option_id=option.id,
+        )
+    except CatalogSelectionError as exc:
+        raise CatalogApplyError(
+            "chain_target_incompatible",
+            str(exc),
+            context={
+                "source_style": chain.style,
+                "target_style": option.id,
+                "target_construction": target_geometry.construction,
+            },
+        ) from exc
+
+    confirmed = confirm_designer_dimension_subtree(
+        selected.spec,
+        prefix="chain.geometry",
+        source=(
+            f"designer-confirmed chain catalog target by {request.created_by}"
+        ),
+        note="Confirmed with the target chain manufacturing record.",
+    )
+    blockers = chain_factory_blockers(confirmed)
+    if blockers:
+        raise CatalogApplyError(
+            "chain_target_incomplete",
+            "the target chain record is not manufacturing-complete",
+            context={
+                "factory_blockers": [
+                    blocker.model_dump(mode="json") for blocker in blockers
+                ],
+            },
+        )
+    changes = _raw_chain_changes(source, confirmed)
+    if not changes:
+        raise CatalogApplyError(
+            "catalog_selection_no_change",
+            "the target chain record matches the active specification",
+        )
+    return selected.model_copy(update={
+        "spec": confirmed,
+        "spec_change": changes,
+    })
+
+
+def _prepare_catalog_revision(
+    db: Session,
+    active_asset_id: str,
+    request: CatalogApplyRequest,
+) -> _PreparedCatalogRevision:
+    """Compile one exact catalog delta without calling an image provider."""
+    context = _catalog_context(
+        db, active_asset_id, request.expected_design_version)
+    descriptor = get_component_catalog_descriptor(request.component_path)
+    if descriptor.image_agent_status != "catalog_ready":
+        raise CatalogApplyError(
+            "catalog_category_pending",
+            f"{request.component_path} is cataloged but its category-specific "
+            "image QA and routing are not yet released",
+            status_code=409,
+            category="capability",
+            context={
+                "status": "category_pending",
+                "component_path": request.component_path,
+                "applicable_jewelry_types": list(
+                    descriptor.applicable_jewelry_types),
+            },
+        )
+    if context.spec.jewelry_type not in descriptor.applicable_jewelry_types:
+        raise CatalogApplyError(
+            "catalog_not_applicable",
+            f"{request.component_path} is not applicable to this "
+            f"{context.spec.jewelry_type}",
+        )
+    if (request.stone_species is not None
+            and request.component_path != "stone.color"):
+        raise CatalogApplyError(
+            "stone_species_not_applicable",
+            "stone_species is accepted only with component_path=stone.color",
+        )
+    palette_species = (
+        request.stone_species or context.spec.stone.species
+        if request.component_path == "stone.color" else None
+    )
+    option = _catalog_option(
+        request.component_path,
+        request.option_id,
+        stone_species=palette_species,
+    )
+    if request.component_path == "chain.style":
+        selection = _prepare_chain_selection(context.spec, request, option)
+    else:
+        if (request.chain_geometry is not None
+                or request.chain_production is not None):
+            raise CatalogApplyError(
+                "chain_target_data_not_applicable",
+                "chain target manufacturing data is accepted only with "
+                "component_path=chain.style",
+            )
+        selection = apply_catalog_selection(
+            context.spec,
+            component_path=request.component_path,
+            option_id=request.option_id,
+            stone_species=palette_species,
+        )
+    if not selection.spec_change:
+        raise CatalogApplyError(
+            "catalog_selection_no_change",
+            "the active specification already has this exact catalog selection",
+        )
+    return _PreparedCatalogRevision(
+        context=context,
+        option=option,
+        selection=selection,
+        instruction=_instruction(request.component_path, option),
+    )
+
+
+def _catalog_image_plan(
+    prepared: _PreparedCatalogRevision,
+    *,
+    variant: int,
+):
+    context = prepared.context
+    selection = prepared.selection
+    option = prepared.option
+    return build_image_plan(
+        ImageOperation.LOCAL_EDIT,
+        prepared.instruction,
+        spec=selection.spec,
+        source_spec=context.spec,
+        source_image=bytes(context.asset.image),
+        region_description=selection.isolation_target,
+        frozen=(
+            *selection.frozen_facts,
+            "every specification path outside the exact catalog delta",
+            "camera, framing, scale, lighting, and background",
+        ),
+        style_constraints=option.visual_geometry,
+        expected_output=(
+            f"only {option.display} applied inside "
+            f"{selection.isolation_target}"
+        ),
+        variant=variant,
+    )
+
+
+def _quality_payload(result: ImageAgentResult) -> JsonObject:
+    failed = list(result.quality.failed_checks)
+    return {
+        **result.quality.model_dump(mode="json"),
+        "accepted": result.accepted,
+        "review_required": result.review_required,
+        "summary": ("Image checks passed." if result.accepted
+                    else "Image needs explicit designer review."),
+        "failed_checks": [check.code for check in failed],
+        "warnings": [
+            check.message for check in failed
+            if check.severity.value == "warning"
+        ],
+    }
+
+
+def _routing_payload(
+    result: ImageAgentResult,
+    run_id: str | None = None,
+) -> JsonObject:
+    attempts = result.run.attempts
+    return {
+        "attempt_count": len(attempts),
+        "used_retry": len(attempts) > 1,
+        "used_fallback": any(attempt.fallback for attempt in attempts),
+        "cache_hit": any(attempt.cached for attempt in attempts),
+        "run_id": run_id,
+    }
+
+
+def _candidate_drift(result: ImageAgentResult) -> float | None:
+    value = next((
+        check.evidence.get("drift")
+        for check in result.quality.checks
+        if check.code == "outside_mask_drift"
+    ), None)
+    return float(value) if isinstance(value, (int, float)) else None
+
+
+def _catalog_selection_error_response(exc: CatalogSelectionError) -> JSONResponse:
+    return _error_response(CatalogApplyError(
+        "catalog_selection_invalid",
+        str(exc),
+        context={
+            "component_path": exc.component_path,
+            "option_id": exc.option_id,
+            "valid_options": list(exc.valid_options),
+        },
+    ))
+
+
+@router.post(
+    "/{active_asset_id}/catalog/preview",
+    status_code=201,
+    response_model=CatalogPreviewResponse,
+)
+def preview_catalog_revision(
+    active_asset_id: str,
+    request: CatalogApplyRequest,
+    db: DbSession,
+):
+    """Evaluate a catalog change and retain only a temporary candidate.
+
+    Both pass and warning results require an explicit Apply.  The provider and
+    jewelry QA finish before this route stores durable ImageRun evidence; no
+    ImageAsset or DesignVersion is created here.
+    """
+    try:
+        prepared = _prepare_catalog_revision(db, active_asset_id, request)
+    except CatalogApplyError as exc:
+        return _error_response(exc)
+    except CatalogSelectionError as exc:
+        return _catalog_selection_error_response(exc)
+
+    context = prepared.context
+    selection = prepared.selection
+    try:
+        plan = _catalog_image_plan(prepared, variant=request.variant)
+        result = _trusted_image_agent().run(
+            plan,
+            source_image=bytes(context.asset.image),
+        )
+    except ImageAgentError as exc:
+        run_id = None
+        if exc.plan is not None:
+            run_id = persist_image_agent_failure(
+                db,
+                exc.plan,
+                exc,
+                project_root_id=context.project.root_id,
+                source_asset_id=context.asset.id,
+                created_by=request.created_by,
+            )
+        return image_agent_error_response(
+            exc,
+            image_run_id=run_id,
+            extra={
+                "component_path": request.component_path,
+                "option_id": request.option_id,
+            },
+        )
+
+    # LOCAL_EDIT plans with source and target specifications always carry all
+    # three lineage hashes.  Refuse to create an accept-capable candidate if a
+    # future plan compiler ever violates that invariant.
+    if (plan.source_hash is None
+            or plan.source_spec_visual_hash is None
+            or plan.spec_visual_hash is None):
+        return _error_response(CatalogApplyError(
+            "catalog_preview_lineage_incomplete",
+            "the evaluated preview is missing exact source/specification lineage",
+            status_code=500,
+            category="internal",
+        ))
+
+    run_id = persist_image_agent_result(
+        db,
+        result,
+        project_root_id=context.project.root_id,
+        source_asset_id=context.asset.id,
+        created_by=request.created_by,
+        status_override=(
+            "preview_ready" if result.accepted else "review_required"),
+    )
+    qa = _quality_payload(result)
+    routing = _routing_payload(result, run_id)
+    verdict: Literal["pass", "warn"] = (
+        "pass" if result.accepted else "warn")
+    raw_changes: tuple[JsonObject, ...] = tuple(
+        dict(change) for change in selection.spec_change)
+    candidate = store_catalog_preview_candidate(
+        run_id=run_id,
+        verdict=verdict,
+        project_root_id=context.project.root_id,
+        source_asset_id=context.asset.id,
+        expected_active_asset_id=context.asset.id,
+        expected_design_version=context.design_version,
+        source_hash=plan.source_hash,
+        source_spec_visual_hash=plan.source_spec_visual_hash,
+        target_spec_visual_hash=plan.spec_visual_hash,
+        image_bytes=result.image_bytes,
+        media_type=sniff_media_type(result.image_bytes),
+        requested_change=prepared.instruction,
+        region_description=selection.isolation_target,
+        drift=_candidate_drift(result),
+        next_spec=selection.spec,
+        component_path=request.component_path,
+        option_id=request.option_id,
+        spec_change=raw_changes,
+        qa=qa,
+        routing=routing,
+        created_by=request.created_by,
+    )
+    base_url = (
+        f"/image-runs/{run_id}/catalog-candidates/{candidate.candidate_id}"
+    )
+    response = CatalogPreviewResponse(
+        status=("preview_ready" if verdict == "pass" else "review_required"),
+        component_path=request.component_path,
+        option_id=request.option_id,
+        isolation_target=selection.isolation_target,
+        source_asset_id=context.asset.id,
+        design_version=context.design_version,
+        image_run_id=run_id,
+        spec_change=tuple(
+            CatalogSpecChange.model_validate(change)
+            for change in selection.spec_change
+        ),
+        next_spec=selection.spec,
+        qa=qa,
+        routing=routing,
+        project=ProjectDetail.model_validate(
+            project_detail(db, context.project)),
+        candidate=CatalogPreviewCandidateSummary(
+            run_id=run_id,
+            candidate_id=candidate.candidate_id,
+            preview_url=f"{base_url}/image",
+            accept_url=f"{base_url}/accept",
+            discard_url=base_url,
+            verdict=verdict,
+        ),
+    )
+    if verdict == "warn":
+        return JSONResponse(
+            status_code=202,
+            content=response.model_dump(mode="json"),
+        )
+    return response
+
+
+@preview_router.get(
+    "/image-runs/{run_id}/catalog-candidates/{candidate_id}/image")
+def get_catalog_preview_image(run_id: str, candidate_id: str):
+    try:
+        candidate = get_catalog_preview_candidate(run_id, candidate_id)
+    except CatalogPreviewUnavailable as exc:
+        return JSONResponse(status_code=410, content={
+            "code": "catalog_preview_unavailable",
+            "category": "conflict",
+            "detail": str(exc),
+        })
+    return Response(
+        content=candidate.image_bytes,
+        media_type=candidate.media_type,
+        headers={"Cache-Control": "private, no-store"},
+    )
+
+
+@preview_router.delete(
+    "/image-runs/{run_id}/catalog-candidates/{candidate_id}",
+    status_code=204,
+)
+def discard_catalog_preview(run_id: str, candidate_id: str):
+    try:
+        discard_catalog_preview_candidate(run_id, candidate_id)
+    except CatalogPreviewUnavailable as exc:
+        return JSONResponse(status_code=410, content={
+            "code": "catalog_preview_unavailable",
+            "category": "conflict",
+            "detail": str(exc),
+        })
+    return Response(status_code=204)
+
+
+@preview_router.post(
+    "/image-runs/{run_id}/catalog-candidates/{candidate_id}/accept",
+    status_code=201,
+    response_model=CatalogPreviewAcceptResponse,
+)
+def accept_catalog_preview(
+    run_id: str,
+    candidate_id: str,
+    request: CatalogPreviewAcceptRequest,
+    db: DbSession,
+):
+    try:
+        candidate = get_catalog_preview_candidate(run_id, candidate_id)
+        accepted = accept_catalog_preview_revision(
+            db,
+            candidate,
+            expected_design_version=request.expected_design_version,
+            created_by=request.created_by,
+        )
+    except CatalogPreviewUnavailable as exc:
+        return JSONResponse(status_code=410, content={
+            "code": "catalog_preview_unavailable",
+            "category": "conflict",
+            "detail": str(exc),
+        })
+    except WarningRevisionError as exc:
+        return JSONResponse(status_code=exc.status_code, content={
+            "code": exc.code,
+            "category": (
+                "stale_version" if exc.code.startswith("stale_")
+                else "validation" if exc.status_code == 422
+                else "conflict"
+            ),
+            "detail": exc.detail,
+        })
+    project = db.get(Project, candidate.project_root_id)
+    if project is None:
+        return _error_response(CatalogApplyError(
+            "project_not_found",
+            "the accepted catalog preview project is unavailable",
+            status_code=404,
+        ))
+    return CatalogPreviewAcceptResponse(
+        asset_id=accepted.asset_id,
+        design_version=accepted.design_version,
+        image_run_id=run_id,
+        spec_change=tuple(
+            CatalogSpecChange.model_validate(change)
+            for change in candidate.spec_change
+        ),
+        project=ProjectDetail.model_validate(project_detail(db, project)),
+    )
+
+
+@router.post(
+    "/{active_asset_id}/catalog/apply",
+    status_code=201,
+    response_model=CatalogApplyResponse,
+    response_model_exclude_none=True,
+    deprecated=True,
+)
+def apply_catalog_revision(
+    active_asset_id: str,
+    request: CatalogApplyRequest,
+    db: DbSession,
+):
+    """Apply one deterministic catalog choice through the trusted image loop."""
+    try:
+        prepared = _prepare_catalog_revision(db, active_asset_id, request)
+    except CatalogApplyError as exc:
+        return _error_response(exc)
+    except CatalogSelectionError as exc:
+        return _catalog_selection_error_response(exc)
+
+    context = prepared.context
+    selection = prepared.selection
+    instruction = prepared.instruction
+    try:
+        plan = _catalog_image_plan(prepared, variant=request.variant)
+        result = _trusted_image_agent().run(
+            plan,
+            source_image=bytes(context.asset.image),
+        )
+    except ImageAgentError as exc:
+        run_id = None
+        if exc.plan is not None:
+            run_id = persist_image_agent_failure(
+                db,
+                exc.plan,
+                exc,
+                project_root_id=context.project.root_id,
+                source_asset_id=context.asset.id,
+                created_by=request.created_by,
+            )
+        return image_agent_error_response(
+            exc,
+            image_run_id=run_id,
+            extra={
+                "component_path": request.component_path,
+                "option_id": request.option_id,
+            },
+        )
+
+    qa = _quality_payload(result)
+    routing = _routing_payload(result)
+    changes = tuple(CatalogSpecChange.model_validate(change)
+                    for change in selection.spec_change)
+    if result.review_required:
+        run_id = persist_image_agent_result(
+            db,
+            result,
+            project_root_id=context.project.root_id,
+            source_asset_id=context.asset.id,
+            created_by=request.created_by,
+        )
+        routing = _routing_payload(result, run_id)
+        candidate = store_markup_warning_candidate(
+            run_id=run_id,
+            project_root_id=context.project.root_id,
+            source_asset_id=context.asset.id,
+            expected_active_asset_id=context.asset.id,
+            expected_design_version=context.design_version,
+            image_bytes=result.image_bytes,
+            media_type=sniff_media_type(result.image_bytes),
+            operation=ImageOperation.LOCAL_EDIT.value,
+            asset_capability="LOCALIZED_EDIT",
+            requested_change=instruction,
+            region_description=selection.isolation_target,
+            drift=_candidate_drift(result),
+            next_spec=selection.spec,
+            ignored_fields=(),
+            qa=qa,
+            routing=routing,
+            created_by=request.created_by,
+        )
+        response = CatalogApplyResponse(
+            status="review_required",
+            component_path=request.component_path,
+            option_id=request.option_id,
+            isolation_target=selection.isolation_target,
+            design_version=context.design_version,
+            image_run_id=run_id,
+            spec_change=changes,
+            next_spec=selection.spec,
+            qa=qa,
+            routing=routing,
+            project=ProjectDetail.model_validate(
+                project_detail(db, context.project)),
+            warning_candidate=CatalogWarningCandidate(
+                run_id=run_id,
+                candidate_id=candidate.candidate_id,
+                preview_url=(
+                    f"/image-runs/{run_id}/candidates/"
+                    f"{candidate.candidate_id}/image"
+                ),
+                requested_change=instruction,
+            ),
+        )
+        return JSONResponse(
+            status_code=202,
+            content=response.model_dump(mode="json", exclude_none=True),
+        )
+
+    try:
+        persisted = persist_spec_image_revision(
+            db,
+            source_asset=context.asset,
+            expected_design_version=context.design_version,
+            next_spec=selection.spec,
+            image_run=result,
+            instruction=instruction,
+            region=selection.isolation_target,
+            created_by=request.created_by,
+            drift=_candidate_drift(result),
+        )
+    except TrustedSpecRevisionError as exc:
+        return JSONResponse(status_code=exc.status_code, content={
+            "code": exc.code,
+            "category": ("stale_version" if exc.code.startswith("stale_")
+                         else "validation"),
+            "detail": exc.detail,
+        })
+    routing = _routing_payload(result, persisted.image_run_id)
+    return CatalogApplyResponse(
+        status="accepted",
+        component_path=request.component_path,
+        option_id=request.option_id,
+        isolation_target=selection.isolation_target,
+        asset_id=persisted.asset_id,
+        design_version=persisted.design_version,
+        image_run_id=persisted.image_run_id,
+        spec_change=changes,
+        qa=qa,
+        routing=routing,
+        project=ProjectDetail.model_validate(
+            project_detail(db, context.project)),
+    )

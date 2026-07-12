@@ -16,10 +16,11 @@ from __future__ import annotations
 import secrets
 from datetime import datetime, timezone
 from functools import lru_cache
+from threading import Lock
 
 from sqlalchemy import (
-    JSON, DateTime, Float, ForeignKey, Integer, LargeBinary, String, Text,
-    create_engine,
+    JSON, Boolean, CheckConstraint, DateTime, Float, ForeignKey, Index, Integer,
+    LargeBinary, String, Text, create_engine, event, text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.engine import make_url
@@ -29,7 +30,21 @@ from facetta.config import env_value
 
 DEFAULT_DATABASE_URL = "sqlite:///./facetta.db"
 
+_engine_initialization_lock = Lock()
+
 SpecJSON = JSON().with_variant(JSONB(), "postgresql")
+
+MOUNTING_ARTIFACT_SCHEMA_VERSION = "facetta.mounting-view.v1"
+MOUNTING_ARTIFACT_KIND = "mounting_view"
+MOUNTING_ARTIFACT_AUTHORITY_SCOPE = "factory_discussion_only"
+MOUNTING_ARTIFACT_VIEWS = ("plan", "front", "side", "section")
+MOUNTING_HIDDEN_GEOMETRY_STATUSES = (
+    "source_observed",
+    "spec_confirmed",
+    "proposed_designer_confirmation_required",
+    "designer_confirmed_visual_proposal",
+    "unknown",
+)
 
 
 def utcnow() -> datetime:
@@ -115,6 +130,10 @@ class ImageAsset(Base):
     # numbers automatically. Children resolve through their root.
     design_id: Mapped[str | None] = mapped_column(
         String(32), nullable=True, index=True)
+    # The exact immutable spec version represented by this visual revision.
+    # Legacy assets intentionally remain NULL: guessing a historical binding
+    # would turn uncertain provenance into false factory truth.
+    design_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
     capability: Mapped[str] = mapped_column(String(48))  # which mode made it
     instruction: Mapped[str | None] = mapped_column(Text, nullable=True)
     region: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -126,6 +145,92 @@ class ImageAsset(Base):
     created_by: Mapped[str] = mapped_column(String(32), default="usr_pending")
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow)
+
+    # A design may own only one primary asset-chain root. NULL remains allowed
+    # for unlinked/derived assets; the partial index gives new databases a
+    # concurrency-safe guard while the service layer preserves legacy DBs that
+    # may already contain duplicate historical links.
+    __table_args__ = (
+        Index(
+            "uq_image_assets_design_primary_chain",
+            "design_id",
+            unique=True,
+            sqlite_where=text(
+                "design_id IS NOT NULL AND parent_asset_id IS NULL"),
+            postgresql_where=text(
+                "design_id IS NOT NULL AND parent_asset_id IS NULL"),
+        ),
+    )
+
+
+class RevisionComponentMapRecord(Base):
+    """Immutable semantic isolation evidence for one exact visual revision.
+
+    ``map_json`` is validated by ``RevisionComponentMap`` at the service
+    boundary.  The content hash makes accidental serialization drift visible;
+    ``asset_id`` as the primary key enforces exactly one map per raster.
+    """
+
+    __tablename__ = "revision_component_maps"
+
+    asset_id: Mapped[str] = mapped_column(
+        ForeignKey("image_assets.id"), primary_key=True)
+    parent_asset_id: Mapped[str | None] = mapped_column(
+        ForeignKey("image_assets.id"), nullable=True, index=True)
+    map_json: Mapped[dict] = mapped_column(SpecJSON)
+    map_sha256: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow)
+
+    __table_args__ = (
+        CheckConstraint(
+            "length(map_sha256) = 64",
+            name="ck_revision_component_map_hash_length",
+        ),
+    )
+
+
+class ImmutableRevisionComponentMapError(RuntimeError):
+    """Raised when append-only per-revision component evidence is rewritten."""
+
+
+@event.listens_for(RevisionComponentMapRecord, "before_update")
+def _reject_revision_component_map_update(
+    _mapper, _connection, _target,
+) -> None:
+    raise ImmutableRevisionComponentMapError(
+        "revision component maps are immutable; map the child revision"
+    )
+
+
+@event.listens_for(RevisionComponentMapRecord, "before_delete")
+def _reject_revision_component_map_delete(
+    _mapper, _connection, _target,
+) -> None:
+    raise ImmutableRevisionComponentMapError(
+        "revision component maps are immutable and cannot be deleted"
+    )
+
+
+class DesignFamily(Base):
+    """One Studio design direction with independently versioned project variants."""
+
+    __tablename__ = "design_families"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    owner: Mapped[str] = mapped_column(String(32), index=True)
+    title: Mapped[str] = mapped_column(String(200))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow)
+
+    __table_args__ = (
+        CheckConstraint(
+            "length(trim(title)) > 0",
+            name="ck_design_family_title",
+        ),
+    )
 
 
 class Project(Base):
@@ -146,10 +251,326 @@ class Project(Base):
         String(120), nullable=True, index=True)  # client / folder; None = Unfiled
     title: Mapped[str] = mapped_column(String(200))
     tags: Mapped[list] = mapped_column(SpecJSON, default=list)
+    family_id: Mapped[str | None] = mapped_column(
+        ForeignKey("design_families.id"), nullable=True, index=True)
+    variation_index: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    variation_label: Mapped[str | None] = mapped_column(
+        String(120), nullable=True)
+    # A branch keeps the exact Studio project and visual it started from. The
+    # child project owns an independent asset chain and immutable spec history.
+    branched_from_project_root_id: Mapped[str | None] = mapped_column(
+        ForeignKey("projects.root_id"), nullable=True, index=True)
+    branched_from_asset_id: Mapped[str | None] = mapped_column(
+        ForeignKey("image_assets.id"), nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow)
+
+    __table_args__ = (
+        CheckConstraint(
+            "variation_index IS NULL OR variation_index >= 1",
+            name="ck_project_variation_index",
+        ),
+        Index(
+            "uq_projects_family_variation_index",
+            "family_id",
+            "variation_index",
+            unique=True,
+            sqlite_where=text(
+                "family_id IS NOT NULL AND variation_index IS NOT NULL"),
+            postgresql_where=text(
+                "family_id IS NOT NULL AND variation_index IS NOT NULL"),
+        ),
+    )
+
+
+class ProjectRevisionRecord(Base):
+    """Immutable designer-intent evidence for one exact primary visual asset.
+
+    The image and specification remain in their canonical asset/design tables.
+    This record preserves what the designer asked, how Facetta interpreted it,
+    and the concise outcome for Studio history. One primary asset may have only
+    one record, so history cannot fork into contradictory explanations.
+    """
+
+    __tablename__ = "project_revision_records"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    asset_id: Mapped[str] = mapped_column(ForeignKey("image_assets.id"))
+    action: Mapped[str] = mapped_column(String(16))
+    raw_intent: Mapped[dict] = mapped_column(SpecJSON)
+    interpretation: Mapped[dict] = mapped_column(SpecJSON)
+    change_summary: Mapped[str] = mapped_column(Text)
+    restored_from_asset_id: Mapped[str | None] = mapped_column(
+        ForeignKey("image_assets.id"), nullable=True)
+    created_by: Mapped[str] = mapped_column(String(32))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow)
+
+    __table_args__ = (
+        CheckConstraint(
+            "action IN ('created', 'edit', 'restore')",
+            name="ck_project_revision_record_action",
+        ),
+        CheckConstraint(
+            "((action = 'restore' AND restored_from_asset_id IS NOT NULL) OR "
+            "(action IN ('created', 'edit') AND "
+            "restored_from_asset_id IS NULL))",
+            name="ck_project_revision_record_restore_source",
+        ),
+        CheckConstraint(
+            "restored_from_asset_id IS NULL OR "
+            "restored_from_asset_id <> asset_id",
+            name="ck_project_revision_record_restore_distinct",
+        ),
+        CheckConstraint(
+            "length(trim(change_summary)) > 0",
+            name="ck_project_revision_record_summary",
+        ),
+        Index(
+            "uq_project_revision_record_asset",
+            "asset_id",
+            unique=True,
+        ),
+    )
+
+
+class ImmutableProjectRevisionRecordError(RuntimeError):
+    """Raised when code tries to rewrite append-only Studio revision evidence."""
+
+
+class InvalidProjectRevisionAssetError(ValueError):
+    """Raised when Studio history is attached to a non-primary visual asset."""
+
+
+@event.listens_for(ProjectRevisionRecord, "before_insert")
+def _validate_project_revision_record_asset(
+    _mapper, connection, target,
+) -> None:
+    # Import lazily to avoid a module-initialization cycle while still sharing
+    # the project backbone's one canonical primary-capability set.
+    from facetta.project_backbone import PRIMARY_REVISION_CAPABILITIES
+
+    capability = connection.execute(
+        text("SELECT capability FROM image_assets WHERE id = :asset_id"),
+        {"asset_id": target.asset_id},
+    ).scalar_one_or_none()
+    if capability not in PRIMARY_REVISION_CAPABILITIES:
+        raise InvalidProjectRevisionAssetError(
+            "project revision records require an existing primary visual asset"
+        )
+
+
+@event.listens_for(ProjectRevisionRecord, "before_update")
+def _reject_project_revision_record_update(
+    _mapper, _connection, _target,
+) -> None:
+    raise ImmutableProjectRevisionRecordError(
+        "project revision records are immutable; append a new primary revision"
+    )
+
+
+@event.listens_for(ProjectRevisionRecord, "before_delete")
+def _reject_project_revision_record_delete(
+    _mapper, _connection, _target,
+) -> None:
+    raise ImmutableProjectRevisionRecordError(
+        "project revision records are immutable and cannot be deleted"
+    )
+
+
+class ImageRun(Base):
+    """One completed invocation of the closed-loop jewelry image agent.
+
+    Runs are append-only audit records. The orchestrator gathers provider and
+    QA results first, then inserts the final run and all of its attempts. There
+    is deliberately no mutable ``updated_at`` lifecycle on this table.
+    """
+
+    __tablename__ = "image_runs"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    project_root_id: Mapped[str | None] = mapped_column(
+        String(32), nullable=True, index=True)
+    source_asset_id: Mapped[str | None] = mapped_column(
+        String(32), nullable=True, index=True)
+    operation: Mapped[str] = mapped_column(String(32), index=True)
+    normalized_intent: Mapped[dict] = mapped_column(SpecJSON)
+    prompt_version: Mapped[str] = mapped_column(String(48))
+    # Content identities from the normalized plan. Nullable preserves honest
+    # provenance for runs recorded before these observability fields existed.
+    input_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    source_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    mask_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    spec_visual_hash: Mapped[str | None] = mapped_column(
+        String(64), nullable=True)
+    source_spec_visual_hash: Mapped[str | None] = mapped_column(
+        String(64), nullable=True)
+    variant: Mapped[int] = mapped_column(Integer, default=0)
+    status: Mapped[str] = mapped_column(String(16))
+    accepted_asset_id: Mapped[str | None] = mapped_column(
+        String(32), nullable=True, index=True)
+    error_category: Mapped[str | None] = mapped_column(
+        String(32), nullable=True)
+    created_by: Mapped[str] = mapped_column(String(32), default="usr_pending")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow)
+
+
+class ImageAttempt(Base):
+    """One immutable provider attempt and its jewelry-specific QA result."""
+
+    __tablename__ = "image_attempts"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    run_id: Mapped[str] = mapped_column(
+        ForeignKey("image_runs.id"), index=True)
+    attempt_number: Mapped[int] = mapped_column(Integer)
+    provider: Mapped[str] = mapped_column(String(32))
+    model: Mapped[str] = mapped_column(String(80))
+    latency_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    cached: Mapped[bool] = mapped_column(Boolean, default=False)
+    provider_request_id: Mapped[str | None] = mapped_column(
+        String(160), nullable=True)
+    qa_verdict: Mapped[str | None] = mapped_column(String(16), nullable=True)
+    qa_checks: Mapped[list] = mapped_column(SpecJSON, default=list)
+    corrective_instruction: Mapped[str | None] = mapped_column(
+        Text, nullable=True)
+    fallback_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    output_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # Prompt and cache identities allow a stored attempt to be reproduced and
+    # explain cache behavior without retaining provider prompt text.
+    prompt_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    cache_key: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    usage: Mapped[dict] = mapped_column(SpecJSON, default=dict)
+    cost: Mapped[float | None] = mapped_column(Float, nullable=True)
+    error_category: Mapped[str | None] = mapped_column(
+        String(32), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow)
+
+    __table_args__ = (
+        Index("uq_image_attempt_run_number", "run_id", "attempt_number",
+              unique=True),
+    )
+
+
+class ImageRunReview(Base):
+    """One append-only designer decision for a QA-warning candidate.
+
+    The original ``ImageRun`` and its attempts remain immutable evidence.  A
+    later explicit designer acceptance is recorded separately, so promoting a
+    warning never rewrites the evaluator's original ``review_required``
+    verdict.
+    """
+
+    __tablename__ = "image_run_reviews"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    run_id: Mapped[str] = mapped_column(
+        ForeignKey("image_runs.id"), unique=True, index=True)
+    decision: Mapped[str] = mapped_column(String(16))
+    accepted_asset_id: Mapped[str | None] = mapped_column(
+        String(32), nullable=True, index=True)
+    created_by: Mapped[str] = mapped_column(String(32))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow)
+
+
+class DerivedArtifactMetadata(Base):
+    """Immutable authority metadata for one accepted derived visual artifact.
+
+    Mounting-view candidates remain outside the product asset chain until a
+    designer accepts them. Consequently this row requires both the originating
+    image run and the append-only acceptance review. The raster remains an
+    ``ImageAsset``; this table records why it may appear in factory-review
+    material without ever becoming factory or production authority.
+
+    ``source_hashes`` maps every entry in ``source_asset_ids`` to the SHA-256
+    identity used by the image run. Application services validate that mapping
+    before the short acceptance transaction; scalar authority invariants are
+    also enforced by database checks below.
+    """
+
+    __tablename__ = "derived_artifact_metadata"
+
+    asset_id: Mapped[str] = mapped_column(
+        ForeignKey("image_assets.id"), primary_key=True)
+    schema_version: Mapped[str] = mapped_column(
+        String(48), default=MOUNTING_ARTIFACT_SCHEMA_VERSION)
+    artifact_kind: Mapped[str] = mapped_column(
+        String(32), default=MOUNTING_ARTIFACT_KIND)
+    view: Mapped[str] = mapped_column(String(16))
+    authority_scope: Mapped[str] = mapped_column(
+        String(32), default=MOUNTING_ARTIFACT_AUTHORITY_SCOPE)
+    hidden_geometry_status: Mapped[str] = mapped_column(String(48))
+    source_asset_ids: Mapped[list] = mapped_column(SpecJSON)
+    source_hashes: Mapped[dict] = mapped_column(SpecJSON)
+    design_version: Mapped[int] = mapped_column(Integer)
+    spec_visual_hash: Mapped[str] = mapped_column(String(16))
+    image_run_id: Mapped[str] = mapped_column(
+        ForeignKey("image_runs.id"))
+    # Product assets are created only after explicit designer acceptance, so a
+    # persisted mounting artifact must always carry the corresponding review.
+    review_id: Mapped[str] = mapped_column(
+        ForeignKey("image_run_reviews.id"))
+    production_authority: Mapped[bool] = mapped_column(Boolean, default=False)
+    disclaimer: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow)
+
+    __table_args__ = (
+        CheckConstraint(
+            f"schema_version = '{MOUNTING_ARTIFACT_SCHEMA_VERSION}'",
+            name="ck_derived_artifact_schema_version",
+        ),
+        CheckConstraint(
+            f"artifact_kind = '{MOUNTING_ARTIFACT_KIND}'",
+            name="ck_derived_artifact_kind",
+        ),
+        CheckConstraint(
+            "view IN ('plan', 'front', 'side', 'section')",
+            name="ck_derived_artifact_mounting_view",
+        ),
+        CheckConstraint(
+            f"authority_scope = '{MOUNTING_ARTIFACT_AUTHORITY_SCOPE}'",
+            name="ck_derived_artifact_authority_scope",
+        ),
+        CheckConstraint(
+            "hidden_geometry_status IN ("
+            "'source_observed', 'spec_confirmed', "
+            "'proposed_designer_confirmation_required', "
+            "'designer_confirmed_visual_proposal', 'unknown')",
+            name="ck_derived_artifact_hidden_geometry_status",
+        ),
+        CheckConstraint(
+            "design_version >= 1",
+            name="ck_derived_artifact_design_version",
+        ),
+        CheckConstraint(
+            "length(spec_visual_hash) = 16",
+            name="ck_derived_artifact_spec_visual_hash",
+        ),
+        CheckConstraint(
+            "production_authority = false",
+            name="ck_derived_artifact_no_production_authority",
+        ),
+        CheckConstraint(
+            "length(trim(disclaimer)) > 0",
+            name="ck_derived_artifact_disclaimer",
+        ),
+        Index(
+            "uq_derived_artifact_image_run",
+            "image_run_id",
+            unique=True,
+        ),
+        Index(
+            "uq_derived_artifact_review",
+            "review_id",
+            unique=True,
+        ),
+    )
 
 
 class DesignMessage(Base):
@@ -234,6 +655,9 @@ class FeedbackEvent(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True,
                                     autoincrement=True)
     asset_id: Mapped[str] = mapped_column(String(32), index=True)
+    image_run_id: Mapped[str | None] = mapped_column(
+        String(32), nullable=True, index=True)
+    subject_kind: Mapped[str] = mapped_column(String(16), default="asset")
     action: Mapped[str] = mapped_column(String(16))  # accepted|regenerated|rejected
     note: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_by: Mapped[str] = mapped_column(String(32), default="usr_pending")
@@ -274,6 +698,124 @@ def _apply_additive_migrations(engine) -> None:
         with engine.begin() as conn:
             conn.execute(text(
                 "ALTER TABLE image_assets ADD COLUMN design_id VARCHAR(32)"))
+    if "design_version" not in existing:
+        with engine.begin() as conn:
+            conn.execute(text(
+                "ALTER TABLE image_assets ADD COLUMN design_version INTEGER"))
+
+    # Studio family/variation fields are nullable so every historical project
+    # remains readable without a guessed family or branch. New families and
+    # revision records are entirely new tables and are created by create_all
+    # before this compatibility pass.
+    project_columns = {
+        c["name"] for c in inspector.get_columns("projects")}
+    project_additions = {
+        "family_id": (
+            "VARCHAR(32) REFERENCES design_families(id)"
+        ),
+        "variation_index": (
+            "INTEGER CHECK (variation_index IS NULL OR variation_index >= 1)"
+        ),
+        "variation_label": "VARCHAR(120)",
+        "branched_from_project_root_id": (
+            "VARCHAR(32) REFERENCES projects(root_id)"
+        ),
+        "branched_from_asset_id": (
+            "VARCHAR(32) REFERENCES image_assets(id)"
+        ),
+    }
+    for column, declaration in project_additions.items():
+        if column not in project_columns:
+            with engine.begin() as conn:
+                conn.execute(text(
+                    f"ALTER TABLE projects ADD COLUMN {column} {declaration}"
+                ))
+    project_indexes = {
+        item["name"] for item in inspect(engine).get_indexes("projects")}
+    for index_name, column in {
+        "ix_projects_family_id": "family_id",
+        "ix_projects_branched_from_project_root_id": (
+            "branched_from_project_root_id"
+        ),
+        "ix_projects_branched_from_asset_id": "branched_from_asset_id",
+    }.items():
+        if index_name not in project_indexes:
+            with engine.begin() as conn:
+                conn.execute(text(
+                    f"CREATE INDEX {index_name} ON projects ({column})"
+                ))
+    project_indexes = {
+        item["name"] for item in inspect(engine).get_indexes("projects")}
+    family_variation_index = "uq_projects_family_variation_index"
+    if family_variation_index not in project_indexes:
+        with engine.begin() as conn:
+            conn.execute(text(
+                "CREATE UNIQUE INDEX " + family_variation_index + " "
+                "ON projects (family_id, variation_index) "
+                "WHERE family_id IS NOT NULL AND variation_index IS NOT NULL"
+            ))
+
+    # Image-agent evidence is append-only, so historical rows are never
+    # backfilled with guessed identities. New executions always populate these
+    # nullable columns through ``image_run_store``.
+    run_columns = {
+        c["name"] for c in inspector.get_columns("image_runs")}
+    if "input_hash" not in run_columns:
+        with engine.begin() as conn:
+            conn.execute(text(
+                "ALTER TABLE image_runs ADD COLUMN input_hash VARCHAR(64)"))
+    if "mask_hash" not in run_columns:
+        with engine.begin() as conn:
+            conn.execute(text(
+                "ALTER TABLE image_runs ADD COLUMN mask_hash VARCHAR(64)"))
+    if "source_spec_visual_hash" not in run_columns:
+        with engine.begin() as conn:
+            conn.execute(text(
+                "ALTER TABLE image_runs ADD COLUMN source_spec_visual_hash VARCHAR(64)"))
+
+    attempt_columns = {
+        c["name"] for c in inspector.get_columns("image_attempts")}
+    if "prompt_hash" not in attempt_columns:
+        with engine.begin() as conn:
+            conn.execute(text(
+                "ALTER TABLE image_attempts ADD COLUMN prompt_hash VARCHAR(64)"))
+    if "cache_key" not in attempt_columns:
+        with engine.begin() as conn:
+            conn.execute(text(
+                "ALTER TABLE image_attempts ADD COLUMN cache_key VARCHAR(64)"))
+
+    # ``create_all`` creates this index on fresh databases. Existing databases
+    # need an additive bootstrap. Preserve readable legacy data: if it already
+    # contains duplicate root links, application-level guards prevent another
+    # one but startup does not fail by trying to rewrite history.
+    indexes = {i["name"] for i in inspector.get_indexes("image_assets")}
+    index_name = "uq_image_assets_design_primary_chain"
+    if index_name not in indexes:
+        with engine.begin() as conn:
+            duplicate = conn.execute(text(
+                "SELECT design_id FROM image_assets "
+                "WHERE design_id IS NOT NULL AND parent_asset_id IS NULL "
+                "GROUP BY design_id HAVING COUNT(*) > 1 LIMIT 1"
+            )).first()
+            if duplicate is None:
+                conn.execute(text(
+                    "CREATE UNIQUE INDEX " + index_name + " "
+                    "ON image_assets (design_id) "
+                    "WHERE design_id IS NOT NULL AND parent_asset_id IS NULL"
+                ))
+
+    feedback_columns = {
+        c["name"] for c in inspector.get_columns("feedback_events")}
+    if "image_run_id" not in feedback_columns:
+        with engine.begin() as conn:
+            conn.execute(text(
+                "ALTER TABLE feedback_events "
+                "ADD COLUMN image_run_id VARCHAR(32)"))
+    if "subject_kind" not in feedback_columns:
+        with engine.begin() as conn:
+            conn.execute(text(
+                "ALTER TABLE feedback_events "
+                "ADD COLUMN subject_kind VARCHAR(16) DEFAULT 'asset'"))
 
 
 def normalize_database_url(url: str) -> str:
@@ -326,12 +868,23 @@ def engine_config(raw_url: str) -> tuple[str, dict]:
 
 
 @lru_cache(maxsize=1)
-def get_engine():
+def _initialize_engine():
     url, kwargs = engine_config(env_value("DATABASE_URL", DEFAULT_DATABASE_URL))
     engine = create_engine(url, **kwargs)
     Base.metadata.create_all(engine)
     _apply_additive_migrations(engine)
     return engine
+
+
+def get_engine():
+    """Return the single engine after one thread-safe schema initialization.
+
+    ``lru_cache`` keeps completed calls safe but may execute a cache miss more
+    than once when requests arrive concurrently. Locking the cache lookup and
+    initialization prevents duplicate SQLite DDL during the first requests.
+    """
+    with _engine_initialization_lock:
+        return _initialize_engine()
 
 
 def get_db():

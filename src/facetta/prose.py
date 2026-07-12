@@ -1,4 +1,4 @@
-"""Prose → spec via the Claude API.
+"""Designer prose → spec via the Claude API.
 
 The model's only job is translating language into a Spec Schema v1 object
 drawn from the controlled vocabulary — it never draws geometry and never
@@ -107,54 +107,6 @@ def generate_spec(prose: str) -> Spec:
         max_tokens=16000,
         system=system_prompt(),
         messages=[{"role": "user", "content": prose}],
-        output_format=Spec,
-    )
-    return response.parsed_output
-
-
-PHOTO_INSTRUCTION = """\
-This is a photograph of a finished jewelry piece. Reverse-engineer it into a spec:
-identify the jewelry type, template, stone species (best guess from color/context),
-cut, setting style, metal, and melee arrangement. ESTIMATE dimensions from visual
-proportions using conventional sizes (e.g. a woman's solitaire center stone is
-typically 6-9 mm) and keep carat physically consistent with the density formula.
-A photograph can never give exact millimeters — the designer will correct the
-numbers before saving, so prefer conventional round values and never fabricate
-precision. If the notes below give any measurements, they override your estimates.
-
-Designer notes: {notes}
-"""
-
-
-def generate_spec_from_photo(image_base64: str, media_type: str,
-                             notes: str = "") -> Spec:
-    """One Claude vision call: photo of a finished piece in, draft Spec out.
-
-    The result is a PROPOSAL — vision estimates proportions, the designer
-    corrects dimensions in the builder, and the same validation gate applies
-    before anything is saved.
-    """
-    if not os.environ.get("ANTHROPIC_API_KEY"):
-        raise ProseUnavailable(
-            "ANTHROPIC_API_KEY is not set; POST /specs/from-photo needs a Claude API key"
-        )
-    import anthropic
-
-    client = anthropic.Anthropic()
-    response = client.messages.parse(
-        model=os.environ.get("FACETTA_CLAUDE_MODEL", DEFAULT_MODEL),
-        max_tokens=16000,
-        system=system_prompt(),
-        messages=[{
-            "role": "user",
-            "content": [
-                {"type": "image", "source": {"type": "base64",
-                                             "media_type": media_type,
-                                             "data": image_base64}},
-                {"type": "text",
-                 "text": PHOTO_INSTRUCTION.format(notes=notes or "none")},
-            ],
-        }],
         output_format=Spec,
     )
     return response.parsed_output

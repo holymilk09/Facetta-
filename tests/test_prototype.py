@@ -3,7 +3,7 @@
 from fastapi.testclient import TestClient
 
 from facetta.main import app
-from facetta.prototype import compile_render_prompt, render_color_preview, stone_hex
+from facetta.prototype import render_color_preview, stone_hex
 from facetta.spec import Spec
 from facetta.validation import validate_spec
 from facetta.vocabulary import get_vocabulary

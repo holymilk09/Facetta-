@@ -16,10 +16,13 @@ from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse, Response
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from facetta.api.error_mapping import (
+    image_agent_error_response, render_unavailable_response,
+)
 from facetta.checklist import (
     DEFAULT_MODE, approval_footer_line, build_checklist_items,
     checklist_status,
@@ -29,7 +32,24 @@ from facetta.db import (
     ImageAsset, Project, get_db, new_id, utcnow,
 )
 from facetta.disclaimer import is_stampable, stamp_b64, stamp_image
+from facetta.markup_snapshot import (
+    MarkupSnapshot,
+    MarkupSnapshotImageError,
+    composite_markup_snapshot,
+)
 from facetta.render import RenderUnavailable, _sniff_media_type
+from facetta.revision_component_map import (
+    bind_map_to_raster,
+    ComponentMapError,
+    ComponentMappingUnresolved,
+    rasterize_component_mask,
+    reconcile_parent_component_ids,
+    unresolved_revision_component_mapper,
+)
+from facetta.revision_component_map_store import (
+    add_revision_component_map,
+    load_revision_component_map,
+)
 from facetta.spec import Spec
 from facetta.specagent import (
     SKIN_TONES, SPIN_MOTIONS, VIEW_ANGLES, check_design_consistency,
@@ -46,14 +66,33 @@ DbSession = Annotated[Session, Depends(get_db)]
 
 
 def _provider_error(exc: RenderUnavailable) -> JSONResponse:
-    status = 503 if "_KEY" in str(exc) else 502
-    return JSONResponse(status_code=status, content={"detail": str(exc)})
+    return render_unavailable_response(exc)
+
+
+def _trusted_image_agent():
+    """Injection seam for the trusted closed-loop image pipeline."""
+    from facetta.image_agent import JewelryImageAgent
+
+    return JewelryImageAgent()
+
+
+def _revision_component_mapper(**kwargs):
+    """Injection seam for calibrated vision mapping of accepted child bytes."""
+    return unresolved_revision_component_mapper(**kwargs)
 
 
 # The gentle accuracy disclaimer is stamped on client-facing photoreal renders.
 # A factory technical drawing carries its own dimension-honesty disclaimer, so a
 # "preview may vary" caption would undermine it — those are delivered unstamped.
-_UNSTAMPED_CAPS = {"MANUFACTURING_TECHNICAL_DRAWING"}
+# PRODUCT_PHOTO is also clean by contract because it is an ecommerce export,
+# while its immutable provenance and QA remain available in the project record.
+_UNSTAMPED_CAPS = {
+    "MANUFACTURING_TECHNICAL_DRAWING",
+    "PRODUCT_PHOTO",
+    "MARKETING_IMAGE",
+    "LINE_ART",
+    "COLORED_LINE_ART",
+}
 
 
 def _client_b64(image_bytes: bytes, *, capability: str | None = None,
@@ -75,26 +114,44 @@ def _get_asset(db: Session, asset_id: str) -> ImageAsset:
 
 def _store_asset(db: Session, image: bytes, capability: str,
                  parent: ImageAsset | None = None, *,
+                 asset_id: str | None = None,
                  instruction: str | None = None, region: str | None = None,
                  drift: float | None = None,
-                 created_by: str = "usr_pending") -> ImageAsset:
+                 design_id: str | None = None,
+                 design_version: int | None = None,
+                 created_by: str = "usr_pending",
+                 commit: bool = True) -> ImageAsset:
+    """Store one immutable asset.
+
+    The default preserves the legacy route behavior.  Trusted workflows pass
+    ``commit=False`` so a primary image and its immutable ``DesignVersion``
+    are flushed and committed as one unit.  Derived assets inherit the exact
+    specification provenance of their parent.
+    """
+    if design_version is None and parent is not None:
+        design_version = parent.design_version
     asset = ImageAsset(
-        id=new_id("ast"),
+        id=asset_id or new_id("ast"),
         root_id=parent.root_id if parent else "",  # set below for roots
         parent_asset_id=parent.id if parent else None,
+        design_id=design_id if parent is None else None,
+        design_version=design_version,
         capability=capability, instruction=instruction, region=region,
         drift=drift, image=image, media_type=_sniff_media_type(image),
         created_by=created_by)
     if parent is None:
         asset.root_id = asset.id
     db.add(asset)
-    db.commit()
     if parent is not None:                       # a new item in an existing chain
-        _touch_project(db, asset.root_id)
+        _touch_project(db, asset.root_id, commit=False)
+    if commit:
+        db.commit()
+    else:
+        db.flush()
     return asset
 
 
-def _ensure_project(db: Session, root: ImageAsset) -> Project:
+def _ensure_project(db: Session, root: ImageAsset, *, commit: bool = True) -> Project:
     """Every chain root files a project into the owner's library (Unfiled until
     the designer organizes it). Idempotent."""
     project = db.get(Project, root.id)
@@ -103,15 +160,19 @@ def _ensure_project(db: Session, root: ImageAsset) -> Project:
         project = Project(root_id=root.id, owner=root.created_by,
                           collection=None, title=title, tags=[])
         db.add(project)
-        db.commit()
+        if commit:
+            db.commit()
+        else:
+            db.flush()
     return project
 
 
-def _touch_project(db: Session, root_id: str) -> None:
+def _touch_project(db: Session, root_id: str, *, commit: bool = True) -> None:
     project = db.get(Project, root_id)
     if project is not None:
         project.updated_at = utcnow()
-        db.commit()
+        if commit:
+            db.commit()
 
 
 def _chain(db: Session, root_id: str) -> list[ImageAsset]:
@@ -120,26 +181,70 @@ def _chain(db: Session, root_id: str) -> list[ImageAsset]:
         .order_by(ImageAsset.created_at, ImageAsset.id)))
 
 
+_PRIMARY_REVISION_CAPABILITIES = frozenset({
+    "CREATIVE_RENDER",
+    "JEWELRY_RENDER",
+    "SPEC_RENDER",
+    "IMPORTED_REFERENCE",
+    "LOCALIZED_EDIT",
+    "GLOBAL_RESTYLE",
+    "PRODUCT_PHOTO",
+})
+
+
+def _is_primary_revision(asset: ImageAsset) -> bool:
+    return asset.capability in _PRIMARY_REVISION_CAPABILITIES
+
+
 def _version_number(chain: list[ImageAsset], asset_id: str) -> int:
-    for i, a in enumerate(chain, start=1):
-        if a.id == asset_id:
-            return i
+    """Return the visual revision, excluding derived evidence and media.
+
+    Markup uploads, source concepts, alternate angles, videos, and drawings
+    belong to a revision; they do not silently advance it.  A derived asset
+    therefore reports the most recent primary revision at its creation point.
+    """
+    revision = 0
+    for asset in chain:
+        if _is_primary_revision(asset):
+            revision += 1
+        if asset.id == asset_id:
+            return revision
     return 0
 
 
 def _pinned(chain: list[ImageAsset]) -> ImageAsset | None:
-    pinned = [a for a in chain if a.pinned_at is not None]
+    pinned = [a for a in chain
+              if a.pinned_at is not None and _is_primary_revision(a)]
+    if not pinned:  # legacy databases may contain a derived pin; keep readable
+        pinned = [a for a in chain if a.pinned_at is not None]
     return max(pinned, key=lambda a: a.pinned_at) if pinned else None
 
 
 def _asset_meta(db: Session, asset: ImageAsset) -> dict:
     chain = _chain(db, asset.root_id)
+    root = db.get(ImageAsset, asset.root_id) or asset
     return {
         "asset_id": asset.id,
         "parent_asset_id": asset.parent_asset_id,
         "root_id": asset.root_id,
         "version": _version_number(chain, asset.id),
+        "revision": (_version_number(chain, asset.id)
+                     if _is_primary_revision(asset) else None),
+        "derived_from_revision": (None if _is_primary_revision(asset)
+                                  else _version_number(chain, asset.id)),
         "capability": asset.capability,
+        "image_url": f"/assets/{asset.id}/image",
+        "design_id": root.design_id,
+        "design_version": asset.design_version,
+        "provenance": {
+            "kind": ("primary_revision" if _is_primary_revision(asset)
+                     else "derived_asset"),
+            "capability": asset.capability,
+            "source_asset_id": asset.parent_asset_id,
+            "design_id": root.design_id,
+            "design_version": asset.design_version,
+            "legacy": bool(root.design_id and asset.design_version is None),
+        },
         "region": asset.region,
         "drift": asset.drift,
         "pinned": asset.pinned_at is not None,
@@ -203,30 +308,44 @@ def _view_children(db: Session, hero: ImageAsset, angles: list[str],
     return out
 
 
-@router.post("/render", status_code=201)
+@router.post("/render", status_code=201, deprecated=True)
 def create_render_asset(request: AssetRenderRequest, db: DbSession):
     """MODE A into the chain: a new root asset the iteration loop grows from.
     Pass `angles` to also get extra camera views of the same design in one
     request — each is derived from this hero render (design-locked), so the
     designer gets a consistent turntable without re-generating (which would
     invent a different piece per angle)."""
+    design_version = None
     if request.design_id is not None:
         from facetta.db import Design
+        from facetta.project_backbone import (
+            DesignAlreadyLinked, ensure_design_chain_available,
+        )
         if db.get(Design, request.design_id) is None:
             raise HTTPException(status_code=404,
                                 detail=f"unknown design '{request.design_id}'")
+        try:
+            ensure_design_chain_available(db, request.design_id)
+        except DesignAlreadyLinked as exc:
+            return JSONResponse(status_code=409, content={
+                "detail": str(exc),
+                "code": "design_already_linked",
+                "existing_root_id": exc.root_id})
+        design_version = db.scalar(
+            select(func.max(DesignVersion.version)).where(
+                DesignVersion.design_id == request.design_id))
     try:
         image, cached = jewelry_render(
             request.piece_description, metal=request.metal,
             stones=request.stones, setting_details=request.setting_details,
             view_angle=request.view_angle, variant=request.variant)
-        hero = _store_asset(db, image, "JEWELRY_RENDER",
-                            instruction=request.piece_description,
-                            created_by=request.created_by)
-        if request.design_id is not None:
-            hero.design_id = request.design_id  # the root carries the link
-            db.commit()
-        _ensure_project(db, hero)             # file it into the owner's library
+        hero = _store_asset(
+            db, image, "JEWELRY_RENDER",
+            instruction=request.piece_description,
+            design_id=request.design_id, design_version=design_version,
+            created_by=request.created_by, commit=False)
+        _ensure_project(db, hero, commit=False)  # same transaction as the root
+        db.commit()
         views = _view_children(db, hero, request.angles, request.created_by,
                                request.skin_tone,
                                request.check_consistency) if request.angles else []
@@ -246,7 +365,7 @@ class AssetViewsRequest(BaseModel):
     created_by: str = "usr_pending"
 
 
-@router.post("/{asset_id}/views", status_code=201)
+@router.post("/{asset_id}/views", status_code=201, deprecated=True)
 def add_views(asset_id: str, request: AssetViewsRequest, db: DbSession):
     """Extra camera angles of an EXISTING asset — the same design from new
     viewpoints, design-locked. Useful on a pinned version: get the approved
@@ -277,7 +396,7 @@ class AssetEditRequest(BaseModel):
     variant: int = 0  # regenerate: a fresh take on the SAME edit, not the cache
 
 
-@router.post("/{asset_id}/localized-edit", status_code=201)
+@router.post("/{asset_id}/localized-edit", status_code=201, deprecated=True)
 def create_localized_edit(asset_id: str, request: AssetEditRequest,
                           db: DbSession):
     """MODE C on a chain asset: the child records its parent, region, and
@@ -332,10 +451,23 @@ def create_localized_edit(asset_id: str, request: AssetEditRequest,
 class MarkupReadRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    marked_image_base64: Annotated[str, Field(min_length=1,
-                                              max_length=14_000_000)]
+    marked_image_base64: Annotated[
+        str,
+        Field(min_length=1, max_length=14_000_000),
+    ] | None = None
+    markup_snapshot: MarkupSnapshot | None = None
     created_by: str = "usr_pending"
     assistant_name: str | None = None
+
+    @model_validator(mode="after")
+    def require_exactly_one_markup_input(self) -> MarkupReadRequest:
+        has_raster = self.marked_image_base64 is not None
+        has_snapshot = self.markup_snapshot is not None
+        if has_raster == has_snapshot:
+            raise ValueError(
+                "provide exactly one of marked_image_base64 or markup_snapshot"
+            )
+        return self
 
 
 @router.post("/{asset_id}/markup/read")
@@ -349,13 +481,38 @@ def markup_read(asset_id: str, request: MarkupReadRequest, db: DbSession):
     from facetta.assistant import DEFAULT_ASSISTANT_NAME
 
     asset = _get_asset(db, asset_id)
+    if request.markup_snapshot is not None:
+        try:
+            marked = composite_markup_snapshot(
+                bytes(asset.image), request.markup_snapshot)
+        except MarkupSnapshotImageError as exc:
+            return JSONResponse(status_code=422, content={
+                "detail": str(exc),
+                "code": "markup_snapshot_composite_invalid",
+                "category": "validation",
+            })
+    else:
+        try:
+            marked = base64.b64decode(
+                request.marked_image_base64 or "", validate=True)
+        except (binascii.Error, ValueError):
+            return JSONResponse(status_code=422, content={
+                "detail": "marked_image_base64 is not valid base64"})
+    linked = _linked_design(db, asset)
+    form_elements = (
+        tuple({
+            "element_id": element.element_id,
+            "role": element.role,
+            "label": element.label,
+            "confirmed_form_description": element.confirmed_form_description,
+        } for element in linked[2].design_form.elements)
+        if linked is not None else ()
+    )
     try:
-        marked = base64.b64decode(request.marked_image_base64, validate=True)
-    except (binascii.Error, ValueError):
-        return JSONResponse(status_code=422, content={
-            "detail": "marked_image_base64 is not valid base64"})
-    try:
-        reading = read_markup(bytes(asset.image), marked)
+        reading = (
+            read_markup(bytes(asset.image), marked, form_elements)
+            if form_elements else read_markup(bytes(asset.image), marked)
+        )
     except RenderUnavailable as exc:
         return _provider_error(exc)
 
@@ -369,16 +526,58 @@ def markup_read(asset_id: str, request: MarkupReadRequest, db: DbSession):
             "annotations": reading["annotations"],
             "assistant_name": name})
 
+    known_form_ids = {
+        element["element_id"] for element in form_elements
+    }
+    for annotation in reading["annotations"]:
+        if annotation.get("target_section") != "design_form":
+            continue
+        target_element_id = annotation.get("target_element_id")
+        if target_element_id not in known_form_ids:
+            return JSONResponse(status_code=422, content={
+                "detail": (
+                    "the marked form change does not identify exactly one "
+                    "known design element; select or confirm the component"
+                ),
+                "understood_as": reading["understood_as"],
+                "annotations": reading["annotations"],
+                "assistant_name": name,
+                "valid_target_element_ids": sorted(known_form_ids),
+            })
+
     # the marked upload is filed as an audit leaf — never an edit base
     notes = _store_asset(db, marked, "MARKUP_NOTES", asset,
                          instruction=reading["understood_as"],
                          created_by=request.created_by)
-    linked = _linked_design(db, asset)
+    first = reading["annotations"][0]
+    targets_spec = bool(first.get("target_section") or first.get("target_ref"))
+    interpretation = {
+        "target_region": first["region_description"],
+        "requested_change": first["change_instruction"],
+        "impact": ("specification" if targets_spec else "visual_only"),
+        "target_spec_reference": first.get("target_ref"),
+        "target_section": first.get("target_section"),
+        "target_index": first.get("index"),
+        "target_component_id": first.get("target_component_id"),
+        "target_element_id": first.get("target_element_id"),
+        "frozen_elements": ([
+            "all specification sections outside the named target",
+            "all jewelry structure outside the marked region",
+        ] if targets_spec else [
+            "all jewelry geometry and components",
+            "the current specification version",
+        ]),
+        "confidence": first.get("confidence"),
+        "clarification_question": None,
+        "understood_as": reading["understood_as"],
+    }
     return {"markup_asset_id": notes.id, "assistant_name": name,
             "understood_as": reading["understood_as"],
             "annotations": reading["annotations"],
+            "interpretation": interpretation,
             "design_linked": linked is not None,
-            "design_id": linked[0] if linked else None}
+            "design_id": linked[0] if linked else None,
+            "expected_design_version": linked[1] if linked else None}
 
 
 class MarkupAnnotation(BaseModel):
@@ -389,6 +588,13 @@ class MarkupAnnotation(BaseModel):
     target_section: str | None = None
     target_ref: str | None = None
     index: int | None = None
+    # Stable semantic identity on the exact source revision. When supplied it
+    # is authoritative for localization; prose and canvas strokes cannot widen
+    # its revision-bound polygon mask.
+    target_component_id: str | None = None
+    target_element_id: str | None = None
+    form_view: Literal["front", "side", "top", "three_quarter"] = (
+        "three_quarter")
     mask_base64: str | None = None
 
 
@@ -400,47 +606,308 @@ class MarkupApplyRequest(BaseModel):
     markup_asset_id: str | None = None   # phase-1 upload, for mask derivation
     kind: Literal["render", "technical"] = "render"
     update_spec: bool = True
+    # Optimistic concurrency guard for the trusted workspace.  Optional only
+    # for the deprecated compatibility caller; the new client always sends it.
+    expected_design_version: Annotated[int, Field(ge=1)] | None = None
     created_by: str = "usr_pending"
     variant: int = 0  # regenerate: fresh takes on the SAME marks, not the cache
 
 
 @router.post("/{asset_id}/markup/apply", status_code=201)
 def markup_apply(asset_id: str, request: MarkupApplyRequest, db: DbSession):
-    """Phase 2: execute the CONFIRMED annotations, sequentially — each child
-    is the parent of the next, so every hop keeps its own freeze contract,
-    drift measurement, and revert point. Per annotation: the linked design's
-    spec moves FIRST through the Grok scoped edit (scope_guard makes touching
-    anything else impossible; a physically impossible change skips the
-    annotation entirely — image and spec move in lockstep or not at all),
-    then the image through the localized-edit contract. One immutable
-    DesignVersion per synced change, with the before → after diff. A final
-    consistency check against the starting image is ADVISORY — the intended
-    changes are real differences; the hard gate is the per-hop drift."""
+    """Phase 2: execute confirmed annotations.
+
+    Trusted-workspace requests carry ``expected_design_version`` and execute
+    exactly one confirmed instruction.  The older no-version compatibility
+    path may still process a list until its callers are migrated.  For each
+    annotation, the linked design's spec moves first through the scoped edit;
+    a physically impossible change skips the image edit so image and spec
+    remain in lockstep.  The accepted image and immutable DesignVersion then
+    commit atomically.
+    """
     from facetta.agent import Annotation, AnnotationUnresolved
     from facetta.grokedit import GrokEditUnavailable, grok_plan_scoped_edit
+
+    if (request.expected_design_version is not None
+            and len(request.annotations) != 1):
+        return JSONResponse(status_code=422, content={
+            "detail": ("trusted markup applies exactly one confirmed "
+                       "instruction at a time"),
+            "code": "single_instruction_required",
+            "category": "validation",
+            "instruction_count": len(request.annotations),
+        })
 
     asset = _get_asset(db, asset_id)
     start_bytes = bytes(asset.image)
 
     # a phase-1 canvas upload yields a drift mask (same raster only)
     derived_mask = None
+    markup_notes_valid = False
     if request.markup_asset_id:
         notes = db.get(ImageAsset, request.markup_asset_id)
-        if notes is not None and notes.capability == "MARKUP_NOTES":
+        if (notes is not None
+                and notes.capability == "MARKUP_NOTES"
+                and notes.root_id == asset.root_id
+                and notes.parent_asset_id == asset.id):
+            markup_notes_valid = True
             derived_mask = mask_from_markup(start_bytes, bytes(notes.image))
 
-    linked = _linked_design(db, asset) if request.update_spec else None
+    linked = _linked_design(db, asset)
     design_id = linked[0] if linked else None
-    current_spec = linked[2] if linked else None
+    current_design_version = linked[1] if linked else asset.design_version
+    current_spec = linked[2] if linked and request.update_spec else None
+
+    if request.expected_design_version is not None:
+        if linked is None:
+            return JSONResponse(status_code=409, content={
+                "detail": "the asset is not linked to a validated design",
+                "code": "design_not_linked",
+                "category": "validation"})
+        if request.expected_design_version != linked[1]:
+            return JSONResponse(status_code=409, content={
+                "detail": ("the design changed while this revision was open; "
+                           "reload before applying the annotation"),
+                "code": "stale_design_version",
+                "category": "stale_version",
+                "expected_design_version": request.expected_design_version,
+                "current_design_version": linked[1]})
 
     current = asset
     steps: list[dict] = []
     for note in request.annotations:
         step: dict = {"annotation": note.model_dump(exclude={"mask_base64"})}
+        form_edit = (
+            note.target_section == "design_form"
+            or note.target_element_id is not None
+        )
+        targets_spec = bool(
+            note.target_section or note.target_ref or note.target_element_id)
+
+        if targets_spec and not request.update_spec:
+            return JSONResponse(status_code=422, content={
+                "detail": ("a geometry, stone, setting, metal, or dimensional "
+                           "change must update the image and specification "
+                           "together"),
+                "code": "spec_sync_required",
+                "category": "validation",
+                "steps": steps})
+        if targets_spec and linked is None:
+            # Compatibility only: the trusted client always supplies
+            # expected_design_version and is rejected above when unlinked.
+            # Keep the old experience reachable until founder acceptance.
+            step["spec_note"] = (
+                "deprecated unlinked image-only path; trusted structural "
+                "edits require a linked design (PATCH "
+                "/assets/{id}/link-design)")
+
+        # Decode the per-annotation mask before compiling any structural spec
+        # change. A design-form revision must use the mask derived from the
+        # persisted same-raster MARKUP_NOTES asset; an untracked client mask
+        # cannot substitute for that provenance.
+        mask_bytes = derived_mask
+        if note.mask_base64:
+            try:
+                supplied_mask = base64.b64decode(
+                    note.mask_base64, validate=True)
+            except (binascii.Error, ValueError):
+                return JSONResponse(status_code=422, content={
+                    "detail": "mask_base64 is not valid base64",
+                    "steps": steps})
+            if not form_edit:
+                mask_bytes = supplied_mask
+
+        parent_component_map = None
+        if (request.expected_design_version is not None
+                and note.target_component_id is None):
+            try:
+                mapped_revision = load_revision_component_map(db, current.id)
+            except ComponentMapError as exc:
+                return JSONResponse(status_code=409, content={
+                    "detail": exc.detail,
+                    "code": exc.code,
+                    "category": "validation",
+                    "steps": steps,
+                })
+            if mapped_revision is not None:
+                return JSONResponse(status_code=422, content={
+                    "detail": (
+                        "select one resolved component on this mapped revision"
+                    ),
+                    "code": "target_component_required",
+                    "category": "validation",
+                    "valid_target_component_ids": [
+                        component.component_id
+                        for component in mapped_revision.components
+                        if component.resolution == "resolved"
+                    ],
+                    "steps": steps,
+                })
+        if note.target_component_id is not None:
+            try:
+                parent_component_map = load_revision_component_map(
+                    db, current.id)
+                if parent_component_map is None:
+                    raise ComponentMapError(
+                        "the selected visual revision has no component map",
+                        code="component_map_not_found",
+                    )
+                # Membership and resolution are checked by rasterization. The
+                # revision-bound semantic mask is authoritative for the image
+                # plan; an arbitrary client mask cannot widen the edit area.
+                mask_bytes = rasterize_component_mask(
+                    parent_component_map, note.target_component_id)
+            except ComponentMapError as exc:
+                return JSONResponse(status_code=422, content={
+                    "detail": exc.detail,
+                    "code": exc.code,
+                    "category": "validation",
+                    "steps": steps,
+                })
+
+        if form_edit:
+            if (note.target_section != "design_form"
+                    or not note.target_element_id):
+                return JSONResponse(status_code=422, content={
+                    "detail": (
+                        "a design-form edit must name target_section "
+                        "'design_form' and exactly one stable target_element_id"
+                    ),
+                    "code": "form_element_required",
+                    "category": "validation",
+                    "steps": steps,
+                })
+            if request.expected_design_version is None:
+                return JSONResponse(status_code=422, content={
+                    "detail": (
+                        "a design-form edit requires expected_design_version"
+                    ),
+                    "code": "expected_design_version_required",
+                    "category": "validation",
+                    "steps": steps,
+                })
+            if (not request.markup_asset_id or not markup_notes_valid
+                    or derived_mask is None):
+                return JSONResponse(status_code=422, content={
+                    "detail": (
+                        "a design-form edit requires a saved same-raster markup "
+                        "asset with a usable highlighted mask"
+                    ),
+                    "code": "form_markup_mask_required",
+                    "category": "validation",
+                    "steps": steps,
+                })
+            mask_bytes = derived_mask
 
         # 1) spec first, when linked and the mark names a section
         scoped = None
-        if current_spec is not None and (note.target_section or note.target_ref):
+        scoped_spec = None
+        reserved_asset_id = (
+            new_id("ast") if note.target_component_id is not None else None
+        )
+        form_region = None
+        confirmed_form_description = None
+        if form_edit and current_spec is not None:
+            from facetta.agent import ScopedEditResult
+            from facetta.design_form_revision import (
+                DesignFormRevisionError,
+                region_from_markup_mask,
+                revise_visual_form_element,
+            )
+
+            reserved_asset_id = reserved_asset_id or new_id("ast")
+            if all(
+                element.element_id != note.target_element_id
+                for element in current_spec.design_form.elements
+            ):
+                return JSONResponse(status_code=422, content={
+                    "detail": (
+                        "the current specification has no confirmed form "
+                        f"element {note.target_element_id!r}"
+                    ),
+                    "code": "form_element_not_found",
+                    "category": "validation",
+                    "valid_target_element_ids": [
+                        element.element_id
+                        for element in current_spec.design_form.elements
+                    ],
+                    "steps": steps,
+                })
+            try:
+                form_region = region_from_markup_mask(
+                    mask_bytes,
+                    bytes(current.image),
+                    view=note.form_view,
+                )
+                annotation = Annotation(
+                    ref=None,
+                    section="design_form",
+                    index=None,
+                    target_element_id=note.target_element_id,
+                    instruction=note.change_instruction,
+                )
+                planned = grok_plan_scoped_edit(annotation, current_spec)
+                planned_element = next(
+                    element for element in planned.spec.design_form.elements
+                    if element.element_id == note.target_element_id
+                )
+                confirmed_form_description = (
+                    planned_element.confirmed_form_description
+                )
+                proposed_spec = revise_visual_form_element(
+                    current_spec,
+                    element_id=note.target_element_id,
+                    confirmed_form_description=confirmed_form_description,
+                    region=form_region,
+                    asset_id=reserved_asset_id,
+                    asset_sha256="0" * 64,
+                )
+            except AnnotationUnresolved as exc:
+                return JSONResponse(status_code=422, content={
+                    "detail": str(exc),
+                    "code": "form_interpretation_unresolved",
+                    "category": "validation",
+                    "steps": steps,
+                })
+            except GrokEditUnavailable as exc:
+                status = 503 if "KEY" in str(exc) else 502
+                return JSONResponse(status_code=status, content={
+                    "detail": str(exc),
+                    "code": "form_interpretation_unavailable",
+                    "category": "provider",
+                    "steps": steps,
+                })
+            except DesignFormRevisionError as exc:
+                return JSONResponse(status_code=422, content={
+                    "detail": exc.detail,
+                    "code": exc.code,
+                    "category": "validation",
+                    "steps": steps,
+                })
+            validated = validate_spec(proposed_spec, get_vocabulary())
+            if not validated.ok:
+                return JSONResponse(status_code=422, content={
+                    "detail": [issue.as_detail() for issue in validated.issues],
+                    "code": "form_spec_invalid",
+                    "category": "validation",
+                    "steps": steps,
+                })
+            # Validation is a gate here, not an opportunity to rewrite an
+            # unrelated legacy/derived field. The scoped form contract must
+            # preserve every non-target byte of the current specification.
+            scoped_spec = proposed_spec
+            scoped = ScopedEditResult(
+                spec=scoped_spec,
+                target=f"design_form.elements[{note.target_element_id}]",
+                isolate_ref=note.target_element_id,
+                changed_fields=[
+                    "design_form element " + note.target_element_id
+                    + " confirmed form -> " + confirmed_form_description,
+                ],
+                ignored_fields=[],
+                message=planned.message,
+            )
+        elif current_spec is not None and (note.target_section or note.target_ref):
             annotation = Annotation(
                 ref=note.target_ref, section=note.target_section,
                 index=note.index, instruction=note.change_instruction)
@@ -449,6 +916,9 @@ def markup_apply(asset_id: str, request: MarkupApplyRequest, db: DbSession):
             except AnnotationUnresolved as exc:
                 step["spec_synced"] = False
                 step["spec_note"] = str(exc)
+                step["rejected"] = True
+                steps.append(step)
+                continue
             except GrokEditUnavailable as exc:
                 status = 503 if "KEY" in str(exc) else 502
                 return JSONResponse(status_code=status, content={
@@ -465,41 +935,303 @@ def markup_apply(asset_id: str, request: MarkupApplyRequest, db: DbSession):
                 scoped_spec = validated.spec
 
         # 2) the image, through the localized-edit contract
-        mask_bytes = derived_mask
-        if note.mask_base64:
+        image_agent_result = None
+        qa_report = None
+        routing_summary = None
+        if request.expected_design_version is not None:
+            from facetta.image_agent import (
+                ImageAgentError, ImageOperation, build_image_plan,
+            )
+            from facetta.image_run_store import (
+                persist_image_agent_failure, persist_image_agent_result,
+            )
+
+            operation = (ImageOperation.LOCAL_EDIT if scoped is not None
+                         else ImageOperation.VISUAL_ONLY_EDIT)
+            plan_spec = scoped_spec if scoped is not None else linked[2]
             try:
-                mask_bytes = base64.b64decode(note.mask_base64, validate=True)
-            except (binascii.Error, ValueError):
+                plan = build_image_plan(
+                    operation,
+                    note.change_instruction,
+                    spec=plan_spec,
+                    source_spec=(current_spec if scoped is not None else None),
+                    source_image=bytes(current.image),
+                    mask_bytes=mask_bytes,
+                    mask_provenance=(
+                        "persisted_designer_markup"
+                        if derived_mask is not None
+                        and mask_bytes is derived_mask
+                        else "client_supplied_markup"
+                        if mask_bytes is not None
+                        else None
+                    ),
+                    region_description=(note.region_description
+                                        if operation is ImageOperation.LOCAL_EDIT
+                                        else None),
+                    frozen=(
+                        "all untargeted specification sections",
+                        "camera and composition unless explicitly requested",
+                    ),
+                    variant=request.variant,
+                )
+                image_agent_result = _trusted_image_agent().run(
+                    plan,
+                    source_image=bytes(current.image),
+                    mask_bytes=mask_bytes,
+                )
+            except ImageAgentError as exc:
+                run_id = None
+                if exc.plan is not None:
+                    run_id = persist_image_agent_failure(
+                        db,
+                        exc.plan,
+                        exc,
+                        project_root_id=asset.root_id,
+                        source_asset_id=current.id,
+                        created_by=request.created_by,
+                    )
+                return image_agent_error_response(
+                    exc,
+                    image_run_id=run_id,
+                    extra={"steps": steps},
+                )
+
+            # The plan used a reserved asset identity and a non-persisted hash
+            # placeholder. Once provider/QA bytes exist, bind the immutable
+            # spec to those exact bytes before either pass persistence or
+            # warning review. The visual hash intentionally ignores storage
+            # identity, so this does not change what the image agent evaluated.
+            if form_edit:
+                from facetta.agent import ScopedEditResult
+                from facetta.design_form_revision import (
+                    DesignFormRevisionError,
+                    revise_visual_form_element,
+                )
+
+                try:
+                    final_form_spec = revise_visual_form_element(
+                        current_spec,
+                        element_id=note.target_element_id,
+                        confirmed_form_description=confirmed_form_description,
+                        region=form_region,
+                        asset_id=reserved_asset_id,
+                        asset_bytes=image_agent_result.image_bytes,
+                    )
+                except DesignFormRevisionError as exc:
+                    return JSONResponse(status_code=422, content={
+                        "detail": exc.detail,
+                        "code": exc.code,
+                        "category": "validation",
+                        "steps": steps,
+                    })
+                validated = validate_spec(final_form_spec, get_vocabulary())
+                if not validated.ok:
+                    return JSONResponse(status_code=422, content={
+                        "detail": [
+                            issue.as_detail() for issue in validated.issues
+                        ],
+                        "code": "form_spec_invalid",
+                        "category": "validation",
+                        "steps": steps,
+                    })
+                # As above, validation gates the exact scoped record; it must
+                # not opportunistically populate an unrelated derived field.
+                scoped_spec = final_form_spec
+                scoped = ScopedEditResult(
+                    spec=scoped_spec,
+                    target=(
+                        "design_form.elements["
+                        + note.target_element_id + "]"
+                    ),
+                    isolate_ref=note.target_element_id,
+                    changed_fields=[
+                        "design_form element " + note.target_element_id
+                        + " confirmed form -> " + confirmed_form_description,
+                    ],
+                    ignored_fields=[],
+                    message=(
+                        "scoped masked design-form revision for "
+                        + note.target_element_id
+                    ),
+                )
+
+            failed = [check.code for check in image_agent_result.quality.failed_checks]
+            warnings = [
+                check.message for check in image_agent_result.quality.failed_checks
+                if check.severity.value == "warning"
+            ]
+            qa_report = {
+                **image_agent_result.quality.model_dump(mode="json"),
+                "accepted": image_agent_result.accepted,
+                "review_required": image_agent_result.review_required,
+                "summary": ("Image checks passed." if image_agent_result.accepted
+                            else "Image needs explicit designer review."),
+                "failed_checks": failed,
+                "warnings": warnings,
+            }
+            routing_summary = {
+                "attempt_count": len(image_agent_result.run.attempts),
+                "used_retry": len(image_agent_result.run.attempts) > 1,
+                "used_fallback": any(
+                    attempt.fallback for attempt in image_agent_result.run.attempts),
+                "cache_hit": any(
+                    attempt.cached for attempt in image_agent_result.run.attempts),
+                "run_id": None,
+            }
+            if image_agent_result.review_required:
+                if note.target_component_id is not None:
+                    # A warning candidate has not become a revision and its
+                    # component identities have not been accepted. Until the
+                    # warning-candidate store can carry a mapped child atomically,
+                    # fail closed instead of later promoting an unmapped asset.
+                    return JSONResponse(status_code=422, content={
+                        "detail": (
+                            "component-aware edits require image QA to pass; "
+                            "refine the selection or instruction and retry"
+                        ),
+                        "code": "component_edit_qa_review_required",
+                        "category": "quality",
+                        "qa": qa_report,
+                        "steps": steps,
+                    })
+                run_id = persist_image_agent_result(
+                    db,
+                    image_agent_result,
+                    project_root_id=asset.root_id,
+                    source_asset_id=current.id,
+                    created_by=request.created_by,
+                )
+                routing_summary["run_id"] = run_id
+                from facetta.warning_candidates import (
+                    store_markup_warning_candidate,
+                )
+
+                candidate_drift = next((
+                    check.evidence.get("drift")
+                    for check in image_agent_result.quality.checks
+                    if check.code == "outside_mask_drift"
+                ), None)
+                candidate = store_markup_warning_candidate(
+                    run_id=run_id,
+                    project_root_id=asset.root_id,
+                    source_asset_id=current.id,
+                    expected_active_asset_id=current.id,
+                    reserved_asset_id=reserved_asset_id,
+                    expected_design_version=current_design_version,
+                    image_bytes=image_agent_result.image_bytes,
+                    media_type=_sniff_media_type(image_agent_result.image_bytes),
+                    operation=operation.value,
+                    asset_capability=(
+                        "GLOBAL_RESTYLE"
+                        if operation is ImageOperation.VISUAL_ONLY_EDIT
+                        else "LOCALIZED_EDIT"
+                    ),
+                    requested_change=note.change_instruction,
+                    region_description=note.region_description,
+                    drift=(float(candidate_drift)
+                           if isinstance(candidate_drift, (int, float))
+                           else None),
+                    next_spec=(scoped_spec if scoped is not None else None),
+                    ignored_fields=tuple(
+                        scoped.ignored_fields if scoped is not None else ()),
+                    qa=qa_report,
+                    routing=routing_summary,
+                    created_by=request.created_by,
+                )
+                return {
+                    "final_asset_id": None,
+                    "root_id": asset.root_id,
+                    "design_id": design_id,
+                    "design_version": current_design_version,
+                    "revision": None,
+                    "spec_version": current_design_version,
+                    "spec_change": [],
+                    "ignored_fields": (scoped.ignored_fields
+                                       if scoped is not None else []),
+                    "qa": qa_report,
+                    "routing": routing_summary,
+                    "image_run_id": run_id,
+                    "warning_candidate": {
+                        "run_id": run_id,
+                        "candidate_id": candidate.candidate_id,
+                        "preview_url": (
+                            f"/image-runs/{run_id}/candidates/"
+                            f"{candidate.candidate_id}/image"
+                        ),
+                        "qa": qa_report,
+                        "operation": operation.value,
+                        "requested_change": note.change_instruction,
+                    },
+                    "steps": steps,
+                }
+            result = {
+                "image": image_agent_result.image_bytes,
+                "drift": next((
+                    check.evidence.get("drift")
+                    for check in image_agent_result.quality.checks
+                    if check.code == "outside_mask_drift"
+                ), None),
+                "retried": len(image_agent_result.run.attempts) > 1,
+                "qa_report": qa_report,
+                "routing": routing_summary,
+            }
+        else:
+            try:
+                result = localized_edit(
+                    bytes(current.image),
+                    region_description=note.region_description,
+                    change_instruction=note.change_instruction,
+                    mask_bytes=mask_bytes, kind=request.kind,
+                    variant=request.variant)
+            except ValueError as exc:
+                step["rejected"] = True
+                step["detail"] = str(exc)
+                steps.append(step)
+                continue
+            except RenderUnavailable as exc:
+                return JSONResponse(status_code=502, content={
+                    "detail": str(exc), "steps": steps})
+
+        # Component geometry for the accepted child must come from a vision
+        # mapper over the actual output bytes. It is resolved and reconciled
+        # before the short image/spec/map transaction; no generic geometry or
+        # copied polygon is invented when the mapper cannot identify a part.
+        child_component_map = None
+        if note.target_component_id is not None:
+            reserved_asset_id = reserved_asset_id or new_id("ast")
+            try:
+                proposed_component_map = _revision_component_mapper(
+                    parent_map=parent_component_map,
+                    parent_image=bytes(current.image),
+                    child_asset_id=reserved_asset_id,
+                    child_image=result["image"],
+                    target_component_id=note.target_component_id,
+                    instruction=note.change_instruction,
+                )
+                if proposed_component_map.asset_id != reserved_asset_id:
+                    raise ComponentMappingUnresolved(
+                        "vision mapper bound the component map to the wrong "
+                        "child asset identity"
+                    )
+                bind_map_to_raster(
+                    proposed_component_map, result["image"])
+                child_component_map = reconcile_parent_component_ids(
+                    parent_component_map, proposed_component_map)
+                bind_map_to_raster(child_component_map, result["image"])
+            except ComponentMapError as exc:
                 return JSONResponse(status_code=422, content={
-                    "detail": "mask_base64 is not valid base64",
-                    "steps": steps})
-        try:
-            result = localized_edit(
-                bytes(current.image),
-                region_description=note.region_description,
-                change_instruction=note.change_instruction,
-                mask_bytes=mask_bytes, kind=request.kind,
-                variant=request.variant)
-        except ValueError as exc:
-            step["rejected"] = True
-            step["detail"] = str(exc)
-            steps.append(step)
-            continue
-        except RenderUnavailable as exc:
-            return JSONResponse(status_code=502, content={
-                "detail": str(exc), "steps": steps})
+                    "detail": exc.detail,
+                    "code": exc.code,
+                    "category": "validation",
+                    "steps": steps,
+                })
 
-        child = _store_asset(
-            db, result["image"], "LOCALIZED_EDIT", current,
-            instruction=note.change_instruction,
-            region=note.region_description, drift=result["drift"],
-            created_by=request.created_by)
-        step.update({"asset_id": child.id,
-                     "version": _version_number(_chain(db, asset.root_id),
-                                                child.id),
-                     "drift": result["drift"], "retried": result["retried"]})
-
-        # 3) one immutable DesignVersion per synced change
+        # 3) persist the accepted image and immutable spec as one transaction.
+        # Provider and validation work above intentionally happen before this
+        # short write section.
+        next_design_version = current_design_version
+        stored = None
+        changes: list[dict] = []
         if scoped is not None and current_spec is not None:
             from facetta.api.designs import _store_version
             from facetta.db import Design
@@ -508,21 +1240,86 @@ def markup_apply(asset_id: str, request: MarkupApplyRequest, db: DbSession):
             latest = db.scalar(
                 select(func.max(DesignVersion.version)).where(
                     DesignVersion.design_id == design_id)) or 0
+            if current_design_version is not None and latest != current_design_version:
+                db.rollback()
+                return JSONResponse(status_code=409, content={
+                    "detail": ("the design changed while the image was being "
+                               "prepared; no revision was saved"),
+                    "code": "stale_design_version",
+                    "category": "stale_version",
+                    "expected_design_version": current_design_version,
+                    "current_design_version": latest,
+                    "steps": steps})
+            next_design_version = latest + 1
             before = current_spec.model_dump(mode="json")
-            stored = _store_version(db, design, scoped_spec, latest + 1,
-                                    request.created_by)
-            changes = diff_specs(before, stored)
+        try:
+            child = _store_asset(
+                db, result["image"], "LOCALIZED_EDIT", current,
+                asset_id=reserved_asset_id,
+                instruction=note.change_instruction,
+                region=note.region_description, drift=result["drift"],
+                design_version=next_design_version,
+                created_by=request.created_by, commit=False)
+            if scoped is not None and current_spec is not None:
+                stored = _store_version(
+                    db, design, scoped_spec, next_design_version,
+                    request.created_by, commit=False)
+                changes = diff_specs(before, stored)
+            if child_component_map is not None:
+                add_revision_component_map(
+                    db,
+                    child_component_map,
+                    image_bytes=result["image"],
+                    parent_asset_id=current.id,
+                )
+            if image_agent_result is not None:
+                run_id = persist_image_agent_result(
+                    db,
+                    image_agent_result,
+                    project_root_id=asset.root_id,
+                    source_asset_id=current.id,
+                    accepted_asset_id=child.id,
+                    created_by=request.created_by,
+                    commit=False,
+                )
+                routing_summary["run_id"] = run_id
+            db.commit()
+        except Exception:
+            db.rollback()
+            raise
+
+        step.update({
+            "asset_id": child.id,
+            "version": _version_number(_chain(db, asset.root_id), child.id),
+            "design_version": next_design_version,
+            "drift": result["drift"],
+            "retried": result["retried"],
+            "qa_report": result.get("qa_report"),
+            "model_routing": result.get("routing", {
+                "attempts": 2 if result.get("retried") else 1,
+                "fallback_used": bool(result.get("fallback_used", False)),
+            }),
+            "target_component_id": note.target_component_id,
+            "component_map_url": (
+                f"/assets/{child.id}/component-map"
+                if child_component_map is not None else None
+            ),
+        })
+
+        if stored is not None:
             step.update({
-                "spec_synced": True, "new_spec_version": latest + 1,
+                "spec_synced": True,
+                "new_spec_version": next_design_version,
                 "changed_fields": scoped.changed_fields,
                 "ignored_fields": scoped.ignored_fields,
+                "spec_change": changes,
                 "changes_summary": summarize_changes(changes)})
             current_spec = scoped_spec
-        elif "spec_synced" not in step:
+            current_design_version = next_design_version
+        else:
             step["spec_synced"] = False
-            if current_spec is None and request.update_spec:
-                step["spec_note"] = ("chain not linked to a design — image "
-                                     "only (PATCH /assets/{id}/link-design)")
+            step.setdefault(
+                "spec_note", "visual-only edit; specification inherited")
 
         current = child
         steps.append(step)
@@ -532,10 +1329,42 @@ def markup_apply(asset_id: str, request: MarkupApplyRequest, db: DbSession):
     if applied:
         consistency = check_design_consistency(start_bytes,
                                                bytes(current.image))
+    last_step = applied[-1] if applied else None
+    raw_changes = last_step.get("spec_change", []) if last_step else []
+    canonical_changes = [{
+        "path": change["path"],
+        "label": change.get("label"),
+        "before": change.get("from"),
+        "after": change.get("to"),
+        "kind": change.get("kind"),
+    } for change in raw_changes]
+    revision = None
+    if applied:
+        revision = {
+            "revision": _version_number(_chain(db, asset.root_id), current.id),
+            "asset": _asset_meta(db, current),
+            "spec_version": current.design_version,
+            "spec_change": canonical_changes,
+            "ignored_fields": last_step.get("ignored_fields", []),
+            "qa": last_step.get("qa_report"),
+            "routing": last_step.get("model_routing"),
+            "created_at": current.created_at.isoformat(),
+        }
     return {
         "final_asset_id": current.id if applied else None,
         "root_id": asset.root_id,
         "design_id": design_id,
+        "design_version": (current_design_version if applied else None),
+        "revision": revision,
+        "spec_version": (current_design_version if applied else None),
+        "spec_change": canonical_changes,
+        "ignored_fields": (last_step.get("ignored_fields", [])
+                           if last_step else []),
+        "qa": last_step.get("qa_report") if last_step else None,
+        "routing": last_step.get("model_routing") if last_step else None,
+        "image_run_id": ((last_step.get("model_routing") or {}).get("run_id")
+                         if last_step else None),
+        "warning_candidate": None,
         "steps": steps,
         "consistency": consistency,
         "image_b64": (stamp_b64(bytes(current.image)) if applied else None),
@@ -552,7 +1381,7 @@ class AssetRestyleRequest(BaseModel):
     variant: int = 0  # regenerate: a fresh take on the SAME restyle
 
 
-@router.post("/{asset_id}/global-restyle", status_code=201)
+@router.post("/{asset_id}/global-restyle", status_code=201, deprecated=True)
 def create_global_restyle(asset_id: str, request: AssetRestyleRequest,
                           db: DbSession):
     """The whole-piece change path: reference-locked, no freeze contract,
@@ -596,7 +1425,7 @@ class AssetVideoRequest(BaseModel):
     created_by: str = "usr_pending"
 
 
-@router.post("/{asset_id}/video", status_code=201)
+@router.post("/{asset_id}/video", status_code=201, deprecated=True)
 def create_spin_video(asset_id: str, request: AssetVideoRequest, db: DbSession):
     """A short showcase clip (slow spin) of the piece, from its render —
     design-locked. Stored as a chain child (SPIN_VIDEO) when the mp4 is
@@ -644,15 +1473,27 @@ def link_design(asset_id: str, request: LinkDesignRequest, db: DbSession):
     also move the design's spec and the factory sheet letters the latest
     version automatically."""
     from facetta.db import Design
+    from facetta.project_backbone import (
+        DesignAlreadyLinked, ensure_design_chain_available,
+    )
 
     asset = _get_asset(db, asset_id)
     if db.get(Design, request.design_id) is None:
         raise HTTPException(status_code=404,
                             detail=f"unknown design '{request.design_id}'")
     root = db.get(ImageAsset, asset.root_id) or asset
+    try:
+        ensure_design_chain_available(db, request.design_id, root.id)
+    except DesignAlreadyLinked as exc:
+        return JSONResponse(status_code=409, content={
+            "detail": str(exc),
+            "code": "design_already_linked",
+            "existing_root_id": exc.root_id})
     root.design_id = request.design_id
     db.commit()
     return {"root_id": root.id, "design_id": request.design_id,
+            "design_version": None,
+            "provenance": "legacy_unversioned",
             "message": f"chain linked to design {request.design_id} — markup "
                        "edits will keep its spec in sync"}
 
@@ -697,6 +1538,60 @@ def get_asset(asset_id: str, db: DbSession):
                                      media_type=asset.media_type)}
 
 
+@router.get("/{asset_id}/component-map")
+def get_asset_component_map(asset_id: str, db: DbSession):
+    _get_asset(db, asset_id)
+    try:
+        component_map = load_revision_component_map(db, asset_id)
+    except ComponentMapError as exc:
+        return JSONResponse(status_code=409, content={
+            "detail": exc.detail,
+            "code": exc.code,
+            "category": "validation",
+        })
+    if component_map is None:
+        return JSONResponse(status_code=404, content={
+            "detail": "this visual revision has no component map",
+            "code": "component_map_not_found",
+            "category": "validation",
+        })
+    return component_map.model_dump(mode="json")
+
+
+@router.get("/{asset_id}/components/{component_id}/mask")
+def get_asset_component_mask(
+    asset_id: str,
+    component_id: str,
+    db: DbSession,
+):
+    _get_asset(db, asset_id)
+    try:
+        component_map = load_revision_component_map(db, asset_id)
+        if component_map is None:
+            raise ComponentMapError(
+                "this visual revision has no component map",
+                code="component_map_not_found",
+            )
+        mask = rasterize_component_mask(component_map, component_id)
+    except ComponentMapError as exc:
+        status = 404 if exc.code in {
+            "component_map_not_found", "target_component_not_found"
+        } else 422
+        return JSONResponse(status_code=status, content={
+            "detail": exc.detail,
+            "code": exc.code,
+            "category": "validation",
+        })
+    return Response(
+        content=mask,
+        media_type="image/png",
+        headers={
+            "X-Facetta-Asset-Id": asset_id,
+            "X-Facetta-Component-Id": component_id,
+        },
+    )
+
+
 @router.get("/{asset_id}/image")
 def get_asset_image(asset_id: str, db: DbSession):
     asset = _get_asset(db, asset_id)
@@ -718,10 +1613,18 @@ def get_history(asset_id: str, db: DbSession):
         "factory_source_asset_id": pinned.id if pinned else None,
         "pinned_version": _version_number(chain, pinned.id) if pinned else None,
         "history": [{
-            "asset_id": a.id, "version": i,
+            "asset_id": a.id,
+            "version": _version_number(chain, a.id),
+            "revision": (_version_number(chain, a.id)
+                         if _is_primary_revision(a) else None),
+            "derived_from_revision": (None if _is_primary_revision(a)
+                                      else _version_number(chain, a.id)),
+            "chain_position": i,
             "parent_asset_id": a.parent_asset_id,
             "capability": a.capability, "region": a.region,
             "instruction": a.instruction, "drift": a.drift,
+            "design_version": a.design_version,
+            "image_url": f"/assets/{a.id}/image",
             "pinned": a.pinned_at is not None,
             "created_at": a.created_at.isoformat(),
         } for i, a in enumerate(chain, start=1)],
@@ -740,6 +1643,24 @@ def _linked_design(db: Session, asset: ImageAsset):
         .where(DesignVersion.design_id == root.design_id)
         .order_by(DesignVersion.version.desc())
     ).scalars().first()
+    if row is None:
+        return None
+    result = validate_spec(Spec.model_validate(row.spec), get_vocabulary())
+    if not result.ok:
+        return None
+    return root.design_id, row.version, result.spec
+
+
+def _exact_linked_design(db: Session, asset: ImageAsset):
+    """Resolve the specification explicitly represented by ``asset``.
+
+    Unlike ``_linked_design`` this never substitutes the latest spec for an
+    older visual.  A NULL version is returned as unknown legacy provenance.
+    """
+    root = db.get(ImageAsset, asset.root_id) or asset
+    if not root.design_id or asset.design_version is None:
+        return None
+    row = db.get(DesignVersion, (root.design_id, asset.design_version))
     if row is None:
         return None
     result = validate_spec(Spec.model_validate(row.spec), get_vocabulary())
@@ -770,7 +1691,7 @@ def _checklist_state(db: Session, checklist: ApprovalChecklist) -> dict:
     return checklist_status(checklist.items, responses)
 
 
-@router.post("/{asset_id}/pin")
+@router.post("/{asset_id}/pin", deprecated=True)
 def pin_asset(asset_id: str, db: DbSession):
     """Pin this version for factory: the manufacturing technical drawing is
     generated from the chain's pinned asset, never silently from 'latest'.
@@ -780,6 +1701,20 @@ def pin_asset(asset_id: str, db: DbSession):
     mode isn't 'optional'): every item must be approved first — the tap-tap
     ritual IS the road to the factory. No checklist → pin behaves as always."""
     asset = _get_asset(db, asset_id)
+    if asset.capability == "CREATIVE_RENDER":
+        return JSONResponse(status_code=409, content={
+            "detail": (
+                "creative candidates must be promoted with a designer-confirmed "
+                "specification before approval or factory pinning"
+            ),
+            "code": "creative_candidate_requires_spec_promotion",
+        })
+    if not _is_primary_revision(asset):
+        return JSONResponse(status_code=409, content={
+            "detail": "only a primary render or edit can be pinned; derived "
+                      "notes, views, videos, and drawings belong to their "
+                      "source revision",
+            "code": "derived_asset_not_approvable"})
     checklist = _newest_checklist(db, asset_id)
     if checklist is not None and checklist.mode != "optional":
         status = _checklist_state(db, checklist)
@@ -817,6 +1752,19 @@ def create_checklist(asset_id: str, request: ChecklistCreateRequest,
     The spec comes from the body, else the chain's design link; with neither
     there is nothing to derive facts from → 409."""
     asset = _get_asset(db, asset_id)
+    if asset.capability == "CREATIVE_RENDER":
+        return JSONResponse(status_code=409, content={
+            "detail": (
+                "creative candidates are review-only; confirm and persist an "
+                "exact specification before creating an approval checklist"
+            ),
+            "code": "creative_candidate_requires_spec_promotion",
+        })
+    if not _is_primary_revision(asset):
+        return JSONResponse(status_code=409, content={
+            "detail": "approval checklists bind to primary visual revisions",
+            "code": "derived_asset_not_approvable"})
+    linked = _exact_linked_design(db, asset)
     validated = None
     if request.spec is not None:
         result = validate_spec(request.spec, get_vocabulary())
@@ -825,9 +1773,14 @@ def create_checklist(asset_id: str, request: ChecklistCreateRequest,
                 "detail": [issue.as_detail() for issue in result.issues]})
         validated = result.spec
     else:
-        linked = _linked_design(db, asset)
         if linked:
             _, _, validated = linked
+        elif (db.get(ImageAsset, asset.root_id) or asset).design_id:
+            return JSONResponse(status_code=409, content={
+                "detail": ("this asset has legacy provenance with no exact "
+                           "design version; create a new spec-aligned revision "
+                           "before approval"),
+                "code": "legacy_provenance_not_approvable"})
     if validated is None:
         return JSONResponse(status_code=409, content={
             "detail": "no spec to derive checklist items from — pass a spec "
@@ -836,12 +1789,19 @@ def create_checklist(asset_id: str, request: ChecklistCreateRequest,
 
     items = [i.model_dump() for i in build_checklist_items(validated)]
     checklist = ApprovalChecklist(
-        id=new_id("chk"), asset_id=asset.id, mode=request.mode, items=items,
+        id=new_id("chk"), asset_id=asset.id,
+        design_id=(linked[0] if linked else None),
+        design_version=(asset.design_version
+                        if asset.design_version is not None else
+                        (linked[1] if linked else None)),
+        mode=request.mode, items=items,
         created_by=request.created_by)
     db.add(checklist)
     db.commit()
     return {"checklist_id": checklist.id, "asset_id": asset.id,
             "version": _version_number(_chain(db, asset.root_id), asset.id),
+            "design_id": checklist.design_id,
+            "design_version": checklist.design_version,
             "mode": checklist.mode, "items": items,
             "status": checklist_status(items, [])}
 
@@ -865,6 +1825,8 @@ def get_checklist(asset_id: str, db: DbSession):
             "created_at": r.created_at.isoformat()}
     status = checklist_status(checklist.items, responses)
     return {"checklist_id": checklist.id, "asset_id": asset.id,
+            "design_id": checklist.design_id,
+            "design_version": checklist.design_version,
             "mode": checklist.mode, "items": checklist.items,
             "answers": latest, "status": status,
             "pin_state": {"pinned": asset.pinned_at is not None,
@@ -918,19 +1880,47 @@ def respond_checklist(asset_id: str, request: ChecklistRespondRequest,
     out: dict = {"checklist_id": checklist.id, "item_key": request.item_key,
                  "approved": request.approved}
 
-    linked = _linked_design(db, asset)
+    linked = _exact_linked_design(db, asset)
     if not request.approved:
-        # the code-built prefill: the item's section/ref map 1:1 onto the
-        # scoped-edit Annotation and the localized-edit region
+        # The checklist fact maps 1:1 onto the single canonical markup
+        # instruction.  The designer first supplies/reads the marked canvas,
+        # confirms the interpretation, then applies this exact-version prefill.
+        annotation = {
+            "region_description": f"the {item['label'].lower()}",
+            "change_instruction": note,
+            "target_ref": item.get("ref"),
+            "target_section": item["section"],
+            "index": item.get("index"),
+        }
+        if item.get("target_element_id"):
+            annotation["target_element_id"] = item["target_element_id"]
+        expected_design_version = (
+            linked[1] if linked else checklist.design_version)
+        apply_body: dict = {
+            "annotations": [annotation],
+            "created_by": request.created_by,
+        }
+        if expected_design_version is not None:
+            apply_body["expected_design_version"] = expected_design_version
         out["change_request"] = {
-            "annotate": {"ref": item.get("ref"), "section": item["section"],
-                         "index": item.get("index"), "instruction": note},
-            "localized_edit": {
-                "region_description": f"the {item['label'].lower()}",
-                "change_instruction": note},
-            "endpoints": ["POST /designs/{design_id}/annotate",
-                          f"POST /assets/{asset.id}/localized-edit"],
-            "design_id": linked[0] if linked else None,
+            "workflow": "markup_read_then_apply",
+            "annotation_prefill": annotation,
+            "markup_read": {
+                "method": "POST",
+                "endpoint": f"/assets/{asset.id}/markup/read",
+                "body_requires": ["marked_image_base64"],
+                "mutates_project": False,
+            },
+            "markup_apply": {
+                "method": "POST",
+                "endpoint": f"/assets/{asset.id}/markup/apply",
+                "body": apply_body,
+                "requires_designer_confirmation": True,
+            },
+            "endpoints": [f"POST /assets/{asset.id}/markup/read",
+                          f"POST /assets/{asset.id}/markup/apply"],
+            "design_id": (linked[0] if linked else checklist.design_id),
+            "design_version": expected_design_version,
         }
         if request.interpret:
             from facetta.grokedit import (
@@ -994,7 +1984,7 @@ class ChainDrawingRequest(BaseModel):
     use_this_asset: bool = False
 
 
-@router.post("/{asset_id}/technical-drawing")
+@router.post("/{asset_id}/technical-drawing", deprecated=True)
 def chain_technical_drawing(asset_id: str, request: ChainDrawingRequest,
                             db: DbSession):
     """MODE B, gated by the pin: generates the manufacturing technical
@@ -1029,7 +2019,7 @@ def chain_technical_drawing(asset_id: str, request: ChainDrawingRequest,
         validated = result.spec
         spec_source = "request"
     else:
-        linked = _linked_design(db, source)
+        linked = _exact_linked_design(db, source)
         if linked:
             design_id, design_version, validated = linked
             spec_source = f"design:{design_id} v{design_version}"

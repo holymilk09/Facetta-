@@ -12,7 +12,15 @@ import math
 from dataclasses import dataclass, field
 
 from facetta.density import check_density
-from facetta.spec import RingSize, Spec, Stone
+from facetta.spec import (
+    DimensionProvenance,
+    OpenLinkChainGeometry,
+    RingSize,
+    SmoothChainGeometry,
+    Spec,
+    Stone,
+    StrandedChainGeometry,
+)
 from facetta.vocabulary import Vocabulary
 
 # US ring size -> inner diameter: linear model, size 3 = 14.07 mm, +0.8128 mm per size
@@ -25,11 +33,30 @@ HALO_MARGIN_MM = 0.3   # gap between center stone girdle and melee
 STONE_GAP_MM = 0.2     # minimum gap between adjacent surround stones
 STATION_GAP_MM = 1.0   # minimum metal between bangle station stones
 
-RING_TEMPLATES = ("solitaire_prong", "halo_prong")
+RING_TEMPLATES = ("solitaire_prong", "halo_prong", "leaf_shoulder_prong")
 BRACELET_TEMPLATES = ("love_bangle", "cuff", "link_bracelet")
 UNMOUNTED_TEMPLATES = ("loose_stone",)  # no setting/metal — the stone is the piece
 BROOCH_TEMPLATES = ("leaf_spray_brooch",)
 DROP_TEMPLATES = ("deco_drop_earring",)  # articulated drop earrings
+
+# Every currently supported sheet template has an explicit product-category
+# contract.  ``cluster_pendant`` intentionally covers both a pendant supplied
+# without a carrier and the same pendant sold on a necklace chain.  Keep this
+# check in validation rather than the Pydantic schema so historical/future
+# template strings remain readable even when the current product cannot approve
+# or manufacture them yet.
+TEMPLATE_JEWELRY_TYPES: dict[str, frozenset[str]] = {
+    **{template: frozenset({"ring"}) for template in RING_TEMPLATES},
+    **{template: frozenset({"bracelet"}) for template in BRACELET_TEMPLATES},
+    **{template: frozenset({"loose_stone"}) for template in UNMOUNTED_TEMPLATES},
+    **{template: frozenset({"brooch"}) for template in BROOCH_TEMPLATES},
+    **{template: frozenset({"earring"}) for template in DROP_TEMPLATES},
+    "cluster_pendant": frozenset({"necklace", "pendant"}),
+}
+
+OPEN_LINK_CHAIN_STYLES = ("cable", "curb", "figaro", "box")
+STRANDED_CHAIN_STYLES = ("rope", "wheat", "singapore")
+SMOOTH_CHAIN_STYLES = ("snake",)
 
 # leaf-spray cluster constants (mm)
 CLUSTER_HUB_MM = 1.6    # metal frame + hub a quatrefoil adds beyond its petals
@@ -57,6 +84,31 @@ class ValidationIssue:
         if self.expected is not None:
             detail["expected"] = self.expected
         return detail
+
+
+def _validate_template_jewelry_type(
+    spec: Spec,
+    issues: list[ValidationIssue],
+) -> None:
+    """Reject a known template paired with the wrong jewelry category.
+
+    Unknown template strings remain schema-readable for migration compatibility;
+    downstream capability/render gates continue to reject unsupported templates.
+    """
+    allowed = TEMPLATE_JEWELRY_TYPES.get(spec.template)
+    if allowed is None or spec.jewelry_type in allowed:
+        return
+    options = sorted(allowed)
+    issues.append(ValidationIssue(
+        loc=("jewelry_type",),
+        type="template",
+        msg=(
+            f"template '{spec.template}' is compatible with jewelry_type "
+            f"{', '.join(options)}, not '{spec.jewelry_type}'"
+        ),
+        valid_options=options,
+        expected={"template": spec.template, "jewelry_type": options},
+    ))
 
 
 @dataclass
@@ -250,7 +302,8 @@ def _validate_stone(stone: Stone, loc: tuple, vocab: Vocabulary, issues: list[Va
         return  # every remaining rule cascades from the species
 
     trade_names = vocab.trade_color_names(stone.species)
-    if trade_names and stone.color.trade not in trade_names:
+    if trade_names and not vocab.is_trade_color_value(
+            stone.species, stone.color.trade):
         issues.append(ValidationIssue(
             loc=(*loc, "color", "trade"),
             msg=f"'{stone.color.trade}' is not a known trade color term for {species.display}",
@@ -520,6 +573,164 @@ def _validate_spray(spec: Spec, issues: list[ValidationIssue]) -> None:
         ))
 
 
+def _validate_chain_manufacturing(
+    spec: Spec,
+    issues: list[ValidationIssue],
+) -> None:
+    """Validate geometry when present without rejecting readable legacy data.
+
+    ``chain_factory_blockers`` owns the missing-record release gate.  Here we
+    reject only contradictory or physically impossible facts supplied in a new
+    manufacturing record.
+    """
+    chain = spec.chain
+    if chain is None:
+        return
+
+    if chain.production is not None:
+        allowed_kinds = (
+            {"supplier_sku", "approved_sample"}
+            if chain.production.mode == "stock"
+            else {"dimensioned_drawing", "cad_asset"}
+        )
+        if chain.production.reference_kind not in allowed_kinds:
+            issues.append(ValidationIssue(
+                loc=("chain", "production", "reference_kind"),
+                type="manufacturing",
+                msg=(
+                    f"{chain.production.mode} chain production cannot use "
+                    f"'{chain.production.reference_kind}' as its authoritative "
+                    "reference"
+                ),
+                valid_options=sorted(allowed_kinds),
+            ))
+
+    geometry = chain.geometry
+    if geometry is None:
+        return
+
+    expected: str | None = None
+    if chain.style in OPEN_LINK_CHAIN_STYLES:
+        expected = "open_link"
+    elif chain.style in STRANDED_CHAIN_STYLES:
+        expected = "stranded"
+    elif chain.style in SMOOTH_CHAIN_STYLES:
+        expected = "smooth_plate"
+    if expected is not None and geometry.construction != expected:
+        issues.append(ValidationIssue(
+            loc=("chain", "geometry", "construction"),
+            type="manufacturing",
+            msg=(
+                f"chain style '{chain.style}' requires {expected} geometry; "
+                f"received {geometry.construction}"
+            ),
+            expected={"construction": expected},
+        ))
+        return
+
+    if (spec.pendant is not None
+            and chain.pendant_connection == "slides_through_bail"):
+        minimum_bail = round(
+            max(geometry.chain_width_mm, geometry.profile_thickness_mm) + 0.2,
+            2,
+        )
+        if spec.pendant.bail_inner_diameter_mm < minimum_bail:
+            issues.append(ValidationIssue(
+                loc=("pendant", "bail_inner_diameter_mm"),
+                type="fit",
+                msg=(
+                    f"bail ID {spec.pendant.bail_inner_diameter_mm} mm cannot "
+                    f"clear the {geometry.chain_width_mm} x "
+                    f"{geometry.profile_thickness_mm} mm chain profile with "
+                    "0.2 mm assembly clearance"
+                ),
+                expected={"min_bail_inner_diameter_mm": minimum_bail},
+            ))
+
+    if isinstance(geometry, OpenLinkChainGeometry):
+        roles = [link.role for link in geometry.links]
+        expected_roles = ["standard", "long"] if chain.style == "figaro" else [
+            "standard"
+        ]
+        if sorted(roles) != sorted(expected_roles):
+            issues.append(ValidationIssue(
+                loc=("chain", "geometry", "links"),
+                type="manufacturing",
+                msg=(
+                    f"{chain.style} chain requires link records "
+                    f"{expected_roles}; received {roles}"
+                ),
+                expected={"roles": expected_roles},
+            ))
+        if geometry.profile_thickness_mm < geometry.link_thickness_mm:
+            issues.append(ValidationIssue(
+                loc=("chain", "geometry", "profile_thickness_mm"),
+                type="fit",
+                msg=(
+                    f"finished profile {geometry.profile_thickness_mm} mm is "
+                    f"thinner than its {geometry.link_thickness_mm} mm link "
+                    "section"
+                ),
+                expected={
+                    "min_profile_thickness_mm": geometry.link_thickness_mm,
+                },
+            ))
+        for index, link in enumerate(geometry.links):
+            min_length = round(
+                link.inside_length_mm + 2 * geometry.link_thickness_mm, 2)
+            if link.length_mm < min_length:
+                issues.append(ValidationIssue(
+                    loc=("chain", "geometry", "links", index, "length_mm"),
+                    type="fit",
+                    msg=(
+                        f"link outside length {link.length_mm} mm cannot contain "
+                        f"a {link.inside_length_mm} mm opening plus two "
+                        f"{geometry.link_thickness_mm} mm link sections"
+                    ),
+                    expected={"min_link_length_mm": min_length},
+                ))
+            min_width = round(
+                link.inside_width_mm + 2 * geometry.link_thickness_mm, 2)
+            if geometry.chain_width_mm < min_width:
+                issues.append(ValidationIssue(
+                    loc=("chain", "geometry", "chain_width_mm"),
+                    type="fit",
+                    msg=(
+                        f"chain width {geometry.chain_width_mm} mm cannot contain "
+                        f"the {link.role} link's {link.inside_width_mm} mm inside "
+                        f"width plus two {geometry.link_thickness_mm} mm sections"
+                    ),
+                    expected={"min_chain_width_mm": min_width},
+                ))
+    elif isinstance(geometry, StrandedChainGeometry):
+        if geometry.strand_wire_diameter_mm > geometry.profile_thickness_mm:
+            issues.append(ValidationIssue(
+                loc=("chain", "geometry", "strand_wire_diameter_mm"),
+                type="fit",
+                msg=(
+                    f"strand wire {geometry.strand_wire_diameter_mm} mm is "
+                    f"thicker than the {geometry.profile_thickness_mm} mm "
+                    "finished profile"
+                ),
+                expected={
+                    "max_strand_wire_diameter_mm": geometry.profile_thickness_mm,
+                },
+            ))
+    elif isinstance(geometry, SmoothChainGeometry):
+        if geometry.plate_thickness_mm > geometry.profile_thickness_mm:
+            issues.append(ValidationIssue(
+                loc=("chain", "geometry", "plate_thickness_mm"),
+                type="fit",
+                msg=(
+                    f"plate thickness {geometry.plate_thickness_mm} mm exceeds "
+                    f"the {geometry.profile_thickness_mm} mm finished profile"
+                ),
+                expected={
+                    "max_plate_thickness_mm": geometry.profile_thickness_mm,
+                },
+            ))
+
+
 def _validate_assembly(spec: Spec, vocab: Vocabulary, issues: list[ValidationIssue]) -> None:
     """Template section requirements and multi-stone physical fit."""
     if spec.template not in UNMOUNTED_TEMPLATES:
@@ -631,6 +842,7 @@ def _validate_assembly(spec: Spec, vocab: Vocabulary, issues: list[ValidationIss
                 type="vocabulary",
                 valid_options=vocab.clasp_type_ids(),
             ))
+        _validate_chain_manufacturing(spec, issues)
 
     # halo / surround stones must physically fit around the center stone
     center = spec.stone.dimensions_mm
@@ -722,6 +934,7 @@ def validate_spec(spec: Spec, vocab: Vocabulary) -> ValidationResult:
     """
     issues: list[ValidationIssue] = []
 
+    _validate_template_jewelry_type(spec, issues)
     _validate_stone(spec.stone, ("stone",), vocab, issues)
     for i, stone in enumerate(spec.side_stones):
         _validate_stone(stone, ("side_stones", i), vocab, issues)
@@ -744,6 +957,19 @@ def validate_spec(spec: Spec, vocab: Vocabulary) -> ValidationResult:
         elif spec.ring_size.inner_diameter_mm is None:
             spec = spec.model_copy(deep=True)
             spec.ring_size.inner_diameter_mm = expected
+            size_source = spec.dimension_provenance.get("ring_size.value")
+            if (size_source is not None
+                    and size_source.status == "estimated_from_reference"):
+                spec.dimension_provenance["ring_size.inner_diameter_mm"] = (
+                    DimensionProvenance(
+                        status="estimated_from_reference",
+                        method=size_source.method,
+                        source=size_source.source,
+                        confidence=size_source.confidence,
+                        note=("Derived from an estimated ring size; verify "
+                              "both values before production."),
+                    )
+                )
         elif abs(spec.ring_size.inner_diameter_mm - expected) > RING_DIAMETER_TOLERANCE_MM:
             issues.append(ValidationIssue(
                 loc=("ring_size", "inner_diameter_mm"),

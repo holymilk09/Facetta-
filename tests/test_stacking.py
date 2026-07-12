@@ -1,7 +1,5 @@
 """Multi-layer stacking: overlay sheets and nesting clearance."""
 
-import copy
-
 import pytest
 from fastapi.testclient import TestClient
 

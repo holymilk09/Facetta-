@@ -3,10 +3,10 @@
 Configuration — connection strings and provider API keys — lives in the
 environment. For zero-setup local development a gitignored ``.env`` at the repo
 root is the single home for all of it: ``DATABASE_URL`` plus the optional
-``ANTHROPIC_API_KEY`` / ``FAL_KEY`` / ``XAI_KEY``. ``load_env_file()`` (called at
-app startup) copies those into the process environment so every consumer — our
-own reads *and* the Anthropic SDK, which looks up ``ANTHROPIC_API_KEY`` itself —
-picks them up. A real exported environment variable always wins over the file.
+``ANTHROPIC_API_KEY`` / ``FAL_KEY`` / ``XAI_KEY`` / ``OPENAI_API_KEY``.
+``load_env_file()`` (called at app startup) copies those into the process
+environment so every consumer picks them up. A real exported environment
+variable always wins over the file.
 """
 
 from __future__ import annotations

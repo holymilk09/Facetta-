@@ -13,6 +13,10 @@ import { LoginScreen } from './src/LoginScreen';
 import { OnboardingScreen } from './src/OnboardingScreen';
 import { ShareScreen } from './src/ShareScreen';
 import { radius, shadows, theme } from './src/theme';
+import {
+  TRUSTED_WORKSPACE_ENABLED,
+  TrustedWorkspaceEntry,
+} from './src/trusted';
 import { WorkflowShowcase } from './src/WorkflowShowcase';
 
 type Tab = 'builder' | 'designs' | 'share';
@@ -34,6 +38,20 @@ export default function App() {
   const api = useMemo(() => createApi(apiUrl.replace(/\/$/, '')), [apiUrl]);
   const { width } = useWindowDimensions();
   const isWide = width >= 900; // tablet / desktop: two-pane layouts
+
+  if (TRUSTED_WORKSPACE_ENABLED) {
+    return (
+      <SafeAreaView style={styles.root}>
+        <StatusBar style="dark" />
+        <TrustedWorkspaceEntry
+          apiBaseUrl={apiUrl}
+          designer={designer}
+          enabled
+          viewportWidth={width}
+        />
+      </SafeAreaView>
+    );
+  }
 
   if (stage === 'onboarding') {
     return (

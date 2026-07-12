@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import base64
 
+from facetta.cairo_support import load_cairosvg
 from facetta.mockup import compile_artwork_restyle_request  # noqa: F401 (style guard)
 from facetta.render import _sniff_media_type, restyle_artwork
 from facetta.spec import Spec
@@ -33,7 +34,7 @@ def render_blueprint_sheet(spec: Spec, model: str = "grok_direct",
     """Return (svg, was_cached). Raises RenderUnavailable without a key or
     when the provider fails — callers translate to 503/502, exactly like the
     photoreal render."""
-    import cairosvg  # deferred: rasterizer needs system cairo
+    cairosvg = load_cairosvg()
 
     geometry_png = cairosvg.svg2png(
         bytestring=render_sheet_geometry(spec).encode(),

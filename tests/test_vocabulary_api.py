@@ -58,6 +58,118 @@ def test_findings_endpoint_serves_metalwork_vocabulary():
     assert body["girdle_thickness_scale"][0] == "extremely_thin"  # ordered scale
 
 
+def test_chain_component_catalog_exposes_typed_agent_control_metadata():
+    response = client.get("/vocabulary/components/chain.style")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["component_path"] == "chain.style"
+    assert body["applicable_jewelry_types"] == ["necklace"]
+    assert body["image_agent_status"] == "catalog_ready"
+    options = {option["id"]: option for option in body["options"]}
+    assert {"cable", "curb", "figaro", "rope", "box", "snake"} <= options.keys()
+    assert options["curb"]["factory_fields"] == {"chain.style": "curb"}
+    assert "chain" in options["curb"]["isolation_target"].lower()
+    assert options["curb"]["visual_geometry"]
+    assert "pendant" in options["curb"]["frozen_facts"]
+
+
+def test_ring_component_catalogs_expose_exact_coupled_controls():
+    cuts = client.get("/vocabulary/components/stone.cut")
+    assert cuts.status_code == 200
+    cut_body = cuts.json()
+    assert cut_body["display"] == "Center stone cut / shape"
+    assert cut_body["applicable_jewelry_types"] == ["ring"]
+    assert cut_body["image_agent_status"] == "catalog_ready"
+    cut_options = {option["id"]: option for option in cut_body["options"]}
+    assert set(cut_options) == {
+        "round_brilliant", "oval_brilliant", "emerald_cut", "cushion",
+    }
+    assert cut_options["emerald_cut"]["factory_fields"] == {
+        "stone.cut": "emerald_cut",
+    }
+    assert cut_options["emerald_cut"]["derived_factory_fields"] == [
+        "stone.carat",
+    ]
+
+    materials = client.get("/vocabulary/components/metal.material")
+    assert materials.status_code == 200
+    material_options = {
+        option["id"]: option for option in materials.json()["options"]
+    }
+    assert material_options["gold_18_rose"]["factory_fields"] == {
+        "metal.material": "gold",
+        "metal.karat": 18,
+        "metal.color": "rose",
+    }
+    assert material_options["platinum"]["factory_fields"] == {
+        "metal.material": "platinum",
+        "metal.karat": None,
+        "metal.color": None,
+    }
+
+    colors = client.get("/vocabulary/components/metal.color")
+    assert colors.status_code == 200
+    assert {option["id"] for option in colors.json()["options"]} == {
+        "yellow", "white", "rose",
+    }
+
+    settings = client.get("/vocabulary/components/setting.style")
+    assert settings.status_code == 200
+    setting_options = {
+        option["id"]: option for option in settings.json()["options"]
+    }
+    assert setting_options["6_prong_basket"]["factory_fields"] == {
+        "setting.style": "6_prong_basket",
+        "setting.prong_count": 6,
+    }
+    assert setting_options["bezel"]["factory_fields"] == {
+        "setting.style": "bezel",
+        "setting.prong_count": None,
+        "setting.prong_tip_mm": None,
+    }
+
+
+def test_center_stone_quick_palette_requires_species_and_is_contextual():
+    missing = client.get("/vocabulary/components/stone.color")
+    assert missing.status_code == 422
+    assert missing.json()["code"] == "stone_species_required"
+
+    sapphire = client.get(
+        "/vocabulary/components/stone.color",
+        params={"stone_species": "sapphire"},
+    )
+    assert sapphire.status_code == 200, sapphire.text
+    body = sapphire.json()
+    assert body["display"] == "Center stone species and color"
+    assert 5 <= len(body["options"]) <= 7
+    royal_blue = next(option for option in body["options"]
+                      if option["id"] == "Royal Blue")
+    assert royal_blue["factory_fields"]["stone.species"] == "sapphire"
+    assert royal_blue["factory_fields"]["stone.color"]["trade"] == "Royal Blue"
+    assert "stone.dimensions_mm" in royal_blue["frozen_facts"]
+
+    unknown = client.get(
+        "/vocabulary/components/stone.color",
+        params={"stone_species": "jadeite"},
+    )
+    assert unknown.status_code == 422
+    assert unknown.json()["code"] == "stone_species_invalid"
+    assert "diamond" in unknown.json()["valid_options"]
+
+
+def test_unknown_component_catalog_is_a_structured_404():
+    response = client.get("/vocabulary/components/chain.magic")
+    assert response.status_code == 404
+    assert response.json()["valid_catalogs"] == [
+        "chain.style",
+        "stone.cut",
+        "stone.color",
+        "metal.material",
+        "metal.color",
+        "setting.style",
+    ]
+
+
 def test_unknown_stone_404s_with_valid_options():
     response = client.get("/vocabulary/stones/jadeite/options")
     assert response.status_code == 404

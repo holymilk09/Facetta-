@@ -9,6 +9,33 @@ renders.
 Read `CLAUDE.md` for the project constitution, `docs/PRD.md` for product requirements,
 `docs/SPEC_SCHEMA.md` for the spec object schema, and `TASKS.md` for the build order.
 
+## Trusted jewelry workflow (internal milestone)
+
+The canonical product loop is **Create → Refine → Approve → Factory**. A
+category-neutral designer prompt or source drawing/image can first create one
+to four review-only visual candidates through `POST /projects/from-prompt` or
+`POST /projects/from-drawing`. A chosen candidate must be promoted into an
+exact designer-confirmed specification before approval. Structured ring
+projects can also start through `POST /projects/from-brief` or
+`POST /projects/from-image`; confirmed markup creates an immutable visual/spec
+revision; approval binds that exact pair; and the project factory-pack endpoint
+exports authoritative confirmed facts plus review-only visual references. The
+deterministic SVG/DXF are explicitly schematic dimensional diagrams—not
+production drawings or buildable jewelry geometry. Production handoff still
+requires a designer-approved, design-derived technical drawing and/or
+tolerance-bearing CAD/master geometry.
+
+Grok is primary for image work. Every trusted candidate passes structured
+jewelry QA, receives one failure-specific Grok correction when needed, and may
+use one task-safe fallback: FLUX when configured, otherwise the OpenAI image
+adapter when its credential is available. Warnings require designer review and failed
+candidates never become project assets. A reviewed warning remains immutable
+in its original image-run evidence; explicit acceptance writes a separate
+review decision and the exact revision atomically. See
+[`docs/trusted-workflow-architecture.md`](docs/trusted-workflow-architecture.md)
+and the OpenAPI-checked
+[`route inventory`](docs/trusted-workflow-route-inventory.md).
+
 ## Setup
 
 Requires Python 3.11+ and [uv](https://docs.astral.sh/uv/).
@@ -29,9 +56,10 @@ cp .env.example .env
 | Key | Used by |
 |---|---|
 | `DATABASE_URL` | PostgreSQL / Supabase (unset → local SQLite). See [Database](#database). |
-| `ANTHROPIC_API_KEY` | Claude endpoints: prose → spec, photo → spec, the edit agent |
+| `ANTHROPIC_API_KEY` | Optional legacy Claude prose → spec and edit-agent endpoints |
 | `FAL_KEY` | Photoreal renders / blueprint sheets via fal.ai |
-| `XAI_KEY` | Grok Imagine direct + concept origination |
+| `XAI_KEY` | Grok Imagine generation/editing and Grok Vision concept/photo extraction |
+| `OPENAI_API_KEY` | Optional direct GPT Image comparison runs; never exposed as a normal user model choice |
 
 `.env` is loaded into the process environment at app startup (`facetta.config`),
 so the keys reach both Facetta's own reads and the Anthropic SDK. A real exported
@@ -114,7 +142,9 @@ terms.
 | Endpoint | Purpose |
 |---|---|
 | `GET /vocabulary/stones` · `GET /vocabulary/stones/{id}/options` | Cascading dropdown data: choosing a stone swaps its colors (trade+GIA), clarity system and grades, cuts, phenomena. Pearl and opal return their own parameter sets. |
-| `POST /specs/sheet.svg` | Stateless technical-sheet preview from a spec |
+| `POST /specs/catalog/select` | Apply one controlled cut, complete alloy/color, setting, or chain choice to an unpersisted draft; coupled and derived facts compile deterministically with no provider call or persistence |
+| `POST /specs/stone/select` | Apply one vocabulary-controlled center species and trade color; incompatible grading/origin claims clear and modeled carat updates at frozen dimensions |
+| `POST /specs/sheet.svg` | Stateless technical-sheet preview from a spec; incomplete reference-defined geometry is visibly marked preliminary and generic template geometry is withheld |
 | `POST /designs` · `POST /designs/{id}/versions` | Create a design / a new immutable version (there is no update — edits always become version+1) |
 | `GET /designs/{id}/versions/{v}/sheet.svg` | The stored version's dimensioned sheet |
 | `POST /designs/{id}/versions/{v}/share` → `GET /share/{token}` | Share links pinned to one exact version; `comment` scope lets a factory pin comments to a region of the sheet |
@@ -122,12 +152,59 @@ terms.
 | `POST /specs/prototype.svg` · `GET /designs/{id}/versions/{v}/prototype.svg` | Deterministic colored prototype (vocabulary hues + metal tones) |
 | `POST /specs/render-prompt` | Compiled photoreal prompt + control-image hint for external image models |
 | `POST /specs/render-request` | Scene-controlled mockup request (lighting, worn-on, photo/atelier-sketch style) with a geometry-locked seed: swap stone color or metal and the composition holds; change a dimension and it reseeds |
-| `POST /specs/sheet.dxf` · `GET /designs/{id}/versions/{v}/sheet.dxf` | The sheet as a DXF R12 drawing — the 2D underlay jewelry CAD (Rhino, MatrixGold) imports natively |
-| `POST /specs/from-photo` | Claude vision: photo of a finished piece → draft spec (designer corrects dims; same validation gate) |
+| `POST /specs/sheet.dxf` · `GET /designs/{id}/versions/{v}/sheet.dxf` | Transform-aware DXF R12 underlay for jewelry CAD: nested rotations and quadratic/cubic/arc outlines are preserved as deterministic polylines; unsupported geometry fails instead of being dropped. It remains a non-authoritative 2D exchange reference, and unresolved custom form or chain geometry returns `409` |
+| `POST /specs/from-photo` | Grok Vision: finished-piece photo → physically corrected draft with stable component coverage; trusted callers run the same blind-first audit and designers still confirm dimensions |
+| `POST /specs/from-plate` | Hand-rendered plate → ring or necklace draft with explicit component coverage; multi-view plates inventory one finished piece, preserve physical stone-group roles/labels, and the trusted client runs a blind-first independent inventory/mapping audit that keeps omissions/uncertainty blocking |
+| `POST /projects/{id}/render` | QA-checked beauty render from the exact designer-confirmed imported reference/spec; incomplete source-component coverage is rejected before image work |
+| `POST /assets/{id}/markup/read` · `POST /assets/{id}/markup/apply` | Read/confirm one marked change, then persist a version-checked image/spec revision. Freeform form edits require a stable element ID and saved same-raster mask |
+| `POST /assets/{id}/catalog/apply` | Apply one safe ring or necklace-chain catalog choice from the exact active image/spec pair. Chain style requires designer-confirmed target geometry and a new exact stock/sample or custom drawing/CAD reference; missing/incompatible facts fail before provider work. Passes persist image/spec/run atomically and warnings remain temporary until explicit review |
+| `POST /projects/{id}/product-photo` | Trusted ecommerce restage: catalog, luxury studio, dark editorial, or macro presentation; ring geometry/spec stay frozen and QA-warning candidates require designer review |
+| `POST /projects/{id}/marketing-pack` | Generate one to four review-only ecommerce background candidates. Designer-accepted images persist as exact-version derived assets and never replace the active design or invalidate factory approval |
+| `POST /projects/from-prompt` | Turn a category-neutral designer direction into one to four QA-gated visual concepts. No source asset, specification, measurements, or factory authority is invented; every candidate waits for selection and confirmed-spec promotion |
+| `POST /projects/from-drawing` | Turn any valid designer drawing or jewelry image into one to four source-faithful visual candidates without grading the source or inventing factory facts; multi-view plates may include one normalized designer-selected region while Facetta retains both the full source and exact provider/QA crop |
+| `POST /projects/{id}/creative-candidates/{candidate_id}/draft` | Read the exact selected creative render into a non-persisted, independently audited draft without asking the designer to upload the candidate again |
+| `POST /projects/{id}/creative-candidates/{candidate_id}/dimensioned-profile/confirm` | Bind designer-entered millimeter paths/thickness to the exact stored candidate and return a non-persisted updated draft; the server supplies source hash and confirmation metadata, then requires source re-audit before promotion |
+| `POST /projects/{id}/creative-candidates/{candidate_id}/source-coverage/resolve` | Correct stable candidate-component mappings and optionally re-audit the exact stored candidate bytes |
+| `POST /projects/{id}/creative-candidates/{candidate_id}/source-coverage/confirm` | Bind explicit designer decisions only to inconclusive source facts; failed or missing audits cannot be overridden |
+| `POST /projects/{id}/line-art` | Geometry-only drawing candidate; even QA-pass output waits for explicit designer confirmation |
+| `POST /projects/{id}/line-art/{asset_id}/colorize` | Color a confirmed line drawing from the exact spec; deterministic and dual-vision material QA hard-fails corroborated stone/metal loss and routes conflicting cross-modality evidence to explicit designer review |
 | `POST /specs/restage-request` | Scene instruction for re-staging a photo of a finished piece via an image-editing model |
 | `GET/POST /designs/{id}/messages` | Designer ↔ factory discussion thread on a design (distinct from pinned sheet comments) |
 | `POST /specs/stack.svg` · `GET /designs/{id}/versions/{v}/stack/{id2}/{v2}/sheet.svg` | Overlay two pieces with computed nesting clearance |
 | `GET /vocabulary/findings` | Chain styles, clasp types, girdle thickness scale |
+| `GET /vocabulary/components/{component_path}` | Typed chain style, ring center-cut, complete metal alloy/color, and center-setting catalogs with exact/coupled factory fields, visual geometry, isolation target, applicability rules, and frozen facts |
+
+For multi-view designer plates, the line-art request may also carry a
+normalized `source_region` (`x`, `y`, `width`, `height`, each relative to the
+full raster) and `source_region_description`. Facetta crops on the server
+before provider work and preserves the exact selection through a corrective
+retry; the original project source remains immutable. This is an isolation
+control, not permission for the model to invent hidden geometry.
+
+Creative drawing intake uses the same normalized source-region coordinate
+contract. The full imported plate remains the immutable root source; an exact
+`CREATIVE_SOURCE_REGION` child asset stores the provider/QA crop, coordinates,
+description, media type, and hash. Candidate parentage and the image run's
+source ID/hash both point to that crop, so a plate cannot merely be described
+as isolated while the image model actually receives every alternate view.
+
+Design-form references and imported-source coverage are intentionally
+conservative.
+`visual_reference_only` components can be visually approved but keep the
+project out of `factory_ready` until a real dimensioned/CAD definition exists.
+The first supported resolution is a designer-supplied or
+designer-confirmed-estimate full-assembly millimeter profile. Facetta renders
+that profile instead of the generic template, labels estimated geometry, and
+ensures DXF conversion cannot resurrect concealed template geometry. Partial
+profiles remain blocked until a shared manufacturing datum is supported.
+Likewise, a new design plate or finished-photo import cannot produce a
+spec-aligned render or factory pack while any visible source component is
+unresolved or lacks a passing independent coverage audit. Existing immutable
+versions without these additive fields remain readable; Facetta never guesses
+a backfill. An old passing audit also cannot bless a mapping whose canonical
+spec path was removed by a later draft edit; that becomes an explicit
+`source_component_path_missing` blocker, and the vision audit is not called
+again until the deterministic mapping is corrected.
 
 ## Facet diagrams (GemCad .ASC)
 
@@ -225,6 +302,36 @@ npx expo start          # scan the QR with Expo Go, or press w for web
 Point the API URL field at your running backend (defaults to
 `http://localhost:8000`; set `EXPO_PUBLIC_API_URL` to override).
 
+The typed trusted workspace is staged behind
+`EXPO_PUBLIC_TRUSTED_WORKSPACE=true`. Its behavior and responsive reference
+screen live in `mobile/src/trusted/`; keep the flag off until the redesign is
+merged and the live ring reliability/founder-acceptance gates pass.
+After the redesign commits, it can import `TrustedWorkspaceEntry` as the single
+integration seam; provider/model internals never enter redesign-owned
+navigation. The trusted screen now includes category-neutral prompt and
+creative-first drawing/image intake with one to four candidates,
+candidate-to-audited-spec promotion,
+candidate-bound source correction/confirmation, and multi-preset ecommerce
+packs. Extracted reference and creative-candidate drafts open in a typed
+Factory Facts editor for stones, counts, dimensions, metal, setting, and
+ring/necklace construction. Designers explicitly mark changed dimensions as
+measured/supplied or reference estimates; raw JSON remains available under
+Advanced rather than being the primary correction workflow. Center gemstone
+species and trade colors cascade from the gemology vocabulary; cross-species
+colors and unsupported species cannot enter the draft. The same candidate
+review now renders the current facts through the canonical deterministic sheet
+compiler on demand. The preview becomes visibly stale after any fact change and
+is explicitly labeled either spec-derived or preliminary/not-for-production;
+it never bypasses exact-revision approval or factory-pack release gates.
+
+Factory-pack continuation pages are not dimension-only tables. The typed fact
+plan also carries non-numeric manufacturing records: stone mount and grading/
+treatment details, band profile, ring-size system, chain style/clasp/link roles/
+soldering/production reference, pendant connection, bracelet and drop link
+counts, custom-form authority, and designer factory instructions. Long values
+continue onto additional visible rows instead of being ellipsized. A pack fails
+closed if any recorded fact remains pending confirmation.
+
 ## Layout
 
 | Path | Purpose |
@@ -236,11 +343,19 @@ Point the API URL field at your running backend (defaults to
 | `scripts/author_facet_diagrams.py` | Authors the bundled diagrams from published proportions |
 | `src/facetta/spec.py` | Pydantic models for Spec Schema v1 |
 | `src/facetta/vocabulary.py` | Vocabulary loader + typed accessors |
+| `src/facetta/component_catalog.py` | Stable component choices compiled into one exact spec delta plus image-isolation controls |
+| `src/facetta/creative_workflow.py` | Category-neutral prompt → visual concepts and input-agnostic drawing/image → source-faithful beauty renders through the closed-loop image agent |
 | `src/facetta/density.py` | Carat ↔ mm density model (`carat = L × W × D × SG × shape_factor / 200`) |
 | `src/facetta/validation.py` | Vocabulary + physical-consistency rules with structured issues |
 | `src/facetta/svg_sheet.py` | Deterministic pencil-style technical sheet renderer (byte-stable per spec) |
-| `src/facetta/db.py` | SQLAlchemy models: users, designs, immutable design_versions, comments, share_links |
+| `src/facetta/db.py` | SQLAlchemy models including immutable design versions, exact-provenance assets, projects, approvals, image runs, and attempts |
+| `src/facetta/image_agent/` | Grok-primary plan/execute/evaluate/correct orchestration and ring QA |
+| `src/facetta/project_backbone.py` · `src/facetta/trusted_revision.py` | Atomic project creation plus accepted image/spec/run revision and warning-review persistence |
+| `src/facetta/factory_pack.py` | Exact approved-revision manifest and deterministic factory archive |
+| `src/facetta/factory_sheet_plan.py` | Deterministic material/stone/setting/dimension schedule with confirmed, estimated, and pending statuses |
+| `src/facetta/factory_schedule_pages.py` | Byte-stable A4 continuation pages so dense fact schedules are never truncated |
 | `src/facetta/prose.py` | Claude API prose → spec layer |
-| `src/facetta/api/` | Routers: vocabulary, specs, designs, share, users |
+| `src/facetta/photo_spec.py` | Grok Vision reference-photo read → deterministic draft spec |
+| `src/facetta/api/` | Routers including canonical projects, persisted markup/approval, image-run evidence, and factory handoff |
 | `src/facetta/main.py` | FastAPI app wiring |
 | `mobile/` | Expo (React Native) app: builder, designs, share views |
