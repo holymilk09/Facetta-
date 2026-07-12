@@ -59,6 +59,14 @@ class AcceptedWarningRevision:
 
 
 @dataclass(frozen=True)
+class DiscardedWarningCandidate:
+    project_root_id: str
+    source_asset_id: str
+    design_version: int
+    review_id: str
+
+
+@dataclass(frozen=True)
 class AcceptedSpecImageRevision:
     """One accepted, atomically persisted image/spec/run revision."""
 
@@ -188,6 +196,105 @@ def _accept_derived_warning_candidate(
     db.add_all([child, review, artifact])
     try:
         db.commit()
+    except Exception:
+        db.rollback()
+        raise
+    return AcceptedWarningRevision(
+        asset_id=child.id,
+        design_id=root.design_id or "",
+        design_version=design_version,
+        spec_change=(),
+        review_id=review.id,
+    )
+
+
+def _accept_presentation_warning_candidate(
+    db: Session,
+    *,
+    candidate: MarkupWarningCandidate,
+    run: ImageRun,
+    source: ImageAsset,
+    root: ImageAsset,
+    project: Project,
+    design_version: int,
+    created_by: str,
+) -> AcceptedWarningRevision:
+    """Persist an exact-source presentation output without advancing design."""
+
+    allowed = {
+        "CLIENT_BEAUTY_RENDER": "SPEC_RENDER",
+        "CLIENT_PRODUCT_PHOTO": "VISUAL_ONLY_EDIT",
+        "MARKETING_IMAGE": "VISUAL_ONLY_EDIT",
+    }
+    expected_operation = allowed.get(candidate.asset_capability)
+    if (candidate.promotion_kind != "presentation_only"
+            or candidate.next_spec is not None
+            or candidate.artifact_metadata is not None
+            or expected_operation is None
+            or candidate.operation != expected_operation
+            or run.operation != expected_operation):
+        raise WarningRevisionError(
+            "presentation_candidate_invalid",
+            "the reviewed candidate is not a presentation-only output",
+            status_code=422,
+        )
+    source_hash = hashlib.sha256(bytes(source.image)).hexdigest()
+    latest = db.get(DesignVersion, (root.design_id, design_version))
+    if latest is None:
+        raise WarningRevisionError(
+            "spec_version_unavailable",
+            "the exact source specification is unavailable",
+            status_code=404,
+        )
+    expected_spec_hash = spec_visual_hash(Spec.model_validate(latest.spec))
+    source_spec_hash_matches = (
+        run.source_spec_visual_hash == expected_spec_hash
+        if expected_operation == "VISUAL_ONLY_EDIT"
+        else run.source_spec_visual_hash in {None, expected_spec_hash}
+    )
+    if (run.project_root_id != project.root_id
+            or run.source_asset_id != source.id
+            or run.source_hash != source_hash
+            or run.spec_visual_hash != expected_spec_hash
+            or not source_spec_hash_matches
+            or run.created_by != candidate.created_by):
+        raise WarningRevisionError(
+            "presentation_candidate_lineage_mismatch",
+            "the presentation is not bound to this exact source and specification",
+            status_code=422,
+        )
+
+    child = ImageAsset(
+        id=candidate.reserved_asset_id or new_id("ast"),
+        root_id=source.root_id,
+        parent_asset_id=source.id,
+        design_id=None,
+        design_version=design_version,
+        capability=candidate.asset_capability,
+        instruction=candidate.requested_change,
+        region=candidate.region_description,
+        drift=None,
+        image=candidate.image_bytes,
+        media_type=_media_type(candidate.image_bytes),
+        created_by=created_by,
+    )
+    review = ImageRunReview(
+        id=new_id("irr"),
+        run_id=candidate.run_id,
+        decision="accepted",
+        accepted_asset_id=child.id,
+        created_by=created_by,
+    )
+    project.updated_at = utcnow()
+    db.add_all([child, review])
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise WarningRevisionError(
+            "presentation_candidate_resolution_conflict",
+            "another review decision was saved before this presentation",
+        ) from exc
     except Exception:
         db.rollback()
         raise
@@ -372,6 +479,13 @@ def accept_warning_revision(
     version, then commits the visual, optional immutable spec version, and
     review decision together in one short transaction.
     """
+    if (candidate.promotion_kind == "presentation_only"
+            and created_by != candidate.created_by):
+        raise WarningRevisionError(
+            "presentation_candidate_owner_mismatch",
+            "only the candidate creator may accept this presentation",
+            status_code=403,
+        )
     existing = db.scalar(select(ImageRunReview).where(
         ImageRunReview.run_id == candidate.run_id))
     if existing is not None and existing.accepted_asset_id is not None:
@@ -434,6 +548,17 @@ def accept_warning_revision(
 
     if candidate.promotion_kind == "derived_only":
         return _accept_derived_warning_candidate(
+            db,
+            candidate=candidate,
+            run=run,
+            source=source,
+            root=root,
+            project=project,
+            design_version=expected_design_version,
+            created_by=created_by,
+        )
+    if candidate.promotion_kind == "presentation_only":
+        return _accept_presentation_warning_candidate(
             db,
             candidate=candidate,
             run=run,
@@ -529,6 +654,82 @@ def accept_warning_revision(
         design_id=root.design_id,
         design_version=next_version,
         spec_change=changes,
+        review_id=review.id,
+    )
+
+
+def discard_warning_revision(
+    db: Session,
+    candidate: MarkupWarningCandidate,
+    *,
+    expected_design_version: int,
+    created_by: str,
+) -> DiscardedWarningCandidate:
+    """Record a terminal rejection against the candidate's exact lineage."""
+
+    if expected_design_version != candidate.expected_design_version:
+        raise WarningRevisionError(
+            "stale_design_version",
+            "the candidate was reviewed against a different specification version",
+        )
+    existing = db.scalar(select(ImageRunReview).where(
+        ImageRunReview.run_id == candidate.run_id))
+    if existing is not None:
+        raise WarningRevisionError(
+            "warning_candidate_resolution_conflict",
+            "this candidate already has a terminal review decision",
+        )
+    run = db.get(ImageRun, candidate.run_id)
+    source = db.get(ImageAsset, candidate.source_asset_id)
+    root = db.get(ImageAsset, candidate.project_root_id)
+    project = db.get(Project, candidate.project_root_id)
+    if (run is None or run.status != "review_required" or source is None
+            or root is None or root.design_id is None or project is None):
+        raise WarningRevisionError(
+            "warning_candidate_unavailable",
+            "the candidate's review lineage is no longer available",
+            status_code=404,
+        )
+    active = _active_primary(db, candidate.project_root_id)
+    latest = db.scalar(select(func.max(DesignVersion.version)).where(
+        DesignVersion.design_id == root.design_id))
+    source_hash = hashlib.sha256(bytes(source.image)).hexdigest()
+    if (source.root_id != candidate.project_root_id
+            or active is None
+            or active.id != candidate.expected_active_asset_id
+            or latest != expected_design_version
+            or source.design_version != expected_design_version
+            or run.project_root_id != candidate.project_root_id
+            or run.source_asset_id != source.id
+            or run.source_hash != source_hash
+            or run.created_by != created_by):
+        raise WarningRevisionError(
+            "warning_candidate_lineage_mismatch",
+            "the candidate is no longer bound to the exact active source",
+        )
+    review = ImageRunReview(
+        id=new_id("irr"),
+        run_id=run.id,
+        decision="discarded",
+        accepted_asset_id=None,
+        created_by=created_by,
+    )
+    db.add(review)
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise WarningRevisionError(
+            "warning_candidate_resolution_conflict",
+            "another review decision was saved before this candidate",
+        ) from exc
+    except Exception:
+        db.rollback()
+        raise
+    return DiscardedWarningCandidate(
+        project_root_id=project.root_id,
+        source_asset_id=source.id,
+        design_version=expected_design_version,
         review_id=review.id,
     )
 

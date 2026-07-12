@@ -96,7 +96,8 @@ export interface StudioMarkupPreview {
   annotation: MarkupApplyRequest['annotation'];
 }
 
-export interface StudioVariationRequest extends ExactStudioLineage {
+export interface StudioVariationRequest extends StudioVisualLineage {
+  sourceDesignVersion: number | null;
   createdBy: string;
   label: string;
 }
@@ -151,6 +152,11 @@ export interface StudioViewDecisionResult {
   project: ProjectDetail | null;
 }
 
+export interface StudioPresentationDecisionResult {
+  candidateId: string;
+  project: ProjectDetail;
+}
+
 export interface StudioFactoryEligibility {
   enabled: boolean;
   eligible: boolean;
@@ -172,6 +178,8 @@ type GatewayTrustedClient = Pick<TrustedApiClient,
   | 'applyMarkup'
   | 'acceptWarningCandidate'
   | 'discardWarningCandidate'
+  | 'acceptPresentationCandidate'
+  | 'discardPresentationCandidate'
   | 'createLineArt'
   | 'createBeautyRender'
   | 'createProductPhoto'
@@ -296,6 +304,18 @@ export function createStudioGateway(
     status: 'pending_review' | 'accepted' | 'discarded';
     studioJob: ActiveStudioJob | null;
   }>();
+  type PresentationDecision = 'pending_review' | 'accepted' | 'discarded';
+  interface PresentationGroup {
+    studioJob: ActiveStudioJob | null;
+    lineage: ExactStudioLineage;
+    decisions: Map<string, PresentationDecision>;
+  }
+  const presentationCandidates = new Map<string, {
+    runId: string;
+    candidateId: string;
+    capability: 'CLIENT_BEAUTY_RENDER' | 'CLIENT_PRODUCT_PHOTO' | 'MARKETING_IMAGE';
+    group: PresentationGroup;
+  }>();
   const visualCandidates = new Map<string, {
     runId: string;
     preview: StudioVisualPreview;
@@ -408,6 +428,46 @@ export function createStudioGateway(
     } catch (error) {
       return trackingError(error);
     }
+  };
+
+  const finishPresentationGroup = async (
+    group: PresentationGroup,
+  ): Promise<StudioGatewayResult<StudioJobRecord | null>> => {
+    const decisions = [...group.decisions.values()];
+    if (decisions.some((decision) => decision === 'pending_review')) {
+      return { data: null, error: null, status: 0 };
+    }
+    const accepted = decisions.filter((decision) => decision === 'accepted').length;
+    return accepted === 0
+      ? cancelJob(group.studioJob)
+      : transitionJob(group.studioJob, 'succeeded', 1, accepted);
+  };
+
+  const registerPresentationCandidates = (
+    studioJob: ActiveStudioJob | null,
+    lineage: ExactStudioLineage,
+    candidates: readonly {
+      runId: string;
+      candidateId: string;
+      capability: 'CLIENT_BEAUTY_RENDER' | 'CLIENT_PRODUCT_PHOTO' | 'MARKETING_IMAGE';
+    }[],
+  ): boolean => {
+    if (candidates.length === 0
+      || candidates.some(({ candidateId, runId }) => !candidateId || !runId)
+      || new Set(candidates.map(({ candidateId }) => candidateId)).size !== candidates.length
+      || candidates.some(({ candidateId }) => presentationCandidates.has(candidateId))) {
+      return false;
+    }
+    const group: PresentationGroup = {
+      studioJob,
+      lineage,
+      decisions: new Map(candidates.map(({ candidateId }) => [candidateId, 'pending_review'])),
+    };
+    candidates.forEach((candidate) => presentationCandidates.set(candidate.candidateId, {
+      ...candidate,
+      group,
+    }));
+    return true;
   };
 
   const callTracked = async <T>(
@@ -1193,6 +1253,23 @@ export function createStudioGateway(
           result.status,
         );
       }
+      if (result.data.status === 'review_required') {
+        const candidateId = result.data.warning_candidate.candidate_id;
+        const runId = result.data.warning_candidate.run_id;
+        if (candidateId === null || !registerPresentationCandidates(
+          started.data,
+          lineage,
+          [{ runId, candidateId, capability: 'CLIENT_BEAUTY_RENDER' }],
+        )) {
+          await failJob(started.data, 'INVALID_PRESENTATION_CANDIDATE', 0.95);
+          return gatewayError(
+            'INVALID_PRESENTATION_CANDIDATE',
+            'The presentation preview could not be bound to this saved revision.',
+            'invalid_response',
+            result.status,
+          );
+        }
+      }
       const activity = result.data.status === 'accepted'
         ? await transitionJob(started.data, 'succeeded', 1, 1)
         : await transitionJob(started.data, 'reviewing', 0.9);
@@ -1235,6 +1312,23 @@ export function createStudioGateway(
           result.status,
         );
       }
+      if (result.data.status === 'review_required') {
+        const candidateId = result.data.warning_candidate.candidate_id;
+        const runId = result.data.warning_candidate.run_id;
+        if (candidateId === null || !registerPresentationCandidates(
+          started.data,
+          lineage,
+          [{ runId, candidateId, capability: 'CLIENT_PRODUCT_PHOTO' }],
+        )) {
+          await failJob(started.data, 'INVALID_PRESENTATION_CANDIDATE', 0.95);
+          return gatewayError(
+            'INVALID_PRESENTATION_CANDIDATE',
+            'The presentation preview could not be bound to this saved revision.',
+            'invalid_response',
+            result.status,
+          );
+        }
+      }
       const activity = result.data.status === 'accepted'
         ? await transitionJob(started.data, 'succeeded', 1, 1)
         : await transitionJob(started.data, 'reviewing', 0.9);
@@ -1273,11 +1367,164 @@ export function createStudioGateway(
           result.status,
         );
       }
+      if (result.data.candidate_count > 0 && !registerPresentationCandidates(
+        started.data,
+        lineage,
+        result.data.candidates.map((candidate) => ({
+          runId: candidate.image_run_id,
+          candidateId: candidate.candidate_id,
+          capability: 'MARKETING_IMAGE' as const,
+        })),
+      )) {
+        await failJob(started.data, 'INVALID_PRESENTATION_CANDIDATE', 0.95);
+        return gatewayError(
+          'INVALID_PRESENTATION_CANDIDATE',
+          'The presentation previews could not be bound to this saved revision.',
+          'invalid_response',
+          result.status,
+        );
+      }
       const activity = result.data.status === 'failed' || result.data.candidate_count === 0
         ? await transitionJob(started.data, 'failed', 0.9, undefined, 'NO_PRESENTATION_OUTPUTS')
         : await transitionJob(started.data, 'reviewing', 0.9);
       if (activity.error !== null) return activity;
       return result;
+    },
+
+    async acceptPresentationCandidate(
+      request: StudioCandidateDecisionRequest,
+    ): Promise<StudioGatewayResult<StudioPresentationDecisionResult>> {
+      const stored = presentationCandidates.get(request.candidateId);
+      if (stored === undefined) return gatewayError(
+        'PRESENTATION_NOT_FOUND', 'This presentation preview is no longer available.',
+        'validation', 404,
+      );
+      if (stored.group.decisions.get(stored.candidateId) !== 'pending_review') {
+        return gatewayError(
+          'PRESENTATION_NOT_REVIEWABLE', 'This presentation preview already has a final decision.',
+          'conflict', 409,
+        );
+      }
+      const before = await client.getProject(stored.group.lineage.projectId);
+      if (before.error !== null) {
+        return { data: null, error: mapError(before.error), status: before.status };
+      }
+      const beforeLineage = exactLineage(before.data);
+      if (beforeLineage === null
+        || beforeLineage.sourceAssetId !== stored.group.lineage.sourceAssetId
+        || beforeLineage.sourceDesignVersion !== stored.group.lineage.sourceDesignVersion) {
+        await failJob(stored.group.studioJob, 'STALE_PRESENTATION_SOURCE', 0.95);
+        return gatewayError(
+          'STALE_PRESENTATION_SOURCE',
+          'The selected design changed while this presentation was awaiting review.',
+          'conflict', 409,
+        );
+      }
+      const accepted = await client.acceptPresentationCandidate(
+        stored.runId,
+        stored.candidateId,
+        {
+          created_by: request.createdBy,
+          expected_project_id: stored.group.lineage.projectId,
+          expected_source_asset_id: stored.group.lineage.sourceAssetId,
+          expected_design_version: stored.group.lineage.sourceDesignVersion,
+        },
+      );
+      if (accepted.error !== null) {
+        await failJob(stored.group.studioJob, accepted.error.code, 0.95);
+        return { data: null, error: mapError(accepted.error), status: accepted.status };
+      }
+      const acceptedLineage = exactLineage(accepted.data.project);
+      const savedAsset = accepted.data.project.derived_assets.find((asset) => (
+        asset.asset_id === accepted.data.asset_id
+        && asset.parent_asset_id === stored.group.lineage.sourceAssetId
+        && asset.design_version === stored.group.lineage.sourceDesignVersion
+        && asset.capability === stored.capability
+      ));
+      if (accepted.data.project_id !== stored.group.lineage.projectId
+        || accepted.data.source_asset_id !== stored.group.lineage.sourceAssetId
+        || accepted.data.source_design_version !== stored.group.lineage.sourceDesignVersion
+        || accepted.data.capability !== stored.capability
+        || acceptedLineage === null
+        || acceptedLineage.sourceAssetId !== stored.group.lineage.sourceAssetId
+        || acceptedLineage.sourceDesignVersion !== stored.group.lineage.sourceDesignVersion
+        || savedAsset === undefined) {
+        await failJob(stored.group.studioJob, 'INVALID_PRESENTATION_ACCEPT_LINEAGE', 0.95);
+        return gatewayError(
+          'INVALID_PRESENTATION_ACCEPT_LINEAGE',
+          'Saving the presentation did not preserve the selected design revision.',
+          'invalid_response', accepted.status,
+        );
+      }
+      stored.group.decisions.set(stored.candidateId, 'accepted');
+      const finished = await finishPresentationGroup(stored.group);
+      if (finished.error !== null) return finished;
+      return {
+        data: { candidateId: stored.candidateId, project: accepted.data.project },
+        error: null,
+        status: accepted.status,
+      };
+    },
+
+    async discardPresentationCandidate(
+      request: StudioCandidateDecisionRequest,
+    ): Promise<StudioGatewayResult<StudioPresentationDecisionResult>> {
+      const stored = presentationCandidates.get(request.candidateId);
+      if (stored === undefined) return gatewayError(
+        'PRESENTATION_NOT_FOUND', 'This presentation preview is no longer available.',
+        'validation', 404,
+      );
+      if (stored.group.decisions.get(stored.candidateId) !== 'pending_review') {
+        return gatewayError(
+          'PRESENTATION_NOT_REVIEWABLE', 'This presentation preview already has a final decision.',
+          'conflict', 409,
+        );
+      }
+      const before = await client.getProject(stored.group.lineage.projectId);
+      if (before.error !== null) {
+        return { data: null, error: mapError(before.error), status: before.status };
+      }
+      const beforeLineage = exactLineage(before.data);
+      if (beforeLineage === null
+        || beforeLineage.sourceAssetId !== stored.group.lineage.sourceAssetId
+        || beforeLineage.sourceDesignVersion !== stored.group.lineage.sourceDesignVersion) {
+        await failJob(stored.group.studioJob, 'STALE_PRESENTATION_SOURCE', 0.95);
+        return gatewayError(
+          'STALE_PRESENTATION_SOURCE',
+          'The selected design changed while this presentation was awaiting review.',
+          'conflict', 409,
+        );
+      }
+      const discarded = await client.discardPresentationCandidate(
+        stored.runId, stored.candidateId, {
+          created_by: request.createdBy,
+          expected_project_id: stored.group.lineage.projectId,
+          expected_source_asset_id: stored.group.lineage.sourceAssetId,
+          expected_design_version: stored.group.lineage.sourceDesignVersion,
+        },
+      );
+      if (discarded.error !== null) {
+        return { data: null, error: mapError(discarded.error), status: discarded.status };
+      }
+      if (discarded.data.project_id !== stored.group.lineage.projectId
+        || discarded.data.source_asset_id !== stored.group.lineage.sourceAssetId
+        || discarded.data.source_design_version !== stored.group.lineage.sourceDesignVersion
+        || discarded.data.candidate_id !== stored.candidateId) {
+        await failJob(stored.group.studioJob, 'INVALID_PRESENTATION_DISCARD_LINEAGE', 0.95);
+        return gatewayError(
+          'INVALID_PRESENTATION_DISCARD_LINEAGE',
+          'Discarding the presentation could not be confirmed for the selected design revision.',
+          'invalid_response', discarded.status,
+        );
+      }
+      stored.group.decisions.set(stored.candidateId, 'discarded');
+      const finished = await finishPresentationGroup(stored.group);
+      if (finished.error !== null) return finished;
+      return {
+        data: { candidateId: stored.candidateId, project: before.data },
+        error: null,
+        status: discarded.status,
+      };
     },
 
     getFactoryEligibility,

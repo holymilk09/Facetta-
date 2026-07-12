@@ -48,6 +48,10 @@ PROVENANCE_BY_CAPABILITY = {
     "CREATIVE_RENDER": "pre_spec_creative_candidate",
     "CREATIVE_SOURCE": "designer_supplied_source",
     "CREATIVE_SOURCE_REGION": "designer_selected_source_region",
+    "CREATIVE_REFERENCE_BOARD": "role_labeled_reference_board",
+    "CREATIVE_REFERENCE_MATERIAL_STYLE": "material_style_reference",
+    "CREATIVE_REFERENCE_CONSTRUCTION_DETAIL": "construction_detail_reference",
+    "CREATIVE_REFERENCE_BRAND_DIRECTION": "brand_direction_reference",
     "SPEC_RENDER": "generated_spec_aligned",
     "JEWELRY_RENDER": "generated_render",
     "IMPORTED_REFERENCE": "imported_reference",
@@ -56,6 +60,7 @@ PROVENANCE_BY_CAPABILITY = {
     "GLOBAL_RESTYLE": "visual_only_edit",
     "PRODUCT_PHOTO": "ecommerce_product_photo",
     "CLIENT_PRODUCT_PHOTO": "client_presentation_photo",
+    "CLIENT_BEAUTY_RENDER": "client_presentation_beauty_render",
     "MARKETING_IMAGE": "ecommerce_marketing_derivative",
     "LINE_ART": "designer_confirmed_line_art",
     "COLORED_LINE_ART": "spec_colored_line_art",
@@ -473,6 +478,10 @@ def persist_creative_project(
     render_source_image: bytes | None = None,
     render_source_media_type: str | None = None,
     render_source_instruction: str | None = None,
+    render_source_capability: Literal[
+        "CREATIVE_SOURCE_REGION", "CREATIVE_REFERENCE_BOARD"
+    ] = "CREATIVE_SOURCE_REGION",
+    reference_sources: tuple[SourceAssetInput, ...] = (),
     candidates: tuple[CreativeCandidateInput, ...],
     owner: str,
     title: str,
@@ -490,6 +499,18 @@ def persist_creative_project(
         raise ValueError("a creative project requires at least one candidate")
     if any(not candidate.image for candidate in candidates):
         raise ValueError("creative candidate image must not be empty")
+    allowed_reference_capabilities = {
+        "CREATIVE_REFERENCE_MATERIAL_STYLE",
+        "CREATIVE_REFERENCE_CONSTRUCTION_DETAIL",
+        "CREATIVE_REFERENCE_BRAND_DIRECTION",
+    }
+    if any(
+        not source.image or source.capability not in allowed_reference_capabilities
+        for source in reference_sources
+    ):
+        raise ValueError("creative role reference source is invalid")
+    if len({source.capability for source in reference_sources}) != len(reference_sources):
+        raise ValueError("creative role reference capabilities must be unique")
 
     now = utcnow()
     root_id = new_id("ast")
@@ -516,7 +537,7 @@ def persist_creative_project(
             parent_asset_id=root_id,
             design_id=None,
             design_version=None,
-            capability="CREATIVE_SOURCE_REGION",
+            capability=render_source_capability,
             instruction=(render_source_instruction or "Designer-selected source region"),
             image=render_source_image,
             media_type=(
@@ -526,6 +547,22 @@ def persist_creative_project(
             created_at=now,
         )
     render_source_id = render_source.id if render_source is not None else root_id
+    reference_rows = [
+        ImageAsset(
+            id=new_id("ast"),
+            root_id=root_id,
+            parent_asset_id=root_id,
+            design_id=None,
+            design_version=None,
+            capability=source.capability,
+            instruction=source.instruction,
+            image=source.image,
+            media_type=source.media_type or sniff_media_type(source.image),
+            created_by=owner,
+            created_at=now,
+        )
+        for source in reference_sources
+    ]
     project = Project(
         root_id=root_id,
         owner=owner,
@@ -556,6 +593,7 @@ def persist_creative_project(
             root,
             project,
             *([render_source] if render_source is not None else []),
+            *reference_rows,
             *candidate_rows,
         ])
         from facetta.image_run_store import persist_image_agent_result

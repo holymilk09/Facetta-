@@ -1,17 +1,15 @@
 import { StatusBar } from 'expo-status-bar';
 import React, { useMemo, useState } from 'react';
 import {
-  Image, Pressable, SafeAreaView, ScrollView, StyleSheet, Text, TextInput,
+  Image, Pressable, SafeAreaView, ScrollView, StyleSheet, Text,
   useWindowDimensions, View,
 } from 'react-native';
-import { createApi, DEFAULT_API_URL } from './src/api';
+import { DEFAULT_API_URL } from './src/api';
 import {
   clearSession, hasOnboarded, loadSession, markOnboarded, saveSession, Session,
 } from './src/auth';
-import type { EditingTarget } from './src/BuilderScreen';
 import { LoginScreen } from './src/LoginScreen';
 import { OnboardingScreen } from './src/OnboardingScreen';
-import { ShareScreen } from './src/ShareScreen';
 import { getStudioAction, getStudioRailActions, getVisibleStudioActions } from './src/studio/actions';
 import { StudioActionContext, StudioActionId } from './src/studio/contracts';
 import { StudioCollectionsWorkspace } from './src/studio/StudioCollectionsWorkspace';
@@ -20,6 +18,7 @@ import { pickExpoStudioCreateReference } from './src/studio/expoReferencePicker'
 import { StudioRefineWorkspace } from './src/studio/StudioRefineWorkspace';
 import { StudioViewsWorkspace } from './src/studio/StudioViewsWorkspace';
 import { StudioPresentWorkspace } from './src/studio/StudioPresentWorkspace';
+import { StudioVaryWorkspace } from './src/studio/StudioVaryWorkspace';
 import { StudioActivityWorkspace } from './src/studio/StudioActivityWorkspace';
 import {
   createStudioGatewayFromOptions, ExactStudioLineage, StudioVisualLineage,
@@ -29,15 +28,11 @@ import { createTrustedApiClient } from './src/trusted/client';
 import type { ProjectDetail } from './src/trusted/types';
 import { WorkflowShowcase } from './src/WorkflowShowcase';
 
-type Tab = 'studio' | 'collections' | 'activity' | 'learn' | 'share';
+type Tab = 'studio' | 'collections' | 'activity' | 'learn';
 type StudioView = 'home' | 'action';
 type Stage = 'onboarding' | 'tour' | 'login' | 'app';
 
 const designImage = require('./assets/studio-asymmetric-paraiba-ring-v1.png');
-const cuffImage = require('./assets/studio-high-jewelry-aquamarine-cuff-v1.png');
-const modelCommerceImage = require('./assets/studio-model-commerce-v2.png');
-const precisionImage = require('./assets/studio-precision-edit.png');
-const collectionImage = require('./assets/studio-setting-variations-v2.png');
 
 function StudioCard({
   image, eyebrow, title, body, accent, wide, onPress,
@@ -79,17 +74,12 @@ export default function App() {
   const [studioView, setStudioView] = useState<StudioView>('home');
   const [selectedActionId, setSelectedActionId] = useState<StudioActionId>('create');
   const [showMoreActions, setShowMoreActions] = useState(false);
-  const [apiUrl, setApiUrl] = useState(DEFAULT_API_URL);
+  const apiUrl = DEFAULT_API_URL;
   const [designer, setDesigner] = useState(session?.designerId ?? 'usr_ana');
-  const [editing, setEditing] = useState<EditingTarget | null>(null);
-  const [focusDesignId, setFocusDesignId] = useState<string | null>(null);
-  const [shareToken, setShareToken] = useState<string | null>(null);
   const [showUtilityMenu, setShowUtilityMenu] = useState(false);
-  const [showDevSettings, setShowDevSettings] = useState(false);
   const [studioProject, setStudioProject] = useState<ProjectDetail | null>(null);
   const [selectedCreativeAssetId, setSelectedCreativeAssetId] = useState<string | null>(null);
 
-  const api = useMemo(() => createApi(apiUrl.replace(/\/$/, '')), [apiUrl]);
   const trustedApi = useMemo(
     () => createTrustedApiClient({ baseUrl: apiUrl.replace(/\/$/, '') }),
     [apiUrl],
@@ -103,7 +93,7 @@ export default function App() {
   );
   const { width } = useWindowDimensions();
   const isWide = width >= 900; // tablet / desktop: two-pane layouts
-  const activeDesignId = studioProject?.root_id ?? editing?.designId ?? focusDesignId;
+  const activeDesignId = studioProject?.root_id ?? null;
   const exactStudioLineage = useMemo<ExactStudioLineage | null>(() => {
     if (studioProject?.active_asset_id === null || studioProject?.active_asset_id === undefined
       || studioProject.active_design_version === null) return null;
@@ -124,14 +114,13 @@ export default function App() {
   }, [studioProject]);
   const actionContext = useMemo<StudioActionContext>(() => ({
     activeDesignId,
-    activeRevisionId: studioProject?.active_asset_id ?? selectedCreativeAssetId
-      ?? (editing ? `${editing.designId}:v${editing.version}` : null),
+    activeRevisionId: studioProject?.active_asset_id ?? selectedCreativeAssetId,
     hasExactSpecification: exactStudioLineage !== null,
     // Factory promotion is deliberately unavailable until the API supplies both
     // an enablement flag and an explicit eligibility decision for this revision.
     factoryEnabled: false,
     factoryEligible: false,
-  }), [activeDesignId, editing, exactStudioLineage, selectedCreativeAssetId, studioProject]);
+  }), [activeDesignId, exactStudioLineage, selectedCreativeAssetId, studioProject]);
   const hasActiveRevision = Boolean(actionContext.activeDesignId && actionContext.activeRevisionId);
   const studioActions = getStudioRailActions(actionContext);
   const moreActions = getVisibleStudioActions(actionContext, 'more');
@@ -216,11 +205,6 @@ export default function App() {
       {showUtilityMenu && (
         <View style={[styles.utilityMenu, shadows.lifted]}>
           {session && <Text style={styles.sessionEmail}>{session.email}</Text>}
-          {__DEV__ && (
-            <Pressable onPress={() => setShowDevSettings(!showDevSettings)} style={styles.utilityRow}>
-              <Text style={styles.utilityRowText}>Developer connection</Text>
-            </Pressable>
-          )}
           <Pressable
             style={styles.utilityRow}
             onPress={() => {
@@ -232,26 +216,7 @@ export default function App() {
           </Pressable>
         </View>
       )}
-      {__DEV__ && showDevSettings && (
-        <View style={styles.settings}>
-          <TextInput
-            style={styles.settingsInput}
-            value={apiUrl}
-            onChangeText={setApiUrl}
-            placeholder="API URL"
-            autoCapitalize="none"
-          />
-          <TextInput
-            style={[styles.settingsInput, { flex: 0.5 }]}
-            value={designer}
-            onChangeText={setDesigner}
-            placeholder="designer id"
-            autoCapitalize="none"
-          />
-        </View>
-      )}
-
-      {tab === 'studio' && (
+      {tab === 'studio' && studioView === 'action' && (
         <View style={[styles.actionRail, isStudioHome && styles.actionRailDark]}>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.actionRailContent}>
             {studioActions.map((action) => (
@@ -299,62 +264,28 @@ export default function App() {
             </Text>
           </View>
 
+          {hasActiveRevision && (
+            <StudioCard
+              image={studioProject?.active_revision?.image_url
+                ? { uri: studioProject.active_revision.image_url }
+                : designImage}
+              eyebrow="CURRENT DESIGN"
+              title={studioProject?.title ?? 'Resume your design'}
+              body="Continue from the current saved revision. Every Studio action will use this exact starting point."
+              accent="#8de2c2"
+              wide
+              onPress={() => openStudioAction('refine')}
+            />
+          )}
           <StudioCard
             image={designImage}
-            eyebrow="AI DESIGN"
-            title="Create—or upload—your piece"
-            body="Describe an idea or submit a ring, sketch, or reference to begin."
+            eyebrow="NEW DESIGN"
+            title="Start from an idea or reference"
+            body="Begin with a sentence, drawing, photograph, render, or master-geometry image."
             accent="#b9a6ff"
             wide
             onPress={() => openStudioAction('create')}
           />
-
-          <View style={styles.dashboardSectionHeader}>
-            <Text style={styles.dashboardSectionTitle}>Creative studios</Text>
-            <Text style={styles.dashboardSectionMeta}>POWERED BY YOUR DESIGN</Text>
-          </View>
-          <View style={styles.studioGrid}>
-            {hasActiveRevision && (
-              <StudioCard
-                image={cuffImage}
-                eyebrow="SETTING VARIATIONS"
-                title="Preserve a new direction"
-                body="Copy this exact revision into a named sibling before you refine it."
-                accent="#8de2c2"
-                onPress={() => openStudioAction('vary')}
-              />
-            )}
-            {exactStudioLineage !== null && (
-              <StudioCard
-                image={modelCommerceImage}
-                eyebrow="CLIENT & MARKETING"
-                title="Prepare presentation imagery"
-                body="Create client-ready beauty views or a reviewable marketing image set from the exact revision."
-                accent="#a9c8ff"
-                onPress={() => openStudioAction('present')}
-              />
-            )}
-            {hasActiveRevision && (
-              <StudioCard
-                image={precisionImage}
-                eyebrow="PRECISION EDIT"
-                title="Refine the design"
-                body={exactStudioLineage === null
-                  ? 'Describe an appearance change or mark one region; structural controls stay locked until facts are confirmed.'
-                  : 'Select a component, describe a change, or mark the exact region to protect the rest.'}
-                accent="#ff9eb5"
-                onPress={() => openStudioAction('refine')}
-              />
-            )}
-            <StudioCard
-              image={collectionImage}
-              eyebrow="COLLECTIONS"
-              title="Organize every direction"
-              body="Keep variations, approved revisions, and presentation assets together."
-              accent="#d6b5ff"
-              onPress={() => setTab('collections')}
-            />
-          </View>
 
         </ScrollView>
       )}
@@ -378,7 +309,6 @@ export default function App() {
               onSave={(selection) => {
                 setStudioProject(selection.project);
                 setSelectedCreativeAssetId(selection.selectedAssetId);
-                setFocusDesignId(selection.project.root_id);
                 setTab('collections');
               }}
             />
@@ -409,17 +339,14 @@ export default function App() {
               onProjectUpdated={setStudioProject}
             />
           ) : selectedActionId === 'vary' ? (
-            <StudioCollectionsWorkspace
-              api={trustedApi}
-              project={studioProject}
-              createdBy={designer}
-              onOpenProject={(projectId) => {
-                void trustedApi.getProject(projectId).then((result) => {
-                  if (result.error === null) setStudioProject(result.data);
-                });
+            <StudioVaryWorkspace
+              gateway={studioGateway}
+              lineage={visualStudioLineage === null ? null : {
+                ...visualStudioLineage,
+                sourceDesignVersion: exactStudioLineage?.sourceDesignVersion ?? null,
               }}
-              onProjectChanged={setStudioProject}
-              onVariationCreated={(project) => {
+              createdBy={designer}
+              onCreated={(project) => {
                 setStudioProject(project);
                 setSelectedCreativeAssetId(project.active_asset_id);
               }}
@@ -457,8 +384,6 @@ export default function App() {
           }}
         />
       )}
-      {tab === 'share' && <ShareScreen api={api} token={shareToken} />}
-
       {tab === 'activity' && (
         <StudioActivityWorkspace
           api={trustedApi}
@@ -512,13 +437,13 @@ export default function App() {
             <Text style={[
               styles.navIcon,
               isStudioHome && styles.navIconDark,
-              (tab === destination || (destination === 'collections' && tab === 'share')) && styles.navActive,
+              tab === destination && styles.navActive,
               isStudioHome && destination === 'studio' && styles.navActiveDark,
             ]}>{icon}</Text>
             <Text style={[
               styles.navLabel,
               isStudioHome && styles.navLabelDark,
-              (tab === destination || (destination === 'collections' && tab === 'share')) && styles.navActive,
+              tab === destination && styles.navActive,
               isStudioHome && destination === 'studio' && styles.navActiveDark,
             ]}>{label}</Text>
           </Pressable>
@@ -574,18 +499,6 @@ const styles = StyleSheet.create({
   sessionEmail: { fontSize: 11, color: theme.faint, paddingHorizontal: 10, paddingVertical: 8 },
   utilityRow: { paddingHorizontal: 10, paddingVertical: 11, borderTopWidth: 1, borderTopColor: theme.line },
   utilityRowText: { fontSize: 14, color: theme.ink },
-  settings: { flexDirection: 'row', gap: 6, paddingHorizontal: 12, paddingVertical: 6 },
-  settingsInput: {
-    flex: 1,
-    borderWidth: 1,
-    borderColor: theme.line,
-    borderRadius: radius.sm,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    fontSize: 12,
-    color: theme.faint,
-    backgroundColor: theme.card,
-  },
   actionRail: {
     zIndex: 10,
     borderBottomWidth: 1,
@@ -664,16 +577,6 @@ const styles = StyleSheet.create({
   livePillText: { fontSize: 10, letterSpacing: 1.4, fontWeight: '700', color: '#d4c8ff' },
   dashboardTitle: { fontFamily: theme.serif, fontSize: 31, lineHeight: 36, color: '#ffffff', maxWidth: 360 },
   dashboardBody: { fontSize: 13, lineHeight: 20, color: '#aaa2b5', marginTop: 10, maxWidth: 380 },
-  dashboardSectionHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginTop: 25,
-    marginBottom: 12,
-  },
-  dashboardSectionTitle: { fontFamily: theme.serif, fontSize: 19, color: '#ffffff' },
-  dashboardSectionMeta: { fontSize: 8, letterSpacing: 1.2, color: '#756b82' },
-  studioGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
   studioCard: {
     width: '48.5%',
     aspectRatio: 0.92,

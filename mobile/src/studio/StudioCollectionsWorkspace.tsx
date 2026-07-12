@@ -19,6 +19,7 @@ import type {
   StudioHistoryRevision,
   StudioProjectHistory,
 } from '../trusted/types';
+import { designerErrorMessage } from './designerErrorMessage';
 
 export type StudioCollectionsApi = Pick<TrustedApiClient,
   | 'getDesignFamily'
@@ -125,7 +126,7 @@ export function StudioCollectionsWorkspace({
         if (!current) return;
         setLoading(false);
         if (result.error !== null) {
-          setError(result.error.message);
+          setError(designerErrorMessage(result.error, 'collections'));
           setFamilies([]);
           return;
         }
@@ -137,7 +138,7 @@ export function StudioCollectionsWorkspace({
     void api.getStudioProjectHistory(project.root_id).then(async (historyResult) => {
       if (!current) return;
       if (historyResult.error !== null) {
-        setError(historyResult.error.message);
+        setError(designerErrorMessage(historyResult.error, 'collections'));
         setLoading(false);
         return;
       }
@@ -152,7 +153,7 @@ export function StudioCollectionsWorkspace({
         const familyResult = await api.getDesignFamily(historyResult.data.family_id);
         if (!current) return;
         if (familyResult.error !== null) {
-          setError(familyResult.error.message);
+          setError(designerErrorMessage(familyResult.error, 'collections'));
           setLoading(false);
           return;
         }
@@ -214,7 +215,7 @@ export function StudioCollectionsWorkspace({
     });
     setBranching(false);
     if (result.error !== null) {
-      setError(result.error.message);
+      setError(designerErrorMessage(result.error, 'collections'));
       return;
     }
     if (result.data.source_project_id !== project.root_id
@@ -242,7 +243,7 @@ export function StudioCollectionsWorkspace({
     );
     setRestoringAssetId(null);
     if (result.error !== null) {
-      setError(result.error.message);
+      setError(designerErrorMessage(result.error, 'collections'));
       return;
     }
     if (result.data.restored_from_asset_id !== revision.asset_id

@@ -18,6 +18,7 @@ from facetta.db import (
     DesignVersion,
     ImageAsset,
     ImageRun,
+    ImageRunReview,
     get_db,
 )
 from facetta.image_agent import (
@@ -188,30 +189,97 @@ def test_pack_candidates_are_reviewable_and_accept_as_derived_assets(
                    for item in refreshed["assets"])
 
     first = body["candidates"][0]
-    accepted = client.post(
+    resolution = {
+        "created_by": "usr_designer",
+        "expected_project_id": project["root_id"],
+        "expected_source_asset_id": project["active_asset_id"],
+        "expected_design_version": 1,
+    }
+    generic_bypass = client.post(
         f"/image-runs/{first['image_run_id']}/candidates/"
         f"{first['candidate_id']}/accept",
-        json={
-            "expected_design_version": 1,
-            "created_by": "usr_designer",
-        },
+        json={"created_by": "usr_designer", "expected_design_version": 1},
+    )
+    assert generic_bypass.status_code == 422
+    assert generic_bypass.json()["code"] == (
+        "presentation_resolution_requires_exact_lineage"
+    )
+    cross_owner = client.post(
+        f"/studio/presentation-candidates/{first['image_run_id']}/"
+        f"{first['candidate_id']}/accept",
+        json={**resolution, "created_by": "usr_other"},
+    )
+    assert cross_owner.status_code == 403
+    assert cross_owner.json()["code"] == "presentation_candidate_owner_mismatch"
+    wrong_source = client.post(
+        f"/studio/presentation-candidates/{first['image_run_id']}/"
+        f"{first['candidate_id']}/accept",
+        json={**resolution, "expected_source_asset_id": "ast_wrong"},
+    )
+    assert wrong_source.status_code == 409
+    assert wrong_source.json()["code"] == "presentation_source_mismatch"
+
+    accepted = client.post(
+        f"/studio/presentation-candidates/{first['image_run_id']}/"
+        f"{first['candidate_id']}/accept",
+        json=resolution,
     )
     assert accepted.status_code == 201, accepted.text
     after = accepted.json()
-    assert after["state"] == "factory_ready"
-    assert after["pinned_revision"]["asset_id"] == project["active_asset_id"]
-    assert after["active_asset_id"] == project["active_asset_id"]
-    assert after["primary_revision_count"] == 1
-    marketing = [item for item in after["derived_assets"]
+    assert after["status"] == "accepted"
+    assert after["project_id"] == project["root_id"]
+    assert after["source_asset_id"] == project["active_asset_id"]
+    assert after["source_design_version"] == 1
+    assert after["capability"] == "MARKETING_IMAGE"
+    assert after["asset_id"]
+    after_project = after["project"]
+    assert after_project["state"] == "factory_ready"
+    assert after_project["pinned_revision"]["asset_id"] == project["active_asset_id"]
+    assert after_project["active_asset_id"] == project["active_asset_id"]
+    assert after_project["primary_revision_count"] == 1
+    marketing = [item for item in after_project["derived_assets"]
                  if item["capability"] == "MARKETING_IMAGE"]
     assert len(marketing) == 1
     assert marketing[0]["design_version"] == 1
     assert marketing[0]["provenance"] == "ecommerce_marketing_derivative"
 
+    second = body["candidates"][1]
+    generic_discard = client.post(
+        f"/image-runs/{second['image_run_id']}/candidates/"
+        f"{second['candidate_id']}/discard",
+        json={"created_by": "usr_designer"},
+    )
+    assert generic_discard.status_code == 422
+    assert generic_discard.json()["code"] == (
+        "presentation_resolution_requires_exact_lineage"
+    )
+    discarded = client.post(
+        f"/studio/presentation-candidates/{second['image_run_id']}/"
+        f"{second['candidate_id']}/discard",
+        json=resolution,
+    )
+    assert discarded.status_code == 200, discarded.text
+    assert discarded.json() == {
+        "status": "discarded",
+        "project_id": project["root_id"],
+        "source_asset_id": project["active_asset_id"],
+        "source_design_version": 1,
+        "candidate_id": second["candidate_id"],
+    }
+    replay = client.post(
+        f"/studio/presentation-candidates/{second['image_run_id']}/"
+        f"{second['candidate_id']}/accept",
+        json=resolution,
+    )
+    assert replay.status_code == 410
+
     with Session() as db:
         assert db.scalar(select(func.count()).select_from(DesignVersion)) == 1
         assert db.scalar(select(func.count()).select_from(ImageRun)) == 3
         assert db.scalar(select(func.count()).select_from(ImageAsset)) == 2
+        reviews = list(db.scalars(select(ImageRunReview).order_by(
+            ImageRunReview.created_at, ImageRunReview.id)))
+        assert [review.decision for review in reviews] == ["accepted", "discarded"]
 
 
 def test_pack_continues_after_one_hard_failure_without_persisting_failed_bytes(

@@ -25,7 +25,9 @@ _MAX_CANDIDATES = 64
 _TTL_SECONDS = 2 * 60 * 60
 
 
-WarningCandidatePromotionKind = Literal["standard", "derived_only"]
+WarningCandidatePromotionKind = Literal[
+    "standard", "derived_only", "presentation_only",
+]
 MountingArtifactAuthority = Literal["factory_discussion_only"]
 
 
@@ -105,7 +107,9 @@ class MarkupWarningCandidate:
     artifact_metadata: MountingViewArtifactMetadata | None = None
 
     def __post_init__(self) -> None:
-        if self.promotion_kind not in {"standard", "derived_only"}:
+        if self.promotion_kind not in {
+            "standard", "derived_only", "presentation_only",
+        }:
             raise ValueError("warning candidate promotion_kind is unsupported")
         if self.artifact_metadata is not None and not isinstance(
             self.artifact_metadata, MountingViewArtifactMetadata,
@@ -124,6 +128,23 @@ class MarkupWarningCandidate:
         if self.promotion_kind == "derived_only" and self.next_spec is not None:
             raise ValueError(
                 "derived-only warning candidates cannot propose a spec revision"
+            )
+        if (self.promotion_kind == "presentation_only"
+                and self.artifact_metadata is not None):
+            raise ValueError(
+                "presentation-only candidates cannot carry factory artifact metadata"
+            )
+        if self.promotion_kind == "presentation_only" and self.next_spec is not None:
+            raise ValueError(
+                "presentation-only warning candidates cannot propose a spec revision"
+            )
+        if (self.promotion_kind == "presentation_only"
+                and self.asset_capability not in {
+                    "CLIENT_BEAUTY_RENDER", "CLIENT_PRODUCT_PHOTO",
+                    "MARKETING_IMAGE",
+                }):
+            raise ValueError(
+                "presentation-only candidate capability is unsupported"
             )
 
     @property

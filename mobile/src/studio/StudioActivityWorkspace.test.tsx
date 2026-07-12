@@ -40,7 +40,8 @@ describe('StudioActivityWorkspace', () => {
 
     expect(await view.findByText('Create directions')).toBeTruthy();
     expect(view.getByText('4 outputs requested · up to 28 credits')).toBeTruthy();
-    expect(view.getByText(/Internal retries are included/)).toBeTruthy();
+    expect(view.getByText('You pay only for usable requested outputs. Unsuccessful results cost 0 credits.')).toBeTruthy();
+    expect(view.queryByText(/Internal retries/i)).toBeNull();
     expect(client.listStudioJobs).toHaveBeenCalledWith('usr_designer');
     expect(view.queryByText(/provider/i)).toBeNull();
     expect(view.queryByText(/model/i)).toBeNull();
@@ -90,7 +91,7 @@ describe('StudioActivityWorkspace', () => {
     });
     const view = await render(<StudioActivityWorkspace api={client} owner="usr_designer" />);
 
-    expect(await view.findByText('Activity is temporarily unavailable.')).toBeTruthy();
+    expect(await view.findByText('Facetta could not connect. Check your connection and try again.')).toBeTruthy();
     expect(view.queryByText('Nothing is running yet')).toBeNull();
   });
 });

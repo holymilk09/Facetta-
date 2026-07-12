@@ -12,6 +12,7 @@ import type {
 import {
   designerCheckDetail, designerCheckLabel, designerReviewState,
 } from './designerReviewLanguage';
+import { designerErrorMessage } from './designerErrorMessage';
 
 const VIEWS = [
   { id: 'front', label: 'Front', detail: 'A clear straight-on geometry view.' },
@@ -47,7 +48,7 @@ export function StudioViewsWorkspace({
     });
     setBusy(false);
     if (result.error !== null) {
-      setError(result.error.message);
+      setError(designerErrorMessage(result.error, 'views'));
       return;
     }
     setPreview(result.data);
@@ -62,7 +63,7 @@ export function StudioViewsWorkspace({
     });
     setBusy(false);
     if (result.error !== null) {
-      setError(result.error.message);
+      setError(designerErrorMessage(result.error, 'views'));
       return;
     }
     if (result.data.project === null) {
@@ -83,7 +84,7 @@ export function StudioViewsWorkspace({
     });
     setBusy(false);
     if (result.error !== null) {
-      setError(result.error.message);
+      setError(designerErrorMessage(result.error, 'views'));
       return;
     }
     setPreview(null);

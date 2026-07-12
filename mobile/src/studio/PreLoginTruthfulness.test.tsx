@@ -5,6 +5,7 @@ import { act, fireEvent, render } from '@testing-library/react-native';
 
 import { ONBOARDING_STEPS, OnboardingScreen } from '../OnboardingScreen';
 import { WORKFLOW_SLIDES, WorkflowShowcase } from '../WorkflowShowcase';
+import { LoginScreen } from '../LoginScreen';
 
 const forbiddenClaim = /\bgrok\b|physically validated|factory sheet[\s\S]*every time|straight to (?:the )?workshop|ready to share with your factory/i;
 
@@ -47,6 +48,13 @@ describe('truthful pre-login journey', () => {
     }
     expect(view.getByText(/Present it now/)).toBeTruthy();
     expect(view.queryByText(forbiddenClaim)).toBeNull();
+    view.unmount();
+  });
+
+  test('leads sign-in with the Studio promise instead of a factory-first claim', async () => {
+    const view = await render(<LoginScreen onSignIn={jest.fn()} />);
+    expect(view.getByText('Create quickly. Refine without losing the design.')).toBeTruthy();
+    expect(view.queryByText(/factory sheet|dropdowns/i)).toBeNull();
     view.unmount();
   });
 });

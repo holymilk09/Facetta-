@@ -56,6 +56,17 @@ from facetta.studio_visual_candidates import (
     remove_studio_visual_candidate,
     store_studio_visual_candidate,
 )
+from facetta.trusted_revision import (
+    WarningRevisionError,
+    accept_warning_revision,
+    discard_warning_revision,
+)
+from facetta.warning_candidates import (
+    MarkupWarningCandidate,
+    WarningCandidateUnavailable,
+    discard_markup_warning_candidate,
+    get_markup_warning_candidate,
+)
 
 
 router = APIRouter(prefix="/studio", tags=["studio"])
@@ -116,6 +127,17 @@ class CancelStudioJobRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     owner: Annotated[str, Field(min_length=1, max_length=32)]
+
+
+class ResolvePresentationCandidateRequest(BaseModel):
+    """Exact lineage required for a terminal presentation decision."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    created_by: Annotated[str, Field(min_length=1, max_length=32)]
+    expected_project_id: Annotated[str, Field(min_length=1, max_length=32)]
+    expected_source_asset_id: Annotated[str, Field(min_length=1, max_length=32)]
+    expected_design_version: Annotated[int, Field(ge=1)]
 
 
 class CreateVisualPreviewRequest(BaseModel):
@@ -733,6 +755,136 @@ def discard_visual_preview(
         "status": "discarded",
         "project_id": discarded.project_root_id,
         "source_asset_id": discarded.source_asset_id,
+        "candidate_id": candidate_id,
+    }
+
+
+def _presentation_candidate_error(exc: WarningRevisionError) -> JSONResponse:
+    return JSONResponse(status_code=exc.status_code, content={
+        "code": exc.code,
+        "category": (
+            "stale_version" if exc.code.startswith("stale_")
+            else "validation" if exc.status_code == 422
+            else "authorization" if exc.status_code == 403
+            else "conflict"
+        ),
+        "detail": exc.detail,
+    })
+
+
+def _require_presentation_candidate_lineage(
+    candidate: MarkupWarningCandidate,
+    request: ResolvePresentationCandidateRequest,
+) -> None:
+    if candidate.promotion_kind != "presentation_only":
+        raise WarningRevisionError(
+            "presentation_candidate_invalid",
+            "this candidate is not a presentation-only output",
+            status_code=422,
+        )
+    if candidate.created_by != request.created_by:
+        raise WarningRevisionError(
+            "presentation_candidate_owner_mismatch",
+            "only the candidate creator may resolve this presentation",
+            status_code=403,
+        )
+    if candidate.project_root_id != request.expected_project_id:
+        raise WarningRevisionError(
+            "presentation_project_mismatch",
+            "the candidate does not belong to the expected project",
+        )
+    if candidate.source_asset_id != request.expected_source_asset_id:
+        raise WarningRevisionError(
+            "presentation_source_mismatch",
+            "the candidate does not belong to the expected source revision",
+        )
+    if candidate.expected_design_version != request.expected_design_version:
+        raise WarningRevisionError(
+            "stale_design_version",
+            "the candidate belongs to a different design version",
+        )
+
+
+@router.post(
+    "/presentation-candidates/{run_id}/{candidate_id}/accept",
+    status_code=201,
+)
+def accept_presentation_candidate(
+    run_id: str,
+    candidate_id: str,
+    request: ResolvePresentationCandidateRequest,
+    db: DbSession,
+):
+    """Save a reviewed deliverable without changing canonical design state."""
+
+    try:
+        candidate = get_markup_warning_candidate(run_id, candidate_id)
+        _require_presentation_candidate_lineage(candidate, request)
+        accepted = accept_warning_revision(
+            db,
+            candidate,
+            expected_design_version=request.expected_design_version,
+            created_by=request.created_by,
+        )
+    except WarningCandidateUnavailable as exc:
+        return JSONResponse(status_code=410, content={
+            "code": "presentation_candidate_unavailable",
+            "category": "conflict",
+            "detail": str(exc),
+        })
+    except WarningRevisionError as exc:
+        return _presentation_candidate_error(exc)
+    asset = db.get(ImageAsset, accepted.asset_id)
+    project = db.get(Project, candidate.project_root_id)
+    if asset is None or project is None:  # pragma: no cover - transaction invariant
+        raise HTTPException(status_code=500, detail="saved presentation unavailable")
+    return {
+        "status": "accepted",
+        "project_id": project.root_id,
+        "source_asset_id": candidate.source_asset_id,
+        "source_design_version": candidate.expected_design_version,
+        "asset_id": asset.id,
+        "capability": asset.capability,
+        "project": project_detail(db, project),
+    }
+
+
+@router.post(
+    "/presentation-candidates/{run_id}/{candidate_id}/discard",
+)
+def discard_presentation_candidate(
+    run_id: str,
+    candidate_id: str,
+    request: ResolvePresentationCandidateRequest,
+    db: DbSession,
+):
+    """Persist a terminal rejection without creating a presentation asset."""
+
+    try:
+        candidate = get_markup_warning_candidate(run_id, candidate_id)
+        _require_presentation_candidate_lineage(candidate, request)
+        discarded = discard_warning_revision(
+            db,
+            candidate,
+            expected_design_version=request.expected_design_version,
+            created_by=request.created_by,
+        )
+        discard_markup_warning_candidate(
+            run_id, candidate_id, created_by=request.created_by,
+        )
+    except WarningCandidateUnavailable as exc:
+        return JSONResponse(status_code=410, content={
+            "code": "presentation_candidate_unavailable",
+            "category": "conflict",
+            "detail": str(exc),
+        })
+    except WarningRevisionError as exc:
+        return _presentation_candidate_error(exc)
+    return {
+        "status": "discarded",
+        "project_id": discarded.project_root_id,
+        "source_asset_id": discarded.source_asset_id,
+        "source_design_version": discarded.design_version,
         "candidate_id": candidate_id,
     }
 

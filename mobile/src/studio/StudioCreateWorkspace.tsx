@@ -7,9 +7,11 @@ import type { StudioGateway } from './gateway';
 import type { ReferenceRole } from './contracts';
 import type { AssetSummary, ProjectDetail } from '../trusted/types';
 import { radius, theme } from '../theme';
+import { designerErrorMessage } from './designerErrorMessage';
 
 export type CreateReferenceRole = Extract<ReferenceRole,
   'master_geometry' | 'material_style' | 'construction_detail' | 'brand_direction'>;
+type SecondaryCreateReferenceRole = Exclude<CreateReferenceRole, 'master_geometry'>;
 
 export interface StudioCreateReference {
   id: string;
@@ -41,9 +43,9 @@ export interface StudioCreateWorkspaceProps {
 
 const ROLES: readonly { role: CreateReferenceRole; label: string; help: string }[] = [
   { role: 'master_geometry', label: 'Master geometry', help: 'The source design whose visible form must be preserved.' },
-  { role: 'material_style', label: 'Material & style', help: 'Surface, color, and finish direction.' },
-  { role: 'construction_detail', label: 'Construction detail', help: 'A clasp, setting, joint, or other detail reference.' },
-  { role: 'brand_direction', label: 'Brand direction', help: 'Campaign and visual-language guidance.' },
+  { role: 'material_style', label: 'Material & style', help: 'Surface, color, and finish only—not jewelry geometry.' },
+  { role: 'construction_detail', label: 'Construction detail', help: 'Visual guidance for one detail, not a confirmed production fact.' },
+  { role: 'brand_direction', label: 'Brand direction', help: 'Mood and visual language only—not product geometry or branding to copy.' },
 ] as const;
 
 const labelForRole = (role: CreateReferenceRole) => (
@@ -76,7 +78,13 @@ export function StudioCreateWorkspace({
 
   const candidates = useMemo(() => project === null ? [] : creativeCandidates(project), [project]);
   const masterReference = references.find((reference) => reference.role === 'master_geometry') ?? null;
-  const unsupportedReferences = references.filter((reference) => reference.role !== 'master_geometry');
+  const secondaryReferences = references.filter(
+    (reference): reference is StudioCreateReference & { role: SecondaryCreateReferenceRole } => (
+      reference.role !== 'master_geometry'
+    ),
+  );
+  const canCreate = !busy && (sentence.trim().length > 0 || masterReference !== null)
+    && !(masterReference === null && secondaryReferences.length > 0);
 
   const requestReference = async (role: CreateReferenceRole) => {
     setError(null);
@@ -100,12 +108,13 @@ export function StudioCreateWorkspace({
 
   const create = async () => {
     const prompt = sentence.trim();
-    if (!prompt || busy) return;
+    if ((!prompt && masterReference === null) || busy) return;
     setBusy(true);
     setError(null);
     setProject(null);
     setSelectedAssetId(null);
-    const title = prompt.length > 64 ? `${prompt.slice(0, 61)}…` : prompt;
+    const sourceTitle = prompt || masterReference?.label || 'Untitled reference study';
+    const title = sourceTitle.length > 64 ? `${sourceTitle.slice(0, 61)}…` : sourceTitle;
     const result = masterReference === null
       ? await gateway.createFromPrompt({
           prompt,
@@ -116,14 +125,19 @@ export function StudioCreateWorkspace({
       : await gateway.createFromDrawing({
           image_base64: masterReference.imageBase64,
           media_type: masterReference.mediaType,
-          instruction: prompt,
+          ...(prompt.length === 0 ? {} : { instruction: prompt }),
+          references: secondaryReferences.map((reference) => ({
+            role: reference.role,
+            image_base64: reference.imageBase64,
+            media_type: reference.mediaType,
+          })),
           variation_count: candidateCount,
           owner,
           title,
         });
     setBusy(false);
     if (result.error !== null) {
-      setError(result.error.message);
+      setError(designerErrorMessage(result.error, 'create'));
       return;
     }
     const nextCandidates = creativeCandidates(result.data);
@@ -186,7 +200,7 @@ export function StudioCreateWorkspace({
               );
               setBusy(false);
               if (result.error !== null) {
-                setError(result.error.message);
+                setError(designerErrorMessage(result.error, 'create'));
                 return;
               }
               onSave({
@@ -248,9 +262,16 @@ export function StudioCreateWorkspace({
               {reference === undefined ? (
                 <Pressable
                   accessibilityRole="button"
-                  style={styles.referenceButton}
+                  accessibilityState={{ disabled: role !== 'master_geometry' && masterReference === null }}
+                  disabled={role !== 'master_geometry' && masterReference === null}
+                  style={[
+                    styles.referenceButton,
+                    role !== 'master_geometry' && masterReference === null && styles.buttonDisabled,
+                  ]}
                   onPress={() => requestReference(role)}>
-                  <Text style={styles.referenceButtonText}>Add</Text>
+                  <Text style={styles.referenceButtonText}>
+                    {role !== 'master_geometry' && masterReference === null ? 'Add master first' : 'Add'}
+                  </Text>
                 </Pressable>
               ) : (
                 <Pressable
@@ -266,12 +287,11 @@ export function StudioCreateWorkspace({
         })}
       </View>
 
-      {unsupportedReferences.length > 0 && (
+      {masterReference === null && secondaryReferences.length > 0 && (
         <View style={styles.limitNotice}>
-          <Text style={styles.limitTitle}>Reference limit in this version</Text>
+          <Text style={styles.limitTitle}>Master geometry required</Text>
           <Text style={styles.limitBody}>
-            {unsupportedReferences.map((item) => labelForRole(item.role)).join(', ')} will remain labeled in this draft,
-            but the current backend cannot send those images with the generation. Only the sentence and Master geometry will affect this run.
+            Add the source design whose geometry should be preserved before using {secondaryReferences.map((item) => labelForRole(item.role)).join(', ')}.
           </Text>
         </View>
       )}
@@ -279,9 +299,9 @@ export function StudioCreateWorkspace({
       {error !== null && <Text style={styles.error}>{error}</Text>}
       <Pressable
         accessibilityRole="button"
-        accessibilityState={{ disabled: busy || sentence.trim().length === 0 }}
-        disabled={busy || sentence.trim().length === 0}
-        style={[styles.primaryButton, (busy || sentence.trim().length === 0) && styles.buttonDisabled]}
+        accessibilityState={{ disabled: !canCreate }}
+        disabled={!canCreate}
+        style={[styles.primaryButton, !canCreate && styles.buttonDisabled]}
         onPress={create}>
         <Text style={styles.primaryButtonText}>{busy ? 'Creating…' : `Create ${candidateCount} direction${candidateCount === 1 ? '' : 's'}`}</Text>
       </Pressable>

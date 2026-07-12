@@ -80,6 +80,9 @@ import type {
   ProjectRevision,
   ProjectState,
   PlateDraftResult,
+  PresentationCandidateAcceptResult,
+  PresentationCandidateDecisionRequest,
+  PresentationCandidateDiscardResult,
   PhotoDraftResult,
   ProductPhotoFraming,
   ProductPhotoPresentation,
@@ -737,6 +740,40 @@ export const decodeVisualPreviewDiscardResult: Decoder<VisualPreviewDiscardResul
   return projectId === null || candidateId === null ? null : {
     status: 'discarded', project_id: projectId, candidate_id: candidateId,
   };
+};
+
+const decodePresentationCandidateAcceptResult: Decoder<PresentationCandidateAcceptResult> = (value) => {
+  if (!isRecord(value) || value.status !== 'accepted') return null;
+  const projectId = nullableText(value.project_id);
+  const sourceAssetId = nullableText(value.source_asset_id);
+  const sourceDesignVersion = number(value.source_design_version);
+  const assetId = nullableText(value.asset_id);
+  const capability = value.capability;
+  const project = decodeProjectDetail(value.project);
+  if (
+    projectId === null || sourceAssetId === null || sourceDesignVersion === null
+    || assetId === null || project === null || project.root_id !== projectId
+    || (capability !== 'CLIENT_BEAUTY_RENDER'
+      && capability !== 'CLIENT_PRODUCT_PHOTO'
+      && capability !== 'MARKETING_IMAGE')
+  ) return null;
+  return {
+    status: 'accepted', project_id: projectId, source_asset_id: sourceAssetId,
+    source_design_version: sourceDesignVersion, asset_id: assetId, capability, project,
+  };
+};
+
+const decodePresentationCandidateDiscardResult: Decoder<PresentationCandidateDiscardResult> = (value) => {
+  if (!isRecord(value) || value.status !== 'discarded') return null;
+  const projectId = nullableText(value.project_id);
+  const sourceAssetId = nullableText(value.source_asset_id);
+  const sourceDesignVersion = number(value.source_design_version);
+  const candidateId = nullableText(value.candidate_id);
+  return projectId === null || sourceAssetId === null || sourceDesignVersion === null
+    || candidateId === null ? null : {
+      status: 'discarded', project_id: projectId, source_asset_id: sourceAssetId,
+      source_design_version: sourceDesignVersion, candidate_id: candidateId,
+    };
 };
 
 const decodeNumberRecord: Decoder<Record<string, number>> = (value) => {
@@ -3071,6 +3108,50 @@ export function createTrustedApiClient(options: TrustedApiClientOptions) {
           body: encodeBody({
             created_by: request.created_by,
             expected_active_asset_id: request.expected_active_asset_id,
+          }),
+        },
+      );
+    },
+
+    async acceptPresentationCandidate(
+      runId: string,
+      candidateId: string,
+      request: PresentationCandidateDecisionRequest,
+    ) {
+      const result = await call(
+        `/studio/presentation-candidates/${encodeURIComponent(runId)}/${encodeURIComponent(candidateId)}/accept`,
+        decodePresentationCandidateAcceptResult,
+        {
+          method: 'POST',
+          body: encodeBody({
+            created_by: request.created_by,
+            expected_project_id: request.expected_project_id,
+            expected_source_asset_id: request.expected_source_asset_id,
+            expected_design_version: request.expected_design_version,
+          }),
+        },
+      );
+      return result.error === null ? {
+        ...result,
+        data: { ...result.data, project: projectWithUrls(result.data.project, baseUrl) },
+      } : result;
+    },
+
+    discardPresentationCandidate(
+      runId: string,
+      candidateId: string,
+      request: PresentationCandidateDecisionRequest,
+    ) {
+      return call(
+        `/studio/presentation-candidates/${encodeURIComponent(runId)}/${encodeURIComponent(candidateId)}/discard`,
+        decodePresentationCandidateDiscardResult,
+        {
+          method: 'POST',
+          body: encodeBody({
+            created_by: request.created_by,
+            expected_project_id: request.expected_project_id,
+            expected_source_asset_id: request.expected_source_asset_id,
+            expected_design_version: request.expected_design_version,
           }),
         },
       );

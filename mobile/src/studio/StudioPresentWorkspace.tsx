@@ -10,7 +10,7 @@ import type {
   ProductPhotoResult, ProjectDetail,
 } from '../trusted/types';
 import { getStudioAction } from './actions';
-import type { ExactStudioLineage, StudioGateway } from './gateway';
+import type { ExactStudioLineage, StudioGateway, StudioGatewayError } from './gateway';
 import { designerReviewState } from './designerReviewLanguage';
 
 const PRESETS: readonly ProductPhotoPreset[] = [
@@ -18,6 +18,22 @@ const PRESETS: readonly ProductPhotoPreset[] = [
 ] as const;
 const FRAMINGS: readonly ProductPhotoFraming[] = ['source', 'square', 'portrait'] as const;
 const PRESENT_CREDITS = getStudioAction('present').creditEstimate ?? 0;
+
+const designerPresentationError = (error: StudioGatewayError): string => {
+  if (error.category === 'conflict') {
+    return 'This preview belongs to an earlier design revision. Generate it again from the selected revision.';
+  }
+  if (error.category === 'network') {
+    return 'Facetta could not reach the image service. Check your connection and try again.';
+  }
+  if (error.category === 'quality') {
+    return 'This image did not preserve the selected design closely enough. Try a new direction.';
+  }
+  if (error.category === 'validation') {
+    return 'This presentation preview is no longer available. Generate a new preview from the selected revision.';
+  }
+  return 'Facetta could not finish this presentation action. Please try again.';
+};
 
 const presetLabel = (preset: ProductPhotoPreset): string => ({
   catalog_white: 'Catalog white',
@@ -39,11 +55,16 @@ interface PresentationCard {
   imageUrl: string | null;
   detail: string;
   status: 'saved' | 'review';
+  candidateId: string | null;
 }
 
 export interface StudioPresentWorkspaceProps {
   gateway: Pick<StudioGateway,
-    'createBeautyPresentation' | 'createProductPresentation' | 'createMarketingPresentation'>;
+    | 'createBeautyPresentation'
+    | 'createProductPresentation'
+    | 'createMarketingPresentation'
+    | 'acceptPresentationCandidate'
+    | 'discardPresentationCandidate'>;
   lineage: ExactStudioLineage | null;
   createdBy: string;
   onProjectUpdated?: (project: ProjectDetail) => void;
@@ -61,13 +82,15 @@ function beautyCard(result: BeautyRenderResult): PresentationCard {
     imageUrl: assetUrl(result.project, result.asset_id),
     detail: `Saved presentation · ${designerReviewState(result.qa.verdict)}`,
     status: 'saved',
+    candidateId: null,
   };
   return {
     id: result.warning_candidate.candidate_id ?? result.image_run_id,
     title: 'Beauty render needs review',
     imageUrl: result.warning_candidate.preview_url,
-    detail: `Temporary candidate · ${designerReviewState(result.quality_report.verdict)}`,
+    detail: `Not saved yet · ${designerReviewState(result.quality_report.verdict)}`,
     status: 'review',
+    candidateId: result.warning_candidate.candidate_id,
   };
 }
 
@@ -78,13 +101,15 @@ function productCard(result: ProductPhotoResult): PresentationCard {
     imageUrl: assetUrl(result.project, result.asset_id),
     detail: `Saved presentation · ${framingLabel(result.presentation.framing)} · ${designerReviewState(result.qa.verdict)}`,
     status: 'saved',
+    candidateId: null,
   };
   return {
     id: result.warning_candidate.candidate_id ?? result.image_run_id,
     title: `${presetLabel(result.presentation.preset)} needs review`,
     imageUrl: result.warning_candidate.preview_url,
-    detail: `Temporary candidate · ${framingLabel(result.presentation.framing)} · ${designerReviewState(result.quality_report.verdict)}`,
+    detail: `Not saved yet · ${framingLabel(result.presentation.framing)} · ${designerReviewState(result.quality_report.verdict)}`,
     status: 'review',
+    candidateId: result.warning_candidate.candidate_id,
   };
 }
 
@@ -93,8 +118,9 @@ function marketingCards(result: MarketingPackResult): PresentationCard[] {
     id: candidate.candidate_id,
     title: presetLabel(candidate.preset),
     imageUrl: candidate.preview_url,
-    detail: `Temporary candidate · ${framingLabel(candidate.framing)} · ${designerReviewState(candidate.qa.verdict)}`,
+    detail: `Not saved yet · ${framingLabel(candidate.framing)} · ${designerReviewState(candidate.qa.verdict)}`,
     status: 'review',
+    candidateId: candidate.candidate_id,
   }));
 }
 
@@ -110,6 +136,7 @@ export function StudioPresentWorkspace({
   ]);
   const [direction, setDirection] = useState('');
   const [busy, setBusy] = useState(false);
+  const [decidingId, setDecidingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
   const [cards, setCards] = useState<readonly PresentationCard[]>([]);
@@ -118,7 +145,7 @@ export function StudioPresentWorkspace({
   const outputCount = destination === 'marketing' ? marketingPresets.length : 1;
   const creditEstimate = outputCount * PRESENT_CREDITS;
   const requestLabel = destination === 'marketing'
-    ? `Generate ${outputCount} review candidate${outputCount === 1 ? '' : 's'}`
+    ? `Generate ${outputCount} presentation preview${outputCount === 1 ? '' : 's'}`
     : clientFormat === 'beauty' ? 'Create client beauty render' : 'Create client product photo';
   const exactRevision = useMemo(() => lineage === null ? null
     : `Confirmed revision ${lineage.sourceDesignVersion}`, [lineage]);
@@ -126,6 +153,46 @@ export function StudioPresentWorkspace({
   const togglePreset = (value: ProductPhotoPreset): void => {
     setMarketingPresets((current) => current.includes(value)
       ? current.filter((item) => item !== value) : [...current, value]);
+  };
+
+  const savePresentation = async (card: PresentationCard): Promise<void> => {
+    if (card.candidateId === null || decidingId !== null) return;
+    setDecidingId(card.id);
+    setError(null);
+    const result = await gateway.acceptPresentationCandidate({
+      candidateId: card.candidateId,
+      createdBy,
+    });
+    setDecidingId(null);
+    if (result.error !== null) {
+      setError(designerPresentationError(result.error));
+      return;
+    }
+    setCards((current) => current.map((item) => item.id === card.id ? {
+      ...item,
+      status: 'saved',
+      candidateId: null,
+      detail: item.detail.replace(/^Not saved yet/, 'Saved presentation'),
+    } : item));
+    setInfo('Presentation saved. Your selected design revision is unchanged.');
+    onProjectUpdated?.(result.data.project);
+  };
+
+  const discardPresentation = async (card: PresentationCard): Promise<void> => {
+    if (card.candidateId === null || decidingId !== null) return;
+    setDecidingId(card.id);
+    setError(null);
+    const result = await gateway.discardPresentationCandidate({
+      candidateId: card.candidateId,
+      createdBy,
+    });
+    setDecidingId(null);
+    if (result.error !== null) {
+      setError(designerPresentationError(result.error));
+      return;
+    }
+    setCards((current) => current.filter((item) => item.id !== card.id));
+    setInfo('Presentation discarded. Your selected design revision is unchanged.');
   };
 
   const generate = async (): Promise<void> => {
@@ -145,7 +212,7 @@ export function StudioPresentWorkspace({
         presentation_only: true,
       });
       setBusy(false);
-      if (result.error !== null) return setError(result.error.message);
+      if (result.error !== null) return setError(designerPresentationError(result.error));
       setCards([beautyCard(result.data)]);
       if (result.data.status === 'accepted') onProjectUpdated?.(result.data.project);
       setInfo(result.data.status === 'accepted'
@@ -164,7 +231,7 @@ export function StudioPresentWorkspace({
         presentation_only: true,
       });
       setBusy(false);
-      if (result.error !== null) return setError(result.error.message);
+      if (result.error !== null) return setError(designerPresentationError(result.error));
       setCards([productCard(result.data)]);
       if (result.data.status === 'accepted') onProjectUpdated?.(result.data.project);
       setInfo(result.data.status === 'accepted'
@@ -181,7 +248,7 @@ export function StudioPresentWorkspace({
       ...(direction.trim() ? { custom_instruction: direction.trim() } : {}),
     });
     setBusy(false);
-    if (result.error !== null) return setError(result.error.message);
+    if (result.error !== null) return setError(designerPresentationError(result.error));
     setCards(marketingCards(result.data));
     setFailures(result.data.failures.map((failure) => `${presetLabel(failure.preset)}: ${failure.detail}`));
     setInfo(`${result.data.candidate_count} of ${result.data.requested_count} requested outputs are ready for review. Nothing changed your design revision.`);
@@ -247,7 +314,7 @@ export function StudioPresentWorkspace({
 
       <View style={styles.costCard}>
         <Text style={styles.costTitle}>{outputCount} requested output{outputCount === 1 ? '' : 's'} · estimated {creditEstimate} credits</Text>
-        <Text style={styles.costCopy}>You are charged only for requested outputs that are ready to use. Unusable results cost 0 credits.</Text>
+        <Text style={styles.costCopy}>You are charged only for the requested outputs you save. Discarded and unusable results cost 0 credits.</Text>
       </View>
       {error !== null && <Notice kind="error" text={error} />}
       <Button title={busy ? 'Generating and checking…' : requestLabel}
@@ -262,7 +329,22 @@ export function StudioPresentWorkspace({
           <View style={styles.resultCopy}>
             <Text style={styles.resultTitle}>{card.title}</Text>
             <Text style={styles.cardCopy}>{card.detail}</Text>
-            {card.status === 'review' && <Text style={styles.reviewLabel}>Review-only · not part of canonical design history</Text>}
+            {card.status === 'review' && <>
+              <Text style={styles.reviewLabel}>Not saved · choose what to keep</Text>
+              <View style={styles.decisionRow}>
+                <Button
+                  title={decidingId === card.id ? 'Saving…' : 'Save presentation'}
+                  disabled={decidingId !== null}
+                  onPress={() => { void savePresentation(card); }}
+                />
+                <Button
+                  title={decidingId === card.id ? 'Working…' : 'Discard'}
+                  kind="ghost"
+                  disabled={decidingId !== null}
+                  onPress={() => { void discardPresentation(card); }}
+                />
+              </View>
+            </>}
           </View>
         </View>)}
       </View>}
@@ -297,4 +379,5 @@ const styles = StyleSheet.create({
   resultCopy: { flex: 1, minWidth: 180, justifyContent: 'center' },
   resultTitle: { color: theme.ink, fontSize: 15, fontWeight: '800', marginBottom: 4 },
   reviewLabel: { color: theme.accent, fontSize: 11, fontWeight: '700', marginTop: 8 },
+  decisionRow: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 10 },
 });

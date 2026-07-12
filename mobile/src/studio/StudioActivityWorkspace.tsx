@@ -12,6 +12,7 @@ import { Button, Notice } from '../components';
 import { theme } from '../theme';
 import type { TrustedApiClient } from '../trusted/client';
 import type { StudioJobAction, StudioJobRecord, StudioJobStatus } from '../trusted/types';
+import { designerErrorMessage } from './designerErrorMessage';
 
 export type StudioActivityApi = Pick<TrustedApiClient,
   'listStudioJobs' | 'cancelStudioJob'
@@ -70,7 +71,7 @@ export function StudioActivityWorkspace({
     setError(null);
     const response = await api.listStudioJobs(owner);
     if (response.error !== null) {
-      setError(response.error.message);
+      setError(designerErrorMessage(response.error, 'activity'));
       setJobs((current) => current ?? []);
       return;
     }
@@ -87,7 +88,7 @@ export function StudioActivityWorkspace({
     const response = await api.cancelStudioJob(job.job_id, owner);
     setCancelingId(null);
     if (response.error !== null) {
-      setError(response.error.message);
+      setError(designerErrorMessage(response.error, 'activity'));
       return;
     }
     setJobs((current) => current?.map((item) => (
@@ -174,7 +175,7 @@ export function StudioActivityWorkspace({
 
       <View style={styles.policy}>
         <Text style={styles.policyTitle}>Clear credit policy</Text>
-        <Text style={styles.muted}>{jobs[0]?.billing.policy ?? 'Only requested outputs that complete successfully are charged. Internal retries are included.'}</Text>
+        <Text style={styles.muted}>You pay only for usable requested outputs. Unsuccessful results cost 0 credits.</Text>
       </View>
     </ScrollView>
   );

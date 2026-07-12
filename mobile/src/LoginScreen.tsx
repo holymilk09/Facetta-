@@ -117,7 +117,7 @@ export function LoginScreen({
           showsVerticalScrollIndicator={false}>
           <View style={styles.brand}>
             <Text style={styles.wordmark}>F A C E T T A</Text>
-            <Text style={styles.tagline}>dimensional truth, from dropdowns to factory sheet</Text>
+            <Text style={styles.tagline}>Create quickly. Refine without losing the design.</Text>
             {onShowTour && (
               <Pressable onPress={onShowTour} hitSlop={8} style={styles.tourLink}>
                 <Text style={styles.tourLinkText}>See how it works →</Text>

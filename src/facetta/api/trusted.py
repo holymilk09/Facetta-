@@ -22,7 +22,7 @@ from facetta.factory_pack import (
 )
 from facetta.factory_sheet_plan import FactorySheetFactPlan
 from facetta.trusted_revision import (
-    WarningRevisionError, accept_warning_revision,
+    WarningRevisionError, accept_warning_revision, discard_warning_revision,
 )
 from facetta.warning_candidates import (
     discard_markup_warning_candidate,
@@ -343,6 +343,12 @@ def accept_warning_candidate(
 ):
     try:
         candidate = get_markup_warning_candidate(run_id, candidate_id)
+        if candidate.promotion_kind == "presentation_only":
+            raise WarningRevisionError(
+                "presentation_resolution_requires_exact_lineage",
+                "resolve presentation candidates through the Studio lineage endpoint",
+                status_code=422,
+            )
         accept_warning_revision(
             db,
             candidate,
@@ -376,9 +382,26 @@ def discard_warning_candidate(
     run_id: str,
     candidate_id: str,
     request: WarningCandidateDiscardRequest,
+    db: DbSession,
 ):
     try:
-        candidate = discard_markup_warning_candidate(
+        candidate = get_markup_warning_candidate(run_id, candidate_id)
+        if candidate.promotion_kind == "presentation_only":
+            raise WarningRevisionError(
+                "presentation_resolution_requires_exact_lineage",
+                "resolve presentation candidates through the Studio lineage endpoint",
+                status_code=422,
+            )
+        if candidate.created_by != request.created_by:
+            raise WarningCandidateUnavailable(
+                "only the candidate creator may discard it")
+        discard_warning_revision(
+            db,
+            candidate,
+            expected_design_version=candidate.expected_design_version,
+            created_by=request.created_by,
+        )
+        discard_markup_warning_candidate(
             run_id, candidate_id, created_by=request.created_by,
         )
     except WarningCandidateUnavailable as exc:
@@ -386,6 +409,17 @@ def discard_warning_candidate(
             "code": "warning_candidate_unavailable",
             "category": "conflict",
             "detail": str(exc),
+        })
+    except WarningRevisionError as exc:
+        return JSONResponse(status_code=exc.status_code, content={
+            "code": exc.code,
+            "category": (
+                "stale_version" if exc.code.startswith("stale_")
+                else "validation" if exc.status_code == 422
+                else "authorization" if exc.status_code == 403
+                else "conflict"
+            ),
+            "detail": exc.detail,
         })
     return {
         "status": "discarded",

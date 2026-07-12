@@ -113,7 +113,7 @@ test('requests 1-4 prompt candidates, lets the designer choose, then saves only 
   }));
 });
 
-test('uses only the supported master-geometry drawing input and labels unsupported roles honestly', async () => {
+test('sends every enabled role with the master geometry input', async () => {
   const master: StudioCreateReference = {
     id: 'master', role: 'master_geometry', label: 'Front sketch',
     imageBase64: 'bWFzdGVy', mediaType: 'image/png',
@@ -138,9 +138,7 @@ test('uses only the supported master-geometry drawing input and labels unsupport
     onSave: jest.fn(),
   }));
 
-  await fireEvent.press(screen.getAllByText('Add')[1]);
-  expect(await screen.findByText('Reference limit in this version')).toBeTruthy();
-  expect(screen.getByText(/Material & style will remain labeled in this draft/)).toBeTruthy();
+  await fireEvent.press(screen.getAllByText('Add')[0]);
   await fireEvent.press(screen.getAllByText('Add')[0]);
   await fireEvent.changeText(screen.getByLabelText('Design sentence'), 'Preserve the silhouette and make it feel lighter.');
   await fireEvent.press(screen.getByText('Create 2 directions'));
@@ -149,11 +147,46 @@ test('uses only the supported master-geometry drawing input and labels unsupport
     image_base64: 'bWFzdGVy',
     media_type: 'image/png',
     instruction: 'Preserve the silhouette and make it feel lighter.',
+    references: [{
+      role: 'material_style',
+      image_base64: 'bWF0ZXJpYWw=',
+      media_type: 'image/jpeg',
+    }],
     variation_count: 2,
     owner: 'designer_1',
     title: 'Preserve the silhouette and make it feel lighter.',
   }));
   expect(createFromPrompt).not.toHaveBeenCalled();
+  expect(screen.queryByText(/Reference limit|cannot send|remain labeled/i)).toBeNull();
+});
+
+test('starts from a master image without forcing a sentence', async () => {
+  const master: StudioCreateReference = {
+    id: 'master', role: 'master_geometry', label: 'Pendant photograph',
+    imageBase64: 'bWFzdGVy', mediaType: 'image/png',
+  };
+  const createFromDrawing = jest.fn(async () => ({
+    data: creativeProject(1), error: null, status: 201,
+  }));
+  await render(React.createElement(StudioCreateWorkspace, {
+    gateway: {
+      createFromPrompt: jest.fn(), createFromDrawing,
+      selectCreativeDirection: jest.fn(),
+    } as unknown as CreateGateway,
+    owner: 'designer_1',
+    initialReferences: [master],
+    onSave: jest.fn(),
+  }));
+
+  await fireEvent.press(screen.getByText('Create 2 directions'));
+  await waitFor(() => expect(createFromDrawing).toHaveBeenCalledWith({
+    image_base64: 'bWFzdGVy',
+    media_type: 'image/png',
+    references: [],
+    variation_count: 2,
+    owner: 'designer_1',
+    title: 'Pendant photograph',
+  }));
 });
 
 test('surfaces picker failures instead of leaving Add as a silent dead end', async () => {
@@ -175,6 +208,30 @@ test('surfaces picker failures instead of leaving Add as a silent dead end', asy
 
   expect(await screen.findByText(/Choose a PNG, JPEG, or WebP image/)).toBeTruthy();
   expect(onRequestReference).toHaveBeenCalledWith('master_geometry');
+});
+
+test('does not expose backend diagnostics when generation fails', async () => {
+  await render(React.createElement(StudioCreateWorkspace, {
+    gateway: {
+      createFromPrompt: jest.fn(async () => ({
+        data: null,
+        error: {
+          code: 'provider_failure', category: 'server', status: 500,
+          message: 'Grok rejected base64 asset_id=ast_1 run_id=run_2 expected_design_version=4',
+        },
+        status: 500,
+      })),
+      createFromDrawing: jest.fn(),
+      selectCreativeDirection: jest.fn(),
+    } as unknown as CreateGateway,
+    owner: 'designer_1',
+    onSave: jest.fn(),
+  }));
+
+  await fireEvent.changeText(screen.getByLabelText('Design sentence'), 'A quiet gold ring.');
+  await fireEvent.press(screen.getByText('Create 2 directions'));
+  expect(await screen.findByText('Facetta could not create those directions. Try again.')).toBeTruthy();
+  expect(screen.queryByText(/grok|base64|asset_id|run_id|design_version/i)).toBeNull();
 });
 
 test('explains when image selection is unavailable instead of silently ignoring Add', async () => {

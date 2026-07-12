@@ -316,6 +316,61 @@ def test_project_render_persists_qa_approved_revision_and_rejects_stale_version(
         if item["asset_id"] == presentation_body["asset_id"]
     ) == "CLIENT_BEAUTY_RENDER"
 
+    class WarningEvaluator:
+        def evaluate(self, *_args, **_kwargs):
+            return ImageQualityReport(
+                verdict=QualityVerdict.WARN,
+                checks=(QualityCheck(
+                    code="presentation_detail",
+                    passed=False,
+                    severity=CheckSeverity.WARNING,
+                    message="the lighting needs designer review",
+                ),),
+                score=87,
+            )
+
+    warning_result = JewelryImageAgent(Provider(), WarningEvaluator()).run(
+        plan, source_image=source,
+    )
+
+    class WarningAgent:
+        def run(self, *_args, **_kwargs):
+            return warning_result
+
+    monkeypatch.setattr(
+        "facetta.image_agent.JewelryImageAgent", lambda: WarningAgent(),
+    )
+    warning_project = client.post(
+        "/projects/from-image", json=_image_request(example_spec),
+    ).json()
+    warned = client.post(
+        f"/projects/{warning_project['root_id']}/render",
+        json={
+            "created_by": "usr_ana",
+            "expected_asset_id": warning_project["active_asset_id"],
+            "expected_design_version": 1,
+            "presentation_only": True,
+        },
+    )
+    assert warned.status_code == 202, warned.text
+    warning_candidate = warned.json()["warning_candidate"]
+    saved_warning = client.post(
+        "/studio/presentation-candidates/"
+        f"{warning_candidate['run_id']}/"
+        f"{warning_candidate['candidate_id']}/accept",
+        json={
+            "created_by": "usr_ana",
+            "expected_project_id": warning_project["root_id"],
+            "expected_source_asset_id": warning_project["active_asset_id"],
+            "expected_design_version": 1,
+        },
+    )
+    assert saved_warning.status_code == 201, saved_warning.text
+    saved_body = saved_warning.json()
+    assert saved_body["capability"] == "CLIENT_BEAUTY_RENDER"
+    assert saved_body["project"]["active_asset_id"] == warning_project["active_asset_id"]
+    assert saved_body["project"]["primary_revision_count"] == 1
+
 
 def test_product_photo_is_visual_only_and_warning_acceptance_keeps_spec_version(
     project_client, example_spec, monkeypatch,
@@ -398,6 +453,44 @@ def test_product_photo_is_visual_only_and_warning_acceptance_keeps_spec_version(
     assert body["active_design_version"] == 1
     with Session() as db:
         assert db.scalar(select(func.count()).select_from(DesignVersion)) == 1
+
+    presentation_project = client.post(
+        "/projects/from-image", json=_image_request(example_spec),
+    ).json()
+    warned_presentation = client.post(
+        f"/projects/{presentation_project['root_id']}/product-photo",
+        json={
+            "created_by": "usr_ana",
+            "expected_asset_id": presentation_project["active_asset_id"],
+            "expected_design_version": 1,
+            "preset": "catalog_white",
+            "framing": "portrait",
+            "presentation_only": True,
+        },
+    )
+    assert warned_presentation.status_code == 202, warned_presentation.text
+    presentation_candidate = warned_presentation.json()["warning_candidate"]
+    saved_presentation = client.post(
+        "/studio/presentation-candidates/"
+        f"{presentation_candidate['run_id']}/"
+        f"{presentation_candidate['candidate_id']}/accept",
+        json={
+            "created_by": "usr_ana",
+            "expected_project_id": presentation_project["root_id"],
+            "expected_source_asset_id": presentation_project["active_asset_id"],
+            "expected_design_version": 1,
+        },
+    )
+    assert saved_presentation.status_code == 201, saved_presentation.text
+    saved = saved_presentation.json()
+    assert saved["capability"] == "CLIENT_PRODUCT_PHOTO"
+    assert saved["source_asset_id"] == presentation_project["active_asset_id"]
+    assert saved["source_design_version"] == 1
+    assert saved["project"]["active_asset_id"] == presentation_project["active_asset_id"]
+    assert saved["project"]["primary_revision_count"] == 1
+    assert saved["asset_id"] in {
+        item["asset_id"] for item in saved["project"]["derived_assets"]
+    }
 
 
 def test_product_photo_pass_atomically_persists_visual_revision(

@@ -30,6 +30,10 @@ from facetta.creative_workflow import (
     get_creative_prompt_generator,
     get_creative_render_generator,
 )
+from facetta.creative_reference_board import (
+    CreativeReferenceImage,
+    build_creative_reference_board,
+)
 from facetta.api.error_mapping import (
     image_agent_error_response, render_unavailable_response,
 )
@@ -308,6 +312,18 @@ class NormalizedSourceRegion(BaseModel):
         return self
 
 
+class CreativeRoleReferenceRequest(BaseModel):
+    """One advisory image with a single, non-authoritative creative role."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    role: Literal[
+        "material_style", "construction_detail", "brand_direction"
+    ]
+    image_base64: Annotated[str, Field(min_length=1, max_length=14_000_000)]
+    media_type: Literal["image/png", "image/jpeg", "image/webp"]
+
+
 class ProjectFromDrawingRequest(BaseModel):
     """Neutral image/drawing intake; no quality or source-maturity labels."""
 
@@ -333,6 +349,9 @@ class ProjectFromDrawingRequest(BaseModel):
         str, Field(min_length=3, max_length=500)
     ] | None = None
     source_region: NormalizedSourceRegion | None = None
+    references: Annotated[
+        list[CreativeRoleReferenceRequest], Field(max_length=3)
+    ] = Field(default_factory=list)
 
     @model_validator(mode="after")
     def description_requires_region(self) -> ProjectFromDrawingRequest:
@@ -340,6 +359,13 @@ class ProjectFromDrawingRequest(BaseModel):
             raise ValueError(
                 "source_region_description requires source_region coordinates"
             )
+        return self
+
+    @model_validator(mode="after")
+    def reference_roles_are_unique(self) -> ProjectFromDrawingRequest:
+        roles = [reference.role for reference in self.references]
+        if len(set(roles)) != len(roles):
+            raise ValueError("secondary creative reference roles must be unique")
         return self
 
 
@@ -1233,6 +1259,43 @@ def create_project_from_drawing(
                        f"is {detected}"),
         })
 
+    decoded_references: list[CreativeReferenceImage] = []
+    for reference in request.references:
+        try:
+            reference_image = base64.b64decode(
+                reference.image_base64, validate=True)
+        except (binascii.Error, ValueError):
+            return JSONResponse(status_code=422, content={
+                "error_category": "validation_failure",
+                "code": "creative_reference_invalid_base64",
+                "detail": (
+                    f"{reference.role} image_base64 is not valid base64"
+                ),
+            })
+        reference_media_type = _uploaded_media_type(reference_image)
+        if reference_media_type is None:
+            return JSONResponse(status_code=422, content={
+                "error_category": "validation_failure",
+                "code": "creative_reference_unsupported_media",
+                "detail": (
+                    f"{reference.role} must be a PNG, JPEG, or WebP image"
+                ),
+            })
+        if reference.media_type != reference_media_type:
+            return JSONResponse(status_code=422, content={
+                "error_category": "validation_failure",
+                "code": "creative_reference_media_mismatch",
+                "detail": (
+                    f"{reference.role} media_type says {reference.media_type}, "
+                    f"but the upload is {reference_media_type}"
+                ),
+            })
+        decoded_references.append(CreativeReferenceImage(
+            role=reference.role,
+            image=reference_image,
+            media_type=reference_media_type,
+        ))
+
     render_source = image
     render_source_media_type: str | None = None
     render_source_instruction: str | None = None
@@ -1270,6 +1333,35 @@ def create_project_from_drawing(
             f"({description}). Treat it as one view of one finished piece. "
             "Do not reconstruct, combine, or count components from surrounding "
             "views outside this exact crop."
+        )
+
+    render_source_capability: Literal[
+        "CREATIVE_SOURCE_REGION", "CREATIVE_REFERENCE_BOARD"
+    ] = "CREATIVE_SOURCE_REGION"
+    if decoded_references:
+        isolated_source_instruction = render_source_instruction
+        try:
+            board = build_creative_reference_board(
+                render_source,
+                tuple(decoded_references),
+            )
+        except (OSError, ValueError) as exc:
+            return JSONResponse(status_code=422, content={
+                "error_category": "validation_failure",
+                "code": "creative_reference_invalid_image",
+                "detail": f"a role-labeled reference could not be decoded: {exc}",
+            })
+        render_source = board.image
+        render_source_media_type = "image/png"
+        render_source_instruction = (
+            f"{isolated_source_instruction}\n\n{board.instruction}"
+            if isolated_source_instruction is not None
+            else board.instruction
+        )
+        render_source_capability = "CREATIVE_REFERENCE_BOARD"
+        effective_instruction = (
+            f"{effective_instruction}\n\nREFERENCE ROLE CONTRACT:\n"
+            f"{board.instruction}"
         )
 
     generated = []
@@ -1312,10 +1404,26 @@ def create_project_from_drawing(
         source_image=image,
         source_media_type=detected,
         render_source_image=(
-            render_source if request.source_region is not None else None
+            render_source
+            if request.source_region is not None or decoded_references
+            else None
         ),
         render_source_media_type=render_source_media_type,
         render_source_instruction=render_source_instruction,
+        render_source_capability=render_source_capability,
+        reference_sources=tuple(SourceAssetInput(
+            image=reference.image,
+            media_type=reference.media_type,
+            capability={
+                "material_style": "CREATIVE_REFERENCE_MATERIAL_STYLE",
+                "construction_detail": "CREATIVE_REFERENCE_CONSTRUCTION_DETAIL",
+                "brand_direction": "CREATIVE_REFERENCE_BRAND_DIRECTION",
+            }[reference.role],
+            instruction=(
+                f"Role-labeled {reference.role} reference; SHA-256 "
+                f"{hashlib.sha256(reference.image).hexdigest()}"
+            ),
+        ) for reference in decoded_references),
         candidates=tuple(CreativeCandidateInput(
             image=result.image_bytes,
             instruction=effective_instruction,
@@ -2093,7 +2201,10 @@ def render_project_revision(
             image_bytes=result.image_bytes,
             media_type=sniff_media_type(result.image_bytes),
             operation=ImageOperation.SPEC_RENDER.value,
-            asset_capability="SPEC_RENDER",
+            asset_capability=(
+                "CLIENT_BEAUTY_RENDER"
+                if request.presentation_only else "SPEC_RENDER"
+            ),
             requested_change=request.instruction,
             region_description="entire designer-confirmed ring",
             drift=None,
@@ -2102,6 +2213,9 @@ def render_project_revision(
             qa=qa,
             routing=routing,
             created_by=request.created_by,
+            promotion_kind=(
+                "presentation_only" if request.presentation_only else "standard"
+            ),
         )
         return JSONResponse(status_code=202, content={
             "status": "review_required",
@@ -2301,7 +2415,10 @@ def create_product_photo(
             image_bytes=result.image_bytes,
             media_type=sniff_media_type(result.image_bytes),
             operation=ImageOperation.VISUAL_ONLY_EDIT.value,
-            asset_capability="PRODUCT_PHOTO",
+            asset_capability=(
+                "CLIENT_PRODUCT_PHOTO"
+                if request.presentation_only else "PRODUCT_PHOTO"
+            ),
             requested_change=brief.intent,
             region_description="entire product presentation; jewelry design frozen",
             drift=None,
@@ -2310,6 +2427,9 @@ def create_product_photo(
             qa=qa,
             routing=routing,
             created_by=request.created_by,
+            promotion_kind=(
+                "presentation_only" if request.presentation_only else "standard"
+            ),
         )
         return JSONResponse(status_code=202, content={
             "status": "review_required",
@@ -2508,6 +2628,7 @@ def create_marketing_pack(
             qa=qa,
             routing=routing,
             created_by=request.created_by,
+            promotion_kind="presentation_only",
         )
         candidates.append({
             "preset": preset,

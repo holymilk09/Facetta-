@@ -452,6 +452,13 @@ export interface CreateProjectFromDrawingRequest {
   /** Exact view isolated from a multi-view plate; the full source is retained. */
   source_region_description?: string;
   source_region?: NormalizedSourceRegion;
+  references?: CreativeRoleReferenceRequest[];
+}
+
+export interface CreativeRoleReferenceRequest {
+  role: 'material_style' | 'construction_detail' | 'brand_direction';
+  image_base64: string;
+  media_type: 'image/png' | 'image/jpeg' | 'image/webp';
 }
 
 export interface CreateProjectFromPromptRequest {
@@ -515,6 +522,38 @@ export interface VisualPreviewApplyResult {
 export interface VisualPreviewDiscardResult {
   status: 'discarded';
   project_id: string;
+  candidate_id: string;
+}
+
+export type PresentationAssetCapability =
+  | 'CLIENT_BEAUTY_RENDER'
+  | 'CLIENT_PRODUCT_PHOTO'
+  | 'MARKETING_IMAGE';
+
+/** Exact optimistic-concurrency tokens required to resolve a presentation preview. */
+export interface PresentationCandidateDecisionRequest {
+  created_by: string;
+  expected_project_id: string;
+  expected_source_asset_id: string;
+  expected_design_version: number;
+}
+
+/** Saving presentation imagery never replaces the active canonical revision. */
+export interface PresentationCandidateAcceptResult {
+  status: 'accepted';
+  project_id: string;
+  source_asset_id: string;
+  source_design_version: number;
+  asset_id: string;
+  capability: PresentationAssetCapability;
+  project: ProjectDetail;
+}
+
+export interface PresentationCandidateDiscardResult {
+  status: 'discarded';
+  project_id: string;
+  source_asset_id: string;
+  source_design_version: number;
   candidate_id: string;
 }
 

@@ -20,6 +20,7 @@ import type { PreviewCandidate } from './contracts';
 import {
   designerCheckDetail, designerCheckLabel, designerReviewState,
 } from './designerReviewLanguage';
+import { designerErrorMessage } from './designerErrorMessage';
 
 const PATHS: readonly { id: ComponentCatalogPath; label: string; help: string }[] = [
   { id: 'metal.color', label: 'Metal color', help: 'Change only the visible metal color.' },
@@ -101,7 +102,7 @@ export function StudioRefineWorkspace({
       if (!current) return;
       setLoading(false);
       if (result.error !== null) {
-        setError(result.error.message);
+        setError(designerErrorMessage(result.error, 'refine'));
         return;
       }
       setCatalog(result.data);
@@ -137,7 +138,7 @@ export function StudioRefineWorkspace({
         ...exactLineage, createdBy, componentPath: path, optionId: selected.id,
       });
       setBusy(false);
-      if (result.error !== null) { setError(result.error.message); return; }
+      if (result.error !== null) { setError(designerErrorMessage(result.error, 'refine')); return; }
       setPreview({ candidate: result.data.candidate, kind: 'catalog' });
       return;
     }
@@ -157,7 +158,7 @@ export function StudioRefineWorkspace({
       const read = await api.readMarkup(lineage.sourceAssetId, {
         markup_snapshot: snapshot, created_by: createdBy,
       });
-      if (read.error !== null) { setBusy(false); setError(read.error.message); return; }
+      if (read.error !== null) { setBusy(false); setError(designerErrorMessage(read.error, 'refine')); return; }
       if (exactLineage !== null
           && read.data.expected_design_version !== exactLineage.sourceDesignVersion) {
         setBusy(false); setError('The annotation was interpreted against a different revision. Reopen the design.'); return;
@@ -203,7 +204,7 @@ export function StudioRefineWorkspace({
             scope: 'appearance',
           });
     setBusy(false);
-    if (result.error !== null) { setError(result.error.message); return; }
+    if (result.error !== null) { setError(designerErrorMessage(result.error, 'refine')); return; }
     setPreview({
       candidate: result.data.candidate,
       kind: exactLineage !== null ? 'markup' : 'visual',
@@ -221,7 +222,7 @@ export function StudioRefineWorkspace({
         : await gateway.applyVisualRefine({ candidateId: preview.candidate.id, createdBy });
     setBusy(false);
     if (result.error !== null) {
-      setError(result.error.message);
+      setError(designerErrorMessage(result.error, 'refine'));
       return;
     }
     if (result.data.project === null) {
@@ -243,7 +244,7 @@ export function StudioRefineWorkspace({
         : await gateway.discardVisualRefine({ candidateId: preview.candidate.id, createdBy });
     setBusy(false);
     if (result.error !== null) {
-      setError(result.error.message);
+      setError(designerErrorMessage(result.error, 'refine'));
       return;
     }
     setPreview(null);

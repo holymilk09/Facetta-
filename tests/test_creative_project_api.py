@@ -478,6 +478,19 @@ def _request(*, variation_count: int = 2) -> dict[str, object]:
     }
 
 
+def _role_reference(
+    role: str,
+    color: tuple[int, int, int],
+    *,
+    media_type: str = "image/png",
+) -> dict[str, str]:
+    return {
+        "role": role,
+        "image_base64": base64.b64encode(_png(color)).decode(),
+        "media_type": media_type,
+    }
+
+
 def _prompt_request(*, variation_count: int = 3) -> dict[str, object]:
     return {
         "prompt": "A platinum floral lariat necklace with emerald leaves",
@@ -658,6 +671,165 @@ def test_from_drawing_persists_variations_without_inventing_a_spec(
         assert all(run.status == "review_required" for run in runs)
 
 
+def test_from_drawing_role_board_is_canonical_persisted_and_reopenable(
+    creative_client,
+):
+    client, Session = creative_client
+    material = _role_reference("material_style", (186, 138, 72))
+    construction = _role_reference("construction_detail", (84, 102, 128))
+    brand = _role_reference("brand_direction", (204, 184, 216))
+    calls: list[tuple[bytes, str, int]] = []
+
+    def generate(source: bytes, instruction: str, variant: int):
+        calls.append((source, instruction, variant))
+        plan = build_image_plan(
+            ImageOperation.REFERENCE_RENDER,
+            instruction,
+            source_image=source,
+            variant=variant,
+        )
+
+        class Provider:
+            def execute(self, *_args, **_kwargs):
+                return ProviderImage(image_bytes=_png((70 + variant, 61, 51)))
+
+        class Evaluator:
+            def evaluate(self, *_args, **_kwargs):
+                return ImageQualityReport(
+                    verdict=QualityVerdict.WARN,
+                    checks=(),
+                    score=94,
+                )
+
+        return JewelryImageAgent(Provider(), Evaluator()).run(
+            plan, source_image=source,
+        )
+
+    app.dependency_overrides[get_creative_render_generator] = lambda: generate
+    response = client.post("/projects/from-drawing", json={
+        **_request(variation_count=4),
+        # Caller order cannot alter image numbering or cache identity.
+        "references": [brand, material, construction],
+    })
+    assert response.status_code == 201, response.text
+    body = response.json()
+    assert len(calls) == 4
+    assert [call[2] for call in calls] == [7, 8, 9, 10]
+    assert all(call[0] == calls[0][0] for call in calls)
+    assert all(call[1] == calls[0][1] for call in calls)
+    instruction = calls[0][1]
+    assert instruction.index("IMAGE 1 — MASTER GEOMETRY") < instruction.index(
+        "IMAGE 2 — MATERIAL & STYLE"
+    ) < instruction.index("IMAGE 3 — CONSTRUCTION DETAIL") < instruction.index(
+        "IMAGE 4 — BRAND DIRECTION"
+    )
+    assert "sole authority for the jewelry's identity" in instruction
+    assert "surface-only guidance" in instruction
+    assert "not a confirmed construction fact" in instruction
+    assert "visual-language guidance" in instruction
+    assert "proof of manufacturability" in instruction
+    assert hashlib.sha256(SOURCE).hexdigest() in instruction
+    for reference in (material, construction, brand):
+        assert hashlib.sha256(base64.b64decode(
+            reference["image_base64"]
+        )).hexdigest() in instruction
+
+    assert len(body["revisions"]) == 4
+    assets = {asset["capability"]: asset for asset in body["assets"]}
+    assert assets["CREATIVE_SOURCE"]["provenance"] == (
+        "designer_supplied_source"
+    )
+    assert assets["CREATIVE_REFERENCE_BOARD"]["provenance"] == (
+        "role_labeled_reference_board"
+    )
+    role_assets = {
+        "material_style": assets["CREATIVE_REFERENCE_MATERIAL_STYLE"],
+        "construction_detail": assets["CREATIVE_REFERENCE_CONSTRUCTION_DETAIL"],
+        "brand_direction": assets["CREATIVE_REFERENCE_BRAND_DIRECTION"],
+    }
+    assert role_assets["material_style"]["provenance"] == "material_style_reference"
+    assert role_assets["construction_detail"]["provenance"] == "construction_detail_reference"
+    assert role_assets["brand_direction"]["provenance"] == "brand_direction_reference"
+    reopened = client.get(f"/projects/{body['root_id']}")
+    assert reopened.status_code == 200, reopened.text
+    reopened_assets = {
+        asset["capability"]: asset for asset in reopened.json()["assets"]
+    }
+    assert reopened_assets["CREATIVE_REFERENCE_BOARD"]["instruction"] == (
+        assets["CREATIVE_REFERENCE_BOARD"]["instruction"]
+    )
+
+    with Session() as db:
+        root = db.get(ImageAsset, body["root_id"])
+        assert root is not None
+        assert bytes(root.image) == SOURCE
+        board_asset = db.get(
+            ImageAsset, assets["CREATIVE_REFERENCE_BOARD"]["asset_id"]
+        )
+        assert board_asset is not None
+        assert bytes(board_asset.image) == calls[0][0]
+        assert board_asset.parent_asset_id == root.id
+        for role, reference in {
+            "material_style": material,
+            "construction_detail": construction,
+            "brand_direction": brand,
+        }.items():
+            stored = db.get(ImageAsset, role_assets[role]["asset_id"])
+            assert stored is not None
+            assert bytes(stored.image) == base64.b64decode(reference["image_base64"])
+            assert stored.parent_asset_id == root.id
+        runs = list(db.scalars(select(ImageRun).order_by(ImageRun.variant)))
+        assert len(runs) == 4
+        assert all(run.source_asset_id == board_asset.id for run in runs)
+        assert all(
+            run.source_hash == hashlib.sha256(bytes(board_asset.image)).hexdigest()
+            for run in runs
+        )
+
+
+@pytest.mark.parametrize("variation_count", [1, 4])
+def test_role_labeled_references_preserve_candidate_count_boundaries(
+    creative_client,
+    variation_count,
+):
+    client, _Session = creative_client
+    variants: list[int] = []
+
+    def generate(source: bytes, instruction: str, variant: int):
+        variants.append(variant)
+        plan = build_image_plan(
+            ImageOperation.REFERENCE_RENDER,
+            instruction,
+            source_image=source,
+            variant=variant,
+        )
+
+        class Provider:
+            def execute(self, *_args, **_kwargs):
+                return ProviderImage(image_bytes=_png((50 + variant, 80, 90)))
+
+        class Evaluator:
+            def evaluate(self, *_args, **_kwargs):
+                return ImageQualityReport(
+                    verdict=QualityVerdict.WARN, checks=(), score=91,
+                )
+
+        return JewelryImageAgent(Provider(), Evaluator()).run(
+            plan, source_image=source,
+        )
+
+    app.dependency_overrides[get_creative_render_generator] = lambda: generate
+    response = client.post("/projects/from-drawing", json={
+        **_request(variation_count=variation_count),
+        "references": [_role_reference(
+            "material_style", (160, 120, 60)
+        )],
+    })
+    assert response.status_code == 201, response.text
+    assert len(response.json()["revisions"]) == variation_count
+    assert variants == list(range(7, 7 + variation_count))
+
+
 def test_from_drawing_isolates_and_persists_exact_multi_view_source_region(
     creative_client,
 ):
@@ -752,6 +924,118 @@ def test_from_drawing_rejects_region_description_without_coordinates(
     with Session() as db:
         assert db.scalar(select(func.count()).select_from(Project)) == 0
         assert db.scalar(select(func.count()).select_from(ImageAsset)) == 0
+
+
+@pytest.mark.parametrize("references", [
+    [
+        _role_reference("material_style", (1, 2, 3)),
+        _role_reference("material_style", (4, 5, 6)),
+    ],
+    [
+        _role_reference("material_style", (1, 2, 3)),
+        _role_reference("construction_detail", (4, 5, 6)),
+        _role_reference("brand_direction", (7, 8, 9)),
+        _role_reference("material_style", (10, 11, 12)),
+    ],
+    [{
+        "role": "master_geometry",
+        "image_base64": base64.b64encode(_png((1, 2, 3))).decode(),
+        "media_type": "image/png",
+    }],
+])
+def test_from_drawing_rejects_duplicate_excess_or_unknown_secondary_roles(
+    creative_client,
+    references,
+):
+    client, Session = creative_client
+    response = client.post("/projects/from-drawing", json={
+        **_request(variation_count=1),
+        "references": references,
+    })
+    assert response.status_code == 422
+    with Session() as db:
+        assert db.scalar(select(func.count()).select_from(Project)) == 0
+        assert db.scalar(select(func.count()).select_from(ImageAsset)) == 0
+
+
+@pytest.mark.parametrize(("reference", "code"), [
+    ({
+        "role": "material_style",
+        "image_base64": "not-valid-base64!",
+        "media_type": "image/png",
+    }, "creative_reference_invalid_base64"),
+    ({
+        "role": "construction_detail",
+        "image_base64": base64.b64encode(b"plain text").decode(),
+        "media_type": "image/png",
+    }, "creative_reference_unsupported_media"),
+    ({
+        "role": "brand_direction",
+        "image_base64": base64.b64encode(_png((1, 2, 3))).decode(),
+        "media_type": "image/jpeg",
+    }, "creative_reference_media_mismatch"),
+])
+def test_from_drawing_validates_each_secondary_reference_exactly(
+    creative_client,
+    reference,
+    code,
+):
+    client, Session = creative_client
+    response = client.post("/projects/from-drawing", json={
+        **_request(variation_count=1),
+        "references": [reference],
+    })
+    assert response.status_code == 422
+    assert response.json()["code"] == code
+    with Session() as db:
+        assert db.scalar(select(func.count()).select_from(Project)) == 0
+        assert db.scalar(select(func.count()).select_from(ImageAsset)) == 0
+
+
+def test_role_reference_generation_failure_leaves_no_project_or_assets(
+    creative_client,
+):
+    client, Session = creative_client
+
+    def fail(source: bytes, instruction: str, variant: int):
+        assert b"PNG" in source[:16]
+        assert "ROLE-LABELED REFERENCE BOARD" in instruction
+        plan = build_image_plan(
+            ImageOperation.REFERENCE_RENDER,
+            instruction,
+            source_image=source,
+            variant=variant,
+        )
+        raise ImageQualityFailure(
+            "candidate failed source fidelity",
+            report=ImageQualityReport(
+                verdict=QualityVerdict.FAIL,
+                checks=(QualityCheck(
+                    code="source_design_preserved",
+                    passed=False,
+                    severity=CheckSeverity.HARD,
+                    message="major source drift",
+                ),),
+                score=30,
+            ),
+            attempts=[],
+            plan=plan,
+        )
+
+    app.dependency_overrides[get_creative_render_generator] = lambda: fail
+    response = client.post("/projects/from-drawing", json={
+        **_request(variation_count=1),
+        "references": [_role_reference(
+            "material_style", (120, 90, 50)
+        )],
+    })
+    assert response.status_code == 422
+    with Session() as db:
+        assert db.scalar(select(func.count()).select_from(Project)) == 0
+        assert db.scalar(select(func.count()).select_from(ImageAsset)) == 0
+        assert db.scalar(select(func.count()).select_from(Design)) == 0
+        assert db.scalar(select(func.count()).select_from(DesignVersion)) == 0
+        assert db.scalar(select(func.count()).select_from(ImageRun)) == 1
 
 
 def test_selected_creative_candidate_can_be_read_without_persisting_spec(
