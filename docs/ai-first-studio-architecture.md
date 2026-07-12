@@ -1,7 +1,9 @@
 # Facetta AI-first studio architecture
 
-Status: product and engineering target. This document defines the direction of
-travel without asserting that every named entity, screen, or service exists.
+Status: active product architecture with an integrated Studio shell and trusted
+control-plane foundation. Target-only capabilities are identified explicitly;
+the document does not imply that every destination or reliability gate has
+shipped.
 Current implementation evidence remains in
 [`STATUS.md`](STATUS.md) and the narrower persisted workflow is documented in
 [`trusted-workflow-architecture.md`](trusted-workflow-architecture.md).
@@ -49,8 +51,9 @@ Design Family
 
 A Design Family is the creative identity shared by related alternatives: for
 example, one floral ring idea explored in several center stones, settings, and
-metals. It is a target grouping concept. A first-class `DesignFamily` database
-entity and migration are not yet implemented.
+metals. First-class family records, variations, immutable revisions, comparison,
+and restore-as-new are implemented in the trusted project control plane. The
+unified Collections interface is the presentation layer for these records.
 
 ### Variation
 
@@ -237,8 +240,27 @@ destination changes packaging and permissions, not historical truth.
 - no visual guess or generic template presented as production geometry.
 
 The current client, marketing-pack, project/library, and factory endpoints
-provide partial destination foundations. One unified destination picker and
-Design Family organization experience are not yet implemented.
+provide destination foundations. The Studio shell exposes Collections and
+contextual Present actions; a fully dynamic destination form remains open work.
+
+## Unified Studio shell
+
+The primary application surface is now one outcome-first shell:
+
+- global navigation: **Studio**, **Collections**, **Activity**, and **Learn**;
+- active-revision actions: **Create**, **Vary**, **Refine**, **Views**,
+  **Present**, and **More**;
+- Factory appears only inside **More** after explicit backend enablement and
+  exact-revision eligibility;
+- Guided creation shows the brief, one optional presentation direction,
+  collection, and save; detailed jewelry controls are hidden behind
+  **Advanced specifications**; and
+- the previous feature-flagged trusted workspace remains an internal module,
+  not a competing top-level product entry.
+
+`StudioActionDefinition`, `StudioJob`, role-labeled references, and temporary
+`PreviewCandidate` decisions form the typed UI boundary. Provider selection,
+raw prompts, base64 payloads, and QA internals stay below that boundary.
 
 ## State and authority
 
@@ -289,10 +311,11 @@ design or production geometry.
 
 ## Delivery sequence
 
-1. Keep the existing trusted project/revision and image-agent evidence stable.
-2. Add the Design Family grouping additively; treat existing Projects as
-   variations without rewriting history.
-3. Wire the redesign around Create, Explore, and Organize.
+1. Keep the integrated trusted project/revision and image-agent evidence stable.
+2. Connect the Studio action gateway to the trusted project APIs without
+   exposing the legacy trusted screen.
+3. Complete Collections over the implemented Design Family and variation
+   records without rewriting history.
 4. Unify on-demand visual twins and component-aware edit routing.
 5. Add the instant masked configurator for geometry-preserving previews.
 6. Add destination packaging for Client, Marketing, Library, and optional
