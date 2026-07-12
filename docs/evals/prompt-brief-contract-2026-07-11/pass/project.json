@@ -1,0 +1,217 @@
+{
+  "active_asset_id": "ast_d311d6638da7b99d",
+  "active_design_version": 1,
+  "active_revision": {
+    "asset_id": "ast_d311d6638da7b99d",
+    "capability": "SPEC_RENDER",
+    "created_at": "2026-07-11T13:12:25.748418",
+    "created_by": "usr_prompt_test_actor",
+    "design_version": 1,
+    "image_url": "/assets/ast_d311d6638da7b99d/image",
+    "instruction": "Create one refined engagement ring with a round brilliant diamond center, four-claw basket, 18k yellow gold, a narrow 1.8 mm half-round polished shank, no halo, and no side stones. Use a neutral studio presentation.",
+    "legacy_provenance": false,
+    "media_type": "image/png",
+    "pinned": false,
+    "provenance": "generated_spec_aligned",
+    "revision": 1,
+    "root_id": "ast_d311d6638da7b99d"
+  },
+  "assets": [
+    {
+      "asset_id": "ast_d311d6638da7b99d",
+      "capability": "SPEC_RENDER",
+      "created_at": "2026-07-11T13:12:25.748418",
+      "created_by": "usr_prompt_test_actor",
+      "design_version": 1,
+      "image_url": "/assets/ast_d311d6638da7b99d/image",
+      "instruction": "Create one refined engagement ring with a round brilliant diamond center, four-claw basket, 18k yellow gold, a narrow 1.8 mm half-round polished shank, no halo, and no side stones. Use a neutral studio presentation.",
+      "legacy_provenance": false,
+      "media_type": "image/png",
+      "pinned": false,
+      "provenance": "generated_spec_aligned",
+      "revision": 1,
+      "root_id": "ast_d311d6638da7b99d"
+    },
+    {
+      "asset_id": "ast_bc60986c3647cccc",
+      "capability": "SOURCE_CONCEPT",
+      "created_at": "2026-07-11T13:12:25.748418",
+      "created_by": "usr_prompt_test_actor",
+      "image_url": "/assets/ast_bc60986c3647cccc/image",
+      "instruction": "Create one refined engagement ring with a round brilliant diamond center, four-claw basket, 18k yellow gold, a narrow 1.8 mm half-round polished shank, no halo, and no side stones. Use a neutral studio presentation.",
+      "legacy_provenance": false,
+      "media_type": "image/png",
+      "parent_asset_id": "ast_d311d6638da7b99d",
+      "pinned": false,
+      "provenance": "generated_concept",
+      "root_id": "ast_d311d6638da7b99d"
+    }
+  ],
+  "collection": "Prompt workflow evaluation",
+  "counts": {
+    "SOURCE_CONCEPT": 1,
+    "SPEC_RENDER": 1
+  },
+  "cover_asset_id": "ast_d311d6638da7b99d",
+  "created_at": "2026-07-11T13:12:25.748418",
+  "derived_assets": [
+    {
+      "asset_id": "ast_bc60986c3647cccc",
+      "capability": "SOURCE_CONCEPT",
+      "created_at": "2026-07-11T13:12:25.748418",
+      "created_by": "usr_prompt_test_actor",
+      "image_url": "/assets/ast_bc60986c3647cccc/image",
+      "instruction": "Create one refined engagement ring with a round brilliant diamond center, four-claw basket, 18k yellow gold, a narrow 1.8 mm half-round polished shank, no halo, and no side stones. Use a neutral studio presentation.",
+      "legacy_provenance": false,
+      "media_type": "image/png",
+      "parent_asset_id": "ast_d311d6638da7b99d",
+      "pinned": false,
+      "provenance": "generated_concept",
+      "root_id": "ast_d311d6638da7b99d"
+    }
+  ],
+  "design_id": "dsn_7819c7a8e6ec5783",
+  "factory_blockers": [],
+  "factory_ready": false,
+  "has_factory_drawing": false,
+  "id": "ast_d311d6638da7b99d",
+  "image_run_ids": [
+    "run_5f9b61a9590eec5c",
+    "run_3abc0d426292124c"
+  ],
+  "item_count": 2,
+  "items": [
+    {
+      "asset_id": "ast_d311d6638da7b99d",
+      "capability": "SPEC_RENDER",
+      "created_at": "2026-07-11T13:12:25.748418",
+      "created_by": "usr_prompt_test_actor",
+      "design_version": 1,
+      "image_url": "/assets/ast_d311d6638da7b99d/image",
+      "instruction": "Create one refined engagement ring with a round brilliant diamond center, four-claw basket, 18k yellow gold, a narrow 1.8 mm half-round polished shank, no halo, and no side stones. Use a neutral studio presentation.",
+      "legacy_provenance": false,
+      "media_type": "image/png",
+      "pinned": false,
+      "provenance": "generated_spec_aligned",
+      "revision": 1,
+      "root_id": "ast_d311d6638da7b99d"
+    },
+    {
+      "asset_id": "ast_bc60986c3647cccc",
+      "capability": "SOURCE_CONCEPT",
+      "created_at": "2026-07-11T13:12:25.748418",
+      "created_by": "usr_prompt_test_actor",
+      "image_url": "/assets/ast_bc60986c3647cccc/image",
+      "instruction": "Create one refined engagement ring with a round brilliant diamond center, four-claw basket, 18k yellow gold, a narrow 1.8 mm half-round polished shank, no halo, and no side stones. Use a neutral studio presentation.",
+      "legacy_provenance": false,
+      "media_type": "image/png",
+      "parent_asset_id": "ast_d311d6638da7b99d",
+      "pinned": false,
+      "provenance": "generated_concept",
+      "root_id": "ast_d311d6638da7b99d"
+    }
+  ],
+  "latest_design_version": 1,
+  "owner": "usr_prompt_test_actor",
+  "primary_revision_count": 1,
+  "revisions": [
+    {
+      "asset_id": "ast_d311d6638da7b99d",
+      "capability": "SPEC_RENDER",
+      "created_at": "2026-07-11T13:12:25.748418",
+      "created_by": "usr_prompt_test_actor",
+      "design_version": 1,
+      "image_url": "/assets/ast_d311d6638da7b99d/image",
+      "instruction": "Create one refined engagement ring with a round brilliant diamond center, four-claw basket, 18k yellow gold, a narrow 1.8 mm half-round polished shank, no halo, and no side stones. Use a neutral studio presentation.",
+      "legacy_provenance": false,
+      "media_type": "image/png",
+      "pinned": false,
+      "provenance": "generated_spec_aligned",
+      "revision": 1,
+      "root_id": "ast_d311d6638da7b99d"
+    }
+  ],
+  "root_id": "ast_d311d6638da7b99d",
+  "spec": {
+    "band": {
+      "profile": "comfort_fit",
+      "thickness_mm": 1.6,
+      "width_mm": 1.8
+    },
+    "bracelet": null,
+    "brooch": null,
+    "chain": null,
+    "composition": null,
+    "created_at": "2026-07-11T13:12:25.748418Z",
+    "created_by": "usr_prompt_test_actor",
+    "design_form": {
+      "elements": []
+    },
+    "design_id": "dsn_7819c7a8e6ec5783",
+    "dimension_provenance": {},
+    "drop": null,
+    "jewelry_type": "ring",
+    "metal": {
+      "color": "yellow",
+      "finish": "high_polish",
+      "karat": 18,
+      "material": "gold"
+    },
+    "mode": "pro",
+    "notes_to_factory": "Concept originated by image generation from the brief: \u201cgolden evaluation case round-solitaire-yellow-4-narrow\u201d. All dimensions are density-consistent DRAFT proposals scaled from a vision estimate of the centre stone \u2014 the designer confirms exact millimetres before production.",
+    "pendant": null,
+    "ring_size": {
+      "inner_diameter_mm": 16.91,
+      "system": "US",
+      "value": 6.5
+    },
+    "schema_version": 1,
+    "setting": {
+      "gallery_height_mm": 3.8,
+      "prong_count": 4,
+      "prong_tip_mm": 0.9,
+      "style": "4_prong_basket"
+    },
+    "side_stones": [],
+    "source_component_coverage": null,
+    "stone": {
+      "carat": 1.639,
+      "clarity": null,
+      "color": {
+        "gia": "natural colour",
+        "hue_code": null,
+        "saturation": null,
+        "tone": null,
+        "trade": "Diamond"
+      },
+      "count": 1,
+      "culet": null,
+      "cut": "round_brilliant",
+      "depth_pct": null,
+      "dimensions_mm": {
+        "depth": 4.6,
+        "length": 7.5,
+        "width": 7.5
+      },
+      "girdle": null,
+      "inscription": null,
+      "lab": null,
+      "mount": null,
+      "origin": null,
+      "phenomena": [],
+      "position": "center",
+      "species": "diamond",
+      "table_pct": null,
+      "treatment": null
+    },
+    "template": "solitaire_prong",
+    "version": 1
+  },
+  "state": "refining",
+  "tags": [
+    "manual-evaluation",
+    "prompt-to-project"
+  ],
+  "title": "Prompt-to-project evaluation",
+  "updated_at": "2026-07-11T13:12:25.748418"
+}

@@ -164,9 +164,11 @@ def _estimate_panel(est: dict, x0: float, y0: float, x1: float) -> list[str]:
         _text(x0 + 78, y0 + 5.0, "~CT EA.", size=2.4, anchor="start",
               color=FAINT),
     ]
-    def ink(conf) -> str:
+    def ink(conf, status=None) -> str:
         # low-confidence estimates letter fainter, so the designer sees at a
         # glance which numbers to trust vs re-measure
+        if status == "ambiguous":
+            return FAINT
         try:
             return INK if float(conf) >= 0.5 else FAINT
         except (TypeError, ValueError):
@@ -205,7 +207,8 @@ def _estimate_panel(est: dict, x0: float, y0: float, x1: float) -> list[str]:
         parts.append(_text(rx, ry, escape(str(m.get("label", "")).upper()[:20]),
                            size=2.4, anchor="start", color=FAINT))
         parts.append(_text(rx + 34, ry, escape(str(m.get("value", "")))[:60],
-                           size=2.8, anchor="start", color=ink(m.get("confidence"))))
+                           size=2.8, anchor="start",
+                           color=ink(m.get("confidence"), m.get("status"))))
 
     banner_y = y0 + _estimate_panel_height(est) - 9.0
     scaled_to = est.get("scale_anchor")

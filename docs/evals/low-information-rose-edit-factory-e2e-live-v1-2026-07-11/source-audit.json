@@ -1,0 +1,24 @@
+{
+  "audited_spec_visual_hash": "e257359d45cf604d",
+  "blockers": [
+    {
+      "code": "source_component_audit_failed",
+      "component_id": "stone.center",
+      "message": "Independent coverage audit failed for stone.center: large round faceted green center stone",
+      "required_resolution": "Correct the spec mapping and repeat the independent audit."
+    },
+    {
+      "code": "source_component_audit_failed",
+      "component_id": "stone.group.001",
+      "message": "Independent coverage audit failed for stone.group.001: eight small round white stones (four per shoulder)",
+      "required_resolution": "Correct the spec mapping and repeat the independent audit."
+    },
+    {
+      "code": "source_component_audit_inconclusive",
+      "component_id": "band.shank",
+      "message": "Independent coverage audit was inconclusive for band.shank: yellow gold continuous round shank/band",
+      "required_resolution": "Obtain a clear source view and repeat the independent audit."
+    }
+  ],
+  "component_count": 6
+}

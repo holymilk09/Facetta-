@@ -114,15 +114,33 @@ class TestChecklistLifecycle:
                               "note": "too heavy — width to 2.0"})
         assert r.status_code == 201, r.text
         cr = r.json()["change_request"]
-        assert cr["annotate"]["section"] == "band"
-        assert cr["annotate"]["instruction"] == "too heavy — width to 2.0"
-        assert cr["localized_edit"]["region_description"] == "the band"
+        assert cr["workflow"] == "markup_read_then_apply"
+        assert cr["annotation_prefill"]["target_section"] == "band"
+        assert cr["annotation_prefill"]["change_instruction"] == \
+            "too heavy — width to 2.0"
+        assert cr["annotation_prefill"]["region_description"] == "the band"
+        assert cr["markup_read"] == {
+            "method": "POST",
+            "endpoint": f"/assets/{aid}/markup/read",
+            "body_requires": ["marked_image_base64"],
+            "mutates_project": False,
+        }
+        assert cr["markup_apply"]["endpoint"] == \
+            f"/assets/{aid}/markup/apply"
+        assert cr["markup_apply"]["body"]["annotations"] == [
+            cr["annotation_prefill"]]
+        assert cr["endpoints"] == [
+            f"POST /assets/{aid}/markup/read",
+            f"POST /assets/{aid}/markup/apply",
+        ]
+        assert "annotate" not in cr and "localized_edit" not in cr
         # the halo stones item prefills its schedule ref + index
         r = client.post(f"/assets/{aid}/checklist/respond",
                         json={"item_key": "side_stones[0]", "approved": False,
                               "note": "melee to 1.3 mm"})
         cr = r.json()["change_request"]
-        assert cr["annotate"]["ref"] == "B" and cr["annotate"]["index"] == 0
+        prefill = cr["annotation_prefill"]
+        assert prefill["target_ref"] == "B" and prefill["index"] == 0
 
     def test_interpret_stores_the_understood_as_echo(self, client, monkeypatch):
         import facetta.grokedit as grokedit
@@ -148,7 +166,7 @@ class TestChecklistLifecycle:
 
     def test_audit_appends_and_latest_wins(self, client):
         aid = _asset(client)
-        body = _checklist(client, aid)
+        _checklist(client, aid)
         client.post(f"/assets/{aid}/checklist/respond",
                     json={"item_key": "stone", "approved": False,
                           "note": "wrong cut"})

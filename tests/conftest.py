@@ -2,6 +2,9 @@ import copy
 
 import pytest
 
+from facetta.image_identity import spec_visual_hash
+from facetta.spec import Spec
+from facetta.validation import validate_spec
 from facetta.vocabulary import get_vocabulary
 
 # The exact example spec from docs/SPEC_SCHEMA.md
@@ -251,6 +254,71 @@ OUTER_BANGLE_SPEC["bracelet"] = {
     "width_mm": 6.1,
     "thickness_mm": 2.6,
 }
+
+
+def audited_import_spec(raw: dict) -> dict:
+    """Attach synthetic all-pass source accounting for endpoint unit tests.
+
+    Production callers never receive this helper. Test rasters are generated
+    color blocks with no inspectable jewelry, so fixtures explicitly declare
+    the canonical sections each synthetic source is standing in for.
+    """
+    data = copy.deepcopy(raw)
+    if data.get("source_component_coverage") is not None:
+        validated = validate_spec(Spec.model_validate(data), get_vocabulary())
+        data["source_component_coverage"]["audited_spec_visual_hash"] = (
+            spec_visual_hash(validated.spec)
+        )
+        return data
+    components: list[tuple[str, str, list[str]]] = [
+        ("assembly.primary", "Complete synthetic jewelry assembly.", ["template"]),
+        ("stone.center", "Synthetic center-stone group.", ["stone"]),
+    ]
+    optional_sections = (
+        ("setting", "setting.primary", "Synthetic primary setting."),
+        ("metal", "metal.body", "Synthetic metal body."),
+        ("band", "band.shank", "Synthetic ring shank."),
+        ("ring_size", "ring.size", "Synthetic ring-size record."),
+        ("pendant", "pendant.body", "Synthetic pendant body."),
+        ("chain", "chain.body", "Synthetic carrier chain."),
+        ("bracelet", "bracelet.body", "Synthetic bracelet body."),
+        ("brooch", "brooch.body", "Synthetic brooch body."),
+        ("drop", "drop.body", "Synthetic drop assembly."),
+        ("composition", "composition.primary", "Synthetic composition."),
+    )
+    for path, component_id, description in optional_sections:
+        if data.get(path) is not None:
+            components.append((component_id, description, [path]))
+    for index, _stone in enumerate(data.get("side_stones", []), start=1):
+        components.append((
+            f"stone.group.{index:03d}",
+            f"Synthetic side-stone group {index}.",
+            [f"side_stones[{index - 1}]"],
+        ))
+    data["source_component_coverage"] = {
+        "source_kind": "imported_reference",
+        "components": [{
+            "component_id": component_id,
+            "source_view": "unspecified",
+            "source_description": description,
+            "source_confidence": 1.0,
+            "canonical_spec_paths": paths,
+            "unresolved_reason": None,
+            "independent_audit": {
+                "kind": "independent_component_audit",
+                "verdict": "pass",
+                "auditor": "synthetic-test-source-audit.v1",
+                "source_view": "unspecified",
+                "observed_description": description,
+                "evidence_sha256": "0" * 64,
+            },
+        } for component_id, description, paths in components],
+    }
+    validated = validate_spec(Spec.model_validate(data), get_vocabulary())
+    data["source_component_coverage"]["audited_spec_visual_hash"] = (
+        spec_visual_hash(validated.spec)
+    )
+    return data
 
 
 @pytest.fixture

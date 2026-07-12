@@ -1,0 +1,21 @@
+{
+  "provider_readiness": {
+    "fal_configured": false,
+    "xai_configured": true
+  },
+  "response": {
+    "detail": "colorization changed the designer-approved geometry; no sheet was created",
+    "quality": {
+      "checked": true,
+      "consistent": false,
+      "differences": [
+        "added large side stone on right of central emerald",
+        "added horizontal bar stone below central",
+        "altered lower accent stone count/placement and band inlay geometry"
+      ],
+      "severity": "major"
+    },
+    "view": "front"
+  },
+  "status_code": 422
+}

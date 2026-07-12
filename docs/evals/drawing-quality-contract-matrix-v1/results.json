@@ -1,0 +1,693 @@
+{
+  "canonical_policy": "facetta.drawing_intake.build_drawing_processing_contract",
+  "contract_version": "drawing-processing.v1",
+  "fixtures": [
+    {
+      "contract_evaluation": {
+        "checks": {
+          "canonical_contract_version": true,
+          "dimension_provenance_handled": true,
+          "factory_truth_uses_validated_record_and_source": true,
+          "internal_signals_captured": true,
+          "no_user_quality_classification_in_prompt": true,
+          "provider_output_not_authoritative": true,
+          "supplied_design_evidence_preserved": true,
+          "uniform_render_strategy": true,
+          "visual_attempt_never_preblocked": true
+        },
+        "evaluation_dimensions": {
+          "best_result_usefulness": true,
+          "factory_truth_non_promotion": true,
+          "fidelity": true,
+          "uncertainty_capture": true
+        },
+        "failed_checks": [],
+        "status": "pass"
+      },
+      "fixture_id": "phone-capture-visibility-loss",
+      "intake_facts": {
+        "dimension_evidence": "absent",
+        "internal_signals": [
+          {
+            "code": "geometry_ambiguous",
+            "detail": "A capture reflection overlaps two supplied contour segments.",
+            "subject": "contours behind capture glare",
+            "visibility": "internal_only"
+          },
+          {
+            "code": "geometry_not_visible",
+            "detail": "The source frame ends before the lower design region is shown.",
+            "subject": "cropped lower design region",
+            "visibility": "internal_only"
+          }
+        ]
+      },
+      "internal_coverage_intent": "Phone capture with perspective, glare, and cropping that obscure specific supplied marks.",
+      "inventory_example": {
+        "decodable": true,
+        "evidence_scope": "inventory_taxonomy_only",
+        "filename": "image-61.jpg",
+        "inventory_category": "necklace",
+        "inventory_input_kind": "mixed",
+        "inventory_notes": "photo of design card being held, mixed media",
+        "live_tested_by_this_harness": false,
+        "relevance": "Inventory note identifies a photographed design card. Capture artifacts in this fixture remain contract evidence, not a claim that this inventoried image was live-evaluated.",
+        "sha256": "ea90ff9a52e7467a90b684c0bd1caf68123560178503d25f2a881774bae7d9a4"
+      },
+      "processing_contract": {
+        "contract_version": "drawing-processing.v1",
+        "factory_questions": [
+          {
+            "code": "resolve_geometry",
+            "question": "For the factory specification, which exact outline or construction should define contours behind capture glare?",
+            "required_before_factory_promotion": true,
+            "stage": "factory_spec",
+            "subject": "contours behind capture glare"
+          },
+          {
+            "code": "define_unseen_geometry",
+            "question": "For the factory specification, what exact geometry defines cropped lower design region?",
+            "required_before_factory_promotion": true,
+            "stage": "factory_spec",
+            "subject": "cropped lower design region"
+          }
+        ],
+        "policy": {
+          "designer_review_required": true,
+          "dimension_handling": "estimate_missing_separately",
+          "draft_spec_allowed": true,
+          "factory_spec_blocked_by_drawing_evidence": true,
+          "factory_truth_source": "validated_record_plus_original_source",
+          "geometry_handling": "preserve_supplied_design_evidence",
+          "pre_render_clarification_required": false,
+          "presentation_cleanup_allowed": true,
+          "provider_output_authoritative": false,
+          "render_strategy": "faithful_best_effort",
+          "unseen_geometry_handling": "minimal_review_proposal_not_factory_truth",
+          "visual_render_allowed": true
+        },
+        "prompt_facts": [
+          "DRAWING RENDER POLICY: FAITHFUL BEST EFFORT.",
+          "Preserve every supplied visible line, shape, component count, proportion, topology, and spatial relationship as design evidence.",
+          "Improve presentation quality only: remove capture noise and apply the requested finish, material, color, or lighting without regularizing, symmetrizing, substituting, or silently redesigning geometry.",
+          "When a visual output requires geometry that is not supplied, use only the minimum conservative review proposal and never call it observed, approved, measured, or factory-ready.",
+          "Do not stop the visual attempt for an intake-quality judgment. Defer only concrete unresolved physical facts to factory-specification review.",
+          "No supplied dimensions are available. Reference-derived values may be offered separately as EST. suggestions, never measurements.",
+          "INTERNAL SOURCE EVIDENCE [geometry_ambiguous] contours behind capture glare: A capture reflection overlaps two supplied contour segments. Preserve the clear surrounding geometry and use the least transformative interpretation for the review candidate. Do not expose this internal label in output.",
+          "INTERNAL SOURCE EVIDENCE [geometry_not_visible] cropped lower design region: The source frame ends before the lower design region is shown. Do not claim hidden geometry was observed. If the visual output requires continuity, use the minimum conservative proposal and keep it review-only. Do not expose this internal label in output.",
+          "AI output is never factory authority; only the validated immutable record plus the original source can support factory truth."
+        ]
+      },
+      "required_live_outcome": {
+        "designer_review_required": true,
+        "dimension_evidence": "absent",
+        "dimension_handling": "estimate_missing_separately",
+        "factory_question_count": 2,
+        "internal_signal_count": 2,
+        "provider_output_authoritative": false,
+        "render_strategy": "faithful_best_effort",
+        "review_proposal_may_be_factory_truth": false,
+        "source_design_evidence": "preserved",
+        "visual_attempt": "required"
+      }
+    },
+    {
+      "contract_evaluation": {
+        "checks": {
+          "canonical_contract_version": true,
+          "dimension_provenance_handled": true,
+          "factory_truth_uses_validated_record_and_source": true,
+          "internal_signals_captured": true,
+          "no_user_quality_classification_in_prompt": true,
+          "provider_output_not_authoritative": true,
+          "supplied_design_evidence_preserved": true,
+          "uniform_render_strategy": true,
+          "visual_attempt_never_preblocked": true
+        },
+        "evaluation_dimensions": {
+          "best_result_usefulness": true,
+          "factory_truth_non_promotion": true,
+          "fidelity": true,
+          "uncertainty_capture": true
+        },
+        "failed_checks": [],
+        "status": "pass"
+      },
+      "fixture_id": "open-ideation-lines",
+      "intake_facts": {
+        "dimension_evidence": "absent",
+        "internal_signals": [
+          {
+            "code": "geometry_not_visible",
+            "detail": "The supplied shank line stops before the rear continuation is defined.",
+            "subject": "rear shank continuation",
+            "visibility": "internal_only"
+          },
+          {
+            "code": "geometry_ambiguous",
+            "detail": "Two supplied construction strokes overlap at the shoulder transition.",
+            "subject": "shoulder transition",
+            "visibility": "internal_only"
+          }
+        ]
+      },
+      "internal_coverage_intent": "Early ideation source with open contours and unresolved construction marks.",
+      "inventory_example": {
+        "decodable": true,
+        "evidence_scope": "inventory_taxonomy_only",
+        "filename": "image-90.jpg",
+        "inventory_category": "ring",
+        "inventory_input_kind": "hand_drawing",
+        "inventory_notes": "hand sketch of ring on hand + separate ring drawing",
+        "live_tested_by_this_harness": false,
+        "relevance": "Inventory note identifies a hand sketch on a hand plus a separate ring drawing. The fixture evidence is not a live image assessment.",
+        "sha256": "162554cf37f76d2be5a6b0b575497e1241ac5c528354eea6ce42f9edb04d2b23"
+      },
+      "processing_contract": {
+        "contract_version": "drawing-processing.v1",
+        "factory_questions": [
+          {
+            "code": "define_unseen_geometry",
+            "question": "For the factory specification, what exact geometry defines rear shank continuation?",
+            "required_before_factory_promotion": true,
+            "stage": "factory_spec",
+            "subject": "rear shank continuation"
+          },
+          {
+            "code": "resolve_geometry",
+            "question": "For the factory specification, which exact outline or construction should define shoulder transition?",
+            "required_before_factory_promotion": true,
+            "stage": "factory_spec",
+            "subject": "shoulder transition"
+          }
+        ],
+        "policy": {
+          "designer_review_required": true,
+          "dimension_handling": "estimate_missing_separately",
+          "draft_spec_allowed": true,
+          "factory_spec_blocked_by_drawing_evidence": true,
+          "factory_truth_source": "validated_record_plus_original_source",
+          "geometry_handling": "preserve_supplied_design_evidence",
+          "pre_render_clarification_required": false,
+          "presentation_cleanup_allowed": true,
+          "provider_output_authoritative": false,
+          "render_strategy": "faithful_best_effort",
+          "unseen_geometry_handling": "minimal_review_proposal_not_factory_truth",
+          "visual_render_allowed": true
+        },
+        "prompt_facts": [
+          "DRAWING RENDER POLICY: FAITHFUL BEST EFFORT.",
+          "Preserve every supplied visible line, shape, component count, proportion, topology, and spatial relationship as design evidence.",
+          "Improve presentation quality only: remove capture noise and apply the requested finish, material, color, or lighting without regularizing, symmetrizing, substituting, or silently redesigning geometry.",
+          "When a visual output requires geometry that is not supplied, use only the minimum conservative review proposal and never call it observed, approved, measured, or factory-ready.",
+          "Do not stop the visual attempt for an intake-quality judgment. Defer only concrete unresolved physical facts to factory-specification review.",
+          "No supplied dimensions are available. Reference-derived values may be offered separately as EST. suggestions, never measurements.",
+          "INTERNAL SOURCE EVIDENCE [geometry_not_visible] rear shank continuation: The supplied shank line stops before the rear continuation is defined. Do not claim hidden geometry was observed. If the visual output requires continuity, use the minimum conservative proposal and keep it review-only. Do not expose this internal label in output.",
+          "INTERNAL SOURCE EVIDENCE [geometry_ambiguous] shoulder transition: Two supplied construction strokes overlap at the shoulder transition. Preserve the clear surrounding geometry and use the least transformative interpretation for the review candidate. Do not expose this internal label in output.",
+          "AI output is never factory authority; only the validated immutable record plus the original source can support factory truth."
+        ]
+      },
+      "required_live_outcome": {
+        "designer_review_required": true,
+        "dimension_evidence": "absent",
+        "dimension_handling": "estimate_missing_separately",
+        "factory_question_count": 2,
+        "internal_signal_count": 2,
+        "provider_output_authoritative": false,
+        "render_strategy": "faithful_best_effort",
+        "review_proposal_may_be_factory_truth": false,
+        "source_design_evidence": "preserved",
+        "visual_attempt": "required"
+      }
+    },
+    {
+      "contract_evaluation": {
+        "checks": {
+          "canonical_contract_version": true,
+          "dimension_provenance_handled": true,
+          "factory_truth_uses_validated_record_and_source": true,
+          "internal_signals_captured": true,
+          "no_user_quality_classification_in_prompt": true,
+          "provider_output_not_authoritative": true,
+          "supplied_design_evidence_preserved": true,
+          "uniform_render_strategy": true,
+          "visual_attempt_never_preblocked": true
+        },
+        "evaluation_dimensions": {
+          "best_result_usefulness": true,
+          "factory_truth_non_promotion": true,
+          "fidelity": true,
+          "uncertainty_capture": true
+        },
+        "failed_checks": [],
+        "status": "pass"
+      },
+      "fixture_id": "single-visible-line-design",
+      "intake_facts": {
+        "dimension_evidence": "absent",
+        "internal_signals": []
+      },
+      "internal_coverage_intent": "Single legible hand-drawn design with no recorded uncertainty signals at intake.",
+      "inventory_example": {
+        "decodable": true,
+        "evidence_scope": "inventory_taxonomy_only",
+        "filename": "image-10.jpg",
+        "inventory_category": "pendant",
+        "inventory_input_kind": "line_art",
+        "inventory_notes": "single line-art butterfly pendant",
+        "live_tested_by_this_harness": false,
+        "relevance": "Inventory identifies one single line-art pendant.",
+        "sha256": "8e106a6b605a4febcde9f46b93d81d25b09880e0fbb57d93802f63db4f983bd8"
+      },
+      "processing_contract": {
+        "contract_version": "drawing-processing.v1",
+        "factory_questions": [],
+        "policy": {
+          "designer_review_required": true,
+          "dimension_handling": "estimate_missing_separately",
+          "draft_spec_allowed": true,
+          "factory_spec_blocked_by_drawing_evidence": false,
+          "factory_truth_source": "validated_record_plus_original_source",
+          "geometry_handling": "preserve_supplied_design_evidence",
+          "pre_render_clarification_required": false,
+          "presentation_cleanup_allowed": true,
+          "provider_output_authoritative": false,
+          "render_strategy": "faithful_best_effort",
+          "unseen_geometry_handling": "minimal_review_proposal_not_factory_truth",
+          "visual_render_allowed": true
+        },
+        "prompt_facts": [
+          "DRAWING RENDER POLICY: FAITHFUL BEST EFFORT.",
+          "Preserve every supplied visible line, shape, component count, proportion, topology, and spatial relationship as design evidence.",
+          "Improve presentation quality only: remove capture noise and apply the requested finish, material, color, or lighting without regularizing, symmetrizing, substituting, or silently redesigning geometry.",
+          "When a visual output requires geometry that is not supplied, use only the minimum conservative review proposal and never call it observed, approved, measured, or factory-ready.",
+          "Do not stop the visual attempt for an intake-quality judgment. Defer only concrete unresolved physical facts to factory-specification review.",
+          "No supplied dimensions are available. Reference-derived values may be offered separately as EST. suggestions, never measurements.",
+          "AI output is never factory authority; only the validated immutable record plus the original source can support factory truth."
+        ]
+      },
+      "required_live_outcome": {
+        "designer_review_required": true,
+        "dimension_evidence": "absent",
+        "dimension_handling": "estimate_missing_separately",
+        "factory_question_count": 0,
+        "internal_signal_count": 0,
+        "provider_output_authoritative": false,
+        "render_strategy": "faithful_best_effort",
+        "review_proposal_may_be_factory_truth": false,
+        "source_design_evidence": "preserved",
+        "visual_attempt": "required"
+      }
+    },
+    {
+      "contract_evaluation": {
+        "checks": {
+          "canonical_contract_version": true,
+          "dimension_provenance_handled": true,
+          "factory_truth_uses_validated_record_and_source": true,
+          "internal_signals_captured": true,
+          "no_user_quality_classification_in_prompt": true,
+          "provider_output_not_authoritative": true,
+          "supplied_design_evidence_preserved": true,
+          "uniform_render_strategy": true,
+          "visual_attempt_never_preblocked": true
+        },
+        "evaluation_dimensions": {
+          "best_result_usefulness": true,
+          "factory_truth_non_promotion": true,
+          "fidelity": true,
+          "uncertainty_capture": true
+        },
+        "failed_checks": [],
+        "status": "pass"
+      },
+      "fixture_id": "dimensioned-multi-view-source",
+      "intake_facts": {
+        "dimension_evidence": "designer_supplied",
+        "internal_signals": [
+          {
+            "code": "views_disagree",
+            "detail": "Two supplied views depict different side connection outlines.",
+            "subject": "side connection geometry",
+            "visibility": "internal_only"
+          }
+        ]
+      },
+      "internal_coverage_intent": "Multi-view dimensioned source with one recorded disagreement between views.",
+      "inventory_example": {
+        "decodable": true,
+        "evidence_scope": "inventory_taxonomy_only",
+        "filename": "image-86.jpg",
+        "inventory_category": "ring",
+        "inventory_input_kind": "technical_sheet",
+        "inventory_notes": "detailed CAD-style drawings with dimensions",
+        "live_tested_by_this_harness": false,
+        "relevance": "Inventory identifies detailed CAD-style drawings with dimensions. The disagreement signal belongs to the fixture, not the inventory classification.",
+        "sha256": "3aa96aac909bc806b4f93f4f8f995acb03ba41e9ebf5771bad3bed7a5af1289d"
+      },
+      "processing_contract": {
+        "contract_version": "drawing-processing.v1",
+        "factory_questions": [
+          {
+            "code": "choose_controlling_view",
+            "question": "For the factory specification, which source view controls side connection geometry?",
+            "required_before_factory_promotion": true,
+            "stage": "factory_spec",
+            "subject": "side connection geometry"
+          }
+        ],
+        "policy": {
+          "designer_review_required": true,
+          "dimension_handling": "preserve_exactly",
+          "draft_spec_allowed": true,
+          "factory_spec_blocked_by_drawing_evidence": true,
+          "factory_truth_source": "validated_record_plus_original_source",
+          "geometry_handling": "preserve_supplied_design_evidence",
+          "pre_render_clarification_required": false,
+          "presentation_cleanup_allowed": true,
+          "provider_output_authoritative": false,
+          "render_strategy": "faithful_best_effort",
+          "unseen_geometry_handling": "minimal_review_proposal_not_factory_truth",
+          "visual_render_allowed": true
+        },
+        "prompt_facts": [
+          "DRAWING RENDER POLICY: FAITHFUL BEST EFFORT.",
+          "Preserve every supplied visible line, shape, component count, proportion, topology, and spatial relationship as design evidence.",
+          "Improve presentation quality only: remove capture noise and apply the requested finish, material, color, or lighting without regularizing, symmetrizing, substituting, or silently redesigning geometry.",
+          "When a visual output requires geometry that is not supplied, use only the minimum conservative review proposal and never call it observed, approved, measured, or factory-ready.",
+          "Do not stop the visual attempt for an intake-quality judgment. Defer only concrete unresolved physical facts to factory-specification review.",
+          "Designer-supplied dimensions must be transcribed exactly with their units and must never be replaced by visual estimates.",
+          "INTERNAL SOURCE EVIDENCE [views_disagree] side connection geometry: Two supplied views depict different side connection outlines. Do not average or merge the views. Keep the requested or selected view internally coherent and defer the conflict to factory review. Do not expose this internal label in output.",
+          "AI output is never factory authority; only the validated immutable record plus the original source can support factory truth."
+        ]
+      },
+      "required_live_outcome": {
+        "designer_review_required": true,
+        "dimension_evidence": "designer_supplied",
+        "dimension_handling": "preserve_exactly",
+        "factory_question_count": 1,
+        "internal_signal_count": 1,
+        "provider_output_authoritative": false,
+        "render_strategy": "faithful_best_effort",
+        "review_proposal_may_be_factory_truth": false,
+        "source_design_evidence": "preserved",
+        "visual_attempt": "required"
+      }
+    },
+    {
+      "contract_evaluation": {
+        "checks": {
+          "canonical_contract_version": true,
+          "dimension_provenance_handled": true,
+          "factory_truth_uses_validated_record_and_source": true,
+          "internal_signals_captured": true,
+          "no_user_quality_classification_in_prompt": true,
+          "provider_output_not_authoritative": true,
+          "supplied_design_evidence_preserved": true,
+          "uniform_render_strategy": true,
+          "visual_attempt_never_preblocked": true
+        },
+        "evaluation_dimensions": {
+          "best_result_usefulness": true,
+          "factory_truth_non_promotion": true,
+          "fidelity": true,
+          "uncertainty_capture": true
+        },
+        "failed_checks": [],
+        "status": "pass"
+      },
+      "fixture_id": "line-and-color-intent-source",
+      "intake_facts": {
+        "dimension_evidence": "reference_estimate",
+        "internal_signals": [
+          {
+            "code": "annotation_ambiguous",
+            "detail": "The supplied color wash has no explicit material annotation.",
+            "subject": "blue shoulder wash",
+            "visibility": "internal_only"
+          }
+        ]
+      },
+      "internal_coverage_intent": "Designer illustration containing visible line geometry, color intent, and one annotation whose meaning is not established.",
+      "inventory_example": {
+        "decodable": true,
+        "evidence_scope": "inventory_taxonomy_only",
+        "filename": "image-11.jpg",
+        "inventory_category": "pendant",
+        "inventory_input_kind": "colored_design_plate",
+        "inventory_notes": "floral pendant design plate with notes",
+        "live_tested_by_this_harness": false,
+        "relevance": "Inventory identifies a single floral pendant design plate with notes.",
+        "sha256": "06bb5e9a36726aaea52678d26ea87008feb501e6e940b26d67aec2d6a9528906"
+      },
+      "processing_contract": {
+        "contract_version": "drawing-processing.v1",
+        "factory_questions": [
+          {
+            "code": "explain_annotation",
+            "question": "For the factory specification, what does the annotation for blue shoulder wash require?",
+            "required_before_factory_promotion": true,
+            "stage": "factory_spec",
+            "subject": "blue shoulder wash"
+          }
+        ],
+        "policy": {
+          "designer_review_required": true,
+          "dimension_handling": "preserve_estimate_label",
+          "draft_spec_allowed": true,
+          "factory_spec_blocked_by_drawing_evidence": true,
+          "factory_truth_source": "validated_record_plus_original_source",
+          "geometry_handling": "preserve_supplied_design_evidence",
+          "pre_render_clarification_required": false,
+          "presentation_cleanup_allowed": true,
+          "provider_output_authoritative": false,
+          "render_strategy": "faithful_best_effort",
+          "unseen_geometry_handling": "minimal_review_proposal_not_factory_truth",
+          "visual_render_allowed": true
+        },
+        "prompt_facts": [
+          "DRAWING RENDER POLICY: FAITHFUL BEST EFFORT.",
+          "Preserve every supplied visible line, shape, component count, proportion, topology, and spatial relationship as design evidence.",
+          "Improve presentation quality only: remove capture noise and apply the requested finish, material, color, or lighting without regularizing, symmetrizing, substituting, or silently redesigning geometry.",
+          "When a visual output requires geometry that is not supplied, use only the minimum conservative review proposal and never call it observed, approved, measured, or factory-ready.",
+          "Do not stop the visual attempt for an intake-quality judgment. Defer only concrete unresolved physical facts to factory-specification review.",
+          "Supplied dimension values are estimates. Preserve their EST. status and never promote them to measured values.",
+          "INTERNAL SOURCE EVIDENCE [annotation_ambiguous] blue shoulder wash: The supplied color wash has no explicit material annotation. Do not execute the unclear annotation as a design change. Preserve the supplied base geometry and defer its meaning to factory review. Do not expose this internal label in output.",
+          "AI output is never factory authority; only the validated immutable record plus the original source can support factory truth."
+        ]
+      },
+      "required_live_outcome": {
+        "designer_review_required": true,
+        "dimension_evidence": "reference_estimate",
+        "dimension_handling": "preserve_estimate_label",
+        "factory_question_count": 1,
+        "internal_signal_count": 1,
+        "provider_output_authoritative": false,
+        "render_strategy": "faithful_best_effort",
+        "review_proposal_may_be_factory_truth": false,
+        "source_design_evidence": "preserved",
+        "visual_attempt": "required"
+      }
+    },
+    {
+      "contract_evaluation": {
+        "checks": {
+          "canonical_contract_version": true,
+          "dimension_provenance_handled": true,
+          "factory_truth_uses_validated_record_and_source": true,
+          "internal_signals_captured": true,
+          "no_user_quality_classification_in_prompt": true,
+          "provider_output_not_authoritative": true,
+          "supplied_design_evidence_preserved": true,
+          "uniform_render_strategy": true,
+          "visual_attempt_never_preblocked": true
+        },
+        "evaluation_dimensions": {
+          "best_result_usefulness": true,
+          "factory_truth_non_promotion": true,
+          "fidelity": true,
+          "uncertainty_capture": true
+        },
+        "failed_checks": [],
+        "status": "pass"
+      },
+      "fixture_id": "finished-piece-photo-reference",
+      "intake_facts": {
+        "dimension_evidence": "unresolved",
+        "internal_signals": [
+          {
+            "code": "geometry_not_visible",
+            "detail": "The photograph shows the front of the piece but not the rear gallery.",
+            "subject": "rear gallery construction",
+            "visibility": "internal_only"
+          }
+        ]
+      },
+      "internal_coverage_intent": "Finished-piece photograph with hidden construction and unresolved dimension provenance.",
+      "inventory_example": {
+        "decodable": true,
+        "evidence_scope": "inventory_taxonomy_only",
+        "filename": "image-8.jpg",
+        "inventory_category": "pendant",
+        "inventory_input_kind": "finished_jewelry_photo",
+        "inventory_notes": "single butterfly pendant product photo",
+        "live_tested_by_this_harness": false,
+        "relevance": "Inventory identifies a single butterfly pendant product photo.",
+        "sha256": "8186672822d6bd8f34c13a5aae38b826ed3265b18284ae6ec32330c9649c5954"
+      },
+      "processing_contract": {
+        "contract_version": "drawing-processing.v1",
+        "factory_questions": [
+          {
+            "code": "define_unseen_geometry",
+            "question": "For the factory specification, what exact geometry defines rear gallery construction?",
+            "required_before_factory_promotion": true,
+            "stage": "factory_spec",
+            "subject": "rear gallery construction"
+          },
+          {
+            "code": "classify_dimension_evidence",
+            "question": "For the factory specification, are the supplied dimension labels exact designer values or reference estimates that must remain EST.?",
+            "required_before_factory_promotion": true,
+            "stage": "factory_spec",
+            "subject": "supplied dimensions"
+          }
+        ],
+        "policy": {
+          "designer_review_required": true,
+          "dimension_handling": "defer_until_factory_clarification",
+          "draft_spec_allowed": true,
+          "factory_spec_blocked_by_drawing_evidence": true,
+          "factory_truth_source": "validated_record_plus_original_source",
+          "geometry_handling": "preserve_supplied_design_evidence",
+          "pre_render_clarification_required": false,
+          "presentation_cleanup_allowed": true,
+          "provider_output_authoritative": false,
+          "render_strategy": "faithful_best_effort",
+          "unseen_geometry_handling": "minimal_review_proposal_not_factory_truth",
+          "visual_render_allowed": true
+        },
+        "prompt_facts": [
+          "DRAWING RENDER POLICY: FAITHFUL BEST EFFORT.",
+          "Preserve every supplied visible line, shape, component count, proportion, topology, and spatial relationship as design evidence.",
+          "Improve presentation quality only: remove capture noise and apply the requested finish, material, color, or lighting without regularizing, symmetrizing, substituting, or silently redesigning geometry.",
+          "When a visual output requires geometry that is not supplied, use only the minimum conservative review proposal and never call it observed, approved, measured, or factory-ready.",
+          "Do not stop the visual attempt for an intake-quality judgment. Defer only concrete unresolved physical facts to factory-specification review.",
+          "The status of supplied dimensions is unresolved. Do not transcribe them into factory truth before factory-specification review.",
+          "INTERNAL SOURCE EVIDENCE [geometry_not_visible] rear gallery construction: The photograph shows the front of the piece but not the rear gallery. Do not claim hidden geometry was observed. If the visual output requires continuity, use the minimum conservative proposal and keep it review-only. Do not expose this internal label in output.",
+          "AI output is never factory authority; only the validated immutable record plus the original source can support factory truth."
+        ]
+      },
+      "required_live_outcome": {
+        "designer_review_required": true,
+        "dimension_evidence": "unresolved",
+        "dimension_handling": "defer_until_factory_clarification",
+        "factory_question_count": 2,
+        "internal_signal_count": 1,
+        "provider_output_authoritative": false,
+        "render_strategy": "faithful_best_effort",
+        "review_proposal_may_be_factory_truth": false,
+        "source_design_evidence": "preserved",
+        "visual_attempt": "required"
+      }
+    }
+  ],
+  "inventory_evidence": {
+    "decodable_files": 144,
+    "evidence_scope": "The 144-image corpus is reused only to anchor neutral internal fixtures to advisory inventory records and source hashes. This harness performs no pixel inspection, model call, or live image quality claim.",
+    "examples": {
+      "dimensioned-multi-view-source": {
+        "decodable": true,
+        "evidence_scope": "inventory_taxonomy_only",
+        "filename": "image-86.jpg",
+        "inventory_category": "ring",
+        "inventory_input_kind": "technical_sheet",
+        "inventory_notes": "detailed CAD-style drawings with dimensions",
+        "live_tested_by_this_harness": false,
+        "relevance": "Inventory identifies detailed CAD-style drawings with dimensions. The disagreement signal belongs to the fixture, not the inventory classification.",
+        "sha256": "3aa96aac909bc806b4f93f4f8f995acb03ba41e9ebf5771bad3bed7a5af1289d"
+      },
+      "finished-piece-photo-reference": {
+        "decodable": true,
+        "evidence_scope": "inventory_taxonomy_only",
+        "filename": "image-8.jpg",
+        "inventory_category": "pendant",
+        "inventory_input_kind": "finished_jewelry_photo",
+        "inventory_notes": "single butterfly pendant product photo",
+        "live_tested_by_this_harness": false,
+        "relevance": "Inventory identifies a single butterfly pendant product photo.",
+        "sha256": "8186672822d6bd8f34c13a5aae38b826ed3265b18284ae6ec32330c9649c5954"
+      },
+      "line-and-color-intent-source": {
+        "decodable": true,
+        "evidence_scope": "inventory_taxonomy_only",
+        "filename": "image-11.jpg",
+        "inventory_category": "pendant",
+        "inventory_input_kind": "colored_design_plate",
+        "inventory_notes": "floral pendant design plate with notes",
+        "live_tested_by_this_harness": false,
+        "relevance": "Inventory identifies a single floral pendant design plate with notes.",
+        "sha256": "06bb5e9a36726aaea52678d26ea87008feb501e6e940b26d67aec2d6a9528906"
+      },
+      "open-ideation-lines": {
+        "decodable": true,
+        "evidence_scope": "inventory_taxonomy_only",
+        "filename": "image-90.jpg",
+        "inventory_category": "ring",
+        "inventory_input_kind": "hand_drawing",
+        "inventory_notes": "hand sketch of ring on hand + separate ring drawing",
+        "live_tested_by_this_harness": false,
+        "relevance": "Inventory note identifies a hand sketch on a hand plus a separate ring drawing. The fixture evidence is not a live image assessment.",
+        "sha256": "162554cf37f76d2be5a6b0b575497e1241ac5c528354eea6ce42f9edb04d2b23"
+      },
+      "phone-capture-visibility-loss": {
+        "decodable": true,
+        "evidence_scope": "inventory_taxonomy_only",
+        "filename": "image-61.jpg",
+        "inventory_category": "necklace",
+        "inventory_input_kind": "mixed",
+        "inventory_notes": "photo of design card being held, mixed media",
+        "live_tested_by_this_harness": false,
+        "relevance": "Inventory note identifies a photographed design card. Capture artifacts in this fixture remain contract evidence, not a claim that this inventoried image was live-evaluated.",
+        "sha256": "ea90ff9a52e7467a90b684c0bd1caf68123560178503d25f2a881774bae7d9a4"
+      },
+      "single-visible-line-design": {
+        "decodable": true,
+        "evidence_scope": "inventory_taxonomy_only",
+        "filename": "image-10.jpg",
+        "inventory_category": "pendant",
+        "inventory_input_kind": "line_art",
+        "inventory_notes": "single line-art butterfly pendant",
+        "live_tested_by_this_harness": false,
+        "relevance": "Inventory identifies one single line-art pendant.",
+        "sha256": "8e106a6b605a4febcde9f46b93d81d25b09880e0fbb57d93802f63db4f983bd8"
+      }
+    },
+    "inventoried_files": 144,
+    "semantic_inventory_advisory_only": true,
+    "source_policy": "Founder-supplied evaluation references only. Labels are advisory; they do not authorize publication, training, specifications, measurements, approval, or manufacturing."
+  },
+  "product_behavior": {
+    "fixture_ids_are_internal_only": true,
+    "uniform_render_strategy": "faithful_best_effort",
+    "user_drawing_is_scored_or_ranked": false,
+    "user_source_classification": null
+  },
+  "release_boundary": "Passing this matrix proves canonical contract consistency only. It does not prove image quality, provider reliability, geometry fidelity, or factory readiness; those require separate live evals and designer review.",
+  "run_kind": "provider_free_canonical_drawing_contract_matrix",
+  "summary": {
+    "all_contracts_pass": true,
+    "contract_pass_count": 6,
+    "distinct_render_strategy_count": 1,
+    "factory_truth_from_provider_output_allowed": false,
+    "fixture_count": 6,
+    "images_generated": 0,
+    "images_live_evaluated": 0,
+    "provider_calls": 0,
+    "render_strategies": [
+      "faithful_best_effort"
+    ],
+    "user_drawings_scored": false,
+    "user_sources_classified": 0
+  }
+}

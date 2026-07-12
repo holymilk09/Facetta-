@@ -1,0 +1,334 @@
+{
+  "band": {
+    "profile": "half_round",
+    "thickness_mm": 1.6,
+    "width_mm": 2.0
+  },
+  "bracelet": null,
+  "brooch": null,
+  "chain": null,
+  "composition": null,
+  "created_at": "2026-07-11T16:11:35.944384Z",
+  "created_by": "usr_operator_review_not_founder",
+  "design_form": {
+    "elements": []
+  },
+  "design_id": "dsn_695de082efc9118d",
+  "dimension_provenance": {
+    "band.thickness_mm": {
+      "confidence": 0.4,
+      "method": "reference_vision",
+      "note": "Reference-derived starting value; verify before production.",
+      "source": "synthetic low-information reference render",
+      "status": "estimated_from_reference"
+    },
+    "band.width_mm": {
+      "confidence": 0.4,
+      "method": "reference_vision",
+      "note": "Reference-derived starting value; verify before production.",
+      "source": "synthetic low-information reference render",
+      "status": "estimated_from_reference"
+    },
+    "ring_size.inner_diameter_mm": {
+      "confidence": 0.4,
+      "method": "reference_vision",
+      "note": "Reference-derived starting value; verify before production.",
+      "source": "synthetic low-information reference render",
+      "status": "estimated_from_reference"
+    },
+    "ring_size.value": {
+      "confidence": 0.4,
+      "method": "reference_vision",
+      "note": "Reference-derived starting value; verify before production.",
+      "source": "synthetic low-information reference render",
+      "status": "estimated_from_reference"
+    },
+    "setting.gallery_height_mm": {
+      "confidence": 0.4,
+      "method": "reference_vision",
+      "note": "Reference-derived starting value; verify before production.",
+      "source": "synthetic low-information reference render",
+      "status": "estimated_from_reference"
+    },
+    "setting.prong_tip_mm": {
+      "confidence": 0.4,
+      "method": "reference_vision",
+      "note": "Reference-derived starting value; verify before production.",
+      "source": "synthetic low-information reference render",
+      "status": "estimated_from_reference"
+    },
+    "side_stones[0].dimensions_mm.depth": {
+      "confidence": 0.4,
+      "method": "reference_vision",
+      "note": "Reference-derived starting value; verify before production.",
+      "source": "synthetic low-information reference render",
+      "status": "estimated_from_reference"
+    },
+    "side_stones[0].dimensions_mm.length": {
+      "confidence": 0.4,
+      "method": "reference_vision",
+      "note": "Reference-derived starting value; verify before production.",
+      "source": "synthetic low-information reference render",
+      "status": "estimated_from_reference"
+    },
+    "side_stones[0].dimensions_mm.width": {
+      "confidence": 0.4,
+      "method": "reference_vision",
+      "note": "Reference-derived starting value; verify before production.",
+      "source": "synthetic low-information reference render",
+      "status": "estimated_from_reference"
+    },
+    "stone.dimensions_mm.depth": {
+      "confidence": 0.4,
+      "method": "reference_vision",
+      "note": "Reference-derived starting value; verify before production.",
+      "source": "synthetic low-information reference render",
+      "status": "estimated_from_reference"
+    },
+    "stone.dimensions_mm.length": {
+      "confidence": 0.4,
+      "method": "reference_vision",
+      "note": "Reference-derived starting value; verify before production.",
+      "source": "synthetic low-information reference render",
+      "status": "estimated_from_reference"
+    },
+    "stone.dimensions_mm.width": {
+      "confidence": 0.4,
+      "method": "reference_vision",
+      "note": "Reference-derived starting value; verify before production.",
+      "source": "synthetic low-information reference render",
+      "status": "estimated_from_reference"
+    }
+  },
+  "drop": null,
+  "jewelry_type": "ring",
+  "metal": {
+    "color": "rose",
+    "finish": "high_polish",
+    "karat": 18,
+    "material": "gold"
+  },
+  "mode": "pro",
+  "notes_to_factory": "Synthetic live workflow fixture. Every dimension is a reference estimate pending designer measurement; unseen gallery construction is not source-observed factory truth.",
+  "pendant": null,
+  "ring_size": {
+    "inner_diameter_mm": 16.91,
+    "system": "US",
+    "value": 6.5
+  },
+  "schema_version": 1,
+  "setting": {
+    "gallery_height_mm": 4.0,
+    "prong_count": 4,
+    "prong_tip_mm": 0.8,
+    "style": "4_prong_basket"
+  },
+  "side_stones": [
+    {
+      "carat": 0.03,
+      "clarity": {
+        "eye_clean": null,
+        "grade": "VS2",
+        "system": "gia_diamond"
+      },
+      "color": {
+        "gia": "colorless",
+        "hue_code": null,
+        "saturation": null,
+        "tone": null,
+        "trade": "F"
+      },
+      "count": 6,
+      "culet": null,
+      "cut": "round_brilliant",
+      "depth_pct": null,
+      "dimensions_mm": {
+        "depth": 1.2,
+        "length": 2.0,
+        "width": 2.0
+      },
+      "girdle": null,
+      "inscription": null,
+      "lab": null,
+      "mount": null,
+      "origin": null,
+      "phenomena": [],
+      "position": "shoulders",
+      "species": "diamond",
+      "table_pct": null,
+      "treatment": null
+    }
+  ],
+  "source_component_coverage": {
+    "audited_spec_visual_hash": "e257359d45cf604d",
+    "components": [
+      {
+        "canonical_spec_paths": [
+          "stone"
+        ],
+        "component_id": "stone.center",
+        "designer_confirmation": null,
+        "independent_audit": {
+          "auditor": "skeptical-source-component-audit.v4",
+          "evidence_sha256": "799f398a44cd4ad9c480a5bb278f086383a43e4354e24dacba69923edfc472f1",
+          "kind": "independent_component_audit",
+          "observed_description": "large oval faceted green center stone",
+          "source_view": "three_quarter",
+          "verdict": "pass"
+        },
+        "source_confidence": 0.45,
+        "source_description": "1 emerald oval_brilliant stone at center",
+        "source_view": "unspecified",
+        "unresolved_reason": null
+      },
+      {
+        "canonical_spec_paths": [
+          "side_stones[0]"
+        ],
+        "component_id": "stone.group.001",
+        "designer_confirmation": {
+          "basis": "visible_source",
+          "confirmed_description": "Exactly three round shoulder stones are visible on each side, six total.",
+          "evidence_sha256": "f03337ca313b3af14e4154157fd45f20f3c4a1207752dc5ecb7dbb0e1ee56c63",
+          "kind": "designer_component_confirmation",
+          "reviewer": "usr_operator_review_not_founder",
+          "source_view": "three_quarter",
+          "spec_visual_hash": "e257359d45cf604d"
+        },
+        "independent_audit": {
+          "auditor": "skeptical-source-component-audit.v4",
+          "evidence_sha256": "799f398a44cd4ad9c480a5bb278f086383a43e4354e24dacba69923edfc472f1",
+          "kind": "independent_component_audit",
+          "observed_description": "Blind visible-fact evidence is insufficient: the specification says repeated-stone count 6, but the blind inventory did not state an assessable repeated-stone count.",
+          "source_view": "three_quarter",
+          "verdict": "inconclusive"
+        },
+        "source_confidence": 0.45,
+        "source_description": "6 diamond round_brilliant stones at shoulders",
+        "source_view": "unspecified",
+        "unresolved_reason": null
+      },
+      {
+        "canonical_spec_paths": [
+          "setting"
+        ],
+        "component_id": "setting.primary",
+        "designer_confirmation": {
+          "basis": "visible_source",
+          "confirmed_description": "Exactly four center-stone prongs are visible around the oval stone.",
+          "evidence_sha256": "f03337ca313b3af14e4154157fd45f20f3c4a1207752dc5ecb7dbb0e1ee56c63",
+          "kind": "designer_component_confirmation",
+          "reviewer": "usr_operator_review_not_founder",
+          "source_view": "three_quarter",
+          "spec_visual_hash": "e257359d45cf604d"
+        },
+        "independent_audit": {
+          "auditor": "skeptical-source-component-audit.v4",
+          "evidence_sha256": "799f398a44cd4ad9c480a5bb278f086383a43e4354e24dacba69923edfc472f1",
+          "kind": "independent_component_audit",
+          "observed_description": "Blind visible-fact evidence is insufficient: the specification says 4-prong, but the blind inventory did not state an assessable prong count.",
+          "source_view": "three_quarter",
+          "verdict": "inconclusive"
+        },
+        "source_confidence": 0.45,
+        "source_description": "4_prong_basket setting with 4 prongs",
+        "source_view": "unspecified",
+        "unresolved_reason": null
+      },
+      {
+        "canonical_spec_paths": [
+          "metal"
+        ],
+        "component_id": "metal.body",
+        "designer_confirmation": null,
+        "independent_audit": {
+          "auditor": "skeptical-source-component-audit.v4",
+          "evidence_sha256": "799f398a44cd4ad9c480a5bb278f086383a43e4354e24dacba69923edfc472f1",
+          "kind": "independent_component_audit",
+          "observed_description": "yellow gold metal parts including shank and setting",
+          "source_view": "three_quarter",
+          "verdict": "pass"
+        },
+        "source_confidence": 0.45,
+        "source_description": "18 yellow gold metal body",
+        "source_view": "unspecified",
+        "unresolved_reason": null
+      },
+      {
+        "canonical_spec_paths": [
+          "band"
+        ],
+        "component_id": "band.shank",
+        "designer_confirmation": null,
+        "independent_audit": {
+          "auditor": "skeptical-source-component-audit.v4",
+          "evidence_sha256": "799f398a44cd4ad9c480a5bb278f086383a43e4354e24dacba69923edfc472f1",
+          "kind": "independent_component_audit",
+          "observed_description": "yellow gold continuous ring shank",
+          "source_view": "three_quarter",
+          "verdict": "pass"
+        },
+        "source_confidence": 0.45,
+        "source_description": "half_round ring shank",
+        "source_view": "unspecified",
+        "unresolved_reason": null
+      },
+      {
+        "canonical_spec_paths": [
+          "template"
+        ],
+        "component_id": "assembly.primary",
+        "designer_confirmation": null,
+        "independent_audit": {
+          "auditor": "skeptical-source-component-audit.v4",
+          "evidence_sha256": "799f398a44cd4ad9c480a5bb278f086383a43e4354e24dacba69923edfc472f1",
+          "kind": "independent_component_audit",
+          "observed_description": "solitaire prong assembly with center stone, shoulders, and shank",
+          "source_view": "three_quarter",
+          "verdict": "pass"
+        },
+        "source_confidence": 0.45,
+        "source_description": "solitaire_prong primary assembly topology",
+        "source_view": "unspecified",
+        "unresolved_reason": null
+      }
+    ],
+    "source_kind": "imported_reference"
+  },
+  "stone": {
+    "carat": 1.04,
+    "clarity": {
+      "eye_clean": null,
+      "grade": "VS",
+      "system": "gia_type_iii"
+    },
+    "color": {
+      "gia": "vivid green",
+      "hue_code": null,
+      "saturation": null,
+      "tone": null,
+      "trade": "Muzo Green"
+    },
+    "count": 1,
+    "culet": null,
+    "cut": "oval_brilliant",
+    "depth_pct": null,
+    "dimensions_mm": {
+      "depth": 4.0,
+      "length": 8.0,
+      "width": 6.0
+    },
+    "girdle": null,
+    "inscription": null,
+    "lab": null,
+    "mount": null,
+    "origin": null,
+    "phenomena": [],
+    "position": "center",
+    "species": "emerald",
+    "table_pct": null,
+    "treatment": null
+  },
+  "template": "solitaire_prong",
+  "version": 2
+}

@@ -1,0 +1,115 @@
+{
+  "corpus": "designer-reference-corpus-v1",
+  "coverage_summary": {
+    "all_factory_ready": false,
+    "applicable_cases": 1,
+    "blocking_cases": [
+      {
+        "blocker_count": 0,
+        "case": "geometric-emerald-ring",
+        "status": "invalid"
+      }
+    ],
+    "factory_ready_cases": 0,
+    "factory_ready_rate": 0.0,
+    "gate_definition": "Factory ready only when every visible source component is mapped and independently audited with no blockers.",
+    "status_counts": {
+      "invalid": 1,
+      "pass": 0,
+      "review_required": 0,
+      "unavailable": 0
+    }
+  },
+  "pair_checks": [],
+  "provider_readiness": {
+    "fallback_configured": false,
+    "xai_configured": true
+  },
+  "rows": [
+    {
+      "case": "geometric-emerald-ring",
+      "category": "ring",
+      "input_kind": "multi_view_line_and_color_plate",
+      "latency_ms": 41832,
+      "read": {
+        "assembly": "horizontal ring: large emerald-cut green stone centred in octagonal geometric bezel with round stones and two small green stones flanking it, wide shank with linear facets and side detailing",
+        "hand_written": [
+          "2026.5.26",
+          "\u5c0f\u7ea2\u4e66\u53f7 2206896480"
+        ],
+        "jewelry_type": "ring",
+        "measurements": [],
+        "metal": "white metal (TBD)",
+        "scale_anchor": null,
+        "scaled": false,
+        "source": "plate",
+        "stones": [
+          {
+            "carat_each": null,
+            "confidence": 0.0,
+            "qty": 1,
+            "size_mm": "L \u00d7 W",
+            "type": "green emerald-cut stone (species TBD)"
+          },
+          {
+            "carat_each": null,
+            "confidence": 0.0,
+            "qty": 2,
+            "size_mm": "L \u00d7 W",
+            "type": "green emerald-cut stone (species TBD)"
+          },
+          {
+            "carat_each": null,
+            "confidence": 0.0,
+            "qty": 1,
+            "size_mm": "L \u00d7 W",
+            "type": "round brilliant stone (species TBD)"
+          }
+        ]
+      },
+      "coverage_error": "blind.004 has contradictory bidirectional mapping",
+      "coverage_status": "invalid",
+      "read_score": {
+        "checks": {
+          "authoritative_text": true,
+          "expected_visual_terms": true,
+          "jewelry_type": true,
+          "minimum_stone_groups": true
+        },
+        "multi_design_warning": false,
+        "observed_jewelry_type": "ring",
+        "score": 100.0,
+        "status": "pass",
+        "stone_group_count": 3,
+        "term_hits": [
+          "green",
+          "emerald",
+          "octagon"
+        ],
+        "transcription_hits": []
+      },
+      "source": {
+        "available": true,
+        "decodable": true,
+        "format": "JPEG",
+        "hash_matches": true,
+        "path": "/Users/mattfb/.codex/attachments/c2fd41d0-b236-43ef-ada9-e9479718c771/image-78.jpg",
+        "sha256": "b9c4e35bc0f6cfe40417577bd3bb6cde9ed983e0c9e11d24531bba6bef9ea831",
+        "size": [
+          1440,
+          2036
+        ]
+      },
+      "workflows": [
+        "plate_read",
+        "beauty_render",
+        "lineart",
+        "factory_sheet",
+        "localized_edit"
+      ]
+    }
+  ],
+  "run": "designer-source-coverage-geometric-live-2026-07-11",
+  "source_policy": "Founder-supplied evaluation references only. Do not publish, train on, or treat as customer-owned production assets. Third-party branding and social watermarks must never appear in accepted outputs.",
+  "stage": "coverage"
+}

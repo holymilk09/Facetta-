@@ -6,8 +6,6 @@ change and the static hold, and the summary averages per engine."""
 import json
 from pathlib import Path
 
-import pytest
-
 import facetta.specagent as agent
 from facetta.evals import (
     score_edit_fidelity, score_spec_conformance, summarize_engine_scores,

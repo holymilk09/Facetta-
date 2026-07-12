@@ -1,0 +1,1231 @@
+{
+  "fallback_provider": "openai",
+  "fallback_tested": true,
+  "gia_evaluator_review": {
+    "completed": false,
+    "false_negatives": null,
+    "false_positives": null,
+    "reviewer": null
+  },
+  "live": true,
+  "mode": "live",
+  "persistence_evidence": {
+    "method": "not_run",
+    "note": "This image-engine run did not exercise canonical project persistence. Attach a named canonical-API integration result before the persistence release gate can pass.",
+    "rejected_active_asset_count": null,
+    "result_set": null,
+    "verified": false
+  },
+  "release_gates": {
+    "blocking_enabled": false,
+    "note": "Only canonical edit 'prong-setting' was executed.",
+    "status": "diagnostic_subset_not_evaluated"
+  },
+  "routing_mode": "grok_then_openai",
+  "rows": [
+    {
+      "case": "oval-solitaire-white-6-wide",
+      "kind": "source",
+      "source_override": {
+        "golden_case": "oval-solitaire-white-6-wide",
+        "path": "/Users/mattfb/Documents/Facetta-trusted-workflow/docs/evals/designer-prong-topology-live-v5-2026-07-12/oval-solitaire-white-6-wide--reference.png",
+        "provenance": "operator-selected, previously reviewed spec-aligned source; not re-generated or re-audited by this result set",
+        "scope": "single_edit_diagnostic_only",
+        "sha256": "4144507a67bbddaccaf6e91c8d1e78026e205f2e7950e3ea19d5285b0a0ead65"
+      },
+      "starting_point": "imported_reference"
+    },
+    {
+      "agent_run": {
+        "attempts": [
+          {
+            "attempt_number": 1,
+            "cache_key": "f0cedb69209c53594e080290627f4131a1dee68ef3a708a566485e15b83af871",
+            "cached": true,
+            "corrective_instruction": null,
+            "cost": null,
+            "error": null,
+            "error_category": null,
+            "fallback_reason": null,
+            "latency_ms": 31693,
+            "model": "grok_direct",
+            "output_hash": "120ada28899b4c47a39edbeb7febce0ecbbf3a90a1fc5bc6dc6682e33f953554",
+            "prompt_hash": "2418af3078fde3728296eaebf7ce5a6433f5c9b33c4a86ceb8c4d33fe0f622da",
+            "provider": "xai",
+            "provider_request_id": null,
+            "qa_checks": [
+              {
+                "code": "decodable_image",
+                "evidence": {
+                  "format": "JPEG",
+                  "height": 1152,
+                  "width": 864
+                },
+                "message": "candidate is a decodable raster image",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "review_resolution",
+                "evidence": {
+                  "height": 1152,
+                  "width": 864
+                },
+                "message": "candidate has reviewable raster dimensions",
+                "passed": true,
+                "severity": "warning"
+              },
+              {
+                "code": "candidate_changed",
+                "evidence": {},
+                "message": "candidate bytes differ from the source",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "requested_change",
+                "evidence": {},
+                "message": "the requested change was not visibly applied",
+                "passed": false,
+                "severity": "hard"
+              },
+              {
+                "code": "protected_regions",
+                "evidence": {},
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "unintended_drift",
+                "evidence": {
+                  "changes": [],
+                  "severity": "none"
+                },
+                "message": "no unintended changes detected",
+                "passed": true,
+                "severity": "warning"
+              },
+              {
+                "code": "spec_change",
+                "evidence": {
+                  "spec_delta": [
+                    {
+                      "from": "6",
+                      "kind": "changed",
+                      "label": "setting prongs",
+                      "path": "setting.prong_count",
+                      "to": "4"
+                    },
+                    {
+                      "from": "6_prong_basket",
+                      "kind": "changed",
+                      "label": "setting style",
+                      "path": "setting.style",
+                      "to": "4_prong_basket"
+                    }
+                  ]
+                },
+                "message": "visible local change does not match the validated result spec",
+                "passed": false,
+                "severity": "hard"
+              },
+              {
+                "code": "edit_domain:setting",
+                "evidence": {
+                  "domain": "setting",
+                  "spec_delta": [
+                    {
+                      "from": "6",
+                      "kind": "changed",
+                      "label": "setting prongs",
+                      "path": "setting.prong_count",
+                      "to": "4"
+                    },
+                    {
+                      "from": "6_prong_basket",
+                      "kind": "changed",
+                      "label": "setting style",
+                      "path": "setting.style",
+                      "to": "4_prong_basket"
+                    }
+                  ]
+                },
+                "message": "visible edit does not match the 'setting' result facts",
+                "passed": false,
+                "severity": "hard"
+              },
+              {
+                "code": "crosscheck_requested_change",
+                "evidence": {},
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "crosscheck_frozen_facts",
+                "evidence": {},
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "crosscheck_unintended_drift",
+                "evidence": {
+                  "changes": [],
+                  "severity": "none"
+                },
+                "message": "independent audit found no unintended changes",
+                "passed": true,
+                "severity": "warning"
+              },
+              {
+                "code": "crosscheck_edit_domains",
+                "evidence": {
+                  "domain_mismatches": []
+                },
+                "message": "independent audit matched every required edit domain",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "target_spec_crosscheck:jewelry_type",
+                "evidence": {
+                  "differences": [],
+                  "observed_prong_count": 5,
+                  "observed_prong_count_complete": false,
+                  "observed_side_stone_count": 0
+                },
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "target_spec_crosscheck:center_identity",
+                "evidence": {
+                  "differences": [],
+                  "observed_prong_count": 5,
+                  "observed_prong_count_complete": false,
+                  "observed_side_stone_count": 0
+                },
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "target_spec_crosscheck:center_cut",
+                "evidence": {
+                  "differences": [],
+                  "observed_prong_count": 5,
+                  "observed_prong_count_complete": false,
+                  "observed_side_stone_count": 0
+                },
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "target_spec_crosscheck:metal",
+                "evidence": {
+                  "differences": [],
+                  "observed_prong_count": 5,
+                  "observed_prong_count_complete": false,
+                  "observed_side_stone_count": 0
+                },
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "target_spec_crosscheck:setting_style",
+                "evidence": {
+                  "differences": [],
+                  "observed_prong_count": 5,
+                  "observed_prong_count_complete": false,
+                  "observed_side_stone_count": 0
+                },
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "target_spec_crosscheck:prong_count",
+                "evidence": {
+                  "differences": [],
+                  "observed_prong_count": 5,
+                  "observed_prong_count_complete": false,
+                  "observed_side_stone_count": 0
+                },
+                "message": "independent audit could not confirm prong count",
+                "passed": false,
+                "severity": "warning"
+              },
+              {
+                "code": "target_spec_crosscheck:side_stone_inventory",
+                "evidence": {
+                  "differences": [],
+                  "observed_prong_count": 5,
+                  "observed_prong_count_complete": false,
+                  "observed_side_stone_count": 0
+                },
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "target_spec_crosscheck:major_components",
+                "evidence": {
+                  "differences": [],
+                  "observed_prong_count": 5,
+                  "observed_prong_count_complete": false,
+                  "observed_side_stone_count": 0
+                },
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "text_or_branding",
+                "evidence": {},
+                "message": "no text or branding introduced",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "outside_mask_drift",
+                "evidence": {
+                  "drift": 0.00544,
+                  "threshold": 0.18
+                },
+                "message": "outside-mask drift is within the calibrated threshold",
+                "passed": true,
+                "severity": "hard"
+              }
+            ],
+            "qa_verdict": "fail",
+            "quality_score": 15.0,
+            "route": "grok_edit",
+            "usage": null
+          },
+          {
+            "attempt_number": 2,
+            "cache_key": "784821c9322fd56f57040d6fbf2d374f60a69016c4fb83e37ce4922860c06784",
+            "cached": false,
+            "corrective_instruction": "- requested_change: the requested change was not visibly applied.\n- spec_change: visible local change does not match the validated result spec. Evidence: {\"spec_delta\": [{\"from\": \"6\", \"kind\": \"changed\", \"label\": \"setting prongs\", \"path\": \"setting.prong_count\", \"to\": \"4\"}, {\"from\": \"6_prong_basket\", \"kind\": \"changed\", \"label\": \"setting style\", \"path\": \"setting.style\", \"to\": \"4_prong_basket\"}]}\n- edit_domain:setting: visible edit does not match the 'setting' result facts. Evidence: {\"domain\": \"setting\", \"spec_delta\": [{\"from\": \"6\", \"kind\": \"changed\", \"label\": \"setting prongs\", \"path\": \"setting.prong_count\", \"to\": \"4\"}, {\"from\": \"6_prong_basket\", \"kind\": \"changed\", \"label\": \"setting style\", \"path\": \"setting.style\", \"to\": \"4_prong_basket\"}]}\n- target_spec_crosscheck:prong_count: independent audit could not confirm prong count. Evidence: {\"differences\": [], \"observed_prong_count\": 5, \"observed_prong_count_complete\": false, \"observed_side_stone_count\": 0}",
+            "cost": null,
+            "error": null,
+            "error_category": null,
+            "fallback_reason": null,
+            "latency_ms": 38473,
+            "model": "grok_direct",
+            "output_hash": "0097bf6aff220d32dcce4890d73363258b861a8d64d05cd4c88828786acae813",
+            "prompt_hash": "665fe875a6337e2f56a9c351ad5841bf0f5b3b4ef819096249e0cb945f47fa0d",
+            "provider": "xai",
+            "provider_request_id": null,
+            "qa_checks": [
+              {
+                "code": "decodable_image",
+                "evidence": {
+                  "format": "JPEG",
+                  "height": 1152,
+                  "width": 864
+                },
+                "message": "candidate is a decodable raster image",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "review_resolution",
+                "evidence": {
+                  "height": 1152,
+                  "width": 864
+                },
+                "message": "candidate has reviewable raster dimensions",
+                "passed": true,
+                "severity": "warning"
+              },
+              {
+                "code": "candidate_changed",
+                "evidence": {},
+                "message": "candidate bytes differ from the source",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "requested_change",
+                "evidence": {},
+                "message": "the requested change was not visibly applied",
+                "passed": false,
+                "severity": "hard"
+              },
+              {
+                "code": "protected_regions",
+                "evidence": {},
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "unintended_drift",
+                "evidence": {
+                  "changes": [],
+                  "severity": "none"
+                },
+                "message": "no unintended changes detected",
+                "passed": true,
+                "severity": "warning"
+              },
+              {
+                "code": "spec_change",
+                "evidence": {
+                  "spec_delta": [
+                    {
+                      "from": "6",
+                      "kind": "changed",
+                      "label": "setting prongs",
+                      "path": "setting.prong_count",
+                      "to": "4"
+                    },
+                    {
+                      "from": "6_prong_basket",
+                      "kind": "changed",
+                      "label": "setting style",
+                      "path": "setting.style",
+                      "to": "4_prong_basket"
+                    }
+                  ]
+                },
+                "message": "visible local change does not match the validated result spec",
+                "passed": false,
+                "severity": "hard"
+              },
+              {
+                "code": "edit_domain:setting",
+                "evidence": {
+                  "domain": "setting",
+                  "spec_delta": [
+                    {
+                      "from": "6",
+                      "kind": "changed",
+                      "label": "setting prongs",
+                      "path": "setting.prong_count",
+                      "to": "4"
+                    },
+                    {
+                      "from": "6_prong_basket",
+                      "kind": "changed",
+                      "label": "setting style",
+                      "path": "setting.style",
+                      "to": "4_prong_basket"
+                    }
+                  ]
+                },
+                "message": "visible edit does not match the 'setting' result facts",
+                "passed": false,
+                "severity": "hard"
+              },
+              {
+                "code": "crosscheck_requested_change",
+                "evidence": {},
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "crosscheck_frozen_facts",
+                "evidence": {},
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "crosscheck_unintended_drift",
+                "evidence": {
+                  "changes": [],
+                  "severity": "none"
+                },
+                "message": "independent audit found no unintended changes",
+                "passed": true,
+                "severity": "warning"
+              },
+              {
+                "code": "crosscheck_edit_domains",
+                "evidence": {
+                  "domain_mismatches": []
+                },
+                "message": "independent audit matched every required edit domain",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "target_spec_crosscheck:jewelry_type",
+                "evidence": {
+                  "differences": [],
+                  "observed_prong_count": 6,
+                  "observed_prong_count_complete": true,
+                  "observed_side_stone_count": 0
+                },
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "target_spec_crosscheck:center_identity",
+                "evidence": {
+                  "differences": [],
+                  "observed_prong_count": 6,
+                  "observed_prong_count_complete": true,
+                  "observed_side_stone_count": 0
+                },
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "target_spec_crosscheck:center_cut",
+                "evidence": {
+                  "differences": [],
+                  "observed_prong_count": 6,
+                  "observed_prong_count_complete": true,
+                  "observed_side_stone_count": 0
+                },
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "target_spec_crosscheck:metal",
+                "evidence": {
+                  "differences": [],
+                  "observed_prong_count": 6,
+                  "observed_prong_count_complete": true,
+                  "observed_side_stone_count": 0
+                },
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "target_spec_crosscheck:setting_style",
+                "evidence": {
+                  "differences": [],
+                  "observed_prong_count": 6,
+                  "observed_prong_count_complete": true,
+                  "observed_side_stone_count": 0
+                },
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "target_spec_crosscheck:prong_count",
+                "evidence": {
+                  "differences": [],
+                  "observed_prong_count": 6,
+                  "observed_prong_count_complete": true,
+                  "observed_side_stone_count": 0
+                },
+                "message": "independent audit found the wrong center-prong count",
+                "passed": false,
+                "severity": "hard"
+              },
+              {
+                "code": "target_spec_crosscheck:side_stone_inventory",
+                "evidence": {
+                  "differences": [],
+                  "observed_prong_count": 6,
+                  "observed_prong_count_complete": true,
+                  "observed_side_stone_count": 0
+                },
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "target_spec_crosscheck:major_components",
+                "evidence": {
+                  "differences": [],
+                  "observed_prong_count": 6,
+                  "observed_prong_count_complete": true,
+                  "observed_side_stone_count": 0
+                },
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "text_or_branding",
+                "evidence": {},
+                "message": "no text or branding introduced",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "outside_mask_drift",
+                "evidence": {
+                  "drift": 0.006598,
+                  "threshold": 0.18
+                },
+                "message": "outside-mask drift is within the calibrated threshold",
+                "passed": true,
+                "severity": "hard"
+              }
+            ],
+            "qa_verdict": "fail",
+            "quality_score": 15.0,
+            "route": "grok_edit",
+            "usage": null
+          },
+          {
+            "attempt_number": 3,
+            "cache_key": "49cec179e7b134a893bf693177b2147b6507cb59ca6ce1cfba99e5bde5e98a31",
+            "cached": false,
+            "corrective_instruction": "- requested_change: the requested change was not visibly applied.\n- spec_change: visible local change does not match the validated result spec. Evidence: {\"spec_delta\": [{\"from\": \"6\", \"kind\": \"changed\", \"label\": \"setting prongs\", \"path\": \"setting.prong_count\", \"to\": \"4\"}, {\"from\": \"6_prong_basket\", \"kind\": \"changed\", \"label\": \"setting style\", \"path\": \"setting.style\", \"to\": \"4_prong_basket\"}]}\n- edit_domain:setting: visible edit does not match the 'setting' result facts. Evidence: {\"domain\": \"setting\", \"spec_delta\": [{\"from\": \"6\", \"kind\": \"changed\", \"label\": \"setting prongs\", \"path\": \"setting.prong_count\", \"to\": \"4\"}, {\"from\": \"6_prong_basket\", \"kind\": \"changed\", \"label\": \"setting style\", \"path\": \"setting.style\", \"to\": \"4_prong_basket\"}]}\n- target_spec_crosscheck:prong_count: independent audit found the wrong center-prong count. Evidence: {\"differences\": [], \"observed_prong_count\": 6, \"observed_prong_count_complete\": true, \"observed_side_stone_count\": 0}",
+            "cost": null,
+            "error": null,
+            "error_category": null,
+            "fallback_reason": "grok_qa_failed",
+            "latency_ms": 66583,
+            "model": "gpt-image-2",
+            "output_hash": "b5246b5e2c30246fe2144b64cf601403d0d7fcdaefb27a8fd743835d56e3c48a",
+            "prompt_hash": "fcf8231827f7ef990af9cc634213cacfb47d3a04ee1172c9379a89eb2d8823c9",
+            "provider": "openai",
+            "provider_request_id": "req_da222c60315d44d58c0cb24c6f660869",
+            "qa_checks": [
+              {
+                "code": "decodable_image",
+                "evidence": {
+                  "format": "PNG",
+                  "height": 1152,
+                  "width": 864
+                },
+                "message": "candidate is a decodable raster image",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "review_resolution",
+                "evidence": {
+                  "height": 1152,
+                  "width": 864
+                },
+                "message": "candidate has reviewable raster dimensions",
+                "passed": true,
+                "severity": "warning"
+              },
+              {
+                "code": "candidate_changed",
+                "evidence": {},
+                "message": "candidate bytes differ from the source",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "requested_change",
+                "evidence": {},
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "protected_regions",
+                "evidence": {},
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "unintended_drift",
+                "evidence": {
+                  "changes": [],
+                  "severity": "none"
+                },
+                "message": "no unintended changes detected",
+                "passed": true,
+                "severity": "warning"
+              },
+              {
+                "code": "spec_change",
+                "evidence": {
+                  "spec_delta": [
+                    {
+                      "from": "6",
+                      "kind": "changed",
+                      "label": "setting prongs",
+                      "path": "setting.prong_count",
+                      "to": "4"
+                    },
+                    {
+                      "from": "6_prong_basket",
+                      "kind": "changed",
+                      "label": "setting style",
+                      "path": "setting.style",
+                      "to": "4_prong_basket"
+                    }
+                  ]
+                },
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "edit_domain:setting",
+                "evidence": {
+                  "domain": "setting",
+                  "spec_delta": [
+                    {
+                      "from": "6",
+                      "kind": "changed",
+                      "label": "setting prongs",
+                      "path": "setting.prong_count",
+                      "to": "4"
+                    },
+                    {
+                      "from": "6_prong_basket",
+                      "kind": "changed",
+                      "label": "setting style",
+                      "path": "setting.style",
+                      "to": "4_prong_basket"
+                    }
+                  ]
+                },
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "crosscheck_requested_change",
+                "evidence": {},
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "crosscheck_frozen_facts",
+                "evidence": {},
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "crosscheck_unintended_drift",
+                "evidence": {
+                  "changes": [],
+                  "severity": "none"
+                },
+                "message": "independent audit found no unintended changes",
+                "passed": true,
+                "severity": "warning"
+              },
+              {
+                "code": "crosscheck_edit_domains",
+                "evidence": {
+                  "domain_mismatches": []
+                },
+                "message": "independent audit matched every required edit domain",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "target_spec_crosscheck:jewelry_type",
+                "evidence": {
+                  "differences": [],
+                  "observed_prong_count": 4,
+                  "observed_prong_count_complete": true,
+                  "observed_side_stone_count": 0
+                },
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "target_spec_crosscheck:center_identity",
+                "evidence": {
+                  "differences": [],
+                  "observed_prong_count": 4,
+                  "observed_prong_count_complete": true,
+                  "observed_side_stone_count": 0
+                },
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "target_spec_crosscheck:center_cut",
+                "evidence": {
+                  "differences": [],
+                  "observed_prong_count": 4,
+                  "observed_prong_count_complete": true,
+                  "observed_side_stone_count": 0
+                },
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "target_spec_crosscheck:metal",
+                "evidence": {
+                  "differences": [],
+                  "observed_prong_count": 4,
+                  "observed_prong_count_complete": true,
+                  "observed_side_stone_count": 0
+                },
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "target_spec_crosscheck:setting_style",
+                "evidence": {
+                  "differences": [],
+                  "observed_prong_count": 4,
+                  "observed_prong_count_complete": true,
+                  "observed_side_stone_count": 0
+                },
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "target_spec_crosscheck:prong_count",
+                "evidence": {
+                  "differences": [],
+                  "observed_prong_count": 4,
+                  "observed_prong_count_complete": true,
+                  "observed_side_stone_count": 0
+                },
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "target_spec_crosscheck:side_stone_inventory",
+                "evidence": {
+                  "differences": [],
+                  "observed_prong_count": 4,
+                  "observed_prong_count_complete": true,
+                  "observed_side_stone_count": 0
+                },
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "target_spec_crosscheck:major_components",
+                "evidence": {
+                  "differences": [],
+                  "observed_prong_count": 4,
+                  "observed_prong_count_complete": true,
+                  "observed_side_stone_count": 0
+                },
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "text_or_branding",
+                "evidence": {},
+                "message": "no text or branding introduced",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "outside_mask_drift",
+                "evidence": {
+                  "drift": 0.0,
+                  "threshold": 0.18
+                },
+                "message": "outside-mask drift is within the calibrated threshold",
+                "passed": true,
+                "severity": "hard"
+              }
+            ],
+            "qa_verdict": "pass",
+            "quality_score": 92.0,
+            "route": "openai_edit",
+            "usage": {
+              "input_tokens": 2422,
+              "input_tokens_details": {
+                "image_tokens": 972,
+                "text_tokens": 1450
+              },
+              "output_tokens": 1294,
+              "output_tokens_details": {
+                "image_tokens": 1294,
+                "text_tokens": 0
+              },
+              "total_tokens": 3716
+            }
+          }
+        ],
+        "error_category": null,
+        "normalized_intent": {
+          "edit_domains": [
+            "setting"
+          ],
+          "expected_output": "the requested local change and no unrelated redesign",
+          "frozen": [
+            "all pixels and jewelry structure outside the center setting",
+            "all validated facts not named by the requested change",
+            "center-stone identity, dimensions, color, and orientation",
+            "side-stone inventory, band, metal, camera, lighting, and background"
+          ],
+          "instruction": "change the center setting from six prongs to four prongs",
+          "localization": {
+            "evidence": {
+              "analysis_size": [
+                288,
+                384
+              ],
+              "chromatic_center_box": [
+                0.347222,
+                0.184896,
+                0.368056,
+                0.226562
+              ],
+              "editable_fraction": 0.129178,
+              "mode": "automatic_chromatic_center_setting_v1",
+              "outside_mask_pixel_lock": true,
+              "stone_center_protected": true
+            },
+            "mask_hash": "ac85f1a6eef0dd815dd3db66f75e582665f4fb5eb24d2bd0e1ef2ba513aebbb1",
+            "mode": "automatic_chromatic_center_setting_v1"
+          },
+          "region_description": "the center setting",
+          "setting_topology_contract": {
+            "source": {
+              "gallery_height_mm": 4.0,
+              "prong_count": 6,
+              "prong_tip_mm": 0.9,
+              "style": "6_prong_basket"
+            },
+            "target": {
+              "gallery_height_mm": 4.0,
+              "prong_count": 4,
+              "prong_tip_mm": 0.9,
+              "style": "4_prong_basket"
+            }
+          },
+          "spec_delta": [
+            {
+              "from": "6",
+              "kind": "changed",
+              "label": "setting prongs",
+              "path": "setting.prong_count",
+              "to": "4"
+            },
+            {
+              "from": "6_prong_basket",
+              "kind": "changed",
+              "label": "setting style",
+              "path": "setting.style",
+              "to": "4_prong_basket"
+            }
+          ],
+          "style_constraints": []
+        },
+        "operation": "LOCAL_EDIT",
+        "output_hash": "b5246b5e2c30246fe2144b64cf601403d0d7fcdaefb27a8fd743835d56e3c48a",
+        "prompt_version": "local-edit.v8",
+        "selected_attempt": 3,
+        "source_hash": "4144507a67bbddaccaf6e91c8d1e78026e205f2e7950e3ea19d5285b0a0ead65",
+        "spec_visual_hash": "fefc00913c9c3648",
+        "status": "accepted",
+        "variant": 0,
+        "verdict": "pass"
+      },
+      "applied": true,
+      "attempts": 3,
+      "case": "prong-setting",
+      "change_visible": true,
+      "eligible_after_designer_review": false,
+      "expected_valid": true,
+      "fidelity_evidence": {
+        "change_applied": true,
+        "note": "center setting changed from six prongs to four prongs",
+        "score": 88.0,
+        "severity": "minor",
+        "static_hold": 0.7,
+        "unintended_changes": [
+          "minor background artifacts and slight lighting/angle noise"
+        ]
+      },
+      "golden_case": "oval-solitaire-white-6-wide",
+      "kind": "edit",
+      "quality": {
+        "checks": [
+          {
+            "code": "decodable_image",
+            "evidence": {
+              "format": "PNG",
+              "height": 1152,
+              "width": 864
+            },
+            "message": "candidate is a decodable raster image",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "review_resolution",
+            "evidence": {
+              "height": 1152,
+              "width": 864
+            },
+            "message": "candidate has reviewable raster dimensions",
+            "passed": true,
+            "severity": "warning"
+          },
+          {
+            "code": "candidate_changed",
+            "evidence": {},
+            "message": "candidate bytes differ from the source",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "requested_change",
+            "evidence": {},
+            "message": "visual evidence matches the requested fact",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "protected_regions",
+            "evidence": {},
+            "message": "visual evidence matches the requested fact",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "unintended_drift",
+            "evidence": {
+              "changes": [],
+              "severity": "none"
+            },
+            "message": "no unintended changes detected",
+            "passed": true,
+            "severity": "warning"
+          },
+          {
+            "code": "spec_change",
+            "evidence": {
+              "spec_delta": [
+                {
+                  "from": "6",
+                  "kind": "changed",
+                  "label": "setting prongs",
+                  "path": "setting.prong_count",
+                  "to": "4"
+                },
+                {
+                  "from": "6_prong_basket",
+                  "kind": "changed",
+                  "label": "setting style",
+                  "path": "setting.style",
+                  "to": "4_prong_basket"
+                }
+              ]
+            },
+            "message": "visual evidence matches the requested fact",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "edit_domain:setting",
+            "evidence": {
+              "domain": "setting",
+              "spec_delta": [
+                {
+                  "from": "6",
+                  "kind": "changed",
+                  "label": "setting prongs",
+                  "path": "setting.prong_count",
+                  "to": "4"
+                },
+                {
+                  "from": "6_prong_basket",
+                  "kind": "changed",
+                  "label": "setting style",
+                  "path": "setting.style",
+                  "to": "4_prong_basket"
+                }
+              ]
+            },
+            "message": "visual evidence matches the requested fact",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "crosscheck_requested_change",
+            "evidence": {},
+            "message": "visual evidence matches the requested fact",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "crosscheck_frozen_facts",
+            "evidence": {},
+            "message": "visual evidence matches the requested fact",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "crosscheck_unintended_drift",
+            "evidence": {
+              "changes": [],
+              "severity": "none"
+            },
+            "message": "independent audit found no unintended changes",
+            "passed": true,
+            "severity": "warning"
+          },
+          {
+            "code": "crosscheck_edit_domains",
+            "evidence": {
+              "domain_mismatches": []
+            },
+            "message": "independent audit matched every required edit domain",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "target_spec_crosscheck:jewelry_type",
+            "evidence": {
+              "differences": [],
+              "observed_prong_count": 4,
+              "observed_prong_count_complete": true,
+              "observed_side_stone_count": 0
+            },
+            "message": "visual evidence matches the requested fact",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "target_spec_crosscheck:center_identity",
+            "evidence": {
+              "differences": [],
+              "observed_prong_count": 4,
+              "observed_prong_count_complete": true,
+              "observed_side_stone_count": 0
+            },
+            "message": "visual evidence matches the requested fact",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "target_spec_crosscheck:center_cut",
+            "evidence": {
+              "differences": [],
+              "observed_prong_count": 4,
+              "observed_prong_count_complete": true,
+              "observed_side_stone_count": 0
+            },
+            "message": "visual evidence matches the requested fact",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "target_spec_crosscheck:metal",
+            "evidence": {
+              "differences": [],
+              "observed_prong_count": 4,
+              "observed_prong_count_complete": true,
+              "observed_side_stone_count": 0
+            },
+            "message": "visual evidence matches the requested fact",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "target_spec_crosscheck:setting_style",
+            "evidence": {
+              "differences": [],
+              "observed_prong_count": 4,
+              "observed_prong_count_complete": true,
+              "observed_side_stone_count": 0
+            },
+            "message": "visual evidence matches the requested fact",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "target_spec_crosscheck:prong_count",
+            "evidence": {
+              "differences": [],
+              "observed_prong_count": 4,
+              "observed_prong_count_complete": true,
+              "observed_side_stone_count": 0
+            },
+            "message": "visual evidence matches the requested fact",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "target_spec_crosscheck:side_stone_inventory",
+            "evidence": {
+              "differences": [],
+              "observed_prong_count": 4,
+              "observed_prong_count_complete": true,
+              "observed_side_stone_count": 0
+            },
+            "message": "visual evidence matches the requested fact",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "target_spec_crosscheck:major_components",
+            "evidence": {
+              "differences": [],
+              "observed_prong_count": 4,
+              "observed_prong_count_complete": true,
+              "observed_side_stone_count": 0
+            },
+            "message": "visual evidence matches the requested fact",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "text_or_branding",
+            "evidence": {},
+            "message": "no text or branding introduced",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "outside_mask_drift",
+            "evidence": {
+              "drift": 0.0,
+              "threshold": 0.18
+            },
+            "message": "outside-mask drift is within the calibrated threshold",
+            "passed": true,
+            "severity": "hard"
+          }
+        ],
+        "notes": [
+          "Prong count visibly reduced from 6 to 4; stone, band, metal and all other geometry unchanged",
+          "Center setting prongs reduced from 6 (top pair + side pair + lower pair) to 4 (top pair + lower pair) with basket adjusted accordingly",
+          "Oval sapphire, band profile/width, metal finish, camera angle, lighting, and reflections remain identical",
+          "4 prongs visible, oval blue sapphire, white metal, no side stones",
+          "4 distinct prongs contact center stone; no side stones visible",
+          "blind center-prong audit used deterministic focused crop: {\"chromatic_center_pixels\": 3910, \"crop_box\": [234, 129, 666, 624], \"crop_fraction\": 0.214844, \"crop_size\": [432, 495], \"mode\": \"automatic_chromatic_center_assembly_v1\", \"source_size\": [864, 1152]}"
+        ],
+        "score": 92.0,
+        "verdict": "pass"
+      },
+      "review_required": false,
+      "score": 88.0,
+      "severity": "minor",
+      "starting_point": "imported_reference",
+      "verdict": "pass"
+    }
+  ],
+  "run": "designer-prong-topology-localized-live-v10-2026-07-12",
+  "source_override": {
+    "golden_case": "oval-solitaire-white-6-wide",
+    "path": "/Users/mattfb/Documents/Facetta-trusted-workflow/docs/evals/designer-prong-topology-live-v5-2026-07-12/oval-solitaire-white-6-wide--reference.png",
+    "provenance": "operator-selected, previously reviewed spec-aligned source; not re-generated or re-audited by this result set",
+    "scope": "single_edit_diagnostic_only",
+    "sha256": "4144507a67bbddaccaf6e91c8d1e78026e205f2e7950e3ea19d5285b0a0ead65"
+  }
+}

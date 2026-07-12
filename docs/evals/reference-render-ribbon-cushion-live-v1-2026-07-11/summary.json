@@ -1,0 +1,292 @@
+{
+  "accepted": false,
+  "attempts": [
+    {
+      "attempt_number": 1,
+      "cache_key": "0c65ae89cb91f81a784ce2cbc6039cd4c432fa7ff92bd752d965f72d7eb4d2f9",
+      "cached": false,
+      "corrective_instruction": null,
+      "cost": null,
+      "error": null,
+      "error_category": null,
+      "fallback_reason": null,
+      "latency_ms": 23591,
+      "model": "grok_direct",
+      "output_hash": "5ed4033bfc60e6dc80b5d753d0915711b4614de861931094bf0fd58764ce2242",
+      "prompt_hash": "5b5757e0433a77347a573a59377f8d601053578f23dcde4352e20f0191b0947a",
+      "provider": "xai",
+      "provider_request_id": null,
+      "qa_checks": [
+        {
+          "code": "decodable_image",
+          "evidence": {
+            "format": "JPEG",
+            "height": 1216,
+            "width": 848
+          },
+          "message": "candidate is a decodable raster image",
+          "passed": true,
+          "severity": "hard"
+        },
+        {
+          "code": "review_resolution",
+          "evidence": {
+            "height": 1216,
+            "width": 848
+          },
+          "message": "candidate has reviewable raster dimensions",
+          "passed": true,
+          "severity": "warning"
+        },
+        {
+          "code": "candidate_changed",
+          "evidence": {},
+          "message": "candidate bytes differ from the source",
+          "passed": true,
+          "severity": "hard"
+        },
+        {
+          "code": "coherent_jewelry_render",
+          "evidence": {},
+          "message": "visual evidence matches the requested fact",
+          "passed": true,
+          "severity": "hard"
+        },
+        {
+          "code": "source_design_preserved",
+          "evidence": {},
+          "message": "candidate materially changed the visible source design identity",
+          "passed": false,
+          "severity": "hard"
+        },
+        {
+          "code": "visible_components_preserved",
+          "evidence": {},
+          "message": "candidate added, removed, replaced, or moved a visible component",
+          "passed": false,
+          "severity": "hard"
+        },
+        {
+          "code": "requested_presentation_applied",
+          "evidence": {},
+          "message": "visual evidence matches the requested fact",
+          "passed": true,
+          "severity": "hard"
+        },
+        {
+          "code": "text_or_branding",
+          "evidence": {},
+          "message": "visual evidence matches the requested fact",
+          "passed": true,
+          "severity": "hard"
+        },
+        {
+          "code": "factory_authority",
+          "evidence": {
+            "factory_authoritative": false
+          },
+          "message": "creative render is review-only and cannot establish hidden geometry, dimensions, materials, stone identity, or factory facts",
+          "passed": false,
+          "severity": "warning"
+        }
+      ],
+      "qa_verdict": "fail",
+      "quality_score": 35.0,
+      "route": "grok_edit",
+      "usage": null
+    },
+    {
+      "attempt_number": 2,
+      "cache_key": "4ad3d72f2d979fd4b1d0d34948448984d52731bbd0f7b2141e290a07fdc5cb72",
+      "cached": false,
+      "corrective_instruction": "- source_design_preserved: candidate materially changed the visible source design identity.\n- visible_components_preserved: candidate added, removed, replaced, or moved a visible component.\n- factory_authority: creative render is review-only and cannot establish hidden geometry, dimensions, materials, stone identity, or factory facts. Evidence: {\"factory_authoritative\": false}",
+      "cost": null,
+      "error": null,
+      "error_category": null,
+      "fallback_reason": null,
+      "latency_ms": 22358,
+      "model": "grok_direct",
+      "output_hash": "aaae26ae0976548d2f6744ac1827299ddd73a38af701cb8af69bca50aec87992",
+      "prompt_hash": "9944bd1dd0bf43ee490e33d9591f2f02f7ffcd798101a43d05962470d09dfe2b",
+      "provider": "xai",
+      "provider_request_id": null,
+      "qa_checks": [
+        {
+          "code": "decodable_image",
+          "evidence": {
+            "format": "JPEG",
+            "height": 1216,
+            "width": 848
+          },
+          "message": "candidate is a decodable raster image",
+          "passed": true,
+          "severity": "hard"
+        },
+        {
+          "code": "review_resolution",
+          "evidence": {
+            "height": 1216,
+            "width": 848
+          },
+          "message": "candidate has reviewable raster dimensions",
+          "passed": true,
+          "severity": "warning"
+        },
+        {
+          "code": "candidate_changed",
+          "evidence": {},
+          "message": "candidate bytes differ from the source",
+          "passed": true,
+          "severity": "hard"
+        },
+        {
+          "code": "coherent_jewelry_render",
+          "evidence": {},
+          "message": "visual evidence matches the requested fact",
+          "passed": true,
+          "severity": "hard"
+        },
+        {
+          "code": "source_design_preserved",
+          "evidence": {},
+          "message": "visual evidence matches the requested fact",
+          "passed": true,
+          "severity": "hard"
+        },
+        {
+          "code": "visible_components_preserved",
+          "evidence": {},
+          "message": "visual evidence matches the requested fact",
+          "passed": true,
+          "severity": "hard"
+        },
+        {
+          "code": "requested_presentation_applied",
+          "evidence": {},
+          "message": "visual evidence matches the requested fact",
+          "passed": true,
+          "severity": "hard"
+        },
+        {
+          "code": "text_or_branding",
+          "evidence": {},
+          "message": "visual evidence matches the requested fact",
+          "passed": true,
+          "severity": "hard"
+        },
+        {
+          "code": "factory_authority",
+          "evidence": {
+            "factory_authoritative": false
+          },
+          "message": "creative render is review-only and cannot establish hidden geometry, dimensions, materials, stone identity, or factory facts",
+          "passed": false,
+          "severity": "warning"
+        }
+      ],
+      "qa_verdict": "warn",
+      "quality_score": 88.0,
+      "route": "grok_edit",
+      "usage": null
+    }
+  ],
+  "candidate_file": "candidate.jpg",
+  "candidate_media_type": "image/jpeg",
+  "candidate_sha256": "aaae26ae0976548d2f6744ac1827299ddd73a38af701cb8af69bca50aec87992",
+  "executed_at": "2026-07-11T15:36:58.952452+00:00",
+  "factory_authoritative": false,
+  "input_hash": "6470ecc149c7ef112c773185e700e9eb89b1896f38637c8cf7eda10dda700403",
+  "instruction": "Treat the source views as views of the same ring. Create one photorealistic three-quarter beauty render of that exact ribbon cushion ring on a clean neutral studio background. Preserve the cushion center stone, violet-blue and clear accent stones, asymmetric ribbon topology, wide sculptural shank, setting relationships, and distinctive proportions; do not simplify or redesign the ribbon geometry.",
+  "maximum_attempts": 3,
+  "operation": "REFERENCE_RENDER",
+  "product_asset_persisted": false,
+  "prompt_version": "reference-render.v1",
+  "quality": {
+    "checks": [
+      {
+        "code": "decodable_image",
+        "evidence": {
+          "format": "JPEG",
+          "height": 1216,
+          "width": 848
+        },
+        "message": "candidate is a decodable raster image",
+        "passed": true,
+        "severity": "hard"
+      },
+      {
+        "code": "review_resolution",
+        "evidence": {
+          "height": 1216,
+          "width": 848
+        },
+        "message": "candidate has reviewable raster dimensions",
+        "passed": true,
+        "severity": "warning"
+      },
+      {
+        "code": "candidate_changed",
+        "evidence": {},
+        "message": "candidate bytes differ from the source",
+        "passed": true,
+        "severity": "hard"
+      },
+      {
+        "code": "coherent_jewelry_render",
+        "evidence": {},
+        "message": "visual evidence matches the requested fact",
+        "passed": true,
+        "severity": "hard"
+      },
+      {
+        "code": "source_design_preserved",
+        "evidence": {},
+        "message": "visual evidence matches the requested fact",
+        "passed": true,
+        "severity": "hard"
+      },
+      {
+        "code": "visible_components_preserved",
+        "evidence": {},
+        "message": "visual evidence matches the requested fact",
+        "passed": true,
+        "severity": "hard"
+      },
+      {
+        "code": "requested_presentation_applied",
+        "evidence": {},
+        "message": "visual evidence matches the requested fact",
+        "passed": true,
+        "severity": "hard"
+      },
+      {
+        "code": "text_or_branding",
+        "evidence": {},
+        "message": "visual evidence matches the requested fact",
+        "passed": true,
+        "severity": "hard"
+      },
+      {
+        "code": "factory_authority",
+        "evidence": {
+          "factory_authoritative": false
+        },
+        "message": "creative render is review-only and cannot establish hidden geometry, dimensions, materials, stone identity, or factory facts",
+        "passed": false,
+        "severity": "warning"
+      }
+    ],
+    "notes": [
+      "asymmetric ribbon twists, cushion stone placement, and blue/clear stone layout match source views; minor smoothing of shank curves"
+    ],
+    "score": 88.0,
+    "verdict": "warn"
+  },
+  "result_set": "reference-render-ribbon-cushion-live-v1-2026-07-11",
+  "review_required": true,
+  "source": "/Users/mattfb/.codex/attachments/c2fd41d0-b236-43ef-ada9-e9479718c771/image-67.jpg",
+  "source_sha256": "8da9ebf5d9c8f6cc14e8014a99445b72ab9c8c92b0e7dd8a9558bea13d926ad5",
+  "status": "review_required",
+  "variant": 1,
+  "verdict": "warn"
+}

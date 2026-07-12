@@ -10,11 +10,9 @@ import json
 import os
 from pathlib import Path
 
-import pytest
-
 from facetta.concept import DesignRead, complete_design
 from facetta.spec import Drop, Spec
-from facetta.svg_sheet import SheetUnsupported, render_sheet
+from facetta.svg_sheet import render_sheet
 from facetta.validation import validate_spec
 from facetta.vocabulary import get_vocabulary
 

@@ -1,0 +1,90 @@
+{
+  "authority": "proposed_designer_confirmation_required",
+  "cached": false,
+  "live": true,
+  "manual_review": {
+    "status": "pending",
+    "verdict": null
+  },
+  "model_role": "grok_primary",
+  "output": "/Users/mattfb/Documents/Facetta-trusted-workflow/docs/evals/designer-mounting-side-live-v1-2026-07-12/grok-side.jpg",
+  "production_authority": false,
+  "provider": "xai",
+  "source": "/Users/mattfb/Documents/Facetta-trusted-workflow/docs/evals/designer-prong-topology-live-v5-2026-07-12/oval-solitaire-white-6-wide--reference.png",
+  "validated_spec": {
+    "band": {
+      "profile": "comfort_fit",
+      "thickness_mm": 1.6,
+      "width_mm": 3.2
+    },
+    "bracelet": null,
+    "brooch": null,
+    "chain": null,
+    "composition": null,
+    "created_at": "1970-01-01T00:00:00Z",
+    "created_by": "usr_pending",
+    "design_form": {
+      "elements": []
+    },
+    "design_id": "dsn_concept",
+    "dimension_provenance": {},
+    "drop": null,
+    "jewelry_type": "ring",
+    "metal": {
+      "color": "white",
+      "finish": "high_polish",
+      "karat": 18,
+      "material": "gold"
+    },
+    "mode": "pro",
+    "notes_to_factory": "Concept originated by image generation from the brief: \u201cgolden evaluation case oval-solitaire-white-6-wide\u201d. All dimensions are density-consistent DRAFT proposals scaled from a vision estimate of the centre stone \u2014 the designer confirms exact millimetres before production.",
+    "pendant": null,
+    "ring_size": {
+      "inner_diameter_mm": 16.91,
+      "system": "US",
+      "value": 6.5
+    },
+    "schema_version": 1,
+    "setting": {
+      "gallery_height_mm": 4.0,
+      "prong_count": 6,
+      "prong_tip_mm": 0.9,
+      "style": "6_prong_basket"
+    },
+    "side_stones": [],
+    "source_component_coverage": null,
+    "stone": {
+      "carat": 2.88,
+      "clarity": null,
+      "color": {
+        "gia": "vivid deep blue, slight violet, tone 6-7",
+        "hue_code": null,
+        "saturation": null,
+        "tone": null,
+        "trade": "Royal Blue"
+      },
+      "count": 1,
+      "culet": null,
+      "cut": "oval_brilliant",
+      "depth_pct": null,
+      "dimensions_mm": {
+        "depth": 4.8,
+        "length": 10.0,
+        "width": 7.5
+      },
+      "girdle": null,
+      "inscription": null,
+      "lab": null,
+      "mount": null,
+      "origin": null,
+      "phenomena": [],
+      "position": "center",
+      "species": "sapphire",
+      "table_pct": null,
+      "treatment": null
+    },
+    "template": "solitaire_prong",
+    "version": 1
+  },
+  "view": "side"
+}

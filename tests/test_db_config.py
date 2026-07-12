@@ -6,6 +6,14 @@ transaction pooler's prepared-statement incompatibility handled, and idle-drop
 resilience turned on for hosted Postgres.
 """
 
+from concurrent.futures import ThreadPoolExecutor
+from threading import Barrier, Lock
+from time import sleep
+
+from sqlalchemy import select
+
+import facetta.db as db
+
 from facetta.db import engine_config, normalize_database_url
 
 
@@ -71,3 +79,51 @@ class TestEngineConfig:
         # the non-libpq flag would make psycopg's connect() raise, so it's removed
         assert "pgbouncer" not in url
         assert kwargs["connect_args"] == {"prepare_threshold": None}
+
+
+def test_concurrent_first_sessions_initialize_sqlite_once(monkeypatch, tmp_path):
+    database_url = f"sqlite:///{tmp_path / 'concurrent.db'}"
+    monkeypatch.setattr(
+        db,
+        "env_value",
+        lambda key, default: database_url,
+    )
+
+    real_create_all = db.Base.metadata.create_all
+    create_all_calls = 0
+    call_count_lock = Lock()
+
+    def slow_create_all(engine):
+        nonlocal create_all_calls
+        with call_count_lock:
+            create_all_calls += 1
+        sleep(0.05)
+        real_create_all(engine)
+
+    monkeypatch.setattr(db.Base.metadata, "create_all", slow_create_all)
+    db._initialize_engine.cache_clear()
+
+    worker_count = 8
+    start = Barrier(worker_count)
+
+    def open_first_session(_worker):
+        start.wait()
+        dependency = db.get_db()
+        session = next(dependency)
+        try:
+            session.execute(select(db.User).limit(1)).all()
+            return session.get_bind()
+        finally:
+            dependency.close()
+
+    engines = []
+    try:
+        with ThreadPoolExecutor(max_workers=worker_count) as executor:
+            engines = list(executor.map(open_first_session, range(worker_count)))
+
+        assert create_all_calls == 1
+        assert len({id(engine) for engine in engines}) == 1
+    finally:
+        for engine in {id(item): item for item in engines}.values():
+            engine.dispose()
+        db._initialize_engine.cache_clear()

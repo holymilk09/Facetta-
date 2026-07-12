@@ -1,0 +1,1224 @@
+{
+  "fallback_provider": "openai",
+  "fallback_tested": true,
+  "gia_evaluator_review": {
+    "completed": false,
+    "false_negatives": null,
+    "false_positives": null,
+    "reviewer": null
+  },
+  "live": true,
+  "mode": "live",
+  "persistence_evidence": {
+    "method": "not_run",
+    "note": "This image-engine run did not exercise canonical project persistence. Attach a named canonical-API integration result before the persistence release gate can pass.",
+    "rejected_active_asset_count": null,
+    "result_set": null,
+    "verified": false
+  },
+  "release_gates": {
+    "blocking_enabled": false,
+    "note": "Only canonical edit 'halo-count' was executed.",
+    "status": "diagnostic_subset_not_evaluated"
+  },
+  "routing_mode": "grok_then_openai",
+  "rows": [
+    {
+      "case": "emerald-halo-rose-4-exact",
+      "kind": "source",
+      "source_override": {
+        "golden_case": "emerald-halo-rose-4-exact",
+        "path": "/Users/mattfb/Documents/Facetta-trusted-workflow/docs/evals/trusted-ring-grok-only-v3-2026-07-11/emerald-halo-rose-4-exact.png",
+        "provenance": "operator-selected, previously reviewed spec-aligned source; not re-generated or re-audited by this result set",
+        "scope": "single_edit_diagnostic_only",
+        "sha256": "68cb3b2be9888d30b6e0542a8bd413374f9d6f08a2d4db764058b844231bb4ec"
+      },
+      "starting_point": "spec_render"
+    },
+    {
+      "agent_run": {
+        "attempts": [
+          {
+            "attempt_number": 1,
+            "cache_key": "3ec8811ab8aea51cff08f81b04ed819d41152a212fc4c932b40797d24b35bcd2",
+            "cached": false,
+            "corrective_instruction": null,
+            "cost": null,
+            "error": null,
+            "error_category": null,
+            "fallback_reason": null,
+            "latency_ms": 50508,
+            "model": "grok_direct",
+            "output_hash": "50afc49d33a1ba4367ec9c971e5a049ee89cf091a4ef5446a9da86211ba6df60",
+            "prompt_hash": "a923c77f6be3670d421dd4d8634d8c515d299f2f7da9b567cdc02094b82218f4",
+            "provider": "xai",
+            "provider_request_id": null,
+            "qa_checks": [
+              {
+                "code": "decodable_image",
+                "evidence": {
+                  "format": "JPEG",
+                  "height": 1152,
+                  "width": 864
+                },
+                "message": "candidate is a decodable raster image",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "review_resolution",
+                "evidence": {
+                  "height": 1152,
+                  "width": 864
+                },
+                "message": "candidate has reviewable raster dimensions",
+                "passed": true,
+                "severity": "warning"
+              },
+              {
+                "code": "candidate_changed",
+                "evidence": {},
+                "message": "candidate bytes differ from the source",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "requested_change",
+                "evidence": {},
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "protected_regions",
+                "evidence": {},
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "unintended_drift",
+                "evidence": {
+                  "changes": [],
+                  "severity": "none"
+                },
+                "message": "no unintended changes detected",
+                "passed": true,
+                "severity": "warning"
+              },
+              {
+                "code": "spec_change",
+                "evidence": {
+                  "spec_delta": [
+                    {
+                      "from": "19",
+                      "kind": "changed",
+                      "label": "side stone 1 count",
+                      "path": "side_stones.0.count",
+                      "to": "18"
+                    }
+                  ]
+                },
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "edit_domain:side_stone_inventory",
+                "evidence": {
+                  "domain": "side_stone_inventory",
+                  "spec_delta": [
+                    {
+                      "from": "19",
+                      "kind": "changed",
+                      "label": "side stone 1 count",
+                      "path": "side_stones.0.count",
+                      "to": "18"
+                    }
+                  ]
+                },
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "inventory_source_count",
+                "evidence": {
+                  "complete": true,
+                  "expected": 19,
+                  "observed": 19,
+                  "role_counts": {
+                    "halo": 19
+                  }
+                },
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "inventory_target_count",
+                "evidence": {
+                  "complete": true,
+                  "expected": 18,
+                  "observed": 18,
+                  "role_counts": {
+                    "halo": 18
+                  }
+                },
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "crosscheck_requested_change",
+                "evidence": {},
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "crosscheck_frozen_facts",
+                "evidence": {},
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "crosscheck_unintended_drift",
+                "evidence": {
+                  "changes": [],
+                  "severity": "none"
+                },
+                "message": "independent audit found no unintended changes",
+                "passed": true,
+                "severity": "warning"
+              },
+              {
+                "code": "crosscheck_edit_domains",
+                "evidence": {
+                  "domain_mismatches": []
+                },
+                "message": "independent audit matched every required edit domain",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "target_spec_crosscheck:jewelry_type",
+                "evidence": {
+                  "differences": [],
+                  "observed_prong_count": 8,
+                  "observed_side_stone_count": 18
+                },
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "target_spec_crosscheck:center_identity",
+                "evidence": {
+                  "differences": [],
+                  "observed_prong_count": 8,
+                  "observed_side_stone_count": 18
+                },
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "target_spec_crosscheck:center_cut",
+                "evidence": {
+                  "differences": [],
+                  "observed_prong_count": 8,
+                  "observed_side_stone_count": 18
+                },
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "target_spec_crosscheck:metal",
+                "evidence": {
+                  "differences": [],
+                  "observed_prong_count": 8,
+                  "observed_side_stone_count": 18
+                },
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "target_spec_crosscheck:setting_style",
+                "evidence": {
+                  "differences": [],
+                  "observed_prong_count": 8,
+                  "observed_side_stone_count": 18
+                },
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "target_spec_crosscheck:prong_count",
+                "evidence": {
+                  "differences": [],
+                  "observed_prong_count": 8,
+                  "observed_side_stone_count": 18
+                },
+                "message": "independent audit found the wrong center-prong count",
+                "passed": false,
+                "severity": "hard"
+              },
+              {
+                "code": "target_spec_crosscheck:side_stone_inventory",
+                "evidence": {
+                  "differences": [],
+                  "observed_prong_count": 8,
+                  "observed_side_stone_count": 18
+                },
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "target_spec_crosscheck:major_components",
+                "evidence": {
+                  "differences": [],
+                  "observed_prong_count": 8,
+                  "observed_side_stone_count": 18
+                },
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "text_or_branding",
+                "evidence": {},
+                "message": "no text or branding introduced",
+                "passed": true,
+                "severity": "hard"
+              }
+            ],
+            "qa_verdict": "fail",
+            "quality_score": 95.0,
+            "route": "grok_edit",
+            "usage": null
+          },
+          {
+            "attempt_number": 2,
+            "cache_key": "61d61d94717483f4c56e78a61b01f1f9c82647c8965e26c180ea96eec366a985",
+            "cached": false,
+            "corrective_instruction": "- target_spec_crosscheck:prong_count: independent audit found the wrong center-prong count. Evidence: {\"differences\": [], \"observed_prong_count\": 8, \"observed_side_stone_count\": 18}",
+            "cost": null,
+            "error": null,
+            "error_category": null,
+            "fallback_reason": null,
+            "latency_ms": 49924,
+            "model": "grok_direct",
+            "output_hash": "194ecee808fa5432b52d06e63d4de274f688a1ea90ac03300ca52b35389c8b46",
+            "prompt_hash": "d22239a069dc2332ba38d4a7728f3ad947c2f07ce0084b8b054398bb7c006d09",
+            "provider": "xai",
+            "provider_request_id": null,
+            "qa_checks": [
+              {
+                "code": "decodable_image",
+                "evidence": {
+                  "format": "JPEG",
+                  "height": 1152,
+                  "width": 864
+                },
+                "message": "candidate is a decodable raster image",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "review_resolution",
+                "evidence": {
+                  "height": 1152,
+                  "width": 864
+                },
+                "message": "candidate has reviewable raster dimensions",
+                "passed": true,
+                "severity": "warning"
+              },
+              {
+                "code": "candidate_changed",
+                "evidence": {},
+                "message": "candidate bytes differ from the source",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "requested_change",
+                "evidence": {},
+                "message": "the requested change was not visibly applied",
+                "passed": false,
+                "severity": "hard"
+              },
+              {
+                "code": "protected_regions",
+                "evidence": {},
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "unintended_drift",
+                "evidence": {
+                  "changes": [],
+                  "severity": "none"
+                },
+                "message": "no unintended changes detected",
+                "passed": true,
+                "severity": "warning"
+              },
+              {
+                "code": "spec_change",
+                "evidence": {
+                  "spec_delta": [
+                    {
+                      "from": "19",
+                      "kind": "changed",
+                      "label": "side stone 1 count",
+                      "path": "side_stones.0.count",
+                      "to": "18"
+                    }
+                  ]
+                },
+                "message": "visible local change does not match the validated result spec",
+                "passed": false,
+                "severity": "hard"
+              },
+              {
+                "code": "edit_domain:side_stone_inventory",
+                "evidence": {
+                  "domain": "side_stone_inventory",
+                  "spec_delta": [
+                    {
+                      "from": "19",
+                      "kind": "changed",
+                      "label": "side stone 1 count",
+                      "path": "side_stones.0.count",
+                      "to": "18"
+                    }
+                  ]
+                },
+                "message": "visible edit does not match the 'side_stone_inventory' result facts",
+                "passed": false,
+                "severity": "hard"
+              },
+              {
+                "code": "inventory_source_count",
+                "evidence": {
+                  "complete": true,
+                  "expected": 19,
+                  "observed": 19,
+                  "role_counts": {
+                    "halo": 19
+                  }
+                },
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "inventory_target_count",
+                "evidence": {
+                  "complete": true,
+                  "expected": 18,
+                  "observed": 19,
+                  "role_counts": {
+                    "halo": 19
+                  }
+                },
+                "message": "candidate does not show the exact target side-stone count",
+                "passed": false,
+                "severity": "hard"
+              },
+              {
+                "code": "crosscheck_requested_change",
+                "evidence": {},
+                "message": "independent audit found the requested change missing",
+                "passed": false,
+                "severity": "hard"
+              },
+              {
+                "code": "crosscheck_frozen_facts",
+                "evidence": {},
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "crosscheck_unintended_drift",
+                "evidence": {
+                  "changes": [],
+                  "severity": "none"
+                },
+                "message": "independent audit found no unintended changes",
+                "passed": true,
+                "severity": "warning"
+              },
+              {
+                "code": "crosscheck_edit_domains",
+                "evidence": {
+                  "domain_mismatches": [
+                    "side_stone_inventory"
+                  ]
+                },
+                "message": "independent audit domain mismatches: side_stone_inventory",
+                "passed": false,
+                "severity": "hard"
+              },
+              {
+                "code": "target_spec_crosscheck:jewelry_type",
+                "evidence": {
+                  "differences": [],
+                  "observed_prong_count": 6,
+                  "observed_side_stone_count": 16
+                },
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "target_spec_crosscheck:center_identity",
+                "evidence": {
+                  "differences": [],
+                  "observed_prong_count": 6,
+                  "observed_side_stone_count": 16
+                },
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "target_spec_crosscheck:center_cut",
+                "evidence": {
+                  "differences": [],
+                  "observed_prong_count": 6,
+                  "observed_side_stone_count": 16
+                },
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "target_spec_crosscheck:metal",
+                "evidence": {
+                  "differences": [],
+                  "observed_prong_count": 6,
+                  "observed_side_stone_count": 16
+                },
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "target_spec_crosscheck:setting_style",
+                "evidence": {
+                  "differences": [],
+                  "observed_prong_count": 6,
+                  "observed_side_stone_count": 16
+                },
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "target_spec_crosscheck:prong_count",
+                "evidence": {
+                  "differences": [],
+                  "observed_prong_count": 6,
+                  "observed_side_stone_count": 16
+                },
+                "message": "independent audit could not confirm prong count",
+                "passed": false,
+                "severity": "warning"
+              },
+              {
+                "code": "target_spec_crosscheck:side_stone_inventory",
+                "evidence": {
+                  "differences": [],
+                  "observed_prong_count": 6,
+                  "observed_side_stone_count": 16
+                },
+                "message": "independent audit could not confirm side stone inventory",
+                "passed": false,
+                "severity": "warning"
+              },
+              {
+                "code": "target_spec_crosscheck:major_components",
+                "evidence": {
+                  "differences": [],
+                  "observed_prong_count": 6,
+                  "observed_side_stone_count": 16
+                },
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "text_or_branding",
+                "evidence": {},
+                "message": "no text or branding introduced",
+                "passed": true,
+                "severity": "hard"
+              }
+            ],
+            "qa_verdict": "fail",
+            "quality_score": 20.0,
+            "route": "grok_edit",
+            "usage": null
+          },
+          {
+            "attempt_number": 3,
+            "cache_key": "b4973afe5ea2ac5f87653ea5d9d0d32a7f694bd8c22959e44b7f741cd455582f",
+            "cached": false,
+            "corrective_instruction": "- requested_change: the requested change was not visibly applied.\n- spec_change: visible local change does not match the validated result spec. Evidence: {\"spec_delta\": [{\"from\": \"19\", \"kind\": \"changed\", \"label\": \"side stone 1 count\", \"path\": \"side_stones.0.count\", \"to\": \"18\"}]}\n- edit_domain:side_stone_inventory: visible edit does not match the 'side_stone_inventory' result facts. Evidence: {\"domain\": \"side_stone_inventory\", \"spec_delta\": [{\"from\": \"19\", \"kind\": \"changed\", \"label\": \"side stone 1 count\", \"path\": \"side_stones.0.count\", \"to\": \"18\"}]}\n- inventory_target_count: candidate does not show the exact target side-stone count. Evidence: {\"complete\": true, \"expected\": 18, \"observed\": 19, \"role_counts\": {\"halo\": 19}}\n- crosscheck_requested_change: independent audit found the requested change missing.\n- crosscheck_edit_domains: independent audit domain mismatches: side_stone_inventory. Evidence: {\"domain_mismatches\": [\"side_stone_inventory\"]}",
+            "cost": null,
+            "error": null,
+            "error_category": null,
+            "fallback_reason": "grok_qa_failed",
+            "latency_ms": 77737,
+            "model": "gpt-image-2",
+            "output_hash": "44b14ed636f6d7a5947e9cf918213aa36c1a4b00f37caffd679123d297248bbe",
+            "prompt_hash": "46ce07b784086da95e0983e0b0856f0b86cfc36d586425f76aab2d99053029c4",
+            "provider": "openai",
+            "provider_request_id": "req_db1283a628f24a709433f6ac682214d9",
+            "qa_checks": [
+              {
+                "code": "decodable_image",
+                "evidence": {
+                  "format": "PNG",
+                  "height": 1152,
+                  "width": 864
+                },
+                "message": "candidate is a decodable raster image",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "review_resolution",
+                "evidence": {
+                  "height": 1152,
+                  "width": 864
+                },
+                "message": "candidate has reviewable raster dimensions",
+                "passed": true,
+                "severity": "warning"
+              },
+              {
+                "code": "candidate_changed",
+                "evidence": {},
+                "message": "candidate bytes differ from the source",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "requested_change",
+                "evidence": {},
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "protected_regions",
+                "evidence": {},
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "unintended_drift",
+                "evidence": {
+                  "changes": [],
+                  "severity": "none"
+                },
+                "message": "no unintended changes detected",
+                "passed": true,
+                "severity": "warning"
+              },
+              {
+                "code": "spec_change",
+                "evidence": {
+                  "spec_delta": [
+                    {
+                      "from": "19",
+                      "kind": "changed",
+                      "label": "side stone 1 count",
+                      "path": "side_stones.0.count",
+                      "to": "18"
+                    }
+                  ]
+                },
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "edit_domain:side_stone_inventory",
+                "evidence": {
+                  "domain": "side_stone_inventory",
+                  "spec_delta": [
+                    {
+                      "from": "19",
+                      "kind": "changed",
+                      "label": "side stone 1 count",
+                      "path": "side_stones.0.count",
+                      "to": "18"
+                    }
+                  ]
+                },
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "inventory_source_count",
+                "evidence": {
+                  "complete": true,
+                  "expected": 19,
+                  "observed": 19,
+                  "role_counts": {
+                    "halo": 19
+                  }
+                },
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "inventory_target_count",
+                "evidence": {
+                  "complete": true,
+                  "expected": 18,
+                  "observed": 18,
+                  "role_counts": {
+                    "halo": 18
+                  }
+                },
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "crosscheck_requested_change",
+                "evidence": {},
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "crosscheck_frozen_facts",
+                "evidence": {},
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "crosscheck_unintended_drift",
+                "evidence": {
+                  "changes": [],
+                  "severity": "none"
+                },
+                "message": "independent audit found no unintended changes",
+                "passed": true,
+                "severity": "warning"
+              },
+              {
+                "code": "crosscheck_edit_domains",
+                "evidence": {
+                  "domain_mismatches": []
+                },
+                "message": "independent audit matched every required edit domain",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "target_spec_crosscheck:jewelry_type",
+                "evidence": {
+                  "differences": [],
+                  "observed_prong_count": 6,
+                  "observed_side_stone_count": 21
+                },
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "target_spec_crosscheck:center_identity",
+                "evidence": {
+                  "differences": [],
+                  "observed_prong_count": 6,
+                  "observed_side_stone_count": 21
+                },
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "target_spec_crosscheck:center_cut",
+                "evidence": {
+                  "differences": [],
+                  "observed_prong_count": 6,
+                  "observed_side_stone_count": 21
+                },
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "target_spec_crosscheck:metal",
+                "evidence": {
+                  "differences": [],
+                  "observed_prong_count": 6,
+                  "observed_side_stone_count": 21
+                },
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "target_spec_crosscheck:setting_style",
+                "evidence": {
+                  "differences": [],
+                  "observed_prong_count": 6,
+                  "observed_side_stone_count": 21
+                },
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "target_spec_crosscheck:prong_count",
+                "evidence": {
+                  "differences": [],
+                  "observed_prong_count": 6,
+                  "observed_side_stone_count": 21
+                },
+                "message": "independent audit could not confirm prong count",
+                "passed": false,
+                "severity": "warning"
+              },
+              {
+                "code": "target_spec_crosscheck:side_stone_inventory",
+                "evidence": {
+                  "differences": [],
+                  "observed_prong_count": 6,
+                  "observed_side_stone_count": 21
+                },
+                "message": "independent audit could not confirm side stone inventory",
+                "passed": false,
+                "severity": "warning"
+              },
+              {
+                "code": "target_spec_crosscheck:major_components",
+                "evidence": {
+                  "differences": [],
+                  "observed_prong_count": 6,
+                  "observed_side_stone_count": 21
+                },
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "text_or_branding",
+                "evidence": {},
+                "message": "no text or branding introduced",
+                "passed": true,
+                "severity": "hard"
+              }
+            ],
+            "qa_verdict": "warn",
+            "quality_score": 95.0,
+            "route": "openai_edit",
+            "usage": {
+              "input_tokens": 2584,
+              "input_tokens_details": {
+                "image_tokens": 972,
+                "text_tokens": 1612
+              },
+              "output_tokens": 1294,
+              "output_tokens_details": {
+                "image_tokens": 1294,
+                "text_tokens": 0
+              },
+              "total_tokens": 3878
+            }
+          }
+        ],
+        "error_category": null,
+        "normalized_intent": {
+          "edit_domains": [
+            "side_stone_inventory"
+          ],
+          "expected_output": "the requested local change and no unrelated redesign",
+          "frozen": [
+            "all pixels and jewelry structure outside the halo",
+            "all validated facts not named by the requested change",
+            "halo stone species, cut, size, color, mount, and spacing pattern",
+            "center stone, setting, band, metal, camera, lighting, and background"
+          ],
+          "instruction": "reduce the halo by exactly one stone",
+          "region_description": "the halo",
+          "side_stone_inventory_contract": {
+            "source": {
+              "groups": [
+                {
+                  "color": {
+                    "gia": "colorless",
+                    "hue_code": null,
+                    "saturation": null,
+                    "tone": null,
+                    "trade": "F"
+                  },
+                  "count": 19,
+                  "cut": "round_brilliant",
+                  "dimensions_mm": {
+                    "depth": 0.98,
+                    "length": 1.6,
+                    "width": 1.6
+                  },
+                  "index": 0,
+                  "role": "halo",
+                  "species": "diamond"
+                }
+              ],
+              "total_count": 19
+            },
+            "target": {
+              "groups": [
+                {
+                  "color": {
+                    "gia": "colorless",
+                    "hue_code": null,
+                    "saturation": null,
+                    "tone": null,
+                    "trade": "F"
+                  },
+                  "count": 18,
+                  "cut": "round_brilliant",
+                  "dimensions_mm": {
+                    "depth": 0.98,
+                    "length": 1.6,
+                    "width": 1.6
+                  },
+                  "index": 0,
+                  "role": "halo",
+                  "species": "diamond"
+                }
+              ],
+              "total_count": 18
+            },
+            "total_count_delta": -1
+          },
+          "spec_delta": [
+            {
+              "from": "19",
+              "kind": "changed",
+              "label": "side stone 1 count",
+              "path": "side_stones.0.count",
+              "to": "18"
+            }
+          ],
+          "style_constraints": []
+        },
+        "operation": "LOCAL_EDIT",
+        "output_hash": "44b14ed636f6d7a5947e9cf918213aa36c1a4b00f37caffd679123d297248bbe",
+        "prompt_version": "local-edit.v7",
+        "selected_attempt": 3,
+        "source_hash": "68cb3b2be9888d30b6e0542a8bd413374f9d6f08a2d4db764058b844231bb4ec",
+        "spec_visual_hash": "7e01c7faea0072c2",
+        "status": "review_required",
+        "variant": 0,
+        "verdict": "warn"
+      },
+      "applied": false,
+      "attempts": 3,
+      "case": "halo-count",
+      "change_visible": false,
+      "eligible_after_designer_review": false,
+      "expected_valid": true,
+      "fidelity_evidence": {
+        "change_applied": false,
+        "note": "no change to halo stone count; images identical",
+        "score": 40.0,
+        "severity": "none",
+        "static_hold": 1.0,
+        "unintended_changes": []
+      },
+      "golden_case": "emerald-halo-rose-4-exact",
+      "kind": "edit",
+      "quality": {
+        "checks": [
+          {
+            "code": "decodable_image",
+            "evidence": {
+              "format": "PNG",
+              "height": 1152,
+              "width": 864
+            },
+            "message": "candidate is a decodable raster image",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "review_resolution",
+            "evidence": {
+              "height": 1152,
+              "width": 864
+            },
+            "message": "candidate has reviewable raster dimensions",
+            "passed": true,
+            "severity": "warning"
+          },
+          {
+            "code": "candidate_changed",
+            "evidence": {},
+            "message": "candidate bytes differ from the source",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "requested_change",
+            "evidence": {},
+            "message": "visual evidence matches the requested fact",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "protected_regions",
+            "evidence": {},
+            "message": "visual evidence matches the requested fact",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "unintended_drift",
+            "evidence": {
+              "changes": [],
+              "severity": "none"
+            },
+            "message": "no unintended changes detected",
+            "passed": true,
+            "severity": "warning"
+          },
+          {
+            "code": "spec_change",
+            "evidence": {
+              "spec_delta": [
+                {
+                  "from": "19",
+                  "kind": "changed",
+                  "label": "side stone 1 count",
+                  "path": "side_stones.0.count",
+                  "to": "18"
+                }
+              ]
+            },
+            "message": "visual evidence matches the requested fact",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "edit_domain:side_stone_inventory",
+            "evidence": {
+              "domain": "side_stone_inventory",
+              "spec_delta": [
+                {
+                  "from": "19",
+                  "kind": "changed",
+                  "label": "side stone 1 count",
+                  "path": "side_stones.0.count",
+                  "to": "18"
+                }
+              ]
+            },
+            "message": "visual evidence matches the requested fact",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "inventory_source_count",
+            "evidence": {
+              "complete": true,
+              "expected": 19,
+              "observed": 19,
+              "role_counts": {
+                "halo": 19
+              }
+            },
+            "message": "visual evidence matches the requested fact",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "inventory_target_count",
+            "evidence": {
+              "complete": true,
+              "expected": 18,
+              "observed": 18,
+              "role_counts": {
+                "halo": 18
+              }
+            },
+            "message": "visual evidence matches the requested fact",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "crosscheck_requested_change",
+            "evidence": {},
+            "message": "visual evidence matches the requested fact",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "crosscheck_frozen_facts",
+            "evidence": {},
+            "message": "visual evidence matches the requested fact",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "crosscheck_unintended_drift",
+            "evidence": {
+              "changes": [],
+              "severity": "none"
+            },
+            "message": "independent audit found no unintended changes",
+            "passed": true,
+            "severity": "warning"
+          },
+          {
+            "code": "crosscheck_edit_domains",
+            "evidence": {
+              "domain_mismatches": []
+            },
+            "message": "independent audit matched every required edit domain",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "target_spec_crosscheck:jewelry_type",
+            "evidence": {
+              "differences": [],
+              "observed_prong_count": 6,
+              "observed_side_stone_count": 21
+            },
+            "message": "visual evidence matches the requested fact",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "target_spec_crosscheck:center_identity",
+            "evidence": {
+              "differences": [],
+              "observed_prong_count": 6,
+              "observed_side_stone_count": 21
+            },
+            "message": "visual evidence matches the requested fact",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "target_spec_crosscheck:center_cut",
+            "evidence": {
+              "differences": [],
+              "observed_prong_count": 6,
+              "observed_side_stone_count": 21
+            },
+            "message": "visual evidence matches the requested fact",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "target_spec_crosscheck:metal",
+            "evidence": {
+              "differences": [],
+              "observed_prong_count": 6,
+              "observed_side_stone_count": 21
+            },
+            "message": "visual evidence matches the requested fact",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "target_spec_crosscheck:setting_style",
+            "evidence": {
+              "differences": [],
+              "observed_prong_count": 6,
+              "observed_side_stone_count": 21
+            },
+            "message": "visual evidence matches the requested fact",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "target_spec_crosscheck:prong_count",
+            "evidence": {
+              "differences": [],
+              "observed_prong_count": 6,
+              "observed_side_stone_count": 21
+            },
+            "message": "independent audit could not confirm prong count",
+            "passed": false,
+            "severity": "warning"
+          },
+          {
+            "code": "target_spec_crosscheck:side_stone_inventory",
+            "evidence": {
+              "differences": [],
+              "observed_prong_count": 6,
+              "observed_side_stone_count": 21
+            },
+            "message": "independent audit could not confirm side stone inventory",
+            "passed": false,
+            "severity": "warning"
+          },
+          {
+            "code": "target_spec_crosscheck:major_components",
+            "evidence": {
+              "differences": [],
+              "observed_prong_count": 6,
+              "observed_side_stone_count": 21
+            },
+            "message": "visual evidence matches the requested fact",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "text_or_branding",
+            "evidence": {},
+            "message": "no text or branding introduced",
+            "passed": true,
+            "severity": "hard"
+          }
+        ],
+        "notes": [
+          "exact halo stone count delta applied; all frozen facts and protected regions unchanged",
+          "halo diamond count reduced from 19 to 18; center emerald, prongs, band, metal, lighting and crop identical",
+          "6 distinct prongs contact emerald edges (4 corners + 2 sides)",
+          "21 small diamonds visible in halo and lower setting",
+          "3/4 angle occludes rear and inner counts"
+        ],
+        "score": 95.0,
+        "verdict": "warn"
+      },
+      "review_required": true,
+      "score": 40.0,
+      "severity": "none",
+      "starting_point": "spec_render",
+      "verdict": "warn"
+    }
+  ],
+  "run": "designer-halo-count-atomic-inventory-live-v2-2026-07-12",
+  "source_override": {
+    "golden_case": "emerald-halo-rose-4-exact",
+    "path": "/Users/mattfb/Documents/Facetta-trusted-workflow/docs/evals/trusted-ring-grok-only-v3-2026-07-11/emerald-halo-rose-4-exact.png",
+    "provenance": "operator-selected, previously reviewed spec-aligned source; not re-generated or re-audited by this result set",
+    "scope": "single_edit_diagnostic_only",
+    "sha256": "68cb3b2be9888d30b6e0542a8bd413374f9d6f08a2d4db764058b844231bb4ec"
+  }
+}

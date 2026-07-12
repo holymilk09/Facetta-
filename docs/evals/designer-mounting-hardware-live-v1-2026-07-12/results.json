@@ -1,0 +1,104 @@
+{
+  "cached": false,
+  "live": true,
+  "manual_review": {
+    "checks": [
+      "side view contains a design-specific stone seat or bearing",
+      "prong roots connect continuously into metal",
+      "basket and gallery match the approved design",
+      "undergallery or bridge is structurally coherent",
+      "head connects coherently to shoulders and shank",
+      "plan/front/side/section use one consistent hardware topology",
+      "no hidden proposal is mistaken for production-confirmed geometry"
+    ],
+    "observations": {
+      "basket_gallery": "pass: coherent basket and gallery rails are visibly drawn",
+      "head_connection": "pass: mounting connects into shoulders and shank",
+      "prong_roots": "pass: six holding prongs connect continuously into metal",
+      "section_view": "fail: no true cut section through the center-stone axis was produced",
+      "source_fidelity": "fail: the cushion center outline drifted toward an oval outline",
+      "undergallery_bridge": "pass_with_confirmation: plausible but hidden in the face-up source"
+    },
+    "status": "rejected_for_correction",
+    "verdict": "fail"
+  },
+  "model_role": "grok_primary",
+  "output": "/Users/mattfb/Documents/Facetta-trusted-workflow/docs/evals/designer-mounting-hardware-live-v1-2026-07-12/grok-mounting-composite.jpg",
+  "provider": "xai",
+  "source": "/Users/mattfb/Documents/Facetta-trusted-workflow/docs/evals/designer-prong-topology-live-v4-2026-07-12/cushion-halo-white-6-wide--reference-warning.png",
+  "summary": {
+    "confirmed_from_reference": [
+      "oval faceted ruby center stone",
+      "6-prong halo setting with round brilliant diamond surround",
+      "plain polished shank",
+      "white metal finish",
+      "exact prong positions and halo layout from render"
+    ],
+    "designer_must_confirm": [
+      "side and section mounting construction details (gallery, under-bezel, prong roots)",
+      "exact stone seat depth and halo elevation",
+      "any hidden lower prong or bridge geometry"
+    ],
+    "dimension_status": "nominal_from_reference",
+    "disclaimer": "Manufacturing illustration\u2014final dimensions after master model and sign-off.",
+    "factory_notes": [
+      "prong-set ruby with halo; maintain exact prong count and placement",
+      "caster to preserve approved proportions without simplification",
+      "setter to verify diamond fit in halo before final prong tipping"
+    ],
+    "mode": "MANUFACTURING_TECHNICAL_DRAWING",
+    "mounting_hardware": {
+      "designer_confirmation_required": true,
+      "deterministic_geometry_allowed": false,
+      "geometry_source": "ai_design_specific_visual_proposal",
+      "piece_mode": "RING_ENGAGEMENT",
+      "production_authority": false,
+      "views": [
+        {
+          "authority": "source_observed",
+          "required_hardware": [
+            "all actual prong or bezel holding points",
+            "halo or side-stone setting boundaries when present",
+            "head-to-shoulder junctions"
+          ],
+          "view": "plan"
+        },
+        {
+          "authority": "source_observed",
+          "required_hardware": [
+            "prong stems and roots",
+            "basket or setting wall",
+            "gallery rails",
+            "shoulder transitions"
+          ],
+          "view": "front"
+        },
+        {
+          "authority": "proposed_designer_confirmation_required",
+          "required_hardware": [
+            "stone seat or bearing relationship",
+            "prong roots or bezel wall",
+            "basket and gallery rails appropriate to this design",
+            "undergallery or bridge",
+            "head-to-shoulder and head-to-shank connection",
+            "pavilion and finger-clearance relationship"
+          ],
+          "view": "side"
+        },
+        {
+          "authority": "proposed_designer_confirmation_required",
+          "required_hardware": [
+            "seat contact beneath the stone girdle",
+            "pavilion clearance",
+            "prong or bezel structural continuity",
+            "gallery and undergallery continuity",
+            "head connection into shoulders or shank"
+          ],
+          "view": "section"
+        }
+      ]
+    },
+    "piece_type": "RING_ENGAGEMENT",
+    "region": "DUAL"
+  }
+}

@@ -7,8 +7,6 @@ spec), and persist=true saves a design the annotation loop can edit.
 """
 
 import base64
-import json
-from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient

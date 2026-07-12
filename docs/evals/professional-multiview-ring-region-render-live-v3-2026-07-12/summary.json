@@ -1,0 +1,392 @@
+{
+  "accepted": false,
+  "attempts": [
+    {
+      "attempt_number": 1,
+      "cache_key": "a8bff8519c66044fbbc7d8b1b63526f76175dd1da732f8fd556c88efee501a68",
+      "cached": true,
+      "corrective_instruction": null,
+      "cost": null,
+      "error": null,
+      "error_category": null,
+      "fallback_reason": null,
+      "latency_ms": 18636,
+      "model": "grok_direct",
+      "output_hash": "f05004ada80992c6e002fdac47716f691099f31c2ed59e289682fdad001b3a2f",
+      "prompt_hash": "eb2d92c0031824d34be7e679b7cde803ca3039cced02f32fb16b9b822bab86f8",
+      "provider": "xai",
+      "provider_request_id": null,
+      "qa_checks": [
+        {
+          "code": "decodable_image",
+          "evidence": {
+            "format": "JPEG",
+            "height": 1104,
+            "width": 928
+          },
+          "message": "candidate is a decodable raster image",
+          "passed": true,
+          "severity": "hard"
+        },
+        {
+          "code": "review_resolution",
+          "evidence": {
+            "height": 1104,
+            "width": 928
+          },
+          "message": "candidate has reviewable raster dimensions",
+          "passed": true,
+          "severity": "warning"
+        },
+        {
+          "code": "source_design_preserved",
+          "evidence": {},
+          "message": "candidate materially changed the visible source design identity",
+          "passed": false,
+          "severity": "hard"
+        },
+        {
+          "code": "visible_components_preserved",
+          "evidence": {},
+          "message": "candidate added, removed, replaced, or moved a visible component",
+          "passed": false,
+          "severity": "hard"
+        },
+        {
+          "code": "local_geometry_preserved",
+          "evidence": {},
+          "message": "candidate changed visible local contours, panels, supports, gallery, shoulders, or shank geometry",
+          "passed": false,
+          "severity": "hard"
+        },
+        {
+          "code": "repeated_element_pattern_preserved",
+          "evidence": {},
+          "message": "candidate changed a visible repeated motif's count, shape, order, spacing, or element type",
+          "passed": false,
+          "severity": "hard"
+        },
+        {
+          "code": "stone_shape_and_cut_family_preserved",
+          "evidence": {},
+          "message": "candidate changed a visible center or side stone shape/cut family",
+          "passed": false,
+          "severity": "hard"
+        },
+        {
+          "code": "candidate_changed",
+          "evidence": {},
+          "message": "candidate bytes differ from the source",
+          "passed": true,
+          "severity": "hard"
+        },
+        {
+          "code": "coherent_jewelry_render",
+          "evidence": {},
+          "message": "visual evidence matches the requested fact",
+          "passed": true,
+          "severity": "hard"
+        },
+        {
+          "code": "complete_piece_visible",
+          "evidence": {},
+          "message": "visual evidence matches the requested fact",
+          "passed": true,
+          "severity": "hard"
+        },
+        {
+          "code": "requested_presentation_applied",
+          "evidence": {},
+          "message": "visual evidence matches the requested fact",
+          "passed": true,
+          "severity": "hard"
+        },
+        {
+          "code": "text_or_branding",
+          "evidence": {},
+          "message": "visual evidence matches the requested fact",
+          "passed": true,
+          "severity": "hard"
+        },
+        {
+          "code": "factory_authority",
+          "evidence": {
+            "factory_authoritative": false
+          },
+          "message": "creative render is review-only and cannot establish hidden geometry, dimensions, materials, stone identity, or factory facts",
+          "passed": false,
+          "severity": "warning"
+        }
+      ],
+      "qa_verdict": "fail",
+      "quality_score": 25.0,
+      "route": "grok_edit",
+      "usage": null
+    },
+    {
+      "attempt_number": 2,
+      "cache_key": "9a53d437c8539ba887b755bb7c66a9e545aff7089ddb81d157e7792b307fd035",
+      "cached": false,
+      "corrective_instruction": "- source_design_preserved: candidate materially changed the visible source design identity.\n- visible_components_preserved: candidate added, removed, replaced, or moved a visible component.\n- local_geometry_preserved: candidate changed visible local contours, panels, supports, gallery, shoulders, or shank geometry.\n- repeated_element_pattern_preserved: candidate changed a visible repeated motif's count, shape, order, spacing, or element type.\n- stone_shape_and_cut_family_preserved: candidate changed a visible center or side stone shape/cut family.",
+      "cost": null,
+      "error": null,
+      "error_category": null,
+      "fallback_reason": null,
+      "latency_ms": 34592,
+      "model": "grok_direct",
+      "output_hash": "1e0dd9fc029308ad39c8f64c505dbcea82e907ccca76dcce7ec207895af4ef80",
+      "prompt_hash": "a88410652467d15e2db5cc05f8afc7f0b29b2a6f832c9d7e6839e529332ec670",
+      "provider": "xai",
+      "provider_request_id": null,
+      "qa_checks": [
+        {
+          "code": "decodable_image",
+          "evidence": {
+            "format": "JPEG",
+            "height": 1104,
+            "width": 928
+          },
+          "message": "candidate is a decodable raster image",
+          "passed": true,
+          "severity": "hard"
+        },
+        {
+          "code": "review_resolution",
+          "evidence": {
+            "height": 1104,
+            "width": 928
+          },
+          "message": "candidate has reviewable raster dimensions",
+          "passed": true,
+          "severity": "warning"
+        },
+        {
+          "code": "source_design_preserved",
+          "evidence": {},
+          "message": "visual evidence matches the requested fact",
+          "passed": true,
+          "severity": "hard"
+        },
+        {
+          "code": "visible_components_preserved",
+          "evidence": {},
+          "message": "visual evidence matches the requested fact",
+          "passed": true,
+          "severity": "hard"
+        },
+        {
+          "code": "local_geometry_preserved",
+          "evidence": {},
+          "message": "visual evidence matches the requested fact",
+          "passed": true,
+          "severity": "hard"
+        },
+        {
+          "code": "repeated_element_pattern_preserved",
+          "evidence": {},
+          "message": "visual evidence matches the requested fact",
+          "passed": true,
+          "severity": "hard"
+        },
+        {
+          "code": "stone_shape_and_cut_family_preserved",
+          "evidence": {},
+          "message": "visual evidence matches the requested fact",
+          "passed": true,
+          "severity": "hard"
+        },
+        {
+          "code": "candidate_changed",
+          "evidence": {},
+          "message": "candidate bytes differ from the source",
+          "passed": true,
+          "severity": "hard"
+        },
+        {
+          "code": "coherent_jewelry_render",
+          "evidence": {},
+          "message": "visual evidence matches the requested fact",
+          "passed": true,
+          "severity": "hard"
+        },
+        {
+          "code": "complete_piece_visible",
+          "evidence": {},
+          "message": "visual evidence matches the requested fact",
+          "passed": true,
+          "severity": "hard"
+        },
+        {
+          "code": "requested_presentation_applied",
+          "evidence": {},
+          "message": "visual evidence matches the requested fact",
+          "passed": true,
+          "severity": "hard"
+        },
+        {
+          "code": "text_or_branding",
+          "evidence": {},
+          "message": "visual evidence matches the requested fact",
+          "passed": true,
+          "severity": "hard"
+        },
+        {
+          "code": "factory_authority",
+          "evidence": {
+            "factory_authoritative": false
+          },
+          "message": "creative render is review-only and cannot establish hidden geometry, dimensions, materials, stone identity, or factory facts",
+          "passed": false,
+          "severity": "warning"
+        }
+      ],
+      "qa_verdict": "warn",
+      "quality_score": 92.0,
+      "route": "grok_edit",
+      "usage": null
+    }
+  ],
+  "candidate_file": "candidate.jpg",
+  "candidate_media_type": "image/jpeg",
+  "candidate_sha256": "1e0dd9fc029308ad39c8f64c505dbcea82e907ccca76dcce7ec207895af4ef80",
+  "executed_at": "2026-07-11T18:38:33.339440+00:00",
+  "factory_authoritative": false,
+  "input_hash": "1c2879dde8bf23582609005c77c131431579f5a24de53b8caa2f17c695d50b0b",
+  "instruction": "Create one photorealistic high-jewelry product render from this exact selected hand-drawn view. Preserve the complete angular ring identity: one large pale-green octagonal step-cut center stone, the stepped octagonal surround, alternating trapezoid and rectangular shoulder panels with small round diamond accents, the raised geometric gallery, and the wide tapering shank. Use polished white precious metal on a clean neutral studio background. Do not add or remove stones, round off the angular architecture, combine alternate views, introduce text or branding, or crop any part of the ring.",
+  "maximum_attempts": 3,
+  "operation": "REFERENCE_RENDER",
+  "product_asset_persisted": false,
+  "prompt_version": "reference-render.v1",
+  "quality": {
+    "checks": [
+      {
+        "code": "decodable_image",
+        "evidence": {
+          "format": "JPEG",
+          "height": 1104,
+          "width": 928
+        },
+        "message": "candidate is a decodable raster image",
+        "passed": true,
+        "severity": "hard"
+      },
+      {
+        "code": "review_resolution",
+        "evidence": {
+          "height": 1104,
+          "width": 928
+        },
+        "message": "candidate has reviewable raster dimensions",
+        "passed": true,
+        "severity": "warning"
+      },
+      {
+        "code": "source_design_preserved",
+        "evidence": {},
+        "message": "visual evidence matches the requested fact",
+        "passed": true,
+        "severity": "hard"
+      },
+      {
+        "code": "visible_components_preserved",
+        "evidence": {},
+        "message": "visual evidence matches the requested fact",
+        "passed": true,
+        "severity": "hard"
+      },
+      {
+        "code": "local_geometry_preserved",
+        "evidence": {},
+        "message": "visual evidence matches the requested fact",
+        "passed": true,
+        "severity": "hard"
+      },
+      {
+        "code": "repeated_element_pattern_preserved",
+        "evidence": {},
+        "message": "visual evidence matches the requested fact",
+        "passed": true,
+        "severity": "hard"
+      },
+      {
+        "code": "stone_shape_and_cut_family_preserved",
+        "evidence": {},
+        "message": "visual evidence matches the requested fact",
+        "passed": true,
+        "severity": "hard"
+      },
+      {
+        "code": "candidate_changed",
+        "evidence": {},
+        "message": "candidate bytes differ from the source",
+        "passed": true,
+        "severity": "hard"
+      },
+      {
+        "code": "coherent_jewelry_render",
+        "evidence": {},
+        "message": "visual evidence matches the requested fact",
+        "passed": true,
+        "severity": "hard"
+      },
+      {
+        "code": "complete_piece_visible",
+        "evidence": {},
+        "message": "visual evidence matches the requested fact",
+        "passed": true,
+        "severity": "hard"
+      },
+      {
+        "code": "requested_presentation_applied",
+        "evidence": {},
+        "message": "visual evidence matches the requested fact",
+        "passed": true,
+        "severity": "hard"
+      },
+      {
+        "code": "text_or_branding",
+        "evidence": {},
+        "message": "visual evidence matches the requested fact",
+        "passed": true,
+        "severity": "hard"
+      },
+      {
+        "code": "factory_authority",
+        "evidence": {
+          "factory_authoritative": false
+        },
+        "message": "creative render is review-only and cannot establish hidden geometry, dimensions, materials, stone identity, or factory facts",
+        "passed": false,
+        "severity": "warning"
+      }
+    ],
+    "notes": [
+      "primary audit: Exact 3/4 view and angular silhouette retained",
+      "primary audit: Octagonal step-cut center, trapezoid/rectangular shoulder panels, round diamond accents, and shank baguettes all match count and placement",
+      "primary audit: Raised geometric gallery and tapering shank profile preserved",
+      "skeptical audit: center step-cut outline and facet family match",
+      "skeptical audit: surround panels and motif count/order preserved",
+      "skeptical audit: shoulder trapezoid/rectangular panels identical in shape and stone layout",
+      "skeptical audit: gallery supports and openings unchanged",
+      "skeptical audit: shank rectangular stone ladder pattern and taper identical"
+    ],
+    "score": 92.0,
+    "verdict": "warn"
+  },
+  "render_source_sha256": "87957f90c718ec0cdc523afdff1f64b4a9658f06a107cf35c635e603311ea409",
+  "result_set": "professional-multiview-ring-region-render-live-v3-2026-07-12",
+  "review_required": true,
+  "source": "/Users/mattfb/.codex/attachments/c2fd41d0-b236-43ef-ada9-e9479718c771/image-78.jpg",
+  "source_region": {
+    "height": 0.43,
+    "width": 0.51,
+    "x": 0.47,
+    "y": 0.04
+  },
+  "source_region_description": "designer-selected upper-right three-quarter ring view; normalized crop x=0.4700, y=0.0400, width=0.5100, height=0.4300",
+  "source_region_file": "source-region.jpg",
+  "source_sha256": "b9c4e35bc0f6cfe40417577bd3bb6cde9ed983e0c9e11d24531bba6bef9ea831",
+  "status": "review_required",
+  "variant": 0,
+  "verdict": "warn"
+}

@@ -1,0 +1,713 @@
+{
+  "corpus": "designer-reference-corpus-v1",
+  "pair_checks": [],
+  "provider_readiness": {
+    "fallback_configured": false,
+    "xai_configured": true
+  },
+  "rows": [
+    {
+      "case": "leaf-ring-measured-green",
+      "category": "ring",
+      "coverage_blockers": [
+        {
+          "code": "source_component_unresolved",
+          "component_id": "assembly.primary",
+          "message": "assembly.primary is visible in the source but unresolved: The assembly describes a visual form or motif that the sparse template path cannot fully define.",
+          "required_resolution": "Designer must map the component to canonical spec paths or define it through an explicit supported form contract."
+        },
+        {
+          "code": "source_component_audit_failed",
+          "component_id": "assembly.primary",
+          "message": "Independent coverage audit failed for assembly.primary: central green square-cut stone set in yellow gold prongs at the top of a wide band; symmetrical leaf motifs with pav\u00e9-set round diamonds extend along both sides of the shank; band tapers toward the bottom",
+          "required_resolution": "Correct the spec mapping and repeat the independent audit."
+        },
+        {
+          "code": "source_component_unresolved",
+          "component_id": "stone.assembly_hint.shoulder",
+          "message": "stone.assembly_hint.shoulder is visible in the source but unresolved: The assembly describes a gem-bearing shoulder/leaf stone group, but the plate reader returned no distinct stone group for it.",
+          "required_resolution": "Designer must map the component to canonical spec paths or define it through an explicit supported form contract."
+        },
+        {
+          "code": "source_component_audit_failed",
+          "component_id": "stone.assembly_hint.shoulder",
+          "message": "Independent coverage audit failed for stone.assembly_hint.shoulder: Assembly source says: central green square-cut stone set in yellow gold prongs at the top of a wide band; symmetrical leaf motifs with pav\u00e9-set round diamonds extend along both sides of the shank; band tapers toward the bottom",
+          "required_resolution": "Correct the spec mapping and repeat the independent audit."
+        },
+        {
+          "code": "source_component_unresolved",
+          "component_id": "setting.primary",
+          "message": "setting.primary is visible in the source but unresolved: The source does not explicitly establish the center setting; the compiled setting is a placeholder.",
+          "required_resolution": "Designer must map the component to canonical spec paths or define it through an explicit supported form contract."
+        },
+        {
+          "code": "source_component_audit_failed",
+          "component_id": "setting.primary",
+          "message": "Independent coverage audit failed for setting.primary: central green square-cut stone set in yellow gold prongs at the top of a wide band; symmetrical leaf motifs with pav\u00e9-set round diamonds extend along both sides of the shank; band tapers toward the bottom",
+          "required_resolution": "Correct the spec mapping and repeat the independent audit."
+        },
+        {
+          "code": "source_component_audit_inconclusive",
+          "component_id": "band.shank",
+          "message": "Independent coverage audit was inconclusive for band.shank: plain metal shank with partial geometric diamond band accents",
+          "required_resolution": "Obtain a clear source view and repeat the independent audit."
+        },
+        {
+          "code": "source_component_unresolved",
+          "component_id": "audit.unmapped.001",
+          "message": "audit.unmapped.001 is visible in the source but unresolved: Blind inventory blind.004 was not mapped: no matching coverage component",
+          "required_resolution": "Designer must map the component to canonical spec paths or define it through an explicit supported form contract."
+        },
+        {
+          "code": "source_component_audit_failed",
+          "component_id": "audit.unmapped.001",
+          "message": "Independent coverage audit failed for audit.unmapped.001: Blind inventory blind.004 is visible but absent from coverage: no matching coverage component",
+          "required_resolution": "Correct the spec mapping and repeat the independent audit."
+        },
+        {
+          "code": "source_component_unresolved",
+          "component_id": "audit.unmapped.002",
+          "message": "audit.unmapped.002 is visible in the source but unresolved: Blind inventory blind.005 was not mapped: no matching coverage component",
+          "required_resolution": "Designer must map the component to canonical spec paths or define it through an explicit supported form contract."
+        },
+        {
+          "code": "source_component_audit_failed",
+          "component_id": "audit.unmapped.002",
+          "message": "Independent coverage audit failed for audit.unmapped.002: Blind inventory blind.005 is visible but absent from coverage: no matching coverage component",
+          "required_resolution": "Correct the spec mapping and repeat the independent audit."
+        },
+        {
+          "code": "source_component_unresolved",
+          "component_id": "audit.unmapped.003",
+          "message": "audit.unmapped.003 is visible in the source but unresolved: Blind inventory blind.006 was not mapped: no matching coverage component",
+          "required_resolution": "Designer must map the component to canonical spec paths or define it through an explicit supported form contract."
+        },
+        {
+          "code": "source_component_audit_failed",
+          "component_id": "audit.unmapped.003",
+          "message": "Independent coverage audit failed for audit.unmapped.003: Blind inventory blind.006 is visible but absent from coverage: no matching coverage component",
+          "required_resolution": "Correct the spec mapping and repeat the independent audit."
+        },
+        {
+          "code": "source_component_unresolved",
+          "component_id": "audit.unmapped.004",
+          "message": "audit.unmapped.004 is visible in the source but unresolved: Blind inventory blind.007 was not mapped: no matching coverage component",
+          "required_resolution": "Designer must map the component to canonical spec paths or define it through an explicit supported form contract."
+        },
+        {
+          "code": "source_component_audit_failed",
+          "component_id": "audit.unmapped.004",
+          "message": "Independent coverage audit failed for audit.unmapped.004: Blind inventory blind.007 is visible but absent from coverage: no matching coverage component",
+          "required_resolution": "Correct the spec mapping and repeat the independent audit."
+        }
+      ],
+      "coverage_status": "review_required",
+      "draft_spec": {
+        "band": {
+          "profile": "half_round",
+          "thickness_mm": 1.6,
+          "width_mm": 2.0
+        },
+        "bracelet": null,
+        "brooch": null,
+        "chain": null,
+        "composition": null,
+        "created_at": "2026-07-11T10:25:11.120542Z",
+        "created_by": "eval_designer",
+        "design_form": {
+          "elements": []
+        },
+        "design_id": "eval_leaf-ring-measured-green",
+        "dimension_provenance": {
+          "band.thickness_mm": {
+            "confidence": 0.4,
+            "method": "reference_vision",
+            "note": "Reference-derived starting value; verify before production.",
+            "source": "designer hand drawing / design plate",
+            "status": "estimated_from_reference"
+          },
+          "band.width_mm": {
+            "confidence": 0.4,
+            "method": "reference_vision",
+            "note": "Reference-derived starting value; verify before production.",
+            "source": "designer hand drawing / design plate",
+            "status": "estimated_from_reference"
+          },
+          "ring_size.value": {
+            "confidence": 0.4,
+            "method": "reference_vision",
+            "note": "Reference-derived starting value; verify before production.",
+            "source": "designer hand drawing / design plate",
+            "status": "estimated_from_reference"
+          },
+          "setting.prong_tip_mm": {
+            "confidence": 0.4,
+            "method": "reference_vision",
+            "note": "Reference-derived starting value; verify before production.",
+            "source": "designer hand drawing / design plate",
+            "status": "estimated_from_reference"
+          },
+          "side_stones[0].dimensions_mm.depth": {
+            "confidence": 0.4,
+            "method": "reference_vision",
+            "note": "Reference-derived starting value; verify before production.",
+            "source": "designer hand drawing / design plate",
+            "status": "estimated_from_reference"
+          },
+          "side_stones[0].dimensions_mm.length": {
+            "confidence": 0.4,
+            "method": "reference_vision",
+            "note": "Reference-derived starting value; verify before production.",
+            "source": "designer hand drawing / design plate",
+            "status": "estimated_from_reference"
+          },
+          "side_stones[0].dimensions_mm.width": {
+            "confidence": 0.4,
+            "method": "reference_vision",
+            "note": "Reference-derived starting value; verify before production.",
+            "source": "designer hand drawing / design plate",
+            "status": "estimated_from_reference"
+          },
+          "stone.dimensions_mm.depth": {
+            "confidence": 0.4,
+            "method": "reference_vision",
+            "note": "Reference-derived starting value; verify before production.",
+            "source": "designer hand drawing / design plate",
+            "status": "estimated_from_reference"
+          },
+          "stone.dimensions_mm.length": {
+            "confidence": 0.4,
+            "method": "reference_vision",
+            "note": "Reference-derived starting value; verify before production.",
+            "source": "designer hand drawing / design plate",
+            "status": "estimated_from_reference"
+          },
+          "stone.dimensions_mm.width": {
+            "confidence": 0.4,
+            "method": "reference_vision",
+            "note": "Reference-derived starting value; verify before production.",
+            "source": "designer hand drawing / design plate",
+            "status": "estimated_from_reference"
+          }
+        },
+        "drop": null,
+        "jewelry_type": "ring",
+        "metal": {
+          "color": "yellow",
+          "finish": "high_polish",
+          "karat": 18,
+          "material": "gold"
+        },
+        "mode": "pro",
+        "notes_to_factory": "DRAFT FROM DESIGN PLATE \u2014 visual estimates and placeholders require designer confirmation before factory release. center stone species is not named; diamond is a placeholder center stone dimensions are not confirmed; using nominal 8 mm placeholder side stone count is not confirmed; showing one representative stone side stone dimensions are not confirmed; using nominal 2 mm placeholder setting/prong count is not confirmed; using four-prong placeholder metal karat is not explicit in 'yellow gold (two-tone with white gold elements)'; using 18k placeholder band width is not designer-confirmed; using 2.0 mm placeholder ring size is not established by the plate; using US 6.5 placeholder SOURCE COMPONENT UNRESOLVED assembly.primary: The assembly describes a visual form or motif that the sparse template path cannot fully define. SOURCE COMPONENT UNRESOLVED stone.assembly_hint.shoulder: The assembly describes a gem-bearing shoulder/leaf stone group, but the plate reader returned no distinct stone group for it. SOURCE COMPONENT UNRESOLVED setting.primary: The source does not explicitly establish the center setting; the compiled setting is a placeholder. INDEPENDENT SOURCE-COVERAGE AUDIT REQUIRED before factory release: stone.center, stone.group.001, assembly.primary, stone.assembly_hint.shoulder, setting.primary, metal.body, band.shank",
+        "pendant": null,
+        "ring_size": {
+          "inner_diameter_mm": null,
+          "system": "US",
+          "value": 6.5
+        },
+        "schema_version": 1,
+        "setting": {
+          "gallery_height_mm": null,
+          "prong_count": 4,
+          "prong_tip_mm": 0.9,
+          "style": "4_prong_basket"
+        },
+        "side_stones": [
+          {
+            "carat": 0.031,
+            "clarity": null,
+            "color": {
+              "gia": "TBD",
+              "hue_code": null,
+              "saturation": null,
+              "tone": null,
+              "trade": "TBD"
+            },
+            "count": 1,
+            "culet": null,
+            "cut": "round_brilliant",
+            "depth_pct": null,
+            "dimensions_mm": {
+              "depth": 1.22,
+              "length": 2.0,
+              "width": 2.0
+            },
+            "girdle": null,
+            "inscription": null,
+            "lab": null,
+            "mount": null,
+            "origin": null,
+            "phenomena": [],
+            "position": "side",
+            "species": "diamond",
+            "table_pct": null,
+            "treatment": null
+          }
+        ],
+        "source_component_coverage": {
+          "components": [
+            {
+              "canonical_spec_paths": [
+                "stone"
+              ],
+              "component_id": "stone.center",
+              "independent_audit": null,
+              "source_confidence": 0.0,
+              "source_description": "green square-cut stone (species TBD)",
+              "source_view": "plate_composite",
+              "unresolved_reason": null
+            },
+            {
+              "canonical_spec_paths": [
+                "side_stones[0]"
+              ],
+              "component_id": "stone.group.001",
+              "independent_audit": null,
+              "source_confidence": 0.0,
+              "source_description": "round brilliant diamond",
+              "source_view": "plate_composite",
+              "unresolved_reason": null
+            },
+            {
+              "canonical_spec_paths": [],
+              "component_id": "assembly.primary",
+              "independent_audit": null,
+              "source_confidence": 0.0,
+              "source_description": "central green square-cut stone set in yellow gold prongs at the top of a wide band; symmetrical leaf motifs with pav\u00e9-set round diamonds extend along both sides of the shank; band tapers toward the bottom",
+              "source_view": "plate_composite",
+              "unresolved_reason": "The assembly describes a visual form or motif that the sparse template path cannot fully define."
+            },
+            {
+              "canonical_spec_paths": [],
+              "component_id": "stone.assembly_hint.shoulder",
+              "independent_audit": null,
+              "source_confidence": 0.0,
+              "source_description": "Assembly source says: central green square-cut stone set in yellow gold prongs at the top of a wide band; symmetrical leaf motifs with pav\u00e9-set round diamonds extend along both sides of the shank; band tapers toward the bottom",
+              "source_view": "plate_composite",
+              "unresolved_reason": "The assembly describes a gem-bearing shoulder/leaf stone group, but the plate reader returned no distinct stone group for it."
+            },
+            {
+              "canonical_spec_paths": [],
+              "component_id": "setting.primary",
+              "independent_audit": null,
+              "source_confidence": 0.0,
+              "source_description": "central green square-cut stone set in yellow gold prongs at the top of a wide band; symmetrical leaf motifs with pav\u00e9-set round diamonds extend along both sides of the shank; band tapers toward the bottom",
+              "source_view": "plate_composite",
+              "unresolved_reason": "The source does not explicitly establish the center setting; the compiled setting is a placeholder."
+            },
+            {
+              "canonical_spec_paths": [
+                "metal"
+              ],
+              "component_id": "metal.body",
+              "independent_audit": null,
+              "source_confidence": 0.0,
+              "source_description": "yellow gold (two-tone with white gold elements)",
+              "source_view": "plate_composite",
+              "unresolved_reason": null
+            },
+            {
+              "canonical_spec_paths": [
+                "band"
+              ],
+              "component_id": "band.shank",
+              "independent_audit": null,
+              "source_confidence": 0.0,
+              "source_description": "central green square-cut stone set in yellow gold prongs at the top of a wide band; symmetrical leaf motifs with pav\u00e9-set round diamonds extend along both sides of the shank; band tapers toward the bottom",
+              "source_view": "plate_composite",
+              "unresolved_reason": null
+            }
+          ],
+          "source_kind": "designer_plate"
+        },
+        "stone": {
+          "carat": 2.617,
+          "clarity": null,
+          "color": {
+            "gia": "TBD",
+            "hue_code": null,
+            "saturation": null,
+            "tone": null,
+            "trade": "TBD"
+          },
+          "count": 1,
+          "culet": null,
+          "cut": "cushion",
+          "depth_pct": null,
+          "dimensions_mm": {
+            "depth": 5.28,
+            "length": 8.0,
+            "width": 8.0
+          },
+          "girdle": null,
+          "inscription": null,
+          "lab": null,
+          "mount": null,
+          "origin": null,
+          "phenomena": [],
+          "position": "center",
+          "species": "diamond",
+          "table_pct": null,
+          "treatment": null
+        },
+        "template": "solitaire_prong",
+        "version": 1
+      },
+      "input_kind": "measured_colored_design_plate",
+      "latency_ms": 46378,
+      "read": {
+        "assembly": "central green square-cut stone set in yellow gold prongs at the top of a wide band; symmetrical leaf motifs with pav\u00e9-set round diamonds extend along both sides of the shank; band tapers toward the bottom",
+        "hand_written": [
+          "Carat section",
+          "21",
+          "4.35",
+          "Diamond carat A. 14 carat = 0.75 D. 1.14 carat = 0.35 D. 1.14 carat = 0.35",
+          "30",
+          "2",
+          "60",
+          "Metal Gold diamond Black Meta : 310Min",
+          "WO henght : 120 gold Diamond width : 2 mm",
+          "R",
+          "115",
+          "15"
+        ],
+        "jewelry_type": "ring",
+        "measurements": [
+          {
+            "confidence": 0.0,
+            "label": "21",
+            "raw": "21",
+            "status": "ambiguous",
+            "value": "21"
+          },
+          {
+            "confidence": 0.0,
+            "label": "4.35",
+            "raw": "4.35",
+            "status": "ambiguous",
+            "value": "4.35"
+          },
+          {
+            "confidence": 0.0,
+            "label": "30",
+            "raw": "30",
+            "status": "ambiguous",
+            "value": "30"
+          },
+          {
+            "confidence": 0.0,
+            "label": "2",
+            "raw": "2",
+            "status": "ambiguous",
+            "value": "2"
+          },
+          {
+            "confidence": 0.0,
+            "label": "60",
+            "raw": "60",
+            "status": "ambiguous",
+            "value": "60"
+          },
+          {
+            "confidence": 0.0,
+            "label": "115",
+            "raw": "115",
+            "status": "ambiguous",
+            "value": "115"
+          },
+          {
+            "confidence": 0.0,
+            "label": "15",
+            "raw": "15",
+            "status": "ambiguous",
+            "value": "15"
+          },
+          {
+            "confidence": 0.0,
+            "label": "R",
+            "raw": "R",
+            "status": "ambiguous",
+            "value": "R"
+          },
+          {
+            "confidence": 0.0,
+            "label": "Diamond width",
+            "raw": "Diamond width : 2 mm",
+            "status": "ambiguous",
+            "value": "2 mm"
+          }
+        ],
+        "metal": "yellow gold (two-tone with white gold elements)",
+        "scale_anchor": null,
+        "scaled": false,
+        "source": "plate",
+        "stones": [
+          {
+            "carat_each": null,
+            "confidence": 0.0,
+            "qty": 1,
+            "size_mm": "TBD",
+            "type": "green square-cut stone (species TBD)"
+          },
+          {
+            "carat_each": null,
+            "confidence": 0.0,
+            "qty": 1,
+            "size_mm": "TBD",
+            "type": "round brilliant diamond"
+          }
+        ]
+      },
+      "read_score": {
+        "checks": {
+          "authoritative_text": true,
+          "expected_visual_terms": true,
+          "jewelry_type": true,
+          "minimum_stone_groups": true
+        },
+        "multi_design_warning": false,
+        "observed_jewelry_type": "ring",
+        "score": 100.0,
+        "status": "pass",
+        "stone_group_count": 2,
+        "term_hits": [
+          "green",
+          "leaf"
+        ],
+        "transcription_hits": [
+          "115",
+          "2 mm",
+          "0.75"
+        ]
+      },
+      "source": {
+        "available": true,
+        "decodable": true,
+        "format": "JPEG",
+        "hash_matches": true,
+        "path": "/Users/mattfb/.codex/attachments/c2fd41d0-b236-43ef-ada9-e9479718c771/image-86.jpg",
+        "sha256": "3aa96aac909bc806b4f93f4f8f995acb03ba41e9ebf5771bad3bed7a5af1289d",
+        "size": [
+          1440,
+          1930
+        ]
+      },
+      "source_component_coverage": {
+        "components": [
+          {
+            "canonical_spec_paths": [
+              "stone"
+            ],
+            "component_id": "stone.center",
+            "independent_audit": {
+              "auditor": "skeptical-source-component-audit.v2",
+              "evidence_sha256": "8f4d61d04638303264f1c3223082069c684383c6d59159c7e521fa6b6e94c9e5",
+              "kind": "independent_component_audit",
+              "observed_description": "square emerald center stone in four-prong setting",
+              "source_view": "three_quarter",
+              "verdict": "pass"
+            },
+            "source_confidence": 0.0,
+            "source_description": "green square-cut stone (species TBD)",
+            "source_view": "plate_composite",
+            "unresolved_reason": null
+          },
+          {
+            "canonical_spec_paths": [
+              "side_stones[0]"
+            ],
+            "component_id": "stone.group.001",
+            "independent_audit": {
+              "auditor": "skeptical-source-component-audit.v2",
+              "evidence_sha256": "8f4d61d04638303264f1c3223082069c684383c6d59159c7e521fa6b6e94c9e5",
+              "kind": "independent_component_audit",
+              "observed_description": "paired leaf motifs with pav\u00e9-set round diamonds flanking center stone",
+              "source_view": "three_quarter",
+              "verdict": "pass"
+            },
+            "source_confidence": 0.0,
+            "source_description": "round brilliant diamond",
+            "source_view": "plate_composite",
+            "unresolved_reason": null
+          },
+          {
+            "canonical_spec_paths": [],
+            "component_id": "assembly.primary",
+            "independent_audit": {
+              "auditor": "skeptical-source-component-audit.v2",
+              "evidence_sha256": "8f4d61d04638303264f1c3223082069c684383c6d59159c7e521fa6b6e94c9e5",
+              "kind": "independent_component_audit",
+              "observed_description": "central green square-cut stone set in yellow gold prongs at the top of a wide band; symmetrical leaf motifs with pav\u00e9-set round diamonds extend along both sides of the shank; band tapers toward the bottom",
+              "source_view": "plate_composite",
+              "verdict": "fail"
+            },
+            "source_confidence": 0.0,
+            "source_description": "central green square-cut stone set in yellow gold prongs at the top of a wide band; symmetrical leaf motifs with pav\u00e9-set round diamonds extend along both sides of the shank; band tapers toward the bottom",
+            "source_view": "plate_composite",
+            "unresolved_reason": "The assembly describes a visual form or motif that the sparse template path cannot fully define."
+          },
+          {
+            "canonical_spec_paths": [],
+            "component_id": "stone.assembly_hint.shoulder",
+            "independent_audit": {
+              "auditor": "skeptical-source-component-audit.v2",
+              "evidence_sha256": "8f4d61d04638303264f1c3223082069c684383c6d59159c7e521fa6b6e94c9e5",
+              "kind": "independent_component_audit",
+              "observed_description": "Assembly source says: central green square-cut stone set in yellow gold prongs at the top of a wide band; symmetrical leaf motifs with pav\u00e9-set round diamonds extend along both sides of the shank; band tapers toward the bottom",
+              "source_view": "plate_composite",
+              "verdict": "fail"
+            },
+            "source_confidence": 0.0,
+            "source_description": "Assembly source says: central green square-cut stone set in yellow gold prongs at the top of a wide band; symmetrical leaf motifs with pav\u00e9-set round diamonds extend along both sides of the shank; band tapers toward the bottom",
+            "source_view": "plate_composite",
+            "unresolved_reason": "The assembly describes a gem-bearing shoulder/leaf stone group, but the plate reader returned no distinct stone group for it."
+          },
+          {
+            "canonical_spec_paths": [],
+            "component_id": "setting.primary",
+            "independent_audit": {
+              "auditor": "skeptical-source-component-audit.v2",
+              "evidence_sha256": "8f4d61d04638303264f1c3223082069c684383c6d59159c7e521fa6b6e94c9e5",
+              "kind": "independent_component_audit",
+              "observed_description": "central green square-cut stone set in yellow gold prongs at the top of a wide band; symmetrical leaf motifs with pav\u00e9-set round diamonds extend along both sides of the shank; band tapers toward the bottom",
+              "source_view": "plate_composite",
+              "verdict": "fail"
+            },
+            "source_confidence": 0.0,
+            "source_description": "central green square-cut stone set in yellow gold prongs at the top of a wide band; symmetrical leaf motifs with pav\u00e9-set round diamonds extend along both sides of the shank; band tapers toward the bottom",
+            "source_view": "plate_composite",
+            "unresolved_reason": "The source does not explicitly establish the center setting; the compiled setting is a placeholder."
+          },
+          {
+            "canonical_spec_paths": [
+              "metal"
+            ],
+            "component_id": "metal.body",
+            "independent_audit": {
+              "auditor": "skeptical-source-component-audit.v2",
+              "evidence_sha256": "8f4d61d04638303264f1c3223082069c684383c6d59159c7e521fa6b6e94c9e5",
+              "kind": "independent_component_audit",
+              "observed_description": "plain metal shank with partial geometric diamond band accents",
+              "source_view": "three_quarter",
+              "verdict": "pass"
+            },
+            "source_confidence": 0.0,
+            "source_description": "yellow gold (two-tone with white gold elements)",
+            "source_view": "plate_composite",
+            "unresolved_reason": null
+          },
+          {
+            "canonical_spec_paths": [
+              "band"
+            ],
+            "component_id": "band.shank",
+            "independent_audit": {
+              "auditor": "skeptical-source-component-audit.v2",
+              "evidence_sha256": "8f4d61d04638303264f1c3223082069c684383c6d59159c7e521fa6b6e94c9e5",
+              "kind": "independent_component_audit",
+              "observed_description": "plain metal shank with partial geometric diamond band accents",
+              "source_view": "three_quarter",
+              "verdict": "inconclusive"
+            },
+            "source_confidence": 0.0,
+            "source_description": "central green square-cut stone set in yellow gold prongs at the top of a wide band; symmetrical leaf motifs with pav\u00e9-set round diamonds extend along both sides of the shank; band tapers toward the bottom",
+            "source_view": "plate_composite",
+            "unresolved_reason": null
+          },
+          {
+            "canonical_spec_paths": [],
+            "component_id": "audit.unmapped.001",
+            "independent_audit": {
+              "auditor": "skeptical-source-component-audit.v2",
+              "evidence_sha256": "8f4d61d04638303264f1c3223082069c684383c6d59159c7e521fa6b6e94c9e5",
+              "kind": "independent_component_audit",
+              "observed_description": "Blind inventory blind.004 is visible but absent from coverage: no matching coverage component",
+              "source_view": "front",
+              "verdict": "fail"
+            },
+            "source_confidence": 0.8,
+            "source_description": "rectangular emerald accent stone in bezel/prong head opposite main stone",
+            "source_view": "front",
+            "unresolved_reason": "Blind inventory blind.004 was not mapped: no matching coverage component"
+          },
+          {
+            "canonical_spec_paths": [],
+            "component_id": "audit.unmapped.002",
+            "independent_audit": {
+              "auditor": "skeptical-source-component-audit.v2",
+              "evidence_sha256": "8f4d61d04638303264f1c3223082069c684383c6d59159c7e521fa6b6e94c9e5",
+              "kind": "independent_component_audit",
+              "observed_description": "Blind inventory blind.005 is visible but absent from coverage: no matching coverage component",
+              "source_view": "front",
+              "verdict": "fail"
+            },
+            "source_confidence": 0.85,
+            "source_description": "channel-set baguette diamond arc across top of shank",
+            "source_view": "front",
+            "unresolved_reason": "Blind inventory blind.005 was not mapped: no matching coverage component"
+          },
+          {
+            "canonical_spec_paths": [],
+            "component_id": "audit.unmapped.003",
+            "independent_audit": {
+              "auditor": "skeptical-source-component-audit.v2",
+              "evidence_sha256": "8f4d61d04638303264f1c3223082069c684383c6d59159c7e521fa6b6e94c9e5",
+              "kind": "independent_component_audit",
+              "observed_description": "Blind inventory blind.006 is visible but absent from coverage: no matching coverage component",
+              "source_view": "top",
+              "verdict": "fail"
+            },
+            "source_confidence": 0.9,
+            "source_description": "leaf motif with pav\u00e9 round diamonds on one shoulder",
+            "source_view": "top",
+            "unresolved_reason": "Blind inventory blind.006 was not mapped: no matching coverage component"
+          },
+          {
+            "canonical_spec_paths": [],
+            "component_id": "audit.unmapped.004",
+            "independent_audit": {
+              "auditor": "skeptical-source-component-audit.v2",
+              "evidence_sha256": "8f4d61d04638303264f1c3223082069c684383c6d59159c7e521fa6b6e94c9e5",
+              "kind": "independent_component_audit",
+              "observed_description": "Blind inventory blind.007 is visible but absent from coverage: no matching coverage component",
+              "source_view": "side",
+              "verdict": "fail"
+            },
+            "source_confidence": 0.85,
+            "source_description": "vertical leaf motif with pav\u00e9 diamonds along shank",
+            "source_view": "side",
+            "unresolved_reason": "Blind inventory blind.007 was not mapped: no matching coverage component"
+          }
+        ],
+        "source_kind": "designer_plate"
+      },
+      "uncertainties": [
+        "DRAFT FROM DESIGN PLATE \u2014 visual estimates and placeholders require designer confirmation before factory release.",
+        "center stone species is not named; diamond is a placeholder",
+        "center stone dimensions are not confirmed; using nominal 8 mm placeholder",
+        "side stone count is not confirmed; showing one representative stone",
+        "side stone dimensions are not confirmed; using nominal 2 mm placeholder",
+        "setting/prong count is not confirmed; using four-prong placeholder",
+        "metal karat is not explicit in 'yellow gold (two-tone with white gold elements)'; using 18k placeholder",
+        "band width is not designer-confirmed; using 2.0 mm placeholder",
+        "ring size is not established by the plate; using US 6.5 placeholder",
+        "SOURCE COMPONENT UNRESOLVED assembly.primary: The assembly describes a visual form or motif that the sparse template path cannot fully define.",
+        "SOURCE COMPONENT UNRESOLVED stone.assembly_hint.shoulder: The assembly describes a gem-bearing shoulder/leaf stone group, but the plate reader returned no distinct stone group for it.",
+        "SOURCE COMPONENT UNRESOLVED setting.primary: The source does not explicitly establish the center setting; the compiled setting is a placeholder.",
+        "INDEPENDENT SOURCE-COVERAGE AUDIT REQUIRED before factory release: stone.center, stone.group.001, assembly.primary, stone.assembly_hint.shoulder, setting.primary, metal.body, band.shank"
+      ],
+      "workflows": [
+        "plate_read",
+        "draft_spec",
+        "beauty_render",
+        "lineart",
+        "factory_sheet",
+        "localized_edit"
+      ]
+    }
+  ],
+  "run": "designer-source-coverage-leaf-live-v2-2026-07-11",
+  "source_policy": "Founder-supplied evaluation references only. Do not publish, train on, or treat as customer-owned production assets. Third-party branding and social watermarks must never appear in accepted outputs.",
+  "stage": "coverage"
+}

@@ -19,17 +19,26 @@ entry, not another f-string.
 
 from __future__ import annotations
 
-import base64
-import json
-import os
-
 from pydantic import BaseModel, ConfigDict, ValidationError
 
+from facetta.image_agent.drift import outside_mask_drift as _outside_drift
+from facetta.image_agent.edit_prompt import (
+    EDIT_OPENERS as _EDIT_OPENERS,
+    compile_localized_edit_instruction,
+)
+from facetta.image_agent.vision import (
+    check_design_consistency as _canonical_design_consistency,
+    vision_json as _vision_json,
+    vision_json_pair as _vision_json_2img,
+)
 from facetta.render import (
-    RenderUnavailable, _provider_key, _sniff_media_type, edit_image,
-    generate_image,
+    RenderUnavailable, edit_image, generate_image,
 )
 from facetta.spec import Spec
+from facetta.mounting_hardware import (
+    compile_mounting_hardware_prompt,
+    mounting_hardware_contract,
+)
 
 DISCLAIMER = ("Manufacturing illustration—final dimensions after master "
               "model and sign-off.")
@@ -51,15 +60,15 @@ SYNONYMS_LINE = (
 TASK_MODE = "MANUFACTURING_TECHNICAL_DRAWING"
 UI_LABELS = {
     "button": "Create manufacturing drawing",
-    "subtitle": ("True-scale views, dimensions, materials & stones for "
-                 "production"),
+    "subtitle": ("Design-specific views, confirmed facts, and proposed "
+                 "mounting for designer and factory review"),
     "synonyms": SYNONYMS_LINE,
 }
 
 MASTER_SYSTEM = """\
-You are the Jewelry Manufacturing Technical Drawing Agent for a
+You are the Jewelry Manufacturing Technical Illustration Agent for a
 designer-facing app. You convert photorealistic jewelry renders into
-factory-ready jewelry manufacturing technical drawings (line art,
+factory-review jewelry manufacturing technical illustrations (line art,
 orthographic views, dimensions, component labels) using vision-first
 analysis and controlled image generation — not parametric guesswork.
 
@@ -95,7 +104,9 @@ verify on master model". Unknown gets TBD with a leader line. Tolerances when
 the mode requires: casting shrink "per alloy + caster"; stone seat
 +0.00/−0.02 mm typical round; comfort-fit note euro vs flat inner.
 
-Edge cases: occluded gallery → section view + "confirm undergallery";
+Edge cases: occluded gallery → use the image model to draw a design-coherent
+side/section mounting proposal and require designer confirmation; never replace
+it with a generic code-drawn basket or present hidden construction as observed;
 multiple metals → label zones or "two-tone TBD"; engraving → "artwork vector
 TBD", blank shank; rough render → ask for a cleaner render, never hallucinate
 prongs; house styles → generic labels, no third-party logos. CAD handoff is a
@@ -779,44 +790,6 @@ class Route(BaseModel):
     occlusion: str = "low"
 
 
-def _vision_json(system: str, image_bytes: bytes, user_text: str) -> dict:
-    """One xAI vision call, JSON out — the same pattern as concept.read_design.
-    Every failure (no key, network, schema) is one story upstream."""
-    key = _provider_key("XAI_KEY")
-    if not key:
-        raise RenderUnavailable(
-            "no XAI_KEY configured — the spec agent needs a vision key")
-
-    media = _sniff_media_type(image_bytes)
-    b64 = base64.b64encode(image_bytes).decode()
-
-    import httpx
-
-    try:
-        response = httpx.post(
-            "https://api.x.ai/v1/chat/completions", timeout=120.0,
-            headers={"Authorization": f"Bearer {key}"},
-            json={
-                "model": os.environ.get("FACETTA_XAI_VISION", "grok-4.3"),
-                "messages": [
-                    {"role": "system", "content": system},
-                    {"role": "user", "content": [
-                        {"type": "image_url",
-                         "image_url": {"url": f"data:{media};base64,{b64}"}},
-                        {"type": "text", "text": user_text},
-                    ]},
-                ],
-                "response_format": {"type": "json_object"},
-            })
-        response.raise_for_status()
-        data = json.loads(response.json()["choices"][0]["message"]["content"])
-        if not isinstance(data, dict):
-            raise ValueError(f"provider returned non-object JSON: {data!r}")
-        return data
-    except Exception as exc:
-        raise RenderUnavailable(f"vision inspect failed: {exc}") from exc
-
-
 def route_design(image_bytes: bytes, notes: str = "") -> Route:
     """Section B: classify the render into a mode + region. A mode the router
     invents is coerced to GENERIC — the sheet must always have a real
@@ -931,19 +904,49 @@ def _normalize_stone_read(data: dict, scale_anchor: str | None) -> dict:
     stones = []
     for s in data.get("stones") or []:
         if isinstance(s, dict) and s.get("type"):
-            stones.append({
+            stone = {
                 "qty": int(s.get("qty") or 1),
                 "type": str(s["type"]),
                 "size_mm": str(s.get("size_mm") or "TBD"),
                 "carat_each": s.get("carat_each"),
                 "confidence": _conf(s.get("confidence")),
-            })
+            }
+            # Plate reads may distinguish otherwise identical materials by
+            # physical role. Preserve those facts so the compiler and blind
+            # coverage auditor do not have to compare anonymous "pear emerald"
+            # groups. Render-estimate callers remain backward compatible.
+            if str(s.get("position") or "").strip():
+                stone["position"] = str(s["position"]).strip()
+            if s.get("qty_status") in {
+                "designer_labeled", "visible_count", "ambiguous",
+            }:
+                stone["qty_status"] = str(s["qty_status"])
+            source_views = s.get("source_views")
+            if isinstance(source_views, list):
+                stone["source_views"] = [
+                    str(view).strip() for view in source_views
+                    if str(view).strip()
+                ]
+            written_labels = s.get("written_labels")
+            if isinstance(written_labels, list):
+                stone["written_labels"] = [
+                    str(label) for label in written_labels
+                    if str(label).strip()
+                ]
+            stones.append(stone)
     measurements = []
     for m in data.get("measurements") or []:
         if isinstance(m, dict) and m.get("label"):
-            measurements.append({"label": str(m["label"]),
-                                 "value": str(m.get("value") or "TBD"),
-                                 "confidence": _conf(m.get("confidence"))})
+            normalized = {"label": str(m["label"]),
+                          "value": str(m.get("value") or "TBD"),
+                          "confidence": _conf(m.get("confidence"))}
+            if m.get("raw") is not None:
+                normalized["raw"] = str(m["raw"])
+            if m.get("status") in {
+                "designer_confirmed", "ambiguous", "estimated",
+            }:
+                normalized["status"] = str(m["status"])
+            measurements.append(normalized)
         elif isinstance(m, (list, tuple)) and len(m) >= 2:  # tolerate old shape
             measurements.append({"label": str(m[0]), "value": str(m[1]),
                                  "confidence": 0.5})
@@ -956,9 +959,9 @@ def _normalize_stone_read(data: dict, scale_anchor: str | None) -> dict:
 # plates for factories (gouache + pencil on toned paper, often with the piece
 # drawn over a figure croquis and dimensions written by hand). This reads ONE
 # such plate into the same estimate shape so the factory-sheet panel can letter
-# it — the app extracting what she used to letter by hand. Numbers she WROTE on
-# the plate are authoritative (high confidence); shapes/colours read from the
-# rendering are estimates; the croquis figure and background are ignored.
+# it — the app extracting what she used to letter by hand. Written text is
+# authoritative as a transcription, but only an unambiguous label + number +
+# unit is manufacturing-confirmed; shapes/colours remain estimates.
 _PLATE_SYSTEM = (
     MASTER_SYSTEM + "\n\n"
     "This is a jewelry designer's HAND-RENDERED design plate (gouache/"
@@ -967,33 +970,62 @@ _PLATE_SYSTEM = (
     "rendered jewelry piece; IGNORE the figure/croquis, the background paper, "
     "and any body outline. Report the piece as JSON only, exactly this shape:\n"
     '{"jewelry_type": "ring|pendant|earrings|brooch|bracelet|necklace",\n'
-    ' "stones": [{"qty": 1, "type": "species + cut, e.g. sapphire emerald cut '
-    'or lapis cabochon or diamond marquise", "size_mm": "L × W", '
-    '"carat_each": null, "confidence": 0.0}],\n'
+    ' "stones": [{"qty": 1, "qty_status": '
+    '"designer_labeled|visible_count|ambiguous", "position": '
+    '"physical role in the finished piece", "source_views": ["front"], '
+    '"written_labels": ["verbatim nearby labels"], "type": '
+    '"species + cut, e.g. sapphire emerald cut or lapis cabochon or diamond '
+    'marquise", "size_mm": "L × W", "carat_each": null, '
+    '"confidence": 0.0}],\n'
     ' "metal": "karat/colour/material, e.g. 18k yellow gold or platinum",\n'
     ' "assembly": "one sentence describing the SPATIAL arrangement: what is at '
     'top/bottom/centre and what connects to what, e.g. \'vertical drop earring: '
     'ear wire at top, graduated discs descending, emerald-cut stone in a round '
     'frame at the bottom\'",\n'
     ' "measurements": [{"label": "overall length", "value": "38 mm", '
+    '"raw": "38 mm drop", '
+    '"status": "designer_confirmed|ambiguous|estimated", '
     '"confidence": 0.0}],\n'
     ' "hand_written": ["transcribe VERBATIM every number, dimension, or note '
     'the designer wrote on the plate"]}\n'
-    "stones: one entry per distinct stone group (centre first); include "
+    "The plate may show the SAME finished jewelry object more than once: a "
+    "front view, side view, construction detail, enlargement, or alternate "
+    "rendering. Inventory ONE physical finished piece. Never add duplicate "
+    "stones merely because the same stones reappear in another view. Use the "
+    "most complete primary view for quantity, and use other views only to "
+    "clarify construction. If you cannot distinguish a repeated view from an "
+    "additional physical component, set qty_status=ambiguous and keep the "
+    "most conservative quantity.\n"
+    "stones: one entry per distinct physical stone group (centre first), "
+    "separating groups when their role, location, dimensions, or nearby "
+    "written label differs; include "
     "cabochons, enamel domes, briolettes, pavé — name the cut/shape and the "
-    "colour you see. ANY dimension the designer WROTE on the plate is "
-    "authoritative: report it in measurements at HIGH confidence (>=0.85) and "
-    "echo it verbatim in hand_written. Shapes and colours you infer from the "
-    "rendering are estimates — keep confidence modest. Use controlled trade "
-    "terms where you are sure; never invent a stone. Output ONLY the JSON.")
+    "colour you see. NEVER infer gemstone species from colour alone: unless "
+    "the plate explicitly names the species, write e.g. 'green emerald-cut "
+    "stone (species TBD)', not 'emerald'. ANY text the designer wrote must be "
+    "echoed verbatim in hand_written. For measurements, preserve punctuation, "
+    "decimal separators, diameter marks and units exactly in raw and value. "
+    "status=designer_confirmed ONLY when label, number, decimal and unit are "
+    "unambiguous. A bare '115', '30', '60', unclear handwriting, or a number "
+    "whose unit/decimal is uncertain is status=ambiguous even when OCR "
+    "confidence is high; do not silently reinterpret it as millimetres. "
+    "Shapes and colours inferred from rendering are estimates. Never invent a "
+    "stone, alloy, unit or decimal point. qty_status=designer_labeled only "
+    "when the designer explicitly wrote the quantity; visible_count when one "
+    "assembled view makes the count assessable; ambiguous otherwise. "
+    "position describes the physical role in that one finished piece, such "
+    "as center_drop, inner_flanking_drops, outer_flanking_drops, collar, or "
+    "pave_field. source_views lists where the group was observed, not extra "
+    "inventory. Copy every nearby numeric or material annotation verbatim "
+    "into written_labels and also into hand_written. Output ONLY the JSON.")
 
 
 def read_design_plate(image_bytes: bytes, *,
                       scale_anchor: str | None = None) -> dict:
     """Read a hand-rendered design plate into the shared estimate shape plus a
-    `hand_written` list (every number/note the designer lettered, verbatim —
-    those are authoritative, not guesses). The factory-sheet panel letters the
-    result; her drawing itself is the sheet's image. Raises RenderUnavailable
+    `hand_written` list (every number/note the designer lettered, verbatim).
+    Ambiguous decimals or units remain explicitly ambiguous. The factory-sheet
+    panel letters the result; her drawing itself is the sheet's image. Raises RenderUnavailable
     on provider failure. This is the reverse of the app's usual flow: her hand
     drawing IN, a structured factory sheet OUT."""
     ask = ("Read this hand-rendered jewelry design plate. Transcribe every "
@@ -1123,6 +1155,9 @@ def compile_sheet_instruction(mode: str, region: str = "DUAL",
         # code panel letters every number — so the model writes NO text at all.
         views = ", ".join(MODES[mode]["views"])
         parts = [TASK_LINE, CLEAN_DRAW_DIRECTIVE.format(views=views)]
+        hardware_prompt = compile_mounting_hardware_prompt(mode)
+        if hardware_prompt:
+            parts.append(hardware_prompt)
         if notes:
             parts.append(f"Designer notes (honor in the drawing, do NOT letter "
                          f"them as text): {notes}")
@@ -1131,6 +1166,9 @@ def compile_sheet_instruction(mode: str, region: str = "DUAL",
         return " ".join(parts)
     # legacy standalone sheet: the model letters its own numbers/title block
     parts = [TASK_LINE, MODES[mode]["prompt"], REGIONS[region]]
+    hardware_prompt = compile_mounting_hardware_prompt(mode)
+    if hardware_prompt:
+        parts.append(hardware_prompt)
     if dims:
         parts.append(
             "Designer-authoritative dimensions — place these EXACTLY on the "
@@ -1183,6 +1221,9 @@ def generate_spec_sheet(image_bytes: bytes, *, notes: str = "",
     summary["mode"] = TASK_MODE
     summary["piece_type"] = mode
     summary["region"] = region
+    hardware_contract = mounting_hardware_contract(mode)
+    if hardware_contract is not None:
+        summary["mounting_hardware"] = hardware_contract.evidence_summary()
     if dims:
         summary["dimension_status"] = "designer_supplied"
 
@@ -1405,82 +1446,17 @@ def _worn_ok(check: dict) -> bool:
                 and check.get("gesture_ok", True))
 
 
-# The design-consistency validator: a derived view (a new angle, a worn shot)
-# must be the SAME piece as the hero. This compares the two images by vision
-# and re-rolls if the jewelry drifted — the same gate the worn check applies to
-# the hand, applied to the design itself.
-_CONSISTENCY_SYSTEM = """\
-You compare TWO photos of fine jewelry for a manufacturer. The FIRST image is
-the approved reference design. The SECOND is a new photo that must show the
-EXACT SAME piece from a different angle or setting — not a redesign.
-
-Judge ONLY the jewelry (ignore camera angle, background, hands, lighting).
-Return JSON exactly:
-{"consistent": true|false, "differences": ["..."], "severity": "none|minor|major"}
-
-consistent is FALSE if the second piece differs in any of: centre stone shape/
-cut, centre stone colour, number or arrangement of side/halo stones, setting or
-prong style, metal colour, overall proportions, or the SIZE/SCALE of the stone
-and ring. Scale matters: if the ring is worn on a hand, the centre stone must
-keep the same size relative to the finger — a stone that looks noticeably bigger
-or smaller than the reference (so a 2 ct would read as a different carat) is a
-MAJOR difference, because the client must not be misled about how large the
-finished piece is. List each real difference briefly in differences. Minor
-lighting/reflection changes are NOT differences. Set severity to "major" for any
-change to the design, stones, metal, or size; "minor" for trivial framing. Be
-fair but honest. Output ONLY the JSON."""
-
-
-def _vision_json_2img(system: str, image_a: bytes, image_b: bytes,
-                      text: str) -> dict:
-    """A vision call over TWO images (reference, candidate), JSON out."""
-    key = _provider_key("XAI_KEY")
-    if not key:
-        raise RenderUnavailable("no XAI_KEY configured — validation needs a key")
-
-    import httpx
-
-    def uri(b: bytes) -> str:
-        return f"data:{_sniff_media_type(b)};base64," + base64.b64encode(b).decode()
-
-    try:
-        response = httpx.post(
-            "https://api.x.ai/v1/chat/completions", timeout=120.0,
-            headers={"Authorization": f"Bearer {key}"},
-            json={"model": os.environ.get("FACETTA_XAI_VISION", "grok-4.3"),
-                  "messages": [
-                      {"role": "system", "content": system},
-                      {"role": "user", "content": [
-                          {"type": "image_url", "image_url": {"url": uri(image_a)}},
-                          {"type": "image_url", "image_url": {"url": uri(image_b)}},
-                          {"type": "text", "text": text}]}],
-                  "response_format": {"type": "json_object"}})
-        response.raise_for_status()
-        data = json.loads(response.json()["choices"][0]["message"]["content"])
-        if not isinstance(data, dict):
-            raise ValueError("non-object JSON")
-        return data
-    except Exception as exc:
-        raise RenderUnavailable(f"consistency check failed: {exc}") from exc
-
-
 def check_design_consistency(reference_bytes: bytes,
                              candidate_bytes: bytes) -> dict:
     """Does the candidate show the SAME jewelry design as the reference?
     Returns {"consistent", "differences", "severity", "checked"}. A provider
     failure returns a permissive pass (checked=False) — the gate is best-effort,
     never a hard dependency that blocks a render."""
-    try:
-        data = _vision_json_2img(
-            _CONSISTENCY_SYSTEM, reference_bytes, candidate_bytes,
-            "Is the second the same piece as the first?")
-    except RenderUnavailable:
-        return {"consistent": True, "differences": [], "severity": "none",
-                "checked": False}
-    data.setdefault("differences", [])
-    data.setdefault("severity", "none")
-    data["checked"] = True
-    return data
+    return _canonical_design_consistency(
+        reference_bytes,
+        candidate_bytes,
+        inspect_pair=_vision_json_2img,
+    )
 
 
 # The markup reader: the designer draws/writes ON the piece — in-app canvas
@@ -1501,25 +1477,44 @@ annotation per mark. Do not invent marks; do not merge separate marks.
 
 Return JSON exactly:
 {"annotations": [{"region_description": "...", "change_instruction": "...",
-  "target_section": "stone|side_stones|setting|metal|band|ring_size|drop|pendant|chain|bracelet|brooch" or null,
+  "target_section": "stone|side_stones|setting|metal|band|ring_size|drop|pendant|chain|bracelet|brooch|design_form" or null,
+  "target_element_id": "one supplied stable design-form element id" or null,
   "handwriting": "verbatim transcription or empty",
   "confidence": 0.0-1.0}],
  "understood_as": "Understood as: (1) ...; (2) ... — nothing else changes.",
  "needs_clarification": true|false, "clarification": "the ONE question to ask"}
+
+When the user message supplies KNOWN DESIGN-FORM ELEMENTS, a freeform metal
+shape or silhouette change must identify exactly one supplied element_id. Do
+not invent an ID or use a neighboring component. Set needs_clarification true
+(with a concrete question) if no supplied element matches.
 
 Set needs_clarification true (with a concrete question) if any handwriting is
 illegible, a mark's intent is ambiguous, or you cannot tell WHICH element a
 mark points at. NEVER guess a region or an intent. Output ONLY the JSON."""
 
 
-def read_markup(clean_bytes: bytes, marked_bytes: bytes) -> dict:
+def read_markup(
+    clean_bytes: bytes,
+    marked_bytes: bytes,
+    known_form_elements: tuple[dict[str, str], ...] = (),
+) -> dict:
     """Read the designer's marks: clean render vs marked copy, structured
     change requests out. Post-rule: any annotation under 0.6 confidence flips
     needs_clarification — a half-read mark is asked about, never executed.
     Raises RenderUnavailable on provider failure (explicit request, fails
     loudly)."""
-    data = _vision_json_2img(_MARKUP_SYSTEM, clean_bytes, marked_bytes,
-                             "Read the designer's marks on the second image.")
+    known = (
+        "\nKNOWN DESIGN-FORM ELEMENTS (use only these stable IDs): "
+        + str(list(known_form_elements))
+        if known_form_elements else ""
+    )
+    data = _vision_json_2img(
+        _MARKUP_SYSTEM,
+        clean_bytes,
+        marked_bytes,
+        "Read the designer's marks on the second image." + known,
+    )
     annotations = []
     for a in data.get("annotations") or []:
         if not isinstance(a, dict):
@@ -1532,6 +1527,7 @@ def read_markup(clean_bytes: bytes, marked_bytes: bytes) -> dict:
             "region_description": region,
             "change_instruction": change,
             "target_section": a.get("target_section"),
+            "target_element_id": a.get("target_element_id"),
             "handwriting": str(a.get("handwriting") or ""),
             "confidence": float(a.get("confidence") or 0.0),
         })
@@ -1735,84 +1731,6 @@ def render_spin_video(image_bytes: bytes, *, motion: str = DEFAULT_SPIN_MOTION,
 # prompt; a mask enables the drift QA and the one stronger-preserve retry.
 # ---------------------------------------------------------------------------
 
-_EDIT_OPENERS = {"render": "Jewelry render edit.",
-                 "technical": "Jewelry technical drawing edit."}
-
-_STRENGTHEN_LINE = (
-    "CRITICAL: the previous attempt drifted outside the highlighted region. "
-    "Preserve every pixel outside the region below with exact fidelity — "
-    "this preservation contract is absolute.")
-
-
-def compile_localized_edit_instruction(region_description: str,
-                                       change_instruction: str,
-                                       kind: str = "render",
-                                       strengthen: bool = False) -> str:
-    """The Section 4C preservation contract, verbatim blocks: PRESERVE /
-    EDIT SCOPE / FORBIDDEN with the region and change filled in. kind
-    'technical' opens as a drawing edit and forbids moving other view boxes
-    or unrelated dimension strings; strengthen=True is the one-retry
-    stronger-preserve language — a CRITICAL opener plus the preserve clause
-    repeated at the tail."""
-    if kind not in _EDIT_OPENERS:
-        raise ValueError(
-            f"unknown edit kind '{kind}'; options: {list(_EDIT_OPENERS)}")
-    preserve = (
-        f"PRESERVE: All design elements outside '{region_description}' must "
-        "remain exactly as in the reference — same camera angle, lighting, "
-        "metal tone, every stone and prong outside the region, shank shape "
-        "outside the region, background unchanged.")
-    edit_scope = (f"EDIT SCOPE: Inside '{region_description}' only: "
-                  f"{change_instruction}.")
-    forbidden = (
-        "FORBIDDEN: Any change outside the highlighted region; no crop; no "
-        "zoom; no global redesign; no new stones outside region unless "
-        "explicitly inside highlight.")
-    if kind == "technical":
-        forbidden += (" Do not move other view boxes or unrelated dimension "
-                      "strings.")
-        closing = ("Black line art on white preserved. Match reference "
-                   "style exactly outside edit zone.")
-    else:
-        closing = ("Photorealistic jewelry product quality. Match reference "
-                   "style exactly outside edit zone.")
-    lines = [_EDIT_OPENERS[kind], preserve, edit_scope, forbidden, closing]
-    if strengthen:
-        lines = [_STRENGTHEN_LINE] + lines + [preserve]
-    return "\n".join(lines)
-
-
-def _outside_drift(parent_bytes: bytes, child_bytes: bytes,
-                   mask_bytes: bytes) -> float:
-    """How much the edit moved OUTSIDE the mask (white = edit, black =
-    preserve): mean absolute grayscale pixel delta over the preserve pixels,
-    normalized to 0..1. Child and mask are resized to the parent so provider
-    resolution changes never break the compare. Pure function — no provider,
-    no cache."""
-    import io
-
-    from PIL import Image
-
-    parent = Image.open(io.BytesIO(parent_bytes)).convert("L")
-    child = Image.open(io.BytesIO(child_bytes)).convert("L")
-    mask = Image.open(io.BytesIO(mask_bytes)).convert("L")
-    if child.size != parent.size:
-        child = child.resize(parent.size)
-    if mask.size != parent.size:
-        mask = mask.resize(parent.size)
-
-    total = 0
-    count = 0
-    # "L" mode → tobytes() is one byte per pixel, row-major
-    for p, c, m in zip(parent.tobytes(), child.tobytes(), mask.tobytes()):
-        if m < 128:                      # black = preserve — measure here
-            total += abs(p - c)
-            count += 1
-    if count == 0:                       # all-white mask: nothing to preserve
-        return 0.0
-    return total / count / 255.0
-
-
 def localized_edit(image_bytes: bytes, *, region_description: str,
                    change_instruction: str, mask_bytes: bytes | None = None,
                    kind: str = "render", model: str = "grok_direct",
@@ -1839,8 +1757,10 @@ def localized_edit(image_bytes: bytes, *, region_description: str,
 
     instruction = compile_localized_edit_instruction(
         region_description, change_instruction, kind=kind)
-    child, cached = edit_image(image_bytes, instruction, model,
-                               variant=variant, style_ref=style_ref)
+    edit_options = {"variant": variant, "style_ref": style_ref}
+    if mask_bytes is not None:
+        edit_options["mask_bytes"] = mask_bytes
+    child, cached = edit_image(image_bytes, instruction, model, **edit_options)
 
     retried = False
     drift: float | None = None
@@ -1851,9 +1771,8 @@ def localized_edit(image_bytes: bytes, *, region_description: str,
             stronger = compile_localized_edit_instruction(
                 region_description, change_instruction, kind=kind,
                 strengthen=True)
-            retry_child, retry_cached = edit_image(image_bytes, stronger,
-                                                   model, variant=variant,
-                                                   style_ref=style_ref)
+            retry_child, retry_cached = edit_image(
+                image_bytes, stronger, model, **edit_options)
             retry_drift = _outside_drift(image_bytes, retry_child, mask_bytes)
             if retry_drift < drift:      # keep the better (lower-drift) child
                 child, cached, drift = retry_child, retry_cached, retry_drift

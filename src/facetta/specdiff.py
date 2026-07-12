@@ -14,7 +14,7 @@ from typing import Any
 
 # metadata and traced geometry are not designer-facing dimensions — skip them
 _SKIP_TOP = {"design_id", "version", "created_by", "created_at",
-             "schema_version", "composition"}
+             "schema_version", "composition", "dimension_provenance"}
 
 # friendly names for the path segments a designer recognizes
 _SECTION = {
@@ -22,6 +22,8 @@ _SECTION = {
     "band": "band", "ring_size": "ring size", "metal": "metal",
     "setting": "setting", "drop": "drop", "pendant": "pendant",
     "bracelet": "bracelet", "chain": "chain", "brooch": "brooch",
+    "geometry": "geometry", "production": "production",
+    "design_form": "design form", "elements": "element",
     "dimensions_mm": "", "color": "colour", "clarity": "clarity",
 }
 _LEAF = {
@@ -34,8 +36,24 @@ _LEAF = {
     "prong_count": "prongs", "gallery_height_mm": "gallery height",
     "material": "material", "karat": "karat", "color": "colour",
     "finish": "finish", "style": "style", "position": "position",
+    "chain_width_mm": "width",
+    "profile_thickness_mm": "profile thickness",
+    "end_ring_outer_diameter_mm": "end ring outside diameter",
+    "link_thickness_mm": "link thickness",
+    "inside_length_mm": "inside length",
+    "inside_width_mm": "inside width",
+    "strand_wire_diameter_mm": "strand wire diameter",
+    "strand_count": "strand count",
+    "plate_thickness_mm": "plate thickness",
+    "production": "production", "reference_kind": "reference type",
+    "reference": "reference", "links_soldered": "links soldered",
+    "pendant_connection": "pendant connection",
     "trade": "trade colour", "grade": "grade",
     "notes_to_factory": "factory notes",
+    "element_id": "stable ID", "role": "role", "label": "label",
+    "confirmed_form_description": "confirmed form",
+    "symmetry": "symmetry", "instance_count": "instances",
+    "asset_id": "reference asset", "asset_sha256": "reference hash",
 }
 
 

@@ -1,0 +1,15 @@
+{
+  "decision": "rejected",
+  "reviewer_role": "internal_founder_proxy_visual_review",
+  "founder_approved": false,
+  "gia_cofounder_approved": false,
+  "machine_verdict_at_generation": "warn",
+  "rejection_reasons": [
+    "The necklace chain and endpoints are cropped, contradicting the request to show the complete necklace.",
+    "Several white gemstone accents use leaf or marquise outlines rather than the explicitly requested round diamond dew-drop group."
+  ],
+  "product_asset_persisted": false,
+  "specification_created": false,
+  "factory_authoritative": false,
+  "follow_up": "creative-generate.v3 adds hard complete-piece and explicit gemstone-fact QA; this candidate must not be promoted."
+}

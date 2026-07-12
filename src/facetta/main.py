@@ -12,8 +12,9 @@ from facetta.config import load_env_file
 # their environment during import, while real exported values still win.
 load_env_file()
 
-from facetta.api import (
-    assets, designs, library, share, specs, stones, users, vocabulary,
+from facetta.api import (  # noqa: E402 - env must load before router imports
+    assets, catalog, designs, library, projects, share, specs, stones, studio,
+    trusted, users, vocabulary,
 )
 
 app = FastAPI(title="Facetta", version=__version__)
@@ -32,7 +33,12 @@ app.include_router(share.router)
 app.include_router(users.router)
 app.include_router(stones.router)
 app.include_router(assets.router)
+app.include_router(catalog.router)
+app.include_router(catalog.preview_router)
+app.include_router(projects.router)
 app.include_router(library.router)
+app.include_router(studio.router)
+app.include_router(trusted.router)
 
 
 @app.get("/health")

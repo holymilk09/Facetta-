@@ -261,8 +261,9 @@ class TestLocalizedEdit:
         calls = []
 
         def fake_edit(image, instruction, model="grok_direct", variant=0,
-                      style_ref=None):
+                      style_ref=None, mask_bytes=None):
             calls.append(instruction)
+            assert mask_bytes == MASK
             return CHILD_CLEAN, False
 
         monkeypatch.setattr(agent, "edit_image", fake_edit)
@@ -278,8 +279,9 @@ class TestLocalizedEdit:
         calls = []
 
         def fake_edit(image, instruction, model="grok_direct", variant=0,
-                      style_ref=None):
+                      style_ref=None, mask_bytes=None):
             calls.append(instruction)
+            assert mask_bytes == MASK
             # first attempt drifts everywhere; the strengthened retry is clean
             return (CHILD_DRIFTED, False) if len(calls) == 1 \
                 else (CHILD_CLEAN, False)
@@ -300,7 +302,8 @@ class TestLocalizedEdit:
         worse = _png(0)                              # drifts even further
 
         def fake_edit(image, instruction, model="grok_direct", variant=0,
-                      style_ref=None):
+                      style_ref=None, mask_bytes=None):
+            assert mask_bytes == MASK
             return (worse, False) if instruction.startswith("CRITICAL") \
                 else (CHILD_DRIFTED, True)
 

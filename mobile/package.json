@@ -13,8 +13,11 @@
   },
   "devDependencies": {
     "@types/node": "^26.1.1",
-    "@types/react": "~19.2.2",
     "tsx": "^4.23.0",
+    "@testing-library/react-native": "^14.0.1",
+    "@types/jest": "29.5.14",
+    "@types/react": "~19.2.2",
+    "jest-expo": "~57.0.1",
     "typescript": "~6.0.3"
   },
   "scripts": {
@@ -22,7 +25,18 @@
     "android": "expo start --android",
     "ios": "expo start --ios",
     "web": "expo start --web",
+    "test": "jest",
     "test:studio": "tsx --test src/studio/*.test.ts"
+  },
+  "jest": {
+    "preset": "jest-expo",
+    "moduleNameMapper": {
+      "^react-native-webview$": "<rootDir>/src/trusted/testWebView.tsx"
+    },
+    "testMatch": [
+      "**/src/trusted/**/*.test.ts",
+      "**/src/trusted/**/*.test.tsx"
+    ]
   },
   "private": true
 }

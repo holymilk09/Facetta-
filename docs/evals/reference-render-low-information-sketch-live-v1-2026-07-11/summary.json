@@ -1,0 +1,201 @@
+{
+  "accepted": false,
+  "attempts": [
+    {
+      "attempt_number": 1,
+      "cache_key": "80d4b2201f63a054b3512e48bd9e7dc294f14aa32e4d24b51c983a31d2c66797",
+      "cached": false,
+      "corrective_instruction": null,
+      "cost": null,
+      "error": null,
+      "error_category": null,
+      "fallback_reason": null,
+      "latency_ms": 18922,
+      "model": "grok_direct",
+      "output_hash": "4bf7e444a3c366581b30c833747f544532043aebfad93b51134bc0fb38c3b607",
+      "prompt_hash": "31ab40b6cc86698b4ec07850f9a6734942ba564b50249e558d894bf8a79cb452",
+      "provider": "xai",
+      "provider_request_id": null,
+      "qa_checks": [
+        {
+          "code": "decodable_image",
+          "evidence": {
+            "format": "JPEG",
+            "height": 1024,
+            "width": 1024
+          },
+          "message": "candidate is a decodable raster image",
+          "passed": true,
+          "severity": "hard"
+        },
+        {
+          "code": "review_resolution",
+          "evidence": {
+            "height": 1024,
+            "width": 1024
+          },
+          "message": "candidate has reviewable raster dimensions",
+          "passed": true,
+          "severity": "warning"
+        },
+        {
+          "code": "candidate_changed",
+          "evidence": {},
+          "message": "candidate bytes differ from the source",
+          "passed": true,
+          "severity": "hard"
+        },
+        {
+          "code": "coherent_jewelry_render",
+          "evidence": {},
+          "message": "visual evidence matches the requested fact",
+          "passed": true,
+          "severity": "hard"
+        },
+        {
+          "code": "source_design_preserved",
+          "evidence": {},
+          "message": "visual evidence matches the requested fact",
+          "passed": true,
+          "severity": "hard"
+        },
+        {
+          "code": "visible_components_preserved",
+          "evidence": {},
+          "message": "visual evidence matches the requested fact",
+          "passed": true,
+          "severity": "hard"
+        },
+        {
+          "code": "requested_presentation_applied",
+          "evidence": {},
+          "message": "visual evidence matches the requested fact",
+          "passed": true,
+          "severity": "hard"
+        },
+        {
+          "code": "text_or_branding",
+          "evidence": {},
+          "message": "visual evidence matches the requested fact",
+          "passed": true,
+          "severity": "hard"
+        },
+        {
+          "code": "factory_authority",
+          "evidence": {
+            "factory_authoritative": false
+          },
+          "message": "creative render is review-only and cannot establish hidden geometry, dimensions, materials, stone identity, or factory facts",
+          "passed": false,
+          "severity": "warning"
+        }
+      ],
+      "qa_verdict": "warn",
+      "quality_score": 92.0,
+      "route": "grok_edit",
+      "usage": null
+    }
+  ],
+  "candidate_file": "candidate.jpg",
+  "candidate_media_type": "image/jpeg",
+  "candidate_sha256": "4bf7e444a3c366581b30c833747f544532043aebfad93b51134bc0fb38c3b607",
+  "executed_at": "2026-07-11T15:49:30.406759+00:00",
+  "factory_authoritative": false,
+  "input_hash": "ef034ba2237d50deac01021b05f8443305ced50200d79e0e27d5ec28e0db97d2",
+  "instruction": "Create one photorealistic three-quarter beauty render from this single low-information ring sketch. Preserve the oval green center stone, exactly four visible center claws, exactly three small round clear shoulder stones on each side, the simple unadorned yellow-gold band, and the drawn overall proportions. Use polished 18k yellow gold and a neutral studio background. Where the sketch does not define hidden gallery construction, use only a minimal plausible review proposal; do not invent extra stones, halos, engraving, split shanks, dimensions, or branding.",
+  "maximum_attempts": 3,
+  "operation": "REFERENCE_RENDER",
+  "product_asset_persisted": false,
+  "prompt_version": "reference-render.v1",
+  "quality": {
+    "checks": [
+      {
+        "code": "decodable_image",
+        "evidence": {
+          "format": "JPEG",
+          "height": 1024,
+          "width": 1024
+        },
+        "message": "candidate is a decodable raster image",
+        "passed": true,
+        "severity": "hard"
+      },
+      {
+        "code": "review_resolution",
+        "evidence": {
+          "height": 1024,
+          "width": 1024
+        },
+        "message": "candidate has reviewable raster dimensions",
+        "passed": true,
+        "severity": "warning"
+      },
+      {
+        "code": "candidate_changed",
+        "evidence": {},
+        "message": "candidate bytes differ from the source",
+        "passed": true,
+        "severity": "hard"
+      },
+      {
+        "code": "coherent_jewelry_render",
+        "evidence": {},
+        "message": "visual evidence matches the requested fact",
+        "passed": true,
+        "severity": "hard"
+      },
+      {
+        "code": "source_design_preserved",
+        "evidence": {},
+        "message": "visual evidence matches the requested fact",
+        "passed": true,
+        "severity": "hard"
+      },
+      {
+        "code": "visible_components_preserved",
+        "evidence": {},
+        "message": "visual evidence matches the requested fact",
+        "passed": true,
+        "severity": "hard"
+      },
+      {
+        "code": "requested_presentation_applied",
+        "evidence": {},
+        "message": "visual evidence matches the requested fact",
+        "passed": true,
+        "severity": "hard"
+      },
+      {
+        "code": "text_or_branding",
+        "evidence": {},
+        "message": "visual evidence matches the requested fact",
+        "passed": true,
+        "severity": "hard"
+      },
+      {
+        "code": "factory_authority",
+        "evidence": {
+          "factory_authoritative": false
+        },
+        "message": "creative render is review-only and cannot establish hidden geometry, dimensions, materials, stone identity, or factory facts",
+        "passed": false,
+        "severity": "warning"
+      }
+    ],
+    "notes": [
+      "oval green center with 4 claws preserved",
+      "exactly 3 small round stones per shoulder",
+      "simple polished yellow-gold band matches",
+      "three-quarter view on neutral background"
+    ],
+    "score": 92.0,
+    "verdict": "warn"
+  },
+  "result_set": "reference-render-low-information-sketch-live-v1-2026-07-11",
+  "review_required": true,
+  "source": "docs/evals/reference-render-low-information-sketch-live-v1-2026-07-11/source.png",
+  "source_sha256": "950ed3311495d6c46bf05b51a310b17b0749a5d902efefdb0fc9cb51f9e0218d",
+  "status": "review_required",
+  "variant": 4,
+  "verdict": "warn"
+}

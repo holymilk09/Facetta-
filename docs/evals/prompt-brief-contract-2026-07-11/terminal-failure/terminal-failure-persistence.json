@@ -1,0 +1,34 @@
+{
+  "database_after": {
+    "assets": 0,
+    "designs": 0,
+    "image_attempts": 3,
+    "image_run_reviews": 0,
+    "image_runs": 1,
+    "projects": 0,
+    "versions": 0
+  },
+  "database_before": {
+    "assets": 0,
+    "designs": 0,
+    "image_attempts": 0,
+    "image_run_reviews": 0,
+    "image_runs": 0,
+    "projects": 0,
+    "versions": 0
+  },
+  "partial_product_records": false,
+  "product_counts_after": {
+    "assets": 0,
+    "designs": 0,
+    "projects": 0,
+    "versions": 0
+  },
+  "product_counts_before": {
+    "assets": 0,
+    "designs": 0,
+    "projects": 0,
+    "versions": 0
+  },
+  "terminal_http_status": 422
+}

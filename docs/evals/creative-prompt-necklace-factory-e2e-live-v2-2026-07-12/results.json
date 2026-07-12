@@ -1,0 +1,24 @@
+{
+  "actor": "usr_internal_designer_e2e",
+  "audit_verdicts": {
+    "assembly.chain": "pass",
+    "assembly.pendant": "pass",
+    "assembly.primary": "pass",
+    "metal.body": "fail",
+    "setting.primary": "inconclusive",
+    "stone.center": "pass",
+    "stone.group.001": "inconclusive"
+  },
+  "candidate": "docs/evals/creative-prompt-necklace-live-v3-2026-07-12/candidate.png",
+  "candidate_sha256": "dd1f8f01c5180bf49c5613e32c4e13861c1fd561a02158ba61d8d3c76a801e37",
+  "draft_spec": "draft-spec.json",
+  "factory_authoritative": false,
+  "founder_approved": false,
+  "gia_cofounder_approved": false,
+  "jewelry_type": "necklace",
+  "next": "Review and correct every visible stone/material/component fact; supply or confirm dimensions and chain production details; then rerun with --confirmed-spec.",
+  "source_component_count": 7,
+  "stage": "candidate_draft",
+  "status": "designer_spec_review_required",
+  "template": "cluster_pendant"
+}

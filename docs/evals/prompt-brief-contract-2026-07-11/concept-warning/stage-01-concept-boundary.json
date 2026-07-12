@@ -1,0 +1,13 @@
+{
+  "acceptance_role": "none",
+  "accepted_by_harness": false,
+  "candidate_id": "cand_2b6fae11765d2de3",
+  "designer_approval": false,
+  "founder_approval": false,
+  "gia_cofounder_approval": false,
+  "preview_file": "stage-01-concept-warning-preview.png",
+  "project_records_unchanged": true,
+  "prompt_contract_version": "concept-generate.v1",
+  "run_id": "run_49eab63e860c0729",
+  "stage": "concept"
+}

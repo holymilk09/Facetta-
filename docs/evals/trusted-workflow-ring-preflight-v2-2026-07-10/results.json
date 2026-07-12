@@ -1,0 +1,704 @@
+{
+  "canonical_edits": [
+    {
+      "expected_valid": true,
+      "golden_case_id": "round-solitaire-yellow-4-narrow",
+      "id": "center-species-color",
+      "instruction": "change the center stone to a vivid blue sapphire",
+      "issues": [],
+      "region": "the center stone",
+      "starting_point": "spec_render",
+      "validation_passed": true,
+      "visual_only": false
+    },
+    {
+      "expected_valid": true,
+      "golden_case_id": "oval-solitaire-white-6-wide",
+      "id": "band-width",
+      "instruction": "increase the band width by 0.6 mm",
+      "issues": [],
+      "region": "the lower shank",
+      "starting_point": "imported_reference",
+      "validation_passed": true,
+      "visual_only": false
+    },
+    {
+      "expected_valid": true,
+      "golden_case_id": "oval-halo-yellow-6-imported",
+      "id": "metal-color",
+      "instruction": "change the metal to 18k rose gold",
+      "issues": [],
+      "region": "all metal surfaces",
+      "starting_point": "imported_reference",
+      "validation_passed": true,
+      "visual_only": false
+    },
+    {
+      "expected_valid": true,
+      "golden_case_id": "cushion-halo-white-6-wide",
+      "id": "prong-setting",
+      "instruction": "change the center setting between four and six prongs",
+      "issues": [],
+      "region": "the center setting",
+      "starting_point": "imported_reference",
+      "validation_passed": true,
+      "visual_only": false
+    },
+    {
+      "expected_valid": true,
+      "golden_case_id": "emerald-halo-rose-4-exact",
+      "id": "halo-count",
+      "instruction": "reduce the halo by exactly one stone",
+      "issues": [],
+      "region": "the halo",
+      "starting_point": "spec_render",
+      "validation_passed": true,
+      "visual_only": false
+    },
+    {
+      "expected_valid": true,
+      "golden_case_id": "marquise-solitaire-yellow-4",
+      "id": "background-only",
+      "instruction": "change only the background to warm ivory",
+      "issues": [],
+      "region": "the background",
+      "starting_point": "spec_render",
+      "validation_passed": true,
+      "visual_only": true
+    },
+    {
+      "expected_valid": false,
+      "golden_case_id": "round-solitaire-yellow-4-narrow",
+      "id": "impossible-band-width",
+      "instruction": "set the band width to 20 mm",
+      "issues": [
+        {
+          "code": "invalid_band_width",
+          "message": "20 mm exceeds the validated ring-band range"
+        }
+      ],
+      "region": "the band",
+      "starting_point": "spec_render",
+      "validation_passed": false,
+      "visual_only": false
+    }
+  ],
+  "cases": [
+    {
+      "band_width_mm": 1.8,
+      "center_cut": "round_brilliant",
+      "center_species": "diamond",
+      "factory_sheet_supported": true,
+      "halo": false,
+      "halo_count": 0,
+      "id": "round-solitaire-yellow-4-narrow",
+      "live_reference_strategy": null,
+      "metal_color": "yellow",
+      "prong_count": 4,
+      "reference_required": false,
+      "spec": {
+        "band": {
+          "profile": "comfort_fit",
+          "thickness_mm": 1.6,
+          "width_mm": 1.8
+        },
+        "bracelet": null,
+        "brooch": null,
+        "chain": null,
+        "composition": null,
+        "created_at": "1970-01-01T00:00:00Z",
+        "created_by": "usr_pending",
+        "design_id": "dsn_concept",
+        "drop": null,
+        "jewelry_type": "ring",
+        "metal": {
+          "color": "yellow",
+          "finish": "high_polish",
+          "karat": 18,
+          "material": "gold"
+        },
+        "mode": "pro",
+        "notes_to_factory": "Concept originated by image generation from the brief: \u201cgolden evaluation case round-solitaire-yellow-4-narrow\u201d. All dimensions are density-consistent DRAFT proposals scaled from a vision estimate of the centre stone \u2014 the designer confirms exact millimetres before production.",
+        "pendant": null,
+        "ring_size": {
+          "inner_diameter_mm": 16.91,
+          "system": "US",
+          "value": 6.5
+        },
+        "schema_version": 1,
+        "setting": {
+          "gallery_height_mm": 3.8,
+          "prong_count": 4,
+          "prong_tip_mm": 0.9,
+          "style": "4_prong_basket"
+        },
+        "side_stones": [],
+        "stone": {
+          "carat": 1.639,
+          "clarity": null,
+          "color": {
+            "gia": "natural colour",
+            "hue_code": null,
+            "saturation": null,
+            "tone": null,
+            "trade": "Diamond"
+          },
+          "count": 1,
+          "culet": null,
+          "cut": "round_brilliant",
+          "depth_pct": null,
+          "dimensions_mm": {
+            "depth": 4.6,
+            "length": 7.5,
+            "width": 7.5
+          },
+          "girdle": null,
+          "inscription": null,
+          "lab": null,
+          "mount": null,
+          "origin": null,
+          "phenomena": [],
+          "position": "center",
+          "species": "diamond",
+          "table_pct": null,
+          "treatment": null
+        },
+        "template": "solitaire_prong",
+        "version": 1
+      },
+      "starting_point": "spec_render"
+    },
+    {
+      "band_width_mm": 3.2,
+      "center_cut": "oval_brilliant",
+      "center_species": "sapphire",
+      "factory_sheet_supported": true,
+      "halo": false,
+      "halo_count": 0,
+      "id": "oval-solitaire-white-6-wide",
+      "live_reference_strategy": "generated_spec_aligned_fixture",
+      "metal_color": "white",
+      "prong_count": 6,
+      "reference_required": true,
+      "spec": {
+        "band": {
+          "profile": "comfort_fit",
+          "thickness_mm": 1.6,
+          "width_mm": 3.2
+        },
+        "bracelet": null,
+        "brooch": null,
+        "chain": null,
+        "composition": null,
+        "created_at": "1970-01-01T00:00:00Z",
+        "created_by": "usr_pending",
+        "design_id": "dsn_concept",
+        "drop": null,
+        "jewelry_type": "ring",
+        "metal": {
+          "color": "white",
+          "finish": "high_polish",
+          "karat": 18,
+          "material": "gold"
+        },
+        "mode": "pro",
+        "notes_to_factory": "Concept originated by image generation from the brief: \u201cgolden evaluation case oval-solitaire-white-6-wide\u201d. All dimensions are density-consistent DRAFT proposals scaled from a vision estimate of the centre stone \u2014 the designer confirms exact millimetres before production.",
+        "pendant": null,
+        "ring_size": {
+          "inner_diameter_mm": 16.91,
+          "system": "US",
+          "value": 6.5
+        },
+        "schema_version": 1,
+        "setting": {
+          "gallery_height_mm": 4.0,
+          "prong_count": 6,
+          "prong_tip_mm": 0.9,
+          "style": "6_prong_basket"
+        },
+        "side_stones": [],
+        "stone": {
+          "carat": 2.88,
+          "clarity": null,
+          "color": {
+            "gia": "vivid deep blue, slight violet, tone 6-7",
+            "hue_code": null,
+            "saturation": null,
+            "tone": null,
+            "trade": "Royal Blue"
+          },
+          "count": 1,
+          "culet": null,
+          "cut": "oval_brilliant",
+          "depth_pct": null,
+          "dimensions_mm": {
+            "depth": 4.8,
+            "length": 10.0,
+            "width": 7.5
+          },
+          "girdle": null,
+          "inscription": null,
+          "lab": null,
+          "mount": null,
+          "origin": null,
+          "phenomena": [],
+          "position": "center",
+          "species": "sapphire",
+          "table_pct": null,
+          "treatment": null
+        },
+        "template": "solitaire_prong",
+        "version": 1
+      },
+      "starting_point": "imported_reference"
+    },
+    {
+      "band_width_mm": 2.2,
+      "center_cut": "emerald_cut",
+      "center_species": "emerald",
+      "factory_sheet_supported": true,
+      "halo": true,
+      "halo_count": 19,
+      "id": "emerald-halo-rose-4-exact",
+      "live_reference_strategy": null,
+      "metal_color": "rose",
+      "prong_count": 4,
+      "reference_required": false,
+      "spec": {
+        "band": {
+          "profile": "comfort_fit",
+          "thickness_mm": 1.6,
+          "width_mm": 2.2
+        },
+        "bracelet": null,
+        "brooch": null,
+        "chain": null,
+        "composition": null,
+        "created_at": "1970-01-01T00:00:00Z",
+        "created_by": "usr_pending",
+        "design_id": "dsn_concept",
+        "drop": null,
+        "jewelry_type": "ring",
+        "metal": {
+          "color": "rose",
+          "finish": "high_polish",
+          "karat": 18,
+          "material": "gold"
+        },
+        "mode": "pro",
+        "notes_to_factory": "Concept originated by image generation from the brief: \u201cgolden evaluation case emerald-halo-rose-4-exact\u201d. All dimensions are density-consistent DRAFT proposals scaled from a vision estimate of the centre stone \u2014 the designer confirms exact millimetres before production.",
+        "pendant": null,
+        "ring_size": {
+          "inner_diameter_mm": 16.91,
+          "system": "US",
+          "value": 6.5
+        },
+        "schema_version": 1,
+        "setting": {
+          "gallery_height_mm": 4.0,
+          "prong_count": 4,
+          "prong_tip_mm": 0.9,
+          "style": "4_prong_basket"
+        },
+        "side_stones": [
+          {
+            "carat": 0.016,
+            "clarity": null,
+            "color": {
+              "gia": "colorless",
+              "hue_code": null,
+              "saturation": null,
+              "tone": null,
+              "trade": "F"
+            },
+            "count": 19,
+            "culet": null,
+            "cut": "round_brilliant",
+            "depth_pct": null,
+            "dimensions_mm": {
+              "depth": 0.98,
+              "length": 1.6,
+              "width": 1.6
+            },
+            "girdle": null,
+            "inscription": null,
+            "lab": null,
+            "mount": null,
+            "origin": null,
+            "phenomena": [],
+            "position": "halo",
+            "species": "diamond",
+            "table_pct": null,
+            "treatment": null
+          }
+        ],
+        "stone": {
+          "carat": 2.499,
+          "clarity": null,
+          "color": {
+            "gia": "vivid, warm, slightly yellowish green",
+            "hue_code": null,
+            "saturation": null,
+            "tone": null,
+            "trade": "Muzo Green"
+          },
+          "count": 1,
+          "culet": null,
+          "cut": "emerald_cut",
+          "depth_pct": null,
+          "dimensions_mm": {
+            "depth": 4.9,
+            "length": 10.0,
+            "width": 7.5
+          },
+          "girdle": null,
+          "inscription": null,
+          "lab": null,
+          "mount": null,
+          "origin": null,
+          "phenomena": [],
+          "position": "center",
+          "species": "emerald",
+          "table_pct": null,
+          "treatment": null
+        },
+        "template": "halo_prong",
+        "version": 1
+      },
+      "starting_point": "spec_render"
+    },
+    {
+      "band_width_mm": 3.0,
+      "center_cut": "cushion",
+      "center_species": "ruby",
+      "factory_sheet_supported": true,
+      "halo": true,
+      "halo_count": 19,
+      "id": "cushion-halo-white-6-wide",
+      "live_reference_strategy": "generated_spec_aligned_fixture",
+      "metal_color": "white",
+      "prong_count": 6,
+      "reference_required": true,
+      "spec": {
+        "band": {
+          "profile": "comfort_fit",
+          "thickness_mm": 1.6,
+          "width_mm": 3.0
+        },
+        "bracelet": null,
+        "brooch": null,
+        "chain": null,
+        "composition": null,
+        "created_at": "1970-01-01T00:00:00Z",
+        "created_by": "usr_pending",
+        "design_id": "dsn_concept",
+        "drop": null,
+        "jewelry_type": "ring",
+        "metal": {
+          "color": "white",
+          "finish": "high_polish",
+          "karat": 18,
+          "material": "gold"
+        },
+        "mode": "pro",
+        "notes_to_factory": "Concept originated by image generation from the brief: \u201cgolden evaluation case cushion-halo-white-6-wide\u201d. All dimensions are density-consistent DRAFT proposals scaled from a vision estimate of the centre stone \u2014 the designer confirms exact millimetres before production.",
+        "pendant": null,
+        "ring_size": {
+          "inner_diameter_mm": 16.91,
+          "system": "US",
+          "value": 6.5
+        },
+        "schema_version": 1,
+        "setting": {
+          "gallery_height_mm": 4.1,
+          "prong_count": 6,
+          "prong_tip_mm": 0.9,
+          "style": "6_prong_basket"
+        },
+        "side_stones": [
+          {
+            "carat": 0.016,
+            "clarity": null,
+            "color": {
+              "gia": "colorless",
+              "hue_code": null,
+              "saturation": null,
+              "tone": null,
+              "trade": "F"
+            },
+            "count": 19,
+            "culet": null,
+            "cut": "round_brilliant",
+            "depth_pct": null,
+            "dimensions_mm": {
+              "depth": 0.98,
+              "length": 1.6,
+              "width": 1.6
+            },
+            "girdle": null,
+            "inscription": null,
+            "lab": null,
+            "mount": null,
+            "origin": null,
+            "phenomena": [],
+            "position": "halo",
+            "species": "diamond",
+            "table_pct": null,
+            "treatment": null
+          }
+        ],
+        "stone": {
+          "carat": 3.3,
+          "clarity": null,
+          "color": {
+            "gia": "vivid red, slightly purplish, tone 5-6",
+            "hue_code": null,
+            "saturation": null,
+            "tone": null,
+            "trade": "Pigeon's Blood"
+          },
+          "count": 1,
+          "culet": null,
+          "cut": "cushion",
+          "depth_pct": null,
+          "dimensions_mm": {
+            "depth": 5.0,
+            "length": 10.0,
+            "width": 7.5
+          },
+          "girdle": null,
+          "inscription": null,
+          "lab": null,
+          "mount": null,
+          "origin": null,
+          "phenomena": [],
+          "position": "center",
+          "species": "ruby",
+          "table_pct": null,
+          "treatment": null
+        },
+        "template": "halo_prong",
+        "version": 1
+      },
+      "starting_point": "imported_reference"
+    },
+    {
+      "band_width_mm": 2.0,
+      "center_cut": "marquise",
+      "center_species": "diamond",
+      "factory_sheet_supported": false,
+      "halo": false,
+      "halo_count": 0,
+      "id": "marquise-solitaire-yellow-4",
+      "live_reference_strategy": null,
+      "metal_color": "yellow",
+      "prong_count": 4,
+      "reference_required": false,
+      "spec": {
+        "band": {
+          "profile": "comfort_fit",
+          "thickness_mm": 1.6,
+          "width_mm": 2.0
+        },
+        "bracelet": null,
+        "brooch": null,
+        "chain": null,
+        "composition": null,
+        "created_at": "1970-01-01T00:00:00Z",
+        "created_by": "usr_pending",
+        "design_id": "dsn_concept",
+        "drop": null,
+        "jewelry_type": "ring",
+        "metal": {
+          "color": "yellow",
+          "finish": "high_polish",
+          "karat": 18,
+          "material": "gold"
+        },
+        "mode": "pro",
+        "notes_to_factory": "Concept originated by image generation from the brief: \u201cgolden evaluation case marquise-solitaire-yellow-4\u201d. All dimensions are density-consistent DRAFT proposals scaled from a vision estimate of the centre stone \u2014 the designer confirms exact millimetres before production.",
+        "pendant": null,
+        "ring_size": {
+          "inner_diameter_mm": 16.91,
+          "system": "US",
+          "value": 6.5
+        },
+        "schema_version": 1,
+        "setting": {
+          "gallery_height_mm": 4.0,
+          "prong_count": 4,
+          "prong_tip_mm": 0.9,
+          "style": "4_prong_basket"
+        },
+        "side_stones": [],
+        "stone": {
+          "carat": 2.028,
+          "clarity": null,
+          "color": {
+            "gia": "natural colour",
+            "hue_code": null,
+            "saturation": null,
+            "tone": null,
+            "trade": "Diamond"
+          },
+          "count": 1,
+          "culet": null,
+          "cut": "marquise",
+          "depth_pct": null,
+          "dimensions_mm": {
+            "depth": 4.8,
+            "length": 10.0,
+            "width": 7.5
+          },
+          "girdle": null,
+          "inscription": null,
+          "lab": null,
+          "mount": null,
+          "origin": null,
+          "phenomena": [],
+          "position": "center",
+          "species": "diamond",
+          "table_pct": null,
+          "treatment": null
+        },
+        "template": "solitaire_prong",
+        "version": 1
+      },
+      "starting_point": "spec_render"
+    },
+    {
+      "band_width_mm": 2.4,
+      "center_cut": "oval_brilliant",
+      "center_species": "sapphire",
+      "factory_sheet_supported": true,
+      "halo": true,
+      "halo_count": 19,
+      "id": "oval-halo-yellow-6-imported",
+      "live_reference_strategy": "generated_spec_aligned_fixture",
+      "metal_color": "yellow",
+      "prong_count": 6,
+      "reference_required": true,
+      "spec": {
+        "band": {
+          "profile": "comfort_fit",
+          "thickness_mm": 1.6,
+          "width_mm": 2.4
+        },
+        "bracelet": null,
+        "brooch": null,
+        "chain": null,
+        "composition": null,
+        "created_at": "1970-01-01T00:00:00Z",
+        "created_by": "usr_pending",
+        "design_id": "dsn_concept",
+        "drop": null,
+        "jewelry_type": "ring",
+        "metal": {
+          "color": "yellow",
+          "finish": "high_polish",
+          "karat": 18,
+          "material": "gold"
+        },
+        "mode": "pro",
+        "notes_to_factory": "Concept originated by image generation from the brief: \u201cgolden evaluation case oval-halo-yellow-6-imported\u201d. All dimensions are density-consistent DRAFT proposals scaled from a vision estimate of the centre stone \u2014 the designer confirms exact millimetres before production.",
+        "pendant": null,
+        "ring_size": {
+          "inner_diameter_mm": 16.91,
+          "system": "US",
+          "value": 6.5
+        },
+        "schema_version": 1,
+        "setting": {
+          "gallery_height_mm": 4.0,
+          "prong_count": 6,
+          "prong_tip_mm": 0.9,
+          "style": "6_prong_basket"
+        },
+        "side_stones": [
+          {
+            "carat": 0.016,
+            "clarity": null,
+            "color": {
+              "gia": "colorless",
+              "hue_code": null,
+              "saturation": null,
+              "tone": null,
+              "trade": "F"
+            },
+            "count": 19,
+            "culet": null,
+            "cut": "round_brilliant",
+            "depth_pct": null,
+            "dimensions_mm": {
+              "depth": 0.98,
+              "length": 1.6,
+              "width": 1.6
+            },
+            "girdle": null,
+            "inscription": null,
+            "lab": null,
+            "mount": null,
+            "origin": null,
+            "phenomena": [],
+            "position": "halo",
+            "species": "diamond",
+            "table_pct": null,
+            "treatment": null
+          }
+        ],
+        "stone": {
+          "carat": 2.88,
+          "clarity": null,
+          "color": {
+            "gia": "vivid deep blue, slight violet, tone 6-7",
+            "hue_code": null,
+            "saturation": null,
+            "tone": null,
+            "trade": "Royal Blue"
+          },
+          "count": 1,
+          "culet": null,
+          "cut": "oval_brilliant",
+          "depth_pct": null,
+          "dimensions_mm": {
+            "depth": 4.8,
+            "length": 10.0,
+            "width": 7.5
+          },
+          "girdle": null,
+          "inscription": null,
+          "lab": null,
+          "mount": null,
+          "origin": null,
+          "phenomena": [],
+          "position": "center",
+          "species": "sapphire",
+          "table_pct": null,
+          "treatment": null
+        },
+        "template": "halo_prong",
+        "version": 1
+      },
+      "starting_point": "imported_reference"
+    }
+  ],
+  "live": false,
+  "mode": "preflight",
+  "persistence_evidence": {
+    "method": "not_run",
+    "note": "This image-engine run did not exercise canonical project persistence. Attach a named canonical-API integration result before the persistence release gate can pass.",
+    "rejected_active_asset_count": null,
+    "result_set": null,
+    "verified": false
+  },
+  "provider_readiness": {
+    "fallback_configured": false,
+    "xai_configured": false
+  },
+  "release_gates": {
+    "blocking_enabled": false,
+    "blocking_note": "Run live with both providers, then complete GIA-trained cofounder evaluator review.",
+    "status": "not_evaluated"
+  },
+  "run": "trusted-workflow-ring-preflight-v2-2026-07-10"
+}

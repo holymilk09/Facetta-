@@ -89,6 +89,19 @@ class TestCompileSheetInstruction:
         assert "Never invent designer names" in text       # honesty rule stays
         assert text.startswith(agent.TASK_LINE)
 
+    def test_ring_sheet_assigns_design_specific_mounting_to_image_model(self):
+        text = agent.compile_sheet_instruction(
+            "RING_ENGAGEMENT", templated=True)
+        assert "IMAGE MODEL OWNS THE DRAWN JEWELRY GEOMETRY" in text
+        assert "stone seat or bearing relationship" in text
+        assert "head-to-shoulder and head-to-shank connection" in text
+        assert "proposal for designer confirmation" in text
+        assert "generic circles, rectangles, baskets, or stock profiles" in text
+
+    def test_non_ring_sheet_does_not_inherit_ring_hardware(self):
+        text = agent.compile_sheet_instruction("PENDANT", templated=True)
+        assert "MOUNTING-HARDWARE CONTRACT" not in text
+
     def test_templated_forbids_all_painted_text(self):
         # Grok can't reliably letter text ('Pullish', 'G6.91') and invented
         # phantom 'PLAN'/'SECTION A-A'. Templated mode forbids ALL text so the
@@ -111,7 +124,8 @@ class TestCompileSheetInstruction:
         assert agent.TASK_MODE == "MANUFACTURING_TECHNICAL_DRAWING"
         assert agent.UI_LABELS["button"] == "Create manufacturing drawing"
         assert agent.UI_LABELS["subtitle"] == (
-            "True-scale views, dimensions, materials & stones for production")
+            "Design-specific views, confirmed facts, and proposed mounting "
+            "for designer and factory review")
         assert agent.UI_LABELS["synonyms"] == agent.SYNONYMS_LINE
         assert "factory drawing" in agent.SYNONYMS_LINE
         assert agent.TASK_LINE in agent.MASTER_SYSTEM      # near the top
@@ -542,6 +556,35 @@ class TestTechnicalDrawingEndpoint:
         read = agent.read_design_plate(b"plate")
         assert read["assembly"].startswith("vertical drop")
 
+    def test_read_design_plate_preserves_one_piece_inventory_context(
+        self, monkeypatch,
+    ):
+        seen = {}
+
+        def fake_vision(system, image, ask):
+            seen["system"] = system
+            return {
+                "jewelry_type": "necklace",
+                "stones": [{
+                    "qty": 2,
+                    "qty_status": "visible_count",
+                    "position": "inner flanking drops",
+                    "source_views": ["front", "detail"],
+                    "written_labels": ["2.84", "3.06"],
+                    "type": "emerald pear shape",
+                }],
+            }
+
+        monkeypatch.setattr(agent, "_vision_json", fake_vision)
+        read = agent.read_design_plate(b"multi-view plate")
+
+        assert "Inventory ONE physical finished piece" in seen["system"]
+        assert "Never add duplicate stones" in seen["system"]
+        assert read["stones"][0]["position"] == "inner flanking drops"
+        assert read["stones"][0]["qty_status"] == "visible_count"
+        assert read["stones"][0]["source_views"] == ["front", "detail"]
+        assert read["stones"][0]["written_labels"] == ["2.84", "3.06"]
+
     def test_assembly_lock_keeps_the_piece_assembled(self):
         # the fix for 'a row of loose stones': the redraw carries the assembly
         read = {"jewelry_type": "earrings",
@@ -685,9 +728,14 @@ class TestTechnicalDrawingEndpoint:
             return REAL_PNG, False
 
         monkeypatch.setattr(specs_mod, "colorize_lineart", fake_colorize)
+        monkeypatch.setattr(specs_mod, "check_geometry_consistency",
+                            lambda reference, candidate: {
+                                "consistent": True, "differences": [],
+                                "severity": "none", "checked": True})
         r = TestClient(app).post("/specs/plate-colorize", json={
             "views": [{"view": "front",
                        "image_base64": base64.b64encode(REAL_PNG).decode()}],
+            "confirmed": True,
             "materials": "lapis cabochon (deep blue); two diamond marquise "
                          "wings (white); 18k yellow gold",
             "estimates": {"stones": [{"qty": 2, "type": "diamond marquise",
@@ -707,8 +755,38 @@ class TestTechnicalDrawingEndpoint:
     def test_plate_colorize_bad_base64_is_422(self):
         r = TestClient(app).post("/specs/plate-colorize", json={
             "views": [{"view": "front", "image_base64": "not base64!!!"}],
+            "confirmed": True,
             "materials": "gold"})
         assert r.status_code == 422
+
+    def test_plate_colorize_requires_designer_confirmation(self):
+        r = TestClient(app).post("/specs/plate-colorize", json={
+            "views": [{"view": "front",
+                       "image_base64": base64.b64encode(REAL_PNG).decode()}],
+            "materials": "18k yellow gold",
+        })
+        assert r.status_code == 409
+        assert r.json()["error_category"] == "approval_required"
+
+    def test_plate_colorize_rejects_geometry_drift(self, monkeypatch):
+        monkeypatch.setattr(specs_mod, "colorize_lineart",
+                            lambda *args, **kwargs: (REAL_PNG, False))
+        monkeypatch.setattr(specs_mod, "check_geometry_consistency",
+                            lambda *args, **kwargs: {
+                                "consistent": False,
+                                "differences": ["added stone"],
+                                "severity": "major",
+                                "checked": True,
+                            })
+        r = TestClient(app).post("/specs/plate-colorize", json={
+            "views": [{"view": "front",
+                       "image_base64": base64.b64encode(REAL_PNG).decode()}],
+            "confirmed": True,
+            "materials": "18k yellow gold",
+        })
+        assert r.status_code == 422
+        assert "geometry" in r.json()["detail"]
+        assert r.json()["quality"]["differences"] == ["added stone"]
 
     def test_read_plate_bad_base64_is_422(self):
         r = TestClient(app).post("/specs/read-plate",

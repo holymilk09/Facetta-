@@ -1,0 +1,265 @@
+{
+  "filenames": [
+    "image-97.jpg",
+    "image-98.jpg",
+    "image-99.jpg",
+    "image-100.jpg",
+    "image-101.jpg",
+    "image-102.jpg",
+    "image-103.jpg",
+    "image-104.jpg",
+    "image-105.jpg",
+    "image-106.jpg",
+    "image-107.jpg",
+    "image-108.jpg",
+    "image-109.jpg",
+    "image-110.jpg",
+    "image-111.jpg",
+    "image-112.jpg"
+  ],
+  "latency_ms": 16914,
+  "payload": {
+    "items": [
+      {
+        "complexity": "moderate",
+        "confidence": 0.85,
+        "filename": "image-97.jpg",
+        "input_kind": "colored_design_plate",
+        "multi_design": true,
+        "notes": "3x3 grid of finished colorful rings",
+        "primary_category": "ring",
+        "watermark_or_branding": false,
+        "workflow_fit": [
+          "catalog_reference",
+          "reference_chart"
+        ]
+      },
+      {
+        "complexity": "simple",
+        "confidence": 0.9,
+        "filename": "image-98.jpg",
+        "input_kind": "unknown",
+        "multi_design": false,
+        "notes": "non-jewelry bird photograph",
+        "primary_category": "unknown",
+        "watermark_or_branding": false,
+        "workflow_fit": [
+          "exclude_as_source"
+        ]
+      },
+      {
+        "complexity": "complex",
+        "confidence": 0.8,
+        "filename": "image-99.jpg",
+        "input_kind": "mixed",
+        "multi_design": true,
+        "notes": "multiple ring photos with sketches and branding",
+        "primary_category": "ring",
+        "watermark_or_branding": true,
+        "workflow_fit": [
+          "beauty_render",
+          "lineart_color",
+          "catalog_reference"
+        ]
+      },
+      {
+        "complexity": "moderate",
+        "confidence": 0.85,
+        "filename": "image-100.jpg",
+        "input_kind": "colored_design_plate",
+        "multi_design": true,
+        "notes": "two ring renderings with visible branding",
+        "primary_category": "ring",
+        "watermark_or_branding": true,
+        "workflow_fit": [
+          "catalog_reference",
+          "beauty_render"
+        ]
+      },
+      {
+        "complexity": "simple",
+        "confidence": 0.8,
+        "filename": "image-101.jpg",
+        "input_kind": "finished_jewelry_photo",
+        "multi_design": true,
+        "notes": "three pearl rings on branded card",
+        "primary_category": "ring",
+        "watermark_or_branding": true,
+        "workflow_fit": [
+          "photo_read",
+          "catalog_reference"
+        ]
+      },
+      {
+        "complexity": "moderate",
+        "confidence": 0.9,
+        "filename": "image-102.jpg",
+        "input_kind": "finished_jewelry_photo",
+        "multi_design": false,
+        "notes": "single ornate ring with bow motif",
+        "primary_category": "ring",
+        "watermark_or_branding": false,
+        "workflow_fit": [
+          "beauty_render"
+        ]
+      },
+      {
+        "complexity": "moderate",
+        "confidence": 0.85,
+        "filename": "image-103.jpg",
+        "input_kind": "colored_design_plate",
+        "multi_design": true,
+        "notes": "two orange-stone rings with branding",
+        "primary_category": "ring",
+        "watermark_or_branding": true,
+        "workflow_fit": [
+          "catalog_reference",
+          "beauty_render"
+        ]
+      },
+      {
+        "complexity": "moderate",
+        "confidence": 0.85,
+        "filename": "image-104.jpg",
+        "input_kind": "colored_design_plate",
+        "multi_design": true,
+        "notes": "two multi-gem floral rings with branding",
+        "primary_category": "ring",
+        "watermark_or_branding": true,
+        "workflow_fit": [
+          "catalog_reference",
+          "beauty_render"
+        ]
+      },
+      {
+        "complexity": "moderate",
+        "confidence": 0.9,
+        "filename": "image-105.jpg",
+        "input_kind": "finished_jewelry_photo",
+        "multi_design": true,
+        "notes": "two views of large pink-stone ring",
+        "primary_category": "ring",
+        "watermark_or_branding": false,
+        "workflow_fit": [
+          "beauty_render",
+          "photo_read"
+        ]
+      },
+      {
+        "complexity": "complex",
+        "confidence": 0.9,
+        "filename": "image-106.jpg",
+        "input_kind": "technical_sheet",
+        "multi_design": true,
+        "notes": "detailed technical drawings with measurements",
+        "primary_category": "ring",
+        "watermark_or_branding": false,
+        "workflow_fit": [
+          "technical_benchmark",
+          "lineart_color"
+        ]
+      },
+      {
+        "complexity": "moderate",
+        "confidence": 0.85,
+        "filename": "image-107.jpg",
+        "input_kind": "finished_jewelry_photo",
+        "multi_design": false,
+        "notes": "single ornate multi-gem ring on patterned background",
+        "primary_category": "ring",
+        "watermark_or_branding": false,
+        "workflow_fit": [
+          "beauty_render"
+        ]
+      },
+      {
+        "complexity": "complex",
+        "confidence": 0.9,
+        "filename": "image-108.jpg",
+        "input_kind": "technical_sheet",
+        "multi_design": true,
+        "notes": "technical drawings with dimensions and specs",
+        "primary_category": "ring",
+        "watermark_or_branding": false,
+        "workflow_fit": [
+          "technical_benchmark",
+          "lineart_color"
+        ]
+      },
+      {
+        "complexity": "complex",
+        "confidence": 0.9,
+        "filename": "image-109.jpg",
+        "input_kind": "technical_sheet",
+        "multi_design": true,
+        "notes": "multiple technical sketches with measurements",
+        "primary_category": "ring",
+        "watermark_or_branding": false,
+        "workflow_fit": [
+          "technical_benchmark",
+          "lineart_color"
+        ]
+      },
+      {
+        "complexity": "complex",
+        "confidence": 0.9,
+        "filename": "image-110.jpg",
+        "input_kind": "technical_sheet",
+        "multi_design": true,
+        "notes": "detailed technical drawings with dimensions",
+        "primary_category": "ring",
+        "watermark_or_branding": false,
+        "workflow_fit": [
+          "technical_benchmark",
+          "lineart_color"
+        ]
+      },
+      {
+        "complexity": "complex",
+        "confidence": 0.85,
+        "filename": "image-111.jpg",
+        "input_kind": "technical_sheet",
+        "multi_design": true,
+        "notes": "floral ring technical sheets with notes",
+        "primary_category": "ring",
+        "watermark_or_branding": false,
+        "workflow_fit": [
+          "technical_benchmark",
+          "lineart_color"
+        ]
+      },
+      {
+        "complexity": "simple",
+        "confidence": 0.85,
+        "filename": "image-112.jpg",
+        "input_kind": "finished_jewelry_photo",
+        "multi_design": true,
+        "notes": "three ring photos on gray background with branding",
+        "primary_category": "ring",
+        "watermark_or_branding": true,
+        "workflow_fit": [
+          "photo_read",
+          "catalog_reference"
+        ]
+      }
+    ]
+  },
+  "source_hashes": [
+    "31d84176ea87d81f4412bbd0381a1753e525d4b89181ba366640d936c19b7eaf",
+    "ae903d13b586d4e316367858acbbe257ce4a6f11d1b9309c0a2cc3f7a50e473a",
+    "002fb2b19becaf82e10785dd2ae2cebb82a6d80a5f75c386db8f7a2e2ab43712",
+    "2abcae071ddcfde1aab531c27bfc28ee6189b6d8033a3e41fbd0fe497d71dbed",
+    "40f607052404ef5832221800d1fe6821c9eac8498b4eb539d8126043906aeced",
+    "ac7c8fdb8efd2c59c2e833d624cea2bb92fc1cd7c02686e5fd8cb870af340e54",
+    "3bcfbd25d6d11ee3a1ec0e9be1b182078a1a8b824262940431c09d59a2e75fea",
+    "7e7df7d262c5810b7b29f399b7371a14c64ac3bf6570bfa905d42f256965f0a8",
+    "464dd21c424f06002f7962f4e4ec87c4761f4163360ccb5dd83c616f604d2993",
+    "22926da408316d9ebddddeda3585b06d096d85525e08be4e31a6c2ffad61df48",
+    "bd0820ff714cdd7ba88784a1f81e668fa7f22b62138848c0798212d5e0cfc7e9",
+    "2aafe436ad71f664ef07a82536c6f06ec7e71e79de83420138f96e15f1f63f21",
+    "5d4656c56323376b9a552e95fc1739fc9e197917952caa6affa4a1caa0b7605a",
+    "ace83869a676f6b633ad54d55558dd2f62216ec687c9a65e079cfab2d11bd1f3",
+    "8c78a3c6486df6d06792ea060ca4dc33aded38f71ea152cc2cdaef61b2252d80",
+    "9cbab9109aedccddfd3fd964beba815a489c4b8cecae76be7a843137bdf76b08"
+  ]
+}

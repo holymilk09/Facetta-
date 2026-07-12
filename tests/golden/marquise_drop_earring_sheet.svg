@@ -2,8 +2,9 @@
 <defs><pattern id="hatch" width="1.4" height="1.4" patternTransform="rotate(45)" patternUnits="userSpaceOnUse"><line x1="0" y1="0" x2="0" y2="1.4" stroke="#8a8a8a" stroke-width="0.12"/></pattern><pattern id="grid" width="5" height="5" patternUnits="userSpaceOnUse"><line x1="0" y1="0" x2="5" y2="0" stroke="#8a8a8a" stroke-width="0.06"/><line x1="0" y1="0" x2="0" y2="5" stroke="#8a8a8a" stroke-width="0.06"/></pattern></defs>
 <rect x="0" y="0" width="297" height="210" fill="#fdfdfa"/>
 <rect x="8" y="8" width="281" height="194" fill="url(#grid)" stroke="#3f3f3f" stroke-width="0.3"/>
-<text x="148.50" y="16.00" font-family="Georgia, 'Times New Roman', serif" font-size="4.6" fill="#3f3f3f" text-anchor="middle" letter-spacing="1.6">TECHNICAL SHEET — DROP EARRING</text>
+<text x="148.50" y="16.00" font-family="Georgia, 'Times New Roman', serif" font-size="4.6" fill="#3f3f3f" text-anchor="middle" letter-spacing="1.6">DIMENSIONAL DIAGRAM — DROP EARRING</text>
 <line x1="11.00" y1="19.50" x2="286.00" y2="19.50" stroke="#8a8a8a" stroke-width="0.15"/>
+<text x="148.50" y="23.00" font-family="Georgia, 'Times New Roman', serif" font-size="2.7" fill="#9b2f2f" text-anchor="middle" font-weight="bold" letter-spacing="0.45">SCHEMATIC DIMENSIONAL DIAGRAM — NOT PRODUCTION GEOMETRY</text>
 <path d="M 78.00 49.00 A 7.13 11.50 0 1 1 78.10 49.00" fill="none" stroke="#3f3f3f" stroke-width="1.84" stroke-linecap="round"/>
 <circle cx="78.00" cy="50.20" r="1.66" fill="#ffffff" stroke="#3f3f3f" stroke-width="0.3"/>
 <ellipse cx="78.00" cy="52.96" rx="1.88" ry="2.76" fill="none" stroke="#3f3f3f" stroke-width="0.3"/>
@@ -96,7 +97,7 @@
 <text x="192.00" y="175.40" font-family="Georgia, 'Times New Roman', serif" font-size="3.8" fill="#3f3f3f" text-anchor="start" font-weight="bold">dsn_marquise_drop  ·  v1</text>
 <text x="192.00" y="179.80" font-family="Georgia, 'Times New Roman', serif" font-size="3.1" fill="#3f3f3f" text-anchor="start">3.83 ct Diamond  ·  marquise</text>
 <text x="192.00" y="184.20" font-family="Georgia, 'Times New Roman', serif" font-size="3.1" fill="#3f3f3f" text-anchor="start">18k Yellow Gold  ·  high polish</text>
-<text x="192.00" y="188.60" font-family="Georgia, 'Times New Roman', serif" font-size="3.1" fill="#3f3f3f" text-anchor="start">Diamond  ·  finest available</text>
+<text x="192.00" y="188.60" font-family="Georgia, 'Times New Roman', serif" font-size="3.1" fill="#3f3f3f" text-anchor="start">F Colorless  ·  finest available</text>
 <text x="192.00" y="192.60" font-family="Georgia, 'Times New Roman', serif" font-size="2.7" fill="#8a8a8a" text-anchor="start">UNITS mm  ·  SCALE 2.3:1  ·  usr_ana</text>
 <text x="286.00" y="198.80" font-family="Georgia, 'Times New Roman', serif" font-size="2.7" fill="#8a8a8a" text-anchor="end">2026-07-07</text>
 <line x1="8.00" y1="194.00" x2="189.00" y2="194.00" stroke="#8a8a8a" stroke-width="0.15"/>
@@ -116,5 +117,5 @@
 <text x="12.00" y="183.50" font-family="Georgia, 'Times New Roman', serif" font-size="2.6" fill="#8a8a8a" text-anchor="start" letter-spacing="1.2">NOTES TO FACTORY</text>
 <text x="12.00" y="187.30" font-family="Georgia, 'Times New Roman', serif" font-size="3.0" fill="#3f3f3f" text-anchor="start">Concept originated by image generation from the brief: “modern marquise drop earring”. Modular articulated drop</text>
 <text x="12.00" y="190.90" font-family="Georgia, 'Times New Roman', serif" font-size="3.0" fill="#3f3f3f" text-anchor="start">— cast frame, hand-set pavé. All dimensions are density-consistent DRAFT proposals scaled from a vision…</text>
-<text x="289.00" y="206.80" font-family="Georgia, 'Times New Roman', serif" font-size="2.8" fill="#8a8a8a" text-anchor="end" letter-spacing="1.2">CONFIDENTIAL — FACTORY PRODUCTION ONLY</text>
+<text x="289.00" y="206.80" font-family="Georgia, 'Times New Roman', serif" font-size="2.8" fill="#8a8a8a" text-anchor="end" letter-spacing="1.2">CONFIDENTIAL — FACTORY REVIEW REFERENCE</text>
 </svg>

@@ -1,0 +1,23 @@
+{
+  "artifacts": {
+    "preview": "facetta-sheet-preview.png",
+    "sheet": "facetta-sheet.svg"
+  },
+  "factory_authoritative_test_fixture": true,
+  "fixture_scope": "synthetic dimensioned full-assembly profile",
+  "review": {
+    "confirmed_profile_visible": true,
+    "dimension_callouts_visible": true,
+    "estimate_disclaimer_visible": true,
+    "generic_template_geometry_visible": false,
+    "result": "pass",
+    "title_block_scale_matches_profile": true
+  },
+  "runtime_assertions": {
+    "factory_pack_created": true,
+    "hidden_template_exported_to_dxf": false,
+    "profile_estimates_in_fact_plan": true,
+    "profile_estimates_in_manifest": true
+  },
+  "status": "internal_synthetic_contract_evidence"
+}

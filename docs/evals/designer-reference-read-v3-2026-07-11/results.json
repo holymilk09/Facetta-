@@ -1,0 +1,1060 @@
+{
+  "corpus": "designer-reference-corpus-v1",
+  "pair_checks": [
+    {
+      "base_case": "leaf-ring-measured-green",
+      "expected_change": "material/species only; geometry frozen",
+      "result": {
+        "base_center_cut": null,
+        "base_stone_group_count": 3,
+        "checks": {
+          "center_cut_stable": true,
+          "jewelry_type_stable": true,
+          "measurement_overlap": true,
+          "stone_group_count_stable": true
+        },
+        "measurement_overlap": 0.833,
+        "status": "pass",
+        "variant_center_cut": null,
+        "variant_stone_group_count": 3
+      },
+      "variant_case": "leaf-ring-measured-pink"
+    }
+  ],
+  "provider_readiness": {
+    "fallback_configured": false,
+    "xai_configured": true
+  },
+  "rows": [
+    {
+      "case": "leaf-ring-measured-green",
+      "category": "ring",
+      "input_kind": "measured_colored_design_plate",
+      "latency_ms": 31804,
+      "read": {
+        "assembly": "central square green stone in four-prong/yellow gold setting flanked by symmetrical leaf-shaped pav\u00e9 diamond motifs that wrap around the shoulders, with channel-set diamonds on upper band and plain polished shank",
+        "hand_written": [
+          "Carat section",
+          "Diamond carat",
+          "A. 14 carat = 0.75",
+          "D. 1.14 carat = 0.35",
+          "D. 1.14 carat = 0.35",
+          "Metal Gold",
+          "diamond Black",
+          "Meta : 310Min",
+          "WO henth : 120 gold",
+          "Diamond width : 2 mm",
+          "21",
+          "4.35",
+          "30",
+          "2",
+          "60",
+          "115",
+          "15",
+          "R"
+        ],
+        "jewelry_type": "ring",
+        "measurements": [
+          {
+            "confidence": 0.0,
+            "label": "overall height",
+            "raw": "115",
+            "status": "ambiguous",
+            "value": "115"
+          },
+          {
+            "confidence": 0.0,
+            "label": "band width",
+            "raw": "15",
+            "status": "ambiguous",
+            "value": "15"
+          },
+          {
+            "confidence": 0.0,
+            "label": "diamond width",
+            "raw": "Diamond width : 2 mm",
+            "status": "designer_confirmed",
+            "value": "2 mm"
+          },
+          {
+            "confidence": 0.0,
+            "label": "shank profile height",
+            "raw": "2",
+            "status": "ambiguous",
+            "value": "2"
+          },
+          {
+            "confidence": 0.0,
+            "label": "shank width",
+            "raw": "30",
+            "status": "ambiguous",
+            "value": "30"
+          },
+          {
+            "confidence": 0.0,
+            "label": "inner diameter reference",
+            "raw": "60",
+            "status": "ambiguous",
+            "value": "60"
+          }
+        ],
+        "metal": "gold (120 gold per notes)",
+        "scale_anchor": null,
+        "scaled": false,
+        "source": "plate",
+        "stones": [
+          {
+            "carat_each": null,
+            "confidence": 0.0,
+            "qty": 1,
+            "size_mm": "TBD",
+            "type": "green square-cut stone (species TBD)"
+          },
+          {
+            "carat_each": null,
+            "confidence": 0.0,
+            "qty": 1,
+            "size_mm": "TBD",
+            "type": "diamond marquise/leaf and round pav\u00e9"
+          },
+          {
+            "carat_each": null,
+            "confidence": 0.0,
+            "qty": 1,
+            "size_mm": "TBD",
+            "type": "diamond baguette/channel"
+          }
+        ]
+      },
+      "read_score": {
+        "checks": {
+          "authoritative_text": true,
+          "expected_visual_terms": true,
+          "jewelry_type": true,
+          "minimum_stone_groups": true
+        },
+        "multi_design_warning": false,
+        "observed_jewelry_type": "ring",
+        "score": 100.0,
+        "status": "pass",
+        "stone_group_count": 3,
+        "term_hits": [
+          "green",
+          "leaf"
+        ],
+        "transcription_hits": [
+          "115",
+          "2 mm",
+          "0.75"
+        ]
+      },
+      "source": {
+        "available": true,
+        "decodable": true,
+        "format": "JPEG",
+        "hash_matches": true,
+        "path": "/Users/mattfb/.codex/attachments/c2fd41d0-b236-43ef-ada9-e9479718c771/image-86.jpg",
+        "sha256": "3aa96aac909bc806b4f93f4f8f995acb03ba41e9ebf5771bad3bed7a5af1289d",
+        "size": [
+          1440,
+          1930
+        ]
+      },
+      "workflows": [
+        "plate_read",
+        "draft_spec",
+        "beauty_render",
+        "lineart",
+        "factory_sheet",
+        "localized_edit"
+      ]
+    },
+    {
+      "case": "leaf-ring-measured-pink",
+      "category": "ring",
+      "input_kind": "measured_colored_design_plate",
+      "latency_ms": 14617,
+      "read": {
+        "assembly": "ring with central pink square-cut stone in yellow gold bezel setting, flanked by pav\u00e9-set leaf motifs in white gold with marquise and round diamonds, two-tone shank with yellow gold interior",
+        "hand_written": [
+          "Carat section",
+          "24",
+          "35",
+          "\u03c635",
+          "Diamond carat",
+          "A. 14 carat = 0.75",
+          "D. 1.14 carat = 0.35",
+          "D. 1.14 carat = 0.35",
+          "30",
+          "2",
+          "60",
+          "R",
+          "Metal Gold",
+          "Diamond Black",
+          "Meta : 310Min",
+          "WO heunsth : 120 gold",
+          "Diamond width : 2 mm",
+          "115",
+          "15"
+        ],
+        "jewelry_type": "ring",
+        "measurements": [
+          {
+            "confidence": 0.0,
+            "label": "overall height",
+            "raw": "115",
+            "status": "ambiguous",
+            "value": "115"
+          },
+          {
+            "confidence": 0.0,
+            "label": "shank width",
+            "raw": "15",
+            "status": "ambiguous",
+            "value": "15"
+          },
+          {
+            "confidence": 0.0,
+            "label": "band height",
+            "raw": "2",
+            "status": "ambiguous",
+            "value": "2"
+          },
+          {
+            "confidence": 0.0,
+            "label": "diameter",
+            "raw": "60",
+            "status": "ambiguous",
+            "value": "60"
+          },
+          {
+            "confidence": 0.0,
+            "label": "width",
+            "raw": "30",
+            "status": "ambiguous",
+            "value": "30"
+          }
+        ],
+        "metal": "two-tone gold (yellow/white)",
+        "scale_anchor": null,
+        "scaled": false,
+        "source": "plate",
+        "stones": [
+          {
+            "carat_each": null,
+            "confidence": 0.0,
+            "qty": 1,
+            "size_mm": "TBD",
+            "type": "pink square-cut stone (species TBD)"
+          },
+          {
+            "carat_each": null,
+            "confidence": 0.0,
+            "qty": 3,
+            "size_mm": "TBD",
+            "type": "diamond marquise"
+          },
+          {
+            "carat_each": null,
+            "confidence": 0.0,
+            "qty": 1,
+            "size_mm": "TBD",
+            "type": "diamond round"
+          }
+        ]
+      },
+      "read_score": {
+        "checks": {
+          "authoritative_text": true,
+          "expected_visual_terms": true,
+          "jewelry_type": true,
+          "minimum_stone_groups": true
+        },
+        "multi_design_warning": false,
+        "observed_jewelry_type": "ring",
+        "score": 100.0,
+        "status": "pass",
+        "stone_group_count": 3,
+        "term_hits": [
+          "pink",
+          "leaf"
+        ],
+        "transcription_hits": [
+          "115",
+          "2 mm",
+          "0.75"
+        ]
+      },
+      "source": {
+        "available": true,
+        "decodable": true,
+        "format": "JPEG",
+        "hash_matches": true,
+        "path": "/Users/mattfb/.codex/attachments/c2fd41d0-b236-43ef-ada9-e9479718c771/image-106.jpg",
+        "sha256": "22926da408316d9ebddddeda3585b06d096d85525e08be4e31a6c2ffad61df48",
+        "size": [
+          1440,
+          1930
+        ]
+      },
+      "workflows": [
+        "plate_read",
+        "localized_edit_ground_truth"
+      ]
+    },
+    {
+      "case": "geometric-emerald-ring",
+      "category": "ring",
+      "input_kind": "multi_view_line_and_color_plate",
+      "latency_ms": 13906,
+      "read": {
+        "assembly": "ring: large central emerald-cut green stone set horizontally in a geometric octagonal bezel with round stones on the shoulders, flanked by two small emerald-cut green stones top and bottom, plain tapered shank",
+        "hand_written": [
+          "2026.5.26"
+        ],
+        "jewelry_type": "ring",
+        "measurements": [],
+        "metal": "white metal (TBD)",
+        "scale_anchor": null,
+        "scaled": false,
+        "source": "plate",
+        "stones": [
+          {
+            "carat_each": null,
+            "confidence": 0.9,
+            "qty": 1,
+            "size_mm": "TBD",
+            "type": "green emerald-cut stone (species TBD)"
+          },
+          {
+            "carat_each": null,
+            "confidence": 0.85,
+            "qty": 2,
+            "size_mm": "TBD",
+            "type": "green emerald-cut stone (species TBD)"
+          },
+          {
+            "carat_each": null,
+            "confidence": 0.7,
+            "qty": 18,
+            "size_mm": "TBD",
+            "type": "round colorless stone (species TBD)"
+          }
+        ]
+      },
+      "read_score": {
+        "checks": {
+          "authoritative_text": true,
+          "expected_visual_terms": true,
+          "jewelry_type": true,
+          "minimum_stone_groups": true
+        },
+        "multi_design_warning": false,
+        "observed_jewelry_type": "ring",
+        "score": 100.0,
+        "status": "pass",
+        "stone_group_count": 3,
+        "term_hits": [
+          "green",
+          "emerald",
+          "octagon"
+        ],
+        "transcription_hits": []
+      },
+      "source": {
+        "available": true,
+        "decodable": true,
+        "format": "JPEG",
+        "hash_matches": true,
+        "path": "/Users/mattfb/.codex/attachments/c2fd41d0-b236-43ef-ada9-e9479718c771/image-78.jpg",
+        "sha256": "b9c4e35bc0f6cfe40417577bd3bb6cde9ed983e0c9e11d24531bba6bef9ea831",
+        "size": [
+          1440,
+          2036
+        ]
+      },
+      "workflows": [
+        "plate_read",
+        "beauty_render",
+        "lineart",
+        "factory_sheet",
+        "localized_edit"
+      ]
+    },
+    {
+      "case": "ribbon-cushion-ring",
+      "category": "ring",
+      "input_kind": "multi_view_colored_design_plate",
+      "latency_ms": 19944,
+      "read": {
+        "assembly": "ring with twisted crossover band; central purple faceted stone set across the top, flanked by rows of light blue baguettes and pav\u00e9 rounds along the flowing metal ribbons",
+        "hand_written": [
+          "langemui 2026\u00b75\u00b721"
+        ],
+        "jewelry_type": "ring",
+        "measurements": [],
+        "metal": "white gold (alloy TBD)",
+        "scale_anchor": null,
+        "scaled": false,
+        "source": "plate",
+        "stones": [
+          {
+            "carat_each": null,
+            "confidence": 0.0,
+            "qty": 1,
+            "size_mm": "TBD",
+            "type": "purple faceted cushion-cut stone (species TBD)"
+          },
+          {
+            "carat_each": null,
+            "confidence": 0.0,
+            "qty": 1,
+            "size_mm": "TBD",
+            "type": "light blue baguette-cut stones (species TBD)"
+          },
+          {
+            "carat_each": null,
+            "confidence": 0.0,
+            "qty": 1,
+            "size_mm": "TBD",
+            "type": "white round pav\u00e9 stones (species TBD)"
+          }
+        ]
+      },
+      "read_score": {
+        "checks": {
+          "authoritative_text": true,
+          "expected_visual_terms": true,
+          "jewelry_type": true,
+          "minimum_stone_groups": true
+        },
+        "multi_design_warning": false,
+        "observed_jewelry_type": "ring",
+        "score": 100.0,
+        "status": "pass",
+        "stone_group_count": 3,
+        "term_hits": [
+          "purple",
+          "blue",
+          "cushion",
+          "ribbon"
+        ],
+        "transcription_hits": []
+      },
+      "source": {
+        "available": true,
+        "decodable": true,
+        "format": "JPEG",
+        "hash_matches": true,
+        "path": "/Users/mattfb/.codex/attachments/c2fd41d0-b236-43ef-ada9-e9479718c771/image-67.jpg",
+        "sha256": "8da9ebf5d9c8f6cc14e8014a99445b72ab9c8c92b0e7dd8a9558bea13d926ad5",
+        "size": [
+          1440,
+          2036
+        ]
+      },
+      "workflows": [
+        "plate_read",
+        "beauty_render",
+        "lineart",
+        "factory_sheet"
+      ]
+    },
+    {
+      "case": "heart-kinetic-ring",
+      "category": "ring",
+      "input_kind": "measured_construction_plate",
+      "latency_ms": 14510,
+      "read": {
+        "assembly": "ring: heart-cut center stone in four-prong setting above a pav\u00e9 band of small round stones, shoulders and shank with geometric block settings and additional small round stones",
+        "hand_written": [
+          "\u03c61,5",
+          "4.1",
+          "2.2",
+          "A/ 2023"
+        ],
+        "jewelry_type": "ring",
+        "measurements": [
+          {
+            "confidence": 0.0,
+            "label": "small stone diameter",
+            "raw": "\u03c61,5",
+            "status": "ambiguous",
+            "value": "1.5 mm"
+          },
+          {
+            "confidence": 0.0,
+            "label": "detail dimension",
+            "raw": "4.1",
+            "status": "ambiguous",
+            "value": "4.1 mm"
+          },
+          {
+            "confidence": 0.0,
+            "label": "detail dimension",
+            "raw": "2.2",
+            "status": "ambiguous",
+            "value": "2.2 mm"
+          }
+        ],
+        "metal": "white metal (TBD)",
+        "scale_anchor": null,
+        "scaled": false,
+        "source": "plate",
+        "stones": [
+          {
+            "carat_each": null,
+            "confidence": 0.0,
+            "qty": 1,
+            "size_mm": "TBD",
+            "type": "heart-cut stone (species TBD)"
+          },
+          {
+            "carat_each": null,
+            "confidence": 0.0,
+            "qty": 1,
+            "size_mm": "1.5",
+            "type": "round stone (species TBD)"
+          }
+        ]
+      },
+      "read_score": {
+        "checks": {
+          "authoritative_text": true,
+          "expected_visual_terms": true,
+          "jewelry_type": true,
+          "minimum_stone_groups": true
+        },
+        "multi_design_warning": false,
+        "observed_jewelry_type": "ring",
+        "score": 100.0,
+        "status": "pass",
+        "stone_group_count": 2,
+        "term_hits": [
+          "heart"
+        ],
+        "transcription_hits": [
+          "2.2",
+          "4"
+        ]
+      },
+      "source": {
+        "available": true,
+        "decodable": true,
+        "format": "JPEG",
+        "hash_matches": true,
+        "path": "/Users/mattfb/.codex/attachments/c2fd41d0-b236-43ef-ada9-e9479718c771/image-92.jpg",
+        "sha256": "09ce09fdcc98851652f74d2738be3567c57564d2278a2a1fffdd080381fe1767",
+        "size": [
+          1080,
+          1440
+        ]
+      },
+      "workflows": [
+        "plate_read",
+        "beauty_render",
+        "lineart",
+        "factory_sheet"
+      ]
+    },
+    {
+      "case": "lineart-color-pair",
+      "category": "earrings",
+      "input_kind": "lineart_and_colored_pair",
+      "latency_ms": 30941,
+      "read": {
+        "assembly": "pair of twisted heart earrings with pav\u00e9 stones and dangling pear-shaped stones; separate heart-with-butterfly-wing pendant with drop",
+        "hand_written": [
+          "INS @JEWELS SPECIAL",
+          "\u5c0f\u7ea2\u4e66\u53f7: 413776279"
+        ],
+        "jewelry_type": "earrings",
+        "measurements": [],
+        "metal": "yellow gold",
+        "scale_anchor": null,
+        "scaled": false,
+        "source": "plate",
+        "stones": [
+          {
+            "carat_each": null,
+            "confidence": 0.0,
+            "qty": 2,
+            "size_mm": "TBD",
+            "type": "teal pear-cut stone (species TBD)"
+          },
+          {
+            "carat_each": null,
+            "confidence": 0.0,
+            "qty": 1,
+            "size_mm": "TBD",
+            "type": "blue round stones (species TBD)"
+          }
+        ]
+      },
+      "read_score": {
+        "checks": {
+          "authoritative_text": true,
+          "expected_visual_terms": true,
+          "jewelry_type": true,
+          "minimum_stone_groups": true
+        },
+        "multi_design_warning": true,
+        "observed_jewelry_type": "earrings",
+        "score": 100.0,
+        "status": "pass",
+        "stone_group_count": 2,
+        "term_hits": [
+          "heart",
+          "drop",
+          "blue",
+          "yellow"
+        ],
+        "transcription_hits": []
+      },
+      "source": {
+        "available": true,
+        "decodable": true,
+        "format": "JPEG",
+        "hash_matches": true,
+        "path": "/Users/mattfb/.codex/attachments/c2fd41d0-b236-43ef-ada9-e9479718c771/image-19.jpg",
+        "sha256": "412d6174a3918e830941050ecf60107ad8b6068ffca025b144b8f06934e0f7c9",
+        "size": [
+          1440,
+          1920
+        ]
+      },
+      "workflows": [
+        "lineart_colorize",
+        "plate_read"
+      ]
+    },
+    {
+      "case": "emerald-drop-earrings",
+      "category": "earrings",
+      "input_kind": "multi_view_colored_design_plate",
+      "latency_ms": 14570,
+      "read": {
+        "assembly": "drop earring: lever-back clip at top, vertical diamond-paved bar connected to square diamond, suspended above large emerald-cut green stone in four-prong setting",
+        "hand_written": [
+          "dior",
+          "diamonds"
+        ],
+        "jewelry_type": "earrings",
+        "measurements": [],
+        "metal": "white metal (TBD)",
+        "scale_anchor": null,
+        "scaled": false,
+        "source": "plate",
+        "stones": [
+          {
+            "carat_each": null,
+            "confidence": 0.8,
+            "qty": 2,
+            "size_mm": "TBD",
+            "type": "green emerald-cut stone (species TBD)"
+          },
+          {
+            "carat_each": null,
+            "confidence": 0.7,
+            "qty": 2,
+            "size_mm": "TBD",
+            "type": "diamond square cut"
+          },
+          {
+            "carat_each": null,
+            "confidence": 0.7,
+            "qty": 1,
+            "size_mm": "TBD",
+            "type": "diamond round brilliant"
+          }
+        ]
+      },
+      "read_score": {
+        "checks": {
+          "authoritative_text": true,
+          "expected_visual_terms": true,
+          "jewelry_type": true,
+          "minimum_stone_groups": true
+        },
+        "multi_design_warning": false,
+        "observed_jewelry_type": "earrings",
+        "score": 100.0,
+        "status": "pass",
+        "stone_group_count": 3,
+        "term_hits": [
+          "green",
+          "emerald",
+          "diamond",
+          "drop"
+        ],
+        "transcription_hits": []
+      },
+      "source": {
+        "available": true,
+        "decodable": true,
+        "format": "JPEG",
+        "hash_matches": true,
+        "path": "/Users/mattfb/.codex/attachments/c2fd41d0-b236-43ef-ada9-e9479718c771/image-32.jpg",
+        "sha256": "8e241e8bb24dd109b7ad8a1778b07db734cc40240b8528dfe09556eb4109e46f",
+        "size": [
+          1440,
+          1440
+        ]
+      },
+      "workflows": [
+        "plate_read",
+        "lineart",
+        "factory_sheet"
+      ]
+    },
+    {
+      "case": "emerald-necklace-measured",
+      "category": "necklace",
+      "input_kind": "measured_colored_design_plate",
+      "latency_ms": 21870,
+      "read": {
+        "assembly": "collar necklace with articulated geometric links set with round diamonds and rectangular emeralds, multiple pear-shaped emerald pendants hanging from the front, central larger emerald drop, flanked by smaller pear drops on each side",
+        "hand_written": [
+          "EMERALD BUFF TOP",
+          "EMERALDS PEAR SHAPE",
+          "2.29",
+          "2.13",
+          "2.49",
+          "2.84",
+          "3.06",
+          "3.25",
+          "2.66",
+          "This design is the exclusive property of Bulgari S.p.A. All rights reserved"
+        ],
+        "jewelry_type": "necklace",
+        "measurements": [
+          {
+            "confidence": 0.0,
+            "label": "2.29",
+            "raw": "2.29",
+            "status": "ambiguous",
+            "value": "2.29"
+          },
+          {
+            "confidence": 0.0,
+            "label": "2.13",
+            "raw": "2.13",
+            "status": "ambiguous",
+            "value": "2.13"
+          },
+          {
+            "confidence": 0.0,
+            "label": "2.49",
+            "raw": "2.49",
+            "status": "ambiguous",
+            "value": "2.49"
+          },
+          {
+            "confidence": 0.0,
+            "label": "2.84",
+            "raw": "2.84",
+            "status": "ambiguous",
+            "value": "2.84"
+          },
+          {
+            "confidence": 0.0,
+            "label": "3.06",
+            "raw": "3.06",
+            "status": "ambiguous",
+            "value": "3.06"
+          },
+          {
+            "confidence": 0.0,
+            "label": "3.25",
+            "raw": "3.25",
+            "status": "ambiguous",
+            "value": "3.25"
+          },
+          {
+            "confidence": 0.0,
+            "label": "2.66",
+            "raw": "2.66",
+            "status": "ambiguous",
+            "value": "2.66"
+          }
+        ],
+        "metal": "white gold or platinum",
+        "scale_anchor": null,
+        "scaled": false,
+        "source": "plate",
+        "stones": [
+          {
+            "carat_each": null,
+            "confidence": 0.0,
+            "qty": 1,
+            "size_mm": "TBD",
+            "type": "emerald pear shape"
+          },
+          {
+            "carat_each": null,
+            "confidence": 0.0,
+            "qty": 2,
+            "size_mm": "TBD",
+            "type": "emerald pear shape"
+          },
+          {
+            "carat_each": null,
+            "confidence": 0.0,
+            "qty": 1,
+            "size_mm": "TBD",
+            "type": "emerald buff top"
+          },
+          {
+            "carat_each": null,
+            "confidence": 0.0,
+            "qty": 4,
+            "size_mm": "TBD",
+            "type": "emerald pear shape"
+          }
+        ]
+      },
+      "read_score": {
+        "checks": {
+          "authoritative_text": true,
+          "expected_visual_terms": true,
+          "jewelry_type": true,
+          "minimum_stone_groups": true
+        },
+        "multi_design_warning": false,
+        "observed_jewelry_type": "necklace",
+        "score": 100.0,
+        "status": "pass",
+        "stone_group_count": 4,
+        "term_hits": [
+          "emerald",
+          "pear",
+          "diamond"
+        ],
+        "transcription_hits": [
+          "3.25",
+          "3.06",
+          "2.49"
+        ]
+      },
+      "source": {
+        "available": true,
+        "decodable": true,
+        "format": "JPEG",
+        "hash_matches": true,
+        "path": "/Users/mattfb/.codex/attachments/c2fd41d0-b236-43ef-ada9-e9479718c771/image-44.jpg",
+        "sha256": "975e44d816096b3c6035b7e6a15bdf44a142283d946e707217842e51e75a3c2f",
+        "size": [
+          1440,
+          1800
+        ]
+      },
+      "workflows": [
+        "plate_read",
+        "factory_sheet"
+      ]
+    },
+    {
+      "case": "kingfisher-ecommerce-inspiration",
+      "category": "ring",
+      "input_kind": "inspiration_and_product_composite",
+      "latency_ms": 21687,
+      "read": {
+        "assembly": "wide band ring featuring a large central marquise blue stone flanked by clustered orange, green and light blue accent stones plus round diamonds, all set within a textured feather-wing motif with yellow gold prongs and beaded borders",
+        "hand_written": [],
+        "jewelry_type": "ring",
+        "measurements": [],
+        "metal": "two-tone brushed white metal and yellow gold",
+        "scale_anchor": null,
+        "scaled": false,
+        "source": "plate",
+        "stones": [
+          {
+            "carat_each": null,
+            "confidence": 0.0,
+            "qty": 1,
+            "size_mm": "TBD",
+            "type": "blue marquise-cut stone (species TBD)"
+          },
+          {
+            "carat_each": null,
+            "confidence": 0.0,
+            "qty": 2,
+            "size_mm": "TBD",
+            "type": "orange pear-cut stone (species TBD)"
+          },
+          {
+            "carat_each": null,
+            "confidence": 0.0,
+            "qty": 3,
+            "size_mm": "TBD",
+            "type": "green triangular/pear-cut stone (species TBD)"
+          },
+          {
+            "carat_each": null,
+            "confidence": 0.0,
+            "qty": 1,
+            "size_mm": "TBD",
+            "type": "light blue pear-cut stone (species TBD)"
+          },
+          {
+            "carat_each": null,
+            "confidence": 0.0,
+            "qty": 8,
+            "size_mm": "TBD",
+            "type": "white round brilliant diamond"
+          }
+        ]
+      },
+      "read_score": {
+        "checks": {
+          "authoritative_text": true,
+          "expected_visual_terms": true,
+          "jewelry_type": true,
+          "minimum_stone_groups": true
+        },
+        "multi_design_warning": true,
+        "observed_jewelry_type": "ring",
+        "score": 100.0,
+        "status": "pass",
+        "stone_group_count": 5,
+        "term_hits": [
+          "blue",
+          "orange",
+          "green",
+          "marquise",
+          "pear"
+        ],
+        "transcription_hits": []
+      },
+      "source": {
+        "available": true,
+        "decodable": true,
+        "format": "JPEG",
+        "hash_matches": true,
+        "path": "/Users/mattfb/.codex/attachments/c2fd41d0-b236-43ef-ada9-e9479718c771/image-98.jpg",
+        "sha256": "ae903d13b586d4e316367858acbbe257ce4a6f11d1b9309c0a2cc3f7a50e473a",
+        "size": [
+          1440,
+          1930
+        ]
+      },
+      "workflows": [
+        "plate_read",
+        "ecommerce_scene",
+        "inspiration_to_render"
+      ]
+    },
+    {
+      "case": "factory-orthographic-benchmark",
+      "category": "ring",
+      "input_kind": "factory_orthographic_reference",
+      "read_status": "not_applicable",
+      "source": {
+        "available": true,
+        "decodable": true,
+        "format": "JPEG",
+        "hash_matches": true,
+        "path": "/Users/mattfb/.codex/attachments/c2fd41d0-b236-43ef-ada9-e9479718c771/image-115.jpg",
+        "sha256": "16ba7f0addbad9e76ed523c574579ced742f9ab5cceddd90a0b842be5bc94538",
+        "size": [
+          1284,
+          1264
+        ]
+      },
+      "workflows": [
+        "factory_sheet_quality_reference"
+      ]
+    },
+    {
+      "case": "heart-ring-material-variants",
+      "category": "ring",
+      "input_kind": "material_variant_plate",
+      "latency_ms": 25196,
+      "read": {
+        "assembly": "multiple heart-stone rings and pendants shown in various metal finishes with prong settings and decorative shanks",
+        "hand_written": [
+          "A/ 2023",
+          "A/ 2023",
+          "A/ 2023",
+          "A/ 2023",
+          "\u5c0f\u7ea2\u4e66\u53f7\uff1a413776279"
+        ],
+        "jewelry_type": "ring",
+        "measurements": [],
+        "metal": "yellow gold / white gold",
+        "scale_anchor": null,
+        "scaled": false,
+        "source": "plate",
+        "stones": [
+          {
+            "carat_each": null,
+            "confidence": 0.0,
+            "qty": 1,
+            "size_mm": "TBD",
+            "type": "blue heart-cut stone"
+          },
+          {
+            "carat_each": null,
+            "confidence": 0.0,
+            "qty": 1,
+            "size_mm": "TBD",
+            "type": "blue heart-cut stone"
+          },
+          {
+            "carat_each": null,
+            "confidence": 0.0,
+            "qty": 1,
+            "size_mm": "TBD",
+            "type": "green heart-cut stone"
+          },
+          {
+            "carat_each": null,
+            "confidence": 0.0,
+            "qty": 1,
+            "size_mm": "TBD",
+            "type": "pink heart-cut stone"
+          }
+        ]
+      },
+      "read_score": {
+        "checks": {
+          "authoritative_text": true,
+          "expected_visual_terms": true,
+          "jewelry_type": true,
+          "minimum_stone_groups": true
+        },
+        "multi_design_warning": true,
+        "observed_jewelry_type": "ring",
+        "score": 100.0,
+        "status": "pass",
+        "stone_group_count": 4,
+        "term_hits": [
+          "heart",
+          "blue",
+          "green",
+          "pink"
+        ],
+        "transcription_hits": []
+      },
+      "source": {
+        "available": true,
+        "decodable": true,
+        "format": "JPEG",
+        "hash_matches": true,
+        "path": "/Users/mattfb/.codex/attachments/c2fd41d0-b236-43ef-ada9-e9479718c771/image-137.jpg",
+        "sha256": "328fe727af59c310658222e12dc4d59cfd9f7ca8af6f9105a6aff6fd95643377",
+        "size": [
+          1440,
+          1440
+        ]
+      },
+      "workflows": [
+        "variant_consistency",
+        "plate_read"
+      ]
+    }
+  ],
+  "run": "designer-reference-read-v3-2026-07-11",
+  "source_policy": "Founder-supplied evaluation references only. Do not publish, train on, or treat as customer-owned production assets. Third-party branding and social watermarks must never appear in accepted outputs.",
+  "stage": "read"
+}

@@ -7,11 +7,10 @@ choice, the designer can rename it, and the style library loads as data.
 
 import json
 
-import pytest
 from fastapi.testclient import TestClient
 
 import facetta.assistant as assistant_mod
-from facetta.assistant import AssistantReply, Turn, assist
+from facetta.assistant import Turn, assist
 from facetta.main import app
 from facetta.render import RenderUnavailable
 from facetta.styles import get_styles

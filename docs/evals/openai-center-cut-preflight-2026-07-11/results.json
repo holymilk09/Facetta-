@@ -1,0 +1,470 @@
+{
+  "attempt_limit": 1,
+  "compiled_prompt": "FACETTA JEWELRY IMAGE CONTRACT local-edit.v6\nReturn one image only. The final output must contain no non-jewelry captions, labels, logos, signatures, watermarks, platform/social IDs, or invented branding. If any such overlay exists in the source, remove it cleanly; this hygiene cleanup is permitted and is not a jewelry design change. Preserve only a physical engraving explicitly named in the validated specification.\n\n\nJewelry render edit.\nPRESERVE: All design elements outside 'only the center-stone body and its immediately touching six prong seats in the selected face-up ring-head view; exclude the complete halo run and every pixel outside the saved mask' must remain exactly as in the reference \u2014 same camera angle, lighting, metal tone, every stone and prong outside the region, shank shape outside the region, background unchanged.\nEDIT SCOPE: Inside 'only the center-stone body and its immediately touching six prong seats in the selected face-up ring-head view; exclude the complete halo run and every pixel outside the saved mask' only: change the oval brilliant center stone to an emerald cut while keeping the same face-up dimensions, species, color, orientation, and six-prong setting.\nFORBIDDEN: Any change outside the highlighted region; no crop; no zoom; no global redesign; no new stones outside region unless explicitly inside highlight.\nPhotorealistic jewelry product quality. Match reference style exactly outside edit zone.\nSOURCE SPEC FACTS (before edit): {\"band\":{\"profile\":\"half_round\",\"thickness_mm\":1.6,\"width_mm\":2.0},\"jewelry_type\":\"ring\",\"metal\":{\"color\":\"white\",\"finish\":\"high_polish\",\"karat\":18,\"material\":\"gold\"},\"ring_size\":{\"inner_diameter_mm\":16.91,\"system\":\"US\",\"value\":6.5},\"setting\":{\"gallery_height_mm\":5.0,\"prong_count\":6,\"prong_tip_mm\":0.8,\"style\":\"6_prong_basket\"},\"side_stones\":[{\"carat\":0.03,\"color\":{\"gia\":\"colorless\",\"trade\":\"F\"},\"count\":14,\"cut\":\"round_brilliant\",\"dimensions_mm\":{\"depth\":1.2,\"length\":2.0,\"width\":2.0},\"position\":\"halo\",\"species\":\"diamond\"}],\"stone\":{\"carat\":2.167,\"color\":{\"gia\":\"vivid blue, medium-dark tone, strong saturation\",\"trade\":\"Royal Blue\"},\"count\":1,\"cut\":\"oval_brilliant\",\"dimensions_mm\":{\"depth\":4.3,\"length\":9.0,\"width\":7.0},\"position\":\"center\",\"species\":\"sapphire\"},\"template\":\"halo_prong\"}\nVALIDATED RESULT FACTS (after edit): {\"band\":{\"profile\":\"half_round\",\"thickness_mm\":1.6,\"width_mm\":2.0},\"jewelry_type\":\"ring\",\"metal\":{\"color\":\"white\",\"finish\":\"high_polish\",\"karat\":18,\"material\":\"gold\"},\"ring_size\":{\"inner_diameter_mm\":16.91,\"system\":\"US\",\"value\":6.5},\"setting\":{\"gallery_height_mm\":5.0,\"prong_count\":6,\"prong_tip_mm\":0.8,\"style\":\"6_prong_basket\"},\"side_stones\":[{\"carat\":0.03,\"color\":{\"gia\":\"colorless\",\"trade\":\"F\"},\"count\":14,\"cut\":\"round_brilliant\",\"dimensions_mm\":{\"depth\":1.2,\"length\":2.0,\"width\":2.0},\"position\":\"halo\",\"species\":\"diamond\"}],\"stone\":{\"carat\":2.709,\"color\":{\"gia\":\"vivid blue, medium-dark tone, strong saturation\",\"trade\":\"Royal Blue\"},\"count\":1,\"cut\":\"emerald_cut\",\"dimensions_mm\":{\"depth\":4.3,\"length\":9.0,\"width\":7.0},\"position\":\"center\",\"species\":\"sapphire\"},\"template\":\"halo_prong\"}\nEXACT SPEC DELTA (the visible edit must make this change):\n- center stone weight: 2.17 ct -> 2.71 ct\n- center stone cut: oval_brilliant -> emerald_cut\nCENTER-STONE SHAPE EXECUTION:\n- Reshape only the center-stone outline and facet pattern to the target cut; do not simulate the change with reflections.\n- Use the target face-up dimensions and orientation. If those facts did not change, preserve their apparent scale and orientation.\n- Preserve species and visible color unless explicitly changed. Adapt only the setting/prongs stated by the validated result facts.\n- TARGET CENTER STONE: {\"carat\":2.709,\"color\":{\"gia\":\"vivid blue, medium-dark tone, strong saturation\",\"trade\":\"Royal Blue\"},\"count\":1,\"cut\":\"emerald_cut\",\"dimensions_mm\":{\"depth\":4.3,\"length\":9.0,\"width\":7.0},\"position\":\"center\",\"species\":\"sapphire\"}\nMASK INPUT ORDER: IMAGE 1 is the untouched source. IMAGE 2 is the localization guide; only its magenta-tinted, white-outlined region may change. Guide colors must not appear in the output.\n\nFROZEN \u2014 THESE MUST NOT CHANGE:\n- all pixels and jewelry structure outside only the center-stone body and its immediately touching six prong seats in the selected face-up ring-head view; exclude the complete halo run and every pixel outside the saved mask\n- all validated facts not named by the requested change\n- center-stone species, visible color, dimensions, and orientation\n- six-prong count and setting style\n- halo inventory, band, metal, camera, lighting, and background\n\nSTYLE CONSTRAINTS:\n- retain the exact source drawing medium, lighting, view, scale, and background\n\nEXPECTED OUTPUT: the same face-up ring-head drawing with only the oval center stone changed to an emerald cut and the six touching prong seats adjusted as needed; halo and all outside-mask pixels unchanged",
+  "designer_approval": false,
+  "disclosure": "Internal provider comparison only. All dimensions/spec facts are test-designer estimates and no output is manufacturing approval.",
+  "edit_id": "center-cut-shape",
+  "founder_approval": false,
+  "gia_cofounder_approval": false,
+  "isolation_policy": "Native alpha mask plus Facetta patch compositing. Pixels outside the internal white-edit mask come from the immutable source raster.",
+  "mode": "preflight",
+  "plan": {
+    "drift_threshold": 0.18,
+    "edit_domains": [
+      "center_stone_shape"
+    ],
+    "expected_output": "the same face-up ring-head drawing with only the oval center stone changed to an emerald cut and the six touching prong seats adjusted as needed; halo and all outside-mask pixels unchanged",
+    "fallback_allowed": false,
+    "frozen": [
+      "all pixels and jewelry structure outside only the center-stone body and its immediately touching six prong seats in the selected face-up ring-head view; exclude the complete halo run and every pixel outside the saved mask",
+      "all validated facts not named by the requested change",
+      "center-stone species, visible color, dimensions, and orientation",
+      "six-prong count and setting style",
+      "halo inventory, band, metal, camera, lighting, and background"
+    ],
+    "input_hash": "4fbe9e8f45c4fff519a183cc14573c773ebadd27bee14697bb8a635081564742",
+    "intent": "change the oval brilliant center stone to an emerald cut while keeping the same face-up dimensions, species, color, orientation, and six-prong setting",
+    "jewelry_type": "ring",
+    "mask_hash": "9b90217713bc868b4aa55dd8e2b54ccdaf1f3e06c4c8512f141f6117edfd1feb",
+    "normalized_intent": {
+      "edit_domains": [
+        "center_stone_shape"
+      ],
+      "expected_output": "the same face-up ring-head drawing with only the oval center stone changed to an emerald cut and the six touching prong seats adjusted as needed; halo and all outside-mask pixels unchanged",
+      "frozen": [
+        "all pixels and jewelry structure outside only the center-stone body and its immediately touching six prong seats in the selected face-up ring-head view; exclude the complete halo run and every pixel outside the saved mask",
+        "all validated facts not named by the requested change",
+        "center-stone species, visible color, dimensions, and orientation",
+        "six-prong count and setting style",
+        "halo inventory, band, metal, camera, lighting, and background"
+      ],
+      "instruction": "change the oval brilliant center stone to an emerald cut while keeping the same face-up dimensions, species, color, orientation, and six-prong setting",
+      "region_description": "only the center-stone body and its immediately touching six prong seats in the selected face-up ring-head view; exclude the complete halo run and every pixel outside the saved mask",
+      "spec_delta": [
+        {
+          "from": "2.17 ct",
+          "kind": "changed",
+          "label": "center stone weight",
+          "path": "stone.carat",
+          "to": "2.71 ct"
+        },
+        {
+          "from": "oval_brilliant",
+          "kind": "changed",
+          "label": "center stone cut",
+          "path": "stone.cut",
+          "to": "emerald_cut"
+        }
+      ],
+      "style_constraints": [
+        "retain the exact source drawing medium, lighting, view, scale, and background"
+      ]
+    },
+    "operation": "LOCAL_EDIT",
+    "prompt_version": "local-edit.v6",
+    "region_description": "only the center-stone body and its immediately touching six prong seats in the selected face-up ring-head view; exclude the complete halo run and every pixel outside the saved mask",
+    "source_hash": "e2109ccf356366075b4e96d03bc471e2963dbd4e09df602f2a85119f111e9574",
+    "source_spec_facts": {
+      "band": {
+        "profile": "half_round",
+        "thickness_mm": 1.6,
+        "width_mm": 2.0
+      },
+      "bracelet": null,
+      "brooch": null,
+      "chain": null,
+      "composition": null,
+      "created_at": "2026-07-11T00:00:00Z",
+      "created_by": "usr_test_designer",
+      "design_form": {
+        "elements": []
+      },
+      "design_id": "dsn_eval_standard_halo_112",
+      "dimension_provenance": {
+        "band.thickness_mm": {
+          "confidence": 0.4,
+          "method": "reference_vision",
+          "note": "Reference-derived starting value; verify before production.",
+          "source": "founder evaluation source image-112.jpg",
+          "status": "estimated_from_reference"
+        },
+        "band.width_mm": {
+          "confidence": 0.4,
+          "method": "reference_vision",
+          "note": "Reference-derived starting value; verify before production.",
+          "source": "founder evaluation source image-112.jpg",
+          "status": "estimated_from_reference"
+        },
+        "ring_size.inner_diameter_mm": {
+          "confidence": 0.4,
+          "method": "reference_vision",
+          "note": "Derived from an estimated ring size; verify both values before production.",
+          "source": "founder evaluation source image-112.jpg",
+          "status": "estimated_from_reference"
+        },
+        "ring_size.value": {
+          "confidence": 0.4,
+          "method": "reference_vision",
+          "note": "Reference-derived starting value; verify before production.",
+          "source": "founder evaluation source image-112.jpg",
+          "status": "estimated_from_reference"
+        },
+        "setting.gallery_height_mm": {
+          "confidence": 0.4,
+          "method": "reference_vision",
+          "note": "Reference-derived starting value; verify before production.",
+          "source": "founder evaluation source image-112.jpg",
+          "status": "estimated_from_reference"
+        },
+        "setting.prong_tip_mm": {
+          "confidence": 0.4,
+          "method": "reference_vision",
+          "note": "Reference-derived starting value; verify before production.",
+          "source": "founder evaluation source image-112.jpg",
+          "status": "estimated_from_reference"
+        },
+        "side_stones[0].dimensions_mm.depth": {
+          "confidence": 0.4,
+          "method": "reference_vision",
+          "note": "Reference-derived starting value; verify before production.",
+          "source": "founder evaluation source image-112.jpg",
+          "status": "estimated_from_reference"
+        },
+        "side_stones[0].dimensions_mm.length": {
+          "confidence": 0.4,
+          "method": "reference_vision",
+          "note": "Reference-derived starting value; verify before production.",
+          "source": "founder evaluation source image-112.jpg",
+          "status": "estimated_from_reference"
+        },
+        "side_stones[0].dimensions_mm.width": {
+          "confidence": 0.4,
+          "method": "reference_vision",
+          "note": "Reference-derived starting value; verify before production.",
+          "source": "founder evaluation source image-112.jpg",
+          "status": "estimated_from_reference"
+        },
+        "stone.dimensions_mm.depth": {
+          "confidence": 0.4,
+          "method": "reference_vision",
+          "note": "Reference-derived starting value; verify before production.",
+          "source": "founder evaluation source image-112.jpg",
+          "status": "estimated_from_reference"
+        },
+        "stone.dimensions_mm.length": {
+          "confidence": 0.4,
+          "method": "reference_vision",
+          "note": "Reference-derived starting value; verify before production.",
+          "source": "founder evaluation source image-112.jpg",
+          "status": "estimated_from_reference"
+        },
+        "stone.dimensions_mm.width": {
+          "confidence": 0.4,
+          "method": "reference_vision",
+          "note": "Reference-derived starting value; verify before production.",
+          "source": "founder evaluation source image-112.jpg",
+          "status": "estimated_from_reference"
+        }
+      },
+      "drop": null,
+      "jewelry_type": "ring",
+      "metal": {
+        "color": "white",
+        "finish": "high_polish",
+        "karat": 18,
+        "material": "gold"
+      },
+      "mode": "pro",
+      "notes_to_factory": "LIVE WORKFLOW TEST ONLY. Stone identity, fourteen-stone halo, ring size, six-prong setting, and every numeric value are explicit test-designer assumptions used to exercise the workflow. They are not measurements extracted from image-112.jpg and are not authority to manufacture the pictured third-party design. Center and halo carat weights are modeled estimates from the stated dimensions. ESTIMATED dimensions are reference-derived prototyping values, not measurements. Verify or adjust them before manufacturing; factory and designer sign-off remain required.",
+      "pendant": null,
+      "ring_size": {
+        "inner_diameter_mm": 16.91,
+        "system": "US",
+        "value": 6.5
+      },
+      "schema_version": 1,
+      "setting": {
+        "gallery_height_mm": 5.0,
+        "prong_count": 6,
+        "prong_tip_mm": 0.8,
+        "style": "6_prong_basket"
+      },
+      "side_stones": [
+        {
+          "carat": 0.03,
+          "clarity": null,
+          "color": {
+            "gia": "colorless",
+            "hue_code": null,
+            "saturation": null,
+            "tone": null,
+            "trade": "F"
+          },
+          "count": 14,
+          "culet": null,
+          "cut": "round_brilliant",
+          "depth_pct": null,
+          "dimensions_mm": {
+            "depth": 1.2,
+            "length": 2.0,
+            "width": 2.0
+          },
+          "girdle": null,
+          "inscription": null,
+          "lab": null,
+          "mount": null,
+          "origin": null,
+          "phenomena": [],
+          "position": "halo",
+          "species": "diamond",
+          "table_pct": null,
+          "treatment": null
+        }
+      ],
+      "stone": {
+        "carat": 2.167,
+        "clarity": null,
+        "color": {
+          "gia": "vivid blue, medium-dark tone, strong saturation",
+          "hue_code": null,
+          "saturation": null,
+          "tone": null,
+          "trade": "Royal Blue"
+        },
+        "count": 1,
+        "culet": null,
+        "cut": "oval_brilliant",
+        "depth_pct": null,
+        "dimensions_mm": {
+          "depth": 4.3,
+          "length": 9.0,
+          "width": 7.0
+        },
+        "girdle": null,
+        "inscription": null,
+        "lab": null,
+        "mount": null,
+        "origin": null,
+        "phenomena": [],
+        "position": "center",
+        "species": "sapphire",
+        "table_pct": null,
+        "treatment": null
+      },
+      "template": "halo_prong",
+      "version": 1
+    },
+    "source_spec_visual_hash": "282cd0866592c84d",
+    "spec_facts": {
+      "band": {
+        "profile": "half_round",
+        "thickness_mm": 1.6,
+        "width_mm": 2.0
+      },
+      "bracelet": null,
+      "brooch": null,
+      "chain": null,
+      "composition": null,
+      "created_at": "2026-07-11T00:00:00Z",
+      "created_by": "usr_test_designer",
+      "design_form": {
+        "elements": []
+      },
+      "design_id": "dsn_eval_standard_halo_112",
+      "dimension_provenance": {
+        "band.thickness_mm": {
+          "confidence": 0.4,
+          "method": "reference_vision",
+          "note": "Reference-derived starting value; verify before production.",
+          "source": "founder evaluation source image-112.jpg",
+          "status": "estimated_from_reference"
+        },
+        "band.width_mm": {
+          "confidence": 0.4,
+          "method": "reference_vision",
+          "note": "Reference-derived starting value; verify before production.",
+          "source": "founder evaluation source image-112.jpg",
+          "status": "estimated_from_reference"
+        },
+        "ring_size.inner_diameter_mm": {
+          "confidence": 0.4,
+          "method": "reference_vision",
+          "note": "Derived from an estimated ring size; verify both values before production.",
+          "source": "founder evaluation source image-112.jpg",
+          "status": "estimated_from_reference"
+        },
+        "ring_size.value": {
+          "confidence": 0.4,
+          "method": "reference_vision",
+          "note": "Reference-derived starting value; verify before production.",
+          "source": "founder evaluation source image-112.jpg",
+          "status": "estimated_from_reference"
+        },
+        "setting.gallery_height_mm": {
+          "confidence": 0.4,
+          "method": "reference_vision",
+          "note": "Reference-derived starting value; verify before production.",
+          "source": "founder evaluation source image-112.jpg",
+          "status": "estimated_from_reference"
+        },
+        "setting.prong_tip_mm": {
+          "confidence": 0.4,
+          "method": "reference_vision",
+          "note": "Reference-derived starting value; verify before production.",
+          "source": "founder evaluation source image-112.jpg",
+          "status": "estimated_from_reference"
+        },
+        "side_stones[0].dimensions_mm.depth": {
+          "confidence": 0.4,
+          "method": "reference_vision",
+          "note": "Reference-derived starting value; verify before production.",
+          "source": "founder evaluation source image-112.jpg",
+          "status": "estimated_from_reference"
+        },
+        "side_stones[0].dimensions_mm.length": {
+          "confidence": 0.4,
+          "method": "reference_vision",
+          "note": "Reference-derived starting value; verify before production.",
+          "source": "founder evaluation source image-112.jpg",
+          "status": "estimated_from_reference"
+        },
+        "side_stones[0].dimensions_mm.width": {
+          "confidence": 0.4,
+          "method": "reference_vision",
+          "note": "Reference-derived starting value; verify before production.",
+          "source": "founder evaluation source image-112.jpg",
+          "status": "estimated_from_reference"
+        },
+        "stone.dimensions_mm.depth": {
+          "confidence": 0.4,
+          "method": "reference_vision",
+          "note": "Reference-derived starting value; verify before production.",
+          "source": "founder evaluation source image-112.jpg",
+          "status": "estimated_from_reference"
+        },
+        "stone.dimensions_mm.length": {
+          "confidence": 0.4,
+          "method": "reference_vision",
+          "note": "Reference-derived starting value; verify before production.",
+          "source": "founder evaluation source image-112.jpg",
+          "status": "estimated_from_reference"
+        },
+        "stone.dimensions_mm.width": {
+          "confidence": 0.4,
+          "method": "reference_vision",
+          "note": "Reference-derived starting value; verify before production.",
+          "source": "founder evaluation source image-112.jpg",
+          "status": "estimated_from_reference"
+        }
+      },
+      "drop": null,
+      "jewelry_type": "ring",
+      "metal": {
+        "color": "white",
+        "finish": "high_polish",
+        "karat": 18,
+        "material": "gold"
+      },
+      "mode": "pro",
+      "notes_to_factory": "LIVE WORKFLOW TEST ONLY. Stone identity, fourteen-stone halo, ring size, six-prong setting, and every numeric value are explicit test-designer assumptions used to exercise the workflow. They are not measurements extracted from image-112.jpg and are not authority to manufacture the pictured third-party design. Center and halo carat weights are modeled estimates from the stated dimensions. ESTIMATED dimensions are reference-derived prototyping values, not measurements. Verify or adjust them before manufacturing; factory and designer sign-off remain required.",
+      "pendant": null,
+      "ring_size": {
+        "inner_diameter_mm": 16.91,
+        "system": "US",
+        "value": 6.5
+      },
+      "schema_version": 1,
+      "setting": {
+        "gallery_height_mm": 5.0,
+        "prong_count": 6,
+        "prong_tip_mm": 0.8,
+        "style": "6_prong_basket"
+      },
+      "side_stones": [
+        {
+          "carat": 0.03,
+          "clarity": null,
+          "color": {
+            "gia": "colorless",
+            "hue_code": null,
+            "saturation": null,
+            "tone": null,
+            "trade": "F"
+          },
+          "count": 14,
+          "culet": null,
+          "cut": "round_brilliant",
+          "depth_pct": null,
+          "dimensions_mm": {
+            "depth": 1.2,
+            "length": 2.0,
+            "width": 2.0
+          },
+          "girdle": null,
+          "inscription": null,
+          "lab": null,
+          "mount": null,
+          "origin": null,
+          "phenomena": [],
+          "position": "halo",
+          "species": "diamond",
+          "table_pct": null,
+          "treatment": null
+        }
+      ],
+      "stone": {
+        "carat": 2.709,
+        "clarity": null,
+        "color": {
+          "gia": "vivid blue, medium-dark tone, strong saturation",
+          "hue_code": null,
+          "saturation": null,
+          "tone": null,
+          "trade": "Royal Blue"
+        },
+        "count": 1,
+        "culet": null,
+        "cut": "emerald_cut",
+        "depth_pct": null,
+        "dimensions_mm": {
+          "depth": 4.3,
+          "length": 9.0,
+          "width": 7.0
+        },
+        "girdle": null,
+        "inscription": null,
+        "lab": null,
+        "mount": null,
+        "origin": null,
+        "phenomena": [],
+        "position": "center",
+        "species": "sapphire",
+        "table_pct": null,
+        "treatment": null
+      },
+      "template": "halo_prong",
+      "version": 1
+    },
+    "spec_visual_hash": "65603d431e032cc8",
+    "style_constraints": [
+      "retain the exact source drawing medium, lighting, view, scale, and background"
+    ],
+    "variant": 0
+  },
+  "product_asset_persisted": false,
+  "project_records_created": 0,
+  "provider_calls": 0,
+  "quality": "low",
+  "run_name": "openai-center-cut-preflight-2026-07-11",
+  "source": "/Users/mattfb/.codex/attachments/c2fd41d0-b236-43ef-ada9-e9479718c771/image-112.jpg",
+  "source_region": {
+    "height": 0.38,
+    "width": 0.55,
+    "x": 0.08,
+    "y": 0.12
+  },
+  "spec": "/Users/mattfb/Documents/Facetta-trusted-workflow/docs/evals/designer-standard-halo-full-e2e-live-v11-2026-07-11/audited-estimated-spec.json",
+  "status": "paid_call_confirmation_required",
+  "test_actor": "usr_openai_comparison_test_actor_unapproved",
+  "warning_auto_accepted": false
+}

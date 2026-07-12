@@ -9,8 +9,6 @@ import json
 from pathlib import Path
 from types import SimpleNamespace
 
-import pytest
-
 from facetta.agent import Annotation, resolve_target
 from facetta.checklist import (
     approval_footer_line, build_checklist_items, checklist_status,
@@ -70,7 +68,8 @@ class TestItemDerivation:
                     instruction="x"))
                 assert target[0] in ("stone", "side_stones", "setting",
                                      "metal", "band", "ring_size", "drop",
-                                     "pendant", "chain", "bracelet", "brooch")
+                                     "pendant", "chain", "bracelet", "brooch",
+                                     "notes_to_factory")
 
     def test_setting_fact_does_not_stutter_prongs(self):
         items = _items(HALO_SPEC)

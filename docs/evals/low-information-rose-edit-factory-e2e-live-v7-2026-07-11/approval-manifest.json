@@ -1,0 +1,679 @@
+{
+  "approved_at": "2026-07-11T16:14:26.901833",
+  "approver": "usr_operator_review_not_founder",
+  "asset_id": "ast_871ba14a1a7399d5",
+  "authority": {
+    "discussion_only": [],
+    "exchange_reference_only": [
+      "facetta-sheet.dxf"
+    ],
+    "factory_truth": [
+      "validated-spec.json",
+      "facetta-sheet.svg",
+      "facetta-schedule-1.svg"
+    ],
+    "note": "Only the validated specification and deterministic SVG sheet are authoritative factory records. The DXF is a 2D drawing-exchange reference only; it must not be used as authoritative fabrication geometry until SVG transform and curve parity is verified. Fields explicitly marked ESTIMATED are reference-derived prototyping values, not measurements, and must be verified or adjusted before manufacturing. Any discussion drawing is AI-derived, designer-reviewed visual context and must not be measured or manufactured.",
+    "visual_reference_only": [
+      "approved-reference.jpg"
+    ]
+  },
+  "checklist": {
+    "id": "chk_c446d2ccc4682acd",
+    "mode": "auto_pin",
+    "results": [
+      {
+        "approved": true,
+        "approved_at": "2026-07-11T16:14:26.884661",
+        "approved_by": "usr_operator_review_not_founder",
+        "fact": "1.04 ct emerald · oval brilliant · 8 × 6 × 4 mm EST.",
+        "item_key": "stone",
+        "label": "Center stone",
+        "note": null
+      },
+      {
+        "approved": true,
+        "approved_at": "2026-07-11T16:14:26.889165",
+        "approved_by": "usr_operator_review_not_founder",
+        "fact": "6 × diamond round brilliant · 2 × 2 × 1.2 mm EST. · 0.18 ct total",
+        "item_key": "side_stones[0]",
+        "label": "Side stones",
+        "note": null
+      },
+      {
+        "approved": true,
+        "approved_at": "2026-07-11T16:14:26.892889",
+        "approved_by": "usr_operator_review_not_founder",
+        "fact": "4 Prong Basket · gallery 4 mm EST.",
+        "item_key": "setting",
+        "label": "Setting",
+        "note": null
+      },
+      {
+        "approved": true,
+        "approved_at": "2026-07-11T16:14:26.895710",
+        "approved_by": "usr_operator_review_not_founder",
+        "fact": "18k Rose Gold · high polish",
+        "item_key": "metal",
+        "label": "Metal & finish",
+        "note": null
+      },
+      {
+        "approved": true,
+        "approved_at": "2026-07-11T16:14:26.899013",
+        "approved_by": "usr_operator_review_not_founder",
+        "fact": "half round · 2 × 1.6 mm EST.",
+        "item_key": "band",
+        "label": "Band",
+        "note": null
+      },
+      {
+        "approved": true,
+        "approved_at": "2026-07-11T16:14:26.901833",
+        "approved_by": "usr_operator_review_not_founder",
+        "fact": "US 6.5 · ⌀ 16.9 mm EST.",
+        "item_key": "ring_size",
+        "label": "Ring size",
+        "note": null
+      }
+    ],
+    "status": {
+      "all_approved": true,
+      "answered": 6,
+      "approved": 6,
+      "declined": [],
+      "outstanding": [],
+      "total": 6
+    }
+  },
+  "design_id": "dsn_9144f2f36c50c3d4",
+  "design_version": 2,
+  "dimensions": {
+    "disclaimer": "ESTIMATED dimensions are reference-derived prototyping values, not measurements. Verify or adjust them before manufacturing; factory and designer sign-off remain required.",
+    "estimated_fields": [
+      {
+        "confidence": 0.4,
+        "field_path": "band.thickness_mm",
+        "method": "reference_vision",
+        "note": "Reference-derived starting value; verify before production.",
+        "source": "synthetic low-information reference render",
+        "status": "estimated_from_reference",
+        "unit": "mm",
+        "value": 1.6
+      },
+      {
+        "confidence": 0.4,
+        "field_path": "band.width_mm",
+        "method": "reference_vision",
+        "note": "Reference-derived starting value; verify before production.",
+        "source": "synthetic low-information reference render",
+        "status": "estimated_from_reference",
+        "unit": "mm",
+        "value": 2.0
+      },
+      {
+        "confidence": 0.4,
+        "field_path": "ring_size.inner_diameter_mm",
+        "method": "reference_vision",
+        "note": "Reference-derived starting value; verify before production.",
+        "source": "synthetic low-information reference render",
+        "status": "estimated_from_reference",
+        "unit": "mm",
+        "value": 16.91
+      },
+      {
+        "confidence": 0.4,
+        "field_path": "ring_size.value",
+        "method": "reference_vision",
+        "note": "Reference-derived starting value; verify before production.",
+        "source": "synthetic low-information reference render",
+        "status": "estimated_from_reference",
+        "unit": "US",
+        "value": 6.5
+      },
+      {
+        "confidence": 0.4,
+        "field_path": "setting.gallery_height_mm",
+        "method": "reference_vision",
+        "note": "Reference-derived starting value; verify before production.",
+        "source": "synthetic low-information reference render",
+        "status": "estimated_from_reference",
+        "unit": "mm",
+        "value": 4.0
+      },
+      {
+        "confidence": 0.4,
+        "field_path": "setting.prong_tip_mm",
+        "method": "reference_vision",
+        "note": "Reference-derived starting value; verify before production.",
+        "source": "synthetic low-information reference render",
+        "status": "estimated_from_reference",
+        "unit": "mm",
+        "value": 0.8
+      },
+      {
+        "confidence": 0.4,
+        "field_path": "side_stones[0].dimensions_mm.depth",
+        "method": "reference_vision",
+        "note": "Reference-derived starting value; verify before production.",
+        "source": "synthetic low-information reference render",
+        "status": "estimated_from_reference",
+        "unit": "mm",
+        "value": 1.2
+      },
+      {
+        "confidence": 0.4,
+        "field_path": "side_stones[0].dimensions_mm.length",
+        "method": "reference_vision",
+        "note": "Reference-derived starting value; verify before production.",
+        "source": "synthetic low-information reference render",
+        "status": "estimated_from_reference",
+        "unit": "mm",
+        "value": 2.0
+      },
+      {
+        "confidence": 0.4,
+        "field_path": "side_stones[0].dimensions_mm.width",
+        "method": "reference_vision",
+        "note": "Reference-derived starting value; verify before production.",
+        "source": "synthetic low-information reference render",
+        "status": "estimated_from_reference",
+        "unit": "mm",
+        "value": 2.0
+      },
+      {
+        "confidence": 0.4,
+        "field_path": "stone.dimensions_mm.depth",
+        "method": "reference_vision",
+        "note": "Reference-derived starting value; verify before production.",
+        "source": "synthetic low-information reference render",
+        "status": "estimated_from_reference",
+        "unit": "mm",
+        "value": 4.0
+      },
+      {
+        "confidence": 0.4,
+        "field_path": "stone.dimensions_mm.length",
+        "method": "reference_vision",
+        "note": "Reference-derived starting value; verify before production.",
+        "source": "synthetic low-information reference render",
+        "status": "estimated_from_reference",
+        "unit": "mm",
+        "value": 8.0
+      },
+      {
+        "confidence": 0.4,
+        "field_path": "stone.dimensions_mm.width",
+        "method": "reference_vision",
+        "note": "Reference-derived starting value; verify before production.",
+        "source": "synthetic low-information reference render",
+        "status": "estimated_from_reference",
+        "unit": "mm",
+        "value": 6.0
+      }
+    ],
+    "has_estimates": true
+  },
+  "factory_sheet_fact_plan": {
+    "confirmed_fact_count": 4,
+    "dimensions": [
+      {
+        "confidence": 0.4,
+        "field_path": "band.thickness_mm",
+        "method": "reference_vision",
+        "note": "Reference-derived starting value; verify before production.",
+        "section": "band",
+        "source": "synthetic low-information reference render",
+        "status": "estimated_from_reference",
+        "unit": "mm",
+        "value": 1.6
+      },
+      {
+        "confidence": 0.4,
+        "field_path": "band.width_mm",
+        "method": "reference_vision",
+        "note": "Reference-derived starting value; verify before production.",
+        "section": "band",
+        "source": "synthetic low-information reference render",
+        "status": "estimated_from_reference",
+        "unit": "mm",
+        "value": 2.0
+      },
+      {
+        "confidence": 0.4,
+        "field_path": "ring_size.inner_diameter_mm",
+        "method": "reference_vision",
+        "note": "Reference-derived starting value; verify before production.",
+        "section": "ring_size",
+        "source": "synthetic low-information reference render",
+        "status": "estimated_from_reference",
+        "unit": "mm",
+        "value": 16.91
+      },
+      {
+        "confidence": 0.4,
+        "field_path": "ring_size.value",
+        "method": "reference_vision",
+        "note": "Reference-derived starting value; verify before production.",
+        "section": "ring_size",
+        "source": "synthetic low-information reference render",
+        "status": "estimated_from_reference",
+        "unit": "US",
+        "value": 6.5
+      },
+      {
+        "confidence": 0.4,
+        "field_path": "setting.gallery_height_mm",
+        "method": "reference_vision",
+        "note": "Reference-derived starting value; verify before production.",
+        "section": "setting",
+        "source": "synthetic low-information reference render",
+        "status": "estimated_from_reference",
+        "unit": "mm",
+        "value": 4.0
+      },
+      {
+        "confidence": 0.4,
+        "field_path": "setting.prong_tip_mm",
+        "method": "reference_vision",
+        "note": "Reference-derived starting value; verify before production.",
+        "section": "setting",
+        "source": "synthetic low-information reference render",
+        "status": "estimated_from_reference",
+        "unit": "mm",
+        "value": 0.8
+      },
+      {
+        "confidence": 0.4,
+        "field_path": "side_stones[0].dimensions_mm.depth",
+        "method": "reference_vision",
+        "note": "Reference-derived starting value; verify before production.",
+        "section": "side_stones",
+        "source": "synthetic low-information reference render",
+        "status": "estimated_from_reference",
+        "unit": "mm",
+        "value": 1.2
+      },
+      {
+        "confidence": 0.4,
+        "field_path": "side_stones[0].dimensions_mm.length",
+        "method": "reference_vision",
+        "note": "Reference-derived starting value; verify before production.",
+        "section": "side_stones",
+        "source": "synthetic low-information reference render",
+        "status": "estimated_from_reference",
+        "unit": "mm",
+        "value": 2.0
+      },
+      {
+        "confidence": 0.4,
+        "field_path": "side_stones[0].dimensions_mm.width",
+        "method": "reference_vision",
+        "note": "Reference-derived starting value; verify before production.",
+        "section": "side_stones",
+        "source": "synthetic low-information reference render",
+        "status": "estimated_from_reference",
+        "unit": "mm",
+        "value": 2.0
+      },
+      {
+        "confidence": 0.4,
+        "field_path": "stone.dimensions_mm.depth",
+        "method": "reference_vision",
+        "note": "Reference-derived starting value; verify before production.",
+        "section": "stone",
+        "source": "synthetic low-information reference render",
+        "status": "estimated_from_reference",
+        "unit": "mm",
+        "value": 4.0
+      },
+      {
+        "confidence": 0.4,
+        "field_path": "stone.dimensions_mm.length",
+        "method": "reference_vision",
+        "note": "Reference-derived starting value; verify before production.",
+        "section": "stone",
+        "source": "synthetic low-information reference render",
+        "status": "estimated_from_reference",
+        "unit": "mm",
+        "value": 8.0
+      },
+      {
+        "confidence": 0.4,
+        "field_path": "stone.dimensions_mm.width",
+        "method": "reference_vision",
+        "note": "Reference-derived starting value; verify before production.",
+        "section": "stone",
+        "source": "synthetic low-information reference render",
+        "status": "estimated_from_reference",
+        "unit": "mm",
+        "value": 6.0
+      }
+    ],
+    "estimate_disclaimer": "ESTIMATED dimensions are reference-derived prototyping values, not measurements. Verify or adjust them before manufacturing; factory and designer sign-off remain required.",
+    "estimated_fact_count": 12,
+    "has_estimates": true,
+    "jewelry_type": "ring",
+    "materials": [
+      {
+        "color": "rose",
+        "fact_status": "designer_confirmed",
+        "finish": "high_polish",
+        "karat": 18,
+        "material": "gold",
+        "section": "metal"
+      }
+    ],
+    "pending_confirmation_count": 0,
+    "schema_version": "facetta.factory-sheet-plan.v1",
+    "settings": [
+      {
+        "dimension_paths": [
+          "setting.prong_tip_mm",
+          "setting.gallery_height_mm"
+        ],
+        "fact_status": "designer_confirmed",
+        "prong_count": 4,
+        "section": "setting",
+        "style": "4_prong_basket"
+      }
+    ],
+    "stones": [
+      {
+        "carat_each": 1.04,
+        "carat_total": 1.04,
+        "count": 1,
+        "cut": "oval_brilliant",
+        "dimension_paths": [
+          "stone.dimensions_mm.length",
+          "stone.dimensions_mm.width",
+          "stone.dimensions_mm.depth"
+        ],
+        "fact_status": "designer_confirmed",
+        "ref": "A",
+        "role": "center",
+        "section": "stone",
+        "species": "emerald",
+        "visible_color": "Muzo Green"
+      },
+      {
+        "carat_each": 0.03,
+        "carat_total": 0.18,
+        "count": 6,
+        "cut": "round_brilliant",
+        "dimension_paths": [
+          "side_stones[0].dimensions_mm.length",
+          "side_stones[0].dimensions_mm.width",
+          "side_stones[0].dimensions_mm.depth"
+        ],
+        "fact_status": "designer_confirmed",
+        "ref": "B",
+        "role": "shoulders",
+        "section": "side_stones",
+        "species": "diamond",
+        "visible_color": "F"
+      }
+    ],
+    "template": "solitaire_prong"
+  },
+  "files": [
+    {
+      "authoritative": true,
+      "bytes": 11666,
+      "name": "validated-spec.json",
+      "sha256": "d423c109dc1dc4553583c1c5689a787240b9941afd417c1d8f821616613a086b"
+    },
+    {
+      "authoritative": true,
+      "bytes": 22979,
+      "name": "facetta-sheet.svg",
+      "sha256": "20ae47b581fa19655a6fa8970c1ddbea71f46d5d5b860b239e11334b8132677a"
+    },
+    {
+      "authoritative": false,
+      "bytes": 22192,
+      "name": "facetta-sheet.dxf",
+      "sha256": "09b4509bd369ff8868d273be3a17d8fa4469b6587b43ed04bf3a9154824bc19f"
+    },
+    {
+      "authoritative": false,
+      "bytes": 126534,
+      "name": "approved-reference.jpg",
+      "sha256": "62d3413577282fd60e3607fa548d48f68e4c97597d75d3c0ea83c16e77a10252"
+    },
+    {
+      "authoritative": true,
+      "bytes": 17917,
+      "name": "facetta-schedule-1.svg",
+      "sha256": "78b803087f75b2ae66dd2e3e447e3b87834f477a775fac155ceb94365f1a744a"
+    }
+  ],
+  "pinned_at": "2026-07-11T16:14:26.902777",
+  "project_id": "ast_00a5b9b805219bbc",
+  "qa_summary": {
+    "attempt_count": 1,
+    "checks": [
+      {
+        "code": "decodable_image",
+        "evidence": {
+          "format": "JPEG",
+          "height": 1024,
+          "width": 1024
+        },
+        "message": "candidate is a decodable raster image",
+        "passed": true,
+        "severity": "hard"
+      },
+      {
+        "code": "review_resolution",
+        "evidence": {
+          "height": 1024,
+          "width": 1024
+        },
+        "message": "candidate has reviewable raster dimensions",
+        "passed": true,
+        "severity": "warning"
+      },
+      {
+        "code": "candidate_changed",
+        "evidence": {},
+        "message": "candidate bytes differ from the source",
+        "passed": true,
+        "severity": "hard"
+      },
+      {
+        "code": "requested_change",
+        "evidence": {},
+        "message": "visual evidence matches the requested fact",
+        "passed": true,
+        "severity": "hard"
+      },
+      {
+        "code": "protected_regions",
+        "evidence": {},
+        "message": "visual evidence matches the requested fact",
+        "passed": true,
+        "severity": "hard"
+      },
+      {
+        "code": "unintended_drift",
+        "evidence": {
+          "changes": [],
+          "severity": "none"
+        },
+        "message": "no unintended changes detected",
+        "passed": true,
+        "severity": "warning"
+      },
+      {
+        "code": "spec_change",
+        "evidence": {
+          "spec_delta": [
+            {
+              "from": "yellow",
+              "kind": "changed",
+              "label": "metal colour",
+              "path": "metal.color",
+              "to": "rose"
+            }
+          ]
+        },
+        "message": "visual evidence matches the requested fact",
+        "passed": true,
+        "severity": "hard"
+      },
+      {
+        "code": "edit_domain:metal_identity",
+        "evidence": {
+          "domain": "metal_identity",
+          "spec_delta": [
+            {
+              "from": "yellow",
+              "kind": "changed",
+              "label": "metal colour",
+              "path": "metal.color",
+              "to": "rose"
+            }
+          ]
+        },
+        "message": "visual evidence matches the requested fact",
+        "passed": true,
+        "severity": "hard"
+      },
+      {
+        "code": "crosscheck_requested_change",
+        "evidence": {},
+        "message": "visual evidence matches the requested fact",
+        "passed": true,
+        "severity": "hard"
+      },
+      {
+        "code": "crosscheck_frozen_facts",
+        "evidence": {},
+        "message": "visual evidence matches the requested fact",
+        "passed": true,
+        "severity": "hard"
+      },
+      {
+        "code": "crosscheck_unintended_drift",
+        "evidence": {
+          "changes": [],
+          "severity": "none"
+        },
+        "message": "independent audit found no unintended changes",
+        "passed": true,
+        "severity": "warning"
+      },
+      {
+        "code": "crosscheck_edit_domains",
+        "evidence": {
+          "domain_mismatches": []
+        },
+        "message": "independent audit matched every required edit domain",
+        "passed": true,
+        "severity": "hard"
+      },
+      {
+        "code": "target_spec_crosscheck:jewelry_type",
+        "evidence": {
+          "differences": [],
+          "observed_prong_count": 4,
+          "observed_side_stone_count": 8
+        },
+        "message": "visual evidence matches the requested fact",
+        "passed": true,
+        "severity": "hard"
+      },
+      {
+        "code": "target_spec_crosscheck:center_identity",
+        "evidence": {
+          "differences": [],
+          "observed_prong_count": 4,
+          "observed_side_stone_count": 8
+        },
+        "message": "visual evidence matches the requested fact",
+        "passed": true,
+        "severity": "hard"
+      },
+      {
+        "code": "target_spec_crosscheck:center_cut",
+        "evidence": {
+          "differences": [],
+          "observed_prong_count": 4,
+          "observed_side_stone_count": 8
+        },
+        "message": "visual evidence matches the requested fact",
+        "passed": true,
+        "severity": "hard"
+      },
+      {
+        "code": "target_spec_crosscheck:metal",
+        "evidence": {
+          "differences": [],
+          "observed_prong_count": 4,
+          "observed_side_stone_count": 8
+        },
+        "message": "visual evidence matches the requested fact",
+        "passed": true,
+        "severity": "hard"
+      },
+      {
+        "code": "target_spec_crosscheck:setting_style",
+        "evidence": {
+          "differences": [],
+          "observed_prong_count": 4,
+          "observed_side_stone_count": 8
+        },
+        "message": "visual evidence matches the requested fact",
+        "passed": true,
+        "severity": "hard"
+      },
+      {
+        "code": "target_spec_crosscheck:prong_count",
+        "evidence": {
+          "differences": [],
+          "observed_prong_count": 4,
+          "observed_side_stone_count": 8
+        },
+        "message": "visual evidence matches the requested fact",
+        "passed": true,
+        "severity": "hard"
+      },
+      {
+        "code": "target_spec_crosscheck:side_stone_inventory",
+        "evidence": {
+          "differences": [],
+          "observed_prong_count": 4,
+          "observed_side_stone_count": 8
+        },
+        "message": "independent audit could not confirm side stone inventory",
+        "passed": false,
+        "severity": "warning"
+      },
+      {
+        "code": "target_spec_crosscheck:major_components",
+        "evidence": {
+          "differences": [],
+          "observed_prong_count": 4,
+          "observed_side_stone_count": 8
+        },
+        "message": "visual evidence matches the requested fact",
+        "passed": true,
+        "severity": "hard"
+      },
+      {
+        "code": "text_or_branding",
+        "evidence": {},
+        "message": "no text or branding introduced",
+        "passed": true,
+        "severity": "hard"
+      }
+    ],
+    "image_run_id": "run_b3159a468fd5b162",
+    "operation": "LOCAL_EDIT",
+    "prompt_version": "local-edit.v6",
+    "status": "accepted_after_designer_review",
+    "verdict": "warn"
+  },
+  "schema_version": "facetta.factory-pack.v1",
+  "visual_revision": 2
+}

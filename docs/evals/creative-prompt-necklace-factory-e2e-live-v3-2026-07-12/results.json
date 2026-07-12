@@ -1,0 +1,56 @@
+{
+  "actor": "usr_internal_designer_e2e",
+  "candidate": "docs/evals/creative-prompt-necklace-live-v5-2026-07-12/candidate.jpg",
+  "candidate_asset_id": "ast_76cea4e12b7cfd1f",
+  "candidate_sha256": "0c40e27c0bf8f49314d74cee61d66c76ffbbabef0303e37789854c4bfa98268a",
+  "database_counts": {
+    "assets": 2,
+    "designs": 1,
+    "image_runs": 1,
+    "projects": 1,
+    "versions": 1
+  },
+  "design_id": "dsn_95a22a1a2e4c2d51",
+  "design_version": 1,
+  "draft_sheet": "draft-facetta-sheet.svg",
+  "draft_sheet_authority": "preliminary_not_for_production",
+  "draft_sheet_preview": "draft-facetta-sheet-preview.png",
+  "draft_sheet_visual_review": "preliminary-sheet-visual-review.json",
+  "dxf_error": {
+    "blockers": [
+      {
+        "code": "visual_reference_not_dimensioned",
+        "detail": "Asymmetric branching vine and tapered drop is confirmed only by pinned visual reference; its contour is not dimensioned factory geometry."
+      },
+      {
+        "code": "chain_production_reference_missing",
+        "detail": "The exact stock item, approved sample, dimensioned drawing, or CAD construction record for the chain is not identified."
+      }
+    ],
+    "code": "factory_geometry_incomplete",
+    "detail": "DXF export is unavailable until every visual form and chain construction blocker is resolved",
+    "error_category": "validation_failure"
+  },
+  "dxf_http_status": 409,
+  "factory_authoritative": false,
+  "factory_blocker_codes": [
+    "chain_production_reference_missing",
+    "visual_reference_not_dimensioned"
+  ],
+  "factory_pack_error": {
+    "category": "approval",
+    "code": "design_form_not_dimensioned",
+    "detail": "Factory release is blocked because these designer-confirmed forms are still visual_reference_only: vine_assembly. Supply or confirm a dimensioned profile or CAD definition before manufacturing."
+  },
+  "factory_pack_http_status": 409,
+  "factory_ready": false,
+  "founder_approved": false,
+  "gia_cofounder_approved": false,
+  "new_image_generation_calls": 0,
+  "project_id": "ast_76cea4e12b7cfd1f",
+  "promoted_asset_id": "ast_3838d89f887f745a",
+  "recorded_image_run_replayed": true,
+  "source_reaudit_inconclusive_count": 3,
+  "stage": "prompt_candidate_to_factory_gate",
+  "status": "factory_release_blocked_as_designed"
+}

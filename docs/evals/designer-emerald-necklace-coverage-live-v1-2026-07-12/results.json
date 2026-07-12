@@ -1,0 +1,891 @@
+{
+  "corpus": "designer-reference-corpus-v1",
+  "coverage_summary": {
+    "all_factory_ready": false,
+    "applicable_cases": 1,
+    "blocking_cases": [
+      {
+        "blocker_count": 12,
+        "case": "emerald-necklace-measured",
+        "status": "invalid"
+      }
+    ],
+    "factory_ready_cases": 0,
+    "factory_ready_rate": 0.0,
+    "gate_definition": "Factory ready only when every visible source component is mapped and independently audited with no blockers.",
+    "status_counts": {
+      "invalid": 1,
+      "pass": 0,
+      "review_required": 0,
+      "unavailable": 0
+    }
+  },
+  "pair_checks": [],
+  "provider_readiness": {
+    "fallback_configured": false,
+    "xai_configured": true
+  },
+  "rows": [
+    {
+      "case": "emerald-necklace-measured",
+      "category": "necklace",
+      "coverage_audit_debug": {
+        "blind_inventory_pass": {
+          "components": [
+            {
+              "confidence": 0.95,
+              "inventory_id": "blind.001",
+              "observed_description": "curved necklace body/band with continuous pav\u00e9 diamond border and repeating geometric metal segments",
+              "source_view": "plate_composite"
+            },
+            {
+              "confidence": 0.9,
+              "inventory_id": "blind.002",
+              "observed_description": "row of emerald-cut green stones set into the lower edge of the main band",
+              "source_view": "plate_composite"
+            },
+            {
+              "confidence": 0.85,
+              "inventory_id": "blind.003",
+              "observed_description": "multiple pear-shaped emerald pendants suspended from the band, varying sizes",
+              "source_view": "plate_composite"
+            },
+            {
+              "confidence": 0.95,
+              "inventory_id": "blind.004",
+              "observed_description": "large central pear-shaped emerald pendant hanging below the band",
+              "source_view": "plate_composite"
+            },
+            {
+              "confidence": 0.9,
+              "inventory_id": "blind.005",
+              "observed_description": "clusters of round faceted stones (diamonds) interspersed along the band and between pendants",
+              "source_view": "plate_composite"
+            },
+            {
+              "confidence": 0.8,
+              "inventory_id": "blind.006",
+              "observed_description": "separate detail rendering of metal settings and prongs for pear emerald pendants",
+              "source_view": "plate_composite"
+            },
+            {
+              "confidence": 0.85,
+              "inventory_id": "blind.007",
+              "observed_description": "detached pear-shaped emerald stones shown with mountings",
+              "source_view": "plate_composite"
+            }
+          ]
+        },
+        "independent_mapping_pass": {
+          "component_audits": [
+            {
+              "component_id": "stone.center",
+              "matched_inventory_ids": [
+                "blind.004"
+              ],
+              "observed_description": "large central pear-shaped emerald pendant",
+              "source_view": "plate_composite",
+              "verdict": "pass"
+            },
+            {
+              "component_id": "stone.group.001",
+              "matched_inventory_ids": [
+                "blind.003"
+              ],
+              "observed_description": "multiple pear-shaped emerald pendants of varying sizes",
+              "source_view": "plate_composite",
+              "verdict": "pass"
+            },
+            {
+              "component_id": "stone.group.002",
+              "matched_inventory_ids": [],
+              "observed_description": "round faceted stones are diamonds; emerald-cut stones are rectangular buff tops",
+              "source_view": "plate_composite",
+              "verdict": "fail"
+            },
+            {
+              "component_id": "assembly.primary",
+              "matched_inventory_ids": [
+                "blind.001",
+                "blind.002",
+                "blind.003",
+                "blind.005"
+              ],
+              "observed_description": "curved necklace body with pav\u00e9 border, emerald-cut stones, pear pendants and round stones",
+              "source_view": "plate_composite",
+              "verdict": "pass"
+            },
+            {
+              "component_id": "assembly.pendant",
+              "matched_inventory_ids": [],
+              "observed_description": "pendant bails and construction details not measurable from view",
+              "source_view": "plate_composite",
+              "verdict": "inconclusive"
+            },
+            {
+              "component_id": "setting.primary",
+              "matched_inventory_ids": [],
+              "observed_description": "setting construction not explicitly established",
+              "source_view": "plate_composite",
+              "verdict": "inconclusive"
+            },
+            {
+              "component_id": "metal.body",
+              "matched_inventory_ids": [],
+              "observed_description": "white metal visible but exact alloy unconfirmed",
+              "source_view": "plate_composite",
+              "verdict": "inconclusive"
+            },
+            {
+              "component_id": "assembly.chain",
+              "matched_inventory_ids": [],
+              "observed_description": "collar band only; no cable chain geometry visible",
+              "source_view": "plate_composite",
+              "verdict": "fail"
+            }
+          ],
+          "inventory_accounting": [
+            {
+              "coverage_component_ids": [
+                "assembly.primary"
+              ],
+              "inventory_id": "blind.001",
+              "unmapped_reason": null
+            },
+            {
+              "coverage_component_ids": [],
+              "inventory_id": "blind.002",
+              "unmapped_reason": "emerald-cut stones on band unmatched to any coverage component"
+            },
+            {
+              "coverage_component_ids": [
+                "stone.group.001",
+                "assembly.primary"
+              ],
+              "inventory_id": "blind.003",
+              "unmapped_reason": null
+            },
+            {
+              "coverage_component_ids": [
+                "stone.center",
+                "assembly.primary"
+              ],
+              "inventory_id": "blind.004",
+              "unmapped_reason": null
+            },
+            {
+              "coverage_component_ids": [
+                "assembly.primary"
+              ],
+              "inventory_id": "blind.005",
+              "unmapped_reason": null
+            },
+            {
+              "coverage_component_ids": [],
+              "inventory_id": "blind.006",
+              "unmapped_reason": "setting detail rendering unmatched to any coverage component"
+            },
+            {
+              "coverage_component_ids": [],
+              "inventory_id": "blind.007",
+              "unmapped_reason": "detached stones unmatched to any coverage component"
+            }
+          ]
+        },
+        "source_sha256": "975e44d816096b3c6035b7e6a15bdf44a142283d946e707217842e51e75a3c2f",
+        "validation_error": "blind.002 has contradictory bidirectional mapping: component_audits=['assembly.primary'], inventory_accounting=[]"
+      },
+      "coverage_blockers": [
+        {
+          "code": "source_component_spec_audit_missing",
+          "component_id": "audit.spec",
+          "message": "source-component evidence was not audited against the exact visible facts in this specification",
+          "required_resolution": "Repeat the independent source audit with the current validated specification before rendering or release."
+        },
+        {
+          "code": "source_component_not_independently_audited",
+          "component_id": "stone.center",
+          "message": "stone.center has not been independently audited against the imported source.",
+          "required_resolution": "Run and retain an independent component-coverage audit."
+        },
+        {
+          "code": "source_component_not_independently_audited",
+          "component_id": "stone.group.001",
+          "message": "stone.group.001 has not been independently audited against the imported source.",
+          "required_resolution": "Run and retain an independent component-coverage audit."
+        },
+        {
+          "code": "source_component_not_independently_audited",
+          "component_id": "stone.group.002",
+          "message": "stone.group.002 has not been independently audited against the imported source.",
+          "required_resolution": "Run and retain an independent component-coverage audit."
+        },
+        {
+          "code": "source_component_not_independently_audited",
+          "component_id": "assembly.primary",
+          "message": "assembly.primary has not been independently audited against the imported source.",
+          "required_resolution": "Run and retain an independent component-coverage audit."
+        },
+        {
+          "code": "source_component_not_independently_audited",
+          "component_id": "assembly.pendant",
+          "message": "assembly.pendant has not been independently audited against the imported source.",
+          "required_resolution": "Run and retain an independent component-coverage audit."
+        },
+        {
+          "code": "source_component_unresolved",
+          "component_id": "setting.primary",
+          "message": "setting.primary is visible in the source but unresolved: The plate does not explicitly establish the stone-setting construction; the compiled setting remains a placeholder.",
+          "required_resolution": "Designer must map the component to canonical spec paths or define it through an explicit supported form contract."
+        },
+        {
+          "code": "source_component_not_independently_audited",
+          "component_id": "setting.primary",
+          "message": "setting.primary has not been independently audited against the imported source.",
+          "required_resolution": "Run and retain an independent component-coverage audit."
+        },
+        {
+          "code": "source_component_unresolved",
+          "component_id": "metal.body",
+          "message": "metal.body is visible in the source but unresolved: The plate does not establish one exact metal/alloy target.",
+          "required_resolution": "Designer must map the component to canonical spec paths or define it through an explicit supported form contract."
+        },
+        {
+          "code": "source_component_not_independently_audited",
+          "component_id": "metal.body",
+          "message": "metal.body has not been independently audited against the imported source.",
+          "required_resolution": "Run and retain an independent component-coverage audit."
+        },
+        {
+          "code": "source_component_unresolved",
+          "component_id": "assembly.chain",
+          "message": "assembly.chain is visible in the source but unresolved: The visible collar/link construction is not a confirmed cable chain record; choose exact chain geometry and a production reference.",
+          "required_resolution": "Designer must map the component to canonical spec paths or define it through an explicit supported form contract."
+        },
+        {
+          "code": "source_component_not_independently_audited",
+          "component_id": "assembly.chain",
+          "message": "assembly.chain has not been independently audited against the imported source.",
+          "required_resolution": "Run and retain an independent component-coverage audit."
+        }
+      ],
+      "coverage_error": "blind.002 has contradictory bidirectional mapping: component_audits=['assembly.primary'], inventory_accounting=[]",
+      "coverage_status": "invalid",
+      "draft_spec": {
+        "band": null,
+        "bracelet": null,
+        "brooch": null,
+        "chain": {
+          "clasp": "lobster",
+          "geometry": null,
+          "length_mm": 450.0,
+          "pendant_connection": null,
+          "production": null,
+          "style": "cable"
+        },
+        "composition": null,
+        "created_at": "2026-07-11T18:15:23.707361Z",
+        "created_by": "eval_designer",
+        "design_form": {
+          "elements": [
+            {
+              "confirmed_form_description": "necklace with ornate openwork collar band set with emerald buff tops and round stones, suspended pear-shaped emerald drops and round stones arranged symmetrically around a central large pear emerald drop",
+              "definition": {
+                "asset_id": "eval:emerald-necklace-measured",
+                "asset_sha256": "975e44d816096b3c6035b7e6a15bdf44a142283d946e707217842e51e75a3c2f",
+                "kind": "visual_reference_only"
+              },
+              "element_id": "necklace_assembly",
+              "instance_count": 1,
+              "label": "Complete necklace assembly",
+              "regions": [
+                {
+                  "polygons": [
+                    {
+                      "points": [
+                        {
+                          "x": 0.01,
+                          "y": 0.01
+                        },
+                        {
+                          "x": 0.99,
+                          "y": 0.01
+                        },
+                        {
+                          "x": 0.99,
+                          "y": 0.99
+                        },
+                        {
+                          "x": 0.01,
+                          "y": 0.99
+                        }
+                      ]
+                    }
+                  ],
+                  "view": "plate_composite"
+                }
+              ],
+              "role": "full_assembly",
+              "symmetry": "asymmetric"
+            }
+          ]
+        },
+        "design_id": "eval_emerald-necklace-measured",
+        "dimension_provenance": {
+          "chain.length_mm": {
+            "confidence": 0.35,
+            "method": "reference_vision",
+            "note": "Reference-derived starting value; verify before production.",
+            "source": "designer necklace drawing / design plate",
+            "status": "estimated_from_reference"
+          },
+          "pendant.bail_height_mm": {
+            "confidence": 0.35,
+            "method": "reference_vision",
+            "note": "Reference-derived starting value; verify before production.",
+            "source": "designer necklace drawing / design plate",
+            "status": "estimated_from_reference"
+          },
+          "pendant.bail_inner_diameter_mm": {
+            "confidence": 0.35,
+            "method": "reference_vision",
+            "note": "Reference-derived starting value; verify before production.",
+            "source": "designer necklace drawing / design plate",
+            "status": "estimated_from_reference"
+          },
+          "setting.prong_tip_mm": {
+            "confidence": 0.35,
+            "method": "reference_vision",
+            "note": "Reference-derived starting value; verify before production.",
+            "source": "designer necklace drawing / design plate",
+            "status": "estimated_from_reference"
+          },
+          "side_stones[0].dimensions_mm.depth": {
+            "confidence": 0.35,
+            "method": "reference_vision",
+            "note": "Reference-derived starting value; verify before production.",
+            "source": "designer necklace drawing / design plate",
+            "status": "estimated_from_reference"
+          },
+          "side_stones[0].dimensions_mm.length": {
+            "confidence": 0.35,
+            "method": "reference_vision",
+            "note": "Reference-derived starting value; verify before production.",
+            "source": "designer necklace drawing / design plate",
+            "status": "estimated_from_reference"
+          },
+          "side_stones[0].dimensions_mm.width": {
+            "confidence": 0.35,
+            "method": "reference_vision",
+            "note": "Reference-derived starting value; verify before production.",
+            "source": "designer necklace drawing / design plate",
+            "status": "estimated_from_reference"
+          },
+          "side_stones[1].dimensions_mm.depth": {
+            "confidence": 0.35,
+            "method": "reference_vision",
+            "note": "Reference-derived starting value; verify before production.",
+            "source": "designer necklace drawing / design plate",
+            "status": "estimated_from_reference"
+          },
+          "side_stones[1].dimensions_mm.length": {
+            "confidence": 0.35,
+            "method": "reference_vision",
+            "note": "Reference-derived starting value; verify before production.",
+            "source": "designer necklace drawing / design plate",
+            "status": "estimated_from_reference"
+          },
+          "side_stones[1].dimensions_mm.width": {
+            "confidence": 0.35,
+            "method": "reference_vision",
+            "note": "Reference-derived starting value; verify before production.",
+            "source": "designer necklace drawing / design plate",
+            "status": "estimated_from_reference"
+          },
+          "stone.dimensions_mm.depth": {
+            "confidence": 0.35,
+            "method": "reference_vision",
+            "note": "Reference-derived starting value; verify before production.",
+            "source": "designer necklace drawing / design plate",
+            "status": "estimated_from_reference"
+          },
+          "stone.dimensions_mm.length": {
+            "confidence": 0.35,
+            "method": "reference_vision",
+            "note": "Reference-derived starting value; verify before production.",
+            "source": "designer necklace drawing / design plate",
+            "status": "estimated_from_reference"
+          },
+          "stone.dimensions_mm.width": {
+            "confidence": 0.35,
+            "method": "reference_vision",
+            "note": "Reference-derived starting value; verify before production.",
+            "source": "designer necklace drawing / design plate",
+            "status": "estimated_from_reference"
+          }
+        },
+        "drop": null,
+        "jewelry_type": "necklace",
+        "metal": {
+          "color": null,
+          "finish": "high_polish",
+          "karat": null,
+          "material": "platinum"
+        },
+        "mode": "pro",
+        "notes_to_factory": "DRAFT FROM NECKLACE DESIGN PLATE \u2014 written values without explicit units remain ambiguous; all estimates and placeholders require designer confirmation before factory release. drop stone dimensions are not confirmed; using nominal 8 mm placeholder drop stone colour is a visual estimate; confirm the trade colour drop stone dimensions are not confirmed; using nominal 2 mm placeholder drop stone colour is a visual estimate; confirm the trade colour stations stone dimensions are not confirmed; using nominal 2 mm placeholder stations stone colour is a visual estimate; confirm the trade colour SOURCE COMPONENT UNRESOLVED setting.primary: The plate does not explicitly establish the stone-setting construction; the compiled setting remains a placeholder. SOURCE COMPONENT UNRESOLVED metal.body: The plate does not establish one exact metal/alloy target. SOURCE COMPONENT UNRESOLVED assembly.chain: The visible collar/link construction is not a confirmed cable chain record; choose exact chain geometry and a production reference. Exact collar/link geometry, chain production reference, attachment construction, stone seats, and all unlabelled dimensions remain open. Unassigned written values preserved for designer review: 2.29, 2.13, 2.49, 2.84, 2.66, 3.06, 3.25",
+        "pendant": {
+          "bail_height_mm": 5.0,
+          "bail_inner_diameter_mm": 3.0,
+          "drop_mm": null
+        },
+        "ring_size": null,
+        "schema_version": 1,
+        "setting": {
+          "gallery_height_mm": null,
+          "prong_count": 4,
+          "prong_tip_mm": 0.8,
+          "style": "prong_cluster"
+        },
+        "side_stones": [
+          {
+            "carat": 0.024,
+            "clarity": null,
+            "color": {
+              "gia": "vivid, warm, slightly yellowish green",
+              "hue_code": null,
+              "saturation": null,
+              "tone": null,
+              "trade": "Muzo Green"
+            },
+            "count": 6,
+            "culet": null,
+            "cut": "pear",
+            "depth_pct": null,
+            "dimensions_mm": {
+              "depth": 1.26,
+              "length": 2.0,
+              "width": 2.0
+            },
+            "girdle": null,
+            "inscription": null,
+            "lab": null,
+            "mount": null,
+            "origin": null,
+            "phenomena": [],
+            "position": "drop",
+            "species": "emerald",
+            "table_pct": null,
+            "treatment": null
+          },
+          {
+            "carat": 0.024,
+            "clarity": null,
+            "color": {
+              "gia": "vivid, warm, slightly yellowish green",
+              "hue_code": null,
+              "saturation": null,
+              "tone": null,
+              "trade": "Muzo Green"
+            },
+            "count": 1,
+            "culet": null,
+            "cut": "round_brilliant",
+            "depth_pct": null,
+            "dimensions_mm": {
+              "depth": 1.22,
+              "length": 2.0,
+              "width": 2.0
+            },
+            "girdle": null,
+            "inscription": null,
+            "lab": null,
+            "mount": null,
+            "origin": null,
+            "phenomena": [],
+            "position": "stations",
+            "species": "emerald",
+            "table_pct": null,
+            "treatment": null
+          }
+        ],
+        "source_component_coverage": {
+          "audited_spec_visual_hash": null,
+          "components": [
+            {
+              "canonical_spec_paths": [
+                "stone"
+              ],
+              "component_id": "stone.center",
+              "designer_confirmation": null,
+              "independent_audit": null,
+              "source_confidence": 0.0,
+              "source_description": "emerald pear shape",
+              "source_view": "plate_composite",
+              "unresolved_reason": null
+            },
+            {
+              "canonical_spec_paths": [
+                "side_stones[0]"
+              ],
+              "component_id": "stone.group.001",
+              "designer_confirmation": null,
+              "independent_audit": null,
+              "source_confidence": 0.0,
+              "source_description": "emerald pear shape",
+              "source_view": "plate_composite",
+              "unresolved_reason": null
+            },
+            {
+              "canonical_spec_paths": [
+                "side_stones[1]"
+              ],
+              "component_id": "stone.group.002",
+              "designer_confirmation": null,
+              "independent_audit": null,
+              "source_confidence": 0.0,
+              "source_description": "emerald buff top",
+              "source_view": "plate_composite",
+              "unresolved_reason": null
+            },
+            {
+              "canonical_spec_paths": [
+                "template",
+                "design_form.elements[necklace_assembly]"
+              ],
+              "component_id": "assembly.primary",
+              "designer_confirmation": null,
+              "independent_audit": null,
+              "source_confidence": 0.0,
+              "source_description": "necklace with ornate openwork collar band set with emerald buff tops and round stones, suspended pear-shaped emerald drops and round stones arranged symmetrically around a central large pear emerald drop",
+              "source_view": "plate_composite",
+              "unresolved_reason": null
+            },
+            {
+              "canonical_spec_paths": [
+                "pendant"
+              ],
+              "component_id": "assembly.pendant",
+              "designer_confirmation": null,
+              "independent_audit": null,
+              "source_confidence": 0.0,
+              "source_description": "necklace with ornate openwork collar band set with emerald buff tops and round stones, suspended pear-shaped emerald drops and round stones arranged symmetrically around a central large pear emerald drop",
+              "source_view": "plate_composite",
+              "unresolved_reason": null
+            },
+            {
+              "canonical_spec_paths": [],
+              "component_id": "setting.primary",
+              "designer_confirmation": null,
+              "independent_audit": null,
+              "source_confidence": 0.0,
+              "source_description": "necklace with ornate openwork collar band set with emerald buff tops and round stones, suspended pear-shaped emerald drops and round stones arranged symmetrically around a central large pear emerald drop",
+              "source_view": "plate_composite",
+              "unresolved_reason": "The plate does not explicitly establish the stone-setting construction; the compiled setting remains a placeholder."
+            },
+            {
+              "canonical_spec_paths": [],
+              "component_id": "metal.body",
+              "designer_confirmation": null,
+              "independent_audit": null,
+              "source_confidence": 0.0,
+              "source_description": "white metal (platinum or white gold)",
+              "source_view": "plate_composite",
+              "unresolved_reason": "The plate does not establish one exact metal/alloy target."
+            },
+            {
+              "canonical_spec_paths": [],
+              "component_id": "assembly.chain",
+              "designer_confirmation": null,
+              "independent_audit": null,
+              "source_confidence": 0.0,
+              "source_description": "necklace with ornate openwork collar band set with emerald buff tops and round stones, suspended pear-shaped emerald drops and round stones arranged symmetrically around a central large pear emerald drop",
+              "source_view": "plate_composite",
+              "unresolved_reason": "The visible collar/link construction is not a confirmed cable chain record; choose exact chain geometry and a production reference."
+            }
+          ],
+          "source_kind": "designer_plate"
+        },
+        "stone": {
+          "carat": 1.535,
+          "clarity": null,
+          "color": {
+            "gia": "vivid, warm, slightly yellowish green",
+            "hue_code": null,
+            "saturation": null,
+            "tone": null,
+            "trade": "Muzo Green"
+          },
+          "count": 1,
+          "culet": null,
+          "cut": "pear",
+          "depth_pct": null,
+          "dimensions_mm": {
+            "depth": 5.04,
+            "length": 8.0,
+            "width": 8.0
+          },
+          "girdle": null,
+          "inscription": null,
+          "lab": null,
+          "mount": null,
+          "origin": null,
+          "phenomena": [],
+          "position": "drop",
+          "species": "emerald",
+          "table_pct": null,
+          "treatment": null
+        },
+        "template": "cluster_pendant",
+        "version": 1
+      },
+      "input_kind": "measured_colored_design_plate",
+      "latency_ms": 34335,
+      "read": {
+        "assembly": "necklace with ornate openwork collar band set with emerald buff tops and round stones, suspended pear-shaped emerald drops and round stones arranged symmetrically around a central large pear emerald drop",
+        "hand_written": [
+          "EMERALD BUFF TOP",
+          "EMERALDS PEAR SHAPE",
+          "2.29",
+          "2.13",
+          "2.49",
+          "2.84",
+          "2.66",
+          "3.06",
+          "3.25"
+        ],
+        "jewelry_type": "necklace",
+        "measurements": [
+          {
+            "confidence": 0.0,
+            "label": "2.29",
+            "raw": "2.29",
+            "status": "ambiguous",
+            "value": "2.29"
+          },
+          {
+            "confidence": 0.0,
+            "label": "2.13",
+            "raw": "2.13",
+            "status": "ambiguous",
+            "value": "2.13"
+          },
+          {
+            "confidence": 0.0,
+            "label": "2.49",
+            "raw": "2.49",
+            "status": "ambiguous",
+            "value": "2.49"
+          },
+          {
+            "confidence": 0.0,
+            "label": "2.84",
+            "raw": "2.84",
+            "status": "ambiguous",
+            "value": "2.84"
+          },
+          {
+            "confidence": 0.0,
+            "label": "2.66",
+            "raw": "2.66",
+            "status": "ambiguous",
+            "value": "2.66"
+          },
+          {
+            "confidence": 0.0,
+            "label": "3.06",
+            "raw": "3.06",
+            "status": "ambiguous",
+            "value": "3.06"
+          },
+          {
+            "confidence": 0.0,
+            "label": "3.25",
+            "raw": "3.25",
+            "status": "ambiguous",
+            "value": "3.25"
+          }
+        ],
+        "metal": "white metal (platinum or white gold)",
+        "scale_anchor": null,
+        "scaled": false,
+        "source": "plate",
+        "stones": [
+          {
+            "carat_each": null,
+            "confidence": 0.0,
+            "qty": 1,
+            "size_mm": "TBD",
+            "type": "emerald pear shape"
+          },
+          {
+            "carat_each": null,
+            "confidence": 0.0,
+            "qty": 6,
+            "size_mm": "TBD",
+            "type": "emerald pear shape"
+          },
+          {
+            "carat_each": null,
+            "confidence": 0.0,
+            "qty": 1,
+            "size_mm": "TBD",
+            "type": "emerald buff top"
+          }
+        ]
+      },
+      "read_score": {
+        "checks": {
+          "authoritative_text": true,
+          "expected_visual_terms": true,
+          "jewelry_type": true,
+          "minimum_stone_groups": true
+        },
+        "multi_design_warning": false,
+        "observed_jewelry_type": "necklace",
+        "score": 100.0,
+        "status": "pass",
+        "stone_group_count": 3,
+        "term_hits": [
+          "emerald",
+          "pear"
+        ],
+        "transcription_hits": [
+          "3.25",
+          "3.06",
+          "2.49"
+        ]
+      },
+      "source": {
+        "available": true,
+        "decodable": true,
+        "format": "JPEG",
+        "hash_matches": true,
+        "path": "/Users/mattfb/.codex/attachments/c2fd41d0-b236-43ef-ada9-e9479718c771/image-44.jpg",
+        "sha256": "975e44d816096b3c6035b7e6a15bdf44a142283d946e707217842e51e75a3c2f",
+        "size": [
+          1440,
+          1800
+        ]
+      },
+      "source_component_coverage": {
+        "audited_spec_visual_hash": null,
+        "components": [
+          {
+            "canonical_spec_paths": [
+              "stone"
+            ],
+            "component_id": "stone.center",
+            "designer_confirmation": null,
+            "independent_audit": null,
+            "source_confidence": 0.0,
+            "source_description": "emerald pear shape",
+            "source_view": "plate_composite",
+            "unresolved_reason": null
+          },
+          {
+            "canonical_spec_paths": [
+              "side_stones[0]"
+            ],
+            "component_id": "stone.group.001",
+            "designer_confirmation": null,
+            "independent_audit": null,
+            "source_confidence": 0.0,
+            "source_description": "emerald pear shape",
+            "source_view": "plate_composite",
+            "unresolved_reason": null
+          },
+          {
+            "canonical_spec_paths": [
+              "side_stones[1]"
+            ],
+            "component_id": "stone.group.002",
+            "designer_confirmation": null,
+            "independent_audit": null,
+            "source_confidence": 0.0,
+            "source_description": "emerald buff top",
+            "source_view": "plate_composite",
+            "unresolved_reason": null
+          },
+          {
+            "canonical_spec_paths": [
+              "template",
+              "design_form.elements[necklace_assembly]"
+            ],
+            "component_id": "assembly.primary",
+            "designer_confirmation": null,
+            "independent_audit": null,
+            "source_confidence": 0.0,
+            "source_description": "necklace with ornate openwork collar band set with emerald buff tops and round stones, suspended pear-shaped emerald drops and round stones arranged symmetrically around a central large pear emerald drop",
+            "source_view": "plate_composite",
+            "unresolved_reason": null
+          },
+          {
+            "canonical_spec_paths": [
+              "pendant"
+            ],
+            "component_id": "assembly.pendant",
+            "designer_confirmation": null,
+            "independent_audit": null,
+            "source_confidence": 0.0,
+            "source_description": "necklace with ornate openwork collar band set with emerald buff tops and round stones, suspended pear-shaped emerald drops and round stones arranged symmetrically around a central large pear emerald drop",
+            "source_view": "plate_composite",
+            "unresolved_reason": null
+          },
+          {
+            "canonical_spec_paths": [],
+            "component_id": "setting.primary",
+            "designer_confirmation": null,
+            "independent_audit": null,
+            "source_confidence": 0.0,
+            "source_description": "necklace with ornate openwork collar band set with emerald buff tops and round stones, suspended pear-shaped emerald drops and round stones arranged symmetrically around a central large pear emerald drop",
+            "source_view": "plate_composite",
+            "unresolved_reason": "The plate does not explicitly establish the stone-setting construction; the compiled setting remains a placeholder."
+          },
+          {
+            "canonical_spec_paths": [],
+            "component_id": "metal.body",
+            "designer_confirmation": null,
+            "independent_audit": null,
+            "source_confidence": 0.0,
+            "source_description": "white metal (platinum or white gold)",
+            "source_view": "plate_composite",
+            "unresolved_reason": "The plate does not establish one exact metal/alloy target."
+          },
+          {
+            "canonical_spec_paths": [],
+            "component_id": "assembly.chain",
+            "designer_confirmation": null,
+            "independent_audit": null,
+            "source_confidence": 0.0,
+            "source_description": "necklace with ornate openwork collar band set with emerald buff tops and round stones, suspended pear-shaped emerald drops and round stones arranged symmetrically around a central large pear emerald drop",
+            "source_view": "plate_composite",
+            "unresolved_reason": "The visible collar/link construction is not a confirmed cable chain record; choose exact chain geometry and a production reference."
+          }
+        ],
+        "source_kind": "designer_plate"
+      },
+      "uncertainties": [
+        "DRAFT FROM NECKLACE DESIGN PLATE \u2014 written values without explicit units remain ambiguous; all estimates and placeholders require designer confirmation before factory release.",
+        "drop stone dimensions are not confirmed; using nominal 8 mm placeholder",
+        "drop stone colour is a visual estimate; confirm the trade colour",
+        "drop stone dimensions are not confirmed; using nominal 2 mm placeholder",
+        "drop stone colour is a visual estimate; confirm the trade colour",
+        "stations stone dimensions are not confirmed; using nominal 2 mm placeholder",
+        "stations stone colour is a visual estimate; confirm the trade colour",
+        "SOURCE COMPONENT UNRESOLVED setting.primary: The plate does not explicitly establish the stone-setting construction; the compiled setting remains a placeholder.",
+        "SOURCE COMPONENT UNRESOLVED metal.body: The plate does not establish one exact metal/alloy target.",
+        "SOURCE COMPONENT UNRESOLVED assembly.chain: The visible collar/link construction is not a confirmed cable chain record; choose exact chain geometry and a production reference.",
+        "Exact collar/link geometry, chain production reference, attachment construction, stone seats, and all unlabelled dimensions remain open.",
+        "Unassigned written values preserved for designer review: 2.29, 2.13, 2.49, 2.84, 2.66, 3.06, 3.25"
+      ],
+      "workflows": [
+        "plate_read",
+        "factory_sheet"
+      ]
+    }
+  ],
+  "run": "designer-emerald-necklace-coverage-live-v1-2026-07-12",
+  "source_policy": "Founder-supplied evaluation references only. Do not publish, train on, or treat as customer-owned production assets. Third-party branding and social watermarks must never appear in accepted outputs.",
+  "stage": "coverage"
+}

@@ -1,0 +1,257 @@
+{
+  "filenames": [
+    "image-81.jpg",
+    "image-82.jpg",
+    "image-83.jpg",
+    "image-84.jpg",
+    "image-85.jpg",
+    "image-86.jpg",
+    "image-87.jpg",
+    "image-88.jpg",
+    "image-89.jpg",
+    "image-90.jpg",
+    "image-91.jpg",
+    "image-92.jpg",
+    "image-93.jpg",
+    "image-94.jpg",
+    "image-95.jpg",
+    "image-96.jpg"
+  ],
+  "latency_ms": 12223,
+  "payload": {
+    "items": [
+      {
+        "complexity": "moderate",
+        "confidence": 0.82,
+        "filename": "image-81.jpg",
+        "input_kind": "hand_drawing",
+        "multi_design": true,
+        "notes": "pencil sketches + one colored ring on paper",
+        "primary_category": "ring",
+        "watermark_or_branding": false,
+        "workflow_fit": [
+          "lineart_color"
+        ]
+      },
+      {
+        "complexity": "moderate",
+        "confidence": 0.9,
+        "filename": "image-82.jpg",
+        "input_kind": "finished_jewelry_photo",
+        "multi_design": false,
+        "notes": "four clean product shots of emerald rings",
+        "primary_category": "ring",
+        "watermark_or_branding": true,
+        "workflow_fit": [
+          "photo_read",
+          "beauty_render"
+        ]
+      },
+      {
+        "complexity": "simple",
+        "confidence": 0.88,
+        "filename": "image-83.jpg",
+        "input_kind": "finished_jewelry_photo",
+        "multi_design": false,
+        "notes": "four product photos on teal background",
+        "primary_category": "ring",
+        "watermark_or_branding": true,
+        "workflow_fit": [
+          "photo_read",
+          "beauty_render"
+        ]
+      },
+      {
+        "complexity": "moderate",
+        "confidence": 0.9,
+        "filename": "image-84.jpg",
+        "input_kind": "finished_jewelry_photo",
+        "multi_design": false,
+        "notes": "two finished emerald rings, platform watermark",
+        "primary_category": "ring",
+        "watermark_or_branding": true,
+        "workflow_fit": [
+          "photo_read",
+          "beauty_render"
+        ]
+      },
+      {
+        "complexity": "complex",
+        "confidence": 0.85,
+        "filename": "image-85.jpg",
+        "input_kind": "hand_drawing",
+        "multi_design": true,
+        "notes": "multiple colored ring sketches with annotations",
+        "primary_category": "ring",
+        "watermark_or_branding": false,
+        "workflow_fit": [
+          "lineart_color"
+        ]
+      },
+      {
+        "complexity": "complex",
+        "confidence": 0.9,
+        "filename": "image-86.jpg",
+        "input_kind": "technical_sheet",
+        "multi_design": true,
+        "notes": "detailed CAD-style drawings with dimensions",
+        "primary_category": "ring",
+        "watermark_or_branding": false,
+        "workflow_fit": [
+          "technical_benchmark",
+          "factory_sheet"
+        ]
+      },
+      {
+        "complexity": "simple",
+        "confidence": 0.87,
+        "filename": "image-87.jpg",
+        "input_kind": "finished_jewelry_photo",
+        "multi_design": false,
+        "notes": "three product shots on gray",
+        "primary_category": "ring",
+        "watermark_or_branding": true,
+        "workflow_fit": [
+          "photo_read"
+        ]
+      },
+      {
+        "complexity": "complex",
+        "confidence": 0.83,
+        "filename": "image-88.jpg",
+        "input_kind": "hand_drawing",
+        "multi_design": true,
+        "notes": "multiple hand-drawn ring designs with notes",
+        "primary_category": "ring",
+        "watermark_or_branding": false,
+        "workflow_fit": [
+          "lineart_color"
+        ]
+      },
+      {
+        "complexity": "moderate",
+        "confidence": 0.8,
+        "filename": "image-89.jpg",
+        "input_kind": "hand_drawing",
+        "multi_design": false,
+        "notes": "mixed sketch + colored rendering of one ring",
+        "primary_category": "ring",
+        "watermark_or_branding": true,
+        "workflow_fit": [
+          "lineart_color"
+        ]
+      },
+      {
+        "complexity": "moderate",
+        "confidence": 0.78,
+        "filename": "image-90.jpg",
+        "input_kind": "hand_drawing",
+        "multi_design": false,
+        "notes": "hand sketch of ring on hand + separate ring drawing",
+        "primary_category": "ring",
+        "watermark_or_branding": true,
+        "workflow_fit": [
+          "lineart_color"
+        ]
+      },
+      {
+        "complexity": "moderate",
+        "confidence": 0.82,
+        "filename": "image-91.jpg",
+        "input_kind": "hand_drawing",
+        "multi_design": true,
+        "notes": "multiple numbered ring sketches",
+        "primary_category": "ring",
+        "watermark_or_branding": true,
+        "workflow_fit": [
+          "lineart_color"
+        ]
+      },
+      {
+        "complexity": "moderate",
+        "confidence": 0.8,
+        "filename": "image-92.jpg",
+        "input_kind": "hand_drawing",
+        "multi_design": false,
+        "notes": "detailed line drawing with measurements",
+        "primary_category": "ring",
+        "watermark_or_branding": true,
+        "workflow_fit": [
+          "lineart_color"
+        ]
+      },
+      {
+        "complexity": "simple",
+        "confidence": 0.88,
+        "filename": "image-93.jpg",
+        "input_kind": "finished_jewelry_photo",
+        "multi_design": false,
+        "notes": "three product photos on gray",
+        "primary_category": "ring",
+        "watermark_or_branding": true,
+        "workflow_fit": [
+          "photo_read"
+        ]
+      },
+      {
+        "complexity": "moderate",
+        "confidence": 0.85,
+        "filename": "image-94.jpg",
+        "input_kind": "finished_jewelry_photo",
+        "multi_design": true,
+        "notes": "grid of eight finished emerald rings",
+        "primary_category": "ring",
+        "watermark_or_branding": true,
+        "workflow_fit": [
+          "photo_read",
+          "catalog_reference"
+        ]
+      },
+      {
+        "complexity": "simple",
+        "confidence": 0.87,
+        "filename": "image-95.jpg",
+        "input_kind": "finished_jewelry_photo",
+        "multi_design": false,
+        "notes": "two finished rings on teal",
+        "primary_category": "ring",
+        "watermark_or_branding": true,
+        "workflow_fit": [
+          "photo_read"
+        ]
+      },
+      {
+        "complexity": "complex",
+        "confidence": 0.92,
+        "filename": "image-96.jpg",
+        "input_kind": "reference_chart",
+        "multi_design": true,
+        "notes": "large grid of many ring designs, taxonomy style",
+        "primary_category": "reference_chart",
+        "watermark_or_branding": false,
+        "workflow_fit": [
+          "reference_chart",
+          "exclude_as_source"
+        ]
+      }
+    ]
+  },
+  "source_hashes": [
+    "4145d5e5b7c319ef432668f798e416e2692744f6545660c0db0a97f028901da0",
+    "a869bea9575ec8d011ed0d1bc7bfbf95fbce02ffb252056ccfb0f38c2376d4b3",
+    "ff36ff917afc730929385fe2f8a464ce7ab0e8c1ad2cfd74a4c1ced0b02496a9",
+    "0b5692518539bc3e9cb665b2e0d910ebf1ad7cd10b5723e6160c9ab8dfe51d3b",
+    "37cdfc2ce18063a58798de220fab6d6925a6bf5ef6354c7182266ac2274d30e5",
+    "3aa96aac909bc806b4f93f4f8f995acb03ba41e9ebf5771bad3bed7a5af1289d",
+    "ca18a5b98e8b9582cf3a310d3b86dd8e5f60bc9c3a7fcab3ff960ee18a800bc6",
+    "07bd5e847e14ed4bc94c166f3aa52271ea2d18617937e0dcce879bdd84344827",
+    "b162566f45236680767c78f5c8436b1fc3fc18a2452cb7b65eb77c64697e2c35",
+    "162554cf37f76d2be5a6b0b575497e1241ac5c528354eea6ce42f9edb04d2b23",
+    "fabeb5edda505eb25d99a07d636288302c8600c3f4c6b9ddd943451af451791f",
+    "09ce09fdcc98851652f74d2738be3567c57564d2278a2a1fffdd080381fe1767",
+    "c7ef0dace2b762383322da727dbace4540d1d4769830d93299b7b5c5ac6e3848",
+    "7e403b342b10734b6d75f38b977cbbf0b51ef862ed021452ee130dbbc6283b3e",
+    "49ab8a4c908b587e3b9ad363729e793e33bca5e2c05f8a108dbc161d5867a92f",
+    "d1014b4052d9c6b824d45d2b55ce3643d75cf77e1b8e456ab9e6888eaf7548d3"
+  ]
+}

@@ -133,7 +133,7 @@ Return JSON exactly:
  "action": "spec_edit" | "image_edit" | "both" | "needs_clarification",
  "instruction": "<the note rewritten as one imperative, agent-ready sentence>",
  "region_description": "<the piece region for a localized image edit>",
- "target_section": "stone|side_stones|setting|metal|band|ring_size|drop|pendant|chain|bracelet|brooch" | null,
+ "target_section": "stone|side_stones|setting|metal|band|ring_size|drop|pendant|chain|bracelet|brooch|design_form" | null,
  "confidence": 0.0-1.0,
  "clarification": "<the ONE question to ask, when action is needs_clarification>"}}
 

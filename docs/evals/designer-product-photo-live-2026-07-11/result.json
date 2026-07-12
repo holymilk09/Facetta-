@@ -1,0 +1,364 @@
+{
+  "image_run": {
+    "accepted": false,
+    "accepted_asset_id": null,
+    "attempts": [
+      {
+        "attempt": 1,
+        "attempt_id": "iat_991ecdd865cd9b81",
+        "attempt_number": 1,
+        "cache_hit": false,
+        "cache_key": "697b25eb4ee7affe6b3bbb571e91ff85cb6de02bf2748b04f2a0b71efb22eaea",
+        "cached": false,
+        "correction": null,
+        "corrective_instruction": null,
+        "cost": null,
+        "created_at": "2026-07-11T01:30:02.127338",
+        "engine_role": "primary",
+        "error_category": null,
+        "failed_checks": [
+          "unintended_drift"
+        ],
+        "fallback_reason": null,
+        "latency_ms": 18952,
+        "model": "grok_direct",
+        "output_hash": "bb8a6034ed384c09433269d266acef582875f29e43ab70fb9119a2a7f7871c00",
+        "prompt_hash": "36e133793174cb860663f9083fdf2b3350ffe39f86e6735ce6b1422d3bca493a",
+        "provider": "xai",
+        "provider_request_id": null,
+        "qa_checks": [
+          {
+            "code": "decodable_image",
+            "evidence": {
+              "format": "JPEG",
+              "height": 1136,
+              "width": 912
+            },
+            "message": "candidate is a decodable raster image",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "review_resolution",
+            "evidence": {
+              "height": 1136,
+              "width": 912
+            },
+            "message": "candidate has reviewable raster dimensions",
+            "passed": true,
+            "severity": "warning"
+          },
+          {
+            "code": "candidate_changed",
+            "evidence": {},
+            "message": "candidate bytes differ from the source",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "requested_change",
+            "evidence": {},
+            "message": "visual evidence matches the requested fact",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "protected_regions",
+            "evidence": {},
+            "message": "visual evidence matches the requested fact",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "unintended_drift",
+            "evidence": {
+              "changes": [
+                "metal rendered fully yellow vs sketch two-tone appearance"
+              ],
+              "severity": "minor"
+            },
+            "message": "unintended changes: metal rendered fully yellow vs sketch two-tone appearance",
+            "passed": false,
+            "severity": "warning"
+          },
+          {
+            "code": "geometry_preserved",
+            "evidence": {},
+            "message": "visual evidence matches the requested fact",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "text_or_branding",
+            "evidence": {},
+            "message": "no text or branding introduced",
+            "passed": true,
+            "severity": "hard"
+          }
+        ],
+        "qa_verdict": "warn",
+        "usage": {},
+        "verdict": "warn"
+      }
+    ],
+    "completed_at": "2026-07-11T01:30:02.127338",
+    "created_at": "2026-07-11T01:30:02.127778",
+    "created_by": "usr_gia",
+    "error_category": null,
+    "input_hash": "f6c6a624df4f119156374990fd6d16aecbc939e91a0dccbbcf390129cdd5faa4",
+    "mask_hash": null,
+    "normalized_intent": {
+      "expected_output": "one production-ready ecommerce product photograph of the exact approved ring; presentation changed, jewelry unchanged",
+      "frozen": [
+        "all jewelry geometry, stones, setting, proportions, and metal identity",
+        "the complete validated specification",
+        "the exact approved ring silhouette and jewelry-to-jewelry proportions",
+        "every center and side stone identity, cut, color, count, and placement",
+        "the complete setting, prong, gallery, band, and metal construction"
+      ],
+      "instruction": "Restage this exact ring as a clean ecommerce catalog photograph on a seamless pure-white background. Designer presentation direction: Show the leaf shoulders clearly with soft natural shadow and generous product margins.",
+      "region_description": null,
+      "spec_delta": [],
+      "style_constraints": [
+        "soft even studio light with controlled gemstone and metal reflections",
+        "centered product-only composition with no props, hands, text, or logos",
+        "commercially clean edges and a natural contact shadow",
+        "compose for a 4:5 portrait ecommerce crop with comfortable product margins"
+      ]
+    },
+    "operation": "VISUAL_ONLY_EDIT",
+    "output_hash": "bb8a6034ed384c09433269d266acef582875f29e43ab70fb9119a2a7f7871c00",
+    "project_id": "ast_b582834ca33d0971",
+    "prompt_contract_version": "visual-only-edit.v1",
+    "prompt_version": "visual-only-edit.v1",
+    "review_decision": null,
+    "review_required": true,
+    "reviewed_at": null,
+    "reviewed_by": null,
+    "run_id": "run_e11ab6aea01d4fa5",
+    "source_asset_id": "ast_b582834ca33d0971",
+    "source_hash": "3aa96aac909bc806b4f93f4f8f995acb03ba41e9ebf5771bad3bed7a5af1289d",
+    "spec_visual_hash": "6f223c7f054713f3",
+    "status": "review_required",
+    "stored_status": "review_required",
+    "variant": 0,
+    "verdict": "warn"
+  },
+  "product_photo": {
+    "body": {
+      "image_run_id": "run_e11ab6aea01d4fa5",
+      "presentation": {
+        "design_version": 1,
+        "framing": "portrait",
+        "preset": "catalog_white",
+        "source_asset_id": "ast_b582834ca33d0971"
+      },
+      "project_id": "ast_b582834ca33d0971",
+      "quality_report": {
+        "accepted": false,
+        "checks": [
+          {
+            "code": "decodable_image",
+            "evidence": {
+              "format": "JPEG",
+              "height": 1136,
+              "width": 912
+            },
+            "message": "candidate is a decodable raster image",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "review_resolution",
+            "evidence": {
+              "height": 1136,
+              "width": 912
+            },
+            "message": "candidate has reviewable raster dimensions",
+            "passed": true,
+            "severity": "warning"
+          },
+          {
+            "code": "candidate_changed",
+            "evidence": {},
+            "message": "candidate bytes differ from the source",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "requested_change",
+            "evidence": {},
+            "message": "visual evidence matches the requested fact",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "protected_regions",
+            "evidence": {},
+            "message": "visual evidence matches the requested fact",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "unintended_drift",
+            "evidence": {
+              "changes": [
+                "metal rendered fully yellow vs sketch two-tone appearance"
+              ],
+              "severity": "minor"
+            },
+            "message": "unintended changes: metal rendered fully yellow vs sketch two-tone appearance",
+            "passed": false,
+            "severity": "warning"
+          },
+          {
+            "code": "geometry_preserved",
+            "evidence": {},
+            "message": "visual evidence matches the requested fact",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "text_or_branding",
+            "evidence": {},
+            "message": "no text or branding introduced",
+            "passed": true,
+            "severity": "hard"
+          }
+        ],
+        "failed_checks": [
+          "unintended_drift"
+        ],
+        "notes": [
+          "exact leaf-shoulder motif and emerald preserved",
+          "clean white seamless catalog presentation achieved"
+        ],
+        "review_required": true,
+        "score": 88.0,
+        "summary": "Image needs explicit designer review.",
+        "verdict": "warn",
+        "warnings": [
+          "unintended changes: metal rendered fully yellow vs sketch two-tone appearance"
+        ]
+      },
+      "routing": {
+        "attempt_count": 1,
+        "cache_hit": false,
+        "run_id": "run_e11ab6aea01d4fa5",
+        "used_fallback": false,
+        "used_retry": false
+      },
+      "status": "review_required",
+      "warning_candidate": {
+        "candidate_id": "cand_ffe225ee79f1f8d7",
+        "operation": "VISUAL_ONLY_EDIT",
+        "preview_url": "/image-runs/run_e11ab6aea01d4fa5/candidates/cand_ffe225ee79f1f8d7/image",
+        "qa": {
+          "accepted": false,
+          "checks": [
+            {
+              "code": "decodable_image",
+              "evidence": {
+                "format": "JPEG",
+                "height": 1136,
+                "width": 912
+              },
+              "message": "candidate is a decodable raster image",
+              "passed": true,
+              "severity": "hard"
+            },
+            {
+              "code": "review_resolution",
+              "evidence": {
+                "height": 1136,
+                "width": 912
+              },
+              "message": "candidate has reviewable raster dimensions",
+              "passed": true,
+              "severity": "warning"
+            },
+            {
+              "code": "candidate_changed",
+              "evidence": {},
+              "message": "candidate bytes differ from the source",
+              "passed": true,
+              "severity": "hard"
+            },
+            {
+              "code": "requested_change",
+              "evidence": {},
+              "message": "visual evidence matches the requested fact",
+              "passed": true,
+              "severity": "hard"
+            },
+            {
+              "code": "protected_regions",
+              "evidence": {},
+              "message": "visual evidence matches the requested fact",
+              "passed": true,
+              "severity": "hard"
+            },
+            {
+              "code": "unintended_drift",
+              "evidence": {
+                "changes": [
+                  "metal rendered fully yellow vs sketch two-tone appearance"
+                ],
+                "severity": "minor"
+              },
+              "message": "unintended changes: metal rendered fully yellow vs sketch two-tone appearance",
+              "passed": false,
+              "severity": "warning"
+            },
+            {
+              "code": "geometry_preserved",
+              "evidence": {},
+              "message": "visual evidence matches the requested fact",
+              "passed": true,
+              "severity": "hard"
+            },
+            {
+              "code": "text_or_branding",
+              "evidence": {},
+              "message": "no text or branding introduced",
+              "passed": true,
+              "severity": "hard"
+            }
+          ],
+          "failed_checks": [
+            "unintended_drift"
+          ],
+          "notes": [
+            "exact leaf-shoulder motif and emerald preserved",
+            "clean white seamless catalog presentation achieved"
+          ],
+          "review_required": true,
+          "score": 88.0,
+          "summary": "Image needs explicit designer review.",
+          "verdict": "warn",
+          "warnings": [
+            "unintended changes: metal rendered fully yellow vs sketch two-tone appearance"
+          ]
+        },
+        "requested_change": "Restage this exact ring as a clean ecommerce catalog photograph on a seamless pure-white background. Designer presentation direction: Show the leaf shoulders clearly with soft natural shadow and generous product margins.",
+        "run_id": "run_e11ab6aea01d4fa5"
+      }
+    },
+    "candidate_image_status": 200,
+    "clean_delivery_matches_stored_bytes": null,
+    "latency_ms": 18966,
+    "status_code": 202
+  },
+  "project_creation": {
+    "active_asset_id": "ast_b582834ca33d0971",
+    "design_version": 1,
+    "root_id": "ast_b582834ca33d0971",
+    "status_code": 201
+  },
+  "provider_readiness": {
+    "fal_configured": false,
+    "xai_configured": true
+  },
+  "source": "/Users/mattfb/.codex/attachments/c2fd41d0-b236-43ef-ada9-e9479718c771/image-86.jpg",
+  "source_sha256": "3aa96aac909bc806b4f93f4f8f995acb03ba41e9ebf5771bad3bed7a5af1289d"
+}

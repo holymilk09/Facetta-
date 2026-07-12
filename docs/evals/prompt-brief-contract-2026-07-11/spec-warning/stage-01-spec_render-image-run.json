@@ -1,0 +1,85 @@
+{
+  "body": {
+    "accepted": false,
+    "accepted_asset_id": null,
+    "attempts": [
+      {
+        "attempt": 1,
+        "attempt_id": "iat_4070ac057e2cdb34",
+        "attempt_number": 1,
+        "cache_hit": true,
+        "cache_key": "108f7fdb2c0025d92fd1aea2f2c124ff2d805b6ff59ee893ed150804d52eaca6",
+        "cached": true,
+        "correction": null,
+        "corrective_instruction": null,
+        "cost": 0.0,
+        "created_at": "2026-07-11T13:12:25.804256",
+        "engine_role": "primary",
+        "error_category": null,
+        "failed_checks": [
+          "offline_designer_review_required"
+        ],
+        "fallback_reason": null,
+        "latency_ms": 0,
+        "model": "grok_direct",
+        "output_hash": "1bf4c789949b4b10ef8212a972d82fa0281051dc7a1bfeb8d47efbab8deb0e40",
+        "prompt_hash": "b8f250bcac93e157f0c868822a5560af13294fefc940fde761840145651890fe",
+        "provider": "xai",
+        "provider_request_id": "offline-contract",
+        "qa_checks": [
+          {
+            "code": "offline_designer_review_required",
+            "evidence": {
+              "offline": true
+            },
+            "message": "offline contract candidate requires designer review",
+            "passed": false,
+            "severity": "warning"
+          }
+        ],
+        "qa_verdict": "warn",
+        "usage": {
+          "contract_test": true
+        },
+        "verdict": "warn"
+      }
+    ],
+    "completed_at": "2026-07-11T13:12:25.804256",
+    "created_at": "2026-07-11T13:12:25.804620",
+    "created_by": "usr_prompt_test_actor",
+    "error_category": null,
+    "input_hash": "008ebe161e8046309540c059346fc2caf89346113631f47e171035491ce8add2",
+    "mask_hash": null,
+    "normalized_intent": {
+      "edit_domains": [],
+      "expected_output": "one photorealistic image faithful to the validated spec",
+      "frozen": [
+        "every validated stone, setting, metal, and component fact",
+        "no text, logos, watermarks, or invented branding",
+        "the source concept's unique design identity, major proportions, and component arrangement"
+      ],
+      "instruction": "Create the spec-aligned hero render for the approved concept",
+      "region_description": null,
+      "spec_delta": [],
+      "style_constraints": []
+    },
+    "operation": "SPEC_RENDER",
+    "output_hash": "1bf4c789949b4b10ef8212a972d82fa0281051dc7a1bfeb8d47efbab8deb0e40",
+    "project_id": null,
+    "prompt_contract_version": "spec-render.v2",
+    "prompt_version": "spec-render.v2",
+    "review_decision": null,
+    "review_required": true,
+    "reviewed_at": null,
+    "reviewed_by": null,
+    "run_id": "run_90770e5232528b4c",
+    "source_asset_id": null,
+    "source_hash": "0dc01eef1c78bd04c4e4a1ee34eb45c4277ce316561b3dff74364edfe29a8129",
+    "spec_visual_hash": "d63eed790c5abe2e",
+    "status": "review_required",
+    "stored_status": "review_required",
+    "variant": 0,
+    "verdict": "warn"
+  },
+  "http_status": 200
+}

@@ -1,0 +1,83 @@
+{
+  "body": {
+    "accepted": true,
+    "accepted_asset_id": "ast_d311d6638da7b99d",
+    "attempts": [
+      {
+        "attempt": 1,
+        "attempt_id": "iat_92cae43de162743c",
+        "attempt_number": 1,
+        "cache_hit": true,
+        "cache_key": "108f7fdb2c0025d92fd1aea2f2c124ff2d805b6ff59ee893ed150804d52eaca6",
+        "cached": true,
+        "correction": null,
+        "corrective_instruction": null,
+        "cost": 0.0,
+        "created_at": "2026-07-11T13:12:25.753969",
+        "engine_role": "primary",
+        "error_category": null,
+        "failed_checks": [],
+        "fallback_reason": null,
+        "latency_ms": 0,
+        "model": "grok_direct",
+        "output_hash": "108de5b5dcb4b62a10ccd63d5217931e52b44d4926e4613ab6aad1b732e2c0d1",
+        "prompt_hash": "b8f250bcac93e157f0c868822a5560af13294fefc940fde761840145651890fe",
+        "provider": "xai",
+        "provider_request_id": "offline-contract",
+        "qa_checks": [
+          {
+            "code": "offline_contract_pass",
+            "evidence": {
+              "offline": true
+            },
+            "message": "offline contract candidate passed",
+            "passed": true,
+            "severity": "hard"
+          }
+        ],
+        "qa_verdict": "pass",
+        "usage": {
+          "contract_test": true
+        },
+        "verdict": "pass"
+      }
+    ],
+    "completed_at": "2026-07-11T13:12:25.753969",
+    "created_at": "2026-07-11T13:12:25.754323",
+    "created_by": "usr_prompt_test_actor",
+    "error_category": null,
+    "input_hash": "008ebe161e8046309540c059346fc2caf89346113631f47e171035491ce8add2",
+    "mask_hash": null,
+    "normalized_intent": {
+      "edit_domains": [],
+      "expected_output": "one photorealistic image faithful to the validated spec",
+      "frozen": [
+        "every validated stone, setting, metal, and component fact",
+        "no text, logos, watermarks, or invented branding",
+        "the source concept's unique design identity, major proportions, and component arrangement"
+      ],
+      "instruction": "Create the spec-aligned hero render for the approved concept",
+      "region_description": null,
+      "spec_delta": [],
+      "style_constraints": []
+    },
+    "operation": "SPEC_RENDER",
+    "output_hash": "108de5b5dcb4b62a10ccd63d5217931e52b44d4926e4613ab6aad1b732e2c0d1",
+    "project_id": "ast_d311d6638da7b99d",
+    "prompt_contract_version": "spec-render.v2",
+    "prompt_version": "spec-render.v2",
+    "review_decision": null,
+    "review_required": false,
+    "reviewed_at": null,
+    "reviewed_by": null,
+    "run_id": "run_5f9b61a9590eec5c",
+    "source_asset_id": "ast_bc60986c3647cccc",
+    "source_hash": "0dc01eef1c78bd04c4e4a1ee34eb45c4277ce316561b3dff74364edfe29a8129",
+    "spec_visual_hash": "d63eed790c5abe2e",
+    "status": "accepted",
+    "stored_status": "accepted",
+    "variant": 0,
+    "verdict": "pass"
+  },
+  "http_status": 200
+}

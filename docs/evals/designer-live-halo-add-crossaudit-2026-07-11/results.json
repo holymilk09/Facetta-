@@ -1,0 +1,1699 @@
+{
+  "fallback_tested": false,
+  "gia_evaluator_review": {
+    "completed": false,
+    "false_negatives": null,
+    "false_positives": null,
+    "reviewer": null
+  },
+  "live": true,
+  "mode": "live",
+  "persistence_evidence": {
+    "method": "not_run",
+    "note": "This image-engine run did not exercise canonical project persistence. Attach a named canonical-API integration result before the persistence release gate can pass.",
+    "rejected_active_asset_count": null,
+    "result_set": null,
+    "verified": false
+  },
+  "release_gates": {
+    "blocking_enabled": false,
+    "note": "Only canonical edit 'halo-add' was executed.",
+    "status": "diagnostic_subset_not_evaluated"
+  },
+  "routing_mode": "grok_only",
+  "rows": [
+    {
+      "agent_run": {
+        "attempts": [
+          {
+            "attempt_number": 1,
+            "cache_key": "cc9151179b616bbfd0a9294e92d8abf8689e274516cbe07f679f4cc3c0450ad2",
+            "cached": true,
+            "corrective_instruction": null,
+            "cost": null,
+            "error": null,
+            "error_category": null,
+            "fallback_reason": null,
+            "latency_ms": 19225,
+            "model": "grok_direct",
+            "output_hash": "00eb6a1cfbce76945035e8f9b24aa72de310e75530b8a562f8856d8c974dea70",
+            "prompt_hash": "c85ab0d95979a877f9864a04be1c426512f25db6df414f836a5346b88b856577",
+            "provider": "xai",
+            "provider_request_id": null,
+            "qa_checks": [
+              {
+                "code": "decodable_image",
+                "evidence": {
+                  "format": "JPEG",
+                  "height": 1152,
+                  "width": 864
+                },
+                "message": "candidate is a decodable raster image",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "review_resolution",
+                "evidence": {
+                  "height": 1152,
+                  "width": 864
+                },
+                "message": "candidate has reviewable raster dimensions",
+                "passed": true,
+                "severity": "warning"
+              },
+              {
+                "code": "jewelry_type",
+                "evidence": {},
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "major_components",
+                "evidence": {},
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "center_species",
+                "evidence": {},
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "cut_family",
+                "evidence": {},
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "center_color",
+                "evidence": {},
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "metal",
+                "evidence": {},
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "setting",
+                "evidence": {},
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "stone_count",
+                "evidence": {},
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "render_crosscheck:jewelry_type",
+                "evidence": {
+                  "differences": [],
+                  "observed_prong_count": 4,
+                  "observed_side_stone_count": 0
+                },
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "render_crosscheck:center_identity",
+                "evidence": {
+                  "differences": [],
+                  "observed_prong_count": 4,
+                  "observed_side_stone_count": 0
+                },
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "render_crosscheck:center_cut",
+                "evidence": {
+                  "differences": [],
+                  "observed_prong_count": 4,
+                  "observed_side_stone_count": 0
+                },
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "render_crosscheck:metal",
+                "evidence": {
+                  "differences": [],
+                  "observed_prong_count": 4,
+                  "observed_side_stone_count": 0
+                },
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "render_crosscheck:setting_style",
+                "evidence": {
+                  "differences": [],
+                  "observed_prong_count": 4,
+                  "observed_side_stone_count": 0
+                },
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "render_crosscheck:prong_count",
+                "evidence": {
+                  "differences": [],
+                  "observed_prong_count": 4,
+                  "observed_side_stone_count": 0
+                },
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "render_crosscheck:side_stone_inventory",
+                "evidence": {
+                  "differences": [],
+                  "observed_prong_count": 4,
+                  "observed_side_stone_count": 0
+                },
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "render_crosscheck:major_components",
+                "evidence": {
+                  "differences": [],
+                  "observed_prong_count": 4,
+                  "observed_side_stone_count": 0
+                },
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "text_or_branding",
+                "evidence": {},
+                "message": "no text or branding detected",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "exact_dimensions",
+                "evidence": {},
+                "message": "exact millimeters appears plausible but remains non-authoritative",
+                "passed": true,
+                "severity": "warning"
+              },
+              {
+                "code": "exact_carat",
+                "evidence": {},
+                "message": "exact carat weight appears plausible but remains non-authoritative",
+                "passed": true,
+                "severity": "warning"
+              }
+            ],
+            "qa_verdict": "pass",
+            "quality_score": 95.0,
+            "route": "grok_generate",
+            "usage": null
+          }
+        ],
+        "error_category": null,
+        "normalized_intent": {
+          "edit_domains": [],
+          "expected_output": "one photorealistic image faithful to the validated spec",
+          "frozen": [
+            "every validated stone, setting, metal, and component fact",
+            "no text, logos, watermarks, or invented branding"
+          ],
+          "instruction": "trusted golden render: round-solitaire-yellow-4-narrow",
+          "region_description": null,
+          "spec_delta": [],
+          "style_constraints": []
+        },
+        "operation": "SPEC_RENDER",
+        "output_hash": "00eb6a1cfbce76945035e8f9b24aa72de310e75530b8a562f8856d8c974dea70",
+        "prompt_version": "spec-render.v1",
+        "selected_attempt": 1,
+        "source_hash": null,
+        "spec_visual_hash": "19633cb8381d49a1",
+        "status": "accepted",
+        "variant": 0,
+        "verdict": "pass"
+      },
+      "attempts": 1,
+      "case": "round-solitaire-yellow-4-narrow",
+      "failed_checks": [],
+      "hard_gate_pass": true,
+      "kind": "render",
+      "quality": {
+        "checks": [
+          {
+            "code": "decodable_image",
+            "evidence": {
+              "format": "JPEG",
+              "height": 1152,
+              "width": 864
+            },
+            "message": "candidate is a decodable raster image",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "review_resolution",
+            "evidence": {
+              "height": 1152,
+              "width": 864
+            },
+            "message": "candidate has reviewable raster dimensions",
+            "passed": true,
+            "severity": "warning"
+          },
+          {
+            "code": "jewelry_type",
+            "evidence": {},
+            "message": "visual evidence matches the requested fact",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "major_components",
+            "evidence": {},
+            "message": "visual evidence matches the requested fact",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "center_species",
+            "evidence": {},
+            "message": "visual evidence matches the requested fact",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "cut_family",
+            "evidence": {},
+            "message": "visual evidence matches the requested fact",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "center_color",
+            "evidence": {},
+            "message": "visual evidence matches the requested fact",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "metal",
+            "evidence": {},
+            "message": "visual evidence matches the requested fact",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "setting",
+            "evidence": {},
+            "message": "visual evidence matches the requested fact",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "stone_count",
+            "evidence": {},
+            "message": "visual evidence matches the requested fact",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "render_crosscheck:jewelry_type",
+            "evidence": {
+              "differences": [],
+              "observed_prong_count": 4,
+              "observed_side_stone_count": 0
+            },
+            "message": "visual evidence matches the requested fact",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "render_crosscheck:center_identity",
+            "evidence": {
+              "differences": [],
+              "observed_prong_count": 4,
+              "observed_side_stone_count": 0
+            },
+            "message": "visual evidence matches the requested fact",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "render_crosscheck:center_cut",
+            "evidence": {
+              "differences": [],
+              "observed_prong_count": 4,
+              "observed_side_stone_count": 0
+            },
+            "message": "visual evidence matches the requested fact",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "render_crosscheck:metal",
+            "evidence": {
+              "differences": [],
+              "observed_prong_count": 4,
+              "observed_side_stone_count": 0
+            },
+            "message": "visual evidence matches the requested fact",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "render_crosscheck:setting_style",
+            "evidence": {
+              "differences": [],
+              "observed_prong_count": 4,
+              "observed_side_stone_count": 0
+            },
+            "message": "visual evidence matches the requested fact",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "render_crosscheck:prong_count",
+            "evidence": {
+              "differences": [],
+              "observed_prong_count": 4,
+              "observed_side_stone_count": 0
+            },
+            "message": "visual evidence matches the requested fact",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "render_crosscheck:side_stone_inventory",
+            "evidence": {
+              "differences": [],
+              "observed_prong_count": 4,
+              "observed_side_stone_count": 0
+            },
+            "message": "visual evidence matches the requested fact",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "render_crosscheck:major_components",
+            "evidence": {
+              "differences": [],
+              "observed_prong_count": 4,
+              "observed_side_stone_count": 0
+            },
+            "message": "visual evidence matches the requested fact",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "text_or_branding",
+            "evidence": {},
+            "message": "no text or branding detected",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "exact_dimensions",
+            "evidence": {},
+            "message": "exact millimeters appears plausible but remains non-authoritative",
+            "passed": true,
+            "severity": "warning"
+          },
+          {
+            "code": "exact_carat",
+            "evidence": {},
+            "message": "exact carat weight appears plausible but remains non-authoritative",
+            "passed": true,
+            "severity": "warning"
+          }
+        ],
+        "notes": [
+          "yellow gold 4-prong round solitaire diamond",
+          "no side stones or markings visible"
+        ],
+        "score": 95.0,
+        "verdict": "pass"
+      },
+      "reference_attempts": 0,
+      "reference_origin": null,
+      "reference_required": false,
+      "reference_supplied": false,
+      "score": 95.6,
+      "starting_point": "spec_render",
+      "verdict": "pass"
+    },
+    {
+      "agent_run": {
+        "attempts": [
+          {
+            "attempt_number": 1,
+            "cache_key": "400a89d920a14d49ac3583053a0b5eb3713fdf4c54688ab5467f04fa395f3e22",
+            "cached": true,
+            "corrective_instruction": null,
+            "cost": null,
+            "error": null,
+            "error_category": null,
+            "fallback_reason": null,
+            "latency_ms": 19764,
+            "model": "grok_direct",
+            "output_hash": "89eb8b4b1204d591b651be2cd98a41a9cdb8b98434e0ff4b42b4b5a446a72e64",
+            "prompt_hash": "653648bd623fba72725183f12aa5ab3ddb61b3204dcd4b757da608a1b36c9442",
+            "provider": "xai",
+            "provider_request_id": null,
+            "qa_checks": [
+              {
+                "code": "decodable_image",
+                "evidence": {
+                  "format": "JPEG",
+                  "height": 1152,
+                  "width": 864
+                },
+                "message": "candidate is a decodable raster image",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "review_resolution",
+                "evidence": {
+                  "height": 1152,
+                  "width": 864
+                },
+                "message": "candidate has reviewable raster dimensions",
+                "passed": true,
+                "severity": "warning"
+              },
+              {
+                "code": "candidate_changed",
+                "evidence": {},
+                "message": "candidate bytes differ from the source",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "requested_change",
+                "evidence": {},
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "protected_regions",
+                "evidence": {},
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "unintended_drift",
+                "evidence": {
+                  "changes": [],
+                  "severity": "none"
+                },
+                "message": "no unintended changes detected",
+                "passed": true,
+                "severity": "warning"
+              },
+              {
+                "code": "spec_change",
+                "evidence": {
+                  "spec_delta": [
+                    {
+                      "from": "\u2014",
+                      "kind": "added",
+                      "label": "side stone 1 weight",
+                      "path": "side_stones.0.carat",
+                      "to": "0.01 ct"
+                    },
+                    {
+                      "from": "\u2014",
+                      "kind": "added",
+                      "label": "side stone 1 colour gia",
+                      "path": "side_stones.0.color.gia",
+                      "to": "colorless"
+                    },
+                    {
+                      "from": "\u2014",
+                      "kind": "added",
+                      "label": "side stone 1 colour trade colour",
+                      "path": "side_stones.0.color.trade",
+                      "to": "F"
+                    },
+                    {
+                      "from": "\u2014",
+                      "kind": "added",
+                      "label": "side stone 1 count",
+                      "path": "side_stones.0.count",
+                      "to": "12"
+                    },
+                    {
+                      "from": "\u2014",
+                      "kind": "added",
+                      "label": "side stone 1 cut",
+                      "path": "side_stones.0.cut",
+                      "to": "round_brilliant"
+                    },
+                    {
+                      "from": "\u2014",
+                      "kind": "added",
+                      "label": "side stone 1 depth",
+                      "path": "side_stones.0.dimensions_mm.depth",
+                      "to": "0.8 mm"
+                    },
+                    {
+                      "from": "\u2014",
+                      "kind": "added",
+                      "label": "side stone 1 length",
+                      "path": "side_stones.0.dimensions_mm.length",
+                      "to": "1.3 mm"
+                    },
+                    {
+                      "from": "\u2014",
+                      "kind": "added",
+                      "label": "side stone 1 width",
+                      "path": "side_stones.0.dimensions_mm.width",
+                      "to": "1.3 mm"
+                    },
+                    {
+                      "from": "\u2014",
+                      "kind": "added",
+                      "label": "side stone 1 position",
+                      "path": "side_stones.0.position",
+                      "to": "halo"
+                    },
+                    {
+                      "from": "\u2014",
+                      "kind": "added",
+                      "label": "side stone 1 type",
+                      "path": "side_stones.0.species",
+                      "to": "diamond"
+                    },
+                    {
+                      "from": "solitaire_prong",
+                      "kind": "changed",
+                      "label": "template",
+                      "path": "template",
+                      "to": "halo_prong"
+                    }
+                  ]
+                },
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "edit_domain:side_stone_inventory",
+                "evidence": {
+                  "domain": "side_stone_inventory",
+                  "spec_delta": [
+                    {
+                      "from": "\u2014",
+                      "kind": "added",
+                      "label": "side stone 1 weight",
+                      "path": "side_stones.0.carat",
+                      "to": "0.01 ct"
+                    },
+                    {
+                      "from": "\u2014",
+                      "kind": "added",
+                      "label": "side stone 1 colour gia",
+                      "path": "side_stones.0.color.gia",
+                      "to": "colorless"
+                    },
+                    {
+                      "from": "\u2014",
+                      "kind": "added",
+                      "label": "side stone 1 colour trade colour",
+                      "path": "side_stones.0.color.trade",
+                      "to": "F"
+                    },
+                    {
+                      "from": "\u2014",
+                      "kind": "added",
+                      "label": "side stone 1 count",
+                      "path": "side_stones.0.count",
+                      "to": "12"
+                    },
+                    {
+                      "from": "\u2014",
+                      "kind": "added",
+                      "label": "side stone 1 cut",
+                      "path": "side_stones.0.cut",
+                      "to": "round_brilliant"
+                    },
+                    {
+                      "from": "\u2014",
+                      "kind": "added",
+                      "label": "side stone 1 depth",
+                      "path": "side_stones.0.dimensions_mm.depth",
+                      "to": "0.8 mm"
+                    },
+                    {
+                      "from": "\u2014",
+                      "kind": "added",
+                      "label": "side stone 1 length",
+                      "path": "side_stones.0.dimensions_mm.length",
+                      "to": "1.3 mm"
+                    },
+                    {
+                      "from": "\u2014",
+                      "kind": "added",
+                      "label": "side stone 1 width",
+                      "path": "side_stones.0.dimensions_mm.width",
+                      "to": "1.3 mm"
+                    },
+                    {
+                      "from": "\u2014",
+                      "kind": "added",
+                      "label": "side stone 1 position",
+                      "path": "side_stones.0.position",
+                      "to": "halo"
+                    },
+                    {
+                      "from": "\u2014",
+                      "kind": "added",
+                      "label": "side stone 1 type",
+                      "path": "side_stones.0.species",
+                      "to": "diamond"
+                    },
+                    {
+                      "from": "solitaire_prong",
+                      "kind": "changed",
+                      "label": "template",
+                      "path": "template",
+                      "to": "halo_prong"
+                    }
+                  ]
+                },
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "edit_domain:side_stone_shape",
+                "evidence": {
+                  "domain": "side_stone_shape",
+                  "spec_delta": [
+                    {
+                      "from": "\u2014",
+                      "kind": "added",
+                      "label": "side stone 1 weight",
+                      "path": "side_stones.0.carat",
+                      "to": "0.01 ct"
+                    },
+                    {
+                      "from": "\u2014",
+                      "kind": "added",
+                      "label": "side stone 1 colour gia",
+                      "path": "side_stones.0.color.gia",
+                      "to": "colorless"
+                    },
+                    {
+                      "from": "\u2014",
+                      "kind": "added",
+                      "label": "side stone 1 colour trade colour",
+                      "path": "side_stones.0.color.trade",
+                      "to": "F"
+                    },
+                    {
+                      "from": "\u2014",
+                      "kind": "added",
+                      "label": "side stone 1 count",
+                      "path": "side_stones.0.count",
+                      "to": "12"
+                    },
+                    {
+                      "from": "\u2014",
+                      "kind": "added",
+                      "label": "side stone 1 cut",
+                      "path": "side_stones.0.cut",
+                      "to": "round_brilliant"
+                    },
+                    {
+                      "from": "\u2014",
+                      "kind": "added",
+                      "label": "side stone 1 depth",
+                      "path": "side_stones.0.dimensions_mm.depth",
+                      "to": "0.8 mm"
+                    },
+                    {
+                      "from": "\u2014",
+                      "kind": "added",
+                      "label": "side stone 1 length",
+                      "path": "side_stones.0.dimensions_mm.length",
+                      "to": "1.3 mm"
+                    },
+                    {
+                      "from": "\u2014",
+                      "kind": "added",
+                      "label": "side stone 1 width",
+                      "path": "side_stones.0.dimensions_mm.width",
+                      "to": "1.3 mm"
+                    },
+                    {
+                      "from": "\u2014",
+                      "kind": "added",
+                      "label": "side stone 1 position",
+                      "path": "side_stones.0.position",
+                      "to": "halo"
+                    },
+                    {
+                      "from": "\u2014",
+                      "kind": "added",
+                      "label": "side stone 1 type",
+                      "path": "side_stones.0.species",
+                      "to": "diamond"
+                    },
+                    {
+                      "from": "solitaire_prong",
+                      "kind": "changed",
+                      "label": "template",
+                      "path": "template",
+                      "to": "halo_prong"
+                    }
+                  ]
+                },
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "edit_domain:side_stone_identity",
+                "evidence": {
+                  "domain": "side_stone_identity",
+                  "spec_delta": [
+                    {
+                      "from": "\u2014",
+                      "kind": "added",
+                      "label": "side stone 1 weight",
+                      "path": "side_stones.0.carat",
+                      "to": "0.01 ct"
+                    },
+                    {
+                      "from": "\u2014",
+                      "kind": "added",
+                      "label": "side stone 1 colour gia",
+                      "path": "side_stones.0.color.gia",
+                      "to": "colorless"
+                    },
+                    {
+                      "from": "\u2014",
+                      "kind": "added",
+                      "label": "side stone 1 colour trade colour",
+                      "path": "side_stones.0.color.trade",
+                      "to": "F"
+                    },
+                    {
+                      "from": "\u2014",
+                      "kind": "added",
+                      "label": "side stone 1 count",
+                      "path": "side_stones.0.count",
+                      "to": "12"
+                    },
+                    {
+                      "from": "\u2014",
+                      "kind": "added",
+                      "label": "side stone 1 cut",
+                      "path": "side_stones.0.cut",
+                      "to": "round_brilliant"
+                    },
+                    {
+                      "from": "\u2014",
+                      "kind": "added",
+                      "label": "side stone 1 depth",
+                      "path": "side_stones.0.dimensions_mm.depth",
+                      "to": "0.8 mm"
+                    },
+                    {
+                      "from": "\u2014",
+                      "kind": "added",
+                      "label": "side stone 1 length",
+                      "path": "side_stones.0.dimensions_mm.length",
+                      "to": "1.3 mm"
+                    },
+                    {
+                      "from": "\u2014",
+                      "kind": "added",
+                      "label": "side stone 1 width",
+                      "path": "side_stones.0.dimensions_mm.width",
+                      "to": "1.3 mm"
+                    },
+                    {
+                      "from": "\u2014",
+                      "kind": "added",
+                      "label": "side stone 1 position",
+                      "path": "side_stones.0.position",
+                      "to": "halo"
+                    },
+                    {
+                      "from": "\u2014",
+                      "kind": "added",
+                      "label": "side stone 1 type",
+                      "path": "side_stones.0.species",
+                      "to": "diamond"
+                    },
+                    {
+                      "from": "solitaire_prong",
+                      "kind": "changed",
+                      "label": "template",
+                      "path": "template",
+                      "to": "halo_prong"
+                    }
+                  ]
+                },
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "edit_domain:design_form",
+                "evidence": {
+                  "domain": "design_form",
+                  "spec_delta": [
+                    {
+                      "from": "\u2014",
+                      "kind": "added",
+                      "label": "side stone 1 weight",
+                      "path": "side_stones.0.carat",
+                      "to": "0.01 ct"
+                    },
+                    {
+                      "from": "\u2014",
+                      "kind": "added",
+                      "label": "side stone 1 colour gia",
+                      "path": "side_stones.0.color.gia",
+                      "to": "colorless"
+                    },
+                    {
+                      "from": "\u2014",
+                      "kind": "added",
+                      "label": "side stone 1 colour trade colour",
+                      "path": "side_stones.0.color.trade",
+                      "to": "F"
+                    },
+                    {
+                      "from": "\u2014",
+                      "kind": "added",
+                      "label": "side stone 1 count",
+                      "path": "side_stones.0.count",
+                      "to": "12"
+                    },
+                    {
+                      "from": "\u2014",
+                      "kind": "added",
+                      "label": "side stone 1 cut",
+                      "path": "side_stones.0.cut",
+                      "to": "round_brilliant"
+                    },
+                    {
+                      "from": "\u2014",
+                      "kind": "added",
+                      "label": "side stone 1 depth",
+                      "path": "side_stones.0.dimensions_mm.depth",
+                      "to": "0.8 mm"
+                    },
+                    {
+                      "from": "\u2014",
+                      "kind": "added",
+                      "label": "side stone 1 length",
+                      "path": "side_stones.0.dimensions_mm.length",
+                      "to": "1.3 mm"
+                    },
+                    {
+                      "from": "\u2014",
+                      "kind": "added",
+                      "label": "side stone 1 width",
+                      "path": "side_stones.0.dimensions_mm.width",
+                      "to": "1.3 mm"
+                    },
+                    {
+                      "from": "\u2014",
+                      "kind": "added",
+                      "label": "side stone 1 position",
+                      "path": "side_stones.0.position",
+                      "to": "halo"
+                    },
+                    {
+                      "from": "\u2014",
+                      "kind": "added",
+                      "label": "side stone 1 type",
+                      "path": "side_stones.0.species",
+                      "to": "diamond"
+                    },
+                    {
+                      "from": "solitaire_prong",
+                      "kind": "changed",
+                      "label": "template",
+                      "path": "template",
+                      "to": "halo_prong"
+                    }
+                  ]
+                },
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "crosscheck_requested_change",
+                "evidence": {},
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "crosscheck_frozen_facts",
+                "evidence": {},
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "crosscheck_unintended_drift",
+                "evidence": {
+                  "changes": [],
+                  "severity": "none"
+                },
+                "message": "independent audit found no unintended changes",
+                "passed": true,
+                "severity": "warning"
+              },
+              {
+                "code": "crosscheck_edit_domains",
+                "evidence": {
+                  "domain_mismatches": []
+                },
+                "message": "independent audit matched every required edit domain",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "text_or_branding",
+                "evidence": {},
+                "message": "no text or branding introduced",
+                "passed": true,
+                "severity": "hard"
+              }
+            ],
+            "qa_verdict": "pass",
+            "quality_score": 95.0,
+            "route": "grok_edit",
+            "usage": null
+          }
+        ],
+        "error_category": null,
+        "normalized_intent": {
+          "edit_domains": [
+            "side_stone_inventory",
+            "side_stone_shape",
+            "side_stone_identity",
+            "design_form"
+          ],
+          "expected_output": "the requested local change and no unrelated redesign",
+          "frozen": [
+            "all pixels and jewelry structure outside the perimeter immediately around the center stone",
+            "all validated facts not named by the requested change",
+            "center-stone identity, size, orientation, and setting",
+            "band, metal, camera, lighting, and background"
+          ],
+          "instruction": "add one halo of exactly 12 round colorless diamonds around the center stone",
+          "region_description": "the perimeter immediately around the center stone",
+          "spec_delta": [
+            {
+              "from": "\u2014",
+              "kind": "added",
+              "label": "side stone 1 weight",
+              "path": "side_stones.0.carat",
+              "to": "0.01 ct"
+            },
+            {
+              "from": "\u2014",
+              "kind": "added",
+              "label": "side stone 1 colour gia",
+              "path": "side_stones.0.color.gia",
+              "to": "colorless"
+            },
+            {
+              "from": "\u2014",
+              "kind": "added",
+              "label": "side stone 1 colour trade colour",
+              "path": "side_stones.0.color.trade",
+              "to": "F"
+            },
+            {
+              "from": "\u2014",
+              "kind": "added",
+              "label": "side stone 1 count",
+              "path": "side_stones.0.count",
+              "to": "12"
+            },
+            {
+              "from": "\u2014",
+              "kind": "added",
+              "label": "side stone 1 cut",
+              "path": "side_stones.0.cut",
+              "to": "round_brilliant"
+            },
+            {
+              "from": "\u2014",
+              "kind": "added",
+              "label": "side stone 1 depth",
+              "path": "side_stones.0.dimensions_mm.depth",
+              "to": "0.8 mm"
+            },
+            {
+              "from": "\u2014",
+              "kind": "added",
+              "label": "side stone 1 length",
+              "path": "side_stones.0.dimensions_mm.length",
+              "to": "1.3 mm"
+            },
+            {
+              "from": "\u2014",
+              "kind": "added",
+              "label": "side stone 1 width",
+              "path": "side_stones.0.dimensions_mm.width",
+              "to": "1.3 mm"
+            },
+            {
+              "from": "\u2014",
+              "kind": "added",
+              "label": "side stone 1 position",
+              "path": "side_stones.0.position",
+              "to": "halo"
+            },
+            {
+              "from": "\u2014",
+              "kind": "added",
+              "label": "side stone 1 type",
+              "path": "side_stones.0.species",
+              "to": "diamond"
+            },
+            {
+              "from": "solitaire_prong",
+              "kind": "changed",
+              "label": "template",
+              "path": "template",
+              "to": "halo_prong"
+            }
+          ],
+          "style_constraints": []
+        },
+        "operation": "LOCAL_EDIT",
+        "output_hash": "89eb8b4b1204d591b651be2cd98a41a9cdb8b98434e0ff4b42b4b5a446a72e64",
+        "prompt_version": "local-edit.v3",
+        "selected_attempt": 1,
+        "source_hash": "00eb6a1cfbce76945035e8f9b24aa72de310e75530b8a562f8856d8c974dea70",
+        "spec_visual_hash": "79e7f49e3e24e66b",
+        "status": "accepted",
+        "variant": 0,
+        "verdict": "pass"
+      },
+      "applied": true,
+      "attempts": 1,
+      "case": "halo-add",
+      "change_visible": true,
+      "eligible_after_designer_review": false,
+      "expected_valid": true,
+      "fidelity_evidence": {
+        "change_applied": true,
+        "note": "added halo of 12 round colorless diamonds around center stone",
+        "score": 100.0,
+        "severity": "none",
+        "static_hold": 1.0,
+        "unintended_changes": []
+      },
+      "golden_case": "round-solitaire-yellow-4-narrow",
+      "kind": "edit",
+      "quality": {
+        "checks": [
+          {
+            "code": "decodable_image",
+            "evidence": {
+              "format": "JPEG",
+              "height": 1152,
+              "width": 864
+            },
+            "message": "candidate is a decodable raster image",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "review_resolution",
+            "evidence": {
+              "height": 1152,
+              "width": 864
+            },
+            "message": "candidate has reviewable raster dimensions",
+            "passed": true,
+            "severity": "warning"
+          },
+          {
+            "code": "candidate_changed",
+            "evidence": {},
+            "message": "candidate bytes differ from the source",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "requested_change",
+            "evidence": {},
+            "message": "visual evidence matches the requested fact",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "protected_regions",
+            "evidence": {},
+            "message": "visual evidence matches the requested fact",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "unintended_drift",
+            "evidence": {
+              "changes": [],
+              "severity": "none"
+            },
+            "message": "no unintended changes detected",
+            "passed": true,
+            "severity": "warning"
+          },
+          {
+            "code": "spec_change",
+            "evidence": {
+              "spec_delta": [
+                {
+                  "from": "\u2014",
+                  "kind": "added",
+                  "label": "side stone 1 weight",
+                  "path": "side_stones.0.carat",
+                  "to": "0.01 ct"
+                },
+                {
+                  "from": "\u2014",
+                  "kind": "added",
+                  "label": "side stone 1 colour gia",
+                  "path": "side_stones.0.color.gia",
+                  "to": "colorless"
+                },
+                {
+                  "from": "\u2014",
+                  "kind": "added",
+                  "label": "side stone 1 colour trade colour",
+                  "path": "side_stones.0.color.trade",
+                  "to": "F"
+                },
+                {
+                  "from": "\u2014",
+                  "kind": "added",
+                  "label": "side stone 1 count",
+                  "path": "side_stones.0.count",
+                  "to": "12"
+                },
+                {
+                  "from": "\u2014",
+                  "kind": "added",
+                  "label": "side stone 1 cut",
+                  "path": "side_stones.0.cut",
+                  "to": "round_brilliant"
+                },
+                {
+                  "from": "\u2014",
+                  "kind": "added",
+                  "label": "side stone 1 depth",
+                  "path": "side_stones.0.dimensions_mm.depth",
+                  "to": "0.8 mm"
+                },
+                {
+                  "from": "\u2014",
+                  "kind": "added",
+                  "label": "side stone 1 length",
+                  "path": "side_stones.0.dimensions_mm.length",
+                  "to": "1.3 mm"
+                },
+                {
+                  "from": "\u2014",
+                  "kind": "added",
+                  "label": "side stone 1 width",
+                  "path": "side_stones.0.dimensions_mm.width",
+                  "to": "1.3 mm"
+                },
+                {
+                  "from": "\u2014",
+                  "kind": "added",
+                  "label": "side stone 1 position",
+                  "path": "side_stones.0.position",
+                  "to": "halo"
+                },
+                {
+                  "from": "\u2014",
+                  "kind": "added",
+                  "label": "side stone 1 type",
+                  "path": "side_stones.0.species",
+                  "to": "diamond"
+                },
+                {
+                  "from": "solitaire_prong",
+                  "kind": "changed",
+                  "label": "template",
+                  "path": "template",
+                  "to": "halo_prong"
+                }
+              ]
+            },
+            "message": "visual evidence matches the requested fact",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "edit_domain:side_stone_inventory",
+            "evidence": {
+              "domain": "side_stone_inventory",
+              "spec_delta": [
+                {
+                  "from": "\u2014",
+                  "kind": "added",
+                  "label": "side stone 1 weight",
+                  "path": "side_stones.0.carat",
+                  "to": "0.01 ct"
+                },
+                {
+                  "from": "\u2014",
+                  "kind": "added",
+                  "label": "side stone 1 colour gia",
+                  "path": "side_stones.0.color.gia",
+                  "to": "colorless"
+                },
+                {
+                  "from": "\u2014",
+                  "kind": "added",
+                  "label": "side stone 1 colour trade colour",
+                  "path": "side_stones.0.color.trade",
+                  "to": "F"
+                },
+                {
+                  "from": "\u2014",
+                  "kind": "added",
+                  "label": "side stone 1 count",
+                  "path": "side_stones.0.count",
+                  "to": "12"
+                },
+                {
+                  "from": "\u2014",
+                  "kind": "added",
+                  "label": "side stone 1 cut",
+                  "path": "side_stones.0.cut",
+                  "to": "round_brilliant"
+                },
+                {
+                  "from": "\u2014",
+                  "kind": "added",
+                  "label": "side stone 1 depth",
+                  "path": "side_stones.0.dimensions_mm.depth",
+                  "to": "0.8 mm"
+                },
+                {
+                  "from": "\u2014",
+                  "kind": "added",
+                  "label": "side stone 1 length",
+                  "path": "side_stones.0.dimensions_mm.length",
+                  "to": "1.3 mm"
+                },
+                {
+                  "from": "\u2014",
+                  "kind": "added",
+                  "label": "side stone 1 width",
+                  "path": "side_stones.0.dimensions_mm.width",
+                  "to": "1.3 mm"
+                },
+                {
+                  "from": "\u2014",
+                  "kind": "added",
+                  "label": "side stone 1 position",
+                  "path": "side_stones.0.position",
+                  "to": "halo"
+                },
+                {
+                  "from": "\u2014",
+                  "kind": "added",
+                  "label": "side stone 1 type",
+                  "path": "side_stones.0.species",
+                  "to": "diamond"
+                },
+                {
+                  "from": "solitaire_prong",
+                  "kind": "changed",
+                  "label": "template",
+                  "path": "template",
+                  "to": "halo_prong"
+                }
+              ]
+            },
+            "message": "visual evidence matches the requested fact",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "edit_domain:side_stone_shape",
+            "evidence": {
+              "domain": "side_stone_shape",
+              "spec_delta": [
+                {
+                  "from": "\u2014",
+                  "kind": "added",
+                  "label": "side stone 1 weight",
+                  "path": "side_stones.0.carat",
+                  "to": "0.01 ct"
+                },
+                {
+                  "from": "\u2014",
+                  "kind": "added",
+                  "label": "side stone 1 colour gia",
+                  "path": "side_stones.0.color.gia",
+                  "to": "colorless"
+                },
+                {
+                  "from": "\u2014",
+                  "kind": "added",
+                  "label": "side stone 1 colour trade colour",
+                  "path": "side_stones.0.color.trade",
+                  "to": "F"
+                },
+                {
+                  "from": "\u2014",
+                  "kind": "added",
+                  "label": "side stone 1 count",
+                  "path": "side_stones.0.count",
+                  "to": "12"
+                },
+                {
+                  "from": "\u2014",
+                  "kind": "added",
+                  "label": "side stone 1 cut",
+                  "path": "side_stones.0.cut",
+                  "to": "round_brilliant"
+                },
+                {
+                  "from": "\u2014",
+                  "kind": "added",
+                  "label": "side stone 1 depth",
+                  "path": "side_stones.0.dimensions_mm.depth",
+                  "to": "0.8 mm"
+                },
+                {
+                  "from": "\u2014",
+                  "kind": "added",
+                  "label": "side stone 1 length",
+                  "path": "side_stones.0.dimensions_mm.length",
+                  "to": "1.3 mm"
+                },
+                {
+                  "from": "\u2014",
+                  "kind": "added",
+                  "label": "side stone 1 width",
+                  "path": "side_stones.0.dimensions_mm.width",
+                  "to": "1.3 mm"
+                },
+                {
+                  "from": "\u2014",
+                  "kind": "added",
+                  "label": "side stone 1 position",
+                  "path": "side_stones.0.position",
+                  "to": "halo"
+                },
+                {
+                  "from": "\u2014",
+                  "kind": "added",
+                  "label": "side stone 1 type",
+                  "path": "side_stones.0.species",
+                  "to": "diamond"
+                },
+                {
+                  "from": "solitaire_prong",
+                  "kind": "changed",
+                  "label": "template",
+                  "path": "template",
+                  "to": "halo_prong"
+                }
+              ]
+            },
+            "message": "visual evidence matches the requested fact",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "edit_domain:side_stone_identity",
+            "evidence": {
+              "domain": "side_stone_identity",
+              "spec_delta": [
+                {
+                  "from": "\u2014",
+                  "kind": "added",
+                  "label": "side stone 1 weight",
+                  "path": "side_stones.0.carat",
+                  "to": "0.01 ct"
+                },
+                {
+                  "from": "\u2014",
+                  "kind": "added",
+                  "label": "side stone 1 colour gia",
+                  "path": "side_stones.0.color.gia",
+                  "to": "colorless"
+                },
+                {
+                  "from": "\u2014",
+                  "kind": "added",
+                  "label": "side stone 1 colour trade colour",
+                  "path": "side_stones.0.color.trade",
+                  "to": "F"
+                },
+                {
+                  "from": "\u2014",
+                  "kind": "added",
+                  "label": "side stone 1 count",
+                  "path": "side_stones.0.count",
+                  "to": "12"
+                },
+                {
+                  "from": "\u2014",
+                  "kind": "added",
+                  "label": "side stone 1 cut",
+                  "path": "side_stones.0.cut",
+                  "to": "round_brilliant"
+                },
+                {
+                  "from": "\u2014",
+                  "kind": "added",
+                  "label": "side stone 1 depth",
+                  "path": "side_stones.0.dimensions_mm.depth",
+                  "to": "0.8 mm"
+                },
+                {
+                  "from": "\u2014",
+                  "kind": "added",
+                  "label": "side stone 1 length",
+                  "path": "side_stones.0.dimensions_mm.length",
+                  "to": "1.3 mm"
+                },
+                {
+                  "from": "\u2014",
+                  "kind": "added",
+                  "label": "side stone 1 width",
+                  "path": "side_stones.0.dimensions_mm.width",
+                  "to": "1.3 mm"
+                },
+                {
+                  "from": "\u2014",
+                  "kind": "added",
+                  "label": "side stone 1 position",
+                  "path": "side_stones.0.position",
+                  "to": "halo"
+                },
+                {
+                  "from": "\u2014",
+                  "kind": "added",
+                  "label": "side stone 1 type",
+                  "path": "side_stones.0.species",
+                  "to": "diamond"
+                },
+                {
+                  "from": "solitaire_prong",
+                  "kind": "changed",
+                  "label": "template",
+                  "path": "template",
+                  "to": "halo_prong"
+                }
+              ]
+            },
+            "message": "visual evidence matches the requested fact",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "edit_domain:design_form",
+            "evidence": {
+              "domain": "design_form",
+              "spec_delta": [
+                {
+                  "from": "\u2014",
+                  "kind": "added",
+                  "label": "side stone 1 weight",
+                  "path": "side_stones.0.carat",
+                  "to": "0.01 ct"
+                },
+                {
+                  "from": "\u2014",
+                  "kind": "added",
+                  "label": "side stone 1 colour gia",
+                  "path": "side_stones.0.color.gia",
+                  "to": "colorless"
+                },
+                {
+                  "from": "\u2014",
+                  "kind": "added",
+                  "label": "side stone 1 colour trade colour",
+                  "path": "side_stones.0.color.trade",
+                  "to": "F"
+                },
+                {
+                  "from": "\u2014",
+                  "kind": "added",
+                  "label": "side stone 1 count",
+                  "path": "side_stones.0.count",
+                  "to": "12"
+                },
+                {
+                  "from": "\u2014",
+                  "kind": "added",
+                  "label": "side stone 1 cut",
+                  "path": "side_stones.0.cut",
+                  "to": "round_brilliant"
+                },
+                {
+                  "from": "\u2014",
+                  "kind": "added",
+                  "label": "side stone 1 depth",
+                  "path": "side_stones.0.dimensions_mm.depth",
+                  "to": "0.8 mm"
+                },
+                {
+                  "from": "\u2014",
+                  "kind": "added",
+                  "label": "side stone 1 length",
+                  "path": "side_stones.0.dimensions_mm.length",
+                  "to": "1.3 mm"
+                },
+                {
+                  "from": "\u2014",
+                  "kind": "added",
+                  "label": "side stone 1 width",
+                  "path": "side_stones.0.dimensions_mm.width",
+                  "to": "1.3 mm"
+                },
+                {
+                  "from": "\u2014",
+                  "kind": "added",
+                  "label": "side stone 1 position",
+                  "path": "side_stones.0.position",
+                  "to": "halo"
+                },
+                {
+                  "from": "\u2014",
+                  "kind": "added",
+                  "label": "side stone 1 type",
+                  "path": "side_stones.0.species",
+                  "to": "diamond"
+                },
+                {
+                  "from": "solitaire_prong",
+                  "kind": "changed",
+                  "label": "template",
+                  "path": "template",
+                  "to": "halo_prong"
+                }
+              ]
+            },
+            "message": "visual evidence matches the requested fact",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "crosscheck_requested_change",
+            "evidence": {},
+            "message": "visual evidence matches the requested fact",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "crosscheck_frozen_facts",
+            "evidence": {},
+            "message": "visual evidence matches the requested fact",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "crosscheck_unintended_drift",
+            "evidence": {
+              "changes": [],
+              "severity": "none"
+            },
+            "message": "independent audit found no unintended changes",
+            "passed": true,
+            "severity": "warning"
+          },
+          {
+            "code": "crosscheck_edit_domains",
+            "evidence": {
+              "domain_mismatches": []
+            },
+            "message": "independent audit matched every required edit domain",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "text_or_branding",
+            "evidence": {},
+            "message": "no text or branding introduced",
+            "passed": true,
+            "severity": "hard"
+          }
+        ],
+        "notes": [
+          "halo of 12 round colorless diamonds added exactly as specified",
+          "center stone, 4-prong basket, band, metal and lighting unchanged"
+        ],
+        "score": 95.0,
+        "verdict": "pass"
+      },
+      "review_required": false,
+      "score": 100.0,
+      "severity": "none",
+      "starting_point": "spec_render",
+      "verdict": "pass"
+    }
+  ],
+  "run": "designer-live-halo-add-crossaudit-2026-07-11"
+}

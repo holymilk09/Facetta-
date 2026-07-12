@@ -443,6 +443,45 @@
     ]
   },
   "trade_color_terms": {
+    "diamond": [
+      {
+        "term": "D Colorless",
+        "gia": "colorless appearance, D-color direction",
+        "meaning": "bright icy-white diamond appearance direction; not a grading report",
+        "legacy_aliases": ["D"]
+      },
+      {
+        "term": "E Colorless",
+        "gia": "colorless appearance, E-color direction",
+        "meaning": "slightly warmer than D in a design visualization; not a grading report"
+      },
+      {
+        "term": "F Colorless",
+        "gia": "colorless appearance, F-color direction",
+        "meaning": "colorless design appearance with a subtle warm allowance; not a grading report",
+        "legacy_aliases": ["F"]
+      },
+      {
+        "term": "G Near Colorless",
+        "gia": "near-colorless appearance, G-color direction",
+        "meaning": "white-facing diamond appearance direction; not a grading report"
+      },
+      {
+        "term": "H Near Colorless",
+        "gia": "near-colorless appearance, H-color direction",
+        "meaning": "soft-white diamond appearance direction; not a grading report"
+      },
+      {
+        "term": "Fancy Yellow",
+        "gia": "yellow diamond appearance, fancy yellow direction",
+        "meaning": "saturated yellow diamond appearance direction; not a grading report"
+      },
+      {
+        "term": "Fancy Pink",
+        "gia": "pink diamond appearance, fancy pink direction",
+        "meaning": "saturated pink diamond appearance direction; not a grading report"
+      }
+    ],
     "ruby": [
       {
         "term": "Pigeon's Blood",
@@ -457,6 +496,26 @@
         "meaning": "deeper red, no glow, still top-tier",
         "origin_tie": "typically Mozambique, Madagascar, Thailand stones",
         "notes": "little to no fluorescence"
+      },
+      {
+        "term": "Vivid Red",
+        "gia": "vivid red, medium tone, strong saturation",
+        "meaning": "a direct red appearance direction without an origin claim"
+      },
+      {
+        "term": "Crimson Red",
+        "gia": "deep red, medium-dark tone, strong saturation",
+        "meaning": "a richer red appearance direction without an origin claim"
+      },
+      {
+        "term": "Purplish Red",
+        "gia": "red with a visible purple modifier, medium tone",
+        "meaning": "a cooler red appearance direction without an origin claim"
+      },
+      {
+        "term": "Pinkish Red",
+        "gia": "red with a visible pink modifier, medium-light tone",
+        "meaning": "a lighter red appearance direction without an origin claim"
       }
     ],
     "sapphire_blue": [
@@ -518,6 +577,21 @@
         "gia": "highly saturated deep green, yellowish nuance",
         "meaning": "vivid color even in small sizes",
         "origin_tie": "named for the Sandawana mines, Zimbabwe"
+      },
+      {
+        "term": "Vivid Green",
+        "gia": "vivid green, medium tone, strong saturation",
+        "meaning": "a direct green appearance direction without an origin claim"
+      },
+      {
+        "term": "Bluish Green",
+        "gia": "green with a visible blue modifier, medium tone",
+        "meaning": "a cool green appearance direction without an origin claim"
+      },
+      {
+        "term": "Deep Green",
+        "gia": "deep green, medium-dark tone, strong saturation",
+        "meaning": "a darker green appearance direction without an origin claim"
       }
     ],
     "aquamarine": [
@@ -1147,42 +1221,74 @@
       {
         "id": "cable",
         "display": "Cable",
-        "note": "uniform round links, the everyday standard"
+        "note": "uniform round links, the everyday standard",
+        "visual_geometry": [
+          "uniform interlocking round or oval open links",
+          "even repeating link pitch with no flattened or twisted link pattern"
+        ]
       },
       {
         "id": "curb",
         "display": "Curb",
-        "note": "twisted flattened links lying flat on the skin"
+        "note": "twisted flattened links lying flat on the skin",
+        "visual_geometry": [
+          "interlocking oval links twisted and flattened into one plane",
+          "continuous flat link face that lies close to the skin"
+        ]
       },
       {
         "id": "figaro",
         "display": "Figaro",
-        "note": "curb pattern with alternating long links"
+        "note": "curb pattern with alternating long links",
+        "visual_geometry": [
+          "flattened curb-link construction",
+          "repeating short-link sequence interrupted by one elongated link"
+        ]
       },
       {
         "id": "rope",
         "display": "Rope",
-        "note": "twisted strands, strong sparkle"
+        "note": "twisted strands, strong sparkle",
+        "visual_geometry": [
+          "multiple interwoven helical link strands",
+          "continuous twisted rope profile with directional sparkle"
+        ]
       },
       {
         "id": "box",
         "display": "Box",
-        "note": "square links, holds pendants straight"
+        "note": "square links, holds pendants straight",
+        "visual_geometry": [
+          "square box-like interlocking links",
+          "straight geometric profile with clearly articulated edges"
+        ]
       },
       {
         "id": "snake",
         "display": "Snake",
-        "note": "smooth sleeve of plates, no visible links"
+        "note": "smooth sleeve of plates, no visible links",
+        "visual_geometry": [
+          "closely fitted curved plates forming a flexible tube",
+          "smooth continuous surface with no open link gaps"
+        ]
       },
       {
         "id": "wheat",
         "display": "Wheat",
-        "note": "braided oval links, very strong"
+        "note": "braided oval links, very strong",
+        "visual_geometry": [
+          "dense interwoven strands of twisted oval links",
+          "symmetrical braided profile with a rounded cross-section"
+        ]
       },
       {
         "id": "singapore",
         "display": "Singapore",
-        "note": "twisted curb with liquid shimmer"
+        "note": "twisted curb with liquid shimmer",
+        "visual_geometry": [
+          "fine interlinked curb segments twisted into a spiral",
+          "faceted undulating profile with fluid directional shimmer"
+        ]
       }
     ],
     "clasp_types": [
@@ -1236,7 +1342,9 @@
       "clarity_systems": [
         "gia_diamond"
       ],
-      "trade_color_keys": [],
+      "trade_color_keys": [
+        "diamond"
+      ],
       "allowed_phenomena": []
     },
     "ruby": {

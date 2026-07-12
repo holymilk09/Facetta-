@@ -15,34 +15,15 @@ from __future__ import annotations
 
 import base64
 import hashlib
-import json
 import os
 from pathlib import Path
 
+from facetta.cairo_support import load_cairosvg
+from facetta.image_identity import spec_visual_hash
+from facetta.media import build_mask_guide, sniff_media_type
 from facetta.mockup import compile_finish_request, geometry_fingerprint
+from facetta.provider_errors import RenderUnavailable
 from facetta.spec import Spec
-
-# Fields that do NOT change what the rendered image looks like -- excluded from
-# the visual hash so a new version (bumped id/date/notes) doesn't needlessly
-# re-render, while every APPEARANCE field (stone, setting, metal, band, ...) IS
-# in the key. The old bug was the reverse: appearance fields (setting, metal
-# finish, clarity) were in NEITHER the prompt nor the fingerprint, so a changed
-# design kept the old key and served a stale image "from ages ago".
-_NONVISUAL_SPEC_FIELDS = {
-    "design_id", "version", "created_by", "created_at", "schema_version",
-    "mode", "notes_to_factory",
-}
-
-
-def spec_visual_hash(spec: Spec) -> str:
-    """A stable fingerprint of everything about a spec that affects how the
-    rendered piece LOOKS -- the whole spec minus pure metadata. Any appearance
-    change (setting, finish, clarity, counts, arrangement) moves this hash, so
-    it can never serve a stale render for a design that actually changed."""
-    data = {k: v for k, v in spec.model_dump(mode="json").items()
-            if k not in _NONVISUAL_SPEC_FIELDS}
-    return hashlib.sha256(
-        json.dumps(data, sort_keys=True, default=str).encode()).hexdigest()[:16]
 
 CACHE_DIR = Path(os.environ.get("FACETTA_RENDER_CACHE", "data/render_cache"))
 PIPELINE_VERSION = "2"  # bump to invalidate every cached render
@@ -52,6 +33,26 @@ PIPELINE_VERSION = "2"  # bump to invalidate every cached render
 # Three routes to two engines. Each entry knows its key, auth scheme, how
 # to wrap our (instruction, control image) pair, and how to find the image
 # in the response — the pipeline around them never changes.
+
+
+def _grok_direct_edit_payload(
+    prompt: str, image: str, extra: dict,
+) -> dict:
+    references = [image, *list(extra.get("extra_images", []))]
+    payload = {
+        "model": "grok-imagine-image-quality",
+        "prompt": prompt,
+    }
+    if len(references) == 1:
+        payload["image"] = {"url": references[0], "type": "image_url"}
+    else:
+        payload["images"] = [
+            {"url": reference, "type": "image_url"}
+            for reference in references
+        ]
+    return payload
+
+
 MODELS = {
     "flux_kontext": {  # FLUX Kontext via fal
         "endpoint": "https://fal.run/fal-ai/flux-pro/kontext",
@@ -80,13 +81,9 @@ MODELS = {
     "grok_direct": {  # Grok Imagine edit straight from xAI
         "endpoint": "https://api.x.ai/v1/images/edits",
         "key_env": "XAI_KEY", "auth": "Bearer",
+        "multi_image": True,
         # b64_json keeps the result inline — no dependency on imgen.x.ai
-        "payload": lambda prompt, image, extra: {
-            "model": "grok-imagine-image-quality",
-            "prompt": prompt,
-            "image": {"url": image, "type": "image_url"},
-            "response_format": "b64_json",
-        },
+        "payload": _grok_direct_edit_payload,
         "parse": lambda data: (
             "data:image/png;base64," + data["data"][0]["b64_json"]
             if data["data"][0].get("b64_json") else data["data"][0]["url"]),
@@ -102,7 +99,7 @@ GENERATION_MODELS = {
         "key_env": "XAI_KEY", "auth": "Bearer",
         "payload": lambda prompt: {
             "model": "grok-imagine-image-quality", "prompt": prompt,
-            "n": 1, "response_format": "b64_json"},
+            "n": 1},
         "parse": lambda data: (
             "data:image/png;base64," + data["data"][0]["b64_json"]
             if data["data"][0].get("b64_json") else data["data"][0]["url"]),
@@ -171,19 +168,8 @@ VIDEO_MODELS = {
 }
 
 
-class RenderUnavailable(Exception):
-    """No key, or the provider cannot be reached."""
-
-
-def _sniff_media_type(image: bytes) -> str:
-    """Engines answer JPEG under .png names — trust magic bytes, not names."""
-    if image[:3] == b"\xff\xd8\xff":
-        return "image/jpeg"
-    if image[:8] == b"\x89PNG\r\n\x1a\n":
-        return "image/png"
-    if image[:4] == b"RIFF" and image[8:12] == b"WEBP":
-        return "image/webp"
-    return "image/png"
+# Legacy imports keep working while canonical code uses the public helper.
+_sniff_media_type = sniff_media_type
 
 
 def _call_engine(model: str, instruction: str, image_data_uri: str,
@@ -210,7 +196,29 @@ def _call_engine(model: str, instruction: str, image_data_uri: str,
         image = httpx.get(image_url, timeout=120.0)
         image.raise_for_status()
         return image.content
-    except Exception as exc:  # network, auth, schema — all one story upstream
+    except httpx.HTTPStatusError as exc:
+        # Keep enough provider evidence to repair a drifting API contract, but
+        # never include request headers, credentials, or the base64 source.
+        safe_detail = ""
+        try:
+            body = exc.response.json()
+            error = body.get("error", body) if isinstance(body, dict) else body
+            if isinstance(error, dict):
+                safe = {
+                    key: error[key]
+                    for key in ("code", "type", "message", "param")
+                    if key in error
+                }
+                safe_detail = str(safe)[:800]
+            else:
+                safe_detail = str(error)[:800]
+        except Exception:
+            safe_detail = exc.response.text[:800]
+        suffix = f": {safe_detail}" if safe_detail else ""
+        raise RenderUnavailable(
+            f"render provider returned HTTP {exc.response.status_code}{suffix}"
+        ) from exc
+    except Exception as exc:  # network, auth, response schema
         raise RenderUnavailable(f"render provider failed: {exc}") from exc
 
 
@@ -228,6 +236,11 @@ def generate_image(prompt: str, model: str = "grok_direct",
     if model not in GENERATION_MODELS:
         raise RenderUnavailable(
             f"unknown generation model '{model}'; options: {list(GENERATION_MODELS)}")
+    engine = GENERATION_MODELS[model]
+    provider_key = _provider_key(engine["key_env"])
+    if not provider_key:
+        raise RenderUnavailable(
+            f"no {engine['key_env']} configured — set it in the environment or .env")
     suffix = f":v{variant}" if variant else ""
     if discriminator:  # e.g. the full-spec visual hash, so a design change
         suffix += ":" + discriminator  # never collides with the old render
@@ -241,12 +254,6 @@ def generate_image(prompt: str, model: str = "grok_direct",
     cached = CACHE_DIR / f"{key}.png"
     if cached.exists():
         return cached.read_bytes(), True
-
-    engine = GENERATION_MODELS[model]
-    provider_key = _provider_key(engine["key_env"])
-    if not provider_key:
-        raise RenderUnavailable(
-            f"no {engine['key_env']} configured — set it in the environment or .env")
 
     import httpx
 
@@ -275,6 +282,14 @@ STYLE_REF_RULE = (
     "image is the design: never copy stones, shapes, settings, or any design "
     "element from the style reference.")
 
+MASK_GUIDE_RULE = (
+    "MASK GUIDE: IMAGE 1 is the untouched source and remains the design truth. "
+    "IMAGE 2 is only a localization guide: the magenta-tinted, white-outlined "
+    "area is editable. Apply the requested change inside that area only and "
+    "preserve IMAGE 1 everywhere else. The magenta tint and white outline are "
+    "guide marks, not output content; remove them completely from the result."
+)
+
 
 def supports_style_ref(model: str) -> bool:
     """Only engines whose edit route accepts multiple input images can carry
@@ -284,19 +299,18 @@ def supports_style_ref(model: str) -> bool:
 
 def edit_image(image_bytes: bytes, instruction: str,
                model: str = "grok_direct", variant: int = 0,
-               style_ref: bytes | None = None) -> tuple[bytes, bool]:
+               style_ref: bytes | None = None,
+               mask_bytes: bytes | None = None) -> tuple[bytes, bool]:
     """Instruction-driven edit of a caller-supplied image — the primitive the
     spec agent's image-to-image passes ride on. Content-addressed like
     restyle_artwork: the input bytes pin the source, the instruction carries
     the transformation — either changing means a genuinely new image.
     ':edit:' namespaces these keys away from artwork and spec renders.
 
-    style_ref is an optional house-style anchor image: it rides as a SECOND
-    input with a strict style-only rule, so the output converges on the
-    house's rendering style without borrowing design elements. Only engines
-    with a multi-image edit route accept it — anywhere else this fails
-    LOUDLY rather than silently pretending the style was applied. The style
-    bytes are part of the cache key: a changed style set is a different image.
+    A white-edit/black-preserve ``mask_bytes`` raster becomes a second
+    localization-guide image. ``style_ref`` becomes the last image. This fits
+    xAI's three-reference limit exactly: untouched source, mask guide, style.
+    Engines without multi-image support fail loudly instead of pretending.
 
     Returns (bytes, was_cached)."""
     if model not in MODELS:
@@ -307,6 +321,22 @@ def edit_image(image_bytes: bytes, instruction: str,
             "edit_image received an empty source image — the upstream render "
             "produced nothing to edit")
     extra: dict = {}
+    extra_images: list[str] = []
+    if mask_bytes is not None:
+        if not supports_style_ref(model):
+            supported = [m for m in MODELS if supports_style_ref(m)]
+            raise RenderUnavailable(
+                f"model '{model}' cannot carry a mask guide; masked editing "
+                f"needs one of {supported}")
+        if not mask_bytes:
+            raise RenderUnavailable("edit mask is empty")
+        try:
+            guide = build_mask_guide(image_bytes, mask_bytes)
+        except ValueError as exc:
+            raise RenderUnavailable(str(exc)) from exc
+        instruction = instruction + "\n" + MASK_GUIDE_RULE
+        extra_images.append(
+            "data:image/png;base64," + base64.b64encode(guide).decode())
     if style_ref is not None:
         if not supports_style_ref(model):
             supported = [m for m in MODELS if supports_style_ref(m)]
@@ -316,10 +346,23 @@ def edit_image(image_bytes: bytes, instruction: str,
         if not style_ref:
             raise RenderUnavailable("style reference image is empty")
         instruction = instruction + "\n" + STYLE_REF_RULE
-        extra["extra_images"] = [
+        extra_images.append(
             f"data:{_sniff_media_type(style_ref)};base64,"
-            + base64.b64encode(style_ref).decode()]
+            + base64.b64encode(style_ref).decode())
+    # Validate all request semantics before checking credentials so callers get
+    # a useful contract error (unsupported mask/style/empty input) even when a
+    # fallback provider is not configured.  Credential validation still occurs
+    # before the cache lookup, so a missing key can never serve stale bytes.
+    provider_key = _provider_key(MODELS[model]["key_env"])
+    if not provider_key:
+        raise RenderUnavailable(
+            f"no {MODELS[model]['key_env']} configured — set it in the "
+            "environment or .env")
+    if extra_images:
+        extra["extra_images"] = extra_images
     suffix = f":v{variant}" if variant else ""
+    if mask_bytes is not None:
+        suffix += ":mask:" + hashlib.sha256(mask_bytes).hexdigest()[:16]
     if style_ref is not None:
         suffix += ":style:" + hashlib.sha256(style_ref).hexdigest()[:16]
     key = hashlib.sha256(
@@ -517,13 +560,18 @@ def render_finished_image(spec: Spec, style: str = "photo",
     if model not in MODELS:
         raise RenderUnavailable(
             f"unknown render model '{model}'; options: {list(MODELS)}")
+    provider_key = _provider_key(MODELS[model]["key_env"])
+    if not provider_key:
+        raise RenderUnavailable(
+            f"no {MODELS[model]['key_env']} configured — set it in the "
+            "environment or .env")
     key = render_cache_key(spec, style, lighting, model)
     CACHE_DIR.mkdir(parents=True, exist_ok=True)
     cached = CACHE_DIR / f"{key}.png"
     if cached.exists():
         return cached.read_bytes(), True
 
-    import cairosvg  # deferred: rasterizer needs system cairo
+    cairosvg = load_cairosvg()
 
     from facetta.plate import render_control_image
 

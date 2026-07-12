@@ -2,8 +2,9 @@
 <defs><pattern id="hatch" width="1.4" height="1.4" patternTransform="rotate(45)" patternUnits="userSpaceOnUse"><line x1="0" y1="0" x2="0" y2="1.4" stroke="#8a8a8a" stroke-width="0.12"/></pattern><pattern id="grid" width="5" height="5" patternUnits="userSpaceOnUse"><line x1="0" y1="0" x2="5" y2="0" stroke="#8a8a8a" stroke-width="0.06"/><line x1="0" y1="0" x2="0" y2="5" stroke="#8a8a8a" stroke-width="0.06"/></pattern></defs>
 <rect x="0" y="0" width="297" height="210" fill="#fdfdfa"/>
 <rect x="8" y="8" width="281" height="194" fill="url(#grid)" stroke="#3f3f3f" stroke-width="0.3"/>
-<text x="148.50" y="16.00" font-family="Georgia, 'Times New Roman', serif" font-size="4.6" fill="#3f3f3f" text-anchor="middle" letter-spacing="1.6">TECHNICAL SHEET — OVAL STATION BANGLE</text>
+<text x="148.50" y="16.00" font-family="Georgia, 'Times New Roman', serif" font-size="4.6" fill="#3f3f3f" text-anchor="middle" letter-spacing="1.6">DIMENSIONAL DIAGRAM — OVAL STATION BANGLE</text>
 <line x1="11.00" y1="19.50" x2="286.00" y2="19.50" stroke="#8a8a8a" stroke-width="0.15"/>
+<text x="148.50" y="23.00" font-family="Georgia, 'Times New Roman', serif" font-size="2.7" fill="#9b2f2f" text-anchor="middle" font-weight="bold" letter-spacing="0.45">SCHEMATIC DIMENSIONAL DIAGRAM — NOT PRODUCTION GEOMETRY</text>
 <line x1="11.00" y1="105.00" x2="286.00" y2="105.00" stroke="#8a8a8a" stroke-width="0.15" stroke-dasharray="6 1.5 1 1.5"/>
 <ellipse cx="95.00" cy="105.00" rx="61.20" ry="51.20" fill="url(#hatch)" stroke="#3f3f3f" stroke-width="0.3"/>
 <ellipse cx="95.00" cy="105.00" rx="56.00" ry="46.00" fill="#ffffff" stroke="#3f3f3f" stroke-width="0.3"/>
@@ -74,5 +75,5 @@
 <text x="164.00" y="199.00" font-family="Georgia, 'Times New Roman', serif" font-size="2.6" fill="#8a8a8a" text-anchor="start">pavé</text>
 <text x="12.00" y="183.50" font-family="Georgia, 'Times New Roman', serif" font-size="2.6" fill="#8a8a8a" text-anchor="start" letter-spacing="1.2">NOTES TO FACTORY</text>
 <text x="12.00" y="187.30" font-family="Georgia, 'Times New Roman', serif" font-size="3.0" fill="#3f3f3f" text-anchor="start">Hinged oval bangle; stations flush-set, screw-motif free.</text>
-<text x="289.00" y="206.80" font-family="Georgia, 'Times New Roman', serif" font-size="2.8" fill="#8a8a8a" text-anchor="end" letter-spacing="1.2">CONFIDENTIAL — FACTORY PRODUCTION ONLY</text>
+<text x="289.00" y="206.80" font-family="Georgia, 'Times New Roman', serif" font-size="2.8" fill="#8a8a8a" text-anchor="end" letter-spacing="1.2">CONFIDENTIAL — FACTORY REVIEW REFERENCE</text>
 </svg>

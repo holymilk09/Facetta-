@@ -1,0 +1,116 @@
+{
+  "body": {
+    "code": "approved_source_material_identity_failed",
+    "detail": "colorization changed stone or metal identity from the approved source; no asset was created",
+    "error_category": "quality_failure",
+    "image_run_id": "run_4c265b5f0aec051d",
+    "quality_report": {
+      "accepted": false,
+      "checks": [
+        {
+          "code": "decodable_image",
+          "evidence": {
+            "format": "JPEG",
+            "height": 1136,
+            "width": 912
+          },
+          "message": "candidate is a decodable raster image",
+          "passed": true,
+          "severity": "hard"
+        },
+        {
+          "code": "review_resolution",
+          "evidence": {
+            "height": 1136,
+            "width": 912
+          },
+          "message": "candidate has reviewable raster dimensions",
+          "passed": true,
+          "severity": "warning"
+        },
+        {
+          "code": "candidate_changed",
+          "evidence": {},
+          "message": "candidate bytes differ from the source",
+          "passed": true,
+          "severity": "hard"
+        },
+        {
+          "code": "requested_change",
+          "evidence": {},
+          "message": "visual evidence matches the requested fact",
+          "passed": true,
+          "severity": "hard"
+        },
+        {
+          "code": "protected_regions",
+          "evidence": {},
+          "message": "visual evidence matches the requested fact",
+          "passed": true,
+          "severity": "hard"
+        },
+        {
+          "code": "unintended_drift",
+          "evidence": {
+            "changes": [],
+            "severity": "none"
+          },
+          "message": "no unintended changes detected",
+          "passed": true,
+          "severity": "warning"
+        },
+        {
+          "code": "geometry_preserved",
+          "evidence": {},
+          "message": "visual evidence matches the requested fact",
+          "passed": true,
+          "severity": "hard"
+        },
+        {
+          "code": "text_or_branding",
+          "evidence": {},
+          "message": "no text or branding introduced",
+          "passed": true,
+          "severity": "hard"
+        },
+        {
+          "code": "approved_source_material_identity",
+          "evidence": {
+            "checked": false,
+            "differences": [
+              "deterministic raster audit found widespread white-stone regions converted to gold"
+            ],
+            "raster_white_to_gold": {
+              "checked": true,
+              "failed": true,
+              "source_white_feature_pixels": 8796,
+              "white_to_gold_pixels": 3340,
+              "white_to_gold_ratio": 0.379718
+            },
+            "sample_verdicts": [],
+            "severity": "major"
+          },
+          "message": "material assignment changed from the approved source: deterministic raster audit found widespread white-stone regions converted to gold",
+          "passed": false,
+          "severity": "hard"
+        }
+      ],
+      "failed_checks": [
+        "approved_source_material_identity"
+      ],
+      "notes": [
+        "Center emerald-cut stone rendered in Muzo Green; 18k yellow gold metal applied to band/setting.",
+        "Leaf motifs and side stones preserved exactly from line drawing; no additions or geometry shifts.",
+        "deterministic raster audit found widespread white-stone regions converted to gold"
+      ],
+      "review_required": false,
+      "score": 35.0,
+      "summary": "Image needs explicit designer review.",
+      "verdict": "fail",
+      "warnings": []
+    }
+  },
+  "expected": "hard quality rejection from deterministic white-stone-to-gold audit",
+  "latency_ms": 14544,
+  "status_code": 422
+}

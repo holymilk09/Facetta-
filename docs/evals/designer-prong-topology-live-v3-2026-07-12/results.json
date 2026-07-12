@@ -1,0 +1,87 @@
+{
+  "fallback_provider": "openai",
+  "fallback_tested": true,
+  "gia_evaluator_review": {
+    "completed": false,
+    "false_negatives": null,
+    "false_positives": null,
+    "reviewer": null
+  },
+  "live": true,
+  "mode": "live",
+  "persistence_evidence": {
+    "method": "not_run",
+    "note": "This image-engine run did not exercise canonical project persistence. Attach a named canonical-API integration result before the persistence release gate can pass.",
+    "rejected_active_asset_count": null,
+    "result_set": null,
+    "verified": false
+  },
+  "release_gates": {
+    "blocking_enabled": false,
+    "note": "Only canonical edit 'prong-setting' was executed.",
+    "status": "diagnostic_subset_not_evaluated"
+  },
+  "routing_mode": "grok_then_openai",
+  "rows": [
+    {
+      "agent_error": {
+        "attempts": [
+          {
+            "attempt_number": 1,
+            "cache_key": "19760646f02bf56697ea80f4fb356f7cd5398b632677c08cc77d67d0e417bbbc",
+            "cached": false,
+            "corrective_instruction": null,
+            "cost": null,
+            "error": {
+              "category": "evaluation",
+              "code": "quality_evaluator_failed",
+              "message": "vision inspect failed: _ssl.c:993: The handshake operation timed out",
+              "retryable": false
+            },
+            "error_category": "evaluation",
+            "fallback_reason": null,
+            "latency_ms": 127985,
+            "model": "grok_direct",
+            "output_hash": "149679cbc266f148c4e519b609978b04bdcf485aac261bfa739c3625884ad077",
+            "prompt_hash": "f895eddc127df6f07312cbec9984ee1e143df518f9ded05ca9bd81241037c9fe",
+            "provider": "xai",
+            "provider_request_id": null,
+            "qa_checks": [],
+            "qa_verdict": null,
+            "quality_score": null,
+            "route": "grok_generate",
+            "usage": null
+          }
+        ],
+        "category": "evaluation",
+        "code": "image_evaluation_failed",
+        "message": "candidate could not be quality-gated: vision inspect failed: _ssl.c:993: The handshake operation timed out"
+      },
+      "attempts": 0,
+      "case": "cushion-halo-white-6-wide",
+      "hard_gate_pass": false,
+      "kind": "render",
+      "reference_attempts": 1,
+      "reference_required": true,
+      "reference_stage_error": "evaluation",
+      "reference_supplied": false,
+      "score": 0,
+      "starting_point": "imported_reference"
+    },
+    {
+      "applied": false,
+      "attempts": 0,
+      "case": "prong-setting",
+      "expected_valid": true,
+      "golden_case": "cushion-halo-white-6-wide",
+      "issues": [],
+      "kind": "edit",
+      "precondition_error": "no_accepted_case_render",
+      "score": 0,
+      "severity": "major",
+      "starting_point": "imported_reference"
+    }
+  ],
+  "run": "designer-prong-topology-live-v3-2026-07-12",
+  "source_override": null
+}

@@ -1,0 +1,976 @@
+{
+  "fallback_provider": "openai",
+  "fallback_tested": true,
+  "gia_evaluator_review": {
+    "completed": false,
+    "false_negatives": null,
+    "false_positives": null,
+    "reviewer": null
+  },
+  "live": true,
+  "mode": "live",
+  "persistence_evidence": {
+    "method": "not_run",
+    "note": "This image-engine run did not exercise canonical project persistence. Attach a named canonical-API integration result before the persistence release gate can pass.",
+    "rejected_active_asset_count": null,
+    "result_set": null,
+    "verified": false
+  },
+  "release_gates": {
+    "blocking_enabled": false,
+    "note": "Only canonical edit 'prong-setting' was executed.",
+    "status": "diagnostic_subset_not_evaluated"
+  },
+  "routing_mode": "grok_then_openai",
+  "rows": [
+    {
+      "agent_run": {
+        "attempts": [
+          {
+            "attempt_number": 1,
+            "cache_key": "19760646f02bf56697ea80f4fb356f7cd5398b632677c08cc77d67d0e417bbbc",
+            "cached": true,
+            "corrective_instruction": null,
+            "cost": null,
+            "error": null,
+            "error_category": null,
+            "fallback_reason": null,
+            "latency_ms": 26935,
+            "model": "grok_direct",
+            "output_hash": "149679cbc266f148c4e519b609978b04bdcf485aac261bfa739c3625884ad077",
+            "prompt_hash": "f895eddc127df6f07312cbec9984ee1e143df518f9ded05ca9bd81241037c9fe",
+            "provider": "xai",
+            "provider_request_id": null,
+            "qa_checks": [
+              {
+                "code": "decodable_image",
+                "evidence": {
+                  "format": "JPEG",
+                  "height": 1152,
+                  "width": 864
+                },
+                "message": "candidate is a decodable raster image",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "review_resolution",
+                "evidence": {
+                  "height": 1152,
+                  "width": 864
+                },
+                "message": "candidate has reviewable raster dimensions",
+                "passed": true,
+                "severity": "warning"
+              },
+              {
+                "code": "jewelry_type",
+                "evidence": {},
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "major_components",
+                "evidence": {},
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "center_species",
+                "evidence": {},
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "cut_family",
+                "evidence": {},
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "center_color",
+                "evidence": {},
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "metal",
+                "evidence": {},
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "setting",
+                "evidence": {},
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "stone_count",
+                "evidence": {},
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "render_crosscheck:jewelry_type",
+                "evidence": {
+                  "differences": [
+                    "prong count mismatch (4 visible vs 6 specified)"
+                  ],
+                  "observed_prong_count": 4,
+                  "observed_prong_count_complete": true,
+                  "observed_side_stone_count": 14
+                },
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "render_crosscheck:center_identity",
+                "evidence": {
+                  "differences": [
+                    "prong count mismatch (4 visible vs 6 specified)"
+                  ],
+                  "observed_prong_count": 4,
+                  "observed_prong_count_complete": true,
+                  "observed_side_stone_count": 14
+                },
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "render_crosscheck:center_cut",
+                "evidence": {
+                  "differences": [
+                    "prong count mismatch (4 visible vs 6 specified)"
+                  ],
+                  "observed_prong_count": 4,
+                  "observed_prong_count_complete": true,
+                  "observed_side_stone_count": 14
+                },
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "render_crosscheck:metal",
+                "evidence": {
+                  "differences": [
+                    "prong count mismatch (4 visible vs 6 specified)"
+                  ],
+                  "observed_prong_count": 4,
+                  "observed_prong_count_complete": true,
+                  "observed_side_stone_count": 14
+                },
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "render_crosscheck:setting_style",
+                "evidence": {
+                  "differences": [
+                    "prong count mismatch (4 visible vs 6 specified)"
+                  ],
+                  "observed_prong_count": 4,
+                  "observed_prong_count_complete": true,
+                  "observed_side_stone_count": 14
+                },
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "render_crosscheck:prong_count",
+                "evidence": {
+                  "differences": [
+                    "prong count mismatch (4 visible vs 6 specified)"
+                  ],
+                  "observed_prong_count": 4,
+                  "observed_prong_count_complete": true,
+                  "observed_side_stone_count": 14
+                },
+                "message": "independent audit found the wrong center-prong count",
+                "passed": false,
+                "severity": "hard"
+              },
+              {
+                "code": "render_crosscheck:side_stone_inventory",
+                "evidence": {
+                  "differences": [
+                    "prong count mismatch (4 visible vs 6 specified)"
+                  ],
+                  "observed_prong_count": 4,
+                  "observed_prong_count_complete": true,
+                  "observed_side_stone_count": 14
+                },
+                "message": "independent audit could not confirm side stone inventory",
+                "passed": false,
+                "severity": "warning"
+              },
+              {
+                "code": "render_crosscheck:major_components",
+                "evidence": {
+                  "differences": [
+                    "prong count mismatch (4 visible vs 6 specified)"
+                  ],
+                  "observed_prong_count": 4,
+                  "observed_prong_count_complete": true,
+                  "observed_side_stone_count": 14
+                },
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "text_or_branding",
+                "evidence": {},
+                "message": "no text or branding detected",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "exact_dimensions",
+                "evidence": {},
+                "message": "exact millimeters appears plausible but remains non-authoritative",
+                "passed": true,
+                "severity": "warning"
+              },
+              {
+                "code": "exact_carat",
+                "evidence": {},
+                "message": "exact carat weight appears plausible but remains non-authoritative",
+                "passed": true,
+                "severity": "warning"
+              }
+            ],
+            "qa_verdict": "fail",
+            "quality_score": 40.0,
+            "route": "grok_generate",
+            "usage": null
+          },
+          {
+            "attempt_number": 2,
+            "cache_key": "9a3df5a496942389c94809380c76680ebc6bf098bcf3c680cc183e470b270bc4",
+            "cached": false,
+            "corrective_instruction": "- render_crosscheck:prong_count: independent audit found the wrong center-prong count. Evidence: {\"differences\": [\"prong count mismatch (4 visible vs 6 specified)\"], \"observed_prong_count\": 4, \"observed_prong_count_complete\": true, \"observed_side_stone_count\": 14}",
+            "cost": null,
+            "error": null,
+            "error_category": null,
+            "fallback_reason": null,
+            "latency_ms": 153217,
+            "model": "grok_direct",
+            "output_hash": "9ba7b931e7a021408e22a819386bd418472f0f83e90f86a2304c4df2b7356d24",
+            "prompt_hash": "ace8734e129987a20276cc75a0b7b5aaf628506acf20d0d7adcc2e89897c95e8",
+            "provider": "xai",
+            "provider_request_id": null,
+            "qa_checks": [
+              {
+                "code": "decodable_image",
+                "evidence": {
+                  "format": "JPEG",
+                  "height": 1152,
+                  "width": 864
+                },
+                "message": "candidate is a decodable raster image",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "review_resolution",
+                "evidence": {
+                  "height": 1152,
+                  "width": 864
+                },
+                "message": "candidate has reviewable raster dimensions",
+                "passed": true,
+                "severity": "warning"
+              },
+              {
+                "code": "jewelry_type",
+                "evidence": {},
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "major_components",
+                "evidence": {},
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "center_species",
+                "evidence": {},
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "cut_family",
+                "evidence": {},
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "center_color",
+                "evidence": {},
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "metal",
+                "evidence": {},
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "setting",
+                "evidence": {},
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "stone_count",
+                "evidence": {},
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "render_crosscheck:jewelry_type",
+                "evidence": {
+                  "differences": [],
+                  "observed_prong_count": 4,
+                  "observed_prong_count_complete": true,
+                  "observed_side_stone_count": 19
+                },
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "render_crosscheck:center_identity",
+                "evidence": {
+                  "differences": [],
+                  "observed_prong_count": 4,
+                  "observed_prong_count_complete": true,
+                  "observed_side_stone_count": 19
+                },
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "render_crosscheck:center_cut",
+                "evidence": {
+                  "differences": [],
+                  "observed_prong_count": 4,
+                  "observed_prong_count_complete": true,
+                  "observed_side_stone_count": 19
+                },
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "render_crosscheck:metal",
+                "evidence": {
+                  "differences": [],
+                  "observed_prong_count": 4,
+                  "observed_prong_count_complete": true,
+                  "observed_side_stone_count": 19
+                },
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "render_crosscheck:setting_style",
+                "evidence": {
+                  "differences": [],
+                  "observed_prong_count": 4,
+                  "observed_prong_count_complete": true,
+                  "observed_side_stone_count": 19
+                },
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "render_crosscheck:prong_count",
+                "evidence": {
+                  "differences": [],
+                  "observed_prong_count": 4,
+                  "observed_prong_count_complete": true,
+                  "observed_side_stone_count": 19
+                },
+                "message": "independent audit found the wrong center-prong count",
+                "passed": false,
+                "severity": "hard"
+              },
+              {
+                "code": "render_crosscheck:side_stone_inventory",
+                "evidence": {
+                  "differences": [],
+                  "observed_prong_count": 4,
+                  "observed_prong_count_complete": true,
+                  "observed_side_stone_count": 19
+                },
+                "message": "independent audit could not confirm side stone inventory",
+                "passed": false,
+                "severity": "warning"
+              },
+              {
+                "code": "render_crosscheck:major_components",
+                "evidence": {
+                  "differences": [],
+                  "observed_prong_count": 4,
+                  "observed_prong_count_complete": true,
+                  "observed_side_stone_count": 19
+                },
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "text_or_branding",
+                "evidence": {},
+                "message": "no text or branding detected",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "exact_dimensions",
+                "evidence": {},
+                "message": "exact millimeters appears plausible but remains non-authoritative",
+                "passed": true,
+                "severity": "warning"
+              },
+              {
+                "code": "exact_carat",
+                "evidence": {},
+                "message": "exact carat weight appears plausible but remains non-authoritative",
+                "passed": true,
+                "severity": "warning"
+              },
+              {
+                "code": "evaluation_transport_recovered",
+                "evidence": {
+                  "image_regenerated": false,
+                  "retry_count": 1
+                },
+                "message": "quality evaluation recovered by retrying the audit on the same generated image bytes",
+                "passed": true,
+                "severity": "warning"
+              }
+            ],
+            "qa_verdict": "fail",
+            "quality_score": 40.0,
+            "route": "grok_generate",
+            "usage": null
+          },
+          {
+            "attempt_number": 3,
+            "cache_key": "2009e0212593782e5b66223f4eb0437fcc936068dc950fe8af8a093041955004",
+            "cached": false,
+            "corrective_instruction": "- render_crosscheck:prong_count: independent audit found the wrong center-prong count. Evidence: {\"differences\": [], \"observed_prong_count\": 4, \"observed_prong_count_complete\": true, \"observed_side_stone_count\": 19}",
+            "cost": null,
+            "error": null,
+            "error_category": null,
+            "fallback_reason": "grok_qa_failed",
+            "latency_ms": 68636,
+            "model": "gpt-image-2",
+            "output_hash": "d2d69ccd8e92d38cdc0b591451ce1e2b506d448a42d5e40197f23e3e5298c974",
+            "prompt_hash": "35406a07d5331b85954ff5dd71b12e4284173dcd3673f6e849cff1b21324ea3f",
+            "provider": "openai",
+            "provider_request_id": "req_bc9aacc4c06f43c8ae494ce9281871a1",
+            "qa_checks": [
+              {
+                "code": "decodable_image",
+                "evidence": {
+                  "format": "PNG",
+                  "height": 1024,
+                  "width": 1024
+                },
+                "message": "candidate is a decodable raster image",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "review_resolution",
+                "evidence": {
+                  "height": 1024,
+                  "width": 1024
+                },
+                "message": "candidate has reviewable raster dimensions",
+                "passed": true,
+                "severity": "warning"
+              },
+              {
+                "code": "jewelry_type",
+                "evidence": {},
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "major_components",
+                "evidence": {},
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "center_species",
+                "evidence": {},
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "cut_family",
+                "evidence": {},
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "center_color",
+                "evidence": {},
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "metal",
+                "evidence": {},
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "setting",
+                "evidence": {},
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "stone_count",
+                "evidence": {},
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "render_crosscheck:jewelry_type",
+                "evidence": {
+                  "differences": [],
+                  "observed_prong_count": 6,
+                  "observed_prong_count_complete": true,
+                  "observed_side_stone_count": 20
+                },
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "render_crosscheck:center_identity",
+                "evidence": {
+                  "differences": [],
+                  "observed_prong_count": 6,
+                  "observed_prong_count_complete": true,
+                  "observed_side_stone_count": 20
+                },
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "render_crosscheck:center_cut",
+                "evidence": {
+                  "differences": [],
+                  "observed_prong_count": 6,
+                  "observed_prong_count_complete": true,
+                  "observed_side_stone_count": 20
+                },
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "render_crosscheck:metal",
+                "evidence": {
+                  "differences": [],
+                  "observed_prong_count": 6,
+                  "observed_prong_count_complete": true,
+                  "observed_side_stone_count": 20
+                },
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "render_crosscheck:setting_style",
+                "evidence": {
+                  "differences": [],
+                  "observed_prong_count": 6,
+                  "observed_prong_count_complete": true,
+                  "observed_side_stone_count": 20
+                },
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "render_crosscheck:prong_count",
+                "evidence": {
+                  "differences": [],
+                  "observed_prong_count": 6,
+                  "observed_prong_count_complete": true,
+                  "observed_side_stone_count": 20
+                },
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "render_crosscheck:side_stone_inventory",
+                "evidence": {
+                  "differences": [],
+                  "observed_prong_count": 6,
+                  "observed_prong_count_complete": true,
+                  "observed_side_stone_count": 20
+                },
+                "message": "independent audit could not confirm side stone inventory",
+                "passed": false,
+                "severity": "warning"
+              },
+              {
+                "code": "render_crosscheck:major_components",
+                "evidence": {
+                  "differences": [],
+                  "observed_prong_count": 6,
+                  "observed_prong_count_complete": true,
+                  "observed_side_stone_count": 20
+                },
+                "message": "visual evidence matches the requested fact",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "text_or_branding",
+                "evidence": {},
+                "message": "no text or branding detected",
+                "passed": true,
+                "severity": "hard"
+              },
+              {
+                "code": "exact_dimensions",
+                "evidence": {},
+                "message": "exact millimeters appears plausible but remains non-authoritative",
+                "passed": true,
+                "severity": "warning"
+              },
+              {
+                "code": "exact_carat",
+                "evidence": {},
+                "message": "exact carat weight appears plausible but remains non-authoritative",
+                "passed": true,
+                "severity": "warning"
+              }
+            ],
+            "qa_verdict": "warn",
+            "quality_score": 90.0,
+            "route": "openai_generate",
+            "usage": {
+              "input_tokens": 697,
+              "input_tokens_details": {
+                "image_tokens": 0,
+                "text_tokens": 697
+              },
+              "output_tokens": 1756,
+              "output_tokens_details": {
+                "image_tokens": 1756,
+                "text_tokens": 0
+              },
+              "total_tokens": 2453
+            }
+          }
+        ],
+        "error_category": null,
+        "normalized_intent": {
+          "edit_domains": [],
+          "expected_output": "one photorealistic image faithful to the validated spec",
+          "frozen": [
+            "every validated stone, setting, metal, and component fact",
+            "no text, logos, watermarks, or invented branding"
+          ],
+          "instruction": "spec-aligned source fixture for reference-backed case cushion-halo-white-6-wide",
+          "region_description": null,
+          "spec_delta": [],
+          "style_constraints": []
+        },
+        "operation": "SPEC_RENDER",
+        "output_hash": "d2d69ccd8e92d38cdc0b591451ce1e2b506d448a42d5e40197f23e3e5298c974",
+        "prompt_version": "spec-render.v3",
+        "selected_attempt": 3,
+        "source_hash": null,
+        "spec_visual_hash": "3f312bd38b7cf0cf",
+        "status": "review_required",
+        "variant": 0,
+        "verdict": "warn"
+      },
+      "attempts": 0,
+      "case": "cushion-halo-white-6-wide",
+      "hard_gate_pass": false,
+      "kind": "render",
+      "quality": {
+        "checks": [
+          {
+            "code": "decodable_image",
+            "evidence": {
+              "format": "PNG",
+              "height": 1024,
+              "width": 1024
+            },
+            "message": "candidate is a decodable raster image",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "review_resolution",
+            "evidence": {
+              "height": 1024,
+              "width": 1024
+            },
+            "message": "candidate has reviewable raster dimensions",
+            "passed": true,
+            "severity": "warning"
+          },
+          {
+            "code": "jewelry_type",
+            "evidence": {},
+            "message": "visual evidence matches the requested fact",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "major_components",
+            "evidence": {},
+            "message": "visual evidence matches the requested fact",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "center_species",
+            "evidence": {},
+            "message": "visual evidence matches the requested fact",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "cut_family",
+            "evidence": {},
+            "message": "visual evidence matches the requested fact",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "center_color",
+            "evidence": {},
+            "message": "visual evidence matches the requested fact",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "metal",
+            "evidence": {},
+            "message": "visual evidence matches the requested fact",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "setting",
+            "evidence": {},
+            "message": "visual evidence matches the requested fact",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "stone_count",
+            "evidence": {},
+            "message": "visual evidence matches the requested fact",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "render_crosscheck:jewelry_type",
+            "evidence": {
+              "differences": [],
+              "observed_prong_count": 6,
+              "observed_prong_count_complete": true,
+              "observed_side_stone_count": 20
+            },
+            "message": "visual evidence matches the requested fact",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "render_crosscheck:center_identity",
+            "evidence": {
+              "differences": [],
+              "observed_prong_count": 6,
+              "observed_prong_count_complete": true,
+              "observed_side_stone_count": 20
+            },
+            "message": "visual evidence matches the requested fact",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "render_crosscheck:center_cut",
+            "evidence": {
+              "differences": [],
+              "observed_prong_count": 6,
+              "observed_prong_count_complete": true,
+              "observed_side_stone_count": 20
+            },
+            "message": "visual evidence matches the requested fact",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "render_crosscheck:metal",
+            "evidence": {
+              "differences": [],
+              "observed_prong_count": 6,
+              "observed_prong_count_complete": true,
+              "observed_side_stone_count": 20
+            },
+            "message": "visual evidence matches the requested fact",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "render_crosscheck:setting_style",
+            "evidence": {
+              "differences": [],
+              "observed_prong_count": 6,
+              "observed_prong_count_complete": true,
+              "observed_side_stone_count": 20
+            },
+            "message": "visual evidence matches the requested fact",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "render_crosscheck:prong_count",
+            "evidence": {
+              "differences": [],
+              "observed_prong_count": 6,
+              "observed_prong_count_complete": true,
+              "observed_side_stone_count": 20
+            },
+            "message": "visual evidence matches the requested fact",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "render_crosscheck:side_stone_inventory",
+            "evidence": {
+              "differences": [],
+              "observed_prong_count": 6,
+              "observed_prong_count_complete": true,
+              "observed_side_stone_count": 20
+            },
+            "message": "independent audit could not confirm side stone inventory",
+            "passed": false,
+            "severity": "warning"
+          },
+          {
+            "code": "render_crosscheck:major_components",
+            "evidence": {
+              "differences": [],
+              "observed_prong_count": 6,
+              "observed_prong_count_complete": true,
+              "observed_side_stone_count": 20
+            },
+            "message": "visual evidence matches the requested fact",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "text_or_branding",
+            "evidence": {},
+            "message": "no text or branding detected",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "exact_dimensions",
+            "evidence": {},
+            "message": "exact millimeters appears plausible but remains non-authoritative",
+            "passed": true,
+            "severity": "warning"
+          },
+          {
+            "code": "exact_carat",
+            "evidence": {},
+            "message": "exact carat weight appears plausible but remains non-authoritative",
+            "passed": true,
+            "severity": "warning"
+          }
+        ],
+        "notes": [
+          "white metal 6-prong halo ring with vivid red cushion ruby center and round diamond halo; fully consistent with spec",
+          "6 visible center prongs",
+          "halo round diamonds match count",
+          "white high-polish metal",
+          "cushion ruby center",
+          "6 distinct prongs contact the red oval center stone",
+          "halo diamonds visible but exact total occluded at edges"
+        ],
+        "score": 90.0,
+        "verdict": "warn"
+      },
+      "reference_attempts": 3,
+      "reference_required": true,
+      "reference_stage_error": "reference_requires_review",
+      "reference_supplied": false,
+      "reference_warning_image": "cushion-halo-white-6-wide--reference-warning.png",
+      "score": 0,
+      "starting_point": "imported_reference"
+    },
+    {
+      "applied": false,
+      "attempts": 0,
+      "case": "prong-setting",
+      "expected_valid": true,
+      "golden_case": "cushion-halo-white-6-wide",
+      "issues": [],
+      "kind": "edit",
+      "precondition_error": "no_accepted_case_render",
+      "score": 0,
+      "severity": "major",
+      "starting_point": "imported_reference"
+    }
+  ],
+  "run": "designer-prong-topology-live-v4-2026-07-12",
+  "source_override": null
+}

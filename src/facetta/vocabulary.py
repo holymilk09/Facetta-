@@ -102,6 +102,21 @@ class Vocabulary:
     def trade_color_names(self, species_id: str) -> list[str]:
         return [t.term for t in self.trade_color_terms(species_id)]
 
+    def is_trade_color_value(self, species_id: str, value: str) -> bool:
+        """Accept canonical terms plus explicit data-owned legacy aliases.
+
+        Aliases keep historical DesignVersions readable; they are deliberately
+        not returned by ``trade_color_names`` and therefore never become a new
+        quick-palette choice.
+        """
+        for term in self.trade_color_terms(species_id):
+            if value == term.term:
+                return True
+            aliases = term.extras.get("legacy_aliases", ())
+            if isinstance(aliases, list) and value in aliases:
+                return True
+        return False
+
     # --- clarity ---
 
     def clarity_grade_entries(self, system: str) -> list[dict]:

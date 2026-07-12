@@ -7,16 +7,15 @@ request to the multi-image engine."""
 
 import base64
 import io
-import json
 
 import pytest
 from PIL import Image
 
 import facetta.render as render_mod
-import facetta.specagent as agent
 from facetta.housestyle import default_style_ref, list_style_refs
 from facetta.render import (
-    RenderUnavailable, STYLE_REF_RULE, edit_image, supports_style_ref,
+    MASK_GUIDE_RULE, RenderUnavailable, STYLE_REF_RULE, edit_image,
+    supports_style_ref,
 )
 
 
@@ -28,6 +27,7 @@ def _png(color) -> bytes:
 
 SOURCE = _png((10, 10, 10))
 STYLE = _png((200, 180, 40))
+MASK = _png((255, 255, 255))
 
 
 @pytest.fixture
@@ -62,7 +62,7 @@ def engine_spy(monkeypatch):
 class TestSupport:
     def test_only_the_multi_image_route_carries_style(self):
         assert supports_style_ref("grok_imagine") is True
-        assert supports_style_ref("grok_direct") is False
+        assert supports_style_ref("grok_direct") is True
         assert supports_style_ref("flux_kontext") is False
 
 
@@ -92,12 +92,65 @@ class TestEditImageWithStyle:
         assert cached is True and len(engine_spy) == 3
 
     def test_single_image_engine_fails_loudly(self, cache):
-        with pytest.raises(RenderUnavailable, match="grok_imagine"):
-            edit_image(SOURCE, "x", "grok_direct", style_ref=STYLE)
+        with pytest.raises(RenderUnavailable, match="grok_direct"):
+            edit_image(SOURCE, "x", "flux_kontext", style_ref=STYLE)
 
     def test_empty_style_ref_is_refused(self, cache):
         with pytest.raises(RenderUnavailable, match="empty"):
             edit_image(SOURCE, "x", "grok_imagine", style_ref=b"")
+
+
+class TestMaskGuide:
+    def test_direct_grok_receives_source_then_guide(self, cache, monkeypatch):
+        calls = []
+
+        class FakeResponse:
+            def raise_for_status(self):
+                pass
+
+            def json(self):
+                return {"data": [{"b64_json": base64.b64encode(
+                    b"edited").decode()}]}
+
+        def fake_post(url, json=None, timeout=None, headers=None):
+            calls.append(json)
+            return FakeResponse()
+
+        import httpx
+        monkeypatch.setattr(httpx, "post", fake_post)
+        monkeypatch.setenv("XAI_KEY", "test-key")
+
+        edit_image(SOURCE, "widen only the band", "grok_direct",
+                   mask_bytes=MASK)
+        payload = calls[0]
+        assert "image" not in payload
+        assert len(payload["images"]) == 2
+        assert payload["images"][0]["url"] != payload["images"][1]["url"]
+        assert MASK_GUIDE_RULE in payload["prompt"]
+
+    def test_mask_and_style_fit_three_reference_limit(self, cache,
+                                                       monkeypatch):
+        calls = []
+
+        class FakeResponse:
+            def raise_for_status(self):
+                pass
+
+            def json(self):
+                return {"data": [{"b64_json": base64.b64encode(
+                    b"edited").decode()}]}
+
+        def fake_post(url, json=None, timeout=None, headers=None):
+            calls.append(json)
+            return FakeResponse()
+
+        import httpx
+        monkeypatch.setattr(httpx, "post", fake_post)
+        monkeypatch.setenv("XAI_KEY", "test-key")
+
+        edit_image(SOURCE, "widen only the band", "grok_direct",
+                   mask_bytes=MASK, style_ref=STYLE)
+        assert len(calls[0]["images"]) == 3
 
 
 class TestHouseStyleSet:

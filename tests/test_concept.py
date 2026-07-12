@@ -20,6 +20,42 @@ def _valid(spec: Spec) -> bool:
 
 
 class TestCompleteDesign:
+    def test_necklace_read_stays_a_necklace_with_visible_group_counts(self):
+        read = DesignRead(
+            jewelry_type="necklace",
+            species="emerald",
+            cut="marquise",
+            center_length_mm=8.0,
+            center_width_mm=4.0,
+            metal_material="platinum",
+            setting_style="prong_4",
+            main_stone_count=5,
+            main_stone_position="vine_leaves",
+            accent_species="diamond",
+            accent_cut="round_brilliant",
+            accent_count=7,
+            chain_style="cable",
+        )
+
+        spec, corrections = complete_design(read, "platinum floral lariat necklace")
+
+        assert _valid(spec)
+        assert spec.jewelry_type == "necklace"
+        assert spec.template == "cluster_pendant"
+        assert spec.stone.species == "emerald"
+        assert spec.stone.cut == "marquise"
+        assert spec.stone.count == 5
+        assert spec.stone.position == "vine_leaves"
+        assert len(spec.side_stones) == 1
+        assert spec.side_stones[0].species == "diamond"
+        assert spec.side_stones[0].count == 7
+        assert spec.chain is not None and spec.chain.style == "cable"
+        assert spec.chain.geometry is None
+        assert spec.chain.production is None
+        assert spec.chain.pendant_connection is None
+        assert spec.band is None and spec.ring_size is None
+        assert any("main necklace group" in item for item in corrections)
+
     def test_halo_read_becomes_a_valid_spec(self):
         read = DesignRead(halo=True, species="emerald", cut="emerald",
                           center_length_mm=13, center_width_mm=10,
@@ -36,7 +72,6 @@ class TestCompleteDesign:
                           center_width_mm=7, metal_material="gold",
                           metal_color="yellow")
         spec, _ = complete_design(read, "sapphire solitaire")
-        d = spec.stone.dimensions_mm
         expect = validate_spec(spec, VOCAB)  # density is one of its checks
         assert expect.ok
         assert spec.template == "solitaire_prong"
@@ -47,7 +82,6 @@ class TestCompleteDesign:
                           center_length_mm=6, center_width_mm=6,
                           metal_material="platinum")
         spec, corrections = complete_design(read, "small halo")
-        melee = spec.side_stones[0]
         # the count is exactly what physically fits — validation agrees
         assert _valid(spec)
         assert any("halo sized to" in c for c in corrections)

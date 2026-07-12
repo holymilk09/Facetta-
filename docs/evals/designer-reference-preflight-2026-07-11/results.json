@@ -1,0 +1,255 @@
+{
+  "corpus": "designer-reference-corpus-v1",
+  "provider_readiness": {
+    "fallback_configured": false,
+    "xai_configured": true
+  },
+  "rows": [
+    {
+      "case": "leaf-ring-measured-green",
+      "category": "ring",
+      "input_kind": "measured_colored_design_plate",
+      "source": {
+        "available": true,
+        "decodable": true,
+        "format": "JPEG",
+        "hash_matches": true,
+        "path": "/Users/mattfb/.codex/attachments/c2fd41d0-b236-43ef-ada9-e9479718c771/image-86.jpg",
+        "sha256": "3aa96aac909bc806b4f93f4f8f995acb03ba41e9ebf5771bad3bed7a5af1289d",
+        "size": [
+          1440,
+          1930
+        ]
+      },
+      "workflows": [
+        "plate_read",
+        "draft_spec",
+        "beauty_render",
+        "lineart",
+        "factory_sheet",
+        "localized_edit"
+      ]
+    },
+    {
+      "case": "leaf-ring-measured-pink",
+      "category": "ring",
+      "input_kind": "measured_colored_design_plate",
+      "source": {
+        "available": true,
+        "decodable": true,
+        "format": "JPEG",
+        "hash_matches": true,
+        "path": "/Users/mattfb/.codex/attachments/c2fd41d0-b236-43ef-ada9-e9479718c771/image-106.jpg",
+        "sha256": "22926da408316d9ebddddeda3585b06d096d85525e08be4e31a6c2ffad61df48",
+        "size": [
+          1440,
+          1930
+        ]
+      },
+      "workflows": [
+        "plate_read",
+        "localized_edit_ground_truth"
+      ]
+    },
+    {
+      "case": "geometric-emerald-ring",
+      "category": "ring",
+      "input_kind": "multi_view_line_and_color_plate",
+      "source": {
+        "available": true,
+        "decodable": true,
+        "format": "JPEG",
+        "hash_matches": true,
+        "path": "/Users/mattfb/.codex/attachments/c2fd41d0-b236-43ef-ada9-e9479718c771/image-78.jpg",
+        "sha256": "b9c4e35bc0f6cfe40417577bd3bb6cde9ed983e0c9e11d24531bba6bef9ea831",
+        "size": [
+          1440,
+          2036
+        ]
+      },
+      "workflows": [
+        "plate_read",
+        "beauty_render",
+        "lineart",
+        "factory_sheet",
+        "localized_edit"
+      ]
+    },
+    {
+      "case": "ribbon-cushion-ring",
+      "category": "ring",
+      "input_kind": "multi_view_colored_design_plate",
+      "source": {
+        "available": true,
+        "decodable": true,
+        "format": "JPEG",
+        "hash_matches": true,
+        "path": "/Users/mattfb/.codex/attachments/c2fd41d0-b236-43ef-ada9-e9479718c771/image-67.jpg",
+        "sha256": "8da9ebf5d9c8f6cc14e8014a99445b72ab9c8c92b0e7dd8a9558bea13d926ad5",
+        "size": [
+          1440,
+          2036
+        ]
+      },
+      "workflows": [
+        "plate_read",
+        "beauty_render",
+        "lineart",
+        "factory_sheet"
+      ]
+    },
+    {
+      "case": "heart-kinetic-ring",
+      "category": "ring",
+      "input_kind": "measured_construction_plate",
+      "source": {
+        "available": true,
+        "decodable": true,
+        "format": "JPEG",
+        "hash_matches": true,
+        "path": "/Users/mattfb/.codex/attachments/c2fd41d0-b236-43ef-ada9-e9479718c771/image-92.jpg",
+        "sha256": "09ce09fdcc98851652f74d2738be3567c57564d2278a2a1fffdd080381fe1767",
+        "size": [
+          1080,
+          1440
+        ]
+      },
+      "workflows": [
+        "plate_read",
+        "beauty_render",
+        "lineart",
+        "factory_sheet"
+      ]
+    },
+    {
+      "case": "lineart-color-pair",
+      "category": "earrings",
+      "input_kind": "lineart_and_colored_pair",
+      "source": {
+        "available": true,
+        "decodable": true,
+        "format": "JPEG",
+        "hash_matches": true,
+        "path": "/Users/mattfb/.codex/attachments/c2fd41d0-b236-43ef-ada9-e9479718c771/image-19.jpg",
+        "sha256": "412d6174a3918e830941050ecf60107ad8b6068ffca025b144b8f06934e0f7c9",
+        "size": [
+          1440,
+          1920
+        ]
+      },
+      "workflows": [
+        "lineart_colorize",
+        "plate_read"
+      ]
+    },
+    {
+      "case": "emerald-drop-earrings",
+      "category": "earrings",
+      "input_kind": "multi_view_colored_design_plate",
+      "source": {
+        "available": true,
+        "decodable": true,
+        "format": "JPEG",
+        "hash_matches": true,
+        "path": "/Users/mattfb/.codex/attachments/c2fd41d0-b236-43ef-ada9-e9479718c771/image-32.jpg",
+        "sha256": "8e241e8bb24dd109b7ad8a1778b07db734cc40240b8528dfe09556eb4109e46f",
+        "size": [
+          1440,
+          1440
+        ]
+      },
+      "workflows": [
+        "plate_read",
+        "lineart",
+        "factory_sheet"
+      ]
+    },
+    {
+      "case": "emerald-necklace-measured",
+      "category": "necklace",
+      "input_kind": "measured_colored_design_plate",
+      "source": {
+        "available": true,
+        "decodable": true,
+        "format": "JPEG",
+        "hash_matches": true,
+        "path": "/Users/mattfb/.codex/attachments/c2fd41d0-b236-43ef-ada9-e9479718c771/image-44.jpg",
+        "sha256": "975e44d816096b3c6035b7e6a15bdf44a142283d946e707217842e51e75a3c2f",
+        "size": [
+          1440,
+          1800
+        ]
+      },
+      "workflows": [
+        "plate_read",
+        "factory_sheet"
+      ]
+    },
+    {
+      "case": "kingfisher-ecommerce-inspiration",
+      "category": "ring",
+      "input_kind": "inspiration_and_product_composite",
+      "source": {
+        "available": true,
+        "decodable": true,
+        "format": "JPEG",
+        "hash_matches": true,
+        "path": "/Users/mattfb/.codex/attachments/c2fd41d0-b236-43ef-ada9-e9479718c771/image-98.jpg",
+        "sha256": "ae903d13b586d4e316367858acbbe257ce4a6f11d1b9309c0a2cc3f7a50e473a",
+        "size": [
+          1440,
+          1930
+        ]
+      },
+      "workflows": [
+        "plate_read",
+        "ecommerce_scene",
+        "inspiration_to_render"
+      ]
+    },
+    {
+      "case": "factory-orthographic-benchmark",
+      "category": "ring",
+      "input_kind": "factory_orthographic_reference",
+      "source": {
+        "available": true,
+        "decodable": true,
+        "format": "JPEG",
+        "hash_matches": true,
+        "path": "/Users/mattfb/.codex/attachments/c2fd41d0-b236-43ef-ada9-e9479718c771/image-115.jpg",
+        "sha256": "16ba7f0addbad9e76ed523c574579ced742f9ab5cceddd90a0b842be5bc94538",
+        "size": [
+          1284,
+          1264
+        ]
+      },
+      "workflows": [
+        "factory_sheet_quality_reference"
+      ]
+    },
+    {
+      "case": "heart-ring-material-variants",
+      "category": "ring",
+      "input_kind": "material_variant_plate",
+      "source": {
+        "available": true,
+        "decodable": true,
+        "format": "JPEG",
+        "hash_matches": true,
+        "path": "/Users/mattfb/.codex/attachments/c2fd41d0-b236-43ef-ada9-e9479718c771/image-137.jpg",
+        "sha256": "328fe727af59c310658222e12dc4d59cfd9f7ca8af6f9105a6aff6fd95643377",
+        "size": [
+          1440,
+          1440
+        ]
+      },
+      "workflows": [
+        "variant_consistency",
+        "plate_read"
+      ]
+    }
+  ],
+  "run": "designer-reference-preflight-2026-07-11",
+  "source_policy": "Founder-supplied evaluation references only. Do not publish, train on, or treat as customer-owned production assets. Third-party branding and social watermarks must never appear in accepted outputs.",
+  "stage": "preflight"
+}

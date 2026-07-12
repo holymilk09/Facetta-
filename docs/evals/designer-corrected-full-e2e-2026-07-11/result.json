@@ -1,0 +1,2569 @@
+{
+  "checklist": {
+    "asset_id": "ast_bf6ef90f143f4dd8",
+    "checklist_id": "chk_43364f07e5d5e351",
+    "design_id": "dsn_de5c0378a002287f",
+    "design_version": 1,
+    "items": [
+      {
+        "fact": "2.26 ct emerald \u00b7 emerald cut \u00b7 8 \u00d7 8 \u00d7 5.2 mm",
+        "index": null,
+        "key": "stone",
+        "label": "Center stone",
+        "question": "Is the center stone right?",
+        "ref": "A",
+        "section": "stone"
+      },
+      {
+        "fact": "12 \u00d7 diamond marquise \u00b7 2.5 \u00d7 1.3 \u00d7 0.8 mm \u00b7 0.18 ct total",
+        "index": 0,
+        "key": "side_stones[0]",
+        "label": "Side stones 1",
+        "question": "Are the side stones 1 right?",
+        "ref": "B",
+        "section": "side_stones"
+      },
+      {
+        "fact": "24 \u00d7 diamond round brilliant \u00b7 1.2 \u00d7 1.2 \u00d7 0.7 mm \u00b7 0.17 ct total",
+        "index": 1,
+        "key": "side_stones[1]",
+        "label": "Side stones 2",
+        "question": "Are the side stones 2 right?",
+        "ref": "C",
+        "section": "side_stones"
+      },
+      {
+        "fact": "4 Prong Basket \u00b7 gallery 4.2 mm",
+        "index": null,
+        "key": "setting",
+        "label": "Setting",
+        "question": "Is the setting right?",
+        "ref": null,
+        "section": "setting"
+      },
+      {
+        "fact": "18k Yellow Gold \u00b7 high polish",
+        "index": null,
+        "key": "metal",
+        "label": "Metal & finish",
+        "question": "Are the metal and finish right?",
+        "ref": null,
+        "section": "metal"
+      },
+      {
+        "fact": "comfort fit \u00b7 2.2 \u00d7 1.6 mm",
+        "index": null,
+        "key": "band",
+        "label": "Band",
+        "question": "Is the band right?",
+        "ref": null,
+        "section": "band"
+      },
+      {
+        "fact": "US 6.5 \u00b7 \u2300 16.9 mm",
+        "index": null,
+        "key": "ring_size",
+        "label": "Ring size",
+        "question": "Is the ring size right?",
+        "ref": null,
+        "section": "ring_size"
+      }
+    ],
+    "mode": "auto_pin",
+    "status": {
+      "all_approved": false,
+      "answered": 0,
+      "approved": 0,
+      "declined": [],
+      "outstanding": [
+        "stone",
+        "side_stones[0]",
+        "side_stones[1]",
+        "setting",
+        "metal",
+        "band",
+        "ring_size"
+      ],
+      "total": 7
+    },
+    "version": 1
+  },
+  "checklist_responses": [
+    {
+      "approved": true,
+      "checklist_id": "chk_43364f07e5d5e351",
+      "item_key": "stone",
+      "pinned": false,
+      "status": {
+        "all_approved": false,
+        "answered": 1,
+        "approved": 1,
+        "declined": [],
+        "outstanding": [
+          "side_stones[0]",
+          "side_stones[1]",
+          "setting",
+          "metal",
+          "band",
+          "ring_size"
+        ],
+        "total": 7
+      }
+    },
+    {
+      "approved": true,
+      "checklist_id": "chk_43364f07e5d5e351",
+      "item_key": "side_stones[0]",
+      "pinned": false,
+      "status": {
+        "all_approved": false,
+        "answered": 2,
+        "approved": 2,
+        "declined": [],
+        "outstanding": [
+          "side_stones[1]",
+          "setting",
+          "metal",
+          "band",
+          "ring_size"
+        ],
+        "total": 7
+      }
+    },
+    {
+      "approved": true,
+      "checklist_id": "chk_43364f07e5d5e351",
+      "item_key": "side_stones[1]",
+      "pinned": false,
+      "status": {
+        "all_approved": false,
+        "answered": 3,
+        "approved": 3,
+        "declined": [],
+        "outstanding": [
+          "setting",
+          "metal",
+          "band",
+          "ring_size"
+        ],
+        "total": 7
+      }
+    },
+    {
+      "approved": true,
+      "checklist_id": "chk_43364f07e5d5e351",
+      "item_key": "setting",
+      "pinned": false,
+      "status": {
+        "all_approved": false,
+        "answered": 4,
+        "approved": 4,
+        "declined": [],
+        "outstanding": [
+          "metal",
+          "band",
+          "ring_size"
+        ],
+        "total": 7
+      }
+    },
+    {
+      "approved": true,
+      "checklist_id": "chk_43364f07e5d5e351",
+      "item_key": "metal",
+      "pinned": false,
+      "status": {
+        "all_approved": false,
+        "answered": 5,
+        "approved": 5,
+        "declined": [],
+        "outstanding": [
+          "band",
+          "ring_size"
+        ],
+        "total": 7
+      }
+    },
+    {
+      "approved": true,
+      "checklist_id": "chk_43364f07e5d5e351",
+      "item_key": "band",
+      "pinned": false,
+      "status": {
+        "all_approved": false,
+        "answered": 6,
+        "approved": 6,
+        "declined": [],
+        "outstanding": [
+          "ring_size"
+        ],
+        "total": 7
+      }
+    },
+    {
+      "approved": true,
+      "checklist_id": "chk_43364f07e5d5e351",
+      "item_key": "ring_size",
+      "message": "All 7 checks approved \u2014 pinned version 1 for factory",
+      "pinned": true,
+      "pinned_version": 1,
+      "status": {
+        "all_approved": true,
+        "answered": 7,
+        "approved": 7,
+        "declined": [],
+        "outstanding": [],
+        "total": 7
+      }
+    }
+  ],
+  "color": {
+    "body": {
+      "candidate": {
+        "asset_capability": "COLORED_LINE_ART",
+        "candidate_id": "cand_50fe5943429be7e2",
+        "operation": "VISUAL_ONLY_EDIT",
+        "preview_url": "/image-runs/run_7da7b164f16d8c54/candidates/cand_50fe5943429be7e2/image",
+        "qa": {
+          "accepted": false,
+          "checks": [
+            {
+              "code": "decodable_image",
+              "evidence": {
+                "format": "JPEG",
+                "height": 1136,
+                "width": 912
+              },
+              "message": "candidate is a decodable raster image",
+              "passed": true,
+              "severity": "hard"
+            },
+            {
+              "code": "review_resolution",
+              "evidence": {
+                "height": 1136,
+                "width": 912
+              },
+              "message": "candidate has reviewable raster dimensions",
+              "passed": true,
+              "severity": "warning"
+            },
+            {
+              "code": "candidate_changed",
+              "evidence": {},
+              "message": "candidate bytes differ from the source",
+              "passed": true,
+              "severity": "hard"
+            },
+            {
+              "code": "requested_change",
+              "evidence": {},
+              "message": "visual evidence matches the requested fact",
+              "passed": true,
+              "severity": "hard"
+            },
+            {
+              "code": "protected_regions",
+              "evidence": {},
+              "message": "visual evidence matches the requested fact",
+              "passed": true,
+              "severity": "hard"
+            },
+            {
+              "code": "unintended_drift",
+              "evidence": {
+                "changes": [],
+                "severity": "none"
+              },
+              "message": "no unintended changes detected",
+              "passed": true,
+              "severity": "warning"
+            },
+            {
+              "code": "geometry_preserved",
+              "evidence": {},
+              "message": "visual evidence matches the requested fact",
+              "passed": true,
+              "severity": "hard"
+            },
+            {
+              "code": "text_or_branding",
+              "evidence": {},
+              "message": "no text or branding introduced",
+              "passed": true,
+              "severity": "hard"
+            },
+            {
+              "code": "approved_source_material_identity",
+              "evidence": {
+                "checked": true,
+                "differences": [
+                  "deterministic raster audit found widespread white-stone regions converted to gold"
+                ],
+                "raster_white_to_gold": {
+                  "checked": true,
+                  "failed": true,
+                  "source_white_feature_pixels": 8796,
+                  "white_to_gold_pixels": 2915,
+                  "white_to_gold_ratio": 0.331401
+                },
+                "sample_verdicts": [
+                  {
+                    "checked": true,
+                    "consistent": true,
+                    "severity": "none"
+                  },
+                  {
+                    "checked": true,
+                    "consistent": true,
+                    "severity": "none"
+                  }
+                ],
+                "severity": "disagreement"
+              },
+              "message": "material identity requires designer review because automated checks disagree: deterministic raster audit found widespread white-stone regions converted to gold",
+              "passed": false,
+              "severity": "warning"
+            }
+          ],
+          "failed_checks": [
+            "approved_source_material_identity"
+          ],
+          "notes": [
+            "Center emerald-cut emerald in green applied; 18k yellow gold metal applied; marquise + round diamonds on leaf shoulders match spec; geometry and proportions identical to line drawing",
+            "deterministic raster audit found widespread white-stone regions converted to gold"
+          ],
+          "review_required": true,
+          "score": 82.0,
+          "summary": "Image needs explicit designer review.",
+          "verdict": "warn",
+          "warnings": [
+            "material identity requires designer review because automated checks disagree: deterministic raster audit found widespread white-stone regions converted to gold"
+          ]
+        },
+        "requested_change": "Apply controlled jeweler's color to this designer-confirmed line drawing using only the validated specification. center: emerald emerald cut in Muzo Green; side groups: 12 diamond marquise at diamond-set leaf shoulders; 24 diamond round brilliant at diamond-set leaf shoulders. Metal: 18k yellow gold.",
+        "run_id": "run_7da7b164f16d8c54"
+      },
+      "image_run_id": "run_7da7b164f16d8c54",
+      "project_id": "ast_bf6ef90f143f4dd8",
+      "quality_report": {
+        "accepted": false,
+        "checks": [
+          {
+            "code": "decodable_image",
+            "evidence": {
+              "format": "JPEG",
+              "height": 1136,
+              "width": 912
+            },
+            "message": "candidate is a decodable raster image",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "review_resolution",
+            "evidence": {
+              "height": 1136,
+              "width": 912
+            },
+            "message": "candidate has reviewable raster dimensions",
+            "passed": true,
+            "severity": "warning"
+          },
+          {
+            "code": "candidate_changed",
+            "evidence": {},
+            "message": "candidate bytes differ from the source",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "requested_change",
+            "evidence": {},
+            "message": "visual evidence matches the requested fact",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "protected_regions",
+            "evidence": {},
+            "message": "visual evidence matches the requested fact",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "unintended_drift",
+            "evidence": {
+              "changes": [],
+              "severity": "none"
+            },
+            "message": "no unintended changes detected",
+            "passed": true,
+            "severity": "warning"
+          },
+          {
+            "code": "geometry_preserved",
+            "evidence": {},
+            "message": "visual evidence matches the requested fact",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "text_or_branding",
+            "evidence": {},
+            "message": "no text or branding introduced",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "approved_source_material_identity",
+            "evidence": {
+              "checked": true,
+              "differences": [
+                "deterministic raster audit found widespread white-stone regions converted to gold"
+              ],
+              "raster_white_to_gold": {
+                "checked": true,
+                "failed": true,
+                "source_white_feature_pixels": 8796,
+                "white_to_gold_pixels": 2915,
+                "white_to_gold_ratio": 0.331401
+              },
+              "sample_verdicts": [
+                {
+                  "checked": true,
+                  "consistent": true,
+                  "severity": "none"
+                },
+                {
+                  "checked": true,
+                  "consistent": true,
+                  "severity": "none"
+                }
+              ],
+              "severity": "disagreement"
+            },
+            "message": "material identity requires designer review because automated checks disagree: deterministic raster audit found widespread white-stone regions converted to gold",
+            "passed": false,
+            "severity": "warning"
+          }
+        ],
+        "failed_checks": [
+          "approved_source_material_identity"
+        ],
+        "notes": [
+          "Center emerald-cut emerald in green applied; 18k yellow gold metal applied; marquise + round diamonds on leaf shoulders match spec; geometry and proportions identical to line drawing",
+          "deterministic raster audit found widespread white-stone regions converted to gold"
+        ],
+        "review_required": true,
+        "score": 82.0,
+        "summary": "Image needs explicit designer review.",
+        "verdict": "warn",
+        "warnings": [
+          "material identity requires designer review because automated checks disagree: deterministic raster audit found widespread white-stone regions converted to gold"
+        ]
+      },
+      "routing": {
+        "attempt_count": 1,
+        "cache_hit": false,
+        "run_id": "run_7da7b164f16d8c54",
+        "used_fallback": false,
+        "used_retry": false
+      },
+      "status": "review_required"
+    },
+    "http_status": 202,
+    "run": {
+      "accepted": true,
+      "accepted_asset_id": "ast_2980132bedad6471",
+      "attempts": [
+        {
+          "attempt": 1,
+          "attempt_id": "iat_bdc894cf96a53974",
+          "attempt_number": 1,
+          "cache_hit": false,
+          "cache_key": "0fd78cc1bca36a2791cbdf209973813bf7612d984ec8b525d460c4eb9a605d6d",
+          "cached": false,
+          "correction": null,
+          "corrective_instruction": null,
+          "cost": null,
+          "created_at": "2026-07-11T02:41:14.277973",
+          "engine_role": "primary",
+          "error_category": null,
+          "failed_checks": [
+            "approved_source_material_identity"
+          ],
+          "fallback_reason": null,
+          "latency_ms": 32248,
+          "model": "grok_direct",
+          "output_hash": "d315304e2aa5022a2c588951c76a6f753a7944e2bc136f76939bc4f5acdd3db1",
+          "prompt_hash": "4da4f50512827c9824e72631b1013a6821085d2dea749078798816758a950418",
+          "provider": "xai",
+          "provider_request_id": null,
+          "qa_checks": [
+            {
+              "code": "decodable_image",
+              "evidence": {
+                "format": "JPEG",
+                "height": 1136,
+                "width": 912
+              },
+              "message": "candidate is a decodable raster image",
+              "passed": true,
+              "severity": "hard"
+            },
+            {
+              "code": "review_resolution",
+              "evidence": {
+                "height": 1136,
+                "width": 912
+              },
+              "message": "candidate has reviewable raster dimensions",
+              "passed": true,
+              "severity": "warning"
+            },
+            {
+              "code": "candidate_changed",
+              "evidence": {},
+              "message": "candidate bytes differ from the source",
+              "passed": true,
+              "severity": "hard"
+            },
+            {
+              "code": "requested_change",
+              "evidence": {},
+              "message": "visual evidence matches the requested fact",
+              "passed": true,
+              "severity": "hard"
+            },
+            {
+              "code": "protected_regions",
+              "evidence": {},
+              "message": "visual evidence matches the requested fact",
+              "passed": true,
+              "severity": "hard"
+            },
+            {
+              "code": "unintended_drift",
+              "evidence": {
+                "changes": [],
+                "severity": "none"
+              },
+              "message": "no unintended changes detected",
+              "passed": true,
+              "severity": "warning"
+            },
+            {
+              "code": "geometry_preserved",
+              "evidence": {},
+              "message": "visual evidence matches the requested fact",
+              "passed": true,
+              "severity": "hard"
+            },
+            {
+              "code": "text_or_branding",
+              "evidence": {},
+              "message": "no text or branding introduced",
+              "passed": true,
+              "severity": "hard"
+            },
+            {
+              "code": "approved_source_material_identity",
+              "evidence": {
+                "checked": true,
+                "differences": [
+                  "deterministic raster audit found widespread white-stone regions converted to gold"
+                ],
+                "raster_white_to_gold": {
+                  "checked": true,
+                  "failed": true,
+                  "source_white_feature_pixels": 8796,
+                  "white_to_gold_pixels": 2915,
+                  "white_to_gold_ratio": 0.331401
+                },
+                "sample_verdicts": [
+                  {
+                    "checked": true,
+                    "consistent": true,
+                    "severity": "none"
+                  },
+                  {
+                    "checked": true,
+                    "consistent": true,
+                    "severity": "none"
+                  }
+                ],
+                "severity": "disagreement"
+              },
+              "message": "material identity requires designer review because automated checks disagree: deterministic raster audit found widespread white-stone regions converted to gold",
+              "passed": false,
+              "severity": "warning"
+            }
+          ],
+          "qa_verdict": "warn",
+          "usage": {},
+          "verdict": "warn"
+        }
+      ],
+      "completed_at": "2026-07-11T02:41:14.277973",
+      "created_at": "2026-07-11T02:41:14.278106",
+      "created_by": "usr_test_designer",
+      "error_category": null,
+      "input_hash": "76403538936b10db3a449b896d387b07c2ac47be46478249524190699b11e9dc",
+      "mask_hash": null,
+      "normalized_intent": {
+        "expected_output": "one spec-colored technical illustration with the confirmed line geometry unchanged",
+        "frozen": [
+          "all jewelry geometry, stones, setting, proportions, and metal identity",
+          "the complete validated specification",
+          "every confirmed line, outline, stone count, component, and spatial relationship",
+          "the exact validated specification"
+        ],
+        "instruction": "Apply controlled jeweler's color to this designer-confirmed line drawing using only the validated specification. center: emerald emerald cut in Muzo Green; side groups: 12 diamond marquise at diamond-set leaf shoulders; 24 diamond round brilliant at diamond-set leaf shoulders. Metal: 18k yellow gold.",
+        "region_description": null,
+        "spec_delta": [],
+        "style_constraints": [
+          "the confirmed black outline geometry is locked pixel-for-structure: add no, remove no, move no, or reshape no element",
+          "fill color within the existing jewelry outlines with restrained realistic facet shading",
+          "every marquise leaf outline and tiny round pave point named as diamond in the specification must remain a bright colorless faceted diamond, never yellow, gold, or plain metal",
+          "apply yellow gold only to structural metal between and around gemstone outlines; never flood-fill a diamond-bearing leaf motif as solid gold",
+          "keep each stone distinct and preserve the plain white background",
+          "no labels, numbers, text, logo, watermark, title block, or new line work"
+        ]
+      },
+      "operation": "VISUAL_ONLY_EDIT",
+      "output_hash": "d315304e2aa5022a2c588951c76a6f753a7944e2bc136f76939bc4f5acdd3db1",
+      "project_id": "ast_bf6ef90f143f4dd8",
+      "prompt_contract_version": "visual-only-edit.v1",
+      "prompt_version": "visual-only-edit.v1",
+      "review_decision": "accepted",
+      "review_required": false,
+      "reviewed_at": "2026-07-11T02:41:14.283614",
+      "reviewed_by": "usr_test_actor_unapproved",
+      "run_id": "run_7da7b164f16d8c54",
+      "source_asset_id": "ast_154fe154be5dc359",
+      "source_hash": "bfb0551f693d15f102c3f03e95d1647bed459cbcfbd2b783c953380b5540d73f",
+      "spec_visual_hash": "fc566aa713967384",
+      "status": "accepted",
+      "stored_status": "review_required",
+      "variant": 0,
+      "verdict": "warn"
+    },
+    "test_actor_review_project": {
+      "active_asset_id": "ast_bf6ef90f143f4dd8",
+      "active_design_version": 1,
+      "active_revision": {
+        "asset_id": "ast_bf6ef90f143f4dd8",
+        "capability": "IMPORTED_REFERENCE",
+        "created_at": "2026-07-11T02:40:21.296753",
+        "created_by": "usr_test_designer",
+        "design_version": 1,
+        "image_url": "/assets/ast_bf6ef90f143f4dd8/image",
+        "instruction": "Designer-confirmed imported reference",
+        "legacy_provenance": false,
+        "media_type": "image/jpeg",
+        "pinned": false,
+        "provenance": "imported_reference",
+        "revision": 1,
+        "root_id": "ast_bf6ef90f143f4dd8"
+      },
+      "assets": [
+        {
+          "asset_id": "ast_bf6ef90f143f4dd8",
+          "capability": "IMPORTED_REFERENCE",
+          "created_at": "2026-07-11T02:40:21.296753",
+          "created_by": "usr_test_designer",
+          "design_version": 1,
+          "image_url": "/assets/ast_bf6ef90f143f4dd8/image",
+          "instruction": "Designer-confirmed imported reference",
+          "legacy_provenance": false,
+          "media_type": "image/jpeg",
+          "pinned": false,
+          "provenance": "imported_reference",
+          "revision": 1,
+          "root_id": "ast_bf6ef90f143f4dd8"
+        },
+        {
+          "asset_id": "ast_154fe154be5dc359",
+          "capability": "LINE_ART",
+          "created_at": "2026-07-11T02:40:42.023598",
+          "created_by": "usr_test_actor_unapproved",
+          "design_version": 1,
+          "image_url": "/assets/ast_154fe154be5dc359/image",
+          "instruction": "Convert this exact approved ring into one clean black technical line-art three-quarter view. Remove photography, paint, paper texture, shadows, annotations, and background only.",
+          "legacy_provenance": false,
+          "media_type": "image/jpeg",
+          "parent_asset_id": "ast_bf6ef90f143f4dd8",
+          "pinned": false,
+          "provenance": "designer_confirmed_line_art",
+          "region": "entire confirmed three_quarter line-art view",
+          "root_id": "ast_bf6ef90f143f4dd8"
+        },
+        {
+          "asset_id": "ast_2980132bedad6471",
+          "capability": "COLORED_LINE_ART",
+          "created_at": "2026-07-11T02:41:14.283517",
+          "created_by": "usr_test_actor_unapproved",
+          "design_version": 1,
+          "image_url": "/assets/ast_2980132bedad6471/image",
+          "instruction": "Apply controlled jeweler's color to this designer-confirmed line drawing using only the validated specification. center: emerald emerald cut in Muzo Green; side groups: 12 diamond marquise at diamond-set leaf shoulders; 24 diamond round brilliant at diamond-set leaf shoulders. Metal: 18k yellow gold.",
+          "legacy_provenance": false,
+          "media_type": "image/jpeg",
+          "parent_asset_id": "ast_154fe154be5dc359",
+          "pinned": false,
+          "provenance": "spec_colored_line_art",
+          "region": "inside the confirmed line-art geometry only",
+          "root_id": "ast_bf6ef90f143f4dd8"
+        }
+      ],
+      "collection": "Founder reference acceptance",
+      "counts": {
+        "COLORED_LINE_ART": 1,
+        "IMPORTED_REFERENCE": 1,
+        "LINE_ART": 1
+      },
+      "cover_asset_id": "ast_bf6ef90f143f4dd8",
+      "created_at": "2026-07-11T02:40:21.296753",
+      "derived_assets": [
+        {
+          "asset_id": "ast_154fe154be5dc359",
+          "capability": "LINE_ART",
+          "created_at": "2026-07-11T02:40:42.023598",
+          "created_by": "usr_test_actor_unapproved",
+          "design_version": 1,
+          "image_url": "/assets/ast_154fe154be5dc359/image",
+          "instruction": "Convert this exact approved ring into one clean black technical line-art three-quarter view. Remove photography, paint, paper texture, shadows, annotations, and background only.",
+          "legacy_provenance": false,
+          "media_type": "image/jpeg",
+          "parent_asset_id": "ast_bf6ef90f143f4dd8",
+          "pinned": false,
+          "provenance": "designer_confirmed_line_art",
+          "region": "entire confirmed three_quarter line-art view",
+          "root_id": "ast_bf6ef90f143f4dd8"
+        },
+        {
+          "asset_id": "ast_2980132bedad6471",
+          "capability": "COLORED_LINE_ART",
+          "created_at": "2026-07-11T02:41:14.283517",
+          "created_by": "usr_test_actor_unapproved",
+          "design_version": 1,
+          "image_url": "/assets/ast_2980132bedad6471/image",
+          "instruction": "Apply controlled jeweler's color to this designer-confirmed line drawing using only the validated specification. center: emerald emerald cut in Muzo Green; side groups: 12 diamond marquise at diamond-set leaf shoulders; 24 diamond round brilliant at diamond-set leaf shoulders. Metal: 18k yellow gold.",
+          "legacy_provenance": false,
+          "media_type": "image/jpeg",
+          "parent_asset_id": "ast_154fe154be5dc359",
+          "pinned": false,
+          "provenance": "spec_colored_line_art",
+          "region": "inside the confirmed line-art geometry only",
+          "root_id": "ast_bf6ef90f143f4dd8"
+        }
+      ],
+      "design_id": "dsn_de5c0378a002287f",
+      "factory_ready": false,
+      "has_factory_drawing": false,
+      "id": "ast_bf6ef90f143f4dd8",
+      "image_run_ids": [
+        "run_e3b4e1cc86afe28c",
+        "run_7da7b164f16d8c54"
+      ],
+      "item_count": 3,
+      "items": [
+        {
+          "asset_id": "ast_bf6ef90f143f4dd8",
+          "capability": "IMPORTED_REFERENCE",
+          "created_at": "2026-07-11T02:40:21.296753",
+          "created_by": "usr_test_designer",
+          "design_version": 1,
+          "image_url": "/assets/ast_bf6ef90f143f4dd8/image",
+          "instruction": "Designer-confirmed imported reference",
+          "legacy_provenance": false,
+          "media_type": "image/jpeg",
+          "pinned": false,
+          "provenance": "imported_reference",
+          "revision": 1,
+          "root_id": "ast_bf6ef90f143f4dd8"
+        },
+        {
+          "asset_id": "ast_154fe154be5dc359",
+          "capability": "LINE_ART",
+          "created_at": "2026-07-11T02:40:42.023598",
+          "created_by": "usr_test_actor_unapproved",
+          "design_version": 1,
+          "image_url": "/assets/ast_154fe154be5dc359/image",
+          "instruction": "Convert this exact approved ring into one clean black technical line-art three-quarter view. Remove photography, paint, paper texture, shadows, annotations, and background only.",
+          "legacy_provenance": false,
+          "media_type": "image/jpeg",
+          "parent_asset_id": "ast_bf6ef90f143f4dd8",
+          "pinned": false,
+          "provenance": "designer_confirmed_line_art",
+          "region": "entire confirmed three_quarter line-art view",
+          "root_id": "ast_bf6ef90f143f4dd8"
+        },
+        {
+          "asset_id": "ast_2980132bedad6471",
+          "capability": "COLORED_LINE_ART",
+          "created_at": "2026-07-11T02:41:14.283517",
+          "created_by": "usr_test_actor_unapproved",
+          "design_version": 1,
+          "image_url": "/assets/ast_2980132bedad6471/image",
+          "instruction": "Apply controlled jeweler's color to this designer-confirmed line drawing using only the validated specification. center: emerald emerald cut in Muzo Green; side groups: 12 diamond marquise at diamond-set leaf shoulders; 24 diamond round brilliant at diamond-set leaf shoulders. Metal: 18k yellow gold.",
+          "legacy_provenance": false,
+          "media_type": "image/jpeg",
+          "parent_asset_id": "ast_154fe154be5dc359",
+          "pinned": false,
+          "provenance": "spec_colored_line_art",
+          "region": "inside the confirmed line-art geometry only",
+          "root_id": "ast_bf6ef90f143f4dd8"
+        }
+      ],
+      "latest_design_version": 1,
+      "owner": "usr_test_designer",
+      "primary_revision_count": 1,
+      "revisions": [
+        {
+          "asset_id": "ast_bf6ef90f143f4dd8",
+          "capability": "IMPORTED_REFERENCE",
+          "created_at": "2026-07-11T02:40:21.296753",
+          "created_by": "usr_test_designer",
+          "design_version": 1,
+          "image_url": "/assets/ast_bf6ef90f143f4dd8/image",
+          "instruction": "Designer-confirmed imported reference",
+          "legacy_provenance": false,
+          "media_type": "image/jpeg",
+          "pinned": false,
+          "provenance": "imported_reference",
+          "revision": 1,
+          "root_id": "ast_bf6ef90f143f4dd8"
+        }
+      ],
+      "root_id": "ast_bf6ef90f143f4dd8",
+      "spec": {
+        "band": {
+          "profile": "comfort_fit",
+          "thickness_mm": 1.6,
+          "width_mm": 2.2
+        },
+        "bracelet": null,
+        "brooch": null,
+        "chain": null,
+        "composition": null,
+        "created_at": "2026-07-11T02:40:21.296753Z",
+        "created_by": "usr_test_designer",
+        "design_id": "dsn_de5c0378a002287f",
+        "drop": null,
+        "jewelry_type": "ring",
+        "metal": {
+          "color": "yellow",
+          "finish": "high_polish",
+          "karat": 18,
+          "material": "gold"
+        },
+        "mode": "pro",
+        "notes_to_factory": "TEST DESIGNER-CONFIRMED SPEC: emerald center and diamond-set leaf shoulders. Side-stone sizes and counts are explicit test values for workflow validation, not measurements extracted from the photograph.",
+        "pendant": null,
+        "ring_size": {
+          "inner_diameter_mm": 16.91,
+          "system": "US",
+          "value": 6.5
+        },
+        "schema_version": 1,
+        "setting": {
+          "gallery_height_mm": 4.2,
+          "prong_count": 4,
+          "prong_tip_mm": 0.9,
+          "style": "4_prong_basket"
+        },
+        "side_stones": [
+          {
+            "carat": 0.015,
+            "clarity": null,
+            "color": {
+              "gia": "F",
+              "hue_code": null,
+              "saturation": null,
+              "tone": null,
+              "trade": "colorless"
+            },
+            "count": 12,
+            "culet": null,
+            "cut": "marquise",
+            "depth_pct": null,
+            "dimensions_mm": {
+              "depth": 0.8,
+              "length": 2.5,
+              "width": 1.3
+            },
+            "girdle": null,
+            "inscription": null,
+            "lab": null,
+            "mount": null,
+            "origin": null,
+            "phenomena": [],
+            "position": "pave_leaves",
+            "species": "diamond",
+            "table_pct": null,
+            "treatment": null
+          },
+          {
+            "carat": 0.007,
+            "clarity": null,
+            "color": {
+              "gia": "F",
+              "hue_code": null,
+              "saturation": null,
+              "tone": null,
+              "trade": "colorless"
+            },
+            "count": 24,
+            "culet": null,
+            "cut": "round_brilliant",
+            "depth_pct": null,
+            "dimensions_mm": {
+              "depth": 0.73,
+              "length": 1.2,
+              "width": 1.2
+            },
+            "girdle": null,
+            "inscription": null,
+            "lab": null,
+            "mount": null,
+            "origin": null,
+            "phenomena": [],
+            "position": "pave_leaves",
+            "species": "diamond",
+            "table_pct": null,
+            "treatment": null
+          }
+        ],
+        "stone": {
+          "carat": 2.263,
+          "clarity": null,
+          "color": {
+            "gia": "vivid, warm, slightly yellowish green",
+            "hue_code": null,
+            "saturation": null,
+            "tone": null,
+            "trade": "Muzo Green"
+          },
+          "count": 1,
+          "culet": null,
+          "cut": "emerald_cut",
+          "depth_pct": null,
+          "dimensions_mm": {
+            "depth": 5.2,
+            "length": 8.0,
+            "width": 8.0
+          },
+          "girdle": null,
+          "inscription": null,
+          "lab": null,
+          "mount": null,
+          "origin": null,
+          "phenomena": [],
+          "position": "center",
+          "species": "emerald",
+          "table_pct": null,
+          "treatment": null
+        },
+        "template": "leaf_shoulder_prong",
+        "version": 1
+      },
+      "state": "refining",
+      "tags": [
+        "corrected-spec",
+        "leaf",
+        "live-eval",
+        "ring"
+      ],
+      "title": "Leaf ring corrected-spec live acceptance",
+      "updated_at": "2026-07-11T02:41:14.283407"
+    }
+  },
+  "corrected_spec": {
+    "band": {
+      "profile": "comfort_fit",
+      "thickness_mm": 1.6,
+      "width_mm": 2.2
+    },
+    "bracelet": null,
+    "brooch": null,
+    "chain": null,
+    "composition": null,
+    "created_at": "2026-07-10T17:27:19.504117Z",
+    "created_by": "usr_test_designer",
+    "design_id": "dsn_test_designer_confirmed_leaf",
+    "drop": null,
+    "jewelry_type": "ring",
+    "metal": {
+      "color": "yellow",
+      "finish": "high_polish",
+      "karat": 18,
+      "material": "gold"
+    },
+    "mode": "pro",
+    "notes_to_factory": "TEST DESIGNER-CONFIRMED SPEC: emerald center and diamond-set leaf shoulders. Side-stone sizes and counts are explicit test values for workflow validation, not measurements extracted from the photograph.",
+    "pendant": null,
+    "ring_size": {
+      "inner_diameter_mm": 16.91,
+      "system": "US",
+      "value": 6.5
+    },
+    "schema_version": 1,
+    "setting": {
+      "gallery_height_mm": 4.2,
+      "prong_count": 4,
+      "prong_tip_mm": 0.9,
+      "style": "4_prong_basket"
+    },
+    "side_stones": [
+      {
+        "carat": 0.015,
+        "clarity": null,
+        "color": {
+          "gia": "F",
+          "hue_code": null,
+          "saturation": null,
+          "tone": null,
+          "trade": "colorless"
+        },
+        "count": 12,
+        "culet": null,
+        "cut": "marquise",
+        "depth_pct": null,
+        "dimensions_mm": {
+          "depth": 0.8,
+          "length": 2.5,
+          "width": 1.3
+        },
+        "girdle": null,
+        "inscription": null,
+        "lab": null,
+        "mount": null,
+        "origin": null,
+        "phenomena": [],
+        "position": "pave_leaves",
+        "species": "diamond",
+        "table_pct": null,
+        "treatment": null
+      },
+      {
+        "carat": 0.007,
+        "clarity": null,
+        "color": {
+          "gia": "F",
+          "hue_code": null,
+          "saturation": null,
+          "tone": null,
+          "trade": "colorless"
+        },
+        "count": 24,
+        "culet": null,
+        "cut": "round_brilliant",
+        "depth_pct": null,
+        "dimensions_mm": {
+          "depth": 0.73,
+          "length": 1.2,
+          "width": 1.2
+        },
+        "girdle": null,
+        "inscription": null,
+        "lab": null,
+        "mount": null,
+        "origin": null,
+        "phenomena": [],
+        "position": "pave_leaves",
+        "species": "diamond",
+        "table_pct": null,
+        "treatment": null
+      }
+    ],
+    "stone": {
+      "carat": 2.263,
+      "clarity": null,
+      "color": {
+        "gia": "vivid, warm, slightly yellowish green",
+        "hue_code": null,
+        "saturation": null,
+        "tone": null,
+        "trade": "Muzo Green"
+      },
+      "count": 1,
+      "culet": null,
+      "cut": "emerald_cut",
+      "depth_pct": null,
+      "dimensions_mm": {
+        "depth": 5.2,
+        "length": 8.0,
+        "width": 8.0
+      },
+      "girdle": null,
+      "inscription": null,
+      "lab": null,
+      "mount": null,
+      "origin": null,
+      "phenomena": [],
+      "position": "center",
+      "species": "emerald",
+      "table_pct": null,
+      "treatment": null
+    },
+    "template": "leaf_shoulder_prong",
+    "version": 1
+  },
+  "disclosure": "Line-art confirmation and checklist approval were performed by an automated test actor to prove mechanics; they are not founder or GIA-trained cofounder acceptance.",
+  "factory_manifest": {
+    "approved_at": "2026-07-11T02:41:14.314264",
+    "approver": "usr_test_actor_unapproved",
+    "asset_id": "ast_bf6ef90f143f4dd8",
+    "authority": {
+      "discussion_only": [
+        "discussion-line-art.jpg"
+      ],
+      "factory_truth": [
+        "validated-spec.json",
+        "facetta-sheet.svg",
+        "facetta-sheet.dxf"
+      ],
+      "note": "Only deterministic artifacts derived from the validated specification are authoritative factory truth. Any discussion drawing is AI-derived, designer-reviewed visual context and must not be measured or manufactured.",
+      "visual_reference_only": [
+        "approved-reference.jpg"
+      ]
+    },
+    "checklist": {
+      "id": "chk_43364f07e5d5e351",
+      "mode": "auto_pin",
+      "results": [
+        {
+          "approved": true,
+          "approved_at": "2026-07-11T02:41:14.297469",
+          "approved_by": "usr_test_actor_unapproved",
+          "fact": "2.26 ct emerald \u00b7 emerald cut \u00b7 8 \u00d7 8 \u00d7 5.2 mm",
+          "item_key": "stone",
+          "label": "Center stone",
+          "note": null
+        },
+        {
+          "approved": true,
+          "approved_at": "2026-07-11T02:41:14.300881",
+          "approved_by": "usr_test_actor_unapproved",
+          "fact": "12 \u00d7 diamond marquise \u00b7 2.5 \u00d7 1.3 \u00d7 0.8 mm \u00b7 0.18 ct total",
+          "item_key": "side_stones[0]",
+          "label": "Side stones 1",
+          "note": null
+        },
+        {
+          "approved": true,
+          "approved_at": "2026-07-11T02:41:14.303504",
+          "approved_by": "usr_test_actor_unapproved",
+          "fact": "24 \u00d7 diamond round brilliant \u00b7 1.2 \u00d7 1.2 \u00d7 0.7 mm \u00b7 0.17 ct total",
+          "item_key": "side_stones[1]",
+          "label": "Side stones 2",
+          "note": null
+        },
+        {
+          "approved": true,
+          "approved_at": "2026-07-11T02:41:14.306451",
+          "approved_by": "usr_test_actor_unapproved",
+          "fact": "4 Prong Basket \u00b7 gallery 4.2 mm",
+          "item_key": "setting",
+          "label": "Setting",
+          "note": null
+        },
+        {
+          "approved": true,
+          "approved_at": "2026-07-11T02:41:14.309179",
+          "approved_by": "usr_test_actor_unapproved",
+          "fact": "18k Yellow Gold \u00b7 high polish",
+          "item_key": "metal",
+          "label": "Metal & finish",
+          "note": null
+        },
+        {
+          "approved": true,
+          "approved_at": "2026-07-11T02:41:14.311483",
+          "approved_by": "usr_test_actor_unapproved",
+          "fact": "comfort fit \u00b7 2.2 \u00d7 1.6 mm",
+          "item_key": "band",
+          "label": "Band",
+          "note": null
+        },
+        {
+          "approved": true,
+          "approved_at": "2026-07-11T02:41:14.314264",
+          "approved_by": "usr_test_actor_unapproved",
+          "fact": "US 6.5 \u00b7 \u2300 16.9 mm",
+          "item_key": "ring_size",
+          "label": "Ring size",
+          "note": null
+        }
+      ],
+      "status": {
+        "all_approved": true,
+        "answered": 7,
+        "approved": 7,
+        "declined": [],
+        "outstanding": [],
+        "total": 7
+      }
+    },
+    "design_id": "dsn_de5c0378a002287f",
+    "design_version": 1,
+    "files": [
+      {
+        "authoritative": true,
+        "bytes": 2949,
+        "name": "validated-spec.json",
+        "sha256": "01121494a27951cbf7c476ea2db6f20265fe1e7b9ad91d5df5d8aad8a932ee46"
+      },
+      {
+        "authoritative": true,
+        "bytes": 236238,
+        "name": "facetta-sheet.svg",
+        "sha256": "a9e38db302de8321f36a9f9b3fdce7e5f4ac125179f47e54101f550a2d90f2bc"
+      },
+      {
+        "authoritative": true,
+        "bytes": 474604,
+        "name": "facetta-sheet.dxf",
+        "sha256": "0a09641561a0ba887226b2bb11a22834fd51dc05e8c0970ae13e462774f3d5f6"
+      },
+      {
+        "authoritative": false,
+        "bytes": 111132,
+        "name": "approved-reference.jpg",
+        "sha256": "bb8a6034ed384c09433269d266acef582875f29e43ab70fb9119a2a7f7871c00"
+      },
+      {
+        "authoritative": false,
+        "bytes": 150909,
+        "name": "discussion-line-art.jpg",
+        "sha256": "bfb0551f693d15f102c3f03e95d1647bed459cbcfbd2b783c953380b5540d73f"
+      }
+    ],
+    "pinned_at": "2026-07-11T02:41:14.315072",
+    "project_id": "ast_bf6ef90f143f4dd8",
+    "qa_summary": {
+      "image_run_id": null,
+      "status": "legacy_not_recorded"
+    },
+    "schema_version": "facetta.factory-pack.v1",
+    "visual_revision": 1
+  },
+  "factory_pack_files": [
+    "validated-spec.json",
+    "facetta-sheet.svg",
+    "facetta-sheet.dxf",
+    "approved-reference.jpg",
+    "discussion-line-art.jpg",
+    "approval-manifest.json"
+  ],
+  "final_project": {
+    "active_asset_id": "ast_bf6ef90f143f4dd8",
+    "active_design_version": 1,
+    "active_revision": {
+      "asset_id": "ast_bf6ef90f143f4dd8",
+      "capability": "IMPORTED_REFERENCE",
+      "created_at": "2026-07-11T02:40:21.296753",
+      "created_by": "usr_test_designer",
+      "design_version": 1,
+      "image_url": "/assets/ast_bf6ef90f143f4dd8/image",
+      "instruction": "Designer-confirmed imported reference",
+      "legacy_provenance": false,
+      "media_type": "image/jpeg",
+      "pinned": true,
+      "provenance": "imported_reference",
+      "revision": 1,
+      "root_id": "ast_bf6ef90f143f4dd8"
+    },
+    "approval": {
+      "all_approved": true,
+      "answers": {
+        "band": {
+          "approved": true,
+          "created_at": "2026-07-11T02:41:14.311483",
+          "created_by": "usr_test_actor_unapproved",
+          "note": null,
+          "understood_as": null
+        },
+        "metal": {
+          "approved": true,
+          "created_at": "2026-07-11T02:41:14.309179",
+          "created_by": "usr_test_actor_unapproved",
+          "note": null,
+          "understood_as": null
+        },
+        "ring_size": {
+          "approved": true,
+          "created_at": "2026-07-11T02:41:14.314264",
+          "created_by": "usr_test_actor_unapproved",
+          "note": null,
+          "understood_as": null
+        },
+        "setting": {
+          "approved": true,
+          "created_at": "2026-07-11T02:41:14.306451",
+          "created_by": "usr_test_actor_unapproved",
+          "note": null,
+          "understood_as": null
+        },
+        "side_stones[0]": {
+          "approved": true,
+          "created_at": "2026-07-11T02:41:14.300881",
+          "created_by": "usr_test_actor_unapproved",
+          "note": null,
+          "understood_as": null
+        },
+        "side_stones[1]": {
+          "approved": true,
+          "created_at": "2026-07-11T02:41:14.303504",
+          "created_by": "usr_test_actor_unapproved",
+          "note": null,
+          "understood_as": null
+        },
+        "stone": {
+          "approved": true,
+          "created_at": "2026-07-11T02:41:14.297469",
+          "created_by": "usr_test_actor_unapproved",
+          "note": null,
+          "understood_as": null
+        }
+      },
+      "approved_count": 7,
+      "asset_id": "ast_bf6ef90f143f4dd8",
+      "checklist_id": "chk_43364f07e5d5e351",
+      "completed": true,
+      "design_id": "dsn_de5c0378a002287f",
+      "design_version": 1,
+      "items": [
+        {
+          "fact": "2.26 ct emerald \u00b7 emerald cut \u00b7 8 \u00d7 8 \u00d7 5.2 mm",
+          "index": null,
+          "key": "stone",
+          "label": "Center stone",
+          "question": "Is the center stone right?",
+          "ref": "A",
+          "section": "stone"
+        },
+        {
+          "fact": "12 \u00d7 diamond marquise \u00b7 2.5 \u00d7 1.3 \u00d7 0.8 mm \u00b7 0.18 ct total",
+          "index": 0,
+          "key": "side_stones[0]",
+          "label": "Side stones 1",
+          "question": "Are the side stones 1 right?",
+          "ref": "B",
+          "section": "side_stones"
+        },
+        {
+          "fact": "24 \u00d7 diamond round brilliant \u00b7 1.2 \u00d7 1.2 \u00d7 0.7 mm \u00b7 0.17 ct total",
+          "index": 1,
+          "key": "side_stones[1]",
+          "label": "Side stones 2",
+          "question": "Are the side stones 2 right?",
+          "ref": "C",
+          "section": "side_stones"
+        },
+        {
+          "fact": "4 Prong Basket \u00b7 gallery 4.2 mm",
+          "index": null,
+          "key": "setting",
+          "label": "Setting",
+          "question": "Is the setting right?",
+          "ref": null,
+          "section": "setting"
+        },
+        {
+          "fact": "18k Yellow Gold \u00b7 high polish",
+          "index": null,
+          "key": "metal",
+          "label": "Metal & finish",
+          "question": "Are the metal and finish right?",
+          "ref": null,
+          "section": "metal"
+        },
+        {
+          "fact": "comfort fit \u00b7 2.2 \u00d7 1.6 mm",
+          "index": null,
+          "key": "band",
+          "label": "Band",
+          "question": "Is the band right?",
+          "ref": null,
+          "section": "band"
+        },
+        {
+          "fact": "US 6.5 \u00b7 \u2300 16.9 mm",
+          "index": null,
+          "key": "ring_size",
+          "label": "Ring size",
+          "question": "Is the ring size right?",
+          "ref": null,
+          "section": "ring_size"
+        }
+      ],
+      "mode": "auto_pin",
+      "outstanding": [],
+      "pinned": true,
+      "total": 7
+    },
+    "assets": [
+      {
+        "asset_id": "ast_bf6ef90f143f4dd8",
+        "capability": "IMPORTED_REFERENCE",
+        "created_at": "2026-07-11T02:40:21.296753",
+        "created_by": "usr_test_designer",
+        "design_version": 1,
+        "image_url": "/assets/ast_bf6ef90f143f4dd8/image",
+        "instruction": "Designer-confirmed imported reference",
+        "legacy_provenance": false,
+        "media_type": "image/jpeg",
+        "pinned": true,
+        "provenance": "imported_reference",
+        "revision": 1,
+        "root_id": "ast_bf6ef90f143f4dd8"
+      },
+      {
+        "asset_id": "ast_154fe154be5dc359",
+        "capability": "LINE_ART",
+        "created_at": "2026-07-11T02:40:42.023598",
+        "created_by": "usr_test_actor_unapproved",
+        "design_version": 1,
+        "image_url": "/assets/ast_154fe154be5dc359/image",
+        "instruction": "Convert this exact approved ring into one clean black technical line-art three-quarter view. Remove photography, paint, paper texture, shadows, annotations, and background only.",
+        "legacy_provenance": false,
+        "media_type": "image/jpeg",
+        "parent_asset_id": "ast_bf6ef90f143f4dd8",
+        "pinned": false,
+        "provenance": "designer_confirmed_line_art",
+        "region": "entire confirmed three_quarter line-art view",
+        "root_id": "ast_bf6ef90f143f4dd8"
+      },
+      {
+        "asset_id": "ast_2980132bedad6471",
+        "capability": "COLORED_LINE_ART",
+        "created_at": "2026-07-11T02:41:14.283517",
+        "created_by": "usr_test_actor_unapproved",
+        "design_version": 1,
+        "image_url": "/assets/ast_2980132bedad6471/image",
+        "instruction": "Apply controlled jeweler's color to this designer-confirmed line drawing using only the validated specification. center: emerald emerald cut in Muzo Green; side groups: 12 diamond marquise at diamond-set leaf shoulders; 24 diamond round brilliant at diamond-set leaf shoulders. Metal: 18k yellow gold.",
+        "legacy_provenance": false,
+        "media_type": "image/jpeg",
+        "parent_asset_id": "ast_154fe154be5dc359",
+        "pinned": false,
+        "provenance": "spec_colored_line_art",
+        "region": "inside the confirmed line-art geometry only",
+        "root_id": "ast_bf6ef90f143f4dd8"
+      }
+    ],
+    "collection": "Founder reference acceptance",
+    "counts": {
+      "COLORED_LINE_ART": 1,
+      "IMPORTED_REFERENCE": 1,
+      "LINE_ART": 1
+    },
+    "cover_asset_id": "ast_bf6ef90f143f4dd8",
+    "created_at": "2026-07-11T02:40:21.296753",
+    "derived_assets": [
+      {
+        "asset_id": "ast_154fe154be5dc359",
+        "capability": "LINE_ART",
+        "created_at": "2026-07-11T02:40:42.023598",
+        "created_by": "usr_test_actor_unapproved",
+        "design_version": 1,
+        "image_url": "/assets/ast_154fe154be5dc359/image",
+        "instruction": "Convert this exact approved ring into one clean black technical line-art three-quarter view. Remove photography, paint, paper texture, shadows, annotations, and background only.",
+        "legacy_provenance": false,
+        "media_type": "image/jpeg",
+        "parent_asset_id": "ast_bf6ef90f143f4dd8",
+        "pinned": false,
+        "provenance": "designer_confirmed_line_art",
+        "region": "entire confirmed three_quarter line-art view",
+        "root_id": "ast_bf6ef90f143f4dd8"
+      },
+      {
+        "asset_id": "ast_2980132bedad6471",
+        "capability": "COLORED_LINE_ART",
+        "created_at": "2026-07-11T02:41:14.283517",
+        "created_by": "usr_test_actor_unapproved",
+        "design_version": 1,
+        "image_url": "/assets/ast_2980132bedad6471/image",
+        "instruction": "Apply controlled jeweler's color to this designer-confirmed line drawing using only the validated specification. center: emerald emerald cut in Muzo Green; side groups: 12 diamond marquise at diamond-set leaf shoulders; 24 diamond round brilliant at diamond-set leaf shoulders. Metal: 18k yellow gold.",
+        "legacy_provenance": false,
+        "media_type": "image/jpeg",
+        "parent_asset_id": "ast_154fe154be5dc359",
+        "pinned": false,
+        "provenance": "spec_colored_line_art",
+        "region": "inside the confirmed line-art geometry only",
+        "root_id": "ast_bf6ef90f143f4dd8"
+      }
+    ],
+    "design_id": "dsn_de5c0378a002287f",
+    "factory_ready": true,
+    "has_factory_drawing": false,
+    "id": "ast_bf6ef90f143f4dd8",
+    "image_run_ids": [
+      "run_e3b4e1cc86afe28c",
+      "run_7da7b164f16d8c54"
+    ],
+    "item_count": 3,
+    "items": [
+      {
+        "asset_id": "ast_bf6ef90f143f4dd8",
+        "capability": "IMPORTED_REFERENCE",
+        "created_at": "2026-07-11T02:40:21.296753",
+        "created_by": "usr_test_designer",
+        "design_version": 1,
+        "image_url": "/assets/ast_bf6ef90f143f4dd8/image",
+        "instruction": "Designer-confirmed imported reference",
+        "legacy_provenance": false,
+        "media_type": "image/jpeg",
+        "pinned": true,
+        "provenance": "imported_reference",
+        "revision": 1,
+        "root_id": "ast_bf6ef90f143f4dd8"
+      },
+      {
+        "asset_id": "ast_154fe154be5dc359",
+        "capability": "LINE_ART",
+        "created_at": "2026-07-11T02:40:42.023598",
+        "created_by": "usr_test_actor_unapproved",
+        "design_version": 1,
+        "image_url": "/assets/ast_154fe154be5dc359/image",
+        "instruction": "Convert this exact approved ring into one clean black technical line-art three-quarter view. Remove photography, paint, paper texture, shadows, annotations, and background only.",
+        "legacy_provenance": false,
+        "media_type": "image/jpeg",
+        "parent_asset_id": "ast_bf6ef90f143f4dd8",
+        "pinned": false,
+        "provenance": "designer_confirmed_line_art",
+        "region": "entire confirmed three_quarter line-art view",
+        "root_id": "ast_bf6ef90f143f4dd8"
+      },
+      {
+        "asset_id": "ast_2980132bedad6471",
+        "capability": "COLORED_LINE_ART",
+        "created_at": "2026-07-11T02:41:14.283517",
+        "created_by": "usr_test_actor_unapproved",
+        "design_version": 1,
+        "image_url": "/assets/ast_2980132bedad6471/image",
+        "instruction": "Apply controlled jeweler's color to this designer-confirmed line drawing using only the validated specification. center: emerald emerald cut in Muzo Green; side groups: 12 diamond marquise at diamond-set leaf shoulders; 24 diamond round brilliant at diamond-set leaf shoulders. Metal: 18k yellow gold.",
+        "legacy_provenance": false,
+        "media_type": "image/jpeg",
+        "parent_asset_id": "ast_154fe154be5dc359",
+        "pinned": false,
+        "provenance": "spec_colored_line_art",
+        "region": "inside the confirmed line-art geometry only",
+        "root_id": "ast_bf6ef90f143f4dd8"
+      }
+    ],
+    "latest_design_version": 1,
+    "owner": "usr_test_designer",
+    "pinned_revision": {
+      "asset_id": "ast_bf6ef90f143f4dd8",
+      "capability": "IMPORTED_REFERENCE",
+      "created_at": "2026-07-11T02:40:21.296753",
+      "created_by": "usr_test_designer",
+      "design_version": 1,
+      "image_url": "/assets/ast_bf6ef90f143f4dd8/image",
+      "instruction": "Designer-confirmed imported reference",
+      "legacy_provenance": false,
+      "media_type": "image/jpeg",
+      "pinned": true,
+      "provenance": "imported_reference",
+      "revision": 1,
+      "root_id": "ast_bf6ef90f143f4dd8"
+    },
+    "primary_revision_count": 1,
+    "revisions": [
+      {
+        "asset_id": "ast_bf6ef90f143f4dd8",
+        "capability": "IMPORTED_REFERENCE",
+        "created_at": "2026-07-11T02:40:21.296753",
+        "created_by": "usr_test_designer",
+        "design_version": 1,
+        "image_url": "/assets/ast_bf6ef90f143f4dd8/image",
+        "instruction": "Designer-confirmed imported reference",
+        "legacy_provenance": false,
+        "media_type": "image/jpeg",
+        "pinned": true,
+        "provenance": "imported_reference",
+        "revision": 1,
+        "root_id": "ast_bf6ef90f143f4dd8"
+      }
+    ],
+    "root_id": "ast_bf6ef90f143f4dd8",
+    "spec": {
+      "band": {
+        "profile": "comfort_fit",
+        "thickness_mm": 1.6,
+        "width_mm": 2.2
+      },
+      "bracelet": null,
+      "brooch": null,
+      "chain": null,
+      "composition": null,
+      "created_at": "2026-07-11T02:40:21.296753Z",
+      "created_by": "usr_test_designer",
+      "design_id": "dsn_de5c0378a002287f",
+      "drop": null,
+      "jewelry_type": "ring",
+      "metal": {
+        "color": "yellow",
+        "finish": "high_polish",
+        "karat": 18,
+        "material": "gold"
+      },
+      "mode": "pro",
+      "notes_to_factory": "TEST DESIGNER-CONFIRMED SPEC: emerald center and diamond-set leaf shoulders. Side-stone sizes and counts are explicit test values for workflow validation, not measurements extracted from the photograph.",
+      "pendant": null,
+      "ring_size": {
+        "inner_diameter_mm": 16.91,
+        "system": "US",
+        "value": 6.5
+      },
+      "schema_version": 1,
+      "setting": {
+        "gallery_height_mm": 4.2,
+        "prong_count": 4,
+        "prong_tip_mm": 0.9,
+        "style": "4_prong_basket"
+      },
+      "side_stones": [
+        {
+          "carat": 0.015,
+          "clarity": null,
+          "color": {
+            "gia": "F",
+            "hue_code": null,
+            "saturation": null,
+            "tone": null,
+            "trade": "colorless"
+          },
+          "count": 12,
+          "culet": null,
+          "cut": "marquise",
+          "depth_pct": null,
+          "dimensions_mm": {
+            "depth": 0.8,
+            "length": 2.5,
+            "width": 1.3
+          },
+          "girdle": null,
+          "inscription": null,
+          "lab": null,
+          "mount": null,
+          "origin": null,
+          "phenomena": [],
+          "position": "pave_leaves",
+          "species": "diamond",
+          "table_pct": null,
+          "treatment": null
+        },
+        {
+          "carat": 0.007,
+          "clarity": null,
+          "color": {
+            "gia": "F",
+            "hue_code": null,
+            "saturation": null,
+            "tone": null,
+            "trade": "colorless"
+          },
+          "count": 24,
+          "culet": null,
+          "cut": "round_brilliant",
+          "depth_pct": null,
+          "dimensions_mm": {
+            "depth": 0.73,
+            "length": 1.2,
+            "width": 1.2
+          },
+          "girdle": null,
+          "inscription": null,
+          "lab": null,
+          "mount": null,
+          "origin": null,
+          "phenomena": [],
+          "position": "pave_leaves",
+          "species": "diamond",
+          "table_pct": null,
+          "treatment": null
+        }
+      ],
+      "stone": {
+        "carat": 2.263,
+        "clarity": null,
+        "color": {
+          "gia": "vivid, warm, slightly yellowish green",
+          "hue_code": null,
+          "saturation": null,
+          "tone": null,
+          "trade": "Muzo Green"
+        },
+        "count": 1,
+        "culet": null,
+        "cut": "emerald_cut",
+        "depth_pct": null,
+        "dimensions_mm": {
+          "depth": 5.2,
+          "length": 8.0,
+          "width": 8.0
+        },
+        "girdle": null,
+        "inscription": null,
+        "lab": null,
+        "mount": null,
+        "origin": null,
+        "phenomena": [],
+        "position": "center",
+        "species": "emerald",
+        "table_pct": null,
+        "treatment": null
+      },
+      "template": "leaf_shoulder_prong",
+      "version": 1
+    },
+    "state": "factory_ready",
+    "tags": [
+      "corrected-spec",
+      "leaf",
+      "live-eval",
+      "ring"
+    ],
+    "title": "Leaf ring corrected-spec live acceptance",
+    "updated_at": "2026-07-11T02:41:14.283407"
+  },
+  "line_art": {
+    "candidate": {
+      "asset_capability": "LINE_ART",
+      "candidate_id": "cand_58a983ecf3fc0c6f",
+      "operation": "VISUAL_ONLY_EDIT",
+      "preview_url": "/image-runs/run_e3b4e1cc86afe28c/candidates/cand_58a983ecf3fc0c6f/image",
+      "qa": {
+        "accepted": false,
+        "checks": [
+          {
+            "code": "decodable_image",
+            "evidence": {
+              "format": "JPEG",
+              "height": 1136,
+              "width": 912
+            },
+            "message": "candidate is a decodable raster image",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "review_resolution",
+            "evidence": {
+              "height": 1136,
+              "width": 912
+            },
+            "message": "candidate has reviewable raster dimensions",
+            "passed": true,
+            "severity": "warning"
+          },
+          {
+            "code": "candidate_changed",
+            "evidence": {},
+            "message": "candidate bytes differ from the source",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "requested_change",
+            "evidence": {},
+            "message": "visual evidence matches the requested fact",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "protected_regions",
+            "evidence": {},
+            "message": "visual evidence matches the requested fact",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "unintended_drift",
+            "evidence": {
+              "changes": [],
+              "severity": "none"
+            },
+            "message": "no unintended changes detected",
+            "passed": true,
+            "severity": "warning"
+          },
+          {
+            "code": "geometry_preserved",
+            "evidence": {},
+            "message": "visual evidence matches the requested fact",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "text_or_branding",
+            "evidence": {},
+            "message": "no text or branding introduced",
+            "passed": true,
+            "severity": "hard"
+          }
+        ],
+        "failed_checks": [],
+        "notes": [
+          "Exact design replicated in clean black technical line-art",
+          "Photo, color, shadows, and background fully removed",
+          "Leaf stones, prongs, emerald-cut center, and comfort-fit band all match source geometry"
+        ],
+        "review_required": true,
+        "score": 95.0,
+        "summary": "Image needs explicit designer review.",
+        "verdict": "pass",
+        "warnings": []
+      },
+      "requested_change": "Convert this exact approved ring into one clean black technical line-art three-quarter view. Remove photography, paint, paper texture, shadows, annotations, and background only.",
+      "run_id": "run_e3b4e1cc86afe28c"
+    },
+    "image_run_id": "run_e3b4e1cc86afe28c",
+    "next": "designer confirms geometry, then colorize the persisted LINE_ART asset",
+    "project_id": "ast_bf6ef90f143f4dd8",
+    "quality_report": {
+      "accepted": false,
+      "checks": [
+        {
+          "code": "decodable_image",
+          "evidence": {
+            "format": "JPEG",
+            "height": 1136,
+            "width": 912
+          },
+          "message": "candidate is a decodable raster image",
+          "passed": true,
+          "severity": "hard"
+        },
+        {
+          "code": "review_resolution",
+          "evidence": {
+            "height": 1136,
+            "width": 912
+          },
+          "message": "candidate has reviewable raster dimensions",
+          "passed": true,
+          "severity": "warning"
+        },
+        {
+          "code": "candidate_changed",
+          "evidence": {},
+          "message": "candidate bytes differ from the source",
+          "passed": true,
+          "severity": "hard"
+        },
+        {
+          "code": "requested_change",
+          "evidence": {},
+          "message": "visual evidence matches the requested fact",
+          "passed": true,
+          "severity": "hard"
+        },
+        {
+          "code": "protected_regions",
+          "evidence": {},
+          "message": "visual evidence matches the requested fact",
+          "passed": true,
+          "severity": "hard"
+        },
+        {
+          "code": "unintended_drift",
+          "evidence": {
+            "changes": [],
+            "severity": "none"
+          },
+          "message": "no unintended changes detected",
+          "passed": true,
+          "severity": "warning"
+        },
+        {
+          "code": "geometry_preserved",
+          "evidence": {},
+          "message": "visual evidence matches the requested fact",
+          "passed": true,
+          "severity": "hard"
+        },
+        {
+          "code": "text_or_branding",
+          "evidence": {},
+          "message": "no text or branding introduced",
+          "passed": true,
+          "severity": "hard"
+        }
+      ],
+      "failed_checks": [],
+      "notes": [
+        "Exact design replicated in clean black technical line-art",
+        "Photo, color, shadows, and background fully removed",
+        "Leaf stones, prongs, emerald-cut center, and comfort-fit band all match source geometry"
+      ],
+      "review_required": true,
+      "score": 95.0,
+      "summary": "Image needs explicit designer review.",
+      "verdict": "pass",
+      "warnings": []
+    },
+    "routing": {
+      "attempt_count": 1,
+      "cache_hit": false,
+      "run_id": "run_e3b4e1cc86afe28c",
+      "used_fallback": false,
+      "used_retry": false
+    },
+    "status": "confirmation_required",
+    "view": "three_quarter"
+  },
+  "line_art_confirmed_project": {
+    "active_asset_id": "ast_bf6ef90f143f4dd8",
+    "active_design_version": 1,
+    "active_revision": {
+      "asset_id": "ast_bf6ef90f143f4dd8",
+      "capability": "IMPORTED_REFERENCE",
+      "created_at": "2026-07-11T02:40:21.296753",
+      "created_by": "usr_test_designer",
+      "design_version": 1,
+      "image_url": "/assets/ast_bf6ef90f143f4dd8/image",
+      "instruction": "Designer-confirmed imported reference",
+      "legacy_provenance": false,
+      "media_type": "image/jpeg",
+      "pinned": false,
+      "provenance": "imported_reference",
+      "revision": 1,
+      "root_id": "ast_bf6ef90f143f4dd8"
+    },
+    "assets": [
+      {
+        "asset_id": "ast_bf6ef90f143f4dd8",
+        "capability": "IMPORTED_REFERENCE",
+        "created_at": "2026-07-11T02:40:21.296753",
+        "created_by": "usr_test_designer",
+        "design_version": 1,
+        "image_url": "/assets/ast_bf6ef90f143f4dd8/image",
+        "instruction": "Designer-confirmed imported reference",
+        "legacy_provenance": false,
+        "media_type": "image/jpeg",
+        "pinned": false,
+        "provenance": "imported_reference",
+        "revision": 1,
+        "root_id": "ast_bf6ef90f143f4dd8"
+      },
+      {
+        "asset_id": "ast_154fe154be5dc359",
+        "capability": "LINE_ART",
+        "created_at": "2026-07-11T02:40:42.023598",
+        "created_by": "usr_test_actor_unapproved",
+        "design_version": 1,
+        "image_url": "/assets/ast_154fe154be5dc359/image",
+        "instruction": "Convert this exact approved ring into one clean black technical line-art three-quarter view. Remove photography, paint, paper texture, shadows, annotations, and background only.",
+        "legacy_provenance": false,
+        "media_type": "image/jpeg",
+        "parent_asset_id": "ast_bf6ef90f143f4dd8",
+        "pinned": false,
+        "provenance": "designer_confirmed_line_art",
+        "region": "entire confirmed three_quarter line-art view",
+        "root_id": "ast_bf6ef90f143f4dd8"
+      }
+    ],
+    "collection": "Founder reference acceptance",
+    "counts": {
+      "IMPORTED_REFERENCE": 1,
+      "LINE_ART": 1
+    },
+    "cover_asset_id": "ast_bf6ef90f143f4dd8",
+    "created_at": "2026-07-11T02:40:21.296753",
+    "derived_assets": [
+      {
+        "asset_id": "ast_154fe154be5dc359",
+        "capability": "LINE_ART",
+        "created_at": "2026-07-11T02:40:42.023598",
+        "created_by": "usr_test_actor_unapproved",
+        "design_version": 1,
+        "image_url": "/assets/ast_154fe154be5dc359/image",
+        "instruction": "Convert this exact approved ring into one clean black technical line-art three-quarter view. Remove photography, paint, paper texture, shadows, annotations, and background only.",
+        "legacy_provenance": false,
+        "media_type": "image/jpeg",
+        "parent_asset_id": "ast_bf6ef90f143f4dd8",
+        "pinned": false,
+        "provenance": "designer_confirmed_line_art",
+        "region": "entire confirmed three_quarter line-art view",
+        "root_id": "ast_bf6ef90f143f4dd8"
+      }
+    ],
+    "design_id": "dsn_de5c0378a002287f",
+    "factory_ready": false,
+    "has_factory_drawing": false,
+    "id": "ast_bf6ef90f143f4dd8",
+    "image_run_ids": [
+      "run_e3b4e1cc86afe28c"
+    ],
+    "item_count": 2,
+    "items": [
+      {
+        "asset_id": "ast_bf6ef90f143f4dd8",
+        "capability": "IMPORTED_REFERENCE",
+        "created_at": "2026-07-11T02:40:21.296753",
+        "created_by": "usr_test_designer",
+        "design_version": 1,
+        "image_url": "/assets/ast_bf6ef90f143f4dd8/image",
+        "instruction": "Designer-confirmed imported reference",
+        "legacy_provenance": false,
+        "media_type": "image/jpeg",
+        "pinned": false,
+        "provenance": "imported_reference",
+        "revision": 1,
+        "root_id": "ast_bf6ef90f143f4dd8"
+      },
+      {
+        "asset_id": "ast_154fe154be5dc359",
+        "capability": "LINE_ART",
+        "created_at": "2026-07-11T02:40:42.023598",
+        "created_by": "usr_test_actor_unapproved",
+        "design_version": 1,
+        "image_url": "/assets/ast_154fe154be5dc359/image",
+        "instruction": "Convert this exact approved ring into one clean black technical line-art three-quarter view. Remove photography, paint, paper texture, shadows, annotations, and background only.",
+        "legacy_provenance": false,
+        "media_type": "image/jpeg",
+        "parent_asset_id": "ast_bf6ef90f143f4dd8",
+        "pinned": false,
+        "provenance": "designer_confirmed_line_art",
+        "region": "entire confirmed three_quarter line-art view",
+        "root_id": "ast_bf6ef90f143f4dd8"
+      }
+    ],
+    "latest_design_version": 1,
+    "owner": "usr_test_designer",
+    "primary_revision_count": 1,
+    "revisions": [
+      {
+        "asset_id": "ast_bf6ef90f143f4dd8",
+        "capability": "IMPORTED_REFERENCE",
+        "created_at": "2026-07-11T02:40:21.296753",
+        "created_by": "usr_test_designer",
+        "design_version": 1,
+        "image_url": "/assets/ast_bf6ef90f143f4dd8/image",
+        "instruction": "Designer-confirmed imported reference",
+        "legacy_provenance": false,
+        "media_type": "image/jpeg",
+        "pinned": false,
+        "provenance": "imported_reference",
+        "revision": 1,
+        "root_id": "ast_bf6ef90f143f4dd8"
+      }
+    ],
+    "root_id": "ast_bf6ef90f143f4dd8",
+    "spec": {
+      "band": {
+        "profile": "comfort_fit",
+        "thickness_mm": 1.6,
+        "width_mm": 2.2
+      },
+      "bracelet": null,
+      "brooch": null,
+      "chain": null,
+      "composition": null,
+      "created_at": "2026-07-11T02:40:21.296753Z",
+      "created_by": "usr_test_designer",
+      "design_id": "dsn_de5c0378a002287f",
+      "drop": null,
+      "jewelry_type": "ring",
+      "metal": {
+        "color": "yellow",
+        "finish": "high_polish",
+        "karat": 18,
+        "material": "gold"
+      },
+      "mode": "pro",
+      "notes_to_factory": "TEST DESIGNER-CONFIRMED SPEC: emerald center and diamond-set leaf shoulders. Side-stone sizes and counts are explicit test values for workflow validation, not measurements extracted from the photograph.",
+      "pendant": null,
+      "ring_size": {
+        "inner_diameter_mm": 16.91,
+        "system": "US",
+        "value": 6.5
+      },
+      "schema_version": 1,
+      "setting": {
+        "gallery_height_mm": 4.2,
+        "prong_count": 4,
+        "prong_tip_mm": 0.9,
+        "style": "4_prong_basket"
+      },
+      "side_stones": [
+        {
+          "carat": 0.015,
+          "clarity": null,
+          "color": {
+            "gia": "F",
+            "hue_code": null,
+            "saturation": null,
+            "tone": null,
+            "trade": "colorless"
+          },
+          "count": 12,
+          "culet": null,
+          "cut": "marquise",
+          "depth_pct": null,
+          "dimensions_mm": {
+            "depth": 0.8,
+            "length": 2.5,
+            "width": 1.3
+          },
+          "girdle": null,
+          "inscription": null,
+          "lab": null,
+          "mount": null,
+          "origin": null,
+          "phenomena": [],
+          "position": "pave_leaves",
+          "species": "diamond",
+          "table_pct": null,
+          "treatment": null
+        },
+        {
+          "carat": 0.007,
+          "clarity": null,
+          "color": {
+            "gia": "F",
+            "hue_code": null,
+            "saturation": null,
+            "tone": null,
+            "trade": "colorless"
+          },
+          "count": 24,
+          "culet": null,
+          "cut": "round_brilliant",
+          "depth_pct": null,
+          "dimensions_mm": {
+            "depth": 0.73,
+            "length": 1.2,
+            "width": 1.2
+          },
+          "girdle": null,
+          "inscription": null,
+          "lab": null,
+          "mount": null,
+          "origin": null,
+          "phenomena": [],
+          "position": "pave_leaves",
+          "species": "diamond",
+          "table_pct": null,
+          "treatment": null
+        }
+      ],
+      "stone": {
+        "carat": 2.263,
+        "clarity": null,
+        "color": {
+          "gia": "vivid, warm, slightly yellowish green",
+          "hue_code": null,
+          "saturation": null,
+          "tone": null,
+          "trade": "Muzo Green"
+        },
+        "count": 1,
+        "culet": null,
+        "cut": "emerald_cut",
+        "depth_pct": null,
+        "dimensions_mm": {
+          "depth": 5.2,
+          "length": 8.0,
+          "width": 8.0
+        },
+        "girdle": null,
+        "inscription": null,
+        "lab": null,
+        "mount": null,
+        "origin": null,
+        "phenomena": [],
+        "position": "center",
+        "species": "emerald",
+        "table_pct": null,
+        "treatment": null
+      },
+      "template": "leaf_shoulder_prong",
+      "version": 1
+    },
+    "state": "refining",
+    "tags": [
+      "corrected-spec",
+      "leaf",
+      "live-eval",
+      "ring"
+    ],
+    "title": "Leaf ring corrected-spec live acceptance",
+    "updated_at": "2026-07-11T02:40:42.023353"
+  },
+  "line_art_run": {
+    "accepted": false,
+    "accepted_asset_id": null,
+    "attempts": [
+      {
+        "attempt": 1,
+        "attempt_id": "iat_3f7ce600ebaaa179",
+        "attempt_number": 1,
+        "cache_hit": false,
+        "cache_key": "45ad2c9598c685a908a308ad81d00f16d120d3d6fa44a88e15a4f495bc7593db",
+        "cached": false,
+        "correction": null,
+        "corrective_instruction": null,
+        "cost": null,
+        "created_at": "2026-07-11T02:40:42.005105",
+        "engine_role": "primary",
+        "error_category": null,
+        "failed_checks": [],
+        "fallback_reason": null,
+        "latency_ms": 20695,
+        "model": "grok_direct",
+        "output_hash": "bfb0551f693d15f102c3f03e95d1647bed459cbcfbd2b783c953380b5540d73f",
+        "prompt_hash": "7597caa46683eb61871060f940e8d62e414f7c97dbc3cc49cb9f29743909af2e",
+        "provider": "xai",
+        "provider_request_id": null,
+        "qa_checks": [
+          {
+            "code": "decodable_image",
+            "evidence": {
+              "format": "JPEG",
+              "height": 1136,
+              "width": 912
+            },
+            "message": "candidate is a decodable raster image",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "review_resolution",
+            "evidence": {
+              "height": 1136,
+              "width": 912
+            },
+            "message": "candidate has reviewable raster dimensions",
+            "passed": true,
+            "severity": "warning"
+          },
+          {
+            "code": "candidate_changed",
+            "evidence": {},
+            "message": "candidate bytes differ from the source",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "requested_change",
+            "evidence": {},
+            "message": "visual evidence matches the requested fact",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "protected_regions",
+            "evidence": {},
+            "message": "visual evidence matches the requested fact",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "unintended_drift",
+            "evidence": {
+              "changes": [],
+              "severity": "none"
+            },
+            "message": "no unintended changes detected",
+            "passed": true,
+            "severity": "warning"
+          },
+          {
+            "code": "geometry_preserved",
+            "evidence": {},
+            "message": "visual evidence matches the requested fact",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "text_or_branding",
+            "evidence": {},
+            "message": "no text or branding introduced",
+            "passed": true,
+            "severity": "hard"
+          }
+        ],
+        "qa_verdict": "pass",
+        "usage": {},
+        "verdict": "pass"
+      }
+    ],
+    "completed_at": "2026-07-11T02:40:42.005105",
+    "created_at": "2026-07-11T02:40:42.005686",
+    "created_by": "usr_test_designer",
+    "error_category": null,
+    "input_hash": "05188c76a40698b743e54d9776d43daca5f567179c49a11b15189d0c3e9cc106",
+    "mask_hash": null,
+    "normalized_intent": {
+      "expected_output": "one geometry-faithful three-quarter line drawing for explicit designer confirmation before color",
+      "frozen": [
+        "all jewelry geometry, stones, setting, proportions, and metal identity",
+        "the complete validated specification",
+        "the complete assembled ring silhouette and proportions",
+        "every visible stone, setting, prong, shoulder motif, and band contour",
+        "the exact validated specification"
+      ],
+      "instruction": "Convert this exact approved ring into one clean black technical line-art three-quarter view. Remove photography, paint, paper texture, shadows, annotations, and background only.",
+      "region_description": null,
+      "spec_delta": [],
+      "style_constraints": [
+        "pure black precise jewelry outlines on a plain white background",
+        "preserve every stone, leaf, shoulder, prong, setting, band contour, count, and spatial relationship",
+        "one assembled ring view only; no exploded parts, title block, labels, numbers, text, or watermark",
+        "consistent thin technical strokes with faceted stone outlines and no color fill"
+      ]
+    },
+    "operation": "VISUAL_ONLY_EDIT",
+    "output_hash": "bfb0551f693d15f102c3f03e95d1647bed459cbcfbd2b783c953380b5540d73f",
+    "project_id": "ast_bf6ef90f143f4dd8",
+    "prompt_contract_version": "visual-only-edit.v1",
+    "prompt_version": "visual-only-edit.v1",
+    "review_decision": null,
+    "review_required": true,
+    "reviewed_at": null,
+    "reviewed_by": null,
+    "run_id": "run_e3b4e1cc86afe28c",
+    "source_asset_id": "ast_bf6ef90f143f4dd8",
+    "source_hash": "bb8a6034ed384c09433269d266acef582875f29e43ab70fb9119a2a7f7871c00",
+    "spec_visual_hash": "fc566aa713967384",
+    "status": "review_required",
+    "stored_status": "review_required",
+    "variant": 0,
+    "verdict": "pass"
+  },
+  "live": true,
+  "project_created": {
+    "active_asset_id": "ast_bf6ef90f143f4dd8",
+    "active_design_version": 1,
+    "active_revision": {
+      "asset_id": "ast_bf6ef90f143f4dd8",
+      "capability": "IMPORTED_REFERENCE",
+      "created_at": "2026-07-11T02:40:21.296753",
+      "created_by": "usr_test_designer",
+      "design_version": 1,
+      "image_url": "/assets/ast_bf6ef90f143f4dd8/image",
+      "instruction": "Designer-confirmed imported reference",
+      "legacy_provenance": false,
+      "media_type": "image/jpeg",
+      "pinned": false,
+      "provenance": "imported_reference",
+      "revision": 1,
+      "root_id": "ast_bf6ef90f143f4dd8"
+    },
+    "assets": [
+      {
+        "asset_id": "ast_bf6ef90f143f4dd8",
+        "capability": "IMPORTED_REFERENCE",
+        "created_at": "2026-07-11T02:40:21.296753",
+        "created_by": "usr_test_designer",
+        "design_version": 1,
+        "image_url": "/assets/ast_bf6ef90f143f4dd8/image",
+        "instruction": "Designer-confirmed imported reference",
+        "legacy_provenance": false,
+        "media_type": "image/jpeg",
+        "pinned": false,
+        "provenance": "imported_reference",
+        "revision": 1,
+        "root_id": "ast_bf6ef90f143f4dd8"
+      }
+    ],
+    "collection": "Founder reference acceptance",
+    "counts": {
+      "IMPORTED_REFERENCE": 1
+    },
+    "cover_asset_id": "ast_bf6ef90f143f4dd8",
+    "created_at": "2026-07-11T02:40:21.296753",
+    "derived_assets": [],
+    "design_id": "dsn_de5c0378a002287f",
+    "factory_ready": false,
+    "has_factory_drawing": false,
+    "id": "ast_bf6ef90f143f4dd8",
+    "image_run_ids": [],
+    "item_count": 1,
+    "items": [
+      {
+        "asset_id": "ast_bf6ef90f143f4dd8",
+        "capability": "IMPORTED_REFERENCE",
+        "created_at": "2026-07-11T02:40:21.296753",
+        "created_by": "usr_test_designer",
+        "design_version": 1,
+        "image_url": "/assets/ast_bf6ef90f143f4dd8/image",
+        "instruction": "Designer-confirmed imported reference",
+        "legacy_provenance": false,
+        "media_type": "image/jpeg",
+        "pinned": false,
+        "provenance": "imported_reference",
+        "revision": 1,
+        "root_id": "ast_bf6ef90f143f4dd8"
+      }
+    ],
+    "latest_design_version": 1,
+    "owner": "usr_test_designer",
+    "primary_revision_count": 1,
+    "revisions": [
+      {
+        "asset_id": "ast_bf6ef90f143f4dd8",
+        "capability": "IMPORTED_REFERENCE",
+        "created_at": "2026-07-11T02:40:21.296753",
+        "created_by": "usr_test_designer",
+        "design_version": 1,
+        "image_url": "/assets/ast_bf6ef90f143f4dd8/image",
+        "instruction": "Designer-confirmed imported reference",
+        "legacy_provenance": false,
+        "media_type": "image/jpeg",
+        "pinned": false,
+        "provenance": "imported_reference",
+        "revision": 1,
+        "root_id": "ast_bf6ef90f143f4dd8"
+      }
+    ],
+    "root_id": "ast_bf6ef90f143f4dd8",
+    "spec": {
+      "band": {
+        "profile": "comfort_fit",
+        "thickness_mm": 1.6,
+        "width_mm": 2.2
+      },
+      "bracelet": null,
+      "brooch": null,
+      "chain": null,
+      "composition": null,
+      "created_at": "2026-07-11T02:40:21.296753Z",
+      "created_by": "usr_test_designer",
+      "design_id": "dsn_de5c0378a002287f",
+      "drop": null,
+      "jewelry_type": "ring",
+      "metal": {
+        "color": "yellow",
+        "finish": "high_polish",
+        "karat": 18,
+        "material": "gold"
+      },
+      "mode": "pro",
+      "notes_to_factory": "TEST DESIGNER-CONFIRMED SPEC: emerald center and diamond-set leaf shoulders. Side-stone sizes and counts are explicit test values for workflow validation, not measurements extracted from the photograph.",
+      "pendant": null,
+      "ring_size": {
+        "inner_diameter_mm": 16.91,
+        "system": "US",
+        "value": 6.5
+      },
+      "schema_version": 1,
+      "setting": {
+        "gallery_height_mm": 4.2,
+        "prong_count": 4,
+        "prong_tip_mm": 0.9,
+        "style": "4_prong_basket"
+      },
+      "side_stones": [
+        {
+          "carat": 0.015,
+          "clarity": null,
+          "color": {
+            "gia": "F",
+            "hue_code": null,
+            "saturation": null,
+            "tone": null,
+            "trade": "colorless"
+          },
+          "count": 12,
+          "culet": null,
+          "cut": "marquise",
+          "depth_pct": null,
+          "dimensions_mm": {
+            "depth": 0.8,
+            "length": 2.5,
+            "width": 1.3
+          },
+          "girdle": null,
+          "inscription": null,
+          "lab": null,
+          "mount": null,
+          "origin": null,
+          "phenomena": [],
+          "position": "pave_leaves",
+          "species": "diamond",
+          "table_pct": null,
+          "treatment": null
+        },
+        {
+          "carat": 0.007,
+          "clarity": null,
+          "color": {
+            "gia": "F",
+            "hue_code": null,
+            "saturation": null,
+            "tone": null,
+            "trade": "colorless"
+          },
+          "count": 24,
+          "culet": null,
+          "cut": "round_brilliant",
+          "depth_pct": null,
+          "dimensions_mm": {
+            "depth": 0.73,
+            "length": 1.2,
+            "width": 1.2
+          },
+          "girdle": null,
+          "inscription": null,
+          "lab": null,
+          "mount": null,
+          "origin": null,
+          "phenomena": [],
+          "position": "pave_leaves",
+          "species": "diamond",
+          "table_pct": null,
+          "treatment": null
+        }
+      ],
+      "stone": {
+        "carat": 2.263,
+        "clarity": null,
+        "color": {
+          "gia": "vivid, warm, slightly yellowish green",
+          "hue_code": null,
+          "saturation": null,
+          "tone": null,
+          "trade": "Muzo Green"
+        },
+        "count": 1,
+        "culet": null,
+        "cut": "emerald_cut",
+        "depth_pct": null,
+        "dimensions_mm": {
+          "depth": 5.2,
+          "length": 8.0,
+          "width": 8.0
+        },
+        "girdle": null,
+        "inscription": null,
+        "lab": null,
+        "mount": null,
+        "origin": null,
+        "phenomena": [],
+        "position": "center",
+        "species": "emerald",
+        "table_pct": null,
+        "treatment": null
+      },
+      "template": "leaf_shoulder_prong",
+      "version": 1
+    },
+    "state": "refining",
+    "tags": [
+      "corrected-spec",
+      "leaf",
+      "live-eval",
+      "ring"
+    ],
+    "title": "Leaf ring corrected-spec live acceptance",
+    "updated_at": "2026-07-11T02:40:21.296753"
+  },
+  "run_name": "designer-corrected-full-e2e-2026-07-11",
+  "source": "docs/evals/designer-product-photo-live-2026-07-11/warning-product-photo.png"
+}

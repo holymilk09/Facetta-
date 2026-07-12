@@ -1,0 +1,13 @@
+{
+  "acceptance_role": "none",
+  "accepted_by_harness": false,
+  "candidate_id": "cand_92ebb5f9e803445b",
+  "designer_approval": false,
+  "founder_approval": false,
+  "gia_cofounder_approval": false,
+  "preview_file": "stage-01-spec_render-warning-preview.png",
+  "project_records_unchanged": true,
+  "prompt_contract_version": "spec-render.v2",
+  "run_id": "run_90770e5232528b4c",
+  "stage": "spec_render"
+}

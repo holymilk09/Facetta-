@@ -1,0 +1,3716 @@
+{
+  "checklist": {
+    "asset_id": "ast_871ba14a1a7399d5",
+    "checklist_id": "chk_c446d2ccc4682acd",
+    "design_id": "dsn_9144f2f36c50c3d4",
+    "design_version": 2,
+    "items": [
+      {
+        "fact": "1.04 ct emerald \u00b7 oval brilliant \u00b7 8 \u00d7 6 \u00d7 4 mm EST.",
+        "index": null,
+        "key": "stone",
+        "label": "Center stone",
+        "question": "Is the center stone right?",
+        "ref": "A",
+        "section": "stone",
+        "target_element_id": null
+      },
+      {
+        "fact": "6 \u00d7 diamond round brilliant \u00b7 2 \u00d7 2 \u00d7 1.2 mm EST. \u00b7 0.18 ct total",
+        "index": 0,
+        "key": "side_stones[0]",
+        "label": "Side stones",
+        "question": "Are the side stones right?",
+        "ref": "B",
+        "section": "side_stones",
+        "target_element_id": null
+      },
+      {
+        "fact": "4 Prong Basket \u00b7 gallery 4 mm EST.",
+        "index": null,
+        "key": "setting",
+        "label": "Setting",
+        "question": "Is the setting right?",
+        "ref": null,
+        "section": "setting",
+        "target_element_id": null
+      },
+      {
+        "fact": "18k Rose Gold \u00b7 high polish",
+        "index": null,
+        "key": "metal",
+        "label": "Metal & finish",
+        "question": "Are the metal and finish right?",
+        "ref": null,
+        "section": "metal",
+        "target_element_id": null
+      },
+      {
+        "fact": "half round \u00b7 2 \u00d7 1.6 mm EST.",
+        "index": null,
+        "key": "band",
+        "label": "Band",
+        "question": "Is the band right?",
+        "ref": null,
+        "section": "band",
+        "target_element_id": null
+      },
+      {
+        "fact": "US 6.5 \u00b7 \u2300 16.9 mm EST.",
+        "index": null,
+        "key": "ring_size",
+        "label": "Ring size",
+        "question": "Is the ring size right?",
+        "ref": null,
+        "section": "ring_size",
+        "target_element_id": null
+      }
+    ],
+    "mode": "auto_pin",
+    "status": {
+      "all_approved": false,
+      "answered": 0,
+      "approved": 0,
+      "declined": [],
+      "outstanding": [
+        "stone",
+        "side_stones[0]",
+        "setting",
+        "metal",
+        "band",
+        "ring_size"
+      ],
+      "total": 6
+    },
+    "version": 2
+  },
+  "checklist_answers": [
+    {
+      "approved": true,
+      "checklist_id": "chk_c446d2ccc4682acd",
+      "item_key": "stone",
+      "pinned": false,
+      "status": {
+        "all_approved": false,
+        "answered": 1,
+        "approved": 1,
+        "declined": [],
+        "outstanding": [
+          "side_stones[0]",
+          "setting",
+          "metal",
+          "band",
+          "ring_size"
+        ],
+        "total": 6
+      }
+    },
+    {
+      "approved": true,
+      "checklist_id": "chk_c446d2ccc4682acd",
+      "item_key": "side_stones[0]",
+      "pinned": false,
+      "status": {
+        "all_approved": false,
+        "answered": 2,
+        "approved": 2,
+        "declined": [],
+        "outstanding": [
+          "setting",
+          "metal",
+          "band",
+          "ring_size"
+        ],
+        "total": 6
+      }
+    },
+    {
+      "approved": true,
+      "checklist_id": "chk_c446d2ccc4682acd",
+      "item_key": "setting",
+      "pinned": false,
+      "status": {
+        "all_approved": false,
+        "answered": 3,
+        "approved": 3,
+        "declined": [],
+        "outstanding": [
+          "metal",
+          "band",
+          "ring_size"
+        ],
+        "total": 6
+      }
+    },
+    {
+      "approved": true,
+      "checklist_id": "chk_c446d2ccc4682acd",
+      "item_key": "metal",
+      "pinned": false,
+      "status": {
+        "all_approved": false,
+        "answered": 4,
+        "approved": 4,
+        "declined": [],
+        "outstanding": [
+          "band",
+          "ring_size"
+        ],
+        "total": 6
+      }
+    },
+    {
+      "approved": true,
+      "checklist_id": "chk_c446d2ccc4682acd",
+      "item_key": "band",
+      "pinned": false,
+      "status": {
+        "all_approved": false,
+        "answered": 5,
+        "approved": 5,
+        "declined": [],
+        "outstanding": [
+          "ring_size"
+        ],
+        "total": 6
+      }
+    },
+    {
+      "approved": true,
+      "checklist_id": "chk_c446d2ccc4682acd",
+      "item_key": "ring_size",
+      "message": "All 6 checks approved \u2014 pinned version 2 for factory",
+      "pinned": true,
+      "pinned_version": 2,
+      "status": {
+        "all_approved": true,
+        "answered": 6,
+        "approved": 6,
+        "declined": [],
+        "outstanding": [],
+        "total": 6
+      }
+    }
+  ],
+  "created_project": {
+    "active_asset_id": "ast_00a5b9b805219bbc",
+    "active_design_version": 1,
+    "active_revision": {
+      "asset_id": "ast_00a5b9b805219bbc",
+      "capability": "IMPORTED_REFERENCE",
+      "created_at": "2026-07-11T16:13:42.881417",
+      "created_by": "usr_operator_review_not_founder",
+      "design_version": 1,
+      "image_url": "/assets/ast_00a5b9b805219bbc/image",
+      "instruction": "Designer-confirmed imported reference",
+      "legacy_provenance": false,
+      "media_type": "image/jpeg",
+      "pinned": false,
+      "provenance": "imported_reference",
+      "revision": 1,
+      "root_id": "ast_00a5b9b805219bbc"
+    },
+    "assets": [
+      {
+        "asset_id": "ast_00a5b9b805219bbc",
+        "capability": "IMPORTED_REFERENCE",
+        "created_at": "2026-07-11T16:13:42.881417",
+        "created_by": "usr_operator_review_not_founder",
+        "design_version": 1,
+        "image_url": "/assets/ast_00a5b9b805219bbc/image",
+        "instruction": "Designer-confirmed imported reference",
+        "legacy_provenance": false,
+        "media_type": "image/jpeg",
+        "pinned": false,
+        "provenance": "imported_reference",
+        "revision": 1,
+        "root_id": "ast_00a5b9b805219bbc"
+      }
+    ],
+    "collection": "Unfiled",
+    "counts": {
+      "IMPORTED_REFERENCE": 1
+    },
+    "cover_asset_id": "ast_00a5b9b805219bbc",
+    "created_at": "2026-07-11T16:13:42.881417",
+    "derived_assets": [],
+    "design_id": "dsn_9144f2f36c50c3d4",
+    "factory_blockers": [],
+    "factory_ready": false,
+    "has_factory_drawing": false,
+    "id": "ast_00a5b9b805219bbc",
+    "image_run_ids": [],
+    "item_count": 1,
+    "items": [
+      {
+        "asset_id": "ast_00a5b9b805219bbc",
+        "capability": "IMPORTED_REFERENCE",
+        "created_at": "2026-07-11T16:13:42.881417",
+        "created_by": "usr_operator_review_not_founder",
+        "design_version": 1,
+        "image_url": "/assets/ast_00a5b9b805219bbc/image",
+        "instruction": "Designer-confirmed imported reference",
+        "legacy_provenance": false,
+        "media_type": "image/jpeg",
+        "pinned": false,
+        "provenance": "imported_reference",
+        "revision": 1,
+        "root_id": "ast_00a5b9b805219bbc"
+      }
+    ],
+    "latest_design_version": 1,
+    "owner": "usr_operator_review_not_founder",
+    "primary_revision_count": 1,
+    "revisions": [
+      {
+        "asset_id": "ast_00a5b9b805219bbc",
+        "capability": "IMPORTED_REFERENCE",
+        "created_at": "2026-07-11T16:13:42.881417",
+        "created_by": "usr_operator_review_not_founder",
+        "design_version": 1,
+        "image_url": "/assets/ast_00a5b9b805219bbc/image",
+        "instruction": "Designer-confirmed imported reference",
+        "legacy_provenance": false,
+        "media_type": "image/jpeg",
+        "pinned": false,
+        "provenance": "imported_reference",
+        "revision": 1,
+        "root_id": "ast_00a5b9b805219bbc"
+      }
+    ],
+    "root_id": "ast_00a5b9b805219bbc",
+    "spec": {
+      "band": {
+        "profile": "half_round",
+        "thickness_mm": 1.6,
+        "width_mm": 2.0
+      },
+      "bracelet": null,
+      "brooch": null,
+      "chain": null,
+      "composition": null,
+      "created_at": "2026-07-11T16:13:42.881417Z",
+      "created_by": "usr_operator_review_not_founder",
+      "design_form": {
+        "elements": []
+      },
+      "design_id": "dsn_9144f2f36c50c3d4",
+      "dimension_provenance": {
+        "band.thickness_mm": {
+          "confidence": 0.4,
+          "method": "reference_vision",
+          "note": "Reference-derived starting value; verify before production.",
+          "source": "synthetic low-information reference render",
+          "status": "estimated_from_reference"
+        },
+        "band.width_mm": {
+          "confidence": 0.4,
+          "method": "reference_vision",
+          "note": "Reference-derived starting value; verify before production.",
+          "source": "synthetic low-information reference render",
+          "status": "estimated_from_reference"
+        },
+        "ring_size.inner_diameter_mm": {
+          "confidence": 0.4,
+          "method": "reference_vision",
+          "note": "Reference-derived starting value; verify before production.",
+          "source": "synthetic low-information reference render",
+          "status": "estimated_from_reference"
+        },
+        "ring_size.value": {
+          "confidence": 0.4,
+          "method": "reference_vision",
+          "note": "Reference-derived starting value; verify before production.",
+          "source": "synthetic low-information reference render",
+          "status": "estimated_from_reference"
+        },
+        "setting.gallery_height_mm": {
+          "confidence": 0.4,
+          "method": "reference_vision",
+          "note": "Reference-derived starting value; verify before production.",
+          "source": "synthetic low-information reference render",
+          "status": "estimated_from_reference"
+        },
+        "setting.prong_tip_mm": {
+          "confidence": 0.4,
+          "method": "reference_vision",
+          "note": "Reference-derived starting value; verify before production.",
+          "source": "synthetic low-information reference render",
+          "status": "estimated_from_reference"
+        },
+        "side_stones[0].dimensions_mm.depth": {
+          "confidence": 0.4,
+          "method": "reference_vision",
+          "note": "Reference-derived starting value; verify before production.",
+          "source": "synthetic low-information reference render",
+          "status": "estimated_from_reference"
+        },
+        "side_stones[0].dimensions_mm.length": {
+          "confidence": 0.4,
+          "method": "reference_vision",
+          "note": "Reference-derived starting value; verify before production.",
+          "source": "synthetic low-information reference render",
+          "status": "estimated_from_reference"
+        },
+        "side_stones[0].dimensions_mm.width": {
+          "confidence": 0.4,
+          "method": "reference_vision",
+          "note": "Reference-derived starting value; verify before production.",
+          "source": "synthetic low-information reference render",
+          "status": "estimated_from_reference"
+        },
+        "stone.dimensions_mm.depth": {
+          "confidence": 0.4,
+          "method": "reference_vision",
+          "note": "Reference-derived starting value; verify before production.",
+          "source": "synthetic low-information reference render",
+          "status": "estimated_from_reference"
+        },
+        "stone.dimensions_mm.length": {
+          "confidence": 0.4,
+          "method": "reference_vision",
+          "note": "Reference-derived starting value; verify before production.",
+          "source": "synthetic low-information reference render",
+          "status": "estimated_from_reference"
+        },
+        "stone.dimensions_mm.width": {
+          "confidence": 0.4,
+          "method": "reference_vision",
+          "note": "Reference-derived starting value; verify before production.",
+          "source": "synthetic low-information reference render",
+          "status": "estimated_from_reference"
+        }
+      },
+      "drop": null,
+      "jewelry_type": "ring",
+      "metal": {
+        "color": "yellow",
+        "finish": "high_polish",
+        "karat": 18,
+        "material": "gold"
+      },
+      "mode": "pro",
+      "notes_to_factory": "Synthetic live workflow fixture. Every dimension is a reference estimate pending designer measurement; unseen gallery construction is not source-observed factory truth.",
+      "pendant": null,
+      "ring_size": {
+        "inner_diameter_mm": 16.91,
+        "system": "US",
+        "value": 6.5
+      },
+      "schema_version": 1,
+      "setting": {
+        "gallery_height_mm": 4.0,
+        "prong_count": 4,
+        "prong_tip_mm": 0.8,
+        "style": "4_prong_basket"
+      },
+      "side_stones": [
+        {
+          "carat": 0.03,
+          "clarity": {
+            "eye_clean": null,
+            "grade": "VS2",
+            "system": "gia_diamond"
+          },
+          "color": {
+            "gia": "colorless",
+            "hue_code": null,
+            "saturation": null,
+            "tone": null,
+            "trade": "F"
+          },
+          "count": 6,
+          "culet": null,
+          "cut": "round_brilliant",
+          "depth_pct": null,
+          "dimensions_mm": {
+            "depth": 1.2,
+            "length": 2.0,
+            "width": 2.0
+          },
+          "girdle": null,
+          "inscription": null,
+          "lab": null,
+          "mount": null,
+          "origin": null,
+          "phenomena": [],
+          "position": "shoulders",
+          "species": "diamond",
+          "table_pct": null,
+          "treatment": null
+        }
+      ],
+      "source_component_coverage": {
+        "audited_spec_visual_hash": "e257359d45cf604d",
+        "components": [
+          {
+            "canonical_spec_paths": [
+              "stone"
+            ],
+            "component_id": "stone.center",
+            "designer_confirmation": null,
+            "independent_audit": {
+              "auditor": "skeptical-source-component-audit.v4",
+              "evidence_sha256": "f35c43cd8d4321e8f4c964426083d3c0ac7bc3b47c2779ff812b60ada4f06bb2",
+              "kind": "independent_component_audit",
+              "observed_description": "large oval faceted green center stone",
+              "source_view": "three_quarter",
+              "verdict": "pass"
+            },
+            "source_confidence": 0.45,
+            "source_description": "1 emerald oval_brilliant stone at center",
+            "source_view": "unspecified",
+            "unresolved_reason": null
+          },
+          {
+            "canonical_spec_paths": [
+              "side_stones[0]"
+            ],
+            "component_id": "stone.group.001",
+            "designer_confirmation": {
+              "basis": "visible_source",
+              "confirmed_description": "Exactly three round shoulder stones are visible on each side, six total.",
+              "evidence_sha256": "f03337ca313b3af14e4154157fd45f20f3c4a1207752dc5ecb7dbb0e1ee56c63",
+              "kind": "designer_component_confirmation",
+              "reviewer": "usr_operator_review_not_founder",
+              "source_view": "three_quarter",
+              "spec_visual_hash": "e257359d45cf604d"
+            },
+            "independent_audit": {
+              "auditor": "skeptical-source-component-audit.v4",
+              "evidence_sha256": "f35c43cd8d4321e8f4c964426083d3c0ac7bc3b47c2779ff812b60ada4f06bb2",
+              "kind": "independent_component_audit",
+              "observed_description": "Blind visible-fact evidence is insufficient: the specification says repeated-stone count 6, but the blind inventory did not state an assessable repeated-stone count.",
+              "source_view": "three_quarter",
+              "verdict": "inconclusive"
+            },
+            "source_confidence": 0.45,
+            "source_description": "6 diamond round_brilliant stones at shoulders",
+            "source_view": "unspecified",
+            "unresolved_reason": null
+          },
+          {
+            "canonical_spec_paths": [
+              "setting"
+            ],
+            "component_id": "setting.primary",
+            "designer_confirmation": {
+              "basis": "visible_source",
+              "confirmed_description": "Exactly four center-stone prongs are visible around the oval stone.",
+              "evidence_sha256": "f03337ca313b3af14e4154157fd45f20f3c4a1207752dc5ecb7dbb0e1ee56c63",
+              "kind": "designer_component_confirmation",
+              "reviewer": "usr_operator_review_not_founder",
+              "source_view": "three_quarter",
+              "spec_visual_hash": "e257359d45cf604d"
+            },
+            "independent_audit": {
+              "auditor": "skeptical-source-component-audit.v4",
+              "evidence_sha256": "f35c43cd8d4321e8f4c964426083d3c0ac7bc3b47c2779ff812b60ada4f06bb2",
+              "kind": "independent_component_audit",
+              "observed_description": "Blind visible-fact evidence is insufficient: the specification says 4-prong, but the blind inventory did not state an assessable prong count.",
+              "source_view": "three_quarter",
+              "verdict": "inconclusive"
+            },
+            "source_confidence": 0.45,
+            "source_description": "4_prong_basket setting with 4 prongs",
+            "source_view": "unspecified",
+            "unresolved_reason": null
+          },
+          {
+            "canonical_spec_paths": [
+              "metal"
+            ],
+            "component_id": "metal.body",
+            "designer_confirmation": null,
+            "independent_audit": {
+              "auditor": "skeptical-source-component-audit.v4",
+              "evidence_sha256": "f35c43cd8d4321e8f4c964426083d3c0ac7bc3b47c2779ff812b60ada4f06bb2",
+              "kind": "independent_component_audit",
+              "observed_description": "yellow gold metal throughout visible portions",
+              "source_view": "three_quarter",
+              "verdict": "pass"
+            },
+            "source_confidence": 0.45,
+            "source_description": "18 yellow gold metal body",
+            "source_view": "unspecified",
+            "unresolved_reason": null
+          },
+          {
+            "canonical_spec_paths": [
+              "band"
+            ],
+            "component_id": "band.shank",
+            "designer_confirmation": null,
+            "independent_audit": {
+              "auditor": "skeptical-source-component-audit.v4",
+              "evidence_sha256": "f35c43cd8d4321e8f4c964426083d3c0ac7bc3b47c2779ff812b60ada4f06bb2",
+              "kind": "independent_component_audit",
+              "observed_description": "continuous yellow gold shank with tapered shoulders, plain lower half",
+              "source_view": "three_quarter",
+              "verdict": "pass"
+            },
+            "source_confidence": 0.45,
+            "source_description": "half_round ring shank",
+            "source_view": "unspecified",
+            "unresolved_reason": null
+          },
+          {
+            "canonical_spec_paths": [
+              "template"
+            ],
+            "component_id": "assembly.primary",
+            "designer_confirmation": null,
+            "independent_audit": {
+              "auditor": "skeptical-source-component-audit.v4",
+              "evidence_sha256": "f35c43cd8d4321e8f4c964426083d3c0ac7bc3b47c2779ff812b60ada4f06bb2",
+              "kind": "independent_component_audit",
+              "observed_description": "solitaire prong assembly with center stone, shoulders, and shank",
+              "source_view": "three_quarter",
+              "verdict": "pass"
+            },
+            "source_confidence": 0.45,
+            "source_description": "solitaire_prong primary assembly topology",
+            "source_view": "unspecified",
+            "unresolved_reason": null
+          }
+        ],
+        "source_kind": "imported_reference"
+      },
+      "stone": {
+        "carat": 1.04,
+        "clarity": {
+          "eye_clean": null,
+          "grade": "VS",
+          "system": "gia_type_iii"
+        },
+        "color": {
+          "gia": "vivid green",
+          "hue_code": null,
+          "saturation": null,
+          "tone": null,
+          "trade": "Muzo Green"
+        },
+        "count": 1,
+        "culet": null,
+        "cut": "oval_brilliant",
+        "depth_pct": null,
+        "dimensions_mm": {
+          "depth": 4.0,
+          "length": 8.0,
+          "width": 6.0
+        },
+        "girdle": null,
+        "inscription": null,
+        "lab": null,
+        "mount": null,
+        "origin": null,
+        "phenomena": [],
+        "position": "center",
+        "species": "emerald",
+        "table_pct": null,
+        "treatment": null
+      },
+      "template": "solitaire_prong",
+      "version": 1
+    },
+    "state": "refining",
+    "tags": [],
+    "title": "Low-information ring isolated-edit live proof",
+    "updated_at": "2026-07-11T16:13:42.881417"
+  },
+  "edit": {
+    "component_path": "metal.color",
+    "design_version": 1,
+    "image_run_id": "run_b3159a468fd5b162",
+    "isolation_target": "all visible metal surfaces of the ring, including shank, shoulders, gallery, and setting metal; exclude every gemstone",
+    "next_spec": {
+      "band": {
+        "profile": "half_round",
+        "thickness_mm": 1.6,
+        "width_mm": 2.0
+      },
+      "created_at": "2026-07-11T16:13:42.881417Z",
+      "created_by": "usr_operator_review_not_founder",
+      "design_form": {
+        "elements": []
+      },
+      "design_id": "dsn_9144f2f36c50c3d4",
+      "dimension_provenance": {
+        "band.thickness_mm": {
+          "confidence": 0.4,
+          "method": "reference_vision",
+          "note": "Reference-derived starting value; verify before production.",
+          "source": "synthetic low-information reference render",
+          "status": "estimated_from_reference"
+        },
+        "band.width_mm": {
+          "confidence": 0.4,
+          "method": "reference_vision",
+          "note": "Reference-derived starting value; verify before production.",
+          "source": "synthetic low-information reference render",
+          "status": "estimated_from_reference"
+        },
+        "ring_size.inner_diameter_mm": {
+          "confidence": 0.4,
+          "method": "reference_vision",
+          "note": "Reference-derived starting value; verify before production.",
+          "source": "synthetic low-information reference render",
+          "status": "estimated_from_reference"
+        },
+        "ring_size.value": {
+          "confidence": 0.4,
+          "method": "reference_vision",
+          "note": "Reference-derived starting value; verify before production.",
+          "source": "synthetic low-information reference render",
+          "status": "estimated_from_reference"
+        },
+        "setting.gallery_height_mm": {
+          "confidence": 0.4,
+          "method": "reference_vision",
+          "note": "Reference-derived starting value; verify before production.",
+          "source": "synthetic low-information reference render",
+          "status": "estimated_from_reference"
+        },
+        "setting.prong_tip_mm": {
+          "confidence": 0.4,
+          "method": "reference_vision",
+          "note": "Reference-derived starting value; verify before production.",
+          "source": "synthetic low-information reference render",
+          "status": "estimated_from_reference"
+        },
+        "side_stones[0].dimensions_mm.depth": {
+          "confidence": 0.4,
+          "method": "reference_vision",
+          "note": "Reference-derived starting value; verify before production.",
+          "source": "synthetic low-information reference render",
+          "status": "estimated_from_reference"
+        },
+        "side_stones[0].dimensions_mm.length": {
+          "confidence": 0.4,
+          "method": "reference_vision",
+          "note": "Reference-derived starting value; verify before production.",
+          "source": "synthetic low-information reference render",
+          "status": "estimated_from_reference"
+        },
+        "side_stones[0].dimensions_mm.width": {
+          "confidence": 0.4,
+          "method": "reference_vision",
+          "note": "Reference-derived starting value; verify before production.",
+          "source": "synthetic low-information reference render",
+          "status": "estimated_from_reference"
+        },
+        "stone.dimensions_mm.depth": {
+          "confidence": 0.4,
+          "method": "reference_vision",
+          "note": "Reference-derived starting value; verify before production.",
+          "source": "synthetic low-information reference render",
+          "status": "estimated_from_reference"
+        },
+        "stone.dimensions_mm.length": {
+          "confidence": 0.4,
+          "method": "reference_vision",
+          "note": "Reference-derived starting value; verify before production.",
+          "source": "synthetic low-information reference render",
+          "status": "estimated_from_reference"
+        },
+        "stone.dimensions_mm.width": {
+          "confidence": 0.4,
+          "method": "reference_vision",
+          "note": "Reference-derived starting value; verify before production.",
+          "source": "synthetic low-information reference render",
+          "status": "estimated_from_reference"
+        }
+      },
+      "jewelry_type": "ring",
+      "metal": {
+        "color": "rose",
+        "finish": "high_polish",
+        "karat": 18,
+        "material": "gold"
+      },
+      "mode": "pro",
+      "notes_to_factory": "Synthetic live workflow fixture. Every dimension is a reference estimate pending designer measurement; unseen gallery construction is not source-observed factory truth.",
+      "ring_size": {
+        "inner_diameter_mm": 16.91,
+        "system": "US",
+        "value": 6.5
+      },
+      "schema_version": 1,
+      "setting": {
+        "gallery_height_mm": 4.0,
+        "prong_count": 4,
+        "prong_tip_mm": 0.8,
+        "style": "4_prong_basket"
+      },
+      "side_stones": [
+        {
+          "carat": 0.03,
+          "clarity": {
+            "grade": "VS2",
+            "system": "gia_diamond"
+          },
+          "color": {
+            "gia": "colorless",
+            "trade": "F"
+          },
+          "count": 6,
+          "cut": "round_brilliant",
+          "dimensions_mm": {
+            "depth": 1.2,
+            "length": 2.0,
+            "width": 2.0
+          },
+          "phenomena": [],
+          "position": "shoulders",
+          "species": "diamond"
+        }
+      ],
+      "source_component_coverage": {
+        "audited_spec_visual_hash": "e257359d45cf604d",
+        "components": [
+          {
+            "canonical_spec_paths": [
+              "stone"
+            ],
+            "component_id": "stone.center",
+            "independent_audit": {
+              "auditor": "skeptical-source-component-audit.v4",
+              "evidence_sha256": "f35c43cd8d4321e8f4c964426083d3c0ac7bc3b47c2779ff812b60ada4f06bb2",
+              "kind": "independent_component_audit",
+              "observed_description": "large oval faceted green center stone",
+              "source_view": "three_quarter",
+              "verdict": "pass"
+            },
+            "source_confidence": 0.45,
+            "source_description": "1 emerald oval_brilliant stone at center",
+            "source_view": "unspecified"
+          },
+          {
+            "canonical_spec_paths": [
+              "side_stones[0]"
+            ],
+            "component_id": "stone.group.001",
+            "designer_confirmation": {
+              "basis": "visible_source",
+              "confirmed_description": "Exactly three round shoulder stones are visible on each side, six total.",
+              "evidence_sha256": "f03337ca313b3af14e4154157fd45f20f3c4a1207752dc5ecb7dbb0e1ee56c63",
+              "kind": "designer_component_confirmation",
+              "reviewer": "usr_operator_review_not_founder",
+              "source_view": "three_quarter",
+              "spec_visual_hash": "e257359d45cf604d"
+            },
+            "independent_audit": {
+              "auditor": "skeptical-source-component-audit.v4",
+              "evidence_sha256": "f35c43cd8d4321e8f4c964426083d3c0ac7bc3b47c2779ff812b60ada4f06bb2",
+              "kind": "independent_component_audit",
+              "observed_description": "Blind visible-fact evidence is insufficient: the specification says repeated-stone count 6, but the blind inventory did not state an assessable repeated-stone count.",
+              "source_view": "three_quarter",
+              "verdict": "inconclusive"
+            },
+            "source_confidence": 0.45,
+            "source_description": "6 diamond round_brilliant stones at shoulders",
+            "source_view": "unspecified"
+          },
+          {
+            "canonical_spec_paths": [
+              "setting"
+            ],
+            "component_id": "setting.primary",
+            "designer_confirmation": {
+              "basis": "visible_source",
+              "confirmed_description": "Exactly four center-stone prongs are visible around the oval stone.",
+              "evidence_sha256": "f03337ca313b3af14e4154157fd45f20f3c4a1207752dc5ecb7dbb0e1ee56c63",
+              "kind": "designer_component_confirmation",
+              "reviewer": "usr_operator_review_not_founder",
+              "source_view": "three_quarter",
+              "spec_visual_hash": "e257359d45cf604d"
+            },
+            "independent_audit": {
+              "auditor": "skeptical-source-component-audit.v4",
+              "evidence_sha256": "f35c43cd8d4321e8f4c964426083d3c0ac7bc3b47c2779ff812b60ada4f06bb2",
+              "kind": "independent_component_audit",
+              "observed_description": "Blind visible-fact evidence is insufficient: the specification says 4-prong, but the blind inventory did not state an assessable prong count.",
+              "source_view": "three_quarter",
+              "verdict": "inconclusive"
+            },
+            "source_confidence": 0.45,
+            "source_description": "4_prong_basket setting with 4 prongs",
+            "source_view": "unspecified"
+          },
+          {
+            "canonical_spec_paths": [
+              "metal"
+            ],
+            "component_id": "metal.body",
+            "independent_audit": {
+              "auditor": "skeptical-source-component-audit.v4",
+              "evidence_sha256": "f35c43cd8d4321e8f4c964426083d3c0ac7bc3b47c2779ff812b60ada4f06bb2",
+              "kind": "independent_component_audit",
+              "observed_description": "yellow gold metal throughout visible portions",
+              "source_view": "three_quarter",
+              "verdict": "pass"
+            },
+            "source_confidence": 0.45,
+            "source_description": "18 yellow gold metal body",
+            "source_view": "unspecified"
+          },
+          {
+            "canonical_spec_paths": [
+              "band"
+            ],
+            "component_id": "band.shank",
+            "independent_audit": {
+              "auditor": "skeptical-source-component-audit.v4",
+              "evidence_sha256": "f35c43cd8d4321e8f4c964426083d3c0ac7bc3b47c2779ff812b60ada4f06bb2",
+              "kind": "independent_component_audit",
+              "observed_description": "continuous yellow gold shank with tapered shoulders, plain lower half",
+              "source_view": "three_quarter",
+              "verdict": "pass"
+            },
+            "source_confidence": 0.45,
+            "source_description": "half_round ring shank",
+            "source_view": "unspecified"
+          },
+          {
+            "canonical_spec_paths": [
+              "template"
+            ],
+            "component_id": "assembly.primary",
+            "independent_audit": {
+              "auditor": "skeptical-source-component-audit.v4",
+              "evidence_sha256": "f35c43cd8d4321e8f4c964426083d3c0ac7bc3b47c2779ff812b60ada4f06bb2",
+              "kind": "independent_component_audit",
+              "observed_description": "solitaire prong assembly with center stone, shoulders, and shank",
+              "source_view": "three_quarter",
+              "verdict": "pass"
+            },
+            "source_confidence": 0.45,
+            "source_description": "solitaire_prong primary assembly topology",
+            "source_view": "unspecified"
+          }
+        ],
+        "source_kind": "imported_reference"
+      },
+      "stone": {
+        "carat": 1.04,
+        "clarity": {
+          "grade": "VS",
+          "system": "gia_type_iii"
+        },
+        "color": {
+          "gia": "vivid green",
+          "trade": "Muzo Green"
+        },
+        "count": 1,
+        "cut": "oval_brilliant",
+        "dimensions_mm": {
+          "depth": 4.0,
+          "length": 8.0,
+          "width": 6.0
+        },
+        "phenomena": [],
+        "position": "center",
+        "species": "emerald"
+      },
+      "template": "solitaire_prong",
+      "version": 1
+    },
+    "option_id": "rose",
+    "project": {
+      "active_asset_id": "ast_00a5b9b805219bbc",
+      "active_design_version": 1,
+      "active_revision": {
+        "asset_id": "ast_00a5b9b805219bbc",
+        "capability": "IMPORTED_REFERENCE",
+        "created_at": "2026-07-11T16:13:42.881417",
+        "created_by": "usr_operator_review_not_founder",
+        "design_version": 1,
+        "image_url": "/assets/ast_00a5b9b805219bbc/image",
+        "instruction": "Designer-confirmed imported reference",
+        "legacy_provenance": false,
+        "media_type": "image/jpeg",
+        "pinned": false,
+        "provenance": "imported_reference",
+        "revision": 1,
+        "root_id": "ast_00a5b9b805219bbc"
+      },
+      "assets": [
+        {
+          "asset_id": "ast_00a5b9b805219bbc",
+          "capability": "IMPORTED_REFERENCE",
+          "created_at": "2026-07-11T16:13:42.881417",
+          "created_by": "usr_operator_review_not_founder",
+          "design_version": 1,
+          "image_url": "/assets/ast_00a5b9b805219bbc/image",
+          "instruction": "Designer-confirmed imported reference",
+          "legacy_provenance": false,
+          "media_type": "image/jpeg",
+          "pinned": false,
+          "provenance": "imported_reference",
+          "revision": 1,
+          "root_id": "ast_00a5b9b805219bbc"
+        }
+      ],
+      "collection": "Unfiled",
+      "counts": {
+        "IMPORTED_REFERENCE": 1
+      },
+      "cover_asset_id": "ast_00a5b9b805219bbc",
+      "created_at": "2026-07-11T16:13:42.881417",
+      "derived_assets": [],
+      "design_id": "dsn_9144f2f36c50c3d4",
+      "factory_blockers": [],
+      "factory_ready": false,
+      "has_factory_drawing": false,
+      "id": "ast_00a5b9b805219bbc",
+      "image_run_ids": [
+        "run_b3159a468fd5b162"
+      ],
+      "item_count": 1,
+      "items": [
+        {
+          "asset_id": "ast_00a5b9b805219bbc",
+          "capability": "IMPORTED_REFERENCE",
+          "created_at": "2026-07-11T16:13:42.881417",
+          "created_by": "usr_operator_review_not_founder",
+          "design_version": 1,
+          "image_url": "/assets/ast_00a5b9b805219bbc/image",
+          "instruction": "Designer-confirmed imported reference",
+          "legacy_provenance": false,
+          "media_type": "image/jpeg",
+          "pinned": false,
+          "provenance": "imported_reference",
+          "revision": 1,
+          "root_id": "ast_00a5b9b805219bbc"
+        }
+      ],
+      "latest_design_version": 1,
+      "owner": "usr_operator_review_not_founder",
+      "primary_revision_count": 1,
+      "revisions": [
+        {
+          "asset_id": "ast_00a5b9b805219bbc",
+          "capability": "IMPORTED_REFERENCE",
+          "created_at": "2026-07-11T16:13:42.881417",
+          "created_by": "usr_operator_review_not_founder",
+          "design_version": 1,
+          "image_url": "/assets/ast_00a5b9b805219bbc/image",
+          "instruction": "Designer-confirmed imported reference",
+          "legacy_provenance": false,
+          "media_type": "image/jpeg",
+          "pinned": false,
+          "provenance": "imported_reference",
+          "revision": 1,
+          "root_id": "ast_00a5b9b805219bbc"
+        }
+      ],
+      "root_id": "ast_00a5b9b805219bbc",
+      "spec": {
+        "band": {
+          "profile": "half_round",
+          "thickness_mm": 1.6,
+          "width_mm": 2.0
+        },
+        "bracelet": null,
+        "brooch": null,
+        "chain": null,
+        "composition": null,
+        "created_at": "2026-07-11T16:13:42.881417Z",
+        "created_by": "usr_operator_review_not_founder",
+        "design_form": {
+          "elements": []
+        },
+        "design_id": "dsn_9144f2f36c50c3d4",
+        "dimension_provenance": {
+          "band.thickness_mm": {
+            "confidence": 0.4,
+            "method": "reference_vision",
+            "note": "Reference-derived starting value; verify before production.",
+            "source": "synthetic low-information reference render",
+            "status": "estimated_from_reference"
+          },
+          "band.width_mm": {
+            "confidence": 0.4,
+            "method": "reference_vision",
+            "note": "Reference-derived starting value; verify before production.",
+            "source": "synthetic low-information reference render",
+            "status": "estimated_from_reference"
+          },
+          "ring_size.inner_diameter_mm": {
+            "confidence": 0.4,
+            "method": "reference_vision",
+            "note": "Reference-derived starting value; verify before production.",
+            "source": "synthetic low-information reference render",
+            "status": "estimated_from_reference"
+          },
+          "ring_size.value": {
+            "confidence": 0.4,
+            "method": "reference_vision",
+            "note": "Reference-derived starting value; verify before production.",
+            "source": "synthetic low-information reference render",
+            "status": "estimated_from_reference"
+          },
+          "setting.gallery_height_mm": {
+            "confidence": 0.4,
+            "method": "reference_vision",
+            "note": "Reference-derived starting value; verify before production.",
+            "source": "synthetic low-information reference render",
+            "status": "estimated_from_reference"
+          },
+          "setting.prong_tip_mm": {
+            "confidence": 0.4,
+            "method": "reference_vision",
+            "note": "Reference-derived starting value; verify before production.",
+            "source": "synthetic low-information reference render",
+            "status": "estimated_from_reference"
+          },
+          "side_stones[0].dimensions_mm.depth": {
+            "confidence": 0.4,
+            "method": "reference_vision",
+            "note": "Reference-derived starting value; verify before production.",
+            "source": "synthetic low-information reference render",
+            "status": "estimated_from_reference"
+          },
+          "side_stones[0].dimensions_mm.length": {
+            "confidence": 0.4,
+            "method": "reference_vision",
+            "note": "Reference-derived starting value; verify before production.",
+            "source": "synthetic low-information reference render",
+            "status": "estimated_from_reference"
+          },
+          "side_stones[0].dimensions_mm.width": {
+            "confidence": 0.4,
+            "method": "reference_vision",
+            "note": "Reference-derived starting value; verify before production.",
+            "source": "synthetic low-information reference render",
+            "status": "estimated_from_reference"
+          },
+          "stone.dimensions_mm.depth": {
+            "confidence": 0.4,
+            "method": "reference_vision",
+            "note": "Reference-derived starting value; verify before production.",
+            "source": "synthetic low-information reference render",
+            "status": "estimated_from_reference"
+          },
+          "stone.dimensions_mm.length": {
+            "confidence": 0.4,
+            "method": "reference_vision",
+            "note": "Reference-derived starting value; verify before production.",
+            "source": "synthetic low-information reference render",
+            "status": "estimated_from_reference"
+          },
+          "stone.dimensions_mm.width": {
+            "confidence": 0.4,
+            "method": "reference_vision",
+            "note": "Reference-derived starting value; verify before production.",
+            "source": "synthetic low-information reference render",
+            "status": "estimated_from_reference"
+          }
+        },
+        "drop": null,
+        "jewelry_type": "ring",
+        "metal": {
+          "color": "yellow",
+          "finish": "high_polish",
+          "karat": 18,
+          "material": "gold"
+        },
+        "mode": "pro",
+        "notes_to_factory": "Synthetic live workflow fixture. Every dimension is a reference estimate pending designer measurement; unseen gallery construction is not source-observed factory truth.",
+        "pendant": null,
+        "ring_size": {
+          "inner_diameter_mm": 16.91,
+          "system": "US",
+          "value": 6.5
+        },
+        "schema_version": 1,
+        "setting": {
+          "gallery_height_mm": 4.0,
+          "prong_count": 4,
+          "prong_tip_mm": 0.8,
+          "style": "4_prong_basket"
+        },
+        "side_stones": [
+          {
+            "carat": 0.03,
+            "clarity": {
+              "eye_clean": null,
+              "grade": "VS2",
+              "system": "gia_diamond"
+            },
+            "color": {
+              "gia": "colorless",
+              "hue_code": null,
+              "saturation": null,
+              "tone": null,
+              "trade": "F"
+            },
+            "count": 6,
+            "culet": null,
+            "cut": "round_brilliant",
+            "depth_pct": null,
+            "dimensions_mm": {
+              "depth": 1.2,
+              "length": 2.0,
+              "width": 2.0
+            },
+            "girdle": null,
+            "inscription": null,
+            "lab": null,
+            "mount": null,
+            "origin": null,
+            "phenomena": [],
+            "position": "shoulders",
+            "species": "diamond",
+            "table_pct": null,
+            "treatment": null
+          }
+        ],
+        "source_component_coverage": {
+          "audited_spec_visual_hash": "e257359d45cf604d",
+          "components": [
+            {
+              "canonical_spec_paths": [
+                "stone"
+              ],
+              "component_id": "stone.center",
+              "designer_confirmation": null,
+              "independent_audit": {
+                "auditor": "skeptical-source-component-audit.v4",
+                "evidence_sha256": "f35c43cd8d4321e8f4c964426083d3c0ac7bc3b47c2779ff812b60ada4f06bb2",
+                "kind": "independent_component_audit",
+                "observed_description": "large oval faceted green center stone",
+                "source_view": "three_quarter",
+                "verdict": "pass"
+              },
+              "source_confidence": 0.45,
+              "source_description": "1 emerald oval_brilliant stone at center",
+              "source_view": "unspecified",
+              "unresolved_reason": null
+            },
+            {
+              "canonical_spec_paths": [
+                "side_stones[0]"
+              ],
+              "component_id": "stone.group.001",
+              "designer_confirmation": {
+                "basis": "visible_source",
+                "confirmed_description": "Exactly three round shoulder stones are visible on each side, six total.",
+                "evidence_sha256": "f03337ca313b3af14e4154157fd45f20f3c4a1207752dc5ecb7dbb0e1ee56c63",
+                "kind": "designer_component_confirmation",
+                "reviewer": "usr_operator_review_not_founder",
+                "source_view": "three_quarter",
+                "spec_visual_hash": "e257359d45cf604d"
+              },
+              "independent_audit": {
+                "auditor": "skeptical-source-component-audit.v4",
+                "evidence_sha256": "f35c43cd8d4321e8f4c964426083d3c0ac7bc3b47c2779ff812b60ada4f06bb2",
+                "kind": "independent_component_audit",
+                "observed_description": "Blind visible-fact evidence is insufficient: the specification says repeated-stone count 6, but the blind inventory did not state an assessable repeated-stone count.",
+                "source_view": "three_quarter",
+                "verdict": "inconclusive"
+              },
+              "source_confidence": 0.45,
+              "source_description": "6 diamond round_brilliant stones at shoulders",
+              "source_view": "unspecified",
+              "unresolved_reason": null
+            },
+            {
+              "canonical_spec_paths": [
+                "setting"
+              ],
+              "component_id": "setting.primary",
+              "designer_confirmation": {
+                "basis": "visible_source",
+                "confirmed_description": "Exactly four center-stone prongs are visible around the oval stone.",
+                "evidence_sha256": "f03337ca313b3af14e4154157fd45f20f3c4a1207752dc5ecb7dbb0e1ee56c63",
+                "kind": "designer_component_confirmation",
+                "reviewer": "usr_operator_review_not_founder",
+                "source_view": "three_quarter",
+                "spec_visual_hash": "e257359d45cf604d"
+              },
+              "independent_audit": {
+                "auditor": "skeptical-source-component-audit.v4",
+                "evidence_sha256": "f35c43cd8d4321e8f4c964426083d3c0ac7bc3b47c2779ff812b60ada4f06bb2",
+                "kind": "independent_component_audit",
+                "observed_description": "Blind visible-fact evidence is insufficient: the specification says 4-prong, but the blind inventory did not state an assessable prong count.",
+                "source_view": "three_quarter",
+                "verdict": "inconclusive"
+              },
+              "source_confidence": 0.45,
+              "source_description": "4_prong_basket setting with 4 prongs",
+              "source_view": "unspecified",
+              "unresolved_reason": null
+            },
+            {
+              "canonical_spec_paths": [
+                "metal"
+              ],
+              "component_id": "metal.body",
+              "designer_confirmation": null,
+              "independent_audit": {
+                "auditor": "skeptical-source-component-audit.v4",
+                "evidence_sha256": "f35c43cd8d4321e8f4c964426083d3c0ac7bc3b47c2779ff812b60ada4f06bb2",
+                "kind": "independent_component_audit",
+                "observed_description": "yellow gold metal throughout visible portions",
+                "source_view": "three_quarter",
+                "verdict": "pass"
+              },
+              "source_confidence": 0.45,
+              "source_description": "18 yellow gold metal body",
+              "source_view": "unspecified",
+              "unresolved_reason": null
+            },
+            {
+              "canonical_spec_paths": [
+                "band"
+              ],
+              "component_id": "band.shank",
+              "designer_confirmation": null,
+              "independent_audit": {
+                "auditor": "skeptical-source-component-audit.v4",
+                "evidence_sha256": "f35c43cd8d4321e8f4c964426083d3c0ac7bc3b47c2779ff812b60ada4f06bb2",
+                "kind": "independent_component_audit",
+                "observed_description": "continuous yellow gold shank with tapered shoulders, plain lower half",
+                "source_view": "three_quarter",
+                "verdict": "pass"
+              },
+              "source_confidence": 0.45,
+              "source_description": "half_round ring shank",
+              "source_view": "unspecified",
+              "unresolved_reason": null
+            },
+            {
+              "canonical_spec_paths": [
+                "template"
+              ],
+              "component_id": "assembly.primary",
+              "designer_confirmation": null,
+              "independent_audit": {
+                "auditor": "skeptical-source-component-audit.v4",
+                "evidence_sha256": "f35c43cd8d4321e8f4c964426083d3c0ac7bc3b47c2779ff812b60ada4f06bb2",
+                "kind": "independent_component_audit",
+                "observed_description": "solitaire prong assembly with center stone, shoulders, and shank",
+                "source_view": "three_quarter",
+                "verdict": "pass"
+              },
+              "source_confidence": 0.45,
+              "source_description": "solitaire_prong primary assembly topology",
+              "source_view": "unspecified",
+              "unresolved_reason": null
+            }
+          ],
+          "source_kind": "imported_reference"
+        },
+        "stone": {
+          "carat": 1.04,
+          "clarity": {
+            "eye_clean": null,
+            "grade": "VS",
+            "system": "gia_type_iii"
+          },
+          "color": {
+            "gia": "vivid green",
+            "hue_code": null,
+            "saturation": null,
+            "tone": null,
+            "trade": "Muzo Green"
+          },
+          "count": 1,
+          "culet": null,
+          "cut": "oval_brilliant",
+          "depth_pct": null,
+          "dimensions_mm": {
+            "depth": 4.0,
+            "length": 8.0,
+            "width": 6.0
+          },
+          "girdle": null,
+          "inscription": null,
+          "lab": null,
+          "mount": null,
+          "origin": null,
+          "phenomena": [],
+          "position": "center",
+          "species": "emerald",
+          "table_pct": null,
+          "treatment": null
+        },
+        "template": "solitaire_prong",
+        "version": 1
+      },
+      "state": "refining",
+      "tags": [],
+      "title": "Low-information ring isolated-edit live proof",
+      "updated_at": "2026-07-11T16:13:42.881417"
+    },
+    "qa": {
+      "accepted": false,
+      "checks": [
+        {
+          "code": "decodable_image",
+          "evidence": {
+            "format": "JPEG",
+            "height": 1024,
+            "width": 1024
+          },
+          "message": "candidate is a decodable raster image",
+          "passed": true,
+          "severity": "hard"
+        },
+        {
+          "code": "review_resolution",
+          "evidence": {
+            "height": 1024,
+            "width": 1024
+          },
+          "message": "candidate has reviewable raster dimensions",
+          "passed": true,
+          "severity": "warning"
+        },
+        {
+          "code": "candidate_changed",
+          "evidence": {},
+          "message": "candidate bytes differ from the source",
+          "passed": true,
+          "severity": "hard"
+        },
+        {
+          "code": "requested_change",
+          "evidence": {},
+          "message": "visual evidence matches the requested fact",
+          "passed": true,
+          "severity": "hard"
+        },
+        {
+          "code": "protected_regions",
+          "evidence": {},
+          "message": "visual evidence matches the requested fact",
+          "passed": true,
+          "severity": "hard"
+        },
+        {
+          "code": "unintended_drift",
+          "evidence": {
+            "changes": [],
+            "severity": "none"
+          },
+          "message": "no unintended changes detected",
+          "passed": true,
+          "severity": "warning"
+        },
+        {
+          "code": "spec_change",
+          "evidence": {
+            "spec_delta": [
+              {
+                "from": "yellow",
+                "kind": "changed",
+                "label": "metal colour",
+                "path": "metal.color",
+                "to": "rose"
+              }
+            ]
+          },
+          "message": "visual evidence matches the requested fact",
+          "passed": true,
+          "severity": "hard"
+        },
+        {
+          "code": "edit_domain:metal_identity",
+          "evidence": {
+            "domain": "metal_identity",
+            "spec_delta": [
+              {
+                "from": "yellow",
+                "kind": "changed",
+                "label": "metal colour",
+                "path": "metal.color",
+                "to": "rose"
+              }
+            ]
+          },
+          "message": "visual evidence matches the requested fact",
+          "passed": true,
+          "severity": "hard"
+        },
+        {
+          "code": "crosscheck_requested_change",
+          "evidence": {},
+          "message": "visual evidence matches the requested fact",
+          "passed": true,
+          "severity": "hard"
+        },
+        {
+          "code": "crosscheck_frozen_facts",
+          "evidence": {},
+          "message": "visual evidence matches the requested fact",
+          "passed": true,
+          "severity": "hard"
+        },
+        {
+          "code": "crosscheck_unintended_drift",
+          "evidence": {
+            "changes": [],
+            "severity": "none"
+          },
+          "message": "independent audit found no unintended changes",
+          "passed": true,
+          "severity": "warning"
+        },
+        {
+          "code": "crosscheck_edit_domains",
+          "evidence": {
+            "domain_mismatches": []
+          },
+          "message": "independent audit matched every required edit domain",
+          "passed": true,
+          "severity": "hard"
+        },
+        {
+          "code": "target_spec_crosscheck:jewelry_type",
+          "evidence": {
+            "differences": [],
+            "observed_prong_count": 4,
+            "observed_side_stone_count": 8
+          },
+          "message": "visual evidence matches the requested fact",
+          "passed": true,
+          "severity": "hard"
+        },
+        {
+          "code": "target_spec_crosscheck:center_identity",
+          "evidence": {
+            "differences": [],
+            "observed_prong_count": 4,
+            "observed_side_stone_count": 8
+          },
+          "message": "visual evidence matches the requested fact",
+          "passed": true,
+          "severity": "hard"
+        },
+        {
+          "code": "target_spec_crosscheck:center_cut",
+          "evidence": {
+            "differences": [],
+            "observed_prong_count": 4,
+            "observed_side_stone_count": 8
+          },
+          "message": "visual evidence matches the requested fact",
+          "passed": true,
+          "severity": "hard"
+        },
+        {
+          "code": "target_spec_crosscheck:metal",
+          "evidence": {
+            "differences": [],
+            "observed_prong_count": 4,
+            "observed_side_stone_count": 8
+          },
+          "message": "visual evidence matches the requested fact",
+          "passed": true,
+          "severity": "hard"
+        },
+        {
+          "code": "target_spec_crosscheck:setting_style",
+          "evidence": {
+            "differences": [],
+            "observed_prong_count": 4,
+            "observed_side_stone_count": 8
+          },
+          "message": "visual evidence matches the requested fact",
+          "passed": true,
+          "severity": "hard"
+        },
+        {
+          "code": "target_spec_crosscheck:prong_count",
+          "evidence": {
+            "differences": [],
+            "observed_prong_count": 4,
+            "observed_side_stone_count": 8
+          },
+          "message": "visual evidence matches the requested fact",
+          "passed": true,
+          "severity": "hard"
+        },
+        {
+          "code": "target_spec_crosscheck:side_stone_inventory",
+          "evidence": {
+            "differences": [],
+            "observed_prong_count": 4,
+            "observed_side_stone_count": 8
+          },
+          "message": "independent audit could not confirm side stone inventory",
+          "passed": false,
+          "severity": "warning"
+        },
+        {
+          "code": "target_spec_crosscheck:major_components",
+          "evidence": {
+            "differences": [],
+            "observed_prong_count": 4,
+            "observed_side_stone_count": 8
+          },
+          "message": "visual evidence matches the requested fact",
+          "passed": true,
+          "severity": "hard"
+        },
+        {
+          "code": "text_or_branding",
+          "evidence": {},
+          "message": "no text or branding introduced",
+          "passed": true,
+          "severity": "hard"
+        }
+      ],
+      "failed_checks": [
+        "target_spec_crosscheck:side_stone_inventory"
+      ],
+      "notes": [
+        "metal hue changed from yellow to warm rose across all visible surfaces; emerald and diamonds unchanged in color, cut, placement; identical geometry, prongs, band profile, lighting",
+        "Metal uniformly changed to rose-gold hue on all visible surfaces; emerald, diamonds, prongs, band profile, lighting, and framing identical",
+        "4 prongs clearly grip center green stone",
+        "8 small diamonds total on both shanks",
+        "broad and blind side-stone inventory audits disagree; designer count review required"
+      ],
+      "review_required": true,
+      "score": 95.0,
+      "summary": "Image needs explicit designer review.",
+      "verdict": "warn",
+      "warnings": [
+        "independent audit could not confirm side stone inventory"
+      ]
+    },
+    "routing": {
+      "attempt_count": 1,
+      "cache_hit": true,
+      "run_id": "run_b3159a468fd5b162",
+      "used_fallback": false,
+      "used_retry": false
+    },
+    "spec_change": [
+      {
+        "after": "rose",
+        "before": "yellow",
+        "label": "gold color",
+        "path": "metal.color"
+      }
+    ],
+    "status": "review_required",
+    "warning_candidate": {
+      "candidate_id": "cand_3a288afab0390863",
+      "operation": "LOCAL_EDIT",
+      "preview_url": "/image-runs/run_b3159a468fd5b162/candidates/cand_3a288afab0390863/image",
+      "requested_change": "Apply the exact catalog selection metal.color=rose (Rose Gold). Required visible geometry: warm pink rose-gold hue on every visible metal surface; uniform color across shank, shoulders, gallery, and setting; no change to polish, texture, dimensions, or component geometry. Change only the isolated component and preserve every frozen fact.",
+      "run_id": "run_b3159a468fd5b162"
+    }
+  },
+  "edit_http_status": 202,
+  "edited_image": "rose-gold-edit-warning.png",
+  "factory_manifest": {
+    "approved_at": "2026-07-11T16:14:26.901833",
+    "approver": "usr_operator_review_not_founder",
+    "asset_id": "ast_871ba14a1a7399d5",
+    "authority": {
+      "discussion_only": [],
+      "exchange_reference_only": [
+        "facetta-sheet.dxf"
+      ],
+      "factory_truth": [
+        "validated-spec.json",
+        "facetta-sheet.svg",
+        "facetta-schedule-1.svg"
+      ],
+      "note": "Only the validated specification and deterministic SVG sheet are authoritative factory records. The DXF is a 2D drawing-exchange reference only; it must not be used as authoritative fabrication geometry until SVG transform and curve parity is verified. Fields explicitly marked ESTIMATED are reference-derived prototyping values, not measurements, and must be verified or adjusted before manufacturing. Any discussion drawing is AI-derived, designer-reviewed visual context and must not be measured or manufactured.",
+      "visual_reference_only": [
+        "approved-reference.jpg"
+      ]
+    },
+    "checklist": {
+      "id": "chk_c446d2ccc4682acd",
+      "mode": "auto_pin",
+      "results": [
+        {
+          "approved": true,
+          "approved_at": "2026-07-11T16:14:26.884661",
+          "approved_by": "usr_operator_review_not_founder",
+          "fact": "1.04 ct emerald \u00b7 oval brilliant \u00b7 8 \u00d7 6 \u00d7 4 mm EST.",
+          "item_key": "stone",
+          "label": "Center stone",
+          "note": null
+        },
+        {
+          "approved": true,
+          "approved_at": "2026-07-11T16:14:26.889165",
+          "approved_by": "usr_operator_review_not_founder",
+          "fact": "6 \u00d7 diamond round brilliant \u00b7 2 \u00d7 2 \u00d7 1.2 mm EST. \u00b7 0.18 ct total",
+          "item_key": "side_stones[0]",
+          "label": "Side stones",
+          "note": null
+        },
+        {
+          "approved": true,
+          "approved_at": "2026-07-11T16:14:26.892889",
+          "approved_by": "usr_operator_review_not_founder",
+          "fact": "4 Prong Basket \u00b7 gallery 4 mm EST.",
+          "item_key": "setting",
+          "label": "Setting",
+          "note": null
+        },
+        {
+          "approved": true,
+          "approved_at": "2026-07-11T16:14:26.895710",
+          "approved_by": "usr_operator_review_not_founder",
+          "fact": "18k Rose Gold \u00b7 high polish",
+          "item_key": "metal",
+          "label": "Metal & finish",
+          "note": null
+        },
+        {
+          "approved": true,
+          "approved_at": "2026-07-11T16:14:26.899013",
+          "approved_by": "usr_operator_review_not_founder",
+          "fact": "half round \u00b7 2 \u00d7 1.6 mm EST.",
+          "item_key": "band",
+          "label": "Band",
+          "note": null
+        },
+        {
+          "approved": true,
+          "approved_at": "2026-07-11T16:14:26.901833",
+          "approved_by": "usr_operator_review_not_founder",
+          "fact": "US 6.5 \u00b7 \u2300 16.9 mm EST.",
+          "item_key": "ring_size",
+          "label": "Ring size",
+          "note": null
+        }
+      ],
+      "status": {
+        "all_approved": true,
+        "answered": 6,
+        "approved": 6,
+        "declined": [],
+        "outstanding": [],
+        "total": 6
+      }
+    },
+    "design_id": "dsn_9144f2f36c50c3d4",
+    "design_version": 2,
+    "dimensions": {
+      "disclaimer": "ESTIMATED dimensions are reference-derived prototyping values, not measurements. Verify or adjust them before manufacturing; factory and designer sign-off remain required.",
+      "estimated_fields": [
+        {
+          "confidence": 0.4,
+          "field_path": "band.thickness_mm",
+          "method": "reference_vision",
+          "note": "Reference-derived starting value; verify before production.",
+          "source": "synthetic low-information reference render",
+          "status": "estimated_from_reference",
+          "unit": "mm",
+          "value": 1.6
+        },
+        {
+          "confidence": 0.4,
+          "field_path": "band.width_mm",
+          "method": "reference_vision",
+          "note": "Reference-derived starting value; verify before production.",
+          "source": "synthetic low-information reference render",
+          "status": "estimated_from_reference",
+          "unit": "mm",
+          "value": 2.0
+        },
+        {
+          "confidence": 0.4,
+          "field_path": "ring_size.inner_diameter_mm",
+          "method": "reference_vision",
+          "note": "Reference-derived starting value; verify before production.",
+          "source": "synthetic low-information reference render",
+          "status": "estimated_from_reference",
+          "unit": "mm",
+          "value": 16.91
+        },
+        {
+          "confidence": 0.4,
+          "field_path": "ring_size.value",
+          "method": "reference_vision",
+          "note": "Reference-derived starting value; verify before production.",
+          "source": "synthetic low-information reference render",
+          "status": "estimated_from_reference",
+          "unit": "US",
+          "value": 6.5
+        },
+        {
+          "confidence": 0.4,
+          "field_path": "setting.gallery_height_mm",
+          "method": "reference_vision",
+          "note": "Reference-derived starting value; verify before production.",
+          "source": "synthetic low-information reference render",
+          "status": "estimated_from_reference",
+          "unit": "mm",
+          "value": 4.0
+        },
+        {
+          "confidence": 0.4,
+          "field_path": "setting.prong_tip_mm",
+          "method": "reference_vision",
+          "note": "Reference-derived starting value; verify before production.",
+          "source": "synthetic low-information reference render",
+          "status": "estimated_from_reference",
+          "unit": "mm",
+          "value": 0.8
+        },
+        {
+          "confidence": 0.4,
+          "field_path": "side_stones[0].dimensions_mm.depth",
+          "method": "reference_vision",
+          "note": "Reference-derived starting value; verify before production.",
+          "source": "synthetic low-information reference render",
+          "status": "estimated_from_reference",
+          "unit": "mm",
+          "value": 1.2
+        },
+        {
+          "confidence": 0.4,
+          "field_path": "side_stones[0].dimensions_mm.length",
+          "method": "reference_vision",
+          "note": "Reference-derived starting value; verify before production.",
+          "source": "synthetic low-information reference render",
+          "status": "estimated_from_reference",
+          "unit": "mm",
+          "value": 2.0
+        },
+        {
+          "confidence": 0.4,
+          "field_path": "side_stones[0].dimensions_mm.width",
+          "method": "reference_vision",
+          "note": "Reference-derived starting value; verify before production.",
+          "source": "synthetic low-information reference render",
+          "status": "estimated_from_reference",
+          "unit": "mm",
+          "value": 2.0
+        },
+        {
+          "confidence": 0.4,
+          "field_path": "stone.dimensions_mm.depth",
+          "method": "reference_vision",
+          "note": "Reference-derived starting value; verify before production.",
+          "source": "synthetic low-information reference render",
+          "status": "estimated_from_reference",
+          "unit": "mm",
+          "value": 4.0
+        },
+        {
+          "confidence": 0.4,
+          "field_path": "stone.dimensions_mm.length",
+          "method": "reference_vision",
+          "note": "Reference-derived starting value; verify before production.",
+          "source": "synthetic low-information reference render",
+          "status": "estimated_from_reference",
+          "unit": "mm",
+          "value": 8.0
+        },
+        {
+          "confidence": 0.4,
+          "field_path": "stone.dimensions_mm.width",
+          "method": "reference_vision",
+          "note": "Reference-derived starting value; verify before production.",
+          "source": "synthetic low-information reference render",
+          "status": "estimated_from_reference",
+          "unit": "mm",
+          "value": 6.0
+        }
+      ],
+      "has_estimates": true
+    },
+    "factory_sheet_fact_plan": {
+      "confirmed_fact_count": 4,
+      "dimensions": [
+        {
+          "confidence": 0.4,
+          "field_path": "band.thickness_mm",
+          "method": "reference_vision",
+          "note": "Reference-derived starting value; verify before production.",
+          "section": "band",
+          "source": "synthetic low-information reference render",
+          "status": "estimated_from_reference",
+          "unit": "mm",
+          "value": 1.6
+        },
+        {
+          "confidence": 0.4,
+          "field_path": "band.width_mm",
+          "method": "reference_vision",
+          "note": "Reference-derived starting value; verify before production.",
+          "section": "band",
+          "source": "synthetic low-information reference render",
+          "status": "estimated_from_reference",
+          "unit": "mm",
+          "value": 2.0
+        },
+        {
+          "confidence": 0.4,
+          "field_path": "ring_size.inner_diameter_mm",
+          "method": "reference_vision",
+          "note": "Reference-derived starting value; verify before production.",
+          "section": "ring_size",
+          "source": "synthetic low-information reference render",
+          "status": "estimated_from_reference",
+          "unit": "mm",
+          "value": 16.91
+        },
+        {
+          "confidence": 0.4,
+          "field_path": "ring_size.value",
+          "method": "reference_vision",
+          "note": "Reference-derived starting value; verify before production.",
+          "section": "ring_size",
+          "source": "synthetic low-information reference render",
+          "status": "estimated_from_reference",
+          "unit": "US",
+          "value": 6.5
+        },
+        {
+          "confidence": 0.4,
+          "field_path": "setting.gallery_height_mm",
+          "method": "reference_vision",
+          "note": "Reference-derived starting value; verify before production.",
+          "section": "setting",
+          "source": "synthetic low-information reference render",
+          "status": "estimated_from_reference",
+          "unit": "mm",
+          "value": 4.0
+        },
+        {
+          "confidence": 0.4,
+          "field_path": "setting.prong_tip_mm",
+          "method": "reference_vision",
+          "note": "Reference-derived starting value; verify before production.",
+          "section": "setting",
+          "source": "synthetic low-information reference render",
+          "status": "estimated_from_reference",
+          "unit": "mm",
+          "value": 0.8
+        },
+        {
+          "confidence": 0.4,
+          "field_path": "side_stones[0].dimensions_mm.depth",
+          "method": "reference_vision",
+          "note": "Reference-derived starting value; verify before production.",
+          "section": "side_stones",
+          "source": "synthetic low-information reference render",
+          "status": "estimated_from_reference",
+          "unit": "mm",
+          "value": 1.2
+        },
+        {
+          "confidence": 0.4,
+          "field_path": "side_stones[0].dimensions_mm.length",
+          "method": "reference_vision",
+          "note": "Reference-derived starting value; verify before production.",
+          "section": "side_stones",
+          "source": "synthetic low-information reference render",
+          "status": "estimated_from_reference",
+          "unit": "mm",
+          "value": 2.0
+        },
+        {
+          "confidence": 0.4,
+          "field_path": "side_stones[0].dimensions_mm.width",
+          "method": "reference_vision",
+          "note": "Reference-derived starting value; verify before production.",
+          "section": "side_stones",
+          "source": "synthetic low-information reference render",
+          "status": "estimated_from_reference",
+          "unit": "mm",
+          "value": 2.0
+        },
+        {
+          "confidence": 0.4,
+          "field_path": "stone.dimensions_mm.depth",
+          "method": "reference_vision",
+          "note": "Reference-derived starting value; verify before production.",
+          "section": "stone",
+          "source": "synthetic low-information reference render",
+          "status": "estimated_from_reference",
+          "unit": "mm",
+          "value": 4.0
+        },
+        {
+          "confidence": 0.4,
+          "field_path": "stone.dimensions_mm.length",
+          "method": "reference_vision",
+          "note": "Reference-derived starting value; verify before production.",
+          "section": "stone",
+          "source": "synthetic low-information reference render",
+          "status": "estimated_from_reference",
+          "unit": "mm",
+          "value": 8.0
+        },
+        {
+          "confidence": 0.4,
+          "field_path": "stone.dimensions_mm.width",
+          "method": "reference_vision",
+          "note": "Reference-derived starting value; verify before production.",
+          "section": "stone",
+          "source": "synthetic low-information reference render",
+          "status": "estimated_from_reference",
+          "unit": "mm",
+          "value": 6.0
+        }
+      ],
+      "estimate_disclaimer": "ESTIMATED dimensions are reference-derived prototyping values, not measurements. Verify or adjust them before manufacturing; factory and designer sign-off remain required.",
+      "estimated_fact_count": 12,
+      "has_estimates": true,
+      "jewelry_type": "ring",
+      "materials": [
+        {
+          "color": "rose",
+          "fact_status": "designer_confirmed",
+          "finish": "high_polish",
+          "karat": 18,
+          "material": "gold",
+          "section": "metal"
+        }
+      ],
+      "pending_confirmation_count": 0,
+      "schema_version": "facetta.factory-sheet-plan.v1",
+      "settings": [
+        {
+          "dimension_paths": [
+            "setting.prong_tip_mm",
+            "setting.gallery_height_mm"
+          ],
+          "fact_status": "designer_confirmed",
+          "prong_count": 4,
+          "section": "setting",
+          "style": "4_prong_basket"
+        }
+      ],
+      "stones": [
+        {
+          "carat_each": 1.04,
+          "carat_total": 1.04,
+          "count": 1,
+          "cut": "oval_brilliant",
+          "dimension_paths": [
+            "stone.dimensions_mm.length",
+            "stone.dimensions_mm.width",
+            "stone.dimensions_mm.depth"
+          ],
+          "fact_status": "designer_confirmed",
+          "ref": "A",
+          "role": "center",
+          "section": "stone",
+          "species": "emerald",
+          "visible_color": "Muzo Green"
+        },
+        {
+          "carat_each": 0.03,
+          "carat_total": 0.18,
+          "count": 6,
+          "cut": "round_brilliant",
+          "dimension_paths": [
+            "side_stones[0].dimensions_mm.length",
+            "side_stones[0].dimensions_mm.width",
+            "side_stones[0].dimensions_mm.depth"
+          ],
+          "fact_status": "designer_confirmed",
+          "ref": "B",
+          "role": "shoulders",
+          "section": "side_stones",
+          "species": "diamond",
+          "visible_color": "F"
+        }
+      ],
+      "template": "solitaire_prong"
+    },
+    "files": [
+      {
+        "authoritative": true,
+        "bytes": 11666,
+        "name": "validated-spec.json",
+        "sha256": "d423c109dc1dc4553583c1c5689a787240b9941afd417c1d8f821616613a086b"
+      },
+      {
+        "authoritative": true,
+        "bytes": 22979,
+        "name": "facetta-sheet.svg",
+        "sha256": "20ae47b581fa19655a6fa8970c1ddbea71f46d5d5b860b239e11334b8132677a"
+      },
+      {
+        "authoritative": false,
+        "bytes": 22192,
+        "name": "facetta-sheet.dxf",
+        "sha256": "09b4509bd369ff8868d273be3a17d8fa4469b6587b43ed04bf3a9154824bc19f"
+      },
+      {
+        "authoritative": false,
+        "bytes": 126534,
+        "name": "approved-reference.jpg",
+        "sha256": "62d3413577282fd60e3607fa548d48f68e4c97597d75d3c0ea83c16e77a10252"
+      },
+      {
+        "authoritative": true,
+        "bytes": 17917,
+        "name": "facetta-schedule-1.svg",
+        "sha256": "78b803087f75b2ae66dd2e3e447e3b87834f477a775fac155ceb94365f1a744a"
+      }
+    ],
+    "pinned_at": "2026-07-11T16:14:26.902777",
+    "project_id": "ast_00a5b9b805219bbc",
+    "qa_summary": {
+      "attempt_count": 1,
+      "checks": [
+        {
+          "code": "decodable_image",
+          "evidence": {
+            "format": "JPEG",
+            "height": 1024,
+            "width": 1024
+          },
+          "message": "candidate is a decodable raster image",
+          "passed": true,
+          "severity": "hard"
+        },
+        {
+          "code": "review_resolution",
+          "evidence": {
+            "height": 1024,
+            "width": 1024
+          },
+          "message": "candidate has reviewable raster dimensions",
+          "passed": true,
+          "severity": "warning"
+        },
+        {
+          "code": "candidate_changed",
+          "evidence": {},
+          "message": "candidate bytes differ from the source",
+          "passed": true,
+          "severity": "hard"
+        },
+        {
+          "code": "requested_change",
+          "evidence": {},
+          "message": "visual evidence matches the requested fact",
+          "passed": true,
+          "severity": "hard"
+        },
+        {
+          "code": "protected_regions",
+          "evidence": {},
+          "message": "visual evidence matches the requested fact",
+          "passed": true,
+          "severity": "hard"
+        },
+        {
+          "code": "unintended_drift",
+          "evidence": {
+            "changes": [],
+            "severity": "none"
+          },
+          "message": "no unintended changes detected",
+          "passed": true,
+          "severity": "warning"
+        },
+        {
+          "code": "spec_change",
+          "evidence": {
+            "spec_delta": [
+              {
+                "from": "yellow",
+                "kind": "changed",
+                "label": "metal colour",
+                "path": "metal.color",
+                "to": "rose"
+              }
+            ]
+          },
+          "message": "visual evidence matches the requested fact",
+          "passed": true,
+          "severity": "hard"
+        },
+        {
+          "code": "edit_domain:metal_identity",
+          "evidence": {
+            "domain": "metal_identity",
+            "spec_delta": [
+              {
+                "from": "yellow",
+                "kind": "changed",
+                "label": "metal colour",
+                "path": "metal.color",
+                "to": "rose"
+              }
+            ]
+          },
+          "message": "visual evidence matches the requested fact",
+          "passed": true,
+          "severity": "hard"
+        },
+        {
+          "code": "crosscheck_requested_change",
+          "evidence": {},
+          "message": "visual evidence matches the requested fact",
+          "passed": true,
+          "severity": "hard"
+        },
+        {
+          "code": "crosscheck_frozen_facts",
+          "evidence": {},
+          "message": "visual evidence matches the requested fact",
+          "passed": true,
+          "severity": "hard"
+        },
+        {
+          "code": "crosscheck_unintended_drift",
+          "evidence": {
+            "changes": [],
+            "severity": "none"
+          },
+          "message": "independent audit found no unintended changes",
+          "passed": true,
+          "severity": "warning"
+        },
+        {
+          "code": "crosscheck_edit_domains",
+          "evidence": {
+            "domain_mismatches": []
+          },
+          "message": "independent audit matched every required edit domain",
+          "passed": true,
+          "severity": "hard"
+        },
+        {
+          "code": "target_spec_crosscheck:jewelry_type",
+          "evidence": {
+            "differences": [],
+            "observed_prong_count": 4,
+            "observed_side_stone_count": 8
+          },
+          "message": "visual evidence matches the requested fact",
+          "passed": true,
+          "severity": "hard"
+        },
+        {
+          "code": "target_spec_crosscheck:center_identity",
+          "evidence": {
+            "differences": [],
+            "observed_prong_count": 4,
+            "observed_side_stone_count": 8
+          },
+          "message": "visual evidence matches the requested fact",
+          "passed": true,
+          "severity": "hard"
+        },
+        {
+          "code": "target_spec_crosscheck:center_cut",
+          "evidence": {
+            "differences": [],
+            "observed_prong_count": 4,
+            "observed_side_stone_count": 8
+          },
+          "message": "visual evidence matches the requested fact",
+          "passed": true,
+          "severity": "hard"
+        },
+        {
+          "code": "target_spec_crosscheck:metal",
+          "evidence": {
+            "differences": [],
+            "observed_prong_count": 4,
+            "observed_side_stone_count": 8
+          },
+          "message": "visual evidence matches the requested fact",
+          "passed": true,
+          "severity": "hard"
+        },
+        {
+          "code": "target_spec_crosscheck:setting_style",
+          "evidence": {
+            "differences": [],
+            "observed_prong_count": 4,
+            "observed_side_stone_count": 8
+          },
+          "message": "visual evidence matches the requested fact",
+          "passed": true,
+          "severity": "hard"
+        },
+        {
+          "code": "target_spec_crosscheck:prong_count",
+          "evidence": {
+            "differences": [],
+            "observed_prong_count": 4,
+            "observed_side_stone_count": 8
+          },
+          "message": "visual evidence matches the requested fact",
+          "passed": true,
+          "severity": "hard"
+        },
+        {
+          "code": "target_spec_crosscheck:side_stone_inventory",
+          "evidence": {
+            "differences": [],
+            "observed_prong_count": 4,
+            "observed_side_stone_count": 8
+          },
+          "message": "independent audit could not confirm side stone inventory",
+          "passed": false,
+          "severity": "warning"
+        },
+        {
+          "code": "target_spec_crosscheck:major_components",
+          "evidence": {
+            "differences": [],
+            "observed_prong_count": 4,
+            "observed_side_stone_count": 8
+          },
+          "message": "visual evidence matches the requested fact",
+          "passed": true,
+          "severity": "hard"
+        },
+        {
+          "code": "text_or_branding",
+          "evidence": {},
+          "message": "no text or branding introduced",
+          "passed": true,
+          "severity": "hard"
+        }
+      ],
+      "image_run_id": "run_b3159a468fd5b162",
+      "operation": "LOCAL_EDIT",
+      "prompt_version": "local-edit.v6",
+      "status": "accepted_after_designer_review",
+      "verdict": "warn"
+    },
+    "schema_version": "facetta.factory-pack.v1",
+    "visual_revision": 2
+  },
+  "factory_pack_files": [
+    "validated-spec.json",
+    "facetta-sheet.svg",
+    "facetta-sheet.dxf",
+    "facetta-schedule-1.svg",
+    "approved-reference.jpg",
+    "approval-manifest.json"
+  ],
+  "final_project": {
+    "active_asset_id": "ast_871ba14a1a7399d5",
+    "active_design_version": 2,
+    "active_revision": {
+      "asset_id": "ast_871ba14a1a7399d5",
+      "capability": "LOCALIZED_EDIT",
+      "created_at": "2026-07-11T16:14:26.870546",
+      "created_by": "usr_operator_review_not_founder",
+      "design_version": 2,
+      "image_url": "/assets/ast_871ba14a1a7399d5/image",
+      "instruction": "Apply the exact catalog selection metal.color=rose (Rose Gold). Required visible geometry: warm pink rose-gold hue on every visible metal surface; uniform color across shank, shoulders, gallery, and setting; no change to polish, texture, dimensions, or component geometry. Change only the isolated component and preserve every frozen fact.",
+      "legacy_provenance": false,
+      "media_type": "image/jpeg",
+      "parent_asset_id": "ast_00a5b9b805219bbc",
+      "pinned": true,
+      "provenance": "localized_edit",
+      "region": "all visible metal surfaces of the ring, including shank, shoulders, gallery, and setting metal; exclude every gemstone",
+      "revision": 2,
+      "root_id": "ast_00a5b9b805219bbc"
+    },
+    "approval": {
+      "all_approved": true,
+      "answers": {
+        "band": {
+          "approved": true,
+          "created_at": "2026-07-11T16:14:26.899013",
+          "created_by": "usr_operator_review_not_founder",
+          "note": null,
+          "understood_as": null
+        },
+        "metal": {
+          "approved": true,
+          "created_at": "2026-07-11T16:14:26.895710",
+          "created_by": "usr_operator_review_not_founder",
+          "note": null,
+          "understood_as": null
+        },
+        "ring_size": {
+          "approved": true,
+          "created_at": "2026-07-11T16:14:26.901833",
+          "created_by": "usr_operator_review_not_founder",
+          "note": null,
+          "understood_as": null
+        },
+        "setting": {
+          "approved": true,
+          "created_at": "2026-07-11T16:14:26.892889",
+          "created_by": "usr_operator_review_not_founder",
+          "note": null,
+          "understood_as": null
+        },
+        "side_stones[0]": {
+          "approved": true,
+          "created_at": "2026-07-11T16:14:26.889165",
+          "created_by": "usr_operator_review_not_founder",
+          "note": null,
+          "understood_as": null
+        },
+        "stone": {
+          "approved": true,
+          "created_at": "2026-07-11T16:14:26.884661",
+          "created_by": "usr_operator_review_not_founder",
+          "note": null,
+          "understood_as": null
+        }
+      },
+      "approved_count": 6,
+      "asset_id": "ast_871ba14a1a7399d5",
+      "checklist_id": "chk_c446d2ccc4682acd",
+      "completed": true,
+      "design_id": "dsn_9144f2f36c50c3d4",
+      "design_version": 2,
+      "items": [
+        {
+          "fact": "1.04 ct emerald \u00b7 oval brilliant \u00b7 8 \u00d7 6 \u00d7 4 mm EST.",
+          "index": null,
+          "key": "stone",
+          "label": "Center stone",
+          "question": "Is the center stone right?",
+          "ref": "A",
+          "section": "stone",
+          "target_element_id": null
+        },
+        {
+          "fact": "6 \u00d7 diamond round brilliant \u00b7 2 \u00d7 2 \u00d7 1.2 mm EST. \u00b7 0.18 ct total",
+          "index": 0,
+          "key": "side_stones[0]",
+          "label": "Side stones",
+          "question": "Are the side stones right?",
+          "ref": "B",
+          "section": "side_stones",
+          "target_element_id": null
+        },
+        {
+          "fact": "4 Prong Basket \u00b7 gallery 4 mm EST.",
+          "index": null,
+          "key": "setting",
+          "label": "Setting",
+          "question": "Is the setting right?",
+          "ref": null,
+          "section": "setting",
+          "target_element_id": null
+        },
+        {
+          "fact": "18k Rose Gold \u00b7 high polish",
+          "index": null,
+          "key": "metal",
+          "label": "Metal & finish",
+          "question": "Are the metal and finish right?",
+          "ref": null,
+          "section": "metal",
+          "target_element_id": null
+        },
+        {
+          "fact": "half round \u00b7 2 \u00d7 1.6 mm EST.",
+          "index": null,
+          "key": "band",
+          "label": "Band",
+          "question": "Is the band right?",
+          "ref": null,
+          "section": "band",
+          "target_element_id": null
+        },
+        {
+          "fact": "US 6.5 \u00b7 \u2300 16.9 mm EST.",
+          "index": null,
+          "key": "ring_size",
+          "label": "Ring size",
+          "question": "Is the ring size right?",
+          "ref": null,
+          "section": "ring_size",
+          "target_element_id": null
+        }
+      ],
+      "mode": "auto_pin",
+      "outstanding": [],
+      "pinned": true,
+      "total": 6
+    },
+    "assets": [
+      {
+        "asset_id": "ast_00a5b9b805219bbc",
+        "capability": "IMPORTED_REFERENCE",
+        "created_at": "2026-07-11T16:13:42.881417",
+        "created_by": "usr_operator_review_not_founder",
+        "design_version": 1,
+        "image_url": "/assets/ast_00a5b9b805219bbc/image",
+        "instruction": "Designer-confirmed imported reference",
+        "legacy_provenance": false,
+        "media_type": "image/jpeg",
+        "pinned": false,
+        "provenance": "imported_reference",
+        "revision": 1,
+        "root_id": "ast_00a5b9b805219bbc"
+      },
+      {
+        "asset_id": "ast_871ba14a1a7399d5",
+        "capability": "LOCALIZED_EDIT",
+        "created_at": "2026-07-11T16:14:26.870546",
+        "created_by": "usr_operator_review_not_founder",
+        "design_version": 2,
+        "image_url": "/assets/ast_871ba14a1a7399d5/image",
+        "instruction": "Apply the exact catalog selection metal.color=rose (Rose Gold). Required visible geometry: warm pink rose-gold hue on every visible metal surface; uniform color across shank, shoulders, gallery, and setting; no change to polish, texture, dimensions, or component geometry. Change only the isolated component and preserve every frozen fact.",
+        "legacy_provenance": false,
+        "media_type": "image/jpeg",
+        "parent_asset_id": "ast_00a5b9b805219bbc",
+        "pinned": true,
+        "provenance": "localized_edit",
+        "region": "all visible metal surfaces of the ring, including shank, shoulders, gallery, and setting metal; exclude every gemstone",
+        "revision": 2,
+        "root_id": "ast_00a5b9b805219bbc"
+      }
+    ],
+    "collection": "Unfiled",
+    "counts": {
+      "IMPORTED_REFERENCE": 1,
+      "LOCALIZED_EDIT": 1
+    },
+    "cover_asset_id": "ast_871ba14a1a7399d5",
+    "created_at": "2026-07-11T16:13:42.881417",
+    "derived_assets": [],
+    "design_id": "dsn_9144f2f36c50c3d4",
+    "factory_blockers": [],
+    "factory_ready": true,
+    "has_factory_drawing": false,
+    "id": "ast_00a5b9b805219bbc",
+    "image_run_ids": [
+      "run_b3159a468fd5b162"
+    ],
+    "item_count": 2,
+    "items": [
+      {
+        "asset_id": "ast_00a5b9b805219bbc",
+        "capability": "IMPORTED_REFERENCE",
+        "created_at": "2026-07-11T16:13:42.881417",
+        "created_by": "usr_operator_review_not_founder",
+        "design_version": 1,
+        "image_url": "/assets/ast_00a5b9b805219bbc/image",
+        "instruction": "Designer-confirmed imported reference",
+        "legacy_provenance": false,
+        "media_type": "image/jpeg",
+        "pinned": false,
+        "provenance": "imported_reference",
+        "revision": 1,
+        "root_id": "ast_00a5b9b805219bbc"
+      },
+      {
+        "asset_id": "ast_871ba14a1a7399d5",
+        "capability": "LOCALIZED_EDIT",
+        "created_at": "2026-07-11T16:14:26.870546",
+        "created_by": "usr_operator_review_not_founder",
+        "design_version": 2,
+        "image_url": "/assets/ast_871ba14a1a7399d5/image",
+        "instruction": "Apply the exact catalog selection metal.color=rose (Rose Gold). Required visible geometry: warm pink rose-gold hue on every visible metal surface; uniform color across shank, shoulders, gallery, and setting; no change to polish, texture, dimensions, or component geometry. Change only the isolated component and preserve every frozen fact.",
+        "legacy_provenance": false,
+        "media_type": "image/jpeg",
+        "parent_asset_id": "ast_00a5b9b805219bbc",
+        "pinned": true,
+        "provenance": "localized_edit",
+        "region": "all visible metal surfaces of the ring, including shank, shoulders, gallery, and setting metal; exclude every gemstone",
+        "revision": 2,
+        "root_id": "ast_00a5b9b805219bbc"
+      }
+    ],
+    "latest_design_version": 2,
+    "owner": "usr_operator_review_not_founder",
+    "pinned_revision": {
+      "asset_id": "ast_871ba14a1a7399d5",
+      "capability": "LOCALIZED_EDIT",
+      "created_at": "2026-07-11T16:14:26.870546",
+      "created_by": "usr_operator_review_not_founder",
+      "design_version": 2,
+      "image_url": "/assets/ast_871ba14a1a7399d5/image",
+      "instruction": "Apply the exact catalog selection metal.color=rose (Rose Gold). Required visible geometry: warm pink rose-gold hue on every visible metal surface; uniform color across shank, shoulders, gallery, and setting; no change to polish, texture, dimensions, or component geometry. Change only the isolated component and preserve every frozen fact.",
+      "legacy_provenance": false,
+      "media_type": "image/jpeg",
+      "parent_asset_id": "ast_00a5b9b805219bbc",
+      "pinned": true,
+      "provenance": "localized_edit",
+      "region": "all visible metal surfaces of the ring, including shank, shoulders, gallery, and setting metal; exclude every gemstone",
+      "revision": 2,
+      "root_id": "ast_00a5b9b805219bbc"
+    },
+    "primary_revision_count": 2,
+    "revisions": [
+      {
+        "asset_id": "ast_00a5b9b805219bbc",
+        "capability": "IMPORTED_REFERENCE",
+        "created_at": "2026-07-11T16:13:42.881417",
+        "created_by": "usr_operator_review_not_founder",
+        "design_version": 1,
+        "image_url": "/assets/ast_00a5b9b805219bbc/image",
+        "instruction": "Designer-confirmed imported reference",
+        "legacy_provenance": false,
+        "media_type": "image/jpeg",
+        "pinned": false,
+        "provenance": "imported_reference",
+        "revision": 1,
+        "root_id": "ast_00a5b9b805219bbc"
+      },
+      {
+        "asset_id": "ast_871ba14a1a7399d5",
+        "capability": "LOCALIZED_EDIT",
+        "created_at": "2026-07-11T16:14:26.870546",
+        "created_by": "usr_operator_review_not_founder",
+        "design_version": 2,
+        "image_url": "/assets/ast_871ba14a1a7399d5/image",
+        "instruction": "Apply the exact catalog selection metal.color=rose (Rose Gold). Required visible geometry: warm pink rose-gold hue on every visible metal surface; uniform color across shank, shoulders, gallery, and setting; no change to polish, texture, dimensions, or component geometry. Change only the isolated component and preserve every frozen fact.",
+        "legacy_provenance": false,
+        "media_type": "image/jpeg",
+        "parent_asset_id": "ast_00a5b9b805219bbc",
+        "pinned": true,
+        "provenance": "localized_edit",
+        "region": "all visible metal surfaces of the ring, including shank, shoulders, gallery, and setting metal; exclude every gemstone",
+        "revision": 2,
+        "root_id": "ast_00a5b9b805219bbc"
+      }
+    ],
+    "root_id": "ast_00a5b9b805219bbc",
+    "spec": {
+      "band": {
+        "profile": "half_round",
+        "thickness_mm": 1.6,
+        "width_mm": 2.0
+      },
+      "bracelet": null,
+      "brooch": null,
+      "chain": null,
+      "composition": null,
+      "created_at": "2026-07-11T16:14:26.869255Z",
+      "created_by": "usr_operator_review_not_founder",
+      "design_form": {
+        "elements": []
+      },
+      "design_id": "dsn_9144f2f36c50c3d4",
+      "dimension_provenance": {
+        "band.thickness_mm": {
+          "confidence": 0.4,
+          "method": "reference_vision",
+          "note": "Reference-derived starting value; verify before production.",
+          "source": "synthetic low-information reference render",
+          "status": "estimated_from_reference"
+        },
+        "band.width_mm": {
+          "confidence": 0.4,
+          "method": "reference_vision",
+          "note": "Reference-derived starting value; verify before production.",
+          "source": "synthetic low-information reference render",
+          "status": "estimated_from_reference"
+        },
+        "ring_size.inner_diameter_mm": {
+          "confidence": 0.4,
+          "method": "reference_vision",
+          "note": "Reference-derived starting value; verify before production.",
+          "source": "synthetic low-information reference render",
+          "status": "estimated_from_reference"
+        },
+        "ring_size.value": {
+          "confidence": 0.4,
+          "method": "reference_vision",
+          "note": "Reference-derived starting value; verify before production.",
+          "source": "synthetic low-information reference render",
+          "status": "estimated_from_reference"
+        },
+        "setting.gallery_height_mm": {
+          "confidence": 0.4,
+          "method": "reference_vision",
+          "note": "Reference-derived starting value; verify before production.",
+          "source": "synthetic low-information reference render",
+          "status": "estimated_from_reference"
+        },
+        "setting.prong_tip_mm": {
+          "confidence": 0.4,
+          "method": "reference_vision",
+          "note": "Reference-derived starting value; verify before production.",
+          "source": "synthetic low-information reference render",
+          "status": "estimated_from_reference"
+        },
+        "side_stones[0].dimensions_mm.depth": {
+          "confidence": 0.4,
+          "method": "reference_vision",
+          "note": "Reference-derived starting value; verify before production.",
+          "source": "synthetic low-information reference render",
+          "status": "estimated_from_reference"
+        },
+        "side_stones[0].dimensions_mm.length": {
+          "confidence": 0.4,
+          "method": "reference_vision",
+          "note": "Reference-derived starting value; verify before production.",
+          "source": "synthetic low-information reference render",
+          "status": "estimated_from_reference"
+        },
+        "side_stones[0].dimensions_mm.width": {
+          "confidence": 0.4,
+          "method": "reference_vision",
+          "note": "Reference-derived starting value; verify before production.",
+          "source": "synthetic low-information reference render",
+          "status": "estimated_from_reference"
+        },
+        "stone.dimensions_mm.depth": {
+          "confidence": 0.4,
+          "method": "reference_vision",
+          "note": "Reference-derived starting value; verify before production.",
+          "source": "synthetic low-information reference render",
+          "status": "estimated_from_reference"
+        },
+        "stone.dimensions_mm.length": {
+          "confidence": 0.4,
+          "method": "reference_vision",
+          "note": "Reference-derived starting value; verify before production.",
+          "source": "synthetic low-information reference render",
+          "status": "estimated_from_reference"
+        },
+        "stone.dimensions_mm.width": {
+          "confidence": 0.4,
+          "method": "reference_vision",
+          "note": "Reference-derived starting value; verify before production.",
+          "source": "synthetic low-information reference render",
+          "status": "estimated_from_reference"
+        }
+      },
+      "drop": null,
+      "jewelry_type": "ring",
+      "metal": {
+        "color": "rose",
+        "finish": "high_polish",
+        "karat": 18,
+        "material": "gold"
+      },
+      "mode": "pro",
+      "notes_to_factory": "Synthetic live workflow fixture. Every dimension is a reference estimate pending designer measurement; unseen gallery construction is not source-observed factory truth.",
+      "pendant": null,
+      "ring_size": {
+        "inner_diameter_mm": 16.91,
+        "system": "US",
+        "value": 6.5
+      },
+      "schema_version": 1,
+      "setting": {
+        "gallery_height_mm": 4.0,
+        "prong_count": 4,
+        "prong_tip_mm": 0.8,
+        "style": "4_prong_basket"
+      },
+      "side_stones": [
+        {
+          "carat": 0.03,
+          "clarity": {
+            "eye_clean": null,
+            "grade": "VS2",
+            "system": "gia_diamond"
+          },
+          "color": {
+            "gia": "colorless",
+            "hue_code": null,
+            "saturation": null,
+            "tone": null,
+            "trade": "F"
+          },
+          "count": 6,
+          "culet": null,
+          "cut": "round_brilliant",
+          "depth_pct": null,
+          "dimensions_mm": {
+            "depth": 1.2,
+            "length": 2.0,
+            "width": 2.0
+          },
+          "girdle": null,
+          "inscription": null,
+          "lab": null,
+          "mount": null,
+          "origin": null,
+          "phenomena": [],
+          "position": "shoulders",
+          "species": "diamond",
+          "table_pct": null,
+          "treatment": null
+        }
+      ],
+      "source_component_coverage": {
+        "audited_spec_visual_hash": "e257359d45cf604d",
+        "components": [
+          {
+            "canonical_spec_paths": [
+              "stone"
+            ],
+            "component_id": "stone.center",
+            "designer_confirmation": null,
+            "independent_audit": {
+              "auditor": "skeptical-source-component-audit.v4",
+              "evidence_sha256": "f35c43cd8d4321e8f4c964426083d3c0ac7bc3b47c2779ff812b60ada4f06bb2",
+              "kind": "independent_component_audit",
+              "observed_description": "large oval faceted green center stone",
+              "source_view": "three_quarter",
+              "verdict": "pass"
+            },
+            "source_confidence": 0.45,
+            "source_description": "1 emerald oval_brilliant stone at center",
+            "source_view": "unspecified",
+            "unresolved_reason": null
+          },
+          {
+            "canonical_spec_paths": [
+              "side_stones[0]"
+            ],
+            "component_id": "stone.group.001",
+            "designer_confirmation": {
+              "basis": "visible_source",
+              "confirmed_description": "Exactly three round shoulder stones are visible on each side, six total.",
+              "evidence_sha256": "f03337ca313b3af14e4154157fd45f20f3c4a1207752dc5ecb7dbb0e1ee56c63",
+              "kind": "designer_component_confirmation",
+              "reviewer": "usr_operator_review_not_founder",
+              "source_view": "three_quarter",
+              "spec_visual_hash": "e257359d45cf604d"
+            },
+            "independent_audit": {
+              "auditor": "skeptical-source-component-audit.v4",
+              "evidence_sha256": "f35c43cd8d4321e8f4c964426083d3c0ac7bc3b47c2779ff812b60ada4f06bb2",
+              "kind": "independent_component_audit",
+              "observed_description": "Blind visible-fact evidence is insufficient: the specification says repeated-stone count 6, but the blind inventory did not state an assessable repeated-stone count.",
+              "source_view": "three_quarter",
+              "verdict": "inconclusive"
+            },
+            "source_confidence": 0.45,
+            "source_description": "6 diamond round_brilliant stones at shoulders",
+            "source_view": "unspecified",
+            "unresolved_reason": null
+          },
+          {
+            "canonical_spec_paths": [
+              "setting"
+            ],
+            "component_id": "setting.primary",
+            "designer_confirmation": {
+              "basis": "visible_source",
+              "confirmed_description": "Exactly four center-stone prongs are visible around the oval stone.",
+              "evidence_sha256": "f03337ca313b3af14e4154157fd45f20f3c4a1207752dc5ecb7dbb0e1ee56c63",
+              "kind": "designer_component_confirmation",
+              "reviewer": "usr_operator_review_not_founder",
+              "source_view": "three_quarter",
+              "spec_visual_hash": "e257359d45cf604d"
+            },
+            "independent_audit": {
+              "auditor": "skeptical-source-component-audit.v4",
+              "evidence_sha256": "f35c43cd8d4321e8f4c964426083d3c0ac7bc3b47c2779ff812b60ada4f06bb2",
+              "kind": "independent_component_audit",
+              "observed_description": "Blind visible-fact evidence is insufficient: the specification says 4-prong, but the blind inventory did not state an assessable prong count.",
+              "source_view": "three_quarter",
+              "verdict": "inconclusive"
+            },
+            "source_confidence": 0.45,
+            "source_description": "4_prong_basket setting with 4 prongs",
+            "source_view": "unspecified",
+            "unresolved_reason": null
+          },
+          {
+            "canonical_spec_paths": [
+              "metal"
+            ],
+            "component_id": "metal.body",
+            "designer_confirmation": null,
+            "independent_audit": {
+              "auditor": "skeptical-source-component-audit.v4",
+              "evidence_sha256": "f35c43cd8d4321e8f4c964426083d3c0ac7bc3b47c2779ff812b60ada4f06bb2",
+              "kind": "independent_component_audit",
+              "observed_description": "yellow gold metal throughout visible portions",
+              "source_view": "three_quarter",
+              "verdict": "pass"
+            },
+            "source_confidence": 0.45,
+            "source_description": "18 yellow gold metal body",
+            "source_view": "unspecified",
+            "unresolved_reason": null
+          },
+          {
+            "canonical_spec_paths": [
+              "band"
+            ],
+            "component_id": "band.shank",
+            "designer_confirmation": null,
+            "independent_audit": {
+              "auditor": "skeptical-source-component-audit.v4",
+              "evidence_sha256": "f35c43cd8d4321e8f4c964426083d3c0ac7bc3b47c2779ff812b60ada4f06bb2",
+              "kind": "independent_component_audit",
+              "observed_description": "continuous yellow gold shank with tapered shoulders, plain lower half",
+              "source_view": "three_quarter",
+              "verdict": "pass"
+            },
+            "source_confidence": 0.45,
+            "source_description": "half_round ring shank",
+            "source_view": "unspecified",
+            "unresolved_reason": null
+          },
+          {
+            "canonical_spec_paths": [
+              "template"
+            ],
+            "component_id": "assembly.primary",
+            "designer_confirmation": null,
+            "independent_audit": {
+              "auditor": "skeptical-source-component-audit.v4",
+              "evidence_sha256": "f35c43cd8d4321e8f4c964426083d3c0ac7bc3b47c2779ff812b60ada4f06bb2",
+              "kind": "independent_component_audit",
+              "observed_description": "solitaire prong assembly with center stone, shoulders, and shank",
+              "source_view": "three_quarter",
+              "verdict": "pass"
+            },
+            "source_confidence": 0.45,
+            "source_description": "solitaire_prong primary assembly topology",
+            "source_view": "unspecified",
+            "unresolved_reason": null
+          }
+        ],
+        "source_kind": "imported_reference"
+      },
+      "stone": {
+        "carat": 1.04,
+        "clarity": {
+          "eye_clean": null,
+          "grade": "VS",
+          "system": "gia_type_iii"
+        },
+        "color": {
+          "gia": "vivid green",
+          "hue_code": null,
+          "saturation": null,
+          "tone": null,
+          "trade": "Muzo Green"
+        },
+        "count": 1,
+        "culet": null,
+        "cut": "oval_brilliant",
+        "depth_pct": null,
+        "dimensions_mm": {
+          "depth": 4.0,
+          "length": 8.0,
+          "width": 6.0
+        },
+        "girdle": null,
+        "inscription": null,
+        "lab": null,
+        "mount": null,
+        "origin": null,
+        "phenomena": [],
+        "position": "center",
+        "species": "emerald",
+        "table_pct": null,
+        "treatment": null
+      },
+      "template": "solitaire_prong",
+      "version": 2
+    },
+    "state": "factory_ready",
+    "tags": [],
+    "title": "Low-information ring isolated-edit live proof",
+    "updated_at": "2026-07-11T16:14:26.869635"
+  },
+  "image_run": {
+    "accepted": true,
+    "accepted_asset_id": "ast_871ba14a1a7399d5",
+    "attempts": [
+      {
+        "attempt": 1,
+        "attempt_id": "iat_f526f1c1973ced2f",
+        "attempt_number": 1,
+        "cache_hit": true,
+        "cache_key": "efb0a5481a2ab769dc7ff197f1332ba60338e8b176a351067d650e563d2c922b",
+        "cached": true,
+        "correction": null,
+        "corrective_instruction": null,
+        "cost": null,
+        "created_at": "2026-07-11T16:14:10.105998",
+        "engine_role": "primary",
+        "error_category": null,
+        "failed_checks": [
+          "target_spec_crosscheck:side_stone_inventory"
+        ],
+        "fallback_reason": null,
+        "latency_ms": 27209,
+        "model": "grok_direct",
+        "output_hash": "62d3413577282fd60e3607fa548d48f68e4c97597d75d3c0ea83c16e77a10252",
+        "prompt_hash": "e7581a1b394658ffbc29f91346aeb40ac080c3fecce14bfd0f479e9e5c9169de",
+        "provider": "xai",
+        "provider_request_id": null,
+        "qa_checks": [
+          {
+            "code": "decodable_image",
+            "evidence": {
+              "format": "JPEG",
+              "height": 1024,
+              "width": 1024
+            },
+            "message": "candidate is a decodable raster image",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "review_resolution",
+            "evidence": {
+              "height": 1024,
+              "width": 1024
+            },
+            "message": "candidate has reviewable raster dimensions",
+            "passed": true,
+            "severity": "warning"
+          },
+          {
+            "code": "candidate_changed",
+            "evidence": {},
+            "message": "candidate bytes differ from the source",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "requested_change",
+            "evidence": {},
+            "message": "visual evidence matches the requested fact",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "protected_regions",
+            "evidence": {},
+            "message": "visual evidence matches the requested fact",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "unintended_drift",
+            "evidence": {
+              "changes": [],
+              "severity": "none"
+            },
+            "message": "no unintended changes detected",
+            "passed": true,
+            "severity": "warning"
+          },
+          {
+            "code": "spec_change",
+            "evidence": {
+              "spec_delta": [
+                {
+                  "from": "yellow",
+                  "kind": "changed",
+                  "label": "metal colour",
+                  "path": "metal.color",
+                  "to": "rose"
+                }
+              ]
+            },
+            "message": "visual evidence matches the requested fact",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "edit_domain:metal_identity",
+            "evidence": {
+              "domain": "metal_identity",
+              "spec_delta": [
+                {
+                  "from": "yellow",
+                  "kind": "changed",
+                  "label": "metal colour",
+                  "path": "metal.color",
+                  "to": "rose"
+                }
+              ]
+            },
+            "message": "visual evidence matches the requested fact",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "crosscheck_requested_change",
+            "evidence": {},
+            "message": "visual evidence matches the requested fact",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "crosscheck_frozen_facts",
+            "evidence": {},
+            "message": "visual evidence matches the requested fact",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "crosscheck_unintended_drift",
+            "evidence": {
+              "changes": [],
+              "severity": "none"
+            },
+            "message": "independent audit found no unintended changes",
+            "passed": true,
+            "severity": "warning"
+          },
+          {
+            "code": "crosscheck_edit_domains",
+            "evidence": {
+              "domain_mismatches": []
+            },
+            "message": "independent audit matched every required edit domain",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "target_spec_crosscheck:jewelry_type",
+            "evidence": {
+              "differences": [],
+              "observed_prong_count": 4,
+              "observed_side_stone_count": 8
+            },
+            "message": "visual evidence matches the requested fact",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "target_spec_crosscheck:center_identity",
+            "evidence": {
+              "differences": [],
+              "observed_prong_count": 4,
+              "observed_side_stone_count": 8
+            },
+            "message": "visual evidence matches the requested fact",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "target_spec_crosscheck:center_cut",
+            "evidence": {
+              "differences": [],
+              "observed_prong_count": 4,
+              "observed_side_stone_count": 8
+            },
+            "message": "visual evidence matches the requested fact",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "target_spec_crosscheck:metal",
+            "evidence": {
+              "differences": [],
+              "observed_prong_count": 4,
+              "observed_side_stone_count": 8
+            },
+            "message": "visual evidence matches the requested fact",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "target_spec_crosscheck:setting_style",
+            "evidence": {
+              "differences": [],
+              "observed_prong_count": 4,
+              "observed_side_stone_count": 8
+            },
+            "message": "visual evidence matches the requested fact",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "target_spec_crosscheck:prong_count",
+            "evidence": {
+              "differences": [],
+              "observed_prong_count": 4,
+              "observed_side_stone_count": 8
+            },
+            "message": "visual evidence matches the requested fact",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "target_spec_crosscheck:side_stone_inventory",
+            "evidence": {
+              "differences": [],
+              "observed_prong_count": 4,
+              "observed_side_stone_count": 8
+            },
+            "message": "independent audit could not confirm side stone inventory",
+            "passed": false,
+            "severity": "warning"
+          },
+          {
+            "code": "target_spec_crosscheck:major_components",
+            "evidence": {
+              "differences": [],
+              "observed_prong_count": 4,
+              "observed_side_stone_count": 8
+            },
+            "message": "visual evidence matches the requested fact",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "text_or_branding",
+            "evidence": {},
+            "message": "no text or branding introduced",
+            "passed": true,
+            "severity": "hard"
+          }
+        ],
+        "qa_verdict": "warn",
+        "usage": {},
+        "verdict": "warn"
+      }
+    ],
+    "completed_at": "2026-07-11T16:14:10.105998",
+    "created_at": "2026-07-11T16:14:10.106435",
+    "created_by": "usr_operator_review_not_founder",
+    "error_category": null,
+    "input_hash": "31c2092b2538815c4042ebc8cdf539bb8553dab266c4ef3c71687b514cf0e479",
+    "mask_hash": null,
+    "normalized_intent": {
+      "edit_domains": [
+        "metal_identity"
+      ],
+      "expected_output": "only Rose Gold applied inside all visible metal surfaces of the ring, including shank, shoulders, gallery, and setting metal; exclude every gemstone",
+      "frozen": [
+        "all pixels and jewelry structure outside all visible metal surfaces of the ring, including shank, shoulders, gallery, and setting metal; exclude every gemstone",
+        "all validated facts not named by the requested change",
+        "stone",
+        "side_stones",
+        "setting",
+        "band.profile",
+        "band.width_mm",
+        "band.thickness_mm",
+        "ring_size",
+        "design_form",
+        "metal.material",
+        "metal.karat",
+        "metal.finish",
+        "every specification path outside the exact catalog delta",
+        "camera, framing, scale, lighting, and background"
+      ],
+      "instruction": "Apply the exact catalog selection metal.color=rose (Rose Gold). Required visible geometry: warm pink rose-gold hue on every visible metal surface; uniform color across shank, shoulders, gallery, and setting; no change to polish, texture, dimensions, or component geometry. Change only the isolated component and preserve every frozen fact.",
+      "region_description": "all visible metal surfaces of the ring, including shank, shoulders, gallery, and setting metal; exclude every gemstone",
+      "spec_delta": [
+        {
+          "from": "yellow",
+          "kind": "changed",
+          "label": "metal colour",
+          "path": "metal.color",
+          "to": "rose"
+        }
+      ],
+      "style_constraints": [
+        "warm pink rose-gold hue on every visible metal surface",
+        "uniform color across shank, shoulders, gallery, and setting",
+        "no change to polish, texture, dimensions, or component geometry"
+      ]
+    },
+    "operation": "LOCAL_EDIT",
+    "output_hash": "62d3413577282fd60e3607fa548d48f68e4c97597d75d3c0ea83c16e77a10252",
+    "project_id": "ast_00a5b9b805219bbc",
+    "prompt_contract_version": "local-edit.v6",
+    "prompt_version": "local-edit.v6",
+    "review_decision": "accepted",
+    "review_required": false,
+    "reviewed_at": "2026-07-11T16:14:26.871036",
+    "reviewed_by": "usr_operator_review_not_founder",
+    "run_id": "run_b3159a468fd5b162",
+    "source_asset_id": "ast_00a5b9b805219bbc",
+    "source_hash": "f03337ca313b3af14e4154157fd45f20f3c4a1207752dc5ecb7dbb0e1ee56c63",
+    "source_spec_visual_hash": "e257359d45cf604d",
+    "spec_visual_hash": "24eaa58f8ad94ae3",
+    "status": "accepted",
+    "stored_status": "review_required",
+    "variant": 5,
+    "verdict": "warn"
+  },
+  "live": true,
+  "operator_disclosure": "Visual review and checklist responses were performed by a Codex test operator, not the founder, a customer, or the GIA-trained cofounder.",
+  "reviewed_project": {
+    "active_asset_id": "ast_871ba14a1a7399d5",
+    "active_design_version": 2,
+    "active_revision": {
+      "asset_id": "ast_871ba14a1a7399d5",
+      "capability": "LOCALIZED_EDIT",
+      "created_at": "2026-07-11T16:14:26.870546",
+      "created_by": "usr_operator_review_not_founder",
+      "design_version": 2,
+      "image_url": "/assets/ast_871ba14a1a7399d5/image",
+      "instruction": "Apply the exact catalog selection metal.color=rose (Rose Gold). Required visible geometry: warm pink rose-gold hue on every visible metal surface; uniform color across shank, shoulders, gallery, and setting; no change to polish, texture, dimensions, or component geometry. Change only the isolated component and preserve every frozen fact.",
+      "legacy_provenance": false,
+      "media_type": "image/jpeg",
+      "parent_asset_id": "ast_00a5b9b805219bbc",
+      "pinned": false,
+      "provenance": "localized_edit",
+      "region": "all visible metal surfaces of the ring, including shank, shoulders, gallery, and setting metal; exclude every gemstone",
+      "revision": 2,
+      "root_id": "ast_00a5b9b805219bbc"
+    },
+    "assets": [
+      {
+        "asset_id": "ast_00a5b9b805219bbc",
+        "capability": "IMPORTED_REFERENCE",
+        "created_at": "2026-07-11T16:13:42.881417",
+        "created_by": "usr_operator_review_not_founder",
+        "design_version": 1,
+        "image_url": "/assets/ast_00a5b9b805219bbc/image",
+        "instruction": "Designer-confirmed imported reference",
+        "legacy_provenance": false,
+        "media_type": "image/jpeg",
+        "pinned": false,
+        "provenance": "imported_reference",
+        "revision": 1,
+        "root_id": "ast_00a5b9b805219bbc"
+      },
+      {
+        "asset_id": "ast_871ba14a1a7399d5",
+        "capability": "LOCALIZED_EDIT",
+        "created_at": "2026-07-11T16:14:26.870546",
+        "created_by": "usr_operator_review_not_founder",
+        "design_version": 2,
+        "image_url": "/assets/ast_871ba14a1a7399d5/image",
+        "instruction": "Apply the exact catalog selection metal.color=rose (Rose Gold). Required visible geometry: warm pink rose-gold hue on every visible metal surface; uniform color across shank, shoulders, gallery, and setting; no change to polish, texture, dimensions, or component geometry. Change only the isolated component and preserve every frozen fact.",
+        "legacy_provenance": false,
+        "media_type": "image/jpeg",
+        "parent_asset_id": "ast_00a5b9b805219bbc",
+        "pinned": false,
+        "provenance": "localized_edit",
+        "region": "all visible metal surfaces of the ring, including shank, shoulders, gallery, and setting metal; exclude every gemstone",
+        "revision": 2,
+        "root_id": "ast_00a5b9b805219bbc"
+      }
+    ],
+    "collection": "Unfiled",
+    "counts": {
+      "IMPORTED_REFERENCE": 1,
+      "LOCALIZED_EDIT": 1
+    },
+    "cover_asset_id": "ast_871ba14a1a7399d5",
+    "created_at": "2026-07-11T16:13:42.881417",
+    "derived_assets": [],
+    "design_id": "dsn_9144f2f36c50c3d4",
+    "factory_blockers": [],
+    "factory_ready": false,
+    "has_factory_drawing": false,
+    "id": "ast_00a5b9b805219bbc",
+    "image_run_ids": [
+      "run_b3159a468fd5b162"
+    ],
+    "item_count": 2,
+    "items": [
+      {
+        "asset_id": "ast_00a5b9b805219bbc",
+        "capability": "IMPORTED_REFERENCE",
+        "created_at": "2026-07-11T16:13:42.881417",
+        "created_by": "usr_operator_review_not_founder",
+        "design_version": 1,
+        "image_url": "/assets/ast_00a5b9b805219bbc/image",
+        "instruction": "Designer-confirmed imported reference",
+        "legacy_provenance": false,
+        "media_type": "image/jpeg",
+        "pinned": false,
+        "provenance": "imported_reference",
+        "revision": 1,
+        "root_id": "ast_00a5b9b805219bbc"
+      },
+      {
+        "asset_id": "ast_871ba14a1a7399d5",
+        "capability": "LOCALIZED_EDIT",
+        "created_at": "2026-07-11T16:14:26.870546",
+        "created_by": "usr_operator_review_not_founder",
+        "design_version": 2,
+        "image_url": "/assets/ast_871ba14a1a7399d5/image",
+        "instruction": "Apply the exact catalog selection metal.color=rose (Rose Gold). Required visible geometry: warm pink rose-gold hue on every visible metal surface; uniform color across shank, shoulders, gallery, and setting; no change to polish, texture, dimensions, or component geometry. Change only the isolated component and preserve every frozen fact.",
+        "legacy_provenance": false,
+        "media_type": "image/jpeg",
+        "parent_asset_id": "ast_00a5b9b805219bbc",
+        "pinned": false,
+        "provenance": "localized_edit",
+        "region": "all visible metal surfaces of the ring, including shank, shoulders, gallery, and setting metal; exclude every gemstone",
+        "revision": 2,
+        "root_id": "ast_00a5b9b805219bbc"
+      }
+    ],
+    "latest_design_version": 2,
+    "owner": "usr_operator_review_not_founder",
+    "primary_revision_count": 2,
+    "revisions": [
+      {
+        "asset_id": "ast_00a5b9b805219bbc",
+        "capability": "IMPORTED_REFERENCE",
+        "created_at": "2026-07-11T16:13:42.881417",
+        "created_by": "usr_operator_review_not_founder",
+        "design_version": 1,
+        "image_url": "/assets/ast_00a5b9b805219bbc/image",
+        "instruction": "Designer-confirmed imported reference",
+        "legacy_provenance": false,
+        "media_type": "image/jpeg",
+        "pinned": false,
+        "provenance": "imported_reference",
+        "revision": 1,
+        "root_id": "ast_00a5b9b805219bbc"
+      },
+      {
+        "asset_id": "ast_871ba14a1a7399d5",
+        "capability": "LOCALIZED_EDIT",
+        "created_at": "2026-07-11T16:14:26.870546",
+        "created_by": "usr_operator_review_not_founder",
+        "design_version": 2,
+        "image_url": "/assets/ast_871ba14a1a7399d5/image",
+        "instruction": "Apply the exact catalog selection metal.color=rose (Rose Gold). Required visible geometry: warm pink rose-gold hue on every visible metal surface; uniform color across shank, shoulders, gallery, and setting; no change to polish, texture, dimensions, or component geometry. Change only the isolated component and preserve every frozen fact.",
+        "legacy_provenance": false,
+        "media_type": "image/jpeg",
+        "parent_asset_id": "ast_00a5b9b805219bbc",
+        "pinned": false,
+        "provenance": "localized_edit",
+        "region": "all visible metal surfaces of the ring, including shank, shoulders, gallery, and setting metal; exclude every gemstone",
+        "revision": 2,
+        "root_id": "ast_00a5b9b805219bbc"
+      }
+    ],
+    "root_id": "ast_00a5b9b805219bbc",
+    "spec": {
+      "band": {
+        "profile": "half_round",
+        "thickness_mm": 1.6,
+        "width_mm": 2.0
+      },
+      "bracelet": null,
+      "brooch": null,
+      "chain": null,
+      "composition": null,
+      "created_at": "2026-07-11T16:14:26.869255Z",
+      "created_by": "usr_operator_review_not_founder",
+      "design_form": {
+        "elements": []
+      },
+      "design_id": "dsn_9144f2f36c50c3d4",
+      "dimension_provenance": {
+        "band.thickness_mm": {
+          "confidence": 0.4,
+          "method": "reference_vision",
+          "note": "Reference-derived starting value; verify before production.",
+          "source": "synthetic low-information reference render",
+          "status": "estimated_from_reference"
+        },
+        "band.width_mm": {
+          "confidence": 0.4,
+          "method": "reference_vision",
+          "note": "Reference-derived starting value; verify before production.",
+          "source": "synthetic low-information reference render",
+          "status": "estimated_from_reference"
+        },
+        "ring_size.inner_diameter_mm": {
+          "confidence": 0.4,
+          "method": "reference_vision",
+          "note": "Reference-derived starting value; verify before production.",
+          "source": "synthetic low-information reference render",
+          "status": "estimated_from_reference"
+        },
+        "ring_size.value": {
+          "confidence": 0.4,
+          "method": "reference_vision",
+          "note": "Reference-derived starting value; verify before production.",
+          "source": "synthetic low-information reference render",
+          "status": "estimated_from_reference"
+        },
+        "setting.gallery_height_mm": {
+          "confidence": 0.4,
+          "method": "reference_vision",
+          "note": "Reference-derived starting value; verify before production.",
+          "source": "synthetic low-information reference render",
+          "status": "estimated_from_reference"
+        },
+        "setting.prong_tip_mm": {
+          "confidence": 0.4,
+          "method": "reference_vision",
+          "note": "Reference-derived starting value; verify before production.",
+          "source": "synthetic low-information reference render",
+          "status": "estimated_from_reference"
+        },
+        "side_stones[0].dimensions_mm.depth": {
+          "confidence": 0.4,
+          "method": "reference_vision",
+          "note": "Reference-derived starting value; verify before production.",
+          "source": "synthetic low-information reference render",
+          "status": "estimated_from_reference"
+        },
+        "side_stones[0].dimensions_mm.length": {
+          "confidence": 0.4,
+          "method": "reference_vision",
+          "note": "Reference-derived starting value; verify before production.",
+          "source": "synthetic low-information reference render",
+          "status": "estimated_from_reference"
+        },
+        "side_stones[0].dimensions_mm.width": {
+          "confidence": 0.4,
+          "method": "reference_vision",
+          "note": "Reference-derived starting value; verify before production.",
+          "source": "synthetic low-information reference render",
+          "status": "estimated_from_reference"
+        },
+        "stone.dimensions_mm.depth": {
+          "confidence": 0.4,
+          "method": "reference_vision",
+          "note": "Reference-derived starting value; verify before production.",
+          "source": "synthetic low-information reference render",
+          "status": "estimated_from_reference"
+        },
+        "stone.dimensions_mm.length": {
+          "confidence": 0.4,
+          "method": "reference_vision",
+          "note": "Reference-derived starting value; verify before production.",
+          "source": "synthetic low-information reference render",
+          "status": "estimated_from_reference"
+        },
+        "stone.dimensions_mm.width": {
+          "confidence": 0.4,
+          "method": "reference_vision",
+          "note": "Reference-derived starting value; verify before production.",
+          "source": "synthetic low-information reference render",
+          "status": "estimated_from_reference"
+        }
+      },
+      "drop": null,
+      "jewelry_type": "ring",
+      "metal": {
+        "color": "rose",
+        "finish": "high_polish",
+        "karat": 18,
+        "material": "gold"
+      },
+      "mode": "pro",
+      "notes_to_factory": "Synthetic live workflow fixture. Every dimension is a reference estimate pending designer measurement; unseen gallery construction is not source-observed factory truth.",
+      "pendant": null,
+      "ring_size": {
+        "inner_diameter_mm": 16.91,
+        "system": "US",
+        "value": 6.5
+      },
+      "schema_version": 1,
+      "setting": {
+        "gallery_height_mm": 4.0,
+        "prong_count": 4,
+        "prong_tip_mm": 0.8,
+        "style": "4_prong_basket"
+      },
+      "side_stones": [
+        {
+          "carat": 0.03,
+          "clarity": {
+            "eye_clean": null,
+            "grade": "VS2",
+            "system": "gia_diamond"
+          },
+          "color": {
+            "gia": "colorless",
+            "hue_code": null,
+            "saturation": null,
+            "tone": null,
+            "trade": "F"
+          },
+          "count": 6,
+          "culet": null,
+          "cut": "round_brilliant",
+          "depth_pct": null,
+          "dimensions_mm": {
+            "depth": 1.2,
+            "length": 2.0,
+            "width": 2.0
+          },
+          "girdle": null,
+          "inscription": null,
+          "lab": null,
+          "mount": null,
+          "origin": null,
+          "phenomena": [],
+          "position": "shoulders",
+          "species": "diamond",
+          "table_pct": null,
+          "treatment": null
+        }
+      ],
+      "source_component_coverage": {
+        "audited_spec_visual_hash": "e257359d45cf604d",
+        "components": [
+          {
+            "canonical_spec_paths": [
+              "stone"
+            ],
+            "component_id": "stone.center",
+            "designer_confirmation": null,
+            "independent_audit": {
+              "auditor": "skeptical-source-component-audit.v4",
+              "evidence_sha256": "f35c43cd8d4321e8f4c964426083d3c0ac7bc3b47c2779ff812b60ada4f06bb2",
+              "kind": "independent_component_audit",
+              "observed_description": "large oval faceted green center stone",
+              "source_view": "three_quarter",
+              "verdict": "pass"
+            },
+            "source_confidence": 0.45,
+            "source_description": "1 emerald oval_brilliant stone at center",
+            "source_view": "unspecified",
+            "unresolved_reason": null
+          },
+          {
+            "canonical_spec_paths": [
+              "side_stones[0]"
+            ],
+            "component_id": "stone.group.001",
+            "designer_confirmation": {
+              "basis": "visible_source",
+              "confirmed_description": "Exactly three round shoulder stones are visible on each side, six total.",
+              "evidence_sha256": "f03337ca313b3af14e4154157fd45f20f3c4a1207752dc5ecb7dbb0e1ee56c63",
+              "kind": "designer_component_confirmation",
+              "reviewer": "usr_operator_review_not_founder",
+              "source_view": "three_quarter",
+              "spec_visual_hash": "e257359d45cf604d"
+            },
+            "independent_audit": {
+              "auditor": "skeptical-source-component-audit.v4",
+              "evidence_sha256": "f35c43cd8d4321e8f4c964426083d3c0ac7bc3b47c2779ff812b60ada4f06bb2",
+              "kind": "independent_component_audit",
+              "observed_description": "Blind visible-fact evidence is insufficient: the specification says repeated-stone count 6, but the blind inventory did not state an assessable repeated-stone count.",
+              "source_view": "three_quarter",
+              "verdict": "inconclusive"
+            },
+            "source_confidence": 0.45,
+            "source_description": "6 diamond round_brilliant stones at shoulders",
+            "source_view": "unspecified",
+            "unresolved_reason": null
+          },
+          {
+            "canonical_spec_paths": [
+              "setting"
+            ],
+            "component_id": "setting.primary",
+            "designer_confirmation": {
+              "basis": "visible_source",
+              "confirmed_description": "Exactly four center-stone prongs are visible around the oval stone.",
+              "evidence_sha256": "f03337ca313b3af14e4154157fd45f20f3c4a1207752dc5ecb7dbb0e1ee56c63",
+              "kind": "designer_component_confirmation",
+              "reviewer": "usr_operator_review_not_founder",
+              "source_view": "three_quarter",
+              "spec_visual_hash": "e257359d45cf604d"
+            },
+            "independent_audit": {
+              "auditor": "skeptical-source-component-audit.v4",
+              "evidence_sha256": "f35c43cd8d4321e8f4c964426083d3c0ac7bc3b47c2779ff812b60ada4f06bb2",
+              "kind": "independent_component_audit",
+              "observed_description": "Blind visible-fact evidence is insufficient: the specification says 4-prong, but the blind inventory did not state an assessable prong count.",
+              "source_view": "three_quarter",
+              "verdict": "inconclusive"
+            },
+            "source_confidence": 0.45,
+            "source_description": "4_prong_basket setting with 4 prongs",
+            "source_view": "unspecified",
+            "unresolved_reason": null
+          },
+          {
+            "canonical_spec_paths": [
+              "metal"
+            ],
+            "component_id": "metal.body",
+            "designer_confirmation": null,
+            "independent_audit": {
+              "auditor": "skeptical-source-component-audit.v4",
+              "evidence_sha256": "f35c43cd8d4321e8f4c964426083d3c0ac7bc3b47c2779ff812b60ada4f06bb2",
+              "kind": "independent_component_audit",
+              "observed_description": "yellow gold metal throughout visible portions",
+              "source_view": "three_quarter",
+              "verdict": "pass"
+            },
+            "source_confidence": 0.45,
+            "source_description": "18 yellow gold metal body",
+            "source_view": "unspecified",
+            "unresolved_reason": null
+          },
+          {
+            "canonical_spec_paths": [
+              "band"
+            ],
+            "component_id": "band.shank",
+            "designer_confirmation": null,
+            "independent_audit": {
+              "auditor": "skeptical-source-component-audit.v4",
+              "evidence_sha256": "f35c43cd8d4321e8f4c964426083d3c0ac7bc3b47c2779ff812b60ada4f06bb2",
+              "kind": "independent_component_audit",
+              "observed_description": "continuous yellow gold shank with tapered shoulders, plain lower half",
+              "source_view": "three_quarter",
+              "verdict": "pass"
+            },
+            "source_confidence": 0.45,
+            "source_description": "half_round ring shank",
+            "source_view": "unspecified",
+            "unresolved_reason": null
+          },
+          {
+            "canonical_spec_paths": [
+              "template"
+            ],
+            "component_id": "assembly.primary",
+            "designer_confirmation": null,
+            "independent_audit": {
+              "auditor": "skeptical-source-component-audit.v4",
+              "evidence_sha256": "f35c43cd8d4321e8f4c964426083d3c0ac7bc3b47c2779ff812b60ada4f06bb2",
+              "kind": "independent_component_audit",
+              "observed_description": "solitaire prong assembly with center stone, shoulders, and shank",
+              "source_view": "three_quarter",
+              "verdict": "pass"
+            },
+            "source_confidence": 0.45,
+            "source_description": "solitaire_prong primary assembly topology",
+            "source_view": "unspecified",
+            "unresolved_reason": null
+          }
+        ],
+        "source_kind": "imported_reference"
+      },
+      "stone": {
+        "carat": 1.04,
+        "clarity": {
+          "eye_clean": null,
+          "grade": "VS",
+          "system": "gia_type_iii"
+        },
+        "color": {
+          "gia": "vivid green",
+          "hue_code": null,
+          "saturation": null,
+          "tone": null,
+          "trade": "Muzo Green"
+        },
+        "count": 1,
+        "culet": null,
+        "cut": "oval_brilliant",
+        "depth_pct": null,
+        "dimensions_mm": {
+          "depth": 4.0,
+          "length": 8.0,
+          "width": 6.0
+        },
+        "girdle": null,
+        "inscription": null,
+        "lab": null,
+        "mount": null,
+        "origin": null,
+        "phenomena": [],
+        "position": "center",
+        "species": "emerald",
+        "table_pct": null,
+        "treatment": null
+      },
+      "template": "solitaire_prong",
+      "version": 2
+    },
+    "state": "refining",
+    "tags": [],
+    "title": "Low-information ring isolated-edit live proof",
+    "updated_at": "2026-07-11T16:14:26.869635"
+  },
+  "run_name": "low-information-rose-edit-factory-e2e-live-v7-2026-07-11",
+  "source": "docs/evals/reference-render-low-information-sketch-live-v2-2026-07-11/candidate.jpg",
+  "source_audit_blockers": [],
+  "synthetic_source": true
+}

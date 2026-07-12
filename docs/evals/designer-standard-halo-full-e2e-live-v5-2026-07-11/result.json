@@ -1,0 +1,1949 @@
+{
+  "audited_spec": {
+    "band": {
+      "profile": "half_round",
+      "thickness_mm": 1.6,
+      "width_mm": 2.0
+    },
+    "bracelet": null,
+    "brooch": null,
+    "chain": null,
+    "composition": null,
+    "created_at": "2026-07-11T00:00:00Z",
+    "created_by": "usr_test_designer",
+    "design_form": {
+      "elements": []
+    },
+    "design_id": "dsn_eval_standard_halo_112",
+    "dimension_provenance": {
+      "band.thickness_mm": {
+        "confidence": 0.4,
+        "method": "reference_vision",
+        "note": "Reference-derived starting value; verify before production.",
+        "source": "founder evaluation source image-112.jpg",
+        "status": "estimated_from_reference"
+      },
+      "band.width_mm": {
+        "confidence": 0.4,
+        "method": "reference_vision",
+        "note": "Reference-derived starting value; verify before production.",
+        "source": "founder evaluation source image-112.jpg",
+        "status": "estimated_from_reference"
+      },
+      "ring_size.inner_diameter_mm": {
+        "confidence": 0.4,
+        "method": "reference_vision",
+        "note": "Derived from an estimated ring size; verify both values before production.",
+        "source": "founder evaluation source image-112.jpg",
+        "status": "estimated_from_reference"
+      },
+      "ring_size.value": {
+        "confidence": 0.4,
+        "method": "reference_vision",
+        "note": "Reference-derived starting value; verify before production.",
+        "source": "founder evaluation source image-112.jpg",
+        "status": "estimated_from_reference"
+      },
+      "setting.gallery_height_mm": {
+        "confidence": 0.4,
+        "method": "reference_vision",
+        "note": "Reference-derived starting value; verify before production.",
+        "source": "founder evaluation source image-112.jpg",
+        "status": "estimated_from_reference"
+      },
+      "setting.prong_tip_mm": {
+        "confidence": 0.4,
+        "method": "reference_vision",
+        "note": "Reference-derived starting value; verify before production.",
+        "source": "founder evaluation source image-112.jpg",
+        "status": "estimated_from_reference"
+      },
+      "side_stones[0].dimensions_mm.depth": {
+        "confidence": 0.4,
+        "method": "reference_vision",
+        "note": "Reference-derived starting value; verify before production.",
+        "source": "founder evaluation source image-112.jpg",
+        "status": "estimated_from_reference"
+      },
+      "side_stones[0].dimensions_mm.length": {
+        "confidence": 0.4,
+        "method": "reference_vision",
+        "note": "Reference-derived starting value; verify before production.",
+        "source": "founder evaluation source image-112.jpg",
+        "status": "estimated_from_reference"
+      },
+      "side_stones[0].dimensions_mm.width": {
+        "confidence": 0.4,
+        "method": "reference_vision",
+        "note": "Reference-derived starting value; verify before production.",
+        "source": "founder evaluation source image-112.jpg",
+        "status": "estimated_from_reference"
+      },
+      "stone.dimensions_mm.depth": {
+        "confidence": 0.4,
+        "method": "reference_vision",
+        "note": "Reference-derived starting value; verify before production.",
+        "source": "founder evaluation source image-112.jpg",
+        "status": "estimated_from_reference"
+      },
+      "stone.dimensions_mm.length": {
+        "confidence": 0.4,
+        "method": "reference_vision",
+        "note": "Reference-derived starting value; verify before production.",
+        "source": "founder evaluation source image-112.jpg",
+        "status": "estimated_from_reference"
+      },
+      "stone.dimensions_mm.width": {
+        "confidence": 0.4,
+        "method": "reference_vision",
+        "note": "Reference-derived starting value; verify before production.",
+        "source": "founder evaluation source image-112.jpg",
+        "status": "estimated_from_reference"
+      }
+    },
+    "drop": null,
+    "jewelry_type": "ring",
+    "metal": {
+      "color": "white",
+      "finish": "high_polish",
+      "karat": 18,
+      "material": "gold"
+    },
+    "mode": "pro",
+    "notes_to_factory": "LIVE WORKFLOW TEST ONLY. Stone identity, fourteen-stone halo, ring size, setting, and every numeric value are explicit test-designer assumptions used to exercise the workflow. They are not measurements extracted from image-112.jpg and are not authority to manufacture the pictured third-party design. Center and halo carat weights are modeled estimates from the stated dimensions. ESTIMATED dimensions are reference-derived prototyping values, not measurements. Verify or adjust them before manufacturing; factory and designer sign-off remain required.",
+    "pendant": null,
+    "ring_size": {
+      "inner_diameter_mm": 16.91,
+      "system": "US",
+      "value": 6.5
+    },
+    "schema_version": 1,
+    "setting": {
+      "gallery_height_mm": 5.0,
+      "prong_count": 4,
+      "prong_tip_mm": 0.8,
+      "style": "4_prong_basket"
+    },
+    "side_stones": [
+      {
+        "carat": 0.03,
+        "clarity": null,
+        "color": {
+          "gia": "colorless",
+          "hue_code": null,
+          "saturation": null,
+          "tone": null,
+          "trade": "F"
+        },
+        "count": 14,
+        "culet": null,
+        "cut": "round_brilliant",
+        "depth_pct": null,
+        "dimensions_mm": {
+          "depth": 1.2,
+          "length": 2.0,
+          "width": 2.0
+        },
+        "girdle": null,
+        "inscription": null,
+        "lab": null,
+        "mount": null,
+        "origin": null,
+        "phenomena": [],
+        "position": "halo",
+        "species": "diamond",
+        "table_pct": null,
+        "treatment": null
+      }
+    ],
+    "source_component_coverage": {
+      "components": [
+        {
+          "canonical_spec_paths": [
+            "stone"
+          ],
+          "component_id": "stone.center",
+          "independent_audit": {
+            "auditor": "skeptical-source-component-audit.v3",
+            "evidence_sha256": "aac10edbdbf85c798473e67ab3de7d39ffa69b95716cc3a194bb667fc62f033c",
+            "kind": "independent_component_audit",
+            "observed_description": "large faceted oval blue center stone",
+            "source_view": "plate_composite",
+            "verdict": "pass"
+          },
+          "source_confidence": 0.9,
+          "source_description": "One oval blue center stone shown in the top and profile views.",
+          "source_view": "plate_composite",
+          "unresolved_reason": null
+        },
+        {
+          "canonical_spec_paths": [
+            "side_stones[0]"
+          ],
+          "component_id": "stone.halo",
+          "independent_audit": {
+            "auditor": "skeptical-source-component-audit.v3",
+            "evidence_sha256": "aac10edbdbf85c798473e67ab3de7d39ffa69b95716cc3a194bb667fc62f033c",
+            "kind": "independent_component_audit",
+            "observed_description": "halo group of small round colorless stones surrounding center stone",
+            "source_view": "plate_composite",
+            "verdict": "pass"
+          },
+          "source_confidence": 0.9,
+          "source_description": "One continuous halo group of small round colorless stones.",
+          "source_view": "plate_composite",
+          "unresolved_reason": null
+        },
+        {
+          "canonical_spec_paths": [
+            "template"
+          ],
+          "component_id": "assembly.primary",
+          "independent_audit": {
+            "auditor": "skeptical-source-component-audit.v3",
+            "evidence_sha256": "aac10edbdbf85c798473e67ab3de7d39ffa69b95716cc3a194bb667fc62f033c",
+            "kind": "independent_component_audit",
+            "observed_description": "complete oval halo ring assembly from multiple views",
+            "source_view": "plate_composite",
+            "verdict": "pass"
+          },
+          "source_confidence": 0.9,
+          "source_description": "One complete oval halo ring assembly shown from multiple views.",
+          "source_view": "plate_composite",
+          "unresolved_reason": null
+        },
+        {
+          "canonical_spec_paths": [
+            "setting"
+          ],
+          "component_id": "setting.primary",
+          "independent_audit": {
+            "auditor": "skeptical-source-component-audit.v3",
+            "evidence_sha256": "aac10edbdbf85c798473e67ab3de7d39ffa69b95716cc3a194bb667fc62f033c",
+            "kind": "independent_component_audit",
+            "observed_description": "metal head with prongs and visible/open gallery structure",
+            "source_view": "plate_composite",
+            "verdict": "pass"
+          },
+          "source_confidence": 0.9,
+          "source_description": "Raised prong basket and gallery supporting the center and halo.",
+          "source_view": "plate_composite",
+          "unresolved_reason": null
+        },
+        {
+          "canonical_spec_paths": [
+            "metal"
+          ],
+          "component_id": "metal.body",
+          "independent_audit": {
+            "auditor": "skeptical-source-component-audit.v3",
+            "evidence_sha256": "aac10edbdbf85c798473e67ab3de7d39ffa69b95716cc3a194bb667fc62f033c",
+            "kind": "independent_component_audit",
+            "observed_description": "metal head, gallery and shank structures",
+            "source_view": "plate_composite",
+            "verdict": "pass"
+          },
+          "source_confidence": 0.9,
+          "source_description": "One continuous white-metal body across head, gallery, and shank.",
+          "source_view": "plate_composite",
+          "unresolved_reason": null
+        },
+        {
+          "canonical_spec_paths": [
+            "band"
+          ],
+          "component_id": "band.shank",
+          "independent_audit": {
+            "auditor": "skeptical-source-component-audit.v3",
+            "evidence_sha256": "aac10edbdbf85c798473e67ab3de7d39ffa69b95716cc3a194bb667fc62f033c",
+            "kind": "independent_component_audit",
+            "observed_description": "metal ring shank",
+            "source_view": "plate_composite",
+            "verdict": "pass"
+          },
+          "source_confidence": 0.9,
+          "source_description": "One plain lower ring shank connected to the raised halo head.",
+          "source_view": "plate_composite",
+          "unresolved_reason": null
+        }
+      ],
+      "source_kind": "designer_plate"
+    },
+    "stone": {
+      "carat": 2.167,
+      "clarity": null,
+      "color": {
+        "gia": "vivid blue, medium-dark tone, strong saturation",
+        "hue_code": null,
+        "saturation": null,
+        "tone": null,
+        "trade": "Royal Blue"
+      },
+      "count": 1,
+      "culet": null,
+      "cut": "oval_brilliant",
+      "depth_pct": null,
+      "dimensions_mm": {
+        "depth": 4.3,
+        "length": 9.0,
+        "width": 7.0
+      },
+      "girdle": null,
+      "inscription": null,
+      "lab": null,
+      "mount": null,
+      "origin": null,
+      "phenomena": [],
+      "position": "center",
+      "species": "sapphire",
+      "table_pct": null,
+      "treatment": null
+    },
+    "template": "halo_prong",
+    "version": 1
+  },
+  "beauty_render": {
+    "body": {
+      "attempts": [
+        {
+          "attempt_number": 1,
+          "cache_key": "9c3a7f3f2629b8420bcb792e43431ab63146737aef8cd9461151b2d6726daae7",
+          "cached": false,
+          "corrective_instruction": null,
+          "cost": null,
+          "error": null,
+          "error_category": null,
+          "fallback_reason": null,
+          "latency_ms": 41726,
+          "model": "grok_direct",
+          "output_hash": "397f2c2c8a1cab4b789b8dff8e0c501a33aa1012d4b24c65c2b9d46d4318f588",
+          "prompt_hash": "ab459a0f8420c3db9514938f3261ec099fa16803ea85ec3f9d1e6aacc5d5a622",
+          "provider": "xai",
+          "provider_request_id": null,
+          "qa_checks": [
+            {
+              "code": "decodable_image",
+              "evidence": {
+                "format": "JPEG",
+                "height": 1152,
+                "width": 864
+              },
+              "message": "candidate is a decodable raster image",
+              "passed": true,
+              "severity": "hard"
+            },
+            {
+              "code": "review_resolution",
+              "evidence": {
+                "height": 1152,
+                "width": 864
+              },
+              "message": "candidate has reviewable raster dimensions",
+              "passed": true,
+              "severity": "warning"
+            },
+            {
+              "code": "candidate_changed",
+              "evidence": {},
+              "message": "candidate bytes differ from the source",
+              "passed": true,
+              "severity": "hard"
+            },
+            {
+              "code": "jewelry_type",
+              "evidence": {},
+              "message": "visual evidence matches the requested fact",
+              "passed": true,
+              "severity": "hard"
+            },
+            {
+              "code": "major_components",
+              "evidence": {},
+              "message": "visual evidence matches the requested fact",
+              "passed": true,
+              "severity": "hard"
+            },
+            {
+              "code": "center_species",
+              "evidence": {},
+              "message": "visual evidence matches the requested fact",
+              "passed": true,
+              "severity": "hard"
+            },
+            {
+              "code": "cut_family",
+              "evidence": {},
+              "message": "visual evidence matches the requested fact",
+              "passed": true,
+              "severity": "hard"
+            },
+            {
+              "code": "center_color",
+              "evidence": {},
+              "message": "visual evidence matches the requested fact",
+              "passed": true,
+              "severity": "hard"
+            },
+            {
+              "code": "metal",
+              "evidence": {},
+              "message": "visual evidence matches the requested fact",
+              "passed": true,
+              "severity": "hard"
+            },
+            {
+              "code": "setting",
+              "evidence": {},
+              "message": "visual evidence matches the requested fact",
+              "passed": true,
+              "severity": "hard"
+            },
+            {
+              "code": "stone_count",
+              "evidence": {},
+              "message": "visual evidence matches the requested fact",
+              "passed": true,
+              "severity": "hard"
+            },
+            {
+              "code": "render_crosscheck:jewelry_type",
+              "evidence": {
+                "differences": [
+                  "setting style is halo_prong not 4_prong_basket",
+                  "center prong count visibly exceeds 4"
+                ],
+                "observed_prong_count": 6,
+                "observed_side_stone_count": 14
+              },
+              "message": "visual evidence matches the requested fact",
+              "passed": true,
+              "severity": "hard"
+            },
+            {
+              "code": "render_crosscheck:center_identity",
+              "evidence": {
+                "differences": [
+                  "setting style is halo_prong not 4_prong_basket",
+                  "center prong count visibly exceeds 4"
+                ],
+                "observed_prong_count": 6,
+                "observed_side_stone_count": 14
+              },
+              "message": "visual evidence matches the requested fact",
+              "passed": true,
+              "severity": "hard"
+            },
+            {
+              "code": "render_crosscheck:center_cut",
+              "evidence": {
+                "differences": [
+                  "setting style is halo_prong not 4_prong_basket",
+                  "center prong count visibly exceeds 4"
+                ],
+                "observed_prong_count": 6,
+                "observed_side_stone_count": 14
+              },
+              "message": "visual evidence matches the requested fact",
+              "passed": true,
+              "severity": "hard"
+            },
+            {
+              "code": "render_crosscheck:metal",
+              "evidence": {
+                "differences": [
+                  "setting style is halo_prong not 4_prong_basket",
+                  "center prong count visibly exceeds 4"
+                ],
+                "observed_prong_count": 6,
+                "observed_side_stone_count": 14
+              },
+              "message": "visual evidence matches the requested fact",
+              "passed": true,
+              "severity": "hard"
+            },
+            {
+              "code": "render_crosscheck:setting_style",
+              "evidence": {
+                "differences": [
+                  "setting style is halo_prong not 4_prong_basket",
+                  "center prong count visibly exceeds 4"
+                ],
+                "observed_prong_count": 6,
+                "observed_side_stone_count": 14
+              },
+              "message": "independent audit found the wrong setting style",
+              "passed": false,
+              "severity": "hard"
+            },
+            {
+              "code": "render_crosscheck:prong_count",
+              "evidence": {
+                "differences": [
+                  "setting style is halo_prong not 4_prong_basket",
+                  "center prong count visibly exceeds 4"
+                ],
+                "observed_prong_count": 6,
+                "observed_side_stone_count": 14
+              },
+              "message": "independent audit could not confirm prong count",
+              "passed": false,
+              "severity": "warning"
+            },
+            {
+              "code": "render_crosscheck:side_stone_inventory",
+              "evidence": {
+                "differences": [
+                  "setting style is halo_prong not 4_prong_basket",
+                  "center prong count visibly exceeds 4"
+                ],
+                "observed_prong_count": 6,
+                "observed_side_stone_count": 14
+              },
+              "message": "independent audit could not confirm side stone inventory",
+              "passed": false,
+              "severity": "warning"
+            },
+            {
+              "code": "render_crosscheck:major_components",
+              "evidence": {
+                "differences": [
+                  "setting style is halo_prong not 4_prong_basket",
+                  "center prong count visibly exceeds 4"
+                ],
+                "observed_prong_count": 6,
+                "observed_side_stone_count": 14
+              },
+              "message": "independent audit found a missing or added major component",
+              "passed": false,
+              "severity": "hard"
+            },
+            {
+              "code": "text_or_branding",
+              "evidence": {},
+              "message": "no text or branding detected",
+              "passed": true,
+              "severity": "hard"
+            },
+            {
+              "code": "reference_consistency",
+              "evidence": {},
+              "message": "visual evidence matches the requested fact",
+              "passed": true,
+              "severity": "hard"
+            },
+            {
+              "code": "exact_dimensions",
+              "evidence": {},
+              "message": "exact millimeters appears plausible but remains non-authoritative",
+              "passed": true,
+              "severity": "warning"
+            },
+            {
+              "code": "exact_carat",
+              "evidence": {},
+              "message": "exact carat weight appears plausible but remains non-authoritative",
+              "passed": true,
+              "severity": "warning"
+            }
+          ],
+          "qa_verdict": "fail",
+          "quality_score": 92.0,
+          "route": "grok_edit",
+          "usage": null
+        },
+        {
+          "attempt_number": 2,
+          "cache_key": "94e5cee9d70b5ea9e95bae3e31374c5a884f7175db5b54275b85cf25727be069",
+          "cached": false,
+          "corrective_instruction": "- render_crosscheck:setting_style: independent audit found the wrong setting style. Evidence: {\"differences\": [\"setting style is halo_prong not 4_prong_basket\", \"center prong count visibly exceeds 4\"], \"observed_prong_count\": 6, \"observed_side_stone_count\": 14}\n- render_crosscheck:prong_count: independent audit could not confirm prong count. Evidence: {\"differences\": [\"setting style is halo_prong not 4_prong_basket\", \"center prong count visibly exceeds 4\"], \"observed_prong_count\": 6, \"observed_side_stone_count\": 14}\n- render_crosscheck:side_stone_inventory: independent audit could not confirm side stone inventory. Evidence: {\"differences\": [\"setting style is halo_prong not 4_prong_basket\", \"center prong count visibly exceeds 4\"], \"observed_prong_count\": 6, \"observed_side_stone_count\": 14}\n- render_crosscheck:major_components: independent audit found a missing or added major component. Evidence: {\"differences\": [\"setting style is halo_prong not 4_prong_basket\", \"center prong count visibly exceeds 4\"], \"observed_prong_count\": 6, \"observed_side_stone_count\": 14}",
+          "cost": null,
+          "error": null,
+          "error_category": null,
+          "fallback_reason": null,
+          "latency_ms": 41756,
+          "model": "grok_direct",
+          "output_hash": "7d0e3c9047d027b6a825e297667d5c1d9257e6737bc7f52be17f766f0dd35361",
+          "prompt_hash": "eb7c992e325c22154c869fcc7da462475f65f772a5506bf58137b705c6a4e3c5",
+          "provider": "xai",
+          "provider_request_id": null,
+          "qa_checks": [
+            {
+              "code": "decodable_image",
+              "evidence": {
+                "format": "JPEG",
+                "height": 1152,
+                "width": 864
+              },
+              "message": "candidate is a decodable raster image",
+              "passed": true,
+              "severity": "hard"
+            },
+            {
+              "code": "review_resolution",
+              "evidence": {
+                "height": 1152,
+                "width": 864
+              },
+              "message": "candidate has reviewable raster dimensions",
+              "passed": true,
+              "severity": "warning"
+            },
+            {
+              "code": "candidate_changed",
+              "evidence": {},
+              "message": "candidate bytes differ from the source",
+              "passed": true,
+              "severity": "hard"
+            },
+            {
+              "code": "jewelry_type",
+              "evidence": {},
+              "message": "visual evidence matches the requested fact",
+              "passed": true,
+              "severity": "hard"
+            },
+            {
+              "code": "major_components",
+              "evidence": {},
+              "message": "visual evidence matches the requested fact",
+              "passed": true,
+              "severity": "hard"
+            },
+            {
+              "code": "center_species",
+              "evidence": {},
+              "message": "visual evidence matches the requested fact",
+              "passed": true,
+              "severity": "hard"
+            },
+            {
+              "code": "cut_family",
+              "evidence": {},
+              "message": "visual evidence matches the requested fact",
+              "passed": true,
+              "severity": "hard"
+            },
+            {
+              "code": "center_color",
+              "evidence": {},
+              "message": "visual evidence matches the requested fact",
+              "passed": true,
+              "severity": "hard"
+            },
+            {
+              "code": "metal",
+              "evidence": {},
+              "message": "visual evidence matches the requested fact",
+              "passed": true,
+              "severity": "hard"
+            },
+            {
+              "code": "setting",
+              "evidence": {},
+              "message": "visual evidence matches the requested fact",
+              "passed": true,
+              "severity": "hard"
+            },
+            {
+              "code": "stone_count",
+              "evidence": {},
+              "message": "visual evidence matches the requested fact",
+              "passed": true,
+              "severity": "hard"
+            },
+            {
+              "code": "render_crosscheck:jewelry_type",
+              "evidence": {
+                "differences": [],
+                "observed_prong_count": 6,
+                "observed_side_stone_count": 14
+              },
+              "message": "visual evidence matches the requested fact",
+              "passed": true,
+              "severity": "hard"
+            },
+            {
+              "code": "render_crosscheck:center_identity",
+              "evidence": {
+                "differences": [],
+                "observed_prong_count": 6,
+                "observed_side_stone_count": 14
+              },
+              "message": "visual evidence matches the requested fact",
+              "passed": true,
+              "severity": "hard"
+            },
+            {
+              "code": "render_crosscheck:center_cut",
+              "evidence": {
+                "differences": [],
+                "observed_prong_count": 6,
+                "observed_side_stone_count": 14
+              },
+              "message": "visual evidence matches the requested fact",
+              "passed": true,
+              "severity": "hard"
+            },
+            {
+              "code": "render_crosscheck:metal",
+              "evidence": {
+                "differences": [],
+                "observed_prong_count": 6,
+                "observed_side_stone_count": 14
+              },
+              "message": "visual evidence matches the requested fact",
+              "passed": true,
+              "severity": "hard"
+            },
+            {
+              "code": "render_crosscheck:setting_style",
+              "evidence": {
+                "differences": [],
+                "observed_prong_count": 6,
+                "observed_side_stone_count": 14
+              },
+              "message": "visual evidence matches the requested fact",
+              "passed": true,
+              "severity": "hard"
+            },
+            {
+              "code": "render_crosscheck:prong_count",
+              "evidence": {
+                "differences": [],
+                "observed_prong_count": 6,
+                "observed_side_stone_count": 14
+              },
+              "message": "independent audit found the wrong center-prong count",
+              "passed": false,
+              "severity": "hard"
+            },
+            {
+              "code": "render_crosscheck:side_stone_inventory",
+              "evidence": {
+                "differences": [],
+                "observed_prong_count": 6,
+                "observed_side_stone_count": 14
+              },
+              "message": "independent audit could not confirm side stone inventory",
+              "passed": false,
+              "severity": "warning"
+            },
+            {
+              "code": "render_crosscheck:major_components",
+              "evidence": {
+                "differences": [],
+                "observed_prong_count": 6,
+                "observed_side_stone_count": 14
+              },
+              "message": "visual evidence matches the requested fact",
+              "passed": true,
+              "severity": "hard"
+            },
+            {
+              "code": "text_or_branding",
+              "evidence": {},
+              "message": "no text or branding detected",
+              "passed": true,
+              "severity": "hard"
+            },
+            {
+              "code": "reference_consistency",
+              "evidence": {},
+              "message": "visual evidence matches the requested fact",
+              "passed": true,
+              "severity": "hard"
+            },
+            {
+              "code": "exact_dimensions",
+              "evidence": {},
+              "message": "exact millimeters appears plausible but remains non-authoritative",
+              "passed": true,
+              "severity": "warning"
+            },
+            {
+              "code": "exact_carat",
+              "evidence": {},
+              "message": "exact carat weight appears plausible but remains non-authoritative",
+              "passed": true,
+              "severity": "warning"
+            }
+          ],
+          "qa_verdict": "fail",
+          "quality_score": 95.0,
+          "route": "grok_edit",
+          "usage": null
+        },
+        {
+          "attempt_number": 3,
+          "cache_key": "8302383fd785da583bdd75b2c14fa2913e9bb4c1125c8d380df7bdb98e0e3c0f",
+          "cached": false,
+          "corrective_instruction": "- render_crosscheck:prong_count: independent audit found the wrong center-prong count. Evidence: {\"differences\": [], \"observed_prong_count\": 6, \"observed_side_stone_count\": 14}\n- render_crosscheck:side_stone_inventory: independent audit could not confirm side stone inventory. Evidence: {\"differences\": [], \"observed_prong_count\": 6, \"observed_side_stone_count\": 14}",
+          "cost": null,
+          "error": {
+            "category": "provider",
+            "code": "image_provider_call_failed",
+            "message": "no FAL_KEY configured \u2014 set it in the environment or .env",
+            "retryable": true
+          },
+          "error_category": "provider",
+          "fallback_reason": "grok_qa_failed",
+          "latency_ms": 0,
+          "model": "flux_kontext",
+          "output_hash": null,
+          "prompt_hash": "481ef5056a236ab08d383237ede6dce6e542a76193416177c137d4a53e1f3681",
+          "provider": "fal",
+          "provider_request_id": null,
+          "qa_checks": [],
+          "qa_verdict": null,
+          "quality_score": null,
+          "route": "flux_kontext_edit",
+          "usage": null
+        }
+      ],
+      "category": "quality",
+      "code": "image_quality_failed",
+      "detail": "no candidate passed jewelry QA: render_crosscheck:prong_count, render_crosscheck:side_stone_inventory",
+      "error_category": "quality_failure",
+      "image_run_id": "run_64aa4c82337ed284",
+      "retryable": false
+    },
+    "http_status": 422
+  },
+  "estimate_disclaimer": "ESTIMATED dimensions are reference-derived prototyping values, not measurements. Verify or adjust them before manufacturing; factory and designer sign-off remain required.",
+  "estimated_spec_before_audit": {
+    "band": {
+      "profile": "half_round",
+      "thickness_mm": 1.6,
+      "width_mm": 2.0
+    },
+    "bracelet": null,
+    "brooch": null,
+    "chain": null,
+    "composition": null,
+    "created_at": "2026-07-11T00:00:00Z",
+    "created_by": "usr_test_designer",
+    "design_form": {
+      "elements": []
+    },
+    "design_id": "dsn_eval_standard_halo_112",
+    "dimension_provenance": {
+      "band.thickness_mm": {
+        "confidence": 0.4,
+        "method": "reference_vision",
+        "note": "Reference-derived starting value; verify before production.",
+        "source": "founder evaluation source image-112.jpg",
+        "status": "estimated_from_reference"
+      },
+      "band.width_mm": {
+        "confidence": 0.4,
+        "method": "reference_vision",
+        "note": "Reference-derived starting value; verify before production.",
+        "source": "founder evaluation source image-112.jpg",
+        "status": "estimated_from_reference"
+      },
+      "ring_size.inner_diameter_mm": {
+        "confidence": 0.4,
+        "method": "reference_vision",
+        "note": "Derived from an estimated ring size; verify both values before production.",
+        "source": "founder evaluation source image-112.jpg",
+        "status": "estimated_from_reference"
+      },
+      "ring_size.value": {
+        "confidence": 0.4,
+        "method": "reference_vision",
+        "note": "Reference-derived starting value; verify before production.",
+        "source": "founder evaluation source image-112.jpg",
+        "status": "estimated_from_reference"
+      },
+      "setting.gallery_height_mm": {
+        "confidence": 0.4,
+        "method": "reference_vision",
+        "note": "Reference-derived starting value; verify before production.",
+        "source": "founder evaluation source image-112.jpg",
+        "status": "estimated_from_reference"
+      },
+      "setting.prong_tip_mm": {
+        "confidence": 0.4,
+        "method": "reference_vision",
+        "note": "Reference-derived starting value; verify before production.",
+        "source": "founder evaluation source image-112.jpg",
+        "status": "estimated_from_reference"
+      },
+      "side_stones[0].dimensions_mm.depth": {
+        "confidence": 0.4,
+        "method": "reference_vision",
+        "note": "Reference-derived starting value; verify before production.",
+        "source": "founder evaluation source image-112.jpg",
+        "status": "estimated_from_reference"
+      },
+      "side_stones[0].dimensions_mm.length": {
+        "confidence": 0.4,
+        "method": "reference_vision",
+        "note": "Reference-derived starting value; verify before production.",
+        "source": "founder evaluation source image-112.jpg",
+        "status": "estimated_from_reference"
+      },
+      "side_stones[0].dimensions_mm.width": {
+        "confidence": 0.4,
+        "method": "reference_vision",
+        "note": "Reference-derived starting value; verify before production.",
+        "source": "founder evaluation source image-112.jpg",
+        "status": "estimated_from_reference"
+      },
+      "stone.dimensions_mm.depth": {
+        "confidence": 0.4,
+        "method": "reference_vision",
+        "note": "Reference-derived starting value; verify before production.",
+        "source": "founder evaluation source image-112.jpg",
+        "status": "estimated_from_reference"
+      },
+      "stone.dimensions_mm.length": {
+        "confidence": 0.4,
+        "method": "reference_vision",
+        "note": "Reference-derived starting value; verify before production.",
+        "source": "founder evaluation source image-112.jpg",
+        "status": "estimated_from_reference"
+      },
+      "stone.dimensions_mm.width": {
+        "confidence": 0.4,
+        "method": "reference_vision",
+        "note": "Reference-derived starting value; verify before production.",
+        "source": "founder evaluation source image-112.jpg",
+        "status": "estimated_from_reference"
+      }
+    },
+    "drop": null,
+    "jewelry_type": "ring",
+    "metal": {
+      "color": "white",
+      "finish": "high_polish",
+      "karat": 18,
+      "material": "gold"
+    },
+    "mode": "pro",
+    "notes_to_factory": "LIVE WORKFLOW TEST ONLY. Stone identity, fourteen-stone halo, ring size, setting, and every numeric value are explicit test-designer assumptions used to exercise the workflow. They are not measurements extracted from image-112.jpg and are not authority to manufacture the pictured third-party design. Center and halo carat weights are modeled estimates from the stated dimensions. ESTIMATED dimensions are reference-derived prototyping values, not measurements. Verify or adjust them before manufacturing; factory and designer sign-off remain required.",
+    "pendant": null,
+    "ring_size": {
+      "inner_diameter_mm": 16.91,
+      "system": "US",
+      "value": 6.5
+    },
+    "schema_version": 1,
+    "setting": {
+      "gallery_height_mm": 5.0,
+      "prong_count": 4,
+      "prong_tip_mm": 0.8,
+      "style": "4_prong_basket"
+    },
+    "side_stones": [
+      {
+        "carat": 0.03,
+        "clarity": null,
+        "color": {
+          "gia": "colorless",
+          "hue_code": null,
+          "saturation": null,
+          "tone": null,
+          "trade": "F"
+        },
+        "count": 14,
+        "culet": null,
+        "cut": "round_brilliant",
+        "depth_pct": null,
+        "dimensions_mm": {
+          "depth": 1.2,
+          "length": 2.0,
+          "width": 2.0
+        },
+        "girdle": null,
+        "inscription": null,
+        "lab": null,
+        "mount": null,
+        "origin": null,
+        "phenomena": [],
+        "position": "halo",
+        "species": "diamond",
+        "table_pct": null,
+        "treatment": null
+      }
+    ],
+    "source_component_coverage": {
+      "components": [
+        {
+          "canonical_spec_paths": [
+            "stone"
+          ],
+          "component_id": "stone.center",
+          "independent_audit": null,
+          "source_confidence": 0.9,
+          "source_description": "One oval blue center stone shown in the top and profile views.",
+          "source_view": "plate_composite",
+          "unresolved_reason": null
+        },
+        {
+          "canonical_spec_paths": [
+            "side_stones[0]"
+          ],
+          "component_id": "stone.halo",
+          "independent_audit": null,
+          "source_confidence": 0.9,
+          "source_description": "One continuous halo group of small round colorless stones.",
+          "source_view": "plate_composite",
+          "unresolved_reason": null
+        },
+        {
+          "canonical_spec_paths": [
+            "template"
+          ],
+          "component_id": "assembly.primary",
+          "independent_audit": null,
+          "source_confidence": 0.9,
+          "source_description": "One complete oval halo ring assembly shown from multiple views.",
+          "source_view": "plate_composite",
+          "unresolved_reason": null
+        },
+        {
+          "canonical_spec_paths": [
+            "setting"
+          ],
+          "component_id": "setting.primary",
+          "independent_audit": null,
+          "source_confidence": 0.9,
+          "source_description": "Raised prong basket and gallery supporting the center and halo.",
+          "source_view": "plate_composite",
+          "unresolved_reason": null
+        },
+        {
+          "canonical_spec_paths": [
+            "metal"
+          ],
+          "component_id": "metal.body",
+          "independent_audit": null,
+          "source_confidence": 0.9,
+          "source_description": "One continuous white-metal body across head, gallery, and shank.",
+          "source_view": "plate_composite",
+          "unresolved_reason": null
+        },
+        {
+          "canonical_spec_paths": [
+            "band"
+          ],
+          "component_id": "band.shank",
+          "independent_audit": null,
+          "source_confidence": 0.9,
+          "source_description": "One plain lower ring shank connected to the raised halo head.",
+          "source_view": "plate_composite",
+          "unresolved_reason": null
+        }
+      ],
+      "source_kind": "designer_plate"
+    },
+    "stone": {
+      "carat": 2.167,
+      "clarity": null,
+      "color": {
+        "gia": "vivid blue, medium-dark tone, strong saturation",
+        "hue_code": null,
+        "saturation": null,
+        "tone": null,
+        "trade": "Royal Blue"
+      },
+      "count": 1,
+      "culet": null,
+      "cut": "oval_brilliant",
+      "depth_pct": null,
+      "dimensions_mm": {
+        "depth": 4.3,
+        "length": 9.0,
+        "width": 7.0
+      },
+      "girdle": null,
+      "inscription": null,
+      "lab": null,
+      "mount": null,
+      "origin": null,
+      "phenomena": [],
+      "position": "center",
+      "species": "sapphire",
+      "table_pct": null,
+      "treatment": null
+    },
+    "template": "halo_prong",
+    "version": 1
+  },
+  "flags": {
+    "exercise_colored_illustration": false,
+    "test_accept_beauty_warning": false,
+    "test_accept_line_art": true,
+    "test_approve_factory": false,
+    "test_confirm_color": false
+  },
+  "line_art": {
+    "body": {
+      "candidate": {
+        "asset_capability": "LINE_ART",
+        "candidate_id": "cand_65e559e907e6690d",
+        "operation": "VISUAL_ONLY_EDIT",
+        "preview_url": "/image-runs/run_c4dabf7605716b8c/candidates/cand_65e559e907e6690d/image",
+        "qa": {
+          "accepted": false,
+          "checks": [
+            {
+              "code": "decodable_image",
+              "evidence": {
+                "format": "JPEG",
+                "height": 1152,
+                "width": 864
+              },
+              "message": "candidate is a decodable raster image",
+              "passed": true,
+              "severity": "hard"
+            },
+            {
+              "code": "review_resolution",
+              "evidence": {
+                "height": 1152,
+                "width": 864
+              },
+              "message": "candidate has reviewable raster dimensions",
+              "passed": true,
+              "severity": "warning"
+            },
+            {
+              "code": "candidate_changed",
+              "evidence": {},
+              "message": "candidate bytes differ from the source",
+              "passed": true,
+              "severity": "hard"
+            },
+            {
+              "code": "requested_change",
+              "evidence": {},
+              "message": "visual evidence matches the requested fact",
+              "passed": true,
+              "severity": "hard"
+            },
+            {
+              "code": "protected_regions",
+              "evidence": {},
+              "message": "visual evidence matches the requested fact",
+              "passed": true,
+              "severity": "hard"
+            },
+            {
+              "code": "unintended_drift",
+              "evidence": {
+                "changes": [],
+                "severity": "none"
+              },
+              "message": "no unintended changes detected",
+              "passed": true,
+              "severity": "warning"
+            },
+            {
+              "code": "geometry_preserved",
+              "evidence": {},
+              "message": "visual evidence matches the requested fact",
+              "passed": true,
+              "severity": "hard"
+            },
+            {
+              "code": "text_or_branding",
+              "evidence": {},
+              "message": "no text or branding introduced",
+              "passed": true,
+              "severity": "hard"
+            }
+          ],
+          "failed_checks": [],
+          "notes": [
+            "Exact ring converted to clean black technical line-art three-quarter view",
+            "Photography, color, texture, shadows and background removed; all geometry, stones, prongs, band and proportions preserved",
+            "source multi-view painted renders converted to single clean black line-art three-quarter view",
+            "oval center stone, 14-stone halo, 4-prong basket setting, half-round band all preserved exactly",
+            "no geometry, proportion, stone count, or topology alterations"
+          ],
+          "review_required": true,
+          "score": 95.0,
+          "summary": "Image needs explicit designer review.",
+          "verdict": "pass",
+          "warnings": []
+        },
+        "requested_change": "Convert this exact approved ring into one clean black technical line-art three-quarter view. Remove photography, paint, paper texture, shadows, annotations, and background only.",
+        "run_id": "run_c4dabf7605716b8c"
+      },
+      "image_run_id": "run_c4dabf7605716b8c",
+      "next": "designer confirms geometry, then colorize the persisted LINE_ART asset",
+      "project_id": "ast_af0e455fba072c42",
+      "quality_report": {
+        "accepted": false,
+        "checks": [
+          {
+            "code": "decodable_image",
+            "evidence": {
+              "format": "JPEG",
+              "height": 1152,
+              "width": 864
+            },
+            "message": "candidate is a decodable raster image",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "review_resolution",
+            "evidence": {
+              "height": 1152,
+              "width": 864
+            },
+            "message": "candidate has reviewable raster dimensions",
+            "passed": true,
+            "severity": "warning"
+          },
+          {
+            "code": "candidate_changed",
+            "evidence": {},
+            "message": "candidate bytes differ from the source",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "requested_change",
+            "evidence": {},
+            "message": "visual evidence matches the requested fact",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "protected_regions",
+            "evidence": {},
+            "message": "visual evidence matches the requested fact",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "unintended_drift",
+            "evidence": {
+              "changes": [],
+              "severity": "none"
+            },
+            "message": "no unintended changes detected",
+            "passed": true,
+            "severity": "warning"
+          },
+          {
+            "code": "geometry_preserved",
+            "evidence": {},
+            "message": "visual evidence matches the requested fact",
+            "passed": true,
+            "severity": "hard"
+          },
+          {
+            "code": "text_or_branding",
+            "evidence": {},
+            "message": "no text or branding introduced",
+            "passed": true,
+            "severity": "hard"
+          }
+        ],
+        "failed_checks": [],
+        "notes": [
+          "Exact ring converted to clean black technical line-art three-quarter view",
+          "Photography, color, texture, shadows and background removed; all geometry, stones, prongs, band and proportions preserved",
+          "source multi-view painted renders converted to single clean black line-art three-quarter view",
+          "oval center stone, 14-stone halo, 4-prong basket setting, half-round band all preserved exactly",
+          "no geometry, proportion, stone count, or topology alterations"
+        ],
+        "review_required": true,
+        "score": 95.0,
+        "summary": "Image needs explicit designer review.",
+        "verdict": "pass",
+        "warnings": []
+      },
+      "routing": {
+        "attempt_count": 1,
+        "cache_hit": true,
+        "run_id": "run_c4dabf7605716b8c",
+        "used_fallback": false,
+        "used_retry": false
+      },
+      "status": "confirmation_required",
+      "view": "three_quarter"
+    },
+    "http_status": 202
+  },
+  "line_art_candidate_file": "line-art-candidate.jpg",
+  "line_art_run": {
+    "body": {
+      "accepted": false,
+      "accepted_asset_id": null,
+      "attempts": [
+        {
+          "attempt": 1,
+          "attempt_id": "iat_33e29a8665914b24",
+          "attempt_number": 1,
+          "cache_hit": true,
+          "cache_key": "94042e72ec5f14470fe7eaede65c8b08dbbced7f280fb9e36ad8aafe3e268c7d",
+          "cached": true,
+          "correction": null,
+          "corrective_instruction": null,
+          "cost": null,
+          "created_at": "2026-07-11T12:29:08.934795",
+          "engine_role": "primary",
+          "error_category": null,
+          "failed_checks": [],
+          "fallback_reason": null,
+          "latency_ms": 17602,
+          "model": "grok_direct",
+          "output_hash": "8417fecf84a801dde663202bac018bb77c83bd40bbe7d417ad0e769456981aa9",
+          "prompt_hash": "2b0cb4624f6470d9d4a681264784e68b72b8ca7b55f402a62e231cda1b4cee6d",
+          "provider": "xai",
+          "provider_request_id": null,
+          "qa_checks": [
+            {
+              "code": "decodable_image",
+              "evidence": {
+                "format": "JPEG",
+                "height": 1152,
+                "width": 864
+              },
+              "message": "candidate is a decodable raster image",
+              "passed": true,
+              "severity": "hard"
+            },
+            {
+              "code": "review_resolution",
+              "evidence": {
+                "height": 1152,
+                "width": 864
+              },
+              "message": "candidate has reviewable raster dimensions",
+              "passed": true,
+              "severity": "warning"
+            },
+            {
+              "code": "candidate_changed",
+              "evidence": {},
+              "message": "candidate bytes differ from the source",
+              "passed": true,
+              "severity": "hard"
+            },
+            {
+              "code": "requested_change",
+              "evidence": {},
+              "message": "visual evidence matches the requested fact",
+              "passed": true,
+              "severity": "hard"
+            },
+            {
+              "code": "protected_regions",
+              "evidence": {},
+              "message": "visual evidence matches the requested fact",
+              "passed": true,
+              "severity": "hard"
+            },
+            {
+              "code": "unintended_drift",
+              "evidence": {
+                "changes": [],
+                "severity": "none"
+              },
+              "message": "no unintended changes detected",
+              "passed": true,
+              "severity": "warning"
+            },
+            {
+              "code": "geometry_preserved",
+              "evidence": {},
+              "message": "visual evidence matches the requested fact",
+              "passed": true,
+              "severity": "hard"
+            },
+            {
+              "code": "text_or_branding",
+              "evidence": {},
+              "message": "no text or branding introduced",
+              "passed": true,
+              "severity": "hard"
+            }
+          ],
+          "qa_verdict": "pass",
+          "usage": {},
+          "verdict": "pass"
+        }
+      ],
+      "completed_at": "2026-07-11T12:29:08.934795",
+      "created_at": "2026-07-11T12:29:08.935183",
+      "created_by": "usr_test_designer",
+      "error_category": null,
+      "input_hash": "89c4fe9b66ec48cc5aa68fe3f45f2adfa85026249d8ec01fcf766d577c8a732a",
+      "mask_hash": null,
+      "normalized_intent": {
+        "edit_domains": [],
+        "expected_output": "one geometry-faithful three-quarter line drawing for explicit designer confirmation before color",
+        "frozen": [
+          "all jewelry geometry, stones, setting, proportions, and metal identity",
+          "the complete validated specification",
+          "the complete assembled ring silhouette and proportions",
+          "every visible stone, setting, prong, shoulder motif, and band contour",
+          "the exact validated specification"
+        ],
+        "instruction": "Convert this exact approved ring into one clean black technical line-art three-quarter view. Remove photography, paint, paper texture, shadows, annotations, and background only.",
+        "region_description": null,
+        "spec_delta": [],
+        "style_constraints": [
+          "pure black precise jewelry outlines on a plain white background",
+          "preserve every stone, leaf, shoulder, prong, setting, band contour, count, and spatial relationship",
+          "one assembled ring view only; no exploded parts, title block, labels, numbers, text, or watermark",
+          "consistent thin technical strokes with faceted stone outlines and no color fill"
+        ]
+      },
+      "operation": "VISUAL_ONLY_EDIT",
+      "output_hash": "8417fecf84a801dde663202bac018bb77c83bd40bbe7d417ad0e769456981aa9",
+      "project_id": "ast_af0e455fba072c42",
+      "prompt_contract_version": "visual-only-edit.v2",
+      "prompt_version": "visual-only-edit.v2",
+      "review_decision": null,
+      "review_required": true,
+      "reviewed_at": null,
+      "reviewed_by": null,
+      "run_id": "run_c4dabf7605716b8c",
+      "source_asset_id": "ast_af0e455fba072c42",
+      "source_hash": "9cbab9109aedccddfd3fd964beba815a489c4b8cecae76be7a843137bdf76b08",
+      "spec_visual_hash": "78110907613a7825",
+      "status": "review_required",
+      "stored_status": "review_required",
+      "variant": 0,
+      "verdict": "pass"
+    },
+    "http_status": 200
+  },
+  "line_art_test_actor_acceptance": {
+    "asset_id": "ast_32f12a4e4700b5fe",
+    "created_by": "usr_test_actor_unapproved"
+  },
+  "live": true,
+  "project_creation": {
+    "body": {
+      "active_asset_id": "ast_af0e455fba072c42",
+      "active_design_version": 1,
+      "active_revision": {
+        "asset_id": "ast_af0e455fba072c42",
+        "capability": "IMPORTED_REFERENCE",
+        "created_at": "2026-07-11T12:28:51.319466",
+        "created_by": "usr_test_designer",
+        "design_version": 1,
+        "image_url": "/assets/ast_af0e455fba072c42/image",
+        "instruction": "Designer-confirmed imported reference",
+        "legacy_provenance": false,
+        "media_type": "image/jpeg",
+        "pinned": false,
+        "provenance": "imported_reference",
+        "revision": 1,
+        "root_id": "ast_af0e455fba072c42"
+      },
+      "assets": [
+        {
+          "asset_id": "ast_af0e455fba072c42",
+          "capability": "IMPORTED_REFERENCE",
+          "created_at": "2026-07-11T12:28:51.319466",
+          "created_by": "usr_test_designer",
+          "design_version": 1,
+          "image_url": "/assets/ast_af0e455fba072c42/image",
+          "instruction": "Designer-confirmed imported reference",
+          "legacy_provenance": false,
+          "media_type": "image/jpeg",
+          "pinned": false,
+          "provenance": "imported_reference",
+          "revision": 1,
+          "root_id": "ast_af0e455fba072c42"
+        }
+      ],
+      "collection": "Founder reference acceptance",
+      "counts": {
+        "IMPORTED_REFERENCE": 1
+      },
+      "cover_asset_id": "ast_af0e455fba072c42",
+      "created_at": "2026-07-11T12:28:51.319466",
+      "derived_assets": [],
+      "design_id": "dsn_4cd0f7e172ac2c83",
+      "factory_blockers": [],
+      "factory_ready": false,
+      "has_factory_drawing": false,
+      "id": "ast_af0e455fba072c42",
+      "image_run_ids": [],
+      "item_count": 1,
+      "items": [
+        {
+          "asset_id": "ast_af0e455fba072c42",
+          "capability": "IMPORTED_REFERENCE",
+          "created_at": "2026-07-11T12:28:51.319466",
+          "created_by": "usr_test_designer",
+          "design_version": 1,
+          "image_url": "/assets/ast_af0e455fba072c42/image",
+          "instruction": "Designer-confirmed imported reference",
+          "legacy_provenance": false,
+          "media_type": "image/jpeg",
+          "pinned": false,
+          "provenance": "imported_reference",
+          "revision": 1,
+          "root_id": "ast_af0e455fba072c42"
+        }
+      ],
+      "latest_design_version": 1,
+      "owner": "usr_test_designer",
+      "primary_revision_count": 1,
+      "revisions": [
+        {
+          "asset_id": "ast_af0e455fba072c42",
+          "capability": "IMPORTED_REFERENCE",
+          "created_at": "2026-07-11T12:28:51.319466",
+          "created_by": "usr_test_designer",
+          "design_version": 1,
+          "image_url": "/assets/ast_af0e455fba072c42/image",
+          "instruction": "Designer-confirmed imported reference",
+          "legacy_provenance": false,
+          "media_type": "image/jpeg",
+          "pinned": false,
+          "provenance": "imported_reference",
+          "revision": 1,
+          "root_id": "ast_af0e455fba072c42"
+        }
+      ],
+      "root_id": "ast_af0e455fba072c42",
+      "spec": {
+        "band": {
+          "profile": "half_round",
+          "thickness_mm": 1.6,
+          "width_mm": 2.0
+        },
+        "bracelet": null,
+        "brooch": null,
+        "chain": null,
+        "composition": null,
+        "created_at": "2026-07-11T12:28:51.319466Z",
+        "created_by": "usr_test_designer",
+        "design_form": {
+          "elements": []
+        },
+        "design_id": "dsn_4cd0f7e172ac2c83",
+        "dimension_provenance": {
+          "band.thickness_mm": {
+            "confidence": 0.4,
+            "method": "reference_vision",
+            "note": "Reference-derived starting value; verify before production.",
+            "source": "founder evaluation source image-112.jpg",
+            "status": "estimated_from_reference"
+          },
+          "band.width_mm": {
+            "confidence": 0.4,
+            "method": "reference_vision",
+            "note": "Reference-derived starting value; verify before production.",
+            "source": "founder evaluation source image-112.jpg",
+            "status": "estimated_from_reference"
+          },
+          "ring_size.inner_diameter_mm": {
+            "confidence": 0.4,
+            "method": "reference_vision",
+            "note": "Derived from an estimated ring size; verify both values before production.",
+            "source": "founder evaluation source image-112.jpg",
+            "status": "estimated_from_reference"
+          },
+          "ring_size.value": {
+            "confidence": 0.4,
+            "method": "reference_vision",
+            "note": "Reference-derived starting value; verify before production.",
+            "source": "founder evaluation source image-112.jpg",
+            "status": "estimated_from_reference"
+          },
+          "setting.gallery_height_mm": {
+            "confidence": 0.4,
+            "method": "reference_vision",
+            "note": "Reference-derived starting value; verify before production.",
+            "source": "founder evaluation source image-112.jpg",
+            "status": "estimated_from_reference"
+          },
+          "setting.prong_tip_mm": {
+            "confidence": 0.4,
+            "method": "reference_vision",
+            "note": "Reference-derived starting value; verify before production.",
+            "source": "founder evaluation source image-112.jpg",
+            "status": "estimated_from_reference"
+          },
+          "side_stones[0].dimensions_mm.depth": {
+            "confidence": 0.4,
+            "method": "reference_vision",
+            "note": "Reference-derived starting value; verify before production.",
+            "source": "founder evaluation source image-112.jpg",
+            "status": "estimated_from_reference"
+          },
+          "side_stones[0].dimensions_mm.length": {
+            "confidence": 0.4,
+            "method": "reference_vision",
+            "note": "Reference-derived starting value; verify before production.",
+            "source": "founder evaluation source image-112.jpg",
+            "status": "estimated_from_reference"
+          },
+          "side_stones[0].dimensions_mm.width": {
+            "confidence": 0.4,
+            "method": "reference_vision",
+            "note": "Reference-derived starting value; verify before production.",
+            "source": "founder evaluation source image-112.jpg",
+            "status": "estimated_from_reference"
+          },
+          "stone.dimensions_mm.depth": {
+            "confidence": 0.4,
+            "method": "reference_vision",
+            "note": "Reference-derived starting value; verify before production.",
+            "source": "founder evaluation source image-112.jpg",
+            "status": "estimated_from_reference"
+          },
+          "stone.dimensions_mm.length": {
+            "confidence": 0.4,
+            "method": "reference_vision",
+            "note": "Reference-derived starting value; verify before production.",
+            "source": "founder evaluation source image-112.jpg",
+            "status": "estimated_from_reference"
+          },
+          "stone.dimensions_mm.width": {
+            "confidence": 0.4,
+            "method": "reference_vision",
+            "note": "Reference-derived starting value; verify before production.",
+            "source": "founder evaluation source image-112.jpg",
+            "status": "estimated_from_reference"
+          }
+        },
+        "drop": null,
+        "jewelry_type": "ring",
+        "metal": {
+          "color": "white",
+          "finish": "high_polish",
+          "karat": 18,
+          "material": "gold"
+        },
+        "mode": "pro",
+        "notes_to_factory": "LIVE WORKFLOW TEST ONLY. Stone identity, fourteen-stone halo, ring size, setting, and every numeric value are explicit test-designer assumptions used to exercise the workflow. They are not measurements extracted from image-112.jpg and are not authority to manufacture the pictured third-party design. Center and halo carat weights are modeled estimates from the stated dimensions. ESTIMATED dimensions are reference-derived prototyping values, not measurements. Verify or adjust them before manufacturing; factory and designer sign-off remain required.",
+        "pendant": null,
+        "ring_size": {
+          "inner_diameter_mm": 16.91,
+          "system": "US",
+          "value": 6.5
+        },
+        "schema_version": 1,
+        "setting": {
+          "gallery_height_mm": 5.0,
+          "prong_count": 4,
+          "prong_tip_mm": 0.8,
+          "style": "4_prong_basket"
+        },
+        "side_stones": [
+          {
+            "carat": 0.03,
+            "clarity": null,
+            "color": {
+              "gia": "colorless",
+              "hue_code": null,
+              "saturation": null,
+              "tone": null,
+              "trade": "F"
+            },
+            "count": 14,
+            "culet": null,
+            "cut": "round_brilliant",
+            "depth_pct": null,
+            "dimensions_mm": {
+              "depth": 1.2,
+              "length": 2.0,
+              "width": 2.0
+            },
+            "girdle": null,
+            "inscription": null,
+            "lab": null,
+            "mount": null,
+            "origin": null,
+            "phenomena": [],
+            "position": "halo",
+            "species": "diamond",
+            "table_pct": null,
+            "treatment": null
+          }
+        ],
+        "source_component_coverage": {
+          "components": [
+            {
+              "canonical_spec_paths": [
+                "stone"
+              ],
+              "component_id": "stone.center",
+              "independent_audit": {
+                "auditor": "skeptical-source-component-audit.v3",
+                "evidence_sha256": "aac10edbdbf85c798473e67ab3de7d39ffa69b95716cc3a194bb667fc62f033c",
+                "kind": "independent_component_audit",
+                "observed_description": "large faceted oval blue center stone",
+                "source_view": "plate_composite",
+                "verdict": "pass"
+              },
+              "source_confidence": 0.9,
+              "source_description": "One oval blue center stone shown in the top and profile views.",
+              "source_view": "plate_composite",
+              "unresolved_reason": null
+            },
+            {
+              "canonical_spec_paths": [
+                "side_stones[0]"
+              ],
+              "component_id": "stone.halo",
+              "independent_audit": {
+                "auditor": "skeptical-source-component-audit.v3",
+                "evidence_sha256": "aac10edbdbf85c798473e67ab3de7d39ffa69b95716cc3a194bb667fc62f033c",
+                "kind": "independent_component_audit",
+                "observed_description": "halo group of small round colorless stones surrounding center stone",
+                "source_view": "plate_composite",
+                "verdict": "pass"
+              },
+              "source_confidence": 0.9,
+              "source_description": "One continuous halo group of small round colorless stones.",
+              "source_view": "plate_composite",
+              "unresolved_reason": null
+            },
+            {
+              "canonical_spec_paths": [
+                "template"
+              ],
+              "component_id": "assembly.primary",
+              "independent_audit": {
+                "auditor": "skeptical-source-component-audit.v3",
+                "evidence_sha256": "aac10edbdbf85c798473e67ab3de7d39ffa69b95716cc3a194bb667fc62f033c",
+                "kind": "independent_component_audit",
+                "observed_description": "complete oval halo ring assembly from multiple views",
+                "source_view": "plate_composite",
+                "verdict": "pass"
+              },
+              "source_confidence": 0.9,
+              "source_description": "One complete oval halo ring assembly shown from multiple views.",
+              "source_view": "plate_composite",
+              "unresolved_reason": null
+            },
+            {
+              "canonical_spec_paths": [
+                "setting"
+              ],
+              "component_id": "setting.primary",
+              "independent_audit": {
+                "auditor": "skeptical-source-component-audit.v3",
+                "evidence_sha256": "aac10edbdbf85c798473e67ab3de7d39ffa69b95716cc3a194bb667fc62f033c",
+                "kind": "independent_component_audit",
+                "observed_description": "metal head with prongs and visible/open gallery structure",
+                "source_view": "plate_composite",
+                "verdict": "pass"
+              },
+              "source_confidence": 0.9,
+              "source_description": "Raised prong basket and gallery supporting the center and halo.",
+              "source_view": "plate_composite",
+              "unresolved_reason": null
+            },
+            {
+              "canonical_spec_paths": [
+                "metal"
+              ],
+              "component_id": "metal.body",
+              "independent_audit": {
+                "auditor": "skeptical-source-component-audit.v3",
+                "evidence_sha256": "aac10edbdbf85c798473e67ab3de7d39ffa69b95716cc3a194bb667fc62f033c",
+                "kind": "independent_component_audit",
+                "observed_description": "metal head, gallery and shank structures",
+                "source_view": "plate_composite",
+                "verdict": "pass"
+              },
+              "source_confidence": 0.9,
+              "source_description": "One continuous white-metal body across head, gallery, and shank.",
+              "source_view": "plate_composite",
+              "unresolved_reason": null
+            },
+            {
+              "canonical_spec_paths": [
+                "band"
+              ],
+              "component_id": "band.shank",
+              "independent_audit": {
+                "auditor": "skeptical-source-component-audit.v3",
+                "evidence_sha256": "aac10edbdbf85c798473e67ab3de7d39ffa69b95716cc3a194bb667fc62f033c",
+                "kind": "independent_component_audit",
+                "observed_description": "metal ring shank",
+                "source_view": "plate_composite",
+                "verdict": "pass"
+              },
+              "source_confidence": 0.9,
+              "source_description": "One plain lower ring shank connected to the raised halo head.",
+              "source_view": "plate_composite",
+              "unresolved_reason": null
+            }
+          ],
+          "source_kind": "designer_plate"
+        },
+        "stone": {
+          "carat": 2.167,
+          "clarity": null,
+          "color": {
+            "gia": "vivid blue, medium-dark tone, strong saturation",
+            "hue_code": null,
+            "saturation": null,
+            "tone": null,
+            "trade": "Royal Blue"
+          },
+          "count": 1,
+          "culet": null,
+          "cut": "oval_brilliant",
+          "depth_pct": null,
+          "dimensions_mm": {
+            "depth": 4.3,
+            "length": 9.0,
+            "width": 7.0
+          },
+          "girdle": null,
+          "inscription": null,
+          "lab": null,
+          "mount": null,
+          "origin": null,
+          "phenomena": [],
+          "position": "center",
+          "species": "sapphire",
+          "table_pct": null,
+          "treatment": null
+        },
+        "template": "halo_prong",
+        "version": 1
+      },
+      "state": "refining",
+      "tags": [
+        "halo",
+        "image-112",
+        "live-eval",
+        "ring"
+      ],
+      "title": "Standard halo image-112 trusted E2E",
+      "updated_at": "2026-07-11T12:28:51.319466"
+    },
+    "http_status": 201
+  },
+  "run_name": "designer-standard-halo-full-e2e-live-v5-2026-07-11",
+  "source": "/Users/mattfb/.codex/attachments/c2fd41d0-b236-43ef-ada9-e9479718c771/image-112.jpg",
+  "source_coverage_audit": {
+    "components": [
+      {
+        "canonical_spec_paths": [
+          "stone"
+        ],
+        "component_id": "stone.center",
+        "independent_audit": {
+          "auditor": "skeptical-source-component-audit.v3",
+          "evidence_sha256": "aac10edbdbf85c798473e67ab3de7d39ffa69b95716cc3a194bb667fc62f033c",
+          "kind": "independent_component_audit",
+          "observed_description": "large faceted oval blue center stone",
+          "source_view": "plate_composite",
+          "verdict": "pass"
+        },
+        "source_confidence": 0.9,
+        "source_description": "One oval blue center stone shown in the top and profile views.",
+        "source_view": "plate_composite",
+        "unresolved_reason": null
+      },
+      {
+        "canonical_spec_paths": [
+          "side_stones[0]"
+        ],
+        "component_id": "stone.halo",
+        "independent_audit": {
+          "auditor": "skeptical-source-component-audit.v3",
+          "evidence_sha256": "aac10edbdbf85c798473e67ab3de7d39ffa69b95716cc3a194bb667fc62f033c",
+          "kind": "independent_component_audit",
+          "observed_description": "halo group of small round colorless stones surrounding center stone",
+          "source_view": "plate_composite",
+          "verdict": "pass"
+        },
+        "source_confidence": 0.9,
+        "source_description": "One continuous halo group of small round colorless stones.",
+        "source_view": "plate_composite",
+        "unresolved_reason": null
+      },
+      {
+        "canonical_spec_paths": [
+          "template"
+        ],
+        "component_id": "assembly.primary",
+        "independent_audit": {
+          "auditor": "skeptical-source-component-audit.v3",
+          "evidence_sha256": "aac10edbdbf85c798473e67ab3de7d39ffa69b95716cc3a194bb667fc62f033c",
+          "kind": "independent_component_audit",
+          "observed_description": "complete oval halo ring assembly from multiple views",
+          "source_view": "plate_composite",
+          "verdict": "pass"
+        },
+        "source_confidence": 0.9,
+        "source_description": "One complete oval halo ring assembly shown from multiple views.",
+        "source_view": "plate_composite",
+        "unresolved_reason": null
+      },
+      {
+        "canonical_spec_paths": [
+          "setting"
+        ],
+        "component_id": "setting.primary",
+        "independent_audit": {
+          "auditor": "skeptical-source-component-audit.v3",
+          "evidence_sha256": "aac10edbdbf85c798473e67ab3de7d39ffa69b95716cc3a194bb667fc62f033c",
+          "kind": "independent_component_audit",
+          "observed_description": "metal head with prongs and visible/open gallery structure",
+          "source_view": "plate_composite",
+          "verdict": "pass"
+        },
+        "source_confidence": 0.9,
+        "source_description": "Raised prong basket and gallery supporting the center and halo.",
+        "source_view": "plate_composite",
+        "unresolved_reason": null
+      },
+      {
+        "canonical_spec_paths": [
+          "metal"
+        ],
+        "component_id": "metal.body",
+        "independent_audit": {
+          "auditor": "skeptical-source-component-audit.v3",
+          "evidence_sha256": "aac10edbdbf85c798473e67ab3de7d39ffa69b95716cc3a194bb667fc62f033c",
+          "kind": "independent_component_audit",
+          "observed_description": "metal head, gallery and shank structures",
+          "source_view": "plate_composite",
+          "verdict": "pass"
+        },
+        "source_confidence": 0.9,
+        "source_description": "One continuous white-metal body across head, gallery, and shank.",
+        "source_view": "plate_composite",
+        "unresolved_reason": null
+      },
+      {
+        "canonical_spec_paths": [
+          "band"
+        ],
+        "component_id": "band.shank",
+        "independent_audit": {
+          "auditor": "skeptical-source-component-audit.v3",
+          "evidence_sha256": "aac10edbdbf85c798473e67ab3de7d39ffa69b95716cc3a194bb667fc62f033c",
+          "kind": "independent_component_audit",
+          "observed_description": "metal ring shank",
+          "source_view": "plate_composite",
+          "verdict": "pass"
+        },
+        "source_confidence": 0.9,
+        "source_description": "One plain lower ring shank connected to the raised halo head.",
+        "source_view": "plate_composite",
+        "unresolved_reason": null
+      }
+    ],
+    "source_kind": "designer_plate"
+  },
+  "source_coverage_audit_reused_from": "/Users/mattfb/Documents/Facetta-trusted-workflow/docs/evals/designer-standard-halo-full-e2e-live-v1-2026-07-11/audited-estimated-spec.json",
+  "source_coverage_blockers": [],
+  "source_policy": "Local evaluation only. Do not publish, train on, or treat as a customer-owned production asset. Remove all third-party branding.",
+  "source_sha256": "9cbab9109aedccddfd3fd964beba815a489c4b8cecae76be7a843137bdf76b08",
+  "stage": "beauty_render_failed",
+  "test_actor_disclosure": "All optional confirmations and approvals are automated test-actor mechanics, not founder, designer, factory, or GIA acceptance."
+}

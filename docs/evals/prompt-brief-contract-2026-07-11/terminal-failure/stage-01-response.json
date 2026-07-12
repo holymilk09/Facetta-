@@ -1,0 +1,112 @@
+{
+  "body": {
+    "attempts": [
+      {
+        "attempt_number": 1,
+        "cache_key": "ead4137477bb7801a6778f87db60ab85d400f07e2acbe3e13e57ebce5ad79d3b",
+        "cached": true,
+        "corrective_instruction": null,
+        "cost": 0.0,
+        "error": null,
+        "error_category": null,
+        "fallback_reason": null,
+        "latency_ms": 0,
+        "model": "grok_direct",
+        "output_hash": "eda235b529b25602e8849b0bdce8621d4a0ab0ca7d55e73c6773d863f4a55f1e",
+        "prompt_hash": "11569639f170631148210a53040a17786a5fc95ace1c3d300c1dedda8db7b68a",
+        "provider": "xai",
+        "provider_request_id": "offline-contract",
+        "qa_checks": [
+          {
+            "code": "offline_terminal_hard_gate_failure",
+            "evidence": {
+              "offline": true
+            },
+            "message": "offline contract candidate failed a hard gate",
+            "passed": false,
+            "severity": "hard"
+          }
+        ],
+        "qa_verdict": "fail",
+        "quality_score": 88.0,
+        "route": "grok_generate",
+        "usage": {
+          "contract_test": true
+        }
+      },
+      {
+        "attempt_number": 2,
+        "cache_key": "2ca5069f558794c034212afbb9141e8c4f7084a21f3a6500bf4261ee8093a7ed",
+        "cached": true,
+        "corrective_instruction": "- offline_terminal_hard_gate_failure: offline contract candidate failed a hard gate. Evidence: {\"offline\": true}",
+        "cost": 0.0,
+        "error": null,
+        "error_category": null,
+        "fallback_reason": null,
+        "latency_ms": 0,
+        "model": "grok_direct",
+        "output_hash": "eda235b529b25602e8849b0bdce8621d4a0ab0ca7d55e73c6773d863f4a55f1e",
+        "prompt_hash": "049af0e71b4883d03bf54939fc7096b3f4c25e035de6fd836a8eecd07ccacdfb",
+        "provider": "xai",
+        "provider_request_id": "offline-contract",
+        "qa_checks": [
+          {
+            "code": "offline_terminal_hard_gate_failure",
+            "evidence": {
+              "offline": true
+            },
+            "message": "offline contract candidate failed a hard gate",
+            "passed": false,
+            "severity": "hard"
+          }
+        ],
+        "qa_verdict": "fail",
+        "quality_score": 88.0,
+        "route": "grok_generate",
+        "usage": {
+          "contract_test": true
+        }
+      },
+      {
+        "attempt_number": 3,
+        "cache_key": "1d8c77387560f82ab3d58ac9adf99b2d88f439640ec4ae70ec381a23d233281b",
+        "cached": true,
+        "corrective_instruction": "- offline_terminal_hard_gate_failure: offline contract candidate failed a hard gate. Evidence: {\"offline\": true}",
+        "cost": 0.0,
+        "error": null,
+        "error_category": null,
+        "fallback_reason": "grok_qa_failed",
+        "latency_ms": 0,
+        "model": "flux",
+        "output_hash": "eda235b529b25602e8849b0bdce8621d4a0ab0ca7d55e73c6773d863f4a55f1e",
+        "prompt_hash": "049af0e71b4883d03bf54939fc7096b3f4c25e035de6fd836a8eecd07ccacdfb",
+        "provider": "fal",
+        "provider_request_id": "offline-contract",
+        "qa_checks": [
+          {
+            "code": "offline_terminal_hard_gate_failure",
+            "evidence": {
+              "offline": true
+            },
+            "message": "offline contract candidate failed a hard gate",
+            "passed": false,
+            "severity": "hard"
+          }
+        ],
+        "qa_verdict": "fail",
+        "quality_score": 88.0,
+        "route": "flux_generate",
+        "usage": {
+          "contract_test": true
+        }
+      }
+    ],
+    "category": "quality",
+    "code": "image_quality_failed",
+    "detail": "no candidate passed jewelry QA: offline_terminal_hard_gate_failure",
+    "error_category": "quality_failure",
+    "image_run_id": "run_a07ad69c1fb6c84d",
+    "retryable": false
+  },
+  "http_status": 422
+}

@@ -6,15 +6,29 @@ from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy.orm import Session
 
 from facetta.db import get_db
+from facetta.component_catalog import (
+    CatalogSelectionError,
+    CatalogSelectionResult,
+    apply_catalog_selection,
+    get_component_catalog_descriptor,
+)
 
 from facetta import prose as prose_layer
+from facetta import photo_spec as photo_spec_layer
+from facetta import plate_spec as plate_spec_layer
 from facetta.db import utcnow
 from facetta.disclaimer import stamp_b64
 from facetta.drawing_frame import frame_technical_drawing
+from facetta.image_agent.vision import check_geometry_consistency
+from facetta.image_identity import spec_visual_hash
 from facetta.estimate import (
     EstimateError, estimate_carat, physics_check_estimates, required_depth_mm,
 )
-from facetta.dxf import svg_to_dxf
+from facetta.dxf import DxfUnsupported, svg_to_dxf
+from facetta.preliminary_sheet import (
+    render_sheet_for_review,
+    sheet_readiness_blockers,
+)
 from facetta.mockup import (
     SceneUnsupported, compile_artwork_restyle_request, compile_finish_request,
     compile_render_request, compile_restage_request,
@@ -27,6 +41,29 @@ from facetta.render import (
 )
 from facetta.prototype import compile_render_prompt, render_color_preview
 from facetta.spec import Spec
+from facetta.source_component_audit import (
+    SourceComponentAuditError,
+    SourceComponentAuditInvalid,
+    audit_source_component_coverage,
+)
+from facetta.source_component_coverage import (
+    CanonicalSpecPath,
+    SourceComponentCoverage,
+    SourceCoverageFactoryBlocker,
+    SourceVisibleComponent,
+    source_component_factory_blockers,
+)
+from facetta.source_component_confirmation import (
+    SourceComponentConfirmationInput,
+    SourceComponentConfirmationInvalid,
+    confirm_source_components,
+)
+from facetta.source_component_resolution import (
+    SourceComponentResolution,
+    SourceCoverageResolutionInvalid,
+    resolve_source_component_coverage,
+    valid_source_component_spec_paths,
+)
 from facetta.specagent import (
     PLATE_VIEWS, colorize_lineart, compile_render_instruction,
     compose_views_strip, generate_spec_sheet, infer_capability, localized_edit,
@@ -42,6 +79,35 @@ from facetta.vocabulary import get_vocabulary
 router = APIRouter(prefix="/specs", tags=["specs"])
 
 DbSession = Annotated[Session, Depends(get_db)]
+
+
+def _audit_source_components_with_contract_retry(
+    source_image: bytes,
+    coverage: SourceComponentCoverage,
+    *,
+    spec: Spec,
+) -> SourceComponentCoverage:
+    """Retry one structurally invalid vision audit, never a quality verdict.
+
+    Grok occasionally returns otherwise useful audit evidence with a malformed
+    bidirectional mapping or response shape.  A single fresh blind-first audit
+    is cheaper than making the designer repeat the whole import.  This retry is
+    deliberately limited to ``SourceComponentAuditInvalid``: provider outages,
+    and valid ``fail``/``inconclusive`` verdicts, retain their original meaning.
+    """
+
+    try:
+        return audit_source_component_coverage(
+            source_image,
+            coverage,
+            spec=spec,
+        )
+    except SourceComponentAuditInvalid:
+        return audit_source_component_coverage(
+            source_image,
+            coverage,
+            spec=spec,
+        )
 
 
 def _branding(house: str | None, signature: str | None) -> Branding | None:
@@ -65,6 +131,195 @@ def validate(spec: Spec):
             content={"detail": [issue.as_detail() for issue in result.issues]},
         )
     return result.spec
+
+
+class DraftCatalogSelectionRequest(BaseModel):
+    """One deterministic catalog choice against an unpersisted draft."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    spec: Spec
+    component_path: Literal[
+        "chain.style",
+        "stone.cut",
+        "metal.material",
+        "metal.color",
+        "setting.style",
+    ]
+    option_id: Annotated[str, Field(min_length=1, max_length=80)]
+
+
+@router.post(
+    "/catalog/select",
+    response_model=CatalogSelectionResult,
+)
+def select_draft_catalog_option(request: DraftCatalogSelectionRequest):
+    """Compile one controlled designer choice without provider work or writes."""
+
+    descriptor = get_component_catalog_descriptor(request.component_path)
+    if request.spec.jewelry_type not in descriptor.applicable_jewelry_types:
+        return JSONResponse(status_code=422, content={
+            "code": "catalog_not_applicable",
+            "detail": (
+                f"{request.component_path} is not applicable to "
+                f"{request.spec.jewelry_type}"
+            ),
+            "applicable_jewelry_types": list(
+                descriptor.applicable_jewelry_types),
+        })
+    try:
+        selected = apply_catalog_selection(
+            request.spec,
+            component_path=request.component_path,
+            option_id=request.option_id,
+        )
+    except CatalogSelectionError as exc:
+        return JSONResponse(status_code=422, content={
+            "code": "catalog_selection_invalid",
+            "detail": str(exc),
+            "component_path": exc.component_path,
+            "option_id": exc.option_id,
+            "valid_options": list(exc.valid_options),
+        })
+    if not selected.spec_change:
+        return JSONResponse(status_code=409, content={
+            "code": "catalog_selection_no_change",
+            "detail": "the draft already has this exact catalog selection",
+            "component_path": request.component_path,
+            "option_id": request.option_id,
+        })
+    return selected
+
+
+class DraftStoneSelectionRequest(BaseModel):
+    """One vocabulary-controlled center-stone identity/color choice."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    spec: Spec
+    species: Annotated[str, Field(min_length=1, max_length=80)]
+    trade_color: Annotated[str, Field(min_length=1, max_length=160)]
+
+
+@router.post(
+    "/stone/select",
+    response_model=CatalogSelectionResult,
+)
+def select_draft_stone(request: DraftStoneSelectionRequest):
+    """Change center species/color and recompute carat at frozen dimensions."""
+
+    vocab = get_vocabulary()
+    species = vocab.species(request.species)
+    if species is None:
+        return JSONResponse(status_code=422, content={
+            "code": "stone_species_invalid",
+            "detail": f"unknown gemstone species {request.species!r}",
+            "valid_options": list(vocab.species_ids()),
+        })
+    terms = vocab.trade_color_terms(request.species)
+    color = next(
+        (term for term in terms if term.term == request.trade_color),
+        None,
+    )
+    if color is None:
+        return JSONResponse(status_code=422, content={
+            "code": "stone_color_invalid",
+            "detail": (
+                f"{request.trade_color!r} is not a controlled trade color "
+                f"for {request.species}"
+            ),
+            "valid_options": [term.term for term in terms],
+        })
+
+    before = request.spec.stone
+    raw = request.spec.model_dump(mode="json")
+    stone = raw["stone"]
+    assert isinstance(stone, dict)
+    stone["species"] = request.species
+    stone["color"] = {
+        "trade": color.term,
+        "gia": color.gia,
+        "hue_code": color.extras.get("hue_code"),
+        "tone": color.extras.get("tone"),
+        "saturation": color.extras.get("saturation"),
+    }
+    species_changed = before.species != request.species
+    if species_changed:
+        # Clarity systems, origins, treatments, and phenomena are
+        # species-specific. Never carry a sapphire grading claim into emerald.
+        stone["clarity"] = None
+        stone["origin"] = None
+        stone["treatment"] = None
+        stone["phenomena"] = []
+    dims = before.dimensions_mm
+    modeled = estimate_carat(
+        vocab,
+        request.species,
+        before.cut,
+        dims.length,
+        dims.width,
+        dims.depth,
+    )
+    stone["carat"] = modeled["carat"]
+    selected = Spec.model_validate(raw)
+    validation = validate_spec(selected, vocab)
+    if not validation.ok:
+        return JSONResponse(status_code=422, content={
+            "code": "stone_selection_invalid",
+            "detail": [issue.as_detail() for issue in validation.issues],
+        })
+    selected = validation.spec
+    assert selected is not None
+
+    before_color = before.color.model_dump(mode="json")
+    after_color = selected.stone.color.model_dump(mode="json")
+    changes = []
+    for path, old, new, label in (
+        ("stone.species", before.species, selected.stone.species, "center stone species"),
+        ("stone.color", before_color, after_color, "center stone color"),
+        ("stone.carat", before.carat, selected.stone.carat, "modeled carat at unchanged dimensions"),
+        ("stone.clarity", (
+            before.clarity.model_dump(mode="json") if before.clarity else None
+        ), (
+            selected.stone.clarity.model_dump(mode="json")
+            if selected.stone.clarity else None
+        ), "center stone clarity"),
+        ("stone.origin", before.origin, selected.stone.origin, "center stone origin"),
+        ("stone.treatment", before.treatment, selected.stone.treatment, "center stone treatment"),
+        ("stone.phenomena", list(before.phenomena), list(selected.stone.phenomena), "center stone phenomena"),
+    ):
+        if old != new:
+            changes.append({
+                "path": path,
+                "before": old,
+                "after": new,
+                "label": label,
+            })
+    if not changes:
+        return JSONResponse(status_code=409, content={
+            "code": "stone_selection_no_change",
+            "detail": "the draft already has this exact stone identity and color",
+        })
+    return CatalogSelectionResult(
+        spec=selected,
+        spec_change=tuple(changes),
+        isolation_target=(
+            "the center-stone body only, preserving its dimensions, outline, "
+            "cut, count, seat, and every surrounding component"
+        ),
+        frozen_facts=(
+            "stone.cut",
+            "stone.dimensions_mm",
+            "stone.count",
+            "stone.position",
+            "setting",
+            "side_stones",
+            "metal",
+            "band",
+            "ring_size",
+            "design_form",
+        ),
+    )
 
 
 class StoneEstimateRequest(BaseModel):
@@ -127,7 +382,7 @@ class ReadPlateRequest(BaseModel):
     variant: int = 0                     # regenerate: a fresh redraw
 
 
-@router.post("/read-plate")
+@router.post("/read-plate", deprecated=True)
 def read_plate(request: ReadPlateRequest):
     """The reverse of the usual flow: the designer's HAND-RENDERED plate IN, a
     structured factory sheet OUT. Grok vision reads the plate into stones,
@@ -209,7 +464,7 @@ class PlateLineartRequest(BaseModel):
     variant: int = 0                     # regenerate an angle the designer rejects
 
 
-@router.post("/plate-lineart")
+@router.post("/plate-lineart", deprecated=True)
 def plate_lineart(request: PlateLineartRequest):
     """Stage 1 of the high-fidelity redraw: read the plate, then Grok draws
     the piece as clean BLACK LINE ART in the requested angles — NO colour. The
@@ -262,6 +517,7 @@ class PlateColorizeRequest(BaseModel):
 
     # the CONFIRMED line-art views from stage 1 (geometry the designer approved)
     views: Annotated[list[ConfirmedView], Field(min_length=1, max_length=5)]
+    confirmed: bool = False
     # the confirmed colours/materials, e.g. "lapis cabochon (deep blue); two
     # diamond marquise wings (white); 18k yellow gold" — from the designer's spec
     materials: Annotated[str, Field(min_length=1, max_length=1000)]
@@ -272,7 +528,7 @@ class PlateColorizeRequest(BaseModel):
     variant: int = 0
 
 
-@router.post("/plate-colorize")
+@router.post("/plate-colorize", deprecated=True)
 def plate_colorize(request: PlateColorizeRequest):
     """Stage 2: colour the designer-CONFIRMED line art from the confirmed
     material colours, then frame the factory sheet. Grok colours WITHIN the
@@ -281,6 +537,12 @@ def plate_colorize(request: PlateColorizeRequest):
     designer's spec, not a visual guess. Code letters the panel."""
     import base64 as b64
     import binascii
+
+    if not request.confirmed:
+        return JSONResponse(status_code=409, content={
+            "error_category": "approval_required",
+            "detail": "designer confirmation is required before colorization; review the line-art views first",
+        })
 
     coloured: list[bytes] = []
     try:
@@ -292,6 +554,13 @@ def plate_colorize(request: PlateColorizeRequest):
                     "detail": f"view '{cv.view}' image_base64 is not valid base64"})
             img, _ = colorize_lineart(line_bytes, request.materials,
                                       variant=request.variant)
+            geometry = check_geometry_consistency(line_bytes, img)
+            if geometry.get("severity") == "major" or not geometry.get("consistent", True):
+                return JSONResponse(status_code=422, content={
+                    "detail": "colorization changed the designer-approved geometry; no sheet was created",
+                    "view": cv.view,
+                    "quality": geometry,
+                })
             coloured.append(img)
     except RenderUnavailable as exc:
         status = 503 if "_KEY" in str(exc) else 502
@@ -326,10 +595,22 @@ def sheet_preview(spec: Spec, house: str | None = None,
             content={"detail": [issue.as_detail() for issue in result.issues]},
         )
     try:
-        svg = render_sheet(result.spec, branding=_branding(house, signature))
+        svg, blockers = render_sheet_for_review(
+            result.spec,
+            branding=_branding(house, signature),
+        )
     except SheetUnsupported as exc:
         return JSONResponse(status_code=422, content={"detail": str(exc)})
-    return Response(content=svg, media_type="image/svg+xml")
+    return Response(
+        content=svg,
+        media_type="image/svg+xml",
+        headers={
+            "X-Facetta-Sheet-Authority": (
+                "preliminary_not_for_production" if blockers
+                else "spec_derived_preview"
+            ),
+        },
+    )
 
 
 class AssistRequest(BaseModel):
@@ -369,7 +650,7 @@ class ConceptRequest(BaseModel):
     variant: int = 0  # >0 asks Grok for a fresh take instead of the cached concept
 
 
-@router.post("/from-concept")
+@router.post("/from-concept", deprecated=True)
 def from_concept(request: ConceptRequest):
     """Grok invents an entirely new design from the brief; the platform reads
     it, applies real millimetres and metal in the proper places, and returns a
@@ -422,8 +703,8 @@ class AgentSheetRequest(BaseModel):
     variant: int = 0  # regenerate: force a fresh Grok drawing, not the cached one
 
 
-@router.post("/technical-drawing")
-@router.post("/agent-sheet")               # legacy alias, same handler
+@router.post("/technical-drawing", deprecated=True)
+@router.post("/agent-sheet", deprecated=True)  # legacy alias, same handler
 def technical_drawing(request: AgentSheetRequest):
     """The user-facing jewelry manufacturing technical drawing: Grok vision
     classifies and inspects the designer's render, then a controlled
@@ -522,7 +803,7 @@ class RenderModeRequest(BaseModel):
     variant: int = 0  # >0 asks for a genuinely fresh take, not the cached one
 
 
-@router.post("/jewelry-render")
+@router.post("/jewelry-render", deprecated=True)
 def jewelry_render_endpoint(request: RenderModeRequest):
     """MODE A — JEWELRY_RENDER: photorealistic product visualization from the
     Section 4A prompt body (presentation and design approval, never factory
@@ -560,7 +841,7 @@ class LocalizedEditRequest(BaseModel):
     variant: int = 0  # regenerate: a fresh take on the SAME edit, not the cache
 
 
-@router.post("/localized-edit")
+@router.post("/localized-edit", deprecated=True)
 def localized_edit_endpoint(request: LocalizedEditRequest):
     """MODE C — LOCALIZED_EDIT: apply the change ONLY inside the highlighted
     region, freeze everything outside it. The preservation contract rides in
@@ -616,7 +897,7 @@ class InferCapabilityRequest(BaseModel):
     text: Annotated[str, Field(min_length=1, max_length=4000)]
 
 
-@router.post("/infer-capability")
+@router.post("/infer-capability", deprecated=True)
 def infer_capability_endpoint(request: InferCapabilityRequest):
     """The app's router hook: Section 1's mode-inference rules over the
     user's message — localized-edit signals win, then technical-drawing,
@@ -642,7 +923,7 @@ class BuildRequest(BaseModel):
     created_by: str = "usr_pending"
 
 
-@router.post("/build")
+@router.post("/build", deprecated=True)
 def build(request: BuildRequest, db: DbSession):
     """One call, the whole piece: Grok invents the design, the validator makes
     it real, and we return the concept image, the validated spec, the
@@ -778,7 +1059,7 @@ def build(request: BuildRequest, db: DbSession):
     return response
 
 
-@router.post("/blueprint-sheet.svg")
+@router.post("/blueprint-sheet.svg", deprecated=True)
 def blueprint_sheet(spec: Spec, model: str = "grok_direct",
                     house: str | None = None, signature: str | None = None):
     """The presentation twin of the technical sheet: an image model paints the
@@ -887,7 +1168,7 @@ class FinishRequestBody(BaseModel):
     lighting: str = "studio"
 
 
-@router.post("/finish-request")
+@router.post("/finish-request", deprecated=True)
 def finish_request(body: FinishRequestBody):
     """The instruction that pairs with the control image: the image model
     paints realism over our exact geometry — trace, don't redesign."""
@@ -906,7 +1187,7 @@ def finish_request(body: FinishRequestBody):
         )
 
 
-@router.post("/render.png")
+@router.post("/render.png", deprecated=True)
 def render_png(body: FinishRequestBody, model: str = "grok_direct"):
     """The one-button photoreal render: control image + finish instruction
     sent to the image provider, result cached by content — an unchanged
@@ -932,7 +1213,7 @@ def render_png(body: FinishRequestBody, model: str = "grok_direct"):
                     headers={"X-Render-Cache": "hit" if cached else "miss"})
 
 
-@router.post("/render-prompt")
+@router.post("/render-prompt", deprecated=True)
 def render_prompt(spec: Spec):
     """Compile the photoreal-render prompt for an external image model. The
     prompt carries the numbers; a control image carries the geometry."""
@@ -954,7 +1235,7 @@ class RenderRequestBody(BaseModel):
     style: str = "photo"  # "photo" | "atelier_sketch"
 
 
-@router.post("/render-request")
+@router.post("/render-request", deprecated=True)
 def render_request(body: RenderRequestBody):
     """Scene-controlled, geometry-locked mockup request: the same design renders
     the same composition every time — edit one spec parameter and only that
@@ -1062,6 +1343,10 @@ class PhotoRequest(BaseModel):
     media_type: Annotated[str, Field(pattern=r"^image/(jpeg|png|webp)$")] = "image/jpeg"
     notes: Annotated[str, Field(max_length=2000)] = ""
     created_by: str = "usr_pending"
+    # Compatibility callers keep the one-pass draft. The trusted workspace
+    # opts in so finished-photo imports receive the same blind-first component
+    # accounting used for designer plates.
+    run_independent_audit: bool = False
 
 
 @router.post("/from-photo")
@@ -1070,12 +1355,16 @@ def from_photo(request: PhotoRequest):
 
     Vision proposes the parameters; a photo can never give exact millimeters,
     so the designer reviews and corrects dimensions in the builder before
-    saving. The same validation gate applies as everywhere else.
+    saving. New drafts retain stable source-component mappings. Trusted callers
+    opt into a separate blind-first audit so omitted visible components remain
+    explicit factory blockers. The same validation gate applies everywhere.
     """
     try:
-        spec = prose_layer.generate_spec_from_photo(
+        spec = photo_spec_layer.generate_spec_from_photo(
             request.image_base64, request.media_type, request.notes)
-    except prose_layer.ProseUnavailable as exc:
+    except photo_spec_layer.PhotoSpecInvalid as exc:
+        return JSONResponse(status_code=422, content={"detail": str(exc)})
+    except photo_spec_layer.PhotoSpecUnavailable as exc:
         return JSONResponse(status_code=503, content={"detail": str(exc)})
 
     spec = spec.model_copy(update={
@@ -1083,6 +1372,77 @@ def from_photo(request: PhotoRequest):
         "created_at": utcnow(),
         "version": 1,
     })
+
+    # A current finished-photo import must never fall through to the
+    # permissive ``coverage=None`` semantics reserved for historical records.
+    # Fail closed if a future reader regression omits the seed or names a path
+    # that does not exist in this exact draft.  This endpoint is stateless, so
+    # the failure cannot leave a partial design or source image behind.
+    coverage = spec.source_component_coverage
+    if coverage is None:
+        return JSONResponse(status_code=502, content={
+            "detail": (
+                "photo draft is missing source-component coverage; "
+                "the import was not saved"
+            ),
+        })
+    valid_paths = set(valid_source_component_spec_paths(spec))
+    invalid_paths = sorted({
+        path
+        for component in coverage.components
+        for path in component.canonical_spec_paths
+        if path not in valid_paths
+    })
+    if invalid_paths:
+        return JSONResponse(status_code=502, content={
+            "detail": (
+                "photo draft source-component coverage references paths "
+                "absent from the draft; the import was not saved"
+            ),
+            "invalid_paths": invalid_paths,
+        })
+
+    # Bind audit evidence to the canonical validated form, including safe
+    # deterministic completions such as a derived ring inner diameter. If we
+    # audited the pre-validation draft, that evidence would be stale as soon
+    # as this endpoint returned it.
+    normalized = validate_spec(spec, get_vocabulary())
+    if not normalized.ok:
+        return JSONResponse(
+            status_code=502,
+            content={
+                "detail": "vision output failed spec validation; add notes with "
+                          "measurements or adjust the draft by hand",
+                "issues": [issue.as_detail() for issue in normalized.issues],
+            },
+        )
+    spec = normalized.spec
+    coverage = spec.source_component_coverage
+    if coverage is None:  # guarded above; keep the type boundary explicit
+        raise AssertionError("validated photo draft lost source coverage")
+
+    if request.run_independent_audit:
+        import base64 as b64
+
+        # photo_spec already validated this payload. Decoding it here keeps
+        # the blind audit independent from the primary read without creating
+        # a second persistence or mutable transport boundary.
+        source_image = b64.b64decode(request.image_base64, validate=True)
+        try:
+            audited = _audit_source_components_with_contract_retry(
+                source_image,
+                coverage,
+                spec=spec,
+            )
+        except SourceComponentAuditError:
+            # The unaudited seed remains factory-blocking. A provider or
+            # audit-contract failure must never make a new import look like
+            # permissive legacy provenance.
+            pass
+        else:
+            spec = spec.model_copy(update={
+                "source_component_coverage": audited,
+            })
     result = validate_spec(spec, get_vocabulary())
     if not result.ok:
         return JSONResponse(
@@ -1096,6 +1456,421 @@ def from_photo(request: PhotoRequest):
     return result.spec
 
 
+class PlateSpecRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    image_base64: Annotated[str, Field(min_length=1, max_length=14_000_000)]
+    scale_anchor: str | None = None
+    notes: Annotated[str, Field(max_length=2000)] = ""
+    created_by: str = "usr_pending"
+    # Compatibility callers can keep the prior one-pass draft. The trusted
+    # client opts in so the second audit remains an internal reliability step,
+    # never a provider choice exposed to the designer.
+    run_independent_audit: bool = False
+
+
+@router.post("/from-plate")
+def from_plate(request: PlateSpecRequest):
+    """Read a hand-rendered ring or necklace plate into a draft specification.
+
+    This is intentionally separate from ``/from-photo``: the plate reader
+    preserves multiple visible stone groups and assembly, while the compiler
+    marks every unconfirmed species, count, dimension, metal, or ring size as
+    a review item.  The returned spec is not factory truth until the designer
+    confirms it through the trusted project workflow.
+    """
+    import base64 as b64
+    import binascii
+    import hashlib
+
+    try:
+        image_bytes = b64.b64decode(request.image_base64, validate=True)
+    except (binascii.Error, ValueError):
+        return JSONResponse(status_code=422,
+                            content={"detail": "image_base64 is not valid base64"})
+    try:
+        read = read_design_plate(image_bytes, scale_anchor=request.scale_anchor)
+        source_sha256 = hashlib.sha256(image_bytes).hexdigest()
+        spec, uncertainties = plate_spec_layer.compile_plate_spec(
+            read,
+            created_by=request.created_by,
+            source_asset_id=f"plate:{source_sha256[:16]}",
+            source_asset_sha256=source_sha256,
+        )
+    except ValueError as exc:
+        return JSONResponse(status_code=422, content={"detail": str(exc)})
+    except RenderUnavailable as exc:
+        status = 503 if "_KEY" in str(exc) else 502
+        return JSONResponse(status_code=status, content={"detail": str(exc)})
+
+    normalized = validate_spec(spec, get_vocabulary())
+    if not normalized.ok:
+        return JSONResponse(status_code=502, content={
+            "detail": "plate draft failed physical validation",
+            "issues": [issue.as_detail() for issue in normalized.issues],
+            "uncertainties": uncertainties,
+        })
+    spec = normalized.spec
+
+    audit_status = "not_requested"
+    if request.run_independent_audit:
+        coverage = spec.source_component_coverage
+        if coverage is None:
+            audit_status = "invalid"
+            uncertainties.append(
+                "Independent source-component audit could not run because "
+                "the draft has no coverage record."
+            )
+        else:
+            try:
+                audited = _audit_source_components_with_contract_retry(
+                    image_bytes, coverage, spec=spec)
+            except SourceComponentAuditError as exc:
+                audit_status = (
+                    "invalid" if isinstance(exc, SourceComponentAuditInvalid)
+                    else "unavailable"
+                )
+                uncertainties.append(
+                    "Independent source-component audit did not complete; "
+                    "factory release remains blocked until it passes."
+                )
+            else:
+                spec = spec.model_copy(update={
+                    "source_component_coverage": audited,
+                })
+                # Replace the compiler's pre-audit reminder with the actual
+                # append-only audit verdicts. Unresolved source notes remain.
+                uncertainties[:] = [
+                    note for note in uncertainties
+                    if not note.startswith(
+                        "INDEPENDENT SOURCE-COVERAGE AUDIT REQUIRED")
+                ]
+                audit_blockers = source_component_factory_blockers(
+                    audited,
+                    valid_spec_paths=valid_source_component_spec_paths(spec),
+                    current_spec_visual_hash=spec_visual_hash(spec),
+                )
+                audit_status = "pass" if not audit_blockers else "review_required"
+                uncertainties.extend(
+                    "SOURCE COVERAGE " + blocker.code + " "
+                    + blocker.component_id + ": " + blocker.message
+                    for blocker in audit_blockers
+                    if blocker.code != "source_component_unresolved"
+                )
+
+    factory_notes = list(uncertainties)
+    if request.notes.strip():
+        factory_notes.append("Designer notes: " + request.notes.strip())
+    spec = spec.model_copy(update={
+        "notes_to_factory": " ".join(factory_notes),
+    })
+    result = validate_spec(spec, get_vocabulary())
+    if not result.ok:
+        return JSONResponse(status_code=502, content={
+            "detail": "plate draft failed physical validation",
+            "issues": [issue.as_detail() for issue in result.issues],
+            "uncertainties": uncertainties,
+        })
+    return {
+        "spec": result.spec,
+        "read": read,
+        "uncertainties": uncertainties,
+        "provenance": "grok_vision_hand_plate_draft",
+        "requires_designer_confirmation": True,
+        "source_coverage_audit": {
+            "status": audit_status,
+            "blocker_count": len(source_component_factory_blockers(
+                result.spec.source_component_coverage,
+                valid_spec_paths=valid_source_component_spec_paths(result.spec),
+                current_spec_visual_hash=spec_visual_hash(result.spec),
+            )),
+        },
+    }
+
+
+class SourceCoverageResolveRequest(BaseModel):
+    """Pure draft input; this route never persists or versions the spec."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    spec: Spec
+    source_image_base64: Annotated[
+        str,
+        Field(min_length=1, max_length=14_000_000),
+    ] | None = None
+    resolutions: Annotated[
+        tuple[SourceComponentResolution, ...],
+        Field(max_length=999),
+    ] = ()
+    created_by: Annotated[str, Field(min_length=1, max_length=120)] = "usr_pending"
+    run_independent_audit: bool = False
+
+
+class SourceCoverageAuditSummary(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    requested: bool
+    status: Literal[
+        "not_requested",
+        "pass",
+        "review_required",
+        "unavailable",
+        "invalid",
+        "legacy_provenance",
+    ]
+    audited_component_ids: tuple[str, ...] = ()
+    blocker_count: int = Field(ge=0)
+    error_detail: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=500,
+        exclude_if=lambda value: value is None,
+    )
+
+
+class SourceCoverageResolveResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    spec: Spec
+    source_kind: Literal["designer_plate", "imported_reference"] | None
+    components: tuple[SourceVisibleComponent, ...]
+    valid_spec_paths: tuple[CanonicalSpecPath, ...]
+    changed_component_ids: tuple[str, ...]
+    invalidated_audit_component_ids: tuple[str, ...]
+    blockers: tuple[SourceCoverageFactoryBlocker, ...]
+    factory_ready: bool
+    legacy_provenance: bool
+    resolved_by: str
+    audit: SourceCoverageAuditSummary
+
+
+class SourceCoverageResolveError(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    code: Literal["invalid_source_component_resolution"]
+    detail: str
+
+
+class SourceCoverageConfirmRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    spec: Spec
+    source_image_base64: Annotated[str, Field(min_length=1, max_length=14_000_000)]
+    confirmations: Annotated[
+        tuple[SourceComponentConfirmationInput, ...],
+        Field(min_length=1, max_length=999),
+    ]
+    created_by: Annotated[str, Field(min_length=1, max_length=120)]
+
+
+class SourceCoverageConfirmResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    spec: Spec
+    confirmed_component_ids: tuple[str, ...]
+    blockers: tuple[SourceCoverageFactoryBlocker, ...]
+    factory_ready: bool
+    confirmed_by: str
+
+
+@router.post(
+    "/source-coverage/resolve",
+    response_model=SourceCoverageResolveResponse,
+    responses={422: {"model": SourceCoverageResolveError}},
+)
+def resolve_source_coverage(
+    request: SourceCoverageResolveRequest,
+) -> SourceCoverageResolveResponse | JSONResponse:
+    """Resolve source-component mappings in an unpersisted designer draft.
+
+    This internal endpoint deliberately has no database dependency.  It cannot
+    add/delete source components or change specification values; it returns a
+    complete replacement draft for the caller to review.  The persisted
+    project revision workflow remains the only product edit boundary.
+    """
+
+    valid_paths = valid_source_component_spec_paths(request.spec)
+    try:
+        resolution = resolve_source_component_coverage(
+            request.spec.source_component_coverage,
+            request.resolutions,
+            valid_spec_paths=valid_paths,
+        )
+    except SourceCoverageResolutionInvalid as exc:
+        return JSONResponse(status_code=422, content={
+            "code": "invalid_source_component_resolution",
+            "detail": str(exc),
+        })
+
+    coverage = resolution.coverage
+    audit_status: Literal[
+        "not_requested",
+        "pass",
+        "review_required",
+        "unavailable",
+        "invalid",
+        "legacy_provenance",
+    ] = "legacy_provenance" if resolution.legacy_provenance else "not_requested"
+    audited_component_ids: tuple[str, ...] = ()
+    audit_error_detail: str | None = None
+
+    if request.run_independent_audit:
+        if coverage is None:
+            return JSONResponse(status_code=422, content={
+                "code": "invalid_source_component_resolution",
+                "detail": (
+                    "legacy spec has no source coverage to audit; import the "
+                    "source through a current draft reader instead of inventing "
+                    "component identities"
+                ),
+            })
+        if request.source_image_base64 is None:
+            return JSONResponse(status_code=422, content={
+                "code": "invalid_source_component_resolution",
+                "detail": (
+                    "source_image_base64 is required when independent audit "
+                    "is requested"
+                ),
+            })
+        import base64 as b64
+        import binascii
+
+        try:
+            source_image = b64.b64decode(
+                request.source_image_base64,
+                validate=True,
+            )
+        except (binascii.Error, ValueError):
+            return JSONResponse(status_code=422, content={
+                "code": "invalid_source_component_resolution",
+                "detail": "source_image_base64 is not valid base64",
+            })
+        stale_path_blockers = tuple(
+            blocker
+            for blocker in source_component_factory_blockers(
+                coverage,
+                valid_spec_paths=valid_paths,
+            )
+            if blocker.code == "source_component_path_missing"
+        )
+        if stale_path_blockers:
+            # A vision model cannot rehabilitate a mapping to a spec field
+            # that no longer exists. Correct the deterministic mapping first;
+            # do not mint fresh passing audit evidence for stale semantics.
+            audit_status = "invalid"
+        else:
+            try:
+                coverage = _audit_source_components_with_contract_retry(
+                    source_image,
+                    coverage,
+                    spec=request.spec,
+                )
+            except SourceComponentAuditError as exc:
+                audit_status = (
+                    "invalid" if isinstance(exc, SourceComponentAuditInvalid)
+                    else "unavailable"
+                )
+                audit_error_detail = str(exc)
+            else:
+                audit_blockers = source_component_factory_blockers(
+                    coverage,
+                    valid_spec_paths=valid_paths,
+                    current_spec_visual_hash=spec_visual_hash(request.spec),
+                )
+                audit_status = (
+                    "pass" if not audit_blockers else "review_required"
+                )
+                audited_component_ids = tuple(
+                    component.component_id
+                    for component in coverage.components
+                    if component.independent_audit is not None
+                )
+
+    blockers = source_component_factory_blockers(
+        coverage,
+        valid_spec_paths=valid_paths,
+        current_spec_visual_hash=(
+            spec_visual_hash(request.spec) if coverage is not None else None
+        ),
+    )
+    updated_spec = request.spec.model_copy(update={
+        "source_component_coverage": coverage,
+    })
+    return SourceCoverageResolveResponse(
+        spec=updated_spec,
+        source_kind=coverage.source_kind if coverage is not None else None,
+        components=coverage.components if coverage is not None else (),
+        valid_spec_paths=valid_paths,
+        changed_component_ids=resolution.changed_component_ids,
+        invalidated_audit_component_ids=(
+            resolution.invalidated_audit_component_ids
+        ),
+        blockers=blockers,
+        factory_ready=not blockers,
+        legacy_provenance=resolution.legacy_provenance,
+        resolved_by=request.created_by,
+        audit=SourceCoverageAuditSummary(
+            requested=request.run_independent_audit,
+            status=audit_status,
+            audited_component_ids=audited_component_ids,
+            blocker_count=len(blockers),
+            error_detail=audit_error_detail,
+        ),
+    )
+
+
+@router.post(
+    "/source-coverage/confirm",
+    response_model=SourceCoverageConfirmResponse,
+)
+def confirm_source_coverage(
+    request: SourceCoverageConfirmRequest,
+) -> SourceCoverageConfirmResponse | JSONResponse:
+    """Resolve only inconclusive audit evidence through explicit human review.
+
+    This route is pure and internal-studio scoped. It changes no specification
+    values and cannot override failed or missing audits. Authentication replaces
+    the current ``created_by`` actor before external beta.
+    """
+    import base64 as b64
+    import binascii
+    import hashlib
+
+    try:
+        source_image = b64.b64decode(request.source_image_base64, validate=True)
+    except (binascii.Error, ValueError):
+        return JSONResponse(status_code=422, content={
+            "code": "invalid_source_component_confirmation",
+            "detail": "source_image_base64 is not valid base64",
+        })
+    try:
+        confirmed = confirm_source_components(
+            request.spec,
+            source_image,
+            request.confirmations,
+            reviewer=request.created_by,
+        )
+    except SourceComponentConfirmationInvalid as exc:
+        return JSONResponse(status_code=422, content={
+            "code": "invalid_source_component_confirmation",
+            "detail": str(exc),
+        })
+    blockers = source_component_factory_blockers(
+        confirmed.source_component_coverage,
+        valid_spec_paths=valid_source_component_spec_paths(confirmed),
+        current_spec_visual_hash=spec_visual_hash(confirmed),
+        current_source_hash=hashlib.sha256(source_image).hexdigest(),
+    )
+    return SourceCoverageConfirmResponse(
+        spec=confirmed,
+        confirmed_component_ids=tuple(
+            item.component_id for item in request.confirmations),
+        blockers=blockers,
+        factory_ready=not blockers,
+        confirmed_by=request.created_by,
+    )
+
+
 class RestageRequestBody(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -1104,7 +1879,7 @@ class RestageRequestBody(BaseModel):
     worn_on: str = "product"
 
 
-@router.post("/restage-request")
+@router.post("/restage-request", deprecated=True)
 def restage_request(body: RestageRequestBody):
     """Scene instruction for re-staging a PHOTO of a finished piece — the
     uploaded photograph is the geometry; only the scene changes."""
@@ -1126,7 +1901,7 @@ class ArtworkRestyleBody(BaseModel):
     style: str = "rendered_color"
 
 
-@router.post("/artwork-restyle.png")
+@router.post("/artwork-restyle.png", deprecated=True)
 def artwork_restyle(body: ArtworkRestyleBody, model: str = "grok_direct"):
     """Restyle the designer's artwork page IN PLACE — rendered color or ink
     line art. The page IS the composition: nothing is added, removed, moved,
@@ -1153,7 +1928,7 @@ def artwork_restyle(body: ArtworkRestyleBody, model: str = "grok_direct"):
                     headers={"X-Render-Cache": "hit" if cached else "miss"})
 
 
-@router.post("/artwork-restyle-request")
+@router.post("/artwork-restyle-request", deprecated=True)
 def artwork_restyle_request(style: str = "rendered_color"):
     """The compiled restyle instruction — for callers driving an engine
     themselves. Restyle-in-place, no re-composition, zero lettering."""
@@ -1212,11 +1987,26 @@ def sheet_dxf(spec: Spec):
             status_code=422,
             content={"detail": [issue.as_detail() for issue in result.issues]},
         )
+    blockers = sheet_readiness_blockers(result.spec)
+    if blockers:
+        return JSONResponse(status_code=409, content={
+            "code": "factory_geometry_incomplete",
+            "error_category": "validation_failure",
+            "detail": (
+                "DXF export is unavailable until every visual form and chain "
+                "construction blocker is resolved"
+            ),
+            "blockers": [
+                {"code": item.code, "detail": item.detail}
+                for item in blockers
+            ],
+        })
     try:
         svg = render_sheet(result.spec)
-    except SheetUnsupported as exc:
+        dxf = svg_to_dxf(svg)
+    except (SheetUnsupported, DxfUnsupported) as exc:
         return JSONResponse(status_code=422, content={"detail": str(exc)})
     return Response(
-        content=svg_to_dxf(svg), media_type="application/dxf",
+        content=dxf, media_type="application/dxf",
         headers={"Content-Disposition":
                  f'attachment; filename="{result.spec.design_id}_v{result.spec.version}.dxf"'})

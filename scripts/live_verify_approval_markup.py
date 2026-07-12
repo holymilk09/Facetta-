@@ -9,7 +9,6 @@ lettering the updated spec + approval footer.
 
 import base64
 import io
-import json
 import sys
 from pathlib import Path
 

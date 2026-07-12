@@ -1,0 +1,266 @@
+{
+  "filenames": [
+    "image-113.jpg",
+    "image-114.jpg",
+    "image-115.jpg",
+    "image-116.jpg",
+    "image-117.jpg",
+    "image-118.jpg",
+    "image-119.jpg",
+    "image-120.jpg",
+    "image-121.jpg",
+    "image-122.jpg",
+    "image-123.jpg",
+    "image-124.jpg",
+    "image-125.jpg",
+    "image-126.jpg",
+    "image-127.jpg",
+    "image-128.jpg"
+  ],
+  "latency_ms": 13236,
+  "payload": {
+    "items": [
+      {
+        "complexity": "simple",
+        "confidence": 0.9,
+        "filename": "image-113.jpg",
+        "input_kind": "finished_jewelry_photo",
+        "multi_design": false,
+        "notes": "three finished rings, visible branding",
+        "primary_category": "ring",
+        "watermark_or_branding": true,
+        "workflow_fit": [
+          "product_photography",
+          "photo_read"
+        ]
+      },
+      {
+        "complexity": "moderate",
+        "confidence": 0.85,
+        "filename": "image-114.jpg",
+        "input_kind": "line_art",
+        "multi_design": true,
+        "notes": "multiple ring sketches",
+        "primary_category": "ring",
+        "watermark_or_branding": false,
+        "workflow_fit": [
+          "lineart_color",
+          "plate_read"
+        ]
+      },
+      {
+        "complexity": "moderate",
+        "confidence": 0.9,
+        "filename": "image-115.jpg",
+        "input_kind": "technical_sheet",
+        "multi_design": false,
+        "notes": "ring technical drawing with dimensions",
+        "primary_category": "ring",
+        "watermark_or_branding": false,
+        "workflow_fit": [
+          "technical_benchmark",
+          "plate_read"
+        ]
+      },
+      {
+        "complexity": "simple",
+        "confidence": 0.9,
+        "filename": "image-116.jpg",
+        "input_kind": "technical_sheet",
+        "multi_design": false,
+        "notes": "basic ring orthographic views",
+        "primary_category": "ring",
+        "watermark_or_branding": false,
+        "workflow_fit": [
+          "technical_benchmark",
+          "plate_read"
+        ]
+      },
+      {
+        "complexity": "moderate",
+        "confidence": 0.9,
+        "filename": "image-117.jpg",
+        "input_kind": "technical_sheet",
+        "multi_design": false,
+        "notes": "ring technical drawing with dimensions",
+        "primary_category": "ring",
+        "watermark_or_branding": false,
+        "workflow_fit": [
+          "technical_benchmark",
+          "plate_read"
+        ]
+      },
+      {
+        "complexity": "simple",
+        "confidence": 0.9,
+        "filename": "image-118.jpg",
+        "input_kind": "technical_sheet",
+        "multi_design": false,
+        "notes": "ring technical drawing with dimensions",
+        "primary_category": "ring",
+        "watermark_or_branding": false,
+        "workflow_fit": [
+          "technical_benchmark",
+          "plate_read"
+        ]
+      },
+      {
+        "complexity": "moderate",
+        "confidence": 0.85,
+        "filename": "image-119.jpg",
+        "input_kind": "finished_jewelry_photo",
+        "multi_design": true,
+        "notes": "two finished rings, branding present",
+        "primary_category": "ring",
+        "watermark_or_branding": true,
+        "workflow_fit": [
+          "photo_read",
+          "beauty_render"
+        ]
+      },
+      {
+        "complexity": "moderate",
+        "confidence": 0.85,
+        "filename": "image-120.jpg",
+        "input_kind": "finished_jewelry_photo",
+        "multi_design": true,
+        "notes": "four finished rings, branding present",
+        "primary_category": "ring",
+        "watermark_or_branding": true,
+        "workflow_fit": [
+          "photo_read",
+          "beauty_render"
+        ]
+      },
+      {
+        "complexity": "simple",
+        "confidence": 0.8,
+        "filename": "image-121.jpg",
+        "input_kind": "hand_drawing",
+        "multi_design": false,
+        "notes": "hand sketch of ring on hand",
+        "primary_category": "ring",
+        "watermark_or_branding": true,
+        "workflow_fit": [
+          "lineart_color"
+        ]
+      },
+      {
+        "complexity": "moderate",
+        "confidence": 0.85,
+        "filename": "image-122.jpg",
+        "input_kind": "finished_jewelry_photo",
+        "multi_design": true,
+        "notes": "finished rings and loose stone, branding",
+        "primary_category": "ring",
+        "watermark_or_branding": true,
+        "workflow_fit": [
+          "photo_read",
+          "beauty_render"
+        ]
+      },
+      {
+        "complexity": "moderate",
+        "confidence": 0.85,
+        "filename": "image-123.jpg",
+        "input_kind": "technical_sheet",
+        "multi_design": true,
+        "notes": "multiple ring technical drawings",
+        "primary_category": "ring",
+        "watermark_or_branding": false,
+        "workflow_fit": [
+          "technical_benchmark",
+          "plate_read"
+        ]
+      },
+      {
+        "complexity": "simple",
+        "confidence": 0.95,
+        "filename": "image-124.jpg",
+        "input_kind": "reference_chart",
+        "multi_design": true,
+        "notes": "gem cut/shape do/don't chart",
+        "primary_category": "reference_chart",
+        "watermark_or_branding": false,
+        "workflow_fit": [
+          "reference_chart",
+          "exclude_as_source"
+        ]
+      },
+      {
+        "complexity": "moderate",
+        "confidence": 0.95,
+        "filename": "image-125.jpg",
+        "input_kind": "reference_chart",
+        "multi_design": true,
+        "notes": "diamond cut taxonomy grid",
+        "primary_category": "reference_chart",
+        "watermark_or_branding": false,
+        "workflow_fit": [
+          "reference_chart",
+          "exclude_as_source"
+        ]
+      },
+      {
+        "complexity": "moderate",
+        "confidence": 0.85,
+        "filename": "image-126.jpg",
+        "input_kind": "finished_jewelry_photo",
+        "multi_design": true,
+        "notes": "multiple finished rings, branding",
+        "primary_category": "ring",
+        "watermark_or_branding": true,
+        "workflow_fit": [
+          "photo_read",
+          "beauty_render"
+        ]
+      },
+      {
+        "complexity": "moderate",
+        "confidence": 0.95,
+        "filename": "image-127.jpg",
+        "input_kind": "reference_chart",
+        "multi_design": true,
+        "notes": "fancy diamond cuts chart",
+        "primary_category": "reference_chart",
+        "watermark_or_branding": false,
+        "workflow_fit": [
+          "reference_chart",
+          "exclude_as_source"
+        ]
+      },
+      {
+        "complexity": "moderate",
+        "confidence": 0.95,
+        "filename": "image-128.jpg",
+        "input_kind": "reference_chart",
+        "multi_design": true,
+        "notes": "gem shape reference grid",
+        "primary_category": "reference_chart",
+        "watermark_or_branding": false,
+        "workflow_fit": [
+          "reference_chart",
+          "exclude_as_source"
+        ]
+      }
+    ]
+  },
+  "source_hashes": [
+    "663f532c0898208366dfd2b3cd0835b45527508c757a94db23a1d9abfed56f51",
+    "d98bd9cf9592095f83d920ef4145f7b93159f6ff9d029788c2a151608f6e55c7",
+    "16ba7f0addbad9e76ed523c574579ced742f9ab5cceddd90a0b842be5bc94538",
+    "54b0d0c9c1cb799c89480e931966c556b830ca866babf7446cc8b51a2b39057f",
+    "4136fb440dc8e88c450052a00cf12f449e62f36d3b50e6fa78604647150a0c45",
+    "f5ae603ec790eb3d6175cfcb5406a86290a058b7ab943290a793081883db133e",
+    "9d84ee2f94efbace001aa797928267932da6277ddb71b2a03c9be993177f034f",
+    "9e60d5d8135add55cc811d72776af3019fdbb4c71049b63f81d886c6264bef81",
+    "9b56d1a500439a9bd90dc79a5d4c7b41cfd797b861143d4990d7300af1ec5db0",
+    "202b9d7d8404d0aefe65ce182db9b3ea2c0969d6bcca63be9d14fe707914c3a0",
+    "3d72c0b93abc807a3678f89cc9b8ae8546fb1d0510cf6e137822c516436d889d",
+    "15a21c443b006b4c82bb044ce31d90c0b34203b0dae90b42f0b0765b1acbe0df",
+    "e393606ccbd327f28cf014f096469ab6ac0dd5739296882e162c2c71ecd10879",
+    "9be46f45f87a6e5edd72b4fa8659db020e9c49ed1d7db15a331098eac632681c",
+    "ca3b05cb4ce0fd6149c1a43711ff50dab37fc4e4638a5b5ef222faa82132fcc2",
+    "820103be00703733b35b3a447e760818e17779c603f5567344d26f64ac099296"
+  ]
+}

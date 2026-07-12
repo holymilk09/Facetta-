@@ -1,0 +1,267 @@
+{
+  "filenames": [
+    "image-49.jpg",
+    "image-50.jpg",
+    "image-51.jpg",
+    "image-52.jpg",
+    "image-53.jpg",
+    "image-54.jpg",
+    "image-55.jpg",
+    "image-56.jpg",
+    "image-57.jpg",
+    "image-58.jpg",
+    "image-59.jpg",
+    "image-60.jpg",
+    "image-61.jpg",
+    "image-62.jpg",
+    "image-63.jpg",
+    "image-64.jpg"
+  ],
+  "latency_ms": 12672,
+  "payload": {
+    "items": [
+      {
+        "complexity": "moderate",
+        "confidence": 0.85,
+        "filename": "image-49.jpg",
+        "input_kind": "finished_jewelry_photo",
+        "multi_design": false,
+        "notes": "single necklace photo with minor annotation",
+        "primary_category": "necklace",
+        "watermark_or_branding": true,
+        "workflow_fit": [
+          "photo_read",
+          "catalog_reference"
+        ]
+      },
+      {
+        "complexity": "moderate",
+        "confidence": 0.9,
+        "filename": "image-50.jpg",
+        "input_kind": "technical_sheet",
+        "multi_design": false,
+        "notes": "earring technical render with numbered views",
+        "primary_category": "earrings",
+        "watermark_or_branding": true,
+        "workflow_fit": [
+          "plate_read",
+          "technical_benchmark"
+        ]
+      },
+      {
+        "complexity": "moderate",
+        "confidence": 0.85,
+        "filename": "image-51.jpg",
+        "input_kind": "finished_jewelry_photo",
+        "multi_design": false,
+        "notes": "single necklace hero photo",
+        "primary_category": "necklace",
+        "watermark_or_branding": true,
+        "workflow_fit": [
+          "photo_read",
+          "catalog_reference"
+        ]
+      },
+      {
+        "complexity": "complex",
+        "confidence": 0.9,
+        "filename": "image-52.jpg",
+        "input_kind": "technical_sheet",
+        "multi_design": false,
+        "notes": "annotated technical drawing with component labels",
+        "primary_category": "necklace",
+        "watermark_or_branding": true,
+        "workflow_fit": [
+          "plate_read",
+          "technical_benchmark"
+        ]
+      },
+      {
+        "complexity": "complex",
+        "confidence": 0.95,
+        "filename": "image-53.jpg",
+        "input_kind": "reference_chart",
+        "multi_design": true,
+        "notes": "multiple necklace designs and sketches on one sheet",
+        "primary_category": "necklace",
+        "watermark_or_branding": true,
+        "workflow_fit": [
+          "reference_chart",
+          "exclude_as_source"
+        ]
+      },
+      {
+        "complexity": "moderate",
+        "confidence": 0.85,
+        "filename": "image-54.jpg",
+        "input_kind": "colored_design_plate",
+        "multi_design": false,
+        "notes": "pearl necklace render with sketch details",
+        "primary_category": "necklace",
+        "watermark_or_branding": true,
+        "workflow_fit": [
+          "plate_read",
+          "lineart_color"
+        ]
+      },
+      {
+        "complexity": "moderate",
+        "confidence": 0.95,
+        "filename": "image-55.jpg",
+        "input_kind": "reference_chart",
+        "multi_design": true,
+        "notes": "grid of bracelet chain patterns",
+        "primary_category": "bracelet",
+        "watermark_or_branding": true,
+        "workflow_fit": [
+          "reference_chart",
+          "exclude_as_source"
+        ]
+      },
+      {
+        "complexity": "complex",
+        "confidence": 0.9,
+        "filename": "image-56.jpg",
+        "input_kind": "technical_sheet",
+        "multi_design": false,
+        "notes": "necklace technical drawing with color bar and labels",
+        "primary_category": "necklace",
+        "watermark_or_branding": true,
+        "workflow_fit": [
+          "plate_read",
+          "technical_benchmark"
+        ]
+      },
+      {
+        "complexity": "complex",
+        "confidence": 0.9,
+        "filename": "image-57.jpg",
+        "input_kind": "technical_sheet",
+        "multi_design": false,
+        "notes": "necklace on bust with component annotations",
+        "primary_category": "necklace",
+        "watermark_or_branding": true,
+        "workflow_fit": [
+          "plate_read",
+          "technical_benchmark"
+        ]
+      },
+      {
+        "complexity": "complex",
+        "confidence": 0.9,
+        "filename": "image-58.jpg",
+        "input_kind": "technical_sheet",
+        "multi_design": false,
+        "notes": "necklace technical drawing with side views",
+        "primary_category": "necklace",
+        "watermark_or_branding": true,
+        "workflow_fit": [
+          "plate_read",
+          "technical_benchmark"
+        ]
+      },
+      {
+        "complexity": "complex",
+        "confidence": 0.9,
+        "filename": "image-59.jpg",
+        "input_kind": "technical_sheet",
+        "multi_design": false,
+        "notes": "necklace technical drawing with gem callouts",
+        "primary_category": "necklace",
+        "watermark_or_branding": true,
+        "workflow_fit": [
+          "plate_read",
+          "technical_benchmark"
+        ]
+      },
+      {
+        "complexity": "moderate",
+        "confidence": 0.85,
+        "filename": "image-60.jpg",
+        "input_kind": "technical_sheet",
+        "multi_design": false,
+        "notes": "necklace render with dimension lines",
+        "primary_category": "necklace",
+        "watermark_or_branding": true,
+        "workflow_fit": [
+          "plate_read",
+          "technical_benchmark"
+        ]
+      },
+      {
+        "complexity": "moderate",
+        "confidence": 0.8,
+        "filename": "image-61.jpg",
+        "input_kind": "mixed",
+        "multi_design": false,
+        "notes": "photo of design card being held, mixed media",
+        "primary_category": "necklace",
+        "watermark_or_branding": true,
+        "workflow_fit": [
+          "photo_read",
+          "localized_edit"
+        ]
+      },
+      {
+        "complexity": "complex",
+        "confidence": 0.9,
+        "filename": "image-62.jpg",
+        "input_kind": "technical_sheet",
+        "multi_design": false,
+        "notes": "necklace technical drawing with gem specs",
+        "primary_category": "necklace",
+        "watermark_or_branding": true,
+        "workflow_fit": [
+          "plate_read",
+          "technical_benchmark"
+        ]
+      },
+      {
+        "complexity": "complex",
+        "confidence": 0.9,
+        "filename": "image-63.jpg",
+        "input_kind": "technical_sheet",
+        "multi_design": false,
+        "notes": "necklace technical drawing with component details",
+        "primary_category": "necklace",
+        "watermark_or_branding": true,
+        "workflow_fit": [
+          "plate_read",
+          "technical_benchmark"
+        ]
+      },
+      {
+        "complexity": "moderate",
+        "confidence": 0.85,
+        "filename": "image-64.jpg",
+        "input_kind": "technical_sheet",
+        "multi_design": false,
+        "notes": "necklace and earring set render with labels",
+        "primary_category": "necklace",
+        "watermark_or_branding": true,
+        "workflow_fit": [
+          "plate_read",
+          "technical_benchmark"
+        ]
+      }
+    ]
+  },
+  "source_hashes": [
+    "6cf7633ee678a1accddcaca976f66eeec34fa1f36b09c711c51d804c144aac62",
+    "946693dc56ed04cad1dcd2b00baa4eee14561bca2ba323dedad9e500824ac412",
+    "037efb459a5e941b37cd780f27f40c9f7d491bb49a8d00ba875226f2fb3e74cd",
+    "3809220af936c9c6db8eebcae98152f14d7a9683f25bf4b0a441c2dcfcaec4a2",
+    "26bfb3b12c3997112945c5fe52950f5e64c96c0bbc5b4a675963996a9586117a",
+    "3f7bf113b2feacc63a3995deb6824789f20b338f48ddd0435e2efda5e69f5344",
+    "621003819d48823bb9d18acda8f76bdd7ce2a14fae03aa57bfb34a646fba7644",
+    "2738ee2f7030a2af8645c98848bba59aeb80887de57290c238eaa93284a69503",
+    "d2723ba7056a7ce35044417cf0bf7f6166e906b9840b5124f13738c35aae12f2",
+    "c1344888c27914b0dfb52720c5d34acd553b1618eba426d4add96cb876ab9f02",
+    "0b297669d03b680ccb280ee0afae58dd5888a6a42d0e07b2cf07e5898a6129df",
+    "3613031355bcbb2ddb3e320c27bf25a23eb053fdf063714aadc4a0637bf3bc62",
+    "ea90ff9a52e7467a90b684c0bd1caf68123560178503d25f2a881774bae7d9a4",
+    "c92f870cd09209a4035dd64fec5e5d845be1dbda32ecbe71d776726ea48295f0",
+    "87b1adf3c4fedc69f9260afd614ea2d34f0414fad59d94abb45c428cfc9efea2",
+    "9204ba92f55917c140330461f501ec9241545a359015ec400c0b575f22c6542b"
+  ]
+}

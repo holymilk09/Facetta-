@@ -1,0 +1,156 @@
+{
+  "accepted": false,
+  "attempts": [
+    {
+      "attempt_number": 1,
+      "cache_key": "eb82fe7877581ed49b9800afc55e38e4b58fa41b62037d78abb0aaa4be7d5dfc",
+      "cached": false,
+      "corrective_instruction": null,
+      "cost": null,
+      "error": null,
+      "error_category": null,
+      "fallback_reason": null,
+      "latency_ms": 18094,
+      "model": "grok_direct",
+      "output_hash": "16ed9c487eafe60890ea5849516558406e416771a13c3a857d0bcbae96e90483",
+      "prompt_hash": "0d33dfce86d3e679713737953f8c0c0615df78d511a74d7f05e9356c1acf6c4a",
+      "provider": "xai",
+      "provider_request_id": null,
+      "qa_checks": [
+        {
+          "code": "decodable_image",
+          "evidence": {
+            "format": "JPEG",
+            "height": 1152,
+            "width": 864
+          },
+          "message": "candidate is a decodable raster image",
+          "passed": true,
+          "severity": "hard"
+        },
+        {
+          "code": "review_resolution",
+          "evidence": {
+            "height": 1152,
+            "width": 864
+          },
+          "message": "candidate has reviewable raster dimensions",
+          "passed": true,
+          "severity": "warning"
+        },
+        {
+          "code": "coherent_jewelry_render",
+          "evidence": {},
+          "message": "visual evidence matches the requested fact",
+          "passed": true,
+          "severity": "hard"
+        },
+        {
+          "code": "requested_presentation_applied",
+          "evidence": {},
+          "message": "visual evidence matches the requested fact",
+          "passed": true,
+          "severity": "hard"
+        },
+        {
+          "code": "text_or_branding",
+          "evidence": {},
+          "message": "visual evidence matches the requested fact",
+          "passed": true,
+          "severity": "hard"
+        },
+        {
+          "code": "factory_authority",
+          "evidence": {
+            "factory_authoritative": false
+          },
+          "message": "creative render is review-only and cannot establish hidden geometry, dimensions, materials, stone identity, or factory facts",
+          "passed": false,
+          "severity": "warning"
+        }
+      ],
+      "qa_verdict": "warn",
+      "quality_score": 95.0,
+      "route": "grok_generate",
+      "usage": null
+    }
+  ],
+  "candidate_file": "candidate.jpg",
+  "candidate_media_type": "image/jpeg",
+  "candidate_sha256": "16ed9c487eafe60890ea5849516558406e416771a13c3a857d0bcbae96e90483",
+  "designer_prompt": "Design a refined platinum floral lariat necklace with two articulated vine branches, five marquise emerald leaves arranged asymmetrically, small round diamond dew drops, a delicate cable chain, and one long tapered drop. Show the complete necklace centered on a clean warm-gray studio background. Keep the construction elegant and physically coherent; no text, logos, or extra jewelry.",
+  "executed_at": "2026-07-11T16:52:36.030338+00:00",
+  "factory_authoritative": false,
+  "input_hash": "c7fec2e1517d2fc45ac448d8768e06eb840871ad5cab80424bcc8835d808088e",
+  "jewelry_type": "jewelry",
+  "maximum_attempts": 3,
+  "operation": "CREATIVE_GENERATE",
+  "product_asset_persisted": false,
+  "prompt_version": "creative-generate.v1",
+  "quality": {
+    "checks": [
+      {
+        "code": "decodable_image",
+        "evidence": {
+          "format": "JPEG",
+          "height": 1152,
+          "width": 864
+        },
+        "message": "candidate is a decodable raster image",
+        "passed": true,
+        "severity": "hard"
+      },
+      {
+        "code": "review_resolution",
+        "evidence": {
+          "height": 1152,
+          "width": 864
+        },
+        "message": "candidate has reviewable raster dimensions",
+        "passed": true,
+        "severity": "warning"
+      },
+      {
+        "code": "coherent_jewelry_render",
+        "evidence": {},
+        "message": "visual evidence matches the requested fact",
+        "passed": true,
+        "severity": "hard"
+      },
+      {
+        "code": "requested_presentation_applied",
+        "evidence": {},
+        "message": "visual evidence matches the requested fact",
+        "passed": true,
+        "severity": "hard"
+      },
+      {
+        "code": "text_or_branding",
+        "evidence": {},
+        "message": "visual evidence matches the requested fact",
+        "passed": true,
+        "severity": "hard"
+      },
+      {
+        "code": "factory_authority",
+        "evidence": {
+          "factory_authoritative": false
+        },
+        "message": "creative render is review-only and cannot establish hidden geometry, dimensions, materials, stone identity, or factory facts",
+        "passed": false,
+        "severity": "warning"
+      }
+    ],
+    "notes": [
+      "vine branches, 5+ asymmetric marquise emeralds, round diamond dew drops, cable chain, long tapered drop all present on warm-gray background"
+    ],
+    "score": 95.0,
+    "verdict": "warn"
+  },
+  "result_set": "creative-prompt-necklace-live-v1-2026-07-12",
+  "review_required": true,
+  "specification_created": false,
+  "status": "review_required",
+  "variant": 21,
+  "verdict": "warn"
+}

@@ -1,0 +1,456 @@
+{
+  "corpus": "designer-reference-corpus-v1",
+  "provider_readiness": {
+    "fallback_configured": false,
+    "xai_configured": true
+  },
+  "rows": [
+    {
+      "case": "leaf-ring-measured-green",
+      "category": "ring",
+      "input_kind": "measured_colored_design_plate",
+      "latency_ms": 19704,
+      "read": {
+        "assembly": "central square emerald in four-prong setting flanked by symmetrical leaf motifs set with marquise and round diamonds, shank with channel-set baguette diamonds, two-tone yellow and white gold construction",
+        "hand_written": [
+          "Carat sectio",
+          "21",
+          "4.35",
+          "Diamond carat",
+          "A. 14 carat = 0.75",
+          "D. 1.14 carat = 0.35",
+          "D. 1.14 carat = 0.35",
+          "30",
+          "2",
+          "60",
+          "Metal Gold",
+          "diamond Black",
+          "Meta : 310Min",
+          "WO hength : 120 gold",
+          "Diamond width : 2 mm",
+          "115",
+          "15",
+          "R"
+        ],
+        "jewelry_type": "ring",
+        "measurements": [
+          {
+            "confidence": 0.95,
+            "label": "overall height side view",
+            "value": "115"
+          },
+          {
+            "confidence": 0.95,
+            "label": "shank width bottom",
+            "value": "15"
+          },
+          {
+            "confidence": 0.9,
+            "label": "band height",
+            "value": "2"
+          },
+          {
+            "confidence": 0.85,
+            "label": "diameter indication",
+            "value": "30"
+          },
+          {
+            "confidence": 0.85,
+            "label": "diameter indication",
+            "value": "60"
+          },
+          {
+            "confidence": 0.95,
+            "label": "diamond width",
+            "value": "2 mm"
+          },
+          {
+            "confidence": 0.85,
+            "label": "top width",
+            "value": "21"
+          },
+          {
+            "confidence": 0.85,
+            "label": "top length",
+            "value": "4.35"
+          }
+        ],
+        "metal": "18k gold two-tone",
+        "scale_anchor": null,
+        "scaled": false,
+        "source": "plate",
+        "stones": [
+          {
+            "carat_each": null,
+            "confidence": 0.9,
+            "qty": 1,
+            "size_mm": "TBD",
+            "type": "emerald emerald cut"
+          },
+          {
+            "carat_each": null,
+            "confidence": 0.7,
+            "qty": 2,
+            "size_mm": "TBD",
+            "type": "diamond marquise"
+          },
+          {
+            "carat_each": null,
+            "confidence": 0.6,
+            "qty": 1,
+            "size_mm": "TBD",
+            "type": "diamond baguette"
+          },
+          {
+            "carat_each": null,
+            "confidence": 0.6,
+            "qty": 1,
+            "size_mm": "TBD",
+            "type": "diamond round pav\u00e9"
+          }
+        ]
+      },
+      "read_score": {
+        "checks": {
+          "authoritative_text": true,
+          "expected_visual_terms": true,
+          "jewelry_type": true,
+          "minimum_stone_groups": true
+        },
+        "multi_design_warning": false,
+        "observed_jewelry_type": "ring",
+        "score": 100.0,
+        "status": "pass",
+        "stone_group_count": 4,
+        "term_hits": [
+          "emerald",
+          "leaf"
+        ],
+        "transcription_hits": [
+          "115",
+          "2 mm",
+          "0.75"
+        ]
+      },
+      "source": {
+        "available": true,
+        "decodable": true,
+        "format": "JPEG",
+        "hash_matches": true,
+        "path": "/Users/mattfb/.codex/attachments/c2fd41d0-b236-43ef-ada9-e9479718c771/image-86.jpg",
+        "sha256": "3aa96aac909bc806b4f93f4f8f995acb03ba41e9ebf5771bad3bed7a5af1289d",
+        "size": [
+          1440,
+          1930
+        ]
+      },
+      "workflows": [
+        "plate_read",
+        "draft_spec",
+        "beauty_render",
+        "lineart",
+        "factory_sheet",
+        "localized_edit"
+      ]
+    },
+    {
+      "case": "leaf-ring-measured-pink",
+      "category": "ring",
+      "input_kind": "measured_colored_design_plate",
+      "latency_ms": 29289,
+      "read": {
+        "assembly": "central pink princess-cut stone in yellow-gold four-prong/bezel setting flanked by symmetrical leaf motifs set with marquise and round diamonds; white-gold shank with channel-set round diamonds on shoulders and gallery",
+        "hand_written": [
+          "Carat section",
+          "24",
+          "\u03c6 35",
+          "Diamond carat A. 14 carat = 0.75 D. 1.14 carat = 0.35 D. 1.14 carat = 0.35",
+          "30",
+          "2",
+          "60",
+          "Metal Gold Diamond Black Meta : 310Min",
+          "WO heunsth : 120 gold Diamond width : 2 mm",
+          "R",
+          "115",
+          "15"
+        ],
+        "jewelry_type": "ring",
+        "measurements": [
+          {
+            "confidence": 0.9,
+            "label": "height",
+            "value": "115"
+          },
+          {
+            "confidence": 0.9,
+            "label": "base width",
+            "value": "15"
+          },
+          {
+            "confidence": 0.85,
+            "label": "shank height",
+            "value": "2"
+          },
+          {
+            "confidence": 0.85,
+            "label": "shank width",
+            "value": "60"
+          },
+          {
+            "confidence": 0.85,
+            "label": "top width",
+            "value": "30"
+          },
+          {
+            "confidence": 0.9,
+            "label": "diameter",
+            "value": "\u03c6 35"
+          },
+          {
+            "confidence": 0.95,
+            "label": "Diamond width",
+            "value": "2 mm"
+          }
+        ],
+        "metal": "two-tone gold (yellow accents, white gold body)",
+        "scale_anchor": null,
+        "scaled": false,
+        "source": "plate",
+        "stones": [
+          {
+            "carat_each": null,
+            "confidence": 0.65,
+            "qty": 1,
+            "size_mm": "TBD",
+            "type": "pink diamond princess cut"
+          },
+          {
+            "carat_each": null,
+            "confidence": 0.55,
+            "qty": 2,
+            "size_mm": "TBD",
+            "type": "diamond marquise"
+          },
+          {
+            "carat_each": null,
+            "confidence": 0.45,
+            "qty": 20,
+            "size_mm": "TBD",
+            "type": "diamond round brilliant"
+          }
+        ]
+      },
+      "read_score": {
+        "checks": {
+          "authoritative_text": true,
+          "expected_visual_terms": true,
+          "jewelry_type": true,
+          "minimum_stone_groups": true
+        },
+        "multi_design_warning": false,
+        "observed_jewelry_type": "ring",
+        "score": 100.0,
+        "status": "pass",
+        "stone_group_count": 3,
+        "term_hits": [
+          "pink",
+          "leaf"
+        ],
+        "transcription_hits": [
+          "115",
+          "2 mm",
+          "0.75"
+        ]
+      },
+      "source": {
+        "available": true,
+        "decodable": true,
+        "format": "JPEG",
+        "hash_matches": true,
+        "path": "/Users/mattfb/.codex/attachments/c2fd41d0-b236-43ef-ada9-e9479718c771/image-106.jpg",
+        "sha256": "22926da408316d9ebddddeda3585b06d096d85525e08be4e31a6c2ffad61df48",
+        "size": [
+          1440,
+          1930
+        ]
+      },
+      "workflows": [
+        "plate_read",
+        "localized_edit_ground_truth"
+      ]
+    },
+    {
+      "case": "geometric-emerald-ring",
+      "category": "ring",
+      "input_kind": "multi_view_line_and_color_plate",
+      "latency_ms": 16580,
+      "read": {
+        "assembly": "horizontal emerald-cut emerald in a geometric octagonal bezel with diamond pav\u00e9 borders and two smaller emerald accents; shank has repeating rectangular motifs and diamond-set shoulders",
+        "hand_written": [
+          "2026.5.26"
+        ],
+        "jewelry_type": "ring",
+        "measurements": [],
+        "metal": "platinum or white gold",
+        "scale_anchor": null,
+        "scaled": false,
+        "source": "plate",
+        "stones": [
+          {
+            "carat_each": null,
+            "confidence": 0.7,
+            "qty": 1,
+            "size_mm": "TBD",
+            "type": "emerald emerald cut"
+          },
+          {
+            "carat_each": null,
+            "confidence": 0.6,
+            "qty": 2,
+            "size_mm": "TBD",
+            "type": "emerald emerald cut"
+          },
+          {
+            "carat_each": null,
+            "confidence": 0.5,
+            "qty": 20,
+            "size_mm": "TBD",
+            "type": "diamond round brilliant"
+          }
+        ]
+      },
+      "read_score": {
+        "checks": {
+          "authoritative_text": true,
+          "expected_visual_terms": true,
+          "jewelry_type": true,
+          "minimum_stone_groups": true
+        },
+        "multi_design_warning": false,
+        "observed_jewelry_type": "ring",
+        "score": 100.0,
+        "status": "pass",
+        "stone_group_count": 3,
+        "term_hits": [
+          "emerald",
+          "octagon"
+        ],
+        "transcription_hits": []
+      },
+      "source": {
+        "available": true,
+        "decodable": true,
+        "format": "JPEG",
+        "hash_matches": true,
+        "path": "/Users/mattfb/.codex/attachments/c2fd41d0-b236-43ef-ada9-e9479718c771/image-78.jpg",
+        "sha256": "b9c4e35bc0f6cfe40417577bd3bb6cde9ed983e0c9e11d24531bba6bef9ea831",
+        "size": [
+          1440,
+          2036
+        ]
+      },
+      "workflows": [
+        "plate_read",
+        "beauty_render",
+        "lineart",
+        "factory_sheet",
+        "localized_edit"
+      ]
+    },
+    {
+      "case": "heart-kinetic-ring",
+      "category": "ring",
+      "input_kind": "measured_construction_plate",
+      "latency_ms": 18426,
+      "read": {
+        "assembly": "heart-shaped turquoise solitaire set above a pav\u00e9-set band with geometric angular side elements and a halo of small round stones",
+        "hand_written": [
+          "\u03c61,5",
+          "4,1",
+          "2,2",
+          "A/2023"
+        ],
+        "jewelry_type": "ring",
+        "measurements": [
+          {
+            "confidence": 0.9,
+            "label": "stone diameter",
+            "value": "\u03c61,5"
+          },
+          {
+            "confidence": 0.9,
+            "label": "detail height",
+            "value": "4,1"
+          },
+          {
+            "confidence": 0.9,
+            "label": "detail height",
+            "value": "2,2"
+          }
+        ],
+        "metal": "white gold",
+        "physics_checked": true,
+        "scale_anchor": null,
+        "scaled": false,
+        "source": "plate",
+        "stones": [
+          {
+            "carat_each": null,
+            "confidence": 0.75,
+            "qty": 1,
+            "size_mm": "TBD",
+            "type": "turquoise heart cut"
+          },
+          {
+            "carat_each": 0.013,
+            "confidence": 0.6,
+            "note": "carat modeled from size (density model)",
+            "qty": 1,
+            "size_mm": "1.5",
+            "type": "diamond round brilliant"
+          }
+        ]
+      },
+      "read_score": {
+        "checks": {
+          "authoritative_text": true,
+          "expected_visual_terms": true,
+          "jewelry_type": true,
+          "minimum_stone_groups": true
+        },
+        "multi_design_warning": false,
+        "observed_jewelry_type": "ring",
+        "score": 100.0,
+        "status": "pass",
+        "stone_group_count": 2,
+        "term_hits": [
+          "heart"
+        ],
+        "transcription_hits": [
+          "4"
+        ]
+      },
+      "source": {
+        "available": true,
+        "decodable": true,
+        "format": "JPEG",
+        "hash_matches": true,
+        "path": "/Users/mattfb/.codex/attachments/c2fd41d0-b236-43ef-ada9-e9479718c771/image-92.jpg",
+        "sha256": "09ce09fdcc98851652f74d2738be3567c57564d2278a2a1fffdd080381fe1767",
+        "size": [
+          1080,
+          1440
+        ]
+      },
+      "workflows": [
+        "plate_read",
+        "beauty_render",
+        "lineart",
+        "factory_sheet"
+      ]
+    }
+  ],
+  "run": "designer-reference-read-ring-v1-2026-07-11",
+  "source_policy": "Founder-supplied evaluation references only. Do not publish, train on, or treat as customer-owned production assets. Third-party branding and social watermarks must never appear in accepted outputs.",
+  "stage": "read"
+}

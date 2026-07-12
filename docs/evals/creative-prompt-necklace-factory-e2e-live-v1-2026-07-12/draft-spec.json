@@ -1,0 +1,358 @@
+{
+  "band": {
+    "profile": "comfort_fit",
+    "thickness_mm": 1.6,
+    "width_mm": 2.2
+  },
+  "bracelet": null,
+  "brooch": null,
+  "chain": null,
+  "composition": null,
+  "created_at": "2026-07-11T17:06:24.843541Z",
+  "created_by": "usr_internal_designer_e2e",
+  "design_form": {
+    "elements": []
+  },
+  "design_id": "dsn_concept",
+  "dimension_provenance": {
+    "band.thickness_mm": {
+      "confidence": 0.45,
+      "method": "reference_vision",
+      "note": "Reference-derived starting value; verify before production.",
+      "source": "imported finished-jewelry reference",
+      "status": "estimated_from_reference"
+    },
+    "band.width_mm": {
+      "confidence": 0.45,
+      "method": "reference_vision",
+      "note": "Reference-derived starting value; verify before production.",
+      "source": "imported finished-jewelry reference",
+      "status": "estimated_from_reference"
+    },
+    "ring_size.inner_diameter_mm": {
+      "confidence": 0.45,
+      "method": "reference_vision",
+      "note": "Reference-derived starting value; verify before production.",
+      "source": "imported finished-jewelry reference",
+      "status": "estimated_from_reference"
+    },
+    "ring_size.value": {
+      "confidence": 0.45,
+      "method": "reference_vision",
+      "note": "Reference-derived starting value; verify before production.",
+      "source": "imported finished-jewelry reference",
+      "status": "estimated_from_reference"
+    },
+    "setting.gallery_height_mm": {
+      "confidence": 0.45,
+      "method": "reference_vision",
+      "note": "Reference-derived starting value; verify before production.",
+      "source": "imported finished-jewelry reference",
+      "status": "estimated_from_reference"
+    },
+    "setting.prong_tip_mm": {
+      "confidence": 0.45,
+      "method": "reference_vision",
+      "note": "Reference-derived starting value; verify before production.",
+      "source": "imported finished-jewelry reference",
+      "status": "estimated_from_reference"
+    },
+    "stone.dimensions_mm.depth": {
+      "confidence": 0.45,
+      "method": "reference_vision",
+      "note": "Reference-derived starting value; verify before production.",
+      "source": "imported finished-jewelry reference",
+      "status": "estimated_from_reference"
+    },
+    "stone.dimensions_mm.length": {
+      "confidence": 0.45,
+      "method": "reference_vision",
+      "note": "Reference-derived starting value; verify before production.",
+      "source": "imported finished-jewelry reference",
+      "status": "estimated_from_reference"
+    },
+    "stone.dimensions_mm.width": {
+      "confidence": 0.45,
+      "method": "reference_vision",
+      "note": "Reference-derived starting value; verify before production.",
+      "source": "imported finished-jewelry reference",
+      "status": "estimated_from_reference"
+    }
+  },
+  "drop": null,
+  "jewelry_type": "ring",
+  "metal": {
+    "color": null,
+    "finish": "high_polish",
+    "karat": null,
+    "material": "platinum"
+  },
+  "mode": "pro",
+  "notes_to_factory": "Concept originated by image generation from the brief: \u201cImported finished-jewelry reference. Return only visible facts. Exact dimensions remain designer-confirmed. Designer notes: Prompt-selected platinum floral lariat necklace. Exactly five marquise emerald leaves and one long polished tapered drop are designer-required. Diamond accents are visible. All dimensions are estimates until explicitly confirmed.\u201d. All dimensions are density-consistent DRAFT proposals scaled from a vision estimate of the centre stone \u2014 the designer confirms exact millimetres before production.",
+  "pendant": null,
+  "ring_size": {
+    "inner_diameter_mm": 16.91,
+    "system": "US",
+    "value": 6.5
+  },
+  "schema_version": 1,
+  "setting": {
+    "gallery_height_mm": 2.4,
+    "prong_count": 4,
+    "prong_tip_mm": 0.9,
+    "style": "4_prong_basket"
+  },
+  "side_stones": [],
+  "source_component_coverage": {
+    "audited_spec_visual_hash": "14d46b776e267dbe",
+    "components": [
+      {
+        "canonical_spec_paths": [
+          "stone"
+        ],
+        "component_id": "stone.center",
+        "designer_confirmation": null,
+        "independent_audit": {
+          "auditor": "skeptical-source-component-audit.v4",
+          "evidence_sha256": "44e227b2ca9ffcdd14a36708cde79c4e39f820a72e82c98b26237909c7e19d6a",
+          "kind": "independent_component_audit",
+          "observed_description": "five marquise-cut green gemstones on vine branches, not one oval center stone",
+          "source_view": "front",
+          "verdict": "fail"
+        },
+        "source_confidence": 0.45,
+        "source_description": "1 emerald oval_brilliant stone at center",
+        "source_view": "unspecified",
+        "unresolved_reason": null
+      },
+      {
+        "canonical_spec_paths": [
+          "setting"
+        ],
+        "component_id": "setting.primary",
+        "designer_confirmation": null,
+        "independent_audit": {
+          "auditor": "skeptical-source-component-audit.v4",
+          "evidence_sha256": "44e227b2ca9ffcdd14a36708cde79c4e39f820a72e82c98b26237909c7e19d6a",
+          "kind": "independent_component_audit",
+          "observed_description": "gemstones integrated into vine structure; prong count and basket style not visible or confirmed",
+          "source_view": "front",
+          "verdict": "inconclusive"
+        },
+        "source_confidence": 0.45,
+        "source_description": "4_prong_basket setting with 4 prongs",
+        "source_view": "unspecified",
+        "unresolved_reason": null
+      },
+      {
+        "canonical_spec_paths": [
+          "metal"
+        ],
+        "component_id": "metal.body",
+        "designer_confirmation": null,
+        "independent_audit": {
+          "auditor": "skeptical-source-component-audit.v4",
+          "evidence_sha256": "44e227b2ca9ffcdd14a36708cde79c4e39f820a72e82c98b26237909c7e19d6a",
+          "kind": "independent_component_audit",
+          "observed_description": "silver-tone metal vine and chain; exact material (platinum) not assessable from image",
+          "source_view": "front",
+          "verdict": "inconclusive"
+        },
+        "source_confidence": 0.45,
+        "source_description": "platinum metal body",
+        "source_view": "unspecified",
+        "unresolved_reason": null
+      },
+      {
+        "canonical_spec_paths": [
+          "band"
+        ],
+        "component_id": "band.shank",
+        "designer_confirmation": null,
+        "independent_audit": {
+          "auditor": "skeptical-source-component-audit.v4",
+          "evidence_sha256": "44e227b2ca9ffcdd14a36708cde79c4e39f820a72e82c98b26237909c7e19d6a",
+          "kind": "independent_component_audit",
+          "observed_description": "no ring shank present; pendant necklace with dangling chain and teardrop",
+          "source_view": "front",
+          "verdict": "fail"
+        },
+        "source_confidence": 0.45,
+        "source_description": "comfort_fit ring shank",
+        "source_view": "unspecified",
+        "unresolved_reason": null
+      },
+      {
+        "canonical_spec_paths": [
+          "template"
+        ],
+        "component_id": "assembly.primary",
+        "designer_confirmation": null,
+        "independent_audit": {
+          "auditor": "skeptical-source-component-audit.v4",
+          "evidence_sha256": "44e227b2ca9ffcdd14a36708cde79c4e39f820a72e82c98b26237909c7e19d6a",
+          "kind": "independent_component_audit",
+          "observed_description": "vine-branch pendant assembly with multiple stones and dangling element, not solitaire prong ring",
+          "source_view": "front",
+          "verdict": "fail"
+        },
+        "source_confidence": 0.45,
+        "source_description": "solitaire_prong primary assembly topology",
+        "source_view": "unspecified",
+        "unresolved_reason": null
+      },
+      {
+        "canonical_spec_paths": [],
+        "component_id": "audit.unmapped.001",
+        "designer_confirmation": null,
+        "independent_audit": {
+          "auditor": "skeptical-source-component-audit.v4",
+          "evidence_sha256": "44e227b2ca9ffcdd14a36708cde79c4e39f820a72e82c98b26237909c7e19d6a",
+          "kind": "independent_component_audit",
+          "observed_description": "Blind inventory blind.001 is visible but absent from coverage: necklace chain; no matching coverage component",
+          "source_view": "front",
+          "verdict": "fail"
+        },
+        "source_confidence": 0.95,
+        "source_description": "fine cable-link necklace chain in silver tone, continuous from both sides meeting at pendant attachment",
+        "source_view": "front",
+        "unresolved_reason": "Blind inventory blind.001 was not mapped: necklace chain; no matching coverage component"
+      },
+      {
+        "canonical_spec_paths": [],
+        "component_id": "audit.unmapped.002",
+        "designer_confirmation": null,
+        "independent_audit": {
+          "auditor": "skeptical-source-component-audit.v4",
+          "evidence_sha256": "44e227b2ca9ffcdd14a36708cde79c4e39f820a72e82c98b26237909c7e19d6a",
+          "kind": "independent_component_audit",
+          "observed_description": "Blind inventory blind.002 is visible but absent from coverage: vine pendant body; no matching coverage component",
+          "source_view": "front",
+          "verdict": "fail"
+        },
+        "source_confidence": 0.95,
+        "source_description": "branching vine-style metal structure forming the pendant body with curved stems and openwork",
+        "source_view": "front",
+        "unresolved_reason": "Blind inventory blind.002 was not mapped: vine pendant body; no matching coverage component"
+      },
+      {
+        "canonical_spec_paths": [],
+        "component_id": "audit.unmapped.003",
+        "designer_confirmation": null,
+        "independent_audit": {
+          "auditor": "skeptical-source-component-audit.v4",
+          "evidence_sha256": "44e227b2ca9ffcdd14a36708cde79c4e39f820a72e82c98b26237909c7e19d6a",
+          "kind": "independent_component_audit",
+          "observed_description": "Blind inventory blind.003 is visible but absent from coverage: five marquise green stones; no matching coverage component",
+          "source_view": "front",
+          "verdict": "fail"
+        },
+        "source_confidence": 0.9,
+        "source_description": "group of five marquise-cut green gemstones mounted at intervals along the vine branches",
+        "source_view": "front",
+        "unresolved_reason": "Blind inventory blind.003 was not mapped: five marquise green stones; no matching coverage component"
+      },
+      {
+        "canonical_spec_paths": [],
+        "component_id": "audit.unmapped.004",
+        "designer_confirmation": null,
+        "independent_audit": {
+          "auditor": "skeptical-source-component-audit.v4",
+          "evidence_sha256": "44e227b2ca9ffcdd14a36708cde79c4e39f820a72e82c98b26237909c7e19d6a",
+          "kind": "independent_component_audit",
+          "observed_description": "Blind inventory blind.004 is visible but absent from coverage: small round white stones; no matching coverage component",
+          "source_view": "front",
+          "verdict": "fail"
+        },
+        "source_confidence": 0.85,
+        "source_description": "scattered group of small round white gemstones set individually on the vine branches and stems",
+        "source_view": "front",
+        "unresolved_reason": "Blind inventory blind.004 was not mapped: small round white stones; no matching coverage component"
+      },
+      {
+        "canonical_spec_paths": [],
+        "component_id": "audit.unmapped.005",
+        "designer_confirmation": null,
+        "independent_audit": {
+          "auditor": "skeptical-source-component-audit.v4",
+          "evidence_sha256": "44e227b2ca9ffcdd14a36708cde79c4e39f820a72e82c98b26237909c7e19d6a",
+          "kind": "independent_component_audit",
+          "observed_description": "Blind inventory blind.005 is visible but absent from coverage: metal leaf motifs; no matching coverage component",
+          "source_view": "front",
+          "verdict": "fail"
+        },
+        "source_confidence": 0.8,
+        "source_description": "small stylized metal leaf motifs integrated into the vine structure",
+        "source_view": "front",
+        "unresolved_reason": "Blind inventory blind.005 was not mapped: metal leaf motifs; no matching coverage component"
+      },
+      {
+        "canonical_spec_paths": [],
+        "component_id": "audit.unmapped.006",
+        "designer_confirmation": null,
+        "independent_audit": {
+          "auditor": "skeptical-source-component-audit.v4",
+          "evidence_sha256": "44e227b2ca9ffcdd14a36708cde79c4e39f820a72e82c98b26237909c7e19d6a",
+          "kind": "independent_component_audit",
+          "observed_description": "Blind inventory blind.006 is visible but absent from coverage: dangling chain extension; no matching coverage component",
+          "source_view": "front",
+          "verdict": "fail"
+        },
+        "source_confidence": 0.95,
+        "source_description": "short dangling chain extension below the vine terminating in a solid teardrop-shaped pendant",
+        "source_view": "front",
+        "unresolved_reason": "Blind inventory blind.006 was not mapped: dangling chain extension; no matching coverage component"
+      },
+      {
+        "canonical_spec_paths": [],
+        "component_id": "audit.unmapped.007",
+        "designer_confirmation": null,
+        "independent_audit": {
+          "auditor": "skeptical-source-component-audit.v4",
+          "evidence_sha256": "44e227b2ca9ffcdd14a36708cde79c4e39f820a72e82c98b26237909c7e19d6a",
+          "kind": "independent_component_audit",
+          "observed_description": "Blind inventory blind.007 is visible but absent from coverage: teardrop pendant; no matching coverage component",
+          "source_view": "front",
+          "verdict": "fail"
+        },
+        "source_confidence": 0.95,
+        "source_description": "elongated polished teardrop pendant element at the terminus of the lower chain",
+        "source_view": "front",
+        "unresolved_reason": "Blind inventory blind.007 was not mapped: teardrop pendant; no matching coverage component"
+      }
+    ],
+    "source_kind": "imported_reference"
+  },
+  "stone": {
+    "carat": 0.453,
+    "clarity": null,
+    "color": {
+      "gia": "vivid, warm, slightly yellowish green",
+      "hue_code": null,
+      "saturation": null,
+      "tone": null,
+      "trade": "Muzo Green"
+    },
+    "count": 1,
+    "culet": null,
+    "cut": "oval_brilliant",
+    "depth_pct": null,
+    "dimensions_mm": {
+      "depth": 2.6,
+      "length": 8.0,
+      "width": 4.0
+    },
+    "girdle": null,
+    "inscription": null,
+    "lab": null,
+    "mount": null,
+    "origin": null,
+    "phenomena": [],
+    "position": "center",
+    "species": "emerald",
+    "table_pct": null,
+    "treatment": null
+  },
+  "template": "solitaire_prong",
+  "version": 1
+}

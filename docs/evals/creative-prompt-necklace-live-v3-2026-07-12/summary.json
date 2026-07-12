@@ -1,0 +1,342 @@
+{
+  "accepted": false,
+  "attempts": [
+    {
+      "attempt_number": 1,
+      "cache_key": "088f4b8e0eb71e6a0b87f85c6d8dd1958fffc7e174e8b73e098d154368576284",
+      "cached": true,
+      "corrective_instruction": null,
+      "cost": null,
+      "error": null,
+      "error_category": null,
+      "fallback_reason": null,
+      "latency_ms": 11932,
+      "model": "grok_direct",
+      "output_hash": "a78325e600b68eef00f726da278401c1b78348a0f4051f8b4c35d0df895f5558",
+      "prompt_hash": "9f352a0013266b8a405abc2d7ad1689df3113244146a8fc5b2742ed6f3d26c12",
+      "provider": "xai",
+      "provider_request_id": null,
+      "qa_checks": [
+        {
+          "code": "decodable_image",
+          "evidence": {
+            "format": "JPEG",
+            "height": 1152,
+            "width": 864
+          },
+          "message": "candidate is a decodable raster image",
+          "passed": true,
+          "severity": "hard"
+        },
+        {
+          "code": "review_resolution",
+          "evidence": {
+            "height": 1152,
+            "width": 864
+          },
+          "message": "candidate has reviewable raster dimensions",
+          "passed": true,
+          "severity": "warning"
+        },
+        {
+          "code": "coherent_jewelry_render",
+          "evidence": {},
+          "message": "visual evidence matches the requested fact",
+          "passed": true,
+          "severity": "hard"
+        },
+        {
+          "code": "requested_presentation_applied",
+          "evidence": {},
+          "message": "visual evidence matches the requested fact",
+          "passed": true,
+          "severity": "hard"
+        },
+        {
+          "code": "explicit_counts_match",
+          "evidence": {},
+          "message": "candidate does not match an explicitly requested component count",
+          "passed": false,
+          "severity": "hard"
+        },
+        {
+          "code": "text_or_branding",
+          "evidence": {},
+          "message": "visual evidence matches the requested fact",
+          "passed": true,
+          "severity": "hard"
+        },
+        {
+          "code": "factory_authority",
+          "evidence": {
+            "factory_authoritative": false
+          },
+          "message": "creative render is review-only and cannot establish hidden geometry, dimensions, materials, stone identity, or factory facts",
+          "passed": false,
+          "severity": "warning"
+        }
+      ],
+      "qa_verdict": "fail",
+      "quality_score": 70.0,
+      "route": "grok_generate",
+      "usage": null
+    },
+    {
+      "attempt_number": 2,
+      "cache_key": "8422de0f3e0f7aeee67ba290e15b603f1927062f28650cf3d849aa66765cc040",
+      "cached": false,
+      "corrective_instruction": "- explicit_counts_match: candidate does not match an explicitly requested component count.",
+      "cost": null,
+      "error": null,
+      "error_category": null,
+      "fallback_reason": null,
+      "latency_ms": 21037,
+      "model": "grok_direct",
+      "output_hash": "5209b825aecbb563970f53488cda451531165d8dd18ad38a369dd31f7d03e7e7",
+      "prompt_hash": "ed5c1695fb0a7492c9415f36d67f798cb3fde6bc2ff98f91d77509b94060998e",
+      "provider": "xai",
+      "provider_request_id": null,
+      "qa_checks": [
+        {
+          "code": "decodable_image",
+          "evidence": {
+            "format": "JPEG",
+            "height": 1152,
+            "width": 864
+          },
+          "message": "candidate is a decodable raster image",
+          "passed": true,
+          "severity": "hard"
+        },
+        {
+          "code": "review_resolution",
+          "evidence": {
+            "height": 1152,
+            "width": 864
+          },
+          "message": "candidate has reviewable raster dimensions",
+          "passed": true,
+          "severity": "warning"
+        },
+        {
+          "code": "coherent_jewelry_render",
+          "evidence": {},
+          "message": "visual evidence matches the requested fact",
+          "passed": true,
+          "severity": "hard"
+        },
+        {
+          "code": "requested_presentation_applied",
+          "evidence": {},
+          "message": "candidate did not apply the requested render presentation",
+          "passed": false,
+          "severity": "hard"
+        },
+        {
+          "code": "explicit_counts_match",
+          "evidence": {},
+          "message": "candidate does not match an explicitly requested component count",
+          "passed": false,
+          "severity": "hard"
+        },
+        {
+          "code": "text_or_branding",
+          "evidence": {},
+          "message": "visual evidence matches the requested fact",
+          "passed": true,
+          "severity": "hard"
+        },
+        {
+          "code": "factory_authority",
+          "evidence": {
+            "factory_authoritative": false
+          },
+          "message": "creative render is review-only and cannot establish hidden geometry, dimensions, materials, stone identity, or factory facts",
+          "passed": false,
+          "severity": "warning"
+        }
+      ],
+      "qa_verdict": "fail",
+      "quality_score": 60.0,
+      "route": "grok_generate",
+      "usage": null
+    },
+    {
+      "attempt_number": 3,
+      "cache_key": "f3d97800018281c7337466dbe46f536e71a4204730c2ddf83e8a9f5d91ff61c4",
+      "cached": false,
+      "corrective_instruction": "- requested_presentation_applied: candidate did not apply the requested render presentation.\n- explicit_counts_match: candidate does not match an explicitly requested component count.",
+      "cost": null,
+      "error": null,
+      "error_category": null,
+      "fallback_reason": "grok_qa_failed",
+      "latency_ms": 30981,
+      "model": "gpt-image-2",
+      "output_hash": "dd1f8f01c5180bf49c5613e32c4e13861c1fd561a02158ba61d8d3c76a801e37",
+      "prompt_hash": "b01e8a6fff60f9ec3be4f0b041363b59a39204e17ef8cf70a07cab57479af6ca",
+      "provider": "openai",
+      "provider_request_id": "req_16c76cffac1d4f539bedd4bb5eb5068c",
+      "qa_checks": [
+        {
+          "code": "decodable_image",
+          "evidence": {
+            "format": "PNG",
+            "height": 1024,
+            "width": 1024
+          },
+          "message": "candidate is a decodable raster image",
+          "passed": true,
+          "severity": "hard"
+        },
+        {
+          "code": "review_resolution",
+          "evidence": {
+            "height": 1024,
+            "width": 1024
+          },
+          "message": "candidate has reviewable raster dimensions",
+          "passed": true,
+          "severity": "warning"
+        },
+        {
+          "code": "coherent_jewelry_render",
+          "evidence": {},
+          "message": "visual evidence matches the requested fact",
+          "passed": true,
+          "severity": "hard"
+        },
+        {
+          "code": "requested_presentation_applied",
+          "evidence": {},
+          "message": "visual evidence matches the requested fact",
+          "passed": true,
+          "severity": "hard"
+        },
+        {
+          "code": "explicit_counts_match",
+          "evidence": {},
+          "message": "visual evidence matches the requested fact",
+          "passed": true,
+          "severity": "hard"
+        },
+        {
+          "code": "text_or_branding",
+          "evidence": {},
+          "message": "visual evidence matches the requested fact",
+          "passed": true,
+          "severity": "hard"
+        },
+        {
+          "code": "factory_authority",
+          "evidence": {
+            "factory_authoritative": false
+          },
+          "message": "creative render is review-only and cannot establish hidden geometry, dimensions, materials, stone identity, or factory facts",
+          "passed": false,
+          "severity": "warning"
+        }
+      ],
+      "qa_verdict": "warn",
+      "quality_score": 92.0,
+      "route": "openai_generate",
+      "usage": {
+        "input_tokens": 503,
+        "input_tokens_details": {
+          "image_tokens": 0,
+          "text_tokens": 503
+        },
+        "output_tokens": 196,
+        "output_tokens_details": {
+          "image_tokens": 196,
+          "text_tokens": 0
+        },
+        "total_tokens": 699
+      }
+    }
+  ],
+  "candidate_file": "candidate.png",
+  "candidate_media_type": "image/png",
+  "candidate_sha256": "dd1f8f01c5180bf49c5613e32c4e13861c1fd561a02158ba61d8d3c76a801e37",
+  "designer_prompt": "Design a refined platinum floral lariat necklace with two articulated vine branches, exactly five marquise emerald leaves arranged asymmetrically, small round diamond dew drops, a delicate cable chain, and one long tapered drop. Show the complete necklace centered on a clean warm-gray studio background. Keep the construction elegant and physically coherent; no text, logos, or extra jewelry.",
+  "executed_at": "2026-07-11T16:57:06.342824+00:00",
+  "factory_authoritative": false,
+  "input_hash": "4f47a91172f6f7c99ef45dc3d066d31513058c30a23b5f7143fd6378d2c8d737",
+  "jewelry_type": "jewelry",
+  "maximum_attempts": 3,
+  "operation": "CREATIVE_GENERATE",
+  "product_asset_persisted": false,
+  "prompt_version": "creative-generate.v2",
+  "quality": {
+    "checks": [
+      {
+        "code": "decodable_image",
+        "evidence": {
+          "format": "PNG",
+          "height": 1024,
+          "width": 1024
+        },
+        "message": "candidate is a decodable raster image",
+        "passed": true,
+        "severity": "hard"
+      },
+      {
+        "code": "review_resolution",
+        "evidence": {
+          "height": 1024,
+          "width": 1024
+        },
+        "message": "candidate has reviewable raster dimensions",
+        "passed": true,
+        "severity": "warning"
+      },
+      {
+        "code": "coherent_jewelry_render",
+        "evidence": {},
+        "message": "visual evidence matches the requested fact",
+        "passed": true,
+        "severity": "hard"
+      },
+      {
+        "code": "requested_presentation_applied",
+        "evidence": {},
+        "message": "visual evidence matches the requested fact",
+        "passed": true,
+        "severity": "hard"
+      },
+      {
+        "code": "explicit_counts_match",
+        "evidence": {},
+        "message": "visual evidence matches the requested fact",
+        "passed": true,
+        "severity": "hard"
+      },
+      {
+        "code": "text_or_branding",
+        "evidence": {},
+        "message": "visual evidence matches the requested fact",
+        "passed": true,
+        "severity": "hard"
+      },
+      {
+        "code": "factory_authority",
+        "evidence": {
+          "factory_authoritative": false
+        },
+        "message": "creative render is review-only and cannot establish hidden geometry, dimensions, materials, stone identity, or factory facts",
+        "passed": false,
+        "severity": "warning"
+      }
+    ],
+    "notes": [
+      "exactly five marquise emeralds, one tapered drop, cable chain, clean gray background, no text/logos"
+    ],
+    "score": 92.0,
+    "verdict": "warn"
+  },
+  "result_set": "creative-prompt-necklace-live-v3-2026-07-12",
+  "review_required": true,
+  "specification_created": false,
+  "status": "review_required",
+  "variant": 21,
+  "verdict": "warn"
+}

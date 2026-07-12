@@ -1,0 +1,30 @@
+{
+  "audited_spec_visual_hash": "e257359d45cf604d",
+  "blockers": [
+    {
+      "code": "source_component_audit_inconclusive",
+      "component_id": "stone.group.001",
+      "message": "Independent coverage audit was inconclusive for stone.group.001: Blind visible-fact evidence is insufficient: the specification says repeated-stone count 6, but the blind inventory did not state an assessable repeated-stone count.",
+      "required_resolution": "Obtain a clearer source and repeat the audit, or have the designer explicitly confirm the visible fact / define the missing target against this exact source."
+    },
+    {
+      "code": "source_component_audit_inconclusive",
+      "component_id": "setting.primary",
+      "message": "Independent coverage audit was inconclusive for setting.primary: Blind visible-fact evidence is insufficient: the specification says 4-prong, but the blind inventory did not state an assessable prong count.",
+      "required_resolution": "Obtain a clearer source and repeat the audit, or have the designer explicitly confirm the visible fact / define the missing target against this exact source."
+    },
+    {
+      "code": "source_component_audit_inconclusive",
+      "component_id": "metal.body",
+      "message": "Independent coverage audit was inconclusive for metal.body: yellow gold visible on shank and setting",
+      "required_resolution": "Obtain a clearer source and repeat the audit, or have the designer explicitly confirm the visible fact / define the missing target against this exact source."
+    },
+    {
+      "code": "source_component_audit_inconclusive",
+      "component_id": "band.shank",
+      "message": "Independent coverage audit was inconclusive for band.shank: yellow gold ring shank/band, smooth and continuous",
+      "required_resolution": "Obtain a clearer source and repeat the audit, or have the designer explicitly confirm the visible fact / define the missing target against this exact source."
+    }
+  ],
+  "component_count": 6
+}

@@ -13,7 +13,11 @@ from sqlalchemy.orm import Session
 from facetta.db import (
     Comment, Design, DesignMessage, DesignVersion, get_db, new_id, utcnow,
 )
-from facetta.dxf import svg_to_dxf
+from facetta.dxf import DxfUnsupported, svg_to_dxf
+from facetta.preliminary_sheet import (
+    render_sheet_for_review,
+    sheet_readiness_blockers,
+)
 from facetta.spec import Spec
 from facetta.specdiff import diff_specs, summarize_changes
 from facetta.svg_sheet import (
@@ -62,7 +66,21 @@ def _validated_or_response(spec: Spec):
     return result.spec, None
 
 
-def _store_version(db: Session, design: Design, spec: Spec, version: int, created_by: str) -> dict:
+def _store_version(
+    db: Session,
+    design: Design,
+    spec: Spec,
+    version: int,
+    created_by: str,
+    *,
+    commit: bool = True,
+) -> dict:
+    """Append an immutable spec version.
+
+    ``commit=False`` is the transaction-safe service seam used when a visual
+    revision and its specification must become visible together.  Existing
+    design-only routes retain the historical commit-on-write behavior.
+    """
     now = utcnow()
     stored = spec.model_dump(mode="json")
     stored.update({
@@ -73,7 +91,10 @@ def _store_version(db: Session, design: Design, spec: Spec, version: int, create
     })
     db.add(DesignVersion(design_id=design.id, version=version, spec=stored,
                          created_by=created_by, created_at=now))
-    db.commit()
+    if commit:
+        db.commit()
+    else:
+        db.flush()
     return stored
 
 
@@ -119,7 +140,7 @@ class EditRequest(BaseModel):
     created_by: str = "usr_pending"
 
 
-@router.post("/{design_id}/edit")
+@router.post("/{design_id}/edit", deprecated=True)
 def edit_design(design_id: str, body: EditRequest, db: DbSession):
     """The edit loop: a plain-language change on the latest version. Claude
     translates it into an edited spec, the validator gates it, and only a
@@ -181,7 +202,7 @@ class AnnotateRequest(BaseModel):
     created_by: str = "usr_pending"
 
 
-@router.post("/{design_id}/annotate")
+@router.post("/{design_id}/annotate", deprecated=True)
 def annotate_design(design_id: str, body: AnnotateRequest, db: DbSession):
     """A surgical edit from a mark on the spec sheet. The annotation points at
     ONE element (a stone-schedule ref or a named section); the agent proposes a
@@ -473,14 +494,29 @@ def get_sheet(design_id: str, version: int, db: DbSession,
     ?house=/?signature= stamp the designer's studio mark (presentation only)."""
     row = _get_version(db, design_id, version)
     try:
-        svg = render_sheet(Spec.model_validate(row.spec), highlight_ref=highlight,
-                           branding=_branding(house, signature))
+        svg, blockers = render_sheet_for_review(
+            Spec.model_validate(row.spec),
+            highlight_ref=highlight,
+            branding=_branding(house, signature),
+        )
     except SheetUnsupported as exc:
         return JSONResponse(status_code=422, content={"detail": str(exc)})
-    return Response(content=svg, media_type="image/svg+xml")
+    return Response(
+        content=svg,
+        media_type="image/svg+xml",
+        headers={
+            "X-Facetta-Sheet-Authority": (
+                "preliminary_not_for_production" if blockers
+                else "spec_derived_preview"
+            ),
+        },
+    )
 
 
-@router.get("/{design_id}/versions/{version}/blueprint-sheet.svg")
+@router.get(
+    "/{design_id}/versions/{version}/blueprint-sheet.svg",
+    deprecated=True,
+)
 def get_blueprint_sheet(design_id: str, version: int, db: DbSession,
                         model: str = "grok_direct", house: str | None = None,
                         signature: str | None = None):
@@ -531,7 +567,7 @@ def get_plate(design_id: str, version: int, db: DbSession, paper: str = "ivory")
     return Response(content=svg, media_type="image/svg+xml")
 
 
-@router.get("/{design_id}/versions/{version}/render.png")
+@router.get("/{design_id}/versions/{version}/render.png", deprecated=True)
 def get_render(design_id: str, version: int, db: DbSession,
                style: str = "photo", lighting: str = "studio"):
     """The stored version's photoreal render — cached by content, so a
@@ -632,12 +668,28 @@ def add_comment(db: Session, design_id: str, version: int, comment: CommentCreat
 def get_sheet_dxf(design_id: str, version: int, db: DbSession):
     """The stored version's sheet as a DXF R12 drawing for CAD import."""
     row = _get_version(db, design_id, version)
+    spec = Spec.model_validate(row.spec)
+    blockers = sheet_readiness_blockers(spec)
+    if blockers:
+        return JSONResponse(status_code=409, content={
+            "code": "factory_geometry_incomplete",
+            "error_category": "validation_failure",
+            "detail": (
+                "DXF export is unavailable until every visual form and chain "
+                "construction blocker is resolved"
+            ),
+            "blockers": [
+                {"code": item.code, "detail": item.detail}
+                for item in blockers
+            ],
+        })
     try:
-        svg = render_sheet(Spec.model_validate(row.spec))
-    except SheetUnsupported as exc:
+        svg = render_sheet(spec)
+        dxf = svg_to_dxf(svg)
+    except (SheetUnsupported, DxfUnsupported) as exc:
         return JSONResponse(status_code=422, content={"detail": str(exc)})
     return Response(
-        content=svg_to_dxf(svg), media_type="application/dxf",
+        content=dxf, media_type="application/dxf",
         headers={"Content-Disposition":
                  f'attachment; filename="{design_id}_v{version}.dxf"'})
 
