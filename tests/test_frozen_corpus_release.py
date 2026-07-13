@@ -26,6 +26,7 @@ def _sha(path: Path) -> str:
 def _fixture(tmp_path: Path) -> dict[str, Any]:
     private_key = Ed25519PrivateKey.generate()
     reviewer_private_key = Ed25519PrivateKey.generate()
+    runner_private_key = Ed25519PrivateKey.generate()
     public_key = tmp_path / "founder.pub"
     public_key.write_bytes(private_key.public_key().public_bytes(
         encoding=serialization.Encoding.Raw,
@@ -34,6 +35,13 @@ def _fixture(tmp_path: Path) -> dict[str, Any]:
     reviewer_public_key = tmp_path / "reviewer.pub"
     reviewer_public_key.write_bytes(
         reviewer_private_key.public_key().public_bytes(
+            encoding=serialization.Encoding.Raw,
+            format=serialization.PublicFormat.Raw,
+        )
+    )
+    runner_public_key = tmp_path / "canonical-api-runner.pub"
+    runner_public_key.write_bytes(
+        runner_private_key.public_key().public_bytes(
             encoding=serialization.Encoding.Raw,
             format=serialization.PublicFormat.Raw,
         )
@@ -109,8 +117,8 @@ def _fixture(tmp_path: Path) -> dict[str, Any]:
         },
         "canonical_api_runner_public_key": {
             "key_id": "canonical-api-runner-v1",
-            "path": reviewer_public_key.name,
-            "sha256": _sha(reviewer_public_key),
+            "path": runner_public_key.name,
+            "sha256": _sha(runner_public_key),
         },
     })
     results = tmp_path / "results.json"
@@ -457,3 +465,25 @@ def test_pinned_workload_must_preserve_144_by_58_by_18_scope(tmp_path: Path):
     assert "exactly 144" in joined
     assert "exactly 58" in joined
     assert "exactly 1,044" in joined
+
+
+def test_founder_and_gia_reviewer_must_use_distinct_public_keys(tmp_path: Path):
+    paths = _fixture(tmp_path)
+    config = json.loads(paths["config"].read_text())
+    reviewer = config["reviewer_public_key"]
+    config["founder_public_key"] = {
+        "key_id": "founder-distinct-label",
+        "path": reviewer["path"],
+        "sha256": reviewer["sha256"],
+    }
+    _json(paths["config"], config)
+
+    result = _run(paths)
+
+    separation = result["authority_key_separation"]
+    assert separation["status"] == "fail"
+    assert any(
+        "founder, gia_reviewer" in error and "public-key bytes" in error
+        for error in separation["errors"]
+    )
+    assert result["corpus_gate_ready"] is False

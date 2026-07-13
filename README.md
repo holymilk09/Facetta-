@@ -58,6 +58,7 @@ cp .env.example .env
 | Key | Used by |
 |---|---|
 | `DATABASE_URL` | PostgreSQL / Supabase (unset → local SQLite). See [Database](#database). |
+| `FACETTA_DEPLOYMENT_REVISION` | Immutable deployed commit/release ID reported by health and verified by the live staging gate |
 | `ANTHROPIC_API_KEY` | Optional legacy Claude prose → spec and edit-agent endpoints |
 | `FAL_KEY` | Photoreal renders / blueprint sheets via fal.ai |
 | `XAI_KEY` | Grok Imagine generation/editing and Grok Vision concept/photo extraction |

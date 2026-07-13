@@ -11,7 +11,9 @@ This is a provider-free release-gate definition, not a quality result.
   integrity cannot be misreported as jewelry-image quality.
 - `config.json` pins the current 90/85/90 gate, three-attempt limit, calibrated
   `0.18` outside-mask drift threshold, routing contract, and implementation
-  hashes.
+  hashes. The frozen implementation set includes both the capture producer and
+  its CLI, so the signed capture's `config_sha256` binds the exact code that
+  converted execution artifacts into the canonical capture envelope.
 - The production config intentionally has no resolved assignment bundle,
   executor key, canonical API-runner key, GIA reviewer key, founder key,
   jewelry-designer reviewer key, or staging-release reviewer key. It is a
@@ -193,6 +195,15 @@ the evidence and its SHA-256 is
 pinned in `config.json`. The production key is intentionally unconfigured
 until the reviewer enrollment step is complete; no key or unsigned evidence
 can become release-ready.
+
+Every enrolled authority must use both a unique key ID and unique Ed25519
+public-key bytes. The corpus compiler, founder-release verifier, and combined
+external-beta verifier recompute this separation across the executor,
+canonical API runner, GIA reviewer, founder, jewelry designer, and staging
+reviewer; reuse by any two roles fails closed. This proves separate signing
+identities, not the real-world identity, qualification, or independence of the
+people controlling them. Those facts must still be checked during enrollment
+and retained with the human review record.
 
 Founder approval is deliberately not folded into `results.json`: it must bind
 the exact bytes the founder reviewed. The separate `founder_public_key` must

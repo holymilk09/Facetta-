@@ -167,11 +167,31 @@ def _fixture(
     executor_public.parent.mkdir(parents=True, exist_ok=True)
     executor_public.write_bytes(_public_bytes(executor_private))
     api_public.write_bytes(_public_bytes(api_private))
+    component_dir = repository / "components"
+    component_dir.mkdir()
+    component_files: dict[str, Path] = {}
+    for name in (
+        "ring_contract",
+        "prompt_bundle",
+        "evaluator_bundle",
+        "live_runner",
+        "replay_verifier",
+        "replay_runner",
+        "release_verifier",
+        "packet_builder",
+        "packet_runner",
+        "capture_producer",
+        "capture_producer_cli",
+    ):
+        component = component_dir / f"{name}.py"
+        component.write_text(f"# frozen {name} fixture\n")
+        component_files[name] = component
     frozen_components: dict[str, str] = {
         "capture_workload": f"workload.json@sha256:{_sha(workload)}",
-        "ring_contract": "fixture-ring-contract@sha256:" + "1" * 64,
-        "prompt_bundle": "fixture-prompt-bundle@sha256:" + "2" * 64,
-        "evaluator_bundle": "fixture-evaluator-bundle@sha256:" + "3" * 64,
+        **{
+            name: f"components/{path.name}@sha256:{_sha(path)}"
+            for name, path in component_files.items()
+        },
         "routing": "provider-free-fixture.v1",
     }
     if resolved:
@@ -213,6 +233,7 @@ def _fixture(
         "executor_private": executor_private,
         "api_private": api_private,
         "executor_public": executor_public,
+        "capture_producer_component": component_files["capture_producer"],
     }
 
 
@@ -263,6 +284,30 @@ class _FakeExecutor:
                     "change_applied": True,
                 })
         return rows
+
+
+def test_preflight_rejects_frozen_capture_producer_drift_before_execution(
+    tmp_path: Path,
+):
+    fixture = _fixture(tmp_path)
+    executor = _FakeExecutor(fixture["evidence"])  # type: ignore[arg-type]
+    producer = _producer(
+        fixture,
+        executor=executor,
+        persistence_runner=_FakePersistenceRunner(),
+    )
+    component: Path = fixture["capture_producer_component"]  # type: ignore[assignment]
+    component.write_text("# drifted capture producer fixture\n")
+
+    with pytest.raises(
+        ValueError,
+        match="capture_producer implementation drifted",
+    ):
+        producer.produce()
+
+    assert executor.preflight_calls == 0
+    assert executor.execute_calls == 0
+    assert not (fixture["evidence"] / "capture").exists()  # type: ignore[operator]
 
 
 class _FakePersistenceRunner:

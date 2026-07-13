@@ -39,6 +39,97 @@ from facetta.ring_evals import evaluate_release_gates
 Json = dict[str, Any]
 
 
+_RELEASE_AUTHORITY_KEY_FIELDS = (
+    ("canonical_api_runner", "canonical_api_runner_public_key"),
+    ("gia_reviewer", "reviewer_public_key"),
+    ("founder", "founder_public_key"),
+    ("jewelry_designer", "designer_reviewer_public_key"),
+    ("staging_reviewer", "staging_reviewer_public_key"),
+)
+
+
+def release_authority_key_separation(config: Json) -> Json:
+    """Audit cryptographic separation across every enrolled release role.
+
+    A signature proves control of a key, not independence between people.  The
+    frozen release claims nevertheless require different signing authorities
+    for execution, canonical persistence, GIA review, founder approval,
+    jewelry-designer acceptance, and staging review.  Reusing either a key id
+    or the exact public-key bytes across roles therefore fails closed.
+
+    Missing roles are deliberately reported but are not errors here: each gate
+    already requires the authorities it consumes.  This helper owns only the
+    cross-role uniqueness invariant and is shared by all release verifiers.
+    """
+
+    identities: list[Json] = []
+    trust = config.get("executor_trust")
+    if isinstance(trust, dict) and trust.get("status") == "enrolled":
+        key_id = trust.get("key_id")
+        public_key = trust.get("public_key")
+        public_key_sha256 = (
+            public_key.rsplit("@sha256:", 1)[1]
+            if isinstance(public_key, str) and "@sha256:" in public_key
+            else None
+        )
+        if (
+            isinstance(key_id, str)
+            and key_id.strip()
+            and isinstance(public_key_sha256, str)
+            and len(public_key_sha256) == 64
+        ):
+            identities.append({
+                "role": "executor",
+                "key_id": key_id,
+                "public_key_sha256": public_key_sha256,
+            })
+
+    for role, field in _RELEASE_AUTHORITY_KEY_FIELDS:
+        configured = config.get(field)
+        if not isinstance(configured, dict):
+            continue
+        key_id = configured.get("key_id")
+        public_key_sha256 = configured.get("sha256")
+        if (
+            isinstance(key_id, str)
+            and key_id.strip()
+            and isinstance(public_key_sha256, str)
+            and len(public_key_sha256) == 64
+        ):
+            identities.append({
+                "role": role,
+                "key_id": key_id,
+                "public_key_sha256": public_key_sha256,
+            })
+
+    errors: list[str] = []
+    for field, label in (
+        ("key_id", "key_id"),
+        ("public_key_sha256", "public-key bytes"),
+    ):
+        roles_by_identity: dict[str, list[str]] = defaultdict(list)
+        for identity in identities:
+            roles_by_identity[str(identity[field])].append(str(identity["role"]))
+        for roles in roles_by_identity.values():
+            if len(roles) > 1:
+                errors.append(
+                    "release authority roles must use distinct "
+                    f"{label}: {', '.join(sorted(roles))}"
+                )
+
+    configured_roles = {str(row["role"]) for row in identities}
+    all_roles = {"executor"} | {
+        role for role, _ in _RELEASE_AUTHORITY_KEY_FIELDS
+    }
+    return {
+        "status": "pass" if not errors else "fail",
+        "configured_roles": sorted(configured_roles),
+        "missing_roles": sorted(all_roles - configured_roles),
+        "identities": sorted(identities, key=lambda row: str(row["role"])),
+        "errors": errors,
+    }
+
+
 def _valid_score(value: object) -> bool:
     return (
         type(value) in {int, float}
@@ -251,6 +342,7 @@ def _validate_config(
                 errors.append(
                     "canonical API runner public-key file hash differs from config"
                 )
+    errors.extend(release_authority_key_separation(config)["errors"])
     return errors
 
 
@@ -295,7 +387,8 @@ def validate_frozen_component_pins(
     # components gets the same path and byte-level pin verification.
     for key in (
         "capture_workload", "capture_planner", "capture_planner_cli",
-        "persistence_verifier", "evidence_path_contract",
+        "capture_producer", "capture_producer_cli", "persistence_verifier",
+        "evidence_path_contract",
     ):
         if key not in frozen:
             continue
@@ -1106,6 +1199,7 @@ def compile_frozen_corpus_gate(
         manifest_hash,
         resolved_repository_root,
     )
+    authority_key_separation = release_authority_key_separation(config)
     path_errors: list[str] = []
     resolved_evidence_root: Path | None = None
     resolved_source_dir: Path | None = None
@@ -1242,6 +1336,7 @@ def compile_frozen_corpus_gate(
         },
         "implementation": {
             "frozen_components": config.get("frozen_components"),
+            "authority_key_separation": authority_key_separation,
         },
         "evidence": evidence_binding,
         "definition": {

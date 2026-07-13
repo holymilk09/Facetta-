@@ -23,6 +23,13 @@ def _transport(method: str, url: str, token: str) -> HttpResult:
     assert method in {"GET", "OPTIONS"}
     if method == "OPTIONS":
         return HttpResult(404)
+    if url.endswith("/health"):
+        return HttpResult(200, "application/json", {
+            "status": "ok",
+            "service": "facetta",
+            "deployment_revision": "0123456789abcdef",
+            "persistence_backend": "postgresql",
+        })
     if token == "":
         return HttpResult(401)
     actor = "a" * 32 if token == "secret-a" else "b" * 32
@@ -58,7 +65,7 @@ def test_read_only_two_user_probe_passes_without_logging_secrets():
     assert result["passed"] is True
     assert result["provider_calls"] == 0
     assert result["mutations"] == 0
-    assert result["schema_version"] == "facetta-staging-isolation.v2"
+    assert result["schema_version"] == "facetta-staging-isolation.v3"
     assert result["target"]["deployment_revision"] == "0123456789abcdef"
     assert len(result["target"]["origin_sha256"]) == 64
     assert len(result["target"]["fixture_set_sha256"]) == 64
@@ -76,6 +83,55 @@ def test_cross_tenant_project_success_fails_probe():
     result = run_probe(_config(), leaky_transport)
     failed = {check["name"] for check in result["checks"] if not check["passed"]}
     assert "user_A_cannot_read_other_project" in failed
+    assert result["passed"] is False
+
+
+def test_operator_cannot_claim_a_revision_the_live_process_does_not_report():
+    def mismatched_revision(method: str, url: str, token: str) -> HttpResult:
+        if url.endswith("/health"):
+            return HttpResult(200, "application/json", {
+                "status": "ok",
+                "service": "facetta",
+                "deployment_revision": "different-live-revision",
+                "persistence_backend": "postgresql",
+            })
+        return _transport(method, url, token)
+
+    result = run_probe(_config(), mismatched_revision)
+    failed = {check["name"] for check in result["checks"] if not check["passed"]}
+    assert failed == {"live_deployment_revision_matches"}
+    assert result["passed"] is False
+
+
+def test_missing_live_revision_fails_closed():
+    def missing_revision(method: str, url: str, token: str) -> HttpResult:
+        if url.endswith("/health"):
+            return HttpResult(200, "application/json", {
+                "status": "ok", "service": "facetta",
+                "persistence_backend": "postgresql",
+            })
+        return _transport(method, url, token)
+
+    result = run_probe(_config(), missing_revision)
+    failed = {check["name"] for check in result["checks"] if not check["passed"]}
+    assert failed == {"live_deployment_revision_matches"}
+    assert result["passed"] is False
+
+
+def test_non_postgres_staging_persistence_fails_closed():
+    def sqlite_backend(method: str, url: str, token: str) -> HttpResult:
+        if url.endswith("/health"):
+            return HttpResult(200, "application/json", {
+                "status": "ok",
+                "service": "facetta",
+                "deployment_revision": "0123456789abcdef",
+                "persistence_backend": "sqlite",
+            })
+        return _transport(method, url, token)
+
+    result = run_probe(_config(), sqlite_backend)
+    failed = {check["name"] for check in result["checks"] if not check["passed"]}
+    assert failed == {"live_persistence_is_postgresql"}
     assert result["passed"] is False
 
 

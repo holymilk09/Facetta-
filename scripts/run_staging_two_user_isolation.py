@@ -198,6 +198,35 @@ def run_probe(config: StagingConfig, transport: Transport = http_transport) -> d
             "passed": observed == expected,
         })
 
+    # Bind the operator-selected release identifier to the process reached at
+    # the exact HTTPS origin.  Before this check, a caller could label evidence
+    # with any syntactically valid revision even when staging ran other code.
+    live_health = transport("GET", f"{config.base_url}/health", "")
+    health_body = (
+        live_health.json_body
+        if isinstance(live_health.json_body, dict) else {}
+    )
+    record(
+        "live_health_is_facetta",
+        True,
+        (
+            live_health.status == 200
+            and live_health.content_type == "application/json"
+            and health_body.get("status") == "ok"
+            and health_body.get("service") == "facetta"
+        ),
+    )
+    record(
+        "live_deployment_revision_matches",
+        True,
+        health_body.get("deployment_revision") == config.deployment_revision,
+    )
+    record(
+        "live_persistence_is_postgresql",
+        True,
+        health_body.get("persistence_backend") == "postgresql",
+    )
+
     for own, other in (
         (config.first, config.second),
         (config.second, config.first),
@@ -319,7 +348,7 @@ def run_probe(config: StagingConfig, transport: Transport = http_transport) -> d
         sort_keys=True,
     ).encode("utf-8")).hexdigest()
     return {
-        "schema_version": "facetta-staging-isolation.v2",
+        "schema_version": "facetta-staging-isolation.v3",
         "run_kind": "read_only_two_principal_staging_probe",
         "target": {
             "origin_sha256": hashlib.sha256(

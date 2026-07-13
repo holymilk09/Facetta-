@@ -139,7 +139,7 @@ def _fixture(tmp_path: Path) -> dict[str, Any]:
     ]
     staging_results = tmp_path / "staging-results.json"
     _json(staging_results, {
-        "schema_version": "facetta-staging-isolation.v2",
+        "schema_version": "facetta-staging-isolation.v3",
         "run_kind": "read_only_two_principal_staging_probe",
         "target": {
             "origin_sha256": "a" * 64,
@@ -364,6 +364,29 @@ def test_designer_approval_is_separate_and_must_verify(tmp_path: Path):
     assert result["external_beta_ready"] is False
     assert result["signatures"]["designer"]["status"] == "not_verified"
     assert any("summary differs" in error for error in result["errors"])
+
+
+def test_designer_and_staging_reviewer_cannot_share_public_key(tmp_path: Path):
+    paths = _fixture(tmp_path)
+    config = json.loads(paths["config"].read_text())
+    designer = config["designer_reviewer_public_key"]
+    config["staging_reviewer_public_key"] = {
+        "key_id": "staging-distinct-label",
+        "path": designer["path"],
+        "sha256": designer["sha256"],
+    }
+    _json(paths["config"], config)
+
+    result = _verify(paths)
+
+    separation = result["authority_key_separation"]
+    assert separation["status"] == "fail"
+    assert any(
+        "jewelry_designer, staging_reviewer" in error
+        and "public-key bytes" in error
+        for error in separation["errors"]
+    )
+    assert result["external_beta_ready"] is False
 
 
 def test_frozen_combined_verifier_pin_must_not_drift(tmp_path: Path):

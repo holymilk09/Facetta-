@@ -19,7 +19,10 @@ from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 from cryptography.hazmat.primitives.serialization import load_pem_public_key
 
-from facetta.frozen_corpus_gate import file_sha256
+from facetta.frozen_corpus_gate import (
+    file_sha256,
+    release_authority_key_separation,
+)
 from facetta.frozen_corpus_release import verify_frozen_corpus_release
 
 
@@ -27,7 +30,7 @@ Json = dict[str, Any]
 CorpusVerifier = Callable[..., Json]
 
 CORPUS_DECISION_SCHEMA = "facetta-frozen-corpus-release-decision.v2"
-STAGING_RESULT_SCHEMA = "facetta-staging-isolation.v2"
+STAGING_RESULT_SCHEMA = "facetta-staging-isolation.v3"
 STAGING_RUN_KIND = "read_only_two_principal_staging_probe"
 STAGING_APPROVAL_SCHEMA = "facetta-staging-isolation-approval.v1"
 DESIGNER_APPROVAL_SCHEMA = "facetta-designer-acceptance-approval.v1"
@@ -37,7 +40,11 @@ EXTERNAL_BETA_DECISION_SCHEMA = "facetta-external-beta-release-decision.v1"
 def required_staging_checks() -> dict[str, object]:
     """Return the exact production-isolation observations required to pass."""
 
-    checks: dict[str, object] = {}
+    checks: dict[str, object] = {
+        "live_health_is_facetta": True,
+        "live_deployment_revision_matches": True,
+        "live_persistence_is_postgresql": True,
+    }
     for label in ("A", "B"):
         checks.update({
             f"user_{label}_reads_own_project": 200,
@@ -413,6 +420,8 @@ def verify_external_beta_release(
     staging = _load_object(staging_results_path)
     staging_approval = _load_object(staging_approval_path)
     errors: list[str] = []
+    authority_key_separation = release_authority_key_separation(config)
+    errors.extend(authority_key_separation["errors"])
 
     corpus_exit_hash = _zero_exit_code(
         corpus_exit_code_path, "frozen-corpus finalizer", errors,
@@ -646,5 +655,6 @@ def verify_external_beta_release(
                 "key_id": key_id,
             },
         },
+        "authority_key_separation": authority_key_separation,
         "errors": errors,
     }

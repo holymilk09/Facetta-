@@ -5,6 +5,50 @@ Read `CLAUDE.md` (constitution — binding), `README.md` (endpoints/layout),
 `docs/DATA_WANTED.md` (open research asks). This file is the delta: what is
 DONE beyond the original TASKS.md build order, and what is next.
 
+## 2026-07-13 external-evidence authority checkpoint
+
+The remaining beta gates now bind the code and deployment they claim to test.
+The frozen corpus configuration hash-pins the capture producer and its CLI,
+and producer preflight verifies those bytes before executor preflight or any
+provider activity. A drifted producer therefore cannot spend calls or create a
+capture that only fails later during release verification.
+
+Release approval also enforces cryptographic role separation. Executor,
+canonical API runner, GIA reviewer, founder, independent jewelry designer, and
+staging reviewer must use unique key IDs and unique Ed25519 public-key bytes.
+The corpus compiler, founder finalizer, and combined external-beta verifier all
+recompute that audit. This proves distinct enrolled signing identities; the
+real-world people, qualifications, and independence still require external
+enrollment records and human verification.
+
+The live staging probe is now `facetta-staging-isolation.v3`. It calls the exact
+HTTPS origin's `/health`, requires Facetta to report the operator-selected
+immutable deployment revision, and requires the initialized persistence engine
+to be PostgreSQL before checking both principals in both directions. A caller
+can no longer relabel evidence from a different deployment or pass the gate on
+the local SQLite fallback.
+
+Validation at this checkpoint is green: 1,650 backend tests, the six production
+surface/route checks, all 35 mobile Jest suites (248 tests), TypeScript, Expo web
+export, Ruff, Python byte-compilation, and frozen-definition validation. The
+credential-free staging command exits `77` with `secrets_logged: false`, as
+required, instead of fabricating live evidence.
+
+The production frozen definition still passes provider-free validation at 144
+integrity sources, 58 ring-quality sources, and 1,044 logical evaluation
+sequences, with zero provider calls and `corpus_gate_ready: false`. The reviewed
+assignment bundle, six separately controlled signing identities, source files,
+secured execution, completed reviews, founder approval, and live staging
+fixtures remain external and unenrolled.
+
+The next internal evaluation-quality gap is explicit: the GIA review packet is
+complete and signed but not blind. It exposes machine acceptance and scores,
+and human rows currently record a Boolean decision without a criterion-level
+jewelry rubric or rationale. Reviewer qualification is process-attested rather
+than credential-verified. Do not describe the remaining review as unbiased or
+credential-verified until a blinded, randomized, criterion-level review
+artifact and enrollment evidence are implemented and exercised.
+
 ## 2026-07-13 inspectable inputs, canonical orchestration, and honest corpus checkpoint
 
 Studio Create now treats every role-labeled reference as a consequential

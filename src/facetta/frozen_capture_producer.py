@@ -42,6 +42,7 @@ from facetta.frozen_evidence_paths import (
     evidence_root as resolve_evidence_root,
     validate_artifact_index,
 )
+from facetta.frozen_corpus_gate import validate_frozen_component_pins
 from facetta.frozen_persistence_attestation import (
     ATTESTATION_SCHEMA,
     CANONICAL_API_SCHEMA,
@@ -536,6 +537,15 @@ class FrozenCaptureProducer:
             raise ValueError("canonical persistence attestation_id is empty")
 
         config = _load_object(self.config_path)
+        implementation_errors = validate_frozen_component_pins(
+            config,
+            self.repository_root,
+        )
+        if implementation_errors:
+            raise ValueError(
+                "frozen capture implementation drifted: "
+                + "; ".join(implementation_errors)
+            )
         executor_key = _load_enrolled_executor_key(config, self.repository_root)
         api_key = _load_enrolled_api_key(config, self.repository_root)
         _challenge_signer(self.executor_signer, executor_key)

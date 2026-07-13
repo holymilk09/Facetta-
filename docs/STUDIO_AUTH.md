@@ -39,8 +39,17 @@ FACETTA_ENV=production
 FACETTA_AUTH_MODE=supabase
 FACETTA_SUPABASE_URL=https://YOUR_PROJECT_REF.supabase.co
 FACETTA_SUPABASE_AUDIENCE=authenticated
+FACETTA_DEPLOYMENT_REVISION=IMMUTABLE_COMMIT_OR_RELEASE_ID
 FACETTA_CORS_ORIGINS=https://studio.example.com
 ```
+
+`GET /health` reports `FACETTA_DEPLOYMENT_REVISION` only when it is a safe,
+nonempty release identifier. The external-beta staging probe requires the
+live process to report the exact revision selected for approval; a missing,
+malformed, or different value fails the gate.
+The same health response reports the initialized database dialect; external
+beta requires `postgresql`, while a local SQLite fallback cannot satisfy the
+live persistence gate.
 
 The JWKS URL is derived from the validated project URL and cached for no longer
 than ten minutes. Only ES256 and RS256 are accepted; shared-secret HS256 tokens

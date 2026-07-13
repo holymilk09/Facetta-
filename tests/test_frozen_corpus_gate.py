@@ -13,6 +13,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from facetta.frozen_corpus_gate import (
     canonical_evidence_payload,
     compile_frozen_corpus_gate,
+    release_authority_key_separation,
 )
 from facetta.frozen_evidence_paths import build_artifact_index
 from facetta.frozen_persistence_attestation import (
@@ -171,7 +172,8 @@ def _fixture(tmp_path: Path) -> dict[str, Any]:
     for name in (
         "ring_contract", "prompt_bundle", "evaluator_bundle", "live_runner",
         "replay_verifier", "replay_runner", "release_verifier",
-        "packet_builder", "packet_runner",
+        "packet_builder", "packet_runner", "capture_producer",
+        "capture_producer_cli",
     ):
         path = components / f"{name}.py"
         path.write_text(f"# frozen {name}\n")
@@ -320,6 +322,7 @@ def _fixture(tmp_path: Path) -> dict[str, Any]:
         "workload": workload,
         "evidence": evidence, "first": first, "second": second,
         "prompt_bundle": component_files["prompt_bundle"],
+        "capture_producer": component_files["capture_producer"],
         "private_key": private_key, "reviewer_key": reviewer_key,
         "runner_private_key": runner_private_key, "runner_key": runner_key,
         "render_candidate": render_candidate, "edit_candidate": edit_candidate,
@@ -478,6 +481,104 @@ def test_pinned_implementation_drift_fails_definition(tmp_path: Path):
     result = _run(paths, evidence=False)
     assert result["definition"]["status"] == "fail"
     assert any("prompt_bundle implementation drifted" in error
+               for error in result["definition"]["errors"])
+
+
+def test_release_authorities_cannot_reuse_public_key_bytes(tmp_path: Path):
+    paths = _fixture(tmp_path)
+    config = json.loads(paths["config"].read_text())
+    config["canonical_api_runner_public_key"] = {
+        "key_id": "canonical-api-runner-distinct-label",
+        "path": paths["reviewer_key"].name,
+        "sha256": _sha(paths["reviewer_key"]),
+    }
+    _json(paths["config"], config)
+
+    result = _run(paths, evidence=False)
+
+    separation = result["implementation"]["authority_key_separation"]
+    assert separation["status"] == "fail"
+    assert any(
+        "canonical_api_runner, gia_reviewer" in error
+        and "public-key bytes" in error
+        for error in separation["errors"]
+    )
+    assert result["definition"]["status"] == "fail"
+    assert result["corpus_gate_ready"] is False
+
+
+def test_release_authorities_cannot_reuse_key_ids(tmp_path: Path):
+    paths = _fixture(tmp_path)
+    config = json.loads(paths["config"].read_text())
+    config["canonical_api_runner_public_key"]["key_id"] = "test-reviewer-v1"
+    _json(paths["config"], config)
+
+    result = _run(paths, evidence=False)
+
+    separation = result["implementation"]["authority_key_separation"]
+    assert separation["status"] == "fail"
+    assert any(
+        "canonical_api_runner, gia_reviewer" in error
+        and "key_id" in error
+        for error in separation["errors"]
+    )
+    assert result["definition"]["status"] == "fail"
+    assert result["corpus_gate_ready"] is False
+
+
+def test_separation_audit_covers_all_six_release_authorities():
+    config = {
+        "executor_trust": {
+            "status": "enrolled",
+            "key_id": "executor-v1",
+            "public_key": f"keys/executor.pub@sha256:{'1' * 64}",
+        },
+        "canonical_api_runner_public_key": {
+            "key_id": "runner-v1", "sha256": "2" * 64,
+        },
+        "reviewer_public_key": {
+            "key_id": "gia-v1", "sha256": "3" * 64,
+        },
+        "founder_public_key": {
+            "key_id": "founder-v1", "sha256": "4" * 64,
+        },
+        "designer_reviewer_public_key": {
+            "key_id": "designer-v1", "sha256": "5" * 64,
+        },
+        "staging_reviewer_public_key": {
+            "key_id": "staging-v1", "sha256": "6" * 64,
+        },
+    }
+
+    audit = release_authority_key_separation(config)
+    assert audit["status"] == "pass"
+    assert audit["configured_roles"] == [
+        "canonical_api_runner",
+        "executor",
+        "founder",
+        "gia_reviewer",
+        "jewelry_designer",
+        "staging_reviewer",
+    ]
+    assert audit["missing_roles"] == []
+
+    config["executor_trust"]["public_key"] = (
+        f"keys/executor.pub@sha256:{'4' * 64}"
+    )
+    duplicate = release_authority_key_separation(config)
+    assert duplicate["status"] == "fail"
+    assert any(
+        "executor, founder" in error and "public-key bytes" in error
+        for error in duplicate["errors"]
+    )
+
+
+def test_pinned_capture_producer_drift_fails_definition(tmp_path: Path):
+    paths = _fixture(tmp_path)
+    paths["capture_producer"].write_text("# changed capture producer\n")
+    result = _run(paths, evidence=False)
+    assert result["definition"]["status"] == "fail"
+    assert any("capture_producer implementation drifted" in error
                for error in result["definition"]["errors"])
 
 

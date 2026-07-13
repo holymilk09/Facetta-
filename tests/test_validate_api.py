@@ -14,6 +14,17 @@ def test_health():
     response = client.get("/health")
     assert response.status_code == 200
     assert response.json()["status"] == "ok"
+    assert response.json()["persistence_backend"] == "sqlite"
+
+
+def test_health_reports_only_a_safe_configured_deployment_revision(monkeypatch):
+    monkeypatch.setenv("FACETTA_DEPLOYMENT_REVISION", "0123456789abcdef")
+    assert client.get("/health").json()["deployment_revision"] == (
+        "0123456789abcdef"
+    )
+
+    monkeypatch.setenv("FACETTA_DEPLOYMENT_REVISION", "unsafe revision/value")
+    assert client.get("/health").json()["deployment_revision"] is None
 
 
 def test_valid_spec_is_echoed_back(example_spec):

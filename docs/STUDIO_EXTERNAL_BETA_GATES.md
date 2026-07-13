@@ -19,8 +19,10 @@ exit code and the generated JSON alongside the human sign-off.
   hashes pinned by
   `docs/evals/frozen-founder-corpus-v1/manifest.json`.
 - `docs/evals/frozen-founder-corpus-v1/config.json` must still match its pinned
-  manifest and implementation hashes. Its current
-  `current_evidence_status` is `not_run`; its executor, canonical API runner,
+  manifest and implementation hashes, including the capture producer and its
+  CLI. Because every capture binds the exact config hash, evidence produced by
+  a different or modified producer fails frozen-definition validation. Its
+  current `current_evidence_status` is `not_run`; its executor, canonical API runner,
   GIA reviewer, founder, jewelry-designer reviewer, and staging-release
   reviewer keys are unenrolled; and it has no resolved assignment bundle, so
   the gate cannot pass yet.
@@ -235,6 +237,13 @@ different canonical project, Design Family, and image asset in the deployed
 production-filtered staging API. The probe is read-only and must not be used to
 seed those records.
 
+Seed the records, then recycle every staging API replica before running the
+probe and retain the platform deployment/restart event in the release ticket.
+The machine result proves that a new process reads both principals' records
+through the initialized PostgreSQL backend. It does not by itself prove backup
+restore, regional failover, or disaster-recovery objectives; those remain
+separate infrastructure exercises.
+
 Inject these exact environment variables from the staging secret manager:
 
 ```text
@@ -252,7 +261,12 @@ FACETTA_STAGING_USER_B_ASSET_ID
 
 `FACETTA_STAGING_BASE_URL` must be an exact HTTPS origin with no path, query,
 fragment, or embedded credentials. `FACETTA_STAGING_DEPLOYMENT_REVISION` must
-be the immutable deployed commit or release identifier being approved. Each
+be the immutable deployed commit or release identifier being approved, and the
+deployed API must have the exact same value injected as
+`FACETTA_DEPLOYMENT_REVISION`. The probe reads this value from the live
+`GET /health` response; an operator-supplied label alone cannot bind evidence
+to deployed code. That health response must also report the initialized
+`postgresql` persistence backend; the local SQLite fallback cannot pass. Each
 access token must be a Supabase JWT whose `sub` is a UUID, the two subjects
 must differ, and all paired record IDs must differ.
 
@@ -277,7 +291,7 @@ test "$GATE_EXIT" -eq 0
 ```
 
 The redirected `results.json` and adjacent `exit-code.txt` are the canonical
-machine artifacts. The v2 result does not print credentials, response bodies,
+machine artifacts. The v3 result does not print credentials, response bodies,
 or the staging origin. It binds the origin by SHA-256, the immutable deployment
 revision, a hash of the two seeded fixture identities/records, and a
 timezone-qualified probe time; it also declares `secrets_logged`,
@@ -304,6 +318,9 @@ The command must exit `0`; `results.json.passed` must be `true`; every entry in
 
 In both A-to-B and B-to-A directions, the probe must prove:
 
+- the exact HTTPS origin reports Facetta health and the selected immutable
+  deployment revision, backed by the initialized PostgreSQL persistence
+  engine;
 - own project, history, image, and family reads succeed;
 - project ownership equals the authenticated JWT subject;
 - cross-principal project/history/image reads return `403`, cross-family
@@ -330,9 +347,9 @@ the same candidates.
 
 The provider-free combined controller freshly reruns the founder/corpus
 verifier, requires the retained corpus decision to match that recomputation,
-verifies exact check coverage and immutable deployment binding in the staging
-v2 result, verifies both additional Ed25519 signatures against keys frozen in
-the corpus config, and binds both retained exit-code files. Only this command
+verifies exact check coverage and live immutable deployment binding in the
+staging v3 result, verifies both additional Ed25519 signatures against keys
+frozen in the corpus config, and binds both retained exit-code files. Only this command
 may emit `external_beta_ready: true`:
 
 ```bash

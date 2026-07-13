@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from contextlib import asynccontextmanager
+import re
 
 from fastapi import APIRouter, Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -28,6 +29,7 @@ from facetta.catalog_component_targeting import (  # noqa: E402
 from facetta.catalog_structural_mapper_composition import (  # noqa: E402
     configure_attested_catalog_structural_mapper_from_environment,
 )
+from facetta.db import get_engine  # noqa: E402
 
 
 @asynccontextmanager
@@ -38,10 +40,28 @@ async def lifespan(_app: FastAPI):
 
 def health() -> dict:
     mapper = catalog_structural_component_mapper_status()
+    persistence_backend = get_engine().dialect.name
+    configured_revision = (
+        env_value("FACETTA_DEPLOYMENT_REVISION") or ""
+    ).strip()
+    deployment_revision = (
+        configured_revision
+        if re.fullmatch(r"[A-Za-z0-9._-]{7,128}", configured_revision)
+        else None
+    )
     return {
         "status": "ok",
         "service": "facetta",
         "version": __version__,
+        # A staging release gate must compare its expected immutable release
+        # identifier with a value emitted by the process it actually reached.
+        # Missing or malformed configuration stays explicit rather than
+        # silently falling back to a package version or operator assertion.
+        "deployment_revision": deployment_revision,
+        # The live external-beta probe requires PostgreSQL. Tenant reads below
+        # exercise the same initialized engine, so this is a deployment fact,
+        # not an operator label from the probe environment.
+        "persistence_backend": persistence_backend,
         # Structural component refinement is optional.  The service remains
         # healthy while this capability is disabled, but operators can see
         # whether an attested mapper is absent, unhealthy, or ready.

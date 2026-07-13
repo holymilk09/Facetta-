@@ -15,6 +15,7 @@ from cryptography.hazmat.primitives.serialization import load_pem_public_key
 
 from facetta.frozen_corpus_gate import (
     file_sha256,
+    release_authority_key_separation,
     validate_frozen_component_pins,
 )
 
@@ -376,6 +377,8 @@ def verify_frozen_corpus_release(
     results_hash = file_sha256(results_path)
     config_hash = file_sha256(config_path)
     root = repository_root or Path(__file__).resolve().parents[2]
+    authority_key_separation = release_authority_key_separation(config)
+    errors.extend(authority_key_separation["errors"])
 
     if results.get("schema_version") != GATE_RESULT_SCHEMA:
         errors.append("unsupported frozen-corpus gate result schema_version")
@@ -549,6 +552,7 @@ def verify_frozen_corpus_release(
             ),
         },
         "approval_sha256": file_sha256(approval_path),
+        "authority_key_separation": authority_key_separation,
         "founder_signature": {"status": signature_status, "key_id": key_id},
         "errors": errors,
     }
