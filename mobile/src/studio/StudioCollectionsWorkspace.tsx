@@ -41,6 +41,10 @@ export interface StudioCollectionsWorkspaceProps {
   onVaryCurrent: () => void;
   /** Returns the selected exact variation to the canonical Refine workspace. */
   onContinueRefining?: () => void;
+  /** Opens Present with the currently active immutable revision as its source. */
+  onPresentCurrent?: () => void;
+  /** Opens Factory only when the host has verified this exact revision is eligible. */
+  onPrepareFactoryCurrent?: () => void;
   /** Host-owned authenticated delivery. Protected bytes are fetched only after Export. */
   deliverProtectedFile?: (request: {
     url: string;
@@ -195,6 +199,8 @@ export function StudioCollectionsWorkspace({
   onProjectChanged,
   onVaryCurrent,
   onContinueRefining,
+  onPresentCurrent,
+  onPrepareFactoryCurrent,
   onShowAllFamilies,
   deliverProtectedFile,
 }: StudioCollectionsWorkspaceProps) {
@@ -271,7 +277,14 @@ export function StudioCollectionsWorkspace({
       setLoading(false);
     });
     return () => { current = false; };
-  }, [api, createdBy, project?.root_id, viewingAllFamilies]);
+  }, [
+    api,
+    createdBy,
+    project?.active_asset_id,
+    project?.active_design_version,
+    project?.root_id,
+    viewingAllFamilies,
+  ]);
 
   const exportSavedOutput = async (output: AssetSummary): Promise<void> => {
     if (deliverProtectedFile === undefined) return;
@@ -501,6 +514,33 @@ export function StudioCollectionsWorkspace({
           )}
         </View>
       </View>
+
+      {onPresentCurrent !== undefined && (
+        <View style={styles.destinationCard}>
+          <View style={styles.destinationCopy}>
+            <Text style={styles.eyebrow}>Use this exact revision</Text>
+            <Text style={styles.sectionTitle}>Ready for someone else to see?</Text>
+            <Text style={styles.sectionCopy}>
+              Create client or marketing imagery from the active revision without changing it.
+            </Text>
+          </View>
+          <View style={styles.destinationActions}>
+            <Button
+              title="Present this revision"
+              disabled={activeAssetId === null}
+              onPress={onPresentCurrent}
+            />
+            {onPrepareFactoryCurrent !== undefined && (
+              <Button
+                title="Prepare Factory review"
+                kind="ghost"
+                disabled={activeAssetId === null}
+                onPress={onPrepareFactoryCurrent}
+              />
+            )}
+          </View>
+        </View>
+      )}
 
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Variations</Text>
@@ -739,6 +779,12 @@ const styles = StyleSheet.create({
   familyCover: { width: '100%', height: 260, backgroundColor: theme.blush },
   familyCopy: { padding: 16 },
   familyActions: { alignItems: 'flex-start', marginTop: 12 },
+  destinationCard: {
+    borderWidth: 1, borderColor: theme.line, borderRadius: 16, padding: 14,
+    backgroundColor: theme.card, marginBottom: 14, gap: 14,
+  },
+  destinationCopy: { maxWidth: 520 },
+  destinationActions: { alignItems: 'flex-start', gap: 8 },
   eyebrow: {
     color: theme.accent, fontSize: 10, fontWeight: '700', letterSpacing: 1.2,
     textTransform: 'uppercase', marginBottom: 5,

@@ -2,6 +2,7 @@
 
 import React from 'react';
 import { fireEvent, render, screen, waitFor } from '@testing-library/react-native';
+import { Text } from 'react-native';
 
 import type { ProjectDetail } from '../trusted/types';
 import {
@@ -89,6 +90,7 @@ const callbacks = () => ({
   onProjectChanged: jest.fn(),
   onVaryCurrent: jest.fn(),
   onContinueRefining: jest.fn(),
+  onPresentCurrent: jest.fn(),
 });
 
 describe('StudioCollectionsWorkspace', () => {
@@ -423,6 +425,83 @@ describe('StudioCollectionsWorkspace', () => {
     }));
   });
 
+  test('refreshes history after Restore and presents the newly active immutable revision', async () => {
+    const restoredHistory = {
+      ...history,
+      active_asset_id: 'asset_3',
+      revisions: [
+        ...history.revisions,
+        {
+          ...history.revisions[0],
+          revision: 3,
+          asset_id: 'asset_3',
+          parent_asset_id: 'asset_2',
+          design_version: 3,
+          action: 'restore' as const,
+          change_summary: 'Restored Revision 1 as a new revision.',
+          restored_from_asset_id: 'asset_1',
+          created_at: '2026-07-12T03:00:00Z',
+        },
+      ],
+    };
+    const restoredProject: ProjectDetail = {
+      ...project,
+      active_asset_id: 'asset_3',
+      active_design_version: 3,
+      cover_asset_id: 'asset_3',
+      primary_revision_count: 3,
+    };
+    const getStudioProjectHistory = jest.fn()
+      .mockResolvedValueOnce({ data: history, error: null, status: 200 })
+      .mockResolvedValueOnce({ data: restoredHistory, error: null, status: 200 });
+    const client = api({
+      getStudioProjectHistory,
+      restoreStudioRevision: jest.fn(async () => ({
+        data: {
+          status: 'restored_as_new_revision' as const,
+          restored_from_asset_id: 'asset_1',
+          new_asset_id: 'asset_3',
+          new_design_version: 3,
+          spec_change: [],
+          project: restoredProject,
+        },
+        error: null,
+        status: 201,
+      })),
+    });
+    const onPresent = jest.fn();
+
+    function CollectionsHarness() {
+      const [currentProject, setCurrentProject] = React.useState(project);
+      return (
+        <>
+          <Text>Harness active asset: {currentProject.active_asset_id}</Text>
+          <StudioCollectionsWorkspace
+            api={client}
+            project={currentProject}
+            createdBy="usr_designer"
+            onOpenProject={jest.fn()}
+            onProjectChanged={setCurrentProject}
+            onVaryCurrent={jest.fn()}
+            onContinueRefining={jest.fn()}
+            onPresentCurrent={() => onPresent(currentProject.active_asset_id)}
+          />
+        </>
+      );
+    }
+
+    await render(<CollectionsHarness />);
+    await screen.findByLabelText('Show revision history (2)');
+    await fireEvent.press(screen.getByLabelText('Show revision history (2)'));
+    await fireEvent.press(screen.getByText('Restore revision 1 as new'));
+
+    expect(await screen.findByText('Harness active asset: asset_3')).toBeTruthy();
+    expect(await screen.findByLabelText('Show revision history (3)')).toBeTruthy();
+    expect(getStudioProjectHistory).toHaveBeenCalledTimes(2);
+    await fireEvent.press(screen.getByText('Present this revision'));
+    expect(onPresent).toHaveBeenCalledWith('asset_3');
+  });
+
   test('keeps dense family records collapsed and continues refining the exact selected variation', async () => {
     const handlers = callbacks();
     await render(
@@ -445,6 +524,10 @@ describe('StudioCollectionsWorkspace', () => {
     expect(screen.queryByLabelText('Compare revision 1')).toBeNull();
     expect(screen.queryByText('Restore revision 1 as new')).toBeNull();
 
+    await fireEvent.press(screen.getByText('Present this revision'));
+    expect(handlers.onPresentCurrent).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText('Prepare Factory review')).toBeNull();
+
     await fireEvent.press(screen.getByText('Continue refining'));
     expect(handlers.onContinueRefining).toHaveBeenCalledTimes(1);
     expect(handlers.onOpenProject).not.toHaveBeenCalled();
@@ -457,6 +540,24 @@ describe('StudioCollectionsWorkspace', () => {
     await fireEvent.press(screen.getByLabelText('Hide revision history (2)'));
     expect(screen.queryByText('Revision 2 · Active')).toBeNull();
     expect(screen.queryByText('Restore revision 1 as new')).toBeNull();
+  });
+
+  test('shows Factory beside Present only when the host verifies the active revision is eligible', async () => {
+    const handlers = callbacks();
+    const onPrepareFactoryCurrent = jest.fn();
+    await render(
+      <StudioCollectionsWorkspace
+        api={api()}
+        project={project}
+        createdBy="usr_designer"
+        {...handlers}
+        onPrepareFactoryCurrent={onPrepareFactoryCurrent}
+      />,
+    );
+
+    expect(await screen.findByText('Use this exact revision')).toBeTruthy();
+    await fireEvent.press(screen.getByText('Prepare Factory review'));
+    expect(onPrepareFactoryCurrent).toHaveBeenCalledTimes(1);
   });
 
   test('does not invent family data when history is unavailable and still routes to Vary', async () => {

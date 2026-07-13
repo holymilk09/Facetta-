@@ -741,6 +741,10 @@ export default function App() {
           }}
           onVaryCurrent={() => openStudioAction('vary')}
           onContinueRefining={() => openStudioAction('refine')}
+          onPresentCurrent={() => openStudioAction('present')}
+          onPrepareFactoryCurrent={getStudioAction('factory').isAvailable(actionContext)
+            ? () => openStudioAction('factory')
+            : undefined}
         />
       )}
       {tab === 'activity' && (

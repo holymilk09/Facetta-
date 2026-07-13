@@ -1,9 +1,35 @@
 # Project status — read me first in a new session
 
-Last updated: 2026-07-13 · branch `codex/facetta-integration`.
+Last updated: 2026-07-14 · branch `codex/facetta-integration`.
 Read `CLAUDE.md` (constitution — binding), `README.md` (endpoints/layout),
 `docs/DATA_WANTED.md` (open research asks). This file is the delta: what is
 DONE beyond the original TASKS.md build order, and what is next.
+
+## 2026-07-14 exact-revision destination checkpoint
+
+Collections now keeps the selected immutable revision in context through the
+next designer decision. An active family exposes one compact destination card:
+Present is the primary action for client or marketing material, while Factory
+appears only when the existing typed action gate verifies that the same active
+revision is exact, entitled, and eligible. Collections does not duplicate the
+Factory rules and does not add Factory to mandatory progress.
+
+Restoring an older revision still appends a new immutable revision. Collections
+now refetches history when the active asset or design version changes within the
+same family, so the newly appended revision, active badge, revision count, and
+subsequent Present handoff cannot remain locally stale. Routing tests prove that
+Present receives the exact active asset and that Factory is absent for a
+visual-only revision but becomes available after exact design confirmation.
+
+Local validation for this checkpoint is green: 1,733 backend tests; all 35
+mobile Jest suites (269 tests); 76 Studio contract tests; TypeScript; Ruff;
+Python byte-compilation; Expo web export; diff hygiene; and the complete
+ten-project production TypeScript-client -> HTTP -> FastAPI acceptance run.
+That run used no Factory path and preserved zero canonical revisions, accepted
+outputs, or charges for failed-QA work. The frozen 144-image provider corpus,
+independent designer/GIA review, founder approval, enrolled external authority,
+and live two-principal HTTPS staging evidence remain external beta gates and
+were not performed by this local checkpoint.
 
 ## 2026-07-13 blind external-evidence authority checkpoint
 

@@ -126,14 +126,26 @@ jest.mock('./StudioViewsWorkspace', () => {
 jest.mock('./StudioPresentWorkspace', () => {
   const ReactLocal = require('react');
   const { Text } = require('react-native');
-  return { StudioPresentWorkspace: () => ReactLocal.createElement(Text, null, 'Present route reached') };
+  return {
+    StudioPresentWorkspace: ({ lineage }: any) => ReactLocal.createElement(
+      Text,
+      null,
+      `Present route reached for ${lineage?.sourceAssetId ?? 'none'}`,
+    ),
+  };
 });
 
 jest.mock('./StudioCollectionsWorkspace', () => {
   const ReactLocal = require('react');
   const { Pressable, Text, View } = require('react-native');
   return {
-    StudioCollectionsWorkspace: ({ project, onVaryCurrent, onContinueRefining }: any) => ReactLocal.createElement(
+    StudioCollectionsWorkspace: ({
+      project,
+      onVaryCurrent,
+      onContinueRefining,
+      onPresentCurrent,
+      onPrepareFactoryCurrent,
+    }: any) => ReactLocal.createElement(
       View,
       null,
       ReactLocal.createElement(
@@ -146,6 +158,16 @@ jest.mock('./StudioCollectionsWorkspace', () => {
         { accessibilityRole: 'button', onPress: onContinueRefining },
         ReactLocal.createElement(Text, null, 'Continue refining exact revision'),
       ),
+      ReactLocal.createElement(
+        Text,
+        { accessibilityRole: 'button', onPress: onPresentCurrent },
+        'Present exact current revision',
+      ),
+      onPrepareFactoryCurrent !== undefined ? ReactLocal.createElement(
+        Text,
+        { accessibilityRole: 'button', onPress: onPrepareFactoryCurrent },
+        'Prepare eligible Factory review',
+      ) : null,
     ),
   };
 });
@@ -230,7 +252,11 @@ jest.mock('./StudioFactoryWorkspace', () => {
 
 import App from '../../App';
 
-afterEach(() => { clearSession(); mockGetProject.mockReset(); mockGetStudioJob.mockClear(); });
+afterEach(() => {
+  clearSession();
+  mockGetProject.mockReset();
+  mockGetStudioJob.mockClear();
+});
 
 const hydratedProject = {
   id: 'project_hydrated', root_id: 'project_hydrated', title: 'Hydrated design',
@@ -467,6 +493,36 @@ test('Collections returns the selected exact revision to Refine', async () => {
   expect(await view.findByText('Refine route reached')).toBeTruthy();
 });
 
+test('Collections sends the exact active revision to Present', async () => {
+  authenticate();
+  const view = await render(<App />);
+
+  await waitFor(() => expect(view.getByText('Start from an idea or reference')).toBeTruthy());
+  fireEvent.press(view.getByText('Start from an idea or reference'));
+  fireEvent.press(await view.findByText('Save mocked direction'));
+  expect(await view.findByText('Refine route reached')).toBeTruthy();
+  fireEvent.press(view.getByRole('tab', { name: 'Collections' }));
+
+  expect(view.queryByText('Prepare eligible Factory review')).toBeNull();
+  fireEvent.press(await view.findByText('Present exact current revision'));
+  expect(await view.findByText('Present route reached for asset_1')).toBeTruthy();
+});
+
+test('Collections exposes Factory only after the exact active revision is eligible', async () => {
+  authenticate();
+  const view = await render(<App />);
+
+  await waitFor(() => expect(view.getByText('Start from an idea or reference')).toBeTruthy());
+  fireEvent.press(view.getByText('Start from an idea or reference'));
+  fireEvent.press(await view.findByText('Save mocked direction'));
+  fireEvent.press(await view.findByText('Review starting design'));
+  fireEvent.press(await view.findByText('Confirm mocked design'));
+  expect(await view.findByText('Refine route reached')).toBeTruthy();
+
+  fireEvent.press(view.getByRole('tab', { name: 'Collections' }));
+  expect(await view.findByText('Prepare eligible Factory review')).toBeTruthy();
+});
+
 test('Refine links directly to starting design review and returns after confirmation', async () => {
   markOnboarded();
   saveSession({
@@ -542,7 +598,7 @@ test.each([
 test.each([
   ['refine', 'Refine route reached'],
   ['views', 'Views route reached'],
-  ['present', 'Present route reached'],
+  ['present', 'Present route reached for asset_hydrated'],
 ] as const)('Activity reviewing %s hydrates exact lineage into the correct destination', async (action, expected) => {
   authenticate();
   const hydration = deferred<any>();
