@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import io
 from datetime import timedelta
 
@@ -12,7 +13,7 @@ from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from conftest import EXAMPLE_SPEC
+from conftest import EXAMPLE_SPEC, audited_import_spec
 from facetta.api import studio as studio_api
 from facetta.api.studio import get_studio_visual_preview_generator
 from facetta.db import (
@@ -43,6 +44,7 @@ from facetta.image_agent import (
     build_image_plan,
 )
 from facetta.main import app
+from facetta.spec import Spec
 from facetta.studio_visual_candidates import (
     StudioVisualCandidateUnavailable,
     clear_studio_visual_candidates_for_tests,
@@ -272,6 +274,100 @@ def test_preview_does_not_mutate_canonical_history_and_apply_is_atomic(
         assert bytes(durable.image) == b""
 
     assert client.get(body["candidate"]["preview_url"]).status_code == 410
+
+
+def test_applied_pre_spec_child_is_the_only_confirmable_design_v1_source(
+    studio_preview_client, monkeypatch,
+):
+    client, Session = studio_preview_client
+    app.dependency_overrides[get_studio_visual_preview_generator] = (
+        lambda: _generator([])
+    )
+    expected = Spec.model_validate(audited_import_spec(EXAMPLE_SPEC))
+    monkeypatch.setattr(
+        "facetta.api.projects.from_photo",
+        lambda _request: expected,
+    )
+
+    original_confirmation = client.post(
+        "/projects/ast_selected/creative-candidates/ast_selected/confirm-design",
+        json={"created_by": "usr_studio"},
+    )
+    assert original_confirmation.status_code == 200, original_confirmation.text
+    original_token = original_confirmation.json()["confirmation_token"]
+
+    preview = _preview(client).json()
+    accepted = client.post(
+        f"/studio/image-runs/{preview['image_run_id']}/visual-candidates/"
+        f"{preview['candidate']['candidate_id']}/accept",
+        json={
+            "created_by": "usr_studio",
+            "expected_active_asset_id": "ast_selected",
+        },
+    )
+    assert accepted.status_code == 201, accepted.text
+    child_id = accepted.json()["new_asset_id"]
+    applied_project = accepted.json()["project"]
+    assert applied_project["active_asset_id"] == child_id
+    assert applied_project["confirmable_pre_spec"] is True
+
+    stale_confirmation = client.post(
+        "/projects/ast_selected/creative-candidates/ast_selected/confirm-design",
+        json={"created_by": "usr_studio"},
+    )
+    assert stale_confirmation.status_code == 409
+    assert "current confirmable pre-spec revision" in (
+        stale_confirmation.json()["detail"]
+    )
+    stale_promotion = client.post(
+        "/projects/ast_selected/creative-candidates/ast_selected/promote",
+        json={
+            "created_by": "usr_studio",
+            "confirmation_token": original_token,
+        },
+    )
+    assert stale_promotion.status_code == 409
+    assert stale_promotion.json()["code"] == (
+        "creative_candidate_promotion_conflict"
+    )
+
+    child_confirmation = client.post(
+        f"/projects/ast_selected/creative-candidates/{child_id}/confirm-design",
+        json={"created_by": "usr_studio"},
+    )
+    assert child_confirmation.status_code == 200, child_confirmation.text
+    child_review = child_confirmation.json()
+    expected_sha256 = hashlib.sha256(CANDIDATE).hexdigest()
+    assert child_review["candidate_id"] == child_id
+    assert child_review["candidate_sha256"] == expected_sha256
+
+    promoted = client.post(
+        f"/projects/ast_selected/creative-candidates/{child_id}/promote",
+        json={
+            "created_by": "usr_studio",
+            "confirmation_token": child_review["confirmation_token"],
+        },
+    )
+    assert promoted.status_code == 200, promoted.text
+    exact = promoted.json()
+    assert exact["confirmable_pre_spec"] is False
+    assert exact["latest_design_version"] == 1
+    assert exact["active_design_version"] == 1
+    assert exact["active_revision"]["parent_asset_id"] == child_id
+    assert exact["active_revision"]["sha256"] == expected_sha256
+
+    with Session() as db:
+        active = db.get(ImageAsset, exact["active_asset_id"])
+        version = db.scalar(select(DesignVersion))
+        assert active is not None and bytes(active.image) == CANDIDATE
+        assert version is not None and version.version == 1
+        assert version.spec["design_id"] == exact["design_id"]
+        record = db.scalar(select(ProjectRevisionRecord).where(
+            ProjectRevisionRecord.asset_id == active.id
+        ))
+        assert record is not None
+        assert record.raw_intent["selected_candidate_asset_id"] == child_id
+        assert record.raw_intent["candidate_sha256"] == expected_sha256
 
 
 def test_visual_apply_atomically_settles_accepted_studio_job(

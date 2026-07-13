@@ -25,7 +25,7 @@ export const WORKFLOW_SLIDES = [
   {
     kicker: 'Choose',
     title: 'Keep the direction\nthat feels right',
-    body: 'Compare the candidates and save the one you want to develop. Unchosen directions remain available without becoming the active design.',
+    body: 'Compare the candidates, choose the one you want to develop, and mark any other direction you want to keep as a variation.',
     image: adjustShot,
   },
   {

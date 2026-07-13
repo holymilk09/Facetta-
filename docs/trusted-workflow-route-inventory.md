@@ -8,14 +8,13 @@ product boundary.
 Caller abbreviations:
 
 - **Trusted client**: `mobile/src/trusted/client.ts`.
-- **Legacy client**: `mobile/src/api.ts`.
 - **Live script**: `scripts/live_verify_approval_markup.py`.
 
 ## Operational and trusted project routes
 
 | Method and path | Class | Observed caller evidence | Replacement or disposition |
 |---|---|---|---|
-| `GET /health` | Canonical | Legacy client; `test_validate_api.py` | Retain as operational health check. |
+| `GET /health` | Canonical | Operational probes; `test_validate_api.py` | Retain as operational health check. |
 | `POST /projects/from-brief` | Canonical | Trusted client; `test_project_backbone.py` | Structured ring-brief project entry. |
 | `POST /projects/from-prompt` | Canonical | Trusted client; `test_creative_project_api.py` | Category-neutral designer prompt entry. Runs one to four `CREATIVE_GENERATE` variants through direction/coherence QA, atomically persists no source/spec/version, and requires explicit selected-candidate promotion before approval or factory work. |
 | `POST /projects/from-drawing` | Canonical | `test_creative_project_api.py` | Neutral drawing/image entry. Runs one to four explicit `REFERENCE_RENDER` variants through source-fidelity QA, persists no partial project on hard failure, and creates no specification or factory authority. |

@@ -5,6 +5,45 @@ Read `CLAUDE.md` (constitution — binding), `README.md` (endpoints/layout),
 `docs/DATA_WANTED.md` (open research asks). This file is the delta: what is
 DONE beyond the original TASKS.md build order, and what is next.
 
+## 2026-07-13 refined-direction confirmation and consolidation checkpoint
+
+The pre-spec journey no longer dead-ends after refinement. The backend now
+identifies one server-authoritative `confirmable_pre_spec` asset: it must be the
+current canonical selected visual, remain without a design/version binding,
+use an allowed creative or reviewed-refinement capability, and descend from a
+real creative direction. Both fact-review creation and Design v1 promotion use
+that same predicate. Applying a visual or marked-region child therefore keeps
+`Review starting design` available for the child's exact pixels, while the
+original direction and stale confirmation tokens fail closed. Promotion copies
+the refined child's exact bytes and hash into immutable Design v1 provenance.
+
+The unused legacy Builder mobile island (`BuilderScreen`, `DesignsScreen`,
+`ShareScreen`, and its provider-aware API wrapper) has been removed after an
+import audit. Active trusted contracts, compatibility readers, and the hidden
+trusted workflow remain in place until their separate migration gates pass.
+Factory copy now consistently says `factory review material`, and onboarding
+asks designers to mark the extra directions they actually want to retain
+instead of implying every unchosen candidate is permanently discoverable.
+
+Frozen-corpus output is also more honest. The technical/GIA compiler and signed
+founder finalizer now emit only `corpus_gate_ready`; neither may claim
+`external_beta_ready` without the separate staging authority. The finalizer
+binds its decision to the versioned gate schema/run kind, exact config and
+manifest hashes, corpus identity, current frozen implementation pins, and the
+founder-approved result bytes. This does not make the external gate runnable:
+the secured 144-image capture executor, a frozen per-source workload, a signed
+staging attestation, and a combined release controller still need to be built;
+external sources, reviewer/founder keys, and staging principals remain
+`not_run` / `unmet`.
+
+Local validation at this checkpoint: 1,484 backend tests, 237 Jest tests, 64
+Studio contract tests, TypeScript, Ruff, Expo web export, corpus-definition
+pin validation, and the production TypeScript-client -> HTTP -> FastAPI
+acceptance all pass. The production acceptance still covers ten mixed-source
+projects plus exact ring structural refinement with no Factory use; the new
+refine-first Design v1 bytes/hash and stale-source boundary is covered by the
+real FastAPI persistence test.
+
 ## 2026-07-13 resumed Studio integration checkpoint
 
 The canceled Codex tracking record did not remove the recovered work. The
@@ -333,12 +372,13 @@ Factory notes are now an explicit approval/edit target, while resolved
 dimensioned profiles no longer mislabel themselves as visual-reference-only.
 Pack generation fails closed when any recorded fact remains pending.
 
-The trusted UI also exposes multi-preset ecommerce packs with the maximum
-provider-attempt multiplier shown before execution. Partial failures do not
-discard successful candidates, and accepted scenes remain derived marketing
-assets. `TrustedWorkspaceEntry` is ready as the one-import seam for the parallel
-redesign, but `mobile/App.tsx` remains untouched because that worktree is still
-dirty and uncommitted.
+The compatibility trusted UI also exposes multi-preset ecommerce packs with
+the maximum provider-attempt multiplier shown before execution. Partial
+failures do not discard successful candidates, and accepted scenes remain
+derived marketing assets. This paragraph describes the retained hidden
+workflow, not the active presentation: `mobile/App.tsx` now mounts the unified
+Studio shell, while `TrustedWorkspaceEntry` remains compatibility-only pending
+its separate migration gates.
 
 ## 2026-07-10 trusted workflow milestone
 

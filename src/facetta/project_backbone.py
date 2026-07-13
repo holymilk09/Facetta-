@@ -51,6 +51,12 @@ PRIMARY_REVISION_CAPABILITIES = frozenset({
     "RESTORED_REVISION",
 })
 
+CONFIRMABLE_PRE_SPEC_CAPABILITIES = frozenset({
+    "CREATIVE_RENDER",
+    "GLOBAL_RESTYLE",
+    "LOCALIZED_EDIT",
+})
+
 PROVENANCE_BY_CAPABILITY = {
     "CREATIVE_RENDER": "pre_spec_creative_candidate",
     "CREATIVE_SOURCE": "designer_supplied_source",
@@ -119,6 +125,51 @@ def accepted_creative_candidate(
             if cursor.parent_asset_id is not None else None
         )
     return None
+
+
+def confirmable_pre_spec_asset(
+    chain: list[ImageAsset],
+    selected_asset_id: str | None,
+) -> ImageAsset | None:
+    """Return the one current visual that may become exact Design v1.
+
+    A pre-spec refinement is canonical only after the designer applies it. The
+    project selection therefore has to name the same asset that the canonical
+    revision ordering considers active. This second comparison is intentional:
+    it fails closed for stale historical rows where a child was appended but
+    the selection pointer still names its parent.
+
+    The asset must also descend from a real creative candidate and the entire
+    project must remain pre-spec. A matching ``root_id`` alone is not enough to
+    establish that provenance.
+    """
+    if selected_asset_id is None:
+        return None
+    by_id = {asset.id: asset for asset in chain}
+    selected = by_id.get(selected_asset_id)
+    root = by_id.get(selected.root_id) if selected is not None else None
+    if selected is None or root is None:
+        return None
+    if (
+        selected.capability not in CONFIRMABLE_PRE_SPEC_CAPABILITIES
+        or selected.design_id is not None
+        or selected.design_version is not None
+        or root.design_id is not None
+        or any(
+            asset.design_id is not None or asset.design_version is not None
+            for asset in chain
+        )
+    ):
+        return None
+    if accepted_creative_candidate(chain, selected.id) is None:
+        return None
+
+    canonical = [asset for asset in chain if is_canonical_revision(asset)]
+    accepted = accepted_creative_candidate(chain, selected.id)
+    if accepted is not None:
+        canonical.insert(0, accepted)
+    active = canonical[-1] if canonical else None
+    return selected if active is not None and active.id == selected.id else None
 
 
 class DesignAlreadyLinked(ValueError):
@@ -832,14 +883,23 @@ def promote_creative_candidate(
         raise ValueError("confirmation draft belongs to another project")
     if draft.candidate_asset_id != candidate_asset_id:
         raise ValueError("confirmation draft belongs to another candidate")
-    if project.selected_candidate_asset_id != candidate_asset_id:
-        raise ValueError("the selected creative candidate changed before confirmation")
-    if root.design_id is not None:
-        raise ValueError("creative project has already been promoted")
-    if (candidate is None
-            or candidate.root_id != root_id
-            or candidate.capability != "CREATIVE_RENDER"):
-        raise ValueError("selected asset is not a creative candidate in this project")
+    chain = list(db.scalars(
+        select(ImageAsset)
+        .where(ImageAsset.root_id == root_id)
+        .order_by(ImageAsset.created_at, ImageAsset.id)
+        .with_for_update()
+    ))
+    chain.sort(key=lambda asset: (
+        asset.id != root_id, asset.created_at, asset.id))
+    confirmable = confirmable_pre_spec_asset(
+        chain,
+        project.selected_candidate_asset_id,
+    )
+    if confirmable is None or confirmable.id != candidate_asset_id:
+        raise ValueError(
+            "the selected pre-spec revision changed before confirmation"
+        )
+    candidate = confirmable
 
     candidate_sha256 = hashlib.sha256(bytes(candidate.image)).hexdigest()
     if candidate_sha256 != draft.candidate_sha256:

@@ -110,15 +110,19 @@ printf '%s\n' "$FINAL_EXIT" > "$ARTIFACT_DIR/final-exit-code.txt"
 test "$FINAL_EXIT" -eq 0
 ```
 
-The final machine authority is `final-decision.json` with
-`external_beta_ready: true`. Neither approval may be inferred from scores, and
-editing `results.json` after approval invalidates the founder signature.
+The final machine authority for **this gate only** is `final-decision.json`
+with `corpus_gate_ready: true`. It never emits `external_beta_ready`; staging
+is a separate required authority. Neither approval may be inferred from
+scores, and editing `results.json` after approval invalidates the founder
+signature. The finalizer also re-verifies the gate-result schema and run kind,
+the exact config and manifest hashes, and the frozen implementation pins before
+accepting the founder signature.
 
 ### Pass criteria
 
 The replay command and final-decision command must both exit `0`;
-`results.json.status` must be `pass`, `results.json.release_ready` must be
-`true`, and `final-decision.json.external_beta_ready` must be `true`. All of the
+`results.json.status` must be `pass`, `results.json.corpus_gate_ready` must be
+`true`, and `final-decision.json.corpus_gate_ready` must be `true`. All of the
 following must hold:
 
 - Definition and implementation pins pass without manifest/config drift.
@@ -141,9 +145,8 @@ following must hold:
 - The run reports `0` provider calls; this command verifies a captured replay
   and must not regenerate images.
 
-Any nonzero exit, `release_ready: false`, `external_beta_ready: false`,
-incomplete/unsigned evidence, missing founder approval, or missing GIA review
-leaves this gate `unmet`.
+Any nonzero exit, `corpus_gate_ready: false`, incomplete/unsigned evidence,
+missing founder approval, or missing GIA review leaves this gate `unmet`.
 
 ## Gate 2: live two-principal staging isolation
 
@@ -233,5 +236,9 @@ isolation check as a release blocker rather than rerunning until green.
 ## Final release decision
 
 External beta remains blocked until both result artifacts pass and both human
-sign-offs refer to the exact retained result hashes. Update this document's
-status table only from that evidence; never from local test output.
+sign-offs refer to the exact retained result hashes. A corpus decision is not
+an external-beta decision. The repository currently exposes separate corpus
+and staging authorities; a future combined release controller must verify both
+versioned artifacts and their retained hashes before it may emit a full
+external-beta-ready decision. Update this document's status table only from
+that evidence; never from local test output.

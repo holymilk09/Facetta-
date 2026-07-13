@@ -60,9 +60,10 @@ the exact bytes the founder reviewed. After reviewer replay passes, enroll the
 separate `founder_public_key`, create and sign a
 `facetta-founder-approval.v1` record bound to the SHA-256 of `results.json`, and
 run `scripts/verify_frozen_corpus_release.py`. Only its
-`final-decision.json.external_beta_ready: true` satisfies the complete corpus
-gate. The repository ships with both production public keys unconfigured and
-contains no human sign-off.
+`final-decision.json.corpus_gate_ready: true` satisfies the complete corpus
+gate. It deliberately cannot claim full external-beta readiness because the
+live two-principal staging-isolation gate is separate. The repository ships
+with both production public keys unconfigured and contains no human sign-off.
 
 The offline replay verifies artifact hashes and recalculates outside-mask drift
 from the captured pixels. Coverage counts come from verified attempts, never

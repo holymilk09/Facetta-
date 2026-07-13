@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
 from datetime import datetime
 from pathlib import Path
@@ -12,10 +13,16 @@ from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 from cryptography.hazmat.primitives.serialization import load_pem_public_key
 
-from facetta.frozen_corpus_gate import file_sha256
+from facetta.frozen_corpus_gate import (
+    file_sha256,
+    validate_frozen_component_pins,
+)
 
 
 Json = dict[str, Any]
+
+GATE_RESULT_SCHEMA = "facetta-frozen-corpus-gate-result.v1"
+GATE_RUN_KIND = "provider_free_frozen_corpus_gate"
 
 
 def canonical_founder_approval_payload(approval: Json) -> bytes:
@@ -30,6 +37,21 @@ def _load_object(path: Path) -> Json:
     if not isinstance(value, dict):
         raise ValueError(f"expected JSON object: {path}")
     return value
+
+
+def _canonical_sha256(value: Any) -> str:
+    encoded = json.dumps(
+        value, ensure_ascii=False, separators=(",", ":"), sort_keys=True,
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _sha256_value(value: Any) -> bool:
+    return (
+        isinstance(value, str)
+        and len(value) == 64
+        and all(character in "0123456789abcdef" for character in value)
+    )
 
 
 def _public_key(config: Json, repository_root: Path) -> tuple[Ed25519PublicKey | None, str | None, str | None]:
@@ -73,8 +95,59 @@ def verify_frozen_corpus_release(
     approval = _load_object(approval_path)
     errors: list[str] = []
     results_hash = file_sha256(results_path)
-    if results.get("status") != "pass" or results.get("release_ready") is not True:
+    config_hash = file_sha256(config_path)
+    root = repository_root or Path(__file__).resolve().parents[2]
+
+    if results.get("schema_version") != GATE_RESULT_SCHEMA:
+        errors.append("unsupported frozen-corpus gate result schema_version")
+    if results.get("run_kind") != GATE_RUN_KIND:
+        errors.append("unsupported frozen-corpus gate result run_kind")
+    if (
+        results.get("status") != "pass"
+        or results.get("corpus_gate_ready") is not True
+    ):
         errors.append("frozen-corpus technical/GIA result is not release-ready")
+    if config.get("schema_version") != "facetta-frozen-gate-config.v1":
+        errors.append("unsupported frozen-corpus config schema_version")
+
+    result_manifest = results.get("manifest")
+    result_config = results.get("config")
+    result_implementation = results.get("implementation")
+    manifest_hash = (
+        result_manifest.get("sha256")
+        if isinstance(result_manifest, dict) else None
+    )
+    result_config_hash = (
+        result_config.get("sha256")
+        if isinstance(result_config, dict) else None
+    )
+    result_components = (
+        result_implementation.get("frozen_components")
+        if isinstance(result_implementation, dict) else None
+    )
+    configured_components = config.get("frozen_components")
+    if not _sha256_value(manifest_hash):
+        errors.append("frozen-corpus result lacks a valid manifest SHA-256")
+    elif config.get("manifest_sha256") != manifest_hash:
+        errors.append("frozen-corpus result manifest hash differs from config")
+    if not _sha256_value(result_config_hash):
+        errors.append("frozen-corpus result lacks a valid config SHA-256")
+    elif result_config_hash != config_hash:
+        errors.append("frozen-corpus result does not bind the exact config bytes")
+    result_corpus_id = (
+        result_manifest.get("corpus_id")
+        if isinstance(result_manifest, dict) else None
+    )
+    if (
+        not isinstance(result_corpus_id, str)
+        or result_corpus_id != config.get("corpus_id")
+    ):
+        errors.append("frozen-corpus result corpus_id differs from config")
+    if not isinstance(configured_components, dict):
+        errors.append("frozen-corpus config lacks frozen implementation pins")
+    elif result_components != configured_components:
+        errors.append("frozen-corpus result implementation pins differ from config")
+    errors.extend(validate_frozen_component_pins(config, root))
     if approval.get("schema_version") != "facetta-founder-approval.v1":
         errors.append("unsupported founder approval schema_version")
     if approval.get("results_sha256") != results_hash:
@@ -94,7 +167,6 @@ def verify_frozen_corpus_release(
         except ValueError:
             errors.append("founder approval approved_at must include a timezone")
 
-    root = repository_root or Path(__file__).resolve().parents[2]
     public_key, key_id, key_error = _public_key(config, root)
     signature = approval.get("signature")
     signature_status = "not_verified"
@@ -121,11 +193,26 @@ def verify_frozen_corpus_release(
 
     passed = not errors and signature_status == "verified"
     return {
-        "schema_version": "facetta-frozen-corpus-release-decision.v1",
+        "schema_version": "facetta-frozen-corpus-release-decision.v2",
         "status": "pass" if passed else "incomplete_or_failed",
-        "external_beta_ready": passed,
+        "corpus_gate_ready": passed,
+        "release_boundary": (
+            "This decision satisfies only the signed frozen-corpus gate. "
+            "External beta also requires a separately verified live "
+            "two-principal staging-isolation result."
+        ),
         "provider_calls": 0,
-        "results_sha256": results_hash,
+        "gate_bindings": {
+            "results_sha256": results_hash,
+            "manifest_sha256": manifest_hash,
+            "config_sha256": config_hash,
+            "config_id": config.get("config_id"),
+            "corpus_id": result_corpus_id,
+            "implementation_pins_sha256": (
+                _canonical_sha256(configured_components)
+                if isinstance(configured_components, dict) else None
+            ),
+        },
         "approval_sha256": file_sha256(approval_path),
         "founder_signature": {"status": signature_status, "key_id": key_id},
         "errors": errors,

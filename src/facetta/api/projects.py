@@ -104,6 +104,7 @@ from facetta.project_backbone import (
     PROVENANCE_BY_CAPABILITY,
     SourceAssetInput,
     accepted_creative_candidate,
+    confirmable_pre_spec_asset,
     get_brief_project_generator,
     is_primary_revision,
     is_canonical_revision,
@@ -300,6 +301,7 @@ class ProjectDetail(BaseModel):
     latest_design_version: int | None
     spec: dict[str, object] | None
     active_asset_id: str | None
+    confirmable_pre_spec: bool
     selected_candidate_asset_id: str | None
     active_design_version: int | None
     active_revision: AssetSummary | None
@@ -976,6 +978,10 @@ def project_detail(db: Session, project: Project,
     pinned = (max(pinned_candidates, key=lambda a: a.pinned_at)
               if pinned_candidates else None)
     design_id = _linked_design_id(db, project, chain)
+    confirmable = confirmable_pre_spec_asset(
+        chain,
+        project.selected_candidate_asset_id,
+    )
     latest = _latest_spec(db, design_id)
     summaries = [
         _asset_summary(
@@ -1070,6 +1076,11 @@ def project_detail(db: Session, project: Project,
         "latest_design_version": latest.version if latest else None,
         "spec": latest.spec if latest else None,
         "active_asset_id": active.id if active else None,
+        "confirmable_pre_spec": (
+            confirmable is not None
+            and active is not None
+            and confirmable.id == active.id
+        ),
         "selected_candidate_asset_id": project.selected_candidate_asset_id,
         "active_design_version": (active.design_version if active else None),
         "active_revision": by_id.get(active.id) if active else None,
@@ -1219,6 +1230,37 @@ def _owned_creative_candidate(
             detail="the selected asset is not a pre-spec creative candidate",
         )
     return project, candidate
+
+
+def _owned_current_confirmable_pre_spec_asset(
+    db: Session,
+    *,
+    project_id: str,
+    candidate_id: str,
+    actor: str,
+) -> tuple[Project, ImageAsset]:
+    """Resolve the exact current pre-spec pixels eligible for confirmation."""
+    project = db.get(Project, project_id)
+    if project is None:
+        raise HTTPException(status_code=404, detail="creative candidate not found")
+    if project.owner != actor:
+        raise HTTPException(
+            status_code=403,
+            detail="only the project owner may review a creative candidate",
+        )
+    current = confirmable_pre_spec_asset(
+        project_chain(db, project.root_id),
+        project.selected_candidate_asset_id,
+    )
+    if current is None or current.id != candidate_id:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "the selected asset is not the current confirmable pre-spec "
+                "revision"
+            ),
+        )
+    return project, current
 
 
 @router.post(
@@ -1655,7 +1697,7 @@ def confirm_project_creative_candidate_design(
 ):
     """Read one candidate into designer facts without persisting a design."""
     principal_actor(principal, request.created_by)
-    _project, candidate = _owned_creative_candidate(
+    _project, candidate = _owned_current_confirmable_pre_spec_asset(
         db,
         project_id=project_id,
         candidate_id=candidate_id,

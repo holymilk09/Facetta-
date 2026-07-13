@@ -208,12 +208,22 @@ export default function App() {
   }, [studioProject]);
   const confirmStudioLineage = useMemo<StudioVisualLineage | null>(() => {
     if (studioProject === null || studioProject.design_id !== null) return null;
-    const candidateId = studioProject.selected_candidate_asset_id ?? selectedCreativeAssetId;
-    if (candidateId === null || candidateId === undefined) return null;
-    const candidate = studioProject.assets.find((asset) => asset.asset_id === candidateId);
-    if (candidate?.capability !== 'CREATIVE_RENDER') return null;
-    return { projectId: studioProject.root_id, sourceAssetId: candidateId };
-  }, [selectedCreativeAssetId, studioProject]);
+    if (studioProject.confirmable_pre_spec !== true) return null;
+    // Confirmation must follow the current canonical pre-spec visual. A
+    // refined child replaces the originally selected creative direction as the
+    // active revision, so falling back to selected_candidate_asset_id here
+    // would either hide the action or review stale pixels.
+    const activeAssetId = studioProject.active_asset_id;
+    if (activeAssetId === null) return null;
+    const activeAsset = studioProject.assets.find((asset) => asset.asset_id === activeAssetId)
+      ?? studioProject.active_revision;
+    if (activeAsset === null || activeAsset.asset_id !== activeAssetId) return null;
+    if (!(['CREATIVE_RENDER', 'GLOBAL_RESTYLE', 'LOCALIZED_EDIT'] as const).includes(
+      activeAsset.capability as 'CREATIVE_RENDER' | 'GLOBAL_RESTYLE' | 'LOCALIZED_EDIT',
+    )) return null;
+    if (activeAsset.design_version !== null) return null;
+    return { projectId: studioProject.root_id, sourceAssetId: activeAssetId };
+  }, [studioProject]);
   const actionContext = useMemo<StudioActionContext>(() => ({
     activeDesignId,
     activeRevisionId: studioProject?.active_asset_id ?? selectedCreativeAssetId,

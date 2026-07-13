@@ -311,7 +311,7 @@ export function StudioFactoryWorkspace({
             You pay only for a usable requested output. Unsuccessful results cost 0 credits.
           </Text>
           <Button
-            title={busy ? 'Preparing review material…' : 'Prepare production-review material'}
+            title={busy ? 'Preparing review material…' : 'Prepare factory review material'}
             disabled={busy}
             onPress={() => { void prepare(); }}
           />

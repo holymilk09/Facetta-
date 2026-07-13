@@ -174,27 +174,7 @@ def _validate_config(
     ):
         errors.append("config frozen_components are incomplete")
     elif isinstance(frozen, dict):
-        root = repository_root.resolve()
-        for key in (
-            "ring_contract", "prompt_bundle", "evaluator_bundle", "live_runner",
-            "replay_verifier", "replay_runner", "release_verifier",
-            "packet_builder", "packet_runner",
-        ):
-            value = str(frozen[key])
-            if "@sha256:" not in value:
-                errors.append(f"config frozen component {key} is not hash-pinned")
-                continue
-            relative, expected_hash = value.rsplit("@sha256:", 1)
-            candidate = (root / relative).resolve()
-            if (
-                not relative or Path(relative).is_absolute()
-                or not candidate.is_relative_to(root)
-                or not candidate.is_file()
-            ):
-                errors.append(f"config frozen component {key} path is unavailable")
-                continue
-            if file_sha256(candidate) != expected_hash:
-                errors.append(f"config frozen component {key} implementation drifted")
+        errors.extend(validate_frozen_component_pins(config, repository_root))
     reviewer_key = config.get("reviewer_public_key")
     if reviewer_key is not None:
         if not isinstance(reviewer_key, dict):
@@ -219,6 +199,45 @@ def _validate_config(
                 errors.append("reviewer public-key file is unavailable")
             elif file_sha256(candidate) != expected_hash:
                 errors.append("reviewer public-key file hash differs from config")
+    return errors
+
+
+def validate_frozen_component_pins(
+    config: Json,
+    repository_root: Path,
+) -> list[str]:
+    """Re-verify the executable implementation pins in one gate config.
+
+    The corpus compiler and founder decision verifier both call this helper so
+    a result cannot be approved after any pinned implementation has drifted.
+    The logical routing contract is intentionally not a repository file.
+    """
+
+    frozen = config.get("frozen_components")
+    if not isinstance(frozen, dict):
+        return ["config frozen_components are incomplete"]
+    errors: list[str] = []
+    root = repository_root.resolve()
+    for key in (
+        "ring_contract", "prompt_bundle", "evaluator_bundle", "live_runner",
+        "replay_verifier", "replay_runner", "release_verifier",
+        "packet_builder", "packet_runner",
+    ):
+        value = frozen.get(key)
+        if not isinstance(value, str) or "@sha256:" not in value:
+            errors.append(f"config frozen component {key} is not hash-pinned")
+            continue
+        relative, expected_hash = value.rsplit("@sha256:", 1)
+        candidate = (root / relative).resolve()
+        if (
+            not relative or Path(relative).is_absolute()
+            or not candidate.is_relative_to(root)
+            or not candidate.is_file()
+        ):
+            errors.append(f"config frozen component {key} path is unavailable")
+            continue
+        if file_sha256(candidate) != expected_hash:
+            errors.append(f"config frozen component {key} implementation drifted")
     return errors
 
 
@@ -806,6 +825,7 @@ def compile_frozen_corpus_gate(
         and quality["status"] == "pass"
     )
     return {
+        "schema_version": "facetta-frozen-corpus-gate-result.v1",
         "run_kind": "provider_free_frozen_corpus_gate",
         "provider_calls": 0,
         "manifest": {
@@ -813,6 +833,9 @@ def compile_frozen_corpus_gate(
             "corpus_id": manifest.get("corpus_id"),
         },
         "config": {"path": str(config_path), "sha256": config_hash},
+        "implementation": {
+            "frozen_components": config.get("frozen_components"),
+        },
         "definition": {
             "status": "pass" if not definition_errors else "fail",
             "errors": definition_errors,
@@ -820,7 +843,7 @@ def compile_frozen_corpus_gate(
         "source_integrity": source_integrity,
         "quality": quality,
         "status": "pass" if passed else "incomplete_or_failed",
-        "release_ready": passed,
+        "corpus_gate_ready": passed,
         "release_boundary": (
             "Source integrity is not image quality. Missing captures, canonical "
             "persistence proof, or GIA-trained review fail closed and must never "

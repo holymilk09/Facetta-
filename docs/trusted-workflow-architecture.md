@@ -406,10 +406,12 @@ This snapshot exposes the exact reasons deletion is unsafe today:
   independent.
 - Provider-neutral media detection, visual-spec identity, and provider errors
   now live in `media.py`, `image_identity.py`, and `provider_errors.py`.
-- Legacy mobile code in `mobile/src/api.ts` still calls direct design, share,
-  stateless preview, prose, and render-request routes. The feature-flagged
-  trusted client calls the canonical project, markup, checklist, image-run,
-  and factory-pack boundary.
+- The orphaned Builder-era mobile screens and `mobile/src/api.ts` have been
+  removed. The active Studio gateway uses `mobile/src/trusted/client.ts` for
+  canonical project, markup, checklist, image-run, presentation, and
+  factory-review boundaries. The hidden all-in-one trusted presentation remains
+  compatibility-only until its separate migration and replacement-test gates
+  pass; its client contracts remain active Studio infrastructure.
 
 ## Extraction sequence
 

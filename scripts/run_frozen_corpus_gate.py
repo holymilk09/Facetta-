@@ -40,7 +40,7 @@ def _report(result: dict[str, object]) -> str:
         "# Frozen founder corpus gate",
         "",
         f"- Overall: `{result['status']}`",
-        f"- Release ready: `{result['release_ready']}`",
+        f"- Corpus gate ready: `{result['corpus_gate_ready']}`",
         f"- Definition: `{definition['status']}`",
         f"- Source integrity: `{sources['status']}` "
         f"({sources['verified']}/{sources['expected']})",
@@ -80,10 +80,10 @@ def main() -> int:
     (args.outdir / "report.md").write_text(_report(result))
     print(json.dumps({
         "status": result["status"],
-        "release_ready": result["release_ready"],
+        "corpus_gate_ready": result["corpus_gate_ready"],
         "artifacts": str(args.outdir),
     }, indent=2))
-    return 0 if result["release_ready"] is True else 1
+    return 0 if result["corpus_gate_ready"] is True else 1
 
 
 if __name__ == "__main__":

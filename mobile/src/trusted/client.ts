@@ -694,6 +694,7 @@ export const decodeProjectDetail: Decoder<ProjectDetail> = (value) => {
     design_id: nullableText(value.design_id) ?? activeRevision?.design_id ?? null,
     spec: decodeJsonObject(value.spec),
     active_asset_id: activeAssetId,
+    confirmable_pre_spec: boolean(value.confirmable_pre_spec),
     selected_candidate_asset_id: nullableText(value.selected_candidate_asset_id),
     active_design_version: number(pick(value, 'active_design_version', 'latest_design_version'))
       ?? activeRevision?.design_version ?? null,

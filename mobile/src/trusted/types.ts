@@ -227,6 +227,8 @@ export interface ProjectDetail {
   /** Present on canonical project payloads; optional only for legacy snapshots. */
   spec?: JsonObject | null;
   active_asset_id: string | null;
+  /** Server-authoritative eligibility for reviewing the current pre-spec pixels. */
+  confirmable_pre_spec?: boolean;
   selected_candidate_asset_id?: string | null;
   active_design_version: number | null;
   active_revision: AssetSummary | null;

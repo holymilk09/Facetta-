@@ -232,7 +232,10 @@ def _refresh_evidence_hashes(paths: dict[str, Any]) -> dict[str, Any]:
 def test_complete_offline_replay_can_pass(tmp_path: Path):
     paths = _fixture(tmp_path)
     result = _run(paths)
-    assert result["release_ready"] is True
+    assert result["schema_version"] == "facetta-frozen-corpus-gate-result.v1"
+    assert result["run_kind"] == "provider_free_frozen_corpus_gate"
+    assert result["corpus_gate_ready"] is True
+    assert "release_ready" not in result
     assert result["source_integrity"]["status"] == "pass"
     assert result["quality"]["status"] == "pass"
     assert result["quality"]["signature"]["status"] == "verified"
@@ -253,7 +256,7 @@ def test_missing_source_fails_integrity(tmp_path: Path):
     paths = _fixture(tmp_path)
     paths["second"].unlink()
     result = _run(paths)
-    assert result["release_ready"] is False
+    assert result["corpus_gate_ready"] is False
     assert result["source_integrity"]["failures"][0]["code"] == "missing"
 
 
@@ -300,7 +303,7 @@ def test_absent_replay_is_not_run_and_fails_closed(tmp_path: Path):
     result = _run(paths, evidence=False)
     assert result["source_integrity"]["status"] == "pass"
     assert result["quality"]["status"] == "not_run"
-    assert result["release_ready"] is False
+    assert result["corpus_gate_ready"] is False
 
 
 def test_missing_reviewer_fails_quality(tmp_path: Path):
@@ -352,7 +355,7 @@ def test_rejected_candidate_persisted_fails_release_gate(tmp_path: Path):
     assert result["quality"]["release_gates"][
         "zero_rejected_candidates_persisted"
     ] is False
-    assert result["release_ready"] is False
+    assert result["corpus_gate_ready"] is False
 
 
 def test_quick_appearance_reviewer_acceptance_is_a_release_gate(tmp_path: Path):
@@ -370,7 +373,7 @@ def test_quick_appearance_reviewer_acceptance_is_a_release_gate(tmp_path: Path):
     assert gate["designer_acceptance_rate"] == 0
     assert gate["threshold"] == 0.9
     assert gate["pass"] is False
-    assert result["release_ready"] is False
+    assert result["corpus_gate_ready"] is False
 
 
 def test_structural_fidelity_is_classified_independently(tmp_path: Path):
@@ -386,7 +389,7 @@ def test_structural_fidelity_is_classified_independently(tmp_path: Path):
     gate = result["quality"]["classified_release_gates"]["structural"]
     assert gate["mean_edit_fidelity"] == 89
     assert gate["pass"] is False
-    assert result["release_ready"] is False
+    assert result["corpus_gate_ready"] is False
 
 
 def test_reviewer_confusion_summary_must_match_decisions(tmp_path: Path):
@@ -399,7 +402,7 @@ def test_reviewer_confusion_summary_must_match_decisions(tmp_path: Path):
         "false_positives": 0, "false_negatives": 0,
     }
     assert result["quality"]["reviewer_review_complete"] is False
-    assert result["release_ready"] is False
+    assert result["corpus_gate_ready"] is False
 
 
 def test_unsigned_evidence_fails_signature_gate(tmp_path: Path):
@@ -410,7 +413,7 @@ def test_unsigned_evidence_fails_signature_gate(tmp_path: Path):
     result = _run(paths)
     assert result["quality"]["signature"]["status"] == "not_verified"
     assert any("unsigned" in error for error in result["quality"]["errors"])
-    assert result["release_ready"] is False
+    assert result["corpus_gate_ready"] is False
 
 
 def test_tampered_signed_assertion_fails_signature_gate(tmp_path: Path):
@@ -436,7 +439,7 @@ def test_missing_manifest_source_coverage_claim_fails(tmp_path: Path):
     assert coverage["missing_source_filenames"] == []
     assert any("lack matching coverage rows" in error
                for error in coverage["errors"])
-    assert result["release_ready"] is False
+    assert result["corpus_gate_ready"] is False
 
 
 def test_signed_coverage_claim_without_source_attempt_fails(tmp_path: Path):
@@ -459,7 +462,7 @@ def test_signed_coverage_claim_without_source_attempt_fails(tmp_path: Path):
     assert coverage["missing_source_filenames"] == ["image-2.png"]
     assert any("do not match verified attempts" in error
                for error in coverage["errors"])
-    assert result["release_ready"] is False
+    assert result["corpus_gate_ready"] is False
 
 
 def test_attempt_artifact_hash_mismatch_fails(tmp_path: Path):
@@ -468,4 +471,4 @@ def test_attempt_artifact_hash_mismatch_fails(tmp_path: Path):
     result = _run(paths)
     assert any("candidate_image artifact hash mismatch" in error
                for error in result["quality"]["errors"])
-    assert result["release_ready"] is False
+    assert result["corpus_gate_ready"] is False

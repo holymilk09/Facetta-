@@ -9,9 +9,9 @@
     "evaluator_bundle": "src/facetta/evals.py@sha256:65d0bc281910d14f9881b25465ad8856cab62bf0927b76923d86a27617db5431",
     "routing": "grok-primary-openai-fallback.v1",
     "live_runner": "scripts/run_trusted_ring_eval.py@sha256:51d74e301c1761d9ad224f4f4fc1dc048fd0655c7c5ac7bc2304eb0725cdfe79",
-    "replay_verifier": "src/facetta/frozen_corpus_gate.py@sha256:7e92c8f5e67a7b9007fd5109ccbc412f9bfbc9908f1cd4393e32bc0de166856b",
-    "replay_runner": "scripts/run_frozen_corpus_gate.py@sha256:5425ef03ced7aeff68f3c082ccb569f5dbeb0c218baa404320153aba71c73253",
-    "release_verifier": "src/facetta/frozen_corpus_release.py@sha256:c218dba529b66e46dfad0466fc68b9c3bfc2c198c1bacc9903faaa1b2f0e0d82",
+    "replay_verifier": "src/facetta/frozen_corpus_gate.py@sha256:21e6a732fd4ca669e93aa7aa4c845cc063970cc546c20505a937c1bdf3b1987e",
+    "replay_runner": "scripts/run_frozen_corpus_gate.py@sha256:03e042971cf0d02c5e5f1912c93c74a20746122d2bdd356a704a37955f0f33bb",
+    "release_verifier": "src/facetta/frozen_corpus_release.py@sha256:530cdd8d9339191239c0c58df8fa0f1108715e2d4d62a12e5237fdf303480445",
     "packet_builder": "src/facetta/frozen_corpus_packet.py@sha256:fb62ac4b1e7844c6f8f97d1af4c799c81004a1d143b4cac25adb1517b2e9014d",
     "packet_runner": "scripts/prepare_frozen_corpus_review.py@sha256:5cb6c3f6eafc654d4b79b19113ef4c25efc457eee1058ab7c1f7f4522957ec5b"
   },

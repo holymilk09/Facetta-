@@ -60,6 +60,7 @@ jest.mock('./StudioCreateWorkspace', () => {
         id: 'project_1', root_id: 'project_1', title: 'Saved direction',
         collection: null, tags: [], owner: 'usr_designer', state: 'refining',
         design_id: null, spec: null, active_asset_id: 'asset_1',
+        confirmable_pre_spec: true,
         active_design_version: null, selected_candidate_asset_id: 'asset_1',
         active_revision: {
           asset_id: 'asset_1', root_id: 'project_1', parent_asset_id: null,
@@ -287,6 +288,45 @@ const nonConfirmablePreSpecProject = {
   factory_ready: false,
 };
 
+const refinedPreSpecProject = {
+  ...nonConfirmablePreSpecProject,
+  confirmable_pre_spec: true,
+  selected_candidate_asset_id: 'asset_original_direction',
+  active_asset_id: 'asset_refined_direction',
+  active_revision: {
+    ...nonConfirmablePreSpecProject.active_revision,
+    asset_id: 'asset_refined_direction',
+    parent_asset_id: 'asset_original_direction',
+    capability: 'LOCALIZED_EDIT',
+    provenance: 'studio_preview_applied',
+  },
+  revisions: [{
+    ...nonConfirmablePreSpecProject.revisions[0],
+    asset: {
+      ...nonConfirmablePreSpecProject.revisions[0].asset,
+      asset_id: 'asset_refined_direction',
+      parent_asset_id: 'asset_original_direction',
+      capability: 'LOCALIZED_EDIT',
+      provenance: 'studio_preview_applied',
+    },
+  }],
+  assets: [
+    {
+      ...nonConfirmablePreSpecProject.assets[0],
+      asset_id: 'asset_original_direction',
+      capability: 'CREATIVE_RENDER',
+      provenance: 'pre_spec_creative_candidate',
+    },
+    {
+      ...nonConfirmablePreSpecProject.assets[0],
+      asset_id: 'asset_refined_direction',
+      parent_asset_id: 'asset_original_direction',
+      capability: 'LOCALIZED_EDIT',
+      provenance: 'studio_preview_applied',
+    },
+  ],
+};
+
 const authenticate = () => {
   markOnboarded();
   saveSession({
@@ -438,6 +478,34 @@ test('Activity Refine does not offer design-fact review for a non-confirmable pr
 
   expect(await view.findByText('Refine route reached')).toBeTruthy();
   expect(view.queryByText('Review starting design')).toBeNull();
+});
+
+test('Activity Refine keeps design-fact review on the current refined pre-spec child', async () => {
+  authenticate();
+  mockGetStudioJob.mockResolvedValueOnce({
+    data: {
+      job_id: 'job_refine', owner: 'usr_designer', action_id: 'refine',
+      lane: 'trusted_structural', status: 'reviewing', progress: 0.9,
+      active_design_id: 'project_hydrated', source_revision_id: 'asset_refined_direction',
+      error_code: null, created_at: '2026-07-12T00:00:00Z',
+      updated_at: '2026-07-12T00:00:01Z',
+      billing: { requested_outputs: 1, credits_per_output: 20, estimated_credits: 20,
+        completed_outputs: 0, charged_outputs: 0, charged_credits: 0, policy: 'test' },
+    },
+    error: null,
+    status: 200,
+  });
+  mockGetProject.mockResolvedValue({
+    data: refinedPreSpecProject, error: null, status: 200,
+  });
+  const view = await render(<App />);
+  await waitFor(() => expect(view.getByText('Start from an idea or reference')).toBeTruthy());
+  fireEvent.press(view.getAllByText('Activity').at(-1)!);
+  const review = await view.findByText('Review refine');
+  await act(async () => { fireEvent.press(review); });
+
+  expect(await view.findByText('Refine route reached')).toBeTruthy();
+  expect(view.getByText('Review starting design')).toBeTruthy();
 });
 
 test('Activity reviewing Create rehydrates the saved candidate chooser and durable job id', async () => {

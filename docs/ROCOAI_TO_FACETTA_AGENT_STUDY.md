@@ -285,20 +285,22 @@ of an approved design, but they are not Facetta's center of gravity.
 
 ## Current repository audit
 
-Facetta is not starting from zero. The backend has much of the needed
-capability, while the mobile surface currently exposes only a thin slice.
+This table records the pre-Studio audit that motivated the integration. The
+Builder-era files named in the original audit were removed on 2026-07-13; the
+active presentation is now the typed Studio gateway and contextual workspaces.
+Treat the gaps below as historical evidence, not current implementation tasks.
 
 | Existing capability | Pointer | Current gap |
 |---|---|---|
 | Assistant / spec guidance | `src/facetta/api/specs.py` | Mobile does not expose the assistant conversation. |
-| Concept from brief → validated spec | `POST /specs/from-concept` | Builder has a one-shot text field rather than an agent flow. |
-| Hero render, localized edit, angle views, markup, video, asset history | `src/facetta/api/assets.py` | `mobile/src/api.ts` does not bind the asset-chain endpoints. |
-| Immutable versions, sheets, DXF, share links, comments | designs/spec routers and `mobile/src/DesignsScreen.tsx` | Factory handoff is not elevated as the explicit last stage. |
+| Concept from brief → validated spec | `POST /specs/from-concept` | Historical Builder used a one-shot text field. Studio now starts from a brief or role-labeled references and keeps facts optional. |
+| Hero render, localized edit, angle views, markup, video, asset history | `src/facetta/api/assets.py` | Historical Builder did not bind the asset chain. Studio now exposes scoped Create, Refine, Views, Present, and immutable history; broad video remains outside the Goal. |
+| Immutable versions, sheets, DXF, share links, comments | designs/spec routers and the Studio Collections/Factory workspaces | Factory is now optional and eligibility-gated rather than the mandatory final stage. |
 
-Known UI mismatch to fix in P0: the home screen markets model try-on, scene
-swaps, ecommerce packs, spin video, and precision edits, but the cards route
-to the general Builder or Designs screens. Do not market a capability as a
-separate studio until it has its own functional state and API binding.
+Resolved integration rule: do not market a capability as a separate Studio
+destination until its CTA reaches a named workflow with a typed contract.
+Model try-on, generic scene swaps, ecommerce-template packs, and spin video are
+not active Goal requirements.
 
 ## Read before changing agent behavior
 

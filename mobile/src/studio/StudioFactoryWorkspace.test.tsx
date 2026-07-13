@@ -65,7 +65,7 @@ describe('StudioFactoryWorkspace', () => {
     expect(screen.getByText('1 requested output × 28 credits = estimated 28 credits')).toBeTruthy();
     expect(screen.getByText('You pay only for a usable requested output. Unsuccessful results cost 0 credits.')).toBeTruthy();
     expect(screen.queryByText(/internal retries/i)).toBeNull();
-    await act(async () => { fireEvent.press(screen.getByText('Prepare production-review material')); });
+    await act(async () => { fireEvent.press(screen.getByText('Prepare factory review material')); });
     await waitFor(() => expect(screen.getByText('Review material prepared')).toBeTruthy());
     expect(createStudioJob).toHaveBeenCalledWith(expect.objectContaining({
       active_design_id: 'project_1', source_revision_id: 'asset_7', credits_per_output: 28,
@@ -90,7 +90,7 @@ describe('StudioFactoryWorkspace', () => {
       createStudioJob: jest.fn(async () => ({ data: job('queued'), error: null, status: 201 })),
       prepareFactoryPack: jest.fn(async () => ({ data: { ...manifest, pinned_asset_id: 'asset_other' }, error: null, status: 200 })),
     }) as any} lineage={lineage} createdBy="designer" deliverProtectedFile={jest.fn()} />);
-    await act(async () => { fireEvent.press(screen.getByText('Prepare production-review material')); });
+    await act(async () => { fireEvent.press(screen.getByText('Prepare factory review material')); });
     expect(await screen.findByText(/did not match the selected revision/i)).toBeTruthy();
     expect(screen.queryByText('Review material prepared')).toBeNull();
   });
@@ -105,9 +105,9 @@ describe('StudioFactoryWorkspace', () => {
       prepareFactoryPack: jest.fn(async () => ({ data: manifest, error: null, status: 200 })),
     }) as any} lineage={lineage} createdBy="designer" deliverProtectedFile={deliverProtectedFile} />);
 
-    await waitFor(() => expect(screen.getByText('Prepare production-review material')).toBeTruthy());
+    await waitFor(() => expect(screen.getByText('Prepare factory review material')).toBeTruthy());
 
-    await act(async () => { fireEvent.press(screen.getByText('Prepare production-review material')); });
+    await act(async () => { fireEvent.press(screen.getByText('Prepare factory review material')); });
     await act(async () => { fireEvent.press(screen.getByText('Open review-sheet.svg')); });
     expect(await screen.findByText(/credit record are unchanged/i)).toBeTruthy();
     expect(createStudioJob).toHaveBeenCalledTimes(1);
@@ -149,7 +149,7 @@ describe('StudioFactoryWorkspace', () => {
     onProjectUpdated={onProjectUpdated} />);
 
     expect(await screen.findByText('Start exact-fact checklist')).toBeTruthy();
-    expect(screen.queryByText('Prepare production-review material')).toBeNull();
+    expect(screen.queryByText('Prepare factory review material')).toBeNull();
     expect(screen.getByText('• Confirm the exact design facts.')).toBeTruthy();
 
     await act(async () => { fireEvent.press(screen.getByText('Start exact-fact checklist')); });
@@ -160,7 +160,7 @@ describe('StudioFactoryWorkspace', () => {
 
     await act(async () => { fireEvent.press(screen.getByText('Confirm fact')); });
     expect(await screen.findByText('Ready for optional Factory preparation')).toBeTruthy();
-    expect(screen.getByText('Prepare production-review material')).toBeTruthy();
+    expect(screen.getByText('Prepare factory review material')).toBeTruthy();
     expect(respondChecklist).toHaveBeenCalledWith('asset_7', expect.objectContaining({
       item_key: 'identity', approved: true, interpret: false,
     }));

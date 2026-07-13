@@ -1,4 +1,4 @@
-"""Compile the final founder-approved frozen-corpus release decision."""
+"""Compile the founder-approved frozen-corpus gate decision."""
 
 from __future__ import annotations
 
@@ -32,10 +32,10 @@ def main() -> int:
     )
     print(json.dumps({
         "status": decision["status"],
-        "external_beta_ready": decision["external_beta_ready"],
+        "corpus_gate_ready": decision["corpus_gate_ready"],
         "artifact": str(args.outdir / "final-decision.json"),
     }, indent=2))
-    return 0 if decision["external_beta_ready"] is True else 1
+    return 0 if decision["corpus_gate_ready"] is True else 1
 
 
 if __name__ == "__main__":

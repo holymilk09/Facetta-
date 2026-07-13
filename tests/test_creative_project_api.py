@@ -692,6 +692,7 @@ def test_from_prompt_persists_independent_candidates_without_source_or_spec(
     assert "design_id" not in body
     assert "spec" not in body
     assert body["factory_ready"] is False
+    assert body["confirmable_pre_spec"] is False
     assert body["revisions"] == []
     assert len(body["creative_candidates"]) == 3
     assert all(item["capability"] == "CREATIVE_RENDER"
@@ -710,6 +711,7 @@ def test_from_prompt_persists_independent_candidates_without_source_or_spec(
     selected_body = selected.json()
     assert selected_body["selected_candidate_asset_id"] == selected_id
     assert selected_body["active_asset_id"] == selected_id
+    assert selected_body["confirmable_pre_spec"] is True
     assert selected_body["cover_asset_id"] == selected_id
     assert "spec" not in selected_body
 
@@ -1599,6 +1601,11 @@ def test_confirm_design_projects_typed_designer_facts_and_exact_hashes(
         "/projects/from-drawing", json=_request(variation_count=1)
     ).json()
     candidate_id = created["creative_candidates"][0]["asset_id"]
+    selected = client.post(
+        f"/projects/{created['id']}/creative-candidates/{candidate_id}/select",
+        json={"created_by": "usr_designer"},
+    )
+    assert selected.status_code == 200, selected.text
     raw = audited_import_spec(EXAMPLE_SPEC)
     raw["dimension_provenance"] = {
         "stone.dimensions_mm.length": {
@@ -2078,12 +2085,19 @@ def test_designer_can_promote_exactly_one_candidate_to_immutable_spec_v1(
     )
     assert checklist.status_code == 201, checklist.text
 
-    second = client.post(
-        f"/projects/{project_id}/creative-candidates/{second_id}/promote",
-        json=_promotion_payload(client, project_id, second_id, confirmed_spec),
+    with patch(
+        "facetta.api.projects.from_photo",
+        return_value=Spec.model_validate(confirmed_spec),
+    ):
+        second_confirmation = client.post(
+            f"/projects/{project_id}/creative-candidates/{second_id}/"
+            "confirm-design",
+            json={"created_by": "usr_designer"},
+        )
+    assert second_confirmation.status_code == 409
+    assert "current confirmable pre-spec revision" in (
+        second_confirmation.json()["detail"]
     )
-    assert second.status_code == 409
-    assert second.json()["code"] == "creative_candidate_promotion_conflict"
 
     with Session() as db:
         assert db.scalar(select(func.count()).select_from(Design)) == 1
