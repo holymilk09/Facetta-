@@ -23,6 +23,11 @@ from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 from cryptography.hazmat.primitives.serialization import load_pem_public_key
 
+from facetta.blind_jewelry_review import (
+    GIA_VISUAL_FIDELITY_ROLE,
+    validate_blind_review_packet,
+    validate_signed_review_ledger,
+)
 from facetta.image_agent.drift import outside_mask_drift
 from facetta.frozen_capture_workload import validate_workload_definition
 from facetta.frozen_evidence_paths import (
@@ -287,6 +292,8 @@ def _validate_config(
             "ring_contract", "prompt_bundle", "evaluator_bundle", "routing",
             "live_runner", "replay_verifier", "replay_runner",
             "release_verifier", "packet_builder", "packet_runner",
+            "blind_review_contract", "release_authority_enrollment",
+            "release_authority_bundle",
         )
     ):
         errors.append("config frozen_components are incomplete")
@@ -300,6 +307,9 @@ def _validate_config(
             key_id = reviewer_key.get("key_id")
             relative = reviewer_key.get("path")
             expected_hash = reviewer_key.get("sha256")
+            reviewer_profile_sha256 = reviewer_key.get(
+                "reviewer_profile_sha256",
+            )
             root = repository_root.resolve()
             candidate = (
                 (root / str(relative)).resolve()
@@ -307,6 +317,15 @@ def _validate_config(
             )
             if not isinstance(key_id, str) or not key_id.strip():
                 errors.append("reviewer public key_id is missing")
+            if not (
+                isinstance(reviewer_profile_sha256, str)
+                and len(reviewer_profile_sha256) == 64
+                and all(
+                    character in "0123456789abcdef"
+                    for character in reviewer_profile_sha256
+                )
+            ):
+                errors.append("GIA reviewer profile sha256 is invalid")
             if (
                 candidate is None or not isinstance(relative, str)
                 or Path(relative).is_absolute()
@@ -671,6 +690,8 @@ def _replay_quality(
     workload_hash: str,
     repository_root: Path,
     evidence_root: Path,
+    review_packet: Json | None,
+    review_ledger: Json | None,
 ) -> Json:
     errors: list[str] = []
     if evidence.get("schema_version") != "facetta-frozen-replay.v1":
@@ -757,6 +778,7 @@ def _replay_quality(
     max_attempts = int(thresholds["max_attempts"])
     rows: list[Json] = []
     selected_result_set: list[Json] = []
+    selected_review_scope: list[Json] = []
     replayed_drift: list[Json] = []
     artifact_paths: dict[int, dict[str, Path]] = {}
     verified_source_evaluations: dict[str, set[tuple[str, str]]] = defaultdict(set)
@@ -873,6 +895,14 @@ def _replay_quality(
                     "candidate_image_sha256"
                 ),
             })
+            selected_review_scope.append({
+                "kind": "render",
+                "operation_class": "render_conformance",
+                "source_sha256": selected.get("source_image_sha256"),
+                "candidate_sha256": selected.get("candidate_image_sha256"),
+                "mask_sha256": None,
+                "machine_pass": bool(selected.get("accepted")) and hard_pass,
+            })
             rows.append({
                 "kind": "render", "case": f"{key[1]}@{source_filename}",
                 "evaluation_id": key[1], "source_filename": source_filename,
@@ -913,6 +943,14 @@ def _replay_quality(
             "source_filename": source_filename,
             "selected_attempt": selected.get("attempt"),
             "candidate_image_sha256": selected.get("candidate_image_sha256"),
+        })
+        selected_review_scope.append({
+            "kind": "edit",
+            "operation_class": evaluation_classes.get(key),
+            "source_sha256": selected.get("source_image_sha256"),
+            "candidate_sha256": selected.get("candidate_image_sha256"),
+            "mask_sha256": selected.get("mask_image_sha256"),
+            "machine_pass": bool(selected.get("accepted")) and applied and drift_pass,
         })
         replayed_drift.append({
             "evaluation_id": key[1], "source_filename": source_filename,
@@ -970,113 +1008,149 @@ def _replay_quality(
             ] else None
         ),
     })
-    reviewer = evidence.get("reviewer_review")
-    review_decisions = reviewer.get("decisions") if isinstance(reviewer, dict) else None
-    decision_errors: list[str] = []
-    decision_by_key: dict[tuple[str, str, str], Json] = {}
-    if not isinstance(review_decisions, list):
-        decision_errors.append("reviewer decisions must be a list")
-        review_decisions = []
-    for decision in review_decisions:
-        if not isinstance(decision, dict):
-            decision_errors.append("every reviewer decision must be an object")
-            continue
-        key = (
-            str(decision.get("kind") or ""),
-            str(decision.get("evaluation_id") or ""),
-            str(decision.get("source_filename") or ""),
-        )
-        if key in decision_by_key:
-            decision_errors.append(
-                "duplicate reviewer decision: " + ":".join(key)
-            )
-        if type(decision.get("accepted")) is not bool:
-            decision_errors.append(
-                "reviewer decision lacks boolean accepted: " + ":".join(key)
-            )
-        decision_by_key[key] = decision
-    selected_keys = {
-        (str(row["kind"]), str(row["evaluation_id"]), str(row["source_filename"]))
-        for row in rows
+    blind_review: Json = {
+        "status": "not_run",
+        "signature_status": "not_verified",
+        "errors": ["blind v2 GIA review packet and ledger are required"],
+        "decisions": [],
+        "accepted_count": 0,
+        "accepted_rate": 0.0,
     }
-    if set(decision_by_key) != selected_keys:
-        missing_decisions = sorted(selected_keys - set(decision_by_key))
-        extra_decisions = sorted(set(decision_by_key) - selected_keys)
-        if missing_decisions:
-            decision_errors.append(
-                "missing reviewer decisions: "
-                + ", ".join(":".join(key) for key in missing_decisions)
-            )
-        if extra_decisions:
-            decision_errors.append(
-                "unexpected reviewer decisions: "
-                + ", ".join(":".join(key) for key in extra_decisions)
-            )
-    machine_by_key = {
-        (str(row["kind"]), str(row["evaluation_id"]), str(row["source_filename"])):
+    packet_scope: dict[tuple[str, str, object, object, object], str] = {}
+    machine_scope = {
         (
-            bool(row.get("hard_gate_pass"))
-            if row["kind"] == "render" else bool(row.get("applied"))
-        )
-        for row in rows
+            str(row["kind"]),
+            str(row["operation_class"]),
+            row["source_sha256"],
+            row["candidate_sha256"],
+            row["mask_sha256"],
+        ): row
+        for row in selected_review_scope
     }
-    false_positives = sum(
-        machine_by_key.get(key) is True and decision.get("accepted") is False
-        for key, decision in decision_by_key.items()
-    )
-    false_negatives = sum(
-        machine_by_key.get(key) is False and decision.get("accepted") is True
-        for key, decision in decision_by_key.items()
-    )
-    review_complete = (
-        isinstance(reviewer, dict)
-        and reviewer.get("completed") is True
-        and isinstance(reviewer.get("reviewer"), str)
-        and bool(reviewer.get("reviewer", "").strip())
-        and reviewer.get("qualification") == "GIA-trained"
-        and type(reviewer.get("false_positives")) is int
-        and type(reviewer.get("false_negatives")) is int
-        and reviewer.get("false_positives") == false_positives
-        and reviewer.get("false_negatives") == false_negatives
-        and not decision_errors
-    )
-    if not review_complete:
-        errors.append("GIA-trained reviewer evidence is incomplete")
-    errors.extend(decision_errors)
-    all_reviewer_accepted = (
-        bool(selected_keys)
-        and set(decision_by_key) == selected_keys
-        and all(
-            decision_by_key[key].get("accepted") is True
-            for key in selected_keys
+    if review_packet is not None and review_ledger is not None:
+        packet_validation = validate_blind_review_packet(review_packet)
+        protocol = review_packet.get("review_protocol")
+        binding = review_packet.get("evidence_binding")
+        capture_provenance = evidence.get("capture_provenance")
+        blind_errors: list[str] = []
+        if packet_validation["status"] != "pass":
+            blind_errors.extend(map(str, packet_validation["errors"]))
+        if not isinstance(protocol, dict) or (
+            protocol.get("reviewer_role") != GIA_VISUAL_FIDELITY_ROLE
+        ):
+            blind_errors.append("blind review packet is not the GIA visual-fidelity role")
+        expected_binding = {
+            "manifest_sha256": manifest_hash,
+            "config_sha256": config_hash,
+            "workload_sha256": workload_hash,
+            "capture_sha256": evidence.get("capture_sha256"),
+        }
+        if binding != expected_binding:
+            blind_errors.append("blind review packet evidence binding differs from replay")
+        if not isinstance(capture_provenance, dict) or (
+            review_packet.get("corpus_run_id")
+            != capture_provenance.get("corpus_run_id")
+        ):
+            blind_errors.append("blind review packet corpus_run_id differs from replay")
+        for item in review_packet.get("items", []):
+            if not isinstance(item, dict):
+                continue
+            artifacts = item.get("artifacts")
+            if not isinstance(artifacts, dict):
+                continue
+            source = artifacts.get("source")
+            candidate = artifacts.get("candidate")
+            mask = artifacts.get("mask")
+            scope_key = (
+                str(item.get("kind")),
+                str(item.get("operation_class")),
+                source.get("sha256") if isinstance(source, dict) else None,
+                candidate.get("sha256") if isinstance(candidate, dict) else None,
+                mask.get("sha256") if isinstance(mask, dict) else None,
+            )
+            item_id = item.get("item_id")
+            if scope_key in packet_scope:
+                blind_errors.append("blind review packet contains duplicate artifact scope")
+            elif isinstance(item_id, str):
+                packet_scope[scope_key] = item_id
+        if set(packet_scope) != set(machine_scope):
+            blind_errors.append(
+                "blind review packet does not exactly cover selected replay artifacts"
+            )
+        reviewer_key, reviewer_key_id, key_error = _reviewer_public_key(
+            config, repository_root,
         )
+        reviewer_config = config.get("reviewer_public_key")
+        profile_sha256 = (
+            reviewer_config.get("reviewer_profile_sha256")
+            if isinstance(reviewer_config, dict) else None
+        )
+        if key_error:
+            blind_errors.append(key_error)
+        elif not isinstance(profile_sha256, str):
+            blind_errors.append("GIA reviewer profile sha256 is not configured")
+        else:
+            assert reviewer_key is not None and reviewer_key_id is not None
+            blind_review = validate_signed_review_ledger(
+                review_packet,
+                review_ledger,
+                reviewer_public_key=reviewer_key,
+                reviewer_key_id=reviewer_key_id,
+                expected_reviewer_profile_sha256=profile_sha256,
+            )
+            blind_errors.extend(map(str, blind_review["errors"]))
+        if blind_errors:
+            blind_review = {**blind_review, "status": "fail", "errors": blind_errors}
+    errors.extend("GIA blind review: " + str(error) for error in blind_review["errors"])
+    decision_by_item = {
+        str(row.get("item_id")): row
+        for row in blind_review.get("decisions", [])
+        if isinstance(row, dict)
+    }
+    review_complete = (
+        blind_review.get("status") == "pass"
+        and blind_review.get("signature_status") == "verified"
+        and len(decision_by_item) == len(machine_scope)
+    )
+    all_reviewer_accepted = (
+        review_complete
+        and bool(decision_by_item)
+        and all(row.get("derived_accepted") is True for row in decision_by_item.values())
     )
     if not all_reviewer_accepted:
         errors.append("one or more GIA reviewer decisions rejected a selected result")
 
-    quick_ids = {
-        evaluation_id
-        for (kind, evaluation_id), operation_class in evaluation_classes.items()
-        if kind == "edit" and operation_class == "quick_appearance"
-    }
+    false_positives = 0
+    false_negatives = 0
+    for scope_key, machine_row in machine_scope.items():
+        item_id = packet_scope.get(scope_key)
+        human_accepted = decision_by_item.get(str(item_id), {}).get(
+            "derived_accepted",
+        )
+        false_positives += (
+            machine_row["machine_pass"] is True and human_accepted is False
+        )
+        false_negatives += (
+            machine_row["machine_pass"] is False and human_accepted is True
+        )
+
     structural_ids = {
         evaluation_id
         for (kind, evaluation_id), operation_class in evaluation_classes.items()
         if kind == "edit" and operation_class == "structural"
     }
-    quick_keys = {
-        key for key in selected_keys if key[0] == "edit" and key[1] in quick_ids
+    quick_scope = {
+        scope_key: row for scope_key, row in machine_scope.items()
+        if row["kind"] == "edit" and row["operation_class"] == "quick_appearance"
     }
     quick_accepted = sum(
-        decision_by_key.get(key, {}).get("accepted") is True for key in quick_keys
+        decision_by_item.get(packet_scope.get(scope_key, ""), {}).get(
+            "derived_accepted",
+        ) is True
+        for scope_key in quick_scope
     )
-    quick_rate = quick_accepted / len(quick_keys) if quick_keys else 0.0
-    quick_pass = (
-        bool(quick_keys)
-        and quick_rate >= float(
-            thresholds["quick_appearance_designer_acceptance_rate"]
-        )
-    )
+    quick_rate = quick_accepted / len(quick_scope) if quick_scope else 0.0
+    quick_pass = bool(quick_scope) and quick_accepted == len(quick_scope)
     structural_rows = [
         row for row in rows
         if row["kind"] == "edit" and row["evaluation_id"] in structural_ids
@@ -1095,10 +1169,12 @@ def _replay_quality(
     )
     classified_gates = {
         "quick_appearance": {
-            "evaluation_count": len(quick_keys),
-            "designer_accepted_count": quick_accepted,
-            "designer_acceptance_rate": round(quick_rate, 4),
-            "threshold": thresholds["quick_appearance_designer_acceptance_rate"],
+            "evaluation_count": len(quick_scope),
+            "gia_accepted_count": quick_accepted,
+            "gia_acceptance_rate": round(quick_rate, 4),
+            "independent_designer_acceptance_threshold": thresholds[
+                "quick_appearance_designer_acceptance_rate"
+            ],
             "pass": quick_pass,
         },
         "structural": {
@@ -1148,6 +1224,7 @@ def _replay_quality(
         "classified_release_gates": classified_gates,
         "reviewer_review_complete": review_complete,
         "all_reviewer_decisions_accepted": all_reviewer_accepted,
+        "blind_review": blind_review,
         "reviewer_confusion_counts": {
             "false_positives": false_positives,
             "false_negatives": false_negatives,
@@ -1163,6 +1240,8 @@ def compile_frozen_corpus_gate(
     repository_root: Path | None = None,
     workload_path: Path | None = None,
     evidence_root: Path | None = None,
+    review_packet_path: Path | None = None,
+    review_ledger_path: Path | None = None,
 ) -> Json:
     manifest = _load_object(manifest_path)
     config = _load_object(config_path)
@@ -1204,6 +1283,8 @@ def compile_frozen_corpus_gate(
     resolved_evidence_root: Path | None = None
     resolved_source_dir: Path | None = None
     resolved_evidence_path: Path | None = None
+    resolved_review_packet_path: Path | None = None
+    resolved_review_ledger_path: Path | None = None
     try:
         if evidence_root is None:
             raise ValueError("an explicit evidence root is required")
@@ -1221,6 +1302,20 @@ def compile_frozen_corpus_gate(
                 label="replay evidence",
                 kind="file",
             )
+        if review_packet_path is not None:
+            resolved_review_packet_path = confined_path(
+                resolved_evidence_root,
+                review_packet_path,
+                label="GIA blind review packet",
+                kind="file",
+            )
+        if review_ledger_path is not None:
+            resolved_review_ledger_path = confined_path(
+                resolved_evidence_root,
+                review_ledger_path,
+                label="GIA blind review ledger",
+                kind="file",
+            )
     except ValueError as exc:
         path_errors.append(str(exc))
     source_integrity = (
@@ -1231,9 +1326,15 @@ def compile_frozen_corpus_gate(
         "failures": [{"code": "path_or_manifest_invalid", "details": path_errors}],
     })
     evidence: Json | None = None
+    review_packet: Json | None = None
+    review_ledger: Json | None = None
     evidence_binding: Json | None = None
     if resolved_evidence_path is not None and resolved_evidence_root is not None:
         evidence = _load_object(resolved_evidence_path)
+        if resolved_review_packet_path is not None:
+            review_packet = _load_object(resolved_review_packet_path)
+        if resolved_review_ledger_path is not None:
+            review_ledger = _load_object(resolved_review_ledger_path)
         signature = evidence.get("signature")
         capture_provenance = evidence.get("capture_provenance")
         evidence_binding = {
@@ -1300,6 +1401,7 @@ def compile_frozen_corpus_gate(
             evidence, resolved_evidence_path, manifest, config, workload,
             manifest_hash, config_hash, file_sha256(resolved_workload_path),
             resolved_repository_root, resolved_evidence_root,
+            review_packet, review_ledger,
         )
     definition_errors = manifest_errors + config_errors + workload_errors + path_errors
     passed = (
@@ -1339,6 +1441,20 @@ def compile_frozen_corpus_gate(
             "authority_key_separation": authority_key_separation,
         },
         "evidence": evidence_binding,
+        "blind_review_evidence": {
+            "packet_file_sha256": (
+                file_sha256(resolved_review_packet_path)
+                if resolved_review_packet_path is not None else None
+            ),
+            "packet_canonical_sha256": (
+                quality.get("blind_review", {}).get("packet_sha256")
+                if isinstance(quality.get("blind_review"), dict) else None
+            ),
+            "ledger_file_sha256": (
+                file_sha256(resolved_review_ledger_path)
+                if resolved_review_ledger_path is not None else None
+            ),
+        },
         "definition": {
             "status": "pass" if not definition_errors else "fail",
             "errors": definition_errors,

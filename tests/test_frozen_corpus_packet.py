@@ -11,11 +11,19 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from PIL import Image
 
+from facetta.blind_jewelry_review import (
+    BLIND_REVIEW_PACKET_SCHEMA,
+    GIA_VISUAL_FIDELITY_ROLE,
+    validate_blind_review_packet,
+)
 from facetta.frozen_capture_workload import (
     build_provider_call_plan,
     canonical_capture_payload,
 )
-from facetta.frozen_corpus_packet import prepare_frozen_corpus_review_packet
+from facetta.frozen_corpus_packet import (
+    prepare_blind_frozen_corpus_review_packet_v2,
+    prepare_frozen_corpus_review_packet,
+)
 from facetta.frozen_evidence_paths import confined_output_path
 from facetta.ring_evals import (
     CANONICAL_RING_EDITS,
@@ -275,6 +283,22 @@ def _prepare(fixture: dict[str, Any]) -> dict[str, object]:
     )
 
 
+def _prepare_blind_v2(fixture: dict[str, Any]) -> dict[str, object]:
+    return prepare_blind_frozen_corpus_review_packet_v2(
+        fixture["manifest"],  # type: ignore[arg-type]
+        fixture["config"],  # type: ignore[arg-type]
+        fixture["workload"],  # type: ignore[arg-type]
+        fixture["sources"],  # type: ignore[arg-type]
+        fixture["capture"],  # type: ignore[arg-type]
+        evidence_root=fixture["root"],  # type: ignore[arg-type]
+        capture_public_key_path=fixture["public_key"],  # type: ignore[arg-type]
+        capture_key_id=str(fixture["key_id"]),
+        review_seed="a" * 64,
+        reviewer_role=GIA_VISUAL_FIDELITY_ROLE,
+        repository_root=fixture["root"],  # type: ignore[arg-type]
+    )
+
+
 def test_packet_uses_only_workload_quality_assignments(tmp_path: Path):
     fixture = _fixture(tmp_path)
     packet = _prepare(fixture)
@@ -304,6 +328,85 @@ def test_packet_uses_only_workload_quality_assignments(tmp_path: Path):
     )
     assert packet["signature"] is None
     assert packet["corpus_gate_ready"] is False
+
+
+def test_blind_v2_projects_only_selected_artifacts_and_review_intent(tmp_path: Path):
+    fixture = _fixture(tmp_path)
+    packet = _prepare_blind_v2(fixture)
+
+    assert packet["schema_version"] == BLIND_REVIEW_PACKET_SCHEMA
+    assert packet["evidence_binding"] == {
+        "manifest_sha256": _sha(fixture["manifest"]),  # type: ignore[arg-type]
+        "config_sha256": _sha(fixture["config"]),  # type: ignore[arg-type]
+        "workload_sha256": _sha(fixture["workload"]),  # type: ignore[arg-type]
+        "capture_sha256": _sha(fixture["capture"]),  # type: ignore[arg-type]
+    }
+    assert validate_blind_review_packet(packet)["status"] == "pass"
+    assert len(packet["items"]) == 2
+    assert {item["operation_class"] for item in packet["items"]} == {
+        "render_conformance", "quick_appearance",
+    }
+    metal = next(
+        item for item in packet["items"]
+        if item["operation_class"] == "quick_appearance"
+    )
+    assert metal["intent"] == {
+        "intended_change": next(
+            edit.instruction for edit in CANONICAL_RING_EDITS
+            if edit.id == "metal-color"
+        ),
+        "target_region": next(
+            edit.region for edit in CANONICAL_RING_EDITS
+            if edit.id == "metal-color"
+        ),
+        "frozen_facts": list(next(
+            edit.frozen_facts for edit in CANONICAL_RING_EDITS
+            if edit.id == "metal-color"
+        )),
+    }
+    assert metal["artifacts"]["source"]["sha256"] == _sha(
+        fixture["sources"] / "ring.png",  # type: ignore[operator]
+    )
+    assert metal["artifacts"]["candidate"]["sha256"]
+    assert metal["artifacts"]["mask"]["sha256"]
+    serialized = json.dumps(packet, sort_keys=True).lower()
+    for forbidden in (
+        "accepted",
+        "attempt",
+        "hard_gate",
+        "score",
+        "severity",
+        "change_applied",
+        "provider",
+        "model",
+        "retry",
+    ):
+        assert forbidden not in serialized
+
+
+def test_blind_v2_is_deterministic_for_the_same_capture_and_seed(tmp_path: Path):
+    fixture = _fixture(tmp_path)
+
+    assert _prepare_blind_v2(fixture) == _prepare_blind_v2(fixture)
+
+
+def test_blind_v2_rejects_ambiguous_or_missing_machine_selection(tmp_path: Path):
+    fixture = _fixture(tmp_path)
+    capture_path = fixture["capture"]
+    capture = json.loads(capture_path.read_text())  # type: ignore[union-attr]
+    capture["attempts"][0]["accepted"] = False
+    capture["signature"] = {
+        "algorithm": "Ed25519",
+        "key_id": fixture["key_id"],
+        "public_key_sha256": _sha(fixture["public_key"]),  # type: ignore[arg-type]
+        "value": base64.b64encode(
+            fixture["private_key"].sign(canonical_capture_payload(capture))
+        ).decode("ascii"),
+    }
+    _json(capture_path, capture)  # type: ignore[arg-type]
+
+    with pytest.raises(ValueError, match="exactly one machine-selected candidate"):
+        _prepare_blind_v2(fixture)
 
 
 def test_packet_embeds_exact_hash_bound_persistence_object(tmp_path: Path):

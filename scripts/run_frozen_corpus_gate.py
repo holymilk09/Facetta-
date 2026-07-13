@@ -58,8 +58,8 @@ def _report(result: dict[str, object]) -> str:
         "- Signed quality source coverage: "
         f"`{coverage.get('completed_source_count', 0)}/"
         f"{coverage.get('expected_source_count', sources['expected'])}`",
-        "- Quick-appearance reviewer acceptance: "
-        f"`{quick.get('designer_acceptance_rate', 'not_run')}` "
+        "- Quick-appearance GIA visual-fidelity acceptance: "
+        f"`{quick.get('gia_acceptance_rate', 'not_run')}` "
         f"(pass: `{quick.get('pass', False)}`)",
         "- Structural fidelity/drift class: "
         f"`{structural.get('pass', False)}`",
@@ -80,6 +80,8 @@ def main() -> int:
     parser.add_argument("--evidence-root", type=Path, required=True)
     parser.add_argument("--source-dir", type=Path, required=True)
     parser.add_argument("--evidence", type=Path)
+    parser.add_argument("--gia-review-packet", type=Path)
+    parser.add_argument("--gia-review-ledger", type=Path)
     parser.add_argument("--outdir", type=Path, required=True)
     args = parser.parse_args()
     resolved_evidence_root = evidence_root(args.evidence_root)
@@ -90,6 +92,8 @@ def main() -> int:
         args.manifest, args.config, args.source_dir, args.evidence,
         workload_path=args.workload,
         evidence_root=resolved_evidence_root,
+        review_packet_path=args.gia_review_packet,
+        review_ledger_path=args.gia_review_ledger,
     )
     output_dir.mkdir(parents=True, exist_ok=True)
     (output_dir / "results.json").write_text(

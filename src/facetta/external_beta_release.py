@@ -11,7 +11,8 @@ from __future__ import annotations
 import base64
 import json
 import re
-from datetime import datetime
+from collections import Counter
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Callable
 
@@ -19,21 +20,33 @@ from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 from cryptography.hazmat.primitives.serialization import load_pem_public_key
 
+from facetta.blind_jewelry_review import (
+    INDEPENDENT_DESIGNER_ROLE,
+    validate_signed_review_ledger,
+)
 from facetta.frozen_corpus_gate import (
     file_sha256,
     release_authority_key_separation,
 )
+from facetta.frozen_evidence_paths import (
+    confined_path,
+    evidence_root as resolve_evidence_root,
+)
 from facetta.frozen_corpus_release import verify_frozen_corpus_release
+from facetta.release_authority_bundle import (
+    REQUIRED_ROLES,
+    verify_release_authority_bundle,
+)
 
 
 Json = dict[str, Any]
 CorpusVerifier = Callable[..., Json]
+AuthorityVerifier = Callable[[dict[str, Any], Path, datetime], Json]
 
 CORPUS_DECISION_SCHEMA = "facetta-frozen-corpus-release-decision.v2"
 STAGING_RESULT_SCHEMA = "facetta-staging-isolation.v3"
 STAGING_RUN_KIND = "read_only_two_principal_staging_probe"
 STAGING_APPROVAL_SCHEMA = "facetta-staging-isolation-approval.v1"
-DESIGNER_APPROVAL_SCHEMA = "facetta-designer-acceptance-approval.v1"
 EXTERNAL_BETA_DECISION_SCHEMA = "facetta-external-beta-release-decision.v1"
 
 
@@ -75,15 +88,6 @@ def required_staging_checks() -> dict[str, object]:
 
 def canonical_staging_approval_payload(approval: Json) -> bytes:
     """Canonical bytes signed by the enrolled staging reviewer."""
-
-    unsigned = {key: value for key, value in approval.items() if key != "signature"}
-    return json.dumps(
-        unsigned, ensure_ascii=False, separators=(",", ":"), sort_keys=True,
-    ).encode("utf-8")
-
-
-def canonical_designer_approval_payload(approval: Json) -> bytes:
-    """Canonical bytes signed by the enrolled jewelry designer."""
 
     unsigned = {key: value for key, value in approval.items() if key != "signature"}
     return json.dumps(
@@ -218,47 +222,120 @@ def _expected_quick_appearance_keys(
     return keys
 
 
-def _validate_designer_decisions(
-    decisions: Json,
-    *,
-    corpus_results_hash: str,
-    corpus_run_id: object,
+def _selected_quick_appearance_scope(
+    evidence_path: Path | None,
+    evidence_root: Path | None,
     expected_keys: set[tuple[str, str]],
-) -> tuple[int, list[str]]:
-    errors: list[str] = []
-    if decisions.get("schema_version") != "facetta-designer-acceptance-decisions.v1":
-        errors.append("unsupported designer acceptance decisions schema_version")
-    if decisions.get("corpus_results_sha256") != corpus_results_hash:
-        errors.append("designer decisions do not bind the exact corpus result bytes")
-    if decisions.get("corpus_run_id") != corpus_run_id:
-        errors.append("designer decisions corpus_run_id differs from the corpus decision")
-    if decisions.get("completed") is not True:
-        errors.append("designer decisions are not complete")
-    if decisions.get("qualification") != "jewelry_designer":
-        errors.append("designer decisions qualification must be jewelry_designer")
-    if not isinstance(decisions.get("designer"), str) or not decisions["designer"].strip():
-        errors.append("designer decisions designer is missing")
-    if not _timezone_value(decisions.get("reviewed_at")):
-        errors.append("designer decisions reviewed_at must include a timezone")
-    rows = decisions.get("decisions")
-    if not isinstance(rows, list) or not all(isinstance(row, dict) for row in rows):
-        return 0, errors + ["designer acceptance decisions are invalid"]
-    observed: dict[tuple[str, str], bool] = {}
-    for row in rows:
-        key = (row.get("source_filename"), row.get("evaluation_id"))
+    errors: list[str],
+) -> list[tuple[str, str, str]]:
+    """Derive the exact signed-replay artifact scope for designer review."""
+
+    if evidence_path is None or evidence_root is None:
+        errors.append("raw replay and evidence root are required for designer scope")
+        return []
+    try:
+        root = resolve_evidence_root(evidence_root)
+        replay_path = confined_path(
+            root, evidence_path, label="replay evidence", kind="file",
+        )
+        replay = _load_object(replay_path)
+    except (OSError, ValueError, TypeError, json.JSONDecodeError) as exc:
+        errors.append(f"designer scope replay is unavailable: {exc}")
+        return []
+
+    attempts = replay.get("attempts")
+    if not isinstance(attempts, list) or not all(
+        isinstance(row, dict) for row in attempts
+    ):
+        errors.append("designer scope replay attempts are invalid")
+        return []
+    selected_by_key: dict[tuple[str, str], list[tuple[str, str, str]]] = {}
+    for row in attempts:
+        if not (
+            row.get("kind") == "edit"
+            and row.get("operation_class") == "quick_appearance"
+            and row.get("accepted") is True
+        ):
+            continue
+        source_filename = row.get("source_filename")
+        evaluation_id = row.get("evaluation_id")
+        key = (source_filename, evaluation_id)
         if not all(isinstance(value, str) and value for value in key):
-            errors.append("designer acceptance decision has an invalid key")
+            errors.append("selected quick-appearance replay row has an invalid key")
             continue
-        typed_key = (str(key[0]), str(key[1]))
-        if typed_key in observed:
-            errors.append("designer acceptance decisions contain duplicate keys")
-        if type(row.get("accepted")) is not bool:
-            errors.append("designer acceptance decision lacks boolean accepted")
+        hashes = (
+            row.get("source_image_sha256"),
+            row.get("candidate_image_sha256"),
+            row.get("mask_image_sha256"),
+        )
+        if not all(_sha256_value(value) for value in hashes):
+            errors.append(
+                "selected quick-appearance replay row has invalid artifact hashes"
+            )
             continue
-        observed[typed_key] = row["accepted"]
-    if set(observed) != expected_keys:
-        errors.append("designer acceptance decisions do not exactly cover quick appearance")
-    return sum(observed.get(key) is True for key in expected_keys), errors
+        typed_key = (str(source_filename), str(evaluation_id))
+        selected_by_key.setdefault(typed_key, []).append(
+            (str(hashes[0]), str(hashes[1]), str(hashes[2]))
+        )
+    if set(selected_by_key) != expected_keys:
+        errors.append(
+            "signed replay selected scope does not exactly cover quick appearance"
+        )
+    if any(len(rows) != 1 for rows in selected_by_key.values()):
+        errors.append(
+            "signed replay must select exactly one quick-appearance candidate per item"
+        )
+    return sorted(
+        rows[0]
+        for key, rows in selected_by_key.items()
+        if key in expected_keys and len(rows) == 1
+    )
+
+
+def _designer_packet_scope(
+    packet: Json,
+    errors: list[str],
+) -> tuple[list[tuple[str, str, str]], set[str]]:
+    """Return only the source/candidate/mask hashes visible to the designer."""
+
+    protocol = packet.get("review_protocol")
+    if not isinstance(protocol, dict) or (
+        protocol.get("reviewer_role") != INDEPENDENT_DESIGNER_ROLE
+    ):
+        errors.append("blind review packet is not for an independent designer")
+    items = packet.get("items")
+    if not isinstance(items, list) or not all(isinstance(row, dict) for row in items):
+        errors.append("blind review packet items are invalid")
+        return [], set()
+    scope: list[tuple[str, str, str]] = []
+    item_ids: set[str] = set()
+    for row in items:
+        if not (
+            row.get("kind") == "edit"
+            and row.get("operation_class") == "quick_appearance"
+        ):
+            continue
+        item_id = row.get("item_id")
+        if isinstance(item_id, str):
+            item_ids.add(item_id)
+        artifacts = row.get("artifacts")
+        source = artifacts.get("source") if isinstance(artifacts, dict) else None
+        candidate = (
+            artifacts.get("candidate") if isinstance(artifacts, dict) else None
+        )
+        mask = artifacts.get("mask") if isinstance(artifacts, dict) else None
+        hashes = (
+            source.get("sha256") if isinstance(source, dict) else None,
+            candidate.get("sha256") if isinstance(candidate, dict) else None,
+            mask.get("sha256") if isinstance(mask, dict) else None,
+        )
+        if all(_sha256_value(value) for value in hashes):
+            scope.append((str(hashes[0]), str(hashes[1]), str(hashes[2])))
+        else:
+            errors.append("blind review packet item has invalid artifact hashes")
+    if not scope:
+        errors.append("independent designer packet has no quick-appearance items")
+    return sorted(scope), item_ids
 
 
 def _staging_public_key(
@@ -304,21 +381,31 @@ def _staging_public_key(
 def _designer_public_key(
     config: Json,
     repository_root: Path,
-) -> tuple[Ed25519PublicKey | None, str | None, str | None]:
+) -> tuple[
+    Ed25519PublicKey | None,
+    str | None,
+    str | None,
+    str | None,
+]:
     configured = config.get("designer_reviewer_public_key")
     if not isinstance(configured, dict):
-        return None, None, "designer reviewer public key is not configured"
+        return None, None, None, "designer reviewer public key is not configured"
     key_id = configured.get("key_id")
     relative = configured.get("path")
     expected_hash = configured.get("sha256")
+    profile_hash = configured.get("reviewer_profile_sha256")
     if (
         not isinstance(key_id, str)
         or not key_id.strip()
         or not isinstance(relative, str)
         or not _sha256_value(expected_hash)
     ):
-        return None, key_id if isinstance(key_id, str) else None, (
+        return None, key_id if isinstance(key_id, str) else None, None, (
             "designer reviewer public-key configuration is incomplete"
+        )
+    if not _sha256_value(profile_hash):
+        return None, key_id, None, (
+            "designer reviewer profile is not hash-enrolled"
         )
     root = repository_root.resolve()
     path = (root / relative).resolve()
@@ -328,17 +415,28 @@ def _designer_public_key(
         or not path.is_file()
         or file_sha256(path) != expected_hash
     ):
-        return None, key_id, "designer reviewer public-key file failed its configured hash"
+        return None, key_id, str(profile_hash), (
+            "designer reviewer public-key file failed its configured hash"
+        )
     try:
         content = path.read_bytes()
         if len(content) == 32:
-            return Ed25519PublicKey.from_public_bytes(content), key_id, None
+            return (
+                Ed25519PublicKey.from_public_bytes(content),
+                key_id,
+                str(profile_hash),
+                None,
+            )
         key = load_pem_public_key(content)
         if not isinstance(key, Ed25519PublicKey):
-            return None, key_id, "configured designer reviewer key is not Ed25519"
-        return key, key_id, None
+            return None, key_id, str(profile_hash), (
+                "configured designer reviewer key is not Ed25519"
+            )
+        return key, key_id, str(profile_hash), None
     except (TypeError, ValueError) as exc:
-        return None, key_id, f"designer reviewer public key is invalid: {exc}"
+        return None, key_id, str(profile_hash), (
+            f"designer reviewer public key is invalid: {exc}"
+        )
 
 
 def _validate_staging_result(staging: Json) -> list[str]:
@@ -400,14 +498,22 @@ def verify_external_beta_release(
     corpus_approval_path: Path,
     corpus_exit_code_path: Path,
     config_path: Path,
-    designer_decisions_path: Path,
-    designer_approval_path: Path,
+    designer_packet_path: Path,
+    designer_ledger_path: Path,
     staging_results_path: Path,
     staging_approval_path: Path,
     staging_exit_code_path: Path,
     *,
     repository_root: Path | None = None,
+    corpus_manifest_path: Path | None = None,
+    corpus_source_dir: Path | None = None,
+    corpus_evidence_path: Path | None = None,
+    corpus_evidence_root: Path | None = None,
+    corpus_workload_path: Path | None = None,
+    gia_review_packet_path: Path | None = None,
+    gia_review_ledger_path: Path | None = None,
     corpus_verifier: CorpusVerifier = verify_frozen_corpus_release,
+    authority_verifier: AuthorityVerifier = verify_release_authority_bundle,
 ) -> Json:
     """Re-verify and compose both signed external-beta authorities."""
 
@@ -415,13 +521,33 @@ def verify_external_beta_release(
     corpus_decision = _load_object(corpus_decision_path)
     corpus_results = _load_object(corpus_results_path)
     config = _load_object(config_path)
-    designer_decisions = _load_object(designer_decisions_path)
-    designer_approval = _load_object(designer_approval_path)
+    designer_packet = _load_object(designer_packet_path)
+    designer_ledger = _load_object(designer_ledger_path)
     staging = _load_object(staging_results_path)
     staging_approval = _load_object(staging_approval_path)
     errors: list[str] = []
     authority_key_separation = release_authority_key_separation(config)
     errors.extend(authority_key_separation["errors"])
+    decision_time = datetime.now(UTC)
+    authority_bundle = authority_verifier(config, root, decision_time)
+    authority_rows = authority_bundle.get("authorities")
+    authority_roles = {
+        row.get("role")
+        for row in authority_rows
+        if isinstance(row, dict) and isinstance(row.get("role"), str)
+    } if isinstance(authority_rows, list) else set()
+    if not (
+        authority_bundle.get("status") == "pass"
+        and authority_bundle.get("errors") == []
+        and authority_roles == set(REQUIRED_ROLES)
+        and isinstance(authority_rows, list)
+        and len(authority_rows) == len(REQUIRED_ROLES)
+    ):
+        errors.append("complete six-role release authority bundle is not verified")
+        errors.extend(
+            f"release authority bundle: {error}"
+            for error in authority_bundle.get("errors", [])
+        )
 
     corpus_exit_hash = _zero_exit_code(
         corpus_exit_code_path, "frozen-corpus finalizer", errors,
@@ -434,6 +560,13 @@ def verify_external_beta_release(
         config_path,
         corpus_approval_path,
         repository_root=root,
+        manifest_path=corpus_manifest_path,
+        source_dir=corpus_source_dir,
+        evidence_path=corpus_evidence_path,
+        evidence_root=corpus_evidence_root,
+        workload_path=corpus_workload_path,
+        review_packet_path=gia_review_packet_path,
+        review_ledger_path=gia_review_ledger_path,
     )
     if corpus_decision != recomputed_corpus:
         errors.append("retained corpus final-decision differs from fresh verification")
@@ -452,113 +585,142 @@ def verify_external_beta_release(
     if not isinstance(bindings, dict) or bindings.get("config_sha256") != file_sha256(config_path):
         errors.append("frozen-corpus final-decision does not bind the exact release config")
 
-    quality = corpus_results.get("quality")
-    classified = (
-        quality.get("classified_release_gates")
-        if isinstance(quality, dict) else None
-    )
-    quick_gate = (
-        classified.get("quick_appearance")
-        if isinstance(classified, dict) else None
-    )
-    if not isinstance(quick_gate, dict) or not (
-        type(quick_gate.get("evaluation_count")) is int
-        and quick_gate["evaluation_count"] > 0
-        and type(quick_gate.get("designer_accepted_count")) is int
-        and 0 <= quick_gate["designer_accepted_count"] <= quick_gate["evaluation_count"]
-        and isinstance(quick_gate.get("designer_acceptance_rate"), (int, float))
-        and isinstance(quick_gate.get("threshold"), (int, float))
-        and quick_gate["designer_acceptance_rate"] >= quick_gate["threshold"]
-        and quick_gate.get("pass") is True
-    ):
-        errors.append("corpus quick-appearance acceptance evidence is not a clean pass")
-        quick_gate = {}
-
     corpus_results_hash = file_sha256(corpus_results_path)
     expected_designer_keys = _expected_quick_appearance_keys(config, root, errors)
-    designer_accepted_count, designer_decision_errors = _validate_designer_decisions(
-        designer_decisions,
-        corpus_results_hash=corpus_results_hash,
-        corpus_run_id=(
-            bindings.get("corpus_run_id") if isinstance(bindings, dict) else None
+    selected_scope = _selected_quick_appearance_scope(
+        corpus_evidence_path,
+        corpus_evidence_root,
+        expected_designer_keys,
+        errors,
+    )
+    packet_scope, quick_packet_item_ids = _designer_packet_scope(
+        designer_packet, errors,
+    )
+    if Counter(packet_scope) != Counter(selected_scope):
+        errors.append(
+            "blind review packet artifact hashes do not exactly match the "
+            "signed replay selections"
+        )
+
+    expected_packet_binding = {
+        "manifest_sha256": (
+            bindings.get("manifest_sha256") if isinstance(bindings, dict) else None
         ),
-        expected_keys=expected_designer_keys,
-    )
-    errors.extend(designer_decision_errors)
-    if designer_approval.get("schema_version") != DESIGNER_APPROVAL_SCHEMA:
-        errors.append("unsupported designer acceptance approval schema_version")
-    if designer_approval.get("corpus_results_sha256") != corpus_results_hash:
-        errors.append("designer approval does not bind the exact corpus result bytes")
-    if designer_approval.get("corpus_run_id") != (
+        "config_sha256": (
+            bindings.get("config_sha256") if isinstance(bindings, dict) else None
+        ),
+        "workload_sha256": (
+            bindings.get("workload_sha256") if isinstance(bindings, dict) else None
+        ),
+        "capture_sha256": (
+            bindings.get("capture_sha256") if isinstance(bindings, dict) else None
+        ),
+    }
+    if designer_packet.get("evidence_binding") != expected_packet_binding:
+        errors.append(
+            "blind review packet does not bind the exact frozen-corpus evidence"
+        )
+    expected_corpus_run_id = (
         bindings.get("corpus_run_id") if isinstance(bindings, dict) else None
-    ):
-        errors.append("designer approval corpus_run_id differs from the corpus decision")
-    designer_decisions_hash = file_sha256(designer_decisions_path)
-    if designer_approval.get("designer_decisions_sha256") != designer_decisions_hash:
-        errors.append("designer approval does not bind the exact decision ledger bytes")
-    if designer_approval.get("decision") != "approved":
-        errors.append("designer decision is not approved")
-    if designer_approval.get("qualification") != "jewelry_designer":
-        errors.append("designer approval qualification must be jewelry_designer")
-    if designer_approval.get("designer") != designer_decisions.get("designer"):
-        errors.append("designer approval identity differs from the decision ledger")
-    for field in ("designer", "approved_at", "release_ticket"):
-        value = designer_approval.get(field)
-        if not isinstance(value, str) or not value.strip():
-            errors.append(f"designer approval {field} is missing")
-    if not _timezone_value(designer_approval.get("approved_at")):
-        errors.append("designer approval approved_at must include a timezone")
-    designer_summary = designer_approval.get("quick_appearance")
-    designer_evaluation_count = len(expected_designer_keys)
-    designer_rate = (
-        round(designer_accepted_count / designer_evaluation_count, 4)
-        if designer_evaluation_count else 0.0
     )
+    if designer_packet.get("corpus_run_id") != expected_corpus_run_id:
+        errors.append("blind review packet corpus_run_id differs from corpus decision")
+
+    thresholds = config.get("thresholds")
+    configured_threshold = (
+        thresholds.get("quick_appearance_designer_acceptance_rate")
+        if isinstance(thresholds, dict) else None
+    )
+    if (
+        isinstance(configured_threshold, bool)
+        or not isinstance(configured_threshold, (int, float))
+        or not 0.90 <= float(configured_threshold) <= 1.0
+    ):
+        errors.append(
+            "independent designer acceptance threshold must be configured at "
+            "90 percent or higher"
+        )
+        designer_threshold = 1.0
+    else:
+        designer_threshold = float(configured_threshold)
+
+    quality = corpus_results.get("quality")
     release_gates = quality.get("release_gates") if isinstance(quality, dict) else None
     within_three_attempts = (
         isinstance(release_gates, dict)
         and release_gates.get("all_localized_edits_within_three_attempts") is True
     )
-    expected_designer_summary = {
-        "evaluation_count": designer_evaluation_count,
-        "accepted_count": designer_accepted_count,
-        "acceptance_rate": designer_rate,
-        "threshold": quick_gate.get("threshold"),
-        "within_three_attempts": within_three_attempts,
-    }
-    if designer_summary != expected_designer_summary:
-        errors.append("designer approval quick-appearance summary differs from corpus evidence")
-    if not (
-        designer_evaluation_count == quick_gate.get("evaluation_count")
-        and within_three_attempts
-        and isinstance(quick_gate.get("threshold"), (int, float))
-        and designer_rate >= quick_gate["threshold"]
-    ):
-        errors.append("independent designer acceptance does not meet the frozen threshold")
+    if not within_three_attempts:
+        errors.append("quick-appearance selections did not complete within three attempts")
 
-    designer_key, designer_key_id, designer_key_error = _designer_public_key(config, root)
-    designer_signature = designer_approval.get("signature")
-    designer_signature_status = "not_verified"
+    (
+        designer_key,
+        designer_key_id,
+        designer_profile_hash,
+        designer_key_error,
+    ) = _designer_public_key(config, root)
     if designer_key_error:
         errors.append(designer_key_error)
-    elif not isinstance(designer_signature, dict):
-        errors.append("designer approval is unsigned")
-    elif (
-        designer_signature.get("algorithm") != "Ed25519"
-        or designer_signature.get("key_id") != designer_key_id
-        or not isinstance(designer_signature.get("value"), str)
-    ):
-        errors.append("designer approval signature metadata is invalid")
+        designer_validation: Json = {
+            "status": "fail",
+            "errors": [designer_key_error],
+            "signature_status": "not_verified",
+            "decisions": [],
+            "accepted_count": 0,
+            "accepted_rate": 0.0,
+        }
     else:
-        try:
-            assert designer_key is not None
-            designer_key.verify(
-                base64.b64decode(designer_signature["value"], validate=True),
-                canonical_designer_approval_payload(designer_approval),
-            )
-            designer_signature_status = "verified"
-        except (InvalidSignature, ValueError, TypeError):
-            errors.append("designer approval signature is invalid")
+        assert designer_key is not None
+        assert designer_key_id is not None
+        assert designer_profile_hash is not None
+        designer_validation = validate_signed_review_ledger(
+            designer_packet,
+            designer_ledger,
+            reviewer_public_key=designer_key,
+            reviewer_key_id=designer_key_id,
+            expected_reviewer_profile_sha256=designer_profile_hash,
+        )
+        errors.extend(
+            f"independent designer review: {error}"
+            for error in designer_validation.get("errors", [])
+        )
+    designer_signature_status = designer_validation.get(
+        "signature_status", "not_verified",
+    )
+    validation_decisions = designer_validation.get("decisions")
+    quick_decisions = [
+        row
+        for row in validation_decisions
+        if isinstance(row, dict)
+        and row.get("item_id") in quick_packet_item_ids
+    ] if isinstance(validation_decisions, list) else []
+    quick_decision_ids = {
+        row.get("item_id")
+        for row in quick_decisions
+        if isinstance(row.get("item_id"), str)
+    }
+    designer_evaluation_count = len(selected_scope)
+    designer_accepted_count = sum(
+        row.get("derived_accepted") is True for row in quick_decisions
+    )
+    designer_rate = (
+        designer_accepted_count / designer_evaluation_count
+        if designer_evaluation_count
+        else 0.0
+    )
+    if not (
+        designer_validation.get("status") == "pass"
+        and designer_signature_status == "verified"
+        and len(packet_scope) == designer_evaluation_count
+        and len(quick_packet_item_ids) == designer_evaluation_count
+        and len(quick_decisions) == designer_evaluation_count
+        and quick_decision_ids == quick_packet_item_ids
+        and float(designer_rate) >= designer_threshold
+    ):
+        errors.append(
+            "independent designer criterion acceptance does not meet the "
+            "frozen threshold"
+        )
 
     verifier_pin = _pinned_file(
         config, "external_beta_release_verifier", root, errors,
@@ -626,13 +788,25 @@ def verify_external_beta_release(
         "external_beta_ready": passed,
         "provider_calls": 0,
         "mutations": 0,
+        "independent_designer_review": {
+            "status": designer_validation.get("status"),
+            "evaluation_count": designer_evaluation_count,
+            "accepted_count": designer_accepted_count,
+            "acceptance_rate": designer_rate,
+            "threshold": designer_threshold,
+            "within_three_attempts": within_three_attempts,
+        },
         "gate_bindings": {
             "corpus_final_decision_sha256": file_sha256(corpus_decision_path),
             "corpus_results_sha256": corpus_results_hash,
             "corpus_approval_sha256": file_sha256(corpus_approval_path),
             "corpus_exit_code_sha256": corpus_exit_hash,
-            "designer_approval_sha256": file_sha256(designer_approval_path),
-            "designer_decisions_sha256": designer_decisions_hash,
+            "designer_review_packet_sha256": file_sha256(
+                designer_packet_path
+            ),
+            "designer_review_ledger_sha256": file_sha256(
+                designer_ledger_path
+            ),
             "staging_results_sha256": staging_results_hash,
             "staging_approval_sha256": file_sha256(staging_approval_path),
             "staging_exit_code_sha256": staging_exit_hash,
@@ -656,5 +830,6 @@ def verify_external_beta_release(
             },
         },
         "authority_key_separation": authority_key_separation,
+        "release_authority_bundle": authority_bundle,
         "errors": errors,
     }

@@ -5,7 +5,50 @@ Read `CLAUDE.md` (constitution — binding), `README.md` (endpoints/layout),
 `docs/DATA_WANTED.md` (open research asks). This file is the delta: what is
 DONE beyond the original TASKS.md build order, and what is next.
 
-## 2026-07-13 external-evidence authority checkpoint
+## 2026-07-13 blind external-evidence authority checkpoint
+
+The corpus and external-beta release boundary now uses two separate
+`facetta-blind-jewelry-review-packet.v2` / signed-ledger workflows. The GIA
+visual-fidelity reviewer and independent jewelry designer receive opaque,
+HMAC-randomized item IDs and role-specific criterion rubrics. Their packets do
+not expose provider identity, machine scores, retry counts, machine verdicts,
+or another reviewer's decisions. Acceptance is derived by the verifier from
+the signed criterion rows; a reviewer cannot supply a trusted top-level
+Boolean. Each ledger binds the exact manifest, config, workload, signed
+capture, corpus run, selected source/candidate/mask artifacts, reviewer role,
+reviewer-profile hash, key ID, and timezone-qualified completion time.
+
+The founder finalizer no longer trusts retained `results.json` as sufficient
+evidence. It requires the raw manifest, source directory, replay, evidence
+root, workload, and GIA packet/ledger; reruns the provider-free compiler; and
+requires the recomputed result to byte-match the retained result. The combined
+external-beta controller repeats that verification, validates a separate
+designer packet/ledger over the exact quick-appearance selections, derives the
+configured acceptance rate, and preserves the live staging-isolation gate.
+Compatibility replay-v1 and legacy Boolean approval artifacts remain readable
+but cannot authorize a release.
+
+Release approval now also requires a privacy-safe six-role authority bundle.
+Executor, canonical API runner, GIA reviewer, founder, independent jewelry
+designer, and staging reviewer must each have hash-pinned enrollment,
+qualification, active-status, and key-custody evidence at one decision time.
+Role/key reuse, expiration, suspension, revocation, or unacknowledged rotation
+fails closed. The production config intentionally leaves this bundle and all
+public keys unenrolled, so local fixtures cannot impersonate external custody.
+
+Validation for this checkpoint is green: 1,709 backend tests; 135 focused
+blind-review, corpus, founder-finalizer, authority-enrollment, and
+external-beta tests; all 35 mobile Jest suites (248 tests); 70 Studio contract
+tests; TypeScript; Expo web export; Ruff; Python byte-compilation; diff hygiene;
+and frozen-definition validation.
+
+The production frozen definition still represents 144 integrity sources, 58
+ring-quality sources, and 1,044 logical evaluation sequences. No provider
+corpus run, human review, founder approval, credential enrollment, or live
+two-principal staging run was performed; both external gates remain
+`not_run` / `unmet`.
+
+## 2026-07-13 external-evidence authority checkpoint (superseded contract)
 
 The remaining beta gates now bind the code and deployment they claim to test.
 The frozen corpus configuration hash-pins the capture producer and its CLI,
@@ -41,13 +84,10 @@ assignment bundle, six separately controlled signing identities, source files,
 secured execution, completed reviews, founder approval, and live staging
 fixtures remain external and unenrolled.
 
-The next internal evaluation-quality gap is explicit: the GIA review packet is
-complete and signed but not blind. It exposes machine acceptance and scores,
-and human rows currently record a Boolean decision without a criterion-level
-jewelry rubric or rationale. Reviewer qualification is process-attested rather
-than credential-verified. Do not describe the remaining review as unbiased or
-credential-verified until a blinded, randomized, criterion-level review
-artifact and enrollment evidence are implemented and exercised.
+The blind criterion-level review and authority-enrollment contracts described
+in the checkpoint above supersede this snapshot. They are implemented and
+locally verified, but remain unexercised with real enrolled reviewers and
+external evidence.
 
 ## 2026-07-13 inspectable inputs, canonical orchestration, and honest corpus checkpoint
 

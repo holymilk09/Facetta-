@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 from typing import Any
 
+import facetta.frozen_corpus_release as frozen_corpus_release
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
@@ -100,6 +101,32 @@ def _fixture(tmp_path: Path) -> dict[str, Any]:
         "capture_workload": f"{workload.name}@sha256:{_sha(workload)}",
     }
     manifest_hash = "a" * 64
+    manifest = tmp_path / "manifest.json"
+    _json(manifest, {
+        "schema_version": "facetta-frozen-corpus.v1",
+        "corpus_id": "test-corpus",
+        "expected_source_count": 0,
+        "sources": [],
+        "evaluation_slice": {
+            "category": "ring",
+            "ring_source_filenames": [],
+            "render_case_ids": [],
+            "operation_ids": [],
+            "operation_classes": {
+                "quick_appearance": [], "structural": [],
+            },
+        },
+    })
+    evidence_root = tmp_path / "retained-evidence"
+    evidence_root.mkdir()
+    source_dir = evidence_root / "sources"
+    source_dir.mkdir()
+    evidence = evidence_root / "replay.json"
+    _json(evidence, {})
+    gia_review_packet = evidence_root / "gia-review-packet.json"
+    _json(gia_review_packet, {})
+    gia_review_ledger = evidence_root / "gia-review-ledger.json"
+    _json(gia_review_ledger, {})
     config = tmp_path / "config.json"
     _json(config, {
         "schema_version": "facetta-frozen-gate-config.v1",
@@ -114,6 +141,7 @@ def _fixture(tmp_path: Path) -> dict[str, Any]:
         "reviewer_public_key": {
             "key_id": "reviewer-v1", "path": reviewer_public_key.name,
             "sha256": _sha(reviewer_public_key),
+            "reviewer_profile_sha256": "9" * 64,
         },
         "canonical_api_runner_public_key": {
             "key_id": "canonical-api-runner-v1",
@@ -145,6 +173,11 @@ def _fixture(tmp_path: Path) -> dict[str, Any]:
             "capture_sha256": "c" * 64,
             "corpus_run_id": "corpus-run-test-1",
             "reviewer_key_id": "reviewer-v1",
+        },
+        "blind_review_evidence": {
+            "packet_file_sha256": _sha(gia_review_packet),
+            "packet_canonical_sha256": "f" * 64,
+            "ledger_file_sha256": _sha(gia_review_ledger),
         },
         "implementation": {"frozen_components": frozen_components},
         "definition": {"status": "pass", "errors": []},
@@ -220,6 +253,22 @@ def _fixture(tmp_path: Path) -> dict[str, Any]:
             },
             "reviewer_review_complete": True,
             "all_reviewer_decisions_accepted": True,
+            "blind_review": {
+                "schema_version": (
+                    "facetta-blind-jewelry-review-ledger-validation.v2"
+                ),
+                "status": "pass",
+                "signature_status": "verified",
+                "packet_sha256": "f" * 64,
+                "reviewer_profile_sha256": "9" * 64,
+                "decisions": [
+                    {"item_id": f"item-{index}", "derived_accepted": True}
+                    for index in range(1_044)
+                ],
+                "accepted_count": 1_044,
+                "accepted_rate": 1.0,
+                "errors": [],
+            },
             "reviewer_confusion_counts": {
                 "false_positives": 0, "false_negatives": 0,
             },
@@ -244,25 +293,82 @@ def _fixture(tmp_path: Path) -> dict[str, Any]:
     return {
         "results": results, "config": config, "approval": approval,
         "root": tmp_path, "components": component_files,
-        "workload": workload,
+        "workload": workload, "manifest": manifest,
+        "source_dir": source_dir, "evidence": evidence,
+        "evidence_root": evidence_root,
+        "gia_review_packet": gia_review_packet,
+        "gia_review_ledger": gia_review_ledger,
     }
 
 
-def _run(paths: dict[str, Any]) -> dict[str, Any]:
+def _run(
+    paths: dict[str, Any],
+    *,
+    include_raw_evidence: bool = True,
+    **overrides: Any,
+) -> dict[str, Any]:
+    raw = {
+        "manifest_path": paths["manifest"],
+        "source_dir": paths["source_dir"],
+        "evidence_path": paths["evidence"],
+        "evidence_root": paths["evidence_root"],
+        "workload_path": paths["workload"],
+        "gia_review_packet_path": paths["gia_review_packet"],
+        "gia_review_ledger_path": paths["gia_review_ledger"],
+    } if include_raw_evidence else {}
+    raw.update(overrides)
     return verify_frozen_corpus_release(
         paths["results"], paths["config"], paths["approval"],
         repository_root=paths["root"],
+        **raw,
     )
 
 
-def test_exact_signed_founder_decision_passes_corpus_gate_only(tmp_path: Path):
+def test_exact_recomputed_founder_decision_passes_corpus_gate_only(
+    tmp_path: Path,
+    monkeypatch,
+):
     paths = _fixture(tmp_path)
+    called: dict[str, Any] = {}
+
+    def compile_spy(
+        manifest_path: Path,
+        config_path: Path,
+        source_dir: Path,
+        evidence_path: Path,
+        **kwargs: Any,
+    ) -> dict[str, Any]:
+        called.update({
+            "manifest_path": manifest_path,
+            "config_path": config_path,
+            "source_dir": source_dir,
+            "evidence_path": evidence_path,
+            **kwargs,
+        })
+        return json.loads(paths["results"].read_text())
+
+    monkeypatch.setattr(
+        frozen_corpus_release, "compile_frozen_corpus_gate", compile_spy,
+    )
     result = _run(paths)
     assert result["schema_version"] == "facetta-frozen-corpus-release-decision.v2"
     assert result["corpus_gate_ready"] is True
     assert "external_beta_ready" not in result
     assert result["founder_signature"]["status"] == "verified"
     assert result["provider_calls"] == 0
+    assert result["evidence_reverification"]["status"] == "pass"
+    assert result["evidence_reverification"]["matches_retained_results"] is True
+    assert called == {
+        "manifest_path": paths["manifest"],
+        "config_path": paths["config"],
+        "source_dir": paths["source_dir"],
+        "evidence_path": paths["evidence"],
+        "repository_root": paths["root"],
+        "workload_path": paths["workload"],
+        "evidence_root": paths["evidence_root"],
+        "review_packet_path": paths["gia_review_packet"],
+        "review_ledger_path": paths["gia_review_ledger"],
+    }
     assert "two-principal staging-isolation" in result["release_boundary"]
     assert result["gate_bindings"]["results_sha256"] == _sha(paths["results"])
     assert result["gate_bindings"]["config_sha256"] == _sha(paths["config"])
@@ -278,6 +384,113 @@ def test_exact_signed_founder_decision_passes_corpus_gate_only(tmp_path: Path):
         "quality_assignment_count": 1_044,
     }
     assert len(result["gate_bindings"]["implementation_pins_sha256"]) == 64
+
+
+def test_synthetic_verified_summaries_without_raw_evidence_fail_closed(
+    tmp_path: Path,
+):
+    paths = _fixture(tmp_path)
+
+    result = _run(paths, include_raw_evidence=False)
+
+    assert result["corpus_gate_ready"] is False
+    assert result["evidence_reverification"]["status"] == "not_run"
+    assert any(
+        "raw frozen-corpus evidence inputs are required" in error
+        for error in result["errors"]
+    )
+
+
+def test_invalid_raw_gia_signature_fails_closed(tmp_path: Path, monkeypatch):
+    paths = _fixture(tmp_path)
+    recomputed = json.loads(paths["results"].read_text())
+    recomputed["status"] = "incomplete_or_failed"
+    recomputed["corpus_gate_ready"] = False
+    recomputed["quality"]["status"] = "fail"
+    recomputed["quality"]["errors"] = ["reviewer signature is invalid"]
+    recomputed["quality"]["signature"] = {
+        "status": "not_verified", "key_id": "reviewer-v1",
+    }
+    monkeypatch.setattr(
+        frozen_corpus_release,
+        "compile_frozen_corpus_gate",
+        lambda *args, **kwargs: recomputed,
+    )
+
+    result = _run(paths)
+
+    assert result["corpus_gate_ready"] is False
+    assert result["evidence_reverification"]["status"] == "fail"
+    assert any("replay signature" in error for error in result["errors"])
+
+
+def test_invalid_raw_persistence_signature_fails_closed(
+    tmp_path: Path,
+    monkeypatch,
+):
+    paths = _fixture(tmp_path)
+    recomputed = json.loads(paths["results"].read_text())
+    recomputed["status"] = "incomplete_or_failed"
+    recomputed["corpus_gate_ready"] = False
+    recomputed["quality"]["status"] = "fail"
+    recomputed["quality"]["errors"] = [
+        "canonical API runner signature is invalid",
+    ]
+    recomputed["quality"]["persistence_attestation"]["status"] = "fail"
+    recomputed["quality"]["persistence_attestation"]["errors"] = [
+        "attestation signature is invalid",
+    ]
+    recomputed["quality"]["persistence_attestation"]["signature"] = {
+        "status": "not_verified", "key_id": "canonical-api-runner-v1",
+    }
+    monkeypatch.setattr(
+        frozen_corpus_release,
+        "compile_frozen_corpus_gate",
+        lambda *args, **kwargs: recomputed,
+    )
+
+    result = _run(paths)
+
+    assert result["corpus_gate_ready"] is False
+    assert result["evidence_reverification"]["status"] == "fail"
+    assert any(
+        "signed persistence attestation" in error for error in result["errors"]
+    )
+
+
+def test_recomputed_result_must_byte_match_retained_result(
+    tmp_path: Path,
+    monkeypatch,
+):
+    paths = _fixture(tmp_path)
+    recomputed = json.loads(paths["results"].read_text())
+    recomputed["compiler_note"] = "different retained bytes"
+    monkeypatch.setattr(
+        frozen_corpus_release,
+        "compile_frozen_corpus_gate",
+        lambda *args, **kwargs: recomputed,
+    )
+
+    result = _run(paths)
+
+    assert result["corpus_gate_ready"] is False
+    assert result["evidence_reverification"]["matches_retained_results"] is False
+    assert any("byte-match retained results" in error for error in result["errors"])
+
+
+def test_raw_replay_paths_are_confined_to_explicit_evidence_root(tmp_path: Path):
+    paths = _fixture(tmp_path)
+    outside_source = tmp_path / "outside-sources"
+    outside_source.mkdir()
+
+    result = _run(paths, source_dir=outside_source)
+
+    assert result["corpus_gate_ready"] is False
+    assert result["evidence_reverification"]["status"] == "fail"
+    assert any(
+        "source directory escapes the evidence root" in error
+        for error in result["errors"]
+    )
 
 
 def test_approval_for_different_result_fails(tmp_path: Path):

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import hmac
 import json
 from datetime import datetime
 from pathlib import Path
@@ -14,6 +15,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 from cryptography.hazmat.primitives.serialization import load_pem_public_key
 
 from facetta.frozen_corpus_gate import (
+    compile_frozen_corpus_gate,
     file_sha256,
     release_authority_key_separation,
     validate_frozen_component_pins,
@@ -45,10 +47,15 @@ def _load_object(path: Path) -> Json:
 
 
 def _canonical_sha256(value: Any) -> str:
-    encoded = json.dumps(
+    return hashlib.sha256(_canonical_json_bytes(value)).hexdigest()
+
+
+def _canonical_json_bytes(value: Any) -> bytes:
+    """Serialize JSON deterministically for semantic byte comparison."""
+
+    return json.dumps(
         value, ensure_ascii=False, separators=(",", ":"), sort_keys=True,
     ).encode("utf-8")
-    return hashlib.sha256(encoded).hexdigest()
 
 
 def _sha256_value(value: Any) -> bool:
@@ -263,6 +270,34 @@ def _validate_compiled_result_internals(
         errors.append("frozen-corpus GIA reviewer evidence is incomplete")
     if quality.get("all_reviewer_decisions_accepted") is not True:
         errors.append("frozen-corpus reviewer decisions are not all accepted")
+    blind_review = quality.get("blind_review")
+    blind_binding = results.get("blind_review_evidence")
+    reviewer_profile_sha256 = (
+        reviewer_key.get("reviewer_profile_sha256")
+        if isinstance(reviewer_key, dict) else None
+    )
+    if not isinstance(blind_review, dict) or not (
+        blind_review.get("schema_version")
+        == "facetta-blind-jewelry-review-ledger-validation.v2"
+        and blind_review.get("status") == "pass"
+        and blind_review.get("signature_status") == "verified"
+        and blind_review.get("reviewer_profile_sha256")
+        == reviewer_profile_sha256
+        and blind_review.get("accepted_count") == assignment_count
+        and blind_review.get("accepted_rate") == 1.0
+        and isinstance(blind_review.get("decisions"), list)
+        and len(blind_review["decisions"]) == assignment_count
+        and blind_review.get("errors") == []
+    ):
+        errors.append("frozen-corpus blind GIA criterion review is not a clean pass")
+    if not isinstance(blind_binding, dict) or not (
+        _sha256_value(blind_binding.get("packet_file_sha256"))
+        and _sha256_value(blind_binding.get("packet_canonical_sha256"))
+        and _sha256_value(blind_binding.get("ledger_file_sha256"))
+        and blind_review.get("packet_sha256")
+        == blind_binding.get("packet_canonical_sha256")
+    ):
+        errors.append("frozen-corpus blind GIA artifact binding is incomplete")
     if quality.get("all_outside_mask_drift_pass") is not True:
         errors.append("frozen-corpus outside-mask replay is not a clean pass")
     runner_key = config.get("canonical_api_runner_public_key")
@@ -363,12 +398,150 @@ def _public_key(config: Json, repository_root: Path) -> tuple[Ed25519PublicKey |
         return None, key_id, f"founder public key is invalid: {exc}"
 
 
+def _reverify_retained_results(
+    results: Json,
+    config: Json,
+    *,
+    manifest_path: Path | None,
+    config_path: Path,
+    source_dir: Path | None,
+    evidence_path: Path | None,
+    evidence_root: Path | None,
+    workload_path: Path | None,
+    gia_review_packet_path: Path | None,
+    gia_review_ledger_path: Path | None,
+    repository_root: Path,
+    workload_hash: str | None,
+    integrity_count: int,
+    quality_count: int,
+    assignment_count: int,
+) -> Json:
+    """Recompile one retained result from its raw, signed evidence.
+
+    A retained result is a cache, not authority.  The compiler reopens the
+    confined replay and independently verifies the GIA-reviewer and canonical
+    API persistence signatures.  Canonical JSON bytes must then match the
+    retained result exactly.  This remains provider-free.
+    """
+
+    retained_bytes = _canonical_json_bytes(results)
+    summary: Json = {
+        "status": "not_run",
+        "compiler": "compile_frozen_corpus_gate",
+        "provider_calls": 0,
+        "matches_retained_results": False,
+        "retained_results_canonical_sha256": hashlib.sha256(
+            retained_bytes
+        ).hexdigest(),
+        "recomputed_results_canonical_sha256": None,
+        "errors": [],
+    }
+    required = {
+        "manifest_path": manifest_path,
+        "source_dir": source_dir,
+        "evidence_path": evidence_path,
+        "evidence_root": evidence_root,
+        "workload_path": workload_path,
+        "gia_review_packet_path": gia_review_packet_path,
+        "gia_review_ledger_path": gia_review_ledger_path,
+    }
+    missing = [name for name, value in required.items() if value is None]
+    if missing:
+        summary["errors"] = [
+            "raw frozen-corpus evidence inputs are required: "
+            + ", ".join(missing)
+        ]
+        return summary
+
+    try:
+        assert manifest_path is not None
+        assert source_dir is not None
+        assert evidence_path is not None
+        assert evidence_root is not None
+        assert workload_path is not None
+        recomputed = compile_frozen_corpus_gate(
+            manifest_path,
+            config_path,
+            source_dir,
+            evidence_path,
+            repository_root=repository_root,
+            workload_path=workload_path,
+            evidence_root=evidence_root,
+            review_packet_path=gia_review_packet_path,
+            review_ledger_path=gia_review_ledger_path,
+        )
+    except (OSError, ValueError, TypeError, json.JSONDecodeError) as exc:
+        summary["status"] = "fail"
+        summary["errors"] = [
+            f"raw frozen-corpus evidence could not be recomputed: {exc}"
+        ]
+        return summary
+
+    recomputed_bytes = _canonical_json_bytes(recomputed)
+    summary["recomputed_results_canonical_sha256"] = hashlib.sha256(
+        recomputed_bytes
+    ).hexdigest()
+    summary["matches_retained_results"] = hmac.compare_digest(
+        retained_bytes, recomputed_bytes
+    )
+    compiler_provider_calls = recomputed.get("provider_calls")
+    summary["provider_calls"] = compiler_provider_calls
+
+    revalidation_errors: list[str] = []
+    if compiler_provider_calls != 0:
+        revalidation_errors.append(
+            "recomputed frozen-corpus gate provider_calls must be zero"
+        )
+    if (
+        recomputed.get("status") != "pass"
+        or recomputed.get("corpus_gate_ready") is not True
+    ):
+        revalidation_errors.append(
+            "recomputed frozen-corpus technical/GIA result is not release-ready"
+        )
+    for section_name in ("definition", "quality"):
+        section = recomputed.get(section_name)
+        section_errors = (
+            section.get("errors") if isinstance(section, dict) else None
+        )
+        if isinstance(section_errors, list):
+            for error in section_errors:
+                if isinstance(error, str) and error:
+                    revalidation_errors.append(
+                        f"recomputed {section_name}: {error}"
+                    )
+    for error in _validate_compiled_result_internals(
+        recomputed,
+        config,
+        workload_hash,
+        integrity_count,
+        quality_count,
+        assignment_count,
+    ):
+        revalidation_errors.append(f"recomputed result: {error}")
+    if summary["matches_retained_results"] is not True:
+        revalidation_errors.append(
+            "recomputed frozen-corpus result does not byte-match retained results"
+        )
+
+    summary["errors"] = revalidation_errors
+    summary["status"] = "pass" if not revalidation_errors else "fail"
+    return summary
+
+
 def verify_frozen_corpus_release(
     results_path: Path,
     config_path: Path,
     approval_path: Path,
     *,
     repository_root: Path | None = None,
+    manifest_path: Path | None = None,
+    source_dir: Path | None = None,
+    evidence_path: Path | None = None,
+    evidence_root: Path | None = None,
+    workload_path: Path | None = None,
+    gia_review_packet_path: Path | None = None,
+    gia_review_ledger_path: Path | None = None,
 ) -> Json:
     results = _load_object(results_path)
     config = _load_object(config_path)
@@ -411,6 +584,25 @@ def verify_frozen_corpus_release(
         quality_count,
         assignment_count,
     ))
+
+    evidence_reverification = _reverify_retained_results(
+        results,
+        config,
+        manifest_path=manifest_path,
+        config_path=config_path,
+        source_dir=source_dir,
+        evidence_path=evidence_path,
+        evidence_root=evidence_root,
+        workload_path=workload_path,
+        gia_review_packet_path=gia_review_packet_path,
+        gia_review_ledger_path=gia_review_ledger_path,
+        repository_root=root,
+        workload_hash=workload_hash,
+        integrity_count=integrity_count,
+        quality_count=quality_count,
+        assignment_count=assignment_count,
+    )
+    errors.extend(map(str, evidence_reverification["errors"]))
 
     result_manifest = results.get("manifest")
     result_config = results.get("config")
@@ -552,6 +744,7 @@ def verify_frozen_corpus_release(
             ),
         },
         "approval_sha256": file_sha256(approval_path),
+        "evidence_reverification": evidence_reverification,
         "authority_key_separation": authority_key_separation,
         "founder_signature": {"status": signature_status, "key_id": key_id},
         "errors": errors,

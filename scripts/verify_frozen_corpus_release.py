@@ -17,6 +17,13 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--results", type=Path, required=True)
     parser.add_argument("--approval", type=Path, required=True)
+    parser.add_argument("--manifest", type=Path, required=True)
+    parser.add_argument("--source-dir", type=Path, required=True)
+    parser.add_argument("--evidence", type=Path, required=True)
+    parser.add_argument("--evidence-root", type=Path, required=True)
+    parser.add_argument("--workload", type=Path, required=True)
+    parser.add_argument("--gia-review-packet", type=Path, required=True)
+    parser.add_argument("--gia-review-ledger", type=Path, required=True)
     parser.add_argument(
         "--config", type=Path,
         default=ROOT / "docs/evals/frozen-founder-corpus-v1/config.json",
@@ -25,6 +32,13 @@ def main() -> int:
     args = parser.parse_args()
     decision = verify_frozen_corpus_release(
         args.results, args.config, args.approval,
+        manifest_path=args.manifest,
+        source_dir=args.source_dir,
+        evidence_path=args.evidence,
+        evidence_root=args.evidence_root,
+        workload_path=args.workload,
+        gia_review_packet_path=args.gia_review_packet,
+        gia_review_ledger_path=args.gia_review_ledger,
     )
     args.outdir.mkdir(parents=True, exist_ok=True)
     (args.outdir / "final-decision.json").write_text(

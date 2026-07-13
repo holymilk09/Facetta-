@@ -20,8 +20,15 @@ def main() -> int:
     parser.add_argument("--corpus-results", type=Path, required=True)
     parser.add_argument("--corpus-approval", type=Path, required=True)
     parser.add_argument("--corpus-exit-code", type=Path, required=True)
-    parser.add_argument("--designer-approval", type=Path, required=True)
-    parser.add_argument("--designer-decisions", type=Path, required=True)
+    parser.add_argument("--corpus-manifest", type=Path, required=True)
+    parser.add_argument("--corpus-source-dir", type=Path, required=True)
+    parser.add_argument("--corpus-evidence", type=Path, required=True)
+    parser.add_argument("--corpus-evidence-root", type=Path, required=True)
+    parser.add_argument("--corpus-workload", type=Path, required=True)
+    parser.add_argument("--gia-review-packet", type=Path, required=True)
+    parser.add_argument("--gia-review-ledger", type=Path, required=True)
+    parser.add_argument("--designer-review-packet", type=Path, required=True)
+    parser.add_argument("--designer-review-ledger", type=Path, required=True)
     parser.add_argument("--staging-results", type=Path, required=True)
     parser.add_argument("--staging-approval", type=Path, required=True)
     parser.add_argument("--staging-exit-code", type=Path, required=True)
@@ -39,11 +46,18 @@ def main() -> int:
         args.corpus_approval,
         args.corpus_exit_code,
         args.config,
-        args.designer_decisions,
-        args.designer_approval,
+        args.designer_review_packet,
+        args.designer_review_ledger,
         args.staging_results,
         args.staging_approval,
         args.staging_exit_code,
+        corpus_manifest_path=args.corpus_manifest,
+        corpus_source_dir=args.corpus_source_dir,
+        corpus_evidence_path=args.corpus_evidence,
+        corpus_evidence_root=args.corpus_evidence_root,
+        corpus_workload_path=args.corpus_workload,
+        gia_review_packet_path=args.gia_review_packet,
+        gia_review_ledger_path=args.gia_review_ledger,
     )
     args.outdir.mkdir(parents=True, exist_ok=True)
     artifact = args.outdir / "external-beta-decision.json"

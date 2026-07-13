@@ -10,6 +10,12 @@ from PIL import Image
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
+from facetta.blind_jewelry_review import (
+    GIA_VISUAL_FIDELITY_ROLE,
+    blind_review_packet_sha256,
+    build_blind_review_packet,
+    canonical_review_ledger_payload,
+)
 from facetta.frozen_corpus_gate import (
     canonical_evidence_payload,
     compile_frozen_corpus_gate,
@@ -88,6 +94,40 @@ def _write_signed(paths: dict[str, Any], evidence: dict[str, Any]) -> None:
     evidence["artifact_index"] = build_artifact_index(artifact_rows)
     _sign(paths, evidence)
     _json(paths["evidence"], evidence)
+
+
+def _write_review_ledger(paths: dict[str, Any], ledger: dict[str, Any]) -> None:
+    ledger.pop("signature", None)
+    ledger["signature"] = {
+        "algorithm": "Ed25519",
+        "key_id": "test-reviewer-v1",
+        "value": base64.b64encode(paths["private_key"].sign(
+            canonical_review_ledger_payload(ledger)
+        )).decode("ascii"),
+    }
+    _json(paths["review_ledger"], ledger)
+
+
+def _reject_blind_review_item(
+    paths: dict[str, Any], *, kind: str | None = None,
+    operation_class: str | None = None,
+) -> None:
+    packet = json.loads(paths["review_packet"].read_text())
+    ledger = json.loads(paths["review_ledger"].read_text())
+    item = next(
+        row for row in packet["items"]
+        if (kind is None or row["kind"] == kind)
+        and (operation_class is None or row["operation_class"] == operation_class)
+    )
+    decision = next(
+        row for row in ledger["decisions"] if row["item_id"] == item["item_id"]
+    )
+    decision["criteria"][0] = {
+        **decision["criteria"][0],
+        "rating": "fail",
+        "rationale": "Visible fidelity does not meet the declared criterion.",
+    }
+    _write_review_ledger(paths, ledger)
 
 
 def _fixture(tmp_path: Path) -> dict[str, Any]:
@@ -174,6 +214,8 @@ def _fixture(tmp_path: Path) -> dict[str, Any]:
         "replay_verifier", "replay_runner", "release_verifier",
         "packet_builder", "packet_runner", "capture_producer",
         "capture_producer_cli",
+        "blind_review_contract", "release_authority_enrollment",
+        "release_authority_bundle",
     ):
         path = components / f"{name}.py"
         path.write_text(f"# frozen {name}\n")
@@ -214,6 +256,7 @@ def _fixture(tmp_path: Path) -> dict[str, Any]:
             "key_id": "test-reviewer-v1",
             "path": reviewer_key.name,
             "sha256": _sha(reviewer_key),
+            "reviewer_profile_sha256": "b" * 64,
         },
         "canonical_api_runner_public_key": {
             "key_id": "canonical-api-runner-v1",
@@ -380,16 +423,92 @@ def _fixture(tmp_path: Path) -> dict[str, Any]:
     }
     evidence_value["persistence_evidence"] = attestation
     _write_signed(paths, evidence_value)
+    selected_items = []
+    for row in evidence_value["attempts"]:
+        kind = str(row["kind"])
+        selected_items.append({
+            "kind": kind,
+            "operation_class": row["operation_class"],
+            "intent": {
+                "intended_change": f"Review {row['evaluation_id']} visual fidelity",
+                "target_region": None if kind == "render" else "declared edit region",
+                "frozen_facts": ["design identity", "unrelated geometry"],
+            },
+            "source": {
+                "path": row["source_image"],
+                "sha256": row["source_image_sha256"],
+            },
+            "candidate": {
+                "path": row["candidate_image"],
+                "sha256": row["candidate_image_sha256"],
+            },
+            "mask": (
+                {
+                    "path": row["mask_image"],
+                    "sha256": row["mask_image_sha256"],
+                }
+                if kind == "edit" else None
+            ),
+        })
+    review_packet_value = build_blind_review_packet(
+        corpus_run_id="corpus-run-test-1",
+        manifest_sha256=_sha(manifest),
+        config_sha256=_sha(config),
+        workload_sha256=_sha(workload),
+        capture_sha256=_sha(capture_artifact),
+        reviewer_role=GIA_VISUAL_FIDELITY_ROLE,
+        review_seed="a" * 64,
+        selected_items=selected_items,
+    )
+    review_packet = tmp_path / "gia-blind-review-packet.json"
+    _json(review_packet, review_packet_value)
+    review_ledger = tmp_path / "gia-blind-review-ledger.json"
+    review_ledger_value = {
+        "schema_version": "facetta-blind-jewelry-review-ledger.v2",
+        "blind_packet_sha256": blind_review_packet_sha256(review_packet_value),
+        "reviewer_id": "opaque-gia-reviewer-test",
+        "reviewer_role": GIA_VISUAL_FIDELITY_ROLE,
+        "reviewer_profile_sha256": "b" * 64,
+        "review_timezone": "UTC",
+        "reviewed_at": "2026-07-13T00:00:00+00:00",
+        "decisions": [
+            {
+                "item_id": item["item_id"],
+                "selected_source_sha256": item["artifacts"]["source"]["sha256"],
+                "selected_candidate_sha256": item["artifacts"]["candidate"]["sha256"],
+                "selected_mask_sha256": (
+                    item["artifacts"]["mask"]["sha256"]
+                    if item["artifacts"]["mask"] is not None else None
+                ),
+                "criteria": [
+                    {
+                        "criterion_id": criterion["criterion_id"],
+                        "rating": "pass",
+                        "rationale": "",
+                    }
+                    for criterion in item["criteria"]
+                ],
+            }
+            for item in review_packet_value["items"]
+        ],
+    }
+    paths["review_packet"] = review_packet
+    paths["review_ledger"] = review_ledger
+    _write_review_ledger(paths, review_ledger_value)
     return paths
 
 
-def _run(paths: dict[str, Any], *, evidence: bool = True) -> dict:
+def _run(
+    paths: dict[str, Any], *, evidence: bool = True, review: bool = True,
+) -> dict:
     return compile_frozen_corpus_gate(
         paths["manifest"], paths["config"], paths["source_dir"],
         paths["evidence"] if evidence else None,
         repository_root=paths["root"],
         workload_path=paths["workload"],
         evidence_root=paths["root"],
+        review_packet_path=paths["review_packet"] if review else None,
+        review_ledger_path=paths["review_ledger"] if review else None,
     )
 
 
@@ -592,12 +711,68 @@ def test_absent_replay_is_not_run_and_fails_closed(tmp_path: Path):
 
 def test_missing_reviewer_fails_quality(tmp_path: Path):
     paths = _fixture(tmp_path)
-    evidence = _refresh_evidence_hashes(paths)
-    evidence.pop("reviewer_review")
-    _write_signed(paths, evidence)
-    result = _run(paths)
+    result = _run(paths, review=False)
     assert result["quality"]["reviewer_review_complete"] is False
-    assert any("reviewer" in error for error in result["quality"]["errors"])
+    assert any("blind v2" in error for error in result["quality"]["errors"])
+
+
+def test_v1_boolean_review_cannot_make_corpus_ready_without_blind_v2(
+    tmp_path: Path,
+):
+    paths = _fixture(tmp_path)
+    legacy = json.loads(paths["evidence"].read_text())["reviewer_review"]
+    assert legacy["completed"] is True
+    assert all(row["accepted"] is True for row in legacy["decisions"])
+
+    result = _run(paths, review=False)
+
+    assert result["corpus_gate_ready"] is False
+    assert result["quality"]["blind_review"]["status"] == "not_run"
+
+
+def test_blind_packet_must_exactly_cover_selected_replay_artifacts(tmp_path: Path):
+    paths = _fixture(tmp_path)
+    packet = json.loads(paths["review_packet"].read_text())
+    packet["items"][0]["artifacts"]["candidate"]["sha256"] = "f" * 64
+    _json(paths["review_packet"], packet)
+
+    result = _run(paths)
+
+    assert result["corpus_gate_ready"] is False
+    assert any(
+        "does not exactly cover selected replay artifacts" in error
+        for error in result["quality"]["errors"]
+    )
+
+
+def test_blind_ledger_profile_must_match_configured_gia_profile(tmp_path: Path):
+    paths = _fixture(tmp_path)
+    ledger = json.loads(paths["review_ledger"].read_text())
+    ledger["reviewer_profile_sha256"] = "c" * 64
+    _write_review_ledger(paths, ledger)
+
+    result = _run(paths)
+
+    assert result["corpus_gate_ready"] is False
+    assert any(
+        "reviewer_profile_sha256 differs" in error
+        for error in result["quality"]["errors"]
+    )
+
+
+def test_gia_reviewer_profile_must_be_config_enrolled(tmp_path: Path):
+    paths = _fixture(tmp_path)
+    config = json.loads(paths["config"].read_text())
+    config["reviewer_public_key"].pop("reviewer_profile_sha256")
+    _json(paths["config"], config)
+
+    result = _run(paths)
+
+    assert result["corpus_gate_ready"] is False
+    assert any(
+        "GIA reviewer profile sha256 is invalid" in error
+        for error in result["definition"]["errors"]
+    )
 
 
 def test_more_than_three_attempts_fails_quality(tmp_path: Path):
@@ -693,18 +868,11 @@ def test_persistence_attestation_cannot_replay_across_capture_runs(tmp_path: Pat
 
 def test_quick_appearance_reviewer_acceptance_is_a_release_gate(tmp_path: Path):
     paths = _fixture(tmp_path)
-    evidence = _refresh_evidence_hashes(paths)
-    decision = next(
-        row for row in evidence["reviewer_review"]["decisions"]
-        if row["evaluation_id"] == "edit-one"
-    )
-    decision["accepted"] = False
-    evidence["reviewer_review"]["false_positives"] = 1
-    _write_signed(paths, evidence)
+    _reject_blind_review_item(paths, operation_class="quick_appearance")
     result = _run(paths)
     gate = result["quality"]["classified_release_gates"]["quick_appearance"]
-    assert gate["designer_acceptance_rate"] == 0
-    assert gate["threshold"] == 0.9
+    assert gate["gia_acceptance_rate"] == 0
+    assert gate["independent_designer_acceptance_threshold"] == 0.9
     assert gate["pass"] is False
     assert result["corpus_gate_ready"] is False
 
@@ -725,7 +893,7 @@ def test_structural_fidelity_is_classified_independently(tmp_path: Path):
     assert result["corpus_gate_ready"] is False
 
 
-def test_reviewer_confusion_summary_must_match_decisions(tmp_path: Path):
+def test_legacy_boolean_summary_cannot_override_blind_v2_ledger(tmp_path: Path):
     paths = _fixture(tmp_path)
     evidence = _refresh_evidence_hashes(paths)
     evidence["reviewer_review"]["false_negatives"] = 9
@@ -734,8 +902,8 @@ def test_reviewer_confusion_summary_must_match_decisions(tmp_path: Path):
     assert result["quality"]["reviewer_confusion_counts"] == {
         "false_positives": 0, "false_negatives": 0,
     }
-    assert result["quality"]["reviewer_review_complete"] is False
-    assert result["corpus_gate_ready"] is False
+    assert result["quality"]["reviewer_review_complete"] is True
+    assert result["corpus_gate_ready"] is True
 
 
 def test_unsigned_evidence_fails_signature_gate(tmp_path: Path):
@@ -924,14 +1092,7 @@ def test_attempt_operation_class_must_match_workload(tmp_path: Path):
 
 def test_gia_rejection_of_render_fails_quality(tmp_path: Path):
     paths = _fixture(tmp_path)
-    evidence = _refresh_evidence_hashes(paths)
-    decision = next(
-        row for row in evidence["reviewer_review"]["decisions"]
-        if row["kind"] == "render"
-    )
-    decision["accepted"] = False
-    evidence["reviewer_review"]["false_positives"] = 1
-    _write_signed(paths, evidence)
+    _reject_blind_review_item(paths, kind="render")
     result = _run(paths)
     assert result["quality"]["all_reviewer_decisions_accepted"] is False
     assert result["quality"]["status"] == "fail"
@@ -939,14 +1100,7 @@ def test_gia_rejection_of_render_fails_quality(tmp_path: Path):
 
 def test_gia_rejection_of_structural_edit_fails_quality(tmp_path: Path):
     paths = _fixture(tmp_path)
-    evidence = _refresh_evidence_hashes(paths)
-    decision = next(
-        row for row in evidence["reviewer_review"]["decisions"]
-        if row["evaluation_id"] == "edit-structural"
-    )
-    decision["accepted"] = False
-    evidence["reviewer_review"]["false_positives"] = 1
-    _write_signed(paths, evidence)
+    _reject_blind_review_item(paths, operation_class="structural")
     result = _run(paths)
     assert result["quality"]["all_reviewer_decisions_accepted"] is False
     assert result["quality"]["status"] == "fail"

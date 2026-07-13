@@ -13,6 +13,10 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
+from facetta.blind_jewelry_review import (
+    GIA_VISUAL_FIDELITY_ROLE,
+    build_blind_review_packet,
+)
 from facetta.frozen_capture_workload import (
     CAPTURE_SCHEMA,
     build_provider_call_plan,
@@ -315,3 +319,121 @@ def prepare_frozen_corpus_review_packet(
         "packet_status": "awaiting_GIA_trained_review_and_signature",
         "corpus_gate_ready": False,
     }
+
+
+def prepare_blind_frozen_corpus_review_packet_v2(
+    manifest_path: Path,
+    config_path: Path,
+    workload_path: Path,
+    source_dir: Path,
+    capture_path: Path,
+    *,
+    evidence_root: Path,
+    capture_public_key_path: Path,
+    capture_key_id: str,
+    review_seed: str,
+    reviewer_role: str = GIA_VISUAL_FIDELITY_ROLE,
+    repository_root: Path | None = None,
+) -> Json:
+    """Prepare the reviewer-visible, blind v2 artifact.
+
+    The v1 converter remains the compatibility reader and secured capture
+    validator.  This adapter deliberately projects only the machine-selected
+    source/candidate/mask, their signed hashes, and the canonical reviewed
+    intent into the v2 artifact.  Raw attempts, evaluator output, provider
+    routing, retries, and machine verdicts never cross this seam.
+    """
+
+    machine_evidence = prepare_frozen_corpus_review_packet(
+        manifest_path,
+        config_path,
+        workload_path,
+        source_dir,
+        capture_path,
+        evidence_root=evidence_root,
+        capture_public_key_path=capture_public_key_path,
+        capture_key_id=capture_key_id,
+        repository_root=repository_root,
+    )
+    plan = build_provider_call_plan(
+        manifest_path,
+        config_path,
+        workload_path,
+        repository_root=repository_root,
+    )
+    planned_by_key = {
+        (row["kind"], row["evaluation_id"], row["source_filename"]): row
+        for row in plan["items"]
+    }
+    attempts_by_key: dict[tuple[str, str, str], list[Json]] = defaultdict(list)
+    for row in machine_evidence["attempts"]:
+        key = (
+            str(row["kind"]),
+            str(row["evaluation_id"]),
+            str(row["source_filename"]),
+        )
+        attempts_by_key[key].append(row)
+
+    selected_items: list[Json] = []
+    for key in sorted(planned_by_key):
+        planned = planned_by_key[key]
+        attempts = attempts_by_key.get(key, [])
+        selected = [row for row in attempts if row.get("accepted") is True]
+        if len(selected) != 1:
+            raise ValueError(
+                "blind v2 requires exactly one machine-selected candidate for "
+                + ":".join(key)
+            )
+        row = selected[0]
+        resolved = planned.get("resolved_inputs")
+        execution = resolved.get("execution") if isinstance(resolved, dict) else None
+        if not isinstance(execution, dict):
+            raise ValueError(
+                "blind v2 canonical review intent is unavailable for " + ":".join(key)
+            )
+        if row.get("resolved_inputs_sha256") != planned.get("resolved_inputs_sha256"):
+            raise ValueError(
+                "blind v2 selected candidate input binding differs for " + ":".join(key)
+            )
+        selected_items.append({
+            "kind": planned["kind"],
+            "operation_class": planned["operation_class"],
+            "intent": {
+                "intended_change": execution["intent"],
+                "target_region": execution["region_description"],
+                "frozen_facts": execution["frozen_facts"],
+            },
+            "source": {
+                "path": row["source_image"],
+                "sha256": row["source_image_sha256"],
+            },
+            "candidate": {
+                "path": row["candidate_image"],
+                "sha256": row["candidate_image_sha256"],
+            },
+            "mask": (
+                {
+                    "path": row["mask_image"],
+                    "sha256": row["mask_image_sha256"],
+                }
+                if planned["kind"] == "edit" else None
+            ),
+        })
+
+    return build_blind_review_packet(
+        corpus_run_id=str(machine_evidence["capture_provenance"]["corpus_run_id"]),
+        manifest_sha256=str(machine_evidence["manifest_sha256"]),
+        config_sha256=str(machine_evidence["config_sha256"]),
+        workload_sha256=str(machine_evidence["workload_sha256"]),
+        capture_sha256=str(machine_evidence["capture_sha256"]),
+        reviewer_role=reviewer_role,
+        review_seed=review_seed,
+        selected_items=selected_items,
+    )
+
+
+__all__ = [
+    "PACKET_SCHEMA",
+    "prepare_blind_frozen_corpus_review_packet_v2",
+    "prepare_frozen_corpus_review_packet",
+]

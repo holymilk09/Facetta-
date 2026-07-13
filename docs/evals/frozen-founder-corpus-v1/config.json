@@ -9,11 +9,14 @@
     "evaluator_bundle": "src/facetta/evals.py@sha256:65d0bc281910d14f9881b25465ad8856cab62bf0927b76923d86a27617db5431",
     "routing": "grok-primary-openai-fallback.v1",
     "live_runner": "scripts/run_trusted_ring_eval.py@sha256:51d74e301c1761d9ad224f4f4fc1dc048fd0655c7c5ac7bc2304eb0725cdfe79",
-    "replay_verifier": "src/facetta/frozen_corpus_gate.py@sha256:e4853ae6182624b88f14be5939edf7c2a783475f5b14529ecb361467609b178d",
-    "replay_runner": "scripts/run_frozen_corpus_gate.py@sha256:d4e7993d2966a93e1950a6d9392f832c620c4417efe9199cec6f1438525b7e18",
-    "release_verifier": "src/facetta/frozen_corpus_release.py@sha256:cfeeece964979b8173e3a726f0bca6f36c3761c85dda9d37a79807728d6226b6",
-    "packet_builder": "src/facetta/frozen_corpus_packet.py@sha256:5134ce19a83703c4caf992a1d099fa60d9670cd56cdfef239cc738ce2c67c556",
-    "packet_runner": "scripts/prepare_frozen_corpus_review.py@sha256:27304228bde914900dad31d9f14e131e8fb14a038512cabc5f89d64a0c8b1db3",
+    "replay_verifier": "src/facetta/frozen_corpus_gate.py@sha256:dbf2377efa37b0e4cb5a452bc1190e7eceaa3cdf864be901f4dffb8ffc06cfc5",
+    "replay_runner": "scripts/run_frozen_corpus_gate.py@sha256:f835a96137c0de2b1a5b61d38f00671efaaaadc6a4c047226be0b9d5b9667ca6",
+    "release_verifier": "src/facetta/frozen_corpus_release.py@sha256:4365a0fb51c3b91339114fab7322a5dc38303bb9ae35771308f52799f6a4f5a7",
+    "packet_builder": "src/facetta/frozen_corpus_packet.py@sha256:07c225ca01a43052ae2ec1205decd89510d41ee6926fc3eba21fc1c99d7c642e",
+    "packet_runner": "scripts/prepare_frozen_corpus_review.py@sha256:fa5988e6174d88dd0d20a243459c2dda82eb4c01bd4b1d6621e12eb68b10e85f",
+    "blind_review_contract": "src/facetta/blind_jewelry_review.py@sha256:9b41a6b7832e06330f7fbae6ed407d34871a53480b310b5ef1670d9316ddac1b",
+    "release_authority_enrollment": "src/facetta/release_authority_enrollment.py@sha256:2d91590c7a961ac164377e18c2d7f2406dfb05783580565fe996e037d3ea55f5",
+    "release_authority_bundle": "src/facetta/release_authority_bundle.py@sha256:e73aace9ec141ffc4ea814eb6eb026bee2c98f3e828978ae9462d0c0d2d0b5b3",
     "capture_workload": "docs/evals/frozen-founder-corpus-v1/workload.json@sha256:8c00e19ab801909ac5620fa1d3ab8dcc2324a7f7cef25300ad020d37c6f85b92",
     "capture_planner": "src/facetta/frozen_capture_workload.py@sha256:7be423247f256a2b9085c9052d7467fb2f2e134e714fd38aec42ab9609f4583c",
     "capture_planner_cli": "scripts/plan_frozen_corpus_capture.py@sha256:bee0dd6ad0d859701de1c984c30bab167f96420301b5f253088b09a2db444695",
@@ -22,8 +25,8 @@
     "persistence_verifier": "src/facetta/frozen_persistence_attestation.py@sha256:988b48c9f35757588369a61c1b0d2cbc24149e33d08b7c2c8f8663c765a12ea5",
     "evidence_path_contract": "src/facetta/frozen_evidence_paths.py@sha256:7cc7469a0bdda144b381c501d84dade4a3236c4bfbec589b26452e3f56802ca8",
     "staging_isolation_probe": "scripts/run_staging_two_user_isolation.py@sha256:48a9e7a83e6adabdab69d583dc11d4e80c82775f356be079d831e8c87058570c",
-    "external_beta_release_verifier": "src/facetta/external_beta_release.py@sha256:9f958f9d7ca2e4e392a9eebad554a6f86783f8b93963d04bfbdfa6b2b9dfbf60",
-    "external_beta_release_cli": "scripts/verify_external_beta_release.py@sha256:4d9bb9fbcf9b47dda7b34ec679eea80229dd19db8f076435dcd8904f1eca4597"
+    "external_beta_release_verifier": "src/facetta/external_beta_release.py@sha256:6c7e4ca13ba9229a39c74ff965a06ff306e9cf2e1b053eef9c7a1aa2d8bd4e83",
+    "external_beta_release_cli": "scripts/verify_external_beta_release.py@sha256:61c4135a432d29231b62d220a0afc5f0501f36ab5002fb78c78d45b0bdab1f79"
   },
   "thresholds": {
     "render_hard_gate_pass_rate": 0.9,
@@ -37,8 +40,10 @@
     "canonical_persistence": true,
     "zero_rejected_candidates_persisted": true,
     "replayable_source_candidate_mask_for_each_edit": true,
-    "gia_trained_reviewer": true,
-    "reviewer_false_positive_false_negative_counts": true
+    "blinded_randomized_role_specific_review": true,
+    "criterion_level_signed_ledgers": true,
+    "reviewer_profile_hash_binding": true,
+    "release_authority_bundle": true
   },
   "executor_trust": {
     "schema_version": "facetta-frozen-executor-trust.v1",
@@ -51,5 +56,6 @@
   "founder_public_key": null,
   "designer_reviewer_public_key": null,
   "staging_reviewer_public_key": null,
+  "release_authority_bundle": null,
   "current_evidence_status": "not_run"
 }

@@ -1,96 +1,53 @@
 # Frozen founder corpus v1
 
-This is a provider-free release-gate definition, not a quality result.
+This directory defines a provider-free release gate. It is **not** a quality
+result and contains no release authority.
 
-- `manifest.json` pins the exact 144 founder-supplied source hashes and declares
-  the 58-reference advisory ring slice plus the canonical ring render/edit
-  workload.
-- `workload.json` binds every manifest filename/hash to source-integrity scope
-  and binds only the 58 advisory ring sources to the full ring quality matrix.
-  The 86 non-ring sources have an explicit null quality assignment; their byte
-  integrity cannot be misreported as jewelry-image quality.
-- `config.json` pins the current 90/85/90 gate, three-attempt limit, calibrated
-  `0.18` outside-mask drift threshold, routing contract, and implementation
-  hashes. The frozen implementation set includes both the capture producer and
-  its CLI, so the signed capture's `config_sha256` binds the exact code that
-  converted execution artifacts into the canonical capture envelope.
-- The production config intentionally has no resolved assignment bundle,
-  executor key, canonical API-runner key, GIA reviewer key, founder key,
-  jewelry-designer reviewer key, or staging-release reviewer key. It is a
-  frozen definition, not an executable release configuration.
-- None of these definition files contains generated candidates, visual scores,
-  designer acceptance, staging isolation, or factory authority.
+- `manifest.json` pins the exact 144 founder-supplied source hashes and marks
+  the 58-reference advisory ring slice.
+- `workload.json` binds all 144 sources to integrity scope and expands the 58
+  ring sources into seven render and eleven edit evaluations: 1,044 logical
+  sequences. The other 86 sources have an explicit null quality assignment.
+- `config.json` pins the 90/85/90 thresholds, three-attempt ceiling, `0.18`
+  outside-mask drift threshold, routing contract, workload, capture/replay,
+  blind-review, authority-enrollment, release, and staging implementations.
 
-Validate the frozen definition and produce its deterministic secured-executor
-plan with zero provider calls:
+The production config intentionally has no assignment bundle, executor key,
+canonical API-runner key, GIA key, founder key, independent-designer key,
+staging-reviewer key, or six-role authority bundle. All 1,044 quality rows are
+unresolved, so the executable provider budget is zero and release status is
+`not_run`.
+
+## 1. Validate and resolve before provider work
 
 ```bash
 PYTHONPATH=src .venv/bin/python scripts/plan_frozen_corpus_capture.py \
   validate-definition
+
 PYTHONPATH=src .venv/bin/python scripts/plan_frozen_corpus_capture.py \
-  --out /secure/path/to/provider-call-plan.json plan
+  --out /secure/path/to/evidence-root/provider-call-plan.json plan
 ```
 
-The plan contains 1,044 **logical** evaluation sequences: each of the 58 ring
-sources is paired with seven render cases and eleven edit operations. The
-3,132-attempt figure is therefore only the logical-scope ceiling at the frozen
-three-attempt cap. It is not an executable provider budget. Each logical row
-must first receive a separately reviewed, source-specific assignment with an
-explicit `execute` or `not_applicable` decision, concrete regions/references,
-and a canonical `resolved_inputs_sha256`. That assignment bundle is hash-pinned
-in the config and preassigns the `corpus_run_id`. With the repository's
-production config, all 1,044 rows remain unresolved, the execution-ready count
-and executable maximum-attempt count are both zero, and capture is blocked.
-Synthetic all-row tests prove deterministic contract coverage only; they are
-not external evidence.
+The 3,132-attempt number is only the logical maximum at three attempts per
+sequence. It is not an executable budget. Independently review and hash-pin a
+source-specific assignment/applicability bundle first. Every row must declare
+`execute` or `not_applicable`, concrete regions/references, a canonical
+`resolved_inputs_sha256`, and the preassigned `corpus_run_id`.
 
-Before any live call, enroll the independently controlled executor public key
-in `config.json`, pin the reviewed assignment bundle, regenerate the plan, and
-confirm every intended execution row is resolved. The secured executor's
-`facetta-frozen-capture.v2` envelope must bind the exact preassigned
-`corpus_run_id`; manifest, config, workload, assignment, and resolved-input
-hashes; every planned source/evaluation key; relative candidate and edit-mask
-paths plus their hashes; and a signed canonical-persistence attestation.
-Validate its separate Ed25519 executor signature before preparing the human
-review packet:
+Before capture, enroll six independent authorities—executor, canonical API
+runner, GIA reviewer, founder, jewelry designer, and staging reviewer—and pin a
+`facetta-release-authority-bundle-config.v1`. Each role needs proof-of-key
+control, separately verified qualification, an active signed status entry, and
+unique key material. Private keys remain outside the repository and evidence
+root. Enrollment artifacts use opaque identifiers and exclude raw personal or
+credential data.
 
-```bash
-PYTHONPATH=src .venv/bin/python scripts/plan_frozen_corpus_capture.py \
-  validate-capture \
-  --capture /secure/path/to/frozen-capture.json \
-  --capture-public-key /secure/path/to/executor-public-key \
-  --capture-key-id secured-executor-v1
-```
+## 2. Produce and validate the signed capture
 
-Passing capture validation proves machine provenance and artifact completeness
-only. It never substitutes for measured quality, independent classification,
-separate designer acceptance, the signed GIA-trained review, or founder
-approval.
-
-The repository now includes a fail-closed capture producer. Its default CLI
-adapter consumes an already-produced, hash-bound execution bundle and therefore
-makes **zero** image-provider calls itself. A secured deployment can replace
-that adapter through the programmatic executor seam, but the same preflight is
-mandatory: all assignments must be resolved and executable, both signing keys
-must prove control of their config-enrolled public identities, every source and
-input artifact must remain inside the evidence root with its exact hash, and
-the output directory must not already exist. The producer caps every sequence
-at three attempts and records an exhausted sequence with zero accepted attempts;
-when an attempt is accepted, it must be the final attempt. It stages the
-complete output atomically, builds a canonical source/candidate/mask/
-persistence artifact index, signs the canonical persistence attestation, signs
-the capture envelope separately, and re-verifies both signatures before making
-the output visible.
-
-The input execution bundle uses schema
-`facetta-frozen-execution-bundle.v1` and binds `corpus_run_id`, the canonical
-provider-call-plan hash, the declared provider-call count, every planned
-sequence and resolved-input hash, and one to three scored attempt rows with
-root-relative candidate/mask paths and SHA-256 values. The canonical API
-observation file uses schema
-`facetta-canonical-persistence-observations.v1` and binds the same run plus the
-exact selected-result-set hash/count and the three required persistence checks.
-Private signing keys must remain outside both the repository and evidence root.
+The fail-closed producer consumes an already hash-bound execution bundle and
+canonical persistence observations. Its default adapter makes zero provider
+calls; a secured deployment may replace the executor seam, but not its
+preflight, attempt limit, artifact confinement, or signatures.
 
 ```bash
 set +x
@@ -105,129 +62,116 @@ PYTHONPATH=src .venv/bin/python scripts/run_frozen_corpus_capture.py \
   --canonical-api-private-key /separate/secret/path/api-runner.key \
   --commit-sha <exact-40-or-64-character-commit-sha> \
   --attestation-id <operator-issued-attestation-id>
+
+PYTHONPATH=src .venv/bin/python scripts/plan_frozen_corpus_capture.py \
+  validate-capture \
+  --capture /secure/path/to/evidence-root/frozen-capture.json \
+  --capture-public-key /secure/path/to/evidence-root/keys/executor.pub \
+  --capture-key-id secured-executor-v1
 ```
 
-Run the integrity-only gate with:
+`facetta-frozen-capture.v2` binds the exact plan, run ID, manifest, config,
+workload, assignments, resolved inputs, all source/candidate/mask hashes, and a
+separately signed canonical-persistence attestation. Every sequence has one to
+three attempts; an accepted attempt must be final; exhausted sequences are
+retained with zero accepted attempts. Output is staged atomically and every
+reference is root-relative and hash indexed.
 
-```bash
-PYTHONPATH=src .venv/bin/python scripts/run_frozen_corpus_gate.py \
-  --evidence-root /secure/path/to/evidence-root \
-  --source-dir /secure/path/to/evidence-root/founder-reference-directory \
-  --outdir /secure/path/to/evidence-root/gate-output
-```
+Passing capture validation proves provenance and completeness only. It does
+not prove image quality or human acceptance.
 
-Validated machine captures should be converted to the review schema with
-`scripts/prepare_frozen_corpus_review.py`. The packet builder hash-binds every
-ring-quality source, candidate, and edit mask and creates exactly one pending
-decision row for every source/evaluation assignment in the pinned workload; it
-never calls a provider, fills a human decision, or signs evidence. The command
-requires the enrolled executor public key and key ID and refuses to build a
-packet unless `facetta-frozen-capture.v2` validation passes. The source
-directory, capture, executor public key, signed persistence attestation,
-candidates, masks, and output must all resolve inside the explicit
-`--evidence-root`. The packet stores only normalized root-relative references
-and a canonical, sorted, hash-bound artifact index. Absolute references, `..`
-traversal, symlink escape, missing index membership, and hash drift fail closed.
-It embeds the verified persistence attestation for replay compatibility while
-retaining its exact capture binding. The replay packet records the SHA-256 of the
-exact signed capture bytes both at its schema-required top level and inside its
-detailed capture provenance, allowing the compiled result and later founder
-approval to retain the same capture chain. The 144-source integrity result
-remains a separate prerequisite and is never inferred from the 58-source
-review packet.
+## 3. Prepare blind human-review packets
 
-Packet construction therefore includes the evidence root explicitly:
+The compatibility `replay-v1` packet remains available for machine replay,
+but its scores and Boolean review data can never authorize release. External
+human authority requires `blind-v2`.
+
+Use separately controlled 32-byte seeds, represented as 64 lowercase hex
+characters, for the two roles:
 
 ```bash
 PYTHONPATH=src .venv/bin/python scripts/prepare_frozen_corpus_review.py \
+  --packet-format blind-v2 \
+  --review-seed <64-lowercase-hex-characters> \
+  --reviewer-role gia_visual_fidelity_reviewer \
   --evidence-root /secure/path/to/evidence-root \
-  --source-dir /secure/path/to/evidence-root/sources \
-  --capture /secure/path/to/evidence-root/capture.json \
-  --capture-public-key /secure/path/to/evidence-root/keys/executor-public-key \
+  --source-dir /secure/path/to/evidence-root/founder-reference-directory \
+  --capture /secure/path/to/evidence-root/frozen-capture.json \
+  --capture-public-key /secure/path/to/evidence-root/keys/executor.pub \
   --capture-key-id secured-executor-v1 \
-  --out /secure/path/to/evidence-root/review/unsigned-packet.json
+  --out /secure/path/to/evidence-root/review/gia-packet.json
+
+PYTHONPATH=src .venv/bin/python scripts/prepare_frozen_corpus_review.py \
+  --packet-format blind-v2 \
+  --review-seed <different-64-lowercase-hex-characters> \
+  --reviewer-role independent_jewelry_designer \
+  --evidence-root /secure/path/to/evidence-root \
+  --source-dir /secure/path/to/evidence-root/founder-reference-directory \
+  --capture /secure/path/to/evidence-root/frozen-capture.json \
+  --capture-public-key /secure/path/to/evidence-root/keys/executor.pub \
+  --capture-key-id secured-executor-v1 \
+  --out /secure/path/to/evidence-root/review/designer-packet.json
 ```
 
-The command intentionally exits nonzero with image quality `not_run` until
-`--evidence` points to a complete `facetta-frozen-replay.v1` JSON capture. A
-replay pins the manifest/config hashes and contains:
+Blind packets use opaque HMAC-randomized item IDs and role-specific jewelry
+rubrics. They omit provider/model identity, prompts, scores, machine verdicts,
+retry counts, other reviewers' decisions, and release state. Signed
+`facetta-blind-jewelry-review-ledger.v2` artifacts contain criterion-level
+answers and rationale, bind the packet canonical hash and exact evidence, and
+identify the enrolled key and privacy-safe reviewer-profile hash. The verifier
+derives acceptance from required criteria; an asserted approval is ignored.
 
-- byte/image integrity for every one of the 144 manifest sources, with
-  provider-backed capture assignments governed separately by the pinned
-  58-source ring workload matrix;
-- the exact `workload.json` SHA-256 and one to three contiguous attempts for
-  every one of its 1,044 source/evaluation assignments;
-- hash-bound source and candidate artifacts for every attempt, plus a
-  hash-bound mask for every edit attempt;
-- captured render conformance and edit-fidelity results;
-- a signed canonical API-runner persistence attestation, bound to the capture's
-  exact `corpus_run_id` and selected result-set digest, proving atomic image and
-  specification writes, stale-write rejection, and zero rejected candidates
-  becoming active assets;
-- completed GIA-trained false-positive/false-negative review.
+The GIA ledger covers visual fidelity for all selected review items. The
+independent designer ledger is separately validated, and the combined release
+controller derives the quick-appearance acceptance rate from the exact
+validator-selected subset. At least 90% must pass within three machine
+attempts.
 
-The review packet and replay compiler consume the pinned workload directly:
-quality coverage is limited to the 58 ring sources and their 1,044 declared
-assignments, while integrity still covers all 144 sources. This closes the
-local scope mismatch only. It does not run a provider, supply an external
-source directory or executor/reviewer key, complete human review, approve a
-release, or make `corpus_gate_ready` true.
+## 4. Compile and finalize the corpus gate
 
-Replay fails closed on a missing or extra assignment, a non-ring quality
-attempt, operation-class drift, non-contiguous or over-limit attempts,
-mismatched source/artifact hashes, non-finite scores, unusable edit masks, or
-any GIA rejection.
+```bash
+EVIDENCE_ROOT=/secure/path/to/evidence-root
+CORPUS_DIR="$EVIDENCE_ROOT/gate-artifacts/frozen-founder-corpus-v1"
 
-The signed reviewer block contains one decision for every selected
-`kind/evaluation_id/source_filename` result. The verifier derives confusion
-counts from those decisions instead of trusting summary numbers. It also
-evaluates the workload classes declared in the manifest: quick appearance
-edits require at least 90% reviewer acceptance within the three-attempt cap;
-structural edits must meet the frozen fidelity and outside-mask drift
-thresholds. Missing, duplicate, or unclassified decisions fail closed.
+PYTHONPATH=src .venv/bin/python scripts/run_frozen_corpus_gate.py \
+  --evidence-root "$EVIDENCE_ROOT" \
+  --source-dir "$EVIDENCE_ROOT/founder-reference-directory" \
+  --evidence "$EVIDENCE_ROOT/signed-facetta-frozen-replay.v1.json" \
+  --gia-review-packet "$EVIDENCE_ROOT/review/gia-packet.json" \
+  --gia-review-ledger "$EVIDENCE_ROOT/review/signed-gia-ledger.json" \
+  --outdir "$CORPUS_DIR"
 
-Machine scores, source coverage, indexed artifacts, persistence attestation,
-and review assertions remain separately attributable within the evidence
-chain. The persistence attestation is Ed25519-signed by the config-enrolled
-canonical API runner; the completed review payload is independently signed by
-the GIA-trained reviewer. The reviewer public-key file is configured outside
-the evidence and its SHA-256 is
-pinned in `config.json`. The production key is intentionally unconfigured
-until the reviewer enrollment step is complete; no key or unsigned evidence
-can become release-ready.
+PYTHONPATH=src .venv/bin/python scripts/verify_frozen_corpus_release.py \
+  --results "$CORPUS_DIR/results.json" \
+  --approval "$EVIDENCE_ROOT/review/signed-founder-approval.json" \
+  --manifest docs/evals/frozen-founder-corpus-v1/manifest.json \
+  --source-dir "$EVIDENCE_ROOT/founder-reference-directory" \
+  --evidence "$EVIDENCE_ROOT/signed-facetta-frozen-replay.v1.json" \
+  --evidence-root "$EVIDENCE_ROOT" \
+  --workload docs/evals/frozen-founder-corpus-v1/workload.json \
+  --gia-review-packet "$EVIDENCE_ROOT/review/gia-packet.json" \
+  --gia-review-ledger "$EVIDENCE_ROOT/review/signed-gia-ledger.json" \
+  --outdir "$CORPUS_DIR"
+```
 
-Every enrolled authority must use both a unique key ID and unique Ed25519
-public-key bytes. The corpus compiler, founder-release verifier, and combined
-external-beta verifier recompute this separation across the executor,
-canonical API runner, GIA reviewer, founder, jewelry designer, and staging
-reviewer; reuse by any two roles fails closed. This proves separate signing
-identities, not the real-world identity, qualification, or independence of the
-people controlling them. Those facts must still be checked during enrollment
-and retained with the human review record.
+The founder approval signs the exact `results.json` bytes. The finalizer also
+requires the raw manifest, source directory, replay, evidence root, workload,
+and GIA packet/ledger. It reruns the provider-free compiler and requires the
+fresh result to byte-match the retained result. A stale result, missing raw
+artifact, or v1 Boolean human review fails closed.
 
-Founder approval is deliberately not folded into `results.json`: it must bind
-the exact bytes the founder reviewed. The separate `founder_public_key` must
-already be enrolled in the frozen config before capture; do not edit the config
-after capture. After reviewer replay passes, use that enrolled private-key
-holder to create and sign a
-`facetta-founder-approval.v1` record bound to the SHA-256 of `results.json`, and
-run `scripts/verify_frozen_corpus_release.py`. Only its
-`final-decision.json.corpus_gate_ready: true` satisfies the complete corpus
-gate. It deliberately cannot claim full external-beta readiness because the
-live two-principal staging-isolation gate is separate. The repository ships
-with all production public keys unconfigured and contains no human sign-off.
+The completed corpus decision may set `corpus_gate_ready: true`; it cannot set
+`external_beta_ready`. The independent-designer ledger, live staging v3
+evidence, staging signature, and complete six-role authority bundle remain
+separate requirements of `scripts/verify_external_beta_release.py`. See
+`docs/STUDIO_EXTERNAL_BETA_GATES.md` for the exact combined command.
 
-Full external-beta composition is owned by
-`scripts/verify_external_beta_release.py`. The combined verifier and staging
-probe are hash-pinned in this config. It re-verifies the signed corpus decision,
-requires a separate config-enrolled jewelry-designer approval of the exact
-quick-appearance result, and requires a config-enrolled staging reviewer to
-sign the exact v2 isolation result and retained zero exit-code bytes. Local or
-self-generated signatures do not satisfy those external custody requirements.
+## Fail-closed summary
 
-The offline replay verifies artifact hashes and recalculates outside-mask drift
-from the captured pixels. Coverage counts come from verified attempts, never
-from signed summary claims alone. Absent source coverage, unsigned or tampered
-evidence, missing captures, changed configuration, more than three attempts,
-failed metrics, rejected-candidate persistence, or missing review all fail
-closed.
+The offline replay recalculates artifact hashes and outside-mask drift from
+captured pixels. Coverage comes from verified attempts, not summary claims.
+Missing/extra assignments, non-ring quality rows, operation drift,
+non-contiguous attempts, unsafe paths, non-finite scores, unusable masks,
+failed GIA criteria, rejected-candidate persistence, stale writes, profile/key
+mismatch, unsigned evidence, or changed configuration all fail. No verifier in
+this directory calls an image provider.
