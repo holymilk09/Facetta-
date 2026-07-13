@@ -100,8 +100,11 @@ test('compares 1-4 candidates, locks the Original, and keeps another as a siblin
 
   expect(screen.queryByText(/factory facts/i)).toBeNull();
   expect(screen.queryByText(/structured specification/i)).toBeNull();
+  expect(screen.queryByText('How many directions?')).toBeNull();
+  expect(screen.queryByText('Optional references')).toBeNull();
   await fireEvent.changeText(screen.getByLabelText('Design sentence'), 'A sculptural aquamarine collar.');
-  await fireEvent.press(screen.getByText('4').parent!);
+  await fireEvent.press(screen.getByLabelText('References and output options'));
+  await fireEvent.press(screen.getByLabelText('4 creative directions'));
   expect(screen.getByText('4 requested outputs × 15 credits = estimated 60 credits')).toBeTruthy();
   await fireEvent.press(screen.getByText('Create 4 directions'));
 
@@ -219,6 +222,7 @@ test('sends every enabled role with the master geometry input', async () => {
     onSave: jest.fn(),
   }));
 
+  await fireEvent.press(screen.getByLabelText('References and output options'));
   await fireEvent.press(screen.getAllByText('Add')[0]);
   await fireEvent.press(screen.getAllByText('Add')[0]);
   await fireEvent.changeText(screen.getByLabelText('Design sentence'), 'Preserve the silhouette and make it feel lighter.');
@@ -285,6 +289,7 @@ test('surfaces picker failures instead of leaving Add as a silent dead end', asy
     onSave: jest.fn(),
   }));
 
+  await fireEvent.press(screen.getByLabelText('References and output options'));
   await fireEvent.press(screen.getAllByText('Add')[0]);
 
   expect(await screen.findByText(/Choose a PNG, JPEG, or WebP image/)).toBeTruthy();
@@ -326,6 +331,7 @@ test('explains when image selection is unavailable instead of silently ignoring 
     onSave: jest.fn(),
   }));
 
+  await fireEvent.press(screen.getByLabelText('References and output options'));
   await fireEvent.press(screen.getAllByText('Add')[0]);
 
   expect(await screen.findByText(/Image selection is unavailable here/)).toBeTruthy();

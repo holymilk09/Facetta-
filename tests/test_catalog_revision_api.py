@@ -81,11 +81,13 @@ def catalog_client():
 
     clear_warning_candidates_for_tests()
     clear_catalog_preview_candidates_for_tests()
+    catalog_component_targeting.configure_catalog_structural_component_mapper(None)
     app.dependency_overrides[get_db] = override
     try:
         yield TestClient(app), TestSession
     finally:
         app.dependency_overrides.clear()
+        catalog_component_targeting.configure_catalog_structural_component_mapper(None)
         clear_warning_candidates_for_tests()
         clear_catalog_preview_candidates_for_tests()
 
@@ -304,6 +306,106 @@ def test_structural_catalog_preview_rejects_before_provider_without_child_mapper
     assert _counts(SessionFactory) == {"versions": 1, "assets": 1, "runs": 0}
 
 
+def test_structural_mapper_activation_requires_attested_calibration_and_health():
+    def mapper(**_kwargs):
+        return None
+
+    with pytest.raises(ValueError, match="mapper_contract"):
+        catalog_component_targeting.configure_catalog_structural_component_mapper(
+            mapper,
+            calibration_evidence_sha256="a" * 64,
+            supported_paths={"setting.style"},
+            readiness_probe=lambda: True,
+        )
+    with pytest.raises(ValueError, match="calibration_evidence_sha256"):
+        catalog_component_targeting.configure_catalog_structural_component_mapper(
+            mapper,
+            mapper_contract="mapper.v1",
+            calibration_evidence_sha256="not-a-digest",
+            supported_paths={"setting.style"},
+            readiness_probe=lambda: True,
+        )
+    with pytest.raises(ValueError, match="supported_paths"):
+        catalog_component_targeting.configure_catalog_structural_component_mapper(
+            mapper,
+            mapper_contract="mapper.v1",
+            calibration_evidence_sha256="a" * 64,
+            supported_paths={"metal.color"},
+            readiness_probe=lambda: True,
+        )
+    with pytest.raises(ValueError, match="readiness_probe"):
+        catalog_component_targeting.configure_catalog_structural_component_mapper(
+            mapper,
+            mapper_contract="mapper.v1",
+            calibration_evidence_sha256="a" * 64,
+            supported_paths={"setting.style"},
+        )
+
+    status = catalog_component_targeting.catalog_structural_component_mapper_status()
+    assert status.state == "unconfigured"
+    assert not catalog_component_targeting.catalog_structural_component_mapper_available(
+        "setting.style"
+    )
+
+
+def test_structural_mapper_readiness_is_path_specific_and_operationally_visible(
+    catalog_client,
+    example_spec,
+):
+    client, SessionFactory = catalog_client
+    project = _create_project(client, example_spec, SessionFactory)
+    catalog_component_targeting.configure_catalog_structural_component_mapper(
+        lambda **_kwargs: None,
+        mapper_contract="approved.stone-cut-mapper.v3",
+        calibration_evidence_sha256="c" * 64,
+        supported_paths={"stone.cut"},
+        readiness_probe=lambda: True,
+    )
+
+    capability = _targeting(client, project["active_asset_id"])
+    paths = {item.component_path: item for item in capability.catalog_paths}
+    assert paths["stone.cut"].status == "ready"
+    assert paths["setting.style"].status == "unresolved"
+    assert paths["setting.style"].reason_code == (
+        "structural_child_mapping_unavailable"
+    )
+    health = client.get("/health").json()["capabilities"][
+        "structural_component_mapping"
+    ]
+    assert health == {
+        "state": "ready",
+        "mapper_contract": "approved.stone-cut-mapper.v3",
+        "calibration_evidence_sha256": "c" * 64,
+        "supported_paths": ["stone.cut"],
+        "reason_code": None,
+    }
+
+
+def test_unhealthy_structural_mapper_never_advertises_targetability(
+    catalog_client,
+    example_spec,
+):
+    client, SessionFactory = catalog_client
+    project = _create_project(client, example_spec, SessionFactory)
+    catalog_component_targeting.configure_catalog_structural_component_mapper(
+        lambda **_kwargs: None,
+        mapper_contract="approved.mapper.v1",
+        calibration_evidence_sha256="d" * 64,
+        supported_paths={"stone.cut", "setting.style"},
+        readiness_probe=lambda: False,
+    )
+
+    capability = _targeting(client, project["active_asset_id"])
+    paths = {item.component_path: item for item in capability.catalog_paths}
+    assert paths["stone.cut"].status == "unresolved"
+    assert paths["setting.style"].status == "unresolved"
+    health = client.get("/health").json()["capabilities"][
+        "structural_component_mapping"
+    ]
+    assert health["state"] == "unhealthy"
+    assert health["reason_code"] == "structural_child_mapper_unhealthy"
+
+
 def test_calibrated_structural_mapper_reconciles_and_persists_child_map(
     catalog_client,
     example_spec,
@@ -337,10 +439,12 @@ def test_calibrated_structural_mapper_reconciles_and_persists_child_map(
             components=components,
         )
 
-    monkeypatch.setattr(
-        catalog_component_targeting,
-        "_configured_structural_mapper",
+    catalog_component_targeting.configure_catalog_structural_component_mapper(
         mapper,
+        mapper_contract="test.calibrated-child-map.v1",
+        calibration_evidence_sha256="a" * 64,
+        supported_paths={"setting.style"},
+        readiness_probe=lambda: True,
     )
     monkeypatch.setattr(
         "facetta.api.catalog._trusted_image_agent",
@@ -374,6 +478,57 @@ def test_calibrated_structural_mapper_reconciles_and_persists_child_map(
         )
 
 
+def test_structural_mapper_output_contract_mismatch_fails_before_persistence(
+    catalog_client,
+    example_spec,
+    monkeypatch,
+):
+    client, SessionFactory = catalog_client
+    project = _create_project(client, example_spec, SessionFactory)
+
+    def mapper(*, parent_map, child_asset_id, child_image, **_kwargs):
+        return RevisionComponentMap(
+            asset_id=child_asset_id,
+            asset_sha256=hashlib.sha256(child_image).hexdigest(),
+            raster_width=parent_map.raster_width,
+            raster_height=parent_map.raster_height,
+            jewelry_type="ring",
+            mapper_contract="different.unapproved-contract.v1",
+            components=tuple(
+                component.model_copy(
+                    update={"parent_component_id": component.component_id}
+                )
+                for component in parent_map.components
+            ),
+        )
+
+    catalog_component_targeting.configure_catalog_structural_component_mapper(
+        mapper,
+        mapper_contract="approved.mapper-contract.v1",
+        calibration_evidence_sha256="e" * 64,
+        supported_paths={"setting.style"},
+        readiness_probe=lambda: True,
+    )
+    monkeypatch.setattr(
+        "facetta.api.catalog._trusted_image_agent",
+        lambda: _ResultAgent(QualityVerdict.PASS),
+    )
+    preview = client.post(
+        f"/assets/{project['active_asset_id']}/catalog/preview",
+        json=_request(component_path="setting.style", option_id="6_prong_basket"),
+    )
+    assert preview.status_code == 201, preview.text
+
+    accepted = client.post(
+        preview.json()["candidate"]["accept_url"],
+        json={"expected_design_version": 1, "created_by": "usr_catalog"},
+    )
+
+    assert accepted.status_code == 409, accepted.text
+    assert accepted.json()["code"] == "component_mapping_unresolved"
+    assert _counts(SessionFactory) == {"versions": 1, "assets": 1, "runs": 1}
+
+
 @pytest.mark.parametrize("decision", ("apply", "variation"))
 def test_structural_decision_fails_atomically_if_child_mapper_becomes_unavailable(
     catalog_client,
@@ -383,10 +538,12 @@ def test_structural_decision_fails_atomically_if_child_mapper_becomes_unavailabl
 ):
     client, SessionFactory = catalog_client
     project = _create_project(client, example_spec, SessionFactory)
-    monkeypatch.setattr(
-        catalog_component_targeting,
-        "_configured_structural_mapper",
+    catalog_component_targeting.configure_catalog_structural_component_mapper(
         lambda **_kwargs: None,
+        mapper_contract="test.unavailable-after-preview.v1",
+        calibration_evidence_sha256="b" * 64,
+        supported_paths={"setting.style"},
+        readiness_probe=lambda: True,
     )
     monkeypatch.setattr(
         "facetta.api.catalog._trusted_image_agent",
@@ -398,11 +555,7 @@ def test_structural_decision_fails_atomically_if_child_mapper_becomes_unavailabl
     )
     assert preview.status_code == 201, preview.text
     body = preview.json()
-    monkeypatch.setattr(
-        catalog_component_targeting,
-        "_configured_structural_mapper",
-        None,
-    )
+    catalog_component_targeting.configure_catalog_structural_component_mapper(None)
 
     if decision == "apply":
         terminal = client.post(

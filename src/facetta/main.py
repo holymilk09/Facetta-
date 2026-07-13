@@ -22,6 +22,9 @@ from facetta.auth import (  # noqa: E402
     require_authenticated_principal,
     validate_auth_configuration,
 )
+from facetta.catalog_component_targeting import (  # noqa: E402
+    catalog_structural_component_mapper_status,
+)
 
 
 @asynccontextmanager
@@ -30,7 +33,26 @@ async def lifespan(_app: FastAPI):
     yield
 
 def health() -> dict:
-    return {"status": "ok", "service": "facetta", "version": __version__}
+    mapper = catalog_structural_component_mapper_status()
+    return {
+        "status": "ok",
+        "service": "facetta",
+        "version": __version__,
+        # Structural component refinement is optional.  The service remains
+        # healthy while this capability is disabled, but operators can see
+        # whether an attested mapper is absent, unhealthy, or ready.
+        "capabilities": {
+            "structural_component_mapping": {
+                "state": mapper.state,
+                "mapper_contract": mapper.mapper_contract,
+                "calibration_evidence_sha256": (
+                    mapper.calibration_evidence_sha256
+                ),
+                "supported_paths": list(mapper.supported_paths),
+                "reason_code": mapper.reason_code,
+            }
+        },
+    }
 
 
 PRODUCTION_SPEC_PATHS = frozenset({

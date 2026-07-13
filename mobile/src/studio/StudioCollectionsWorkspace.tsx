@@ -12,6 +12,7 @@ import { AuthenticatedImage as Image } from '../AuthenticatedImage';
 import { Button, Field, Notice } from '../components';
 import { theme } from '../theme';
 import type {
+  AssetSummary,
   DesignFamilyDetail,
   DesignFamilyVariation,
   ProjectDetail,
@@ -92,6 +93,44 @@ function variationLineage(
   return parent === undefined
     ? 'Branched from an earlier family direction'
     : `Branched from ${variationDisplayName(parent)}`;
+}
+
+const SAVED_OUTPUT_CAPABILITIES = new Set([
+  'CLIENT_BEAUTY_RENDER',
+  'CLIENT_PRODUCT_PHOTO',
+  'MARKETING_IMAGE',
+  'LINE_ART',
+  'COLORED_LINE_ART',
+  'FACTORY_DRAWING',
+]);
+
+const savedOutputLabel = (capability: string): string => ({
+  CLIENT_BEAUTY_RENDER: 'Client beauty render',
+  CLIENT_PRODUCT_PHOTO: 'Client product photo',
+  MARKETING_IMAGE: 'Marketing image',
+  LINE_ART: 'Saved technical view',
+  COLORED_LINE_ART: 'Saved color view',
+  FACTORY_DRAWING: 'Factory review drawing',
+})[capability] ?? 'Saved output';
+
+function savedOutputLineage(
+  output: AssetSummary,
+  project: ProjectDetail,
+  revisions: StudioHistoryRevision[],
+): string {
+  const revisionsByAsset = new Map(revisions.map((revision) => (
+    [revision.asset_id, revision] as const
+  )));
+  const assetsById = new Map(project.assets.map((asset) => [asset.asset_id, asset] as const));
+  const visited = new Set<string>();
+  let sourceId = output.parent_asset_id;
+  while (sourceId !== null && !visited.has(sourceId)) {
+    visited.add(sourceId);
+    const sourceRevision = revisionsByAsset.get(sourceId);
+    if (sourceRevision !== undefined) return `From Revision ${sourceRevision.revision}`;
+    sourceId = assetsById.get(sourceId)?.parent_asset_id ?? null;
+  }
+  return 'Saved beside this variation · exact source retained';
 }
 
 export function StudioCollectionsWorkspace({
@@ -366,6 +405,9 @@ export function StudioCollectionsWorkspace({
     ?? family?.variations.find((variation) => variation.cover_asset_id !== null)?.cover_asset_id
     ?? null;
   const activeAssetId = data.history.active_asset_id;
+  const savedOutputs = [...project.derived_assets]
+    .filter((asset) => asset.image_url !== null && SAVED_OUTPUT_CAPABILITIES.has(asset.capability))
+    .sort((left, right) => (right.created_at ?? '').localeCompare(left.created_at ?? ''));
 
   return (
     <ScrollView contentContainerStyle={styles.workspace}>
@@ -463,6 +505,37 @@ export function StudioCollectionsWorkspace({
             onPress={() => { void createVariation(); }}
           />
         </View>
+      </View>
+
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Saved outputs</Text>
+        <Text style={styles.sectionCopy}>
+          Client, marketing, and view images live beside the exact design revision they came
+          from. They never replace design history.
+        </Text>
+        {savedOutputs.length === 0 ? (
+          <View style={styles.inlineEmpty}>
+            <Text style={styles.meta}>No presentation or view images have been saved for this variation.</Text>
+          </View>
+        ) : (
+          <View style={styles.outputGrid}>
+            {savedOutputs.map((output) => (
+              <View key={output.asset_id} style={styles.outputCard}>
+                <Image
+                  accessibilityLabel={savedOutputLabel(output.capability)}
+                  source={{ uri: api.assetImageUrl(output.asset_id) }}
+                  resizeMode="cover"
+                  style={styles.outputImage}
+                />
+                <Text style={styles.variationTitle}>{savedOutputLabel(output.capability)}</Text>
+                <Text style={styles.lineage}>
+                  {savedOutputLineage(output, project, data.history.revisions)}
+                </Text>
+                {output.created_at !== null && <Text style={styles.meta}>{dateLabel(output.created_at)}</Text>}
+              </View>
+            ))}
+          </View>
+        )}
       </View>
 
       {compared.length === 2 && (
@@ -601,4 +674,10 @@ const styles = StyleSheet.create({
   compareButtonSelected: { backgroundColor: theme.ink, borderColor: theme.ink },
   compareText: { color: theme.ink, fontSize: 11 },
   compareTextSelected: { color: theme.paper, fontSize: 11 },
+  outputGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 12 },
+  outputCard: {
+    width: 190, borderWidth: 1, borderColor: theme.line, borderRadius: 12,
+    padding: 8, backgroundColor: theme.paper,
+  },
+  outputImage: { width: '100%', height: 150, borderRadius: 8, marginBottom: 8, backgroundColor: theme.blush },
 });

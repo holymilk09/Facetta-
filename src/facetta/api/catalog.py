@@ -522,7 +522,7 @@ def _studio_component_targeting(
             component_ids = tuple(component.component_id for component in components)
         elif (
             path not in MATERIAL_ONLY_CATALOG_PATHS
-            and not catalog_structural_component_mapper_available()
+            and not catalog_structural_component_mapper_available(path)
         ):
             status = "unresolved"
             reason = "structural_child_mapping_unavailable"
@@ -868,7 +868,7 @@ def _catalog_component_target(
         )
     if (
         component_path not in MATERIAL_ONLY_CATALOG_PATHS
-        and not catalog_structural_component_mapper_available()
+        and not catalog_structural_component_mapper_available(component_path)
     ):
         raise CatalogApplyError(
             "component_mapping_unresolved",

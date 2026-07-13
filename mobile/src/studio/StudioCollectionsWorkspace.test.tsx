@@ -154,6 +154,66 @@ describe('StudioCollectionsWorkspace', () => {
     expect(screen.queryByText(/project_main|project_white|asset_1|asset_2|family_orbit|design_ring/i)).toBeNull();
   });
 
+  test('keeps saved client, marketing, and view outputs discoverable beside their exact revision', async () => {
+    const savedProject: ProjectDetail = {
+      ...project,
+      assets: [
+        {
+          asset_id: 'asset_1', root_id: 'project_main', parent_asset_id: null,
+          capability: 'SPEC_RENDER', provenance: 'generated_concept', revision: 1,
+          design_id: 'design_ring', design_version: 1, region: null, instruction: null,
+          drift: null, pinned: false, media_type: 'image/png', image_url: 'https://test/revision-1.png',
+          created_by: 'usr_designer', created_at: '2026-07-12T01:00:00Z', legacy_provenance: false,
+        },
+        {
+          asset_id: 'asset_2', root_id: 'project_main', parent_asset_id: 'asset_1',
+          capability: 'LOCALIZED_EDIT', provenance: 'localized_edit', revision: 2,
+          design_id: 'design_ring', design_version: 2, region: 'metal', instruction: 'Rose gold',
+          drift: 0.01, pinned: false, media_type: 'image/png', image_url: 'https://test/revision-2.png',
+          created_by: 'usr_designer', created_at: '2026-07-12T02:00:00Z', legacy_provenance: false,
+        },
+      ],
+      derived_assets: [
+        {
+          asset_id: 'client_output', root_id: 'project_main', parent_asset_id: 'asset_2',
+          capability: 'CLIENT_BEAUTY_RENDER', provenance: 'generated_concept', revision: null,
+          design_id: 'design_ring', design_version: 2, region: null, instruction: null,
+          drift: 0.01, pinned: false, media_type: 'image/png', image_url: 'https://test/client.png',
+          created_by: 'usr_designer', created_at: '2026-07-12T04:00:00Z', legacy_provenance: false,
+        },
+        {
+          asset_id: 'view_output', root_id: 'project_main', parent_asset_id: 'asset_2',
+          capability: 'LINE_ART', provenance: 'designer_confirmed_line_art', revision: null,
+          design_id: 'design_ring', design_version: 2, region: null, instruction: null,
+          drift: 0.01, pinned: false, media_type: 'image/png', image_url: 'https://test/view.png',
+          created_by: 'usr_designer', created_at: '2026-07-12T03:00:00Z', legacy_provenance: false,
+        },
+      ],
+    };
+    const client = api();
+    await render(
+      <AuthenticatedImageProvider
+        allowedOrigin="https://test"
+        headers={{ Authorization: 'Bearer first-party-token' }}>
+        <StudioCollectionsWorkspace
+          api={client}
+          project={savedProject}
+          createdBy="usr_designer"
+          {...callbacks()}
+        />
+      </AuthenticatedImageProvider>,
+    );
+
+    expect(await screen.findByText('Saved outputs')).toBeTruthy();
+    expect(screen.getByText('Client beauty render')).toBeTruthy();
+    expect(screen.getByText('Saved technical view')).toBeTruthy();
+    expect(screen.getAllByText('From Revision 2')).toHaveLength(2);
+    expect(screen.getByLabelText('Client beauty render').props.source.headers).toEqual({
+      Authorization: 'Bearer first-party-token',
+    });
+    expect(screen.queryByText(/generated_concept|designer_confirmed|CLIENT_BEAUTY_RENDER|LINE_ART/i)).toBeNull();
+  });
+
   test('navigates to All families and back without requiring host-level state changes', async () => {
     const client = api();
     const handlers = callbacks();

@@ -11,7 +11,9 @@ from __future__ import annotations
 
 import hashlib
 import io
-from typing import Protocol
+import re
+from dataclasses import dataclass
+from typing import Callable, Literal, Protocol
 
 from PIL import Image, ImageOps
 from sqlalchemy.orm import Session
@@ -92,20 +94,129 @@ class CatalogStructuralComponentMapper(Protocol):
     ) -> RevisionComponentMap: ...
 
 
-_configured_structural_mapper: CatalogStructuralComponentMapper | None = None
+STRUCTURAL_CATALOG_PATHS = frozenset(
+    set(RING_CATALOG_TARGET_KINDS) - set(MATERIAL_ONLY_CATALOG_PATHS)
+)
+
+
+@dataclass(frozen=True)
+class CatalogStructuralMapperActivation:
+    """Deployment attestation for one calibrated mapper implementation.
+
+    Registration is deliberately explicit.  A callable alone is not evidence
+    that a model was calibrated, is healthy, or supports every structural
+    operation.  ``calibration_evidence_sha256`` pins the external evaluation
+    artifact approved for this exact mapper contract; it does not claim that
+    Facetta itself performed that evaluation.
+    """
+
+    mapper: CatalogStructuralComponentMapper
+    mapper_contract: str
+    calibration_evidence_sha256: str
+    supported_paths: frozenset[str]
+    readiness_probe: Callable[[], bool]
+
+
+@dataclass(frozen=True)
+class CatalogStructuralMapperStatus:
+    state: Literal["unconfigured", "unhealthy", "ready"]
+    mapper_contract: str | None = None
+    calibration_evidence_sha256: str | None = None
+    supported_paths: tuple[str, ...] = ()
+    reason_code: str | None = None
+
+
+_configured_structural_mapper: CatalogStructuralMapperActivation | None = None
 
 
 def configure_catalog_structural_component_mapper(
     mapper: CatalogStructuralComponentMapper | None,
+    *,
+    mapper_contract: str | None = None,
+    calibration_evidence_sha256: str | None = None,
+    supported_paths: frozenset[str] | set[str] | tuple[str, ...] = (),
+    readiness_probe: Callable[[], bool] | None = None,
 ) -> None:
-    """Install a calibrated mapper; ``None`` restores fail-closed behavior."""
+    """Activate an externally calibrated mapper or restore fail-closed mode.
+
+    Production composition code must provide all attestation fields.  This
+    function intentionally does not import arbitrary classes from environment
+    variables and does not treat a configured callable as calibrated evidence.
+    """
     global _configured_structural_mapper
-    _configured_structural_mapper = mapper
+    if mapper is None:
+        if any(
+            value is not None and value != ()
+            for value in (
+                mapper_contract,
+                calibration_evidence_sha256,
+                readiness_probe,
+            )
+        ) or supported_paths:
+            raise ValueError("mapper activation metadata requires a mapper")
+        _configured_structural_mapper = None
+        return
+    if not callable(mapper):
+        raise ValueError("mapper must be callable")
+    if mapper_contract is None or re.fullmatch(
+        r"[A-Za-z0-9][A-Za-z0-9._:-]{0,79}", mapper_contract
+    ) is None:
+        raise ValueError("mapper_contract must be a stable 1-80 character ID")
+    if calibration_evidence_sha256 is None or re.fullmatch(
+        r"[0-9a-f]{64}", calibration_evidence_sha256
+    ) is None:
+        raise ValueError("calibration_evidence_sha256 must be a lowercase SHA-256")
+    released_paths = frozenset(supported_paths)
+    if not released_paths or not released_paths.issubset(STRUCTURAL_CATALOG_PATHS):
+        raise ValueError(
+            "supported_paths must be a non-empty subset of released structural paths"
+        )
+    if readiness_probe is None or not callable(readiness_probe):
+        raise ValueError("readiness_probe is required for mapper activation")
+    _configured_structural_mapper = CatalogStructuralMapperActivation(
+        mapper=mapper,
+        mapper_contract=mapper_contract,
+        calibration_evidence_sha256=calibration_evidence_sha256,
+        supported_paths=released_paths,
+        readiness_probe=readiness_probe,
+    )
 
 
-def catalog_structural_component_mapper_available() -> bool:
+def catalog_structural_component_mapper_status() -> CatalogStructuralMapperStatus:
+    """Return non-secret operational state for capability gating and health."""
+    activation = _configured_structural_mapper
+    if activation is None:
+        return CatalogStructuralMapperStatus(
+            state="unconfigured",
+            reason_code="structural_child_mapping_unavailable",
+        )
+    try:
+        healthy = activation.readiness_probe() is True
+    except Exception:
+        healthy = False
+    return CatalogStructuralMapperStatus(
+        state="ready" if healthy else "unhealthy",
+        mapper_contract=activation.mapper_contract,
+        calibration_evidence_sha256=activation.calibration_evidence_sha256,
+        supported_paths=tuple(sorted(activation.supported_paths)),
+        reason_code=None if healthy else "structural_child_mapper_unhealthy",
+    )
+
+
+def catalog_structural_component_mapper_available(
+    component_path: str | None = None,
+) -> bool:
     """Report whether structural candidates can preserve map continuity."""
-    return _configured_structural_mapper is not None
+    activation = _configured_structural_mapper
+    status = catalog_structural_component_mapper_status()
+    return (
+        activation is not None
+        and status.state == "ready"
+        and (
+            component_path is None
+            or component_path in activation.supported_paths
+        )
+    )
 
 
 def _raster_size(image_bytes: bytes) -> tuple[int, int]:
@@ -197,20 +308,39 @@ def prepare_catalog_child_component_map(
             "the structural catalog candidate has no exact mapped targets",
             code="catalog_target_unmapped",
         )
-    mapper = _configured_structural_mapper
-    if mapper is None:
+    activation = _configured_structural_mapper
+    if (
+        activation is None
+        or not catalog_structural_component_mapper_available(component_path)
+    ):
         raise ComponentMappingUnresolved(
-            "a calibrated catalog child mapper is required for structural edits"
+            "a healthy calibrated catalog child mapper is required for this "
+            "structural edit"
         )
-    proposed = mapper(
-        parent_map=parent_map,
-        parent_image=source_image,
-        child_asset_id=child_asset_id,
-        child_image=child_image,
-        target_component_ids=target_component_ids,
-        component_path=component_path,
-        instruction=instruction,
-    )
+    try:
+        proposed = activation.mapper(
+            parent_map=parent_map,
+            parent_image=source_image,
+            child_asset_id=child_asset_id,
+            child_image=child_image,
+            target_component_ids=target_component_ids,
+            component_path=component_path,
+            instruction=instruction,
+        )
+    except ComponentMappingUnresolved:
+        raise
+    except Exception as exc:
+        raise ComponentMappingUnresolved(
+            "the calibrated catalog child mapper failed closed"
+        ) from exc
+    if not isinstance(proposed, RevisionComponentMap):
+        raise ComponentMappingUnresolved(
+            "the catalog child mapper returned no valid component map"
+        )
+    if proposed.mapper_contract != activation.mapper_contract:
+        raise ComponentMappingUnresolved(
+            "the catalog child mapper output does not match its active contract"
+        )
     if proposed.asset_id != child_asset_id:
         raise ComponentMappingUnresolved(
             "the catalog child mapper bound its map to the wrong asset"

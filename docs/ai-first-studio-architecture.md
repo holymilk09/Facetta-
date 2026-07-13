@@ -153,6 +153,17 @@ successful structural change advances image and specification atomically.
 The product chooses instant versus structural execution from the component and
 delta contract. Designers choose the change they want, not a provider or model.
 
+Structural component-map continuity is currently a disabled production
+capability, not an implied feature. The repository contains the typed mapper
+seam and strict reconciliation/persistence boundary, but no calibrated mapper
+implementation. Activation requires an explicit stable mapper contract, the
+SHA-256 of its externally approved calibration evidence, its exact supported
+catalog paths, and a passing runtime readiness probe. Capability discovery is
+path-specific, `/health` reports `unconfigured`, `unhealthy`, or `ready`, and
+the returned child map must carry the activated mapper contract before it can
+be reconciled or persisted. Configuration alone never creates polygons and an
+unhealthy, unsupported, throwing, or contract-mismatched mapper fails closed.
+
 ## Division of labor
 
 The core invariant is:

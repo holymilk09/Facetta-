@@ -78,6 +78,7 @@ export function StudioCreateWorkspace({
   const [sentence, setSentence] = useState(initialSentence);
   const [references, setReferences] = useState<StudioCreateReference[]>([...initialReferences]);
   const [candidateCount, setCandidateCount] = useState<1 | 2 | 3 | 4>(2);
+  const [setupOpen, setSetupOpen] = useState(initialReferences.length > 0);
   const [project, setProject] = useState<ProjectDetail | null>(resumeProject);
   const resumedCandidates = resumeProject === null ? [] : creativeCandidates(resumeProject);
   const resumedSelection = resumeProject?.selected_candidate_asset_id;
@@ -329,58 +330,80 @@ export function StudioCreateWorkspace({
         style={styles.prompt}
       />
 
-      <Text style={styles.sectionTitle}>How many directions?</Text>
-      <View style={styles.countRow}>
-        {([1, 2, 3, 4] as const).map((count) => (
-          <Pressable
-            key={count}
-            accessibilityRole="radio"
-            accessibilityState={{ checked: candidateCount === count }}
-            style={[styles.countChip, candidateCount === count && styles.countChipSelected]}
-            onPress={() => setCandidateCount(count)}>
-            <Text style={[styles.countText, candidateCount === count && styles.countTextSelected]}>{count}</Text>
-          </Pressable>
-        ))}
-      </View>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="References and output options"
+        accessibilityState={{ expanded: setupOpen }}
+        onPress={() => setSetupOpen((current) => !current)}
+        style={[styles.setupDisclosure, setupOpen && styles.setupDisclosureOpen]}>
+        <View style={styles.setupDisclosureCopy}>
+          <Text style={styles.setupDisclosureTitle}>References &amp; output options</Text>
+          <Text style={styles.setupDisclosureSummary}>
+            {candidateCount} direction{candidateCount === 1 ? '' : 's'} · {references.length === 0
+              ? 'No references'
+              : `${references.length} role-labeled reference${references.length === 1 ? '' : 's'}`}
+          </Text>
+        </View>
+        <Text style={styles.disclosureGlyph}>{setupOpen ? '−' : '+'}</Text>
+      </Pressable>
 
-      <Text style={styles.sectionTitle}>Optional references</Text>
-      <Text style={styles.sectionHelp}>Give every image one role so intent stays unambiguous.</Text>
-      <View style={styles.referenceList}>
-        {STUDIO_CREATE_REFERENCE_CONTROLS.map(({ role, label, help }) => {
-          const reference = references.find((item) => item.role === role);
-          return (
-            <View key={role} style={styles.referenceRow}>
-              <View style={styles.referenceCopy}>
-                <Text style={styles.referenceTitle}>{label}</Text>
-                <Text style={styles.referenceHelp}>{reference?.label ?? help}</Text>
-              </View>
-              {reference === undefined ? (
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityState={{ disabled: role !== 'master_geometry' && masterReference === null }}
-                  disabled={role !== 'master_geometry' && masterReference === null}
-                  style={[
-                    styles.referenceButton,
-                    role !== 'master_geometry' && masterReference === null && styles.buttonDisabled,
-                  ]}
-                  onPress={() => requestReference(role)}>
-                  <Text style={styles.referenceButtonText}>
-                    {role !== 'master_geometry' && masterReference === null ? 'Add master first' : 'Add'}
-                  </Text>
-                </Pressable>
-              ) : (
-                <Pressable
-                  accessibilityRole="button"
-                  accessibilityLabel={`Remove ${label}`}
-                  style={styles.referenceButton}
-                  onPress={() => setReferences((current) => current.filter((item) => item.id !== reference.id))}>
-                  <Text style={styles.referenceButtonText}>Remove</Text>
-                </Pressable>
-              )}
-            </View>
-          );
-        })}
-      </View>
+      {setupOpen && (
+        <View style={styles.setupPanel}>
+          <Text style={styles.sectionTitle}>How many directions?</Text>
+          <View style={styles.countRow}>
+            {([1, 2, 3, 4] as const).map((count) => (
+              <Pressable
+                key={count}
+                accessibilityRole="radio"
+                accessibilityLabel={`${count} creative direction${count === 1 ? '' : 's'}`}
+                accessibilityState={{ checked: candidateCount === count }}
+                style={[styles.countChip, candidateCount === count && styles.countChipSelected]}
+                onPress={() => setCandidateCount(count)}>
+                <Text style={[styles.countText, candidateCount === count && styles.countTextSelected]}>{count}</Text>
+              </Pressable>
+            ))}
+          </View>
+
+          <Text style={styles.sectionTitle}>Optional references</Text>
+          <Text style={styles.sectionHelp}>Give every image one role so intent stays unambiguous.</Text>
+          <View style={styles.referenceList}>
+            {STUDIO_CREATE_REFERENCE_CONTROLS.map(({ role, label, help }) => {
+              const reference = references.find((item) => item.role === role);
+              return (
+                <View key={role} style={styles.referenceRow}>
+                  <View style={styles.referenceCopy}>
+                    <Text style={styles.referenceTitle}>{label}</Text>
+                    <Text style={styles.referenceHelp}>{reference?.label ?? help}</Text>
+                  </View>
+                  {reference === undefined ? (
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityState={{ disabled: role !== 'master_geometry' && masterReference === null }}
+                      disabled={role !== 'master_geometry' && masterReference === null}
+                      style={[
+                        styles.referenceButton,
+                        role !== 'master_geometry' && masterReference === null && styles.buttonDisabled,
+                      ]}
+                      onPress={() => requestReference(role)}>
+                      <Text style={styles.referenceButtonText}>
+                        {role !== 'master_geometry' && masterReference === null ? 'Add master first' : 'Add'}
+                      </Text>
+                    </Pressable>
+                  ) : (
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityLabel={`Remove ${label}`}
+                      style={styles.referenceButton}
+                      onPress={() => setReferences((current) => current.filter((item) => item.id !== reference.id))}>
+                      <Text style={styles.referenceButtonText}>Remove</Text>
+                    </Pressable>
+                  )}
+                </View>
+              );
+            })}
+          </View>
+        </View>
+      )}
 
       {masterReference === null && secondaryReferences.length > 0 && (
         <View style={styles.limitNotice}>
@@ -422,6 +445,17 @@ const styles = StyleSheet.create({
   countChipSelected: { backgroundColor: '#6f52d9', borderColor: '#6f52d9' },
   countText: { color: theme.faint, fontWeight: '700' },
   countTextSelected: { color: '#ffffff' },
+  setupDisclosure: {
+    borderWidth: 1, borderColor: theme.line, borderRadius: radius.lg,
+    backgroundColor: theme.card, padding: 14, marginTop: 16,
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+  },
+  setupDisclosureOpen: { borderColor: '#6f52d9' },
+  setupDisclosureCopy: { flex: 1 },
+  setupDisclosureTitle: { color: theme.ink, fontSize: 13, fontWeight: '700' },
+  setupDisclosureSummary: { color: theme.faint, fontSize: 11, lineHeight: 16, marginTop: 3 },
+  disclosureGlyph: { color: '#6f52d9', fontSize: 22, fontWeight: '500' },
+  setupPanel: { paddingHorizontal: 2 },
   referenceList: { borderWidth: 1, borderColor: theme.line, borderRadius: radius.lg, backgroundColor: theme.card, marginTop: 10, overflow: 'hidden' },
   referenceRow: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14, borderBottomWidth: 1, borderBottomColor: theme.line },
   referenceCopy: { flex: 1 },
