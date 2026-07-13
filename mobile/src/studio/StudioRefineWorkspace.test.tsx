@@ -3,7 +3,7 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-
 
 import { AuthenticatedImageProvider } from '../AuthenticatedImage';
 import { StudioRefineWorkspace } from './StudioRefineWorkspace';
-import type { ProjectDetail } from '../trusted/types';
+import type { ProjectDetail, StudioComponentTargeting } from '../trusted/types';
 
 const project = {
   id: 'project_1', root_id: 'project_1', title: 'Orbit', collection: null,
@@ -56,6 +56,28 @@ const catalog = {
   }],
 };
 
+const readyTargeting: StudioComponentTargeting = {
+  schema_version: 'facetta.studio-component-targeting.v1',
+  asset_id: 'asset_2',
+  asset_sha256: 'a'.repeat(64),
+  jewelry_type: 'ring',
+  component_map: {
+    state: 'ready', scope: 'ring_v1', map_sha256: 'b'.repeat(64),
+    mapper_contract: 'facetta.ring-component-map.v1', raster_width: 1024, raster_height: 1024,
+  },
+  catalog_paths: [
+    { component_path: 'metal.color', status: 'ready', required_component_kinds: ['metal'], component_ids: ['shank'], reason_code: null },
+    { component_path: 'metal.material', status: 'ready', required_component_kinds: ['metal'], component_ids: ['shank'], reason_code: null },
+    { component_path: 'stone.color', status: 'ready', required_component_kinds: ['stone'], component_ids: ['center_stone'], reason_code: null },
+    { component_path: 'stone.cut', status: 'unresolved', required_component_kinds: ['stone'], component_ids: [], reason_code: 'structural_child_mapping_unavailable' },
+    { component_path: 'setting.style', status: 'unresolved', required_component_kinds: ['setting'], component_ids: [], reason_code: 'structural_child_mapping_unavailable' },
+    { component_path: 'chain.style', status: 'unresolved', required_component_kinds: ['chain'], component_ids: [], reason_code: 'not_applicable' },
+  ],
+  authority: 'exact_revision_image_editing_only',
+};
+
+const getReadyTargeting = jest.fn(async () => ({ data: readyTargeting, error: null, status: 200 }));
+
 const responderEvent = (locationX: number, locationY: number) => ({
   nativeEvent: { locationX, locationY },
 });
@@ -76,6 +98,7 @@ describe('StudioRefineWorkspace', () => {
       <StudioRefineWorkspace
         api={{
           getComponentCatalog: jest.fn(async () => ({ data: catalog, error: null, status: 200 })),
+          getStudioComponentTargeting: getReadyTargeting,
           readMarkup: jest.fn(),
         }}
         gateway={{
@@ -116,6 +139,7 @@ describe('StudioRefineWorkspace', () => {
       <StudioRefineWorkspace
         api={{
           getComponentCatalog: jest.fn(async () => ({ data: catalog, error: null, status: 200 })),
+          getStudioComponentTargeting: getReadyTargeting,
           readMarkup: jest.fn(),
         }}
         gateway={{ previewCatalogRefine, applyCatalogRefine, discardCatalogRefine: jest.fn() } as any}
@@ -164,7 +188,7 @@ describe('StudioRefineWorkspace', () => {
     const onApplied = jest.fn();
     await renderWithAuth(
       <StudioRefineWorkspace
-        api={{ getComponentCatalog, readMarkup: jest.fn() }}
+        api={{ getComponentCatalog, getStudioComponentTargeting: getReadyTargeting, readMarkup: jest.fn() }}
         gateway={{
           previewVisualRefine, applyVisualRefine, discardVisualRefine: jest.fn(),
           previewCatalogRefine: jest.fn(), applyCatalogRefine: jest.fn(), discardCatalogRefine: jest.fn(),
@@ -210,6 +234,7 @@ describe('StudioRefineWorkspace', () => {
           requested_change: 'Warm only this surface',
           impact: 'visual_only' as const,
           target_spec_reference: null, target_section: null, target_index: null,
+          target_component_id: 'metal.upper-left',
           target_element_id: null, frozen_elements: ['all jewelry geometry'],
           confidence: 0.98, clarification_question: null,
           understood_as: 'Warm only the highlighted surface; preserve geometry.',
@@ -230,7 +255,7 @@ describe('StudioRefineWorkspace', () => {
     }));
     await renderWithAuth(
       <StudioRefineWorkspace
-        api={{ getComponentCatalog: jest.fn(), readMarkup }}
+        api={{ getComponentCatalog: jest.fn(), getStudioComponentTargeting: getReadyTargeting, readMarkup }}
         gateway={{
           previewVisualRefine, applyVisualRefine: jest.fn(), discardVisualRefine: jest.fn(),
           previewCatalogRefine: jest.fn(), applyCatalogRefine: jest.fn(), discardCatalogRefine: jest.fn(),
@@ -281,6 +306,7 @@ describe('StudioRefineWorkspace', () => {
       <StudioRefineWorkspace
         api={{
           getComponentCatalog: jest.fn(async () => ({ data: catalog, error: null, status: 200 })),
+          getStudioComponentTargeting: getReadyTargeting,
           readMarkup: jest.fn(),
         }}
         gateway={{
@@ -334,6 +360,7 @@ describe('StudioRefineWorkspace', () => {
       <StudioRefineWorkspace
         api={{
           getComponentCatalog: jest.fn(async () => ({ data: catalog, error: null, status: 200 })),
+          getStudioComponentTargeting: getReadyTargeting,
           readMarkup: jest.fn(),
         }}
         gateway={{
@@ -391,6 +418,7 @@ describe('StudioRefineWorkspace', () => {
       <StudioRefineWorkspace
         api={{
           getComponentCatalog: jest.fn(async () => ({ data: catalog, error: null, status: 200 })),
+          getStudioComponentTargeting: getReadyTargeting,
           readMarkup: jest.fn(),
         }}
         gateway={{
@@ -438,6 +466,7 @@ describe('StudioRefineWorkspace', () => {
       <StudioRefineWorkspace
         api={{
           getComponentCatalog: jest.fn(async () => ({ data: catalog, error: null, status: 200 })),
+          getStudioComponentTargeting: getReadyTargeting,
           readMarkup: jest.fn(), getProject: jest.fn(async () => ({
             data: exactFactProject, error: null, status: 200,
           })), reviseStudioFacts,
@@ -509,5 +538,61 @@ describe('StudioRefineWorkspace', () => {
     await waitFor(() => expect(onApplied).toHaveBeenCalledWith(revisedProject));
     expect(onApplied).toHaveBeenCalledWith(revisedProject);
     expect(await screen.findByText('Save fact revision')).toBeTruthy();
+  });
+
+  test('fails closed when the exact revision has no mapped component regions', async () => {
+    const getComponentCatalog = jest.fn();
+    const previewCatalogRefine = jest.fn();
+    const unmapped: StudioComponentTargeting = {
+      ...readyTargeting,
+      component_map: { ...readyTargeting.component_map, state: 'unmapped', map_sha256: null },
+      catalog_paths: readyTargeting.catalog_paths.map((candidate) => ({
+        ...candidate, status: 'unmapped' as const, component_ids: [], reason_code: 'component_map_missing',
+      })),
+    };
+    await renderWithAuth(
+      <StudioRefineWorkspace
+        api={{
+          getComponentCatalog,
+          getStudioComponentTargeting: jest.fn(async () => ({ data: unmapped, error: null, status: 200 })),
+          readMarkup: jest.fn(),
+        }}
+        gateway={{ previewCatalogRefine } as any}
+        lineage={{ projectId: 'project_1', sourceAssetId: 'asset_2', sourceDesignVersion: 2 }}
+        createdBy="designer"
+        onApplied={jest.fn()}
+      />,
+    );
+
+    await waitFor(() => expect(
+      screen.getByLabelText('Component refine mode').props.accessibilityState.disabled,
+    ).toBe(true));
+    expect(screen.getByText(/will not guess component geometry/i)).toBeTruthy();
+    expect(screen.getByText('Appearance change')).toBeTruthy();
+    expect(getComponentCatalog).not.toHaveBeenCalled();
+    expect(previewCatalogRefine).not.toHaveBeenCalled();
+  });
+
+  test('offers mapped material paths while disabling unresolved structural paths', async () => {
+    await renderWithAuth(
+      <StudioRefineWorkspace
+        api={{
+          getComponentCatalog: jest.fn(async () => ({ data: catalog, error: null, status: 200 })),
+          getStudioComponentTargeting: getReadyTargeting,
+          readMarkup: jest.fn(),
+        }}
+        gateway={{} as any}
+        lineage={{ projectId: 'project_1', sourceAssetId: 'asset_2', sourceDesignVersion: 2 }}
+        createdBy="designer"
+        onApplied={jest.fn()}
+      />,
+    );
+
+    await waitFor(() => expect(
+      screen.getByLabelText('Metal color component path').props.accessibilityState.disabled,
+    ).toBe(false));
+    expect(screen.getByLabelText('Stone cut component path').props.accessibilityState.disabled).toBe(true);
+    expect(screen.getByLabelText('Setting component path').props.accessibilityState.disabled).toBe(true);
+    expect(screen.getAllByText(/needs calibrated structural mapping/i).length).toBeGreaterThanOrEqual(2);
   });
 });

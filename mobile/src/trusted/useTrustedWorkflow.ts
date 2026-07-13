@@ -38,6 +38,7 @@ export interface MarkupConfirmation {
   target_spec_reference?: string | null;
   target_section?: string | null;
   target_index?: number | null;
+  target_component_id?: string | null;
   target_element_id?: string | null;
   form_view?: 'front' | 'side' | 'top' | 'three_quarter';
   mask_base64?: string | null;
@@ -472,6 +473,9 @@ export function useTrustedWorkflow(
     const targetElementId = confirmation.target_element_id === undefined
       ? source.target_element_id
       : confirmation.target_element_id;
+    const targetComponentId = confirmation.target_component_id === undefined
+      ? source.target_component_id
+      : confirmation.target_component_id;
     if (impact === 'specification' && targetSection === null
       && targetReference === null && targetElementId === null) {
       dispatch({
@@ -493,6 +497,7 @@ export function useTrustedWorkflow(
       index: confirmation.target_index === undefined
         ? source.target_index
         : confirmation.target_index,
+      target_component_id: targetComponentId,
       target_element_id: targetElementId,
       form_view: confirmation.form_view ?? 'three_quarter',
       mask_base64: confirmation.mask_base64 ?? null,

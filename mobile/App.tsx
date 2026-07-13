@@ -29,10 +29,10 @@ import {
 } from './src/studio/StudioFactoryWorkspace';
 import { StudioActivityWorkspace } from './src/studio/StudioActivityWorkspace';
 import {
-  createStudioGatewayFromOptions, ExactStudioLineage, StudioVisualLineage,
+  createStudioGatewayFromOptions, ExactStudioLineage, StudioReviewJobEnvelope,
+  StudioVisualLineage,
 } from './src/studio/gateway';
 import { radius, shadows, theme } from './src/theme';
-import { createTrustedApiClient } from './src/trusted/client';
 import type { ProjectDetail } from './src/trusted/types';
 import { WorkflowShowcase } from './src/WorkflowShowcase';
 import { designerErrorMessage } from './src/studio/designerErrorMessage';
@@ -48,6 +48,7 @@ interface ProjectHydrationRequest {
   destination: ProjectHydrationDestination;
   expectedAssetId?: string;
   studioJobId?: string;
+  reviewJobId?: string;
 }
 
 interface CreateReviewState {
@@ -103,6 +104,7 @@ export default function App() {
   const [studioProject, setStudioProject] = useState<ProjectDetail | null>(null);
   const [selectedCreativeAssetId, setSelectedCreativeAssetId] = useState<string | null>(null);
   const [createReview, setCreateReview] = useState<CreateReviewState | null>(null);
+  const [activityReview, setActivityReview] = useState<StudioReviewJobEnvelope | null>(null);
   const [projectHydration, setProjectHydration] = useState<{
     request: ProjectHydrationRequest;
     loading: boolean;
@@ -115,6 +117,7 @@ export default function App() {
     setStudioProject(null);
     setSelectedCreativeAssetId(null);
     setCreateReview(null);
+    setActivityReview(null);
     setStage('login');
   }, []);
   const expireAuthenticatedSession = useCallback(() => {
@@ -155,15 +158,6 @@ export default function App() {
     };
   }, [adoptAuthenticatedSession, authLifecycleEnabled, clearAuthenticatedUi]);
 
-  const trustedApi = useMemo(
-    () => createTrustedApiClient({
-      baseUrl: apiUrl.replace(/\/$/, ''),
-      getAccessToken: () => sessionAccessToken(session),
-      requireAccessToken: true,
-      onAuthenticationFailure: expireAuthenticatedSession,
-    }),
-    [apiUrl, expireAuthenticatedSession, session],
-  );
   const studioGateway = useMemo(
     () => createStudioGatewayFromOptions(
       {
@@ -227,7 +221,25 @@ export default function App() {
 
   const hydrateProject = useCallback(async (request: ProjectHydrationRequest) => {
     setProjectHydration({ request, loading: true, error: null });
-    const result = await trustedApi.getProject(request.projectId);
+    if (request.reviewJobId !== undefined
+      && ['refine', 'views', 'present'].includes(request.destination)) {
+      const review = await studioGateway.resumeReviewJob(request.reviewJobId, designer);
+      if (review.error !== null) {
+        setProjectHydration({
+          request,
+          loading: false,
+          error: designerErrorMessage(review.error, 'collections'),
+        });
+        return;
+      }
+      setStudioProject(review.data.project);
+      setSelectedCreativeAssetId(review.data.project.active_asset_id);
+      setActivityReview(review.data);
+      setProjectHydration(null);
+      openStudioAction(request.destination as 'refine' | 'views' | 'present', false, true);
+      return;
+    }
+    const result = await studioGateway.getProject(request.projectId);
     if (result.error !== null) {
       setProjectHydration({
         request,
@@ -268,7 +280,7 @@ export default function App() {
       return;
     }
     openStudioAction(request.destination);
-  }, [trustedApi]);
+  }, [designer, studioGateway]);
 
   const deliverProtectedFile = useCallback(async (
     request: StudioProtectedFileRequest,
@@ -277,12 +289,17 @@ export default function App() {
     accessToken: sessionAccessToken(session),
   }), [apiUrl, session]);
 
-  const openStudioAction = (actionId: StudioActionId, preserveCreateReview = false) => {
+  const openStudioAction = (
+    actionId: StudioActionId,
+    preserveCreateReview = false,
+    preserveActivityReview = false,
+  ) => {
     if (actionId === 'more') {
       setShowMoreActions((visible) => !visible);
       return;
     }
     if (!preserveCreateReview) setCreateReview(null);
+    if (!preserveActivityReview) setActivityReview(null);
     setSelectedActionId(actionId);
     setShowMoreActions(false);
     setStudioView('action');
@@ -512,12 +529,18 @@ export default function App() {
             />
           ) : selectedActionId === 'refine' || selectedActionId === 'specifications' ? (
             <StudioRefineWorkspace
-              key={selectedActionId}
+              key={activityReview === null ? selectedActionId : `${selectedActionId}:${activityReview.job.job_id}`}
               api={studioGateway}
               gateway={studioGateway}
-              lineage={exactStudioLineage ?? visualStudioLineage}
+              lineage={activityReview?.job.action_id === 'refine'
+                ? activityReview.lineage : exactStudioLineage ?? visualStudioLineage}
               createdBy={designer}
-              sourceImageUrl={studioProject?.active_revision?.image_url ?? null}
+              sourceImageUrl={activityReview?.job.action_id === 'refine'
+                ? activityReview.sourceImageUrl : studioProject?.active_revision?.image_url ?? null}
+              resumeReviewJobId={activityReview?.job.action_id === 'refine'
+                ? activityReview.job.job_id : undefined}
+              reviewSourceIsActive={activityReview?.job.action_id === 'refine'
+                ? activityReview.sourceIsActive : true}
               initialAdvancedFactsOpen={selectedActionId === 'specifications'}
               onApplied={(project) => {
                 setStudioProject(project);
@@ -532,10 +555,16 @@ export default function App() {
           ) : selectedActionId === 'views' ? (
             <StudioViewsWorkspace
               gateway={studioGateway}
-              lineage={exactStudioLineage}
+              lineage={activityReview?.job.action_id === 'views'
+                && 'sourceDesignVersion' in activityReview.lineage
+                ? activityReview.lineage : exactStudioLineage}
               createdBy={designer}
               onSaved={setStudioProject}
               imageRequestHeaders={authenticatedImageHeaders}
+              resumeReviewJobId={activityReview?.job.action_id === 'views'
+                ? activityReview.job.job_id : undefined}
+              reviewSourceIsActive={activityReview?.job.action_id === 'views'
+                ? activityReview.sourceIsActive : true}
             />
           ) : selectedActionId === 'confirm' ? (
             <StudioConfirmWorkspace
@@ -551,10 +580,15 @@ export default function App() {
           ) : selectedActionId === 'present' ? (
             <StudioPresentWorkspace
               gateway={studioGateway}
-              lineage={exactStudioLineage ?? visualStudioLineage}
+              lineage={activityReview?.job.action_id === 'present'
+                ? activityReview.lineage : exactStudioLineage ?? visualStudioLineage}
               createdBy={designer}
               onProjectUpdated={setStudioProject}
               imageRequestHeaders={authenticatedImageHeaders}
+              resumeReviewJobId={activityReview?.job.action_id === 'present'
+                ? activityReview.job.job_id : undefined}
+              reviewSourceIsActive={activityReview?.job.action_id === 'present'
+                ? activityReview.sourceIsActive : true}
             />
           ) : selectedActionId === 'vary' ? (
             <StudioVaryWorkspace
@@ -628,7 +662,7 @@ export default function App() {
             void hydrateProject({
               projectId: job.active_design_id,
               destination: job.action_id as 'refine' | 'views' | 'present',
-              expectedAssetId: job.source_revision_id,
+              reviewJobId: job.job_id,
             });
           }}
           onOpenDesign={(projectId) => {

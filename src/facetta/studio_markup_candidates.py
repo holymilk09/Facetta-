@@ -408,7 +408,7 @@ def list_studio_markup_candidates(
 
 
 def _validate_exact_lineage(
-    db: Session, candidate: StudioMarkupCandidate,
+    db: Session, candidate: StudioMarkupCandidate, *, require_active: bool = True,
 ) -> tuple[Project, ImageAsset, ImageRun]:
     project = db.get(Project, candidate.project_root_id)
     source = db.get(ImageAsset, candidate.source_asset_id)
@@ -435,12 +435,13 @@ def _validate_exact_lineage(
     target_spec_hash = spec_visual_hash(candidate.next_spec or Spec.model_validate(
         version.spec)) if version is not None else None
     if (
-        project is None or source is None or run is None or active is None
+        project is None or source is None or run is None
+        or (require_active and active is None)
         or project.owner != candidate.created_by
         or source.id != candidate.expected_active_asset_id
-        or active.id != source.id
+        or (require_active and active is not None and active.id != source.id)
         or source.design_version != candidate.design_version
-        or latest != candidate.design_version
+        or (require_active and latest != candidate.design_version)
         or source_hash != candidate.source_hash
         or hashlib.sha256(candidate.image_bytes).hexdigest() != candidate.output_hash
         or source_spec_hash != candidate.source_spec_hash
@@ -598,7 +599,7 @@ def discard_studio_markup_candidate(
             "markup_candidate_lineage_mismatch",
             "the decision identifies another image/spec revision",
         )
-    _validate_exact_lineage(db, candidate)
+    _validate_exact_lineage(db, candidate, require_active=False)
     try:
         discarded = discard_warning_revision(
             db,
@@ -606,6 +607,7 @@ def discard_studio_markup_candidate(
             expected_design_version=expected_design_version,
             created_by=created_by,
             commit=False,
+            require_active=False,
         )
         now = utcnow()
         record.status = "discarded"

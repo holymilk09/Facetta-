@@ -604,6 +604,7 @@ def _require_exact_source(
     expected_active_asset_id: str,
     expected_source_sha256: str,
     created_by: str,
+    require_active: bool = True,
 ) -> tuple[Project, ImageAsset, ImageRun]:
     project = db.scalar(select(Project).where(
         Project.root_id == candidate.project_root_id
@@ -640,7 +641,7 @@ def _require_exact_source(
         if (
             source.root_id != project.root_id
             or source.capability != "CREATIVE_RENDER"
-            or project.selected_candidate_asset_id != source.id
+            or (require_active and project.selected_candidate_asset_id != source.id)
             or expected_active_asset_id != source.id
             or expected_source_sha256 != current_hash
             or candidate.source_hash != current_hash
@@ -667,8 +668,9 @@ def _require_exact_source(
             if root.design_id else None
         )
         if (
-            active is None
-            or active.id != (candidate.expected_active_asset_id or source.id)
+            (require_active and active is None)
+            or (require_active and active is not None
+                and active.id != (candidate.expected_active_asset_id or source.id))
             or expected_active_asset_id
             != (candidate.expected_active_asset_id or source.id)
             or expected_source_sha256 != current_hash
@@ -680,7 +682,7 @@ def _require_exact_source(
             )
         if (
             source.design_version != candidate.design_version
-            or latest != candidate.design_version
+            or (require_active and latest != candidate.design_version)
             or version is None
         ):
             raise StudioPresentationError(
@@ -922,6 +924,7 @@ def discard_studio_presentation_candidate(
         expected_active_asset_id=expected_active_asset_id,
         expected_source_sha256=expected_source_sha256,
         created_by=created_by,
+        require_active=False,
     )
     existing = db.scalar(select(ImageRunReview).where(
         ImageRunReview.run_id == candidate.run_id,

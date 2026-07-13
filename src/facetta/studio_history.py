@@ -23,6 +23,11 @@ from facetta.db import (
     utcnow,
 )
 from facetta.project_backbone import is_primary_revision
+from facetta.catalog_component_targeting import (
+    prepare_catalog_child_component_map,
+)
+from facetta.revision_component_map import ComponentMapError
+from facetta.revision_component_map_store import add_revision_component_map
 from facetta.specdiff import diff_specs, summarize_changes
 from facetta.studio_visual_candidates import StudioVisualCandidate
 
@@ -53,9 +58,9 @@ def _verified_revision_hash(
     """
 
     actual = _sha256(asset)
-    record = db.scalar(select(ProjectRevisionRecord).where(
-        ProjectRevisionRecord.asset_id == asset.id
-    ))
+    record = db.scalar(
+        select(ProjectRevisionRecord).where(ProjectRevisionRecord.asset_id == asset.id)
+    )
     if record is None:
         return actual
     expected = (record.interpretation or {}).get("output_sha256")
@@ -116,24 +121,27 @@ def fork_preview_candidate_variation(
         )
     try:
         if kind == "studio_visual":
-            candidate, candidate_record = (
-                lock_studio_visual_candidate_for_decision(
-                    db, run_id, candidate_id, owner=created_by,
-                )
+            candidate, candidate_record = lock_studio_visual_candidate_for_decision(
+                db,
+                run_id,
+                candidate_id,
+                owner=created_by,
             )
             next_spec = None
         elif kind == "catalog_revision":
-            candidate, candidate_record = (
-                lock_catalog_preview_candidate_for_decision(
-                    db, run_id, candidate_id, owner=created_by,
-                )
+            candidate, candidate_record = lock_catalog_preview_candidate_for_decision(
+                db,
+                run_id,
+                candidate_id,
+                owner=created_by,
             )
             next_spec = candidate.next_spec
         elif kind == "studio_markup":
-            candidate, candidate_record = (
-                lock_studio_markup_candidate_for_decision(
-                    db, run_id, candidate_id, owner=created_by,
-                )
+            candidate, candidate_record = lock_studio_markup_candidate_for_decision(
+                db,
+                run_id,
+                candidate_id,
+                owner=created_by,
             )
             next_spec = candidate.next_spec
             if next_spec is None:
@@ -143,11 +151,15 @@ def fork_preview_candidate_variation(
                 # its specification stayed identical.
                 source_root = db.get(ImageAsset, candidate.project_root_id)
                 source_version = (
-                    db.get(DesignVersion, (
-                        source_root.design_id, candidate.design_version,
-                    ))
-                    if source_root is not None
-                    and source_root.design_id is not None else None
+                    db.get(
+                        DesignVersion,
+                        (
+                            source_root.design_id,
+                            candidate.design_version,
+                        ),
+                    )
+                    if source_root is not None and source_root.design_id is not None
+                    else None
                 )
                 if source_version is None:
                     raise StudioHistoryError(
@@ -170,12 +182,16 @@ def fork_preview_candidate_variation(
         StudioMarkupCandidateUnavailable,
     ) as exc:
         raise StudioHistoryError(
-            "preview_candidate_unavailable", str(exc), status_code=410,
+            "preview_candidate_unavailable",
+            str(exc),
+            status_code=410,
         ) from exc
 
-    project = db.scalar(select(Project).where(
-        Project.root_id == candidate.project_root_id
-    ).with_for_update())
+    project = db.scalar(
+        select(Project)
+        .where(Project.root_id == candidate.project_root_id)
+        .with_for_update()
+    )
     source = db.get(ImageAsset, candidate.source_asset_id)
     run = db.get(ImageRun, run_id)
     if (
@@ -196,6 +212,55 @@ def fork_preview_candidate_variation(
             status_code=410,
         )
 
+    new_root_id = new_id("ast")
+    child_component_map = None
+    if kind == "catalog_revision":
+        assert next_spec is not None
+        try:
+            source_root = db.get(ImageAsset, source.root_id)
+            source_version = (
+                db.get(
+                    DesignVersion,
+                    (source_root.design_id, source.design_version),
+                )
+                if source_root is not None
+                and source_root.design_id is not None
+                and source.design_version is not None
+                else None
+            )
+            if source_version is None:
+                raise ComponentMapError(
+                    "the exact source specification is unavailable",
+                    code="spec_version_unavailable",
+                )
+            candidate_changes = diff_specs(
+                source_version.spec,
+                next_spec.model_dump(mode="json"),
+            )
+            child_component_map = prepare_catalog_child_component_map(
+                db,
+                source_asset_id=source.id,
+                source_image=bytes(source.image),
+                child_asset_id=new_root_id,
+                child_image=candidate.image_bytes,
+                jewelry_type=next_spec.jewelry_type,
+                component_path=candidate.component_path,
+                target_component_ids=candidate.target_component_ids,
+                changed_spec_paths=tuple(
+                    str(change["path"]) for change in candidate_changes
+                ),
+                instruction=candidate.requested_change,
+            )
+        except ComponentMapError as exc:
+            db.rollback()
+            raise StudioHistoryError(
+                exc.code,
+                exc.detail,
+                status_code=(
+                    409 if exc.code == "component_mapping_unresolved" else 422
+                ),
+            ) from exc
+
     family = ensure_project_family(db, project)
     if family.owner != created_by:
         raise StudioHistoryError(
@@ -203,39 +268,47 @@ def fork_preview_candidate_variation(
             "the project and design family have different owners",
             status_code=422,
         )
-    highest = db.scalar(select(func.max(Project.variation_index)).where(
-        Project.family_id == family.id
-    )) or 1
+    highest = (
+        db.scalar(
+            select(func.max(Project.variation_index)).where(
+                Project.family_id == family.id
+            )
+        )
+        or 1
+    )
     variation_index = highest + 1
     now = utcnow()
-    new_root_id = new_id("ast")
     design_id: str | None = None
     design_version: int | None = None
     if next_spec is not None:
         design_id = new_id("dsn")
         design_version = 1
         stored_spec = next_spec.model_dump(mode="json")
-        stored_spec.update({
-            "design_id": design_id,
-            "version": 1,
-            "created_by": created_by,
-            "created_at": now.isoformat().replace("+00:00", "Z"),
-        })
-        db.add_all([
-            Design(
-                id=design_id,
-                created_by=created_by,
-                created_at=now,
-                collection=project.collection,
-            ),
-            DesignVersion(
-                design_id=design_id,
-                version=1,
-                spec=stored_spec,
-                created_by=created_by,
-                created_at=now,
-            ),
-        ])
+        stored_spec.update(
+            {
+                "design_id": design_id,
+                "version": 1,
+                "created_by": created_by,
+                "created_at": now.isoformat().replace("+00:00", "Z"),
+            }
+        )
+        db.add_all(
+            [
+                Design(
+                    id=design_id,
+                    created_by=created_by,
+                    created_at=now,
+                    collection=project.collection,
+                ),
+                DesignVersion(
+                    design_id=design_id,
+                    version=1,
+                    spec=stored_spec,
+                    created_by=created_by,
+                    created_at=now,
+                ),
+            ]
+        )
 
     new_asset = ImageAsset(
         id=new_root_id,
@@ -259,9 +332,7 @@ def fork_preview_candidate_variation(
         family_id=family.id,
         variation_index=variation_index,
         variation_label=label,
-        selected_candidate_asset_id=(
-            new_root_id if next_spec is None else None
-        ),
+        selected_candidate_asset_id=(new_root_id if next_spec is None else None),
         branched_from_project_root_id=project.root_id,
         branched_from_asset_id=source.id,
         created_at=now,
@@ -327,9 +398,18 @@ def fork_preview_candidate_variation(
         except StudioJobAccountingError as exc:
             db.rollback()
             raise StudioHistoryError(
-                "variation_job_resolution_conflict", str(exc),
+                "variation_job_resolution_conflict",
+                str(exc),
             ) from exc
     try:
+        db.flush()
+        if child_component_map is not None:
+            add_revision_component_map(
+                db,
+                child_component_map,
+                image_bytes=candidate.image_bytes,
+                parent_asset_id=source.id,
+            )
         db.commit()
     except IntegrityError as exc:
         db.rollback()
@@ -381,12 +461,15 @@ def _validate_pre_spec_visual_candidate(
     candidate: StudioVisualCandidate,
     expected_active_asset_id: str,
     created_by: str,
+    require_active: bool = True,
 ) -> tuple[Project, ImageAsset, ImageRun]:
     """Recheck the candidate's complete pre-spec authority boundary."""
 
-    project = db.scalar(select(Project).where(
-        Project.root_id == candidate.project_root_id
-    ).with_for_update())
+    project = db.scalar(
+        select(Project)
+        .where(Project.root_id == candidate.project_root_id)
+        .with_for_update()
+    )
     source = db.get(ImageAsset, candidate.source_asset_id)
     root = db.get(ImageAsset, candidate.project_root_id)
     run = db.get(ImageRun, candidate.run_id)
@@ -408,21 +491,24 @@ def _validate_pre_spec_visual_candidate(
             "this Studio visual route cannot edit specification-linked work",
             status_code=422,
         )
-    if (source.root_id != project.root_id
-            or source.capability != "CREATIVE_RENDER"):
+    if source.root_id != project.root_id or source.capability != "CREATIVE_RENDER":
         raise StudioHistoryError(
             "visual_preview_source_invalid",
             "the preview source is not a canonical pre-spec visual",
             status_code=422,
         )
-    if (expected_active_asset_id
-            != candidate.expected_selected_candidate_asset_id
-            or candidate.source_asset_id != expected_active_asset_id):
+    if (
+        expected_active_asset_id != candidate.expected_selected_candidate_asset_id
+        or candidate.source_asset_id != expected_active_asset_id
+    ):
         raise StudioHistoryError(
             "stale_asset_revision",
             "the preview was not reviewed against this selected visual",
         )
-    if project.selected_candidate_asset_id != expected_active_asset_id:
+    if (
+        require_active
+        and project.selected_candidate_asset_id != expected_active_asset_id
+    ):
         raise StudioHistoryError(
             "stale_asset_revision",
             "the selected visual changed while the preview was under review",
@@ -434,19 +520,23 @@ def _validate_pre_spec_visual_candidate(
             "the selected source bytes no longer match the preview lineage",
             status_code=422,
         )
-    if (run.project_root_id != project.root_id
-            or run.source_asset_id != source.id
-            or run.source_hash != source_hash
-            or run.created_by != created_by
-            or run.accepted_asset_id is not None
-            or run.status not in {"preview_ready", "review_required"}):
+    if (
+        run.project_root_id != project.root_id
+        or run.source_asset_id != source.id
+        or run.source_hash != source_hash
+        or run.created_by != created_by
+        or run.accepted_asset_id is not None
+        or run.status not in {"preview_ready", "review_required"}
+    ):
         raise StudioHistoryError(
             "visual_preview_run_mismatch",
             "the preview run is not bound to this exact project and source",
             status_code=422,
         )
-    if db.scalar(select(ImageRunReview).where(
-            ImageRunReview.run_id == run.id)) is not None:
+    if (
+        db.scalar(select(ImageRunReview).where(ImageRunReview.run_id == run.id))
+        is not None
+    ):
         raise StudioHistoryError(
             "visual_preview_already_reviewed",
             "the visual preview already has a terminal review decision",
@@ -480,8 +570,7 @@ def apply_pre_spec_visual_candidate(
         capability="CREATIVE_RENDER",
         instruction=candidate.requested_change,
         region=(
-            "designer-marked region"
-            if candidate.scope == "marked_region" else None
+            "designer-marked region" if candidate.scope == "marked_region" else None
         ),
         drift=None,
         image=candidate.image_bytes,
@@ -582,6 +671,7 @@ def discard_pre_spec_visual_candidate(
         candidate=candidate,
         expected_active_asset_id=expected_active_asset_id,
         created_by=created_by,
+        require_active=False,
     )
     review = ImageRunReview(
         id=new_id("irr"),
@@ -613,33 +703,44 @@ def discard_pre_spec_visual_candidate(
 
 
 def _project_chain(db: Session, root_id: str) -> list[ImageAsset]:
-    rows = list(db.scalars(
-        select(ImageAsset)
-        .where(ImageAsset.root_id == root_id)
-        .order_by(ImageAsset.created_at, ImageAsset.id)
-    ))
-    rows.sort(key=lambda asset: (
-        asset.id != root_id, asset.created_at, asset.id,
-    ))
+    rows = list(
+        db.scalars(
+            select(ImageAsset)
+            .where(ImageAsset.root_id == root_id)
+            .order_by(ImageAsset.created_at, ImageAsset.id)
+        )
+    )
+    rows.sort(
+        key=lambda asset: (
+            asset.id != root_id,
+            asset.created_at,
+            asset.id,
+        )
+    )
     return rows
 
 
 def _active_primary(db: Session, root_id: str) -> ImageAsset | None:
     primary = [
-        asset for asset in _project_chain(db, root_id)
-        if is_primary_revision(asset)
+        asset for asset in _project_chain(db, root_id) if is_primary_revision(asset)
     ]
     if not primary:
         return None
     project = db.get(Project, root_id)
-    if (project is not None
-            and project.selected_candidate_asset_id is not None
-            and not any(asset.design_version is not None for asset in primary)):
-        selected = next((
-            asset for asset in primary
-            if asset.id == project.selected_candidate_asset_id
-            and asset.design_version is None
-        ), None)
+    if (
+        project is not None
+        and project.selected_candidate_asset_id is not None
+        and not any(asset.design_version is not None for asset in primary)
+    ):
+        selected = next(
+            (
+                asset
+                for asset in primary
+                if asset.id == project.selected_candidate_asset_id
+                and asset.design_version is None
+            ),
+            None,
+        )
         if selected is not None:
             return selected
     return primary[-1]
@@ -685,9 +786,9 @@ def fork_project_variation(
 ) -> VariationBranchResult:
     """Copy one exact revision into an independent sibling project."""
 
-    project = db.scalar(select(Project).where(
-        Project.root_id == project_root_id
-    ).with_for_update())
+    project = db.scalar(
+        select(Project).where(Project.root_id == project_root_id).with_for_update()
+    )
     source = db.get(ImageAsset, source_asset_id)
     active = _active_primary(db, project_root_id)
     if project is None or source is None or source.root_id != project_root_id:
@@ -735,7 +836,9 @@ def fork_project_variation(
         )
 
     source_sha256 = _verified_revision_hash(
-        db, source, mismatch_code="variation_source_hash_mismatch",
+        db,
+        source,
+        mismatch_code="variation_source_hash_mismatch",
     )
 
     family = ensure_project_family(db, project)
@@ -745,8 +848,14 @@ def fork_project_variation(
             "the project and design family have different owners",
             status_code=422,
         )
-    highest = db.scalar(select(func.max(Project.variation_index)).where(
-        Project.family_id == family.id)) or 1
+    highest = (
+        db.scalar(
+            select(func.max(Project.variation_index)).where(
+                Project.family_id == family.id
+            )
+        )
+        or 1
+    )
     variation_index = highest + 1
     now = utcnow()
     new_root_id = new_id("ast")
@@ -760,8 +869,7 @@ def fork_project_variation(
                 "the selected visual has no exact specification binding",
                 status_code=422,
             )
-        source_version = db.get(
-            DesignVersion, (root.design_id, source.design_version))
+        source_version = db.get(DesignVersion, (root.design_id, source.design_version))
         if source_version is None:
             raise StudioHistoryError(
                 "variation_spec_unavailable",
@@ -771,27 +879,31 @@ def fork_project_variation(
         new_design_id = new_id("dsn")
         new_design_version = 1
         stored_spec = dict(source_version.spec)
-        stored_spec.update({
-            "design_id": new_design_id,
-            "version": 1,
-            "created_by": created_by,
-            "created_at": now.isoformat().replace("+00:00", "Z"),
-        })
-        db.add_all([
-            Design(
-                id=new_design_id,
-                created_by=created_by,
-                created_at=now,
-                collection=project.collection,
-            ),
-            DesignVersion(
-                design_id=new_design_id,
-                version=1,
-                spec=stored_spec,
-                created_by=created_by,
-                created_at=now,
-            ),
-        ])
+        stored_spec.update(
+            {
+                "design_id": new_design_id,
+                "version": 1,
+                "created_by": created_by,
+                "created_at": now.isoformat().replace("+00:00", "Z"),
+            }
+        )
+        db.add_all(
+            [
+                Design(
+                    id=new_design_id,
+                    created_by=created_by,
+                    created_at=now,
+                    collection=project.collection,
+                ),
+                DesignVersion(
+                    design_id=new_design_id,
+                    version=1,
+                    spec=stored_spec,
+                    created_by=created_by,
+                    created_at=now,
+                ),
+            ]
+        )
 
     new_asset = ImageAsset(
         id=new_root_id,
@@ -876,14 +988,18 @@ def restore_project_revision(
 ) -> RestoreRevisionResult:
     """Append a copy of a historical revision as the new active revision."""
 
-    project = db.scalar(select(Project).where(
-        Project.root_id == project_root_id
-    ).with_for_update())
+    project = db.scalar(
+        select(Project).where(Project.root_id == project_root_id).with_for_update()
+    )
     selected = db.get(ImageAsset, restore_asset_id)
     active = _active_primary(db, project_root_id)
     root = db.get(ImageAsset, project_root_id)
-    if (project is None or root is None or selected is None
-            or selected.root_id != project_root_id):
+    if (
+        project is None
+        or root is None
+        or selected is None
+        or selected.root_id != project_root_id
+    ):
         raise StudioHistoryError(
             "restore_revision_unavailable",
             "the selected historical revision is not in this project",
@@ -919,10 +1035,14 @@ def restore_project_revision(
         )
 
     selected_sha256 = _verified_revision_hash(
-        db, selected, mismatch_code="restore_source_hash_mismatch",
+        db,
+        selected,
+        mismatch_code="restore_source_hash_mismatch",
     )
     active_sha256 = _verified_revision_hash(
-        db, active, mismatch_code="restore_parent_hash_mismatch",
+        db,
+        active,
+        mismatch_code="restore_parent_hash_mismatch",
     )
 
     now = utcnow()
@@ -937,14 +1057,18 @@ def restore_project_revision(
                 "one of the selected revisions has unknown specification provenance",
                 status_code=422,
             )
-        selected_version = db.get(
-            DesignVersion, (design_id, selected.design_version))
-        active_version = db.get(
-            DesignVersion, (design_id, active.design_version))
-        latest = db.scalar(select(func.max(DesignVersion.version)).where(
-            DesignVersion.design_id == design_id))
-        if (selected_version is None or active_version is None
-                or latest != active.design_version):
+        selected_version = db.get(DesignVersion, (design_id, selected.design_version))
+        active_version = db.get(DesignVersion, (design_id, active.design_version))
+        latest = db.scalar(
+            select(func.max(DesignVersion.version)).where(
+                DesignVersion.design_id == design_id
+            )
+        )
+        if (
+            selected_version is None
+            or active_version is None
+            or latest != active.design_version
+        ):
             raise StudioHistoryError(
                 "restore_spec_unavailable",
                 "the exact historical or active specification is unavailable",
@@ -952,23 +1076,27 @@ def restore_project_revision(
             )
         next_version = active.design_version + 1
         restored_spec = dict(selected_version.spec)
-        restored_spec.update({
-            "design_id": design_id,
-            "version": next_version,
-            "created_by": created_by,
-            "created_at": now.isoformat().replace("+00:00", "Z"),
-        })
+        restored_spec.update(
+            {
+                "design_id": design_id,
+                "version": next_version,
+                "created_by": created_by,
+                "created_at": now.isoformat().replace("+00:00", "Z"),
+            }
+        )
         changes = tuple(diff_specs(active_version.spec, restored_spec))
         summary = summarize_changes(list(changes)) or (
             "Restored the selected historical visual and specification."
         )
-        db.add(DesignVersion(
-            design_id=design_id,
-            version=next_version,
-            spec=restored_spec,
-            created_by=created_by,
-            created_at=now,
-        ))
+        db.add(
+            DesignVersion(
+                design_id=design_id,
+                version=next_version,
+                spec=restored_spec,
+                created_by=created_by,
+                created_at=now,
+            )
+        )
 
     restored_asset = ImageAsset(
         id=new_id("ast"),

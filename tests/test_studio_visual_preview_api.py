@@ -398,6 +398,15 @@ def test_apply_rejects_stale_selected_visual_and_source_hash(
     )
     assert stale.status_code == 410
     assert stale.json()["code"] == "visual_preview_unavailable"
+    discarded = client.post(
+        f"/studio/image-runs/{first['image_run_id']}/visual-candidates/"
+        f"{first['candidate']['candidate_id']}/discard",
+        json={
+            "created_by": "usr_studio",
+            "expected_active_asset_id": "ast_selected",
+        },
+    )
+    assert discarded.status_code == 200
 
     with Session() as db:
         db.get(Project, "ast_selected").selected_candidate_asset_id = "ast_selected"

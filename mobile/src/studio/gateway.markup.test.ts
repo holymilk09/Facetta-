@@ -72,6 +72,7 @@ test('markup refinement stays temporary until explicit apply', async () => {
     createdBy: 'designer_1', annotation: {
       region_description: 'halo', change_instruction: 'make the halo lighter',
       impact: 'visual_only', target_section: null, target_ref: null, index: null,
+      target_component_id: null,
       target_element_id: null, form_view: 'three_quarter', mask_base64: null,
     },
   });
@@ -109,6 +110,7 @@ test('discard makes a markup candidate terminal without changing the project', a
     createdBy: 'designer_1', annotation: {
       region_description: 'background', change_instruction: 'warmer background',
       impact: 'visual_only', target_section: null, target_ref: null, index: null,
+      target_component_id: null,
       target_element_id: null, form_view: 'three_quarter', mask_base64: null,
     },
   });

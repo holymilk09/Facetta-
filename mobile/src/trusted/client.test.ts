@@ -18,6 +18,7 @@ import {
   decodeSaveAsVariationResult,
   decodeStudioJobList,
   decodeStudioJobRecord,
+  decodeStudioComponentTargeting,
   decodeStudioProjectHistory,
   decodeSourceCoverageResolutionResult,
 } from './client';
@@ -1731,4 +1732,103 @@ describe('trusted API decoders', () => {
       created_by: 'designer',
     });
   });
+});
+
+test('markup preserves an exact revision component identity from read through apply', async () => {
+  const fetcher = jest.fn<Promise<Response>, [RequestInfo | URL, RequestInit?]>(
+    async (input) => {
+      const url = String(input);
+      if (url.endsWith('/markup/read')) {
+        return {
+          ok: true,
+          status: 200,
+          text: async () => JSON.stringify({
+            markup_asset_id: 'markup_1',
+            assistant_name: 'Facetta',
+            design_id: 'design_1',
+            expected_design_version: 3,
+            interpretation: {
+              target_region: 'left shoulder',
+              requested_change: 'soften this shoulder',
+              impact: 'specification',
+              target_spec_reference: 'setting.shoulder_profile',
+              target_section: 'setting',
+              target_index: null,
+              target_component_id: 'shoulders.left',
+              target_element_id: null,
+              frozen_elements: ['everything outside the left shoulder'],
+              confidence: 0.97,
+              clarification_question: null,
+              understood_as: 'Soften only the mapped left shoulder.',
+            },
+          }),
+        } as unknown as Response;
+      }
+      return {
+        ok: false,
+        status: 422,
+        text: async () => JSON.stringify({ detail: 'test stop after request capture' }),
+      } as unknown as Response;
+    },
+  );
+  const api = createTrustedApiClient({ baseUrl: 'https://facetta.test', fetcher });
+
+  const reading = await api.readMarkup('asset 1', {
+    markup_snapshot: {
+      schema_version: 1,
+      coordinate_space: 'normalized_image',
+      source_uri: 'https://facetta.test/assets/asset%201/image',
+      annotations: [],
+    },
+    created_by: 'designer',
+  });
+  expect(reading.error).toBeNull();
+  expect(reading.data?.interpretation.target_component_id).toBe('shoulders.left');
+
+  await api.applyMarkup('asset 1', {
+    annotation: {
+      region_description: reading.data!.interpretation.target_region,
+      change_instruction: reading.data!.interpretation.requested_change,
+      impact: reading.data!.interpretation.impact,
+      target_section: reading.data!.interpretation.target_section,
+      target_ref: reading.data!.interpretation.target_spec_reference,
+      index: reading.data!.interpretation.target_index,
+      target_component_id: reading.data!.interpretation.target_component_id,
+      target_element_id: reading.data!.interpretation.target_element_id,
+      form_view: 'three_quarter',
+      mask_base64: null,
+    },
+    markup_asset_id: 'markup_1',
+    expected_design_version: 3,
+    created_by: 'designer',
+  });
+
+  const body = JSON.parse(String(fetcher.mock.calls[1]?.[1]?.body));
+  expect(body.annotations[0].target_component_id).toBe('shoulders.left');
+});
+
+test('decodes only the designer-safe exact component targeting contract', () => {
+  const targeting = decodeStudioComponentTargeting({
+    schema_version: 'facetta.studio-component-targeting.v1',
+    asset_id: 'asset_1',
+    asset_sha256: 'a'.repeat(64),
+    jewelry_type: 'ring',
+    component_map: {
+      state: 'unresolved', scope: 'ring_v1', map_sha256: 'b'.repeat(64),
+      mapper_contract: 'calibrated.mapper.v1', raster_width: 1024, raster_height: 1024,
+    },
+    catalog_paths: [{
+      component_path: 'setting.style', status: 'unresolved',
+      required_component_kinds: ['prongs', 'setting'],
+      component_ids: ['prongs', 'setting'],
+      reason_code: 'structural_child_mapping_unavailable',
+    }],
+    authority: 'exact_revision_image_editing_only',
+  });
+
+  expect(targeting?.catalog_paths[0]).toMatchObject({
+    component_path: 'setting.style', status: 'unresolved',
+    reason_code: 'structural_child_mapping_unavailable',
+  });
+  expect((targeting as any)?.catalog_paths[0].polygons).toBeUndefined();
 });

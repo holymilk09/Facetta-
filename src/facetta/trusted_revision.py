@@ -29,6 +29,11 @@ from facetta.validation import validate_spec
 from facetta.vocabulary import get_vocabulary
 from facetta.warning_candidates import MarkupWarningCandidate
 from facetta.catalog_preview_candidates import CatalogPreviewCandidate
+from facetta.catalog_component_targeting import (
+    prepare_catalog_child_component_map,
+)
+from facetta.revision_component_map import ComponentMapError
+from facetta.revision_component_map_store import add_revision_component_map
 
 
 class WarningRevisionError(RuntimeError):
@@ -103,14 +108,20 @@ def _media_type(image: bytes) -> str:
 
 
 def _active_primary(db: Session, root_id: str) -> ImageAsset | None:
-    chain = list(db.scalars(
-        select(ImageAsset)
-        .where(ImageAsset.root_id == root_id)
-        .order_by(ImageAsset.created_at, ImageAsset.id)
-    ))
-    chain.sort(key=lambda asset: (
-        asset.id != root_id, asset.created_at, asset.id,
-    ))
+    chain = list(
+        db.scalars(
+            select(ImageAsset)
+            .where(ImageAsset.root_id == root_id)
+            .order_by(ImageAsset.created_at, ImageAsset.id)
+        )
+    )
+    chain.sort(
+        key=lambda asset: (
+            asset.id != root_id,
+            asset.created_at,
+            asset.id,
+        )
+    )
     primary = [asset for asset in chain if is_primary_revision(asset)]
     return primary[-1] if primary else None
 
@@ -135,20 +146,24 @@ def _accept_derived_warning_candidate(
             "the derived candidate is missing its typed artifact metadata",
             status_code=422,
         )
-    if (candidate.asset_capability != "FACTORY_REVIEW_MOUNTING_VIEW"
-            or candidate.operation != "MOUNTING_VIEW_GENERATE"
-            or run.operation != "MOUNTING_VIEW_GENERATE"):
+    if (
+        candidate.asset_capability != "FACTORY_REVIEW_MOUNTING_VIEW"
+        or candidate.operation != "MOUNTING_VIEW_GENERATE"
+        or run.operation != "MOUNTING_VIEW_GENERATE"
+    ):
         raise WarningRevisionError(
             "derived_artifact_capability_invalid",
             "the reviewed candidate is not a canonical mounting view",
             status_code=422,
         )
     source_hash = hashlib.sha256(bytes(source.image)).hexdigest()
-    if (run.project_root_id != project.root_id
-            or run.source_asset_id != source.id
-            or run.source_hash != source_hash
-            or metadata.source_hash != source_hash
-            or run.spec_visual_hash != metadata.spec_visual_hash):
+    if (
+        run.project_root_id != project.root_id
+        or run.source_asset_id != source.id
+        or run.source_hash != source_hash
+        or metadata.source_hash != source_hash
+        or run.spec_visual_hash != metadata.spec_visual_hash
+    ):
         raise WarningRevisionError(
             "derived_artifact_lineage_mismatch",
             "the mounting view is not bound to this exact source and specification",
@@ -227,12 +242,14 @@ def _accept_presentation_warning_candidate(
         "MARKETING_IMAGE": "VISUAL_ONLY_EDIT",
     }
     expected_operation = allowed.get(candidate.asset_capability)
-    if (candidate.promotion_kind != "presentation_only"
-            or candidate.next_spec is not None
-            or candidate.artifact_metadata is not None
-            or expected_operation is None
-            or candidate.operation != expected_operation
-            or run.operation != expected_operation):
+    if (
+        candidate.promotion_kind != "presentation_only"
+        or candidate.next_spec is not None
+        or candidate.artifact_metadata is not None
+        or expected_operation is None
+        or candidate.operation != expected_operation
+        or run.operation != expected_operation
+    ):
         raise WarningRevisionError(
             "presentation_candidate_invalid",
             "the reviewed candidate is not a presentation-only output",
@@ -252,12 +269,14 @@ def _accept_presentation_warning_candidate(
         if expected_operation == "VISUAL_ONLY_EDIT"
         else run.source_spec_visual_hash in {None, expected_spec_hash}
     )
-    if (run.project_root_id != project.root_id
-            or run.source_asset_id != source.id
-            or run.source_hash != source_hash
-            or run.spec_visual_hash != expected_spec_hash
-            or not source_spec_hash_matches
-            or run.created_by != candidate.created_by):
+    if (
+        run.project_root_id != project.root_id
+        or run.source_asset_id != source.id
+        or run.source_hash != source_hash
+        or run.spec_visual_hash != expected_spec_hash
+        or not source_spec_hash_matches
+        or run.created_by != candidate.created_by
+    ):
         raise WarningRevisionError(
             "presentation_candidate_lineage_mismatch",
             "the presentation is not bound to this exact source and specification",
@@ -356,16 +375,20 @@ def persist_spec_image_revision(
             "stale_asset_revision",
             "the active visual changed while the image candidate was prepared",
         )
-    latest = db.scalar(select(func.max(DesignVersion.version)).where(
-        DesignVersion.design_id == root.design_id))
-    if (latest != expected_design_version
-            or source_asset.design_version != expected_design_version):
+    latest = db.scalar(
+        select(func.max(DesignVersion.version)).where(
+            DesignVersion.design_id == root.design_id
+        )
+    )
+    if (
+        latest != expected_design_version
+        or source_asset.design_version != expected_design_version
+    ):
         raise TrustedSpecRevisionError(
             "stale_design_version",
             "the specification changed while the image candidate was prepared",
         )
-    before_row = db.get(
-        DesignVersion, (root.design_id, expected_design_version))
+    before_row = db.get(DesignVersion, (root.design_id, expected_design_version))
     if before_row is None:
         raise TrustedSpecRevisionError(
             "spec_version_unavailable",
@@ -375,11 +398,12 @@ def persist_spec_image_revision(
 
     before_spec = Spec.model_validate(before_row.spec)
     expected_source_hash = hashlib.sha256(bytes(source_asset.image)).hexdigest()
-    if (image_run.plan.operation.value != "LOCAL_EDIT"
-            or image_run.plan.source_hash != expected_source_hash
-            or image_run.plan.source_spec_visual_hash
-            != spec_visual_hash(before_spec)
-            or image_run.plan.spec_visual_hash != spec_visual_hash(next_spec)):
+    if (
+        image_run.plan.operation.value != "LOCAL_EDIT"
+        or image_run.plan.source_hash != expected_source_hash
+        or image_run.plan.source_spec_visual_hash != spec_visual_hash(before_spec)
+        or image_run.plan.spec_visual_hash != spec_visual_hash(next_spec)
+    ):
         raise TrustedSpecRevisionError(
             "image_plan_spec_mismatch",
             "the accepted candidate was not evaluated against this exact source and result specification",
@@ -405,12 +429,14 @@ def persist_spec_image_revision(
     now = utcnow()
     next_version = expected_design_version + 1
     stored = dict(next_payload)
-    stored.update({
-        "design_id": root.design_id,
-        "version": next_version,
-        "created_by": created_by,
-        "created_at": now.isoformat().replace("+00:00", "Z"),
-    })
+    stored.update(
+        {
+            "design_id": root.design_id,
+            "version": next_version,
+            "created_by": created_by,
+            "created_at": now.isoformat().replace("+00:00", "Z"),
+        }
+    )
     child = ImageAsset(
         id=asset_id or new_id("ast"),
         root_id=source_asset.root_id,
@@ -480,15 +506,18 @@ def accept_warning_revision(
     version, then commits the visual, optional immutable spec version, and
     review decision together in one short transaction.
     """
-    if (candidate.promotion_kind == "presentation_only"
-            and created_by != candidate.created_by):
+    if (
+        candidate.promotion_kind == "presentation_only"
+        and created_by != candidate.created_by
+    ):
         raise WarningRevisionError(
             "presentation_candidate_owner_mismatch",
             "only the candidate creator may accept this presentation",
             status_code=403,
         )
-    existing = db.scalar(select(ImageRunReview).where(
-        ImageRunReview.run_id == candidate.run_id))
+    existing = db.scalar(
+        select(ImageRunReview).where(ImageRunReview.run_id == candidate.run_id)
+    )
     if existing is not None and existing.accepted_asset_id is not None:
         asset = db.get(ImageAsset, existing.accepted_asset_id)
         root = db.get(ImageAsset, asset.root_id) if asset is not None else None
@@ -508,9 +537,11 @@ def accept_warning_revision(
 
     run = db.get(ImageRun, candidate.run_id)
     source = db.get(ImageAsset, candidate.source_asset_id)
-    project = db.scalar(select(Project).where(
-        Project.root_id == candidate.project_root_id
-    ).with_for_update())
+    project = db.scalar(
+        select(Project)
+        .where(Project.root_id == candidate.project_root_id)
+        .with_for_update()
+    )
     root = db.get(ImageAsset, candidate.project_root_id)
     if run is None or run.status != "review_required":
         raise WarningRevisionError(
@@ -530,8 +561,7 @@ def accept_warning_revision(
             "the candidate does not belong to this project",
         )
     active = _active_primary(db, candidate.project_root_id)
-    if (active is None
-            or active.id != candidate.expected_active_asset_id):
+    if active is None or active.id != candidate.expected_active_asset_id:
         raise WarningRevisionError(
             "stale_asset_revision",
             "the active visual changed while this candidate was under review",
@@ -541,8 +571,11 @@ def accept_warning_revision(
             "stale_design_version",
             "the candidate was reviewed against a different specification version",
         )
-    latest = db.scalar(select(func.max(DesignVersion.version)).where(
-        DesignVersion.design_id == root.design_id))
+    latest = db.scalar(
+        select(func.max(DesignVersion.version)).where(
+            DesignVersion.design_id == root.design_id
+        )
+    )
     if latest != expected_design_version or source.design_version != latest:
         raise WarningRevisionError(
             "stale_design_version",
@@ -595,25 +628,33 @@ def accept_warning_revision(
         # candidate spec, not opportunistically populate an unrelated derived
         # field while the designer is accepting one visual revision.
         stored = candidate.next_spec.model_dump(mode="json")
-        stored.update({
-            "design_id": root.design_id,
-            "version": next_version,
-            "created_by": created_by,
-            "created_at": now.isoformat().replace("+00:00", "Z"),
-        })
-        db.add(DesignVersion(
-            design_id=root.design_id,
-            version=next_version,
-            spec=stored,
-            created_by=created_by,
-            created_at=now,
-        ))
+        stored.update(
+            {
+                "design_id": root.design_id,
+                "version": next_version,
+                "created_by": created_by,
+                "created_at": now.isoformat().replace("+00:00", "Z"),
+            }
+        )
+        db.add(
+            DesignVersion(
+                design_id=root.design_id,
+                version=next_version,
+                spec=stored,
+                created_by=created_by,
+                created_at=now,
+            )
+        )
         changes = tuple(diff_specs(before_row.spec, stored))
 
     if candidate.asset_capability not in {
-        "LOCALIZED_EDIT", "GLOBAL_RESTYLE", "PRODUCT_PHOTO",
+        "LOCALIZED_EDIT",
+        "GLOBAL_RESTYLE",
+        "PRODUCT_PHOTO",
         "MARKETING_IMAGE",
-        "LINE_ART", "COLORED_LINE_ART", "SPEC_RENDER",
+        "LINE_ART",
+        "COLORED_LINE_ART",
+        "SPEC_RENDER",
     }:
         raise WarningRevisionError(
             "candidate_capability_invalid",
@@ -671,6 +712,7 @@ def discard_warning_revision(
     expected_design_version: int,
     created_by: str,
     commit: bool = True,
+    require_active: bool = True,
 ) -> DiscardedWarningCandidate:
     """Record a terminal rejection against the candidate's exact lineage."""
 
@@ -679,8 +721,9 @@ def discard_warning_revision(
             "stale_design_version",
             "the candidate was reviewed against a different specification version",
         )
-    existing = db.scalar(select(ImageRunReview).where(
-        ImageRunReview.run_id == candidate.run_id))
+    existing = db.scalar(
+        select(ImageRunReview).where(ImageRunReview.run_id == candidate.run_id)
+    )
     if existing is not None:
         raise WarningRevisionError(
             "warning_candidate_resolution_conflict",
@@ -690,26 +733,38 @@ def discard_warning_revision(
     source = db.get(ImageAsset, candidate.source_asset_id)
     root = db.get(ImageAsset, candidate.project_root_id)
     project = db.get(Project, candidate.project_root_id)
-    if (run is None or run.status != "review_required" or source is None
-            or root is None or root.design_id is None or project is None):
+    if (
+        run is None
+        or run.status != "review_required"
+        or source is None
+        or root is None
+        or root.design_id is None
+        or project is None
+    ):
         raise WarningRevisionError(
             "warning_candidate_unavailable",
             "the candidate's review lineage is no longer available",
             status_code=404,
         )
     active = _active_primary(db, candidate.project_root_id)
-    latest = db.scalar(select(func.max(DesignVersion.version)).where(
-        DesignVersion.design_id == root.design_id))
+    latest = db.scalar(
+        select(func.max(DesignVersion.version)).where(
+            DesignVersion.design_id == root.design_id
+        )
+    )
     source_hash = hashlib.sha256(bytes(source.image)).hexdigest()
-    if (source.root_id != candidate.project_root_id
-            or active is None
-            or active.id != candidate.expected_active_asset_id
-            or latest != expected_design_version
-            or source.design_version != expected_design_version
-            or run.project_root_id != candidate.project_root_id
-            or run.source_asset_id != source.id
-            or run.source_hash != source_hash
-            or run.created_by != created_by):
+    if (
+        source.root_id != candidate.project_root_id
+        or (require_active and active is None)
+        or (require_active and active is not None
+            and active.id != candidate.expected_active_asset_id)
+        or (require_active and latest != expected_design_version)
+        or source.design_version != expected_design_version
+        or run.project_root_id != candidate.project_root_id
+        or run.source_asset_id != source.id
+        or run.source_hash != source_hash
+        or run.created_by != created_by
+    ):
         raise WarningRevisionError(
             "warning_candidate_lineage_mismatch",
             "the candidate is no longer bound to the exact active source",
@@ -759,8 +814,9 @@ def accept_catalog_preview_revision(
     source specification, and proposed specification before the short write
     transaction creates the visual and immutable specification together.
     """
-    existing = db.scalar(select(ImageRunReview).where(
-        ImageRunReview.run_id == candidate.run_id))
+    existing = db.scalar(
+        select(ImageRunReview).where(ImageRunReview.run_id == candidate.run_id)
+    )
     if existing is not None and existing.accepted_asset_id is not None:
         asset = db.get(ImageAsset, existing.accepted_asset_id)
         root = db.get(ImageAsset, asset.root_id) if asset is not None else None
@@ -780,12 +836,17 @@ def accept_catalog_preview_revision(
 
     run = db.get(ImageRun, candidate.run_id)
     source = db.get(ImageAsset, candidate.source_asset_id)
-    project = db.scalar(select(Project).where(
-        Project.root_id == candidate.project_root_id
-    ).with_for_update())
+    project = db.scalar(
+        select(Project)
+        .where(Project.root_id == candidate.project_root_id)
+        .with_for_update()
+    )
     root = db.get(ImageAsset, candidate.project_root_id)
-    if (run is None or run.status not in {"preview_ready", "review_required"}
-            or run.accepted_asset_id is not None):
+    if (
+        run is None
+        or run.status not in {"preview_ready", "review_required"}
+        or run.accepted_asset_id is not None
+    ):
         raise WarningRevisionError(
             "catalog_preview_run_unavailable",
             "the image run is not an uncommitted catalog preview",
@@ -797,9 +858,11 @@ def accept_catalog_preview_revision(
             "the catalog preview source project is no longer available",
             status_code=404,
         )
-    if (source.root_id != candidate.project_root_id
-            or run.project_root_id != candidate.project_root_id
-            or run.source_asset_id != candidate.source_asset_id):
+    if (
+        source.root_id != candidate.project_root_id
+        or run.project_root_id != candidate.project_root_id
+        or run.source_asset_id != candidate.source_asset_id
+    ):
         raise WarningRevisionError(
             "catalog_preview_source_mismatch",
             "the catalog preview does not belong to this exact project source",
@@ -815,8 +878,11 @@ def accept_catalog_preview_revision(
             "stale_design_version",
             "the catalog preview was opened against a different specification version",
         )
-    latest = db.scalar(select(func.max(DesignVersion.version)).where(
-        DesignVersion.design_id == root.design_id))
+    latest = db.scalar(
+        select(func.max(DesignVersion.version)).where(
+            DesignVersion.design_id == root.design_id
+        )
+    )
     if latest != expected_design_version or source.design_version != latest:
         raise WarningRevisionError(
             "stale_design_version",
@@ -834,12 +900,14 @@ def accept_catalog_preview_revision(
     source_hash = hashlib.sha256(bytes(source.image)).hexdigest()
     source_spec_hash = spec_visual_hash(source_spec)
     target_spec_hash = spec_visual_hash(candidate.next_spec)
-    if (candidate.source_hash != source_hash
-            or candidate.source_spec_visual_hash != source_spec_hash
-            or candidate.target_spec_visual_hash != target_spec_hash
-            or run.source_hash != source_hash
-            or run.source_spec_visual_hash != source_spec_hash
-            or run.spec_visual_hash != target_spec_hash):
+    if (
+        candidate.source_hash != source_hash
+        or candidate.source_spec_visual_hash != source_spec_hash
+        or candidate.target_spec_visual_hash != target_spec_hash
+        or run.source_hash != source_hash
+        or run.source_spec_visual_hash != source_spec_hash
+        or run.spec_visual_hash != target_spec_hash
+    ):
         raise WarningRevisionError(
             "catalog_preview_lineage_mismatch",
             "the catalog preview is not bound to this exact image and specification pair",
@@ -864,15 +932,39 @@ def accept_catalog_preview_revision(
 
     now = utcnow()
     next_version = expected_design_version + 1
+    child_asset_id = new_id("ast")
+    try:
+        child_component_map = prepare_catalog_child_component_map(
+            db,
+            source_asset_id=source.id,
+            source_image=bytes(source.image),
+            child_asset_id=child_asset_id,
+            child_image=candidate.image_bytes,
+            jewelry_type=candidate.next_spec.jewelry_type,
+            component_path=candidate.component_path,
+            target_component_ids=candidate.target_component_ids,
+            changed_spec_paths=tuple(
+                str(change["path"]) for change in changes
+            ),
+            instruction=candidate.requested_change,
+        )
+    except ComponentMapError as exc:
+        raise WarningRevisionError(
+            exc.code,
+            exc.detail,
+            status_code=(409 if exc.code == "component_mapping_unresolved" else 422),
+        ) from exc
     stored = dict(next_payload)
-    stored.update({
-        "design_id": root.design_id,
-        "version": next_version,
-        "created_by": created_by,
-        "created_at": now.isoformat().replace("+00:00", "Z"),
-    })
+    stored.update(
+        {
+            "design_id": root.design_id,
+            "version": next_version,
+            "created_by": created_by,
+            "created_at": now.isoformat().replace("+00:00", "Z"),
+        }
+    )
     child = ImageAsset(
-        id=new_id("ast"),
+        id=child_asset_id,
         root_id=source.root_id,
         parent_asset_id=source.id,
         design_id=None,
@@ -903,10 +995,16 @@ def accept_catalog_preview_revision(
     project.updated_at = now
     db.add_all([version, child, review])
     try:
+        db.flush()
+        if child_component_map is not None:
+            add_revision_component_map(
+                db,
+                child_component_map,
+                image_bytes=candidate.image_bytes,
+                parent_asset_id=source.id,
+            )
         if commit:
             db.commit()
-        else:
-            db.flush()
     except IntegrityError as exc:
         db.rollback()
         raise WarningRevisionError(

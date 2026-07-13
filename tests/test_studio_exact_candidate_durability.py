@@ -234,12 +234,15 @@ def test_exact_view_discard_is_idempotent_free_and_stale_cas_is_atomic(
     response = client.post(stale_path, json=stale_payload)
     assert response.status_code == 409
     assert response.json()["code"] == "stale_design_version"
+    discard_path, discard_payload = _view_decision(stale, "discard")
+    discarded_stale = client.post(discard_path, json=discard_payload)
+    assert discarded_stale.status_code == 200
     with Session() as db:
         record = db.get(StudioViewCandidateRecord, stale.candidate_id)
         job = db.get(StudioJobRecord, "job_view_stale")
-        assert record is not None and record.status == "reviewing"
+        assert record is not None and record.status == "discarded"
         assert record.accepted_asset_id is None
-        assert job is not None and job.status == "reviewing"
+        assert job is not None and job.status == "canceled"
         assert job.charged_outputs == 0
         assert db.scalar(select(func.count()).select_from(ImageAsset)) == 1
 
@@ -359,13 +362,16 @@ def test_exact_present_discard_all_is_free_and_stale_group_rolls_back(
     response = client.post(path, json=body)
     assert response.status_code == 409
     assert response.json()["code"] == "stale_design_version"
+    for candidate in stale_candidates:
+        discard_path, discard_body = _present_decision(candidate, "discard")
+        assert client.post(discard_path, json=discard_body).status_code == 200
     with Session() as db:
         record = db.get(
             StudioPresentationCandidateRecord, stale_candidates[0].candidate_id)
         job = db.get(StudioJobRecord, stale_job)
-        assert record is not None and record.status == "reviewing"
+        assert record is not None and record.status == "discarded"
         assert record.accepted_asset_id is None
-        assert job is not None and job.status == "reviewing"
+        assert job is not None and job.status == "canceled"
         assert job.charged_outputs == 0
         assert db.scalar(select(func.count()).select_from(ImageAsset)) == 1
 

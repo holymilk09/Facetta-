@@ -20,10 +20,12 @@ from facetta.db import (
     ImageRun,
     PreviewCandidateRecord,
     Project,
+    StudioJobRecord,
     new_id,
     utcnow,
 )
 from facetta.json_types import JsonObject
+from facetta.studio_jobs import studio_job_action_definition
 
 
 _TTL_SECONDS = 2 * 60 * 60
@@ -50,6 +52,7 @@ class StudioVisualCandidate:
     qa: JsonObject
     created_by: str
     expires_at: datetime
+    studio_job_id: str | None = None
 
 
 def _utc(value: datetime) -> datetime:
@@ -74,6 +77,7 @@ def _candidate(record: PreviewCandidateRecord) -> StudioVisualCandidate:
         qa=payload["qa"],
         created_by=record.owner,
         expires_at=_utc(record.expires_at),
+        studio_job_id=record.studio_job_id,
     )
 
 
@@ -91,6 +95,7 @@ def _owned_reviewing_record(
     *,
     owner: str,
     for_update: bool = False,
+    require_active: bool = True,
 ) -> PreviewCandidateRecord:
     query = select(PreviewCandidateRecord).where(
         PreviewCandidateRecord.id == candidate_id,
@@ -128,7 +133,8 @@ def _owned_reviewing_record(
         or project.owner != owner
         or source is None
         or source.root_id != record.project_root_id
-        or project.selected_candidate_asset_id != record.expected_active_asset_id
+        or (require_active
+            and project.selected_candidate_asset_id != record.expected_active_asset_id)
         or source.id != record.expected_active_asset_id
         or source_hash != record.source_sha256
         or output_hash != record.output_sha256
@@ -159,7 +165,24 @@ def store_studio_visual_candidate(
     scope: Literal["appearance", "marked_region"],
     qa: JsonObject,
     created_by: str,
+    studio_job_id: str | None = None,
 ) -> StudioVisualCandidate:
+    if studio_job_id is not None:
+        job = db.get(StudioJobRecord, studio_job_id)
+        canonical = studio_job_action_definition("refine")
+        if (job is None or job.owner != created_by or job.action_id != "refine"
+                or job.lane != canonical.lane
+                or job.credits_per_output != canonical.credits_per_output
+                or job.requested_outputs != 1 or job.status != "running"):
+            raise StudioVisualCandidateUnavailable(
+                "the Studio Refine job is unavailable or invalid")
+        for field, expected in (("active_design_id", project_root_id),
+                                ("source_revision_id", source_asset_id)):
+            current = getattr(job, field)
+            if current is not None and current != expected:
+                raise StudioVisualCandidateUnavailable(
+                    "the Studio Refine job belongs to another source revision")
+            setattr(job, field, expected)
     now = utcnow()
     record = PreviewCandidateRecord(
         id=new_id("cand"),
@@ -175,6 +198,7 @@ def store_studio_visual_candidate(
         media_type=media_type,
         kind="studio_visual",
         status="reviewing",
+        studio_job_id=studio_job_id,
         payload={
             "verdict": verdict,
             "requested_change": requested_change,
@@ -201,9 +225,10 @@ def get_studio_visual_candidate(
     candidate_id: str,
     *,
     owner: str,
+    require_active: bool = True,
 ) -> StudioVisualCandidate:
     return _candidate(_owned_reviewing_record(
-        db, run_id, candidate_id, owner=owner,
+        db, run_id, candidate_id, owner=owner, require_active=require_active,
     ))
 
 
@@ -241,6 +266,7 @@ def list_studio_visual_candidates(
         try:
             current = _owned_reviewing_record(
                 db, record.image_run_id, record.id, owner=owner,
+                require_active=False,
             )
         except StudioVisualCandidateUnavailable:
             continue

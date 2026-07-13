@@ -383,6 +383,7 @@ def _require_exact_lineage(
     expected_source_asset_id: str,
     expected_design_version: int,
     created_by: str,
+    require_active: bool = True,
 ) -> tuple[Project, ImageAsset, ImageAsset, ImageRun]:
     project = db.scalar(select(Project).where(
         Project.root_id == candidate.project_root_id).with_for_update())
@@ -421,7 +422,8 @@ def _require_exact_lineage(
         db.get(DesignVersion, (root.design_id, candidate.design_version))
         if root.design_id else None
     )
-    if active is None or active.id != source.id or current_hash != candidate.source_hash:
+    if ((require_active and (active is None or active.id != source.id))
+            or current_hash != candidate.source_hash):
         raise StudioViewError(
             "stale_asset_revision",
             "the active visual changed while this View was under review",
@@ -429,7 +431,7 @@ def _require_exact_lineage(
     if (
         expected_design_version != candidate.design_version
         or source.design_version != candidate.design_version
-        or latest_version != candidate.design_version
+        or (require_active and latest_version != candidate.design_version)
         or version is None
     ):
         raise StudioViewError(
@@ -575,6 +577,7 @@ def discard_studio_view_candidate(
         expected_source_asset_id=expected_source_asset_id,
         expected_design_version=expected_design_version,
         created_by=created_by,
+        require_active=False,
     )
     if db.scalar(select(ImageRunReview).where(
         ImageRunReview.run_id == run.id)) is not None:

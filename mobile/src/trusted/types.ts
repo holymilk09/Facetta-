@@ -482,6 +482,7 @@ interface CreateVisualPreviewRequestBase {
   expected_active_asset_id: string;
   instruction: string;
   variant?: number;
+  studio_job_id?: string;
 }
 
 export type CreateVisualPreviewRequest = CreateVisualPreviewRequestBase & (
@@ -517,6 +518,7 @@ export interface VisualPreviewListItem {
   scope: 'appearance' | 'marked_region';
   qa: ImageQualityReport;
   expires_at: string;
+  studio_job_id: string | null;
 }
 
 export interface VisualPreviewListResult {
@@ -1117,6 +1119,34 @@ export interface ComponentCatalog {
   options: ComponentCatalogOption[];
 }
 
+export type ComponentTargetingState = 'ready' | 'unmapped' | 'unresolved';
+
+export interface CatalogPathTargetability {
+  component_path: ComponentCatalogPath;
+  status: ComponentTargetingState;
+  required_component_kinds: string[];
+  component_ids: string[];
+  reason_code: string | null;
+}
+
+/** Designer-safe capability facts; raw polygons and masks never cross this seam. */
+export interface StudioComponentTargeting {
+  schema_version: 'facetta.studio-component-targeting.v1';
+  asset_id: string;
+  asset_sha256: string;
+  jewelry_type: string;
+  component_map: {
+    state: ComponentTargetingState;
+    scope: 'ring_v1' | 'not_released';
+    map_sha256: string | null;
+    mapper_contract: string | null;
+    raster_width: number | null;
+    raster_height: number | null;
+  };
+  catalog_paths: CatalogPathTargetability[];
+  authority: 'exact_revision_image_editing_only';
+}
+
 export interface DraftCatalogSelectionRequest {
   spec: JsonObject;
   component_path: ComponentCatalogPath;
@@ -1364,6 +1394,8 @@ export interface MarkupInterpretation {
   target_spec_reference: string | null;
   target_section: string | null;
   target_index: number | null;
+  /** Stable semantic identity on the exact source revision, when mapped. */
+  target_component_id: string | null;
   target_element_id: string | null;
   frozen_elements: string[];
   confidence: number | null;
@@ -1402,6 +1434,8 @@ export interface ConfirmedMarkupAnnotation {
   target_section: string | null;
   target_ref: string | null;
   index: number | null;
+  /** Exact revision-bound component identity; never inferred from prose. */
+  target_component_id: string | null;
   target_element_id: string | null;
   form_view: 'front' | 'side' | 'top' | 'three_quarter';
   mask_base64: string | null;

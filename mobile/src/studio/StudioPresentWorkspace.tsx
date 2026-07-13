@@ -95,6 +95,8 @@ export interface StudioPresentWorkspaceProps {
   createdBy: string;
   onProjectUpdated?: (project: ProjectDetail) => void;
   imageRequestHeaders?: Readonly<Record<string, string>>;
+  resumeReviewJobId?: string;
+  reviewSourceIsActive?: boolean;
 }
 
 function assetUrl(project: ProjectDetail, assetId: string): string | null {
@@ -186,6 +188,7 @@ function exactResumeCard(result: StudioExactPresentationPreview): PresentationCa
 
 export function StudioPresentWorkspace({
   gateway, lineage, createdBy, onProjectUpdated, imageRequestHeaders,
+  resumeReviewJobId, reviewSourceIsActive = true,
 }: StudioPresentWorkspaceProps) {
   const [destination, setDestination] = useState<Destination>('client');
   const [clientFormat, setClientFormat] = useState<ClientFormat>('beauty');
@@ -239,7 +242,10 @@ export function StudioPresentWorkspace({
     let active = true;
     if ('sourceDesignVersion' in lineage) {
       if (typeof gateway.resumeExactPresentations !== 'function') return undefined;
-      void gateway.resumeExactPresentations(lineage, createdBy).then((result) => {
+      const resumed = resumeReviewJobId === undefined
+        ? gateway.resumeExactPresentations(lineage, createdBy)
+        : gateway.resumeExactPresentations(lineage, createdBy, resumeReviewJobId);
+      void resumed.then((result) => {
         if (!active || lineageKeyRef.current !== requestedLineageKey) return;
         if (result.error !== null) {
           setError(designerPresentationError(result.error));
@@ -253,7 +259,10 @@ export function StudioPresentWorkspace({
       });
     } else {
       if (typeof gateway.resumePreSpecPresentations !== 'function') return undefined;
-      void gateway.resumePreSpecPresentations(lineage, createdBy).then((result) => {
+      const resumed = resumeReviewJobId === undefined
+        ? gateway.resumePreSpecPresentations(lineage, createdBy)
+        : gateway.resumePreSpecPresentations(lineage, createdBy, resumeReviewJobId);
+      void resumed.then((result) => {
         if (!active || lineageKeyRef.current !== requestedLineageKey) return;
         if (result.error !== null) {
           setError(designerPresentationError(result.error));
@@ -267,7 +276,7 @@ export function StudioPresentWorkspace({
       });
     }
     return () => { active = false; };
-  }, [createdBy, gateway, lineageKey]);
+  }, [createdBy, gateway, lineageKey, resumeReviewJobId]);
 
   const togglePreset = (value: ProductPhotoPreset): void => {
     setMarketingPresets((current) => current.includes(value)
@@ -275,7 +284,7 @@ export function StudioPresentWorkspace({
   };
 
   const savePresentation = async (card: PresentationCard): Promise<void> => {
-    if (card.candidateId === null || decidingId !== null) return;
+    if (card.candidateId === null || decidingId !== null || !reviewSourceIsActive) return;
     const requestedLineageKey = lineageKey;
     setDecidingId(card.id);
     setError(null);
@@ -325,7 +334,7 @@ export function StudioPresentWorkspace({
   };
 
   const generate = async (): Promise<void> => {
-    if (lineage === null || busy || outputCount === 0) return;
+    if (lineage === null || busy || outputCount === 0 || !reviewSourceIsActive) return;
     const requestedLineageKey = lineageKey;
     setBusy(true);
     setError(null);
@@ -445,6 +454,7 @@ export function StudioPresentWorkspace({
         <Text style={styles.lineageLabel}>Exact source</Text>
         <Text style={styles.lineageValue}>{exactRevision}</Text>
       </View>
+      {!reviewSourceIsActive && <Notice kind="info" text="This result was created from an earlier revision. Saving or generating from it is unavailable. You can discard the pending result without changing or charging the current design." />}
 
       <Text style={styles.sectionTitle}>1 · {STUDIO_PRESENT_CONTROLS.destination.label}</Text>
       <View style={styles.destinationRow}>
@@ -495,7 +505,7 @@ export function StudioPresentWorkspace({
       </View>
       {visibleError !== null && <Notice kind="error" text={visibleError} />}
       <Button title={busy ? 'Generating and checking…' : requestLabel}
-        disabled={busy || outputCount === 0} onPress={() => { void generate(); }} />
+        disabled={busy || outputCount === 0 || !reviewSourceIsActive} onPress={() => { void generate(); }} />
 
       {visibleInfo !== null && <Notice kind="info" text={visibleInfo} />}
       {visibleFailures.map((failure) => <Notice key={failure} kind="error" text={failure} />)}
@@ -511,7 +521,7 @@ export function StudioPresentWorkspace({
               <View style={styles.decisionRow}>
                 <Button
                   title={decidingId === card.id ? 'Saving…' : 'Save presentation'}
-                  disabled={decidingId !== null}
+                  disabled={decidingId !== null || !reviewSourceIsActive}
                   onPress={() => { void savePresentation(card); }}
                 />
                 <Button

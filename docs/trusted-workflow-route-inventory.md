@@ -90,6 +90,7 @@ Caller abbreviations:
 | `GET /assets/{asset_id}` | Internal primitive | Asset/checklist tests | Retain as a narrow asset read until all consumers use `ProjectDetail`. |
 | `GET /assets/{asset_id}/image` | Canonical | Trusted client constructs this URL; project payloads return it | Retain; image bytes stay out of project JSON. |
 | `GET /assets/{asset_id}/component-map` | Canonical | Trusted component-aware editing | Returns the accepted revision's stable semantic component IDs and normalized regions without exposing provider internals. |
+| `GET /assets/{asset_id}/studio-component-targeting` | Canonical | Studio Refine capability gate; `test_catalog_revision_api.py` | Returns designer-safe targetability states, stable component IDs, and exact revision hashes for released catalog paths. It never exposes raw polygons or treats the raster map as jewelry geometry. |
 | `GET /assets/{asset_id}/components/{component_id}/mask` | Canonical | Trusted component-aware editing | Returns the normalized mask for one stable component on the exact accepted revision; used as deterministic targeting input, never as jewelry geometry. |
 | `GET /assets/{asset_id}/history` | Internal primitive | `test_assets.py` | Project revisions are canonical; retain compare/history primitive while client migration completes. |
 | `POST /assets/{asset_id}/markup/read` | Canonical | Trusted client; markup and design-form acceptance tests; live script | Retain; read-only interpretation with stable design-form element IDs when an organic component is targeted. |

@@ -8,7 +8,8 @@ import { Button, ChipRow, Field, Notice } from '../components';
 import { radius, theme } from '../theme';
 import type {
   ComponentCatalog, ComponentCatalogOption, ComponentCatalogPath,
-  ConfirmedMarkupAnnotation, JsonObject, JsonValue, ProjectDetail, StudioFactPath,
+  ConfirmedMarkupAnnotation, JsonObject, JsonValue, ProjectDetail, StudioComponentTargeting,
+  StudioFactPath,
 } from '../trusted/types';
 import {
   ANNOTATION_SNAPSHOT_SCHEMA_VERSION,
@@ -34,7 +35,8 @@ const PATHS: readonly { id: ComponentCatalogPath; label: string; help: string }[
   { id: 'chain.style', label: 'Chain', help: 'Preview a supported chain direction.' },
 ] as const;
 
-export type StudioRefineApi = Pick<StudioGateway, 'getComponentCatalog' | 'readMarkup'>
+export type StudioRefineApi = Pick<StudioGateway,
+  'getComponentCatalog' | 'getStudioComponentTargeting' | 'readMarkup'>
   & Partial<Pick<StudioGateway, 'getProject' | 'reviseStudioFacts'>>;
 
 export interface StudioRefineWorkspaceProps {
@@ -53,6 +55,8 @@ export interface StudioRefineWorkspaceProps {
   onApplied: (project: ProjectDetail) => void;
   onVariationCreated?: (project: ProjectDetail) => void;
   imageRequestHeaders?: Readonly<Record<string, string>>;
+  resumeReviewJobId?: string;
+  reviewSourceIsActive?: boolean;
 }
 
 function optionDetail(option: ComponentCatalogOption): string {
@@ -136,7 +140,7 @@ function friendlyFactOption(value: string): string {
 export function StudioRefineWorkspace({
   api, gateway, lineage, createdBy, sourceImageUrl = null, initialAdvancedFactsOpen = false,
   onApplied, onVariationCreated,
-  imageRequestHeaders,
+  imageRequestHeaders, resumeReviewJobId, reviewSourceIsActive = true,
 }: StudioRefineWorkspaceProps) {
   const exactLineage = hasExactSpecification(lineage) ? lineage : null;
   const exactSpecification = exactLineage !== null;
@@ -146,6 +150,9 @@ export function StudioRefineWorkspace({
   );
   const [path, setPath] = useState<ComponentCatalogPath>('metal.color');
   const [catalog, setCatalog] = useState<ComponentCatalog | null>(null);
+  const [targeting, setTargeting] = useState<StudioComponentTargeting | null>(null);
+  const [targetingLoading, setTargetingLoading] = useState(exactSpecification);
+  const [targetingError, setTargetingError] = useState<string | null>(null);
   const [optionId, setOptionId] = useState<string | null>(null);
   const [preview, setPreview] = useState<{
     candidate: PreviewCandidate;
@@ -182,7 +189,50 @@ export function StudioRefineWorkspace({
 
   useEffect(() => {
     let current = true;
-    if (!exactSpecification) {
+    setTargeting(null);
+    setTargetingError(null);
+    if (exactLineage === null) {
+      setTargetingLoading(false);
+      return () => { current = false; };
+    }
+    setTargetingLoading(true);
+    void api.getStudioComponentTargeting(exactLineage.sourceAssetId).then((result) => {
+      if (!current) return;
+      setTargetingLoading(false);
+      if (result.error !== null) {
+        setTargetingError('Precise component targeting could not be verified for this revision. Describe an appearance change or use Mark up instead.');
+        return;
+      }
+      if (result.data.asset_id !== exactLineage.sourceAssetId) {
+        setTargetingError('Component targeting belongs to a different revision. Reopen the latest design before refining it.');
+        return;
+      }
+      setTargeting(result.data);
+    });
+    return () => { current = false; };
+  }, [api, exactSpecification, lineage?.sourceAssetId]);
+
+  const targetability = targeting?.catalog_paths.find(
+    (candidate) => candidate.component_path === path,
+  ) ?? null;
+  const readyPaths = useMemo(() => targeting?.catalog_paths.filter(
+    (candidate) => candidate.status === 'ready',
+  ) ?? [], [targeting]);
+  const componentAvailable = exactSpecification && !targetingLoading && readyPaths.length > 0;
+  const selectedPathReady = targetability?.status === 'ready';
+
+  useEffect(() => {
+    if (targetingLoading || targeting === null || selectedPathReady || readyPaths.length === 0) return;
+    setPath(readyPaths[0].component_path);
+  }, [readyPaths, selectedPathReady, targeting, targetingLoading]);
+
+  useEffect(() => {
+    if (mode === 'component' && !targetingLoading && !componentAvailable) setMode('instruction');
+  }, [componentAvailable, mode, targetingLoading]);
+
+  useEffect(() => {
+    let current = true;
+    if (!exactSpecification || targetingLoading || !selectedPathReady) {
       setLoading(false);
       setCatalog(null);
       setOptionId(null);
@@ -191,7 +241,6 @@ export function StudioRefineWorkspace({
     setLoading(true);
     setCatalog(null);
     setOptionId(null);
-    setPreview(null);
     setError(null);
     void api.getComponentCatalog(path).then((result) => {
       if (!current) return;
@@ -204,7 +253,8 @@ export function StudioRefineWorkspace({
       setOptionId(result.data.options[0]?.id ?? null);
     });
     return () => { current = false; };
-  }, [api, exactSpecification, path, lineage?.sourceAssetId]);
+  }, [api, exactSpecification, path, lineage?.sourceAssetId, selectedPathReady,
+    targetingLoading]);
 
   useEffect(() => {
     if (!exactSpecification && mode === 'component') setMode('instruction');
@@ -256,7 +306,10 @@ export function StudioRefineWorkspace({
       return () => { current = false; };
     }
     setResuming(true);
-    void gateway.resumeRefine(lineage, createdBy).then((result) => {
+    const resumed = resumeReviewJobId === undefined
+      ? gateway.resumeRefine(lineage, createdBy)
+      : gateway.resumeRefine(lineage, createdBy, resumeReviewJobId);
+    void resumed.then((result) => {
       if (!current) return;
       setResuming(false);
       if (result.error !== null) {
@@ -270,7 +323,7 @@ export function StudioRefineWorkspace({
     });
     return () => { current = false; };
   }, [createdBy, gateway, lineage?.projectId, lineage?.sourceAssetId,
-    exactLineage?.sourceDesignVersion]);
+    exactLineage?.sourceDesignVersion, resumeReviewJobId]);
 
   useEffect(() => {
     setSnapshot((current) => ({ ...current, source_uri: sourceImageUrl ?? '' }));
@@ -383,7 +436,7 @@ export function StudioRefineWorkspace({
   };
 
   const makePreview = async (): Promise<void> => {
-    if (lineage === null || busy) return;
+    if (lineage === null || busy || !reviewSourceIsActive) return;
     if (mode === 'facts') { reviewFacts(); return; }
     setBusy(true);
     setError(null);
@@ -392,6 +445,11 @@ export function StudioRefineWorkspace({
       if (!exactSpecification) {
         setBusy(false);
         setError('Confirm design facts before making structural component changes.');
+        return;
+      }
+      if (!selectedPathReady) {
+        setBusy(false);
+        setError('Precise targeting is not available for this component on the selected revision.');
         return;
       }
       if (selected === null) { setBusy(false); return; }
@@ -408,6 +466,7 @@ export function StudioRefineWorkspace({
       change_instruction: instruction.trim(),
       impact: 'visual_only' as const,
       target_section: null, target_ref: null, index: null,
+      target_component_id: null,
       target_element_id: null, form_view: 'three_quarter' as const,
       mask_base64: null,
     };
@@ -437,6 +496,7 @@ export function StudioRefineWorkspace({
         target_section: interpretation.target_section,
         target_ref: interpretation.target_spec_reference,
         index: interpretation.target_index,
+        target_component_id: interpretation.target_component_id,
         target_element_id: interpretation.target_element_id,
         form_view: 'three_quarter',
         mask_base64: null,
@@ -473,7 +533,8 @@ export function StudioRefineWorkspace({
   };
 
   const apply = async (): Promise<void> => {
-    if (preview === null || busy || decisionInFlight.current || preview.candidate.verdict === 'reject') return;
+    if (preview === null || busy || decisionInFlight.current
+      || preview.candidate.verdict === 'reject' || !reviewSourceIsActive) return;
     decisionInFlight.current = true;
     setBusy(true);
     setError(null);
@@ -584,6 +645,9 @@ export function StudioRefineWorkspace({
           save as variation will start a sibling direction; discard will leave history untouched.
         </Text>
         {understoodAs !== null && <Notice kind="info" text={understoodAs} />}
+        {!reviewSourceIsActive && (
+          <Notice kind="info" text="This result was created from an earlier revision. Apply is unavailable. You can save it as a new variation or discard it without changing the current design." />
+        )}
         <View style={styles.compareRow}>
           {sourceImageUrl !== null && (
             <View style={styles.comparePane}>
@@ -662,7 +726,7 @@ export function StudioRefineWorkspace({
               onPress={() => { setNamingVariation(true); setError(null); }}
             />
           )}
-          <Button title={busy ? 'Working…' : 'Apply as new revision'} disabled={busy || rejected || !sourceReady} onPress={() => { void apply(); }} />
+          <Button title={busy ? 'Working…' : 'Apply as new revision'} disabled={busy || rejected || !sourceReady || !reviewSourceIsActive} onPress={() => { void apply(); }} />
         </View>
       </ScrollView>
     );
@@ -674,6 +738,8 @@ export function StudioRefineWorkspace({
       <Text style={styles.title}>Change one thing. Keep the rest.</Text>
       <Text style={styles.body}>Choose how to target one change. Every route creates a temporary candidate before anything enters design history.</Text>
 
+      {!reviewSourceIsActive && <Notice kind="info" text="This Activity result was created from an earlier revision. Review the existing preview below; creating or applying another change from this source is unavailable." />}
+
       {resuming && <Notice kind="info" text="Checking for a pending preview from this exact revision…" />}
 
       <View style={styles.modeRow}>
@@ -682,7 +748,7 @@ export function StudioRefineWorkspace({
           ['instruction', 'Describe', 'Describe an appearance-only change in plain language.'],
           ['annotation', 'Mark up', 'Draw directly on the exact active image.'],
         ] as const).map(([id, label, detail]) => {
-          const unavailable = id === 'component' && !exactSpecification;
+          const unavailable = id === 'component' && !componentAvailable;
           return (
             <Pressable
               key={id}
@@ -699,7 +765,11 @@ export function StudioRefineWorkspace({
               style={[styles.modeCard, mode === id && styles.selectedCard, unavailable && styles.disabledCard]}>
               <Text style={styles.pathTitle}>{label}</Text>
               <Text style={styles.pathHelp}>{unavailable
-                ? 'Confirm design facts before making structural component changes.'
+                ? !exactSpecification
+                  ? 'Confirm design facts before making precise component changes.'
+                  : targetingLoading
+                    ? 'Checking precise targeting for this revision…'
+                    : 'No precisely mapped component change is available for this revision.'
                 : detail}</Text>
             </Pressable>
           );
@@ -714,7 +784,7 @@ export function StudioRefineWorkspace({
           onPress={() => {
             const opening = !advancedFactsOpen;
             setAdvancedFactsOpen(opening);
-            setMode(opening ? 'facts' : 'component');
+            setMode(opening ? 'facts' : componentAvailable ? 'component' : 'instruction');
             setFactReview(null);
             setError(null);
           }}
@@ -731,15 +801,41 @@ export function StudioRefineWorkspace({
         <Notice kind="info" text="Design facts are not confirmed yet. You can refine appearance or a marked region; component and construction changes unlock after those facts are reviewed." />
       )}
 
+      {targetingError !== null && <Notice kind="error" text={targetingError} />}
+      {exactSpecification && !targetingLoading && targetingError === null
+        && readyPaths.length === 0 && (
+        <Notice kind="info" text="This revision has no precisely mapped component regions yet. Describe an appearance change or use Mark up; Facetta will not guess component geometry." />
+      )}
+
       {mode === 'component' && <>
         <Text style={styles.sectionTitle}>1 · Component</Text>
         <View style={styles.pathGrid}>
-          {PATHS.map((item) => (
-            <Pressable key={item.id} onPress={() => setPath(item.id)} style={[styles.pathCard, path === item.id && styles.selectedCard]}>
-              <Text style={styles.pathTitle}>{item.label}</Text>
-              <Text style={styles.pathHelp}>{item.help}</Text>
-            </Pressable>
-          ))}
+          {PATHS.map((item) => {
+            const capability = targeting?.catalog_paths.find(
+              (candidate) => candidate.component_path === item.id,
+            ) ?? null;
+            const unavailable = capability?.status !== 'ready';
+            const help = capability?.status === 'ready' ? item.help
+              : capability?.status === 'unmapped'
+                ? 'Precise targeting has not been mapped for this revision.'
+                : capability?.status === 'unresolved'
+                  ? 'This path needs calibrated structural mapping before it can preserve component identity.'
+                  : 'Precise component targeting is not released for this category.';
+            return (
+              <Pressable
+                key={item.id}
+                accessibilityLabel={`${item.label} component path`}
+                accessibilityRole="button"
+                accessibilityState={{ disabled: unavailable, selected: path === item.id }}
+                disabled={unavailable}
+                onPress={() => setPath(item.id)}
+                style={[styles.pathCard, path === item.id && styles.selectedCard,
+                  unavailable && styles.disabledCard]}>
+                <Text style={styles.pathTitle}>{item.label}</Text>
+                <Text style={styles.pathHelp}>{help}</Text>
+              </Pressable>
+            );
+          })}
         </View>
         <Text style={styles.sectionTitle}>2 · Direction</Text>
         {loading ? <ActivityIndicator color={theme.accent} /> : (
@@ -867,13 +963,13 @@ export function StudioRefineWorkspace({
         ? '0 credits · specification revision only'
         : `1 requested output × ${REFINE_CREDITS_PER_OUTPUT} credits = estimated ${REFINE_CREDITS_PER_OUTPUT} credits`}</Text>
       {mode !== 'facts' ? (
-        <Button title={busy ? 'Creating preview…' : 'Preview change'} disabled={busy
-          || (mode === 'component' && selected === null)
+        <Button title={busy ? 'Creating preview…' : 'Preview change'} disabled={busy || !reviewSourceIsActive
+          || (mode === 'component' && (selected === null || !selectedPathReady))
           || (mode === 'instruction' && !instruction.trim())
           || (mode === 'annotation' && (sourceImageUrl === null || snapshot.annotations.length === 0))}
           onPress={() => { void makePreview(); }} />
       ) : factReview === null && (
-        <Button title="Review fact changes" disabled={busy || factsLoading || editableFacts.length === 0}
+        <Button title="Review fact changes" disabled={busy || !reviewSourceIsActive || factsLoading || editableFacts.length === 0}
           onPress={() => { void makePreview(); }} />
       )}
     </ScrollView>

@@ -221,6 +221,7 @@ class CreateVisualPreviewRequest(BaseModel):
     mask_base64: Annotated[str, Field(min_length=1, max_length=14_000_000)] | None = None
     markup_asset_id: Annotated[str, Field(min_length=1, max_length=32)] | None = None
     variant: Annotated[int, Field(ge=0, le=100)] = 0
+    studio_job_id: Annotated[str, Field(min_length=1, max_length=32)] | None = None
 
 
 class ReviewVisualPreviewRequest(BaseModel):
@@ -909,6 +910,7 @@ def create_visual_preview(
         scope=request.scope,
         qa=qa,
         created_by=request.created_by,
+        studio_job_id=request.studio_job_id,
     )
     payload = {
         "project_id": project.root_id,
@@ -1030,6 +1032,7 @@ def discard_visual_preview(
     try:
         candidate = get_studio_visual_candidate(
             db, run_id, candidate_id, owner=request.created_by,
+            require_active=False,
         )
         discarded = discard_pre_spec_visual_candidate(
             db,
@@ -1126,6 +1129,7 @@ def reopen_visual_previews(
         "scope": candidate.scope,
         "qa": candidate.qa,
         "expires_at": candidate.expires_at.isoformat(),
+        "studio_job_id": candidate.studio_job_id,
     } for candidate in candidates]}
 
 

@@ -88,6 +88,35 @@ const quality = {
   summary: 'Pass', failed_checks: [], warnings: [], checks: [],
 } as const;
 
+test('job-centric review restores immutable stale source with fail-closed decisions', async () => {
+  const staleProject = project(2);
+  staleProject.active_asset_id = 'candidate_2';
+  staleProject.active_revision = staleProject.revisions[1]!.asset;
+  const reviewingJob: StudioJobRecord = {
+    job_id: 'studio_job_stale_refine', owner: 'designer_1', action_id: 'refine',
+    lane: 'trusted_structural', status: 'reviewing', progress: 0.9,
+    active_design_id: 'project_1', source_revision_id: 'candidate_1', error_code: null,
+    created_at: '2026-07-12T00:00:00Z', updated_at: '2026-07-12T00:00:01Z',
+    billing: {
+      requested_outputs: 1, credits_per_output: 20, estimated_credits: 20,
+      completed_outputs: 0, charged_outputs: 0, charged_credits: 0,
+      policy: 'Only accepted outputs are charged.',
+    },
+  };
+  const gateway = createStudioGateway({
+    getStudioJob: async () => ok(reviewingJob),
+    getProject: async () => ok(staleProject),
+  } as any, { trackJobs: true });
+
+  const resumed = await gateway.resumeReviewJob(reviewingJob.job_id, 'designer_1');
+  assert.equal(resumed.error, null);
+  assert.equal(resumed.data?.sourceIsActive, false);
+  assert.equal(resumed.data?.lineage.sourceAssetId, 'candidate_1');
+  assert.deepEqual(resumed.data?.allowedDecisions, {
+    apply: false, discard: true, saveAsVariation: true,
+  });
+});
+
 test('tracked prompt and drawing creation charge only after direction acceptance', async () => {
   const jobs = tracking();
   let drawingCalls = 0;

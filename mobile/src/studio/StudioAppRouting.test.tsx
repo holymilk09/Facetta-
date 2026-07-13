@@ -5,6 +5,18 @@ import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
 import { clearSession, markOnboarded, saveSession } from '../auth';
 
 const mockGetProject = jest.fn();
+const mockGetStudioJob = jest.fn(async (jobId: string) => ({
+  data: {
+    job_id: jobId, owner: 'usr_designer', action_id: jobId.replace('job_', ''),
+    lane: 'trusted_structural', status: 'reviewing', progress: 0.9,
+    active_design_id: 'project_hydrated', source_revision_id: 'asset_hydrated',
+    error_code: null, created_at: '2026-07-12T00:00:00Z', updated_at: '2026-07-12T00:00:01Z',
+    billing: { requested_outputs: 1, credits_per_output: 20, estimated_credits: 20,
+      completed_outputs: 0, charged_outputs: 0, charged_credits: 0, policy: 'test' },
+  },
+  error: null,
+  status: 200,
+}));
 
 const deferred = <T,>() => {
   let resolve!: (value: T) => void;
@@ -15,7 +27,10 @@ const deferred = <T,>() => {
 };
 
 jest.mock('../trusted/client', () => ({
-  createTrustedApiClient: () => ({ getProject: mockGetProject }),
+  createTrustedApiClient: () => ({
+    getProject: mockGetProject,
+    getStudioJob: mockGetStudioJob,
+  }),
 }));
 
 jest.mock('./StudioCreateWorkspace', () => {
@@ -159,7 +174,7 @@ jest.mock('./StudioFactoryWorkspace', () => {
 
 import App from '../../App';
 
-afterEach(() => { clearSession(); mockGetProject.mockReset(); });
+afterEach(() => { clearSession(); mockGetProject.mockReset(); mockGetStudioJob.mockClear(); });
 
 const hydratedProject = {
   id: 'project_hydrated', root_id: 'project_hydrated', title: 'Hydrated design',
@@ -175,7 +190,19 @@ const hydratedProject = {
     media_type: 'image/png', image_url: null, created_by: 'usr_designer',
     created_at: null, legacy_provenance: false,
   },
-  pinned_revision: null, revisions: [], assets: [], derived_assets: [], approval: null,
+  pinned_revision: null, revisions: [{
+    revision: 2,
+    asset: {
+      asset_id: 'asset_hydrated', root_id: 'project_hydrated', parent_asset_id: null,
+      capability: 'SPEC_RENDER', provenance: 'confirmed_design', revision: 2,
+      design_id: 'design_hydrated', design_version: 2, region: null,
+      instruction: 'Hydrated design', drift: null, pinned: false,
+      media_type: 'image/png', image_url: null, created_by: 'usr_designer',
+      created_at: null, legacy_provenance: false,
+    },
+    spec_version: 2, spec_change: [], ignored_fields: [], qa: null, routing: null,
+    created_at: null,
+  }], assets: [], derived_assets: [], approval: null,
   factory_ready: false, factory_blockers: [], primary_revision_count: 2,
   has_factory_drawing: false, cover_asset_id: 'asset_hydrated', created_at: null, updated_at: null,
 };

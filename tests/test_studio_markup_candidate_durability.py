@@ -304,13 +304,22 @@ def test_stale_active_revision_rejects_without_partial_terminal_rows(
     )
     assert rejected.status_code == 422, rejected.text
     assert rejected.json()["code"] == "markup_candidate_lineage_mismatch"
+    discarded = client.post(
+        f"/studio/markup-candidates/{candidate.run_id}/"
+        f"{candidate.candidate_id}/discard",
+        json={
+            "created_by": OWNER,
+            "expected_active_asset_id": "ast_markup",
+            "expected_design_version": version,
+        },
+    )
+    assert discarded.status_code == 200, discarded.text
     with Session() as db:
         durable = db.get(StudioMarkupCandidateRecord, candidate.candidate_id)
         job = db.get(StudioJobRecord, candidate.studio_job_id)
-        assert durable is not None and durable.status == "reviewing"
-        assert durable.image == candidate.image_bytes
-        assert job is not None and job.status == "reviewing"
+        assert durable is not None and durable.status == "discarded"
+        assert durable.image == b""
+        assert job is not None and job.status == "canceled"
         assert job.charged_outputs == 0
-        assert db.scalar(select(func.count()).select_from(ImageRunReview)) == 0
+        assert db.scalar(select(func.count()).select_from(ImageRunReview)) == 1
         assert db.scalar(select(func.count()).select_from(ProjectRevisionRecord)) == 0
-

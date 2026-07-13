@@ -56,6 +56,7 @@ PRODUCTION_ASSET_PATHS = frozenset({
 PRODUCTION_CATALOG_PATHS = frozenset({
     "/assets/{active_asset_id}/catalog/preview",
     "/assets/{active_asset_id}/catalog/previews",
+    "/assets/{asset_id}/studio-component-targeting",
 })
 
 PRODUCTION_TRUSTED_PATHS = frozenset({
@@ -64,6 +65,113 @@ PRODUCTION_TRUSTED_PATHS = frozenset({
     "/image-runs/{run_id}/candidates/{candidate_id}/discard",
     "/projects/{project_id}/factory-pack",
     "/projects/{project_id}/factory-pack.zip",
+})
+
+RouteOperation = tuple[str, str]
+
+PRODUCTION_CATALOG_PREVIEW_OPERATIONS: frozenset[RouteOperation] = frozenset({
+    ("GET", "/image-runs/{run_id}/catalog-candidates/{candidate_id}/image"),
+    ("DELETE", "/image-runs/{run_id}/catalog-candidates/{candidate_id}"),
+    ("POST", "/image-runs/{run_id}/catalog-candidates/{candidate_id}/accept"),
+    (
+        "POST",
+        "/image-runs/{run_id}/catalog-candidates/{candidate_id}/save-as-variation",
+    ),
+})
+
+PRODUCTION_PROJECT_OPERATIONS: frozenset[RouteOperation] = frozenset({
+    ("POST", "/projects/from-prompt"),
+    ("POST", "/projects/from-drawing"),
+    (
+        "POST",
+        "/projects/{project_id}/creative-candidates/{candidate_id}/select",
+    ),
+    (
+        "POST",
+        "/projects/{project_id}/creative-candidates/{candidate_id}/confirm-design",
+    ),
+    (
+        "POST",
+        "/projects/{project_id}/creative-candidates/{candidate_id}/promote",
+    ),
+    ("GET", "/projects/{root_id}"),
+    ("POST", "/projects/{root_id}/render"),
+    ("POST", "/projects/{root_id}/product-photo"),
+    ("POST", "/projects/{root_id}/marketing-pack"),
+    ("POST", "/projects/{root_id}/visual-twin/views"),
+    ("POST", "/projects/{root_id}/line-art"),
+})
+
+PRODUCTION_STUDIO_OPERATIONS: frozenset[RouteOperation] = frozenset({
+    ("POST", "/studio/jobs"),
+    ("GET", "/studio/jobs"),
+    ("GET", "/studio/jobs/{job_id}"),
+    ("PATCH", "/studio/jobs/{job_id}"),
+    ("POST", "/studio/jobs/{job_id}/cancel"),
+    ("POST", "/studio/projects/{project_id}/visual-previews"),
+    (
+        "GET",
+        "/studio/image-runs/{run_id}/visual-candidates/{candidate_id}/image",
+    ),
+    (
+        "POST",
+        "/studio/image-runs/{run_id}/visual-candidates/{candidate_id}/accept",
+    ),
+    (
+        "POST",
+        "/studio/image-runs/{run_id}/visual-candidates/{candidate_id}/discard",
+    ),
+    (
+        "POST",
+        "/studio/image-runs/{run_id}/visual-candidates/{candidate_id}/save-as-variation",
+    ),
+    ("GET", "/studio/projects/{project_root_id}/visual-candidates"),
+    ("GET", "/studio/projects/{project_root_id}/markup-candidates"),
+    ("GET", "/studio/markup-candidates/{run_id}/{candidate_id}/image"),
+    ("POST", "/studio/markup-candidates/{run_id}/{candidate_id}/accept"),
+    ("POST", "/studio/markup-candidates/{run_id}/{candidate_id}/discard"),
+    (
+        "POST",
+        "/studio/markup-candidates/{run_id}/{candidate_id}/save-as-variation",
+    ),
+    ("POST", "/studio/projects/{project_id}/presentation-previews"),
+    ("GET", "/studio/view-candidates"),
+    ("GET", "/studio/view-candidates/{run_id}/{candidate_id}/image"),
+    ("POST", "/studio/view-candidates/{run_id}/{candidate_id}/accept"),
+    ("POST", "/studio/view-candidates/{run_id}/{candidate_id}/discard"),
+    ("GET", "/studio/presentation-candidates"),
+    (
+        "GET",
+        "/studio/image-runs/{run_id}/presentation-candidates/{candidate_id}/image",
+    ),
+    (
+        "POST",
+        "/studio/image-runs/{run_id}/presentation-candidates/{candidate_id}/accept",
+    ),
+    (
+        "POST",
+        "/studio/image-runs/{run_id}/presentation-candidates/{candidate_id}/discard",
+    ),
+    (
+        "POST",
+        "/studio/presentation-candidates/{run_id}/{candidate_id}/accept",
+    ),
+    (
+        "POST",
+        "/studio/presentation-candidates/{run_id}/{candidate_id}/discard",
+    ),
+    ("POST", "/studio/projects/{project_root_id}/variations"),
+    (
+        "POST",
+        "/studio/projects/{project_root_id}/revisions/{asset_id}/restore",
+    ),
+    ("GET", "/studio/projects/{project_root_id}/history"),
+    ("GET", "/studio/families"),
+    ("GET", "/studio/families/{family_id}"),
+})
+
+PRODUCTION_STUDIO_FACT_OPERATIONS: frozenset[RouteOperation] = frozenset({
+    ("POST", "/studio/projects/{project_root_id}/facts/revise"),
 })
 
 
@@ -82,6 +190,39 @@ def _filtered_router(source: APIRouter, paths: frozenset[str]) -> APIRouter:
         route for route in source.routes
         if getattr(route, "path", None) in paths
     )
+    return router
+
+
+def _operation_filtered_router(
+    source: APIRouter,
+    operations: frozenset[RouteOperation],
+) -> APIRouter:
+    """Select an exact public method/path surface and reject stale entries."""
+    router = APIRouter()
+    selected: set[RouteOperation] = set()
+    for route in source.routes:
+        path = getattr(route, "path", None)
+        methods = getattr(route, "methods", set()) or set()
+        available_operations = {
+            (method.upper(), path)
+            for method in methods
+            if path is not None
+        }
+        route_operations = available_operations & operations
+        if route_operations:
+            unexpected = available_operations - operations
+            if unexpected:
+                raise RuntimeError(
+                    "production route object includes non-allowlisted methods: "
+                    f"{sorted(unexpected)}"
+                )
+            router.routes.append(route)
+            selected.update(route_operations)
+    missing = operations - selected
+    if missing:
+        raise RuntimeError(
+            f"production route allowlist references missing operations: {sorted(missing)}"
+        )
     return router
 
 
@@ -128,10 +269,26 @@ def create_app() -> FastAPI:
         _filtered_router(catalog.router, PRODUCTION_CATALOG_PATHS)
         if production else catalog.router
     )
-    application.include_router(catalog.preview_router)
-    application.include_router(projects.router)
-    application.include_router(studio.router)
-    application.include_router(studio_facts.router)
+    application.include_router(
+        _operation_filtered_router(
+            catalog.preview_router, PRODUCTION_CATALOG_PREVIEW_OPERATIONS,
+        ) if production else catalog.preview_router
+    )
+    application.include_router(
+        _operation_filtered_router(
+            projects.router, PRODUCTION_PROJECT_OPERATIONS,
+        ) if production else projects.router
+    )
+    application.include_router(
+        _operation_filtered_router(
+            studio.router, PRODUCTION_STUDIO_OPERATIONS,
+        ) if production else studio.router
+    )
+    application.include_router(
+        _operation_filtered_router(
+            studio_facts.router, PRODUCTION_STUDIO_FACT_OPERATIONS,
+        ) if production else studio_facts.router
+    )
     application.include_router(
         _filtered_router(trusted.router, PRODUCTION_TRUSTED_PATHS)
         if production else trusted.router

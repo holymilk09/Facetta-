@@ -33,10 +33,13 @@ export interface StudioViewsWorkspaceProps {
   createdBy: string;
   onSaved: (project: ProjectDetail) => void;
   imageRequestHeaders?: Readonly<Record<string, string>>;
+  resumeReviewJobId?: string;
+  reviewSourceIsActive?: boolean;
 }
 
 export function StudioViewsWorkspace({
   gateway, lineage, createdBy, onSaved, imageRequestHeaders,
+  resumeReviewJobId, reviewSourceIsActive = true,
 }: StudioViewsWorkspaceProps) {
   const [view, setView] = useState<ViewId>('three_quarter');
   const [preview, setPreview] = useState<StudioViewPreview | null>(null);
@@ -66,7 +69,10 @@ export function StudioViewsWorkspace({
     if (lineage === null || typeof gateway.resumeViews !== 'function') return undefined;
     const requestedLineageKey = lineageKey;
     let active = true;
-    void gateway.resumeViews(lineage, createdBy).then((result) => {
+    const resumed = resumeReviewJobId === undefined
+      ? gateway.resumeViews(lineage, createdBy)
+      : gateway.resumeViews(lineage, createdBy, resumeReviewJobId);
+    void resumed.then((result) => {
       if (!active || lineageKeyRef.current !== requestedLineageKey) return;
       if (result.error !== null) {
         setError(designerErrorMessage(result.error, 'views'));
@@ -77,10 +83,10 @@ export function StudioViewsWorkspace({
       setNotice((current) => current ?? 'A saved view preview was resumed for review.');
     });
     return () => { active = false; };
-  }, [createdBy, gateway, lineageKey]);
+  }, [createdBy, gateway, lineageKey, resumeReviewJobId]);
 
   const createPreview = async (): Promise<void> => {
-    if (lineage === null || busy) return;
+    if (lineage === null || busy || !reviewSourceIsActive) return;
     const requestedLineageKey = lineageKey;
     setBusy(true);
     setError(null);
@@ -98,7 +104,8 @@ export function StudioViewsWorkspace({
   };
 
   const accept = async (): Promise<void> => {
-    if (previewForLineage === null || busy || previewForLineage.verdict === 'fail') return;
+    if (previewForLineage === null || busy || previewForLineage.verdict === 'fail'
+      || !reviewSourceIsActive) return;
     const requestedLineageKey = lineageKey;
     setBusy(true);
     setError(null);
@@ -158,6 +165,7 @@ export function StudioViewsWorkspace({
           {' '}the selected source revision. Save keeps it beside the design as a derived view;
           it does not replace the active revision.
         </Text>
+        {!reviewSourceIsActive && <Notice kind="info" text="This view was created from an earlier revision. Saving it is unavailable, but you can discard it without changing or charging the current design." />}
         <Image
           accessibilityLabel={`Temporary ${previewForLineage.view} view`}
           source={{ uri: previewForLineage.previewUrl }}
@@ -184,7 +192,7 @@ export function StudioViewsWorkspace({
         {visibleError !== null && <Notice kind="error" text={visibleError} />}
         <View style={styles.actions}>
           <Button title={busy ? 'Working…' : 'Discard'} kind="ghost" disabled={busy} onPress={() => { void discard(); }} />
-          <Button title={busy ? 'Working…' : 'Save view'} disabled={busy || rejected} onPress={() => { void accept(); }} />
+          <Button title={busy ? 'Working…' : 'Save view'} disabled={busy || rejected || !reviewSourceIsActive} onPress={() => { void accept(); }} />
         </View>
       </ScrollView>
     );
@@ -197,6 +205,7 @@ export function StudioViewsWorkspace({
       <Text style={styles.body}>
         Choose one useful technical view. You will review a temporary result before anything is saved.
       </Text>
+      {!reviewSourceIsActive && <Notice kind="info" text="This Activity result was created from an earlier revision. Only its existing preview can be reviewed or discarded." />}
       <View style={styles.viewGrid}>
         {VIEWS.map((item) => (
           <Pressable
@@ -220,7 +229,7 @@ export function StudioViewsWorkspace({
       <Text style={styles.creditEstimate}>
         1 requested output × {VIEWS_CREDITS_PER_OUTPUT} credits = estimated {VIEWS_CREDITS_PER_OUTPUT} credits
       </Text>
-      <Button title={busy ? 'Creating preview…' : 'Preview view'} disabled={busy} onPress={() => { void createPreview(); }} />
+      <Button title={busy ? 'Creating preview…' : 'Preview view'} disabled={busy || !reviewSourceIsActive} onPress={() => { void createPreview(); }} />
     </ScrollView>
   );
 }

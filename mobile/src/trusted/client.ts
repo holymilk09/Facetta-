@@ -32,6 +32,7 @@ import type {
   ComponentCatalog,
   ComponentCatalogOption,
   ComponentCatalogPath,
+  StudioComponentTargeting,
   CreateLineArtRequest,
   CreateProjectFromBriefRequest,
   CreateProjectFromDrawingRequest,
@@ -748,6 +749,8 @@ export const decodeVisualPreviewListResult: Decoder<VisualPreviewListResult> = (
     const requestedChange = nullableText(item.requested_change);
     const expiresAt = nullableText(item.expires_at);
     const qa = decodeImageQualityReport(item.qa);
+    const studioJobId = item.studio_job_id === null
+      ? null : nullableText(item.studio_job_id);
     const scope = item.scope;
     const verdict = item.verdict;
     if (
@@ -762,6 +765,7 @@ export const decodeVisualPreviewListResult: Decoder<VisualPreviewListResult> = (
       source_asset_id: sourceAssetId, preview_url: previewUrl,
       save_as_variation_url: saveAsVariationUrl,
       verdict, requested_change: requestedChange, scope, qa, expires_at: expiresAt,
+      studio_job_id: studioJobId,
     };
   });
   return candidates.some((item) => item === null)
@@ -1309,6 +1313,7 @@ export const decodeMarkupInterpretation: Decoder<MarkupInterpretation> = (value)
   if (targetRegion === null || requestedChange === null) return null;
   const targetReference = nullableText(pick(value, 'target_spec_reference', 'target_ref', 'ref'));
   const targetSection = nullableText(pick(value, 'target_section', 'section'));
+  const targetComponentId = nullableText(value.target_component_id);
   const targetElementId = nullableText(value.target_element_id);
   return {
     target_region: targetRegion,
@@ -1320,6 +1325,7 @@ export const decodeMarkupInterpretation: Decoder<MarkupInterpretation> = (value)
     target_spec_reference: targetReference,
     target_section: targetSection,
     target_index: number(pick(value, 'target_index', 'index')),
+    target_component_id: targetComponentId,
     target_element_id: targetElementId,
     frozen_elements: stringList(pick(value, 'frozen_elements', 'frozen')),
     confidence: number(value.confidence),
@@ -1654,6 +1660,58 @@ export const decodeComponentCatalog: Decoder<ComponentCatalog> = (value) => {
     applicable_jewelry_types: jewelryTypes,
     image_agent_status: imageAgentStatus,
     options: decodedOptions,
+  };
+};
+
+const componentTargetingState = (value: unknown) => (
+  value === 'ready' || value === 'unmapped' || value === 'unresolved' ? value : null
+);
+
+export const decodeStudioComponentTargeting: Decoder<StudioComponentTargeting> = (value) => {
+  if (!isRecord(value) || !isRecord(value.component_map)
+    || !Array.isArray(value.catalog_paths)) return null;
+  const assetId = nullableText(value.asset_id);
+  const assetSha = nullableText(value.asset_sha256);
+  const jewelryType = nullableText(value.jewelry_type);
+  const mapState = componentTargetingState(value.component_map.state);
+  const mapScope = value.component_map.scope === 'ring_v1'
+    || value.component_map.scope === 'not_released' ? value.component_map.scope : null;
+  const paths = value.catalog_paths.map((item) => {
+    if (!isRecord(item)) return null;
+    const componentPath = knownComponentCatalogPath(item.component_path);
+    const status = componentTargetingState(item.status);
+    const requiredKinds = strictStringList(item.required_component_kinds);
+    const componentIds = strictStringList(item.component_ids);
+    if (componentPath === null || status === null || requiredKinds === null
+      || componentIds === null) return null;
+    return {
+      component_path: componentPath,
+      status,
+      required_component_kinds: requiredKinds,
+      component_ids: componentIds,
+      reason_code: nullableText(item.reason_code),
+    };
+  });
+  if (value.schema_version !== 'facetta.studio-component-targeting.v1'
+    || value.authority !== 'exact_revision_image_editing_only'
+    || assetId === null || assetSha === null || !/^[0-9a-f]{64}$/.test(assetSha)
+    || jewelryType === null || mapState === null || mapScope === null
+    || paths.some((item) => item === null)) return null;
+  return {
+    schema_version: value.schema_version,
+    asset_id: assetId,
+    asset_sha256: assetSha,
+    jewelry_type: jewelryType,
+    component_map: {
+      state: mapState,
+      scope: mapScope,
+      map_sha256: nullableText(value.component_map.map_sha256),
+      mapper_contract: nullableText(value.component_map.mapper_contract),
+      raster_width: number(value.component_map.raster_width),
+      raster_height: number(value.component_map.raster_height),
+    },
+    catalog_paths: paths as StudioComponentTargeting['catalog_paths'],
+    authority: value.authority,
   };
 };
 
@@ -3553,6 +3611,7 @@ export function createTrustedApiClient(options: TrustedApiClientOptions) {
               ? { markup_asset_id: request.markup_asset_id }
               : {}),
             ...(request.variant === undefined ? {} : { variant: request.variant }),
+            ...(request.studio_job_id === undefined ? {} : { studio_job_id: request.studio_job_id }),
           }),
         },
       );
@@ -4119,6 +4178,16 @@ export function createTrustedApiClient(options: TrustedApiClientOptions) {
         },
         status: result.status,
       };
+    },
+
+    getStudioComponentTargeting(assetId: string) {
+      return call(
+        `/assets/${encodeURIComponent(assetId)}/studio-component-targeting`,
+        (value) => {
+          const targeting = decodeStudioComponentTargeting(value);
+          return targeting?.asset_id === assetId ? targeting : null;
+        },
+      );
     },
 
     getStoneVocabulary() {
@@ -4893,6 +4962,7 @@ export function createTrustedApiClient(options: TrustedApiClientOptions) {
           target_section: annotation.target_section,
           target_ref: annotation.target_ref,
           index: annotation.index,
+          target_component_id: annotation.target_component_id,
           target_element_id: annotation.target_element_id,
           form_view: annotation.form_view,
           mask_base64: annotation.mask_base64,

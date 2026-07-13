@@ -42,6 +42,8 @@ import {
 
 export type StudioGatewayErrorCategory =
   | 'network'
+  | 'authentication'
+  | 'not_found'
   | 'validation'
   | 'conflict'
   | 'quality'
@@ -171,6 +173,19 @@ export interface StudioResumedRefinePreview {
   understoodAs: string;
 }
 
+export interface StudioReviewJobEnvelope {
+  job: StudioJobRecord;
+  project: ProjectDetail;
+  lineage: ExactStudioLineage | StudioVisualLineage;
+  sourceImageUrl: string | null;
+  sourceIsActive: boolean;
+  allowedDecisions: {
+    apply: boolean;
+    discard: true;
+    saveAsVariation: boolean;
+  };
+}
+
 export interface StudioVariationRequest extends StudioVisualLineage {
   sourceDesignVersion: number | null;
   createdBy: string;
@@ -296,6 +311,7 @@ type GatewayTrustedClient = Pick<TrustedApiClient,
   | 'createChecklist'
   | 'respondChecklist'
   | 'getComponentCatalog'
+  | 'getStudioComponentTargeting'
   | 'readMarkup'
   | 'reviseStudioFacts'
   | 'getDesignFamily'
@@ -305,6 +321,7 @@ type GatewayTrustedClient = Pick<TrustedApiClient,
   | 'assetImageUrl'
   | 'createStudioJob'
   | 'listStudioJobs'
+  | 'getStudioJob'
   | 'transitionStudioJob'
   | 'cancelStudioJob'
   | 'createVisualPreview'
@@ -347,6 +364,10 @@ const gatewayError = (
 function mapError(error: ApiError): StudioGatewayError {
   const category: StudioGatewayErrorCategory = error.category === 'network'
     ? 'network'
+    : error.category === 'authentication'
+      ? 'authentication'
+      : error.category === 'not_found'
+        ? 'not_found'
     : error.category === 'validation'
       ? 'validation'
       : error.category === 'conflict' || error.category === 'stale_version'
@@ -776,6 +797,12 @@ export function createStudioGateway(
       return result;
     },
 
+    async getStudioComponentTargeting(
+      ...args: Parameters<GatewayTrustedClient['getStudioComponentTargeting']>
+    ) {
+      return mapResult(await client.getStudioComponentTargeting(...args));
+    },
+
     async readMarkup(
       ...args: Parameters<GatewayTrustedClient['readMarkup']>
     ) {
@@ -826,6 +853,65 @@ export function createStudioGateway(
       ...args: Parameters<GatewayTrustedClient['listStudioJobs']>
     ) {
       return mapResult(await client.listStudioJobs(...args));
+    },
+
+    async resumeReviewJob(
+      jobId: string,
+      owner: string,
+    ): Promise<StudioGatewayResult<StudioReviewJobEnvelope>> {
+      const jobResult = await client.getStudioJob(jobId, owner);
+      if (jobResult.error !== null) return {
+        data: null, error: mapError(jobResult.error), status: jobResult.status,
+      };
+      const job = jobResult.data;
+      if (job.status !== 'reviewing'
+        || !['refine', 'views', 'present'].includes(job.action_id)
+        || job.active_design_id === null
+        || job.source_revision_id === null) {
+        return gatewayError(
+          'STUDIO_REVIEW_JOB_NOT_REVIEWABLE',
+          'This Activity item no longer has a reviewable result.',
+          'conflict', 409,
+        );
+      }
+      const projectResult = await client.getProject(job.active_design_id);
+      if (projectResult.error !== null) return {
+        data: null, error: mapError(projectResult.error), status: projectResult.status,
+      };
+      const project = projectResult.data;
+      const revision = project.revisions.find(
+        (item) => item.asset.asset_id === job.source_revision_id,
+      );
+      if (project.root_id !== job.active_design_id || revision === undefined) {
+        return gatewayError(
+          'STUDIO_REVIEW_SOURCE_UNAVAILABLE',
+          'The immutable source revision for this result is unavailable.',
+          'invalid_response', 409,
+        );
+      }
+      const lineage: ExactStudioLineage | StudioVisualLineage = revision.asset.design_version === null
+        ? { projectId: project.root_id, sourceAssetId: revision.asset.asset_id }
+        : {
+          projectId: project.root_id,
+          sourceAssetId: revision.asset.asset_id,
+          sourceDesignVersion: revision.asset.design_version,
+        };
+      const sourceIsActive = project.active_asset_id === revision.asset.asset_id
+        && project.active_design_version === revision.asset.design_version;
+      return {
+        data: {
+          job, project, lineage,
+          sourceImageUrl: revision.asset.image_url ?? null,
+          sourceIsActive,
+          allowedDecisions: {
+            apply: sourceIsActive,
+            discard: true,
+            saveAsVariation: job.action_id === 'refine',
+          },
+        },
+        error: null,
+        status: projectResult.status,
+      };
     },
 
     async cancelStudioJob(
@@ -1086,12 +1172,14 @@ export function createStudioGateway(
     async resumeRefine(
       lineage: ExactStudioLineage | StudioVisualLineage,
       createdBy: string,
+      reviewJobId?: string,
     ): Promise<StudioGatewayResult<StudioResumedRefinePreview | null>> {
       const jobs = trackJobs
         ? await client.listStudioJobs(createdBy, 'reviewing') : null;
       const matchingJob = jobs?.error === null
         ? [...jobs.data.jobs].reverse().find((job) => (
             job.action_id === 'refine'
+            && (reviewJobId === undefined || job.job_id === reviewJobId)
             && job.active_design_id === lineage.projectId
             && job.source_revision_id === lineage.sourceAssetId
           )) ?? null
@@ -1099,6 +1187,11 @@ export function createStudioGateway(
       const studioJob = matchingJob === null ? null : {
         jobId: matchingJob.job_id, owner: createdBy,
       };
+      if (reviewJobId !== undefined && matchingJob === null) return gatewayError(
+        'RESUME_REFINE_JOB_MISMATCH',
+        'This saved refinement is not bound to the selected Activity job.',
+        'conflict', 409,
+      );
 
       if ('sourceDesignVersion' in lineage) {
         const markupResult = typeof client.listStudioMarkupCandidates === 'function'
@@ -1106,20 +1199,11 @@ export function createStudioGateway(
         if (markupResult !== null && markupResult.error !== null) return {
           data: null, error: mapError(markupResult.error), status: markupResult.status,
         };
-        if (markupResult !== null && markupResult.error === null
-          && markupResult.data.candidates.some((item) => (
-          item.project_root_id !== lineage.projectId
-          || item.source_asset_id !== lineage.sourceAssetId
-          || item.design_version !== lineage.sourceDesignVersion
-        ))) {
-          return gatewayError(
-            'RESUME_REFINE_LINEAGE_MISMATCH',
-            'A pending marked-region preview no longer matches the selected revision.',
-            'conflict', 409,
-          );
-        }
         const latestMarkup = markupResult?.error === null
           ? [...markupResult.data.candidates]
+          .filter((item) => item.project_root_id === lineage.projectId
+            && item.source_asset_id === lineage.sourceAssetId
+            && item.design_version === lineage.sourceDesignVersion)
           .filter((item) => matchingJob === null || item.studio_job_id === matchingJob.job_id)
           .sort((left, right) => (
             Date.parse(left.expires_at) - Date.parse(right.expires_at)
@@ -1159,7 +1243,10 @@ export function createStudioGateway(
             'conflict', 409,
           );
         }
-        const latest = [...result.data.candidates].sort((left, right) => (
+        const latest = [...result.data.candidates]
+        .filter((item) => reviewJobId === undefined
+          || item.candidate.studio_job_id === reviewJobId)
+        .sort((left, right) => (
           Date.parse(left.expires_at) - Date.parse(right.expires_at)
           || left.candidate.candidate_id.localeCompare(right.candidate.candidate_id)
         )).at(-1);
@@ -1222,7 +1309,9 @@ export function createStudioGateway(
           'conflict', 409,
         );
       }
-      const latest = [...result.data.candidates].sort((left, right) => (
+      const latest = [...result.data.candidates]
+      .filter((item) => reviewJobId === undefined || item.studio_job_id === reviewJobId)
+      .sort((left, right) => (
         Date.parse(left.expires_at) - Date.parse(right.expires_at)
         || left.candidate_id.localeCompare(right.candidate_id)
       )).at(-1);
@@ -1291,6 +1380,7 @@ export function createStudioGateway(
             expected_active_asset_id: request.sourceAssetId,
             instruction,
             scope: 'appearance',
+            ...(started.data === null ? {} : { studio_job_id: started.data.jobId }),
             ...(request.variant === undefined ? {} : { variant: request.variant }),
           }
         : typeof request.maskBase64 === 'string'
@@ -1299,6 +1389,7 @@ export function createStudioGateway(
             expected_active_asset_id: request.sourceAssetId,
             instruction,
             scope: 'marked_region',
+            ...(started.data === null ? {} : { studio_job_id: started.data.jobId }),
             mask_base64: request.maskBase64,
             ...(request.variant === undefined ? {} : { variant: request.variant }),
           }
@@ -1307,6 +1398,7 @@ export function createStudioGateway(
             expected_active_asset_id: request.sourceAssetId,
             instruction,
             scope: 'marked_region',
+            ...(started.data === null ? {} : { studio_job_id: started.data.jobId }),
             markup_asset_id: request.markupAssetId,
             ...(request.variant === undefined ? {} : { variant: request.variant }),
           };
@@ -1976,6 +2068,7 @@ export function createStudioGateway(
     async resumeViews(
       lineage: ExactStudioLineage,
       createdBy: string,
+      reviewJobId?: string,
     ): Promise<StudioGatewayResult<StudioViewPreview | null>> {
       const listed = await client.listStudioViewCandidates(createdBy, lineage.projectId);
       if (listed.error !== null) {
@@ -1985,6 +2078,7 @@ export function createStudioGateway(
         candidate.project_id === lineage.projectId
         && candidate.source_asset_id === lineage.sourceAssetId
         && candidate.design_version === lineage.sourceDesignVersion
+        && (reviewJobId === undefined || candidate.studio_job_id === reviewJobId)
       ));
       if (matching.length === 0) return { data: null, error: null, status: listed.status };
       const candidate = matching[0];
@@ -2116,6 +2210,7 @@ export function createStudioGateway(
     async resumePreSpecPresentations(
       lineage: StudioVisualLineage,
       createdBy: string,
+      reviewJobId?: string,
     ): Promise<StudioGatewayResult<PreSpecPresentationResult[]>> {
       const result = await client.listPreSpecPresentations(
         createdBy, lineage.projectId,
@@ -2128,6 +2223,7 @@ export function createStudioGateway(
         if (candidate.design_version !== null
           || candidate.project_id !== lineage.projectId
           || candidate.source_asset_id !== lineage.sourceAssetId
+          || (reviewJobId !== undefined && candidate.studio_job_id !== reviewJobId)
           || !/^[0-9a-f]{64}$/.test(candidate.source_sha256)
           || preSpecPresentationCandidates.has(candidate.candidate_id)) continue;
         preSpecPresentationCandidates.set(candidate.candidate_id, {
@@ -2160,6 +2256,7 @@ export function createStudioGateway(
     async resumeExactPresentations(
       lineage: ExactStudioLineage,
       createdBy: string,
+      reviewJobId?: string,
     ): Promise<StudioGatewayResult<StudioExactPresentationPreview[]>> {
       const listed = await client.listPreSpecPresentations(createdBy, lineage.projectId);
       if (listed.error !== null) {
@@ -2169,6 +2266,7 @@ export function createStudioGateway(
         candidate.project_id === lineage.projectId
         && candidate.source_asset_id === lineage.sourceAssetId
         && candidate.design_version === lineage.sourceDesignVersion
+        && (reviewJobId === undefined || candidate.studio_job_id === reviewJobId)
       ));
       const byJob = new Map<string, PreSpecPresentationResumeCandidate[]>();
       for (const candidate of matching) {
@@ -2335,16 +2433,6 @@ export function createStudioGateway(
       const before = await client.getProject(stored.lineage.projectId);
       if (before.error !== null) {
         return { data: null, error: mapError(before.error), status: before.status };
-      }
-      if (before.data.active_design_version !== null
-        || before.data.active_asset_id !== stored.lineage.sourceAssetId
-        || before.data.selected_candidate_asset_id !== stored.lineage.sourceAssetId) {
-        await failJob(stored.studioJob, 'STALE_PRESENTATION_SOURCE', 0.95);
-        return gatewayError(
-          'STALE_PRESENTATION_SOURCE',
-          'The selected visual changed while this presentation was awaiting review.',
-          'conflict', 409,
-        );
       }
       const discarded = await client.discardPreSpecPresentation(
         stored.runId, stored.candidateId, {
@@ -2649,17 +2737,6 @@ export function createStudioGateway(
       const before = await client.getProject(stored.group.lineage.projectId);
       if (before.error !== null) {
         return { data: null, error: mapError(before.error), status: before.status };
-      }
-      const beforeLineage = exactLineage(before.data);
-      if (beforeLineage === null
-        || beforeLineage.sourceAssetId !== stored.group.lineage.sourceAssetId
-        || beforeLineage.sourceDesignVersion !== stored.group.lineage.sourceDesignVersion) {
-        await failJob(stored.group.studioJob, 'STALE_PRESENTATION_SOURCE', 0.95);
-        return gatewayError(
-          'STALE_PRESENTATION_SOURCE',
-          'The selected design changed while this presentation was awaiting review.',
-          'conflict', 409,
-        );
       }
       const discarded = await client.discardPresentationCandidate(
         stored.runId, stored.candidateId, {
