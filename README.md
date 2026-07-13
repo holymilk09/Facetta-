@@ -84,7 +84,10 @@ uses temporary SQLite and deterministic offline image providers to exercise ten
 projects across sentence, drawing, photograph, finished-render, and role-labeled
 reference starts. Every case verifies save/reopen, exact-revision branching,
 review-before-Apply, immutable comparison/Restore, source semantics, and Activity
-accounting without paid-provider credentials or Factory.
+accounting without paid-provider credentials or Factory. The same run forces one
+three-attempt hard-QA failure and one stale Apply race, proving zero canonical
+persistence or charge for the failed generation and unchanged history plus a
+zero-charge failed Activity record for the stale decision.
 
 ## Run the API
 

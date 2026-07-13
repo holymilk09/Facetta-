@@ -227,6 +227,7 @@ test('tracked generation failures close the job without charging output', async 
   });
   assert.equal(result.error?.code, 'UNEXPECTED_GENERATION_FAILURE');
   assert.deepEqual(jobs.transitions.map((call) => call.request.status), ['running', 'failed']);
+  assert.equal(jobs.transitions[1]?.request.progress, 1);
   assert.equal(jobs.transitions[1]?.request.completed_outputs, undefined);
 });
 

@@ -16,7 +16,7 @@ import os
 from pathlib import Path
 
 from PIL import Image
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import sessionmaker
 
 from facetta.api.studio import (
@@ -27,12 +27,24 @@ from facetta.creative_workflow import (
     get_creative_prompt_generator,
     get_creative_render_generator,
 )
-from facetta.db import Base, get_db
+from facetta.db import (
+    Base,
+    Design,
+    DesignVersion,
+    ImageAsset,
+    ImageRun,
+    Project,
+    ProjectRevisionRecord,
+    StudioJobRecord,
+    get_db,
+)
 from facetta.image_agent import (
+    CheckSeverity,
     ImageOperation,
     ImageQualityReport,
     JewelryImageAgent,
     ProviderImage,
+    QualityCheck,
     QualityVerdict,
     build_image_plan,
 )
@@ -101,6 +113,37 @@ def _accepted_result(
     )
 
 
+FAILED_QA_FIXTURE_PROMPT = "__FACETTA_ACCEPTANCE_FORCE_QA_FAIL__"
+
+
+def _quality_rejected_result(plan, image: bytes):
+    """Exercise the real closed-loop QA failure path in this server only.
+
+    The trigger is interpreted solely by the dependency override in this
+    disposable acceptance process. The production generator never imports or
+    recognizes it, so ordinary prompts cannot activate fixture behavior.
+    """
+
+    class Provider:
+        def execute(self, *_args, **_kwargs):
+            return ProviderImage(image_bytes=image)
+
+    class Evaluator:
+        def evaluate(self, *_args, **_kwargs):
+            return ImageQualityReport(
+                verdict=QualityVerdict.FAIL,
+                checks=(QualityCheck(
+                    code="acceptance_forced_fidelity_failure",
+                    passed=False,
+                    severity=CheckSeverity.HARD,
+                    message="Acceptance fixture rejected the candidate.",
+                ),),
+                score=0,
+            )
+
+    return JewelryImageAgent(Provider(), Evaluator()).run(plan)
+
+
 def _prompt_generator(prompt: str, variant: int):
     image = _png(_fixture_color("prompt", prompt, variant))
     plan = build_image_plan(
@@ -108,6 +151,8 @@ def _prompt_generator(prompt: str, variant: int):
         prompt,
         variant=variant,
     )
+    if prompt == FAILED_QA_FIXTURE_PROMPT:
+        return _quality_rejected_result(plan, image)
     return _accepted_result(plan, image)
 
 
@@ -195,6 +240,43 @@ engine = create_engine(
 )
 Base.metadata.create_all(engine)
 Session = sessionmaker(bind=engine, autoflush=False)
+
+
+@app.get("/__acceptance__/canonical-state/{owner}")
+def _acceptance_canonical_state(owner: str) -> dict[str, int]:
+    """Expose scoped persistence counts only in the disposable test process."""
+
+    with Session() as db:
+        return {
+            "projects": db.scalar(select(func.count()).select_from(
+                Project).where(Project.owner == owner)) or 0,
+            "image_assets": db.scalar(select(func.count()).select_from(
+                ImageAsset).where(ImageAsset.created_by == owner)) or 0,
+            "revision_records": db.scalar(select(func.count()).select_from(
+                ProjectRevisionRecord).where(
+                    ProjectRevisionRecord.created_by == owner)) or 0,
+            "designs": db.scalar(select(func.count()).select_from(
+                Design).where(Design.created_by == owner)) or 0,
+            "design_versions": db.scalar(select(func.count()).select_from(
+                DesignVersion).join(Design).where(
+                    Design.created_by == owner)) or 0,
+            "accepted_image_runs": db.scalar(select(func.count()).select_from(
+                ImageRun).where(
+                    ImageRun.created_by == owner,
+                    ImageRun.accepted_asset_id.is_not(None),
+                )) or 0,
+            "failed_image_runs": db.scalar(select(func.count()).select_from(
+                ImageRun).where(
+                    ImageRun.created_by == owner,
+                    ImageRun.status == "failed",
+                )) or 0,
+            "charged_outputs": db.scalar(select(
+                func.coalesce(func.sum(StudioJobRecord.charged_outputs), 0),
+            ).where(StudioJobRecord.owner == owner)) or 0,
+            "completed_outputs": db.scalar(select(
+                func.coalesce(func.sum(StudioJobRecord.completed_outputs), 0),
+            ).where(StudioJobRecord.owner == owner)) or 0,
+        }
 
 
 def _database():

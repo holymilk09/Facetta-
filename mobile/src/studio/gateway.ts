@@ -614,10 +614,12 @@ export function createStudioGateway(
   const failJob = async (
     job: ActiveStudioJob | null,
     code: string,
-    progress = 0.1,
+    progress = 1,
   ): Promise<void> => {
     // Preserve the action's original error. Activity repair is retryable, but
-    // it must never disguise why generation itself failed.
+    // it must never disguise why generation itself failed. A terminal failure
+    // uses monotonic completion progress so a job already at review (0.9)
+    // cannot get stranded there by a rejected backward progress transition.
     await transitionJob(job, 'failed', progress, undefined, code);
   };
 

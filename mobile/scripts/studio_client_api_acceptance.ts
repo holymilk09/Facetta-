@@ -22,6 +22,8 @@ const baseUrl = process.argv[2];
 assert(baseUrl, 'usage: tsx scripts/studio_client_api_acceptance.ts BASE_URL');
 
 const actor = 'usr_client_api_acceptance';
+const failedQaActor = 'usr_failed_qa_acceptance';
+const FAILED_QA_FIXTURE_PROMPT = '__FACETTA_ACCEPTANCE_FORCE_QA_FAIL__';
 const trustedClient = createTrustedApiClient({ baseUrl });
 const gateway = createStudioGateway(trustedClient, { trackJobs: true });
 
@@ -46,6 +48,19 @@ interface AcceptanceResult {
   referenceRoles: readonly ReferenceRole[];
   directionCount: number;
   canonicalRevisionCount: number;
+  staleApplyRejected: boolean;
+}
+
+interface AcceptanceCanonicalState {
+  projects: number;
+  image_assets: number;
+  revision_records: number;
+  designs: number;
+  design_versions: number;
+  accepted_image_runs: number;
+  failed_image_runs: number;
+  charged_outputs: number;
+  completed_outputs: number;
 }
 
 const CASES: readonly AcceptanceCase[] = [
@@ -142,6 +157,67 @@ function assertReferencePersistence(project: ProjectDetail, roles: readonly Refe
     assert.equal(board.provenance, 'role_labeled_reference_board');
     assert.equal(board.parent_asset_id, project.root_id);
   }
+}
+
+async function canonicalState(owner: string): Promise<AcceptanceCanonicalState> {
+  const response = await fetch(
+    `${baseUrl}/__acceptance__/canonical-state/${encodeURIComponent(owner)}`,
+  );
+  assert.equal(response.status, 200, 'acceptance state probe failed');
+  return await response.json() as AcceptanceCanonicalState;
+}
+
+async function runFailedQaCase(): Promise<void> {
+  assert.deepEqual(await canonicalState(failedQaActor), {
+    projects: 0,
+    image_assets: 0,
+    revision_records: 0,
+    designs: 0,
+    design_versions: 0,
+    accepted_image_runs: 0,
+    failed_image_runs: 0,
+    charged_outputs: 0,
+    completed_outputs: 0,
+  }, 'failed-QA fixture owner did not start isolated');
+
+  const rejected = await gateway.createFromPrompt({
+    prompt: FAILED_QA_FIXTURE_PROMPT,
+    variation_count: 1,
+    starting_variant: 99,
+    owner: failedQaActor,
+    title: 'Acceptance: forced QA rejection',
+    collection: 'Studio failed-QA acceptance',
+    tags: ['client-api', 'failed-qa', 'no-canonical-output'],
+  });
+  assert.equal(rejected.data, null, 'failed QA returned a Studio project');
+  assert.equal(rejected.status, 422);
+  assert.equal(rejected.error?.code, 'image_quality_failed');
+  assert.equal(rejected.error?.category, 'quality');
+
+  assert.deepEqual(await canonicalState(failedQaActor), {
+    projects: 0,
+    image_assets: 0,
+    revision_records: 0,
+    designs: 0,
+    design_versions: 0,
+    accepted_image_runs: 0,
+    failed_image_runs: 1,
+    charged_outputs: 0,
+    completed_outputs: 0,
+  }, 'failed QA persisted canonical design truth or a charged output');
+
+  const activity = value(await gateway.listStudioJobs(failedQaActor), 'Failed-QA Activity');
+  assert.equal(activity.jobs.length, 1);
+  const failedCreate = activity.jobs[0];
+  assert(failedCreate);
+  assert.equal(failedCreate.action_id, 'create');
+  assert.equal(failedCreate.status, 'failed');
+  assert.equal(failedCreate.error_code, 'image_quality_failed');
+  assert.equal(failedCreate.active_design_id, null);
+  assert.equal(failedCreate.source_revision_id, null);
+  assert.equal(failedCreate.billing.completed_outputs, 0);
+  assert.equal(failedCreate.billing.charged_outputs, 0);
+  assert.equal(failedCreate.billing.charged_credits, 0);
 }
 
 async function create(caseDefinition: AcceptanceCase, index: number): Promise<ProjectDetail> {
@@ -262,6 +338,32 @@ async function runCase(caseDefinition: AcceptanceCase, index: number): Promise<A
   assert.equal(whilePreviewHistory.revisions.length, 1, `${label}: preview mutated canonical history`);
   assert.equal(whilePreviewHistory.active_asset_id, originalRevision.asset_id);
 
+  // Exercise a real stale-write race once across the matrix. Both previews
+  // begin from the same immutable revision; the normal preview is accepted
+  // first, so this second pending candidate must never overwrite it.
+  let staleCandidateId: string | null = null;
+  if (index === 0) {
+    const stalePreview = value(await gateway.previewVisualRefine({
+      projectId: reopenedBranch.root_id,
+      sourceAssetId: originalRevision.asset_id,
+      createdBy: actor,
+      instruction: 'Cool the metal while preserving every contour and stone position.',
+      scope: 'appearance',
+      variant: 99 - index,
+    }), `${label}: Create candidate that will become stale`);
+    assert.equal(stalePreview.candidate.temporary, true);
+    assert.equal(stalePreview.candidate.status, 'pending_review');
+    assert.equal(stalePreview.lineage.sourceAssetId, originalRevision.asset_id);
+    staleCandidateId = stalePreview.candidate.id;
+
+    const withTwoPreviews = value(
+      await gateway.getStudioProjectHistory(reopenedBranch.root_id),
+      `${label}: History with two temporary candidates`,
+    );
+    assert.equal(withTwoPreviews.revisions.length, whilePreviewHistory.revisions.length);
+    assert.equal(withTwoPreviews.active_asset_id, whilePreviewHistory.active_asset_id);
+  }
+
   const applied = value(await gateway.applyVisualRefine({
     candidateId: preview.candidate.id,
     createdBy: actor,
@@ -284,6 +386,45 @@ async function runCase(caseDefinition: AcceptanceCase, index: number): Promise<A
     await sha256(refinedRevision.image_url),
     `${label}: original and refined bytes are not independently comparable`,
   );
+
+  let staleApplyRejected = false;
+  if (staleCandidateId !== null) {
+    const beforeStaleApply = compareHistory;
+    const beforeStaleActiveHash = await sha256(refinedRevision.image_url);
+    const staleApply = await gateway.applyVisualRefine({
+      candidateId: staleCandidateId,
+      createdBy: actor,
+    });
+    assert.equal(staleApply.data, null, `${label}: stale Apply unexpectedly returned data`);
+    assert(staleApply.error, `${label}: stale Apply unexpectedly succeeded`);
+    assert.equal(staleApply.status, 410);
+    assert.equal(staleApply.error.code, 'visual_preview_unavailable');
+    assert.equal(staleApply.error.category, 'conflict');
+    assert.equal(staleApply.error.retryable, false);
+
+    const afterStaleApply = value(
+      await gateway.getStudioProjectHistory(reopenedBranch.root_id),
+      `${label}: Reopen history after rejected stale Apply`,
+    );
+    assert.equal(
+      afterStaleApply.revisions.length,
+      beforeStaleApply.revisions.length,
+      `${label}: rejected stale Apply appended canonical history`,
+    );
+    assert.equal(
+      afterStaleApply.active_asset_id,
+      beforeStaleApply.active_asset_id,
+      `${label}: rejected stale Apply changed the active asset`,
+    );
+    const afterStaleActive = afterStaleApply.revisions.at(-1);
+    assert(afterStaleActive);
+    assert.equal(
+      await sha256(afterStaleActive.image_url),
+      beforeStaleActiveHash,
+      `${label}: rejected stale Apply changed the active revision bytes`,
+    );
+    staleApplyRejected = true;
+  }
 
   const restored = value(await gateway.restoreStudioRevision(
     reopenedBranch.root_id,
@@ -321,10 +462,13 @@ async function runCase(caseDefinition: AcceptanceCase, index: number): Promise<A
     referenceRoles: caseDefinition.references ?? [],
     directionCount: candidates.length,
     canonicalRevisionCount: finalHistory.revisions.length,
+    staleApplyRejected,
   };
 }
 
 async function main(): Promise<void> {
+  await runFailedQaCase();
+
   const results: AcceptanceResult[] = [];
   for (const [index, caseDefinition] of CASES.entries()) {
     results.push(await runCase(caseDefinition, index));
@@ -341,12 +485,28 @@ async function main(): Promise<void> {
   const activity = value(await gateway.listStudioJobs(actor), 'Activity');
   const creates = activity.jobs.filter((job) => job.action_id === 'create');
   const refines = activity.jobs.filter((job) => job.action_id === 'refine');
+  const succeededRefines = refines.filter((job) => job.status === 'succeeded');
+  const rejectedStaleRefines = refines.filter((job) => (
+    job.status === 'failed' && job.error_code === 'visual_preview_unavailable'
+  ));
   assert.equal(creates.length, 10, 'one durable Create job must exist per matrix project');
-  assert.equal(refines.length, 10, 'one durable Refine job must exist per matrix project');
-  for (const job of [...creates, ...refines]) {
+  assert.equal(succeededRefines.length, 10, 'one successful Refine job must exist per matrix project');
+  assert.equal(rejectedStaleRefines.length, 1, 'the stale Apply must leave one honest failed Refine job');
+  assert.equal(refines.length, 11, 'only the deliberate stale candidate may add a Refine job');
+  for (const job of [...creates, ...succeededRefines]) {
     assert.equal(job.status, 'succeeded');
     assert(job.billing.charged_outputs > 0, `${job.action_id} was not charged atomically`);
   }
+  for (const job of rejectedStaleRefines) {
+    assert.equal(job.billing.completed_outputs, 0);
+    assert.equal(job.billing.charged_outputs, 0);
+    assert.equal(job.billing.charged_credits, 0);
+  }
+  assert.equal(
+    results.filter((item) => item.staleApplyRejected).length,
+    1,
+    'exactly one real-process stale Apply negative case must run',
+  );
   assert.equal(activity.jobs.some((job) => job.action_id === 'factory'), false);
 
   process.stdout.write(JSON.stringify({
@@ -361,8 +521,20 @@ async function main(): Promise<void> {
       role_labeled_reference_projects: results.filter((item) => item.referenceRoles.length > 0).length,
     },
     projects: results,
-    settled_activity: { create: creates.length, refine: refines.length },
+    settled_activity: {
+      create: creates.length,
+      refine_succeeded: succeededRefines.length,
+      refine_stale_rejected: rejectedStaleRefines.length,
+    },
+    failed_qa: {
+      canonical_projects: 0,
+      canonical_revisions: 0,
+      accepted_outputs: 0,
+      charged_outputs: 0,
+      failed_evidence_runs: 1,
+    },
     canonical_mutation_before_acceptance: false,
+    stale_apply_mutated_canonical_history: false,
     factory_used: false,
   }, null, 2) + '\n');
 }
