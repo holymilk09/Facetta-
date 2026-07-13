@@ -114,6 +114,30 @@ jest.mock('./StudioPresentWorkspace', () => {
   return { StudioPresentWorkspace: () => ReactLocal.createElement(Text, null, 'Present route reached') };
 });
 
+jest.mock('./StudioCollectionsWorkspace', () => {
+  const ReactLocal = require('react');
+  const { Pressable, Text } = require('react-native');
+  return {
+    StudioCollectionsWorkspace: ({ project, onVaryCurrent }: any) => ReactLocal.createElement(
+      Pressable,
+      { accessibilityRole: 'button', onPress: onVaryCurrent },
+      ReactLocal.createElement(Text, null, `Vary exact ${project?.root_id ?? 'none'}`),
+    ),
+  };
+});
+
+jest.mock('./StudioVaryWorkspace', () => {
+  const ReactLocal = require('react');
+  const { Text } = require('react-native');
+  return {
+    StudioVaryWorkspace: ({ lineage }: any) => ReactLocal.createElement(
+      Text,
+      null,
+      `Vary route reached for ${lineage?.projectId ?? 'none'} via ${lineage?.sourceAssetId ?? 'none'}`,
+    ),
+  };
+});
+
 jest.mock('./StudioActivityWorkspace', () => {
   const ReactLocal = require('react');
   const { Pressable, Text, View } = require('react-native');
@@ -244,6 +268,20 @@ test('saving a selected direction continues to Refine and authenticates its Stud
   expect(cover.props.source.headers).toEqual({
     Authorization: 'Bearer server-issued-test-token',
   });
+});
+
+test('Collections delegates variation creation to Studio Vary with the exact active project', async () => {
+  authenticate();
+  const view = await render(<App />);
+
+  await waitFor(() => expect(view.getByText('Start from an idea or reference')).toBeTruthy());
+  fireEvent.press(view.getByText('Start from an idea or reference'));
+  fireEvent.press(await view.findByText('Save mocked direction'));
+  expect(await view.findByText('Refine route reached')).toBeTruthy();
+
+  fireEvent.press(view.getAllByText('Collections').at(-1)!);
+  fireEvent.press(await view.findByText('Vary exact project_1'));
+  expect(await view.findByText('Vary route reached for project_1 via asset_1')).toBeTruthy();
 });
 
 test('confirming Design v1 returns immediately to Refine without a Collections or Factory detour', async () => {

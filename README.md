@@ -292,18 +292,16 @@ negotiates SSL with Supabase either way).
 > directly through SQLAlchemy so every write goes through the spec validator and the
 > immutable-version rules. Supabase is the database, not the API layer.
 
-> **Deployment guard:** database connectivity is integrated; production authentication
-> is not. The current mobile login is a local UI prototype and the API does not verify
-> Supabase JWTs yet. Keep Facetta's tables out of the Supabase Data API until owner-based
-> RLS policies and backend JWT verification are implemented and tested. If the `public`
-> schema is exposed in **Integrations → Data API**, do not grant `anon` or `authenticated`
-> access to these tables yet.
+> **Deployment guard:** production authentication is integrated through locally verified
+> asymmetric Supabase access JWTs and canonical owner checks; see `docs/STUDIO_AUTH.md`.
+> Facetta still does not use the Supabase Data API for application access. Keep direct
+> table grants disabled unless a separately reviewed RLS/Data API contract is introduced.
 
 ## Mobile app (Expo)
 
-`mobile/` contains the React Native app: the cascading-dropdown spec builder
-(Basic/Pro), validation with corrective errors, live sheet preview, immutable
-version history, and the factory share view with tap-to-pin comments.
+`mobile/` contains the unified React Native Studio: mixed-source Create, temporary
+candidate review, Vary, Refine, Views, Present, Collections, immutable history,
+Activity, Learn, and an entitlement-gated optional Factory destination.
 
 ```sh
 cd mobile
@@ -314,13 +312,11 @@ npx expo start          # scan the QR with Expo Go, or press w for web
 Point the API URL field at your running backend (defaults to
 `http://localhost:8000`; set `EXPO_PUBLIC_API_URL` to override).
 
-The typed trusted workspace is staged behind
-`EXPO_PUBLIC_TRUSTED_WORKSPACE=true`. Its behavior and responsive reference
-screen live in `mobile/src/trusted/`; keep the flag off until the redesign is
-merged and the live ring reliability/founder-acceptance gates pass.
-After the redesign commits, it can import `TrustedWorkspaceEntry` as the single
-integration seam; provider/model internals never enter redesign-owned
-navigation. The trusted screen now includes category-neutral prompt and
+The production shell integrates trusted contracts through the typed Studio gateway;
+provider/model internals never enter designer navigation. The older comprehensive
+trusted screen remains an internal diagnostic surface behind
+`EXPO_PUBLIC_TRUSTED_WORKSPACE=true` and is not a competing product entry. Keep that
+diagnostic flag off in normal Studio builds. The trusted module includes category-neutral prompt and
 creative-first drawing/image intake with one to four candidates,
 candidate-to-audited-spec promotion,
 candidate-bound source correction/confirmation, and multi-preset ecommerce

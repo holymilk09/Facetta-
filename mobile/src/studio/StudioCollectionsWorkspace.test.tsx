@@ -79,15 +79,6 @@ function api(overrides: Partial<StudioCollectionsApi> = {}): StudioCollectionsAp
       error: null,
       status: 201,
     })),
-    saveAsVariation: jest.fn(async () => ({
-      data: {
-        status: 'variation_created' as const, family_id: 'family_orbit',
-        variation_index: 3, source_project_id: 'project_main', source_asset_id: 'asset_2',
-        project: { ...project, id: 'project_blue', root_id: 'project_blue', active_asset_id: 'asset_blue' },
-      },
-      error: null,
-      status: 201,
-    })),
     assetImageUrl: jest.fn((assetId: string) => `https://test/assets/${assetId}.png`),
     ...overrides,
   } as StudioCollectionsApi;
@@ -96,7 +87,7 @@ function api(overrides: Partial<StudioCollectionsApi> = {}): StudioCollectionsAp
 const callbacks = () => ({
   onOpenProject: jest.fn(),
   onProjectChanged: jest.fn(),
-  onVariationCreated: jest.fn(),
+  onVaryCurrent: jest.fn(),
 });
 
 describe('StudioCollectionsWorkspace', () => {
@@ -327,7 +318,7 @@ describe('StudioCollectionsWorkspace', () => {
     expect(handlers.onOpenProject).not.toHaveBeenCalled();
   });
 
-  test('branches and restores only against the exact active lineage', async () => {
+  test('routes variation creation to canonical Vary and restores only against exact active lineage', async () => {
     const client = api();
     const handlers = callbacks();
     await render(
@@ -340,20 +331,10 @@ describe('StudioCollectionsWorkspace', () => {
     );
     await screen.findByText('Saved revision history');
 
-    await fireEvent.changeText(screen.getByPlaceholderText('Rose gold study'), 'Blue sapphire study');
-    await fireEvent.press(screen.getByText('Create variation'));
-    await waitFor(() => expect(client.saveAsVariation).toHaveBeenCalledWith(
-      'project_main',
-      {
-        created_by: 'usr_designer',
-        expected_active_asset_id: 'asset_2',
-        expected_design_version: 2,
-        label: 'Blue sapphire study',
-      },
-    ));
-    expect(handlers.onVariationCreated).toHaveBeenCalledWith(expect.objectContaining({
-      root_id: 'project_blue',
-    }));
+    expect(screen.queryByText('Variation name')).toBeNull();
+    expect(screen.queryByPlaceholderText('Rose gold study')).toBeNull();
+    await fireEvent.press(screen.getByText('Vary this revision'));
+    expect(handlers.onVaryCurrent).toHaveBeenCalledTimes(1);
 
     await fireEvent.press(screen.getByText('Restore revision 1 as new'));
     await waitFor(() => expect(client.restoreStudioRevision).toHaveBeenCalledWith(
@@ -370,7 +351,7 @@ describe('StudioCollectionsWorkspace', () => {
     }));
   });
 
-  test('does not invent family data when history is unavailable and still branches exactly', async () => {
+  test('does not invent family data when history is unavailable and still routes to Vary', async () => {
     const unavailable = {
       data: null,
       error: {
@@ -399,43 +380,25 @@ describe('StudioCollectionsWorkspace', () => {
     expect(client.getDesignFamily).not.toHaveBeenCalled();
     expect(screen.queryByText(/project_main|asset_2|design_ring/i)).toBeNull();
 
-    await fireEvent.changeText(screen.getByPlaceholderText('Rose gold study'), 'Independent study');
-    await fireEvent.press(screen.getByText('Create variation'));
-    await waitFor(() => expect(client.saveAsVariation).toHaveBeenCalledWith(
-      'project_main', expect.objectContaining({
-        expected_active_asset_id: 'asset_2', expected_design_version: 2,
-      }),
-    ));
+    expect(screen.queryByText('Variation name')).toBeNull();
+    await fireEvent.press(screen.getByText('Vary this revision'));
+    expect(handlers.onVaryCurrent).toHaveBeenCalledTimes(1);
   });
 
-  test('rejects a branch response that does not preserve the requested source asset', async () => {
-    const client = api({
-      saveAsVariation: jest.fn(async () => ({
-        data: {
-          status: 'variation_created' as const, family_id: 'family_orbit',
-          variation_index: 3, source_project_id: 'project_main',
-          source_asset_id: 'asset_wrong', project,
-        },
-        error: null,
-        status: 201,
-      })),
-    });
+  test('disables Vary navigation when the selected project has no active revision', async () => {
+    const client = api();
     const handlers = callbacks();
     await render(
       <StudioCollectionsWorkspace
         api={client}
-        project={project}
+        project={{ ...project, active_asset_id: null, cover_asset_id: null }}
         createdBy="usr_designer"
         {...handlers}
       />,
     );
-    await screen.findByText('Saved revision history');
-    await fireEvent.changeText(screen.getByPlaceholderText('Rose gold study'), 'Unsafe branch');
-    await fireEvent.press(screen.getByText('Create variation'));
-
-    expect(await screen.findByText(
-      'Facetta could not verify the source revision. No variation was created.',
-    )).toBeTruthy();
-    expect(handlers.onVariationCreated).not.toHaveBeenCalled();
+    await screen.findByText('Saved history is unavailable');
+    expect(screen.getByText('Vary this revision').parent?.props.accessibilityState).toEqual({ disabled: true });
+    await fireEvent.press(screen.getByText('Vary this revision'));
+    expect(handlers.onVaryCurrent).not.toHaveBeenCalled();
   });
 });

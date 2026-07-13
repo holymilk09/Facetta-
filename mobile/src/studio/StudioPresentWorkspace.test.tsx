@@ -15,6 +15,7 @@ describe('StudioPresentWorkspace', () => {
   });
 
   test('restores exact-revision presentation previews after remount', async () => {
+    const acceptPresentationCandidate = jest.fn();
     const resumeExactPresentations = jest.fn(async () => ({
       data: [{
         lineage,
@@ -34,7 +35,7 @@ describe('StudioPresentWorkspace', () => {
       gateway={{
         resumeExactPresentations, createBeautyPresentation: jest.fn(),
         createProductPresentation: jest.fn(), createMarketingPresentation: jest.fn(),
-        acceptPresentationCandidate: jest.fn(), discardPresentationCandidate: jest.fn(),
+        acceptPresentationCandidate, discardPresentationCandidate: jest.fn(),
         createPreSpecPresentation: jest.fn(), resumePreSpecPresentations: jest.fn(),
         acceptPreSpecPresentation: jest.fn(), discardPreSpecPresentation: jest.fn(),
       } as any}
@@ -43,6 +44,9 @@ describe('StudioPresentWorkspace', () => {
     />);
     expect(await screen.findByText('Catalog white')).toBeTruthy();
     expect(screen.getByText('1 saved preview resumed for review.')).toBeTruthy();
+    expect(screen.getByText(/exact source cannot be displayed/i)).toBeTruthy();
+    fireEvent.press(screen.getByText('Save presentation'));
+    expect(acceptPresentationCandidate).not.toHaveBeenCalled();
     expect(resumeExactPresentations).toHaveBeenCalledWith(lineage, 'designer');
   });
 
@@ -208,6 +212,7 @@ describe('StudioPresentWorkspace', () => {
         })),
         createProductPresentation: jest.fn(), createMarketingPresentation: jest.fn(),
         acceptPresentationCandidate: jest.fn(), discardPresentationCandidate: jest.fn(),
+        assetImageUrl: jest.fn(() => 'https://test/source.png'),
       } as any}
       lineage={lineage}
       createdBy="designer"
@@ -328,6 +333,7 @@ describe('StudioPresentWorkspace', () => {
         discardPreSpecPresentation: jest.fn(), createBeautyPresentation: jest.fn(),
         createProductPresentation: jest.fn(), createMarketingPresentation: jest.fn(),
         acceptPresentationCandidate: jest.fn(), discardPresentationCandidate: jest.fn(),
+        assetImageUrl: jest.fn(() => 'https://test/source.png'),
       } as any}
       lineage={visualLineage}
       createdBy="designer"
@@ -377,6 +383,7 @@ describe('StudioPresentWorkspace', () => {
         acceptPreSpecPresentation: jest.fn(), createBeautyPresentation: jest.fn(),
         createProductPresentation: jest.fn(), createMarketingPresentation: jest.fn(),
         acceptPresentationCandidate: jest.fn(), discardPresentationCandidate: jest.fn(),
+        assetImageUrl: jest.fn(() => 'https://test/source.png'),
       } as any}
       lineage={{ projectId: 'project_visual', sourceAssetId: 'asset_visual' }}
       createdBy="designer"
@@ -389,6 +396,9 @@ describe('StudioPresentWorkspace', () => {
     await waitFor(() => expect(calls).toHaveLength(2));
     expect(calls.map((call) => call.preset)).toEqual(['catalog_white', 'luxury_studio']);
     expect(await screen.findByText('2 of 2 requested outputs are ready for review. Your selected visual is unchanged.')).toBeTruthy();
+    expect(screen.getAllByText('Exact source · unchanged')).toHaveLength(1);
+    expect(screen.getAllByText('Candidate · review before saving')).toHaveLength(2);
+    expect(screen.getAllByLabelText(/Exact source revision/)).toHaveLength(1);
     const discardButtons = screen.getAllByText('Discard');
     await act(async () => { fireEvent.press(discardButtons[0]); });
     expect(discardPreSpecPresentation).toHaveBeenCalledWith({

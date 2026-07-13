@@ -650,10 +650,7 @@ export default function App() {
             setStudioProject(project);
             setSelectedCreativeAssetId(project.active_asset_id);
           }}
-          onVariationCreated={(project) => {
-            setStudioProject(project);
-            setSelectedCreativeAssetId(project.active_asset_id);
-          }}
+          onVaryCurrent={() => openStudioAction('vary')}
         />
       )}
       {tab === 'activity' && (

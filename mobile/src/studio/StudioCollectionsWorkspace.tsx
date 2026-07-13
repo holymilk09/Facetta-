@@ -9,7 +9,7 @@ import {
 } from 'react-native';
 import { AuthenticatedImage as Image } from '../AuthenticatedImage';
 
-import { Button, Field, Notice } from '../components';
+import { Button, Notice } from '../components';
 import { theme } from '../theme';
 import type {
   AssetSummary,
@@ -27,7 +27,6 @@ export type StudioCollectionsApi = Pick<StudioGateway,
   | 'listDesignFamilies'
   | 'getStudioProjectHistory'
   | 'restoreStudioRevision'
-  | 'saveAsVariation'
   | 'assetImageUrl'
 >;
 
@@ -37,7 +36,8 @@ export interface StudioCollectionsWorkspaceProps {
   createdBy: string;
   onOpenProject: (projectId: string) => void;
   onProjectChanged: (project: ProjectDetail) => void;
-  onVariationCreated: (project: ProjectDetail) => void;
+  /** Opens the canonical Vary workspace for the currently active project. */
+  onVaryCurrent: () => void;
   /** Host-owned authenticated delivery. Protected bytes are fetched only after Export. */
   deliverProtectedFile?: (request: {
     url: string;
@@ -165,7 +165,7 @@ export function StudioCollectionsWorkspace({
   createdBy,
   onOpenProject,
   onProjectChanged,
-  onVariationCreated,
+  onVaryCurrent,
   onShowAllFamilies,
   deliverProtectedFile,
 }: StudioCollectionsWorkspaceProps) {
@@ -173,8 +173,6 @@ export function StudioCollectionsWorkspace({
   const [loading, setLoading] = useState(project !== null);
   const [error, setError] = useState<string | null>(null);
   const [compareAssetIds, setCompareAssetIds] = useState<string[]>([]);
-  const [variationLabel, setVariationLabel] = useState('');
-  const [branching, setBranching] = useState(false);
   const [restoringAssetId, setRestoringAssetId] = useState<string | null>(null);
   const [families, setFamilies] = useState<DesignFamilyDetail[] | null>(null);
   const [viewingAllFamilies, setViewingAllFamilies] = useState(false);
@@ -186,7 +184,6 @@ export function StudioCollectionsWorkspace({
     setData(null);
     setError(null);
     setCompareAssetIds([]);
-    setVariationLabel('');
     setExportingAssetId(null);
     setExportError(null);
     if (project === null || viewingAllFamilies) {
@@ -287,31 +284,6 @@ export function StudioCollectionsWorkspace({
       }
       return [...selected.slice(-1), assetId];
     });
-  };
-
-  const createVariation = async (): Promise<void> => {
-    const label = variationLabel.trim();
-    if (project === null || project.active_asset_id === null || !label || branching) return;
-    setBranching(true);
-    setError(null);
-    const result = await api.saveAsVariation(project.root_id, {
-      created_by: createdBy,
-      expected_active_asset_id: project.active_asset_id,
-      expected_design_version: project.active_design_version,
-      label,
-    });
-    setBranching(false);
-    if (result.error !== null) {
-      setError(designerErrorMessage(result.error, 'collections'));
-      return;
-    }
-    if (result.data.source_project_id !== project.root_id
-      || result.data.source_asset_id !== project.active_asset_id) {
-      setError('Facetta could not verify the source revision. No variation was created.');
-      return;
-    }
-    setVariationLabel('');
-    onVariationCreated(result.data.project);
   };
 
   const restoreRevision = async (revision: StudioHistoryRevision): Promise<void> => {
@@ -425,19 +397,13 @@ export function StudioCollectionsWorkspace({
         <View style={styles.section}>
           <Text style={styles.branchTitle}>Explore from the selected active revision</Text>
           <Text style={styles.meta}>
-            A new variation can still begin from the current saved revision. Its starting point
-            remains attached behind the scenes.
+            Open Vary to name a sibling from this exact saved revision. Collections stays focused
+            on browsing, comparing, and restoring history.
           </Text>
-          <Field
-            label="Variation name"
-            value={variationLabel}
-            onChange={setVariationLabel}
-            placeholder="Rose gold study"
-          />
           <Button
-            title={branching ? 'Creating variation…' : 'Create variation'}
-            disabled={branching || project.active_asset_id === null || !variationLabel.trim()}
-            onPress={() => { void createVariation(); }}
+            title="Vary this revision"
+            disabled={project.active_asset_id === null}
+            onPress={onVaryCurrent}
           />
         </View>
       </ScrollView>
@@ -536,21 +502,15 @@ export function StudioCollectionsWorkspace({
         <View style={styles.branchCard}>
           <Text style={styles.branchTitle}>Explore without changing this direction</Text>
           <Text style={styles.meta}>
-            The new variation begins from the current Revision {data.history.revisions.find((revision) => (
+            Vary starts from the current Revision {data.history.revisions.find((revision) => (
               revision.asset_id === activeAssetId
-            ))?.revision ?? data.history.revisions.length}. The starting point remains attached
-            behind the scenes.
+            ))?.revision ?? data.history.revisions.length} in Studio, where you can name the new
+            sibling before creating it.
           </Text>
-          <Field
-            label="Variation name"
-            value={variationLabel}
-            onChange={setVariationLabel}
-            placeholder="Rose gold study"
-          />
           <Button
-            title={branching ? 'Creating variation…' : 'Create variation'}
-            disabled={branching || project.active_asset_id === null || !variationLabel.trim()}
-            onPress={() => { void createVariation(); }}
+            title="Vary this revision"
+            disabled={project.active_asset_id === null}
+            onPress={onVaryCurrent}
           />
         </View>
       </View>

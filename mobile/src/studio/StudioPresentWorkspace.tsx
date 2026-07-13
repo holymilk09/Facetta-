@@ -286,7 +286,8 @@ export function StudioPresentWorkspace({
   };
 
   const savePresentation = async (card: PresentationCard): Promise<void> => {
-    if (card.candidateId === null || decidingId !== null || !reviewSourceIsActive) return;
+    if (card.candidateId === null || decidingId !== null || !reviewSourceIsActive
+      || sourceImageUrl === null) return;
     const requestedLineageKey = lineageKey;
     setDecidingId(card.id);
     setError(null);
@@ -516,38 +517,48 @@ export function StudioPresentWorkspace({
       {visibleFailures.map((failure) => <Notice key={failure} kind="error" text={failure} />)}
       {visibleCards.length > 0 && <View style={styles.results}>
         <Text style={styles.sectionTitle}>Results</Text>
-        {visibleCards.map((card) => <View key={card.id} style={styles.resultCard}>
-          <View style={styles.comparisonRow}>
-            {sourceImageUrl !== null && <View style={styles.comparisonPanel}>
-              <Text style={styles.comparisonLabel}>Exact source · unchanged</Text>
-              <Image accessibilityLabel="Exact source revision" source={{ uri: sourceImageUrl }} imageRequestHeaders={imageRequestHeaders} style={styles.preview} />
-            </View>}
-            {card.imageUrl !== null && <View style={styles.comparisonPanel}>
-              <Text style={styles.comparisonLabel}>Candidate · review before saving</Text>
-              <Image accessibilityLabel={card.title} source={{ uri: card.imageUrl }} imageRequestHeaders={imageRequestHeaders} style={styles.preview} />
-            </View>}
-          </View>
-          <View style={styles.resultCopy}>
-            <Text style={styles.resultTitle}>{card.title}</Text>
-            <Text style={styles.cardCopy}>{card.detail}</Text>
-            {card.status === 'review' && <>
-              <Text style={styles.reviewLabel}>Not saved · choose what to keep</Text>
-              <View style={styles.decisionRow}>
-                <Button
-                  title={decidingId === card.id ? 'Saving…' : 'Save presentation'}
-                  disabled={decidingId !== null || !reviewSourceIsActive}
-                  onPress={() => { void savePresentation(card); }}
-                />
-                <Button
-                  title={decidingId === card.id ? 'Working…' : 'Discard'}
-                  kind="ghost"
-                  disabled={decidingId !== null}
-                  onPress={() => { void discardPresentation(card); }}
-                />
+        <View style={styles.reviewWorkspace}>
+          {sourceImageUrl !== null && <View style={styles.sourcePanel}>
+            <Text style={styles.comparisonLabel}>Exact source · unchanged</Text>
+            <Image accessibilityLabel="Exact source revision" source={{ uri: sourceImageUrl }} imageRequestHeaders={imageRequestHeaders} style={styles.sourcePreview} />
+            <Text style={styles.sourceGuidance}>Use this one fixed reference to check the form, setting, and proportions of every output.</Text>
+          </View>}
+          {sourceImageUrl === null && (
+            <Notice
+              kind="error"
+              text="The exact source cannot be displayed, so these presentations cannot be saved. Reopen the design and compare again."
+            />
+          )}
+          <View style={styles.candidateGrid}>
+            {visibleCards.map((card) => <View key={card.id} style={styles.resultCard}>
+              {card.imageUrl !== null && <View style={styles.candidateImage}>
+                <Text style={styles.comparisonLabel}>{card.status === 'review'
+                  ? 'Candidate · review before saving' : 'Saved presentation'}</Text>
+                <Image accessibilityLabel={card.title} source={{ uri: card.imageUrl }} imageRequestHeaders={imageRequestHeaders} style={styles.preview} />
+              </View>}
+              <View style={styles.resultCopy}>
+                <Text style={styles.resultTitle}>{card.title}</Text>
+                <Text style={styles.cardCopy}>{card.detail}</Text>
+                {card.status === 'review' && <>
+                  <Text style={styles.reviewLabel}>Not saved · choose what to keep</Text>
+                  <View style={styles.decisionRow}>
+                    <Button
+                      title={decidingId === card.id ? 'Saving…' : 'Save presentation'}
+                      disabled={decidingId !== null || !reviewSourceIsActive || sourceImageUrl === null}
+                      onPress={() => { void savePresentation(card); }}
+                    />
+                    <Button
+                      title={decidingId === card.id ? 'Working…' : 'Discard'}
+                      kind="ghost"
+                      disabled={decidingId !== null}
+                      onPress={() => { void discardPresentation(card); }}
+                    />
+                  </View>
+                </>}
               </View>
-            </>}
+            </View>)}
           </View>
-        </View>)}
+        </View>
       </View>}
     </ScrollView>
   );
@@ -575,12 +586,16 @@ const styles = StyleSheet.create({
   costTitle: { color: theme.ink, fontSize: 14, fontWeight: '800' },
   costCopy: { color: theme.faint, fontSize: 12, lineHeight: 18, marginTop: 4 },
   results: { gap: 10 },
-  resultCard: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, borderWidth: 1, borderColor: theme.line, borderRadius: radius.md, padding: 10, backgroundColor: theme.card },
-  comparisonRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  comparisonPanel: { gap: 5 },
+  reviewWorkspace: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'flex-start', gap: 12 },
+  sourcePanel: { width: 230, gap: 6, padding: 10, borderWidth: 1, borderColor: theme.gold, borderRadius: radius.md, backgroundColor: theme.goldSoft },
+  sourceGuidance: { color: theme.faint, fontSize: 11, lineHeight: 16 },
+  sourcePreview: { width: '100%', aspectRatio: 1, borderRadius: radius.sm, backgroundColor: theme.line },
+  candidateGrid: { flex: 1, minWidth: 240, flexDirection: 'row', flexWrap: 'wrap', alignItems: 'flex-start', gap: 10 },
+  resultCard: { flexGrow: 1, flexBasis: 240, maxWidth: 340, gap: 10, borderWidth: 1, borderColor: theme.line, borderRadius: radius.md, padding: 10, backgroundColor: theme.card },
+  candidateImage: { gap: 5 },
   comparisonLabel: { color: theme.faint, fontSize: 10, fontWeight: '800', textTransform: 'uppercase' },
-  preview: { width: 190, aspectRatio: 1, borderRadius: radius.sm, backgroundColor: theme.line },
-  resultCopy: { flex: 1, minWidth: 180, justifyContent: 'center' },
+  preview: { width: '100%', aspectRatio: 1, borderRadius: radius.sm, backgroundColor: theme.line },
+  resultCopy: { minWidth: 180 },
   resultTitle: { color: theme.ink, fontSize: 15, fontWeight: '800', marginBottom: 4 },
   reviewLabel: { color: theme.accent, fontSize: 11, fontWeight: '700', marginTop: 8 },
   decisionRow: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 10 },

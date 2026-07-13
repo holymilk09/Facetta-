@@ -504,7 +504,12 @@ dirty and uncommitted.
   with carat re-estimate, collections + search + category filters, mockup
   scene compiler UI, tablet two-pane layout.
 
-## Next (in priority order, agreed with founder)
+## Historical priorities (superseded by the 2026-07-12 Studio direction above)
+
+The numbered list below is retained as a chronology of the trusted-workflow build. It is
+not the current execution queue; references to pending redesign wiring, authentication,
+or Supabase setup have since been superseded. Current remaining gates are summarized at
+the top of this file and in `STUDIO_EXTERNAL_BETA_GATES.md`.
 
 1. **Finish and live-test the input-agnostic creative loop** — the backend now
    exposes neutral `POST /projects/from-drawing`, runs one to four explicit
