@@ -65,6 +65,7 @@ def test_chain_component_catalog_exposes_typed_agent_control_metadata():
     assert body["component_path"] == "chain.style"
     assert body["applicable_jewelry_types"] == ["necklace"]
     assert body["image_agent_status"] == "catalog_ready"
+    assert body["preview_execution_modes"] == ["provider"]
     options = {option["id"]: option for option in body["options"]}
     assert {"cable", "curb", "figaro", "rope", "box", "snake"} <= options.keys()
     assert options["curb"]["factory_fields"] == {"chain.style": "curb"}
@@ -109,12 +110,14 @@ def test_ring_component_catalogs_expose_exact_coupled_controls():
 
     colors = client.get("/vocabulary/components/metal.color")
     assert colors.status_code == 200
+    assert colors.json()["preview_execution_modes"] == ["instant", "provider"]
     assert {option["id"] for option in colors.json()["options"]} == {
         "yellow", "white", "rose",
     }
 
     settings = client.get("/vocabulary/components/setting.style")
     assert settings.status_code == 200
+    assert settings.json()["preview_execution_modes"] == ["provider"]
     setting_options = {
         option["id"]: option for option in settings.json()["options"]
     }

@@ -28,6 +28,7 @@ const catalogPayload = {
   display: 'Gold color',
   applicable_jewelry_types: ['ring'],
   image_agent_status: 'catalog_ready',
+  preview_execution_modes: ['instant', 'provider'],
   options: [option],
 };
 
@@ -161,6 +162,20 @@ const previewPayload = {
   },
 };
 
+const instantPreviewPayload = {
+  ...previewPayload,
+  routing: {
+    ...previewPayload.routing,
+    execution_mode: 'instant_masked_transform',
+    provider_calls: 0,
+    attempt_count: 0,
+  },
+  candidate: {
+    ...previewPayload.candidate,
+    studio_job_id: null,
+  },
+};
+
 const acceptedPreviewPayload = {
   status: 'accepted',
   asset_id: 'ast_2',
@@ -186,6 +201,9 @@ describe('component catalog client contracts', () => {
 
   test.each([
     [{ ...catalogPayload, image_agent_status: 'experimental' }],
+    [{ ...catalogPayload, preview_execution_modes: [] }],
+    [{ ...catalogPayload, preview_execution_modes: ['instant', 'instant'] }],
+    [{ ...catalogPayload, preview_execution_modes: ['instant', 'local'] }],
     [{ ...catalogPayload, component_path: 'band.secret_profile' }],
     [{ ...catalogPayload, options: [{ ...option, frozen_facts: [] }] }],
     [{ ...catalogPayload, options: [{ ...option, selection_requirements: [7] }] }],
@@ -246,6 +264,24 @@ describe('component catalog client contracts', () => {
       asset_id: 'ast_2',
       design_version: 2,
     });
+    expect(decodeCatalogPreviewResult(instantPreviewPayload)).toMatchObject({
+      status: 'preview_ready',
+      candidate: { studio_job_id: null },
+      routing: { attempt_count: 0 },
+    });
+  });
+
+  test.each([
+    [{ ...instantPreviewPayload, component_path: 'stone.cut' }],
+    [{ ...instantPreviewPayload, routing: { ...instantPreviewPayload.routing, provider_calls: 1 } }],
+    [{ ...instantPreviewPayload, routing: { ...instantPreviewPayload.routing, attempt_count: 1 } }],
+    [{ ...instantPreviewPayload, routing: { ...instantPreviewPayload.routing, used_retry: true } }],
+    [{ ...instantPreviewPayload, routing: { ...instantPreviewPayload.routing, used_fallback: true } }],
+    [{ ...instantPreviewPayload, routing: { ...instantPreviewPayload.routing, cache_hit: true } }],
+    [{ ...instantPreviewPayload, candidate: { ...instantPreviewPayload.candidate, studio_job_id: 'job_1' } }],
+    [{ ...previewPayload, routing: { ...previewPayload.routing, execution_mode: 'instant_unknown' } }],
+  ])('rejects malformed or job-bound instant preview routing', (payload) => {
+    expect(decodeCatalogPreviewResult(payload)).toBeNull();
   });
 
   test.each([
@@ -328,10 +364,60 @@ describe('component catalog client contracts', () => {
     expect(JSON.parse(String(fetcher.mock.calls[0]?.[1]?.body))).toEqual({
       ...request,
       variant: 0,
+      execution_mode: 'provider',
     });
     expect(JSON.parse(String(fetcher.mock.calls[1]?.[1]?.body))).toEqual({
       expected_design_version: 1,
       created_by: 'usr_designer',
+    });
+  });
+
+  test('serializes an opt-in instant preview without a Studio job', async () => {
+    const fetcher = jest.fn(async (_url: RequestInfo | URL, _init?: RequestInit) => ({
+      ok: true,
+      status: 201,
+      text: async () => JSON.stringify(instantPreviewPayload),
+    } as unknown as Response));
+    const client = createTrustedApiClient({ baseUrl: 'https://facetta.test', fetcher });
+
+    const preview = await client.previewCatalogSelection('ast_root', {
+      component_path: 'metal.color',
+      option_id: 'rose',
+      expected_design_version: 1,
+      created_by: 'usr_designer',
+      execution_mode: 'instant',
+    });
+
+    expect(preview.error).toBeNull();
+    expect(JSON.parse(String(fetcher.mock.calls[0]?.[1]?.body))).toEqual({
+      component_path: 'metal.color',
+      option_id: 'rose',
+      expected_design_version: 1,
+      created_by: 'usr_designer',
+      variant: 0,
+      execution_mode: 'instant',
+    });
+  });
+
+  test('preserves explicit instant capability errors for guarded fallback', async () => {
+    const fetcher = jest.fn(async () => ({
+      ok: false,
+      status: 422,
+      text: async () => JSON.stringify({
+        code: 'instant_gold_color_unsupported',
+        category: 'capability',
+        detail: 'This quick-preview transform is not deployed yet.',
+      }),
+    } as unknown as Response));
+    const client = createTrustedApiClient({ baseUrl: 'https://facetta.test', fetcher });
+
+    const preview = await client.previewCatalogSelection('ast_root', {
+      component_path: 'metal.color', option_id: 'future_gold',
+      expected_design_version: 1, created_by: 'usr_designer', execution_mode: 'instant',
+    });
+
+    expect(preview.error).toMatchObject({
+      code: 'instant_gold_color_unsupported', category: 'capability',
     });
   });
 

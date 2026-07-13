@@ -3,6 +3,7 @@ grading vocabularies. Everything served here comes straight from
 data/gemology_vocabulary.json — no trade terms are invented in code."""
 
 from dataclasses import asdict
+from typing import Literal
 
 from fastapi import APIRouter, Query
 from fastapi.responses import JSONResponse
@@ -27,6 +28,7 @@ class ComponentCatalogResponse(BaseModel):
     display: str
     applicable_jewelry_types: tuple[str, ...]
     image_agent_status: ImageAgentCatalogStatus
+    preview_execution_modes: tuple[Literal["instant", "provider"], ...]
     options: tuple[ComponentCatalogOption, ...]
 
 
@@ -99,6 +101,11 @@ def component_options(
         display=descriptor.display,
         applicable_jewelry_types=descriptor.applicable_jewelry_types,
         image_agent_status=descriptor.image_agent_status,
+        preview_execution_modes=(
+            ("instant", "provider")
+            if component_path == "metal.color"
+            else ("provider",)
+        ),
         options=options,
     )
 

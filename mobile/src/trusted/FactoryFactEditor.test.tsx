@@ -138,6 +138,8 @@ test('editor uses backend catalogs for coupled choices instead of free text', as
     display,
     applicable_jewelry_types: ['ring'],
     image_agent_status: 'catalog_ready',
+    preview_execution_modes: component_path === 'metal.color'
+      ? ['instant', 'provider'] : ['provider'],
     options,
   });
   const option = (

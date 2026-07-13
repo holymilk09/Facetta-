@@ -2,7 +2,9 @@
 
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import type { ApiResult, CatalogPreviewResult, ProjectDetail } from '../trusted/types';
+import type {
+  ApiErrorCategory, ApiResult, CatalogPreviewResult, ProjectDetail, StudioJobRecord,
+} from '../trusted/types';
 import { createStudioGateway } from './gateway';
 
 const ok = <T>(data: T, status = 200): ApiResult<T> => ({ data, error: null, status });
@@ -156,6 +158,18 @@ const catalogPreview = (): CatalogPreviewResult => ({
     save_as_variation_url: 'https://example.test/save-as-variation',
     verdict: 'pass',
     expires_in_seconds: 600,
+  },
+});
+
+const catalogStudioJob = (status: StudioJobRecord['status']): StudioJobRecord => ({
+  job_id: 'studio_job_catalog', owner: 'designer_1', action_id: 'refine',
+  lane: 'trusted_structural', status, progress: status === 'queued' ? 0 : 0.05,
+  active_design_id: 'project_1', source_revision_id: 'asset_1', error_code: null,
+  created_at: '2026-07-13T00:00:00Z', updated_at: '2026-07-13T00:00:01Z',
+  billing: {
+    requested_outputs: 1, credits_per_output: 20, estimated_credits: 20,
+    completed_outputs: 0, charged_outputs: 0, charged_credits: 0,
+    policy: 'Only accepted requested outputs are charged.',
   },
 });
 
@@ -320,6 +334,142 @@ test('catalog refine preserves lineage and applies only through an explicit deci
     candidateId: preview.data.candidate.id, createdBy: 'designer_1',
   });
   assert.equal(repeated.error?.code, 'CANDIDATE_NOT_REVIEWABLE');
+});
+
+test('instant catalog refine creates a temporary candidate without a Studio job', async () => {
+  let jobCreates = 0;
+  const requests: any[] = [];
+  const gateway = createStudioGateway(fakeClient({
+    createStudioJob: async () => {
+      jobCreates += 1;
+      return ok(catalogStudioJob('queued'), 201);
+    },
+    transitionStudioJob: async () => ok(catalogStudioJob('running')),
+    previewCatalogSelection: async (_assetId, request) => {
+      requests.push(request);
+      return ok({
+        ...catalogPreview(),
+        routing: {
+          attempt_count: 0, used_retry: false, used_fallback: false,
+          cache_hit: false, run_id: 'run_1',
+        },
+        candidate: { ...catalogPreview().candidate, studio_job_id: null },
+      }, 201);
+    },
+  }), { trackJobs: true });
+
+  const preview = await gateway.previewCatalogRefine({
+    projectId: 'project_1', sourceAssetId: 'asset_1', sourceDesignVersion: 1,
+    createdBy: 'designer_1', componentPath: 'metal.color', optionId: 'rose',
+    executionMode: 'instant',
+  });
+
+  assert.equal(preview.error, null);
+  assert.equal(preview.data?.executionMode, 'instant');
+  assert.equal(preview.data?.estimatedCredits, 0);
+  assert.equal(jobCreates, 0);
+  assert.deepEqual(requests, [{
+    component_path: 'metal.color', option_id: 'rose', expected_design_version: 1,
+    created_by: 'designer_1', execution_mode: 'instant',
+  }]);
+});
+
+test('only deployment skew may fall back from instant to a tracked provider preview', async () => {
+  const requests: any[] = [];
+  let jobCreates = 0;
+  const gateway = createStudioGateway(fakeClient({
+    createStudioJob: async () => {
+      jobCreates += 1;
+      return ok(catalogStudioJob('queued'), 201);
+    },
+    transitionStudioJob: async (_jobId, request) => ok(catalogStudioJob(request.status)),
+    previewCatalogSelection: async (_assetId, request) => {
+      requests.push(request);
+      if (request.execution_mode === 'instant') return {
+        data: null,
+        error: {
+          code: 'instant_gold_color_unsupported',
+          message: 'Quick preview support is not deployed for this option.',
+          category: 'capability' as const,
+          status: 422,
+          retryable: false,
+        },
+        status: 422,
+      };
+      return ok({
+        ...catalogPreview(),
+        candidate: {
+          ...catalogPreview().candidate,
+          studio_job_id: 'studio_job_catalog',
+        },
+      }, 201);
+    },
+  }), { trackJobs: true });
+
+  const preview = await gateway.previewCatalogRefine({
+    projectId: 'project_1', sourceAssetId: 'asset_1', sourceDesignVersion: 1,
+    createdBy: 'designer_1', componentPath: 'metal.color', optionId: 'future_gold',
+    executionMode: 'instant',
+  });
+
+  assert.equal(preview.error, null);
+  assert.equal(preview.data?.executionMode, 'provider');
+  assert.equal(preview.data?.estimatedCredits, 20);
+  assert.equal(jobCreates, 1);
+  assert.equal(requests.length, 2);
+  assert.equal(requests[0].execution_mode, 'instant');
+  assert.equal(requests[0].studio_job_id, undefined);
+  assert.equal(requests[1].execution_mode, 'provider');
+  assert.equal(requests[1].studio_job_id, 'studio_job_catalog');
+});
+
+test('instant safety, lineage, authorization, and integrity errors never start provider work', async () => {
+  const cases: { code: string; category: ApiErrorCategory; status: number }[] = [
+    { code: 'instant_preview_path_unsupported', category: 'capability', status: 422 },
+    { code: 'instant_preview_target_unavailable', category: 'capability', status: 422 },
+    { code: 'instant_gold_color_raster_too_large', category: 'capability', status: 422 },
+    { code: 'instant_gold_color_orientation_unsupported', category: 'capability', status: 422 },
+    { code: 'instant_gold_color_mask_mismatch', category: 'capability', status: 422 },
+    { code: 'instant_gold_color_verification_failed', category: 'capability', status: 422 },
+    { code: 'instant_gold_color_qa_failed', category: 'quality', status: 422 },
+    { code: 'stale_design_version', category: 'stale_version', status: 409 },
+    { code: 'candidate_payload_tampered', category: 'conflict', status: 409 },
+    { code: 'AUTHENTICATION_REQUIRED', category: 'authentication', status: 401 },
+    { code: 'FORBIDDEN', category: 'authorization', status: 403 },
+    { code: 'INVALID_RESPONSE', category: 'decode', status: 200 },
+    { code: 'NETWORK_ERROR', category: 'network', status: 0 },
+  ];
+
+  for (const item of cases) {
+    let previewCalls = 0;
+    let jobCreates = 0;
+    const gateway = createStudioGateway(fakeClient({
+      createStudioJob: async () => {
+        jobCreates += 1;
+        return ok(catalogStudioJob('queued'), 201);
+      },
+      previewCatalogSelection: async () => {
+        previewCalls += 1;
+        return {
+          data: null,
+          error: {
+            code: item.code, message: item.code, category: item.category,
+            status: item.status, retryable: false,
+          },
+          status: item.status,
+        };
+      },
+    }), { trackJobs: true });
+
+    const result = await gateway.previewCatalogRefine({
+      projectId: 'project_1', sourceAssetId: 'asset_1', sourceDesignVersion: 1,
+      createdBy: 'designer_1', componentPath: 'metal.color', optionId: 'rose',
+      executionMode: 'instant',
+    });
+    assert.equal(result.error?.code, item.code);
+    assert.equal(previewCalls, 1, item.code);
+    assert.equal(jobCreates, 0, item.code);
+  }
 });
 
 test('resumes the latest exact-lineage catalog preview and hydrates Apply', async () => {

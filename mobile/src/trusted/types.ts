@@ -1143,6 +1143,8 @@ export type CatalogImageAgentStatus =
   | 'catalog_ready'
   | 'catalog_ready_category_pending';
 
+export type CatalogPreviewExecutionMode = 'instant' | 'provider';
+
 export interface ComponentCatalogOption {
   id: string;
   display: string;
@@ -1159,6 +1161,8 @@ export interface ComponentCatalog {
   display: string;
   applicable_jewelry_types: string[];
   image_agent_status: CatalogImageAgentStatus;
+  /** Ordered backend-authorized preview routes for this exact catalog path. */
+  preview_execution_modes: CatalogPreviewExecutionMode[];
   options: ComponentCatalogOption[];
 }
 
@@ -1299,6 +1303,8 @@ export interface CatalogApplyRequest {
 export interface CatalogPreviewRequest extends CatalogApplyRequest {
   /** Durable one-output Refine job settled atomically with the preview decision. */
   studio_job_id?: string;
+  /** Instant is valid only when the fetched component catalog declares it. */
+  execution_mode?: CatalogPreviewExecutionMode;
 }
 
 /**
@@ -1805,6 +1811,7 @@ export interface FactoryPackManifest {
 export type ApiErrorCategory =
   | 'network'
   | 'validation'
+  | 'capability'
   | 'stale_version'
   | 'quality'
   | 'provider'

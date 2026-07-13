@@ -1686,11 +1686,18 @@ export const decodeComponentCatalog: Decoder<ComponentCatalog> = (value) => {
     || value.image_agent_status === 'catalog_ready_category_pending'
     ? value.image_agent_status
     : null;
+  const previewExecutionModes = Array.isArray(value.preview_execution_modes)
+    && value.preview_execution_modes.length > 0
+    && value.preview_execution_modes.every((mode) => mode === 'instant' || mode === 'provider')
+    ? value.preview_execution_modes as ComponentCatalog['preview_execution_modes']
+    : null;
   const rawOptions = Array.isArray(value.options) ? value.options : null;
   const options = rawOptions?.map(decodeComponentCatalogOption) ?? [];
   if (
     componentPath === null || display === null || jewelryTypes === null
-    || imageAgentStatus === null || rawOptions === null || rawOptions.length === 0
+    || imageAgentStatus === null || previewExecutionModes === null
+    || new Set(previewExecutionModes).size !== previewExecutionModes.length
+    || rawOptions === null || rawOptions.length === 0
     || options.some((option) => option === null)
     || jewelryTypes.some((kind) => kind !== 'ring' && kind !== 'necklace')
   ) return null;
@@ -1703,6 +1710,7 @@ export const decodeComponentCatalog: Decoder<ComponentCatalog> = (value) => {
     display,
     applicable_jewelry_types: jewelryTypes,
     image_agent_status: imageAgentStatus,
+    preview_execution_modes: previewExecutionModes,
     options: decodedOptions,
   };
 };
@@ -2001,6 +2009,9 @@ export const decodeCatalogPreviewResult: Decoder<CatalogPreviewResult> = (value)
   const nextSpec = decodeJsonObject(value.next_spec);
   const qa = decodeImageQualityReport(value.qa);
   const routing = decodeRouting(value.routing);
+  const routingRecord = isRecord(value.routing) ? value.routing : null;
+  const rawExecutionMode = routingRecord?.execution_mode;
+  const instantRouting = rawExecutionMode === 'instant_masked_transform';
   const project = decodeProjectDetail(value.project);
   const candidate = decodeCatalogPreviewCandidate(value.candidate);
   if (
@@ -2008,9 +2019,18 @@ export const decodeCatalogPreviewResult: Decoder<CatalogPreviewResult> = (value)
     || sourceAssetId === null || designVersion === null
     || !Number.isInteger(designVersion) || designVersion < 1
     || imageRunId === null || specChange === null || nextSpec === null
-    || qa === null || routing === null || routing.attempt_count < 1
+    || qa === null || routing === null
+    || (rawExecutionMode !== undefined && !instantRouting)
+    || (instantRouting && (
+      componentPath !== 'metal.color'
+      || number(routingRecord?.provider_calls) !== 0
+      || routing.attempt_count !== 0
+      || routing.used_retry || routing.used_fallback || routing.cache_hit
+    ))
+    || (!instantRouting && routing.attempt_count < 1)
     || routing.run_id !== imageRunId || project === null || project.spec === null
     || candidate === null || candidate.run_id !== imageRunId
+    || (instantRouting && candidate.studio_job_id !== null)
     || project.active_asset_id !== sourceAssetId
     || project.active_design_version !== designVersion
     || !specChange.every((change) => sameCatalogValue(
@@ -3157,10 +3177,13 @@ function apiError(status: number, value: unknown, fallback: string): ApiError {
       ? 'quality'
       : rawCategory.includes('provider')
         ? 'provider'
+        : rawCategory.includes('capability')
+          ? 'capability'
         : rawCategory.includes('validation')
           ? 'validation'
           : rawCategory || null;
   const category = categoryValue === 'network' || categoryValue === 'validation'
+    || categoryValue === 'capability'
     || categoryValue === 'stale_version' || categoryValue === 'quality'
     || categoryValue === 'provider' || categoryValue === 'conflict'
     || categoryValue === 'not_found' || categoryValue === 'decode'
@@ -4391,6 +4414,7 @@ export function createTrustedApiClient(options: TrustedApiClientOptions) {
         'POST',
         {
           ...catalogApplyBody(request),
+          execution_mode: request.execution_mode ?? 'provider',
           ...(request.studio_job_id === undefined
             ? {} : { studio_job_id: request.studio_job_id }),
         },

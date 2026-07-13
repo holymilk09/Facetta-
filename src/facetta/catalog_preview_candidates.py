@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 from facetta.db import (
     DesignVersion,
     ImageAsset,
+    ImageAttempt,
     ImageRun,
     PreviewCandidateRecord,
     Project,
@@ -22,6 +23,11 @@ from facetta.db import (
     utcnow,
 )
 from facetta.image_identity import spec_visual_hash
+from facetta.instant_metal_color import (
+    TRANSFORM_VERSION as INSTANT_METAL_COLOR_VERSION,
+    instant_input_sha256,
+    transform_contract_sha256,
+)
 from facetta.json_types import JsonObject
 from facetta.project_backbone import is_primary_revision
 from facetta.revision_component_map import (
@@ -91,6 +97,7 @@ class CatalogPreviewCandidate:
     target_mask_sha256: str | None
     proposed_child_component_map: RevisionComponentMap | None
     studio_job_id: str | None
+    transform_contract_sha256: str | None
 
 
 def _utc(value: datetime) -> datetime:
@@ -169,6 +176,11 @@ def _validated_candidate_payload(
             if raw_child_map is not None
             else None
         )
+        transform_hash = payload.get("transform_contract_sha256")
+        if transform_hash is not None and (
+            not isinstance(transform_hash, str) or len(transform_hash) != 64
+        ):
+            raise ValueError("candidate transform lineage is invalid")
     except (KeyError, TypeError, ValueError) as exc:
         raise CatalogPreviewUnavailable(
             "the catalog preview payload is incomplete or invalid"
@@ -222,6 +234,7 @@ def _candidate(record: PreviewCandidateRecord) -> CatalogPreviewCandidate:
         target_mask_sha256=payload.get("target_mask_sha256"),
         proposed_child_component_map=proposed_child_map,
         studio_job_id=record.studio_job_id,
+        transform_contract_sha256=payload.get("transform_contract_sha256"),
     )
 
 
@@ -575,6 +588,69 @@ def _owned_reviewing_record(
             )
         except (ComponentMapError, TypeError, ValueError):
             proposed_child_map_valid = False
+    routing = payload.get("routing")
+    intent = run.normalized_intent if run is not None else None
+    transform_hash = payload.get("transform_contract_sha256")
+    instant_markers = (
+        transform_hash is not None,
+        isinstance(routing, dict)
+        and routing.get("execution_mode") == "instant_masked_transform",
+        isinstance(intent, dict)
+        and intent.get("execution_mode") == "instant_masked_transform",
+        run is not None and run.prompt_version == INSTANT_METAL_COLOR_VERSION,
+    )
+    instant_lineage_valid = True
+    if any(instant_markers):
+        provider_attempt = db.scalar(
+            select(ImageAttempt.id).where(ImageAttempt.run_id == record.image_run_id)
+        )
+        recomputed_input_hash = (
+            instant_input_sha256(
+                record.source_sha256,
+                expected_mask_hash,
+                transform_hash,
+            )
+            if isinstance(expected_mask_hash, str)
+            and isinstance(transform_hash, str)
+            else None
+        )
+        instant_lineage_valid = (
+            payload.get("component_path") == "metal.color"
+            and record.studio_job_id is None
+            and isinstance(transform_hash, str)
+            and len(transform_hash) == 64
+            and isinstance(intent, dict)
+            and isinstance(intent.get("transform_contract"), dict)
+            and transform_contract_sha256(intent["transform_contract"])
+            == transform_hash
+            and intent["transform_contract"].get("controlled_color")
+            == payload.get("option_id")
+            and intent.get("execution_mode") == "instant_masked_transform"
+            and intent.get("component_path") == "metal.color"
+            and intent.get("option_id") == payload.get("option_id")
+            and intent.get("source_sha256") == record.source_sha256
+            and intent.get("mask_sha256") == expected_mask_hash
+            and intent.get("output_sha256") == record.output_sha256
+            and intent.get("transform_contract_sha256") == transform_hash
+            and intent.get("authority") == "temporary_preview_only"
+            and routing.get("transform_contract_sha256") == transform_hash
+            and routing.get("execution_mode") == "instant_masked_transform"
+            and routing.get("provider_calls") == 0
+            and routing.get("attempt_count") == 0
+            and routing.get("source_sha256") == record.source_sha256
+            and routing.get("mask_sha256") == expected_mask_hash
+            and routing.get("output_sha256") == record.output_sha256
+            and routing.get("input_sha256") == recomputed_input_hash
+            and run is not None
+            and run.operation == "LOCAL_EDIT"
+            and run.prompt_version == INSTANT_METAL_COLOR_VERSION
+            and run.status == "preview_ready"
+            and run.accepted_asset_id is None
+            and run.input_hash == recomputed_input_hash
+            and next_spec.metal is not None
+            and next_spec.metal.color == payload.get("option_id")
+            and provider_attempt is None
+        )
     if (
         project is None
         or project.owner != owner
@@ -597,6 +673,7 @@ def _owned_reviewing_record(
         or run.spec_visual_hash != expected_target_spec_hash
         or not component_lineage_valid
         or not proposed_child_map_valid
+        or not instant_lineage_valid
     ):
         raise CatalogPreviewUnavailable(
             "the catalog preview no longer matches the exact image/spec source"
@@ -633,6 +710,7 @@ def store_catalog_preview_candidate(
     target_mask_sha256: str | None = None,
     proposed_child_component_map: RevisionComponentMap | None = None,
     studio_job_id: str | None = None,
+    transform_contract_sha256: str | None = None,
 ) -> CatalogPreviewCandidate:
     if not reviewable_candidate_qa(verdict, qa):
         raise CatalogPreviewQaInvalid(
@@ -685,6 +763,7 @@ def store_catalog_preview_candidate(
             "component_map_sha256": component_map_sha256,
             "target_component_ids": list(target_component_ids),
             "target_mask_sha256": target_mask_sha256,
+            "transform_contract_sha256": transform_contract_sha256,
             "proposed_child_component_map": (
                 proposed_child_component_map.model_dump(mode="json")
                 if proposed_child_component_map is not None

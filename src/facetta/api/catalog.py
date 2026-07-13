@@ -71,6 +71,12 @@ from facetta.image_run_store import (
     persist_image_agent_failure,
     persist_image_agent_result,
 )
+from facetta.image_identity import spec_visual_hash
+from facetta.instant_metal_color import (
+    InstantMetalColorError,
+    TRANSFORM_VERSION as INSTANT_METAL_COLOR_VERSION,
+    transform_ring_gold_color,
+)
 from facetta.json_types import JsonObject, JsonValue
 from facetta.media import sniff_media_type
 from facetta.project_backbone import is_primary_revision
@@ -142,6 +148,7 @@ class CatalogPreviewRequest(CatalogApplyRequest):
     """Catalog edit inputs plus the optional durable Studio review ledger."""
 
     studio_job_id: Annotated[str | None, Field(min_length=1, max_length=32)] = None
+    execution_mode: Literal["provider", "instant"] = "provider"
 
 
 class CatalogPreviewAcceptRequest(BaseModel):
@@ -1053,6 +1060,205 @@ def _catalog_selection_error_response(exc: CatalogSelectionError) -> JSONRespons
     )
 
 
+def _instant_gold_color_preview(
+    db: Session,
+    *,
+    prepared: _PreparedCatalogRevision,
+    target: _CatalogComponentTarget,
+    request: CatalogPreviewRequest,
+    actor: str,
+):
+    """Create a zero-provider temporary preview for one exact mapped ring."""
+    context = prepared.context
+    selection = prepared.selection
+    try:
+        transformed = transform_ring_gold_color(
+            bytes(context.asset.image),
+            target.mask_bytes,
+            controlled_color=request.option_id,
+        )
+    except InstantMetalColorError as exc:
+        return _error_response(CatalogApplyError(
+            exc.code,
+            exc.detail,
+            category="capability",
+            context={
+                "component_path": request.component_path,
+                "option_id": request.option_id,
+            },
+        ))
+
+    source_spec_hash = spec_visual_hash(context.spec)
+    target_spec_hash = spec_visual_hash(selection.spec)
+    run_id = new_id("run")
+    routing: JsonObject = {
+        "execution_mode": "instant_masked_transform",
+        "provider_calls": 0,
+        "attempt_count": 0,
+        "used_retry": False,
+        "used_fallback": False,
+        "cache_hit": False,
+        "run_id": run_id,
+        "source_sha256": transformed.source_sha256,
+        "mask_sha256": transformed.mask_sha256,
+        "transform_contract_sha256": transformed.transform_contract_sha256,
+        "input_sha256": transformed.input_sha256,
+        "output_sha256": transformed.output_sha256,
+    }
+    qa: JsonObject = {
+        "verdict": "pass",
+        "accepted": True,
+        "review_required": False,
+        "summary": "Deterministic exact-mask checks passed.",
+        "failed_checks": [],
+        "warnings": [],
+        "checks": [
+            {
+                "code": "exact_raster_dimensions",
+                "severity": "hard",
+                "passed": True,
+                "message": "Raster dimensions are unchanged.",
+                "evidence": {
+                    "width": transformed.width,
+                    "height": transformed.height,
+                },
+            },
+            {
+                "code": "outside_mask_drift",
+                "severity": "hard",
+                "passed": True,
+                "message": (
+                    "Decoded pixels outside the exact mask are byte-identical."
+                ),
+                "evidence": {"drift": 0.0},
+            },
+            {
+                "code": "source_transparency_preserved",
+                "severity": "hard",
+                "passed": True,
+                "message": "Source alpha is unchanged for every pixel.",
+                "evidence": {},
+            },
+            {
+                "code": "masked_luminance_preserved",
+                "severity": "hard",
+                "passed": transformed.max_luminance_delta <= 1.0,
+                "message": (
+                    "Masked luminance, highlights, and texture are preserved."
+                ),
+                "evidence": {
+                    "max_luminance_delta": transformed.max_luminance_delta,
+                    "changed_inside_pixels": transformed.changed_inside_pixels,
+                },
+            },
+        ],
+    }
+    if transformed.max_luminance_delta > 1.0:
+        return _error_response(CatalogApplyError(
+            "instant_gold_color_qa_failed",
+            "the deterministic preview did not preserve masked luminance",
+            status_code=422,
+            category="quality",
+        ))
+    db.add(ImageRun(
+        id=run_id,
+        project_root_id=context.project.root_id,
+        source_asset_id=context.asset.id,
+        operation="LOCAL_EDIT",
+        normalized_intent={
+            "execution_mode": "instant_masked_transform",
+            "component_path": "metal.color",
+            "option_id": request.option_id,
+            "source_sha256": transformed.source_sha256,
+            "mask_sha256": transformed.mask_sha256,
+            "transform_contract": transformed.transform_contract,
+            "transform_contract_sha256": transformed.transform_contract_sha256,
+            "output_sha256": transformed.output_sha256,
+            "authority": "temporary_preview_only",
+        },
+        prompt_version=INSTANT_METAL_COLOR_VERSION,
+        input_hash=transformed.input_sha256,
+        source_hash=transformed.source_sha256,
+        mask_hash=transformed.mask_sha256,
+        spec_visual_hash=target_spec_hash,
+        source_spec_visual_hash=source_spec_hash,
+        variant=request.variant,
+        status="preview_ready",
+        accepted_asset_id=None,
+        created_by=actor,
+    ))
+    raw_changes: tuple[JsonObject, ...] = tuple(
+        dict(change) for change in selection.spec_change
+    )
+    try:
+        candidate = store_catalog_preview_candidate(
+            db,
+            run_id=run_id,
+            verdict="pass",
+            project_root_id=context.project.root_id,
+            source_asset_id=context.asset.id,
+            expected_active_asset_id=context.asset.id,
+            expected_design_version=context.design_version,
+            source_hash=transformed.source_sha256,
+            source_spec_visual_hash=source_spec_hash,
+            target_spec_visual_hash=target_spec_hash,
+            image_bytes=transformed.image_bytes,
+            media_type="image/png",
+            requested_change=prepared.instruction,
+            region_description=selection.isolation_target,
+            drift=0.0,
+            next_spec=selection.spec,
+            component_path=request.component_path,
+            option_id=request.option_id,
+            spec_change=raw_changes,
+            qa=qa,
+            routing=routing,
+            created_by=actor,
+            component_map_sha256=target.map_sha256,
+            target_component_ids=target.component_ids,
+            target_mask_sha256=target.mask_sha256,
+            proposed_child_component_map=None,
+            studio_job_id=None,
+            transform_contract_sha256=transformed.transform_contract_sha256,
+        )
+    except (CatalogPreviewQaInvalid, CatalogPreviewUnavailable) as exc:
+        db.rollback()
+        return _error_response(CatalogApplyError(
+            "instant_gold_color_candidate_invalid",
+            str(exc),
+            status_code=409,
+            category="quality",
+        ))
+    base_url = f"/image-runs/{run_id}/catalog-candidates/{candidate.candidate_id}"
+    return CatalogPreviewResponse(
+        status="preview_ready",
+        component_path=request.component_path,
+        option_id=request.option_id,
+        isolation_target=selection.isolation_target,
+        source_asset_id=context.asset.id,
+        design_version=context.design_version,
+        image_run_id=run_id,
+        spec_change=tuple(
+            CatalogSpecChange.model_validate(change)
+            for change in selection.spec_change
+        ),
+        next_spec=selection.spec,
+        qa=qa,
+        routing=routing,
+        project=ProjectDetail.model_validate(project_detail(db, context.project)),
+        candidate=CatalogPreviewCandidateSummary(
+            run_id=run_id,
+            candidate_id=candidate.candidate_id,
+            preview_url=f"{base_url}/image",
+            accept_url=f"{base_url}/accept",
+            discard_url=base_url,
+            save_as_variation_url=f"{base_url}/save-as-variation",
+            verdict="pass",
+            studio_job_id=None,
+        ),
+    )
+
+
 @router.post(
     "/{active_asset_id}/catalog/preview",
     status_code=201,
@@ -1080,6 +1286,43 @@ def preview_catalog_revision(
 
     context = prepared.context
     selection = prepared.selection
+    if request.execution_mode == "instant":
+        if request.studio_job_id is not None:
+            return _error_response(CatalogApplyError(
+                "instant_preview_job_not_allowed",
+                "instant gold color previews do not create or bind a Studio job",
+                status_code=409,
+                category="conflict",
+            ))
+        if request.component_path != "metal.color":
+            return _error_response(CatalogApplyError(
+                "instant_preview_path_unsupported",
+                "instant preview is released only for exact mapped ring "
+                "metal.color edits",
+                status_code=422,
+                category="capability",
+                context={"component_path": request.component_path},
+            ))
+        try:
+            instant_target = _catalog_component_target(
+                db, prepared, component_path=request.component_path
+            )
+        except CatalogApplyError as exc:
+            return _error_response(exc)
+        if instant_target is None:
+            return _error_response(CatalogApplyError(
+                "instant_preview_target_unavailable",
+                "instant preview requires an exact mapped ring metal region",
+                status_code=422,
+                category="capability",
+            ))
+        return _instant_gold_color_preview(
+            db,
+            prepared=prepared,
+            target=instant_target,
+            request=request,
+            actor=actor,
+        )
     if request.studio_job_id is None:
         try:
             require_provider_studio_job(

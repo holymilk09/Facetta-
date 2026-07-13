@@ -148,8 +148,7 @@ export function StudioRefineWorkspace({
   const exactLineage = hasExactSpecification(lineage) ? lineage : null;
   const exactSpecification = exactLineage !== null;
   const [mode, setMode] = useState<'component' | 'instruction' | 'annotation' | 'facts'>(
-    exactSpecification && initialAdvancedFactsOpen ? 'facts'
-      : exactSpecification ? 'component' : 'instruction',
+    exactSpecification && initialAdvancedFactsOpen ? 'facts' : 'instruction',
   );
   const [path, setPath] = useState<ComponentCatalogPath>('metal.color');
   const [catalog, setCatalog] = useState<ComponentCatalog | null>(null);
@@ -160,6 +159,8 @@ export function StudioRefineWorkspace({
   const [preview, setPreview] = useState<{
     candidate: PreviewCandidate;
     kind: 'catalog' | 'markup' | 'visual';
+    executionMode?: 'instant' | 'provider';
+    estimatedCredits?: number;
   } | null>(null);
   const [instruction, setInstruction] = useState('');
   const [understoodAs, setUnderstoodAs] = useState<string | null>(null);
@@ -253,6 +254,7 @@ export function StudioRefineWorkspace({
 
   useEffect(() => {
     let current = true;
+    if (mode !== 'component') return () => { current = false; };
     if (!exactSpecification || targetingLoading || !selectedPathReady) {
       setLoading(false);
       setCatalog(null);
@@ -274,7 +276,7 @@ export function StudioRefineWorkspace({
       setOptionId(result.data.options[0]?.id ?? null);
     });
     return () => { current = false; };
-  }, [api, exactSpecification, path, lineage?.sourceAssetId, selectedPathReady,
+  }, [api, exactSpecification, mode, path, lineage?.sourceAssetId, selectedPathReady,
     targetingLoading]);
 
   useEffect(() => {
@@ -352,6 +354,12 @@ export function StudioRefineWorkspace({
 
   const selected = useMemo(() => catalog?.options.find((option) => option.id === optionId) ?? null,
     [catalog, optionId]);
+  const catalogPreviewMode = path === 'metal.color'
+    && targeting?.jewelry_type === 'ring'
+    && catalog?.component_path === path
+    && catalog.preview_execution_modes.includes('instant')
+    ? 'instant' as const
+    : 'provider' as const;
   const editableFacts = useMemo(() => {
     const spec = factProject?.spec;
     if (spec === null || spec === undefined) return [];
@@ -476,10 +484,16 @@ export function StudioRefineWorkspace({
       if (selected === null) { setBusy(false); return; }
       const result = await gateway.previewCatalogRefine({
         ...exactLineage, createdBy, componentPath: path, optionId: selected.id,
+        executionMode: catalogPreviewMode,
       });
       setBusy(false);
       if (result.error !== null) { setError(designerErrorMessage(result.error, 'refine')); return; }
-      setPreview({ candidate: result.data.candidate, kind: 'catalog' });
+      setPreview({
+        candidate: result.data.candidate,
+        kind: 'catalog',
+        executionMode: result.data.executionMode,
+        estimatedCredits: result.data.estimatedCredits,
+      });
       return;
     }
     let annotation: ConfirmedMarkupAnnotation = {
@@ -667,6 +681,14 @@ export function StudioRefineWorkspace({
           Compare this temporary candidate with the selected source revision. Apply will append a new revision;
           save as variation will start a sibling direction; discard will leave history untouched.
         </Text>
+        {preview.kind === 'catalog' && preview.executionMode !== undefined && (
+          <Notice
+            kind="info"
+            text={preview.executionMode === 'instant'
+              ? 'Quick preview · 0 credits'
+              : `Standard provider preview · estimated ${preview.estimatedCredits ?? REFINE_CREDITS_PER_OUTPUT} credits if you Apply or Save as Variation`}
+          />
+        )}
         {understoodAs !== null && <Notice kind="info" text={understoodAs} />}
         {!reviewSourceIsActive && (
           <Notice kind="info" text="This result was created from an earlier revision. Apply is unavailable. You can save it as a new variation or discard it without changing the current design." />
@@ -779,33 +801,24 @@ export function StudioRefineWorkspace({
           ['component', 'Component', 'Choose a controlled material or construction option.'],
           ['instruction', 'Describe', 'Describe an appearance-only change in plain language.'],
           ['annotation', 'Mark up', 'Draw directly on the exact active image.'],
-        ] as const).map(([id, label, detail]) => {
-          const unavailable = id === 'component' && !componentAvailable;
-          return (
+        ] as const).filter(([id]) => id !== 'component' || componentAvailable)
+          .map(([id, label, detail]) => (
             <Pressable
               key={id}
               accessibilityLabel={`${label} refine mode`}
               accessibilityRole="button"
-              accessibilityState={{ disabled: unavailable, selected: mode === id }}
-              disabled={unavailable}
+              accessibilityState={{ selected: mode === id }}
               onPress={() => {
                 setMode(id);
                 setAdvancedFactsOpen(false);
                 setFactReview(null);
                 setError(null);
               }}
-              style={[styles.modeCard, mode === id && styles.selectedCard, unavailable && styles.disabledCard]}>
+              style={[styles.modeCard, mode === id && styles.selectedCard]}>
               <Text style={styles.pathTitle}>{label}</Text>
-              <Text style={styles.pathHelp}>{unavailable
-                ? !exactSpecification
-                  ? 'Confirm design facts before making precise component changes.'
-                  : targetingLoading
-                    ? 'Checking precise targeting for this revision…'
-                    : 'No precisely mapped component change is available for this revision.'
-                : detail}</Text>
+              <Text style={styles.pathHelp}>{detail}</Text>
             </Pressable>
-          );
-        })}
+          ))}
       </View>
 
       {exactSpecification && typeof api.reviseStudioFacts === 'function' && (
@@ -816,7 +829,7 @@ export function StudioRefineWorkspace({
           onPress={() => {
             const opening = !advancedFactsOpen;
             setAdvancedFactsOpen(opening);
-            setMode(opening ? 'facts' : componentAvailable ? 'component' : 'instruction');
+            setMode(opening ? 'facts' : 'instruction');
             setFactReview(null);
             setError(null);
           }}
@@ -829,15 +842,13 @@ export function StudioRefineWorkspace({
         </Pressable>
       )}
 
-      {!exactSpecification && (
+      {!exactSpecification && onReviewStartingDesign !== undefined && (
         <View style={styles.startingFactsCard}>
           <View style={styles.startingFactsCopy}>
             <Text style={styles.advancedDisclosureTitle}>Unlock precise ring edits</Text>
             <Text style={styles.pathHelp}>For a ring direction, review the image-derived starting facts before changing components or construction. Estimates stay clearly separate from facts you confirm. Technical views become available after those facts are recorded; you can keep refining or presenting without them.</Text>
           </View>
-          {onReviewStartingDesign !== undefined && (
-            <Button title="Review starting design" kind="ghost" onPress={onReviewStartingDesign} />
-          )}
+          <Button title="Review starting design" kind="ghost" onPress={onReviewStartingDesign} />
         </View>
       )}
 
@@ -1001,7 +1012,9 @@ export function StudioRefineWorkspace({
       {error !== null && <Notice kind="error" text={error} />}
       <Text style={styles.creditEstimate}>{mode === 'facts'
         ? '0 credits · specification revision only'
-        : `1 requested output × ${REFINE_CREDITS_PER_OUTPUT} credits = estimated ${REFINE_CREDITS_PER_OUTPUT} credits`}</Text>
+        : mode === 'component' && catalogPreviewMode === 'instant'
+          ? 'Quick preview · 0 credits'
+          : `1 requested output × ${REFINE_CREDITS_PER_OUTPUT} credits = estimated ${REFINE_CREDITS_PER_OUTPUT} credits`}</Text>
       {mode !== 'facts' ? (
         <Button title={busy ? 'Creating preview…' : 'Preview change'} disabled={busy || !reviewSourceIsActive
           || (mode === 'component' && (selected === null || !selectedPathReady))

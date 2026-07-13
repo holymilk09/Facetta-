@@ -128,10 +128,24 @@ factory fact. If an exact catalog selection also changes the specification,
 that delta is compiled from the catalog and committed only through the normal
 versioned acceptance boundary.
 
-This unified configurator experience is target work. Existing masks, catalog
-selections, visual-only edits, and exact outside-mask compositing demonstrate
-parts of the contract, but do not yet constitute a complete instant studio
-configurator.
+The first released slice is intentionally narrow: yellow-, white-, and
+rose-gold color on an exact mapped ring revision. The component catalog, rather
+than the UI, declares `instant` and `provider` support. Instant execution creates
+the normal temporary candidate with no provider attempt, Studio job, or credit;
+Apply and Save as Variation append canonical history through the existing
+atomic decision boundary. A one-code deployment-skew fallback may create a
+standard provider preview, whose 20-credit estimate is disclosed before the
+designer accepts it. Safety, lineage, raster, mask, QA, authentication, decode,
+and network failures never fall back to paid work.
+
+The deterministic transform is bounded by exact source/mask/contract hashes,
+recomputed input lineage, decoded outside-mask equality, alpha and luminance
+preservation, normalized orientation, eligible profile preservation, and strict
+raster limits. Every independent instant marker must agree at review time; any
+tamper, provider attempt, injected job, or stale source fails closed without a
+canonical revision. This remains image-edit evidence only, never geometry,
+measurement, manufacturability, or Factory authority. Other materials, stone
+colors, finishes, backgrounds, and jewelry categories remain gated target work.
 
 ### Structural AI edit
 
@@ -281,6 +295,9 @@ The primary application surface is now one outcome-first shell:
 - global navigation: **Studio**, **Collections**, **Activity**, and **Learn**;
 - active-revision actions: **Create**, **Vary**, **Refine**, **Views**,
   **Present**, and **More**;
+- Refine begins with **Describe** and **Mark up**; **Component** is disclosed
+  only when the exact revision has a usable mapped path, and its catalog is
+  loaded only after explicit selection;
 - Factory appears only inside **More** after explicit backend enablement and
   exact-revision eligibility;
 - Guided creation shows the brief, one optional presentation direction,
@@ -357,7 +374,8 @@ design or production geometry.
 3. Complete Collections over the implemented Design Family and variation
    records without rewriting history.
 4. Unify on-demand visual twins and component-aware edit routing.
-5. Add the instant masked configurator for geometry-preserving previews.
+5. Expand the released ring gold-color instant configurator only after each
+   additional appearance option has an exact mask and frozen acceptance proof.
 6. Keep the implemented Client/Marketing packaging, zero-credit Collections
    navigation, and optional Factory promotion stable; add the future reusable
    Library pointer layer only as a separate, rights-aware product goal.

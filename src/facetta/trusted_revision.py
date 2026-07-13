@@ -1028,6 +1028,7 @@ def accept_catalog_preview_revision(
             "component_map_sha256": candidate.component_map_sha256,
             "target_component_ids": list(candidate.target_component_ids),
             "target_mask_sha256": candidate.target_mask_sha256,
+            "transform_contract_sha256": candidate.transform_contract_sha256,
             "factory_authority": False,
         },
         change_summary=(

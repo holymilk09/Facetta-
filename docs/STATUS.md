@@ -561,6 +561,35 @@ The canceled Codex tracking record did not remove the recovered work. The
 trusted recovery branch remains independently preserved, and the unified
 Studio integration continues on `codex/facetta-integration`.
 
+Refine now opens on the lowest-friction truthful route: one plain-language
+appearance change. Mark up remains beside it, while Component appears only
+after the exact revision reports at least one usable mapped path. Component
+catalog data is deferred until the designer chooses that route, and the
+starting-design prompt is absent when there is no eligible review action. This
+removes disabled and actionless choices without weakening temporary preview,
+Apply, Save as Variation, Discard, or immutable specification authority.
+
+The first instant configurator slice is now available only where its evidence
+is exact: a mapped ring's controlled yellow-, white-, or rose-gold color. The
+backend declares that capability in the component catalog; Studio never infers
+it from a label. The quick path performs a deterministic chroma transform
+inside the exact revision mask, preserves decoded pixels outside the mask,
+alpha, dimensions, luminance, and eligible RGB color-profile semantics, and
+creates a temporary candidate with no provider attempt, Studio job, or credit.
+Apply and Save as Variation reuse the existing atomic candidate decisions;
+Discard leaves canonical history untouched. A provider fallback is allowed
+only for explicit transform-version skew, is shown as a 20-credit standard
+preview before acceptance, and remains uncharged unless the designer applies
+or saves it. Raster, orientation, profile, mask, QA, stale-lineage, integrity,
+authorization, decode, and network failures never trigger paid fallback.
+
+Instant provenance is fail-closed across independent run, candidate, source,
+mask, output, option, target-spec, transform-contract, and prompt-version
+markers. The combined input hash is recomputed at decision time, any provider
+attempt or injected Studio job invalidates the candidate, and compressed or
+oversized rasters are rejected before pixel materialization. These controls are
+image-edit evidence only and carry no Factory or production authority.
+
 This checkpoint closes two review-state hazards. A stale pre-spec visual
 candidate is now terminalized together with its exact uncharged Refine job,
 clears temporary bytes, and cannot create a revision or review decision.
@@ -578,15 +607,18 @@ language remains absent until the backend reports that the exact revision is
 both entitled and eligible. The duplicate legacy readiness entry is removed
 from the public Studio action contract; compatibility readers remain internal.
 
-Local validation at this checkpoint: 1,478 backend tests, 236 Jest tests, 64
-Studio contract tests, TypeScript, Ruff, Expo web export, and the production
-TypeScript-client -> HTTP -> FastAPI acceptance all pass. The acceptance covers
-ten mixed-source projects plus a confirmed ring `stone.cut` preview/Apply
-journey; it reports no canonical mutation before acceptance, no canonical
-asset/revision or charge from failed QA, and no Factory use. These local results
-do not satisfy the two external gates: the signed frozen 144-image corpus with
-founder/GIA review and live two-principal HTTPS staging isolation remain
-`not_run` / `unmet` in `STUDIO_EXTERNAL_BETA_GATES.md`.
+Local validation at this checkpoint: 1,733 backend tests, 265 Jest tests, 76
+Studio contract tests, TypeScript, Ruff, Python bytecode compilation, Expo web
+export, and the production TypeScript-client -> HTTP -> FastAPI acceptance all
+pass. The acceptance covers ten mixed-source projects plus a confirmed ring
+`stone.cut` preview/Apply journey; it reports no canonical mutation before
+acceptance, no canonical asset/revision or charge from failed QA, and no
+Factory use. The instant path additionally has focused raster, provenance,
+tamper, fallback, decision, and client-decoder coverage inside those full
+suites. These local results do not satisfy the two external gates: the signed
+frozen 144-image corpus with founder/GIA review and live two-principal HTTPS
+staging isolation remain `not_run` / `unmet` in
+`STUDIO_EXTERNAL_BETA_GATES.md`.
 
 ## 2026-07-13 ring structural preview boundary
 

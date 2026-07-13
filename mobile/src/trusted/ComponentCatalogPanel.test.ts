@@ -84,6 +84,7 @@ function ringCatalog(path: ComponentCatalogPath): ComponentCatalog {
       display: 'Gold color',
       applicable_jewelry_types: ['ring'],
       image_agent_status: 'catalog_ready',
+      preview_execution_modes: ['instant', 'provider'],
       options: [roseOption],
     };
   }
@@ -102,6 +103,7 @@ function ringCatalog(path: ComponentCatalogPath): ComponentCatalog {
     display: path,
     applicable_jewelry_types: ['ring'],
     image_agent_status: 'catalog_ready',
+    preview_execution_modes: ['provider'],
     options: [option],
   };
 }
@@ -208,6 +210,7 @@ describe('ComponentCatalogPanel', () => {
       display: 'Center stone species and color',
       applicable_jewelry_types: ['ring'],
       image_agent_status: 'catalog_ready',
+      preview_execution_modes: ['provider'],
       options: [{
         id: 'Royal Blue', display: 'Royal Blue',
         visual_geometry: ['blue sapphire with intact faceting'],
@@ -410,6 +413,7 @@ describe('ComponentCatalogPanel', () => {
       display: 'Chain type',
       applicable_jewelry_types: ['necklace'],
       image_agent_status: 'catalog_ready_category_pending',
+      preview_execution_modes: ['provider'],
       options: [chainOption],
     };
     const getComponentCatalog = jest.fn(async () => ({
@@ -457,6 +461,7 @@ describe('ComponentCatalogPanel', () => {
       display: 'Chain type',
       applicable_jewelry_types: ['necklace'],
       image_agent_status: 'catalog_ready',
+      preview_execution_modes: ['provider'],
       options: [chainOption],
     };
     const necklaceSpec: JsonObject = {

@@ -384,6 +384,9 @@ def fork_preview_candidate_variation(
             "operation": "fork_reviewed_preview",
             "source_sha256": candidate.source_hash,
             "output_sha256": candidate.output_hash,
+            "transform_contract_sha256": getattr(
+                candidate, "transform_contract_sha256", None
+            ),
             "independent_revision_history": True,
             "specification_created": next_spec is not None,
             "factory_authority": False,

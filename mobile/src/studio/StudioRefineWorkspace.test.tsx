@@ -3,7 +3,7 @@ import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-
 
 import { AuthenticatedImageProvider } from '../AuthenticatedImage';
 import { StudioRefineWorkspace } from './StudioRefineWorkspace';
-import type { ProjectDetail, StudioComponentTargeting } from '../trusted/types';
+import type { ComponentCatalog, ProjectDetail, StudioComponentTargeting } from '../trusted/types';
 
 const project = {
   id: 'project_1', root_id: 'project_1', title: 'Orbit', collection: null,
@@ -45,10 +45,11 @@ const exactFactProject = {
   },
 } as ProjectDetail;
 
-const catalog = {
+const catalog: ComponentCatalog = {
   component_path: 'metal.color' as const,
   display: 'Metal color', applicable_jewelry_types: ['ring'],
   image_agent_status: 'catalog_ready' as const,
+  preview_execution_modes: ['instant', 'provider'],
   options: [{
     id: 'rose_gold', display: 'Rose gold', visual_geometry: [],
     isolation_target: 'Visible metal surfaces', frozen_facts: ['stone geometry'],
@@ -120,6 +121,7 @@ describe('StudioRefineWorkspace', () => {
       data: {
         lineage: { projectId: 'project_1', sourceAssetId: 'asset_2', sourceDesignVersion: 2 },
         componentPath: 'metal.color' as const, optionId: 'rose_gold',
+        executionMode: 'instant' as const, estimatedCredits: 0,
         candidate: {
           id: 'candidate_1', jobId: 'run_1', sourceRevisionId: 'asset_2',
           assetUrl: 'https://test/preview.png', verdict: 'pass' as const,
@@ -156,8 +158,16 @@ describe('StudioRefineWorkspace', () => {
 
     expect(screen.queryByText('Review starting design')).toBeNull();
     expect(screen.getByText('1 requested output × 20 credits = estimated 20 credits')).toBeTruthy();
+    await waitFor(() => expect(screen.getByLabelText('Component refine mode')).toBeTruthy());
+    await act(async () => { fireEvent.press(screen.getByLabelText('Component refine mode')); });
+    await waitFor(() => expect(screen.getByText('Rose gold')).toBeTruthy());
+    expect(screen.getByText('Quick preview · 0 credits')).toBeTruthy();
     await act(async () => { fireEvent.press(await screen.findByText('Preview change')); });
+    expect(previewCatalogRefine).toHaveBeenCalledWith(expect.objectContaining({
+      executionMode: 'instant',
+    }));
     expect(await screen.findByText('Nothing has changed yet.')).toBeTruthy();
+    expect(screen.getByText('Quick preview · 0 credits')).toBeTruthy();
     expect(screen.getByText('Visual consistency')).toBeTruthy();
     expect(screen.queryByText(/Grok|QA|model routing|evaluator trace/i)).toBeNull();
     expect(onApplied).not.toHaveBeenCalled();
@@ -191,11 +201,12 @@ describe('StudioRefineWorkspace', () => {
           : candidate
       )),
     };
-    const cutCatalog = {
+    const cutCatalog: ComponentCatalog = {
       component_path: 'stone.cut' as const,
       display: 'Stone cut',
       applicable_jewelry_types: ['ring'],
       image_agent_status: 'catalog_ready' as const,
+      preview_execution_modes: ['provider'],
       options: [{
         id: 'emerald_cut', display: 'Emerald cut', visual_geometry: [],
         isolation_target: 'Center stone, prongs, and setting',
@@ -215,6 +226,8 @@ describe('StudioRefineWorkspace', () => {
         },
         componentPath: 'stone.cut' as const,
         optionId: 'emerald_cut',
+        executionMode: 'provider' as const,
+        estimatedCredits: 20,
         candidate: {
           id: 'candidate_cut', jobId: 'run_cut', sourceRevisionId: 'asset_2',
           assetUrl: 'https://test/cut-preview.png', verdict: 'pass' as const,
@@ -249,6 +262,8 @@ describe('StudioRefineWorkspace', () => {
       />,
     );
 
+    await waitFor(() => expect(screen.getByLabelText('Component refine mode')).toBeTruthy());
+    await act(async () => { fireEvent.press(screen.getByLabelText('Component refine mode')); });
     await waitFor(() => expect(
       screen.getByLabelText('Stone cut component path').props.accessibilityState.disabled,
     ).toBe(false));
@@ -257,6 +272,7 @@ describe('StudioRefineWorkspace', () => {
       await Promise.resolve();
     });
     await waitFor(() => expect(getComponentCatalog).toHaveBeenCalledWith('stone.cut'));
+    expect(screen.getByText('1 requested output × 20 credits = estimated 20 credits')).toBeTruthy();
     await act(async () => {
       fireEvent.press(await screen.findByText('Emerald cut'));
       await Promise.resolve();
@@ -272,8 +288,10 @@ describe('StudioRefineWorkspace', () => {
       createdBy: 'designer',
       componentPath: 'stone.cut',
       optionId: 'emerald_cut',
+      executionMode: 'provider',
     }));
     expect(await screen.findByText('Nothing has changed yet.')).toBeTruthy();
+    expect(screen.getByText(/Standard provider preview · estimated 20 credits/)).toBeTruthy();
     expect(screen.getByLabelText('Temporary refinement preview')).toBeTruthy();
     await act(async () => {
       fireEvent.press(screen.getByText('Apply as new revision'));
@@ -342,7 +360,10 @@ describe('StudioRefineWorkspace', () => {
     );
 
     expect(getComponentCatalog).not.toHaveBeenCalled();
-    expect(screen.getByLabelText('Component refine mode').props.accessibilityState.disabled).toBe(true);
+    expect(screen.queryByLabelText('Component refine mode')).toBeNull();
+    expect(screen.getByLabelText('Describe refine mode').props.accessibilityState).toEqual({
+      selected: true,
+    });
     expect(screen.getByText('Unlock precise ring edits')).toBeTruthy();
     expect(screen.getByText(/image-derived starting facts/i)).toBeTruthy();
     expect(screen.getByText(/Technical views become available after those facts are recorded/)).toBeTruthy();
@@ -394,7 +415,8 @@ describe('StudioRefineWorkspace', () => {
       />,
     );
 
-    expect(screen.getByText('Unlock precise ring edits')).toBeTruthy();
+    expect(screen.queryByText('Unlock precise ring edits')).toBeNull();
+    expect(screen.queryByLabelText('Component refine mode')).toBeNull();
     expect(screen.queryByText('Review starting design')).toBeNull();
   });
 
@@ -744,10 +766,11 @@ describe('StudioRefineWorkspace', () => {
       />,
     );
 
-    await waitFor(() => expect(
-      screen.getByLabelText('Component refine mode').props.accessibilityState.disabled,
-    ).toBe(true));
-    expect(screen.getByText(/will not guess component geometry/i)).toBeTruthy();
+    await waitFor(() => expect(screen.getByText(/will not guess component geometry/i)).toBeTruthy());
+    expect(screen.queryByLabelText('Component refine mode')).toBeNull();
+    expect(screen.getByLabelText('Describe refine mode').props.accessibilityState).toEqual({
+      selected: true,
+    });
     expect(screen.getByText('Appearance change')).toBeTruthy();
     expect(getComponentCatalog).not.toHaveBeenCalled();
     expect(previewCatalogRefine).not.toHaveBeenCalled();
@@ -789,17 +812,18 @@ describe('StudioRefineWorkspace', () => {
     );
 
     await waitFor(() => expect(prepareStudioComponentMap).toHaveBeenCalledWith('asset_2'));
-    await waitFor(() => expect(
-      screen.getByLabelText('Component refine mode').props.accessibilityState.disabled,
-    ).toBe(false));
-    expect(getComponentCatalog).toHaveBeenCalledWith('metal.color');
+    await waitFor(() => expect(screen.getByLabelText('Component refine mode')).toBeTruthy());
+    expect(getComponentCatalog).not.toHaveBeenCalled();
+    await act(async () => { fireEvent.press(screen.getByLabelText('Component refine mode')); });
+    await waitFor(() => expect(getComponentCatalog).toHaveBeenCalledWith('metal.color'));
   });
 
   test('offers mapped material paths while disabling unresolved structural paths', async () => {
+    const getComponentCatalog = jest.fn(async () => ({ data: catalog, error: null, status: 200 }));
     await renderWithAuth(
       <StudioRefineWorkspace
         api={{
-          getComponentCatalog: jest.fn(async () => ({ data: catalog, error: null, status: 200 })),
+          getComponentCatalog,
           getStudioComponentTargeting: getReadyTargeting,
           readMarkup: jest.fn(),
         }}
@@ -810,6 +834,9 @@ describe('StudioRefineWorkspace', () => {
       />,
     );
 
+    await waitFor(() => expect(screen.getByLabelText('Component refine mode')).toBeTruthy());
+    expect(getComponentCatalog).not.toHaveBeenCalled();
+    await act(async () => { fireEvent.press(screen.getByLabelText('Component refine mode')); });
     await waitFor(() => expect(
       screen.getByLabelText('Metal color component path').props.accessibilityState.disabled,
     ).toBe(false));

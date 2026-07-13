@@ -19,6 +19,7 @@ from facetta.db import (
     Base,
     DesignVersion,
     ImageAsset,
+    ImageAttempt,
     ImageRun,
     ImageRunReview,
     PreviewCandidateRecord,
@@ -27,6 +28,7 @@ from facetta.db import (
     RevisionComponentMapRecord,
     StudioJobRecord,
     get_db,
+    new_id,
 )
 from facetta.api.catalog import StudioComponentTargetingResponse
 from facetta.design_form import NormalizedPoint, NormalizedPolygon
@@ -63,6 +65,24 @@ from facetta.warning_candidates import clear_warning_candidates_for_tests
 def _png(color: tuple[int, int, int] = (210, 210, 210)) -> bytes:
     out = io.BytesIO()
     Image.new("RGB", (40, 40), color).save(out, format="PNG")
+    return out.getvalue()
+
+
+def _textured_rgba_png() -> bytes:
+    image = Image.new("RGBA", (40, 40))
+    pixels = []
+    for y in range(40):
+        for x in range(40):
+            value = 80 + ((x * 7 + y * 11) % 150)
+            pixels.append((
+                min(255, value + 18),
+                value,
+                max(0, value - 22),
+                80 + ((x * 13 + y * 17) % 176),
+            ))
+    image.putdata(pixels)
+    out = io.BytesIO()
+    image.save(out, format="PNG")
     return out.getvalue()
 
 
@@ -176,11 +196,12 @@ def _create_project(
     SessionFactory: sessionmaker | None = None,
     map_revision: bool = True,
     unresolved_kind: str | None = None,
+    image: bytes | None = None,
 ) -> dict:
     response = client.post(
         "/projects/from-image",
         json={
-            "image_base64": base64.b64encode(_png()).decode(),
+            "image_base64": base64.b64encode(image or _png()).decode(),
             "media_type": "image/png",
             "spec": audited_import_spec(example_spec),
             "owner": "usr_catalog",
@@ -792,6 +813,342 @@ def _request(**overrides) -> dict:
     }
     body.update(overrides)
     return body
+
+
+def test_instant_gold_color_preview_is_exact_masked_and_zero_provider(
+    catalog_client,
+    example_spec,
+    monkeypatch,
+):
+    client, SessionFactory = catalog_client
+    project = _create_project(
+        client, example_spec, SessionFactory, image=_textured_rgba_png()
+    )
+    provider_calls: list[bool] = []
+    monkeypatch.setattr(
+        "facetta.api.catalog._trusted_image_agent",
+        lambda: provider_calls.append(True),
+    )
+
+    response = client.post(
+        f"/assets/{project['active_asset_id']}/catalog/preview",
+        json=_request(execution_mode="instant"),
+    )
+
+    assert response.status_code == 201, response.text
+    body = response.json()
+    assert body["status"] == "preview_ready"
+    assert body["candidate"]["studio_job_id"] is None
+    assert body["routing"]["execution_mode"] == "instant_masked_transform"
+    assert body["routing"]["provider_calls"] == 0
+    assert body["routing"]["attempt_count"] == 0
+    assert provider_calls == []
+    preview_response = client.get(body["candidate"]["preview_url"])
+    assert preview_response.status_code == 200, preview_response.text
+
+    with SessionFactory() as db:
+        source = db.get(ImageAsset, project["active_asset_id"])
+        component_map = load_revision_component_map(db, project["active_asset_id"])
+        run = db.get(ImageRun, body["image_run_id"])
+        candidate = db.get(
+            PreviewCandidateRecord, body["candidate"]["candidate_id"]
+        )
+        assert source is not None and component_map is not None
+        assert run is not None and candidate is not None
+        mask_bytes = rasterize_component_masks(
+            component_map,
+            ("prongs", "setting", "shank", "shoulders", "gallery", "metal"),
+        )
+        assert db.scalar(select(func.count()).select_from(ImageAttempt)) == 0
+        assert db.scalar(select(func.count()).select_from(StudioJobRecord)) == 0
+        assert db.scalar(select(func.count()).select_from(ImageAsset)) == 1
+        assert db.scalar(select(func.count()).select_from(DesignVersion)) == 1
+        source_bytes = bytes(source.image)
+        assert run.prompt_version == "facetta.instant-gold-color.v1"
+        assert run.normalized_intent["execution_mode"] == (
+            "instant_masked_transform"
+        )
+        assert run.normalized_intent["source_sha256"] == hashlib.sha256(
+            source_bytes
+        ).hexdigest()
+        assert run.normalized_intent["mask_sha256"] == hashlib.sha256(
+            mask_bytes
+        ).hexdigest()
+        assert candidate.payload["transform_contract_sha256"] == (
+            run.normalized_intent["transform_contract_sha256"]
+        )
+        assert candidate.payload["routing"] == body["routing"]
+
+    with Image.open(io.BytesIO(source_bytes)) as source_image:
+        source_pixels = list(
+            source_image.convert("RGBA").get_flattened_data()
+        )
+        source_size = source_image.size
+    with Image.open(io.BytesIO(preview_response.content)) as preview_image:
+        preview_pixels = list(
+            preview_image.convert("RGBA").get_flattened_data()
+        )
+        assert preview_image.size == source_size
+    with Image.open(io.BytesIO(mask_bytes)) as mask_image:
+        mask_pixels = list(mask_image.convert("L").get_flattened_data())
+    assert all(
+        preview_pixels[index] == source_pixels[index]
+        for index, coverage in enumerate(mask_pixels)
+        if coverage == 0
+    )
+    assert all(
+        preview[3] == source[3]
+        for preview, source in zip(preview_pixels, source_pixels)
+    )
+    changed = [
+        index
+        for index, coverage in enumerate(mask_pixels)
+        if coverage > 0 and preview_pixels[index] != source_pixels[index]
+    ]
+    assert changed
+    for index in changed:
+        source_luma = sum(
+            channel * weight
+            for channel, weight in zip(
+                source_pixels[index][:3], (0.2126, 0.7152, 0.0722)
+            )
+        )
+        preview_luma = sum(
+            channel * weight
+            for channel, weight in zip(
+                preview_pixels[index][:3], (0.2126, 0.7152, 0.0722)
+            )
+        )
+        assert abs(source_luma - preview_luma) <= 1.0
+
+
+@pytest.mark.parametrize("decision", ("apply", "save", "discard"))
+def test_instant_gold_color_preview_reuses_canonical_candidate_decisions(
+    catalog_client,
+    example_spec,
+    monkeypatch,
+    decision,
+):
+    client, SessionFactory = catalog_client
+    project = _create_project(
+        client, example_spec, SessionFactory, image=_textured_rgba_png()
+    )
+    monkeypatch.setattr(
+        "facetta.api.catalog._trusted_image_agent",
+        lambda: pytest.fail("instant preview must not construct a provider agent"),
+    )
+    response = client.post(
+        f"/assets/{project['active_asset_id']}/catalog/preview",
+        json=_request(execution_mode="instant"),
+    )
+    assert response.status_code == 201, response.text
+    preview = response.json()
+
+    if decision == "apply":
+        decided = client.post(
+            preview["candidate"]["accept_url"],
+            json={"expected_design_version": 1, "created_by": "usr_catalog"},
+        )
+        assert decided.status_code == 201, decided.text
+        terminal_asset_id = decided.json()["asset_id"]
+        expected_status = "applied"
+    elif decision == "save":
+        decided = client.post(
+            preview["candidate"]["save_as_variation_url"],
+            json={"created_by": "usr_catalog", "label": "Rose instant"},
+        )
+        assert decided.status_code == 201, decided.text
+        terminal_asset_id = decided.json()["project"]["root_id"]
+        expected_status = "saved_as_variation"
+    else:
+        decided = client.delete(preview["candidate"]["discard_url"])
+        assert decided.status_code == 204, decided.text
+        terminal_asset_id = None
+        expected_status = "discarded"
+
+    with SessionFactory() as db:
+        candidate = db.get(
+            PreviewCandidateRecord, preview["candidate"]["candidate_id"]
+        )
+        assert candidate is not None and candidate.status == expected_status
+        assert candidate.terminal_asset_id == terminal_asset_id
+        assert db.scalar(select(func.count()).select_from(ImageAttempt)) == 0
+        assert db.scalar(select(func.count()).select_from(StudioJobRecord)) == 0
+        if decision == "discard":
+            assert db.scalar(select(func.count()).select_from(ImageAsset)) == 1
+            assert db.scalar(select(func.count()).select_from(DesignVersion)) == 1
+        else:
+            revision = db.scalar(select(ProjectRevisionRecord).where(
+                ProjectRevisionRecord.asset_id == terminal_asset_id
+            ))
+            assert revision is not None
+            assert revision.interpretation["transform_contract_sha256"] == (
+                candidate.payload["transform_contract_sha256"]
+            )
+
+
+def test_instant_gold_color_preview_fails_closed_for_other_catalog_paths(
+    catalog_client,
+    example_spec,
+    monkeypatch,
+):
+    client, SessionFactory = catalog_client
+    project = _create_project(client, example_spec, SessionFactory)
+    provider_calls: list[bool] = []
+    monkeypatch.setattr(
+        "facetta.api.catalog._trusted_image_agent",
+        lambda: provider_calls.append(True),
+    )
+
+    response = client.post(
+        f"/assets/{project['active_asset_id']}/catalog/preview",
+        json=_request(
+            component_path="metal.material",
+            option_id="platinum",
+            execution_mode="instant",
+        ),
+    )
+
+    assert response.status_code == 422, response.text
+    assert response.json()["code"] == "instant_preview_path_unsupported"
+    assert provider_calls == []
+    with SessionFactory() as db:
+        assert db.scalar(select(func.count()).select_from(ImageRun)) == 0
+        assert db.scalar(select(func.count()).select_from(PreviewCandidateRecord)) == 0
+        assert db.scalar(select(func.count()).select_from(StudioJobRecord)) == 0
+
+
+def test_instant_gold_color_preview_fails_closed_without_exact_map(
+    catalog_client,
+    example_spec,
+    monkeypatch,
+):
+    client, SessionFactory = catalog_client
+    project = _create_project(client, example_spec, map_revision=False)
+    monkeypatch.setattr(
+        "facetta.api.catalog._trusted_image_agent",
+        lambda: pytest.fail("unmapped instant preview must not call a provider"),
+    )
+
+    response = client.post(
+        f"/assets/{project['active_asset_id']}/catalog/preview",
+        json=_request(execution_mode="instant"),
+    )
+
+    assert response.status_code == 422, response.text
+    assert response.json()["code"] == "component_map_not_found"
+    with SessionFactory() as db:
+        assert db.scalar(select(func.count()).select_from(ImageRun)) == 0
+        assert db.scalar(select(func.count()).select_from(PreviewCandidateRecord)) == 0
+
+
+@pytest.mark.parametrize(
+    "corruption",
+    (
+        "routing_mode_removed",
+        "run_input_hash",
+        "intent_source_hash",
+        "intent_mask_hash",
+        "intent_output_hash",
+        "transform_color",
+        "payload_option",
+        "prompt_version",
+        "provider_attempt",
+    ),
+)
+def test_instant_gold_color_preview_fails_closed_for_lineage_tampering(
+    catalog_client,
+    example_spec,
+    corruption,
+):
+    client, SessionFactory = catalog_client
+    project = _create_project(
+        client, example_spec, SessionFactory, image=_textured_rgba_png()
+    )
+    response = client.post(
+        f"/assets/{project['active_asset_id']}/catalog/preview",
+        json=_request(execution_mode="instant"),
+    )
+    assert response.status_code == 201, response.text
+    preview = response.json()
+
+    with SessionFactory() as db:
+        record = db.get(
+            PreviewCandidateRecord, preview["candidate"]["candidate_id"]
+        )
+        run = db.get(ImageRun, preview["image_run_id"])
+        assert record is not None and run is not None
+        payload = dict(record.payload)
+        routing = dict(payload["routing"])
+        intent = dict(run.normalized_intent)
+        contract = dict(intent["transform_contract"])
+        if corruption == "routing_mode_removed":
+            routing.pop("execution_mode")
+        elif corruption == "run_input_hash":
+            run.input_hash = "0" * 64
+        elif corruption == "intent_source_hash":
+            intent["source_sha256"] = "0" * 64
+        elif corruption == "intent_mask_hash":
+            intent["mask_sha256"] = "0" * 64
+        elif corruption == "intent_output_hash":
+            intent["output_sha256"] = "0" * 64
+        elif corruption == "transform_color":
+            contract["controlled_color"] = "white"
+            intent["transform_contract"] = contract
+        elif corruption == "payload_option":
+            payload["option_id"] = "white"
+        elif corruption == "prompt_version":
+            run.prompt_version = "facetta.instant-gold-color.tampered"
+        elif corruption == "provider_attempt":
+            db.add(ImageAttempt(
+                id=new_id("att"),
+                run_id=run.id,
+                attempt_number=1,
+                provider="tampered",
+                model="tampered",
+            ))
+        payload["routing"] = routing
+        record.payload = payload
+        run.normalized_intent = intent
+        db.commit()
+
+    reopened = client.get(preview["candidate"]["preview_url"])
+    assert reopened.status_code == 410, reopened.text
+    assert reopened.json()["code"] == "catalog_preview_unavailable"
+    with SessionFactory() as db:
+        durable = db.get(
+            PreviewCandidateRecord, preview["candidate"]["candidate_id"]
+        )
+        assert durable is not None and durable.status == "expired"
+        assert db.scalar(select(func.count()).select_from(ImageAsset)) == 1
+        assert db.scalar(select(func.count()).select_from(DesignVersion)) == 1
+        assert db.scalar(select(func.count()).select_from(ImageRunReview)) == 0
+
+
+def test_instant_gold_color_preview_rejects_job_without_settling_or_charging_it(
+    catalog_client,
+    example_spec,
+):
+    client, SessionFactory = catalog_client
+    project = _create_project(client, example_spec, SessionFactory)
+    job = _studio_job(client, project)
+
+    response = client.post(
+        f"/assets/{project['active_asset_id']}/catalog/preview",
+        json=_request(execution_mode="instant", studio_job_id=job["job_id"]),
+    )
+
+    assert response.status_code == 409, response.text
+    assert response.json()["code"] == "instant_preview_job_not_allowed"
+    with SessionFactory() as db:
+        durable_job = db.get(StudioJobRecord, job["job_id"])
+        assert durable_job is not None and durable_job.status == "running"
+        assert durable_job.progress == pytest.approx(0.05)
+        assert durable_job.completed_outputs == durable_job.charged_outputs == 0
+        assert durable_job.error_code is None
+        assert db.scalar(select(func.count()).select_from(ImageRun)) == 0
+        assert db.scalar(select(func.count()).select_from(ImageAttempt)) == 0
+        assert db.scalar(select(func.count()).select_from(PreviewCandidateRecord)) == 0
 
 
 def _studio_job(

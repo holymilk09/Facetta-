@@ -167,6 +167,8 @@ export interface StudioCatalogPreview {
   lineage: ExactStudioLineage;
   componentPath: CatalogPreviewRequest['component_path'];
   optionId: string;
+  executionMode: NonNullable<CatalogPreviewRequest['execution_mode']>;
+  estimatedCredits: number;
 }
 
 export interface StudioMarkupPreview {
@@ -208,6 +210,7 @@ export interface StudioCatalogPreviewRequest extends ExactStudioLineage {
   stoneSpecies?: string;
   chainGeometry?: CatalogPreviewRequest['chain_geometry'];
   chainProduction?: CatalogPreviewRequest['chain_production'];
+  executionMode?: CatalogPreviewRequest['execution_mode'];
 }
 
 export interface StudioMarkupPreviewRequest extends ExactStudioLineage {
@@ -1732,9 +1735,7 @@ export function createStudioGateway(
         sourceAssetId: request.sourceAssetId,
         sourceDesignVersion: request.sourceDesignVersion,
       };
-      const started = await startJob('refine', request.createdBy, 1, lineage);
-      if (started.error !== null) return started;
-      const trustedRequest: CatalogPreviewRequest = {
+      const baseTrustedRequest: CatalogPreviewRequest = {
         component_path: request.componentPath,
         option_id: request.optionId,
         expected_design_version: request.sourceDesignVersion,
@@ -1743,21 +1744,64 @@ export function createStudioGateway(
         ...(request.stoneSpecies === undefined ? {} : { stone_species: request.stoneSpecies }),
         ...(request.chainGeometry === undefined ? {} : { chain_geometry: request.chainGeometry }),
         ...(request.chainProduction === undefined ? {} : { chain_production: request.chainProduction }),
-        ...(started.data === null ? {} : { studio_job_id: started.data.jobId }),
       };
-      const result = await callTracked(
-        started.data,
-        () => client.previewCatalogSelection(request.sourceAssetId, trustedRequest),
-      );
+      let studioJob: ActiveStudioJob | null = null;
+      let result: StudioGatewayResult<CatalogPreviewResult>;
+      let executionMode = request.executionMode ?? 'provider';
+
+      if (executionMode === 'instant') {
+        try {
+          const instant = await client.previewCatalogSelection(request.sourceAssetId, {
+            ...baseTrustedRequest,
+            execution_mode: 'instant',
+          });
+          if (instant.error === null) {
+            result = instant;
+          } else if (
+            instant.error.category === 'capability'
+            && instant.error.code === 'instant_gold_color_unsupported'
+          ) {
+            executionMode = 'provider';
+            result = { data: null, error: mapError(instant.error), status: instant.status };
+          } else {
+            return { data: null, error: mapError(instant.error), status: instant.status };
+          }
+        } catch (error) {
+          return gatewayError(
+            'UNEXPECTED_INSTANT_PREVIEW_FAILURE',
+            error instanceof Error ? error.message : 'The quick preview could not be created.',
+            'unavailable', 0, true,
+          );
+        }
+      } else {
+        result = gatewayError(
+          'PROVIDER_PREVIEW_NOT_STARTED', 'The standard preview has not started.',
+          'unavailable', 0,
+        );
+      }
+
+      if (executionMode === 'provider') {
+        const started = await startJob('refine', request.createdBy, 1, lineage);
+        if (started.error !== null) return started;
+        studioJob = started.data;
+        result = await callTracked(
+          studioJob,
+          () => client.previewCatalogSelection(request.sourceAssetId, {
+            ...baseTrustedRequest,
+            execution_mode: 'provider',
+            ...(studioJob === null ? {} : { studio_job_id: studioJob.jobId }),
+          }),
+        );
+      }
       if (result.error !== null) return result;
-      markBackendCandidateReviewing(started.data);
+      markBackendCandidateReviewing(studioJob);
       if (
         result.data.source_asset_id !== request.sourceAssetId
         || result.data.design_version !== request.sourceDesignVersion
         || result.data.project.root_id !== request.projectId
-        || (result.data.candidate.studio_job_id ?? null) !== (started.data?.jobId ?? null)
+        || (result.data.candidate.studio_job_id ?? null) !== (studioJob?.jobId ?? null)
       ) {
-        await failJob(started.data, 'INVALID_PREVIEW_LINEAGE', 0.9);
+        await failJob(studioJob, 'INVALID_PREVIEW_LINEAGE', 0.9);
         return gatewayError(
           'INVALID_PREVIEW_LINEAGE',
           'The preview response did not match the requested immutable revision.',
@@ -1784,7 +1828,7 @@ export function createStudioGateway(
         preview: candidate,
         lineage,
         proposedSpec: result.data.next_spec,
-        studioJob: started.data,
+        studioJob,
       });
       return {
         data: {
@@ -1792,6 +1836,9 @@ export function createStudioGateway(
           lineage,
           componentPath: request.componentPath,
           optionId: request.optionId,
+          executionMode,
+          estimatedCredits: executionMode === 'instant'
+            ? 0 : getStudioAction('refine').creditEstimate ?? 0,
         },
         error: null,
         status: result.status,
