@@ -161,6 +161,22 @@ def test_mounted_legacy_mutation_cannot_false_pass_as_hidden():
     assert result["passed"] is False
 
 
+def test_mounted_raw_prompt_compiler_cannot_escape_release_probe():
+    """Retired prompt-debug/compiler operations are release-critical exposure."""
+
+    def mounted_compiler_transport(
+        method: str, url: str, token: str,
+    ) -> HttpResult:
+        if method == "OPTIONS" and url.endswith("/specs/render-prompt"):
+            return HttpResult(405, allowed_methods=frozenset({"POST"}))
+        return _transport(method, url, token)
+
+    result = run_probe(_config(), mounted_compiler_transport)
+    failed = {check["name"] for check in result["checks"] if not check["passed"]}
+    assert failed == {"production_disallows_specs_render_prompt"}
+    assert result["passed"] is False
+
+
 def test_dynamic_get_collision_does_not_hide_a_safe_production_surface():
     def production_collision_transport(
         method: str, url: str, token: str,

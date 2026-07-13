@@ -1,5 +1,5 @@
 import { StatusBar } from 'expo-status-bar';
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator, Pressable, SafeAreaView, ScrollView, StyleSheet, Text,
   useWindowDimensions, View,
@@ -117,7 +117,14 @@ export default function App() {
     loading: boolean;
     error: string | null;
   } | null>(null);
+  // Opening a family variation or Activity item is a designer selection. If a
+  // slower, earlier request finishes after a newer selection, it must not
+  // replace the latest project or surface an error for work the designer no
+  // longer intends to open.
+  const projectHydrationRequestId = useRef(0);
   const clearAuthenticatedUi = useCallback(() => {
+    projectHydrationRequestId.current += 1;
+    setProjectHydration(null);
     clearSession();
     setSession(null);
     setDesigner('');
@@ -269,10 +276,14 @@ export default function App() {
   const isStudioHome = tab === 'studio' && studioView === 'home';
 
   const hydrateProject = useCallback(async (request: ProjectHydrationRequest) => {
+    const requestId = projectHydrationRequestId.current + 1;
+    projectHydrationRequestId.current = requestId;
+    const isCurrentRequest = (): boolean => projectHydrationRequestId.current === requestId;
     setProjectHydration({ request, loading: true, error: null });
     if (request.reviewJobId !== undefined
       && ['refine', 'views', 'present'].includes(request.destination)) {
       const review = await studioGateway.resumeReviewJob(request.reviewJobId, designer);
+      if (!isCurrentRequest()) return;
       if (review.error !== null) {
         setProjectHydration({
           request,
@@ -289,6 +300,7 @@ export default function App() {
       return;
     }
     const result = await studioGateway.getProject(request.projectId);
+    if (!isCurrentRequest()) return;
     if (result.error !== null) {
       setProjectHydration({
         request,

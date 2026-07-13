@@ -357,8 +357,12 @@ def run_probe(config: StagingConfig, transport: Transport = http_transport) -> d
     # is acceptable only when the retired mutating method is absent from Allow.
     legacy_path_values = {
         "project_id": quote(config.first.project_id, safe=""),
+        "root_id": quote(config.first.project_id, safe=""),
         "asset_id": quote(config.first.asset_id, safe=""),
+        "active_asset_id": quote(config.first.asset_id, safe=""),
         "design_id": "e2e-hidden",
+        "version": "1",
+        "token": "e2e-hidden",
         "candidate_id": "e2e-hidden",
         "line_art_asset_id": "e2e-hidden",
         "run_id": "e2e-hidden",

@@ -419,6 +419,21 @@ def test_image_assets_reject_canonical_mutation_and_delete_but_allow_pinning():
             db.commit()
         db.rollback()
 
+    # Source kind is designer-declared provenance, not editable presentation
+    # metadata. In particular, historical NULL cannot later be rewritten as a
+    # photograph/drawing/render claim after that asset has produced accepted
+    # descendants.
+    with SessionFactory() as db:
+        asset = db.get(ImageAsset, "ast_immutable")
+        assert asset is not None and asset.source_kind is None
+        asset.source_kind = "photograph"
+        with pytest.raises(
+            ImmutableImageAssetError,
+            match="source_kind",
+        ):
+            db.commit()
+        db.rollback()
+
     with SessionFactory() as db:
         asset = db.get(ImageAsset, "ast_immutable")
         assert asset is not None

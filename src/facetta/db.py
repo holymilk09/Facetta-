@@ -193,8 +193,8 @@ class ImmutableImageAssetError(RuntimeError):
 
 _IMAGE_ASSET_CANONICAL_FIELDS = frozenset({
     "id", "root_id", "parent_asset_id", "design_id", "design_version",
-    "capability", "instruction", "region", "drift", "image", "media_type",
-    "created_by", "created_at",
+    "capability", "source_kind", "instruction", "region", "drift", "image",
+    "media_type", "created_by", "created_at",
 })
 
 

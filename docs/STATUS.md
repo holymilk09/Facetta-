@@ -5,6 +5,37 @@ Read `CLAUDE.md` (constitution — binding), `README.md` (endpoints/layout),
 `docs/DATA_WANTED.md` (open research asks). This file is the delta: what is
 DONE beyond the original TASKS.md build order, and what is next.
 
+## 2026-07-14 selection-order, source-provenance, and legacy-discovery checkpoint
+
+Studio project hydration now treats every Collections or Activity open as an
+ordered designer selection. A slower response from an earlier selection can no
+longer replace the latest family variation, open the wrong revision, or surface
+an obsolete recovery error. Signing out also invalidates any in-flight project
+open before authenticated UI state is cleared.
+
+`ImageAsset.source_kind` is now part of the canonical immutability boundary.
+Persisted drawing, photograph, finished-render, or legacy unknown provenance
+cannot be relabeled in place after the asset has entered revision history;
+pinning remains the deliberately mutable presentation exception.
+
+The signed staging probe now checks 53 exact retired method/path pairs instead
+of only the previous mutation subset. It covers every route classified as
+Deprecated compatibility or Dead/conflicting, including provider-triggering
+GET renders, raw prompt/compiler operations, design edit/annotation adapters,
+and token-share reads. Tests bind every probe template to a real development
+route, prove every one is absent from production OpenAPI and method discovery,
+and require every production mutation to remain classified Canonical.
+
+Local validation is green: 1,784 backend tests; all 36 mobile Jest suites (284
+tests); 77 Studio contract tests; TypeScript; Ruff; Expo web export; diff
+hygiene; and the complete ten-project production TypeScript-client -> HTTP ->
+FastAPI acceptance run with no Factory use. The frozen definition still covers
+144 integrity sources, 58 quality sources, and 1,044 logical sequences with
+zero provider calls. The credential-free staging probe exits `77` with
+`secrets_logged: false`. The signed corpus run, reviewed assignment bundle,
+independent designer/GIA review, founder approval, authority enrollment, and
+live two-principal staging evidence remain unmet external-beta gates.
+
 ## 2026-07-14 Studio lineage, destination, and staging-isolation checkpoint
 
 Studio Refine now binds annotations to the exact source asset rather than its

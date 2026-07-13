@@ -1,5 +1,8 @@
 """The Internet-facing beta mounts only the authenticated Studio surface."""
 
+import re
+from pathlib import Path
+
 import pytest
 
 from fastapi import APIRouter
@@ -96,6 +99,25 @@ EXPECTED_PRODUCTION_OPERATIONS = (
 )
 
 
+_INVENTORY_ROW = re.compile(
+    r"^\| `(GET|POST|PUT|PATCH|DELETE) ([^`]+)` \| "
+    r"(Canonical|Internal primitive|Deprecated compatibility|Dead/conflicting) \|",
+    re.MULTILINE,
+)
+
+
+def _classified_operations() -> dict[tuple[str, str], str]:
+    inventory = (
+        Path(__file__).resolve().parents[1]
+        / "docs"
+        / "trusted-workflow-route-inventory.md"
+    ).read_text()
+    return {
+        (method, path): classification
+        for method, path, classification in _INVENTORY_ROW.findall(inventory)
+    }
+
+
 def test_production_method_path_surface_is_exact(monkeypatch):
     monkeypatch.setenv("FACETTA_ENV", "production")
     production_app = create_app()
@@ -106,6 +128,69 @@ def test_production_method_path_surface_is_exact(monkeypatch):
         if method.lower() in {"get", "post", "put", "patch", "delete"}
     }
     assert actual == EXPECTED_PRODUCTION_OPERATIONS
+
+
+def test_release_probe_covers_every_retired_product_operation() -> None:
+    """A deployment cannot pass while any retired route escapes observation."""
+
+    classified = _classified_operations()
+    retired = {
+        operation
+        for operation, classification in classified.items()
+        if classification in {"Deprecated compatibility", "Dead/conflicting"}
+    }
+    probed = {
+        (method, path)
+        for _name, method, path in STAGING_DISALLOWED_LEGACY_OPERATIONS
+    }
+
+    assert retired <= probed
+
+
+def test_release_probe_templates_are_real_and_absent_from_production(
+    monkeypatch,
+) -> None:
+    """Every signed check names a real compatibility route and a real absence."""
+
+    forbidden = {
+        (method, path)
+        for _name, method, path in STAGING_DISALLOWED_LEGACY_OPERATIONS
+    }
+    monkeypatch.setenv("FACETTA_ENV", "test")
+    development = create_app().openapi()["paths"]
+    development_operations = {
+        (method.upper(), path)
+        for path, methods in development.items()
+        for method in methods
+        if method.lower() in {"get", "post", "put", "patch", "delete"}
+    }
+    assert forbidden <= development_operations
+
+    monkeypatch.setenv("FACETTA_ENV", "production")
+    production = create_app().openapi()["paths"]
+    production_operations = {
+        (method.upper(), path)
+        for path, methods in production.items()
+        for method in methods
+        if method.lower() in {"get", "post", "put", "patch", "delete"}
+    }
+    assert forbidden.isdisjoint(production_operations)
+
+
+def test_every_production_mutation_is_classified_canonical() -> None:
+    """Internal/compatibility primitives may never drift into public writes."""
+
+    classified = _classified_operations()
+    mutations = {
+        operation
+        for operation in EXPECTED_PRODUCTION_OPERATIONS
+        if operation[0] in {"POST", "PUT", "PATCH", "DELETE"}
+    }
+
+    assert mutations
+    assert all(
+        classified.get(operation) == "Canonical" for operation in mutations
+    )
 
 
 def test_production_router_filter_fails_closed_on_shared_path_method_drift():
@@ -185,8 +270,12 @@ def test_production_hides_legacy_admin_and_stateless_spec_adapters(monkeypatch):
         ):
             path = path_template.format(
                 project_id="known",
+                root_id="known",
                 asset_id="known",
+                active_asset_id="known",
                 design_id="known",
+                version="1",
+                token="known",
                 candidate_id="candidate",
                 line_art_asset_id="line-art",
                 run_id="known",
@@ -212,8 +301,12 @@ def test_production_method_discovery_excludes_staging_legacy_operations(
         ):
             path = path_template.format(
                 project_id="known",
+                root_id="known",
                 asset_id="known",
+                active_asset_id="known",
                 design_id="known",
+                version="1",
+                token="known",
                 candidate_id="candidate",
                 line_art_asset_id="line-art",
                 run_id="known",

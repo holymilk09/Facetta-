@@ -49,18 +49,21 @@ STAGING_RUN_KIND = "read_only_two_principal_staging_probe"
 STAGING_APPROVAL_SCHEMA = "facetta-staging-isolation-approval.v1"
 EXTERNAL_BETA_DECISION_SCHEMA = "facetta-external-beta-release-decision.v1"
 
-# These mutating operations belong to superseded Builder/trusted-workflow
-# surfaces. A deployed external-beta API must not expose them, even though
-# compatibility handlers remain available in development for historical data
-# and migration tests. The live probe checks them with OPTIONS only, so it can
-# prove the requested method is absent without creating records or invoking a
-# provider. The tuple is shared with the probe to keep the signed-result
-# contract and the deployed observations exact.
+# These operations belong to superseded Builder/trusted-workflow surfaces. A
+# deployed external-beta API must not expose them, even though compatibility
+# handlers remain available in development for historical data and migration
+# tests. This includes GET operations that start provider work or expose the
+# retired token-share surface: HTTP method safety does not make those product
+# boundaries acceptable. The live probe checks every operation with OPTIONS
+# only, so it can prove the requested method is absent without creating
+# records, reading shared data, or invoking a provider. The tuple is shared
+# with the probe to keep the signed-result contract and the deployed
+# observations exact.
 STAGING_DISALLOWED_LEGACY_OPERATIONS: tuple[tuple[str, str, str], ...] = (
     (
         "design_version_share",
         "POST",
-        "/designs/{design_id}/versions/1/share",
+        "/designs/{design_id}/versions/{version}/share",
     ),
     ("specs_from_photo", "POST", "/specs/from-photo"),
     ("specs_from_plate", "POST", "/specs/from-plate"),
@@ -83,7 +86,7 @@ STAGING_DISALLOWED_LEGACY_OPERATIONS: tuple[tuple[str, str, str], ...] = (
     (
         "asset_catalog_apply",
         "POST",
-        "/assets/{asset_id}/catalog/apply",
+        "/assets/{active_asset_id}/catalog/apply",
     ),
     ("asset_render", "POST", "/assets/render"),
     ("asset_views", "POST", "/assets/{asset_id}/views"),
@@ -110,22 +113,27 @@ STAGING_DISALLOWED_LEGACY_OPERATIONS: tuple[tuple[str, str, str], ...] = (
         "POST",
         "/projects/from-brief/candidates/{candidate_id}/accept",
     ),
+    (
+        "project_from_brief_candidate_image",
+        "GET",
+        "/projects/from-brief/candidates/{candidate_id}/image",
+    ),
     ("project_from_image", "POST", "/projects/from-image"),
     (
         "project_creative_candidate_select",
         "POST",
         "/projects/{project_id}/creative-candidates/{candidate_id}/select",
     ),
-    ("project_render", "POST", "/projects/{project_id}/render"),
+    ("project_render", "POST", "/projects/{root_id}/render"),
     (
         "project_product_photo",
         "POST",
-        "/projects/{project_id}/product-photo",
+        "/projects/{root_id}/product-photo",
     ),
     (
         "project_visual_twin_views",
         "POST",
-        "/projects/{project_id}/visual-twin/views",
+        "/projects/{root_id}/visual-twin/views",
     ),
     (
         "project_creative_candidate_draft",
@@ -135,13 +143,48 @@ STAGING_DISALLOWED_LEGACY_OPERATIONS: tuple[tuple[str, str, str], ...] = (
     (
         "project_line_art_colorize",
         "POST",
-        "/projects/{project_id}/line-art/{line_art_asset_id}/colorize",
+        "/projects/{root_id}/line-art/{line_art_asset_id}/colorize",
     ),
     (
         "trusted_image_run_feedback",
         "POST",
         "/image-runs/{run_id}/feedback",
     ),
+    ("design_edit", "POST", "/designs/{design_id}/edit"),
+    ("design_annotate", "POST", "/designs/{design_id}/annotate"),
+    (
+        "design_blueprint_sheet",
+        "GET",
+        "/designs/{design_id}/versions/{version}/blueprint-sheet.svg",
+    ),
+    (
+        "design_provider_render",
+        "GET",
+        "/designs/{design_id}/versions/{version}/render.png",
+    ),
+    ("specs_from_concept", "POST", "/specs/from-concept"),
+    ("specs_localized_edit", "POST", "/specs/localized-edit"),
+    ("specs_technical_drawing", "POST", "/specs/technical-drawing"),
+    ("specs_agent_sheet", "POST", "/specs/agent-sheet"),
+    ("specs_read_plate", "POST", "/specs/read-plate"),
+    ("specs_plate_lineart", "POST", "/specs/plate-lineart"),
+    ("specs_plate_colorize", "POST", "/specs/plate-colorize"),
+    ("specs_blueprint_sheet", "POST", "/specs/blueprint-sheet.svg"),
+    ("specs_provider_render", "POST", "/specs/render.png"),
+    ("specs_artwork_restyle", "POST", "/specs/artwork-restyle.png"),
+    ("specs_render_request", "POST", "/specs/render-request"),
+    ("specs_restage_request", "POST", "/specs/restage-request"),
+    ("specs_render_prompt", "POST", "/specs/render-prompt"),
+    ("specs_finish_request", "POST", "/specs/finish-request"),
+    (
+        "specs_artwork_restyle_request",
+        "POST",
+        "/specs/artwork-restyle-request",
+    ),
+    ("specs_infer_capability", "POST", "/specs/infer-capability"),
+    ("token_share_read", "GET", "/share/{token}"),
+    ("token_share_sheet", "GET", "/share/{token}/sheet.svg"),
+    ("token_share_comment", "POST", "/share/{token}/comments"),
 )
 
 

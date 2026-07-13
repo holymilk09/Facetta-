@@ -141,6 +141,7 @@ jest.mock('./StudioCollectionsWorkspace', () => {
   return {
     StudioCollectionsWorkspace: ({
       project,
+      onOpenProject,
       onVaryCurrent,
       onContinueRefining,
       onPresentCurrent,
@@ -148,6 +149,16 @@ jest.mock('./StudioCollectionsWorkspace', () => {
     }: any) => ReactLocal.createElement(
       View,
       null,
+      ReactLocal.createElement(
+        Pressable,
+        { accessibilityRole: 'button', onPress: () => onOpenProject('project_a') },
+        ReactLocal.createElement(Text, null, 'Open project A'),
+      ),
+      ReactLocal.createElement(
+        Pressable,
+        { accessibilityRole: 'button', onPress: () => onOpenProject('project_b') },
+        ReactLocal.createElement(Text, null, 'Open project B'),
+      ),
       ReactLocal.createElement(
         Pressable,
         { accessibilityRole: 'button', onPress: onVaryCurrent },
@@ -323,6 +334,31 @@ const nonConfirmablePreSpecProject = {
   factory_ready: false,
 };
 
+const hydratedProjectFor = (projectId: string, assetId: string) => ({
+  ...hydratedProject,
+  id: projectId,
+  root_id: projectId,
+  title: `Hydrated ${projectId}`,
+  active_asset_id: assetId,
+  selected_candidate_asset_id: assetId,
+  active_revision: {
+    ...hydratedProject.active_revision,
+    asset_id: assetId,
+    root_id: projectId,
+    instruction: `Hydrated ${projectId}`,
+  },
+  revisions: hydratedProject.revisions.map((revision) => ({
+    ...revision,
+    asset: {
+      ...revision.asset,
+      asset_id: assetId,
+      root_id: projectId,
+      instruction: `Hydrated ${projectId}`,
+    },
+  })),
+  cover_asset_id: assetId,
+});
+
 const refinedPreSpecProject = {
   ...nonConfirmablePreSpecProject,
   confirmable_pre_spec: true,
@@ -463,6 +499,84 @@ test('Studio home opens Collections through the saved-work continuation', async 
   const continuation = await view.findByLabelText('Continue saved work');
   fireEvent.press(continuation);
   expect(await view.findByText('Vary exact none')).toBeTruthy();
+});
+
+test('the latest family selection wins when an older project request resolves last', async () => {
+  authenticate();
+  const older = deferred<any>();
+  const latest = deferred<any>();
+  mockGetProject.mockImplementation((projectId: string) => (
+    projectId === 'project_a' ? older.promise : latest.promise
+  ));
+  const view = await render(<App />);
+
+  fireEvent.press(await view.findByRole('tab', { name: 'Collections' }));
+  const projectA = await view.findByText('Open project A');
+  const projectB = view.getByText('Open project B');
+  await act(async () => {
+    fireEvent.press(projectA);
+    await Promise.resolve();
+  });
+  await act(async () => {
+    fireEvent.press(projectB);
+    latest.resolve({ data: hydratedProjectFor('project_b', 'asset_b'), error: null, status: 200 });
+    await latest.promise;
+    await Promise.resolve();
+  });
+  expect(await view.findByText('Vary exact project_b')).toBeTruthy();
+
+  await act(async () => {
+    older.resolve({ data: hydratedProjectFor('project_a', 'asset_a'), error: null, status: 200 });
+    await older.promise;
+    await Promise.resolve();
+  });
+  await waitFor(() => {
+    expect(view.getByText('Vary exact project_b')).toBeTruthy();
+    expect(view.queryByText('Vary exact project_a')).toBeNull();
+  });
+});
+
+test('an older family request cannot surface a stale error over the latest selection', async () => {
+  authenticate();
+  const older = deferred<any>();
+  const latest = deferred<any>();
+  mockGetProject.mockImplementation((projectId: string) => (
+    projectId === 'project_a' ? older.promise : latest.promise
+  ));
+  const view = await render(<App />);
+
+  fireEvent.press(await view.findByRole('tab', { name: 'Collections' }));
+  const projectA = await view.findByText('Open project A');
+  const projectB = view.getByText('Open project B');
+  await act(async () => {
+    fireEvent.press(projectA);
+    await Promise.resolve();
+  });
+  await act(async () => {
+    fireEvent.press(projectB);
+    latest.resolve({ data: hydratedProjectFor('project_b', 'asset_b'), error: null, status: 200 });
+    await latest.promise;
+    await Promise.resolve();
+  });
+  expect(await view.findByText('Vary exact project_b')).toBeTruthy();
+
+  await act(async () => {
+    older.resolve({
+      data: null,
+      error: {
+        code: 'NETWORK_ERROR', category: 'network', status: 0,
+        message: 'Older request failed.', retryable: true,
+      },
+      status: 0,
+    });
+    await older.promise;
+    await Promise.resolve();
+  });
+  await waitFor(() => {
+    expect(view.getByText('Vary exact project_b')).toBeTruthy();
+    expect(view.queryByText(/could not connect/i)).toBeNull();
+    expect(view.queryByText('Retry')).toBeNull();
+  });
 });
 
 test('Collections delegates variation creation to Studio Vary with the exact active project', async () => {
