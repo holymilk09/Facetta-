@@ -528,6 +528,7 @@ describe('trusted API decoders', () => {
       instruction: 'Preserve every visible element and render in platinum.',
       variation_count: 3,
       starting_variant: 10,
+      studio_job_id: 'studio job drawing',
       owner: 'usr_designer',
       title: 'Concept',
       source_region_description: 'Front necklace elevation',
@@ -550,6 +551,7 @@ describe('trusted API decoders', () => {
       source_kind: 'photograph',
       variation_count: 3,
       starting_variant: 10,
+      studio_job_id: 'studio job drawing',
       instruction: 'Preserve every visible element and render in platinum.',
       source_region_description: 'Front necklace elevation',
       source_region: { x: 0.2, y: 0.1, width: 0.6, height: 0.5 },
@@ -629,9 +631,15 @@ describe('trusted API decoders', () => {
       prompt: 'A platinum floral lariat necklace with emerald leaves.',
       variation_count: 3,
       starting_variant: 8,
+      studio_job_id: 'studio job prompt',
       owner: 'usr_designer',
       title: 'Lariat',
       collection: 'Exploration',
+      references: [{
+        role: 'material_style',
+        image_base64: 'cmVmZXJlbmNl',
+        media_type: 'image/jpeg',
+      }],
     });
     await api.selectCreativeCandidate('ast prompt', 'candidate two', 'usr_designer');
     await api.selectCreativeCandidate(
@@ -645,9 +653,15 @@ describe('trusted API decoders', () => {
       prompt: 'A platinum floral lariat necklace with emerald leaves.',
       variation_count: 3,
       starting_variant: 8,
+      studio_job_id: 'studio job prompt',
       owner: 'usr_designer',
       title: 'Lariat',
       collection: 'Exploration',
+      references: [{
+        role: 'material_style',
+        image_base64: 'cmVmZXJlbmNl',
+        media_type: 'image/jpeg',
+      }],
     });
     expect(fetcher.mock.calls[1]?.[0]).toBe(
       'https://facetta.test/projects/ast%20prompt/creative-candidates/candidate%20two/select');

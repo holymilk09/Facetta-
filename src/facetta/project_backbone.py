@@ -763,6 +763,8 @@ def persist_prompt_creative_project(
     db: Session,
     *,
     candidates: tuple[CreativeCandidateInput, ...],
+    reference_board: SourceAssetInput | None = None,
+    reference_sources: tuple[SourceAssetInput, ...] = (),
     owner: str,
     title: str,
     collection: str | None = None,
@@ -779,6 +781,27 @@ def persist_prompt_creative_project(
         raise ValueError("a creative project requires at least one candidate")
     if any(not candidate.image for candidate in candidates):
         raise ValueError("creative candidate image must not be empty")
+    if reference_board is not None and (
+        not reference_board.image
+        or reference_board.capability != "CREATIVE_REFERENCE_BOARD"
+    ):
+        raise ValueError("prompt creative reference board is invalid")
+    allowed_reference_capabilities = {
+        "CREATIVE_REFERENCE_MATERIAL_STYLE",
+        "CREATIVE_REFERENCE_CONSTRUCTION_DETAIL",
+        "CREATIVE_REFERENCE_BRAND_DIRECTION",
+    }
+    if any(
+        not source.image or source.capability not in allowed_reference_capabilities
+        for source in reference_sources
+    ):
+        raise ValueError("prompt creative role reference source is invalid")
+    if len({source.capability for source in reference_sources}) != len(reference_sources):
+        raise ValueError("prompt creative role reference capabilities must be unique")
+    if (reference_board is None) != (len(reference_sources) == 0):
+        raise ValueError(
+            "prompt creative advisory references require one canonical board"
+        )
 
     now = utcnow()
     root_id = new_id("ast")
@@ -797,6 +820,41 @@ def persist_prompt_creative_project(
             created_at=now,
         )
         for index, candidate in enumerate(candidates)
+    ]
+    reference_board_row = (
+        ImageAsset(
+            id=new_id("ast"),
+            root_id=root_id,
+            parent_asset_id=root_id,
+            design_id=None,
+            design_version=None,
+            capability="CREATIVE_REFERENCE_BOARD",
+            instruction=reference_board.instruction,
+            image=reference_board.image,
+            media_type=(
+                reference_board.media_type
+                or sniff_media_type(reference_board.image)
+            ),
+            created_by=owner,
+            created_at=now,
+        )
+        if reference_board is not None else None
+    )
+    reference_rows = [
+        ImageAsset(
+            id=new_id("ast"),
+            root_id=root_id,
+            parent_asset_id=root_id,
+            design_id=None,
+            design_version=None,
+            capability=source.capability,
+            instruction=source.instruction,
+            image=source.image,
+            media_type=source.media_type or sniff_media_type(source.image),
+            created_by=owner,
+            created_at=now,
+        )
+        for source in reference_sources
     ]
     project = Project(
         root_id=root_id,
@@ -821,7 +879,12 @@ def persist_prompt_creative_project(
                 )
             studio_job.active_design_id = root_id
             studio_job.updated_at = now
-        db.add_all([*rows, project])
+        db.add_all([
+            *rows,
+            project,
+            *([reference_board_row] if reference_board_row is not None else []),
+            *reference_rows,
+        ])
         from facetta.image_run_store import persist_image_agent_result
 
         image_run_ids = [
@@ -829,7 +892,10 @@ def persist_prompt_creative_project(
                 db,
                 candidate.image_run,
                 project_root_id=root_id,
-                source_asset_id=None,
+                source_asset_id=(
+                    reference_board_row.id
+                    if reference_board_row is not None else None
+                ),
                 accepted_asset_id=row.id,
                 created_by=owner,
                 commit=False,

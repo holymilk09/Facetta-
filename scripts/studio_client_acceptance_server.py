@@ -421,20 +421,38 @@ def _quality_rejected_result(plan, image: bytes):
     return JewelryImageAgent(Provider(), Evaluator()).run(plan)
 
 
-def _prompt_generator(prompt: str, variant: int):
+def _prompt_generator(
+    prompt: str,
+    variant: int,
+    *,
+    reference_board: bytes | None = None,
+    reference_instruction: str | None = None,
+):
+    if (reference_board is None) != (reference_instruction is None):
+        raise AssertionError("acceptance prompt references lost their role contract")
     image = (
         _semantic_ring_png()
         if prompt == STRUCTURAL_PRE_SPEC_PROMPT
-        else _png(_fixture_color("prompt", prompt, variant))
+        else _png(_fixture_color(
+            "prompt",
+            prompt,
+            reference_board or b"",
+            reference_instruction or "",
+            variant,
+        ))
     )
     plan = build_image_plan(
         ImageOperation.CREATIVE_GENERATE,
         prompt,
+        source_image=reference_board,
         variant=variant,
+        style_constraints=(
+            () if reference_instruction is None else (reference_instruction,)
+        ),
     )
     if prompt == FAILED_QA_FIXTURE_PROMPT:
         return _quality_rejected_result(plan, image)
-    return _accepted_result(plan, image)
+    return _accepted_result(plan, image, source=reference_board)
 
 
 def _render_generator(

@@ -132,7 +132,6 @@ export function StudioCreateWorkspace({
     || visualReview.allReady(referenceVisualKeys);
   const referenceVisualFailed = visualReview.anyFailed(referenceVisualKeys);
   const canCreate = !busy && (sentence.trim().length > 0 || masterReference !== null)
-    && !(masterReference === null && secondaryReferences.length > 0)
     && (masterReference === null || sourceKind !== null)
     && referenceVisualsReady;
 
@@ -170,6 +169,13 @@ export function StudioCreateWorkspace({
     const result = masterReference === null
       ? await gateway.createFromPrompt({
           prompt,
+          ...(secondaryReferences.length === 0 ? {} : {
+            references: secondaryReferences.map((reference) => ({
+              role: reference.role,
+              image_base64: reference.imageBase64,
+              media_type: reference.mediaType,
+            })),
+          }),
           variation_count: candidateCount,
           owner,
           title,
@@ -462,9 +468,9 @@ export function StudioCreateWorkspace({
         <View style={styles.setupDisclosureCopy}>
           <Text style={styles.setupDisclosureTitle}>References &amp; output options</Text>
           <Text style={styles.setupDisclosureSummary}>
-            {candidateCount} direction{candidateCount === 1 ? '' : 's'} · {references.length === 0
-              ? 'No references'
-              : `${references.length} role-labeled reference${references.length === 1 ? '' : 's'}`}
+            {candidateCount} direction{candidateCount === 1 ? '' : 's'} · {secondaryReferences.length === 0
+              ? 'No supporting references'
+              : `${secondaryReferences.length} supporting reference${secondaryReferences.length === 1 ? '' : 's'}`}
           </Text>
         </View>
         <Text style={styles.disclosureGlyph}>{setupOpen ? '−' : '+'}</Text>
@@ -494,6 +500,7 @@ export function StudioCreateWorkspace({
               ({ role }) => role !== 'master_geometry',
             ).map(({ role, label, help }) => {
               const reference = references.find((item) => item.role === role);
+              const advisoryInputReady = sentence.trim().length > 0 || masterReference !== null;
               return (
                 <View key={role} style={styles.referenceRow}>
                   {reference !== undefined && (
@@ -514,18 +521,18 @@ export function StudioCreateWorkspace({
                     <Pressable
                       accessibilityRole="button"
                       accessibilityLabel={`Add ${label} reference`}
-                      accessibilityHint={masterReference === null
-                        ? 'Add a visual source before adding this supporting reference.'
+                      accessibilityHint={!advisoryInputReady
+                        ? 'Add a design sentence or visual source before adding this supporting reference.'
                         : help}
-                      accessibilityState={{ disabled: role !== 'master_geometry' && masterReference === null }}
-                      disabled={role !== 'master_geometry' && masterReference === null}
+                      accessibilityState={{ disabled: !advisoryInputReady }}
+                      disabled={!advisoryInputReady}
                       style={[
                         styles.referenceButton,
-                        role !== 'master_geometry' && masterReference === null && styles.buttonDisabled,
+                        !advisoryInputReady && styles.buttonDisabled,
                       ]}
                       onPress={() => requestReference(role)}>
                       <Text style={styles.referenceButtonText}>
-                        {role !== 'master_geometry' && masterReference === null ? 'Add master first' : 'Add'}
+                        {!advisoryInputReady ? 'Add an idea first' : 'Add'}
                       </Text>
                     </Pressable>
                   ) : (

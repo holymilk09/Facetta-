@@ -798,6 +798,41 @@ test('Create, Views, and Present forward typed inputs without model or provider 
   ]);
 });
 
+test('Create forwards prompt advisory references through the typed gateway seam', async () => {
+  let observed: Parameters<NonNullable<ReturnType<typeof fakeClient>['createProjectFromPrompt']>>[0] | null = null;
+  const gateway = createStudioGateway(fakeClient({
+    createProjectFromPrompt: async (request) => {
+      observed = request;
+      return ok(project(), 201);
+    },
+  }));
+
+  const result = await gateway.createFromPrompt({
+    prompt: 'A minimal gold cuff',
+    owner: 'designer_1',
+    title: 'Gold cuff',
+    variation_count: 2,
+    references: [{
+      role: 'brand_direction',
+      image_base64: 'YnJhbmQ=',
+      media_type: 'image/png',
+    }],
+  });
+
+  assert.equal(result.error, null);
+  assert.deepEqual(observed, {
+    prompt: 'A minimal gold cuff',
+    owner: 'designer_1',
+    title: 'Gold cuff',
+    variation_count: 2,
+    references: [{
+      role: 'brand_direction',
+      image_base64: 'YnJhbmQ=',
+      media_type: 'image/png',
+    }],
+  });
+});
+
 test('Views stay temporary, bind to the exact revision, and save only after acceptance', async () => {
   const acceptedProject = project();
   acceptedProject.derived_assets = [{

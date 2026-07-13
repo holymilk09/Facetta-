@@ -402,6 +402,84 @@ test('sends every enabled role with the master geometry input', async () => {
   expect(screen.queryByText(/Reference limit|cannot send|remain labeled/i)).toBeNull();
 });
 
+test('accepts role-labeled advisory guidance after a sentence without requiring a master', async () => {
+  const material: StudioCreateReference = {
+    id: 'material', role: 'material_style', label: 'Hammered gold reference',
+    imageBase64: 'bWF0ZXJpYWw=', mediaType: 'image/jpeg',
+  };
+  const createFromPrompt = jest.fn(async () => ({
+    data: creativeProject(2), error: null, status: 201,
+  }));
+  const createFromDrawing = jest.fn();
+  const onRequestReference = jest.fn(async () => material);
+  await renderCreate(<StudioCreateWorkspace
+    gateway={{
+      createFromPrompt, createFromDrawing, completeCreativeDirectionReview: jest.fn(),
+    } as CreateGateway}
+    owner="designer_1"
+    onRequestReference={onRequestReference}
+    onSave={jest.fn()}
+  />);
+
+  await fireEvent.press(screen.getByLabelText('References and output options'));
+  const addMaterial = screen.getByLabelText('Add Material & style reference');
+  expect(addMaterial.props.accessibilityState).toEqual({ disabled: true });
+  expect(screen.getAllByText('Add an idea first')).toHaveLength(3);
+  expect(screen.getByText('2 directions · No supporting references')).toBeTruthy();
+
+  await fireEvent.changeText(
+    screen.getByLabelText('Design sentence'),
+    'A broad sculptural gold cuff with one clean opening.',
+  );
+  expect(screen.getByLabelText('Add Material & style reference').props.accessibilityState).toEqual({
+    disabled: false,
+  });
+  await fireEvent.press(screen.getByLabelText('Add Material & style reference'));
+  expect(onRequestReference).toHaveBeenCalledWith('material_style');
+  expect(screen.getByText('2 directions · 1 supporting reference')).toBeTruthy();
+  expect(screen.getByText('Create 2 directions').parent?.props.accessibilityState).toEqual({ disabled: true });
+
+  await loadReferencePreview('Material & style reference preview');
+  await fireEvent.press(screen.getByText('Create 2 directions'));
+  await waitFor(() => expect(createFromPrompt).toHaveBeenCalledWith({
+    prompt: 'A broad sculptural gold cuff with one clean opening.',
+    references: [{
+      role: 'material_style',
+      image_base64: 'bWF0ZXJpYWw=',
+      media_type: 'image/jpeg',
+    }],
+    variation_count: 2,
+    owner: 'designer_1',
+    title: 'A broad sculptural gold cuff with one clean opening.',
+  }));
+  expect(createFromDrawing).not.toHaveBeenCalled();
+});
+
+test('rejects an advisory-only setup until the designer supplies a sentence or master', async () => {
+  const material: StudioCreateReference = {
+    id: 'material', role: 'material_style', label: 'Hammered gold reference',
+    imageBase64: 'bWF0ZXJpYWw=', mediaType: 'image/jpeg',
+  };
+  const createFromPrompt = jest.fn();
+  await renderCreate(<StudioCreateWorkspace
+    gateway={{
+      createFromPrompt, createFromDrawing: jest.fn(),
+      completeCreativeDirectionReview: jest.fn(),
+    } as CreateGateway}
+    owner="designer_1"
+    initialReferences={[material]}
+    onSave={jest.fn()}
+  />);
+
+  await loadReferencePreview('Material & style reference preview');
+  expect(screen.getByText('2 directions · 1 supporting reference')).toBeTruthy();
+  expect(screen.getByText('Create 2 directions').parent?.props.accessibilityState).toEqual({
+    disabled: true,
+  });
+  await fireEvent.press(screen.getByText('Create 2 directions'));
+  expect(createFromPrompt).not.toHaveBeenCalled();
+});
+
 test('starts from a master image without forcing a sentence', async () => {
   const master: StudioCreateReference = {
     id: 'master', role: 'master_geometry', label: 'Pendant photograph',

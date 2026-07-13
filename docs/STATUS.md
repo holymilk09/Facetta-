@@ -5,6 +5,52 @@ Read `CLAUDE.md` (constitution — binding), `README.md` (endpoints/layout),
 `docs/DATA_WANTED.md` (open research asks). This file is the delta: what is
 DONE beyond the original TASKS.md build order, and what is next.
 
+## 2026-07-14 sentence-led references and bound release authority checkpoint
+
+Studio Create now accepts up to three unique supporting images—material/style,
+construction/detail, and brand direction—after the designer supplies a design
+sentence. A supporting image is never promoted to master geometry. Without a
+master image, the written direction remains the sole geometry and identity
+authority; supporting images may influence only their labeled advisory role.
+An advisory-only setup with neither a sentence nor a master remains disabled.
+
+The backend composes a deterministic role-labeled advisory board, binds its
+exact hash and role contract to `CREATIVE_GENERATE`, and uses an image-backed
+provider route without enabling source-geometry fidelity checks. The original
+reference bytes, roles, hashes, board, provider runs, and candidate lineage are
+persisted in one transaction. The candidates remain pre-spec, and failed QA
+retains attempt evidence without creating a Project, image revision, Design, or
+DesignVersion. The production TypeScript-client -> HTTP -> FastAPI acceptance
+matrix now includes sentence-plus-material/brand guidance as one of ten
+mixed-source projects; all ten save, reopen, branch, and refine without using
+Factory.
+
+The external-beta authority verifier now binds every operational signer—the
+executor, canonical API runner, GIA reviewer, founder, independent designer,
+and staging reviewer—to the exact enrolled role key ID and normalized Ed25519
+digest. A valid but unused enrollment can no longer mask an unrelated gate
+signer. The staging reviewer approval must also bind the exact tested fixture
+set, in addition to origin and deployment revision. Frozen implementation pins
+were advanced to these verifier bytes without changing either external gate's
+`not_run` / `unmet` status.
+
+Local validation is green: 1,764 backend tests; all 36 mobile Jest suites (278
+tests); 77 Studio contract tests; TypeScript; Ruff; Python byte-compilation;
+Expo web export; diff hygiene; 176 focused release-integrity tests; frozen
+definition validation; and the complete production client-to-API acceptance
+run. The credential-free staging probe still exits `77` with
+`secrets_logged: false`.
+
+The available corpus source directory was independently checked against the
+manifest: all 144 images match their hashes, byte sizes, dimensions, and
+formats, with no missing or extra files. Execution remains correctly blocked:
+all 1,044 rows lack the reviewed, hash-pinned assignment bundle, no executor
+authority or `corpus_run_id` is enrolled, and zero rows are execution-ready.
+The repository intentionally consumes externally generated execution and
+persistence bundles instead of containing a paid live runner. No provider call,
+human review, founder approval, authority enrollment, or live staging run was
+performed by this checkpoint.
+
 ## 2026-07-14 synchronized comparison and Activity-truth checkpoint
 
 Refine, Views, unsaved Present candidates, and Collections revision comparison

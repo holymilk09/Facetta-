@@ -512,6 +512,7 @@ export interface CreateProjectFromPromptRequest {
   title: string;
   collection?: string;
   tags?: string[];
+  references?: CreativeRoleReferenceRequest[];
   studio_job_id?: string;
 }
 

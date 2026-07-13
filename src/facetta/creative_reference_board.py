@@ -105,8 +105,8 @@ def _role_contract(
     )
 
 
-def build_creative_reference_board(
-    master_geometry: bytes,
+def _build_creative_reference_board(
+    master_geometry: bytes | None,
     references: tuple[CreativeReferenceImage, ...],
 ) -> CreativeReferenceBoard:
     """Return a stable 2x2 PNG board and its exact role-handling contract."""
@@ -117,12 +117,16 @@ def build_creative_reference_board(
     if len(ordered) > 3:
         raise ValueError("at most three secondary creative references are allowed")
 
-    entries: list[tuple[str, bytes, str]] = [(
-        "master_geometry",
-        master_geometry,
-        hashlib.sha256(master_geometry).hexdigest(),
-    )]
+    entries: list[tuple[str, bytes, str]] = []
+    if master_geometry is not None:
+        entries.append((
+            "master_geometry",
+            master_geometry,
+            hashlib.sha256(master_geometry).hexdigest(),
+        ))
     entries.extend((item.role, item.image, item.sha256) for item in ordered)
+    if not entries:
+        raise ValueError("a creative reference board requires at least one image")
 
     width, height = 1600, 1600
     gutter = 24
@@ -167,15 +171,40 @@ def build_creative_reference_board(
         _role_contract(role, index + 1, sha256)
         for index, (role, _raw, sha256) in enumerate(entries)
     ]
-    instruction = (
-        "ROLE-LABELED REFERENCE BOARD. Treat each panel only according to its "
-        "declared role. The master is the sole geometry authority; secondary "
-        "references are advisory and never establish dimensions, hidden structure, "
-        "material identity, or production readiness.\n- "
-        + "\n- ".join(role_contracts)
-    )
+    if master_geometry is None:
+        instruction = (
+            "ROLE-LABELED ADVISORY REFERENCE BOARD. No panel is master geometry. "
+            "Create the jewelry geometry only from the designer's written direction. "
+            "Treat every panel only according to its declared advisory role; none "
+            "establishes jewelry identity, dimensions, hidden structure, material "
+            "identity, or production readiness.\n- "
+            + "\n- ".join(role_contracts)
+        )
+    else:
+        instruction = (
+            "ROLE-LABELED REFERENCE BOARD. Treat each panel only according to its "
+            "declared role. The master is the sole geometry authority; secondary "
+            "references are advisory and never establish dimensions, hidden structure, "
+            "material identity, or production readiness.\n- "
+            + "\n- ".join(role_contracts)
+        )
     return CreativeReferenceBoard(
         image=output.getvalue(),
         instruction=instruction,
         references=ordered,
     )
+
+
+def build_creative_reference_board(
+    master_geometry: bytes,
+    references: tuple[CreativeReferenceImage, ...],
+) -> CreativeReferenceBoard:
+    """Compose one geometry authority with up to three advisory references."""
+    return _build_creative_reference_board(master_geometry, references)
+
+
+def build_advisory_reference_board(
+    references: tuple[CreativeReferenceImage, ...],
+) -> CreativeReferenceBoard:
+    """Compose prompt guidance without assigning geometry authority to an image."""
+    return _build_creative_reference_board(None, references)

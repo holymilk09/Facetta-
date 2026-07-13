@@ -449,8 +449,13 @@ def route_for_attempt(plan: ImageAgentPlan, number: int) -> ImageRoute | None:
         ImageOperation.LOCAL_EDIT,
         ImageOperation.VISUAL_ONLY_EDIT,
         ImageOperation.MOUNTING_VIEW_GENERATE,
-    } or (plan.operation is ImageOperation.SPEC_RENDER
-          and plan.source_hash is not None)
+    } or (
+        plan.operation in {
+            ImageOperation.CREATIVE_GENERATE,
+            ImageOperation.SPEC_RENDER,
+        }
+        and plan.source_hash is not None
+    )
     if number in (1, 2):
         return ImageRoute.GROK_EDIT if editing else ImageRoute.GROK_GENERATE
     if number == 3 and plan.fallback_allowed:

@@ -3637,6 +3637,9 @@ export function createTrustedApiClient(options: TrustedApiClientOptions) {
               media_type: reference.media_type,
             })),
           }),
+          ...(request.studio_job_id === undefined
+            ? {}
+            : { studio_job_id: request.studio_job_id }),
         }),
       });
     },
@@ -3652,6 +3655,16 @@ export function createTrustedApiClient(options: TrustedApiClientOptions) {
           title: request.title,
           ...(request.collection === undefined ? {} : { collection: request.collection }),
           ...(request.tags === undefined ? {} : { tags: request.tags }),
+          ...(request.references === undefined ? {} : {
+            references: request.references.map((reference) => ({
+              role: reference.role,
+              image_base64: reference.image_base64,
+              media_type: reference.media_type,
+            })),
+          }),
+          ...(request.studio_job_id === undefined
+            ? {}
+            : { studio_job_id: request.studio_job_id }),
         }),
       });
     },

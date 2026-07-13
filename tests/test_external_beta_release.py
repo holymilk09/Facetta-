@@ -281,13 +281,14 @@ def _sign_staging_approval(paths: dict[str, Any]) -> None:
         "release_ticket": "FACETTA-STAGING-1",
         "origin_sha256": staging["target"]["origin_sha256"],
         "deployment_revision": staging["target"]["deployment_revision"],
+        "fixture_set_sha256": staging["target"]["fixture_set_sha256"],
     }
     value["signature"] = {
         "algorithm": "Ed25519",
         "key_id": "staging-reviewer-v1",
-        "value": base64.b64encode(paths["private"].sign(
-            canonical_staging_approval_payload(value)
-        )).decode("ascii"),
+        "value": base64.b64encode(
+            paths["private"].sign(canonical_staging_approval_payload(value))
+        ).decode("ascii"),
     }
     _json(paths["staging_approval"], value)
 
@@ -696,6 +697,28 @@ def test_staging_reviewer_signature_must_verify(tmp_path: Path):
     result = _verify(paths)
     assert result["external_beta_ready"] is False
     assert result["signatures"]["staging_reviewer"]["status"] == "not_verified"
+
+
+def test_staging_approval_must_bind_exact_fixture_set_even_when_resigned(
+    tmp_path: Path,
+):
+    paths = _fixture(tmp_path)
+    approval = json.loads(paths["staging_approval"].read_text())
+    approval["fixture_set_sha256"] = "9" * 64
+    approval["signature"] = {
+        "algorithm": "Ed25519",
+        "key_id": "staging-reviewer-v1",
+        "value": base64.b64encode(
+            paths["private"].sign(canonical_staging_approval_payload(approval))
+        ).decode("ascii"),
+    }
+    _json(paths["staging_approval"], approval)
+
+    result = _verify(paths)
+
+    assert result["signatures"]["staging_reviewer"]["status"] == "verified"
+    assert result["external_beta_ready"] is False
+    assert any("fixture_set_sha256 differs" in error for error in result["errors"])
 
 
 def test_designer_criterion_ledger_signature_must_verify(tmp_path: Path):

@@ -749,7 +749,11 @@ def verify_external_beta_release(
     if not _timezone_value(staging_approval.get("approved_at")):
         errors.append("staging approval approved_at must include a timezone")
     target = staging.get("target") if isinstance(staging.get("target"), dict) else {}
-    for field in ("origin_sha256", "deployment_revision"):
+    for field in (
+        "origin_sha256",
+        "deployment_revision",
+        "fixture_set_sha256",
+    ):
         if staging_approval.get(field) != target.get(field):
             errors.append(f"staging approval {field} differs from the tested target")
 

@@ -36,7 +36,15 @@ LegacyCreativeRenderGenerator: TypeAlias = Callable[
 CreativeRenderGenerator: TypeAlias = (
     QualitySourceCreativeRenderGenerator | LegacyCreativeRenderGenerator
 )
-CreativePromptGenerator = Callable[[str, int], ImageAgentResult]
+class CreativePromptGenerator(Protocol):
+    def __call__(
+        self,
+        instruction: str,
+        variant: int,
+        *,
+        reference_board: bytes | None = None,
+        reference_instruction: str | None = None,
+    ) -> ImageAgentResult: ...
 
 
 def invoke_creative_render_generator(
@@ -85,19 +93,30 @@ def invoke_creative_render_generator(
 def generate_creative_prompt(
     instruction: str,
     variant: int,
+    *,
+    reference_board: bytes | None = None,
+    reference_instruction: str | None = None,
 ) -> ImageAgentResult:
     """Generate a category-neutral, explicitly pre-spec jewelry candidate."""
+    if (reference_board is None) != (reference_instruction is None):
+        raise ValueError(
+            "an advisory reference board and its role contract must be supplied together"
+        )
+    style_constraints = (
+        "fine-jewelry product rendering with believable material response",
+        "clean presentation with the complete jewelry piece reviewable",
+        "designer-facing concept quality rather than generic clip art",
+    )
+    if reference_instruction is not None:
+        style_constraints = (*style_constraints, reference_instruction)
     plan = build_image_plan(
         ImageOperation.CREATIVE_GENERATE,
         instruction,
+        source_image=reference_board,
         variant=variant,
-        style_constraints=(
-            "fine-jewelry product rendering with believable material response",
-            "clean presentation with the complete jewelry piece reviewable",
-            "designer-facing concept quality rather than generic clip art",
-        ),
+        style_constraints=style_constraints,
     )
-    return JewelryImageAgent().run(plan)
+    return JewelryImageAgent().run(plan, source_image=reference_board)
 
 
 def get_creative_prompt_generator() -> CreativePromptGenerator:

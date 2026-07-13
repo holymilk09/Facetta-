@@ -48,6 +48,7 @@ from facetta.release_authority_enrollment import (
 BUNDLE_CONFIG_SCHEMA = "facetta-release-authority-bundle-config.v1"
 BUNDLE_DECISION_SCHEMA = "facetta-release-authority-bundle-decision.v1"
 REQUIRED_VERIFICATION_POLICY = "facetta-release-authority-policy-v1"
+REQUIRED_EXECUTOR_TRUST_SCHEMA = "facetta-frozen-executor-trust.v1"
 
 REQUIRED_ROLES: tuple[ReleaseAuthorityRole, ...] = (
     "executor",
@@ -86,6 +87,14 @@ ROLE_QUALIFICATION_REQUIREMENTS: dict[
         "staging_isolation_reviewer",
         frozenset({"signed_attestation", "manual_document_review"}),
     ),
+}
+
+_OPERATIONAL_SIGNER_FIELDS: dict[ReleaseAuthorityRole, str] = {
+    "canonical_api_runner": "canonical_api_runner_public_key",
+    "gia_reviewer": "reviewer_public_key",
+    "founder": "founder_public_key",
+    "jewelry_designer": "designer_reviewer_public_key",
+    "staging_reviewer": "staging_reviewer_public_key",
 }
 
 _MAX_JSON_BYTES = 2 * 1024 * 1024
@@ -284,6 +293,27 @@ def verify_release_authority_bundle(
                 qualification_bytes,
             ).hexdigest()
 
+        # The bundle proves that six people are enrolled and qualified.  The
+        # release gates use a second set of operational key pointers, so bind
+        # those pointers back to the exact enrolled key before any role can
+        # contribute authority.  Otherwise an unrelated key could sign a gate
+        # while a qualified-but-unused key merely made this bundle pass.
+        for role in REQUIRED_ROLES:
+            operational_key_id, operational_key_digest = _load_operational_signer(
+                config,
+                root,
+                role,
+            )
+            enrollment = enrollments[role]
+            if operational_key_id != enrollment.key_id:
+                raise _BundleError(
+                    f"{role} operational signer key_id differs from enrollment",
+                )
+            if operational_key_digest != enrollment.public_key_sha256:
+                raise _BundleError(
+                    f"{role} operational signer public key differs from enrollment",
+                )
+
         verify_enrollment_independence(
             tuple(enrollments[role] for role in REQUIRED_ROLES),
             required_roles=set(REQUIRED_ROLES),
@@ -420,6 +450,49 @@ def _load_pinned_key(
     return content, normalized_digest
 
 
+def _load_operational_signer(
+    config: Mapping[str, Any],
+    root: Path,
+    role: ReleaseAuthorityRole,
+) -> tuple[str, str]:
+    """Load the key used by a concrete release gate for one enrolled role."""
+
+    if role == "executor":
+        trust = config.get("executor_trust")
+        if not isinstance(trust, Mapping) or not (
+            trust.get("schema_version") == REQUIRED_EXECUTOR_TRUST_SCHEMA
+            and trust.get("status") == "enrolled"
+        ):
+            raise _BundleError("executor operational signer is not enrolled")
+        key_id = trust.get("key_id")
+        pinned_value = trust.get("public_key")
+        if not isinstance(pinned_value, str) or "@sha256:" not in pinned_value:
+            raise _BundleError("executor operational signer config is invalid")
+        relative, expected_hash = pinned_value.rsplit("@sha256:", 1)
+        raw = {"path": relative, "sha256": expected_hash, "key_id": key_id}
+    else:
+        field = _OPERATIONAL_SIGNER_FIELDS[role]
+        configured = config.get(field)
+        if not isinstance(configured, Mapping):
+            raise _BundleError(f"{role} operational signer config is absent")
+        raw = {
+            "path": configured.get("path"),
+            "sha256": configured.get("sha256"),
+            "key_id": configured.get("key_id"),
+        }
+
+    try:
+        pinned = _PinnedPublicKey.model_validate(raw)
+    except ValidationError as exc:
+        raise _BundleError(f"{role} operational signer config is invalid") from exc
+    _, normalized_digest = _load_pinned_key(
+        root,
+        pinned,
+        label=f"{role} operational signer public key",
+    )
+    return pinned.key_id, normalized_digest
+
+
 def _json_object(content: bytes, *, label: str) -> dict[str, Any]:
     try:
         value = json.loads(content)
@@ -447,6 +520,7 @@ __all__ = [
     "BUNDLE_CONFIG_SCHEMA",
     "BUNDLE_DECISION_SCHEMA",
     "REQUIRED_ROLES",
+    "REQUIRED_EXECUTOR_TRUST_SCHEMA",
     "REQUIRED_VERIFICATION_POLICY",
     "ROLE_QUALIFICATION_REQUIREMENTS",
     "verify_release_authority_bundle",

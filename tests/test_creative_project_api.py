@@ -250,6 +250,45 @@ def test_prompt_creative_qa_checks_direction_without_source_preservation():
     assert "factory_authority" in codes
 
 
+def test_prompt_creative_advisory_board_uses_edit_routes_without_geometry_qa():
+    board = _png((180, 130, 80))
+    role_contract = (
+        "Material and style guidance only; never copy its jewelry geometry."
+    )
+    plan = build_image_plan(
+        ImageOperation.CREATIVE_GENERATE,
+        "A sculptural open gold cuff",
+        source_image=board,
+        style_constraints=(role_contract,),
+    )
+    inspection = CreativeRenderInspection(
+        coherent_jewelry_render=True,
+        complete_piece_visible=True,
+        requested_presentation_applied=True,
+        explicit_counts_match=True,
+        explicit_stone_facts_match=True,
+        text_or_branding_detected=False,
+        score=95,
+    )
+    report = RingQualityEvaluator(
+        prompt_creative_inspector=_PromptCreativeInspector(inspection),
+        require_cross_inspection=False,
+        require_render_cross_inspection=False,
+    ).evaluate(
+        plan,
+        _png((190, 140, 90)),
+        source_image=board,
+        mask_bytes=None,
+    )
+
+    assert route_for_attempt(plan, 1).value == "grok_edit"
+    assert route_for_attempt(plan, 3).value == "flux_kontext_edit"
+    assert role_contract in compile_initial_prompt(plan)
+    codes = {check.code for check in report.checks}
+    assert "source_design_preserved" not in codes
+    assert "visible_components_preserved" not in codes
+
+
 def test_prompt_creative_qa_hard_fails_an_explicit_count_mismatch():
     plan = build_image_plan(
         ImageOperation.CREATIVE_GENERATE,
@@ -892,6 +931,233 @@ def test_from_prompt_persists_independent_candidates_without_source_or_spec(
             "CREATIVE_GENERATE", "CREATIVE_GENERATE", "CREATIVE_GENERATE"]
         assert [run.variant for run in runs] == [4, 5, 6]
         assert all(run.source_asset_id is None for run in runs)
+
+
+def test_from_prompt_advisory_references_are_bound_and_persisted_by_role(
+    creative_client,
+):
+    client, Session = creative_client
+    material = _role_reference("material_style", (186, 138, 72))
+    construction = _role_reference("construction_detail", (84, 102, 128))
+    brand = _role_reference("brand_direction", (204, 184, 216))
+    calls: list[tuple[bytes, str, int]] = []
+
+    def generate(
+        instruction: str,
+        variant: int,
+        *,
+        reference_board: bytes | None = None,
+        reference_instruction: str | None = None,
+    ):
+        assert reference_board is not None
+        assert reference_instruction is not None
+        calls.append((reference_board, reference_instruction, variant))
+        plan = build_image_plan(
+            ImageOperation.CREATIVE_GENERATE,
+            instruction,
+            source_image=reference_board,
+            style_constraints=(reference_instruction,),
+            variant=variant,
+        )
+
+        class Provider:
+            def execute(self, _plan, route, _prompt, *, source_image, **_kwargs):
+                assert route.value.endswith("_edit")
+                assert source_image == reference_board
+                return ProviderImage(image_bytes=_png((50 + variant, 80, 90)))
+
+        class Evaluator:
+            def evaluate(self, plan, _candidate, *, source_image, mask_bytes):
+                assert plan.operation is ImageOperation.CREATIVE_GENERATE
+                assert source_image == reference_board
+                assert mask_bytes is None
+                return ImageQualityReport(
+                    verdict=QualityVerdict.WARN, checks=(), score=94,
+                )
+
+        return JewelryImageAgent(Provider(), Evaluator()).run(
+            plan, source_image=reference_board,
+        )
+
+    app.dependency_overrides[get_creative_prompt_generator] = lambda: generate
+    response = client.post("/projects/from-prompt", json={
+        **_prompt_request(variation_count=4),
+        # Input order cannot change board identity or role numbering.
+        "references": [brand, material, construction],
+    })
+    assert response.status_code == 201, response.text
+    body = response.json()
+    assert [call[2] for call in calls] == [4, 5, 6, 7]
+    assert all(call[0] == calls[0][0] for call in calls)
+    assert all(call[1] == calls[0][1] for call in calls)
+    role_contract = calls[0][1]
+    assert "ROLE-LABELED ADVISORY REFERENCE BOARD" in role_contract
+    assert "No panel is master geometry" in role_contract
+    assert role_contract.index("IMAGE 1 — MATERIAL & STYLE") < role_contract.index(
+        "IMAGE 2 — CONSTRUCTION DETAIL"
+    ) < role_contract.index("IMAGE 3 — BRAND DIRECTION")
+    assert "surface-only guidance" in role_contract
+    assert "not a confirmed construction fact" in role_contract
+    assert "visual-language guidance" in role_contract
+
+    assert body["root_id"] == body["creative_candidates"][0]["asset_id"]
+    assert len(body["creative_candidates"]) == 4
+    assert body["revisions"] == []
+    assets = {asset["capability"]: asset for asset in body["assets"]}
+    board_asset = assets["CREATIVE_REFERENCE_BOARD"]
+    assert board_asset["provenance"] == "role_labeled_reference_board"
+    assert assets["CREATIVE_REFERENCE_MATERIAL_STYLE"]["provenance"] == (
+        "material_style_reference"
+    )
+    assert assets["CREATIVE_REFERENCE_CONSTRUCTION_DETAIL"]["provenance"] == (
+        "construction_detail_reference"
+    )
+    assert assets["CREATIVE_REFERENCE_BRAND_DIRECTION"]["provenance"] == (
+        "brand_direction_reference"
+    )
+
+    with Session() as db:
+        board_row = db.get(ImageAsset, board_asset["asset_id"])
+        assert board_row is not None
+        assert bytes(board_row.image) == calls[0][0]
+        assert board_row.parent_asset_id == body["root_id"]
+        assert db.scalar(select(func.count()).select_from(Design)) == 0
+        assert db.scalar(select(func.count()).select_from(DesignVersion)) == 0
+        runs = list(db.scalars(select(ImageRun).order_by(ImageRun.variant)))
+        assert len(runs) == 4
+        assert all(run.operation == "CREATIVE_GENERATE" for run in runs)
+        assert all(run.source_asset_id == board_row.id for run in runs)
+        assert all(
+            run.source_hash == hashlib.sha256(bytes(board_row.image)).hexdigest()
+            for run in runs
+        )
+
+
+@pytest.mark.parametrize("variation_count", [1, 4])
+def test_from_prompt_advisory_references_preserve_candidate_bounds(
+    creative_client,
+    variation_count: int,
+):
+    client, _Session = creative_client
+    variants: list[int] = []
+
+    def generate(
+        instruction: str,
+        variant: int,
+        *,
+        reference_board: bytes | None = None,
+        reference_instruction: str | None = None,
+    ):
+        assert reference_board is not None
+        assert reference_instruction is not None
+        variants.append(variant)
+        plan = build_image_plan(
+            ImageOperation.CREATIVE_GENERATE,
+            instruction,
+            source_image=reference_board,
+            style_constraints=(reference_instruction,),
+            variant=variant,
+        )
+
+        class Provider:
+            def execute(self, *_args, **_kwargs):
+                return ProviderImage(image_bytes=_png((60 + variant, 80, 100)))
+
+        class Evaluator:
+            def evaluate(self, *_args, **_kwargs):
+                return ImageQualityReport(
+                    verdict=QualityVerdict.WARN, checks=(), score=91,
+                )
+
+        return JewelryImageAgent(Provider(), Evaluator()).run(
+            plan, source_image=reference_board,
+        )
+
+    app.dependency_overrides[get_creative_prompt_generator] = lambda: generate
+    response = client.post("/projects/from-prompt", json={
+        **_prompt_request(variation_count=variation_count),
+        "references": [_role_reference("material_style", (160, 120, 60))],
+    })
+    assert response.status_code == 201, response.text
+    assert len(response.json()["creative_candidates"]) == variation_count
+    assert variants == list(range(4, 4 + variation_count))
+
+
+@pytest.mark.parametrize("references", [
+    [
+        _role_reference("material_style", (1, 2, 3)),
+        _role_reference("material_style", (4, 5, 6)),
+    ],
+    [{
+        "role": "master_geometry",
+        "image_base64": base64.b64encode(_png((1, 2, 3))).decode(),
+        "media_type": "image/png",
+    }],
+])
+def test_from_prompt_rejects_duplicate_or_master_reference_roles(
+    creative_client,
+    references,
+):
+    client, Session = creative_client
+    response = client.post("/projects/from-prompt", json={
+        **_prompt_request(variation_count=1),
+        "references": references,
+    })
+    assert response.status_code == 422
+    with Session() as db:
+        assert db.scalar(select(func.count()).select_from(Project)) == 0
+        assert db.scalar(select(func.count()).select_from(ImageAsset)) == 0
+
+
+def test_from_prompt_advisory_qa_failure_leaves_no_canonical_project(
+    creative_client,
+):
+    client, Session = creative_client
+
+    def fail(
+        instruction: str,
+        variant: int,
+        *,
+        reference_board: bytes | None = None,
+        reference_instruction: str | None = None,
+    ):
+        assert reference_board is not None
+        assert reference_instruction is not None
+        plan = build_image_plan(
+            ImageOperation.CREATIVE_GENERATE,
+            instruction,
+            source_image=reference_board,
+            style_constraints=(reference_instruction,),
+            variant=variant,
+        )
+        raise ImageQualityFailure(
+            "candidate failed prompt fidelity",
+            report=ImageQualityReport(
+                verdict=QualityVerdict.FAIL,
+                checks=(QualityCheck(
+                    code="requested_direction_applied",
+                    passed=False,
+                    severity=CheckSeverity.HARD,
+                    message="designer direction was not applied",
+                ),),
+                score=30,
+            ),
+            attempts=[],
+            plan=plan,
+        )
+
+    app.dependency_overrides[get_creative_prompt_generator] = lambda: fail
+    response = client.post("/projects/from-prompt", json={
+        **_prompt_request(variation_count=1),
+        "references": [_role_reference("brand_direction", (120, 90, 50))],
+    })
+    assert response.status_code == 422
+    with Session() as db:
+        assert db.scalar(select(func.count()).select_from(Project)) == 0
+        assert db.scalar(select(func.count()).select_from(ImageAsset)) == 0
+        assert db.scalar(select(func.count()).select_from(Design)) == 0
+        assert db.scalar(select(func.count()).select_from(DesignVersion)) == 0
+        assert db.scalar(select(func.count()).select_from(ImageRun)) == 1
 
 
 def test_creative_selection_atomically_settles_reviewing_create_job_after_restart(

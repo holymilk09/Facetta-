@@ -105,10 +105,13 @@ class RenderPrimitiveProvider:
             plan.operation is ImageOperation.SPEC_RENDER
             and plan.source_hash is not None)
         operation_needs_generation = (
-            plan.operation in {
-                ImageOperation.CREATIVE_GENERATE,
-                ImageOperation.CONCEPT_GENERATE,
-            }
+            (
+                plan.operation in {
+                    ImageOperation.CREATIVE_GENERATE,
+                    ImageOperation.CONCEPT_GENERATE,
+                }
+                and plan.source_hash is None
+            )
             or (plan.operation is ImageOperation.SPEC_RENDER
                 and not reference_backed_spec_render))
         if operation_needs_generation != generation_route:

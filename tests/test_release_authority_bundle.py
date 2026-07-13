@@ -280,6 +280,26 @@ def _build_fixture(
             },
         },
     }
+    operational_fields = {
+        "canonical_api_runner": "canonical_api_runner_public_key",
+        "gia_reviewer": "reviewer_public_key",
+        "founder": "founder_public_key",
+        "jewelry_designer": "designer_reviewer_public_key",
+        "staging_reviewer": "staging_reviewer_public_key",
+    }
+    executor_key = paths["executor_key"]
+    executor_pin = _pin(root, executor_key)
+    config["executor_trust"] = {
+        "schema_version": "facetta-frozen-executor-trust.v1",
+        "status": "enrolled",
+        "key_id": enrollments["executor"]["key_id"],
+        "public_key": f"{executor_pin['path']}@sha256:{executor_pin['sha256']}",
+    }
+    for role, field in operational_fields.items():
+        config[field] = {
+            **_pin(root, paths[f"{role}_key"]),
+            "key_id": enrollments[role]["key_id"],
+        }
     return BundleFixture(root=root, config=config, paths=paths)
 
 
@@ -396,6 +416,36 @@ def test_status_signer_cannot_reuse_release_authority_key(tmp_path: Path) -> Non
     result = verify_release_authority_bundle(fixture.config, fixture.root, NOW)
     assert result["status"] == "fail"
     assert result["errors"] == ["signer public key collides with a release authority"]
+
+
+def test_operational_signer_must_be_the_exact_enrolled_role_key(
+    tmp_path: Path,
+) -> None:
+    fixture = _build_fixture(tmp_path)
+    config = deepcopy(fixture.config)
+    founder_pin = _pin(fixture.root, fixture.paths["founder_key"])
+    config["staging_reviewer_public_key"] = {
+        **founder_pin,
+        "key_id": "staging_reviewer-key-v1",
+    }
+
+    result = verify_release_authority_bundle(config, fixture.root, NOW)
+
+    assert result["status"] == "fail"
+    assert result["errors"] == [
+        "staging_reviewer operational signer public key differs from enrollment",
+    ]
+
+
+def test_missing_operational_signer_fails_closed(tmp_path: Path) -> None:
+    fixture = _build_fixture(tmp_path)
+    config = deepcopy(fixture.config)
+    config["founder_public_key"] = None
+
+    result = verify_release_authority_bundle(config, fixture.root, NOW)
+
+    assert result["status"] == "fail"
+    assert result["errors"] == ["founder operational signer config is absent"]
 
 
 def test_status_sequence_below_configured_minimum_is_rollback(tmp_path: Path) -> None:

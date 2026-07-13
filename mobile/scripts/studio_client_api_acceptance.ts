@@ -102,6 +102,7 @@ const CASES: readonly AcceptanceCase[] = [
   {
     id: 'sentence-sculptural-band', start: 'sentence', sourceKind: null, directionCount: 4,
     instruction: 'A sculptural fine-jewelry band with one calm architectural fold.',
+    references: ['material_style', 'brand_direction'],
   },
   {
     id: 'drawing-front-view', start: 'image', sourceKind: 'drawing', directionCount: 2,
@@ -621,6 +622,7 @@ async function create(caseDefinition: AcceptanceCase, index: number): Promise<Pr
   if (caseDefinition.start === 'sentence') {
     return value(await gateway.createFromPrompt({
       prompt: caseDefinition.instruction,
+      references: references(caseDefinition.references ?? []),
       ...common,
     }), `${caseDefinition.id}: Create from sentence`);
   }

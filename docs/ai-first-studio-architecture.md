@@ -71,6 +71,28 @@ record exists, the revision binds the primary image to one immutable
 than silently advancing it. Branching creates a new revision or variation; it
 never rewrites historical pixels, specification facts, approvals, or evidence.
 
+## Creative input authority
+
+Studio distinguishes an identity source from advisory direction. A master
+geometry image is the sole image authority for silhouette, component count,
+placement, and proportions. A written design sentence can instead own that
+creative authority when no master image exists. Up to three unique supporting
+images may then be assigned as material/style, construction/detail, or brand
+direction. Supporting images never establish identity, dimensions, hidden
+construction, confirmed material facts, or production readiness. With neither
+a sentence nor a master, advisory images are intentionally insufficient to
+start generation.
+
+The prompt-led implementation assembles supporting images into a deterministic
+role-labeled board and binds the exact board hash and role contract to the
+`CREATIVE_GENERATE` plan. An image-backed provider route may use that board,
+but creative QA continues to judge the written direction and candidate rather
+than requiring preservation of advisory geometry. The canonical transaction
+stores the original supporting bytes, role-specific capabilities, board,
+provider-run linkage, and all candidate provenance together. No Design or
+DesignVersion exists until the designer selects and confirms a direction; a
+failed candidate cannot create canonical project history.
+
 ## Visual twin on demand
 
 A visual twin is a generated depiction of a selected revision for a defined
@@ -219,6 +241,26 @@ The repository still contains deterministic generic jewelry schematics and DXF
 reference geometry. They remain compatibility/internal primitives and are
 explicitly non-authoritative. They are not the target visual architecture and
 must not be presented as the actual design or buildable geometry.
+
+## External beta authority boundary
+
+Local test success cannot authorize external beta. The secured executor,
+canonical API runner, GIA reviewer, founder, independent jewelry designer, and
+staging reviewer are six separately enrolled roles. Each operational gate
+signature must use the exact key ID and normalized Ed25519 public-key digest
+qualified for that role; a qualified but unused enrollment key is not release
+authority. Staging approval also binds the exact fixture-set hash, origin, and
+deployment revision that were tested.
+
+Paid corpus execution remains outside the repository behind a secured operator
+boundary. The local producer consumes signed execution and persistence
+observations, then revalidates exact row coverage, attempt ceilings, artifact
+hashes, evidence-root confinement, QA acceptance, signatures, and atomic
+persistence. This preserves zero-call planning and prevents local fixtures,
+credentials, or an unreviewed provider runner from becoming release evidence.
+The exact fallback route, account budget, assignment bundle, `corpus_run_id`,
+and executor authority must be explicitly reviewed and pinned before any of the
+1,044 logical sequences becomes execution-ready.
 
 ## Optional factory promotion lane
 

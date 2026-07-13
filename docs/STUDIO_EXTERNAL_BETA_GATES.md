@@ -31,8 +31,10 @@ expired, suspended, revoked, or stale records fail closed. Role/key reuse,
 duplicate subjects, invalid qualification scope, status rollback, or
 unacknowledged rotation also fail. Artifacts use opaque tokens and must not
 contain names, email addresses, government identifiers, credential numbers,
-or private keys. The production config deliberately keeps
-`release_authority_bundle` and all release keys `null` until real external
+or private keys. The public key and key ID used by each operational gate must
+exactly match that role's enrolled key; an unrelated signer cannot borrow the
+authority of a valid but unused enrollment. The production config deliberately
+keeps `release_authority_bundle` and all release keys `null` until real external
 enrollment is retained.
 
 ## Gate 1: signed frozen 144-image corpus
@@ -76,6 +78,34 @@ The repository production definition reports 144 integrity sources, 58 ring
 quality sources, 1,044 logical evaluation sequences, and zero execution-ready
 rows until assignments and keys are enrolled. Planning and validation make
 zero provider calls.
+
+### Secured execution handoff
+
+The repository does not contain a paid live executor. A separately secured
+operator must resolve and pin every assignment, preassign the `corpus_run_id`,
+enroll the executor authority, mount the verified source directory beneath the
+evidence root, and enforce an account-level dollar budget before provider work.
+The `3,132` maximum is an image-attempt ceiling, not a total request or dollar
+ceiling. The operator must also review and pin one exact fallback contract;
+the frozen routing label must not be used to infer a different live-runner
+fallback silently.
+
+After the secured executor produces the complete execution bundle and the
+canonical API produces persistence observations, the local CLI revalidates and
+signs them without calling an image provider:
+
+```bash
+PYTHONPATH=src .venv/bin/python scripts/run_frozen_corpus_capture.py \
+  --evidence-root "$EVIDENCE_ROOT" \
+  --source-dir "$EVIDENCE_ROOT/founder-reference-directory" \
+  --execution-bundle "$EVIDENCE_ROOT/execution-bundle.json" \
+  --persistence-observations "$EVIDENCE_ROOT/persistence-observations.json" \
+  --output-dir "$EVIDENCE_ROOT/signed-capture" \
+  --executor-private-key /separate/secret/path/executor.key \
+  --canonical-api-private-key /separate/secret/path/api-runner.key \
+  --commit-sha "$(git rev-parse HEAD)" \
+  --attestation-id <operator-issued-attestation-id>
+```
 
 ### Prepare the blind GIA packet
 

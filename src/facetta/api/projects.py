@@ -41,6 +41,7 @@ from facetta.creative_workflow import (
 )
 from facetta.creative_reference_board import (
     CreativeReferenceImage,
+    build_advisory_reference_board,
     build_creative_reference_board,
 )
 from facetta.api.error_mapping import (
@@ -448,6 +449,16 @@ class ProjectFromPromptRequest(BaseModel):
     collection: Annotated[str, Field(min_length=1, max_length=80)] | None = None
     tags: Annotated[list[str], Field(max_length=24)] = Field(default_factory=list)
     studio_job_id: Annotated[str, Field(min_length=1, max_length=32)] | None = None
+    references: Annotated[
+        list[CreativeRoleReferenceRequest], Field(max_length=3)
+    ] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def reference_roles_are_unique(self) -> ProjectFromPromptRequest:
+        roles = [reference.role for reference in self.references]
+        if len(set(roles)) != len(roles):
+            raise ValueError("advisory creative reference roles must be unique")
+        return self
 
 
 class CreativeCandidatePromoteRequest(BaseModel):
@@ -1184,6 +1195,44 @@ def _uploaded_media_type(image: bytes) -> str | None:
     return None
 
 
+def _decode_creative_role_references(
+    references: list[CreativeRoleReferenceRequest],
+) -> tuple[CreativeReferenceImage, ...] | JSONResponse:
+    decoded: list[CreativeReferenceImage] = []
+    for reference in references:
+        try:
+            reference_image = base64.b64decode(
+                reference.image_base64, validate=True)
+        except (binascii.Error, ValueError):
+            return JSONResponse(status_code=422, content={
+                "error_category": "validation_failure",
+                "code": "creative_reference_invalid_base64",
+                "detail": f"{reference.role} image_base64 is not valid base64",
+            })
+        reference_media_type = _uploaded_media_type(reference_image)
+        if reference_media_type is None:
+            return JSONResponse(status_code=422, content={
+                "error_category": "validation_failure",
+                "code": "creative_reference_unsupported_media",
+                "detail": f"{reference.role} must be a PNG, JPEG, or WebP image",
+            })
+        if reference.media_type != reference_media_type:
+            return JSONResponse(status_code=422, content={
+                "error_category": "validation_failure",
+                "code": "creative_reference_media_mismatch",
+                "detail": (
+                    f"{reference.role} media_type says {reference.media_type}, "
+                    f"but the upload is {reference_media_type}"
+                ),
+            })
+        decoded.append(CreativeReferenceImage(
+            role=reference.role,
+            image=reference_image,
+            media_type=reference_media_type,
+        ))
+    return tuple(decoded)
+
+
 def _validate_ring_spec(spec: Spec):
     if spec.jewelry_type != "ring":
         return None, JSONResponse(status_code=422, content={
@@ -1776,11 +1825,34 @@ def create_project_from_prompt(
         )
     except ProviderStudioJobError as exc:
         return provider_studio_job_error_response(exc)
+    decoded = _decode_creative_role_references(request.references)
+    if isinstance(decoded, JSONResponse):
+        return decoded
+    decoded_references = decoded
+    advisory_board = None
+    if decoded_references:
+        try:
+            advisory_board = build_advisory_reference_board(decoded_references)
+        except (OSError, ValueError) as exc:
+            return JSONResponse(status_code=422, content={
+                "error_category": "validation_failure",
+                "code": "creative_reference_invalid_image",
+                "detail": f"a role-labeled reference could not be decoded: {exc}",
+            })
     generated = []
     for offset in range(request.variation_count):
         variant = request.starting_variant + offset
         try:
-            result = generate(request.prompt, variant)
+            result = (
+                generate(
+                    request.prompt,
+                    variant,
+                    reference_board=advisory_board.image,
+                    reference_instruction=advisory_board.instruction,
+                )
+                if advisory_board is not None
+                else generate(request.prompt, variant)
+            )
         except ImageAgentError as exc:
             observed_run_ids = [
                 persist_image_agent_result(
@@ -1803,6 +1875,18 @@ def create_project_from_prompt(
                 "error_category": "validation_failure",
                 "detail": "creative prompt generator returned the wrong operation",
             })
+        if advisory_board is not None and (
+            result.plan.source_hash
+            != hashlib.sha256(advisory_board.image).hexdigest()
+            or advisory_board.instruction not in result.plan.style_constraints
+        ):
+            return JSONResponse(status_code=500, content={
+                "error_category": "validation_failure",
+                "detail": (
+                    "creative prompt generator did not bind the advisory "
+                    "reference board and role contract"
+                ),
+            })
         if _uploaded_media_type(result.image_bytes) is None:
             persist_image_agent_result(db, result, created_by=request.owner)
             return JSONResponse(status_code=422, content={
@@ -1818,6 +1902,28 @@ def create_project_from_prompt(
             instruction=request.prompt,
             image_run=result,
         ) for result in generated),
+        reference_board=(
+            SourceAssetInput(
+                image=advisory_board.image,
+                media_type="image/png",
+                capability="CREATIVE_REFERENCE_BOARD",
+                instruction=advisory_board.instruction,
+            )
+            if advisory_board is not None else None
+        ),
+        reference_sources=tuple(SourceAssetInput(
+            image=reference.image,
+            media_type=reference.media_type,
+            capability={
+                "material_style": "CREATIVE_REFERENCE_MATERIAL_STYLE",
+                "construction_detail": "CREATIVE_REFERENCE_CONSTRUCTION_DETAIL",
+                "brand_direction": "CREATIVE_REFERENCE_BRAND_DIRECTION",
+            }[reference.role],
+            instruction=(
+                f"Role-labeled {reference.role} reference; SHA-256 "
+                f"{hashlib.sha256(reference.image).hexdigest()}"
+            ),
+        ) for reference in decoded_references),
         owner=request.owner,
         title=request.title,
         collection=request.collection,
@@ -1879,42 +1985,10 @@ def create_project_from_drawing(
                        f"is {detected}"),
         })
 
-    decoded_references: list[CreativeReferenceImage] = []
-    for reference in request.references:
-        try:
-            reference_image = base64.b64decode(
-                reference.image_base64, validate=True)
-        except (binascii.Error, ValueError):
-            return JSONResponse(status_code=422, content={
-                "error_category": "validation_failure",
-                "code": "creative_reference_invalid_base64",
-                "detail": (
-                    f"{reference.role} image_base64 is not valid base64"
-                ),
-            })
-        reference_media_type = _uploaded_media_type(reference_image)
-        if reference_media_type is None:
-            return JSONResponse(status_code=422, content={
-                "error_category": "validation_failure",
-                "code": "creative_reference_unsupported_media",
-                "detail": (
-                    f"{reference.role} must be a PNG, JPEG, or WebP image"
-                ),
-            })
-        if reference.media_type != reference_media_type:
-            return JSONResponse(status_code=422, content={
-                "error_category": "validation_failure",
-                "code": "creative_reference_media_mismatch",
-                "detail": (
-                    f"{reference.role} media_type says {reference.media_type}, "
-                    f"but the upload is {reference_media_type}"
-                ),
-            })
-        decoded_references.append(CreativeReferenceImage(
-            role=reference.role,
-            image=reference_image,
-            media_type=reference_media_type,
-        ))
+    decoded = _decode_creative_role_references(request.references)
+    if isinstance(decoded, JSONResponse):
+        return decoded
+    decoded_references = decoded
 
     render_source = image
     render_source_media_type: str | None = None
