@@ -969,6 +969,10 @@ def fork_project_variation(
         variation_label=label,
         branched_from_project_root_id=project.root_id,
         branched_from_asset_id=source.id,
+        # A visual-only branch starts with its copied root selected. Without
+        # this binding the Studio preview seam treats the just-created branch
+        # as stale and refuses the first refinement.
+        selected_candidate_asset_id=(new_root_id if new_design_id is None else None),
         created_at=now,
         updated_at=now,
     )

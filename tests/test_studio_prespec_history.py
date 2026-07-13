@@ -85,6 +85,9 @@ def test_variation_branches_the_selected_creative_candidate_not_last_generated()
         assert bytes(branched.image) == b"selected"
         assert branched.design_version is None
         assert branched.capability == "VARIATION_BRANCH"
+        branch_project = db.get(Project, result.project_root_id)
+        assert branch_project is not None
+        assert branch_project.selected_candidate_asset_id == branched.id
         branch_record = db.scalar(select(ProjectRevisionRecord).where(
             ProjectRevisionRecord.asset_id == branched.id
         ))

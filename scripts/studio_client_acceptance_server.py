@@ -10,6 +10,7 @@ whose output is accepted by the same image-agent and QA contracts.
 
 from __future__ import annotations
 
+import hashlib
 import io
 import os
 from pathlib import Path
@@ -50,7 +51,37 @@ def _png(color: tuple[int, int, int]) -> bytes:
     return output.getvalue()
 
 
-def _accepted_result(plan, image: bytes, *, source: bytes | None = None):
+def _fixture_color(namespace: str, *parts: object) -> tuple[int, int, int]:
+    """Return a stable, visibly useful color for one acceptance output.
+
+    A variant-only fixture makes unrelated projects produce byte-identical
+    images.  That is sufficient for a single happy path, but it can conceal
+    cross-project mix-ups in the mixed-source acceptance matrix.  Include the
+    complete provider input in a length-delimited digest so a sentence, each
+    uploaded source, and each role-labeled reference board produce distinct,
+    deterministic bytes without introducing a network provider.
+    """
+    digest = hashlib.sha256()
+    for part in (namespace, *parts):
+        value = part if isinstance(part, bytes) else str(part).encode("utf-8")
+        digest.update(len(value).to_bytes(8, "big"))
+        digest.update(value)
+    raw = digest.digest()
+    # Avoid nearly black/white fixtures so comparisons remain visible in UI.
+    return (
+        32 + raw[0] % 192,
+        32 + raw[1] % 192,
+        32 + raw[2] % 192,
+    )
+
+
+def _accepted_result(
+    plan,
+    image: bytes,
+    *,
+    source: bytes | None = None,
+    quality_source: bytes | None = None,
+):
     class Provider:
         def execute(self, *_args, **_kwargs):
             return ProviderImage(image_bytes=image)
@@ -66,11 +97,12 @@ def _accepted_result(plan, image: bytes, *, source: bytes | None = None):
     return JewelryImageAgent(Provider(), Evaluator()).run(
         plan,
         source_image=source,
+        quality_source_image=quality_source,
     )
 
 
 def _prompt_generator(prompt: str, variant: int):
-    image = _png((50 + variant, 90 + variant, 130 + variant))
+    image = _png(_fixture_color("prompt", prompt, variant))
     plan = build_image_plan(
         ImageOperation.CREATIVE_GENERATE,
         prompt,
@@ -86,7 +118,13 @@ def _render_generator(
     *,
     quality_source_image: bytes | None = None,
 ):
-    image = _png((70 + variant, 105 + variant, 140 + variant))
+    image = _png(_fixture_color(
+        "render",
+        source,
+        quality_source_image or b"",
+        instruction,
+        variant,
+    ))
     plan = build_image_plan(
         ImageOperation.REFERENCE_RENDER,
         instruction,
@@ -94,7 +132,12 @@ def _render_generator(
         quality_source_image=quality_source_image,
         variant=variant,
     )
-    return _accepted_result(plan, image, source=source)
+    return _accepted_result(
+        plan,
+        image,
+        source=source,
+        quality_source=quality_source_image,
+    )
 
 
 def _visual_preview_generator(
@@ -106,7 +149,9 @@ def _visual_preview_generator(
 ):
     assert scope == "appearance"
     assert mask is None
-    image = _png((175 + variant, 120 + variant, 95 + variant))
+    image = _png(_fixture_color(
+        "visual-preview", source, instruction, scope, mask or b"", variant,
+    ))
     plan = build_image_plan(
         ImageOperation.REFERENCE_RENDER,
         instruction,
@@ -123,7 +168,14 @@ def _presentation_generator(
     expected_output: str,
     variant: int,
 ):
-    image = _png((225, 218, 205))
+    image = _png(_fixture_color(
+        "presentation",
+        source,
+        intent,
+        "\x1f".join(style_constraints),
+        expected_output,
+        variant,
+    ))
     plan = build_image_plan(
         ImageOperation.REFERENCE_RENDER,
         intent,

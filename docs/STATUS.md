@@ -24,6 +24,14 @@ Studio gateway. Create candidates are durable review directions rather than
 fake sequential revisions; the selected direction becomes the Original and
 other useful candidates can be kept explicitly as sibling Variations.
 
+The real-process Studio acceptance now runs ten deterministic projects through
+the production TypeScript client/gateway, HTTP, uvicorn/FastAPI, and disposable
+SQLite. It covers sentence, drawing, photograph, finished-render, and every
+secondary reference role; each case saves, reopens, branches, previews without
+canonical mutation, applies, compares bytes, and restores append-only without
+entering Factory. Live provider quality and two-principal staging isolation
+remain separate external gates.
+
 Remaining product/reliability work includes a calibrated production component
 mapper for initially unmapped creative candidates, broader cross-category
 component graphs, a complete instant masked configurator, design-derived

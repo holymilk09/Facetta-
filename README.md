@@ -80,9 +80,11 @@ npm run test:studio-client-api
 
 `test:studio-client-api` starts a disposable real uvicorn/FastAPI process and
 runs the production TypeScript trusted client and Studio gateway over HTTP. It
-uses temporary SQLite and deterministic offline image providers, so it verifies
-Create, review-before-Apply, immutable comparison/Restore, Activity accounting,
-and a saved Client derivative without paid-provider credentials or Factory.
+uses temporary SQLite and deterministic offline image providers to exercise ten
+projects across sentence, drawing, photograph, finished-render, and role-labeled
+reference starts. Every case verifies save/reopen, exact-revision branching,
+review-before-Apply, immutable comparison/Restore, source semantics, and Activity
+accounting without paid-provider credentials or Factory.
 
 ## Run the API
 
