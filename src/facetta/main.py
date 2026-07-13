@@ -76,7 +76,6 @@ PRODUCTION_ASSET_PATHS = frozenset({
     "/assets/{asset_id}/image",
     "/assets/{asset_id}/checklist",
     "/assets/{asset_id}/checklist/respond",
-    "/assets/{asset_id}/pin",
 })
 
 PRODUCTION_CATALOG_PATHS = frozenset({
