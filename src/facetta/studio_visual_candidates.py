@@ -533,9 +533,20 @@ def lock_studio_visual_candidate_for_decision(
     candidate_id: str,
     *,
     owner: str,
+    require_active: bool = True,
 ) -> tuple[StudioVisualCandidate, PreviewCandidateRecord]:
+    """Lock one exact candidate, optionally allowing a historical source.
+
+    Apply callers keep the default active-source requirement.  Save as
+    Variation may explicitly set ``require_active=False`` because it creates
+    an independent sibling from the candidate's immutable source instead of
+    advancing the active project.  Every ownership, source/candidate hash,
+    run-lineage, expiry, terminal-state, and QA check remains mandatory.
+    """
+
     record = _owned_reviewing_record(
         db, run_id, candidate_id, owner=owner, for_update=True,
+        require_active=require_active,
     )
     return _candidate(record), record
 

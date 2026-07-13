@@ -821,6 +821,7 @@ describe('component catalog client contracts', () => {
       ok: true, status: 201,
       text: async () => JSON.stringify({
         status: 'saved_as_variation', family_id: 'family_catalog', variation_index: 2,
+        source_project_id: 'ast_1', source_asset_id: 'ast_1',
         design_id: 'dsn_variation', design_version: 1,
         project: projectPayload('ast_2', 1),
       }),
@@ -832,6 +833,9 @@ describe('component catalog client contracts', () => {
       created_by: 'usr_designer', label: '  Rose halo  ',
     });
     expect(result.error).toBeNull();
+    expect(result.data).toMatchObject({
+      source_project_id: 'ast_1', source_asset_id: 'ast_1',
+    });
     expect(fetcher).toHaveBeenCalledWith(
       'https://facetta.test/image-runs/run_preview/catalog-candidates/cand_preview/save-as-variation',
       expect.objectContaining({ method: 'POST' }),

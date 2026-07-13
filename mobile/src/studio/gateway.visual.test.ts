@@ -288,6 +288,7 @@ test('failed-fidelity visual candidates cannot become canonical', async () => {
 
 test('saves a visual preview as one named sibling and leaves source active', async () => {
   let saves = 0;
+  const source = project('asset_newer');
   const variationAsset = {
     ...asset('variation_visual', null, 1), root_id: 'variation_visual',
     asset_id: 'variation_visual', capability: 'VARIATION_BRANCH',
@@ -321,10 +322,11 @@ test('saves a visual preview as one named sibling and leaves source active', asy
       assert.deepEqual(request, { created_by: 'designer_1', label: 'Warm direction' });
       return ok({
         status: 'saved_as_variation' as const, family_id: 'family_visual',
-        variation_index: 2, project: sibling,
+        variation_index: 2, source_project_id: 'project_visual',
+        source_asset_id: 'asset_source', project: sibling,
       }, 201);
     },
-    getProject: async () => ok(project('asset_source')),
+    getProject: async () => ok(source),
   };
   const gateway = createStudioGateway(client as any, {
     now: () => new Date('2026-07-12T00:00:00Z'),
@@ -340,6 +342,7 @@ test('saves a visual preview as one named sibling and leaves source active', asy
   assert.equal(saved.data?.candidate.status, 'saved_as_variation');
   assert.equal(saved.data?.project.root_id, 'variation_visual');
   assert.equal(saves, 1);
+  assert.equal(source.active_asset_id, 'asset_newer');
   const repeated = await gateway.saveVisualPreviewAsVariation({
     candidateId: 'candidate_variation', createdBy: 'designer_1', label: 'Duplicate',
   });

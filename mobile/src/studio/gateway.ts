@@ -420,6 +420,40 @@ function exactLineage(project: ProjectDetail): ExactStudioLineage | null {
   };
 }
 
+function hasImmutableSource(
+  project: ProjectDetail,
+  lineage: ExactStudioLineage | StudioVisualLineage,
+): boolean {
+  if (project.root_id !== lineage.projectId) return false;
+  const expectedDesignVersion = 'sourceDesignVersion' in lineage
+    ? lineage.sourceDesignVersion
+    : null;
+  return project.revisions.some((revision) => (
+    revision.asset.asset_id === lineage.sourceAssetId
+    && revision.asset.design_version === expectedDesignVersion
+  ));
+}
+
+/** A candidate branch may add family metadata, but never change source design truth. */
+function sameCanonicalSourceState(before: ProjectDetail, after: ProjectDetail): boolean {
+  return before.root_id === after.root_id
+    && before.owner === after.owner
+    && before.design_id === after.design_id
+    && sameJson(before.spec ?? null, after.spec ?? null)
+    && before.active_asset_id === after.active_asset_id
+    && before.active_design_version === after.active_design_version
+    && before.selected_candidate_asset_id === after.selected_candidate_asset_id
+    && before.primary_revision_count === after.primary_revision_count
+    && before.revisions.length === after.revisions.length
+    && before.revisions.every((revision, index) => {
+      const compared = after.revisions[index];
+      return compared !== undefined
+        && revision.revision === compared.revision
+        && revision.asset.asset_id === compared.asset.asset_id
+        && revision.asset.design_version === compared.asset.design_version;
+    });
+}
+
 function previewChecks(result: CatalogPreviewResult): readonly PreviewCheck[] {
   return qualityPreviewChecks(result.qa);
 }
@@ -1691,16 +1725,26 @@ export function createStudioGateway(
         'quality', 422,
       );
       const lineage = stored.preview.lineage;
+      const sourceBefore = await client.getProject(lineage.projectId);
+      if (sourceBefore.error !== null) return {
+        data: null, error: mapError(sourceBefore.error), status: sourceBefore.status,
+      };
+      if (!hasImmutableSource(sourceBefore.data, lineage)) return gatewayError(
+        'STUDIO_REVIEW_SOURCE_UNAVAILABLE',
+        'The immutable source revision for this result is unavailable.',
+        'conflict', 409,
+      );
       const result = await callTracked(stored.studioJob, () => client.saveVisualPreviewAsVariation(
         stored.runId, stored.preview.candidate.id, stored.saveAsVariationUrl,
         { created_by: request.createdBy, label },
       ));
       if (result.error !== null) return result;
-      const source = await client.getProject(lineage.projectId);
+      const sourceAfter = await client.getProject(lineage.projectId);
       if (
-        source.error !== null
-        || source.data.active_asset_id !== lineage.sourceAssetId
-        || source.data.active_design_version !== null
+        sourceAfter.error !== null
+        || result.data.source_project_id !== lineage.projectId
+        || result.data.source_asset_id !== lineage.sourceAssetId
+        || !sameCanonicalSourceState(sourceBefore.data, sourceAfter.data)
         || result.data.project.root_id === lineage.projectId
         || result.data.project.active_asset_id !== result.data.project.root_id
         || result.data.project.active_design_version !== null
@@ -1919,17 +1963,27 @@ export function createStudioGateway(
       if (stored.preview.status !== 'pending_review') return gatewayError(
         'CANDIDATE_NOT_REVIEWABLE', 'This preview already has a final decision.', 'conflict', 409,
       );
+      const sourceBefore = await client.getProject(stored.lineage.projectId);
+      if (sourceBefore.error !== null) return {
+        data: null, error: mapError(sourceBefore.error), status: sourceBefore.status,
+      };
+      if (!hasImmutableSource(sourceBefore.data, stored.lineage)) return gatewayError(
+        'STUDIO_REVIEW_SOURCE_UNAVAILABLE',
+        'The immutable source revision for this result is unavailable.',
+        'conflict', 409,
+      );
       const result = await client.saveCatalogPreviewAsVariation(
         stored.trusted, { created_by: request.createdBy, label },
       );
       if (result.error !== null) return {
         data: null, error: mapError(result.error), status: result.status,
       };
-      const source = await client.getProject(stored.lineage.projectId);
+      const sourceAfter = await client.getProject(stored.lineage.projectId);
       if (
-        source.error !== null
-        || source.data.active_asset_id !== stored.lineage.sourceAssetId
-        || source.data.active_design_version !== stored.lineage.sourceDesignVersion
+        sourceAfter.error !== null
+        || result.data.source_project_id !== stored.lineage.projectId
+        || result.data.source_asset_id !== stored.lineage.sourceAssetId
+        || !sameCanonicalSourceState(sourceBefore.data, sourceAfter.data)
         || result.data.project.root_id === stored.lineage.projectId
         || result.data.project.active_asset_id !== result.data.project.root_id
         || result.data.project.active_design_version !== 1
@@ -2144,17 +2198,27 @@ export function createStudioGateway(
           'CANDIDATE_NOT_REVIEWABLE', 'This preview cannot be saved.', 'conflict', 409,
         );
       }
+      const sourceBefore = await client.getProject(stored.lineage.projectId);
+      if (sourceBefore.error !== null) return {
+        data: null, error: mapError(sourceBefore.error), status: sourceBefore.status,
+      };
+      if (!hasImmutableSource(sourceBefore.data, stored.lineage)) return gatewayError(
+        'STUDIO_REVIEW_SOURCE_UNAVAILABLE',
+        'The immutable source revision for this result is unavailable.',
+        'conflict', 409,
+      );
       const result = await client.saveStudioMarkupPreviewAsVariation(stored.trusted, {
         created_by: request.createdBy, label,
       });
       if (result.error !== null) return {
         data: null, error: mapError(result.error), status: result.status,
       };
-      const source = await client.getProject(stored.lineage.projectId);
+      const sourceAfter = await client.getProject(stored.lineage.projectId);
       if (
-        source.error !== null
-        || source.data.active_asset_id !== stored.lineage.sourceAssetId
-        || source.data.active_design_version !== stored.lineage.sourceDesignVersion
+        sourceAfter.error !== null
+        || result.data.source_project_id !== stored.lineage.projectId
+        || result.data.source_asset_id !== stored.lineage.sourceAssetId
+        || !sameCanonicalSourceState(sourceBefore.data, sourceAfter.data)
         || result.data.project.root_id === stored.lineage.projectId
         || result.data.project.active_asset_id !== result.data.project.root_id
         || result.data.project.active_design_version !== 1

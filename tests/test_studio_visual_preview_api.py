@@ -48,6 +48,7 @@ from facetta.spec import Spec
 from facetta.studio_visual_candidates import (
     StudioVisualCandidateUnavailable,
     clear_studio_visual_candidates_for_tests,
+    lock_studio_visual_candidate_for_decision,
     store_studio_visual_candidate,
 )
 
@@ -197,6 +198,30 @@ def _counts(Session) -> dict[str, int]:
             "records": db.scalar(
                 select(func.count()).select_from(ProjectRevisionRecord)),
         }
+
+
+def _advance_active_visual(Session, *, asset_id: str = "ast_newer") -> None:
+    """Append a newer immutable visual without touching the preview source."""
+
+    with Session() as db:
+        newer = ImageAsset(
+            id=asset_id,
+            root_id="ast_selected",
+            parent_asset_id="ast_selected",
+            design_version=None,
+            capability="GLOBAL_RESTYLE",
+            source_kind="photograph",
+            instruction="A later accepted direction",
+            image=_png((100, 110, 120)),
+            media_type="image/png",
+            created_by="usr_studio",
+        )
+        db.add(newer)
+        db.flush()
+        project = db.get(Project, "ast_selected")
+        assert project is not None
+        project.selected_candidate_asset_id = newer.id
+        db.commit()
 
 
 def test_production_visual_preview_requires_job_before_generator(
@@ -977,6 +1002,109 @@ def test_discard_is_terminal_and_creates_no_canonical_revision(
     ).status_code == 410
 
 
+def test_visual_decision_lock_requires_active_source_unless_branching_history(
+    studio_preview_client,
+):
+    client, Session = studio_preview_client
+    app.dependency_overrides[get_studio_visual_preview_generator] = (
+        lambda: _generator([])
+    )
+    preview = _preview(client).json()
+    candidate_id = preview["candidate"]["candidate_id"]
+    run_id = preview["image_run_id"]
+    _advance_active_visual(Session)
+
+    with Session() as db:
+        with pytest.raises(
+            StudioVisualCandidateUnavailable,
+            match="no longer matches the exact selected source",
+        ):
+            lock_studio_visual_candidate_for_decision(
+                db,
+                run_id,
+                candidate_id,
+                owner="usr_studio",
+            )
+
+        candidate, record = lock_studio_visual_candidate_for_decision(
+            db,
+            run_id,
+            candidate_id,
+            owner="usr_studio",
+            require_active=False,
+        )
+
+    assert candidate.source_asset_id == "ast_selected"
+    assert candidate.expected_selected_candidate_asset_id == "ast_selected"
+    assert candidate.source_hash == hashlib.sha256(SOURCE).hexdigest()
+    assert candidate.output_hash == hashlib.sha256(CANDIDATE).hexdigest()
+    assert record.status == "reviewing"
+    with Session() as db:
+        project = db.get(Project, "ast_selected")
+        assert project is not None
+        assert project.selected_candidate_asset_id == "ast_newer"
+        assert db.scalar(select(func.count()).select_from(ImageRunReview)) == 0
+        assert db.scalar(select(func.count()).select_from(
+            ProjectRevisionRecord)) == 0
+
+
+@pytest.mark.parametrize(
+    "tamper",
+    ["source_hash", "candidate_bytes", "missing_run_source"],
+)
+def test_historical_visual_decision_lock_fails_closed_on_lineage_tampering(
+    studio_preview_client,
+    tamper,
+):
+    client, Session = studio_preview_client
+    app.dependency_overrides[get_studio_visual_preview_generator] = (
+        lambda: _generator([])
+    )
+    job_id = _running_refine_job(client)
+    preview = _preview(client, studio_job_id=job_id).json()
+    candidate_id = preview["candidate"]["candidate_id"]
+    run_id = preview["image_run_id"]
+    _advance_active_visual(Session)
+
+    with Session() as db:
+        record = db.get(PreviewCandidateRecord, candidate_id)
+        run = db.get(ImageRun, run_id)
+        assert record is not None and run is not None
+        if tamper == "source_hash":
+            record.source_sha256 = "0" * 64
+        elif tamper == "candidate_bytes":
+            record.image = b"tampered candidate bytes"
+        else:
+            run.source_asset_id = None
+        db.commit()
+
+    with Session() as db:
+        with pytest.raises(
+            StudioVisualCandidateUnavailable,
+            match="no longer matches the exact selected source",
+        ):
+            lock_studio_visual_candidate_for_decision(
+                db,
+                run_id,
+                candidate_id,
+                owner="usr_studio",
+                require_active=False,
+            )
+
+        job = db.get(StudioJobRecord, job_id)
+        candidate = db.get(PreviewCandidateRecord, candidate_id)
+        project = db.get(Project, "ast_selected")
+        assert job is not None and candidate is not None and project is not None
+        assert job.completed_outputs == 0
+        assert job.charged_outputs == 0
+        assert candidate.status == "reviewing"
+        assert candidate.terminal_asset_id is None
+        assert project.selected_candidate_asset_id == "ast_newer"
+        assert db.scalar(select(func.count()).select_from(ImageRunReview)) == 0
+        assert db.scalar(select(func.count()).select_from(
+            ProjectRevisionRecord)) == 0
+
+
 def test_visual_preview_saves_directly_as_independent_variation(
     studio_preview_client,
 ):
@@ -987,6 +1115,7 @@ def test_visual_preview_saves_directly_as_independent_variation(
     preview = _preview(client).json()
     candidate_id = preview["candidate"]["candidate_id"]
     run_id = preview["image_run_id"]
+    _advance_active_visual(Session)
 
     saved = client.post(
         f"/studio/image-runs/{run_id}/visual-candidates/{candidate_id}/"
@@ -996,6 +1125,8 @@ def test_visual_preview_saves_directly_as_independent_variation(
     assert saved.status_code == 201, saved.text
     body = saved.json()
     assert body["status"] == "saved_as_variation"
+    assert body["source_project_id"] == "ast_selected"
+    assert body["source_asset_id"] == "ast_selected"
     sibling_id = body["project"]["root_id"]
     with Session() as db:
         original = db.get(Project, "ast_selected")
@@ -1006,10 +1137,11 @@ def test_visual_preview_saves_directly_as_independent_variation(
             ImageRunReview.run_id == run_id
         ))
         assert original is not None and sibling is not None and asset is not None
-        assert original.selected_candidate_asset_id == "ast_selected"
+        assert original.selected_candidate_asset_id == "ast_newer"
         assert sibling.family_id == original.family_id
         assert sibling.variation_label == "Warm metal"
         assert sibling.branched_from_project_root_id == original.root_id
+        assert sibling.branched_from_asset_id == "ast_selected"
         assert bytes(asset.image) == CANDIDATE
         assert asset.design_id is None and asset.design_version is None
         assert durable is not None

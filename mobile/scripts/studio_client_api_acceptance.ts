@@ -162,7 +162,10 @@ function value<T>(result: { data: T | null; error: unknown; status: number }, st
 
 async function sha256(url: string): Promise<string> {
   const response = await fetch(url);
-  assert.equal(response.status, 200, `image read failed for ${url}`);
+  if (response.status !== 200) {
+    const detail = await response.text();
+    assert.equal(response.status, 200, `image read failed for ${url}: ${detail}`);
+  }
   return createHash('sha256').update(Buffer.from(await response.arrayBuffer())).digest('hex');
 }
 

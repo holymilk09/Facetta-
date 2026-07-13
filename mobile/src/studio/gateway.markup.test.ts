@@ -6,20 +6,37 @@ import type { ProjectDetail } from '../trusted/types';
 
 const ok = <T>(data: T, status = 200) => ({ data, error: null, status } as const);
 
-const project = (assetId: string): ProjectDetail => ({
-  id: 'project_1', root_id: 'project_1', title: 'Orbit', collection: null,
-  tags: [], owner: 'designer_1', state: 'refining', design_id: 'design_1', spec: {},
-  active_asset_id: assetId, active_design_version: 1, active_revision: {
+const project = (assetId: string): ProjectDetail => {
+  const source = {
+    asset_id: 'asset_1', root_id: 'project_1', parent_asset_id: null,
+    capability: 'SPEC_RENDER', provenance: 'studio', revision: 1,
+    design_id: 'design_1', design_version: 1, region: null, instruction: null,
+    drift: null, pinned: false, media_type: 'image/png', image_url: 'https://test/source.png',
+    created_by: 'designer_1', created_at: null, legacy_provenance: false,
+  };
+  const active = {
     asset_id: assetId, root_id: 'project_1', parent_asset_id: null,
     capability: 'LOCALIZED_EDIT', provenance: 'studio', revision: 2,
     design_id: 'design_1', design_version: 1, region: null, instruction: null,
     drift: null, pinned: false, media_type: 'image/png', image_url: 'https://test/image.png',
     created_by: 'designer_1', created_at: null, legacy_provenance: false,
-  },
-  pinned_revision: null, revisions: [], assets: [], derived_assets: [], approval: null,
-  factory_ready: false, factory_blockers: [], primary_revision_count: 2,
-  has_factory_drawing: false, cover_asset_id: assetId, created_at: null, updated_at: null,
-});
+  };
+  const assets = assetId === source.asset_id ? [source] : [source, active];
+  return {
+    id: 'project_1', root_id: 'project_1', title: 'Orbit', collection: null,
+    tags: [], owner: 'designer_1', state: 'refining', design_id: 'design_1', spec: {},
+    active_asset_id: assetId, active_design_version: 1,
+    active_revision: assetId === source.asset_id ? source : active,
+    pinned_revision: null,
+    revisions: assets.map((entry, index) => ({
+      revision: index + 1, asset: entry, spec_version: 1, spec_change: [],
+      ignored_fields: [], qa: null, routing: null, created_at: null,
+    })),
+    assets, derived_assets: [], approval: null,
+    factory_ready: false, factory_blockers: [], primary_revision_count: assets.length,
+    has_factory_drawing: false, cover_asset_id: assetId, created_at: null, updated_at: null,
+  };
+};
 
 const quality = {
   verdict: 'pass', accepted: true, review_required: false, score: 1,
@@ -121,7 +138,7 @@ test('discard makes a markup candidate terminal without changing the project', a
 });
 
 test('a fresh gateway resumes durable markup and saves it as a sibling variation', async () => {
-  const source = project('asset_1');
+  const source = project('asset_2');
   const variation = {
     ...project('variation_1'), id: 'variation_1', root_id: 'variation_1',
     active_asset_id: 'variation_1', cover_asset_id: 'variation_1',
@@ -163,7 +180,8 @@ test('a fresh gateway resumes durable markup and saves it as a sibling variation
       assert.equal(request.label, 'Soft halo');
       return ok({
         status: 'saved_as_variation' as const, family_id: 'family_1',
-        variation_index: 2, project: variation,
+        variation_index: 2, source_project_id: 'project_1',
+        source_asset_id: 'asset_1', project: variation,
       }, 201);
     },
   };
@@ -184,5 +202,5 @@ test('a fresh gateway resumes durable markup and saves it as a sibling variation
   assert.equal(result.data?.project.root_id, 'variation_1');
   assert.equal(result.data?.candidate.status, 'saved_as_variation');
   assert.equal(saved, 1);
-  assert.equal(source.active_asset_id, 'asset_1');
+  assert.equal(source.active_asset_id, 'asset_2');
 });

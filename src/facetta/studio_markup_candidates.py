@@ -25,6 +25,8 @@ from facetta.db import (
 )
 from facetta.image_identity import spec_visual_hash
 from facetta.project_backbone import is_primary_revision
+from facetta.revision_component_map import ComponentMapError, component_map_hash
+from facetta.revision_component_map_store import load_revision_component_map
 from facetta.spec import Spec
 from facetta.specdiff import summarize_changes
 from facetta.studio_jobs import (
@@ -69,6 +71,9 @@ class StudioMarkupCandidate:
     output_hash: str
     source_spec_hash: str
     target_spec_hash: str
+    source_component_map_state: str | None
+    source_component_map_hash: str | None
+    target_mask_hash: str | None
     image_bytes: bytes
     media_type: str
     operation: str
@@ -133,6 +138,9 @@ def _candidate(record: StudioMarkupCandidateRecord) -> StudioMarkupCandidate:
         output_hash=record.output_sha256,
         source_spec_hash=record.source_spec_visual_hash,
         target_spec_hash=record.target_spec_visual_hash,
+        source_component_map_state=payload.get("source_component_map_state"),
+        source_component_map_hash=payload.get("source_component_map_sha256"),
+        target_mask_hash=payload.get("target_mask_sha256"),
         image_bytes=bytes(record.image),
         media_type=record.media_type,
         operation=record.operation,
@@ -165,6 +173,40 @@ def _active_primary(db: Session, root_id: str) -> ImageAsset | None:
 
 def _reviewable(qa: object) -> bool:
     return reviewable_candidate_qa_payload(qa)
+
+
+def _source_component_map_binding(
+    db: Session,
+    source_asset_id: str,
+) -> tuple[str, str | None]:
+    """Bind review authority to the exact source's map state.
+
+    Markup refinement may start from a revision that is explicitly unmapped,
+    so absence is represented rather than invented.  If a map exists, its
+    validated content hash becomes part of the durable candidate lineage.
+    """
+
+    component_map = load_revision_component_map(db, source_asset_id)
+    if component_map is None:
+        return "unmapped", None
+    return "mapped", component_map_hash(component_map)
+
+
+def _run_mask_binding_valid(run: ImageRun, expected_mask_hash: str | None) -> bool:
+    intent = run.normalized_intent
+    localization = intent.get("localization") if isinstance(intent, dict) else None
+    intent_mask_hash = (
+        localization.get("mask_hash")
+        if isinstance(localization, dict) else None
+    )
+    if expected_mask_hash is None:
+        return run.mask_hash is None and intent_mask_hash is None
+    return (
+        isinstance(expected_mask_hash, str)
+        and len(expected_mask_hash) == 64
+        and run.mask_hash == expected_mask_hash
+        and intent_mask_hash == expected_mask_hash
+    )
 
 
 def _exact_refine_job(
@@ -299,6 +341,16 @@ def store_studio_markup_candidate(
     source_hash = hashlib.sha256(bytes(source.image)).hexdigest()
     source_spec_hash = spec_visual_hash(Spec.model_validate(version.spec))
     target_spec_hash = spec_visual_hash(candidate.next_spec or Spec.model_validate(version.spec))
+    try:
+        source_map_state, source_map_hash = _source_component_map_binding(
+            db, source.id)
+    except ComponentMapError as exc:
+        raise StudioMarkupError(
+            "markup_candidate_lineage_invalid",
+            "the exact source component-map evidence is invalid",
+            status_code=422,
+        ) from exc
+    target_mask_hash = run.mask_hash
     if (
         candidate.promotion_kind != "standard"
         or project.owner != candidate.created_by
@@ -309,9 +361,11 @@ def store_studio_markup_candidate(
         or run.source_asset_id != source.id
         or run.source_hash != source_hash
         or run.created_by != candidate.created_by
+        or run.operation != candidate.operation
         or run.status != "review_required"
         or run.spec_visual_hash != target_spec_hash
         or run.source_spec_visual_hash not in {None, source_spec_hash}
+        or not _run_mask_binding_valid(run, target_mask_hash)
     ):
         raise StudioMarkupError(
             "markup_candidate_lineage_invalid",
@@ -363,6 +417,9 @@ def store_studio_markup_candidate(
             "qa": candidate.qa,
             "routing": candidate.routing,
             "reserved_asset_id": candidate.reserved_asset_id,
+            "source_component_map_state": source_map_state,
+            "source_component_map_sha256": source_map_hash,
+            "target_mask_sha256": target_mask_hash,
         },
         status="reviewing",
         studio_job_id=studio_job_id,
@@ -444,14 +501,24 @@ def get_studio_markup_candidate(
 
 def lock_studio_markup_candidate_for_decision(
     db: Session, run_id: str, candidate_id: str, *, owner: str,
+    require_active: bool = True,
 ) -> tuple[StudioMarkupCandidate, StudioMarkupCandidateRecord]:
+    """Lock an exact candidate for one terminal decision.
+
+    Apply callers retain the active-source requirement by default. Save as
+    Variation may explicitly allow a historical immutable source because it
+    creates an independent sibling and never advances the active project.
+    Every other source, spec, map, mask, run, candidate, job, and QA binding
+    remains mandatory.
+    """
+
     record = _owned_record(
         db, run_id, candidate_id, owner=owner, for_update=True)
     if record.status != "reviewing":
         raise StudioMarkupCandidateUnavailable(
             f"the Studio markup candidate was already {record.status}")
     candidate = _candidate(record)
-    _validate_exact_lineage(db, candidate)
+    _validate_exact_lineage(db, candidate, require_active=require_active)
     return candidate, record
 
 
@@ -512,10 +579,16 @@ def _validate_exact_lineage(
     )
     target_spec_hash = spec_visual_hash(candidate.next_spec or Spec.model_validate(
         version.spec)) if version is not None else None
+    try:
+        current_map_state, current_map_hash = _source_component_map_binding(
+            db, candidate.source_asset_id)
+    except ComponentMapError:
+        current_map_state, current_map_hash = "invalid", None
     if (
         project is None or source is None or run is None
         or (require_active and active is None)
         or project.owner != candidate.created_by
+        or source.root_id != candidate.project_root_id
         or source.id != candidate.expected_active_asset_id
         or (require_active and active is not None and active.id != source.id)
         or source.design_version != candidate.design_version
@@ -524,13 +597,17 @@ def _validate_exact_lineage(
         or hashlib.sha256(candidate.image_bytes).hexdigest() != candidate.output_hash
         or source_spec_hash != candidate.source_spec_hash
         or target_spec_hash != candidate.target_spec_hash
+        or current_map_state != candidate.source_component_map_state
+        or current_map_hash != candidate.source_component_map_hash
         or run.project_root_id != project.root_id
         or run.source_asset_id != source.id
         or run.source_hash != source_hash
         or run.created_by != candidate.created_by
+        or run.operation != candidate.operation
         or run.status != "review_required"
         or run.spec_visual_hash != candidate.target_spec_hash
         or run.source_spec_visual_hash not in {None, candidate.source_spec_hash}
+        or not _run_mask_binding_valid(run, candidate.target_mask_hash)
         or not _reviewable(candidate.qa)
     ):
         raise StudioMarkupError(

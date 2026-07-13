@@ -855,17 +855,21 @@ export const decodePreviewVariationResult: Decoder<PreviewVariationResult> = (va
   if (!isRecord(value) || value.status !== 'saved_as_variation') return null;
   const familyId = nullableText(value.family_id);
   const variationIndex = number(value.variation_index);
+  const sourceProjectId = nullableText(value.source_project_id);
+  const sourceAssetId = nullableText(value.source_asset_id);
   const designId = nullableText(value.design_id);
   const designVersion = number(value.design_version);
   const project = decodeProjectDetail(value.project);
   if (
     familyId === null || variationIndex === null || !Number.isInteger(variationIndex)
-    || variationIndex < 1 || project === null
+    || variationIndex < 1 || sourceProjectId === null || sourceAssetId === null
+    || project === null
     || ((designId === null) !== (designVersion === null))
     || (designVersion !== null && (!Number.isInteger(designVersion) || designVersion < 1))
   ) return null;
   return {
-    status: 'saved_as_variation', family_id: familyId, variation_index: variationIndex, project,
+    status: 'saved_as_variation', family_id: familyId, variation_index: variationIndex,
+    source_project_id: sourceProjectId, source_asset_id: sourceAssetId, project,
     ...(designId === null ? {} : { design_id: designId, design_version: designVersion as number }),
   };
 };

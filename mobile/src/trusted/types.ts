@@ -599,6 +599,9 @@ export interface PreviewVariationResult {
   status: 'saved_as_variation';
   family_id: string;
   variation_index: number;
+  /** Exact immutable project/revision from which this reviewed candidate branched. */
+  source_project_id: string;
+  source_asset_id: string;
   design_id?: string;
   design_version?: number;
   project: ProjectDetail;

@@ -2160,6 +2160,8 @@ def save_catalog_preview_as_variation(
         "status": "saved_as_variation",
         "family_id": result.family_id,
         "variation_index": result.variation_index,
+        "source_project_id": result.source_project_id,
+        "source_asset_id": result.source_asset_id,
         "design_id": result.design_id,
         "design_version": result.design_version,
         "project": ProjectDetail.model_validate(project_detail(db, project)),

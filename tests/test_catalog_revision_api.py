@@ -34,7 +34,10 @@ from facetta.api.catalog import StudioComponentTargetingResponse
 from facetta.design_form import NormalizedPoint, NormalizedPolygon
 from facetta.catalog_preview_candidates import (
     CatalogPreviewJobError,
+    CatalogPreviewUnavailable,
     clear_catalog_preview_candidates_for_tests,
+    list_catalog_preview_candidates,
+    lock_catalog_preview_candidate_for_decision,
 )
 from facetta import catalog_component_targeting
 from facetta.component_catalog import get_component_catalog
@@ -1649,6 +1652,11 @@ def test_catalog_preview_saves_exact_spec_directly_as_variation(
         f"/assets/{project['active_asset_id']}/catalog/preview",
         json=_request(),
     ).json()
+    newer = client.post(
+        f"/assets/{project['active_asset_id']}/catalog/apply",
+        json=_request(option_id="white"),
+    )
+    assert newer.status_code == 201, newer.text
     saved = client.post(
         f"/image-runs/{preview['image_run_id']}/catalog-candidates/"
         f"{preview['candidate']['candidate_id']}/save-as-variation",
@@ -1657,9 +1665,14 @@ def test_catalog_preview_saves_exact_spec_directly_as_variation(
     assert saved.status_code == 201, saved.text
     body = saved.json()
     assert body["status"] == "saved_as_variation"
+    assert body["source_project_id"] == project["root_id"]
+    assert body["source_asset_id"] == project["active_asset_id"]
     assert body["design_version"] == 1
     assert body["project"]["spec"]["metal"]["color"] == "rose"
     sibling_id = body["project"]["root_id"]
+    current = client.get(f"/projects/{project['root_id']}")
+    assert current.status_code == 200, current.text
+    assert current.json()["active_asset_id"] == newer.json()["asset_id"]
     with SessionFactory() as db:
         original = db.get(Project, project["root_id"])
         sibling = db.get(Project, sibling_id)
@@ -1671,9 +1684,11 @@ def test_catalog_preview_saves_exact_spec_directly_as_variation(
             )
         )
         assert original is not None and sibling is not None and asset is not None
-        assert project["active_asset_id"] == original.root_id
+        assert original.root_id == project["root_id"]
+        assert newer.json()["asset_id"] != project["active_asset_id"]
         assert sibling.family_id == original.family_id
         assert sibling.variation_label == "Rose direction"
+        assert sibling.branched_from_asset_id == project["active_asset_id"]
         assert asset.design_id == body["design_id"]
         assert asset.design_version == 1
         assert durable is not None
@@ -1764,6 +1779,156 @@ def test_catalog_preview_accept_rejects_stale_exact_source_without_rerun(
         assert current_job is not None and current_job.status == "failed"
         assert current_job.completed_outputs == current_job.charged_outputs == 0
         assert current_job.error_code == "catalog_preview_unavailable"
+
+
+def test_catalog_candidate_historical_branch_mode_preserves_exact_source_authority(
+    catalog_client,
+    example_spec,
+    monkeypatch,
+):
+    client, SessionFactory = catalog_client
+    project = _create_project(client, example_spec, SessionFactory)
+    agent = _ResultAgent(QualityVerdict.PASS)
+    monkeypatch.setattr("facetta.api.catalog._trusted_image_agent", lambda: agent)
+    exact_child = client.post(
+        f"/assets/{project['active_asset_id']}/catalog/apply",
+        json=_request(option_id="white"),
+    )
+    assert exact_child.status_code == 201, exact_child.text
+    source_asset_id = exact_child.json()["asset_id"]
+    with SessionFactory() as db:
+        source_asset = db.get(ImageAsset, source_asset_id)
+        assert source_asset is not None
+        source_image = bytes(source_asset.image)
+        add_revision_component_map(
+            db,
+            _component_map(source_asset_id, source_image),
+            image_bytes=source_image,
+            parent_asset_id=project["active_asset_id"],
+        )
+        db.commit()
+    preview = client.post(
+        f"/assets/{source_asset_id}/catalog/preview",
+        json=_request(expected_design_version=2),
+    ).json()
+    newer = client.post(
+        f"/assets/{source_asset_id}/catalog/apply",
+        json=_request(option_id="yellow", expected_design_version=2),
+    )
+    assert newer.status_code == 201, newer.text
+
+    run_id = preview["image_run_id"]
+    candidate_id = preview["candidate"]["candidate_id"]
+    with SessionFactory() as db:
+        with pytest.raises(CatalogPreviewUnavailable):
+            lock_catalog_preview_candidate_for_decision(
+                db,
+                run_id,
+                candidate_id,
+                owner="usr_catalog",
+            )
+        with pytest.raises(CatalogPreviewUnavailable):
+            lock_catalog_preview_candidate_for_decision(
+                db,
+                run_id,
+                candidate_id,
+                owner="usr_other",
+                require_active=False,
+            )
+        candidate, record = lock_catalog_preview_candidate_for_decision(
+            db,
+            run_id,
+            candidate_id,
+            owner="usr_catalog",
+            require_active=False,
+        )
+        assert candidate.source_asset_id == source_asset_id
+        assert candidate.expected_active_asset_id == source_asset_id
+        assert candidate.expected_design_version == 2
+        assert candidate.source_asset_id != newer.json()["asset_id"]
+        assert record.status == "reviewing"
+        reopened = list_catalog_preview_candidates(
+            db,
+            project_root_id=project["root_id"],
+            owner="usr_catalog",
+        )
+        assert [item.candidate_id for item in reopened] == [candidate_id]
+        assert db.scalar(select(func.count()).select_from(Project)) == 1
+
+
+@pytest.mark.parametrize(
+    "corruption",
+    (
+        "tampered_source_bytes",
+        "missing_component_map",
+        "tampered_run_binding",
+        "tampered_candidate_qa",
+    ),
+)
+def test_catalog_candidate_historical_branch_mode_fails_closed_on_lineage_drift(
+    catalog_client,
+    example_spec,
+    monkeypatch,
+    corruption,
+):
+    client, SessionFactory = catalog_client
+    project = _create_project(client, example_spec, SessionFactory)
+    monkeypatch.setattr(
+        "facetta.api.catalog._trusted_image_agent",
+        lambda: _ResultAgent(QualityVerdict.PASS),
+    )
+    preview = client.post(
+        f"/assets/{project['active_asset_id']}/catalog/preview",
+        json=_request(),
+    ).json()
+    newer = client.post(
+        f"/assets/{project['active_asset_id']}/catalog/apply",
+        json=_request(option_id="white"),
+    )
+    assert newer.status_code == 201, newer.text
+
+    run_id = preview["image_run_id"]
+    candidate_id = preview["candidate"]["candidate_id"]
+    with SessionFactory() as db:
+        if corruption == "tampered_source_bytes":
+            db.execute(
+                ImageAsset.__table__.update()
+                .where(ImageAsset.id == project["active_asset_id"])
+                .values(image=_png((1, 2, 3)))
+            )
+        elif corruption == "missing_component_map":
+            db.execute(
+                RevisionComponentMapRecord.__table__.delete().where(
+                    RevisionComponentMapRecord.asset_id
+                    == project["active_asset_id"]
+                )
+            )
+        elif corruption == "tampered_run_binding":
+            db.execute(
+                ImageRun.__table__.update()
+                .where(ImageRun.id == run_id)
+                .values(source_asset_id=newer.json()["asset_id"])
+            )
+        else:
+            record = db.get(PreviewCandidateRecord, candidate_id)
+            assert record is not None
+            payload = dict(record.payload)
+            payload["qa"] = {}
+            record.payload = payload
+        db.commit()
+
+    with SessionFactory() as db:
+        with pytest.raises(CatalogPreviewUnavailable):
+            lock_catalog_preview_candidate_for_decision(
+                db,
+                run_id,
+                candidate_id,
+                owner="usr_catalog",
+                require_active=False,
+            )
+        assert db.scalar(select(func.count()).select_from(Project)) == 1
+        assert db.scalar(select(func.count()).select_from(ImageAsset)) == 2
+        assert db.scalar(select(func.count()).select_from(DesignVersion)) == 2
 
 
 def test_catalog_preview_discard_removes_only_temporary_bytes(

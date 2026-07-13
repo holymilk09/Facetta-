@@ -40,32 +40,39 @@ const asset = (assetId: string, designVersion: number) => ({
   legacy_provenance: false,
 });
 
-const project = (assetId = 'asset_1', designVersion = 1): ProjectDetail => ({
-  id: 'project_1',
-  root_id: 'project_1',
-  title: 'Test design',
-  collection: null,
-  tags: [],
-  owner: 'designer_1',
-  state: 'refining',
-  design_id: 'design_1',
-  spec: {},
-  active_asset_id: assetId,
-  active_design_version: designVersion,
-  active_revision: asset(assetId, designVersion),
-  pinned_revision: null,
-  revisions: [],
-  assets: [asset(assetId, designVersion)],
-  derived_assets: [],
-  approval: null,
-  factory_ready: false,
-  factory_blockers: [],
-  primary_revision_count: 1,
-  has_factory_drawing: false,
-  cover_asset_id: assetId,
-  created_at: '2026-07-12T00:00:00Z',
-  updated_at: '2026-07-12T00:00:00Z',
-});
+const project = (assetId = 'asset_1', designVersion = 1): ProjectDetail => {
+  const active = asset(assetId, designVersion);
+  const lineageAssets = assetId === 'asset_1' ? [active] : [asset('asset_1', 1), active];
+  return {
+    id: 'project_1',
+    root_id: 'project_1',
+    title: 'Test design',
+    collection: null,
+    tags: [],
+    owner: 'designer_1',
+    state: 'refining',
+    design_id: 'design_1',
+    spec: {},
+    active_asset_id: assetId,
+    active_design_version: designVersion,
+    active_revision: active,
+    pinned_revision: null,
+    revisions: lineageAssets.map((entry, index) => ({
+      revision: index + 1, asset: entry, spec_version: entry.design_version,
+      spec_change: [], ignored_fields: [], qa: null, routing: null, created_at: null,
+    })),
+    assets: lineageAssets,
+    derived_assets: [],
+    approval: null,
+    factory_ready: false,
+    factory_blockers: [],
+    primary_revision_count: lineageAssets.length,
+    has_factory_drawing: false,
+    cover_asset_id: assetId,
+    created_at: '2026-07-12T00:00:00Z',
+    updated_at: '2026-07-12T00:00:00Z',
+  };
+};
 
 type GatewayClient = Parameters<typeof createStudioGateway>[0];
 
@@ -235,6 +242,7 @@ test('rejects a partial or rebound atomic Create response', async () => {
 
 test('saves an exact catalog preview as a named sibling without advancing its source', async () => {
   let saveCalls = 0;
+  const source = project('asset_2', 2);
   const sibling = {
     ...project('variation_2', 1), id: 'variation_2', root_id: 'variation_2',
     active_asset_id: 'variation_2', active_revision: {
@@ -250,10 +258,11 @@ test('saves an exact catalog preview as a named sibling without advancing its so
       assert.deepEqual(request, { created_by: 'designer_1', label: 'Rose halo' });
       return ok({
         status: 'saved_as_variation' as const, family_id: 'family_1', variation_index: 2,
+        source_project_id: 'project_1', source_asset_id: 'asset_1',
         design_id: 'design_variation', design_version: 1, project: sibling,
       }, 201);
     },
-    getProject: async () => ok(project()),
+    getProject: async () => ok(source),
   }));
   const preview = await gateway.previewCatalogRefine({
     projectId: 'project_1', sourceAssetId: 'asset_1', sourceDesignVersion: 1,
@@ -274,6 +283,7 @@ test('saves an exact catalog preview as a named sibling without advancing its so
   assert.equal(saved.data?.candidate.status, 'saved_as_variation');
   assert.equal(saved.data?.project.root_id, 'variation_2');
   assert.equal(saved.data?.familyId, 'family_1');
+  assert.equal(source.active_asset_id, 'asset_2');
   assert.equal(saveCalls, 1);
 
   const repeated = await gateway.saveCatalogPreviewAsVariation({

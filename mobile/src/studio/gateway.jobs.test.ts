@@ -325,6 +325,9 @@ test('catalog preview keeps image-run and Studio-job identities separate through
 
 test('saving a catalog preview variation resolves Activity once with one completed output', async () => {
   const jobs = tracking();
+  const source = project(2);
+  source.active_asset_id = 'candidate_2';
+  source.active_revision = source.revisions[1]!.asset;
   const sibling = {
     ...project(1), id: 'variation_2', root_id: 'variation_2',
     active_asset_id: 'variation_2', active_design_version: 1,
@@ -347,9 +350,10 @@ test('saving a catalog preview variation resolves Activity once with one complet
     }, 201),
     saveCatalogPreviewAsVariation: async () => ok({
       status: 'saved_as_variation', family_id: 'family_1', variation_index: 2,
+      source_project_id: 'project_1', source_asset_id: 'candidate_1',
       design_id: 'design_variation', design_version: 1, project: sibling,
     }, 201),
-    getProject: async () => ok(project(1)),
+    getProject: async () => ok(source),
   } as any, { trackJobs: true });
 
   await gateway.previewCatalogRefine({
@@ -360,6 +364,7 @@ test('saving a catalog preview variation resolves Activity once with one complet
     candidateId: 'candidate_variation', createdBy: 'designer_1', label: 'Rose halo',
   });
   assert.equal(saved.error, null);
+  assert.equal(source.active_asset_id, 'candidate_2');
   assert.deepEqual(jobs.transitions.map((call) => call.request.status), ['running']);
 });
 

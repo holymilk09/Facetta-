@@ -13,6 +13,7 @@ import {
   decodePhotoDraftResult,
   decodePlateDraftResult,
   decodeProductPhotoResult,
+  decodePreviewVariationResult,
   decodeProjectCreationResult,
   decodeProjectDetail,
   decodeSaveAsVariationResult,
@@ -116,6 +117,25 @@ export function runTrustedClientDecoderTests(): void {
   assert(variation?.project.root_id === 'ast_variation_2'
     && variation.source_asset_id === 'ast_root',
   'save-as-variation responses must decode their sibling project and source provenance');
+
+  const reviewedVariation = decodePreviewVariationResult({
+    status: 'saved_as_variation',
+    family_id: 'fam_ring',
+    variation_index: 3,
+    source_project_id: 'ast_root',
+    source_asset_id: 'ast_root',
+    design_id: 'dsn_preview',
+    design_version: 1,
+    project: variation?.project,
+  });
+  assert(reviewedVariation?.source_asset_id === 'ast_root',
+    'reviewed preview variations must preserve exact source provenance');
+  assert(decodePreviewVariationResult({
+    status: 'saved_as_variation',
+    family_id: 'fam_ring',
+    variation_index: 3,
+    project: variation?.project,
+  }) === null, 'reviewed preview variation provenance must fail closed when absent');
 
   const creationWarning = decodeProjectCreationResult({
     status: 'review_required',

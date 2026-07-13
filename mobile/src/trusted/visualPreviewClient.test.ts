@@ -143,6 +143,7 @@ describe('pre-spec visual preview client', () => {
       ok: true, status: 201,
       text: async () => JSON.stringify({
         status: 'saved_as_variation', family_id: 'family_visual', variation_index: 2,
+        source_project_id: 'project_visual', source_asset_id: 'asset_visual',
         project: projectPayload,
       }),
     } as Response));
@@ -152,6 +153,9 @@ describe('pre-spec visual preview client', () => {
       { created_by: 'designer', label: '  Warm direction  ' },
     );
     expect(result.error).toBeNull();
+    expect(result.data).toMatchObject({
+      source_project_id: 'project_visual', source_asset_id: 'asset_visual',
+    });
     expect(fetcher).toHaveBeenCalledWith(
       'https://facetta.test/studio/image-runs/run%20visual/visual-candidates/candidate%20visual/save-as-variation',
       expect.objectContaining({ method: 'POST' }),

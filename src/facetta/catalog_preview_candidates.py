@@ -472,6 +472,7 @@ def _owned_reviewing_record(
     *,
     owner: str,
     for_update: bool = False,
+    require_active: bool = True,
 ) -> PreviewCandidateRecord:
     query = select(PreviewCandidateRecord).where(
         PreviewCandidateRecord.id == candidate_id,
@@ -655,9 +656,14 @@ def _owned_reviewing_record(
         project is None
         or project.owner != owner
         or source is None
+        or root is None
         or source.root_id != record.project_root_id
+        or not is_primary_revision(source)
         or active is None
-        or active.id != record.expected_active_asset_id
+        or (
+            require_active
+            and active.id != record.expected_active_asset_id
+        )
         or source.id != record.expected_active_asset_id
         or source.design_version != record.expected_design_version
         or source_hash != record.source_sha256
@@ -802,9 +808,15 @@ def lock_catalog_preview_candidate_for_decision(
     candidate_id: str,
     *,
     owner: str,
+    require_active: bool = True,
 ) -> tuple[CatalogPreviewCandidate, PreviewCandidateRecord]:
     record = _owned_reviewing_record(
-        db, run_id, candidate_id, owner=owner, for_update=True,
+        db,
+        run_id,
+        candidate_id,
+        owner=owner,
+        for_update=True,
+        require_active=require_active,
     )
     return _candidate(record), record
 
@@ -830,6 +842,7 @@ def list_catalog_preview_candidates(
         try:
             current = _owned_reviewing_record(
                 db, record.image_run_id, record.id, owner=owner,
+                require_active=False,
             )
         except CatalogPreviewUnavailable:
             # A resume read is a real lifecycle observation. Do not silently

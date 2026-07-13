@@ -33,6 +33,7 @@ from facetta.main import app
 from facetta.spec import Spec
 from facetta.studio_markup_candidates import (
     StudioMarkupError,
+    lock_studio_markup_candidate_for_decision,
     store_studio_markup_candidate,
 )
 from facetta.warning_candidates import (
@@ -111,6 +112,16 @@ def _store(
     output = _png(120 + len(suffix))
     source_spec_hash = spec_visual_hash(Spec.model_validate(spec))
     target_spec_hash = spec_visual_hash(next_spec or Spec.model_validate(spec))
+    mask_hash = ("a" * 64 if next_spec is not None else None)
+    normalized_intent = (
+        {
+            "localization": {
+                "mode": "caller_supplied_mask",
+                "mask_hash": mask_hash,
+            },
+        }
+        if mask_hash is not None else {}
+    )
     run_id = f"run_markup_{suffix}"
     job_id = f"job_markup_{suffix}" if with_job else None
     with Session() as db:
@@ -119,11 +130,11 @@ def _store(
             project_root_id="ast_markup",
             source_asset_id="ast_markup",
             operation=("LOCAL_EDIT" if next_spec is not None else "VISUAL_ONLY_EDIT"),
-            normalized_intent={"change": suffix},
+            normalized_intent={"change": suffix, **normalized_intent},
             prompt_version="test.v1",
             input_hash=hashlib.sha256(output).hexdigest(),
             source_hash=hashlib.sha256(source).hexdigest(),
-            mask_hash=None,
+            mask_hash=mask_hash,
             spec_visual_hash=target_spec_hash,
             source_spec_visual_hash=source_spec_hash,
             variant=0,
@@ -261,21 +272,48 @@ def test_save_as_variation_preserves_exact_spec_and_settles_job(markup_candidate
     )
     clear_warning_candidates_for_tests()
 
+    newer_raw = copy.deepcopy(spec)
+    newer_raw.update({"version": version + 1})
+    with Session() as db:
+        db.add_all([
+            DesignVersion(
+                design_id="dsn_markup",
+                version=version + 1,
+                spec=newer_raw,
+                created_by=OWNER,
+            ),
+            ImageAsset(
+                id="ast_markup_newer",
+                root_id="ast_markup",
+                parent_asset_id="ast_markup",
+                design_id=None,
+                design_version=version + 1,
+                capability="LOCALIZED_EDIT",
+                image=_png(212),
+                media_type="image/png",
+                created_by=OWNER,
+            ),
+        ])
+        db.commit()
+
     saved = client.post(
         f"/studio/markup-candidates/{candidate.run_id}/"
         f"{candidate.candidate_id}/save-as-variation",
         json={"created_by": OWNER, "label": "Satin marked study"},
     )
     assert saved.status_code == 201, saved.text
-    sibling = saved.json()["project"]
+    payload = saved.json()
+    assert payload["source_project_id"] == "ast_markup"
+    assert payload["source_asset_id"] == "ast_markup"
+    sibling = payload["project"]
     assert sibling["root_id"] != "ast_markup"
     assert sibling["active_design_version"] == 1
     assert sibling["spec"]["metal"]["finish"] == "satin"
 
     original = client.get("/projects/ast_markup")
     assert original.status_code == 200
-    assert original.json()["active_asset_id"] == "ast_markup"
-    assert original.json()["active_design_version"] == version
+    assert original.json()["active_asset_id"] == "ast_markup_newer"
+    assert original.json()["active_design_version"] == version + 1
     assert original.json()["spec"]["metal"]["finish"] != "satin"
     with Session() as db:
         durable = db.get(StudioMarkupCandidateRecord, candidate.candidate_id)
@@ -284,6 +322,137 @@ def test_save_as_variation_preserves_exact_spec_and_settles_job(markup_candidate
         assert durable.terminal_asset_id == sibling["active_asset_id"]
         assert job is not None and job.status == "succeeded"
         assert job.charged_outputs == 1
+
+
+def test_historical_source_lock_is_variation_only_and_does_not_charge(
+    markup_candidates,
+):
+    _client, Session, spec, version, source = markup_candidates
+    candidate = _store(
+        Session,
+        spec,
+        version,
+        source,
+        suffix="historical_variation",
+    )
+    with Session() as db:
+        next_raw = copy.deepcopy(spec)
+        next_raw.update({"version": version + 1})
+        db.add_all([
+            DesignVersion(
+                design_id="dsn_markup",
+                version=version + 1,
+                spec=next_raw,
+                created_by=OWNER,
+            ),
+            ImageAsset(
+                id="ast_markup_active",
+                root_id="ast_markup",
+                parent_asset_id="ast_markup",
+                design_id=None,
+                design_version=version + 1,
+                capability="LOCALIZED_EDIT",
+                image=_png(211),
+                media_type="image/png",
+                created_by=OWNER,
+            ),
+        ])
+        db.commit()
+
+    with Session() as db:
+        with pytest.raises(StudioMarkupError) as active_only:
+            lock_studio_markup_candidate_for_decision(
+                db,
+                candidate.run_id,
+                candidate.candidate_id,
+                owner=OWNER,
+            )
+        assert active_only.value.code == "markup_candidate_lineage_mismatch"
+        db.rollback()
+
+        historical, record = lock_studio_markup_candidate_for_decision(
+            db,
+            candidate.run_id,
+            candidate.candidate_id,
+            owner=OWNER,
+            require_active=False,
+        )
+        assert historical.source_asset_id == "ast_markup"
+        assert historical.design_version == version
+        assert historical.source_hash == hashlib.sha256(source).hexdigest()
+        assert historical.source_component_map_state == "unmapped"
+        assert historical.source_component_map_hash is None
+        assert record.status == "reviewing"
+
+        job = db.get(StudioJobRecord, candidate.studio_job_id)
+        project = db.get(Project, "ast_markup")
+        assert job is not None and job.status == "reviewing"
+        assert (job.completed_outputs, job.charged_outputs) == (0, 0)
+        assert project is not None and project.root_id == "ast_markup"
+        assert db.scalar(select(func.count()).select_from(ImageRunReview)) == 0
+        assert db.scalar(select(func.count()).select_from(
+            ProjectRevisionRecord)) == 0
+
+
+@pytest.mark.parametrize("corruption", ["mask", "map", "run", "candidate"])
+def test_historical_source_lock_fails_closed_for_tampered_exact_lineage(
+    markup_candidates,
+    corruption: str,
+):
+    _client, Session, spec, version, source = markup_candidates
+    next_raw = copy.deepcopy(spec)
+    next_raw["metal"]["finish"] = "satin"
+    candidate = _store(
+        Session,
+        spec,
+        version,
+        source,
+        suffix=f"historical_tamper_{corruption}",
+        next_spec=Spec.model_validate(next_raw),
+    )
+    with Session() as db:
+        record = db.get(StudioMarkupCandidateRecord, candidate.candidate_id)
+        assert record is not None
+        if corruption == "mask":
+            payload = dict(record.payload)
+            payload["target_mask_sha256"] = "0" * 64
+            record.payload = payload
+        elif corruption == "map":
+            payload = dict(record.payload)
+            payload.update({
+                "source_component_map_state": "mapped",
+                "source_component_map_sha256": "0" * 64,
+            })
+            record.payload = payload
+        elif corruption == "run":
+            run = db.get(ImageRun, candidate.run_id)
+            assert run is not None
+            run.operation = "VISUAL_ONLY_EDIT"
+        else:
+            record.image = _png(223)
+        db.commit()
+
+    with Session() as db:
+        with pytest.raises(StudioMarkupError) as rejected:
+            lock_studio_markup_candidate_for_decision(
+                db,
+                candidate.run_id,
+                candidate.candidate_id,
+                owner=OWNER,
+                require_active=False,
+            )
+        assert rejected.value.code == "markup_candidate_lineage_mismatch"
+        db.rollback()
+        durable = db.get(StudioMarkupCandidateRecord, candidate.candidate_id)
+        job = db.get(StudioJobRecord, candidate.studio_job_id)
+        assert durable is not None and durable.status == "reviewing"
+        assert durable.terminal_asset_id is None
+        assert job is not None and job.status == "reviewing"
+        assert (job.completed_outputs, job.charged_outputs) == (0, 0)
+        assert db.scalar(select(func.count()).select_from(ImageAsset)) == 1
+        assert db.scalar(select(func.count()).select_from(ImageRunReview)) == 0
+        assert db.scalar(select(func.count()).select_from(
+            ProjectRevisionRecord)) == 0
 
 
 def test_stale_active_revision_rejects_without_partial_terminal_rows(

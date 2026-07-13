@@ -87,6 +87,8 @@ class VariationBranchResult:
     family_id: str
     project_root_id: str
     asset_id: str
+    source_project_id: str
+    source_asset_id: str
     design_id: str | None
     design_version: int | None
     variation_index: int
@@ -135,6 +137,7 @@ def fork_preview_candidate_variation(
                 run_id,
                 candidate_id,
                 owner=created_by,
+                require_active=False,
             )
             next_spec = None
         elif kind == "catalog_revision":
@@ -143,6 +146,7 @@ def fork_preview_candidate_variation(
                 run_id,
                 candidate_id,
                 owner=created_by,
+                require_active=False,
             )
             next_spec = candidate.next_spec
         elif kind == "studio_markup":
@@ -151,6 +155,7 @@ def fork_preview_candidate_variation(
                 run_id,
                 candidate_id,
                 owner=created_by,
+                require_active=False,
             )
             next_spec = candidate.next_spec
             if next_spec is None:
@@ -449,6 +454,8 @@ def fork_preview_candidate_variation(
         family_id=family.id,
         project_root_id=new_root_id,
         asset_id=new_root_id,
+        source_project_id=project.root_id,
+        source_asset_id=source.id,
         design_id=design_id,
         design_version=design_version,
         variation_index=variation_index,
@@ -1064,6 +1071,8 @@ def fork_project_variation(
         family_id=family.id,
         project_root_id=new_root_id,
         asset_id=new_asset.id,
+        source_project_id=project.root_id,
+        source_asset_id=source.id,
         design_id=new_design_id,
         design_version=new_design_version,
         variation_index=variation_index,

@@ -1383,6 +1383,8 @@ def save_visual_preview_as_variation(
         "status": "saved_as_variation",
         "family_id": result.family_id,
         "variation_index": result.variation_index,
+        "source_project_id": result.source_project_id,
+        "source_asset_id": result.source_asset_id,
         "project": project_detail(db, project),
     }
 
@@ -1609,6 +1611,8 @@ def save_exact_markup_candidate_as_variation(
         "candidate_id": candidate_id,
         "family_id": result.family_id,
         "variation_index": result.variation_index,
+        "source_project_id": result.source_project_id,
+        "source_asset_id": result.source_asset_id,
         "project": project_detail(db, project),
     }
 

@@ -5,6 +5,37 @@ Read `CLAUDE.md` (constitution — binding), `README.md` (endpoints/layout),
 `docs/DATA_WANTED.md` (open research asks). This file is the delta: what is
 DONE beyond the original TASKS.md build order, and what is next.
 
+## 2026-07-14 historical Refine variation checkpoint
+
+Activity can now preserve a useful Refine result even after the source project
+has advanced. Catalog, visual-only, and marked-region candidates may be saved
+as a new sibling Variation from the exact immutable revision they were created
+from. Apply remains active-source-only, so a stale candidate can never silently
+replace the designer's current work.
+
+The variation response now names its source project and source asset. The
+mobile gateway first verifies that exact revision still exists, then verifies
+the response provenance and rereads the source project after the branch. Any
+change to its active asset, design version, specification, revision history, or
+selection fails closed. Ownership, source and output hashes, specification and
+component-map lineage, target mask, provider run, QA evidence, and durable job
+binding remain mandatory. Catalog Activity resume also retains a valid stale
+candidate instead of expiring it merely because a newer revision is active.
+
+Local validation for this checkpoint is green: 1,747 backend tests; all 35
+mobile Jest suites (269 tests); 76 Studio contract tests; TypeScript; Ruff;
+Python byte-compilation; Expo web export; diff hygiene; and the complete
+ten-project production TypeScript-client -> HTTP -> FastAPI acceptance run.
+The end-to-end run caught and closed a child-revision lineage regression before
+this checkpoint: candidate images remain reviewable when the design bridge is
+canonically held by the project root. The run used no Factory path and failed
+QA produced zero canonical revisions, accepted outputs, or charges.
+
+The frozen 144-image provider corpus, independent designer/GIA review, founder
+approval, enrolled external authority, and live two-principal HTTPS staging
+evidence remain external beta gates and were not performed by this local
+checkpoint.
+
 ## 2026-07-14 exact-revision destination checkpoint
 
 Collections now keeps the selected immutable revision in context through the
