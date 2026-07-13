@@ -5,6 +5,44 @@ Read `CLAUDE.md` (constitution — binding), `README.md` (endpoints/layout),
 `docs/DATA_WANTED.md` (open research asks). This file is the delta: what is
 DONE beyond the original TASKS.md build order, and what is next.
 
+## 2026-07-13 Studio review-authority and secured-capture checkpoint
+
+The renewed Studio journey is locally complete across its six intended steps:
+mixed-source Create, one-to-four candidate selection, precise Refine, temporary
+side-by-side review, Family -> Variation -> immutable Revision organization,
+and Library/Client/Marketing destinations with Factory remaining optional.
+Designer-facing review labels now use a closed vocabulary. Unknown evaluator,
+provider, model, QA, or routing labels collapse to neutral visual-consistency
+language instead of leaking backend terminology into the workspace.
+
+Every durable temporary candidate boundary now independently revalidates its
+quality evidence at storage, reopen/list/image, and decision time. Catalog,
+visual, marked-region, View, pre-spec Present, and exact Present candidates all
+reject missing, contradictory, or hard-failure QA. Corrupt candidates expire
+without appending an asset or revision, and their exact jobs settle with zero
+completed/charged output. Legitimate warning and forced-designer-review shapes
+remain supported. Job settlement also rechecks action, lane, pricing, owner,
+project, source revision, and output binding, so a corrupted link cannot fail
+an unrelated same-owner job.
+
+The frozen-corpus evidence path now includes a provider-free capture producer
+and a pluggable secured-executor seam. It refuses unresolved assignments,
+unenrolled signing identities, source/hash drift, unsafe evidence paths,
+over-budget attempts, non-final acceptance, or mismatched persistence results.
+Successful runs atomically publish a source/candidate/mask/persistence artifact
+index, a separately signed canonical-persistence attestation, and a signed
+capture envelope, then locally verify both authorities before returning. The
+repository CLI consumes existing execution and persistence-observation bundles;
+it does not call an image provider.
+
+Local validation for this checkpoint: 1,619 backend tests, 242 Jest tests, 69
+Studio contract tests, 101 focused external-evidence tests, TypeScript, Ruff,
+Python compilation, Expo web export, and the production TypeScript-client ->
+HTTP -> FastAPI acceptance pass. The production frozen plan remains deliberately
+non-executable with signing/reviewer identities unenrolled. No 144-image corpus
+run, designer/GIA review, founder approval, or live two-principal HTTPS staging
+run was performed, so external beta remains gated on real external evidence.
+
 ## 2026-07-13 production provider-job authority checkpoint
 
 Every provider-backed production generation path now requires a canonical,

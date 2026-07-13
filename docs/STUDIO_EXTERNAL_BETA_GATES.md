@@ -201,8 +201,8 @@ following must hold:
 - Definition and implementation pins pass without manifest/config drift.
 - Source integrity is `144/144`; quality assignments match the pinned
   58-source ring workload matrix and the signed evaluation IDs exactly match
-  verified attempts. Until the replay compiler consumes that matrix directly,
-  this external gate remains `unmet` even if capture-envelope validation passes.
+  verified attempts. The replay compiler consumes that pinned matrix directly;
+  capture-envelope validation alone still cannot satisfy the external gate.
 - Every declared render and edit evaluation has artifact-verified evidence;
   every edit has replayable source, candidate, and mask pixels.
 - Render hard-gate pass rate is at least `0.90`; mean render conformance is at

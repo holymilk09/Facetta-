@@ -65,6 +65,45 @@ only. It never substitutes for measured quality, independent classification,
 separate designer acceptance, the signed GIA-trained review, or founder
 approval.
 
+The repository now includes a fail-closed capture producer. Its default CLI
+adapter consumes an already-produced, hash-bound execution bundle and therefore
+makes **zero** image-provider calls itself. A secured deployment can replace
+that adapter through the programmatic executor seam, but the same preflight is
+mandatory: all assignments must be resolved and executable, both signing keys
+must prove control of their config-enrolled public identities, every source and
+input artifact must remain inside the evidence root with its exact hash, and
+the output directory must not already exist. The producer caps every sequence
+at three attempts, requires the accepted result to be the final attempt, stages
+the complete output atomically, builds a canonical source/candidate/mask/
+persistence artifact index, signs the canonical persistence attestation, signs
+the capture envelope separately, and re-verifies both signatures before making
+the output visible.
+
+The input execution bundle uses schema
+`facetta-frozen-execution-bundle.v1` and binds `corpus_run_id`, the canonical
+provider-call-plan hash, the declared provider-call count, every planned
+sequence and resolved-input hash, and one to three scored attempt rows with
+root-relative candidate/mask paths and SHA-256 values. The canonical API
+observation file uses schema
+`facetta-canonical-persistence-observations.v1` and binds the same run plus the
+exact selected-result-set hash/count and the three required persistence checks.
+Private signing keys must remain outside both the repository and evidence root.
+
+```bash
+set +x
+umask 077
+PYTHONPATH=src .venv/bin/python scripts/run_frozen_corpus_capture.py \
+  --evidence-root /secure/path/to/evidence-root \
+  --source-dir /secure/path/to/evidence-root/founder-reference-directory \
+  --execution-bundle /secure/path/to/evidence-root/execution-bundle.json \
+  --persistence-observations /secure/path/to/evidence-root/persistence-observations.json \
+  --output-dir /secure/path/to/evidence-root/signed-capture \
+  --executor-private-key /separate/secret/path/executor.key \
+  --canonical-api-private-key /separate/secret/path/api-runner.key \
+  --commit-sha <exact-40-or-64-character-commit-sha> \
+  --attestation-id <operator-issued-attestation-id>
+```
+
 Run the integrity-only gate with:
 
 ```bash
@@ -155,8 +194,10 @@ until the reviewer enrollment step is complete; no key or unsigned evidence
 can become release-ready.
 
 Founder approval is deliberately not folded into `results.json`: it must bind
-the exact bytes the founder reviewed. After reviewer replay passes, enroll the
-separate `founder_public_key`, create and sign a
+the exact bytes the founder reviewed. The separate `founder_public_key` must
+already be enrolled in the frozen config before capture; do not edit the config
+after capture. After reviewer replay passes, use that enrolled private-key
+holder to create and sign a
 `facetta-founder-approval.v1` record bound to the SHA-256 of `results.json`, and
 run `scripts/verify_frozen_corpus_release.py`. Only its
 `final-decision.json.corpus_gate_ready: true` satisfies the complete corpus
