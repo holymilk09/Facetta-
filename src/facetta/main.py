@@ -79,30 +79,39 @@ def health() -> dict:
     }
 
 
-PRODUCTION_ASSET_PATHS = frozenset({
-    "/assets/{asset_id}/markup/read",
-    "/assets/{asset_id}/markup/apply",
-    "/assets/{asset_id}/image",
-    "/assets/{asset_id}/checklist",
-    "/assets/{asset_id}/checklist/respond",
-})
-
-PRODUCTION_CATALOG_PATHS = frozenset({
-    "/assets/{active_asset_id}/catalog/preview",
-    "/assets/{active_asset_id}/catalog/previews",
-    "/assets/{asset_id}/studio-component-targeting",
-    "/assets/{asset_id}/studio-component-map",
-})
-
-PRODUCTION_TRUSTED_PATHS = frozenset({
-    "/image-runs/{run_id}/candidates/{candidate_id}/image",
-    "/image-runs/{run_id}/candidates/{candidate_id}/accept",
-    "/image-runs/{run_id}/candidates/{candidate_id}/discard",
-    "/projects/{project_id}/factory-pack",
-    "/projects/{project_id}/factory-pack.zip",
-})
-
 RouteOperation = tuple[str, str]
+
+PRODUCTION_VOCABULARY_OPERATIONS: frozenset[RouteOperation] = frozenset({
+    ("GET", "/vocabulary/components/{component_path}"),
+    ("GET", "/vocabulary/findings"),
+    ("GET", "/vocabulary/stones"),
+    ("GET", "/vocabulary/stones/{stone_id}/options"),
+})
+
+PRODUCTION_ASSET_OPERATIONS: frozenset[RouteOperation] = frozenset({
+    ("POST", "/assets/{asset_id}/markup/read"),
+    ("POST", "/assets/{asset_id}/markup/apply"),
+    ("GET", "/assets/{asset_id}/image"),
+    ("POST", "/assets/{asset_id}/checklist"),
+    ("GET", "/assets/{asset_id}/checklist"),
+    ("POST", "/assets/{asset_id}/checklist/respond"),
+})
+
+PRODUCTION_CATALOG_OPERATIONS: frozenset[RouteOperation] = frozenset({
+    ("POST", "/assets/{active_asset_id}/catalog/preview"),
+    ("GET", "/assets/{active_asset_id}/catalog/previews"),
+    ("GET", "/assets/{asset_id}/studio-component-targeting"),
+    ("POST", "/assets/{asset_id}/studio-component-map"),
+})
+
+PRODUCTION_TRUSTED_OPERATIONS: frozenset[RouteOperation] = frozenset({
+    ("GET", "/image-runs/{run_id}/candidates/{candidate_id}/image"),
+    ("POST", "/image-runs/{run_id}/candidates/{candidate_id}/accept"),
+    ("POST", "/image-runs/{run_id}/candidates/{candidate_id}/discard"),
+    ("GET", "/projects/{project_id}/factory-pack"),
+    ("POST", "/projects/{project_id}/factory-pack"),
+    ("GET", "/projects/{project_id}/factory-pack.zip"),
+})
 
 PRODUCTION_CATALOG_PREVIEW_OPERATIONS: frozenset[RouteOperation] = frozenset({
     ("GET", "/image-runs/{run_id}/catalog-candidates/{candidate_id}/image"),
@@ -215,15 +224,6 @@ PRODUCTION_STUDIO_FACT_OPERATIONS: frozenset[RouteOperation] = frozenset({
 })
 
 
-def _filtered_router(source: APIRouter, paths: frozenset[str]) -> APIRouter:
-    router = APIRouter()
-    router.routes.extend(
-        route for route in source.routes
-        if getattr(route, "path", None) in paths
-    )
-    return router
-
-
 def _operation_filtered_router(
     source: APIRouter,
     operations: frozenset[RouteOperation],
@@ -286,18 +286,26 @@ def create_app() -> FastAPI:
     # specification adapters, legacy Builder, design/library/user/stone
     # administration, and capability-share routes remain available in
     # test/development for migration, never on the public beta surface.
-    application.include_router(vocabulary.router)
+    application.include_router(
+        _operation_filtered_router(
+            vocabulary.router, PRODUCTION_VOCABULARY_OPERATIONS,
+        ) if production else vocabulary.router
+    )
     if not production:
         application.include_router(
             specs.router,
             dependencies=[Depends(require_authenticated_principal)],
         )
     application.include_router(
-        _filtered_router(assets.router, PRODUCTION_ASSET_PATHS)
+        _operation_filtered_router(
+            assets.router, PRODUCTION_ASSET_OPERATIONS,
+        )
         if production else assets.router
     )
     application.include_router(
-        _filtered_router(catalog.router, PRODUCTION_CATALOG_PATHS)
+        _operation_filtered_router(
+            catalog.router, PRODUCTION_CATALOG_OPERATIONS,
+        )
         if production else catalog.router
     )
     application.include_router(
@@ -321,7 +329,9 @@ def create_app() -> FastAPI:
         ) if production else studio_facts.router
     )
     application.include_router(
-        _filtered_router(trusted.router, PRODUCTION_TRUSTED_PATHS)
+        _operation_filtered_router(
+            trusted.router, PRODUCTION_TRUSTED_OPERATIONS,
+        )
         if production else trusted.router
     )
     if not production:

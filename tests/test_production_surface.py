@@ -1,9 +1,12 @@
 """The Internet-facing beta mounts only the authenticated Studio surface."""
 
+import pytest
+
+from fastapi import APIRouter
 from fastapi.testclient import TestClient
 
 from facetta.external_beta_release import STAGING_DISALLOWED_LEGACY_OPERATIONS
-from facetta.main import create_app
+from facetta.main import _operation_filtered_router, create_app
 
 
 def _operations(method: str, *paths: str) -> set[tuple[str, str]]:
@@ -103,6 +106,27 @@ def test_production_method_path_surface_is_exact(monkeypatch):
         if method.lower() in {"get", "post", "put", "patch", "delete"}
     }
     assert actual == EXPECTED_PRODUCTION_OPERATIONS
+
+
+def test_production_router_filter_fails_closed_on_shared_path_method_drift():
+    """An approved URL must not implicitly approve a new legacy method."""
+
+    router = APIRouter()
+
+    async def handler():
+        return {"status": "ok"}
+
+    router.add_api_route(
+        "/studio/example", handler, methods=["GET", "POST"],
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match="production route object includes non-allowlisted methods",
+    ):
+        _operation_filtered_router(
+            router, frozenset({("GET", "/studio/example")}),
+        )
 
 
 def test_production_hides_legacy_admin_and_stateless_spec_adapters(monkeypatch):

@@ -412,6 +412,10 @@ describe('StudioRefineWorkspace', () => {
     });
     await act(async () => { fireEvent.press(screen.getByText('Apply as new revision')); });
     await waitFor(() => expect(onApplied).toHaveBeenCalledWith(preSpecProject));
+    await waitFor(() => expect(
+      screen.getByPlaceholderText(/make the presentation softer/i).props.value,
+    ).toBe(''));
+    expect(screen.getByText('Preview change').parent?.props.accessibilityState.disabled).toBe(true);
     expect(preSpecProject.active_design_version).toBeNull();
   });
 
@@ -442,7 +446,87 @@ describe('StudioRefineWorkspace', () => {
     expect(screen.queryByText('Review starting design')).toBeNull();
   });
 
+  test('clears a consumed instruction after saving its preview as a variation', async () => {
+    const variationProject = {
+      ...preSpecProject,
+      id: 'variation_visual', root_id: 'variation_visual', active_asset_id: 'variation_visual',
+      cover_asset_id: 'variation_visual',
+    } as ProjectDetail;
+    const candidate = {
+      id: 'candidate_visual_variation', jobId: 'run_visual_variation',
+      sourceRevisionId: 'creative_1', assetUrl: 'https://test/variation-preview.png',
+      verdict: 'pass' as const, status: 'pending_review' as const, checks: [], temporary: true,
+      expiresAt: null, decision: null, decidedAt: null, canonicalRevisionId: null,
+    };
+    const previewVisualRefine = jest.fn(async () => ({
+      data: {
+        lineage: { projectId: 'project_1', sourceAssetId: 'creative_1' },
+        instruction: 'Make the lighting warmer', scope: 'appearance' as const, candidate,
+      }, error: null, status: 201,
+    }));
+    const saveVisualPreviewAsVariation = jest.fn(async () => ({
+      data: {
+        candidate: { ...candidate, status: 'saved_as_variation' as const },
+        project: variationProject,
+      }, error: null, status: 201,
+    }));
+    const onVariationCreated = jest.fn();
+    await renderWithAuth(
+      <StudioRefineWorkspace
+        api={{
+          getComponentCatalog: jest.fn(), getStudioComponentTargeting: getReadyTargeting,
+          readMarkup: jest.fn(),
+        }}
+        gateway={{
+          previewVisualRefine, saveVisualPreviewAsVariation,
+          applyVisualRefine: jest.fn(), discardVisualRefine: jest.fn(),
+          previewCatalogRefine: jest.fn(), applyCatalogRefine: jest.fn(),
+          discardCatalogRefine: jest.fn(), previewMarkupRefine: jest.fn(),
+          applyMarkupRefine: jest.fn(), discardMarkupRefine: jest.fn(),
+        } as any}
+        lineage={{ projectId: 'project_1', sourceAssetId: 'creative_1' }}
+        sourceImageUrl="https://test/source.png"
+        createdBy="designer"
+        onApplied={jest.fn()}
+        onVariationCreated={onVariationCreated}
+      />,
+    );
+
+    await act(async () => {
+      fireEvent.changeText(
+        screen.getByPlaceholderText(/make the presentation softer/i),
+        'Make the lighting warmer',
+      );
+    });
+    await waitFor(() => expect(screen.getByDisplayValue('Make the lighting warmer')).toBeTruthy());
+    await act(async () => { fireEvent.press(screen.getByText('Preview change')); });
+    expect(await screen.findByText('Nothing has changed yet.')).toBeTruthy();
+    await act(async () => {
+      fireEvent(screen.getByLabelText('Exact source revision'), 'load');
+      fireEvent(screen.getByLabelText('Temporary refinement preview'), 'load');
+    });
+    await act(async () => { fireEvent.press(screen.getByText('Save as Variation')); });
+    await act(async () => {
+      fireEvent.changeText(screen.getByPlaceholderText('e.g. Rose gold halo'), 'Warm direction');
+    });
+    await waitFor(() => expect(screen.getByDisplayValue('Warm direction')).toBeTruthy());
+    await act(async () => { fireEvent.press(screen.getByText('Save named variation')); });
+
+    await waitFor(() => expect(saveVisualPreviewAsVariation).toHaveBeenCalledWith({
+      candidateId: 'candidate_visual_variation', createdBy: 'designer', label: 'Warm direction',
+    }));
+    await waitFor(() => expect(onVariationCreated).toHaveBeenCalledWith(variationProject));
+    expect(screen.getByPlaceholderText(/make the presentation softer/i).props.value).toBe('');
+    expect(screen.getByText('Preview change').parent?.props.accessibilityState.disabled).toBe(true);
+  });
+
   test('routes pre-spec annotation through exact saved markup provenance', async () => {
+    const annotationCandidate = {
+      id: 'candidate_markup', jobId: 'run_markup', sourceRevisionId: 'creative_1',
+      assetUrl: 'https://test/markup-preview.png', verdict: 'pass' as const,
+      status: 'pending_review' as const, checks: [], temporary: true,
+      expiresAt: null, decision: null, decidedAt: null, canonicalRevisionId: null,
+    };
     const readMarkup = jest.fn(async () => ({
       data: {
         markup_asset_id: 'markup_exact', assistant_name: 'Facetta',
@@ -463,26 +547,32 @@ describe('StudioRefineWorkspace', () => {
       data: {
         lineage: { projectId: 'project_1', sourceAssetId: 'creative_1' },
         instruction: 'Warm only this surface', scope: 'marked_region' as const,
-        candidate: {
-          id: 'candidate_markup', jobId: 'run_markup', sourceRevisionId: 'creative_1',
-          assetUrl: 'https://test/markup-preview.png', verdict: 'pass' as const,
-          status: 'pending_review' as const, checks: [], temporary: true,
-          expiresAt: null, decision: null, decidedAt: null, canonicalRevisionId: null,
-        },
+        candidate: annotationCandidate,
       }, error: null, status: 201,
     }));
+    const discardVisualRefine = jest.fn(async () => ({
+      data: {
+        candidate: { ...annotationCandidate, status: 'discarded' as const }, project: null,
+      }, error: null, status: 200,
+    }));
+    const applyVisualRefine = jest.fn(async () => ({
+      data: {
+        candidate: { ...annotationCandidate, status: 'applied' as const }, project: preSpecProject,
+      }, error: null, status: 201,
+    }));
+    const onApplied = jest.fn();
     await renderWithAuth(
       <StudioRefineWorkspace
         api={{ getComponentCatalog: jest.fn(), getStudioComponentTargeting: getReadyTargeting, readMarkup }}
         gateway={{
-          previewVisualRefine, applyVisualRefine: jest.fn(), discardVisualRefine: jest.fn(),
+          previewVisualRefine, applyVisualRefine, discardVisualRefine,
           previewCatalogRefine: jest.fn(), applyCatalogRefine: jest.fn(), discardCatalogRefine: jest.fn(),
           previewMarkupRefine: jest.fn(), applyMarkupRefine: jest.fn(), discardMarkupRefine: jest.fn(),
         }}
         lineage={{ projectId: 'project_1', sourceAssetId: 'creative_1' }}
         sourceImageUrl="https://test/source.png"
         createdBy="designer"
-        onApplied={jest.fn()}
+        onApplied={onApplied}
       />,
     );
 
@@ -505,6 +595,27 @@ describe('StudioRefineWorkspace', () => {
     }));
     expect(screen.getByText(/Warm only the highlighted surface/)).toBeTruthy();
     expect(screen.getByLabelText('Temporary refinement preview')).toBeTruthy();
+
+    await act(async () => { fireEvent.press(screen.getByText('Discard')); });
+    await waitFor(() => expect(discardVisualRefine).toHaveBeenCalledWith({
+      candidateId: 'candidate_markup', createdBy: 'designer',
+    }));
+    expect(await screen.findByLabelText('Jewelry image annotation canvas')).toBeTruthy();
+    expect(screen.getByLabelText('Clear all annotations').props.accessibilityState.disabled).toBe(false);
+    expect(screen.getByText('Preview change').parent?.props.accessibilityState.disabled).toBe(false);
+
+    await act(async () => { fireEvent.press(screen.getByText('Preview change')); });
+    expect(await screen.findByText('Nothing has changed yet.')).toBeTruthy();
+    await act(async () => {
+      fireEvent(screen.getByLabelText('Exact source revision'), 'load');
+      fireEvent(screen.getByLabelText('Temporary refinement preview'), 'load');
+    });
+    await act(async () => { fireEvent.press(screen.getByText('Apply as new revision')); });
+    await waitFor(() => expect(onApplied).toHaveBeenCalledWith(preSpecProject));
+    expect(screen.getByLabelText('Describe refine mode').props.accessibilityState.selected).toBe(true);
+    await act(async () => { fireEvent.press(screen.getByLabelText('Mark up refine mode')); });
+    expect(screen.getByLabelText('Clear all annotations').props.accessibilityState.disabled).toBe(true);
+    expect(screen.getByText('Preview change').parent?.props.accessibilityState.disabled).toBe(true);
   });
 
   test('clears markup instead of rebinding it when the exact source revision changes', async () => {

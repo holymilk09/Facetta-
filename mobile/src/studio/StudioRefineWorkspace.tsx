@@ -195,6 +195,15 @@ export function StudioRefineWorkspace({
     ? null : `refine-candidate:${preview.candidate.id}:${preview.candidate.assetUrl}`;
   const comparisonVisualKeys = [sourceVisualKey, candidateVisualKey] as const;
   const comparisonReady = visualReview.allReady(comparisonVisualKeys);
+  const resetAcceptedDraft = (): void => {
+    setMode('instruction');
+    setOptionId(null);
+    setInstruction('');
+    setUnderstoodAs(null);
+    setNamingVariation(false);
+    setVariationName('');
+    setSnapshot((current) => ({ ...current, annotations: [] }));
+  };
   const exactStoneSpecies = useMemo(() => {
     const spec = factProject?.spec;
     if (spec === null || spec === undefined) return null;
@@ -618,6 +627,7 @@ export function StudioRefineWorkspace({
       return;
     }
     setPreview(null);
+    resetAcceptedDraft();
     onApplied(result.data.project);
   };
 
@@ -680,8 +690,7 @@ export function StudioRefineWorkspace({
       return;
     }
     setPreview(null);
-    setNamingVariation(false);
-    setVariationName('');
+    resetAcceptedDraft();
     onVariationCreated?.(result.data.project);
   };
 

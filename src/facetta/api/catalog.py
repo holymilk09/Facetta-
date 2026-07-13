@@ -2294,6 +2294,11 @@ def apply_catalog_revision(
             image_run=result,
             instruction=instruction,
             region=selection.isolation_target,
+            component_path=request.component_path,
+            target_component_ids=(target.component_ids if target is not None else ()),
+            changed_spec_paths=tuple(
+                str(change["path"]) for change in selection.spec_change
+            ),
             created_by=actor,
             drift=_candidate_drift(result),
         )

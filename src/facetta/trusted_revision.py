@@ -35,7 +35,10 @@ from facetta.catalog_component_targeting import (
     prepare_catalog_child_component_map,
     rebind_prepared_catalog_child_component_map,
 )
-from facetta.revision_component_map import ComponentMapError
+from facetta.revision_component_map import (
+    ComponentMapError,
+    component_map_hash,
+)
 from facetta.revision_component_map_store import add_revision_component_map
 
 
@@ -338,6 +341,9 @@ def persist_spec_image_revision(
     image_run: ImageAgentResult,
     instruction: str,
     region: str,
+    component_path: str,
+    target_component_ids: tuple[str, ...],
+    changed_spec_paths: tuple[str, ...],
     created_by: str,
     capability: str = "LOCALIZED_EDIT",
     drift: float | None = None,
@@ -431,6 +437,32 @@ def persist_spec_image_revision(
             status_code=422,
         )
 
+    # The compatibility Apply route remains available while Studio callers
+    # migrate to preview/apply. It must not be allowed to append a canonical
+    # ring revision that silently drops the component map needed by the next
+    # precise Refine. Prepare and validate the child map before staging any
+    # canonical rows, then persist it in the same transaction below.
+    child_asset_id = asset_id or new_id("ast")
+    try:
+        child_component_map = prepare_catalog_child_component_map(
+            db,
+            source_asset_id=source_asset.id,
+            source_image=bytes(source_asset.image),
+            child_asset_id=child_asset_id,
+            child_image=image_run.image_bytes,
+            jewelry_type=next_spec.jewelry_type,
+            component_path=component_path,
+            target_component_ids=target_component_ids,
+            changed_spec_paths=changed_spec_paths,
+            instruction=instruction,
+        )
+    except ComponentMapError as exc:
+        raise TrustedSpecRevisionError(
+            exc.code,
+            exc.detail,
+            status_code=(409 if exc.code == "component_mapping_unresolved" else 422),
+        ) from exc
+
     now = utcnow()
     next_version = expected_design_version + 1
     stored = dict(next_payload)
@@ -443,7 +475,7 @@ def persist_spec_image_revision(
         }
     )
     child = ImageAsset(
-        id=asset_id or new_id("ast"),
+        id=child_asset_id,
         root_id=source_asset.root_id,
         parent_asset_id=source_asset.id,
         design_id=None,
@@ -498,6 +530,15 @@ def persist_spec_image_revision(
             "source_spec_visual_hash": source_spec_hash,
             "target_spec_visual_hash": target_spec_hash,
             "image_run_id": run_id,
+            "component_map_state": (
+                "ready" if child_component_map is not None else "not_released"
+            ),
+            "component_map_sha256": (
+                component_map_hash(child_component_map)
+                if child_component_map is not None
+                else None
+            ),
+            "target_component_ids": list(target_component_ids),
             "factory_authority": False,
         },
         change_summary=(
@@ -510,6 +551,14 @@ def persist_spec_image_revision(
     db.add(revision)
     project.updated_at = now
     try:
+        db.flush()
+        if child_component_map is not None:
+            add_revision_component_map(
+                db,
+                child_component_map,
+                image_bytes=image_run.image_bytes,
+                parent_asset_id=source_asset.id,
+            )
         db.commit()
     except IntegrityError as exc:
         db.rollback()

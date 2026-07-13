@@ -1799,14 +1799,7 @@ def test_catalog_candidate_historical_branch_mode_preserves_exact_source_authori
     with SessionFactory() as db:
         source_asset = db.get(ImageAsset, source_asset_id)
         assert source_asset is not None
-        source_image = bytes(source_asset.image)
-        add_revision_component_map(
-            db,
-            _component_map(source_asset_id, source_image),
-            image_bytes=source_image,
-            parent_asset_id=project["active_asset_id"],
-        )
-        db.commit()
+        assert load_revision_component_map(db, source_asset_id) is not None
     preview = client.post(
         f"/assets/{source_asset_id}/catalog/preview",
         json=_request(expected_design_version=2),
@@ -2627,9 +2620,13 @@ def test_catalog_pass_uses_exact_specs_and_persists_one_atomic_revision(
         run = db.get(ImageRun, body["image_run_id"])
         child = db.get(ImageAsset, body["asset_id"])
         version = db.get(DesignVersion, (project["design_id"], 2))
-        revision = db.scalar(select(ProjectRevisionRecord).where(
-            ProjectRevisionRecord.asset_id == body["asset_id"]
-        ))
+        revision = db.scalar(
+            select(ProjectRevisionRecord).where(
+                ProjectRevisionRecord.asset_id == body["asset_id"]
+            )
+        )
+        source_map = load_revision_component_map(db, project["active_asset_id"])
+        child_map = load_revision_component_map(db, body["asset_id"])
         assert run is not None and run.accepted_asset_id == child.id
         assert run.source_asset_id == project["active_asset_id"]
         assert child.parent_asset_id == project["active_asset_id"]
@@ -2644,15 +2641,33 @@ def test_catalog_pass_uses_exact_specs_and_persists_one_atomic_revision(
             "image_run_id": body["image_run_id"],
         }
         assert revision.interpretation["source_sha256"] == plan.source_hash
-        assert revision.interpretation["output_sha256"] == hashlib.sha256(
-            bytes(child.image)
-        ).hexdigest()
+        assert (
+            revision.interpretation["output_sha256"]
+            == hashlib.sha256(bytes(child.image)).hexdigest()
+        )
         assert revision.interpretation["source_spec_visual_hash"] == (
             plan.source_spec_visual_hash
         )
         assert revision.interpretation["target_spec_visual_hash"] == (
             plan.spec_visual_hash
         )
+        assert source_map is not None and child_map is not None
+        assert child_map.asset_id == child.id
+        assert child_map.asset_sha256 == hashlib.sha256(bytes(child.image)).hexdigest()
+        assert child_map.components == source_map.components
+        assert child_map.mapper_contract == "facetta.material-only-map-copy.v1"
+        assert revision.interpretation["component_map_state"] == "ready"
+        assert revision.interpretation["component_map_sha256"] == (
+            component_map_hash(child_map)
+        )
+        assert revision.interpretation["target_component_ids"] == [
+            "prongs",
+            "setting",
+            "shank",
+            "shoulders",
+            "gallery",
+            "metal",
+        ]
         assert revision.interpretation["factory_authority"] is False
 
 
@@ -2863,6 +2878,41 @@ def test_catalog_database_failure_rolls_back_image_spec_and_run_together(
         assert db.scalar(select(func.count()).select_from(
             ProjectRevisionRecord
         )) == 0
+
+
+def test_catalog_component_map_failure_rolls_back_entire_canonical_revision(
+    catalog_client,
+    example_spec,
+    monkeypatch,
+):
+    client, SessionFactory = catalog_client
+    project = _create_project(client, example_spec, SessionFactory)
+    agent = _ResultAgent(QualityVerdict.PASS)
+    monkeypatch.setattr("facetta.api.catalog._trusted_image_agent", lambda: agent)
+    baseline = _counts(SessionFactory)
+
+    def fail_component_map(*_args, **_kwargs):
+        raise RuntimeError("simulated component-map transaction failure")
+
+    monkeypatch.setattr(
+        "facetta.trusted_revision.add_revision_component_map",
+        fail_component_map,
+    )
+    with pytest.raises(
+        RuntimeError,
+        match="simulated component-map transaction failure",
+    ):
+        client.post(
+            f"/assets/{project['active_asset_id']}/catalog/apply",
+            json=_request(),
+        )
+
+    assert _counts(SessionFactory) == baseline
+    with SessionFactory() as db:
+        assert db.scalar(select(func.count()).select_from(ProjectRevisionRecord)) == 0
+        assert (
+            db.scalar(select(func.count()).select_from(RevisionComponentMapRecord)) == 1
+        )
 
 
 def test_old_primary_asset_is_rejected_before_provider(
