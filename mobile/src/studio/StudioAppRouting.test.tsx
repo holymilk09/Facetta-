@@ -336,6 +336,34 @@ const authenticate = () => {
   });
 };
 
+test('global navigation is exactly four named destinations and each opens its routed workspace', async () => {
+  authenticate();
+  const view = await render(<App />);
+
+  await waitFor(() => expect(view.getByText('Start from an idea or reference')).toBeTruthy());
+  expect(view.getAllByRole('tab').map((item) => item.props.accessibilityLabel)).toEqual([
+    'Studio', 'Collections', 'Activity', 'Learn',
+  ]);
+  expect(view.getByRole('tab', { name: 'Studio' }).props.accessibilityState).toEqual({ selected: true });
+
+  fireEvent.press(view.getByRole('tab', { name: 'Collections' }));
+  expect(await view.findByText('Vary exact none')).toBeTruthy();
+  expect(view.getByRole('tab', { name: 'Collections' }).props.accessibilityState).toEqual({ selected: true });
+
+  fireEvent.press(view.getByRole('tab', { name: 'Activity' }));
+  expect(await view.findByText('Review create')).toBeTruthy();
+  expect(view.getByRole('tab', { name: 'Activity' }).props.accessibilityState).toEqual({ selected: true });
+
+  fireEvent.press(view.getByRole('tab', { name: 'Learn' }));
+  expect(await view.findByText('Learn the workflow, when you need it.')).toBeTruthy();
+  expect(view.getByRole('tab', { name: 'Learn' }).props.accessibilityState).toEqual({ selected: true });
+
+  fireEvent.press(view.getByRole('tab', { name: 'Studio' }));
+  expect(await view.findByText('Start from an idea or reference')).toBeTruthy();
+  expect(view.getByRole('tab', { name: 'Studio' }).props.accessibilityState).toEqual({ selected: true });
+  expect(view.queryByText(/Builder|Share design|Factory/i)).toBeNull();
+});
+
 test('saving a selected direction continues to Refine and authenticates its Studio cover', async () => {
   markOnboarded();
   saveSession({

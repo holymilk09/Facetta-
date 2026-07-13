@@ -738,6 +738,9 @@ export default function App() {
         ] as const).map(([destination, icon, label]) => (
           <Pressable
             key={destination}
+            accessibilityRole="tab"
+            accessibilityLabel={label}
+            accessibilityState={{ selected: tab === destination }}
             style={styles.navItem}
             onPress={() => {
               setTab(destination);
