@@ -372,6 +372,119 @@ def test_attempt_ceiling_fails_without_partial_capture(tmp_path: Path):
     assert not (fixture["evidence"] / "capture").exists()  # type: ignore[operator]
 
 
+def test_terminal_unaccepted_render_and_edit_capture_final_attempt(
+    tmp_path: Path,
+):
+    fixture = _fixture(tmp_path)
+
+    class ExhaustedExecutor(_FakeExecutor):
+        def execute(self, item: dict[str, object]) -> list[dict[str, object]]:
+            rows = super().execute(item)
+            for row in rows:
+                row["accepted"] = False
+                if item["kind"] == "render":
+                    row["hard_gate_pass"] = False
+                else:
+                    row["severity"] = "major"
+                    row["change_applied"] = False
+            return rows
+
+    class RecordingPersistenceRunner(_FakePersistenceRunner):
+        selected: list[dict[str, object]] | None = None
+
+        def observe(
+            self,
+            *,
+            selected_result_set: list[dict[str, object]],
+        ) -> dict[str, object]:
+            self.selected = selected_result_set
+            return super().observe(selected_result_set=selected_result_set)
+
+    executor = ExhaustedExecutor(
+        fixture["evidence"],  # type: ignore[arg-type]
+        attempt_count=3,
+    )
+    persistence = RecordingPersistenceRunner()
+    producer = _producer(
+        fixture,
+        executor=executor,
+        persistence_runner=persistence,
+    )
+
+    producer.produce()
+
+    assert persistence.selected is not None
+    assert {
+        row["kind"]: row["selected_attempt"] for row in persistence.selected
+    } == {"edit": 3, "render": 3}
+
+    evidence: Path = fixture["evidence"]  # type: ignore[assignment]
+    capture_path = evidence / "capture" / "capture.json"
+    capture = json.loads(capture_path.read_text())
+    assert len(capture["attempts"]) == 6
+    assert all(row["accepted"] is False for row in capture["attempts"])
+    final_by_kind = {
+        row["kind"]: row
+        for row in capture["attempts"]
+        if row["attempt"] == 3
+    }
+    assert final_by_kind["render"]["hard_gate_pass"] is False
+    assert final_by_kind["edit"]["change_applied"] is False
+    assert final_by_kind["edit"]["severity"] == "major"
+
+    validation = validate_capture_envelope(
+        capture_path,
+        fixture["manifest"],  # type: ignore[arg-type]
+        fixture["config"],  # type: ignore[arg-type]
+        fixture["workload"],  # type: ignore[arg-type]
+        capture_public_key_path=fixture["executor_public"],  # type: ignore[arg-type]
+        capture_key_id="executor-test-v1",
+        repository_root=fixture["repository"],  # type: ignore[arg-type]
+    )
+    assert validation["status"] == "pass"
+    assert validation["signature_status"] == "verified"
+
+
+@pytest.mark.parametrize(
+    ("accepted_pattern", "message"),
+    [
+        ([True, False], "accepted attempt must be final"),
+        ([True, True], "multiple accepted attempts"),
+    ],
+)
+def test_invalid_early_or_multiple_acceptance_fails_without_partial_capture(
+    tmp_path: Path,
+    accepted_pattern: list[bool],
+    message: str,
+):
+    fixture = _fixture(tmp_path)
+
+    class InvalidAcceptanceExecutor(_FakeExecutor):
+        def execute(self, item: dict[str, object]) -> list[dict[str, object]]:
+            rows = super().execute(item)
+            for row, accepted in zip(rows, accepted_pattern, strict=True):
+                row["accepted"] = accepted
+            return rows
+
+    executor = InvalidAcceptanceExecutor(
+        fixture["evidence"],  # type: ignore[arg-type]
+        attempt_count=len(accepted_pattern),
+    )
+    persistence = _FakePersistenceRunner()
+    producer = _producer(
+        fixture,
+        executor=executor,
+        persistence_runner=persistence,
+    )
+
+    with pytest.raises(ValueError, match=message):
+        producer.produce()
+
+    assert executor.execute_calls == 1
+    assert persistence.observe_calls == 0
+    assert not (fixture["evidence"] / "capture").exists()  # type: ignore[operator]
+
+
 def test_pluggable_executor_artifacts_cannot_escape_evidence_root(tmp_path: Path):
     fixture = _fixture(tmp_path)
     outside = tmp_path / "outside-candidate.png"

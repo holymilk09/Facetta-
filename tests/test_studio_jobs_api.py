@@ -189,15 +189,18 @@ def test_fresh_schema_contains_persistent_studio_jobs():
     }
 
 
-def test_non_candidate_job_lifecycle_is_persistent_and_client_completion_never_charges(client):
+def test_terminal_job_lifecycle_is_persistent_and_client_completion_never_charges(client):
     project_id, source_id = _seed_project(
-        client, project_id="project_vary_lifecycle",
+        client,
+        project_id="project_factory_lifecycle",
+        exact_specification=True,
+        factory_eligible=True,
     )
-    definition = STUDIO_JOB_ACTIONS["vary"]
+    definition = STUDIO_JOB_ACTIONS["factory"]
     job = _create(
         client,
         outputs=3,
-        action_id="vary",
+        action_id="factory",
         lane=definition.lane,
         credits=definition.credits_per_output,
         active_design_id=project_id,
@@ -208,8 +211,8 @@ def test_non_candidate_job_lifecycle_is_persistent_and_client_completion_never_c
     assert job["status"] == "queued"
     assert job["billing"] == {
         "requested_outputs": 3,
-        "credits_per_output": 0,
-        "estimated_credits": 0,
+        "credits_per_output": 28,
+        "estimated_credits": 84,
         "completed_outputs": 0,
         "charged_outputs": 0,
         "charged_credits": 0,
@@ -248,7 +251,33 @@ def test_non_candidate_job_lifecycle_is_persistent_and_client_completion_never_c
     assert immutable.status_code == 409
 
 
-@pytest.mark.parametrize("action_id", ["create", "refine", "views", "present"])
+def test_instant_transaction_cannot_create_or_orphan_a_studio_job(client):
+    project_id, source_id = _seed_project(
+        client, project_id="project_vary_atomic_only",
+    )
+    definition = STUDIO_JOB_ACTIONS["vary"]
+    response = client.post("/studio/jobs", json={
+        "owner": "usr_designer",
+        "action_id": "vary",
+        "lane": definition.lane,
+        "active_design_id": project_id,
+        "source_revision_id": source_id,
+        "requested_outputs": 1,
+        "credits_per_output": definition.credits_per_output,
+    })
+
+    assert response.status_code == 422
+    assert "atomic Studio transaction" in response.json()["detail"]
+    listed = client.get("/studio/jobs", params={"owner": "usr_designer"})
+    assert listed.status_code == 200
+    assert listed.json() == {"jobs": []}
+
+
+@pytest.mark.parametrize("action_id", [
+    action_id
+    for action_id, definition in STUDIO_JOB_ACTIONS.items()
+    if definition.review_authority == "candidate_decision"
+])
 def test_reviewing_candidate_jobs_are_owned_by_their_candidate_decision(
     client,
     action_id,
@@ -406,6 +435,8 @@ def test_server_registry_is_canonical_for_every_studio_action(client):
         factory_eligible=True,
     )
     for action_id, definition in STUDIO_JOB_ACTIONS.items():
+        if definition.execution_mode == "instant_transaction":
+            continue
         context = (
             eligible if action_id == "factory"
             else exact if "exact_specification" in definition.context_requirements
@@ -429,21 +460,25 @@ def test_server_registry_is_canonical_for_every_studio_action(client):
 
 def test_server_registry_matches_designer_action_contract():
     expected = {
-        "create": ("brief_or_reference", "design_revision", "design_record"),
-        "vary": ("direction", "variation_set", "design_record"),
-        "refine": ("instruction", "design_revision", "design_record"),
-        "views": ("view_set", "view_set", "visual_preview"),
+        "create": ("brief_or_reference", "design_revision", "design_record", "candidate_job", "candidate_decision"),
+        "vary": ("direction", "variation_set", "design_record", "instant_transaction", "none"),
+        "refine": ("instruction", "design_revision", "design_record", "candidate_job", "candidate_decision"),
+        "views": ("view_set", "view_set", "visual_preview", "candidate_job", "candidate_decision"),
         "present": (
-            "destination", "presentation_pack", "visual_preview",
+            "destination", "presentation_pack", "visual_preview", "candidate_job", "candidate_decision",
         ),
-        "factory": (None, "factory_review_pack", "production_review"),
+        "factory": (None, "factory_review_pack", "production_review", "terminal_job", "generic_transition"),
     }
-    for action_id, (required_input, output_type, authority) in expected.items():
+    for action_id, (
+        required_input, output_type, authority, execution_mode, review_authority,
+    ) in expected.items():
         definition = STUDIO_JOB_ACTIONS[action_id]
         if required_input is not None:
             assert required_input in definition.input_requirements
         assert output_type == definition.output_type
         assert authority == definition.authority
+        assert execution_mode == definition.execution_mode
+        assert review_authority == definition.review_authority
         if required_input not in {None, "brief_or_reference"}:
             assert required_input in {
                 field.id for field in definition.ui_schema if field.required
@@ -457,7 +492,12 @@ def test_server_registry_matches_designer_action_contract():
 
 
 @pytest.mark.parametrize(
-    "action_id", ["vary", "refine", "views", "present", "factory"],
+    "action_id", [
+        action_id
+        for action_id, definition in STUDIO_JOB_ACTIONS.items()
+        if "active_project" in definition.context_requirements
+        and definition.execution_mode != "instant_transaction"
+    ],
 )
 def test_design_jobs_reject_missing_active_project_context(client, action_id):
     definition = STUDIO_JOB_ACTIONS[action_id]
@@ -942,13 +982,16 @@ def test_backend_acceptance_helper_is_the_only_charge_authority():
 
 def test_progress_and_charge_invariants_reject_inconsistent_updates(client):
     project_id, source_id = _seed_project(
-        client, project_id="project_vary_invariants",
+        client,
+        project_id="project_factory_invariants",
+        exact_specification=True,
+        factory_eligible=True,
     )
-    definition = STUDIO_JOB_ACTIONS["vary"]
+    definition = STUDIO_JOB_ACTIONS["factory"]
     job_id = _create(
         client,
         outputs=1,
-        action_id="vary",
+        action_id="factory",
         lane=definition.lane,
         credits=definition.credits_per_output,
         active_design_id=project_id,

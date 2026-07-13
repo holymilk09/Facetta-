@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 import json
 from importlib.resources import files
+from typing import Literal
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -18,6 +19,26 @@ from facetta.db import (
     StudioJobRecord,
     utcnow,
 )
+
+
+StudioExecutionMode = Literal[
+    "instant_transaction", "candidate_job", "terminal_job",
+]
+StudioReviewAuthority = Literal[
+    "none", "candidate_decision", "generic_transition",
+]
+
+_EXECUTION_MODES = frozenset({
+    "instant_transaction", "candidate_job", "terminal_job",
+})
+_REVIEW_AUTHORITIES = frozenset({
+    "none", "candidate_decision", "generic_transition",
+})
+_REVIEW_AUTHORITY_BY_EXECUTION_MODE = {
+    "instant_transaction": "none",
+    "candidate_job": "candidate_decision",
+    "terminal_job": "generic_transition",
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -36,6 +57,8 @@ class StudioJobActionDefinition:
     """Canonical Studio job contract owned by the server."""
 
     lane: str
+    execution_mode: StudioExecutionMode
+    review_authority: StudioReviewAuthority
     credits_per_output: int
     input_requirements: tuple[str, ...]
     context_requirements: tuple[str, ...]
@@ -50,9 +73,30 @@ def _load_studio_job_actions() -> dict[str, StudioJobActionDefinition]:
             encoding="utf-8",
         ),
     )
+    for action_id, value in raw.items():
+        execution_mode = value.get("execution_mode")
+        review_authority = value.get("review_authority")
+        if execution_mode not in _EXECUTION_MODES:
+            raise ValueError(
+                f"Studio action {action_id!r} has invalid execution_mode "
+                f"{execution_mode!r}"
+            )
+        if review_authority not in _REVIEW_AUTHORITIES:
+            raise ValueError(
+                f"Studio action {action_id!r} has invalid review_authority "
+                f"{review_authority!r}"
+            )
+        expected_authority = _REVIEW_AUTHORITY_BY_EXECUTION_MODE[execution_mode]
+        if review_authority != expected_authority:
+            raise ValueError(
+                f"Studio action {action_id!r} execution_mode {execution_mode!r} "
+                f"requires review_authority {expected_authority!r}"
+            )
     return {
         action_id: StudioJobActionDefinition(
             lane=value["lane"],
+            execution_mode=value["execution_mode"],
+            review_authority=value["review_authority"],
             credits_per_output=value["credits_per_output"],
             input_requirements=tuple(value["input_requirements"]),
             context_requirements=tuple(value["context_requirements"]),

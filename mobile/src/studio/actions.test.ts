@@ -4,10 +4,10 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   getStudioAction, getStudioRailActions, getVisibleStudioActions, STUDIO_ACTIONS,
+  transitionStudioJob,
 } from './actions';
 import {
   decidePreviewCandidate, PreviewCandidate, STUDIO_ACTION_IDS, StudioJob,
-  transitionStudioJob,
 } from './contracts';
 import {
   STUDIO_CREATE_REFERENCE_CONTROLS, STUDIO_PRESENT_CONTROLS,
@@ -121,9 +121,30 @@ test('starting design fact review is internal for a selected pre-spec visual and
 test('the current branch action is transparent and does not charge for generation', () => {
   const branch = getStudioAction('vary');
   assert.deepEqual(
-    [branch.label, branch.creditEstimate, branch.createsJob, branch.authority],
-    ['Save as a variation', 0, false, 'design_record'],
+    [
+      branch.label, branch.creditEstimate, branch.createsJob, branch.authority,
+      branch.executionMode, branch.reviewAuthority,
+    ],
+    [
+      'Save as a variation', 0, false, 'design_record',
+      'instant_transaction', 'none',
+    ],
   );
+});
+
+test('canonical job behavior is derived from manifest orchestration', () => {
+  for (const actionId of ['create', 'vary', 'refine', 'views', 'present', 'factory'] as const) {
+    const action = getStudioAction(actionId);
+    assert.equal(action.createsJob, action.executionMode !== 'instant_transaction');
+    assert.equal(
+      action.reviewAuthority,
+      action.executionMode === 'candidate_job'
+        ? 'candidate_decision'
+        : action.executionMode === 'terminal_job'
+          ? 'generic_transition'
+          : 'none',
+    );
+  }
 });
 
 test('action schemas match the controls rendered by Create and Present', () => {
@@ -200,7 +221,7 @@ test('dynamic design-fact workflows explicitly use their dedicated host UI', () 
   );
 });
 
-test('StudioJob lifecycle rejects terminal-state mutation', () => {
+test('StudioJob lifecycle derives candidate review authority from the registry', () => {
   const job: StudioJob = {
     id: 'job_1',
     actionId: 'refine',
@@ -216,7 +237,25 @@ test('StudioJob lifecycle rejects terminal-state mutation', () => {
   };
   const running = transitionStudioJob(job, 'running', '2026-07-12T00:00:02Z');
   const reviewing = transitionStudioJob(running, 'reviewing', '2026-07-12T00:00:03Z');
-  const succeeded = transitionStudioJob(reviewing, 'succeeded', '2026-07-12T00:00:04Z');
+  assert.throws(
+    () => transitionStudioJob(reviewing, 'succeeded', '2026-07-12T00:00:04Z'),
+    /Invalid StudioJob transition/,
+  );
+  assert.throws(
+    () => transitionStudioJob(reviewing, 'failed', '2026-07-12T00:00:04Z'),
+    /Invalid StudioJob transition/,
+  );
+
+  const terminalJob = { ...job, actionId: 'factory' as const };
+  const terminalRunning = transitionStudioJob(
+    terminalJob, 'running', '2026-07-12T00:00:02Z',
+  );
+  const terminalReviewing = transitionStudioJob(
+    terminalRunning, 'reviewing', '2026-07-12T00:00:03Z',
+  );
+  const succeeded = transitionStudioJob(
+    terminalReviewing, 'succeeded', '2026-07-12T00:00:04Z',
+  );
   assert.equal(succeeded.progress, 1);
   assert.throws(() => transitionStudioJob(succeeded, 'running', '2026-07-12T00:00:05Z'));
 });

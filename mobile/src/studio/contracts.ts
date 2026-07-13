@@ -59,6 +59,16 @@ export type StudioOutputType =
 
 export type StudioAuthority = 'visual_preview' | 'design_record' | 'production_review';
 
+export type StudioExecutionMode =
+  | 'instant_transaction'
+  | 'candidate_job'
+  | 'terminal_job';
+
+export type StudioReviewAuthority =
+  | 'none'
+  | 'candidate_decision'
+  | 'generic_transition';
+
 /**
  * Declarative fields can be rendered from this registry. Host-rendered actions
  * own conditional or server-derived controls in their dedicated workspace.
@@ -81,6 +91,8 @@ export interface StudioActionDefinition {
   shortLabel: string;
   description: string;
   lane: StudioLane | null;
+  executionMode: StudioExecutionMode;
+  reviewAuthority: StudioReviewAuthority;
   referenceRoles: readonly ReferenceRole[];
   inputRequirements: readonly StudioInputRequirement[];
   contextRequirements: readonly StudioContextRequirement[];
@@ -193,16 +205,22 @@ const JOB_TRANSITIONS: Readonly<Record<StudioJobStatus, readonly StudioJobStatus
   canceled: [],
 };
 
-export function canTransitionStudioJob(from: StudioJobStatus, to: StudioJobStatus): boolean {
+export function canTransitionStudioJob(
+  from: StudioJobStatus,
+  to: StudioJobStatus,
+  reviewAuthority: StudioReviewAuthority,
+): boolean {
+  if (from === 'reviewing' && reviewAuthority === 'candidate_decision') return false;
   return JOB_TRANSITIONS[from].includes(to);
 }
 
-export function transitionStudioJob(
+export function transitionStudioJobWithAuthority(
   job: StudioJob,
   status: StudioJobStatus,
   updatedAt: string,
+  reviewAuthority: StudioReviewAuthority,
 ): StudioJob {
-  if (!canTransitionStudioJob(job.status, status)) {
+  if (!canTransitionStudioJob(job.status, status, reviewAuthority)) {
     throw new Error(`Invalid StudioJob transition: ${job.status} -> ${status}`);
   }
   return {

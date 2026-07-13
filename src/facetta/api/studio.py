@@ -87,6 +87,7 @@ from facetta.studio_history import (
 )
 from facetta.studio_jobs import (
     FactoryJobContextError,
+    STUDIO_JOB_ACTIONS,
     lock_factory_job_context,
     revalidate_factory_job_for_execution,
     studio_job_action_definition,
@@ -499,9 +500,11 @@ _JOB_TRANSITIONS: dict[str, frozenset[str]] = {
 # candidate-specific Apply/Save/Discard transaction is the only authority that
 # may settle the job. A generic lifecycle report must not strand that candidate
 # or fabricate a terminal state without the canonical decision.
-_CANDIDATE_OWNED_REVIEW_ACTIONS = frozenset({
-    "create", "refine", "views", "present",
-})
+_CANDIDATE_OWNED_REVIEW_ACTIONS = frozenset(
+    action_id
+    for action_id, definition in STUDIO_JOB_ACTIONS.items()
+    if definition.review_authority == "candidate_decision"
+)
 
 _BILLING_POLICY = (
     "Only requested outputs accepted by a backend decision are charged. "
@@ -575,6 +578,14 @@ def _require_studio_job_context(
     """Validate server-owned action context before reserving any work."""
 
     action = studio_job_action_definition(request.action_id)
+    if action.execution_mode == "instant_transaction":
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"{request.action_id} is an atomic Studio transaction and does "
+                "not create a Studio job"
+            ),
+        )
     requirements = frozenset(action.context_requirements)
     if "active_project" not in requirements:
         return

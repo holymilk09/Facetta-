@@ -225,6 +225,40 @@ test('tracked visual discard relies on atomic backend settlement without client 
   assert.equal(cancellations, 0);
 });
 
+test('post-generation validation failure cannot generically fail a candidate-owned review job', async () => {
+  const transitions: string[] = [];
+  const client = {
+    ...baseClient(),
+    createStudioJob: async () => ok(studioJob('queued'), 201),
+    transitionStudioJob: async (_jobId: string, request: any) => {
+      transitions.push(request.status);
+      return ok(studioJob(request.status));
+    },
+    createVisualPreview: async () => ok({
+      project_id: 'wrong_project',
+      source_asset_id: 'asset_source',
+      image_run_id: 'run_invalid_lineage',
+      candidate: {
+        candidate_id: 'candidate_invalid_lineage',
+        preview_url: 'https://facetta.test/invalid-lineage.png',
+        save_as_variation_url: 'https://facetta.test/save-invalid-lineage',
+        verdict: 'pass' as const,
+        qa: quality(),
+      },
+    }, 201),
+  };
+  const gateway = createStudioGateway(client as any, { trackJobs: true });
+
+  const result = await gateway.previewVisualRefine({
+    projectId: 'project_visual', sourceAssetId: 'asset_source',
+    createdBy: 'designer_1', instruction: 'soften the reflection', scope: 'appearance',
+  });
+
+  assert.equal(result.error?.code, 'INVALID_VISUAL_PREVIEW_LINEAGE');
+  assert.deepEqual(transitions, ['running']);
+  assert.equal(transitions.includes('failed'), false);
+});
+
 test('failed-fidelity visual candidates cannot become canonical', async () => {
   let acceptCalls = 0;
   const client = {

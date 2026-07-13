@@ -77,6 +77,12 @@ const loadDirection = async (index: number): Promise<void> => {
   });
 };
 
+const loadReferencePreview = async (label: string): Promise<void> => {
+  await act(async () => {
+    fireEvent(screen.getByLabelText(label), 'load');
+  });
+};
+
 test('stages sibling variations locally and commits them only with the explicit Continue action', async () => {
   const createFromPrompt = jest.fn(async () => ({
     data: creativeProject(4), error: null, status: 201,
@@ -351,6 +357,31 @@ test('sends every enabled role with the master geometry input', async () => {
   await fireEvent.press(screen.getByLabelText('References and output options'));
   await fireEvent.press(screen.getByLabelText('Add Material & style reference'));
   await fireEvent.changeText(screen.getByLabelText('Design sentence'), 'Preserve the silhouette and make it feel lighter.');
+
+  expect(screen.getByText('Create 2 directions').parent?.props.accessibilityState).toEqual({ disabled: true });
+  expect(screen.getByText('Checking attached references before creation…')).toBeTruthy();
+  expect(screen.getByLabelText('Visual source preview').props.source.uri).toBe(
+    'data:image/png;base64,bWFzdGVy',
+  );
+  expect(screen.getByLabelText('Material & style reference preview').props.source.uri).toBe(
+    'data:image/jpeg;base64,bWF0ZXJpYWw=',
+  );
+
+  await fireEvent.press(screen.getByLabelText('Inspect Master geometry · Front sketch in detail'));
+  expect(screen.getByText('Master geometry · Front sketch')).toBeTruthy();
+  await fireEvent.press(screen.getByLabelText('Zoom image to 4x'));
+  expect(screen.getByLabelText('Zoom image to 4x').props.accessibilityState).toEqual({ selected: true });
+  expect(createProjectFromDrawing).not.toHaveBeenCalled();
+  await fireEvent.press(screen.getByLabelText('Close image inspector'));
+
+  await fireEvent.press(screen.getByLabelText('Inspect Material & style · Brushed gold reference in detail'));
+  expect(screen.getByText('Material & style · Brushed gold reference')).toBeTruthy();
+  await fireEvent.press(screen.getByLabelText('Close image inspector'));
+  expect(createProjectFromDrawing).not.toHaveBeenCalled();
+
+  await loadReferencePreview('Visual source preview');
+  await loadReferencePreview('Material & style reference preview');
+  expect(screen.getByText('Create 2 directions').parent?.props.accessibilityState).toEqual({ disabled: false });
   await fireEvent.press(screen.getByText('Create 2 directions'));
 
   await waitFor(() => expect(createProjectFromDrawing).toHaveBeenCalledWith({
@@ -393,6 +424,8 @@ test('starts from a master image without forcing a sentence', async () => {
     'data:image/png;base64,bWFzdGVy',
   );
   expect(screen.getByLabelText('Replace visual source')).toBeTruthy();
+  expect(screen.getByText('Create 2 directions').parent?.props.accessibilityState).toEqual({ disabled: true });
+  await loadReferencePreview('Visual source preview');
   await fireEvent.press(screen.getByText('Create 2 directions'));
   await waitFor(() => expect(createFromDrawing).toHaveBeenCalledWith({
     image_base64: 'bWFzdGVy',
@@ -403,6 +436,34 @@ test('starts from a master image without forcing a sentence', async () => {
     owner: 'designer_1',
     title: 'Pendant photograph',
   }));
+});
+
+test('fails closed when an attached reference cannot render', async () => {
+  const master: StudioCreateReference = {
+    id: 'master-failed', role: 'master_geometry', label: 'Unreadable sketch',
+    imageBase64: 'ZmFpbGVk', mediaType: 'image/png', sourceKind: 'drawing',
+  };
+  const createFromDrawing = jest.fn();
+  await renderCreate(<StudioCreateWorkspace
+    gateway={{
+      createFromPrompt: jest.fn(), createFromDrawing,
+      completeCreativeDirectionReview: jest.fn(),
+    } as unknown as CreateGateway}
+    owner="designer_1"
+    initialReferences={[master]}
+    onSave={jest.fn()}
+  />);
+
+  await act(async () => {
+    fireEvent(screen.getByLabelText('Visual source preview'), 'error');
+  });
+
+  expect(screen.getByText(
+    'A reference preview could not be shown. Replace or remove it before creating directions.',
+  )).toBeTruthy();
+  expect(screen.getByText('Create 2 directions').parent?.props.accessibilityState).toEqual({ disabled: true });
+  await fireEvent.press(screen.getByText('Create 2 directions'));
+  expect(createFromDrawing).not.toHaveBeenCalled();
 });
 
 test('surfaces picker failures instead of leaving Add as a silent dead end', async () => {

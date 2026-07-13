@@ -284,6 +284,15 @@ The primary application surface is now one outcome-first shell:
 `PreviewCandidate` decisions form the typed UI boundary. Provider selection,
 raw prompts, base64 payloads, and QA internals stay below that boundary.
 
+`src/facetta/studio_action_manifest.json` is the orchestration authority for
+job-backed actions. Its `execution_mode` distinguishes atomic transactions,
+candidate-review jobs, and terminal jobs; `review_authority` identifies whether
+no review settlement, a candidate Apply/Save/Discard transaction, or a generic
+terminal transition owns completion. Backend and generated mobile definitions
+must reject missing, invalid, or contradictory combinations. In particular,
+Vary cannot create an Activity job, while a candidate-review job cannot be
+settled generically after its durable candidate enters review.
+
 ## State and authority
 
 Creative state and factory state must not be collapsed into one status. A

@@ -2,7 +2,6 @@ import React, { useMemo, useState } from 'react';
 import {
   Pressable, ScrollView, StyleSheet, Text, TextInput, View,
 } from 'react-native';
-import { AuthenticatedImage as Image } from '../AuthenticatedImage';
 
 import type { StudioGateway } from './gateway';
 import type { AssetSummary, CreativeSourceKind, ProjectDetail } from '../trusted/types';
@@ -113,6 +112,9 @@ export function StudioCreateWorkspace({
       ? null
       : `create-candidate:${candidate.asset_id}:${candidate.image_url}`
   );
+  const referenceVisualKey = (reference: StudioCreateReference): string => (
+    `create-reference:${reference.role}:${reference.id}:${reference.mediaType}:${reference.imageBase64}`
+  );
   const decisionVisualKeys = candidates.filter((candidate) => (
     candidate.asset_id === selectedAssetId || stagedCandidateIds.has(candidate.asset_id)
   )).map(candidateVisualKey);
@@ -125,9 +127,14 @@ export function StudioCreateWorkspace({
       reference.role !== 'master_geometry'
     ),
   );
+  const referenceVisualKeys = references.map(referenceVisualKey);
+  const referenceVisualsReady = referenceVisualKeys.length === 0
+    || visualReview.allReady(referenceVisualKeys);
+  const referenceVisualFailed = visualReview.anyFailed(referenceVisualKeys);
   const canCreate = !busy && (sentence.trim().length > 0 || masterReference !== null)
     && !(masterReference === null && secondaryReferences.length > 0)
-    && (masterReference === null || sourceKind !== null);
+    && (masterReference === null || sourceKind !== null)
+    && referenceVisualsReady;
 
   const requestReference = async (role: CreateReferenceRole) => {
     setError(null);
@@ -372,9 +379,12 @@ export function StudioCreateWorkspace({
 
       <View style={styles.masterSourceCard}>
         {masterReference !== null && (
-          <Image
+          <StudioReviewImage
             accessibilityLabel="Visual source preview"
+            inspectionLabel={`Master geometry · ${masterReference.label}`}
             source={{ uri: referencePreviewUri(masterReference) }}
+            onLoad={() => visualReview.markReady(referenceVisualKey(masterReference))}
+            onError={() => visualReview.markFailed(referenceVisualKey(masterReference))}
             style={styles.referenceThumbnail}
           />
         )}
@@ -487,9 +497,12 @@ export function StudioCreateWorkspace({
               return (
                 <View key={role} style={styles.referenceRow}>
                   {reference !== undefined && (
-                    <Image
+                    <StudioReviewImage
                       accessibilityLabel={`${label} reference preview`}
+                      inspectionLabel={`${label} · ${reference.label}`}
                       source={{ uri: referencePreviewUri(reference) }}
+                      onLoad={() => visualReview.markReady(referenceVisualKey(reference))}
+                      onError={() => visualReview.markFailed(referenceVisualKey(reference))}
                       style={styles.referenceThumbnail}
                     />
                   )}
@@ -547,6 +560,12 @@ export function StudioCreateWorkspace({
             Add the source design whose geometry should be preserved before using {secondaryReferences.map((item) => labelForRole(item.role)).join(', ')}.
           </Text>
         </View>
+      )}
+
+      {references.length > 0 && !referenceVisualsReady && (
+        <Text style={styles.reviewReadiness}>{referenceVisualFailed
+          ? 'A reference preview could not be shown. Replace or remove it before creating directions.'
+          : 'Checking attached references before creation…'}</Text>
       )}
 
       {error !== null && <Text style={styles.error}>{error}</Text>}

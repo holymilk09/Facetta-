@@ -1,6 +1,8 @@
 {
   "create": {
     "lane": "fast_visual",
+    "execution_mode": "candidate_job",
+    "review_authority": "candidate_decision",
     "credits_per_output": 15,
     "input_requirements": ["brief_or_reference"],
     "context_requirements": [],
@@ -16,6 +18,8 @@
   },
   "vary": {
     "lane": "instant",
+    "execution_mode": "instant_transaction",
+    "review_authority": "none",
     "credits_per_output": 0,
     "input_requirements": ["direction"],
     "context_requirements": ["active_project", "active_revision"],
@@ -27,6 +31,8 @@
   },
   "refine": {
     "lane": "trusted_structural",
+    "execution_mode": "candidate_job",
+    "review_authority": "candidate_decision",
     "credits_per_output": 20,
     "input_requirements": ["instruction"],
     "context_requirements": ["active_project", "active_revision"],
@@ -39,6 +45,8 @@
   },
   "views": {
     "lane": "fast_visual",
+    "execution_mode": "candidate_job",
+    "review_authority": "candidate_decision",
     "credits_per_output": 15,
     "input_requirements": ["view_set"],
     "context_requirements": ["active_project", "active_revision", "exact_specification"],
@@ -50,6 +58,8 @@
   },
   "present": {
     "lane": "fast_visual",
+    "execution_mode": "candidate_job",
+    "review_authority": "candidate_decision",
     "credits_per_output": 18,
     "input_requirements": ["destination"],
     "context_requirements": ["active_project", "active_revision"],
@@ -62,6 +72,8 @@
   },
   "factory": {
     "lane": "trusted_structural",
+    "execution_mode": "terminal_job",
+    "review_authority": "generic_transition",
     "credits_per_output": 28,
     "input_requirements": [],
     "context_requirements": ["active_project", "active_revision", "exact_specification", "factory_eligible"],

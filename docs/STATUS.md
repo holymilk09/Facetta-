@@ -5,6 +5,41 @@ Read `CLAUDE.md` (constitution — binding), `README.md` (endpoints/layout),
 `docs/DATA_WANTED.md` (open research asks). This file is the delta: what is
 DONE beyond the original TASKS.md build order, and what is next.
 
+## 2026-07-13 inspectable inputs, canonical orchestration, and honest corpus checkpoint
+
+Studio Create now treats every role-labeled reference as a consequential
+visual input. Master geometry, material/style, construction/detail, and brand
+direction thumbnails open the authenticated 1x/2x/4x detail inspector with the
+role and source label visible. Creation remains disabled until every attached
+compact preview has rendered; a failed reference asks the designer to replace
+or remove it. Opening or zooming the detail modal cannot satisfy that gate or
+change the role sent to the backend.
+
+The canonical Studio action manifest now owns orchestration as well as labels,
+inputs, pricing, output type, and authority. Typed `execution_mode` and
+`review_authority` values are generated into the mobile registry and loaded by
+the backend. Vary is an atomic transaction and cannot create an orphan Activity
+job. Create, Refine, Views, and Present are candidate-decision jobs; generic
+success/failure transitions cannot settle them after review begins. Factory is
+the declared terminal job. The mobile gateway mirrors a backend-owned candidate
+transition before validating its response, so malformed lineage cannot trigger
+a false generic failure against a durable reviewing candidate.
+
+The frozen corpus producer now records legitimate terminal exhaustion instead
+of aborting it. A sequence may have zero or one accepted attempt; when accepted,
+that attempt must be final, and early or multiple acceptance still fails the
+atomic capture. Three-attempt render and edit exhaustion is persisted, signed,
+replayed from the final attempt, and counted as a reliability failure. This
+removes survivorship bias from the 90% acceptance and structural gates.
+
+Local validation for this checkpoint: 1,639 backend tests, 248 Jest tests, 70
+Studio contract tests, TypeScript, Ruff, Python compilation, Expo web export,
+six exact production-surface tests, generated-manifest parity, and the complete
+ten-project production TypeScript-client -> HTTP -> FastAPI acceptance pass.
+The frozen 144-image corpus has not been executed with enrolled provider and
+reviewer identities; independent designer/GIA review, founder approval, and
+live two-principal HTTPS staging evidence remain external beta gates.
+
 ## 2026-07-13 inspectable and candidate-owned Studio review checkpoint
 
 Every consequential Studio visual can now be inspected at jewelry-detail

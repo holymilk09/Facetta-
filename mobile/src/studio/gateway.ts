@@ -355,6 +355,8 @@ export interface StudioGatewayOptions {
 interface ActiveStudioJob {
   jobId: string;
   owner: string;
+  actionId: StudioJobAction;
+  status: StudioJobRecord['status'];
 }
 
 const gatewayError = (
@@ -552,7 +554,10 @@ export function createStudioGateway(
   ): Promise<StudioGatewayResult<ActiveStudioJob | null>> => {
     if (!trackJobs) return { data: null, error: null, status: 0 };
     const action = getStudioAction(actionId);
-    if (action.lane === null || action.creditEstimate === null) {
+    if (!action.createsJob
+      || action.executionMode === 'instant_transaction'
+      || action.lane === null
+      || action.creditEstimate === null) {
       return gatewayError(
         'INVALID_STUDIO_ACTION', 'This action cannot create a Studio job.',
         'validation', 422,
@@ -580,7 +585,12 @@ export function createStudioGateway(
         return { data: null, error: mapError(running.error), status: running.status };
       }
       return {
-        data: { jobId: running.data.job_id, owner },
+        data: {
+          jobId: running.data.job_id,
+          owner,
+          actionId,
+          status: running.data.status,
+        },
         error: null,
         status: running.status,
       };
@@ -598,6 +608,15 @@ export function createStudioGateway(
     binding?: { activeDesignId?: string; sourceRevisionId?: string },
   ): Promise<StudioGatewayResult<StudioJobRecord | null>> => {
     if (job === null) return { data: null, error: null, status: 0 };
+    const action = getStudioAction(job.actionId);
+    if (job.status === 'reviewing'
+      && action.reviewAuthority === 'candidate_decision') {
+      return gatewayError(
+        'STUDIO_CANDIDATE_DECISION_REQUIRED',
+        `This ${job.actionId} review must be settled by Apply, Save, or Discard.`,
+        'conflict', 409,
+      );
+    }
     try {
       const result = await client.transitionStudioJob(job.jobId, {
         owner: job.owner,
@@ -610,9 +629,11 @@ export function createStudioGateway(
         ...(binding?.sourceRevisionId === undefined
           ? {} : { source_revision_id: binding.sourceRevisionId }),
       });
-      return result.error === null
-        ? result
-        : { data: null, error: mapError(result.error), status: result.status };
+      if (result.error !== null) {
+        return { data: null, error: mapError(result.error), status: result.status };
+      }
+      job.status = result.data.status;
+      return result;
     } catch (error) {
       return trackingError(error);
     }
@@ -628,6 +649,18 @@ export function createStudioGateway(
     // uses monotonic completion progress so a job already at review (0.9)
     // cannot get stranded there by a rejected backward progress transition.
     await transitionJob(job, 'failed', progress, undefined, code);
+  };
+
+  const markBackendCandidateReviewing = (job: ActiveStudioJob | null): void => {
+    if (job === null) return;
+    const action = getStudioAction(job.actionId);
+    if (action.executionMode === 'candidate_job'
+      && action.reviewAuthority === 'candidate_decision') {
+      // Candidate-producing endpoints persist the candidate and move the job to
+      // reviewing atomically. Mirror that server-owned transition locally so a
+      // later response-validation error cannot issue a false generic failure.
+      job.status = 'reviewing';
+    }
   };
 
   const finishPresentationGroup = async (
@@ -699,7 +732,11 @@ export function createStudioGateway(
         'conflict', 409,
       );
     }
-    return { data: { jobId, owner }, error: null, status: listed.status };
+    return {
+      data: { jobId, owner, actionId, status: 'reviewing' },
+      error: null,
+      status: listed.status,
+    };
   };
 
   const callTracked = async <T>(
@@ -886,8 +923,10 @@ export function createStudioGateway(
         data: null, error: mapError(jobResult.error), status: jobResult.status,
       };
       const job = jobResult.data;
+      const action = getStudioAction(job.action_id);
       if (job.status !== 'reviewing'
-        || !['refine', 'views', 'present'].includes(job.action_id)
+        || action.executionMode !== 'candidate_job'
+        || action.reviewAuthority !== 'candidate_decision'
         || job.active_design_id === null
         || job.source_revision_id === null) {
         return gatewayError(
@@ -1275,7 +1314,10 @@ export function createStudioGateway(
           )) ?? null
         : null;
       const studioJob = matchingJob === null ? null : {
-        jobId: matchingJob.job_id, owner: createdBy,
+        jobId: matchingJob.job_id,
+        owner: createdBy,
+        actionId: matchingJob.action_id,
+        status: matchingJob.status,
       };
       if (reviewJobId !== undefined && matchingJob === null) return gatewayError(
         'RESUME_REFINE_JOB_MISMATCH',
@@ -1360,7 +1402,10 @@ export function createStudioGateway(
           );
         }
         const catalogStudioJob = catalogJob === null ? null : {
-          jobId: catalogJob.job_id, owner: createdBy,
+          jobId: catalogJob.job_id,
+          owner: createdBy,
+          actionId: catalogJob.action_id,
+          status: catalogJob.status,
         };
         const candidate: PreviewCandidate = {
           id: latest.candidate.candidate_id,
@@ -1497,6 +1542,7 @@ export function createStudioGateway(
         () => client.createVisualPreview(request.projectId, trustedRequest),
       );
       if (result.error !== null) return result;
+      markBackendCandidateReviewing(started.data);
       if (
         result.data.project_id !== request.projectId
         || result.data.source_asset_id !== request.sourceAssetId
@@ -1704,6 +1750,7 @@ export function createStudioGateway(
         () => client.previewCatalogSelection(request.sourceAssetId, trustedRequest),
       );
       if (result.error !== null) return result;
+      markBackendCandidateReviewing(started.data);
       if (
         result.data.source_asset_id !== request.sourceAssetId
         || result.data.design_version !== request.sourceDesignVersion
@@ -1886,6 +1933,7 @@ export function createStudioGateway(
         },
       ));
       if (result.error !== null) return result;
+      markBackendCandidateReviewing(studioJob);
       const warning = result.data.warning_candidate;
       if (
         result.data.revision !== null
@@ -2120,6 +2168,7 @@ export function createStudioGateway(
         },
       ));
       if (result.error !== null) return result;
+      markBackendCandidateReviewing(started.data);
       const candidateId = result.data.candidate.candidate_id;
       const previewUrl = result.data.candidate.preview_url;
       if (
@@ -2326,6 +2375,8 @@ export function createStudioGateway(
           studioJob: candidate.studio_job_id === null ? null : {
             jobId: candidate.studio_job_id,
             owner: createdBy,
+            actionId: 'present',
+            status: 'reviewing',
           },
           status: 'pending_review',
         });
@@ -2417,6 +2468,7 @@ export function createStudioGateway(
         }),
       );
       if (result.error !== null) return result;
+      markBackendCandidateReviewing(started.data);
       const candidate = result.data.candidate;
       if (result.data.project_id !== projectId
         || result.data.source_asset_id !== lineage.sourceAssetId
@@ -2583,6 +2635,7 @@ export function createStudioGateway(
           result.status,
         );
       }
+      markBackendCandidateReviewing(started.data);
       if (
         result.data.project_id !== projectId
         || result.data.source_asset_id !== request.expected_asset_id
@@ -2641,6 +2694,7 @@ export function createStudioGateway(
           result.status,
         );
       }
+      markBackendCandidateReviewing(started.data);
       if (
         result.data.project_id !== projectId
         || result.data.presentation.source_asset_id !== request.expected_asset_id
@@ -2692,6 +2746,9 @@ export function createStudioGateway(
         }),
       );
       if (result.error !== null) return result;
+      if (result.data.candidate_count > 0) {
+        markBackendCandidateReviewing(started.data);
+      }
       if (
         result.data.project_id !== projectId
         || result.data.source_asset_id !== request.expected_asset_id

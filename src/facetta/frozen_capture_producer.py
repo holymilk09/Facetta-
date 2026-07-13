@@ -436,10 +436,14 @@ def _attempt_errors(attempts: list[Json], planned: Json) -> list[str]:
             or type(attempt.get("change_applied")) is not bool
         ):
             errors.append(f"executor edit attempt {index} lacks scores: {key}")
-    if len(accepted) != 1 or accepted[0] != len(attempts):
+    if len(accepted) > 1:
         errors.append(
-            "executor must finish each sequence with exactly one accepted final attempt: "
+            "executor sequence has multiple accepted attempts: "
             + key
+        )
+    elif accepted and accepted[0] != len(attempts):
+        errors.append(
+            "executor accepted attempt must be final: " + key
         )
     return errors
 

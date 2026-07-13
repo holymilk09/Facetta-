@@ -724,7 +724,8 @@ test('presentation decisions fail closed if the selected revision changes before
   });
   assert.equal(result.error?.code, 'STALE_PRESENTATION_SOURCE');
   assert.equal(acceptCalls, 0);
-  assert.equal(jobs.transitions.at(-1)?.request.status, 'failed');
+  assert.deepEqual(jobs.transitions.map((call) => call.request.status), ['running']);
+  assert.equal(jobs.transitions.some((call) => call.request.status === 'failed'), false);
 });
 
 test('discarding the only exact presentation delegates atomic zero-charge settlement', async () => {

@@ -73,8 +73,9 @@ mandatory: all assignments must be resolved and executable, both signing keys
 must prove control of their config-enrolled public identities, every source and
 input artifact must remain inside the evidence root with its exact hash, and
 the output directory must not already exist. The producer caps every sequence
-at three attempts, requires the accepted result to be the final attempt, stages
-the complete output atomically, builds a canonical source/candidate/mask/
+at three attempts and records an exhausted sequence with zero accepted attempts;
+when an attempt is accepted, it must be the final attempt. It stages the
+complete output atomically, builds a canonical source/candidate/mask/
 persistence artifact index, signs the canonical persistence attestation, signs
 the capture envelope separately, and re-verifies both signatures before making
 the output visible.
