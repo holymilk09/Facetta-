@@ -23,6 +23,7 @@ import {
 } from './designerReviewLanguage';
 import { designerErrorMessage } from './designerErrorMessage';
 import { getStudioAction } from './actions';
+import { useVisualReviewReadiness } from './useVisualReviewReadiness';
 
 const REFINE_CREDITS_PER_OUTPUT = getStudioAction('refine').creditEstimate ?? 0;
 
@@ -182,12 +183,15 @@ export function StudioRefineWorkspace({
   );
   const [activeFactGroup, setActiveFactGroup] = useState<FactGroupId>('identity');
   const [factReview, setFactReview] = useState<readonly FactChangeReview[] | null>(null);
-  const [sourceReady, setSourceReady] = useState(false);
   const decisionInFlight = useRef(false);
-
-  useEffect(() => {
-    setSourceReady(false);
-  }, [sourceImageUrl, lineage?.sourceAssetId]);
+  const visualReviewScope = `${lineage?.sourceAssetId ?? 'none'}:${sourceImageUrl ?? 'missing'}:${preview?.candidate.id ?? 'no-preview'}:${preview?.candidate.assetUrl ?? 'missing'}`;
+  const visualReview = useVisualReviewReadiness(visualReviewScope);
+  const sourceVisualKey = sourceImageUrl === null || sourceImageUrl === undefined
+    ? null : `refine-source:${lineage?.sourceAssetId ?? 'none'}:${sourceImageUrl}`;
+  const candidateVisualKey = preview === null
+    ? null : `refine-candidate:${preview.candidate.id}:${preview.candidate.assetUrl}`;
+  const comparisonVisualKeys = [sourceVisualKey, candidateVisualKey] as const;
+  const comparisonReady = visualReview.allReady(comparisonVisualKeys);
 
   useEffect(() => {
     let current = true;
@@ -551,7 +555,8 @@ export function StudioRefineWorkspace({
 
   const apply = async (): Promise<void> => {
     if (preview === null || busy || decisionInFlight.current
-      || preview.candidate.verdict === 'reject' || !reviewSourceIsActive) return;
+      || preview.candidate.verdict === 'reject' || !reviewSourceIsActive
+      || !comparisonReady) return;
     decisionInFlight.current = true;
     setBusy(true);
     setError(null);
@@ -596,7 +601,8 @@ export function StudioRefineWorkspace({
   };
 
   const saveAsVariation = async (): Promise<void> => {
-    if (preview === null || busy || decisionInFlight.current) return;
+    if (preview === null || busy || decisionInFlight.current
+      || preview.candidate.verdict === 'reject' || !comparisonReady) return;
     const label = variationName.trim();
     if (label.length === 0) {
       setError('Give this variation a short name before saving it.');
@@ -673,23 +679,30 @@ export function StudioRefineWorkspace({
                 accessibilityLabel="Exact source revision"
                 source={{ uri: sourceImageUrl }}
                 imageRequestHeaders={imageRequestHeaders}
-                onLoad={() => setSourceReady(true)}
-                onError={() => setSourceReady(false)}
+                onLoad={() => visualReview.markReady(sourceVisualKey)}
+                onError={() => visualReview.markFailed(sourceVisualKey)}
                 style={styles.preview}
               />
             </View>
           )}
           <View style={styles.comparePane}>
             <Text style={styles.compareLabel}>PREVIEW</Text>
-            <Image accessibilityLabel="Temporary refinement preview" source={{ uri: preview.candidate.assetUrl }} imageRequestHeaders={imageRequestHeaders} style={styles.preview} />
+            <Image
+              accessibilityLabel="Temporary refinement preview"
+              source={{ uri: preview.candidate.assetUrl }}
+              imageRequestHeaders={imageRequestHeaders}
+              onLoad={() => visualReview.markReady(candidateVisualKey)}
+              onError={() => visualReview.markFailed(candidateVisualKey)}
+              style={styles.preview}
+            />
           </View>
         </View>
-        {!sourceReady && (
+        {!comparisonReady && (
           <Notice
             kind="error"
-            text={sourceImageUrl === null
-              ? 'The exact source revision is unavailable. Reopen the design before accepting this preview.'
-              : 'Wait for the exact source revision to load before accepting this preview.'}
+            text={visualReview.anyFailed(comparisonVisualKeys)
+              ? 'The exact source or preview could not be displayed. Reopen the design or generate this preview again before accepting it.'
+              : 'Wait for the exact source and preview to finish loading before accepting this result.'}
           />
         )}
         <View style={styles.reviewCard}>
@@ -727,7 +740,7 @@ export function StudioRefineWorkspace({
               />
               <Button
                 title={busy ? 'Saving…' : 'Save named variation'}
-                disabled={busy || variationName.trim().length === 0 || rejected || !sourceReady}
+                disabled={busy || variationName.trim().length === 0 || rejected || !comparisonReady}
                 onPress={() => { void saveAsVariation(); }}
               />
             </View>
@@ -739,11 +752,11 @@ export function StudioRefineWorkspace({
             <Button
               title="Save as Variation"
               kind="ghost"
-              disabled={busy || rejected || !sourceReady}
+              disabled={busy || rejected || !comparisonReady}
               onPress={() => { setNamingVariation(true); setError(null); }}
             />
           )}
-          <Button title={busy ? 'Working…' : 'Apply as new revision'} disabled={busy || rejected || !sourceReady || !reviewSourceIsActive} onPress={() => { void apply(); }} />
+          <Button title={busy ? 'Working…' : 'Apply as new revision'} disabled={busy || rejected || !comparisonReady || !reviewSourceIsActive} onPress={() => { void apply(); }} />
         </View>
       </ScrollView>
     );

@@ -19,6 +19,7 @@ import type {
 } from './gateway';
 import { designerReviewState } from './designerReviewLanguage';
 import { STUDIO_PRESENT_CONTROLS } from './workspaceControls';
+import { useVisualReviewReadiness } from './useVisualReviewReadiness';
 
 export { STUDIO_PRESENT_CONTROLS } from './workspaceControls';
 
@@ -233,6 +234,15 @@ export function StudioPresentWorkspace({
       : 'Selected visual direction · specification not confirmed', [lineage]);
   const sourceImageUrl = lineage === null || typeof gateway.assetImageUrl !== 'function'
     ? null : gateway.assetImageUrl(lineage.sourceAssetId);
+  const visualReview = useVisualReviewReadiness(`${lineageKey}:${sourceImageUrl ?? 'missing'}`);
+  const sourceVisualKey = sourceImageUrl === null
+    ? null : `present-source:${lineage?.sourceAssetId ?? 'none'}:${sourceImageUrl}`;
+  const cardVisualKey = (card: PresentationCard): string | null => (
+    card.imageUrl === null ? null : `present-candidate:${card.id}:${card.imageUrl}`
+  );
+  const cardReady = (card: PresentationCard): boolean => (
+    visualReview.allReady([sourceVisualKey, cardVisualKey(card)])
+  );
 
   useEffect(() => {
     setUiLineageKey(lineageKey);
@@ -293,7 +303,7 @@ export function StudioPresentWorkspace({
 
   const savePresentation = async (card: PresentationCard): Promise<void> => {
     if (card.candidateId === null || decidingId !== null || !reviewSourceIsActive
-      || sourceImageUrl === null) return;
+      || !cardReady(card)) return;
     const requestedLineageKey = lineageKey;
     setDecidingId(card.id);
     setError(null);
@@ -549,7 +559,14 @@ export function StudioPresentWorkspace({
         <View style={styles.reviewWorkspace}>
           {sourceImageUrl !== null && <View style={styles.sourcePanel}>
             <Text style={styles.comparisonLabel}>Exact source · unchanged</Text>
-            <Image accessibilityLabel="Exact source revision" source={{ uri: sourceImageUrl }} imageRequestHeaders={imageRequestHeaders} style={styles.sourcePreview} />
+            <Image
+              accessibilityLabel="Exact source revision"
+              source={{ uri: sourceImageUrl }}
+              imageRequestHeaders={imageRequestHeaders}
+              onLoad={() => visualReview.markReady(sourceVisualKey)}
+              onError={() => visualReview.markFailed(sourceVisualKey)}
+              style={styles.sourcePreview}
+            />
             <Text style={styles.sourceGuidance}>Use this one fixed reference to check the form, setting, and proportions of every output.</Text>
           </View>}
           {sourceImageUrl === null && (
@@ -563,17 +580,31 @@ export function StudioPresentWorkspace({
               {card.imageUrl !== null && <View style={styles.candidateImage}>
                 <Text style={styles.comparisonLabel}>{card.status === 'review'
                   ? 'Candidate · review before saving' : 'Saved presentation'}</Text>
-                <Image accessibilityLabel={card.title} source={{ uri: card.imageUrl }} imageRequestHeaders={imageRequestHeaders} style={styles.preview} />
+                <Image
+                  accessibilityLabel={card.title}
+                  source={{ uri: card.imageUrl }}
+                  imageRequestHeaders={imageRequestHeaders}
+                  onLoad={() => visualReview.markReady(cardVisualKey(card))}
+                  onError={() => visualReview.markFailed(cardVisualKey(card))}
+                  style={styles.preview}
+                />
               </View>}
               <View style={styles.resultCopy}>
                 <Text style={styles.resultTitle}>{card.title}</Text>
                 <Text style={styles.cardCopy}>{card.detail}</Text>
                 {card.status === 'review' && <>
                   <Text style={styles.reviewLabel}>Not saved · choose what to keep</Text>
+                  {!cardReady(card) && (
+                    <Text style={styles.reviewReadiness}>
+                      {visualReview.anyFailed([sourceVisualKey, cardVisualKey(card)])
+                        ? 'This comparison could not be displayed. Generate it again or discard it.'
+                        : 'Wait for the exact source and this candidate to finish loading before saving.'}
+                    </Text>
+                  )}
                   <View style={styles.decisionRow}>
                     <Button
                       title={decidingId === card.id ? 'Saving…' : 'Save presentation'}
-                      disabled={decidingId !== null || !reviewSourceIsActive || sourceImageUrl === null}
+                      disabled={decidingId !== null || !reviewSourceIsActive || !cardReady(card)}
                       onPress={() => { void savePresentation(card); }}
                     />
                     <Button
@@ -627,5 +658,6 @@ const styles = StyleSheet.create({
   resultCopy: { minWidth: 180 },
   resultTitle: { color: theme.ink, fontSize: 15, fontWeight: '800', marginBottom: 4 },
   reviewLabel: { color: theme.accent, fontSize: 11, fontWeight: '700', marginTop: 8 },
+  reviewReadiness: { color: '#745513', fontSize: 11, lineHeight: 16, marginTop: 6 },
   decisionRow: { flexDirection: 'row', flexWrap: 'wrap', marginTop: 10 },
 });

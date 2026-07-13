@@ -1,7 +1,7 @@
 /// <reference types="jest" />
 
 import React from 'react';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react-native';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 
 import type { StudioGateway } from './gateway';
 import { StudioCreateReference, StudioCreateWorkspace } from './StudioCreateWorkspace';
@@ -63,6 +63,20 @@ type CreateGateway = Pick<StudioGateway,
   'createFromPrompt' | 'createFromDrawing' | 'completeCreativeDirectionReview'
 >;
 
+const renderCreate = (ui: React.ReactElement) => render(
+  <AuthenticatedImageProvider
+    allowedOrigin="https://facetta.test"
+    headers={{ Authorization: 'Bearer first-party-token' }}>
+    {ui}
+  </AuthenticatedImageProvider>,
+);
+
+const loadDirection = async (index: number): Promise<void> => {
+  await act(async () => {
+    fireEvent(screen.getByLabelText(`Direction ${index} preview`), 'load');
+  });
+};
+
 test('stages sibling variations locally and commits them only with the explicit Continue action', async () => {
   const createFromPrompt = jest.fn(async () => ({
     data: creativeProject(4), error: null, status: 201,
@@ -80,7 +94,7 @@ test('stages sibling variations locally and commits them only with the explicit 
     status: 200,
   }));
   const onSave = jest.fn();
-  await render(
+  await renderCreate(
     <AuthenticatedImageProvider
       allowedOrigin="https://facetta.test"
       headers={{ Authorization: 'Bearer first-party-token' }}>
@@ -118,6 +132,9 @@ test('stages sibling variations locally and commits them only with the explicit 
     Authorization: 'Bearer first-party-token',
   });
   expect(screen.getByText(/visual directions.+not measurements or production instructions/i)).toBeTruthy();
+  await loadDirection(1);
+  await loadDirection(2);
+  await loadDirection(3);
   await fireEvent.press(screen.getAllByText('Keep as variation')[0]);
   expect(completeCreativeDirectionReview).not.toHaveBeenCalled();
   expect(onSave).not.toHaveBeenCalled();
@@ -159,7 +176,7 @@ test('reopens a durable reviewing Create job and settles that exact job on selec
     status: 200,
   }));
   const onSave = jest.fn();
-  await render(
+  await renderCreate(
     <StudioCreateWorkspace
       gateway={{
         createFromPrompt, createFromDrawing, completeCreativeDirectionReview,
@@ -174,6 +191,7 @@ test('reopens a durable reviewing Create job and settles that exact job on selec
   expect(await screen.findByText('Which direction do you want to refine?')).toBeTruthy();
   expect(createFromPrompt).not.toHaveBeenCalled();
   expect(createFromDrawing).not.toHaveBeenCalled();
+  await loadDirection(2);
   await fireEvent.press(screen.getByLabelText('Direction 2'));
   await fireEvent.press(screen.getByText('Continue with Direction 2'));
   await waitFor(() => expect(completeCreativeDirectionReview).toHaveBeenCalledWith({
@@ -183,6 +201,41 @@ test('reopens a durable reviewing Create job and settles that exact job on selec
   expect(onSave).toHaveBeenCalledWith(expect.objectContaining({
     selectedAssetId: 'candidate_2',
   }));
+});
+
+test('does not create an immutable Original until its selected preview renders', async () => {
+  const completeCreativeDirectionReview = jest.fn(async () => ({
+    data: { project: creativeProject(1), retained_variations: [] },
+    error: null,
+    status: 200,
+  }));
+  await renderCreate(<StudioCreateWorkspace
+    gateway={{
+      createFromPrompt: jest.fn(), createFromDrawing: jest.fn(),
+      completeCreativeDirectionReview,
+    } as CreateGateway}
+    owner="designer_1"
+    resumeProject={creativeProject(1)}
+    onSave={jest.fn()}
+  />);
+
+  const continueButton = screen.getByText('Continue with Direction 1');
+  expect(continueButton.parent?.props.accessibilityState.disabled).toBe(true);
+  fireEvent.press(continueButton);
+  expect(completeCreativeDirectionReview).not.toHaveBeenCalled();
+
+  await act(async () => {
+    fireEvent(screen.getByLabelText('Direction 1 preview'), 'error');
+  });
+  expect(screen.getByText(/selected direction could not be displayed/i)).toBeTruthy();
+  fireEvent.press(continueButton);
+  expect(completeCreativeDirectionReview).not.toHaveBeenCalled();
+
+  await loadDirection(1);
+  await act(async () => {
+    fireEvent.press(screen.getByText('Continue with Direction 1'));
+  });
+  await waitFor(() => expect(completeCreativeDirectionReview).toHaveBeenCalledTimes(1));
 });
 
 test('keeps the complete review staged after an atomic commit error and retries the same decision', async () => {
@@ -206,7 +259,7 @@ test('keeps the complete review staged after an atomic commit error and retries 
       status: 200,
     });
   const onSave = jest.fn();
-  await render(<StudioCreateWorkspace
+  await renderCreate(<StudioCreateWorkspace
     gateway={{
       createFromPrompt: jest.fn(), createFromDrawing: jest.fn(),
       completeCreativeDirectionReview,
@@ -217,6 +270,8 @@ test('keeps the complete review staged after an atomic commit error and retries 
     onSave={onSave}
   />);
 
+  await loadDirection(2);
+  await loadDirection(3);
   await fireEvent.press(screen.getAllByText('Keep as variation')[0]);
   await fireEvent.press(screen.getByLabelText('Direction 3'));
   const continueLabel = 'Continue with Direction 3 · keep 1 variation';
@@ -242,7 +297,7 @@ test('keeps an already-created direction set when the designer starts another br
   const createFromPrompt = jest.fn(async () => ({
     data: creativeProject(2), error: null, status: 201,
   }));
-  await render(<StudioCreateWorkspace
+  await renderCreate(<StudioCreateWorkspace
     gateway={{
       createFromPrompt, createFromDrawing: jest.fn(), completeCreativeDirectionReview: jest.fn(),
     } as CreateGateway}
@@ -253,6 +308,8 @@ test('keeps an already-created direction set when the designer starts another br
 
   await fireEvent.press(screen.getByText('Create 2 directions'));
   expect(await screen.findByText(/Your choice becomes the Original/i)).toBeTruthy();
+  await loadDirection(1);
+  await loadDirection(2);
   await fireEvent.press(screen.getAllByText('Keep as variation')[0]);
   expect(screen.getByText('Continue with Direction 1 · keep 1 variation')).toBeTruthy();
   await fireEvent.press(screen.getByText('Leave in Activity & start another'));
@@ -277,7 +334,7 @@ test('sends every enabled role with the master geometry input', async () => {
   }));
   const createFromPrompt = jest.fn();
   const onRequestReference = jest.fn(async (role) => role === 'master_geometry' ? master : material);
-  await render(React.createElement(StudioCreateWorkspace, {
+  await renderCreate(React.createElement(StudioCreateWorkspace, {
     gateway: {
       createFromPrompt,
       createFromDrawing: createProjectFromDrawing,
@@ -322,7 +379,7 @@ test('starts from a master image without forcing a sentence', async () => {
   const createFromDrawing = jest.fn(async () => ({
     data: creativeProject(1), error: null, status: 201,
   }));
-  await render(React.createElement(StudioCreateWorkspace, {
+  await renderCreate(React.createElement(StudioCreateWorkspace, {
     gateway: {
       createFromPrompt: jest.fn(), createFromDrawing,
       completeCreativeDirectionReview: jest.fn(),
@@ -352,7 +409,7 @@ test('surfaces picker failures instead of leaving Add as a silent dead end', asy
   const onRequestReference = jest.fn(async () => {
     throw new Error('Choose a PNG, JPEG, or WebP image. Other file types are not supported.');
   });
-  await render(React.createElement(StudioCreateWorkspace, {
+  await renderCreate(React.createElement(StudioCreateWorkspace, {
     gateway: {
       createFromPrompt: jest.fn(),
       createFromDrawing: jest.fn(),
@@ -370,7 +427,7 @@ test('surfaces picker failures instead of leaving Add as a silent dead end', asy
 });
 
 test('does not expose backend diagnostics when generation fails', async () => {
-  await render(React.createElement(StudioCreateWorkspace, {
+  await renderCreate(React.createElement(StudioCreateWorkspace, {
     gateway: {
       createFromPrompt: jest.fn(async () => ({
         data: null,
@@ -394,7 +451,7 @@ test('does not expose backend diagnostics when generation fails', async () => {
 });
 
 test('explains when image selection is unavailable instead of silently ignoring Add', async () => {
-  await render(React.createElement(StudioCreateWorkspace, {
+  await renderCreate(React.createElement(StudioCreateWorkspace, {
     gateway: {
       createFromPrompt: jest.fn(),
       createFromDrawing: jest.fn(),

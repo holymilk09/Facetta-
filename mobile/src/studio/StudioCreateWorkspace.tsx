@@ -12,6 +12,7 @@ import { getStudioAction } from './actions';
 import {
   STUDIO_CREATE_REFERENCE_CONTROLS, type CreateReferenceRole,
 } from './workspaceControls';
+import { useVisualReviewReadiness } from './useVisualReviewReadiness';
 
 export { STUDIO_CREATE_REFERENCE_CONTROLS } from './workspaceControls';
 export type { CreateReferenceRole } from './workspaceControls';
@@ -105,6 +106,18 @@ export function StudioCreateWorkspace({
   const [error, setError] = useState<string | null>(null);
 
   const candidates = useMemo(() => project === null ? [] : creativeCandidates(project), [project]);
+  const visualReview = useVisualReviewReadiness(project?.root_id ?? 'create-setup');
+  const candidateVisualKey = (candidate: AssetSummary): string | null => (
+    candidate.image_url === null
+      ? null
+      : `create-candidate:${candidate.asset_id}:${candidate.image_url}`
+  );
+  const decisionVisualKeys = candidates.filter((candidate) => (
+    candidate.asset_id === selectedAssetId || stagedCandidateIds.has(candidate.asset_id)
+  )).map(candidateVisualKey);
+  const decisionVisualsReady = selectedAssetId !== null
+    && decisionVisualKeys.length === stagedCandidateIds.size + 1
+    && visualReview.allReady(decisionVisualKeys);
   const masterReference = references.find((reference) => reference.role === 'master_geometry') ?? null;
   const secondaryReferences = references.filter(
     (reference): reference is StudioCreateReference & { role: SecondaryCreateReferenceRole } => (
@@ -181,8 +194,8 @@ export function StudioCreateWorkspace({
     setSelectedAssetId(nextCandidates[0].asset_id);
   };
 
-  const toggleDirectionToKeep = (candidateId: string): void => {
-    if (busy) return;
+  const toggleDirectionToKeep = (candidateId: string, visualKey: string | null): void => {
+    if (busy || (!stagedCandidateIds.has(candidateId) && !visualReview.isReady(visualKey))) return;
     setStagedCandidateIds((current) => {
       const next = new Set(current);
       if (next.has(candidateId)) next.delete(candidateId);
@@ -192,7 +205,7 @@ export function StudioCreateWorkspace({
   };
 
   const continueWithSelection = async (): Promise<void> => {
-    if (project === null || selectedAssetId === null || busy) return;
+    if (project === null || selectedAssetId === null || busy || !decisionVisualsReady) return;
 
     setBusy(true);
     setError(null);
@@ -244,6 +257,8 @@ export function StudioCreateWorkspace({
           {candidates.map((candidate, index) => {
             const selected = selectedAssetId === candidate.asset_id;
             const stagedToKeep = stagedCandidateIds.has(candidate.asset_id);
+            const visualKey = candidateVisualKey(candidate);
+            const visualReady = visualReview.isReady(visualKey);
             const candidateDisabled = busy;
             return (
               <Pressable
@@ -268,6 +283,8 @@ export function StudioCreateWorkspace({
                   <Image
                     accessibilityLabel={`Direction ${index + 1} preview`}
                     source={{ uri: candidate.image_url }}
+                    onLoad={() => visualReview.markReady(visualKey)}
+                    onError={() => visualReview.markFailed(visualKey)}
                     style={styles.candidateImage}
                   />
                 )}
@@ -281,14 +298,14 @@ export function StudioCreateWorkspace({
                       accessibilityRole="button"
                       accessibilityLabel={`${stagedToKeep ? 'Remove' : 'Keep'} Direction ${index + 1} ${stagedToKeep ? 'from' : 'as'} variations`}
                       accessibilityState={{
-                        disabled: candidateDisabled,
+                        disabled: candidateDisabled || (!visualReady && !stagedToKeep),
                         selected: stagedToKeep,
                       }}
-                      disabled={candidateDisabled}
+                      disabled={candidateDisabled || (!visualReady && !stagedToKeep)}
                       style={styles.keepButton}
                       onPress={(event) => {
                         event.stopPropagation();
-                        toggleDirectionToKeep(candidate.asset_id);
+                        toggleDirectionToKeep(candidate.asset_id, visualKey);
                       }}>
                       <Text style={styles.keepButtonText}>
                         {stagedToKeep ? 'Remove from kept variations' : 'Keep as variation'}
@@ -300,6 +317,13 @@ export function StudioCreateWorkspace({
             );
           })}
         </View>
+        {!decisionVisualsReady && selectedAssetId !== null && (
+          <Text style={styles.reviewReadiness}>
+            {visualReview.anyFailed(decisionVisualKeys)
+              ? 'A selected direction could not be displayed. Choose another direction or remove it from kept variations before continuing.'
+              : 'Wait for every selected direction to finish loading before continuing.'}
+          </Text>
+        )}
         {error !== null && <Text style={styles.error}>{error}</Text>}
         <View style={styles.footerActions}>
           <Pressable style={styles.secondaryButton} onPress={() => {
@@ -312,9 +336,9 @@ export function StudioCreateWorkspace({
           </Pressable>
           <Pressable
             accessibilityRole="button"
-            accessibilityState={{ disabled: selectedAssetId === null || busy }}
-            style={[styles.primaryButton, (selectedAssetId === null || busy) && styles.buttonDisabled]}
-            disabled={selectedAssetId === null || busy}
+            accessibilityState={{ disabled: busy || !decisionVisualsReady }}
+            style={[styles.primaryButton, (busy || !decisionVisualsReady) && styles.buttonDisabled]}
+            disabled={busy || !decisionVisualsReady}
             onPress={() => void continueWithSelection()}>
             <Text style={styles.primaryButtonText}>{busy
               ? 'Saving directions…'
@@ -601,6 +625,7 @@ const styles = StyleSheet.create({
   candidateImage: { width: '100%', aspectRatio: 1, backgroundColor: '#ebe7ef' },
   imageFallback: { width: '100%', aspectRatio: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#ebe7ef' },
   imageFallbackText: { color: theme.faint, fontSize: 11 },
+  reviewReadiness: { color: '#745513', fontSize: 11, lineHeight: 17, marginTop: 12 },
   candidateCopy: { padding: 12 },
   candidateTitle: { color: theme.ink, fontSize: 13, fontWeight: '700' },
   candidateMeta: { color: theme.faint, fontSize: 10, marginTop: 3 },

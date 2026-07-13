@@ -161,7 +161,17 @@ describe('StudioRefineWorkspace', () => {
     expect(screen.getByText('Visual consistency')).toBeTruthy();
     expect(screen.queryByText(/Grok|QA|model routing|evaluator trace/i)).toBeNull();
     expect(onApplied).not.toHaveBeenCalled();
-    await act(async () => { fireEvent(screen.getByLabelText('Exact source revision'), 'load'); });
+    await act(async () => {
+      fireEvent(screen.getByLabelText('Exact source revision'), 'load');
+      fireEvent(screen.getByLabelText('Temporary refinement preview'), 'error');
+    });
+    expect(screen.getByText(/source or preview could not be displayed/i)).toBeTruthy();
+    expect(screen.getByText('Discard').parent?.props.accessibilityState.disabled).toBe(false);
+    fireEvent.press(screen.getByText('Apply as new revision'));
+    expect(applyCatalogRefine).not.toHaveBeenCalled();
+    await act(async () => {
+      fireEvent(screen.getByLabelText('Temporary refinement preview'), 'load');
+    });
     await act(async () => { fireEvent.press(screen.getByText('Apply as new revision')); });
     await waitFor(() => expect(onApplied).toHaveBeenCalledWith(project));
   });
@@ -274,6 +284,7 @@ describe('StudioRefineWorkspace', () => {
 
     await act(async () => {
       fireEvent(screen.getByLabelText('Exact source revision'), 'load');
+      fireEvent(screen.getByLabelText('Temporary refinement preview'), 'load');
       await Promise.resolve();
     });
     await act(async () => {
@@ -352,7 +363,10 @@ describe('StudioRefineWorkspace', () => {
     }));
     expect(screen.getByLabelText('Exact source revision')).toBeTruthy();
     expect(screen.getByLabelText('Temporary refinement preview')).toBeTruthy();
-    await act(async () => { fireEvent(screen.getByLabelText('Exact source revision'), 'load'); });
+    await act(async () => {
+      fireEvent(screen.getByLabelText('Exact source revision'), 'load');
+      fireEvent(screen.getByLabelText('Temporary refinement preview'), 'load');
+    });
     await act(async () => { fireEvent.press(screen.getByText('Apply as new revision')); });
     await waitFor(() => expect(onApplied).toHaveBeenCalledWith(preSpecProject));
     expect(preSpecProject.active_design_version).toBeNull();
@@ -545,7 +559,10 @@ describe('StudioRefineWorkspace', () => {
     expect(screen.getByLabelText('Temporary refinement preview').props.source.headers).toEqual({
       Authorization: 'Bearer test-session-token',
     });
-    await act(async () => { fireEvent(screen.getByLabelText('Exact source revision'), 'load'); });
+    await act(async () => {
+      fireEvent(screen.getByLabelText('Exact source revision'), 'load');
+      fireEvent(screen.getByLabelText('Temporary refinement preview'), 'load');
+    });
     await act(async () => { fireEvent.press(screen.getByText('Apply as new revision')); });
     expect(applyCatalogRefine).toHaveBeenCalledWith({
       candidateId: 'candidate_resumed', createdBy: 'designer',
@@ -598,7 +615,10 @@ describe('StudioRefineWorkspace', () => {
     );
 
     expect(await screen.findByText('Save as Variation')).toBeTruthy();
-    await act(async () => { fireEvent(screen.getByLabelText('Exact source revision'), 'load'); });
+    await act(async () => {
+      fireEvent(screen.getByLabelText('Exact source revision'), 'load');
+      fireEvent(screen.getByLabelText('Temporary refinement preview'), 'load');
+    });
     fireEvent.press(screen.getByText('Save as Variation'));
     expect(await screen.findByText(/source revision stays unchanged/i)).toBeTruthy();
     expect(saveCatalogPreviewAsVariation).not.toHaveBeenCalled();

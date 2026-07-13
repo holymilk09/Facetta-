@@ -15,6 +15,7 @@ import {
 } from './designerReviewLanguage';
 import { designerErrorMessage } from './designerErrorMessage';
 import { getStudioAction } from './actions';
+import { useVisualReviewReadiness } from './useVisualReviewReadiness';
 
 const VIEWS_CREDITS_PER_OUTPUT = getStudioAction('views').creditEstimate ?? 0;
 
@@ -65,6 +66,14 @@ export function StudioViewsWorkspace({
     ? preview : null;
   const sourceImageUrl = lineage === null || typeof gateway.assetImageUrl !== 'function'
     ? null : gateway.assetImageUrl(lineage.sourceAssetId);
+  const visualReviewScope = `${lineageKey}:${sourceImageUrl ?? 'missing'}:${previewForLineage?.candidateId ?? 'no-preview'}:${previewForLineage?.previewUrl ?? 'missing'}`;
+  const visualReview = useVisualReviewReadiness(visualReviewScope);
+  const sourceVisualKey = sourceImageUrl === null
+    ? null : `views-source:${lineage?.sourceAssetId ?? 'none'}:${sourceImageUrl}`;
+  const candidateVisualKey = previewForLineage === null
+    ? null : `views-candidate:${previewForLineage.candidateId}:${previewForLineage.previewUrl}`;
+  const comparisonVisualKeys = [sourceVisualKey, candidateVisualKey] as const;
+  const comparisonReady = visualReview.allReady(comparisonVisualKeys);
 
   useEffect(() => {
     setUiLineageKey(lineageKey);
@@ -112,7 +121,7 @@ export function StudioViewsWorkspace({
 
   const accept = async (): Promise<void> => {
     if (previewForLineage === null || busy || previewForLineage.verdict === 'fail'
-      || !reviewSourceIsActive || sourceImageUrl === null) return;
+      || !reviewSourceIsActive || !comparisonReady) return;
     const requestedLineageKey = lineageKey;
     setBusy(true);
     setError(null);
@@ -187,6 +196,8 @@ export function StudioViewsWorkspace({
                   accessibilityLabel="Exact source revision"
                   source={{ uri: sourceImageUrl }}
                   imageRequestHeaders={imageRequestHeaders}
+                  onLoad={() => visualReview.markReady(sourceVisualKey)}
+                  onError={() => visualReview.markFailed(sourceVisualKey)}
                   style={styles.preview}
                 />
               </View>
@@ -197,6 +208,8 @@ export function StudioViewsWorkspace({
                 accessibilityLabel={`Temporary ${previewForLineage.view} view`}
                 source={{ uri: previewForLineage.previewUrl }}
                 imageRequestHeaders={imageRequestHeaders}
+                onLoad={() => visualReview.markReady(candidateVisualKey)}
+                onError={() => visualReview.markFailed(candidateVisualKey)}
                 style={styles.preview}
               />
             </View>
@@ -206,6 +219,14 @@ export function StudioViewsWorkspace({
           <Notice
             kind="error"
             text="The exact source cannot be displayed, so this view cannot be saved. Reopen the design and compare again."
+          />
+        )}
+        {sourceImageUrl !== null && !comparisonReady && (
+          <Notice
+            kind="error"
+            text={visualReview.anyFailed(comparisonVisualKeys)
+              ? 'The exact source or candidate could not be displayed. Generate the view again before saving it.'
+              : 'Wait for the exact source and candidate to finish loading before saving this view.'}
           />
         )}
         <View style={styles.reviewCard}>
@@ -230,7 +251,7 @@ export function StudioViewsWorkspace({
           <Button title={busy ? 'Working…' : 'Discard'} kind="ghost" disabled={busy} onPress={() => { void discard(); }} />
           <Button
             title={busy ? 'Working…' : 'Save view'}
-            disabled={busy || rejected || !reviewSourceIsActive || sourceImageUrl === null}
+            disabled={busy || rejected || !reviewSourceIsActive || !comparisonReady}
             onPress={() => { void accept(); }}
           />
         </View>

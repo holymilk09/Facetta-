@@ -87,6 +87,18 @@ describe('StudioViewsWorkspace', () => {
     });
     expect(onSaved).not.toHaveBeenCalled();
 
+    fireEvent.press(screen.getByText('Save view'));
+    expect(acceptLineArtView).not.toHaveBeenCalled();
+    await act(async () => {
+      fireEvent(screen.getByLabelText('Exact source revision'), 'load');
+      fireEvent(screen.getByLabelText('Temporary front view'), 'error');
+    });
+    expect(screen.getByText(/source or candidate could not be displayed/i)).toBeTruthy();
+    fireEvent.press(screen.getByText('Save view'));
+    expect(acceptLineArtView).not.toHaveBeenCalled();
+    await act(async () => {
+      fireEvent(screen.getByLabelText('Temporary front view'), 'load');
+    });
     await act(async () => { fireEvent.press(screen.getByText('Save view')); });
     await waitFor(() => expect(onSaved).toHaveBeenCalledWith(project));
     expect(screen.getByText('View saved beside the design. The active design revision did not change.')).toBeTruthy();

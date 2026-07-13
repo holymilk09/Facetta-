@@ -5,6 +5,32 @@ Read `CLAUDE.md` (constitution — binding), `README.md` (endpoints/layout),
 `docs/DATA_WANTED.md` (open research asks). This file is the delta: what is
 DONE beyond the original TASKS.md build order, and what is next.
 
+## 2026-07-13 Studio rendered-review authority checkpoint
+
+Create, Refine, Views, and Present now share one fail-closed visual-review
+invariant: a URL is not evidence that a designer saw an image. Every image
+needed for a keep, apply, or save decision must emit a successful render event
+for its exact candidate and source identity. Missing, protected, expired, or
+failed images keep the decision disabled and repeat the same guard inside the
+handler. Discard remains available, and Present tracks each candidate
+independently so loading one marketing output cannot authorize another.
+
+Create therefore cannot establish an immutable Original or retain a sibling
+direction until each selected preview is visible. Refine cannot Apply or Save
+as Variation until both the exact source and temporary candidate are visible.
+Views and Present likewise require a rendered side-by-side comparison before a
+derived asset can be saved. Concise designer recovery copy distinguishes a
+pending load from an image that failed to display without exposing provider or
+authentication internals.
+
+Local validation for this checkpoint: 1,622 backend tests, 244 Jest tests, 69
+Studio contract tests, TypeScript, Ruff, Python compilation, Expo web export,
+and the production TypeScript-client -> HTTP -> FastAPI acceptance pass. The
+acceptance still covers ten mixed-source projects without Factory and confirms
+no canonical mutation before acceptance. No real 144-image corpus run,
+designer/GIA review, founder approval, or live two-principal HTTPS staging run
+was performed, so external beta remains gated on those external authorities.
+
 ## 2026-07-13 Studio review-continuity and Original-provenance checkpoint
 
 Present now separates configuration from candidate review. Once any preview is

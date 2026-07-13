@@ -2,14 +2,23 @@ import React from 'react';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 
 import { StudioPresentWorkspace } from './StudioPresentWorkspace';
+import { AuthenticatedImageProvider } from '../AuthenticatedImage';
 
 const lineage = {
   projectId: 'project_1', sourceAssetId: 'asset_4', sourceDesignVersion: 4,
 };
 
+const renderPresent = (ui: React.ReactElement) => render(
+  <AuthenticatedImageProvider
+    allowedOrigin="https://test"
+    headers={{ Authorization: 'Bearer first-party-token' }}>
+    {ui}
+  </AuthenticatedImageProvider>,
+);
+
 describe('StudioPresentWorkspace', () => {
   test('fails closed without an exact immutable revision', async () => {
-    await render(<StudioPresentWorkspace gateway={{} as any} lineage={null} createdBy="designer" />);
+    await renderPresent(<StudioPresentWorkspace gateway={{} as any} lineage={null} createdBy="designer" />);
     expect(screen.getByText('Choose a saved direction first')).toBeTruthy();
     expect(screen.getByText('Present always starts from one saved revision.')).toBeTruthy();
   });
@@ -31,7 +40,7 @@ describe('StudioPresentWorkspace', () => {
       error: null,
       status: 200,
     }));
-    await render(<StudioPresentWorkspace
+    await renderPresent(<StudioPresentWorkspace
       gateway={{
         resumeExactPresentations, createBeautyPresentation: jest.fn(),
         createProductPresentation: jest.fn(), createMarketingPresentation: jest.fn(),
@@ -80,7 +89,7 @@ describe('StudioPresentWorkspace', () => {
       createPreSpecPresentation: jest.fn(), resumePreSpecPresentations: jest.fn(),
       acceptPreSpecPresentation: jest.fn(), discardPreSpecPresentation: jest.fn(),
     } as any;
-    const rendered = await render(<StudioPresentWorkspace
+    const rendered = await renderPresent(<StudioPresentWorkspace
       gateway={gateway} lineage={lineage} createdBy="designer"
     />);
     expect(await screen.findByText('Results')).toBeTruthy();
@@ -121,7 +130,7 @@ describe('StudioPresentWorkspace', () => {
       error: null,
       status: 201,
     }));
-    await render(<StudioPresentWorkspace
+    await renderPresent(<StudioPresentWorkspace
       gateway={{
         createBeautyPresentation: jest.fn(), createProductPresentation,
         createMarketingPresentation: jest.fn(), acceptPresentationCandidate,
@@ -153,6 +162,18 @@ describe('StudioPresentWorkspace', () => {
     expect(screen.queryByText('1 · Destination')).toBeNull();
     expect(screen.queryByText('Create client product photo')).toBeNull();
     expect(screen.queryByText(/canonical|quality|QA/i)).toBeNull();
+    fireEvent.press(screen.getByText('Save presentation'));
+    expect(acceptPresentationCandidate).not.toHaveBeenCalled();
+    await act(async () => {
+      fireEvent(screen.getByLabelText('Exact source revision'), 'load');
+      fireEvent(screen.getByLabelText('Catalog white needs review'), 'error');
+    });
+    expect(screen.getByText(/comparison could not be displayed/i)).toBeTruthy();
+    fireEvent.press(screen.getByText('Save presentation'));
+    expect(acceptPresentationCandidate).not.toHaveBeenCalled();
+    await act(async () => {
+      fireEvent(screen.getByLabelText('Catalog white needs review'), 'load');
+    });
     await act(async () => { fireEvent.press(screen.getByText('Save presentation')); });
     await waitFor(() => expect(acceptPresentationCandidate).toHaveBeenCalledWith({
       candidateId: 'candidate_1', createdBy: 'designer',
@@ -171,7 +192,7 @@ describe('StudioPresentWorkspace', () => {
       error: null,
       status: 200,
     }));
-    await render(<StudioPresentWorkspace
+    await renderPresent(<StudioPresentWorkspace
       gateway={{
         createBeautyPresentation: jest.fn(async () => ({
           data: {
@@ -235,7 +256,7 @@ describe('StudioPresentWorkspace', () => {
       error: null,
       status: 202,
     }));
-    await render(<StudioPresentWorkspace
+    await renderPresent(<StudioPresentWorkspace
       gateway={{
         createBeautyPresentation, createProductPresentation: jest.fn(),
         createMarketingPresentation: jest.fn(), acceptPresentationCandidate: jest.fn(),
@@ -263,7 +284,7 @@ describe('StudioPresentWorkspace', () => {
 
   test('fails closed instead of displaying a generation-time auto-saved Client output', async () => {
     const onProjectUpdated = jest.fn();
-    await render(<StudioPresentWorkspace
+    await renderPresent(<StudioPresentWorkspace
       gateway={{
         createBeautyPresentation: jest.fn(async () => ({
           data: {
@@ -310,7 +331,7 @@ describe('StudioPresentWorkspace', () => {
       error: null,
       status: 201,
     }));
-    await render(<StudioPresentWorkspace
+    await renderPresent(<StudioPresentWorkspace
       gateway={{
         createBeautyPresentation: jest.fn(), createProductPresentation: jest.fn(),
         createMarketingPresentation, acceptPresentationCandidate: jest.fn(),
@@ -345,7 +366,7 @@ describe('StudioPresentWorkspace', () => {
   });
 
   test('replaces backend lineage diagnostics with designer recovery guidance', async () => {
-    await render(<StudioPresentWorkspace
+    await renderPresent(<StudioPresentWorkspace
       gateway={{
         createBeautyPresentation: jest.fn(async () => ({
           data: null,
@@ -391,7 +412,7 @@ describe('StudioPresentWorkspace', () => {
       error: null,
       status: 201,
     }));
-    await render(<StudioPresentWorkspace
+    await renderPresent(<StudioPresentWorkspace
       gateway={{
         createPreSpecPresentation, acceptPreSpecPresentation,
         discardPreSpecPresentation: jest.fn(), createBeautyPresentation: jest.fn(),
@@ -411,6 +432,10 @@ describe('StudioPresentWorkspace', () => {
       framing: 'square',
     }));
     expect(await screen.findByText('Not saved · choose what to keep')).toBeTruthy();
+    await act(async () => {
+      fireEvent(screen.getByLabelText('Exact source revision'), 'load');
+      fireEvent(screen.getByLabelText('Client beauty render'), 'load');
+    });
     await act(async () => { fireEvent.press(screen.getByText('Save presentation')); });
     expect(acceptPreSpecPresentation).toHaveBeenCalledWith({
       candidateId: 'candidate_client', createdBy: 'designer',
@@ -441,10 +466,14 @@ describe('StudioPresentWorkspace', () => {
       data: { candidateId, project: { root_id: 'project_visual' } },
       error: null, status: 200,
     }));
-    await render(<StudioPresentWorkspace
+    const acceptPreSpecPresentation = jest.fn(async ({ candidateId }) => ({
+      data: { candidateId, project: { root_id: 'project_visual' } },
+      error: null, status: 201,
+    }));
+    await renderPresent(<StudioPresentWorkspace
       gateway={{
         createPreSpecPresentation, discardPreSpecPresentation,
-        acceptPreSpecPresentation: jest.fn(), createBeautyPresentation: jest.fn(),
+        acceptPreSpecPresentation, createBeautyPresentation: jest.fn(),
         createProductPresentation: jest.fn(), createMarketingPresentation: jest.fn(),
         acceptPresentationCandidate: jest.fn(), discardPresentationCandidate: jest.fn(),
         assetImageUrl: jest.fn(() => 'https://test/source.png'),
@@ -463,12 +492,23 @@ describe('StudioPresentWorkspace', () => {
     expect(screen.getAllByText('Exact source · unchanged')).toHaveLength(1);
     expect(screen.getAllByText('Candidate · review before saving')).toHaveLength(2);
     expect(screen.getAllByLabelText(/Exact source revision/)).toHaveLength(1);
+    await act(async () => {
+      fireEvent(screen.getByLabelText('Exact source revision'), 'load');
+      fireEvent(screen.getByLabelText('Catalog white'), 'load');
+    });
+    const saveButtons = screen.getAllByText('Save presentation');
+    fireEvent.press(saveButtons[1]);
+    expect(acceptPreSpecPresentation).not.toHaveBeenCalled();
+    await act(async () => { fireEvent.press(saveButtons[0]); });
+    expect(acceptPreSpecPresentation).toHaveBeenCalledWith({
+      candidateId: 'candidate_catalog_white', createdBy: 'designer',
+    });
     const discardButtons = screen.getAllByText('Discard');
     await act(async () => { fireEvent.press(discardButtons[0]); });
     expect(discardPreSpecPresentation).toHaveBeenCalledWith({
-      candidateId: 'candidate_catalog_white', createdBy: 'designer',
+      candidateId: 'candidate_luxury_studio', createdBy: 'designer',
     });
-    expect(screen.getByText('Luxury studio')).toBeTruthy();
+    expect(screen.getByText('Catalog white')).toBeTruthy();
   });
 
   test('resumes durable pre-spec previews after the workspace remounts', async () => {
@@ -487,7 +527,7 @@ describe('StudioPresentWorkspace', () => {
       error: null,
       status: 200,
     }));
-    await render(<StudioPresentWorkspace
+    await renderPresent(<StudioPresentWorkspace
       gateway={{
         resumePreSpecPresentations, createPreSpecPresentation: jest.fn(),
         acceptPreSpecPresentation: jest.fn(), discardPreSpecPresentation: jest.fn(),
