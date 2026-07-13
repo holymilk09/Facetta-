@@ -1,13 +1,17 @@
-export type StudioActionId =
-  | 'create'
-  | 'vary'
-  | 'refine'
-  | 'confirm'
-  | 'views'
-  | 'present'
-  | 'more'
-  | 'specifications'
-  | 'factory';
+export const STUDIO_ACTION_IDS = [
+  'create',
+  'vary',
+  'refine',
+  'confirm',
+  'views',
+  'present',
+  'more',
+  'specifications',
+  'factory',
+] as const;
+
+export type StudioActionId = typeof STUDIO_ACTION_IDS[number];
+export type StudioWorkspaceActionId = Exclude<StudioActionId, 'more'>;
 
 export type StudioLane = 'instant' | 'fast_visual' | 'trusted_structural';
 

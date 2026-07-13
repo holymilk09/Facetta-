@@ -2,9 +2,12 @@
 
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { getStudioAction, getStudioRailActions, getVisibleStudioActions } from './actions';
 import {
-  decidePreviewCandidate, PreviewCandidate, StudioJob, transitionStudioJob,
+  getStudioAction, getStudioRailActions, getVisibleStudioActions, STUDIO_ACTIONS,
+} from './actions';
+import {
+  decidePreviewCandidate, PreviewCandidate, STUDIO_ACTION_IDS, StudioJob,
+  transitionStudioJob,
 } from './contracts';
 import {
   STUDIO_CREATE_REFERENCE_CONTROLS, STUDIO_PRESENT_CONTROLS,
@@ -18,6 +21,12 @@ const emptyContext = {
   factoryEnabled: false,
   factoryEligible: false,
 };
+
+test('the action registry defines every Studio action exactly once', () => {
+  const registeredIds = STUDIO_ACTIONS.map((action) => action.id);
+  assert.equal(new Set(registeredIds).size, registeredIds.length);
+  assert.deepEqual(registeredIds, [...STUDIO_ACTION_IDS]);
+});
 
 test('only Create is visible without an active design', () => {
   assert.deepEqual(

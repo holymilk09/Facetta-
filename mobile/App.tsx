@@ -14,7 +14,9 @@ import {
 import { LoginScreen, PasswordRecoveryScreen } from './src/LoginScreen';
 import { OnboardingScreen } from './src/OnboardingScreen';
 import { getStudioAction, getStudioRailActions, getVisibleStudioActions } from './src/studio/actions';
-import { StudioActionContext, StudioActionId } from './src/studio/contracts';
+import {
+  StudioActionContext, StudioActionId, StudioWorkspaceActionId,
+} from './src/studio/contracts';
 import { StudioCollectionsWorkspace } from './src/studio/StudioCollectionsWorkspace';
 import { StudioCreateWorkspace } from './src/studio/StudioCreateWorkspace';
 import { StudioConfirmWorkspace } from './src/studio/StudioConfirmWorkspace';
@@ -42,6 +44,10 @@ type StudioView = 'home' | 'action';
 type Stage = 'onboarding' | 'tour' | 'booting' | 'login' | 'recovery' | 'app';
 type ProjectHydrationDestination = 'collections' | 'create' | 'refine' | 'views' | 'present'
   | 'specifications';
+
+function assertNeverStudioAction(actionId: never): never {
+  throw new Error(`Unhandled Studio action workspace: ${String(actionId)}`);
+}
 
 interface ProjectHydrationRequest {
   projectId: string;
@@ -96,7 +102,7 @@ export default function App() {
   const [stage, setStage] = useState<Stage>(() => authLifecycleEnabled ? 'booting' : 'onboarding');
   const [tab, setTab] = useState<Tab>('studio');
   const [studioView, setStudioView] = useState<StudioView>('home');
-  const [selectedActionId, setSelectedActionId] = useState<StudioActionId>('create');
+  const [selectedActionId, setSelectedActionId] = useState<StudioWorkspaceActionId>('create');
   const [showMoreActions, setShowMoreActions] = useState(false);
   const apiUrl = DEFAULT_API_URL;
   const [designer, setDesigner] = useState(session?.designerId ?? '');
@@ -654,14 +660,7 @@ export default function App() {
               deliverProtectedFile={deliverProtectedFile}
               onProjectUpdated={setStudioProject}
             />
-          ) : (
-            <View style={styles.workspaceNotice}>
-              <Text style={styles.workspaceNoticeTitle}>{getStudioAction(selectedActionId).label}</Text>
-              <Text style={styles.workspaceNoticeBody}>
-                This destination will use the exact active revision. It will appear here when it is ready to use.
-              </Text>
-            </View>
-          )}
+          ) : assertNeverStudioAction(selectedActionId)}
         </View>
       )}
       {tab === 'collections' && (
