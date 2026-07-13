@@ -242,6 +242,15 @@ export interface ProjectDetail {
   updated_at: string | null;
 }
 
+export interface StudioCapabilities {
+  factory_review: {
+    enabled: boolean;
+    scope: 'principal';
+  };
+  /** False until Facetta has durable workspace membership and billing. */
+  workspace_entitlements_available: false;
+}
+
 /**
  * Fork the exact active revision into an independent sibling variation.
  * The expected values make the branch fail safely if the project changes while

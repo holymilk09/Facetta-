@@ -16,6 +16,7 @@ import type {
   CreateVisualPreviewRequest,
   DrawingConfirmationResult,
   FactoryPackManifest,
+  StudioCapabilities,
   ImageQualityReport,
   JsonObject,
   MarketingPackRequest,
@@ -336,10 +337,9 @@ type GatewayTrustedClient = Pick<TrustedApiClient,
   | 'discardPreSpecPresentation'
   | 'confirmCreativeCandidateDesign'
   | 'promoteCreativeCandidate'
->;
+> & Partial<Pick<TrustedApiClient, 'getStudioCapabilities'>>;
 
 export interface StudioGatewayOptions {
-  factoryEnabled?: boolean;
   /** Persist designer-visible Activity. Disabled for isolated adapters/tests. */
   trackJobs?: boolean;
   now?: () => Date;
@@ -456,7 +456,6 @@ export function createStudioGateway(
   client: GatewayTrustedClient,
   options: StudioGatewayOptions = {},
 ) {
-  const factoryEnabled = options.factoryEnabled ?? false;
   const trackJobs = options.trackJobs ?? false;
   const now = options.now ?? (() => new Date());
   let confirmationReviewSequence = 0;
@@ -739,14 +738,24 @@ export function createStudioGateway(
   const getFactoryEligibility = async (
     projectId: string,
   ): Promise<StudioGatewayResult<StudioFactoryEligibility>> => {
-    if (!factoryEnabled) return {
+    const capabilities = client.getStudioCapabilities === undefined
+      ? gatewayError(
+        'FACTORY_ENTITLEMENT_UNAVAILABLE',
+        'Facetta could not verify Factory access.',
+        'unavailable', 0, true,
+      )
+      : mapResult<StudioCapabilities>(await client.getStudioCapabilities());
+    if (capabilities.error !== null) return {
+      data: null, error: capabilities.error, status: capabilities.status,
+    };
+    if (!capabilities.data.factory_review.enabled) return {
       data: {
         enabled: false,
         eligible: false,
         projectId,
         pinnedAssetId: null,
         designVersion: null,
-        blockers: ['Factory destination is not enabled for this workspace.'],
+        blockers: ['Factory review is not enabled for this account.'],
       },
       error: null,
       status: 200,
@@ -2514,17 +2523,18 @@ export function createStudioGateway(
         }) as Promise<ApiResult<BeautyRenderResult>>,
       );
       if (result.error !== null) return result;
-      const accepted = result.data.status === 'accepted' ? result.data : null;
-      const responseProjectId = result.data.status === 'accepted'
-        ? result.data.project.root_id : result.data.project_id;
+      if (result.data.status !== 'review_required') {
+        await failJob(started.data, 'PRESENTATION_REVIEW_BYPASSED', 0.95);
+        return gatewayError(
+          'PRESENTATION_REVIEW_BYPASSED',
+          'A Client presentation must remain temporary until the designer reviews it.',
+          'invalid_response',
+          result.status,
+        );
+      }
       if (
-        responseProjectId !== projectId
+        result.data.project_id !== projectId
         || result.data.source_asset_id !== request.expected_asset_id
-        || (accepted !== null
-          && (accepted.project.active_design_version !== request.expected_design_version
-            || (request.presentation_only === true
-              && (accepted.project.active_asset_id !== request.expected_asset_id
-                || !accepted.project.derived_assets.some((asset) => asset.asset_id === accepted.asset_id)))))
       ) {
         await failJob(started.data, 'INVALID_PRESENTATION_LINEAGE', 0.95);
         return gatewayError(
@@ -2534,27 +2544,21 @@ export function createStudioGateway(
           result.status,
         );
       }
-      if (result.data.status === 'review_required') {
-        const candidateId = result.data.warning_candidate.candidate_id;
-        const runId = result.data.warning_candidate.run_id;
-        if (candidateId === null || !registerPresentationCandidates(
-          started.data,
-          lineage,
-          [{ runId, candidateId, capability: 'CLIENT_BEAUTY_RENDER' }],
-        )) {
-          await failJob(started.data, 'INVALID_PRESENTATION_CANDIDATE', 0.95);
-          return gatewayError(
-            'INVALID_PRESENTATION_CANDIDATE',
-            'The presentation preview could not be bound to this saved revision.',
-            'invalid_response',
-            result.status,
-          );
-        }
+      const candidateId = result.data.warning_candidate.candidate_id;
+      const runId = result.data.warning_candidate.run_id;
+      if (candidateId === null || !registerPresentationCandidates(
+        started.data,
+        lineage,
+        [{ runId, candidateId, capability: 'CLIENT_BEAUTY_RENDER' }],
+      )) {
+        await failJob(started.data, 'INVALID_PRESENTATION_CANDIDATE', 0.95);
+        return gatewayError(
+          'INVALID_PRESENTATION_CANDIDATE',
+          'The presentation preview could not be bound to this saved revision.',
+          'invalid_response',
+          result.status,
+        );
       }
-      const activity = result.data.status === 'accepted'
-        ? await transitionJob(started.data, 'succeeded', 1, 1)
-        : { data: null, error: null, status: result.status } as const;
-      if (activity.error !== null) return activity;
       return result;
     },
 
@@ -2577,16 +2581,19 @@ export function createStudioGateway(
         }) as Promise<ApiResult<ProductPhotoResult>>,
       );
       if (result.error !== null) return result;
-      const accepted = result.data.status === 'accepted' ? result.data : null;
-      const responseProjectId = result.data.status === 'accepted'
-        ? result.data.project.root_id : result.data.project_id;
+      if (result.data.status !== 'review_required') {
+        await failJob(started.data, 'PRESENTATION_REVIEW_BYPASSED', 0.95);
+        return gatewayError(
+          'PRESENTATION_REVIEW_BYPASSED',
+          'A Client presentation must remain temporary until the designer reviews it.',
+          'invalid_response',
+          result.status,
+        );
+      }
       if (
-        responseProjectId !== projectId
+        result.data.project_id !== projectId
         || result.data.presentation.source_asset_id !== request.expected_asset_id
         || result.data.presentation.design_version !== request.expected_design_version
-        || (accepted !== null && request.presentation_only === true
-          && (accepted.project.active_asset_id !== request.expected_asset_id
-            || !accepted.project.derived_assets.some((asset) => asset.asset_id === accepted.asset_id)))
       ) {
         await failJob(started.data, 'INVALID_PRESENTATION_LINEAGE', 0.95);
         return gatewayError(
@@ -2596,27 +2603,21 @@ export function createStudioGateway(
           result.status,
         );
       }
-      if (result.data.status === 'review_required') {
-        const candidateId = result.data.warning_candidate.candidate_id;
-        const runId = result.data.warning_candidate.run_id;
-        if (candidateId === null || !registerPresentationCandidates(
-          started.data,
-          lineage,
-          [{ runId, candidateId, capability: 'CLIENT_PRODUCT_PHOTO' }],
-        )) {
-          await failJob(started.data, 'INVALID_PRESENTATION_CANDIDATE', 0.95);
-          return gatewayError(
-            'INVALID_PRESENTATION_CANDIDATE',
-            'The presentation preview could not be bound to this saved revision.',
-            'invalid_response',
-            result.status,
-          );
-        }
+      const candidateId = result.data.warning_candidate.candidate_id;
+      const runId = result.data.warning_candidate.run_id;
+      if (candidateId === null || !registerPresentationCandidates(
+        started.data,
+        lineage,
+        [{ runId, candidateId, capability: 'CLIENT_PRODUCT_PHOTO' }],
+      )) {
+        await failJob(started.data, 'INVALID_PRESENTATION_CANDIDATE', 0.95);
+        return gatewayError(
+          'INVALID_PRESENTATION_CANDIDATE',
+          'The presentation preview could not be bound to this saved revision.',
+          'invalid_response',
+          result.status,
+        );
       }
-      const activity = result.data.status === 'accepted'
-        ? await transitionJob(started.data, 'succeeded', 1, 1)
-        : { data: null, error: null, status: result.status } as const;
-      if (activity.error !== null) return activity;
       return result;
     },
 
@@ -2801,6 +2802,19 @@ export function createStudioGateway(
     },
 
     getFactoryEligibility,
+
+    async getFactoryEntitlement(): Promise<StudioGatewayResult<boolean>> {
+      if (client.getStudioCapabilities === undefined) return gatewayError(
+        'FACTORY_ENTITLEMENT_UNAVAILABLE',
+        'Facetta could not verify Factory access.',
+        'unavailable', 0, true,
+      );
+      const result = await client.getStudioCapabilities();
+      if (result.error !== null) return {
+        data: null, error: mapError(result.error), status: result.status,
+      };
+      return { data: result.data.factory_review.enabled, error: null, status: result.status };
+    },
 
     async getEligibleFactoryPack(projectId: string): Promise<StudioGatewayResult<FactoryPackManifest>> {
       const eligibility = await getFactoryEligibility(projectId);

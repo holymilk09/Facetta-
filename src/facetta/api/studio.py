@@ -112,6 +112,7 @@ from facetta.trusted_revision import (
     accept_warning_revision,
     discard_warning_revision,
 )
+from facetta.entitlements import has_factory_entitlement, require_factory_entitlement
 from facetta.warning_candidates import (
     MarkupWarningCandidate,
     WarningCandidateUnavailable,
@@ -127,6 +128,30 @@ router = APIRouter(
 )
 DbSession = Annotated[Session, Depends(get_db)]
 PrincipalDep = Annotated[AuthenticatedPrincipal, Depends(require_principal_boundary)]
+
+
+class StudioFactoryCapability(BaseModel):
+    enabled: bool
+    scope: Literal["principal"] = "principal"
+
+
+class StudioCapabilities(BaseModel):
+    factory_review: StudioFactoryCapability
+    workspace_entitlements_available: Literal[False] = False
+
+
+@router.get("/capabilities", response_model=StudioCapabilities)
+def get_studio_capabilities(principal: PrincipalDep) -> StudioCapabilities:
+    """Return server-owned capabilities for the authenticated Studio actor.
+
+    There is no workspace membership model yet, so this response says so and
+    exposes only an exact principal-scoped Factory capability.
+    """
+    return StudioCapabilities(
+        factory_review=StudioFactoryCapability(
+            enabled=has_factory_entitlement(principal),
+        ),
+    )
 
 
 class SaveVariationRequest(BaseModel):
@@ -503,6 +528,8 @@ def create_studio_job(
 ):
     principal_actor(principal, request.owner)
     action = studio_job_action_definition(request.action_id)
+    if request.action_id == "factory":
+        require_factory_entitlement(principal)
     if request.lane != action.lane:
         raise HTTPException(
             status_code=422,

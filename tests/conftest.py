@@ -7,6 +7,9 @@ import pytest
 # into required bearer authentication.
 os.environ.setdefault("FACETTA_AUTH_MODE", "test")
 os.environ.setdefault("FACETTA_ENV", "test")
+# Existing API fixtures intentionally use the unbound local test principal.
+# Factory remains fail-closed unless this test-only escape hatch is explicit.
+os.environ.setdefault("FACETTA_FACTORY_ALLOW_LOCAL_TEST", "true")
 
 from facetta.image_identity import spec_visual_hash
 from facetta.spec import Spec

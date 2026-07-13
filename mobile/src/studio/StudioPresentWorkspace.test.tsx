@@ -119,6 +119,7 @@ describe('StudioPresentWorkspace', () => {
         createBeautyPresentation: jest.fn(), createProductPresentation,
         createMarketingPresentation: jest.fn(), acceptPresentationCandidate,
         discardPresentationCandidate: jest.fn(),
+        assetImageUrl: jest.fn(() => 'https://test/source.png'),
       } as any}
       lineage={lineage}
       createdBy="designer"
@@ -128,8 +129,8 @@ describe('StudioPresentWorkspace', () => {
     expect(screen.getByText('Confirmed revision 4')).toBeTruthy();
     expect(screen.queryByText(/asset_4/)).toBeNull();
     expect(screen.getByText('1 requested output · estimated 18 credits')).toBeTruthy();
-    expect(screen.getByText(/passing Client output is saved and charged when generation finishes/i)).toBeTruthy();
-    expect(screen.getByText(/If review is required, it is charged only when you choose Save/i)).toBeTruthy();
+    expect(screen.getByText(/Generation creates review previews only/i)).toBeTruthy();
+    expect(screen.getByText(/charged only for the outputs you explicitly save/i)).toBeTruthy();
     fireEvent.press(screen.getByText('Product photo'));
     const generate = await screen.findByText('Create client product photo');
     await act(async () => { fireEvent.press(generate); });
@@ -139,6 +140,8 @@ describe('StudioPresentWorkspace', () => {
       preset: 'catalog_white', framing: 'square', presentation_only: true,
     }));
     expect(await screen.findByText('Not saved · choose what to keep')).toBeTruthy();
+    expect(screen.getByText('Exact source · unchanged')).toBeTruthy();
+    expect(screen.getByText('Candidate · review before saving')).toBeTruthy();
     expect(screen.queryByText(/canonical|quality|QA/i)).toBeNull();
     await act(async () => { fireEvent.press(screen.getByText('Save presentation')); });
     await waitFor(() => expect(acceptPresentationCandidate).toHaveBeenCalledWith({
@@ -185,6 +188,35 @@ describe('StudioPresentWorkspace', () => {
     expect(screen.queryByText('Beauty render needs review')).toBeNull();
   });
 
+  test('fails closed instead of displaying a generation-time auto-saved Client output', async () => {
+    const onProjectUpdated = jest.fn();
+    await render(<StudioPresentWorkspace
+      gateway={{
+        createBeautyPresentation: jest.fn(async () => ({
+          data: {
+            status: 'accepted', asset_id: 'unexpected_saved', source_asset_id: 'asset_4',
+            image_run_id: 'run_unexpected', qa: { verdict: 'pass' },
+            project: { root_id: 'project_1', assets: [], derived_assets: [] },
+          },
+          error: null,
+          status: 201,
+        })),
+        createProductPresentation: jest.fn(), createMarketingPresentation: jest.fn(),
+        acceptPresentationCandidate: jest.fn(), discardPresentationCandidate: jest.fn(),
+      } as any}
+      lineage={lineage}
+      createdBy="designer"
+      onProjectUpdated={onProjectUpdated}
+    />);
+
+    await act(async () => { fireEvent.press(screen.getByText('Create client beauty render')); });
+    expect(await screen.findByText(
+      'Facetta could not open a safe review preview. Nothing was saved or charged.',
+    )).toBeTruthy();
+    expect(screen.queryByText('Saved presentation')).toBeNull();
+    expect(onProjectUpdated).not.toHaveBeenCalled();
+  });
+
   test('prices marketing by requested outputs and reports partial QA failures honestly', async () => {
     const createMarketingPresentation = jest.fn(async () => ({
       data: {
@@ -218,8 +250,8 @@ describe('StudioPresentWorkspace', () => {
 
     fireEvent.press(screen.getByText('Marketing'));
     expect(await screen.findByText('2 requested outputs · estimated 36 credits')).toBeTruthy();
-    expect(screen.getByText('You are charged only for the requested outputs you save. Discarded and unusable results cost 0 credits.')).toBeTruthy();
-    expect(screen.queryByText(/passing Client output is saved and charged/i)).toBeNull();
+    expect(screen.getByText(/Generation creates review previews only/i)).toBeTruthy();
+    expect(screen.queryByText(/saved and charged when generation finishes/i)).toBeNull();
     expect(screen.queryByText(/failed quality checks/i)).toBeNull();
     await act(async () => { fireEvent.press(screen.getByText('Generate 2 presentation previews')); });
 
@@ -346,7 +378,7 @@ describe('StudioPresentWorkspace', () => {
     />);
 
     await act(async () => { fireEvent.press(screen.getByText('Marketing')); });
-    expect(screen.getByText('You are charged only for the requested outputs you save. Discarded and unusable results cost 0 credits.')).toBeTruthy();
+    expect(screen.getByText(/charged only for the outputs you explicitly save/i)).toBeTruthy();
     const generate = await screen.findByText('Generate 2 presentation previews');
     await act(async () => { fireEvent.press(generate); });
     await waitFor(() => expect(calls).toHaveLength(2));

@@ -385,7 +385,7 @@ test('discarded view delegates atomic zero-charge Activity completion to the dur
   assert.equal(jobs.cancellations.length, 0);
 });
 
-test('Present distinguishes accepted, review-only, and failed generation outcomes', async () => {
+test('Present rejects generation-time acceptance and keeps review-only outputs uncharged', async () => {
   const jobs = tracking();
   const boundJobIds: string[] = [];
   const acceptedProject = project(1);
@@ -426,12 +426,13 @@ test('Present distinguishes accepted, review-only, and failed generation outcome
     },
   } as any, { trackJobs: true });
 
-  await gateway.createBeautyPresentation('project_1', {
+  const bypassed = await gateway.createBeautyPresentation('project_1', {
     created_by: 'designer_1', expected_asset_id: 'candidate_1',
     expected_design_version: 1, presentation_only: true,
   });
-  assert.equal(jobs.transitions.at(-1)?.request.status, 'succeeded');
-  assert.equal(jobs.transitions.at(-1)?.request.completed_outputs, 1);
+  assert.equal(bypassed.error?.code, 'PRESENTATION_REVIEW_BYPASSED');
+  assert.equal(jobs.transitions.at(-1)?.request.status, 'failed');
+  assert.equal(jobs.transitions.some((call) => call.request.completed_outputs), false);
 
   await gateway.createProductPresentation('project_1', {
     created_by: 'designer_1', expected_asset_id: 'candidate_1', expected_design_version: 1,

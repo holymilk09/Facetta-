@@ -90,7 +90,7 @@ export interface StudioPresentWorkspaceProps {
     | 'resumePreSpecPresentations'
     | 'resumeExactPresentations'
     | 'acceptPreSpecPresentation'
-    | 'discardPreSpecPresentation'>;
+    | 'discardPreSpecPresentation'> & Partial<Pick<StudioGateway, 'assetImageUrl'>>;
   lineage: ExactStudioLineage | StudioVisualLineage | null;
   createdBy: string;
   onProjectUpdated?: (project: ProjectDetail) => void;
@@ -219,8 +219,6 @@ export function StudioPresentWorkspace({
 
   const outputCount = destination === 'marketing' ? marketingPresets.length : 1;
   const creditEstimate = outputCount * PRESENT_CREDITS;
-  const passingClientAutoSaves = destination === 'client' && lineage !== null
-    && 'sourceDesignVersion' in lineage;
   const requestLabel = destination === 'marketing'
     ? `Generate ${outputCount} presentation preview${outputCount === 1 ? '' : 's'}`
     : clientFormat === 'beauty' ? 'Create client beauty render' : 'Create client product photo';
@@ -228,6 +226,8 @@ export function StudioPresentWorkspace({
     : 'sourceDesignVersion' in lineage
       ? `Confirmed revision ${lineage.sourceDesignVersion}`
       : 'Selected visual direction · specification not confirmed', [lineage]);
+  const sourceImageUrl = lineage === null || typeof gateway.assetImageUrl !== 'function'
+    ? null : gateway.assetImageUrl(lineage.sourceAssetId);
 
   useEffect(() => {
     setUiLineageKey(lineageKey);
@@ -393,11 +393,12 @@ export function StudioPresentWorkspace({
       if (lineageKeyRef.current !== requestedLineageKey) return;
       setBusy(false);
       if (result.error !== null) return setError(designerPresentationError(result.error));
+      if (result.data.status !== 'review_required') {
+        setError('Facetta could not open a safe review preview. Nothing was saved or charged.');
+        return;
+      }
       setCards([beautyCard(result.data)]);
-      if (result.data.status === 'accepted') onProjectUpdated?.(result.data.project);
-      setInfo(result.data.status === 'accepted'
-        ? 'Presentation saved. Your active design revision was not replaced.'
-        : 'This result needs review and has not been saved as a presentation.');
+      setInfo('Preview ready for review. Nothing was saved or charged.');
       return;
     }
     if (destination === 'client') {
@@ -413,11 +414,12 @@ export function StudioPresentWorkspace({
       if (lineageKeyRef.current !== requestedLineageKey) return;
       setBusy(false);
       if (result.error !== null) return setError(designerPresentationError(result.error));
+      if (result.data.status !== 'review_required') {
+        setError('Facetta could not open a safe review preview. Nothing was saved or charged.');
+        return;
+      }
       setCards([productCard(result.data)]);
-      if (result.data.status === 'accepted') onProjectUpdated?.(result.data.project);
-      setInfo(result.data.status === 'accepted'
-        ? 'Presentation saved. Your active design revision was not replaced.'
-        : 'This result needs review and has not been saved as a presentation.');
+      setInfo('Preview ready for review. Nothing was saved or charged.');
       return;
     }
     const result = await gateway.createMarketingPresentation(lineage.projectId, {
@@ -499,9 +501,7 @@ export function StudioPresentWorkspace({
 
       <View style={styles.costCard}>
         <Text style={styles.costTitle}>{outputCount} requested output{outputCount === 1 ? '' : 's'} · estimated {creditEstimate} credits</Text>
-        <Text style={styles.costCopy}>{passingClientAutoSaves
-          ? 'A passing Client output is saved and charged when generation finishes. If review is required, it is charged only when you choose Save. Discarded and unusable results cost 0 credits.'
-          : 'You are charged only for the requested outputs you save. Discarded and unusable results cost 0 credits.'}</Text>
+        <Text style={styles.costCopy}>Generation creates review previews only. You are charged only for the outputs you explicitly save. Discarded, stale, and unusable results cost 0 credits.</Text>
       </View>
       {visibleError !== null && <Notice kind="error" text={visibleError} />}
       <Button title={busy ? 'Generating and checking…' : requestLabel}
@@ -512,7 +512,16 @@ export function StudioPresentWorkspace({
       {visibleCards.length > 0 && <View style={styles.results}>
         <Text style={styles.sectionTitle}>Results</Text>
         {visibleCards.map((card) => <View key={card.id} style={styles.resultCard}>
-          {card.imageUrl !== null && <Image accessibilityLabel={card.title} source={{ uri: card.imageUrl }} imageRequestHeaders={imageRequestHeaders} style={styles.preview} />}
+          <View style={styles.comparisonRow}>
+            {sourceImageUrl !== null && <View style={styles.comparisonPanel}>
+              <Text style={styles.comparisonLabel}>Exact source · unchanged</Text>
+              <Image accessibilityLabel="Exact source revision" source={{ uri: sourceImageUrl }} imageRequestHeaders={imageRequestHeaders} style={styles.preview} />
+            </View>}
+            {card.imageUrl !== null && <View style={styles.comparisonPanel}>
+              <Text style={styles.comparisonLabel}>Candidate · review before saving</Text>
+              <Image accessibilityLabel={card.title} source={{ uri: card.imageUrl }} imageRequestHeaders={imageRequestHeaders} style={styles.preview} />
+            </View>}
+          </View>
           <View style={styles.resultCopy}>
             <Text style={styles.resultTitle}>{card.title}</Text>
             <Text style={styles.cardCopy}>{card.detail}</Text>
@@ -562,6 +571,9 @@ const styles = StyleSheet.create({
   costCopy: { color: theme.faint, fontSize: 12, lineHeight: 18, marginTop: 4 },
   results: { gap: 10 },
   resultCard: { flexDirection: 'row', flexWrap: 'wrap', gap: 12, borderWidth: 1, borderColor: theme.line, borderRadius: radius.md, padding: 10, backgroundColor: theme.card },
+  comparisonRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
+  comparisonPanel: { gap: 5 },
+  comparisonLabel: { color: theme.faint, fontSize: 10, fontWeight: '800', textTransform: 'uppercase' },
   preview: { width: 190, aspectRatio: 1, borderRadius: radius.sm, backgroundColor: theme.line },
   resultCopy: { flex: 1, minWidth: 180, justifyContent: 'center' },
   resultTitle: { color: theme.ink, fontSize: 15, fontWeight: '800', marginBottom: 4 },

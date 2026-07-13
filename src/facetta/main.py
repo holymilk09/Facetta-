@@ -125,6 +125,7 @@ PRODUCTION_PROJECT_OPERATIONS: frozenset[RouteOperation] = frozenset({
 })
 
 PRODUCTION_STUDIO_OPERATIONS: frozenset[RouteOperation] = frozenset({
+    ("GET", "/studio/capabilities"),
     ("POST", "/studio/jobs"),
     ("GET", "/studio/jobs"),
     ("GET", "/studio/jobs/{job_id}"),

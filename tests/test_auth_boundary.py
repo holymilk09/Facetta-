@@ -265,6 +265,59 @@ def test_studio_routes_share_the_same_required_principal_boundary(auth_client):
         assert response.json()["detail"]["code"] == "authentication_required"
 
 
+def test_factory_capability_is_server_sourced_exact_principal_and_fail_closed(
+    auth_client, monkeypatch,
+):
+    client, _Session = auth_client
+    owner = {"Authorization": f"Bearer {OWNER_TOKEN}"}
+    other = {"Authorization": f"Bearer {OTHER_TOKEN}"}
+    monkeypatch.delenv("FACETTA_FACTORY_ENTITLED_PRINCIPALS_JSON", raising=False)
+
+    disabled = client.get("/studio/capabilities", headers=owner)
+    assert disabled.status_code == 200
+    assert disabled.json() == {
+        "factory_review": {"enabled": False, "scope": "principal"},
+        "workspace_entitlements_available": False,
+    }
+
+    monkeypatch.setenv(
+        "FACETTA_FACTORY_ENTITLED_PRINCIPALS_JSON",
+        json.dumps(["usr_owner"]),
+    )
+    assert client.get("/studio/capabilities", headers=owner).json()[
+        "factory_review"
+    ]["enabled"] is True
+    assert client.get("/studio/capabilities", headers=other).json()[
+        "factory_review"
+    ]["enabled"] is False
+
+
+def test_factory_pack_routes_enforce_entitlement_before_pack_lookup(
+    auth_client, monkeypatch,
+):
+    client, _Session = auth_client
+    owner = {"Authorization": f"Bearer {OWNER_TOKEN}"}
+    monkeypatch.setenv("FACETTA_FACTORY_ENTITLED_PRINCIPALS_JSON", "[]")
+
+    response = client.get(
+        "/projects/ast_auth_root/factory-pack", headers=owner,
+    )
+    assert response.status_code == 403
+    assert response.json()["detail"]["code"] == "factory_entitlement_required"
+
+    job = client.post("/studio/jobs", headers=owner, json={
+        "owner": "usr_owner",
+        "action_id": "factory",
+        "lane": "trusted_structural",
+        "active_design_id": "ast_auth_root",
+        "source_revision_id": "ast_auth_root",
+        "requested_outputs": 1,
+        "credits_per_output": 28,
+    })
+    assert job.status_code == 403
+    assert job.json()["detail"]["code"] == "factory_entitlement_required"
+
+
 def test_owner_and_created_by_fields_cannot_spoof_principal(auth_client):
     client, _Session = auth_client
     response = client.post(

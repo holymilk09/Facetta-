@@ -28,6 +28,7 @@ EXPECTED_PRODUCTION_OPERATIONS = (
         "/projects/{project_id}/factory-pack.zip",
         "/studio/jobs",
         "/studio/jobs/{job_id}",
+        "/studio/capabilities",
         "/studio/projects/{project_root_id}/visual-candidates",
         "/studio/projects/{project_root_id}/markup-candidates",
         "/studio/markup-candidates/{run_id}/{candidate_id}/image",

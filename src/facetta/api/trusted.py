@@ -48,6 +48,7 @@ from facetta.warning_candidates import (
     discard_markup_warning_candidate,
     WarningCandidateUnavailable, get_markup_warning_candidate,
 )
+from facetta.entitlements import require_factory_entitlement
 
 router = APIRouter(
     tags=["trusted-workflow"],
@@ -568,7 +569,10 @@ def _pack_or_error(db: Session, project_id: str):
     "/projects/{project_id}/factory-pack",
     response_model=FactoryPackManifest,
 )
-def get_factory_pack_manifest(project_id: str, db: DbSession):
+def get_factory_pack_manifest(
+    project_id: str, db: DbSession, principal: PrincipalDep,
+):
+    require_factory_entitlement(principal)
     pack = _pack_or_error(db, project_id)
     if isinstance(pack, JSONResponse):
         return pack
@@ -599,6 +603,7 @@ def prepare_factory_pack(
     exists and exactly one accepted output was charged. Failed or stale work
     is terminal with zero charge.
     """
+    require_factory_entitlement(principal)
     principal_actor(principal, request.owner)
     try:
         job = revalidate_factory_job_for_execution(
@@ -654,7 +659,10 @@ def prepare_factory_pack(
 
 
 @router.get("/projects/{project_id}/factory-pack.zip")
-def download_factory_pack(project_id: str, db: DbSession):
+def download_factory_pack(
+    project_id: str, db: DbSession, principal: PrincipalDep,
+):
+    require_factory_entitlement(principal)
     pack = _pack_or_error(db, project_id)
     if isinstance(pack, JSONResponse):
         return pack

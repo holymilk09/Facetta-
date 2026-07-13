@@ -101,6 +101,7 @@ export default function App() {
   const apiUrl = DEFAULT_API_URL;
   const [designer, setDesigner] = useState(session?.designerId ?? '');
   const [showUtilityMenu, setShowUtilityMenu] = useState(false);
+  const [factoryEntitled, setFactoryEntitled] = useState(false);
   const [studioProject, setStudioProject] = useState<ProjectDetail | null>(null);
   const [selectedCreativeAssetId, setSelectedCreativeAssetId] = useState<string | null>(null);
   const [createReview, setCreateReview] = useState<CreateReviewState | null>(null);
@@ -118,6 +119,7 @@ export default function App() {
     setSelectedCreativeAssetId(null);
     setCreateReview(null);
     setActivityReview(null);
+    setFactoryEntitled(false);
     setStage('login');
   }, []);
   const expireAuthenticatedSession = useCallback(() => {
@@ -166,10 +168,19 @@ export default function App() {
         requireAccessToken: true,
         onAuthenticationFailure: expireAuthenticatedSession,
       },
-      { trackJobs: true, factoryEnabled: true },
+      { trackJobs: true },
     ),
     [apiUrl, expireAuthenticatedSession, session],
   );
+  useEffect(() => {
+    let active = true;
+    setFactoryEntitled(false);
+    if (sessionAccessToken(session) === null) return () => { active = false; };
+    void studioGateway.getFactoryEntitlement().then((result) => {
+      if (active) setFactoryEntitled(result.error === null && result.data === true);
+    });
+    return () => { active = false; };
+  }, [session, studioGateway]);
   const { width } = useWindowDimensions();
   const authenticatedImageHeaders = useMemo(() => {
     const token = sessionAccessToken(session);
@@ -211,9 +222,10 @@ export default function App() {
     // Readiness appears only for an exact specification. The actual Factory
     // destination remains hidden until the backend project says this exact
     // revision is eligible; job creation rechecks that decision server-side.
-    factoryEnabled: exactStudioLineage !== null,
+    factoryEnabled: factoryEntitled,
     factoryEligible: studioProject?.factory_ready === true,
-  }), [activeDesignId, confirmStudioLineage, exactStudioLineage, selectedCreativeAssetId, studioProject]);
+  }), [activeDesignId, confirmStudioLineage, exactStudioLineage, factoryEntitled,
+    selectedCreativeAssetId, studioProject]);
   const hasActiveRevision = Boolean(actionContext.activeDesignId && actionContext.activeRevisionId);
   const studioActions = getStudioRailActions(actionContext);
   const moreActions = getVisibleStudioActions(actionContext, 'more');

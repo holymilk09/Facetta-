@@ -30,6 +30,14 @@ jest.mock('../trusted/client', () => ({
   createTrustedApiClient: () => ({
     getProject: mockGetProject,
     getStudioJob: mockGetStudioJob,
+    getStudioCapabilities: async () => ({
+      data: {
+        factory_review: { enabled: true, scope: 'principal' },
+        workspace_entitlements_available: false,
+      },
+      error: null,
+      status: 200,
+    }),
   }),
 }));
 

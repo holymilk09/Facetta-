@@ -130,6 +130,7 @@ import type {
   StudioJobRecord,
   StudioJobStatus,
   StudioProjectHistory,
+  StudioCapabilities,
   StudioViewCandidateAcceptResult,
   StudioViewCandidateDecisionRequest,
   StudioViewCandidateDiscardResult,
@@ -182,6 +183,20 @@ const number = (value: unknown): number | null =>
 
 const boolean = (value: unknown, fallback = false): boolean =>
   typeof value === 'boolean' ? value : fallback;
+
+const decodeStudioCapabilities: Decoder<StudioCapabilities> = (value) => {
+  if (!isRecord(value) || !isRecord(value.factory_review)) return null;
+  if (value.factory_review.scope !== 'principal'
+    || typeof value.factory_review.enabled !== 'boolean'
+    || value.workspace_entitlements_available !== false) return null;
+  return {
+    factory_review: {
+      enabled: value.factory_review.enabled,
+      scope: 'principal',
+    },
+    workspace_entitlements_available: false,
+  };
+};
 
 const stringList = (value: unknown): string[] =>
   Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
@@ -4528,6 +4543,10 @@ export function createTrustedApiClient(options: TrustedApiClientOptions) {
 
     getProject(projectId: string) {
       return projectCall(`/projects/${encodeURIComponent(projectId)}`);
+    },
+
+    getStudioCapabilities() {
+      return call('/studio/capabilities', decodeStudioCapabilities);
     },
 
     async reviseStudioFacts(

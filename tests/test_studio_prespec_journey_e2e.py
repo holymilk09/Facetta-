@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import io
 
 import pytest
@@ -390,6 +391,29 @@ def test_ten_mixed_source_projects_reopen_branch_compare_and_restore(
         lambda: reference_provider
     )
 
+    def visual_preview_provider(
+        source: bytes,
+        instruction: str,
+        scope: str,
+        mask: bytes | None,
+        variant: int,
+    ):
+        assert instruction == "Warm the metal while preserving every contour"
+        assert scope == "appearance"
+        assert mask is None
+        image = _png((105 + variant, 125 + variant, 145 + variant))
+        plan = build_image_plan(
+            ImageOperation.REFERENCE_RENDER,
+            instruction,
+            source_image=source,
+            variant=variant,
+        )
+        return _accepted_result(plan, image, source=source)
+
+    app.dependency_overrides[get_studio_visual_preview_generator] = (
+        lambda: visual_preview_provider
+    )
+
     def role_reference(role: str, color: tuple[int, int, int]):
         return {
             "role": role,
@@ -526,24 +550,64 @@ def test_ten_mixed_source_projects_reopen_branch_compare_and_restore(
         assert selected.status_code == 200, selected.text
         assert selected.json()["active_asset_id"] == selected_id
 
+        preview_response = client.post(
+            f"/studio/projects/{project_id}/visual-previews",
+            json={
+                "created_by": owner,
+                "expected_active_asset_id": selected_id,
+                "instruction": "Warm the metal while preserving every contour",
+                "scope": "appearance",
+                "variant": index + 1,
+            },
+        )
+        assert preview_response.status_code == 201, preview_response.text
+        preview = preview_response.json()
+        candidate_id = preview["candidate"]["candidate_id"]
+        applied_response = client.post(
+            f"/studio/image-runs/{preview['image_run_id']}/visual-candidates/"
+            f"{candidate_id}/accept",
+            json={
+                "created_by": owner,
+                "expected_active_asset_id": selected_id,
+            },
+        )
+        assert applied_response.status_code == 201, applied_response.text
+        applied = applied_response.json()
+        applied_id = applied["new_asset_id"]
+        applied_image = _stored_image(Session, applied_id)
+        immutable_images[applied_id] = applied_image
+        assert applied_id != selected_id
+
         # Save/reopen and history comparison use persisted API reads, not the
         # creation response retained by this test.
         reopened = client.get(f"/projects/{project_id}")
         assert reopened.status_code == 200, reopened.text
-        assert reopened.json()["active_asset_id"] == selected_id
+        assert reopened.json()["active_asset_id"] == applied_id
         before = client.get(f"/studio/projects/{project_id}/history")
         assert before.status_code == 200, before.text
         before_history = before.json()
-        assert before_history["active_asset_id"] == selected_id
+        assert before_history["active_asset_id"] == applied_id
         assert [item["asset_id"] for item in before_history["revisions"]] == [
-            selected_id,
+            selected_id, applied_id,
         ]
+        source_revision, applied_revision = before_history["revisions"]
+        assert applied_revision["parent_asset_id"] == source_revision["asset_id"]
+        assert applied_revision["action"] == "edit"
+        assert applied_revision["raw_intent"]["image_run_id"] == (
+            preview["image_run_id"]
+        )
+        assert applied_revision["interpretation"]["source_sha256"] == (
+            hashlib.sha256(selected_image).hexdigest()
+        )
+        assert applied_revision["interpretation"]["output_sha256"] == (
+            hashlib.sha256(applied_image).hexdigest()
+        )
 
         branch_response = client.post(
             f"/studio/projects/{project_id}/variations",
             json={
                 "created_by": owner,
-                "expected_active_asset_id": selected_id,
+                "expected_active_asset_id": applied_id,
                 "expected_design_version": None,
                 "label": f"Direction {index + 1}B",
             },
@@ -553,11 +617,11 @@ def test_ten_mixed_source_projects_reopen_branch_compare_and_restore(
         branch_project = branch["project"]
         branch_project_ids.add(branch_project["root_id"])
         assert branch["source_project_id"] == project_id
-        assert branch["source_asset_id"] == selected_id
+        assert branch["source_asset_id"] == applied_id
         assert branch_project["factory_ready"] is False
         assert _stored_image(
             Session, branch_project["active_asset_id"],
-        ) == selected_image
+        ) == applied_image
 
         # An unselected sibling is a candidate direction, not a historical
         # revision of this Variation, so Restore must fail closed.
@@ -565,18 +629,42 @@ def test_ten_mixed_source_projects_reopen_branch_compare_and_restore(
             f"/studio/projects/{project_id}/revisions/{first_id}/restore",
             json={
                 "created_by": owner,
-                "expected_active_asset_id": selected_id,
+                "expected_active_asset_id": applied_id,
                 "expected_design_version": None,
             },
         )
         assert candidate_restore.status_code == 422, candidate_restore.text
         assert candidate_restore.json()["code"] == "restore_source_not_revision"
 
+        restore_response = client.post(
+            f"/studio/projects/{project_id}/revisions/{selected_id}/restore",
+            json={
+                "created_by": owner,
+                "expected_active_asset_id": applied_id,
+                "expected_design_version": None,
+            },
+        )
+        assert restore_response.status_code == 201, restore_response.text
+        restored = restore_response.json()
+        restored_id = restored["new_asset_id"]
+        restored_image = _stored_image(Session, restored_id)
+        immutable_images[restored_id] = restored_image
+        assert restored_id not in {selected_id, applied_id}
+        assert restored["restored_from_asset_id"] == selected_id
+        assert restored_image == selected_image
+
         after = client.get(f"/studio/projects/{project_id}/history").json()
-        assert after["active_asset_id"] == selected_id
-        assert [item["asset_id"] for item in after["revisions"]] == [selected_id]
+        assert after["active_asset_id"] == restored_id
+        assert [item["asset_id"] for item in after["revisions"]] == [
+            selected_id, applied_id, restored_id,
+        ]
+        restored_revision = after["revisions"][-1]
+        assert restored_revision["action"] == "restore"
+        assert restored_revision["parent_asset_id"] == applied_id
+        assert restored_revision["restored_from_asset_id"] == selected_id
         assert _stored_image(Session, first_id) == first_image
         assert _stored_image(Session, selected_id) == selected_image
+        assert _stored_image(Session, applied_id) == applied_image
 
     assert len(original_project_ids) == 10
     assert len(branch_project_ids) == 10

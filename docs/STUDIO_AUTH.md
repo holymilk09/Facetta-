@@ -47,6 +47,23 @@ than ten minutes. Only ES256 and RS256 are accepted; shared-secret HS256 tokens
 are not supported. `opaque`, `local`, and `test` are explicit non-production
 compatibility modes. Production startup rejects them.
 
+## Optional Factory entitlement
+
+Factory is not unlocked by a client flag or by project readiness alone. The
+authenticated shell reads `GET /studio/capabilities`; the API enables
+`factory_review` only when the exact subject appears in the server-owned JSON
+allowlist `FACETTA_FACTORY_ENTITLED_PRINCIPALS_JSON`.
+
+Missing or malformed configuration fails closed. Factory job creation, pack
+reads, pack preparation, and ZIP download enforce the same capability on the
+server. This is a principal-scoped beta seam, not a workspace plan: Facetta has
+no durable workspace membership, subscription, or administrator-role model.
+The response therefore reports `workspace_entitlements_available: false` and
+`scope: principal`. `FACETTA_FACTORY_ALLOW_LOCAL_TEST` exists only for the
+unbound legacy test harness under `FACETTA_ENV=test`; it is not a deployment
+switch. Replace this allowlist with transactional workspace entitlements before
+selling team access or delegating Factory permission.
+
 The production application surface omits legacy Designs, Library, Users,
 Saved Stones, and share-administration routers; it also disables OpenAPI/Swagger
 and wildcard CORS. Only the eight specification adapters consumed by Studio

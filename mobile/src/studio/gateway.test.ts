@@ -89,6 +89,10 @@ function fakeClient(overrides: Partial<GatewayClient> = {}): GatewayClient {
     recordImageRunFeedback: unsupported,
     getProject: unsupported,
     getFactoryPack: unsupported,
+    getStudioCapabilities: async () => ok({
+      factory_review: { enabled: false, scope: 'principal' as const },
+      workspace_entitlements_available: false as const,
+    }),
     ...overrides,
   } as GatewayClient;
 }
@@ -415,7 +419,7 @@ test('rejects a Create variation response rebound to a different candidate', asy
   assert.equal(result.error?.code, 'INVALID_VARIATION_LINEAGE');
 });
 
-test('Factory remains disabled until explicitly enabled and backend-eligible', async () => {
+test('Factory remains disabled until server-entitled and backend-eligible', async () => {
   let projectReads = 0;
   const disabled = createStudioGateway(fakeClient({
     getProject: async () => {
@@ -432,8 +436,12 @@ test('Factory remains disabled until explicitly enabled and backend-eligible', a
   eligibleProject.factory_ready = true;
   eligibleProject.pinned_revision = { ...asset('asset_1', 1), pinned: true };
   const enabled = createStudioGateway(fakeClient({
+    getStudioCapabilities: async () => ok({
+      factory_review: { enabled: true, scope: 'principal' as const },
+      workspace_entitlements_available: false as const,
+    }),
     getProject: async () => ok(eligibleProject),
-  }), { factoryEnabled: true });
+  }));
   const enabledResult = await enabled.getFactoryEligibility('project_1');
   assert.equal(enabledResult.data?.eligible, true);
   assert.equal(enabledResult.data?.pinnedAssetId, 'asset_1');
