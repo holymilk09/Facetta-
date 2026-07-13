@@ -312,8 +312,8 @@ type GatewayTrustedClient = Pick<TrustedApiClient,
   | 'acceptStudioViewCandidate'
   | 'discardStudioViewCandidate'
   | 'createLineArt'
-  | 'createBeautyRender'
-  | 'createProductPhoto'
+  | 'createStudioBeautyRender'
+  | 'createStudioProductPhoto'
   | 'createMarketingPack'
   | 'recordImageRunFeedback'
   | 'getProject'
@@ -2731,8 +2731,9 @@ export function createStudioGateway(
       if (started.error !== null) return started;
       const result = await callTracked(
         started.data,
-        () => client.createBeautyRender(projectId, {
+        () => client.createStudioBeautyRender(projectId, {
           ...request,
+          presentation_only: true,
           ...(started.data === null ? {} : { studio_job_id: started.data.jobId }),
         }) as Promise<ApiResult<BeautyRenderResult>>,
       );
@@ -2790,8 +2791,9 @@ export function createStudioGateway(
       if (started.error !== null) return started;
       const result = await callTracked(
         started.data,
-        () => client.createProductPhoto(projectId, {
+        () => client.createStudioProductPhoto(projectId, {
           ...request,
+          presentation_only: true,
           ...(started.data === null ? {} : { studio_job_id: started.data.jobId }),
         }) as Promise<ApiResult<ProductPhotoResult>>,
       );

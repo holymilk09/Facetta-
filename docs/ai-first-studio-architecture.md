@@ -362,6 +362,12 @@ The primary application surface is now one outcome-first shell:
 `PreviewCandidate` decisions form the typed UI boundary. Provider selection,
 raw prompts, base64 payloads, and QA internals stay below that boundary.
 
+The active presentation gateway uses Studio-only beauty-render and
+product-photo client methods. These methods always address the accounted
+`/studio/projects/...` review routes and cannot fall back to deprecated
+project-mutation routes. Hidden compatibility clients remain separate until
+the legacy deletion gates pass.
+
 `src/facetta/studio_action_manifest.json` is the orchestration authority for
 job-backed actions. Its `execution_mode` distinguishes atomic transactions,
 candidate-review jobs, and terminal jobs; `review_authority` identifies whether
@@ -379,6 +385,13 @@ expired candidate from remaining indefinitely visible as Ready to review,
 clears its temporary bytes, preserves accepted-subset billing, and remains
 idempotent. Create is outside this cleanup path because selected Create
 directions are durable history rather than expiring preview decisions.
+
+Restore is also an append-only authority transition. When the selected
+historical raster already has a validated immutable component map, the exact
+map is rebound to the byte-identical restored child in the same transaction as
+the new image, specification version, active pointer, and revision record. A
+missing map remains missing; invalid map or raster evidence aborts the entire
+restore. Restore never reruns vision or invents component geometry.
 
 ## State and authority
 

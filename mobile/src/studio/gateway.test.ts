@@ -89,8 +89,8 @@ function fakeClient(overrides: Partial<GatewayClient> = {}): GatewayClient {
     applyMarkup: unsupported,
     discardWarningCandidate: unsupported,
     createLineArt: unsupported,
-    createBeautyRender: unsupported,
-    createProductPhoto: unsupported,
+    createStudioBeautyRender: unsupported,
+    createStudioProductPhoto: unsupported,
     createMarketingPack: unsupported,
     acceptWarningCandidate: unsupported,
     recordImageRunFeedback: unsupported,
@@ -747,9 +747,10 @@ test('Confirm removes expired opaque drafts before later access', async () => {
   assert.equal(stale.error?.code, 'CONFIRM_REVIEW_EXPIRED');
 });
 
-test('Create, Views, and Present forward typed inputs without model or provider controls', async () => {
+test('Create, Views, and Present use canonical typed seams without legacy fallbacks', async () => {
   const calls: string[] = [];
-  const gateway = createStudioGateway(fakeClient({
+  let legacyPresentationCalls = 0;
+  const client = fakeClient({
     createProjectFromPrompt: async (request) => {
       calls.push(`prompt:${request.prompt}`);
       return ok(project(), 201);
@@ -758,19 +759,30 @@ test('Create, Views, and Present forward typed inputs without model or provider 
       calls.push(`view:${request.expected_asset_id}:${request.expected_design_version}:${request.view}`);
       return unavailable();
     },
-    createBeautyRender: async (_projectId, request) => {
-      calls.push(`beauty:${request.expected_asset_id}:${request.expected_design_version}`);
+    createStudioBeautyRender: async (_projectId, request) => {
+      calls.push(`beauty:${request.expected_asset_id}:${request.expected_design_version}:${request.presentation_only}`);
       return unavailable();
     },
-    createProductPhoto: async (_projectId, request) => {
-      calls.push(`product:${request.expected_asset_id}:${request.expected_design_version}:${request.preset}`);
+    createStudioProductPhoto: async (_projectId, request) => {
+      calls.push(`product:${request.expected_asset_id}:${request.expected_design_version}:${request.preset}:${request.presentation_only}`);
       return unavailable();
     },
     createMarketingPack: async (_projectId, request) => {
       calls.push(`marketing:${request.expected_asset_id}:${request.expected_design_version}:${request.presets.length}`);
       return unavailable();
     },
-  }));
+  });
+  Object.assign(client, {
+    createBeautyRender: async () => {
+      legacyPresentationCalls += 1;
+      return unavailable();
+    },
+    createProductPhoto: async () => {
+      legacyPresentationCalls += 1;
+      return unavailable();
+    },
+  });
+  const gateway = createStudioGateway(client);
   assert.equal('createFromBrief' in gateway, false);
   assert.equal('selectCreativeDirection' in gateway, false);
   await gateway.createFromPrompt({ prompt: 'Emerald collar', owner: 'designer_1', title: 'Collar' });
@@ -792,10 +804,11 @@ test('Create, Views, and Present forward typed inputs without model or provider 
   assert.deepEqual(calls, [
     'prompt:Emerald collar',
     'view:asset_1:1:three_quarter',
-    'beauty:asset_1:1',
-    'product:asset_1:1:catalog_white',
+    'beauty:asset_1:1:true',
+    'product:asset_1:1:catalog_white:true',
     'marketing:asset_1:1:2',
   ]);
+  assert.equal(legacyPresentationCalls, 0);
 });
 
 test('Create forwards prompt advisory references through the typed gateway seam', async () => {

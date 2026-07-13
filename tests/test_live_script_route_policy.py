@@ -104,3 +104,31 @@ def test_legacy_creative_selection_is_not_an_active_studio_boundary() -> None:
     assert "completeCreativeDirectionReview" in workspace
     assert "gateway.selectCreativeDirection" not in acceptance
     assert "trustedClient.selectCreativeCandidate" not in acceptance
+
+
+def test_active_studio_presentations_cannot_fall_back_to_legacy_project_routes() -> None:
+    client = (ROOT / "mobile/src/trusted/client.ts").read_text()
+    gateway = (ROOT / "mobile/src/studio/gateway.ts").read_text()
+    compatibility_workflow = (
+        ROOT / "mobile/src/trusted/useTrustedWorkflow.ts"
+    ).read_text()
+
+    beauty_method = client.split(
+        "    createStudioBeautyRender(", 1,
+    )[1].split("async createProductPhoto", 1)[0]
+    product_method = client.split(
+        "    createStudioProductPhoto(", 1,
+    )[1].split("async createMarketingPack", 1)[0]
+
+    assert "/studio/projects/" in beauty_method
+    assert "`/projects/" not in beauty_method
+    assert "/studio/projects/" in product_method
+    assert "`/projects/" not in product_method
+    assert "client.createStudioBeautyRender(" in gateway
+    assert "client.createStudioProductPhoto(" in gateway
+    assert "client.createBeautyRender(" not in gateway
+    assert "client.createProductPhoto(" not in gateway
+
+    # Compatibility remains isolated until the founder and history gates pass.
+    assert "api.createBeautyRender(" in compatibility_workflow
+    assert "api.createProductPhoto(" in compatibility_workflow

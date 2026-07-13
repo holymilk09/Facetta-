@@ -470,14 +470,14 @@ test('Present rejects generation-time acceptance and keeps review-only outputs u
   acceptedProject.derived_assets = [asset('presentation_1', 'BEAUTY_RENDER')];
   const gateway = createStudioGateway({
     ...jobs.client,
-    createBeautyRender: async (_projectId: string, request: any) => {
+    createStudioBeautyRender: async (_projectId: string, request: any) => {
       boundJobIds.push(request.studio_job_id);
       return ok({
         status: 'accepted', project: acceptedProject, source_asset_id: 'candidate_1',
         asset_id: 'presentation_1', image_run_id: 'image_run_beauty', qa: quality,
       }, 201);
     },
-    createProductPhoto: async (_projectId: string, request: any) => {
+    createStudioProductPhoto: async (_projectId: string, request: any) => {
       boundJobIds.push(request.studio_job_id);
       return ok({
         status: 'review_required', project_id: 'project_1', source_asset_id: 'candidate_1',
@@ -707,7 +707,7 @@ test('presentation decisions fail closed if the selected revision changes before
   stale.active_design_version = 2;
   const gateway = createStudioGateway({
     ...jobs.client,
-    createProductPhoto: async () => ok({
+    createStudioProductPhoto: async () => ok({
       status: 'review_required', project_id: 'project_1', image_run_id: 'run_product',
       quality_report: quality, routing: {},
       presentation: { preset: 'catalog_white', framing: 'square',
@@ -738,7 +738,7 @@ test('discarding the only exact presentation delegates atomic zero-charge settle
   const current = project(1);
   const gateway = createStudioGateway({
     ...jobs.client,
-    createProductPhoto: async () => ok({
+    createStudioProductPhoto: async () => ok({
       status: 'review_required', project_id: 'project_1', image_run_id: 'run_product',
       quality_report: quality, routing: {},
       presentation: { preset: 'catalog_white', framing: 'square',
@@ -773,7 +773,7 @@ test('exact presentation decision errors leave the durable reviewing job untouch
   const current = project(1);
   const gateway = createStudioGateway({
     ...jobs.client,
-    createProductPhoto: async () => ok({
+    createStudioProductPhoto: async () => ok({
       status: 'review_required', project_id: 'project_1', image_run_id: 'run_product_error',
       quality_report: quality, routing: {}, presentation: {
         preset: 'catalog_white', framing: 'square', source_asset_id: 'candidate_1', design_version: 1,

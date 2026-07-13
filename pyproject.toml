@@ -1,7 +1,7 @@
 [project]
 name = "facetta"
 version = "0.1.0"
-description = "Design-to-manufacturing platform for the jewelry industry: structured specs in, factory-ready outputs out."
+description = "AI jewelry-design Studio with review-first generation, immutable revision history, and optional factory-review preparation."
 requires-python = ">=3.11"
 dependencies = [
     "anthropic>=0.115.1",

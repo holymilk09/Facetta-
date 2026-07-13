@@ -437,6 +437,8 @@ test('accepts role-labeled advisory guidance after a sentence without requiring 
   await fireEvent.press(screen.getByLabelText('Add Material & style reference'));
   expect(onRequestReference).toHaveBeenCalledWith('material_style');
   expect(screen.getByText('2 directions · 1 supporting reference')).toBeTruthy();
+  expect(screen.queryByText('Master geometry required')).toBeNull();
+  expect(screen.queryByText('Add a design idea')).toBeNull();
   expect(screen.getByText('Create 2 directions').parent?.props.accessibilityState).toEqual({ disabled: true });
 
   await loadReferencePreview('Material & style reference preview');
@@ -473,6 +475,11 @@ test('rejects an advisory-only setup until the designer supplies a sentence or m
 
   await loadReferencePreview('Material & style reference preview');
   expect(screen.getByText('2 directions · 1 supporting reference')).toBeTruthy();
+  expect(screen.getByText('Add a design idea')).toBeTruthy();
+  expect(screen.getByText(
+    'Supporting references can guide material, construction, or brand direction after you add a design sentence or one visual source. They do not define the jewelry on their own.',
+  )).toBeTruthy();
+  expect(screen.queryByText('Master geometry required')).toBeNull();
   expect(screen.getByText('Create 2 directions').parent?.props.accessibilityState).toEqual({
     disabled: true,
   });

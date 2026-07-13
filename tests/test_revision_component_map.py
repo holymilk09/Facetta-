@@ -19,8 +19,9 @@ from facetta.db import (
     DesignVersion,
     ImageAsset,
     ImmutableRevisionComponentMapError,
-    RevisionComponentMapRecord,
     Project,
+    ProjectRevisionRecord,
+    RevisionComponentMapRecord,
     get_db,
 )
 from facetta.design_form import NormalizedPoint, NormalizedPolygon
@@ -43,7 +44,11 @@ from facetta.revision_component_map_store import (
     add_revision_component_map,
     load_revision_component_map,
 )
-from facetta.studio_history import fork_project_variation
+from facetta.studio_history import (
+    StudioHistoryError,
+    fork_project_variation,
+    restore_project_revision,
+)
 
 from conftest import HALO_SPEC
 
@@ -196,6 +201,215 @@ def _mapped_asset(client: TestClient, Session) -> tuple[str, str, bytes]:
         )
         db.commit()
     return asset_id, design_id, image
+
+
+def _restorable_spec_project(
+    client: TestClient,
+    Session,
+    *,
+    mapped: bool,
+) -> tuple[str, str, str, bytes]:
+    """Create a spec-bound historical source and a newer active revision."""
+
+    design = client.post(
+        "/designs", json={"created_by": "usr_restore", "spec": HALO_SPEC}
+    )
+    assert design.status_code == 201, design.text
+    design_id = design.json()["design_id"]
+    rendered = client.post(
+        "/assets/render",
+        json={
+            "piece_description": "a mapped halo restore source",
+            "design_id": design_id,
+            "created_by": "usr_restore",
+        },
+    )
+    assert rendered.status_code == 201, rendered.text
+    source_id = rendered.json()["asset_id"]
+    active_id = "ast_restore_current"
+    with Session() as db:
+        source = db.get(ImageAsset, source_id)
+        project = db.get(Project, source_id)
+        first_version = db.get(DesignVersion, (design_id, 1))
+        assert source is not None and project is not None and first_version is not None
+        source_image = bytes(source.image)
+        if mapped:
+            add_revision_component_map(
+                db,
+                _map(source_id, source_image),
+                image_bytes=source_image,
+                parent_asset_id=None,
+            )
+        second_spec = dict(first_version.spec)
+        second_spec.update({
+            "design_id": design_id,
+            "version": 2,
+            "created_by": project.owner,
+        })
+        db.add_all([
+            DesignVersion(
+                design_id=design_id,
+                version=2,
+                spec=second_spec,
+                created_by=project.owner,
+            ),
+            ImageAsset(
+                id=active_id,
+                root_id=source_id,
+                parent_asset_id=source_id,
+                design_id=None,
+                design_version=2,
+                capability="LOCALIZED_EDIT",
+                instruction="newer active revision",
+                image=_png((160, 170, 180)),
+                media_type="image/png",
+                created_by=project.owner,
+            ),
+        ])
+        db.commit()
+        owner = project.owner
+    return source_id, active_id, owner, source_image
+
+
+def test_restore_carries_exact_component_map_and_remains_targetable(
+    component_client,
+):
+    client, Session = component_client
+    source_id, active_id, owner, source_image = _restorable_spec_project(
+        client, Session, mapped=True,
+    )
+
+    with Session() as db:
+        restored = restore_project_revision(
+            db,
+            project_root_id=source_id,
+            restore_asset_id=source_id,
+            expected_active_asset_id=active_id,
+            expected_design_version=2,
+            created_by=owner,
+        )
+        restored_map = load_revision_component_map(db, restored.asset_id)
+        record = db.scalar(select(ProjectRevisionRecord).where(
+            ProjectRevisionRecord.asset_id == restored.asset_id
+        ))
+        assert restored.design_version == 3
+        assert restored_map is not None and record is not None
+        assert restored_map.asset_sha256 == hashlib.sha256(source_image).hexdigest()
+        assert restored_map.mapper_contract == "facetta.byte-identical-map-copy.v1"
+        assert {item.component_id for item in restored_map.components} == {
+            item.component_id for item in _map(source_id, source_image).components
+        }
+        assert record.interpretation["component_map_status"] == (
+            "copied_exact_raster"
+        )
+        assert record.interpretation["component_map_source_asset_id"] == source_id
+        assert record.interpretation["component_map_sha256"] == (
+            db.get(RevisionComponentMapRecord, restored.asset_id).map_sha256
+        )
+
+    targeting = client.get(
+        f"/assets/{restored.asset_id}/studio-component-targeting"
+    )
+    assert targeting.status_code == 200, targeting.text
+    payload = targeting.json()
+    assert payload["component_map"]["state"] == "ready"
+    paths = {item["component_path"]: item for item in payload["catalog_paths"]}
+    assert paths["metal.color"]["status"] == "ready"
+
+
+def test_restore_corrupt_component_map_rolls_back_everything(component_client):
+    client, Session = component_client
+    source_id, active_id, owner, _ = _restorable_spec_project(
+        client, Session, mapped=True,
+    )
+    with Session() as db:
+        db.execute(
+            RevisionComponentMapRecord.__table__.update()
+            .where(RevisionComponentMapRecord.asset_id == source_id)
+            .values(map_sha256="0" * 64)
+        )
+        db.commit()
+        before = {
+            "assets": db.scalar(select(func.count()).select_from(ImageAsset)),
+            "versions": db.scalar(select(func.count()).select_from(DesignVersion)),
+            "revisions": db.scalar(
+                select(func.count()).select_from(ProjectRevisionRecord)
+            ),
+            "maps": db.scalar(
+                select(func.count()).select_from(RevisionComponentMapRecord)
+            ),
+        }
+
+        with pytest.raises(StudioHistoryError) as captured:
+            restore_project_revision(
+                db,
+                project_root_id=source_id,
+                restore_asset_id=source_id,
+                expected_active_asset_id=active_id,
+                expected_design_version=2,
+                created_by=owner,
+            )
+
+        assert captured.value.code == "component_map_record_hash_mismatch"
+        assert captured.value.status_code == 422
+        after = {
+            "assets": db.scalar(select(func.count()).select_from(ImageAsset)),
+            "versions": db.scalar(select(func.count()).select_from(DesignVersion)),
+            "revisions": db.scalar(
+                select(func.count()).select_from(ProjectRevisionRecord)
+            ),
+            "maps": db.scalar(
+                select(func.count()).select_from(RevisionComponentMapRecord)
+            ),
+        }
+        assert after == before
+        assert db.get(DesignVersion, (db.get(ImageAsset, source_id).design_id, 3)) is None
+        project = db.get(Project, source_id)
+        assert project is not None and project.selected_candidate_asset_id is None
+
+
+def test_restore_honestly_unmapped_revision_remains_explicitly_unmapped(
+    component_client,
+):
+    client, Session = component_client
+    source_id, active_id, owner, _ = _restorable_spec_project(
+        client, Session, mapped=False,
+    )
+
+    with Session() as db:
+        restored = restore_project_revision(
+            db,
+            project_root_id=source_id,
+            restore_asset_id=source_id,
+            expected_active_asset_id=active_id,
+            expected_design_version=2,
+            created_by=owner,
+        )
+        assert load_revision_component_map(db, restored.asset_id) is None
+        record = db.scalar(select(ProjectRevisionRecord).where(
+            ProjectRevisionRecord.asset_id == restored.asset_id
+        ))
+        assert record is not None
+        assert record.interpretation["component_map_status"] == "unmapped"
+        assert record.interpretation["component_map_source_asset_id"] is None
+        assert record.interpretation["component_map_sha256"] is None
+
+    targeting = client.get(
+        f"/assets/{restored.asset_id}/studio-component-targeting"
+    )
+    assert targeting.status_code == 200, targeting.text
+    payload = targeting.json()
+    assert payload["component_map"] == {
+        "state": "unmapped",
+        "scope": "ring_v1",
+        "map_sha256": None,
+        "mapper_contract": None,
+        "raster_width": None,
+        "raster_height": None,
+    }
+    paths = {item["component_path"]: item for item in payload["catalog_paths"]}
+    assert paths["metal.color"]["status"] == "unmapped"
+    assert paths["metal.color"]["reason_code"] == "component_map_not_found"
 
 
 def test_ring_inventory_is_strict_and_mask_is_bound_to_component():

@@ -560,11 +560,13 @@ export function StudioCreateWorkspace({
         </View>
       )}
 
-      {masterReference === null && secondaryReferences.length > 0 && (
+      {masterReference === null
+        && secondaryReferences.length > 0
+        && sentence.trim().length === 0 && (
         <View style={styles.limitNotice}>
-          <Text style={styles.limitTitle}>Master geometry required</Text>
+          <Text style={styles.limitTitle}>Add a design idea</Text>
           <Text style={styles.limitBody}>
-            Add the source design whose geometry should be preserved before using {secondaryReferences.map((item) => labelForRole(item.role)).join(', ')}.
+            Supporting references can guide material, construction, or brand direction after you add a design sentence or one visual source. They do not define the jewelry on their own.
           </Text>
         </View>
       )}

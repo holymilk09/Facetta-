@@ -5,6 +5,41 @@ Read `CLAUDE.md` (constitution — binding), `README.md` (endpoints/layout),
 `docs/DATA_WANTED.md` (open research asks). This file is the delta: what is
 DONE beyond the original TASKS.md build order, and what is next.
 
+## 2026-07-14 restore authority and canonical presentation checkpoint
+
+Studio Restore now carries an existing immutable component map across the
+byte-identical appended revision. A mapped ring therefore remains available
+for component-aware Refine after Restore instead of becoming inexplicably
+unmapped. The copy revalidates the historical map hash and raster binding,
+records the exact source and copied-map hash in the new immutable revision,
+and commits the image, specification version, active pointer, map, and revision
+record together. Corrupt evidence fails with no partial revision or pointer
+change; a genuinely unmapped source stays explicitly unmapped and never gains
+invented component authority.
+
+The active Studio presentation gateway no longer shares the hidden trusted
+workflow's conditional beauty-render and product-photo methods. It calls
+explicit Studio-only client methods that always use the accounted
+`/studio/projects/...` review routes and force presentation-only behavior.
+Deprecated project-render methods remain isolated for compatibility until the
+founder, OpenAPI, and historical-readability deletion gates pass. A source
+policy test prevents the active gateway from regaining those fallbacks.
+
+Create copy now matches its actual authority contract: sentence-led creation
+with material/style, construction/detail, or brand-direction references no
+longer displays a contradictory master-geometry warning. Supporting references
+without either a design sentence or a visual source remain disabled and explain
+what is missing without implying that an advisory image can define the jewelry.
+
+Local validation is green: 1,768 backend tests; all 36 mobile Jest suites (279
+tests); 77 Studio contract tests; TypeScript; Ruff; Python byte-compilation;
+Expo web export; diff hygiene; and the complete ten-project production
+TypeScript-client -> HTTP -> FastAPI acceptance run. That run again used no
+Factory path, and failed QA created zero canonical projects, revisions,
+accepted outputs, or charges. The external 144-image run, independent
+designer/GIA review, founder approval, authority enrollment, and live staging
+evidence remain unmet external-beta gates.
+
 ## 2026-07-14 sentence-led references and bound release authority checkpoint
 
 Studio Create now accepts up to three unique supporting images—material/style,

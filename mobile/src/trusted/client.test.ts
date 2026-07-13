@@ -1194,7 +1194,7 @@ describe('trusted API decoders', () => {
     } as unknown as Response));
     const api = createTrustedApiClient({ baseUrl: 'https://facetta.test', fetcher });
 
-    const result = await api.createBeautyRender('project imported', {
+    const result = await api.createStudioBeautyRender('project imported', {
       created_by: 'usr_designer',
       expected_asset_id: 'asset_active_primary',
       source_asset_id: 'asset_colored_line_art',
@@ -1261,7 +1261,7 @@ describe('trusted API decoders', () => {
     } as unknown as Response));
     const api = createTrustedApiClient({ baseUrl: 'https://facetta.test', fetcher });
 
-    const result = await api.createProductPhoto('project imported', {
+    const result = await api.createStudioProductPhoto('project imported', {
       created_by: 'usr_designer',
       expected_asset_id: 'asset_active_primary',
       expected_design_version: 4,
@@ -1288,6 +1288,40 @@ describe('trusted API decoders', () => {
       studio_job_id: 'job_present_product',
     });
     expect(result.data?.status).toBe('review_required');
+  });
+
+  test('canonical Studio presentation methods fail closed on Studio routes', async () => {
+    const fetcher = jest.fn(async (
+      _input: RequestInfo | URL,
+      _init?: RequestInit,
+    ) => ({
+      ok: false,
+      status: 422,
+      text: async () => JSON.stringify({ detail: 'Studio accounting is required.' }),
+    } as unknown as Response));
+    const api = createTrustedApiClient({ baseUrl: 'https://facetta.test', fetcher });
+
+    await api.createStudioBeautyRender('project legacy shape', {
+      created_by: 'usr_designer',
+      expected_asset_id: 'asset_active_primary',
+      expected_design_version: 4,
+    });
+    await api.createStudioProductPhoto('project legacy shape', {
+      created_by: 'usr_designer',
+      expected_asset_id: 'asset_active_primary',
+      expected_design_version: 4,
+      preset: 'catalog_white',
+    });
+
+    expect(fetcher.mock.calls.map(([url]) => url)).toEqual([
+      'https://facetta.test/studio/projects/project%20legacy%20shape/beauty-render',
+      'https://facetta.test/studio/projects/project%20legacy%20shape/product-photo',
+    ]);
+    expect(fetcher.mock.calls.map(([, init]) => (
+      JSON.parse(String(init?.body)) as { presentation_only?: boolean }
+    ).presentation_only)).toEqual([true, true]);
+    expect(fetcher.mock.calls.every(([url]) => !String(url).includes('/projects/project%20legacy%20shape/render')))
+      .toBe(true);
   });
 
   test('posts an isolated normalized source region to the line-art route', async () => {

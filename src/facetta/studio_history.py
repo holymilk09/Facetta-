@@ -1220,37 +1220,75 @@ def restore_project_revision(
         created_by=created_by,
         created_at=now,
     )
-    record = ProjectRevisionRecord(
-        id=new_id("prr"),
-        asset_id=restored_asset.id,
-        action="restore",
-        raw_intent={
-            "kind": "restore_revision",
-            "selected_asset_id": selected.id,
-        },
-        interpretation={
-            "operation": "append_historical_copy",
-            "history_deleted": False,
-            "visual_bytes_restored_exactly": True,
-            "specification_restored": design_id is not None,
-            "source_sha256": selected_sha256,
-            "output_sha256": selected_sha256,
-            "parent_sha256": active_sha256,
-        },
-        change_summary=summary,
-        restored_from_asset_id=selected.id,
-        created_by=created_by,
-        created_at=now,
-    )
     project.updated_at = now
     if design_id is None:
         # Pre-spec projects use the selected-candidate pointer as their exact
         # active visual. A restore must advance that pointer to the appended
         # child or reads would silently snap back to the old candidate.
         project.selected_candidate_asset_id = restored_asset.id
-    db.add_all([restored_asset, record])
+    db.add(restored_asset)
     try:
+        # Restore is a byte-identical copy of ``selected``. Preserve its exact
+        # component-isolation evidence just as Save as Variation does, rather
+        # than making a previously targetable revision silently unmapped.
+        # The helper intentionally returns ``None`` for an honestly unmapped
+        # source and validates both the stored map hash and raster binding when
+        # evidence exists. Any inconsistency therefore aborts the image, spec,
+        # history, active-pointer, and map writes together.
+        db.flush()
+        copied_component_map = copy_revision_component_map_for_identical_raster(
+            db,
+            source_asset_id=selected.id,
+            child_asset_id=restored_asset.id,
+            child_image_bytes=bytes(restored_asset.image),
+        )
+        # Revision records are immutable. Create the record only after map
+        # validation/copying so its final provenance is written exactly once.
+        db.add(
+            ProjectRevisionRecord(
+                id=new_id("prr"),
+                asset_id=restored_asset.id,
+                action="restore",
+                raw_intent={
+                    "kind": "restore_revision",
+                    "selected_asset_id": selected.id,
+                },
+                interpretation={
+                    "operation": "append_historical_copy",
+                    "history_deleted": False,
+                    "visual_bytes_restored_exactly": True,
+                    "specification_restored": design_id is not None,
+                    "source_sha256": selected_sha256,
+                    "output_sha256": selected_sha256,
+                    "parent_sha256": active_sha256,
+                    "component_map_status": (
+                        "copied_exact_raster"
+                        if copied_component_map is not None
+                        else "unmapped"
+                    ),
+                    "component_map_source_asset_id": (
+                        selected.id if copied_component_map is not None else None
+                    ),
+                    "component_map_sha256": (
+                        copied_component_map.map_sha256
+                        if copied_component_map is not None
+                        else None
+                    ),
+                },
+                change_summary=summary,
+                restored_from_asset_id=selected.id,
+                created_by=created_by,
+                created_at=now,
+            )
+        )
         db.commit()
+    except ComponentMapError as exc:
+        db.rollback()
+        raise StudioHistoryError(
+            exc.code,
+            exc.detail,
+            status_code=422,
+        ) from exc
     except IntegrityError as exc:
         db.rollback()
         raise StudioHistoryError(

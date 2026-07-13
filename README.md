@@ -155,7 +155,14 @@ reject a physically impossible stone with the computed expected carat and depth.
 `"trade": "Royal Blue"` to anything unknown to get back the list of valid sapphire trade
 terms.
 
-## Other endpoints
+## API inventory (development and compatibility)
+
+This table is an engineering inventory, not the designer navigation model.
+Production exposes only the authenticated Studio allowlist defined in
+`src/facetta/main.py`; deprecated Builder, stateless-spec, direct-apply,
+design-admin, and share routes remain available only in test/development while
+historical callers migrate. Do not build a new Studio workflow against a
+deprecated compatibility route.
 
 | Endpoint | Purpose |
 |---|---|
@@ -372,4 +379,4 @@ closed if any recorded fact remains pending confirmation.
 | `src/facetta/photo_spec.py` | Grok Vision reference-photo read → deterministic draft spec |
 | `src/facetta/api/` | Routers including canonical projects, persisted markup/approval, image-run evidence, and factory handoff |
 | `src/facetta/main.py` | FastAPI app wiring |
-| `mobile/` | Expo (React Native) app: builder, designs, share views |
+| `mobile/` | Expo (React Native) Studio: Create, Vary, Refine, Views, Present, Collections, Activity, Learn, and eligibility-gated Factory review |

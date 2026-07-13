@@ -3554,6 +3554,102 @@ export function createTrustedApiClient(options: TrustedApiClientOptions) {
     return { ...result, data: projectWithUrls(result.data, baseUrl) };
   };
 
+  const beautyRenderCall = async (
+    path: string,
+    request: BeautyRenderRequest,
+  ): Promise<ApiResult<BeautyRenderResult>> => {
+    const result = await jsonCall(
+      path,
+      'POST',
+      {
+        created_by: request.created_by,
+        expected_asset_id: request.expected_asset_id,
+        source_asset_id: request.source_asset_id ?? request.expected_asset_id,
+        expected_design_version: request.expected_design_version,
+        instruction: request.instruction
+          ?? 'Create a beauty render faithful to the current designer-confirmed specification and preserve the imported design identity.',
+        variant: request.variant ?? 0,
+        ...(request.presentation_only === undefined
+          ? {}
+          : { presentation_only: request.presentation_only }),
+        ...(request.studio_job_id === undefined ? {} : { studio_job_id: request.studio_job_id }),
+      },
+      decodeBeautyRenderResult,
+    );
+    if (result.error !== null) return result;
+    if (result.data.status === 'review_required') {
+      const preview = result.data.warning_candidate.preview_url;
+      return {
+        ...result,
+        data: {
+          ...result.data,
+          warning_candidate: {
+            ...result.data.warning_candidate,
+            preview_url: preview === null
+              || /^https?:\/\//i.test(preview) || preview.startsWith('data:')
+              ? preview
+              : `${baseUrl}${preview.startsWith('/') ? '' : '/'}${preview}`,
+          },
+        },
+      };
+    }
+    return {
+      ...result,
+      data: {
+        ...result.data,
+        project: projectWithUrls(result.data.project, baseUrl),
+      },
+    };
+  };
+
+  const productPhotoCall = async (
+    path: string,
+    request: ProductPhotoRequest,
+  ): Promise<ApiResult<ProductPhotoResult>> => {
+    const result = await jsonCall(
+      path,
+      'POST',
+      {
+        created_by: request.created_by,
+        expected_asset_id: request.expected_asset_id,
+        expected_design_version: request.expected_design_version,
+        preset: request.preset,
+        framing: request.framing ?? 'portrait',
+        custom_instruction: request.custom_instruction ?? '',
+        variant: request.variant ?? 0,
+        ...(request.presentation_only === undefined
+          ? {}
+          : { presentation_only: request.presentation_only }),
+        ...(request.studio_job_id === undefined ? {} : { studio_job_id: request.studio_job_id }),
+      },
+      decodeProductPhotoResult,
+    );
+    if (result.error !== null) return result;
+    if (result.data.status === 'accepted') {
+      return {
+        ...result,
+        data: {
+          ...result.data,
+          project: projectWithUrls(result.data.project, baseUrl),
+        },
+      };
+    }
+    const preview = result.data.warning_candidate.preview_url;
+    return {
+      ...result,
+      data: {
+        ...result.data,
+        warning_candidate: {
+          ...result.data.warning_candidate,
+          preview_url: preview === null
+            || /^https?:\/\//i.test(preview) || preview.startsWith('data:')
+            ? preview
+            : `${baseUrl}${preview.startsWith('/') ? '' : '/'}${preview}`,
+        },
+      },
+    };
+  };
+
   return {
     previewDraftFactorySheet(spec: JsonObject) {
       return svgCall('/specs/sheet.svg', spec);
@@ -4883,102 +4979,44 @@ export function createTrustedApiClient(options: TrustedApiClientOptions) {
       };
     },
 
+    /** @deprecated Hidden trusted-workflow compatibility; Studio uses createStudioBeautyRender. */
     async createBeautyRender(projectId: string, request: BeautyRenderRequest) {
       const studioPresentation = request.presentation_only === true
         && request.studio_job_id !== undefined;
-      const result = await jsonCall(
+      return beautyRenderCall(
         studioPresentation
           ? `/studio/projects/${encodeURIComponent(projectId)}/beauty-render`
           : `/projects/${encodeURIComponent(projectId)}/render`,
-        'POST',
-        {
-          created_by: request.created_by,
-          expected_asset_id: request.expected_asset_id,
-          source_asset_id: request.source_asset_id ?? request.expected_asset_id,
-          expected_design_version: request.expected_design_version,
-          instruction: request.instruction
-            ?? 'Create a beauty render faithful to the current designer-confirmed specification and preserve the imported design identity.',
-          variant: request.variant ?? 0,
-          ...(request.presentation_only === undefined
-            ? {}
-            : { presentation_only: request.presentation_only }),
-          ...(request.studio_job_id === undefined ? {} : { studio_job_id: request.studio_job_id }),
-        },
-        decodeBeautyRenderResult,
+        request,
       );
-      if (result.error !== null) return result;
-      if (result.data.status === 'review_required') {
-        const preview = result.data.warning_candidate.preview_url;
-        return {
-          ...result,
-          data: {
-            ...result.data,
-            warning_candidate: {
-              ...result.data.warning_candidate,
-              preview_url: preview === null
-                || /^https?:\/\//i.test(preview) || preview.startsWith('data:')
-                ? preview
-                : `${baseUrl}${preview.startsWith('/') ? '' : '/'}${preview}`,
-            },
-          },
-        };
-      }
-      return {
-        ...result,
-        data: {
-          ...result.data,
-          project: projectWithUrls(result.data.project, baseUrl),
-        },
-      };
     },
 
+    /** Canonical review-only Studio presentation route; never falls back to project mutation. */
+    createStudioBeautyRender(projectId: string, request: BeautyRenderRequest) {
+      return beautyRenderCall(
+        `/studio/projects/${encodeURIComponent(projectId)}/beauty-render`,
+        { ...request, presentation_only: true },
+      );
+    },
+
+    /** @deprecated Hidden trusted-workflow compatibility; Studio uses createStudioProductPhoto. */
     async createProductPhoto(projectId: string, request: ProductPhotoRequest) {
       const studioPresentation = request.presentation_only === true
         && request.studio_job_id !== undefined;
-      const result = await jsonCall(
+      return productPhotoCall(
         studioPresentation
           ? `/studio/projects/${encodeURIComponent(projectId)}/product-photo`
           : `/projects/${encodeURIComponent(projectId)}/product-photo`,
-        'POST',
-        {
-          created_by: request.created_by,
-          expected_asset_id: request.expected_asset_id,
-          expected_design_version: request.expected_design_version,
-          preset: request.preset,
-          framing: request.framing ?? 'portrait',
-          custom_instruction: request.custom_instruction ?? '',
-          variant: request.variant ?? 0,
-          ...(request.presentation_only === undefined
-            ? {}
-            : { presentation_only: request.presentation_only }),
-          ...(request.studio_job_id === undefined ? {} : { studio_job_id: request.studio_job_id }),
-        },
-        decodeProductPhotoResult,
+        request,
       );
-      if (result.error !== null) return result;
-      if (result.data.status === 'accepted') {
-        return {
-          ...result,
-          data: {
-            ...result.data,
-            project: projectWithUrls(result.data.project, baseUrl),
-          },
-        };
-      }
-      const preview = result.data.warning_candidate.preview_url;
-      return {
-        ...result,
-        data: {
-          ...result.data,
-          warning_candidate: {
-            ...result.data.warning_candidate,
-            preview_url: preview === null
-              || /^https?:\/\//i.test(preview) || preview.startsWith('data:')
-              ? preview
-              : `${baseUrl}${preview.startsWith('/') ? '' : '/'}${preview}`,
-          },
-        },
-      };
+    },
+
+    /** Canonical review-only Studio presentation route; never falls back to project mutation. */
+    createStudioProductPhoto(projectId: string, request: ProductPhotoRequest) {
+      return productPhotoCall(
+        `/studio/projects/${encodeURIComponent(projectId)}/product-photo`,
+        { ...request, presentation_only: true },
+      );
     },
 
     async createMarketingPack(projectId: string, request: MarketingPackRequest) {
