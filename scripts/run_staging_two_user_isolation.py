@@ -9,16 +9,24 @@ projects, and image assets so ownership can be checked in both directions.
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
 import os
 import re
 import sys
 from dataclasses import dataclass
+from datetime import datetime, timezone
+from pathlib import Path
 from typing import Callable
 from urllib.error import HTTPError, URLError
 from urllib.parse import quote, urlencode, urlparse
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 from uuid import UUID
+
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT / "src"))
+
+from facetta.external_beta_release import required_staging_checks  # noqa: E402
 
 
 @dataclass(frozen=True)
@@ -44,6 +52,7 @@ class StagingIdentity:
 @dataclass(frozen=True)
 class StagingConfig:
     base_url: str
+    deployment_revision: str
     first: StagingIdentity
     second: StagingIdentity
 
@@ -76,6 +85,9 @@ def _jwt_actor(token: str) -> str:
 def load_config() -> StagingConfig:
     missing: list[str] = []
     base_url = _required("FACETTA_STAGING_BASE_URL", missing).rstrip("/")
+    deployment_revision = _required(
+        "FACETTA_STAGING_DEPLOYMENT_REVISION", missing,
+    )
     identity_values: dict[str, dict[str, str]] = {}
     for label in ("A", "B"):
         prefix = f"FACETTA_STAGING_USER_{label}"
@@ -94,6 +106,8 @@ def load_config() -> StagingConfig:
         or parsed.username is not None or parsed.password is not None
     ):
         raise ValueError("FACETTA_STAGING_BASE_URL must be an exact HTTPS origin")
+    if re.fullmatch(r"[A-Za-z0-9._-]{7,128}", deployment_revision) is None:
+        raise ValueError("staging deployment revision is not a safe release identifier")
 
     def identity(label: str) -> StagingIdentity:
         values = identity_values[label]
@@ -121,7 +135,12 @@ def load_config() -> StagingConfig:
         or first.asset_id == second.asset_id
     ):
         raise ValueError("staging identities must reference distinct seeded records")
-    return StagingConfig(base_url=base_url, first=first, second=second)
+    return StagingConfig(
+        base_url=base_url,
+        deployment_revision=deployment_revision,
+        first=first,
+        second=second,
+    )
 
 
 class _RejectRedirects(HTTPRedirectHandler):
@@ -281,9 +300,36 @@ def run_probe(config: StagingConfig, transport: Transport = http_transport) -> d
         record(f"production_hides_{hidden_name}", 404, hidden.status)
 
     passed = all(check["passed"] for check in checks)
+    expected_checks = required_staging_checks()
+    if {row["name"]: row["expected"] for row in checks} != expected_checks:
+        raise RuntimeError("staging probe implementation differs from release contract")
+    fixture_binding = {
+        identity.label: {
+            "actor": identity.actor,
+            "project_id": identity.project_id,
+            "family_id": identity.family_id,
+            "asset_id": identity.asset_id,
+        }
+        for identity in (config.first, config.second)
+    }
+    fixture_set_sha256 = hashlib.sha256(json.dumps(
+        fixture_binding,
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("utf-8")).hexdigest()
     return {
-        "schema_version": "facetta-staging-isolation.v1",
+        "schema_version": "facetta-staging-isolation.v2",
         "run_kind": "read_only_two_principal_staging_probe",
+        "target": {
+            "origin_sha256": hashlib.sha256(
+                config.base_url.encode("utf-8")
+            ).hexdigest(),
+            "deployment_revision": config.deployment_revision,
+            "fixture_set_sha256": fixture_set_sha256,
+            "probed_at": datetime.now(timezone.utc).isoformat(),
+            "transport": "live_https",
+        },
         "checks": checks,
         "passed": passed,
         "secrets_logged": False,

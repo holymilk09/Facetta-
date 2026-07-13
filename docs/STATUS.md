@@ -5,6 +5,43 @@ Read `CLAUDE.md` (constitution — binding), `README.md` (endpoints/layout),
 `docs/DATA_WANTED.md` (open research asks). This file is the delta: what is
 DONE beyond the original TASKS.md build order, and what is next.
 
+## 2026-07-13 Studio authority and external-release checkpoint
+
+The four global Studio destinations are now an explicit accessible tab set:
+`Studio`, `Collections`, `Activity`, and `Learn`. Each tab exposes its selected
+state and routes to its named workspace. Tests also prove that the Studio home
+does not leak legacy Builder, Share, or Factory shortcuts. Within an active
+design the contextual rail remains limited to Create, Vary, Refine, Views,
+Present, and More; Factory is still conditional on the exact revision being
+both entitled and backend-eligible.
+
+Durable visual previews now revalidate their stored QA authority before every
+review or decision. The embedded verdict must match the durable record, hard
+failures can never become reviewable, and pass/warn states must carry their
+expected acceptance and review flags. Malformed or tampered QA therefore
+expires the temporary candidate and cannot append an asset, revision, charge,
+or canonical mutation.
+
+External-beta readiness now has one fail-closed controller. It independently
+recomputes the frozen-corpus founder decision, requires a complete designer
+acceptance ledger and separate Ed25519 designer approval, verifies the live
+two-principal HTTPS staging result and its separate signed approval, binds all
+evidence to exact hashes, deployment revision, fixture set, reviewer identities,
+and frozen implementation pins, and rejects nonzero finalizer exit records.
+The production configuration deliberately leaves designer and staging reviewer
+keys unenrolled. The default capture plan consequently reports zero executable
+sequences, zero provider attempts/calls, and cannot emit
+`external_beta_ready` without the real external evidence.
+
+Local validation for this checkpoint: 1,577 backend tests, 242 Jest tests, 68
+Studio contract tests, TypeScript, Ruff, Python compilation, Expo web export,
+hash-pin verification, and the production TypeScript-client -> HTTP -> FastAPI
+acceptance pass. The acceptance covers ten mixed-source projects plus one
+structural edit with no Factory use, no canonical mutation before acceptance,
+and no canonical output or charge from failed QA. The 144-image corpus,
+designer/GIA and founder reviews, and live two-principal staging run remain
+external prerequisites and have not been performed.
+
 ## 2026-07-13 Studio IA and production-surface consolidation checkpoint
 
 The designer-facing Studio no longer presents `Starting design facts` as a

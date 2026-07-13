@@ -13,10 +13,11 @@ This is a provider-free release-gate definition, not a quality result.
   `0.18` outside-mask drift threshold, routing contract, and implementation
   hashes.
 - The production config intentionally has no resolved assignment bundle,
-  executor key, canonical API-runner key, reviewer key, or founder key. It is a
+  executor key, canonical API-runner key, GIA reviewer key, founder key,
+  jewelry-designer reviewer key, or staging-release reviewer key. It is a
   frozen definition, not an executable release configuration.
 - None of these definition files contains generated candidates, visual scores,
-  designer acceptance, or factory authority.
+  designer acceptance, staging isolation, or factory authority.
 
 Validate the frozen definition and produce its deterministic secured-executor
 plan with zero provider calls:
@@ -161,7 +162,15 @@ run `scripts/verify_frozen_corpus_release.py`. Only its
 `final-decision.json.corpus_gate_ready: true` satisfies the complete corpus
 gate. It deliberately cannot claim full external-beta readiness because the
 live two-principal staging-isolation gate is separate. The repository ships
-with both production public keys unconfigured and contains no human sign-off.
+with all production public keys unconfigured and contains no human sign-off.
+
+Full external-beta composition is owned by
+`scripts/verify_external_beta_release.py`. The combined verifier and staging
+probe are hash-pinned in this config. It re-verifies the signed corpus decision,
+requires a separate config-enrolled jewelry-designer approval of the exact
+quick-appearance result, and requires a config-enrolled staging reviewer to
+sign the exact v2 isolation result and retained zero exit-code bytes. Local or
+self-generated signatures do not satisfy those external custody requirements.
 
 The offline replay verifies artifact hashes and recalculates outside-mask drift
 from the captured pixels. Coverage counts come from verified attempts, never

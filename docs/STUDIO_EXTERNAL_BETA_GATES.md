@@ -5,7 +5,7 @@ mock-transport tests do **not** satisfy either gate.
 
 | Gate | Current execution status | External-beta status |
 |---|---|---|
-| Signed frozen 144-image corpus and founder/GIA review | `not_run` | `unmet` |
+| Signed frozen 144-image corpus, GIA/founder review, and designer acceptance | `not_run` | `unmet` |
 | Live two-principal staging isolation | `not_run` | `unmet` |
 
 Do not change either status to met from a local test result. Retain the command
@@ -21,8 +21,9 @@ exit code and the generated JSON alongside the human sign-off.
 - `docs/evals/frozen-founder-corpus-v1/config.json` must still match its pinned
   manifest and implementation hashes. Its current
   `current_evidence_status` is `not_run`; its executor, canonical API runner,
-  reviewer, and founder keys are unenrolled; and it has no resolved assignment
-  bundle, so the gate cannot pass yet.
+  GIA reviewer, founder, jewelry-designer reviewer, and staging-release
+  reviewer keys are unenrolled; and it has no resolved assignment bundle, so
+  the gate cannot pass yet.
 - **Resolve the workload before capture.** The 1,044 rows are a logical review
   scope, not 1,044 executable jobs. Independently review and hash-pin one
   source-specific assignment/applicability bundle with concrete regions and
@@ -32,15 +33,18 @@ exit code and the generated JSON alongside the human sign-off.
   The production plan currently reports zero execution-ready rows and zero
   maximum executable attempts.
 - **Freeze key enrollment before capture.** Configure the executor, canonical
-  API runner, GIA reviewer, and founder Ed25519 public keys by key ID, path, and
-  SHA-256 in `config.json` before generating the final provider-call plan,
-  capture, replay, or `results.json`.
+  API runner, GIA reviewer, founder, jewelry-designer reviewer, and staging
+  release reviewer Ed25519 public keys by key ID, path, and SHA-256 in
+  `config.json` before generating the final provider-call plan, capture,
+  replay, or `results.json`.
   The capture and replay bind the exact config hash, so adding the founder key
   after execution would invalidate that evidence. Keep all private signing
   keys outside the repository and outside the run artifacts. The executor
-  signs capture, the API runner signs persistence, the reviewer signs the
-  completed replay, and the founder signs only the already-generated result
-  bytes later. Public-key enrollment is not approval.
+  signs capture, the API runner signs persistence, the GIA reviewer signs the
+  completed replay, the designer separately signs acceptance of the exact
+  corpus-result bytes, the staging reviewer signs the exact isolation result
+  and exit-code bytes, and the founder signs only the already-generated corpus
+  result bytes. Public-key enrollment is not approval.
 - The replay passed to `--evidence` must be one complete
   `facetta-frozen-replay.v1` JSON payload signed by that enrolled key. It must
   bind its manifest/config hashes, all source/candidate/mask artifact hashes,
@@ -235,6 +239,7 @@ Inject these exact environment variables from the staging secret manager:
 
 ```text
 FACETTA_STAGING_BASE_URL
+FACETTA_STAGING_DEPLOYMENT_REVISION
 FACETTA_STAGING_USER_A_ACCESS_TOKEN
 FACETTA_STAGING_USER_A_PROJECT_ID
 FACETTA_STAGING_USER_A_FAMILY_ID
@@ -246,9 +251,10 @@ FACETTA_STAGING_USER_B_ASSET_ID
 ```
 
 `FACETTA_STAGING_BASE_URL` must be an exact HTTPS origin with no path, query,
-fragment, or embedded credentials. Each access token must be a Supabase JWT
-whose `sub` is a UUID, the two subjects must differ, and all paired record IDs
-must differ.
+fragment, or embedded credentials. `FACETTA_STAGING_DEPLOYMENT_REVISION` must
+be the immutable deployed commit or release identifier being approved. Each
+access token must be a Supabase JWT whose `sub` is a UUID, the two subjects
+must differ, and all paired record IDs must differ.
 
 ### Execute
 
@@ -271,12 +277,17 @@ test "$GATE_EXIT" -eq 0
 ```
 
 The redirected `results.json` and adjacent `exit-code.txt` are the canonical
-machine artifacts. The script
-does not print credentials or response bodies and declares `secrets_logged`,
-`provider_calls`, and `mutations` in its result. Store the exit code and an
-operator/date sign-off beside it. Never archive the process environment or
-access tokens with the result; revoke or expire both staging tokens after the
-evidence is accepted.
+machine artifacts. The v2 result does not print credentials, response bodies,
+or the staging origin. It binds the origin by SHA-256, the immutable deployment
+revision, a hash of the two seeded fixture identities/records, and a
+timezone-qualified probe time; it also declares `secrets_logged`,
+`provider_calls`, and `mutations`. An independently controlled, config-enrolled
+staging reviewer must sign a `facetta-staging-isolation-approval.v1` record
+that binds the exact `results.json` and `exit-code.txt` hashes, target origin
+hash, deployment revision, reviewer, timezone-qualified approval time, and
+release ticket. Never archive the process environment or access tokens with
+the result; revoke or expire both staging tokens after the evidence is
+accepted.
 
 ### Pass criteria
 
@@ -309,10 +320,43 @@ isolation check as a release blocker rather than rerunning until green.
 
 ## Final release decision
 
-External beta remains blocked until both result artifacts pass and both human
-sign-offs refer to the exact retained result hashes. A corpus decision is not
-an external-beta decision. The repository currently exposes separate corpus
-and staging authorities; a future combined release controller must verify both
-versioned artifacts and their retained hashes before it may emit a full
-external-beta-ready decision. Update this document's status table only from
-that evidence; never from local test output.
+External beta remains blocked until both machine gates pass and the founder,
+GIA-trained reviewer, independent jewelry designer, and staging reviewer have
+completed their distinct signed decisions. The designer creates a
+`facetta-designer-acceptance-approval.v1` record bound to the exact corpus
+`results.json`, its `corpus_run_id`, and the complete quick-appearance summary;
+the signature is not inferred from the GIA review even when both people accept
+the same candidates.
+
+The provider-free combined controller freshly reruns the founder/corpus
+verifier, requires the retained corpus decision to match that recomputation,
+verifies exact check coverage and immutable deployment binding in the staging
+v2 result, verifies both additional Ed25519 signatures against keys frozen in
+the corpus config, and binds both retained exit-code files. Only this command
+may emit `external_beta_ready: true`:
+
+```bash
+set +e
+PYTHONPATH=src .venv/bin/python scripts/verify_external_beta_release.py \
+  --corpus-decision "$CORPUS_DIR/final-decision.json" \
+  --corpus-results "$CORPUS_DIR/results.json" \
+  --corpus-approval "$EVIDENCE_ROOT/signed-founder-approval.json" \
+  --corpus-exit-code "$CORPUS_DIR/final-exit-code.txt" \
+  --designer-decisions "$EVIDENCE_ROOT/designer-acceptance-decisions.json" \
+  --designer-approval "$EVIDENCE_ROOT/signed-designer-approval.json" \
+  --staging-results "$STAGING_DIR/results.json" \
+  --staging-approval "$EVIDENCE_ROOT/signed-staging-approval.json" \
+  --staging-exit-code "$STAGING_DIR/exit-code.txt" \
+  --outdir "$EVIDENCE_ROOT/gate-artifacts/external-beta"
+COMBINED_EXIT=$?
+set -e
+test "$COMBINED_EXIT" -eq 0
+```
+
+The output `external-beta-decision.json` is a derived, reproducible authority
+whose bindings include every input artifact hash, both immutable gate targets,
+and the frozen verifier/probe implementation hashes. A corpus decision alone,
+an unsigned staging pass, a GIA decision mislabeled as designer acceptance, a
+changed deployment, missing check, nonzero retained exit code, or any hash/signature
+drift leaves `external_beta_ready: false`. Update this document's status table
+only from retained external evidence; never from local test output.

@@ -9,6 +9,7 @@ from scripts.run_staging_two_user_isolation import (
 def _config() -> StagingConfig:
     return StagingConfig(
         base_url="https://staging.facetta.test",
+        deployment_revision="0123456789abcdef",
         first=StagingIdentity(
             "A", "secret-a", "a" * 32, "project-a", "family-a", "asset-a",
         ),
@@ -57,6 +58,10 @@ def test_read_only_two_user_probe_passes_without_logging_secrets():
     assert result["passed"] is True
     assert result["provider_calls"] == 0
     assert result["mutations"] == 0
+    assert result["schema_version"] == "facetta-staging-isolation.v2"
+    assert result["target"]["deployment_revision"] == "0123456789abcdef"
+    assert len(result["target"]["origin_sha256"]) == 64
+    assert len(result["target"]["fixture_set_sha256"]) == 64
     assert "secret-a" not in str(result)
     assert "secret-b" not in str(result)
 
