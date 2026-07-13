@@ -1,9 +1,11 @@
 /// <reference types="jest" />
 
 import React from 'react';
+import { StyleSheet } from 'react-native';
 import { act, fireEvent, render } from '@testing-library/react-native';
 
 import { ONBOARDING_STEPS, OnboardingScreen } from '../OnboardingScreen';
+import { StudioCollageBackground } from '../StudioCollageBackground';
 import { WORKFLOW_SLIDES, WorkflowShowcase } from '../WorkflowShowcase';
 import { LoginScreen } from '../LoginScreen';
 
@@ -14,6 +16,17 @@ function copyOf(items: readonly { kicker: string; title: string; body: string }[
 }
 
 describe('truthful pre-login journey', () => {
+  test('clips the animated entry collage to the viewport', async () => {
+    const view = await render(<StudioCollageBackground />);
+    const viewport = view.getByTestId('studio-collage-viewport');
+
+    expect(StyleSheet.flatten(viewport.props.style)).toEqual(expect.objectContaining({
+      position: 'absolute',
+      overflow: 'hidden',
+    }));
+    view.unmount();
+  });
+
   test('keeps onboarding provider-neutral and makes Factory optional and eligibility-gated', async () => {
     const copy = copyOf(ONBOARDING_STEPS);
     expect(copy).not.toMatch(forbiddenClaim);
@@ -25,6 +38,12 @@ describe('truthful pre-login journey', () => {
 
     const view = await render(<OnboardingScreen onDone={jest.fn()} />);
     expect(view.getByText('Begin from your idea')).toBeTruthy();
+    const primaryAction = view.getByText('Continue').parent;
+    expect(primaryAction).not.toBeNull();
+    expect(StyleSheet.flatten(primaryAction?.props.style)).toEqual(expect.objectContaining({
+      alignSelf: 'center',
+      maxWidth: 420,
+    }));
     await act(async () => { fireEvent.press(view.getByText('Continue')); });
     expect(view.getByText('Choose before you refine')).toBeTruthy();
     await act(async () => { fireEvent.press(view.getByText('Continue')); });

@@ -23,6 +23,10 @@ from facetta.db import (
 )
 from facetta.dimension_provenance import mark_designer_adjusted_dimensions
 from facetta.project_backbone import is_primary_revision
+from facetta.revision_component_map import ComponentMapError
+from facetta.revision_component_map_store import (
+    copy_revision_component_map_for_identical_raster,
+)
 from facetta.spec import Spec
 from facetta.specdiff import diff_specs, summarize_changes
 from facetta.validation import validate_spec
@@ -289,38 +293,68 @@ def _apply_studio_fact_revision(
         created_by=created_by,
         created_at=now,
     )
-    record = ProjectRevisionRecord(
-        id=new_id("prr"),
-        asset_id=child.id,
-        action="edit",
-        raw_intent={
-            "kind": "studio_fact_revision",
-            "source_asset_id": active.id,
-            "expected_design_version": expected_design_version,
-            "facts": requested_values,
-        },
-        interpretation={
-            "operation": "append_designer_fact_revision",
-            "image_generation": False,
-            "provider_used": False,
-            "factory_authority": False,
-            "credits_charged": 0,
-            "source_asset_id": active.id,
-            "source_sha256": source_hash,
-            "output_sha256": source_hash,
-        },
-        change_summary=(
-            summarize_changes(list(spec_change))
-            or "Updated designer-confirmed Studio facts."
-        ),
-        created_by=created_by,
-        created_at=now,
-    )
     project.selected_candidate_asset_id = child.id
     project.updated_at = now
-    db.add_all([version, child, record])
+    db.add_all([version, child])
     try:
+        # A fact-only revision deliberately preserves the exact source raster.
+        # Carry any calibrated component-isolation evidence forward instead of
+        # making a previously targetable design silently unmapped. Validation,
+        # copy, immutable history, the active pointer, and the new spec version
+        # all share this transaction, so corrupt source evidence fails closed
+        # without leaving a partial canonical revision.
+        db.flush()
+        copied_component_map = copy_revision_component_map_for_identical_raster(
+            db,
+            source_asset_id=active.id,
+            child_asset_id=child.id,
+            child_image_bytes=bytes(child.image),
+        )
+        record = ProjectRevisionRecord(
+            id=new_id("prr"),
+            asset_id=child.id,
+            action="edit",
+            raw_intent={
+                "kind": "studio_fact_revision",
+                "source_asset_id": active.id,
+                "expected_design_version": expected_design_version,
+                "facts": requested_values,
+            },
+            interpretation={
+                "operation": "append_designer_fact_revision",
+                "image_generation": False,
+                "provider_used": False,
+                "factory_authority": False,
+                "credits_charged": 0,
+                "source_asset_id": active.id,
+                "source_sha256": source_hash,
+                "output_sha256": source_hash,
+                "component_map_status": (
+                    "copied_exact_raster"
+                    if copied_component_map is not None
+                    else "unmapped"
+                ),
+                "component_map_source_asset_id": (
+                    active.id if copied_component_map is not None else None
+                ),
+                "component_map_sha256": (
+                    copied_component_map.map_sha256
+                    if copied_component_map is not None
+                    else None
+                ),
+            },
+            change_summary=(
+                summarize_changes(list(spec_change))
+                or "Updated designer-confirmed Studio facts."
+            ),
+            created_by=created_by,
+            created_at=now,
+        )
+        db.add(record)
         db.commit()
+    except ComponentMapError as exc:
+        db.rollback()
+        raise StudioFactRevisionError(exc.code, exc.detail) from exc
     except IntegrityError as exc:
         db.rollback()
         raise StudioFactRevisionError(

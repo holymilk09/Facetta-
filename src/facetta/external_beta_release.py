@@ -346,6 +346,31 @@ def _selected_quick_appearance_scope(
     ):
         errors.append("designer scope replay attempts are invalid")
         return []
+    not_applicable = replay.get("not_applicable_assignments", [])
+    if not isinstance(not_applicable, list) or not all(
+        isinstance(row, dict) for row in not_applicable
+    ):
+        errors.append("designer scope replay not-applicable assignments are invalid")
+        return []
+    not_applicable_keys: set[tuple[str, str]] = set()
+    for row in not_applicable:
+        if not (
+            row.get("kind") == "edit"
+            and row.get("operation_class") == "quick_appearance"
+        ):
+            continue
+        source_filename = row.get("source_filename")
+        evaluation_id = row.get("evaluation_id")
+        if not all(
+            isinstance(value, str) and value
+            for value in (source_filename, evaluation_id)
+        ):
+            errors.append("quick-appearance non-applicable row has an invalid key")
+            continue
+        key = (str(source_filename), str(evaluation_id))
+        if key in not_applicable_keys:
+            errors.append("quick-appearance non-applicable scope contains duplicates")
+        not_applicable_keys.add(key)
     selected_by_key: dict[tuple[str, str], list[tuple[str, str, str]]] = {}
     for row in attempts:
         if not (
@@ -374,9 +399,15 @@ def _selected_quick_appearance_scope(
         selected_by_key.setdefault(typed_key, []).append(
             (str(hashes[0]), str(hashes[1]), str(hashes[2]))
         )
-    if set(selected_by_key) != expected_keys:
+    selected_keys = set(selected_by_key)
+    if selected_keys & not_applicable_keys:
         errors.append(
-            "signed replay selected scope does not exactly cover quick appearance"
+            "signed replay both selected and marked a quick-appearance row "
+            "non-applicable"
+        )
+    if selected_keys | not_applicable_keys != expected_keys:
+        errors.append(
+            "signed replay resolved scope does not exactly cover quick appearance"
         )
     if any(len(rows) != 1 for rows in selected_by_key.values()):
         errors.append(

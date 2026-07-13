@@ -12,6 +12,7 @@ from facetta.frozen_capture_workload import (
     build_provider_call_plan,
     canonical_capture_payload,
     canonical_object_sha256,
+    not_applicable_assignment_rows,
     validate_capture_envelope,
     validate_workload_definition,
 )
@@ -188,6 +189,28 @@ def _fixture(tmp_path: Path) -> tuple[Path, Path, Path, Path]:
     return root, manifest, config, workload
 
 
+def _mark_edit_not_applicable(root: Path, config: Path, *, reason: str) -> None:
+    assignments = root / "assignments.json"
+    raw = json.loads(assignments.read_text())
+    edit = next(row for row in raw["assignments"] if row["kind"] == "edit")
+    edit["binding"] = {
+        "schema_version": "facetta-frozen-source-assignment.v1",
+        "review_status": "approved",
+        "applicability": "not_applicable",
+        "not_applicable_reason": reason,
+        "review_evidence_sha256": "4" * 64,
+        "source_spec_evidence_sha256": "5" * 64,
+        "component_map_sha256": "6" * 64,
+        "region_evidence_sha256": "7" * 64,
+    }
+    _write(assignments, raw)
+    config_raw = json.loads(config.read_text())
+    config_raw["frozen_components"]["resolved_assignment_bundle"] = (
+        f"assignments.json@sha256:{_sha(assignments)}"
+    )
+    _write(config, config_raw)
+
+
 def test_definition_separates_integrity_from_ring_quality(tmp_path: Path):
     root, manifest, config, workload = _fixture(tmp_path)
     result = validate_workload_definition(
@@ -242,6 +265,156 @@ def test_plan_is_deterministic_and_executes_no_provider_calls(tmp_path: Path):
         assert row["resolved_inputs_sha256"] == canonical_object_sha256(
             row["resolved_inputs"]
         )
+
+
+def test_reviewed_not_applicable_rows_remain_signed_without_provider_calls(
+    tmp_path: Path,
+):
+    root, manifest, config, workload = _fixture(tmp_path)
+    _mark_edit_not_applicable(
+        root, config, reason="source has no plated metal surface to recolor",
+    )
+    private_key, public_key_path = _executor_key(root, config)
+    plan = build_provider_call_plan(
+        manifest, config, workload, repository_root=root,
+    )
+    assert plan["provider_calls_executed"] == 0
+    assert plan["planned_evaluation_sequence_count"] == 2
+    assert plan["resolved_sequence_count"] == 2
+    assert plan["execution_ready_sequence_count"] == 1
+    assert plan["not_applicable_sequence_count"] == 1
+    assert plan["maximum_provider_attempt_count"] == 3
+    assert plan["logical_scope_maximum_attempt_count"] == 6
+    assert plan["capture_status"] == "not_run"
+
+    capture_dir = root / "capture-na"
+    capture_dir.mkdir()
+    candidate = capture_dir / "render.png"
+    candidate.write_bytes(b"render")
+    persistence = capture_dir / "persistence.json"
+    persistence.write_text('{"verified":true}\n')
+    planned = next(
+        row for row in plan["items"]
+        if row["resolved_inputs"]["execution_ready"] is True
+    )
+    capture = {
+        "schema_version": "facetta-frozen-capture.v2",
+        "corpus_run_id": plan["corpus_run_id"],
+        "manifest_sha256": plan["manifest_sha256"],
+        "config_sha256": plan["config_sha256"],
+        "workload_sha256": plan["workload_sha256"],
+        "assignment_bundle_sha256": plan["assignment_bundle"]["bundle_sha256"],
+        "not_applicable_assignments": not_applicable_assignment_rows(plan),
+        "attempts": [{
+            "kind": planned["kind"],
+            "evaluation_id": planned["evaluation_id"],
+            "source_filename": planned["source_filename"],
+            "source_sha256": planned["source_sha256"],
+            "resolved_inputs_sha256": planned["resolved_inputs_sha256"],
+            "attempt": 1,
+            "accepted": True,
+            "candidate_image": candidate.name,
+            "candidate_image_sha256": _sha(candidate),
+            "render_conformance_score": 95,
+            "hard_gate_pass": True,
+        }],
+        "persistence_evidence_ref": {
+            "relative_path": persistence.name,
+            "sha256": _sha(persistence),
+        },
+        "signature": None,
+    }
+
+    def sign() -> None:
+        capture["signature"] = {
+            "algorithm": "Ed25519",
+            "key_id": "executor-test-v1",
+            "public_key_sha256": _sha(public_key_path),
+            "value": base64.b64encode(
+                private_key.sign(canonical_capture_payload(capture))
+            ).decode("ascii"),
+        }
+
+    capture_path = capture_dir / "capture.json"
+    sign()
+    _write(capture_path, capture)
+    valid = validate_capture_envelope(
+        capture_path, manifest, config, workload,
+        capture_public_key_path=public_key_path,
+        capture_key_id="executor-test-v1",
+        repository_root=root,
+    )
+    assert valid["status"] == "pass"
+    assert valid["logical_evaluation_sequence_count"] == 2
+    assert valid["captured_evaluation_sequence_count"] == 1
+    assert valid["not_applicable_evaluation_sequence_count"] == 1
+
+    capture["not_applicable_assignments"][0]["reason"] = "tampered reason"
+    sign()
+    _write(capture_path, capture)
+    tampered = validate_capture_envelope(
+        capture_path, manifest, config, workload,
+        capture_public_key_path=public_key_path,
+        capture_key_id="executor-test-v1",
+        repository_root=root,
+    )
+    assert tampered["status"] == "fail"
+    assert "capture not-applicable assignments differ from the frozen plan" in (
+        tampered["errors"]
+    )
+
+    capture["not_applicable_assignments"] = not_applicable_assignment_rows(plan)
+    reviewed_na = next(
+        row for row in plan["items"]
+        if row["resolved_inputs"]["resolution_status"] == "not_applicable"
+    )
+    edit_candidate = capture_dir / "edit.png"
+    edit_mask = capture_dir / "mask.png"
+    edit_candidate.write_bytes(b"edit")
+    edit_mask.write_bytes(b"mask")
+    capture["attempts"].append({
+        "kind": reviewed_na["kind"],
+        "evaluation_id": reviewed_na["evaluation_id"],
+        "source_filename": reviewed_na["source_filename"],
+        "source_sha256": reviewed_na["source_sha256"],
+        "resolved_inputs_sha256": reviewed_na["resolved_inputs_sha256"],
+        "attempt": 1,
+        "accepted": True,
+        "candidate_image": edit_candidate.name,
+        "candidate_image_sha256": _sha(edit_candidate),
+        "mask_image": edit_mask.name,
+        "mask_image_sha256": _sha(edit_mask),
+        "edit_fidelity_score": 95,
+        "severity": "none",
+        "change_applied": True,
+    })
+    sign()
+    _write(capture_path, capture)
+    attempted = validate_capture_envelope(
+        capture_path, manifest, config, workload,
+        capture_public_key_path=public_key_path,
+        capture_key_id="executor-test-v1",
+        repository_root=root,
+    )
+    assert attempted["status"] == "fail"
+    assert any(
+        "attempted a reviewed non-applicable assignment" in error
+        for error in attempted["errors"]
+    )
+
+
+def test_malformed_not_applicable_assignment_blocks_without_provider_calls(
+    tmp_path: Path,
+):
+    root, manifest, config, workload = _fixture(tmp_path)
+    _mark_edit_not_applicable(root, config, reason="")
+    plan = build_provider_call_plan(
+        manifest, config, workload, repository_root=root,
+    )
+    assert plan["provider_calls_executed"] == 0
+    assert plan["unresolved_sequence_count"] == 1
+    assert plan["not_applicable_sequence_count"] == 0
+    assert plan["capture_status"] == "blocked_unresolved_assignments"
 
 
 def test_production_matrix_is_scope_only_until_reviewed_bindings_are_pinned():
@@ -399,6 +572,8 @@ def test_signed_capture_binds_plan_artifacts_and_persistence(tmp_path: Path):
         "manifest_sha256": plan["manifest_sha256"],
         "config_sha256": plan["config_sha256"],
         "workload_sha256": plan["workload_sha256"],
+        "assignment_bundle_sha256": plan["assignment_bundle"]["bundle_sha256"],
+        "not_applicable_assignments": not_applicable_assignment_rows(plan),
         "attempts": attempts,
         "persistence_evidence_ref": {
             "relative_path": "persistence.json",
@@ -528,6 +703,8 @@ def test_signed_capture_rejects_artifact_tampering(tmp_path: Path):
         "manifest_sha256": plan["manifest_sha256"],
         "config_sha256": plan["config_sha256"],
         "workload_sha256": plan["workload_sha256"],
+        "assignment_bundle_sha256": plan["assignment_bundle"]["bundle_sha256"],
+        "not_applicable_assignments": not_applicable_assignment_rows(plan),
         "attempts": attempts,
         "persistence_evidence_ref": {
             "relative_path": persistence.name, "sha256": _sha(persistence),

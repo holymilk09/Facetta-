@@ -17,10 +17,51 @@ from facetta.blind_jewelry_review import (
     canonical_review_ledger_payload,
 )
 from facetta.external_beta_release import (
+    _selected_quick_appearance_scope,
     canonical_staging_approval_payload,
     required_staging_checks,
     verify_external_beta_release,
 )
+
+
+def test_designer_scope_counts_reviewed_not_applicable_rows_as_resolved(
+    tmp_path: Path,
+):
+    replay = tmp_path / "replay.json"
+    _json(replay, {
+        "attempts": [{
+            "kind": "edit",
+            "operation_class": "quick_appearance",
+            "source_filename": "ring-a.png",
+            "evaluation_id": "metal-color",
+            "accepted": True,
+            "source_image_sha256": "1" * 64,
+            "candidate_image_sha256": "2" * 64,
+            "mask_image_sha256": "3" * 64,
+        }],
+        "not_applicable_assignments": [{
+            "kind": "edit",
+            "operation_class": "quick_appearance",
+            "source_filename": "ring-b.png",
+            "evaluation_id": "metal-color",
+        }],
+    })
+    expected = {("ring-a.png", "metal-color"), ("ring-b.png", "metal-color")}
+    errors: list[str] = []
+    scope = _selected_quick_appearance_scope(
+        replay, tmp_path, expected, errors,
+    )
+    assert errors == []
+    assert scope == [("1" * 64, "2" * 64, "3" * 64)]
+
+    raw = json.loads(replay.read_text())
+    raw["not_applicable_assignments"] = []
+    _json(replay, raw)
+    errors = []
+    _selected_quick_appearance_scope(replay, tmp_path, expected, errors)
+    assert "signed replay resolved scope does not exactly cover quick appearance" in (
+        errors
+    )
 
 
 def _json(path: Path, value: object) -> None:

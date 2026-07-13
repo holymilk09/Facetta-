@@ -19,6 +19,7 @@ from facetta.blind_jewelry_review import (
 from facetta.frozen_capture_workload import (
     build_provider_call_plan,
     canonical_capture_payload,
+    not_applicable_assignment_rows,
 )
 from facetta.frozen_corpus_packet import (
     prepare_blind_frozen_corpus_review_packet_v2,
@@ -74,7 +75,11 @@ def _binding(evaluation_id: str, kind: str) -> dict[str, object]:
     }
 
 
-def _fixture(tmp_path: Path) -> dict[str, Any]:
+def _fixture(
+    tmp_path: Path,
+    *,
+    not_applicable_edit: bool = False,
+) -> dict[str, Any]:
     root = tmp_path / "repo"
     sources = root / "sources"
     sources.mkdir(parents=True)
@@ -159,6 +164,23 @@ def _fixture(tmp_path: Path) -> dict[str, Any]:
             )
         ],
     })
+    if not_applicable_edit:
+        assignment_raw = json.loads(assignment_bundle.read_text())
+        edit = next(
+            row for row in assignment_raw["assignments"]
+            if row["kind"] == "edit"
+        )
+        edit["binding"] = {
+            "schema_version": "facetta-frozen-source-assignment.v1",
+            "review_status": "approved",
+            "applicability": "not_applicable",
+            "not_applicable_reason": "source contains no eligible metal surface",
+            "review_evidence_sha256": "4" * 64,
+            "source_spec_evidence_sha256": "5" * 64,
+            "component_map_sha256": "6" * 64,
+            "region_evidence_sha256": "7" * 64,
+        }
+        _json(assignment_bundle, assignment_raw)
     private_key = Ed25519PrivateKey.generate()
     public_key = root / "executor.pub"
     public_key.write_bytes(private_key.public_key().public_bytes(
@@ -199,7 +221,11 @@ def _fixture(tmp_path: Path) -> dict[str, Any]:
     capture_dir = root / "capture"
     capture_dir.mkdir()
     attempts = []
-    for index, planned in enumerate(plan["items"], 1):
+    execution_items = [
+        row for row in plan["items"]
+        if row["resolved_inputs"].get("execution_ready") is True
+    ]
+    for index, planned in enumerate(execution_items, 1):
         candidate = capture_dir / f"candidate-{index}.png"
         Image.new("RGB", (4, 4), "gray").save(candidate)
         row = {
@@ -238,6 +264,8 @@ def _fixture(tmp_path: Path) -> dict[str, Any]:
         "manifest_sha256": plan["manifest_sha256"],
         "config_sha256": plan["config_sha256"],
         "workload_sha256": plan["workload_sha256"],
+        "assignment_bundle_sha256": plan["assignment_bundle"]["bundle_sha256"],
+        "not_applicable_assignments": not_applicable_assignment_rows(plan),
         "attempts": attempts,
         "persistence_evidence_ref": {
             "relative_path": persistence.name,
@@ -307,6 +335,8 @@ def test_packet_uses_only_workload_quality_assignments(tmp_path: Path):
         "slice": "ring",
         "source_count": 1,
         "evaluation_sequence_count": 2,
+        "executed_evaluation_sequence_count": 2,
+        "not_applicable_evaluation_sequence_count": 0,
         "status": "pending_review",
     }
     assert packet["integrity_prerequisite"] == {
@@ -328,6 +358,52 @@ def test_packet_uses_only_workload_quality_assignments(tmp_path: Path):
     )
     assert packet["signature"] is None
     assert packet["corpus_gate_ready"] is False
+
+
+def test_reviewed_not_applicable_row_is_replayed_but_not_blind_reviewed(
+    tmp_path: Path,
+):
+    fixture = _fixture(tmp_path, not_applicable_edit=True)
+    packet = _prepare(fixture)
+    blind = _prepare_blind_v2(fixture)
+
+    assert packet["quality_scope"] == {
+        "slice": "ring",
+        "source_count": 1,
+        "evaluation_sequence_count": 2,
+        "executed_evaluation_sequence_count": 1,
+        "not_applicable_evaluation_sequence_count": 1,
+        "status": "pending_review",
+    }
+    assert len(packet["attempts"]) == 1
+    assert len(packet["not_applicable_assignments"]) == 1
+    assert packet["source_coverage"][0]["filename"] == "ring.png"
+    assert packet["source_coverage"][0]["evaluation_ids"] == [
+        "metal-color", "round-solitaire-yellow-4-narrow",
+    ]
+    assert len(packet["reviewer_review"]["decisions"]) == 1
+    assert len(blind["items"]) == 1
+    assert blind["items"][0]["operation_class"] == "render_conformance"
+
+    capture_path: Path = fixture["capture"]
+    capture = json.loads(capture_path.read_text())
+    capture["not_applicable_assignments"][0]["reason"] = "tampered"
+    capture["signature"] = None
+    private_key: Ed25519PrivateKey = fixture["private_key"]
+    capture["signature"] = {
+        "algorithm": "Ed25519",
+        "key_id": fixture["key_id"],
+        "public_key_sha256": _sha(fixture["public_key"]),
+        "value": base64.b64encode(
+            private_key.sign(canonical_capture_payload(capture))
+        ).decode("ascii"),
+    }
+    _json(capture_path, capture)
+    with pytest.raises(
+        ValueError,
+        match="capture not-applicable assignments differ from the frozen plan",
+    ):
+        _prepare(fixture)
 
 
 def test_blind_v2_projects_only_selected_artifacts_and_review_intent(tmp_path: Path):

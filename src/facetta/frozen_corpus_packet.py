@@ -21,6 +21,7 @@ from facetta.frozen_capture_workload import (
     CAPTURE_SCHEMA,
     build_provider_call_plan,
     file_sha256,
+    not_applicable_assignment_rows,
     validate_capture_envelope,
 )
 from facetta.frozen_evidence_paths import (
@@ -125,6 +126,7 @@ def prepare_frozen_corpus_review_packet(
         (row["kind"], row["evaluation_id"], row["source_filename"]): row
         for row in plan["items"]
     }
+    expected_not_applicable = not_applicable_assignment_rows(plan)
     manifest_hashes = {
         str(row["filename"]): str(row["sha256"])
         for row in manifest.get("sources", [])
@@ -157,6 +159,8 @@ def prepare_frozen_corpus_review_packet(
     attempts = capture["attempts"]
     evidence_attempts: list[Json] = []
     coverage: dict[str, set[str]] = defaultdict(set)
+    for row in expected_not_applicable:
+        coverage[str(row["source_filename"])].add(str(row["evaluation_id"]))
     for index, raw in enumerate(attempts, 1):
         if not isinstance(raw, dict):  # Defensive; validator already enforces this.
             raise ValueError(f"capture attempt {index} must be an object")
@@ -248,7 +252,11 @@ def prepare_frozen_corpus_review_packet(
                 row["mask_image"], row["mask_image_sha256"], f"mask:{identity}",
             ))
     artifact_index = build_artifact_index(artifact_rows)
-    decision_keys = sorted(expected)
+    decision_keys = sorted(
+        key
+        for key, row in expected.items()
+        if row["resolved_inputs"].get("execution_ready") is True
+    )
     return {
         "schema_version": PACKET_SCHEMA,
         "manifest_sha256": plan["manifest_sha256"],
@@ -283,6 +291,10 @@ def prepare_frozen_corpus_review_packet(
             "slice": "ring",
             "source_count": len(quality_sources),
             "evaluation_sequence_count": len(expected),
+            "executed_evaluation_sequence_count": len(evidence_attempts),
+            "not_applicable_evaluation_sequence_count": len(
+                expected_not_applicable
+            ),
             "status": "pending_review",
         },
         "source_coverage": [
@@ -295,6 +307,7 @@ def prepare_frozen_corpus_review_packet(
             for filename in sorted(quality_sources)
         ],
         "attempts": evidence_attempts,
+        "not_applicable_assignments": expected_not_applicable,
         # Replay compatibility is explicit: the contents are embedded, while
         # the adjacent binding preserves the exact executor-captured bytes.
         "persistence_evidence": persistence_evidence,
@@ -364,6 +377,7 @@ def prepare_blind_frozen_corpus_review_packet_v2(
     planned_by_key = {
         (row["kind"], row["evaluation_id"], row["source_filename"]): row
         for row in plan["items"]
+        if row["resolved_inputs"].get("execution_ready") is True
     }
     attempts_by_key: dict[tuple[str, str, str], list[Json]] = defaultdict(list)
     for row in machine_evidence["attempts"]:

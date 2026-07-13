@@ -239,7 +239,7 @@ const styles = StyleSheet.create({
     paddingVertical: 15,
     paddingHorizontal: 20,
     alignItems: 'center',
-    alignSelf: 'stretch',
+    alignSelf: 'center',
     maxWidth: 420,
     width: '100%',
   },

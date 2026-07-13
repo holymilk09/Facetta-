@@ -29,7 +29,11 @@ from facetta.blind_jewelry_review import (
     validate_signed_review_ledger,
 )
 from facetta.image_agent.drift import outside_mask_drift
-from facetta.frozen_capture_workload import validate_workload_definition
+from facetta.frozen_capture_workload import (
+    build_provider_call_plan,
+    not_applicable_assignment_rows,
+    validate_workload_definition,
+)
 from facetta.frozen_evidence_paths import (
     confined_path,
     evidence_root as resolve_evidence_root,
@@ -692,6 +696,7 @@ def _replay_quality(
     evidence_root: Path,
     review_packet: Json | None,
     review_ledger: Json | None,
+    assignment_plan: Json | None,
 ) -> Json:
     errors: list[str] = []
     if evidence.get("schema_version") != "facetta-frozen-replay.v1":
@@ -752,6 +757,25 @@ def _replay_quality(
         attempts = [row for row in attempts if isinstance(row, dict)]
 
     quality_sources, evaluation_classes, expected = _quality_workload(workload)
+    expected_not_applicable_rows = (
+        not_applicable_assignment_rows(assignment_plan)
+        if assignment_plan is not None
+        else []
+    )
+    actual_not_applicable_rows = evidence.get("not_applicable_assignments", [])
+    if actual_not_applicable_rows != expected_not_applicable_rows:
+        errors.append(
+            "replay not-applicable assignments differ from the frozen plan"
+        )
+    expected_not_applicable = {
+        (
+            str(row["kind"]),
+            str(row["evaluation_id"]),
+            str(row["source_filename"]),
+        )
+        for row in expected_not_applicable_rows
+    }
+    expected_execution = expected - expected_not_applicable
     grouped: dict[tuple[str, str, str], list[Json]] = defaultdict(list)
     for row in attempts:
         key = (
@@ -760,9 +784,10 @@ def _replay_quality(
             str(row.get("source_filename") or ""),
         )
         grouped[key].append(row)
-    observed_assignments = set(grouped)
+    observed_execution = set(grouped)
+    observed_assignments = observed_execution | expected_not_applicable
     missing = sorted(expected - observed_assignments)
-    unexpected = sorted(observed_assignments - expected)
+    unexpected = sorted(observed_execution - expected_execution)
     if missing:
         errors.append(
             "missing workload assignments: "
@@ -831,10 +856,12 @@ def _replay_quality(
         if (
             binding_valid
             and required_artifacts <= set(paths)
-            and (*evaluation_pair, source_filename) in expected
+            and (*evaluation_pair, source_filename) in expected_execution
             and captured.get("operation_class") == expected_class
         ):
             verified_source_evaluations[source_filename].add(evaluation_pair)
+    for kind, evaluation_id, source_filename in expected_not_applicable:
+        verified_source_evaluations[source_filename].add((kind, evaluation_id))
     coverage = _source_coverage(
         evidence,
         quality_sources,
@@ -845,7 +872,7 @@ def _replay_quality(
     for sequence_key in sorted(grouped):
         key = sequence_key[:2]
         source_filename = sequence_key[2]
-        if sequence_key not in expected:
+        if sequence_key not in expected_execution:
             continue
         captured = sorted(grouped[sequence_key], key=lambda row: (
             row.get("attempt") if type(row.get("attempt")) is int else 10**9
@@ -1214,6 +1241,8 @@ def _replay_quality(
         "source_coverage": coverage,
         "captured_attempt_count": len(attempts),
         "expected_evaluation_count": len(expected),
+        "execution_ready_evaluation_count": len(expected_execution),
+        "not_applicable_evaluation_count": len(expected_not_applicable),
         "completed_evaluation_count": len(observed_assignments & expected),
         "integrity_source_count": len(manifest.get("sources", [])),
         "quality_source_count": len(quality_sources),
@@ -1255,6 +1284,7 @@ def compile_frozen_corpus_gate(
     workload: Json = {}
     workload_errors: list[str] = []
     workload_validation: Json
+    assignment_plan: Json | None = None
     try:
         workload = _load_object(resolved_workload_path)
         workload_validation = validate_workload_definition(
@@ -1264,6 +1294,30 @@ def compile_frozen_corpus_gate(
             repository_root=resolved_repository_root,
         )
         workload_errors.extend(map(str, workload_validation.get("errors", [])))
+        frozen_components = config.get("frozen_components")
+        if (
+            not workload_errors
+            and isinstance(frozen_components, dict)
+            and "resolved_assignment_bundle" in frozen_components
+        ):
+            assignment_plan = build_provider_call_plan(
+                manifest_path,
+                config_path,
+                resolved_workload_path,
+                repository_root=resolved_repository_root,
+            )
+            if assignment_plan.get("unresolved_sequence_count") != 0:
+                workload_errors.append(
+                    "frozen assignment plan contains unresolved logical rows"
+                )
+                assignment_plan = None
+            elif assignment_plan.get("resolved_sequence_count") != (
+                assignment_plan.get("planned_evaluation_sequence_count")
+            ):
+                workload_errors.append(
+                    "frozen assignment plan does not resolve its complete logical scope"
+                )
+                assignment_plan = None
     except (OSError, ValueError, json.JSONDecodeError) as exc:
         workload_validation = {
             "status": "fail",
@@ -1401,7 +1455,7 @@ def compile_frozen_corpus_gate(
             evidence, resolved_evidence_path, manifest, config, workload,
             manifest_hash, config_hash, file_sha256(resolved_workload_path),
             resolved_repository_root, resolved_evidence_root,
-            review_packet, review_ledger,
+            review_packet, review_ledger, assignment_plan,
         )
     definition_errors = manifest_errors + config_errors + workload_errors + path_errors
     passed = (

@@ -53,7 +53,7 @@ function DriftRail({
 /** Decorative, continuously moving jewelry references for entry screens. */
 export function StudioCollageBackground() {
   return (
-    <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+    <View testID="studio-collage-viewport" pointerEvents="none" style={styles.viewport}>
       <View style={styles.paper} />
       <View style={styles.columns}>
         <DriftRail images={[highJewelryRing, highJewelryBracelet, concept, coloredPlate, variations, factorySheet]} duration={58000} />
@@ -65,6 +65,11 @@ export function StudioCollageBackground() {
 }
 
 const styles = StyleSheet.create({
+  // The rails intentionally extend well beyond the viewport so their loop has
+  // no visible seam. Clip them here: without this boundary React Native Web
+  // includes the off-screen rail in the document height, creating a tall,
+  // mostly blank page after onboarding transitions.
+  viewport: { ...StyleSheet.absoluteFill, overflow: 'hidden' },
   paper: { ...StyleSheet.absoluteFill, backgroundColor: '#e9e5ed' },
   columns: {
     position: 'absolute',

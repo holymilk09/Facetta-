@@ -47,7 +47,9 @@ enrollment is retained.
 - The independently reviewed assignment bundle resolves the 1,044 logical
   ring-quality rows to source-specific `execute` or `not_applicable`
   assignments and preassigns one `corpus_run_id`. Unresolved rows make zero
-  provider calls and cannot enter capture.
+  provider calls and cannot enter capture. A reviewed `not_applicable` row
+  remains in the logical scope as a signed reason/hash binding, but creates no
+  execution-bundle sequence, provider request, candidate, or reviewer item.
 - A signed `facetta-frozen-capture.v2` binds the manifest, config, workload,
   assignments, source/candidate/mask hashes, selected result set, executor,
   canonical API persistence attestation, and exact run ID.
@@ -77,7 +79,9 @@ PYTHONPATH=src .venv/bin/python scripts/plan_frozen_corpus_capture.py \
 The repository production definition reports 144 integrity sources, 58 ring
 quality sources, 1,044 logical evaluation sequences, and zero execution-ready
 rows until assignments and keys are enrolled. Planning and validation make
-zero provider calls.
+zero provider calls. Once enrolled, `planned_evaluation_sequence_count` remains
+`1,044`; only `execution_ready_sequence_count` contributes to the live attempt
+ceiling, while `not_applicable_sequence_count` remains hash-bound end to end.
 
 ### Secured execution handoff
 
@@ -190,8 +194,11 @@ test "$FINAL_EXIT" -eq 0
 
 - Source integrity is `144/144`; the exact 58-source ring workload and 1,044
   logical rows are covered without missing or extra assignments.
-- Every accepted attempt is the final attempt; every sequence has zero or one
-  accepted attempt and uses no more than three attempts.
+- The replay's reviewed non-applicable projection exactly matches the frozen
+  assignment plan. Any omitted, rewritten, duplicated, or attempted
+  non-applicable row fails closed.
+- Every accepted attempt is the final attempt; every execution-ready sequence
+  has zero or one accepted attempt and uses no more than three attempts.
 - Render hard-gate pass rate is at least `0.90`; mean render conformance is at
   least `85`; mean edit fidelity is at least `90`; outside-mask drift is at
   most `0.18`.

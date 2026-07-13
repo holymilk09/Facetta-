@@ -696,11 +696,9 @@ def build_provider_call_plan(
         "unresolved_sequence_count": len(items) - assignment_resolved_count,
         "items": items,
         "capture_status": (
-            "not_run"
-            if execution_ready_count == len(items)
-            else "blocked_unresolved_assignments"
+            "blocked_unresolved_assignments"
             if assignment_resolved_count != len(items)
-            else "blocked_non_executable_assignments"
+            else "not_run"
         ),
         "corpus_gate_ready": False,
     }
@@ -714,6 +712,52 @@ def canonical_capture_payload(capture: Json) -> bytes:
         separators=(",", ":"),
         sort_keys=True,
     ).encode("utf-8")
+
+
+def not_applicable_assignment_rows(plan: Json) -> list[Json]:
+    """Project reviewed non-applicable rows into a signed, deterministic list.
+
+    A non-applicable logical row is still part of the frozen 1,044-row scope,
+    but it must never become a provider request or a synthetic failed attempt.
+    The projection retains the exact reviewed reason and plan binding so the
+    capture and replay verifiers can prove that no row was silently dropped.
+    """
+
+    rows: list[Json] = []
+    items = plan.get("items")
+    if not isinstance(items, list):
+        raise ValueError("frozen plan items are invalid")
+    for planned in items:
+        if not isinstance(planned, dict):
+            raise ValueError("frozen plan item is invalid")
+        resolved = planned.get("resolved_inputs")
+        if not isinstance(resolved, dict):
+            raise ValueError("frozen plan resolved inputs are invalid")
+        if resolved.get("resolution_status") != "not_applicable":
+            continue
+        applicability = resolved.get("applicability")
+        if not isinstance(applicability, dict):
+            raise ValueError("not-applicable assignment lacks reviewed evidence")
+        rows.append({
+            "kind": planned.get("kind"),
+            "evaluation_id": planned.get("evaluation_id"),
+            "operation_class": planned.get("operation_class"),
+            "source_filename": planned.get("source_filename"),
+            "source_sha256": planned.get("source_sha256"),
+            "resolved_inputs_sha256": planned.get("resolved_inputs_sha256"),
+            "reason": applicability.get("reason"),
+            "review_evidence_sha256": applicability.get(
+                "review_evidence_sha256"
+            ),
+        })
+    return sorted(
+        rows,
+        key=lambda row: (
+            str(row["kind"]),
+            str(row["evaluation_id"]),
+            str(row["source_filename"]),
+        ),
+    )
 
 
 def _artifact_path(capture_path: Path, value: object) -> Path | None:
@@ -763,11 +807,6 @@ def validate_capture_envelope(
             "frozen plan contains unresolved source-specific assignments; "
             "capture is forbidden"
         )
-    if plan["not_applicable_sequence_count"]:
-        errors.append(
-            "frozen plan contains reviewed non-applicable logical assignments; "
-            "capture v2 cannot treat them as provider attempts"
-        )
     if plan["executor_trust"]["status"] != "enrolled":
         errors.append("frozen plan has no enrolled executor")
     if capture.get("schema_version") != CAPTURE_SCHEMA:
@@ -781,10 +820,24 @@ def validate_capture_envelope(
         if capture.get(field) != plan[field]:
             errors.append(f"capture {field} differs from the frozen plan")
 
-    expected = {
+    expected_logical = {
         (row["kind"], row["evaluation_id"], row["source_filename"]): row
         for row in plan["items"]
     }
+    expected = {
+        key: row
+        for key, row in expected_logical.items()
+        if row["resolved_inputs"].get("execution_ready") is True
+    }
+    expected_not_applicable = not_applicable_assignment_rows(plan)
+    if capture.get("assignment_bundle_sha256") != plan["assignment_bundle"].get(
+        "bundle_sha256"
+    ):
+        errors.append("capture assignment bundle hash differs from the frozen plan")
+    if capture.get("not_applicable_assignments") != expected_not_applicable:
+        errors.append(
+            "capture not-applicable assignments differ from the frozen plan"
+        )
     attempts = capture.get("attempts")
     if not isinstance(attempts, list):
         attempts = []
@@ -803,7 +856,15 @@ def validate_capture_envelope(
         )
         planned = expected.get(key)
         if planned is None:
-            errors.append("capture contains an unplanned assignment: " + ":".join(key))
+            if key in expected_logical:
+                errors.append(
+                    "capture attempted a reviewed non-applicable assignment: "
+                    + ":".join(key)
+                )
+            else:
+                errors.append(
+                    "capture contains an unplanned assignment: " + ":".join(key)
+                )
             continue
         if row.get("source_sha256") != planned["source_sha256"]:
             errors.append(f"capture source hash differs for attempt {index}")
@@ -937,7 +998,12 @@ def validate_capture_envelope(
             if isinstance(corpus_run_id, str) and corpus_run_id.strip()
             else None
         ),
-        "planned_evaluation_sequence_count": len(expected),
+        "planned_evaluation_sequence_count": len(expected_logical),
+        "execution_ready_evaluation_sequence_count": len(expected),
+        "logical_evaluation_sequence_count": len(expected_logical),
+        "not_applicable_evaluation_sequence_count": len(
+            expected_not_applicable
+        ),
         "captured_evaluation_sequence_count": len(set(expected) & set(grouped)),
         "captured_attempt_count": len(attempts),
         "verified_artifact_count": artifact_count,
@@ -947,3 +1013,20 @@ def validate_capture_envelope(
             "It is not the signed GIA review or founder release decision."
         ),
     }
+
+
+__all__ = [
+    "ASSIGNMENT_BUNDLE_SCHEMA",
+    "CAPTURE_SCHEMA",
+    "EXECUTOR_TRUST_SCHEMA",
+    "PLAN_SCHEMA",
+    "RESOLVED_ASSIGNMENT_SCHEMA",
+    "WORKLOAD_SCHEMA",
+    "build_provider_call_plan",
+    "canonical_capture_payload",
+    "canonical_object_sha256",
+    "file_sha256",
+    "not_applicable_assignment_rows",
+    "validate_capture_envelope",
+    "validate_workload_definition",
+]

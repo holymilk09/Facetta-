@@ -33,6 +33,7 @@ from facetta.frozen_capture_workload import (
     canonical_capture_payload,
     canonical_object_sha256,
     file_sha256,
+    not_applicable_assignment_rows,
     validate_capture_envelope,
 )
 from facetta.frozen_evidence_paths import (
@@ -234,6 +235,7 @@ class BundleCaptureExecutor:
         expected = {
             (row["kind"], row["evaluation_id"], row["source_filename"]): row
             for row in plan["items"]
+            if row["resolved_inputs"].get("execution_ready") is True
         }
         rows: dict[tuple[str, str, str], Json] = {}
         for index, row in enumerate(sequences, 1):
@@ -523,12 +525,10 @@ class FrozenCaptureProducer:
         )
         if plan["unresolved_sequence_count"]:
             raise ValueError("frozen plan contains unresolved assignments")
-        if plan["not_applicable_sequence_count"]:
-            raise ValueError("frozen plan contains non-executable assignments")
-        if plan["execution_ready_sequence_count"] != plan[
+        if plan["resolved_sequence_count"] != plan[
             "planned_evaluation_sequence_count"
         ]:
-            raise ValueError("frozen plan is not fully execution-ready")
+            raise ValueError("frozen plan is not fully resolved")
         if plan["executor_trust"]["status"] != "enrolled":
             raise ValueError("frozen plan has no enrolled executor")
         if not _git_sha(self.commit_sha):
@@ -630,7 +630,12 @@ class FrozenCaptureProducer:
                 destination.write_bytes(source.read_bytes())
                 artifact_rows.append((relative.as_posix(), source_hash, "source-image"))
 
-            for planned in plan["items"]:
+            execution_items = [
+                row
+                for row in plan["items"]
+                if row["resolved_inputs"].get("execution_ready") is True
+            ]
+            for planned in execution_items:
                 raw_attempts = self.executor.execute(planned)
                 if not isinstance(raw_attempts, list) or any(
                     not isinstance(row, dict) for row in raw_attempts
@@ -809,6 +814,9 @@ class FrozenCaptureProducer:
                 "assignment_bundle_sha256": plan["assignment_bundle"].get(
                     "bundle_sha256"
                 ),
+                "not_applicable_assignments": not_applicable_assignment_rows(
+                    plan
+                ),
                 "provider_calls_executed": completed_calls,
                 "attempts": attempts,
                 "persistence_evidence_ref": {
@@ -854,7 +862,11 @@ class FrozenCaptureProducer:
                     output_dir / persistence_relative
                 ).as_posix(),
                 "persistence_attestation_sha256": persistence_hash,
-                "captured_evaluation_sequence_count": len(plan["items"]),
+                "logical_evaluation_sequence_count": len(plan["items"]),
+                "captured_evaluation_sequence_count": len(execution_items),
+                "not_applicable_evaluation_sequence_count": len(
+                    not_applicable_assignment_rows(plan)
+                ),
                 "captured_attempt_count": len(attempts),
                 "signature_status": validation["signature_status"],
                 "corpus_gate_ready": False,
