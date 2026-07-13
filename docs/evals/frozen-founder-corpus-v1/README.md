@@ -59,9 +59,17 @@ PYTHONPATH=src .venv/bin/python scripts/run_frozen_corpus_gate.py \
 
 Validated machine captures should be converted to the review schema with
 `scripts/prepare_frozen_corpus_review.py`. The packet builder hash-binds every
-source, candidate, and edit mask and creates pending decision rows; it never
-calls a provider, fills a human decision, or signs evidence. This removes
-manual hash transcription while preserving the human review boundary.
+ring-quality source, candidate, and edit mask and creates exactly one pending
+decision row for every source/evaluation assignment in the pinned workload; it
+never calls a provider, fills a human decision, or signs evidence. The command
+requires the enrolled executor public key and key ID and refuses to build a
+packet unless `facetta-frozen-capture.v1` validation passes. It embeds the
+validated persistence JSON for replay compatibility while retaining the exact
+path/hash binding from the capture. The replay packet records the SHA-256 of the
+exact signed capture bytes both at its schema-required top level and inside its
+detailed capture provenance, allowing the compiled result and later founder
+approval to retain the same capture chain. The 144-source integrity result
+remains a separate prerequisite and is never inferred from the 58-source review packet.
 
 The command intentionally exits nonzero with image quality `not_run` until
 `--evidence` points to a complete `facetta-frozen-replay.v1` JSON capture. A
@@ -70,7 +78,8 @@ replay pins the manifest/config hashes and contains:
 - byte/image integrity for every one of the 144 manifest sources, with
   provider-backed capture assignments governed separately by the pinned
   58-source ring workload matrix;
-- one or more attempts for every declared render and edit evaluation;
+- the exact `workload.json` SHA-256 and one to three contiguous attempts for
+  every one of its 1,044 source/evaluation assignments;
 - hash-bound source and candidate artifacts for every attempt, plus a
   hash-bound mask for every edit attempt;
 - captured render conformance and edit-fidelity results;
@@ -78,13 +87,17 @@ replay pins the manifest/config hashes and contains:
   candidates that became active assets;
 - completed GIA-trained false-positive/false-negative review.
 
-The currently pinned replay compiler predates `workload.json` and still asks
-for artifact-verified quality coverage across all 144 sources. That conflicts
-with the new explicit 58-source quality scope. Do not launch the secured
-provider run or claim the corpus gate is runnable until the replay compiler and
-review-packet builder consume this workload directly and their replacement
-tests pass. Definition and plan validation intentionally leave
-`corpus_gate_ready: false`.
+The review packet and replay compiler consume the pinned workload directly:
+quality coverage is limited to the 58 ring sources and their 1,044 declared
+assignments, while integrity still covers all 144 sources. This closes the
+local scope mismatch only. It does not run a provider, supply an external
+source directory or executor/reviewer key, complete human review, approve a
+release, or make `corpus_gate_ready` true.
+
+Replay fails closed on a missing or extra assignment, a non-ring quality
+attempt, operation-class drift, non-contiguous or over-limit attempts,
+mismatched source/artifact hashes, non-finite scores, unusable edit masks, or
+any GIA rejection.
 
 The signed reviewer block contains one decision for every selected
 `kind/evaluation_id/source_filename` result. The verifier derives confusion

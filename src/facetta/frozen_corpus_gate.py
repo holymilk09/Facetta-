@@ -13,6 +13,7 @@ import base64
 import hashlib
 import json
 from collections import defaultdict
+from math import isfinite
 from pathlib import Path
 from statistics import mean
 from typing import Any
@@ -23,10 +24,27 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 from cryptography.hazmat.primitives.serialization import load_pem_public_key
 
 from facetta.image_agent.drift import outside_mask_drift
+from facetta.frozen_capture_workload import validate_workload_definition
 from facetta.ring_evals import evaluate_release_gates
 
 
 Json = dict[str, Any]
+
+
+def _valid_score(value: object) -> bool:
+    return (
+        type(value) in {int, float}
+        and isfinite(float(value))
+        and 0 <= float(value) <= 100
+    )
+
+
+def _mask_has_selected_and_protected_pixels(path: Path) -> bool:
+    """A drift replay needs both an edit region and an outside control region."""
+
+    with Image.open(path) as image:
+        low, high = image.convert("L").getextrema()
+    return low < 128 <= high
 
 
 def file_sha256(path: Path) -> str:
@@ -381,14 +399,13 @@ def _verify_declared_artifact(
 
 def _source_coverage(
     evidence: Json,
-    manifest: Json,
-    expected_evaluations: set[tuple[str, str]],
-    verified_source_evaluations: dict[str, set[str]],
+    quality_sources: dict[str, str],
+    expected_assignments: set[tuple[str, str, str]],
+    verified_source_evaluations: dict[str, set[tuple[str, str]]],
 ) -> Json:
-    expected_sources = {
-        str(row["filename"]): str(row["sha256"])
-        for row in manifest["sources"]
-    }
+    expected_by_source: dict[str, set[tuple[str, str]]] = defaultdict(set)
+    for kind, evaluation_id, filename in expected_assignments:
+        expected_by_source[filename].add((kind, evaluation_id))
     rows = evidence.get("source_coverage")
     errors: list[str] = []
     if not isinstance(rows, list):
@@ -403,24 +420,25 @@ def _source_coverage(
         errors.append("duplicate source coverage: " + ", ".join(duplicates))
     claimed: set[str] = set()
     failed: set[str] = set()
-    expected_ids = {evaluation_id for _, evaluation_id in expected_evaluations}
     for row in objects:
         filename = str(row.get("filename") or "")
-        if filename not in expected_sources:
-            errors.append(f"source coverage references unknown source: {filename}")
+        if filename not in quality_sources:
+            errors.append(
+                f"source coverage references non-quality or unknown source: {filename}"
+            )
             continue
-        if row.get("source_sha256") != expected_sources[filename]:
+        if row.get("source_sha256") != quality_sources[filename]:
             errors.append(f"source coverage hash differs for {filename}")
             continue
         evaluation_ids = row.get("evaluation_ids")
-        if (
-            not isinstance(evaluation_ids, list) or not evaluation_ids
-            or any(str(item) not in expected_ids for item in evaluation_ids)
-        ):
+        expected_ids = {
+            evaluation_id for _, evaluation_id in expected_by_source[filename]
+        }
+        if not isinstance(evaluation_ids, list) or set(map(str, evaluation_ids)) != expected_ids:
             errors.append(f"source coverage evaluations are invalid for {filename}")
             continue
         actual_ids = verified_source_evaluations.get(filename, set())
-        if set(map(str, evaluation_ids)) != actual_ids:
+        if actual_ids != expected_by_source[filename]:
             errors.append(
                 f"source coverage evaluations do not match verified attempts for {filename}"
             )
@@ -432,8 +450,12 @@ def _source_coverage(
         claimed.add(filename)
         if status == "fail":
             failed.add(filename)
-    completed = set(expected_sources) & set(verified_source_evaluations)
-    missing = sorted(set(expected_sources) - completed)
+    completed = {
+        filename
+        for filename, expected in expected_by_source.items()
+        if verified_source_evaluations.get(filename, set()) == expected
+    }
+    missing = sorted(set(quality_sources) - completed)
     if missing:
         errors.append("missing artifact-verified source coverage: " + ", ".join(missing))
     unclaimed = sorted(completed - claimed)
@@ -441,7 +463,7 @@ def _source_coverage(
         errors.append("verified source attempts lack matching coverage rows: " + ", ".join(unclaimed))
     return {
         "status": "pass" if not errors and not failed else "fail",
-        "expected_source_count": len(expected_sources),
+        "expected_source_count": len(quality_sources),
         "completed_source_count": len(completed),
         "failed_source_count": len(failed),
         "missing_source_filenames": missing,
@@ -449,13 +471,44 @@ def _source_coverage(
     }
 
 
+def _quality_workload(
+    workload: Json,
+) -> tuple[
+    dict[str, str],
+    dict[tuple[str, str], str],
+    set[tuple[str, str, str]],
+]:
+    """Compile the already-validated quality matrix into exact assignments."""
+
+    set_id = str(workload["ring_quality_evaluation_set_id"])
+    evaluation_rows = workload["evaluation_sets"][set_id]
+    evaluation_classes = {
+        (str(row["kind"]), str(row["evaluation_id"])):
+        str(row["operation_class"])
+        for row in evaluation_rows
+    }
+    quality_sources = {
+        str(row["filename"]): str(row["sha256"])
+        for row in workload["sources"]
+        if row.get("quality") is not None
+    }
+    assignments = {
+        (kind, evaluation_id, filename)
+        for filename in quality_sources
+        for kind, evaluation_id in evaluation_classes
+    }
+    return quality_sources, evaluation_classes, assignments
+
+
 def _replay_quality(
     evidence: Json,
     evidence_path: Path,
     manifest: Json,
     config: Json,
+    workload: Json,
     manifest_hash: str,
     config_hash: str,
+    workload_hash: str,
     repository_root: Path,
 ) -> Json:
     errors: list[str] = []
@@ -465,6 +518,8 @@ def _replay_quality(
         errors.append("replay manifest hash differs from frozen manifest")
     if evidence.get("config_sha256") != config_hash:
         errors.append("replay config hash differs from frozen config")
+    if evidence.get("workload_sha256") != workload_hash:
+        errors.append("replay workload hash differs from frozen workload")
     signature = _verify_signature(evidence, config, repository_root)
     if signature["status"] != "verified":
         errors.append(str(signature.get("error") or "replay signature is not verified"))
@@ -476,7 +531,9 @@ def _replay_quality(
             "signature": signature,
             "source_coverage": {
                 "status": "not_run",
-                "expected_source_count": len(manifest.get("sources", [])),
+                "expected_source_count": workload.get(
+                    "expected_quality_source_count", 0,
+                ),
                 "completed_source_count": 0,
             },
             "release_gates": {"status": "not_evaluated"},
@@ -485,12 +542,7 @@ def _replay_quality(
         errors.append("every captured attempt must be an object")
         attempts = [row for row in attempts if isinstance(row, dict)]
 
-    evaluation = manifest["evaluation_slice"]
-    expected = {
-        ("render", str(value)) for value in evaluation["render_case_ids"]
-    } | {
-        ("edit", str(value)) for value in evaluation["operation_ids"]
-    }
+    quality_sources, evaluation_classes, expected = _quality_workload(workload)
     grouped: dict[tuple[str, str, str], list[Json]] = defaultdict(list)
     for row in attempts:
         key = (
@@ -499,20 +551,26 @@ def _replay_quality(
             str(row.get("source_filename") or ""),
         )
         grouped[key].append(row)
-    observed_evaluations = {(kind, evaluation_id) for kind, evaluation_id, _ in grouped}
-    missing = sorted(expected - observed_evaluations)
-    unexpected = sorted(observed_evaluations - expected)
+    observed_assignments = set(grouped)
+    missing = sorted(expected - observed_assignments)
+    unexpected = sorted(observed_assignments - expected)
     if missing:
-        errors.append("missing evaluations: " + ", ".join(f"{a}:{b}" for a, b in missing))
+        errors.append(
+            "missing workload assignments: "
+            + ", ".join(":".join(value) for value in missing)
+        )
     if unexpected:
-        errors.append("unexpected evaluations: " + ", ".join(f"{a}:{b}" for a, b in unexpected))
+        errors.append(
+            "unexpected workload assignments: "
+            + ", ".join(":".join(value) for value in unexpected)
+        )
 
     thresholds = config["thresholds"]
     max_attempts = int(thresholds["max_attempts"])
     rows: list[Json] = []
     replayed_drift: list[Json] = []
     artifact_paths: dict[int, dict[str, Path]] = {}
-    verified_source_evaluations: dict[str, set[str]] = defaultdict(set)
+    verified_source_evaluations: dict[str, set[tuple[str, str]]] = defaultdict(set)
     manifest_sources = {
         str(row["filename"]): str(row["sha256"])
         for row in manifest["sources"]
@@ -551,57 +609,82 @@ def _replay_quality(
             str(captured.get("kind") or ""),
             str(captured.get("evaluation_id") or ""),
         )
+        expected_class = evaluation_classes.get(evaluation_pair)
+        if captured.get("operation_class") != expected_class:
+            errors.append(f"{label} operation_class differs from frozen workload")
         if (
             binding_valid
             and required_artifacts <= set(paths)
-            and evaluation_pair in expected
+            and (*evaluation_pair, source_filename) in expected
+            and captured.get("operation_class") == expected_class
         ):
-            verified_source_evaluations[source_filename].add(evaluation_pair[1])
+            verified_source_evaluations[source_filename].add(evaluation_pair)
     coverage = _source_coverage(
-        evidence, manifest, expected, verified_source_evaluations,
+        evidence,
+        quality_sources,
+        expected,
+        verified_source_evaluations,
     )
     errors.extend(coverage["errors"])
     for sequence_key in sorted(grouped):
         key = sequence_key[:2]
         source_filename = sequence_key[2]
-        if key not in expected:
+        if sequence_key not in expected:
             continue
         captured = sorted(grouped[sequence_key], key=lambda row: (
             row.get("attempt") if type(row.get("attempt")) is int else 10**9
         ))
         indexes = [row.get("attempt") for row in captured]
         if any(type(index) is not int or index < 1 for index in indexes):
-            errors.append(f"{key[0]}:{key[1]} has invalid attempt indexes")
+            errors.append(
+                f"{key[0]}:{key[1]}:{source_filename} has invalid attempt indexes"
+            )
             continue
         if len(set(indexes)) != len(indexes):
-            errors.append(f"{key[0]}:{key[1]} has duplicate attempt indexes")
+            errors.append(
+                f"{key[0]}:{key[1]}:{source_filename} has duplicate attempt indexes"
+            )
+        elif sorted(indexes) != list(range(1, len(captured) + 1)):
+            errors.append(
+                f"{key[0]}:{key[1]}:{source_filename} attempt indexes are not contiguous"
+            )
         attempts_used = max(indexes, default=0)
         if attempts_used > max_attempts:
-            errors.append(f"{key[0]}:{key[1]} exceeded {max_attempts} attempts")
+            errors.append(
+                f"{key[0]}:{key[1]}:{source_filename} exceeded "
+                f"{max_attempts} attempts"
+            )
         accepted = [row for row in captured if row.get("accepted") is True]
         if len(accepted) > 1:
-            errors.append(f"{key[0]}:{key[1]} has multiple accepted attempts")
+            errors.append(
+                f"{key[0]}:{key[1]}:{source_filename} has multiple accepted attempts"
+            )
         selected = accepted[-1] if accepted else (captured[-1] if captured else {})
         if accepted and selected.get("attempt") != attempts_used:
-            errors.append(f"{key[0]}:{key[1]} continued after acceptance")
+            errors.append(
+                f"{key[0]}:{key[1]}:{source_filename} continued after acceptance"
+            )
         if key[0] == "render":
             score = selected.get("render_conformance_score")
             hard_pass = selected.get("hard_gate_pass")
-            if not isinstance(score, (int, float)) or type(hard_pass) is not bool:
+            if not _valid_score(score) or type(hard_pass) is not bool:
                 errors.append(f"render:{key[1]} lacks scored capture evidence")
                 continue
             rows.append({
                 "kind": "render", "case": f"{key[1]}@{source_filename}",
                 "evaluation_id": key[1], "source_filename": source_filename,
                 "score": score,
-                "hard_gate_pass": hard_pass, "attempts": attempts_used,
+                "hard_gate_pass": (
+                    bool(selected.get("accepted")) and hard_pass
+                ),
+                "attempts": attempts_used,
             })
             continue
 
         score = selected.get("edit_fidelity_score")
         severity = selected.get("severity")
         applied = selected.get("change_applied")
-        if (not isinstance(score, (int, float))
+        if (not _valid_score(score)
                 or severity not in {"none", "minor", "major"}
                 or type(applied) is not bool):
             errors.append(f"edit:{key[1]} lacks scored capture evidence")
@@ -614,6 +697,11 @@ def _replay_quality(
             errors.append(f"edit:{key[1]} lacks replayable source/candidate/mask files")
             continue
         assert parent is not None and child is not None and mask is not None
+        if not _mask_has_selected_and_protected_pixels(mask):
+            errors.append(
+                f"edit:{key[1]}:{source_filename} mask lacks selected/protected regions"
+            )
+            continue
         drift = outside_mask_drift(parent.read_bytes(), child.read_bytes(), mask.read_bytes())
         drift_pass = drift <= float(thresholds["max_outside_mask_drift"])
         replayed_drift.append({
@@ -707,10 +795,27 @@ def _replay_quality(
     if not review_complete:
         errors.append("GIA-trained reviewer evidence is incomplete")
     errors.extend(decision_errors)
+    all_reviewer_accepted = (
+        bool(selected_keys)
+        and set(decision_by_key) == selected_keys
+        and all(
+            decision_by_key[key].get("accepted") is True
+            for key in selected_keys
+        )
+    )
+    if not all_reviewer_accepted:
+        errors.append("one or more GIA reviewer decisions rejected a selected result")
 
-    operation_classes = evaluation["operation_classes"]
-    quick_ids = set(map(str, operation_classes["quick_appearance"]))
-    structural_ids = set(map(str, operation_classes["structural"]))
+    quick_ids = {
+        evaluation_id
+        for (kind, evaluation_id), operation_class in evaluation_classes.items()
+        if kind == "edit" and operation_class == "quick_appearance"
+    }
+    structural_ids = {
+        evaluation_id
+        for (kind, evaluation_id), operation_class in evaluation_classes.items()
+        if kind == "edit" and operation_class == "structural"
+    }
     quick_keys = {
         key for key in selected_keys if key[0] == "edit" and key[1] in quick_ids
     }
@@ -768,12 +873,13 @@ def _replay_quality(
     ))
     passed = (
         not errors
-        and observed_evaluations == expected
+        and observed_assignments == expected
         and signature["status"] == "verified"
         and coverage["status"] == "pass"
         and base_machine_gates_pass
         and all_drift_pass
         and review_complete
+        and all_reviewer_accepted
         and quick_pass
         and structural_pass
     )
@@ -784,12 +890,15 @@ def _replay_quality(
         "source_coverage": coverage,
         "captured_attempt_count": len(attempts),
         "expected_evaluation_count": len(expected),
-        "completed_evaluation_count": len(observed_evaluations & expected),
+        "completed_evaluation_count": len(observed_assignments & expected),
+        "integrity_source_count": len(manifest.get("sources", [])),
+        "quality_source_count": len(quality_sources),
         "outside_mask_replay": replayed_drift,
         "all_outside_mask_drift_pass": all_drift_pass,
         "release_gates": release,
         "classified_release_gates": classified_gates,
         "reviewer_review_complete": review_complete,
+        "all_reviewer_decisions_accepted": all_reviewer_accepted,
         "reviewer_confusion_counts": {
             "false_positives": false_positives,
             "false_negatives": false_negatives,
@@ -803,6 +912,7 @@ def compile_frozen_corpus_gate(
     source_dir: Path,
     evidence_path: Path | None = None,
     repository_root: Path | None = None,
+    workload_path: Path | None = None,
 ) -> Json:
     manifest = _load_object(manifest_path)
     config = _load_object(config_path)
@@ -812,6 +922,27 @@ def compile_frozen_corpus_gate(
     resolved_repository_root = (
         repository_root or Path(__file__).resolve().parents[2]
     )
+    resolved_workload_path = workload_path or manifest_path.parent / "workload.json"
+    workload: Json = {}
+    workload_errors: list[str] = []
+    workload_validation: Json
+    try:
+        workload = _load_object(resolved_workload_path)
+        workload_validation = validate_workload_definition(
+            manifest_path,
+            config_path,
+            resolved_workload_path,
+            repository_root=resolved_repository_root,
+        )
+        workload_errors.extend(map(str, workload_validation.get("errors", [])))
+    except (OSError, ValueError, json.JSONDecodeError) as exc:
+        workload_validation = {
+            "status": "fail",
+            "provider_calls": 0,
+            "errors": [f"workload definition is unavailable: {exc}"],
+            "corpus_gate_ready": False,
+        }
+        workload_errors.extend(workload_validation["errors"])
     config_errors = _validate_config(
         config,
         manifest,
@@ -822,6 +953,21 @@ def compile_frozen_corpus_gate(
         "status": "fail", "expected": 0, "verified": 0,
         "failures": [{"code": "manifest_invalid"}],
     }
+    evidence: Json | None = None
+    evidence_binding: Json | None = None
+    if evidence_path is not None:
+        evidence = _load_object(evidence_path)
+        signature = evidence.get("signature")
+        evidence_binding = {
+            "path": str(evidence_path),
+            "sha256": file_sha256(evidence_path),
+            "schema_version": evidence.get("schema_version"),
+            "workload_sha256": evidence.get("workload_sha256"),
+            "capture_sha256": evidence.get("capture_sha256"),
+            "reviewer_key_id": (
+                signature.get("key_id") if isinstance(signature, dict) else None
+            ),
+        }
     if evidence_path is None:
         quality: Json = {
             "status": "not_run",
@@ -829,17 +975,33 @@ def compile_frozen_corpus_gate(
             "signature": {"status": "not_run"},
             "source_coverage": {
                 "status": "not_run",
-                "expected_source_count": len(rows),
+                "expected_source_count": workload_validation.get(
+                    "quality_source_count", 0,
+                ),
+                "completed_source_count": 0,
+            },
+            "release_gates": {"status": "not_evaluated"},
+        }
+    elif workload_errors:
+        quality = {
+            "status": "not_run",
+            "errors": ["quality replay requires a valid frozen workload"],
+            "signature": {"status": "not_run"},
+            "source_coverage": {
+                "status": "not_run",
+                "expected_source_count": 0,
                 "completed_source_count": 0,
             },
             "release_gates": {"status": "not_evaluated"},
         }
     else:
+        assert evidence is not None
         quality = _replay_quality(
-            _load_object(evidence_path), evidence_path, manifest, config,
-            manifest_hash, config_hash, resolved_repository_root,
+            evidence, evidence_path, manifest, config, workload,
+            manifest_hash, config_hash, file_sha256(resolved_workload_path),
+            resolved_repository_root,
         )
-    definition_errors = manifest_errors + config_errors
+    definition_errors = manifest_errors + config_errors + workload_errors
     passed = (
         not definition_errors
         and source_integrity["status"] == "pass"
@@ -854,9 +1016,28 @@ def compile_frozen_corpus_gate(
             "corpus_id": manifest.get("corpus_id"),
         },
         "config": {"path": str(config_path), "sha256": config_hash},
+        "workload": {
+            "path": str(resolved_workload_path),
+            "sha256": (
+                file_sha256(resolved_workload_path)
+                if resolved_workload_path.is_file()
+                else None
+            ),
+            "status": workload_validation.get("status", "fail"),
+            "integrity_source_count": workload_validation.get(
+                "integrity_source_count", 0,
+            ),
+            "quality_source_count": workload_validation.get(
+                "quality_source_count", 0,
+            ),
+            "quality_evaluations_per_source": workload_validation.get(
+                "quality_evaluations_per_source", 0,
+            ),
+        },
         "implementation": {
             "frozen_components": config.get("frozen_components"),
         },
+        "evidence": evidence_binding,
         "definition": {
             "status": "pass" if not definition_errors else "fail",
             "errors": definition_errors,

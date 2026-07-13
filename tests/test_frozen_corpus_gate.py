@@ -71,6 +71,52 @@ def _fixture(tmp_path: Path) -> dict[str, Any]:
             },
         },
     })
+    workload = tmp_path / "workload.json"
+    _json(workload, {
+        "schema_version": "facetta-frozen-capture-workload.v1",
+        "corpus_id": "test-corpus",
+        "config_id": "test-config",
+        "manifest_sha256": _sha(manifest),
+        "expected_integrity_source_count": 2,
+        "expected_quality_source_count": 1,
+        "ring_quality_evaluation_set_id": "ring-full-matrix-v1",
+        "evaluation_sets": {
+            "ring-full-matrix-v1": [
+                {
+                    "kind": "render",
+                    "evaluation_id": "render-one",
+                    "operation_class": "render_conformance",
+                },
+                {
+                    "kind": "edit",
+                    "evaluation_id": "edit-one",
+                    "operation_class": "quick_appearance",
+                },
+                {
+                    "kind": "edit",
+                    "evaluation_id": "edit-structural",
+                    "operation_class": "structural",
+                },
+            ],
+        },
+        "sources": [
+            {
+                "filename": first.name,
+                "sha256": _sha(first),
+                "integrity_required": True,
+                "quality": {
+                    "slice": "ring",
+                    "evaluation_set_id": "ring-full-matrix-v1",
+                },
+            },
+            {
+                "filename": second.name,
+                "sha256": _sha(second),
+                "integrity_required": True,
+                "quality": None,
+            },
+        ],
+    })
     config = tmp_path / "config.json"
     components = tmp_path / "components"
     components.mkdir()
@@ -99,6 +145,7 @@ def _fixture(tmp_path: Path) -> dict[str, Any]:
             for name, path in component_files.items()
         } | {
             "routing": "captured-replay.v1",
+            "capture_workload": f"workload.json@sha256:{_sha(workload)}",
         },
         "thresholds": {
             "render_hard_gate_pass_rate": 0.90,
@@ -118,27 +165,29 @@ def _fixture(tmp_path: Path) -> dict[str, Any]:
     edit_candidate = tmp_path / "edit-candidate.png"
     mask = tmp_path / "mask.png"
     _image(render_candidate, "white")
-    _image(edit_candidate, "gray")
-    _image(mask, "black")
+    _image(edit_candidate, "white")
+    edit_mask = Image.new("L", (4, 4), 0)
+    edit_mask.putpixel((0, 0), 255)
+    edit_mask.save(mask)
     evidence = tmp_path / "evidence.json"
     evidence_value: dict[str, Any] = {
         "schema_version": "facetta-frozen-replay.v1",
         "manifest_sha256": _sha(manifest),
         "config_sha256": _sha(config),
+        "workload_sha256": _sha(workload),
         "source_coverage": [
             {
                 "filename": first.name, "source_sha256": _sha(first),
-                "evaluation_ids": ["render-one"], "quality_status": "pass",
-            },
-            {
-                "filename": second.name, "source_sha256": _sha(second),
-                "evaluation_ids": ["edit-one", "edit-structural"],
+                "evaluation_ids": [
+                    "render-one", "edit-one", "edit-structural",
+                ],
                 "quality_status": "pass",
             },
         ],
         "attempts": [
             {
                 "kind": "render", "evaluation_id": "render-one",
+                "operation_class": "render_conformance",
                 "attempt": 1, "accepted": True,
                 "source_filename": first.name, "source_sha256": _sha(first),
                 "source_image": str(first),
@@ -149,22 +198,24 @@ def _fixture(tmp_path: Path) -> dict[str, Any]:
             },
             {
                 "kind": "edit", "evaluation_id": "edit-one",
+                "operation_class": "quick_appearance",
                 "attempt": 1, "accepted": True,
-                "source_filename": second.name, "source_sha256": _sha(second),
+                "source_filename": first.name, "source_sha256": _sha(first),
                 "edit_fidelity_score": 95, "severity": "none",
-                "change_applied": True, "source_image": str(second),
-                "source_image_sha256": _sha(second),
+                "change_applied": True, "source_image": str(first),
+                "source_image_sha256": _sha(first),
                 "candidate_image": str(edit_candidate),
                 "candidate_image_sha256": _sha(edit_candidate),
                 "mask_image": str(mask), "mask_image_sha256": _sha(mask),
             },
             {
                 "kind": "edit", "evaluation_id": "edit-structural",
+                "operation_class": "structural",
                 "attempt": 1, "accepted": True,
-                "source_filename": second.name, "source_sha256": _sha(second),
+                "source_filename": first.name, "source_sha256": _sha(first),
                 "edit_fidelity_score": 95, "severity": "none",
-                "change_applied": True, "source_image": str(second),
-                "source_image_sha256": _sha(second),
+                "change_applied": True, "source_image": str(first),
+                "source_image_sha256": _sha(first),
                 "candidate_image": str(edit_candidate),
                 "candidate_image_sha256": _sha(edit_candidate),
                 "mask_image": str(mask), "mask_image_sha256": _sha(mask),
@@ -187,11 +238,11 @@ def _fixture(tmp_path: Path) -> dict[str, Any]:
                 },
                 {
                     "kind": "edit", "evaluation_id": "edit-one",
-                    "source_filename": second.name, "accepted": True,
+                    "source_filename": first.name, "accepted": True,
                 },
                 {
                     "kind": "edit", "evaluation_id": "edit-structural",
-                    "source_filename": second.name, "accepted": True,
+                    "source_filename": first.name, "accepted": True,
                 },
             ],
         },
@@ -199,6 +250,7 @@ def _fixture(tmp_path: Path) -> dict[str, Any]:
     paths: dict[str, Any] = {
         "root": tmp_path,
         "source_dir": source_dir, "manifest": manifest, "config": config,
+        "workload": workload,
         "evidence": evidence, "first": first, "second": second,
         "prompt_bundle": component_files["prompt_bundle"],
         "private_key": private_key, "reviewer_key": reviewer_key,
@@ -213,6 +265,7 @@ def _run(paths: dict[str, Any], *, evidence: bool = True) -> dict:
         paths["manifest"], paths["config"], paths["source_dir"],
         paths["evidence"] if evidence else None,
         repository_root=paths["root"],
+        workload_path=paths["workload"],
     )
 
 
@@ -239,10 +292,18 @@ def test_complete_offline_replay_can_pass(tmp_path: Path):
     assert result["source_integrity"]["status"] == "pass"
     assert result["quality"]["status"] == "pass"
     assert result["quality"]["signature"]["status"] == "verified"
+    assert result["evidence"] == {
+        "path": str(paths["evidence"]),
+        "sha256": _sha(paths["evidence"]),
+        "schema_version": "facetta-frozen-replay.v1",
+        "workload_sha256": _sha(paths["workload"]),
+        "capture_sha256": None,
+        "reviewer_key_id": "test-reviewer-v1",
+    }
     assert result["quality"]["source_coverage"] == {
         "status": "pass",
-        "expected_source_count": 2,
-        "completed_source_count": 2,
+        "expected_source_count": 1,
+        "completed_source_count": 1,
         "failed_source_count": 0,
         "missing_source_filenames": [],
         "errors": [],
@@ -333,6 +394,19 @@ def test_more_than_three_attempts_fails_quality(tmp_path: Path):
     assert result["quality"]["release_gates"][
         "all_localized_edits_within_three_attempts"
     ] is False
+
+
+def test_attempt_indexes_must_be_contiguous_per_source_assignment(tmp_path: Path):
+    paths = _fixture(tmp_path)
+    evidence = _refresh_evidence_hashes(paths)
+    evidence["attempts"][0]["attempt"] = 2
+    _write_signed(paths, evidence)
+    result = _run(paths)
+    assert any(
+        "attempt indexes are not contiguous" in error
+        for error in result["quality"]["errors"]
+    )
+    assert result["corpus_gate_ready"] is False
 
 
 def test_metric_failure_fails_release_gate(tmp_path: Path):
@@ -434,8 +508,8 @@ def test_missing_manifest_source_coverage_claim_fails(tmp_path: Path):
     _write_signed(paths, evidence)
     result = _run(paths)
     coverage = result["quality"]["source_coverage"]
-    assert coverage["expected_source_count"] == 2
-    assert coverage["completed_source_count"] == 2
+    assert coverage["expected_source_count"] == 1
+    assert coverage["completed_source_count"] == 1
     assert coverage["missing_source_filenames"] == []
     assert any("lack matching coverage rows" in error
                for error in coverage["errors"])
@@ -445,21 +519,16 @@ def test_missing_manifest_source_coverage_claim_fails(tmp_path: Path):
 def test_signed_coverage_claim_without_source_attempt_fails(tmp_path: Path):
     paths = _fixture(tmp_path)
     evidence = _refresh_evidence_hashes(paths)
-    for edit in (row for row in evidence["attempts"] if row["kind"] == "edit"):
-        edit.update({
-            "source_filename": paths["first"].name,
-            "source_sha256": _sha(paths["first"]),
-            "source_image": str(paths["first"]),
-            "source_image_sha256": _sha(paths["first"]),
-            "candidate_image": str(paths["render_candidate"]),
-            "candidate_image_sha256": _sha(paths["render_candidate"]),
-        })
+    evidence["attempts"] = [
+        row for row in evidence["attempts"]
+        if row["evaluation_id"] != "edit-structural"
+    ]
     _write_signed(paths, evidence)
     result = _run(paths)
     coverage = result["quality"]["source_coverage"]
-    assert coverage["expected_source_count"] == 2
-    assert coverage["completed_source_count"] == 1
-    assert coverage["missing_source_filenames"] == ["image-2.png"]
+    assert coverage["expected_source_count"] == 1
+    assert coverage["completed_source_count"] == 0
+    assert coverage["missing_source_filenames"] == ["image-1.png"]
     assert any("do not match verified attempts" in error
                for error in coverage["errors"])
     assert result["corpus_gate_ready"] is False
@@ -471,4 +540,120 @@ def test_attempt_artifact_hash_mismatch_fails(tmp_path: Path):
     result = _run(paths)
     assert any("candidate_image artifact hash mismatch" in error
                for error in result["quality"]["errors"])
+    assert result["corpus_gate_ready"] is False
+
+
+def test_non_ring_quality_attempt_is_an_unexpected_assignment(tmp_path: Path):
+    paths = _fixture(tmp_path)
+    evidence = _refresh_evidence_hashes(paths)
+    extra = dict(evidence["attempts"][0])
+    extra.update({
+        "source_filename": paths["second"].name,
+        "source_sha256": _sha(paths["second"]),
+        "source_image": str(paths["second"]),
+        "source_image_sha256": _sha(paths["second"]),
+    })
+    evidence["attempts"].append(extra)
+    _write_signed(paths, evidence)
+    result = _run(paths)
+    assert any(
+        "unexpected workload assignments" in error
+        for error in result["quality"]["errors"]
+    )
+    assert result["corpus_gate_ready"] is False
+
+
+def test_attempt_operation_class_must_match_workload(tmp_path: Path):
+    paths = _fixture(tmp_path)
+    evidence = _refresh_evidence_hashes(paths)
+    evidence["attempts"][0]["operation_class"] = "structural"
+    _write_signed(paths, evidence)
+    result = _run(paths)
+    assert any(
+        "operation_class differs from frozen workload" in error
+        for error in result["quality"]["errors"]
+    )
+    assert result["corpus_gate_ready"] is False
+
+
+def test_gia_rejection_of_render_fails_quality(tmp_path: Path):
+    paths = _fixture(tmp_path)
+    evidence = _refresh_evidence_hashes(paths)
+    decision = next(
+        row for row in evidence["reviewer_review"]["decisions"]
+        if row["kind"] == "render"
+    )
+    decision["accepted"] = False
+    evidence["reviewer_review"]["false_positives"] = 1
+    _write_signed(paths, evidence)
+    result = _run(paths)
+    assert result["quality"]["all_reviewer_decisions_accepted"] is False
+    assert result["quality"]["status"] == "fail"
+
+
+def test_gia_rejection_of_structural_edit_fails_quality(tmp_path: Path):
+    paths = _fixture(tmp_path)
+    evidence = _refresh_evidence_hashes(paths)
+    decision = next(
+        row for row in evidence["reviewer_review"]["decisions"]
+        if row["evaluation_id"] == "edit-structural"
+    )
+    decision["accepted"] = False
+    evidence["reviewer_review"]["false_positives"] = 1
+    _write_signed(paths, evidence)
+    result = _run(paths)
+    assert result["quality"]["all_reviewer_decisions_accepted"] is False
+    assert result["quality"]["status"] == "fail"
+
+
+def test_rejected_render_attempt_cannot_hard_pass(tmp_path: Path):
+    paths = _fixture(tmp_path)
+    evidence = _refresh_evidence_hashes(paths)
+    render = next(row for row in evidence["attempts"] if row["kind"] == "render")
+    render["accepted"] = False
+    evidence["reviewer_review"]["false_negatives"] = 1
+    _write_signed(paths, evidence)
+    result = _run(paths)
+    assert result["quality"]["release_gates"]["hard_gate_pass"] is False
+    assert result["quality"]["status"] == "fail"
+
+
+def test_non_finite_score_fails_closed(tmp_path: Path):
+    paths = _fixture(tmp_path)
+    evidence = _refresh_evidence_hashes(paths)
+    evidence["attempts"][0]["render_conformance_score"] = float("nan")
+    _write_signed(paths, evidence)
+    result = _run(paths)
+    assert any(
+        "lacks scored capture evidence" in error
+        for error in result["quality"]["errors"]
+    )
+    assert result["quality"]["status"] == "fail"
+
+
+def test_uniform_edit_mask_cannot_claim_zero_drift(tmp_path: Path):
+    paths = _fixture(tmp_path)
+    Image.new("L", (4, 4), 255).save(paths["root"] / "mask.png")
+    evidence = _refresh_evidence_hashes(paths)
+    for row in evidence["attempts"]:
+        if row["kind"] == "edit":
+            row["mask_image_sha256"] = _sha(paths["root"] / "mask.png")
+    _write_signed(paths, evidence)
+    result = _run(paths)
+    assert any(
+        "mask lacks selected/protected regions" in error
+        for error in result["quality"]["errors"]
+    )
+    assert result["quality"]["status"] == "fail"
+
+
+def test_replay_must_bind_exact_workload_hash(tmp_path: Path):
+    paths = _fixture(tmp_path)
+    evidence = _refresh_evidence_hashes(paths)
+    evidence["workload_sha256"] = "0" * 64
+    _write_signed(paths, evidence)
+    result = _run(paths)
+    assert "replay workload hash differs" in " ".join(
+        result["quality"]["errors"]
+    )
     assert result["corpus_gate_ready"] is False

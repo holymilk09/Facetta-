@@ -19,6 +19,9 @@ DEFAULT_MANIFEST = (
 DEFAULT_CONFIG = (
     ROOT / "docs" / "evals" / "frozen-founder-corpus-v1" / "config.json"
 )
+DEFAULT_WORKLOAD = (
+    ROOT / "docs" / "evals" / "frozen-founder-corpus-v1" / "workload.json"
+)
 
 
 def _report(result: dict[str, object]) -> str:
@@ -42,6 +45,9 @@ def _report(result: dict[str, object]) -> str:
         f"- Overall: `{result['status']}`",
         f"- Corpus gate ready: `{result['corpus_gate_ready']}`",
         f"- Definition: `{definition['status']}`",
+        f"- Workload: `{result['workload']['status']}` "
+        f"(quality: `{result['workload']['quality_source_count']}`, "
+        f"integrity: `{result['workload']['integrity_source_count']}`)",
         f"- Source integrity: `{sources['status']}` "
         f"({sources['verified']}/{sources['expected']})",
         f"- Image quality replay: `{quality['status']}`",
@@ -66,12 +72,14 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--manifest", type=Path, default=DEFAULT_MANIFEST)
     parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
+    parser.add_argument("--workload", type=Path, default=DEFAULT_WORKLOAD)
     parser.add_argument("--source-dir", type=Path, required=True)
     parser.add_argument("--evidence", type=Path)
     parser.add_argument("--outdir", type=Path, required=True)
     args = parser.parse_args()
     result = compile_frozen_corpus_gate(
         args.manifest, args.config, args.source_dir, args.evidence,
+        workload_path=args.workload,
     )
     args.outdir.mkdir(parents=True, exist_ok=True)
     (args.outdir / "results.json").write_text(

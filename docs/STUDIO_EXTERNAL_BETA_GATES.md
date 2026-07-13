@@ -22,9 +22,14 @@ exit code and the generated JSON alongside the human sign-off.
   manifest and implementation hashes. Its current
   `current_evidence_status` is `not_run` and `reviewer_public_key` is `null`, so
   the gate cannot pass yet.
-- Reviewer enrollment must configure an Ed25519 public key by key ID, path, and
-  SHA-256 in `config.json`. Keep the private signing key outside the repository
-  and outside the run artifacts.
+- **Freeze key enrollment before capture.** Configure both the GIA reviewer and
+  founder Ed25519 public keys by key ID, path, and SHA-256 in `config.json`
+  before generating the provider-call plan, capture, replay, or `results.json`.
+  The capture and replay bind the exact config hash, so adding the founder key
+  after execution would invalidate that evidence. Keep both private signing
+  keys outside the repository and outside the run artifacts. The reviewer
+  signs the completed replay; the founder signs only the already-generated
+  result bytes later. Neither public-key enrollment is an approval.
 - The replay passed to `--evidence` must be one complete
   `facetta-frozen-replay.v1` JSON payload signed by that enrolled key. It must
   bind its manifest/config hashes, all source/candidate/mask artifact hashes,
@@ -72,16 +77,29 @@ Build an unsigned review packet locally:
 PYTHONPATH=src .venv/bin/python scripts/prepare_frozen_corpus_review.py \
   --source-dir /secure/path/to/founder-reference-directory \
   --capture /secure/path/to/frozen-capture.json \
+  --capture-public-key /secure/path/to/executor-public-key \
+  --capture-key-id secured-executor-v1 \
   --out /secure/path/to/unsigned-review-packet.json
 ```
 
-The builder makes zero provider calls, verifies every referenced frozen source,
-derives source/candidate/mask SHA-256 values, and generates one pending reviewer
-decision per observed result. Its output is intentionally unsigned with
+The builder makes zero provider calls and first requires the capture's executor
+signature, exact plan coverage, artifact hashes, and persistence binding to
+validate. It verifies every ring-quality source referenced by the pinned
+workload, derives replay paths without changing the signed hashes, embeds the
+hash-bound persistence JSON, and generates exactly one pending reviewer
+decision per declared 58-source/evaluation assignment. Full 144-source byte and
+image integrity remains a separate prerequisite. The packet's top-level
+`capture_sha256` and nested capture provenance both bind the exact signed
+capture bytes used by the replay compiler and subsequent founder chain. Its
+output is intentionally unsigned with
 `completed: false`, null decisions, and `pending_review` coverage. The
 GIA-trained reviewer completes those fields, verifies the images, recomputes
 the declared confusion summary, and signs the entire canonical payload outside
 the repository. The replay verifier rejects the packet until that happens.
+The CLI validates against the operator-supplied executor key path and ID and
+records their identity in capture provenance; key custody/enrollment is an
+external operational control, not something a locally self-generated key can
+satisfy by itself.
 
 ### Execute
 
@@ -114,9 +132,9 @@ The output directory is the canonical machine-result location for this run:
 
 The GIA-trained review is part of the signed replay. Founder approval is a
 second release decision because it must bind the already-generated
-`results.json` bytes. Enroll `founder_public_key` in the frozen config using the
-same key-id/path/SHA-256 shape as `reviewer_public_key`; keep its private key
-outside the repository. After reviewing the result, the founder signs a
+`results.json` bytes. The founder public key must already have been enrolled
+and frozen in the config before capture; do not edit the config at this stage.
+After reviewing the result, the founder signs a
 `facetta-founder-approval.v1` record containing `results_sha256`, decision
 `approved`, founder name, timezone-qualified `approved_at`, and release-ticket
 identifier. Then compile the final decision:

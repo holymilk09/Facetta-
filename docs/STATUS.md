@@ -5,6 +5,37 @@ Read `CLAUDE.md` (constitution — binding), `README.md` (endpoints/layout),
 `docs/DATA_WANTED.md` (open research asks). This file is the delta: what is
 DONE beyond the original TASKS.md build order, and what is next.
 
+## 2026-07-13 workload-bound corpus evidence checkpoint
+
+The frozen external-quality gate now consumes one pinned workload from capture
+through replay, review-packet compilation, and founder release. It keeps the
+144-source integrity inventory separate from the exact 58-source ring quality
+sample and requires all 1,044 source-by-evaluation assignments. Replay rejects
+missing, extra, non-ring, discontinuous, non-finite, or out-of-range evidence;
+failed GIA candidates cannot machine-pass. The review packet accepts only a
+valid signed `facetta-frozen-capture.v1` artifact, preserves its signing and
+capture-byte provenance, binds source/candidate/mask/persistence evidence, and
+leaves every human decision blank. It cannot claim readiness.
+
+The founder finalizer no longer trusts a shallow top-level pass. It derives the
+frozen scope from the pinned workload and requires the nested definition,
+workload, integrity, quality, signature, coverage, GIA, evidence-chain, and
+release gates to agree before it may emit `corpus_gate_ready`. Reviewer and
+founder keys must be enrolled in the frozen config before plan, capture,
+replay, or result bytes are signed. Staging remains a separate authority, so
+this path still cannot emit `external_beta_ready`.
+
+Local validation at this checkpoint: 1,510 backend tests, 239 Jest tests, 67
+Studio contract tests, TypeScript, Ruff, Expo web export, frozen-definition
+pin validation, all 57 focused frozen-gate/production-surface tests, and the
+production TypeScript-client -> HTTP -> FastAPI acceptance pass. No provider
+corpus run or human review was performed. External beta remains blocked on a
+fully resolved secured executor, a config-pinned executor identity, measured
+rather than asserted machine scores, signed API persistence attestation, an
+independently classified ring sample, a separate designer-acceptance signal,
+portable evidence paths, enrolled reviewer/founder keys, and the combined
+corpus-plus-staging release controller.
+
 ## 2026-07-13 atomic Create and capture-planning checkpoint
 
 The pre-spec journey no longer dead-ends after refinement. The backend now
@@ -44,8 +75,8 @@ manifest hashes, corpus identity, current frozen implementation pins, and the
 founder-approved result bytes. The frozen per-source workload and provider-call
 planner now exist and separate 144-source integrity from the 58-source ring
 quality slice. This still does not make the external gate runnable: the secured
-capture executor, replay-compiler workload integration, a signed staging
-attestation, and a combined release controller still need to be built;
+capture executor, a signed staging attestation, and a combined release
+controller still need to be built;
 external sources, reviewer/founder keys, and staging principals remain
 `not_run` / `unmet`.
 
