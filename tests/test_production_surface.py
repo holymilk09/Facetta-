@@ -53,6 +53,7 @@ EXPECTED_PRODUCTION_OPERATIONS = (
         "/specs/source-coverage/confirm",
         "/assets/{asset_id}/markup/read",
         "/assets/{asset_id}/markup/apply",
+        "/assets/{asset_id}/studio-component-map",
         "/assets/{asset_id}/checklist",
         "/assets/{asset_id}/checklist/respond",
         "/assets/{asset_id}/pin",

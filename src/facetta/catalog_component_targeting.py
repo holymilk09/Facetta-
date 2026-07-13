@@ -29,7 +29,12 @@ from facetta.revision_component_map_store import load_revision_component_map
 
 
 RING_CATALOG_TARGET_KINDS: dict[str, tuple[str, ...]] = {
-    "stone.cut": ("center_stone",),
+    # Changing the face-up cut also moves the immediately touching bearing
+    # points.  A center-stone-only mask would either freeze the old seat/prong
+    # tips into an incoherent shape or force the provider to edit outside its
+    # authorized region.  The deterministic catalog contract already freezes
+    # the setting facts while allowing these pixels to adapt.
+    "stone.cut": ("center_stone", "prongs", "setting"),
     "stone.color": ("center_stone",),
     "setting.style": ("prongs", "setting"),
     "metal.material": (
@@ -345,6 +350,88 @@ def prepare_catalog_child_component_map(
         raise ComponentMappingUnresolved(
             "the catalog child mapper bound its map to the wrong asset"
         )
-    reconciled = reconcile_parent_component_ids(parent_map, proposed)
+    proposed_payload = proposed.model_dump(mode="json")
+    proposed_payload["calibration_evidence_sha256"] = (
+        activation.calibration_evidence_sha256
+    )
+    attested = RevisionComponentMap.model_validate(proposed_payload)
+    reconciled = reconcile_parent_component_ids(parent_map, attested)
     bind_map_to_raster(reconciled, child_image)
     return reconciled
+
+
+def prepare_catalog_source_component_map(
+    *,
+    asset_id: str,
+    image: bytes,
+    jewelry_type: str,
+) -> RevisionComponentMap:
+    """Map one exact ring revision under the active attested release.
+
+    Source mapping is intentionally explicit and non-mutating. Callers stage
+    the returned immutable map in their own persistence transaction. A
+    test-only child callable or a mapper without a source method stays closed.
+    """
+    if jewelry_type != "ring":
+        raise ComponentMappingUnresolved(
+            "source component mapping is released only for rings"
+        )
+    activation = _configured_structural_mapper
+    if (
+        activation is None
+        or not catalog_structural_component_mapper_available("stone.cut")
+    ):
+        raise ComponentMappingUnresolved(
+            "a healthy attested ring mapper is required for source mapping"
+        )
+    map_source = getattr(activation.mapper, "map_source", None)
+    if not callable(map_source):
+        raise ComponentMappingUnresolved(
+            "the active structural mapper cannot map a source revision"
+        )
+    try:
+        proposed = map_source(asset_id=asset_id, image=image)
+    except ComponentMappingUnresolved:
+        raise
+    except Exception as exc:
+        raise ComponentMappingUnresolved(
+            "the attested source component mapper failed closed"
+        ) from exc
+    if not isinstance(proposed, RevisionComponentMap):
+        raise ComponentMappingUnresolved(
+            "the source component mapper returned no valid component map"
+        )
+    if (
+        proposed.mapper_contract != activation.mapper_contract
+        or proposed.asset_id != asset_id
+    ):
+        raise ComponentMappingUnresolved(
+            "the source component map does not match its active attestation"
+        )
+    payload = proposed.model_dump(mode="json")
+    payload["calibration_evidence_sha256"] = (
+        activation.calibration_evidence_sha256
+    )
+    attested = RevisionComponentMap.model_validate(payload)
+    bind_map_to_raster(attested, image)
+    return attested
+
+
+def rebind_prepared_catalog_child_component_map(
+    component_map: RevisionComponentMap,
+    *,
+    child_asset_id: str,
+    child_image: bytes,
+) -> RevisionComponentMap:
+    """Bind a preview-time child map to its accepted immutable asset ID.
+
+    The raster bytes and polygons are unchanged; only the not-yet-persisted
+    placeholder identity is replaced. This is intentionally DB- and
+    provider-free so Apply remains a short deterministic transaction.
+    """
+    bind_map_to_raster(component_map, child_image)
+    payload = component_map.model_dump(mode="json")
+    payload["asset_id"] = child_asset_id
+    rebound = RevisionComponentMap.model_validate(payload)
+    bind_map_to_raster(rebound, child_image)
+    return rebound

@@ -15,6 +15,7 @@ import { createTrustedApiClient } from '../src/trusted/client';
 import type {
   CreativeRoleReferenceRequest,
   CreativeSourceKind,
+  JsonObject,
   ProjectDetail,
 } from '../src/trusted/types';
 
@@ -23,6 +24,7 @@ assert(baseUrl, 'usage: tsx scripts/studio_client_api_acceptance.ts BASE_URL');
 
 const actor = 'usr_client_api_acceptance';
 const failedQaActor = 'usr_failed_qa_acceptance';
+const structuralActor = 'usr_structural_api_acceptance';
 const FAILED_QA_FIXTURE_PROMPT = '__FACETTA_ACCEPTANCE_FORCE_QA_FAIL__';
 const trustedClient = createTrustedApiClient({ baseUrl });
 const gateway = createStudioGateway(trustedClient, { trackJobs: true });
@@ -57,10 +59,28 @@ interface AcceptanceCanonicalState {
   revision_records: number;
   designs: number;
   design_versions: number;
-  accepted_image_runs: number;
+  accepted_image_reviews: number;
   failed_image_runs: number;
   charged_outputs: number;
   completed_outputs: number;
+}
+
+interface ConfirmedRingFixture {
+  image_base64: string;
+  media_type: 'image/png';
+  confirmed_spec: JsonObject;
+}
+
+interface StructuralCutAcceptanceResult {
+  projectId: string;
+  sourceAssetId: string;
+  acceptedAssetId: string;
+  sourceDesignVersion: 1;
+  acceptedDesignVersion: 2;
+  previewWasTemporary: true;
+  canonicalRevisionCountBeforeApply: 1;
+  canonicalRevisionCountAfterApply: 2;
+  chargedOutputs: 1;
 }
 
 const CASES: readonly AcceptanceCase[] = [
@@ -167,6 +187,221 @@ async function canonicalState(owner: string): Promise<AcceptanceCanonicalState> 
   return await response.json() as AcceptanceCanonicalState;
 }
 
+async function confirmedRingFixture(): Promise<ConfirmedRingFixture> {
+  const response = await fetch(`${baseUrl}/__acceptance__/confirmed-ring-fixture`);
+  assert.equal(response.status, 200, 'confirmed-ring acceptance fixture failed');
+  return await response.json() as ConfirmedRingFixture;
+}
+
+async function runStructuralCutCase(): Promise<StructuralCutAcceptanceResult> {
+  assert.deepEqual(await canonicalState(structuralActor), {
+    projects: 0,
+    image_assets: 0,
+    revision_records: 0,
+    designs: 0,
+    design_versions: 0,
+    accepted_image_reviews: 0,
+    failed_image_runs: 0,
+    charged_outputs: 0,
+    completed_outputs: 0,
+  }, 'structural fixture owner did not start isolated');
+
+  const fixture = await confirmedRingFixture();
+  const imported = value(await trustedClient.createProjectFromImage({
+    image_base64: fixture.image_base64,
+    media_type: fixture.media_type,
+    confirmed_spec: fixture.confirmed_spec,
+    owner: structuralActor,
+    title: 'Acceptance: confirmed ring stone-cut refinement',
+    collection: 'Studio structural acceptance',
+    tags: ['client-api', 'structural', 'stone-cut', 'no-factory'],
+  }), 'Structural: import designer-confirmed ring');
+  assert.equal(imported.active_design_version, 1);
+  assert(imported.active_revision);
+  const sourceAssetId = imported.active_asset_id;
+  assert(sourceAssetId);
+  assert.equal(imported.active_revision.asset_id, imported.active_asset_id);
+  assert.equal(imported.active_revision.design_version, 1);
+  assert.equal((imported.spec?.stone as JsonObject | undefined)?.cut, 'oval_brilliant');
+  assert.equal(imported.factory_ready, false);
+
+  const canonicalAfterImport = await canonicalState(structuralActor);
+  assert.deepEqual(canonicalAfterImport, {
+    projects: 1,
+    image_assets: 1,
+    revision_records: 0,
+    designs: 1,
+    design_versions: 1,
+    accepted_image_reviews: 0,
+    failed_image_runs: 0,
+    charged_outputs: 0,
+    completed_outputs: 0,
+  }, 'confirmed import did not establish exactly one canonical revision');
+
+  const beforeMap = value(
+    await gateway.getStudioComponentTargeting(sourceAssetId),
+    'Structural: read unmapped source targeting',
+  );
+  assert.equal(beforeMap.component_map.state, 'unmapped');
+  assert.equal(
+    beforeMap.catalog_paths.find((path) => path.component_path === 'stone.cut')?.status,
+    'unmapped',
+  );
+
+  const prepared = value(
+    await gateway.prepareStudioComponentMap(sourceAssetId),
+    'Structural: prepare exact source map',
+  );
+  assert.equal(prepared.component_map.state, 'ready');
+  assert.equal(prepared.component_map.mapper_contract, 'facetta.grok-ring-component-map.v1');
+  const cutTargeting = prepared.catalog_paths.find(
+    (path) => path.component_path === 'stone.cut',
+  );
+  assert(cutTargeting, 'stone.cut targeting was omitted after source mapping');
+  assert.equal(cutTargeting.status, 'ready');
+  assert.deepEqual(cutTargeting.required_component_kinds, [
+    'center_stone', 'prongs', 'setting',
+  ]);
+
+  const cutCatalog = value(
+    await gateway.getComponentCatalog('stone.cut'),
+    'Structural: load stone-cut catalog',
+  );
+  assert(cutCatalog.options.some((option) => option.id === 'emerald_cut'));
+
+  const sourceHistory = value(
+    await gateway.getStudioProjectHistory(imported.root_id),
+    'Structural: history before preview',
+  );
+  assert.equal(sourceHistory.revisions.length, 1);
+  assert.equal(sourceHistory.active_asset_id, sourceAssetId);
+  const sourceHash = await sha256(imported.active_revision.image_url!);
+
+  const preview = value(await gateway.previewCatalogRefine({
+    projectId: imported.root_id,
+    sourceAssetId,
+    sourceDesignVersion: 1,
+    createdBy: structuralActor,
+    componentPath: 'stone.cut',
+    optionId: 'emerald_cut',
+    variant: 17,
+  }), 'Structural: preview stone-cut change');
+  assert.equal(preview.componentPath, 'stone.cut');
+  assert.equal(preview.optionId, 'emerald_cut');
+  assert.deepEqual(preview.lineage, {
+    projectId: imported.root_id,
+    sourceAssetId,
+    sourceDesignVersion: 1,
+  });
+  assert.equal(preview.candidate.temporary, true);
+  assert.equal(preview.candidate.status, 'pending_review');
+  assert.equal(preview.candidate.verdict, 'pass');
+  assert.notEqual(await sha256(preview.candidate.assetUrl), sourceHash);
+
+  const historyDuringReview = value(
+    await gateway.getStudioProjectHistory(imported.root_id),
+    'Structural: history while preview is temporary',
+  );
+  assert.equal(historyDuringReview.revisions.length, 1);
+  assert.equal(historyDuringReview.active_asset_id, sourceAssetId);
+  const reopenedDuringReview = value(
+    await gateway.getProject(imported.root_id),
+    'Structural: reopen before Apply',
+  );
+  assert.equal(reopenedDuringReview.active_asset_id, sourceAssetId);
+  assert.equal(reopenedDuringReview.active_design_version, 1);
+  assert.equal(
+    (reopenedDuringReview.spec?.stone as JsonObject | undefined)?.cut,
+    'oval_brilliant',
+  );
+  assert.equal(await sha256(reopenedDuringReview.active_revision!.image_url!), sourceHash);
+  assert.deepEqual(
+    await canonicalState(structuralActor),
+    canonicalAfterImport,
+    'temporary structural preview mutated or charged canonical truth',
+  );
+
+  const reviewingActivity = value(
+    await gateway.listStudioJobs(structuralActor),
+    'Structural: reviewing Activity',
+  );
+  assert.equal(reviewingActivity.jobs.length, 1);
+  const reviewingJob = reviewingActivity.jobs[0];
+  assert(reviewingJob);
+  assert.equal(reviewingJob.action_id, 'refine');
+  assert.equal(reviewingJob.lane, 'trusted_structural');
+  assert.equal(reviewingJob.status, 'reviewing');
+  assert.equal(reviewingJob.source_revision_id, sourceAssetId);
+  assert.equal(reviewingJob.billing.completed_outputs, 0);
+  assert.equal(reviewingJob.billing.charged_outputs, 0);
+  assert.equal(reviewingJob.billing.charged_credits, 0);
+
+  const applied = value(await gateway.applyCatalogRefine({
+    candidateId: preview.candidate.id,
+    createdBy: structuralActor,
+  }), 'Structural: Apply stone-cut preview');
+  assert.equal(applied.candidate.status, 'applied');
+  const acceptedAssetId = applied.candidate.canonicalRevisionId;
+  assert(acceptedAssetId);
+  assert(applied.project);
+  assert.equal(applied.project.active_asset_id, acceptedAssetId);
+  assert.equal(applied.project.active_design_version, 2);
+  assert.equal((applied.project.spec?.stone as JsonObject | undefined)?.cut, 'emerald_cut');
+
+  const acceptedHistory = value(
+    await gateway.getStudioProjectHistory(imported.root_id),
+    'Structural: reopen accepted history',
+  );
+  assert.equal(acceptedHistory.revisions.length, 2);
+  assert.equal(acceptedHistory.active_asset_id, acceptedAssetId);
+  assert.equal(acceptedHistory.revisions[1]?.parent_asset_id, sourceAssetId);
+  assert.equal(acceptedHistory.revisions[1]?.design_version, 2);
+  const reopenedAccepted = value(
+    await gateway.getProject(imported.root_id),
+    'Structural: reopen accepted project',
+  );
+  assert.equal(reopenedAccepted.active_asset_id, acceptedAssetId);
+  assert.equal(reopenedAccepted.active_design_version, 2);
+  assert.equal((reopenedAccepted.spec?.stone as JsonObject | undefined)?.cut, 'emerald_cut');
+  assert.notEqual(await sha256(reopenedAccepted.active_revision!.image_url!), sourceHash);
+
+  assert.deepEqual(await canonicalState(structuralActor), {
+    projects: 1,
+    image_assets: 2,
+    revision_records: 1,
+    designs: 1,
+    design_versions: 2,
+    accepted_image_reviews: 1,
+    failed_image_runs: 0,
+    charged_outputs: 1,
+    completed_outputs: 1,
+  }, 'Apply did not settle exactly one charged canonical revision');
+
+  const settledActivity = value(
+    await gateway.listStudioJobs(structuralActor),
+    'Structural: settled Activity',
+  );
+  assert.equal(settledActivity.jobs.length, 1);
+  const settledJob = settledActivity.jobs[0];
+  assert(settledJob);
+  assert.equal(settledJob.status, 'succeeded');
+  assert.equal(settledJob.billing.completed_outputs, 1);
+  assert.equal(settledJob.billing.charged_outputs, 1);
+  assert(settledJob.billing.charged_credits > 0);
+
+  return {
+    projectId: imported.root_id,
+    sourceAssetId,
+    acceptedAssetId,
+    sourceDesignVersion: 1,
+    acceptedDesignVersion: 2,
+    previewWasTemporary: true,
+    canonicalRevisionCountBeforeApply: 1,
+    canonicalRevisionCountAfterApply: 2,
+    chargedOutputs: 1,
+  };
+}
+
 async function runFailedQaCase(): Promise<void> {
   assert.deepEqual(await canonicalState(failedQaActor), {
     projects: 0,
@@ -174,7 +409,7 @@ async function runFailedQaCase(): Promise<void> {
     revision_records: 0,
     designs: 0,
     design_versions: 0,
-    accepted_image_runs: 0,
+    accepted_image_reviews: 0,
     failed_image_runs: 0,
     charged_outputs: 0,
     completed_outputs: 0,
@@ -200,7 +435,7 @@ async function runFailedQaCase(): Promise<void> {
     revision_records: 0,
     designs: 0,
     design_versions: 0,
-    accepted_image_runs: 0,
+    accepted_image_reviews: 0,
     failed_image_runs: 1,
     charged_outputs: 0,
     completed_outputs: 0,
@@ -468,6 +703,7 @@ async function runCase(caseDefinition: AcceptanceCase, index: number): Promise<A
 
 async function main(): Promise<void> {
   await runFailedQaCase();
+  const structuralCut = await runStructuralCutCase();
 
   const results: AcceptanceResult[] = [];
   for (const [index, caseDefinition] of CASES.entries()) {
@@ -533,6 +769,7 @@ async function main(): Promise<void> {
       charged_outputs: 0,
       failed_evidence_runs: 1,
     },
+    structural_cut: structuralCut,
     canonical_mutation_before_acceptance: false,
     stale_apply_mutated_canonical_history: false,
     factory_used: false,

@@ -142,6 +142,13 @@ class RevisionComponentMap(_FrozenStrictModel):
         str,
         Field(strict=True, min_length=1, max_length=80),
     ]
+    # Present only when an automatic mapper was activated against an external,
+    # approved frozen evaluation artifact. The digest is provenance, not a
+    # claim that these image polygons are factory geometry.
+    calibration_evidence_sha256: Annotated[
+        str,
+        Field(pattern=r"^[0-9a-f]{64}$"),
+    ] | None = None
     components: Annotated[tuple[RevisionComponent, ...], Field(min_length=1)]
 
     @model_validator(mode="after")

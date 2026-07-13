@@ -16,6 +16,7 @@ from facetta.db import (
     ImageRun,
     ImageRunReview,
     Project,
+    ProjectRevisionRecord,
     new_id,
     utcnow,
 )
@@ -30,7 +31,9 @@ from facetta.vocabulary import get_vocabulary
 from facetta.warning_candidates import MarkupWarningCandidate
 from facetta.catalog_preview_candidates import CatalogPreviewCandidate
 from facetta.catalog_component_targeting import (
+    STRUCTURAL_CATALOG_PATHS,
     prepare_catalog_child_component_map,
+    rebind_prepared_catalog_child_component_map,
 )
 from facetta.revision_component_map import ComponentMapError
 from facetta.revision_component_map_store import add_revision_component_map
@@ -934,20 +937,32 @@ def accept_catalog_preview_revision(
     next_version = expected_design_version + 1
     child_asset_id = new_id("ast")
     try:
-        child_component_map = prepare_catalog_child_component_map(
-            db,
-            source_asset_id=source.id,
-            source_image=bytes(source.image),
-            child_asset_id=child_asset_id,
-            child_image=candidate.image_bytes,
-            jewelry_type=candidate.next_spec.jewelry_type,
-            component_path=candidate.component_path,
-            target_component_ids=candidate.target_component_ids,
-            changed_spec_paths=tuple(
-                str(change["path"]) for change in changes
-            ),
-            instruction=candidate.requested_change,
-        )
+        if candidate.component_path in STRUCTURAL_CATALOG_PATHS:
+            if candidate.proposed_child_component_map is None:
+                raise ComponentMapError(
+                    "the structural preview has no reviewed child component map",
+                    code="component_mapping_unresolved",
+                )
+            child_component_map = rebind_prepared_catalog_child_component_map(
+                candidate.proposed_child_component_map,
+                child_asset_id=child_asset_id,
+                child_image=candidate.image_bytes,
+            )
+        else:
+            child_component_map = prepare_catalog_child_component_map(
+                db,
+                source_asset_id=source.id,
+                source_image=bytes(source.image),
+                child_asset_id=child_asset_id,
+                child_image=candidate.image_bytes,
+                jewelry_type=candidate.next_spec.jewelry_type,
+                component_path=candidate.component_path,
+                target_component_ids=candidate.target_component_ids,
+                changed_spec_paths=tuple(
+                    str(change["path"]) for change in changes
+                ),
+                instruction=candidate.requested_change,
+            )
     except ComponentMapError as exc:
         raise WarningRevisionError(
             exc.code,
@@ -992,8 +1007,38 @@ def accept_catalog_preview_revision(
         accepted_asset_id=child.id,
         created_by=created_by,
     )
+    revision = ProjectRevisionRecord(
+        id=new_id("prr"),
+        asset_id=child.id,
+        action="edit",
+        raw_intent={
+            "kind": "catalog_component_refinement",
+            "component_path": candidate.component_path,
+            "option_id": candidate.option_id,
+            "instruction": candidate.requested_change,
+            "source_asset_id": source.id,
+            "image_run_id": run.id,
+        },
+        interpretation={
+            "operation": "append_reviewed_catalog_revision",
+            "source_sha256": source_hash,
+            "output_sha256": candidate.output_hash,
+            "source_spec_visual_hash": source_spec_hash,
+            "target_spec_visual_hash": target_spec_hash,
+            "component_map_sha256": candidate.component_map_sha256,
+            "target_component_ids": list(candidate.target_component_ids),
+            "target_mask_sha256": candidate.target_mask_sha256,
+            "factory_authority": False,
+        },
+        change_summary=(
+            f"Applied reviewed {candidate.component_path} option "
+            f"{candidate.option_id} as immutable revision {next_version}."
+        ),
+        created_by=created_by,
+        created_at=now,
+    )
     project.updated_at = now
-    db.add_all([version, child, review])
+    db.add_all([version, child, review, revision])
     try:
         db.flush()
         if child_component_map is not None:

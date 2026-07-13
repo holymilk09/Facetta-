@@ -10,6 +10,7 @@ from fastapi import APIRouter, Depends
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, ConfigDict, Field
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from facetta.api.error_mapping import image_agent_error_response
@@ -26,16 +27,21 @@ from facetta.catalog_preview_candidates import (
     CatalogPreviewUnavailable,
     discard_catalog_preview_candidate,
     get_catalog_preview_candidate,
+    invalidate_catalog_preview_candidate,
     list_catalog_preview_candidates,
     resolve_catalog_preview_candidate,
     settle_catalog_preview_acceptance,
+    settle_catalog_preview_refine_job_failure,
     store_catalog_preview_candidate,
     validate_catalog_preview_refine_job,
 )
 from facetta.catalog_component_targeting import (
     MATERIAL_ONLY_CATALOG_PATHS,
     RING_CATALOG_TARGET_KINDS,
+    STRUCTURAL_CATALOG_PATHS,
     catalog_structural_component_mapper_available,
+    prepare_catalog_child_component_map,
+    prepare_catalog_source_component_map,
 )
 from facetta.chain_geometry import chain_factory_blockers
 from facetta.component_catalog import (
@@ -47,7 +53,7 @@ from facetta.component_catalog import (
     get_component_catalog,
     get_component_catalog_descriptor,
 )
-from facetta.db import DesignVersion, ImageAsset, ImageRun, Project, get_db
+from facetta.db import DesignVersion, ImageAsset, ImageRun, Project, get_db, new_id
 from facetta.dimension_provenance import confirm_designer_dimension_subtree
 from facetta.image_agent import (
     ImageAgentError,
@@ -70,7 +76,10 @@ from facetta.revision_component_map import (
     component_map_hash,
     rasterize_component_masks,
 )
-from facetta.revision_component_map_store import load_revision_component_map
+from facetta.revision_component_map_store import (
+    add_revision_component_map,
+    load_revision_component_map,
+)
 from facetta.spec import ChainGeometry, ChainProduction, Spec
 from facetta.studio_history import StudioHistoryError, fork_preview_candidate_variation
 from facetta.trusted_revision import (
@@ -1063,14 +1072,12 @@ def preview_catalog_revision(
 
     context = prepared.context
     selection = prepared.selection
-    try:
-        target = _catalog_component_target(
-            db, prepared, component_path=request.component_path
-        )
-    except CatalogApplyError as exc:
-        return _error_response(exc)
     if request.studio_job_id is not None:
         try:
+            # Hold the exact job row through provider execution and candidate
+            # persistence. PostgreSQL therefore serializes duplicate requests;
+            # the winner moves the job to reviewing in the same transaction,
+            # and every replay is rejected before any provider-backed work.
             validate_catalog_preview_refine_job(
                 db,
                 job_id=request.studio_job_id,
@@ -1088,6 +1095,12 @@ def preview_catalog_revision(
                 )
             )
     try:
+        target = _catalog_component_target(
+            db, prepared, component_path=request.component_path
+        )
+    except CatalogApplyError as exc:
+        return _error_response(exc)
+    try:
         plan = _catalog_image_plan(prepared, variant=request.variant, target=target)
         result = _trusted_image_agent().run(
             plan,
@@ -1104,7 +1117,41 @@ def preview_catalog_revision(
                 project_root_id=context.project.root_id,
                 source_asset_id=context.asset.id,
                 created_by=actor,
+                commit=(request.studio_job_id is None),
             )
+        if request.studio_job_id is not None:
+            try:
+                settle_catalog_preview_refine_job_failure(
+                    db,
+                    job_id=request.studio_job_id,
+                    owner=actor,
+                    project_root_id=context.project.root_id,
+                    source_asset_id=context.asset.id,
+                    error_code=exc.code,
+                    commit=False,
+                )
+                db.commit()
+            except CatalogPreviewJobError as job_exc:
+                db.rollback()
+                # The binding changed after preflight. Preserve one failure
+                # run, but never pretend it was atomically settled to that job.
+                if exc.plan is not None:
+                    run_id = persist_image_agent_failure(
+                        db,
+                        exc.plan,
+                        exc,
+                        project_root_id=context.project.root_id,
+                        source_asset_id=context.asset.id,
+                        created_by=actor,
+                    )
+                return _error_response(
+                    CatalogApplyError(
+                        "catalog_preview_job_invalid",
+                        str(job_exc),
+                        status_code=409,
+                        category="conflict",
+                    )
+                )
         return image_agent_error_response(
             exc,
             image_run_id=run_id,
@@ -1122,14 +1169,167 @@ def preview_catalog_revision(
         or plan.source_spec_visual_hash is None
         or plan.spec_visual_hash is None
     ):
-        return _error_response(
-            CatalogApplyError(
-                "catalog_preview_lineage_incomplete",
-                "the evaluated preview is missing exact source/specification lineage",
-                status_code=500,
-                category="internal",
-            )
+        lineage_error = CatalogApplyError(
+            "catalog_preview_lineage_incomplete",
+            "the evaluated preview is missing exact source/specification lineage",
+            status_code=500,
+            category="internal",
         )
+        run_id = persist_image_agent_result(
+            db,
+            result,
+            project_root_id=context.project.root_id,
+            source_asset_id=context.asset.id,
+            created_by=actor,
+            status_override="failed",
+            commit=False,
+        )
+        failed_run = db.get(ImageRun, run_id)
+        if failed_run is not None:
+            failed_run.error_category = lineage_error.code[:32]
+        if request.studio_job_id is not None:
+            try:
+                settle_catalog_preview_refine_job_failure(
+                    db,
+                    job_id=request.studio_job_id,
+                    owner=actor,
+                    project_root_id=context.project.root_id,
+                    source_asset_id=context.asset.id,
+                    error_code=lineage_error.code,
+                    commit=False,
+                )
+                db.commit()
+            except CatalogPreviewJobError as job_exc:
+                db.rollback()
+                run_id = persist_image_agent_result(
+                    db,
+                    result,
+                    project_root_id=context.project.root_id,
+                    source_asset_id=context.asset.id,
+                    created_by=actor,
+                    status_override="failed",
+                    commit=False,
+                )
+                failed_run = db.get(ImageRun, run_id)
+                if failed_run is not None:
+                    failed_run.error_category = lineage_error.code[:32]
+                db.commit()
+                return _error_response(
+                    CatalogApplyError(
+                        "catalog_preview_job_invalid",
+                        str(job_exc),
+                        status_code=409,
+                        category="conflict",
+                    )
+                )
+        else:
+            db.commit()
+        lineage_error.context["image_run_id"] = run_id
+        return _error_response(lineage_error)
+
+    qa = _quality_payload(result)
+    verdict: Literal["pass", "warn"] = "pass" if result.accepted else "warn"
+    raw_changes: tuple[JsonObject, ...] = tuple(
+        dict(change) for change in selection.spec_change
+    )
+    proposed_child_component_map: RevisionComponentMap | None = None
+    structural = request.component_path in STRUCTURAL_CATALOG_PATHS
+    structural_error: CatalogApplyError | None = None
+    if structural and not result.accepted:
+        structural_error = CatalogApplyError(
+            "catalog_structural_qa_unresolved",
+            "structural refinement requires a fully passed jewelry QA result",
+            status_code=422,
+            category="quality",
+            context={
+                "component_path": request.component_path,
+                "option_id": request.option_id,
+                "qa": qa,
+            },
+        )
+    elif structural:
+        try:
+            proposed_child_component_map = prepare_catalog_child_component_map(
+                db,
+                source_asset_id=context.asset.id,
+                source_image=bytes(context.asset.image),
+                child_asset_id=new_id("tmp"),
+                child_image=result.image_bytes,
+                jewelry_type=selection.spec.jewelry_type,
+                component_path=request.component_path,
+                target_component_ids=(
+                    target.component_ids if target is not None else ()
+                ),
+                changed_spec_paths=tuple(
+                    str(change["path"]) for change in raw_changes
+                ),
+                instruction=prepared.instruction,
+            )
+        except ComponentMapError as exc:
+            structural_error = CatalogApplyError(
+                exc.code,
+                exc.detail,
+                status_code=(
+                    409 if exc.code == "component_mapping_unresolved" else 422
+                ),
+                category="capability",
+                context={
+                    "component_path": request.component_path,
+                    "option_id": request.option_id,
+                },
+            )
+    if structural_error is not None:
+        run_id = persist_image_agent_result(
+            db,
+            result,
+            project_root_id=context.project.root_id,
+            source_asset_id=context.asset.id,
+            created_by=actor,
+            status_override="failed",
+            commit=False,
+        )
+        failed_run = db.get(ImageRun, run_id)
+        if failed_run is not None:
+            failed_run.error_category = structural_error.code
+        if request.studio_job_id is not None:
+            try:
+                settle_catalog_preview_refine_job_failure(
+                    db,
+                    job_id=request.studio_job_id,
+                    owner=actor,
+                    project_root_id=context.project.root_id,
+                    source_asset_id=context.asset.id,
+                    error_code=structural_error.code,
+                    commit=False,
+                )
+                db.commit()
+            except CatalogPreviewJobError as job_exc:
+                db.rollback()
+                run_id = persist_image_agent_result(
+                    db,
+                    result,
+                    project_root_id=context.project.root_id,
+                    source_asset_id=context.asset.id,
+                    created_by=actor,
+                    status_override="failed",
+                    commit=False,
+                )
+                failed_run = db.get(ImageRun, run_id)
+                if failed_run is not None:
+                    failed_run.error_category = structural_error.code
+                db.commit()
+                return _error_response(
+                    CatalogApplyError(
+                        "catalog_preview_job_invalid",
+                        str(job_exc),
+                        status_code=409,
+                        category="conflict",
+                    )
+                )
+        else:
+            db.commit()
+        structural_error.context["image_run_id"] = run_id
+        return _error_response(structural_error)
 
     run_id = persist_image_agent_result(
         db,
@@ -1138,13 +1338,9 @@ def preview_catalog_revision(
         source_asset_id=context.asset.id,
         created_by=actor,
         status_override=("preview_ready" if result.accepted else "review_required"),
+        commit=False,
     )
-    qa = _quality_payload(result)
     routing = _routing_payload(result, run_id)
-    verdict: Literal["pass", "warn"] = "pass" if result.accepted else "warn"
-    raw_changes: tuple[JsonObject, ...] = tuple(
-        dict(change) for change in selection.spec_change
-    )
     try:
         candidate = store_catalog_preview_candidate(
             db,
@@ -1172,9 +1368,10 @@ def preview_catalog_revision(
             component_map_sha256=(target.map_sha256 if target is not None else None),
             target_component_ids=(target.component_ids if target is not None else ()),
             target_mask_sha256=(target.mask_sha256 if target is not None else None),
+            proposed_child_component_map=proposed_child_component_map,
             studio_job_id=request.studio_job_id,
         )
-    except CatalogPreviewJobError as exc:
+    except (CatalogPreviewJobError, CatalogPreviewUnavailable) as exc:
         db.rollback()
         return _error_response(
             CatalogApplyError(
@@ -1247,6 +1444,84 @@ def get_studio_component_targeting(asset_id: str, db: DbSession):
             )
         )
     except CatalogApplyError as exc:
+        return _error_response(exc)
+
+
+@router.post(
+    "/{asset_id}/studio-component-map",
+    response_model=StudioComponentTargetingResponse,
+)
+def prepare_studio_component_map(asset_id: str, db: DbSession):
+    """Prepare image-edit targeting for one exact ring revision.
+
+    This endpoint creates only an immutable raster component map. It does not
+    revise the design, create a candidate, charge generation credits, infer
+    dimensions, or add Factory authority. Existing maps make the call
+    idempotent.
+    """
+    # Serialize the provider-backed preparation on the immutable asset. The
+    # second caller rechecks after acquiring the row lock and reuses the map
+    # instead of paying for a duplicate vision request.
+    asset = db.scalar(
+        select(ImageAsset)
+        .where(ImageAsset.id == asset_id)
+        .with_for_update()
+    )
+    if asset is None:
+        return _error_response(
+            CatalogApplyError(
+                "asset_not_found",
+                f"unknown asset {asset_id!r}",
+                status_code=404,
+            )
+        )
+    try:
+        existing = load_revision_component_map(db, asset.id)
+        if existing is None:
+            spec = _asset_exact_spec(db, asset)
+            proposed = prepare_catalog_source_component_map(
+                asset_id=asset.id,
+                image=bytes(asset.image),
+                jewelry_type=spec.jewelry_type,
+            )
+            add_revision_component_map(
+                db,
+                proposed,
+                image_bytes=bytes(asset.image),
+                parent_asset_id=asset.parent_asset_id,
+            )
+            db.commit()
+        return _studio_component_targeting(db, asset)
+    except IntegrityError:
+        # Concurrent preparation is safe: immutable asset IDs permit exactly
+        # one winner and the loser reopens the same canonical map.
+        db.rollback()
+        try:
+            return _studio_component_targeting(db, asset)
+        except (ComponentMapError, CatalogApplyError) as exc:
+            if isinstance(exc, CatalogApplyError):
+                return _error_response(exc)
+            return _error_response(
+                CatalogApplyError(
+                    exc.code,
+                    exc.detail,
+                    status_code=409,
+                    category="validation",
+                )
+            )
+    except ComponentMapError as exc:
+        db.rollback()
+        return _error_response(
+            CatalogApplyError(
+                exc.code,
+                exc.detail,
+                status_code=409,
+                category="capability",
+                context={"source_asset_id": asset_id},
+            )
+        )
+    except CatalogApplyError as exc:
+        db.rollback()
         return _error_response(exc)
 
 
@@ -1330,7 +1605,34 @@ def get_catalog_preview_image(
             candidate_id,
             owner=run.created_by,
         )
-    except (CatalogPreviewUnavailable, CatalogPreviewJobError) as exc:
+    except CatalogPreviewUnavailable as exc:
+        db.rollback()
+        try:
+            invalidate_catalog_preview_candidate(
+                db,
+                run_id,
+                candidate_id,
+                owner=run.created_by,
+            )
+        except CatalogPreviewJobError as job_exc:
+            db.rollback()
+            return JSONResponse(
+                status_code=409,
+                content={
+                    "code": "catalog_preview_job_conflict",
+                    "category": "conflict",
+                    "detail": str(job_exc),
+                },
+            )
+        return JSONResponse(
+            status_code=410,
+            content={
+                "code": "catalog_preview_unavailable",
+                "category": "conflict",
+                "detail": str(exc),
+            },
+        )
+    except CatalogPreviewJobError as exc:
         db.rollback()
         return JSONResponse(
             status_code=410,
@@ -1429,6 +1731,23 @@ def accept_catalog_preview(
         settle_catalog_preview_acceptance(db, candidate, owner=actor)
         db.commit()
     except CatalogPreviewUnavailable as exc:
+        try:
+            invalidate_catalog_preview_candidate(
+                db,
+                run_id,
+                candidate_id,
+                owner=actor,
+            )
+        except CatalogPreviewJobError as job_exc:
+            db.rollback()
+            return JSONResponse(
+                status_code=409,
+                content={
+                    "code": "catalog_preview_job_conflict",
+                    "category": "conflict",
+                    "detail": str(job_exc),
+                },
+            )
         return JSONResponse(
             status_code=410,
             content={
@@ -1504,6 +1823,24 @@ def save_catalog_preview_as_variation(
             created_by=actor,
         )
     except StudioHistoryError as exc:
+        if exc.code == "preview_candidate_unavailable":
+            try:
+                invalidate_catalog_preview_candidate(
+                    db,
+                    run_id,
+                    candidate_id,
+                    owner=actor,
+                )
+            except CatalogPreviewJobError as job_exc:
+                db.rollback()
+                return JSONResponse(
+                    status_code=409,
+                    content={
+                        "code": "catalog_preview_job_conflict",
+                        "category": "conflict",
+                        "detail": str(job_exc),
+                    },
+                )
         return JSONResponse(
             status_code=exc.status_code,
             content={

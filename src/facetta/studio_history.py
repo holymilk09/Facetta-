@@ -28,7 +28,9 @@ from facetta.project_backbone import (
     is_primary_revision,
 )
 from facetta.catalog_component_targeting import (
+    STRUCTURAL_CATALOG_PATHS,
     prepare_catalog_child_component_map,
+    rebind_prepared_catalog_child_component_map,
 )
 from facetta.revision_component_map import ComponentMapError
 from facetta.revision_component_map_store import add_revision_component_map
@@ -240,24 +242,36 @@ def fork_preview_candidate_variation(
                     "the exact source specification is unavailable",
                     code="spec_version_unavailable",
                 )
-            candidate_changes = diff_specs(
-                source_version.spec,
-                next_spec.model_dump(mode="json"),
-            )
-            child_component_map = prepare_catalog_child_component_map(
-                db,
-                source_asset_id=source.id,
-                source_image=bytes(source.image),
-                child_asset_id=new_root_id,
-                child_image=candidate.image_bytes,
-                jewelry_type=next_spec.jewelry_type,
-                component_path=candidate.component_path,
-                target_component_ids=candidate.target_component_ids,
-                changed_spec_paths=tuple(
-                    str(change["path"]) for change in candidate_changes
-                ),
-                instruction=candidate.requested_change,
-            )
+            if candidate.component_path in STRUCTURAL_CATALOG_PATHS:
+                if candidate.proposed_child_component_map is None:
+                    raise ComponentMapError(
+                        "the structural preview has no reviewed child component map",
+                        code="component_mapping_unresolved",
+                    )
+                child_component_map = rebind_prepared_catalog_child_component_map(
+                    candidate.proposed_child_component_map,
+                    child_asset_id=new_root_id,
+                    child_image=candidate.image_bytes,
+                )
+            else:
+                candidate_changes = diff_specs(
+                    source_version.spec,
+                    next_spec.model_dump(mode="json"),
+                )
+                child_component_map = prepare_catalog_child_component_map(
+                    db,
+                    source_asset_id=source.id,
+                    source_image=bytes(source.image),
+                    child_asset_id=new_root_id,
+                    child_image=candidate.image_bytes,
+                    jewelry_type=next_spec.jewelry_type,
+                    component_path=candidate.component_path,
+                    target_component_ids=candidate.target_component_ids,
+                    changed_spec_paths=tuple(
+                        str(change["path"]) for change in candidate_changes
+                    ),
+                    instruction=candidate.requested_change,
+                )
         except ComponentMapError as exc:
             db.rollback()
             raise StudioHistoryError(

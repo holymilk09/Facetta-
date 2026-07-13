@@ -109,6 +109,59 @@ describe('StudioCollectionsWorkspace', () => {
     expect(screen.queryByText(/factory/i)).toBeNull();
   });
 
+  test('opens the recently active variation from an unsorted family without claiming revision recency', async () => {
+    const unsortedFamily = {
+      ...family,
+      variations: [
+        {
+          ...family.variations[1],
+          root_id: 'project_newest',
+          variation_label: 'Newest direction',
+          cover_asset_id: 'asset_newest',
+          updated_at: '2026-07-12T05:00:00Z',
+        },
+        {
+          ...family.variations[0],
+          root_id: 'project_oldest',
+          variation_label: 'Oldest direction',
+          cover_asset_id: 'asset_oldest',
+          updated_at: '2026-07-12T01:00:00Z',
+        },
+        {
+          ...family.variations[1],
+          root_id: 'project_middle',
+          variation_label: 'Middle direction',
+          cover_asset_id: 'asset_middle',
+          updated_at: '2026-07-12T03:00:00Z',
+        },
+      ],
+    };
+    const client = api({
+      listDesignFamilies: jest.fn(async () => ({
+        data: { families: [unsortedFamily] }, error: null, status: 200,
+      })),
+    });
+    const handlers = callbacks();
+
+    await render(
+      <StudioCollectionsWorkspace
+        api={client}
+        project={null}
+        createdBy="usr_designer"
+        {...handlers}
+      />,
+    );
+
+    expect(await screen.findByText('Recently active · Newest direction')).toBeTruthy();
+    expect(screen.queryByText(/latest.*revision|newest.*revision/i)).toBeNull();
+    expect(client.assetImageUrl).toHaveBeenCalledWith('asset_newest');
+    expect(client.assetImageUrl).not.toHaveBeenCalledWith('asset_oldest');
+    expect(client.assetImageUrl).not.toHaveBeenCalledWith('asset_middle');
+
+    await fireEvent.press(screen.getByLabelText('Open recently active variation: Newest direction'));
+    expect(handlers.onOpenProject).toHaveBeenCalledWith('project_newest');
+  });
+
   test('shows semantic family lineage, revision compare, and sibling navigation without raw IDs', async () => {
     const client = api();
     const handlers = callbacks();

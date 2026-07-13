@@ -68,7 +68,13 @@ def test_variation_branches_the_selected_creative_candidate_not_last_generated()
         db.add_all([source, selected, generated_later, project])
         db.commit()
 
-        assert studio_history(project.root_id, db)["active_asset_id"] == selected.id
+        initial_history = studio_history(project.root_id, db)
+        assert initial_history["active_asset_id"] == selected.id
+        assert initial_history["variation_index"] == 1
+        assert initial_history["family_id"] is None
+        db.refresh(project)
+        assert project.variation_index is None
+        assert project.family_id is None
 
         result = fork_project_variation(
             db,

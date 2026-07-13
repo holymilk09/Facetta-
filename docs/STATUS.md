@@ -27,14 +27,51 @@ language remains absent until the backend reports that the exact revision is
 both entitled and eligible; the older readiness registry entry is retained
 internally during migration but is not visible.
 
-Local validation at this checkpoint: 1,439 backend tests, 230 Jest tests, 61
-Studio contract tests, TypeScript, Ruff, Expo web export, and the ten-project
-production TypeScript-client -> HTTP -> FastAPI acceptance all pass. The
-acceptance reports no canonical mutation before acceptance, no canonical
-asset/revision or charge from failed QA, and no Factory use. These local
-results do not satisfy the two external gates: the signed frozen 144-image
-corpus with founder/GIA review and live two-principal HTTPS staging isolation
-remain `not_run` / `unmet` in `STUDIO_EXTERNAL_BETA_GATES.md`.
+Local validation at this checkpoint: 1,467 backend tests, 234 Jest tests, 61
+Studio contract tests, TypeScript, Ruff, Expo web export, and the production
+TypeScript-client -> HTTP -> FastAPI acceptance all pass. The acceptance covers
+ten mixed-source projects plus a confirmed ring `stone.cut` preview/Apply
+journey; it reports no canonical mutation before acceptance, no canonical
+asset/revision or charge from failed QA, and no Factory use. These local results
+do not satisfy the two external gates: the signed frozen 144-image corpus with
+founder/GIA review and live two-principal HTTPS staging isolation remain
+`not_run` / `unmet` in `STUDIO_EXTERNAL_BETA_GATES.md`.
+
+## 2026-07-13 ring structural preview boundary
+
+The ring-first structural seam is now implemented behind explicit operational
+activation. A fixed Grok vision adapter can prepare semantic source maps and
+reconcile one reviewed child map for the released `stone.cut` path. The edit
+scope is deliberately coupled across center stone, prongs, and setting. It
+requires a verified external calibration artifact digest and runtime readiness;
+without those facts Studio stays fail-closed and offers Describe or Mark up.
+The mobile Refine workspace attempts eligible ring source-map preparation once
+in the background, without exposing provider controls or another workflow step.
+
+Structural mapping and full QA now finish before a PreviewCandidate becomes
+accept-capable. Structural warnings, mapper failures, stale sources, tampered
+candidate bytes, or activation/evidence drift terminalize the candidate or run
+and settle its linked Refine job with zero charged outputs. Apply and Save as
+Variation are database-only acceptance boundaries: they append the exact image,
+specification, component-map evidence, immutable revision or sibling variation,
+and provenance atomically without a late vision call. Component-map evidence is
+explicitly image-edit targeting only, never CAD or Factory authority. Broader
+setting edits and categories remain gated, and the external corpus/founder/GIA
+release evidence is still not run.
+
+Collections now chooses the most recently active variation for each family card
+and uses that variation's cover and open target, with deterministic
+tie-breaking. This is intentionally described as project activity—not the
+newest immutable design revision—because presentation and marketing work can
+also advance a variation's `updated_at` timestamp.
+
+Local validation for this checkpoint: 1,467 backend tests, 234 Jest tests, 61
+Studio contract tests, TypeScript, Ruff, production OpenAPI surface equality,
+Expo web export, the ten-project production client-to-HTTP matrix, and its
+confirmed ring structural preview/Apply journey all pass. The structural
+mapper's deterministic contract and catalog lifecycle are covered locally; the
+external 144-image corpus and founder/GIA review remain explicit release gates
+rather than inferred from unit tests.
 
 ## 2026-07-12 AI-first studio architecture direction
 

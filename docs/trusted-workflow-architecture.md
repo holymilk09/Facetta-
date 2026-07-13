@@ -153,6 +153,17 @@ stock/sample or custom drawing/CAD production record. It cannot reuse a
 source-style supplier SKU, silently clear production facts, or reach a provider
 when the target construction is incompatible.
 
+For structural ring paths, a warning is not sufficient evidence and never
+creates an accept-capable candidate. The released source and child mapper runs
+before the temporary candidate enters review, verifies the coupled target
+region and outside-target stability, and binds its contract plus calibration
+digest to the candidate. Apply and Save as Variation revalidate that reviewed
+evidence and persist image, specification, map, revision, and job settlement in
+one database transaction without rerunning vision. A stale, tampered, revoked,
+or failed structural candidate leaves no canonical revision and charges zero
+outputs. Non-structural appearance warnings may still enter explicit designer
+review because they do not claim changed jewelry geometry.
+
 Structural candidates and validated spec renders also receive a prompt-diverse
 skeptical second audit. The render audit independently checks center identity
 and cut, metal, setting style, actual center-prong count, side-stone inventory,

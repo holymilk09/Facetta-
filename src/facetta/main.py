@@ -25,11 +25,15 @@ from facetta.auth import (  # noqa: E402
 from facetta.catalog_component_targeting import (  # noqa: E402
     catalog_structural_component_mapper_status,
 )
+from facetta.catalog_structural_mapper_composition import (  # noqa: E402
+    configure_attested_catalog_structural_mapper_from_environment,
+)
 
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     validate_auth_configuration()
+    configure_attested_catalog_structural_mapper_from_environment()
     yield
 
 def health() -> dict:
@@ -79,6 +83,7 @@ PRODUCTION_CATALOG_PATHS = frozenset({
     "/assets/{active_asset_id}/catalog/preview",
     "/assets/{active_asset_id}/catalog/previews",
     "/assets/{asset_id}/studio-component-targeting",
+    "/assets/{asset_id}/studio-component-map",
 })
 
 PRODUCTION_TRUSTED_PATHS = frozenset({

@@ -314,6 +314,7 @@ type GatewayTrustedClient = Pick<TrustedApiClient,
   | 'respondChecklist'
   | 'getComponentCatalog'
   | 'getStudioComponentTargeting'
+  | 'prepareStudioComponentMap'
   | 'readMarkup'
   | 'reviseStudioFacts'
   | 'getDesignFamily'
@@ -824,6 +825,12 @@ export function createStudioGateway(
       ...args: Parameters<GatewayTrustedClient['getStudioComponentTargeting']>
     ) {
       return mapResult(await client.getStudioComponentTargeting(...args));
+    },
+
+    async prepareStudioComponentMap(
+      ...args: Parameters<GatewayTrustedClient['prepareStudioComponentMap']>
+    ) {
+      return mapResult(await client.prepareStudioComponentMap(...args));
     },
 
     async readMarkup(

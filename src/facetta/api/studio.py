@@ -2283,7 +2283,10 @@ def studio_history(project_root_id: str, db: DbSession):
     return {
         "project_id": project_root_id,
         "family_id": project.family_id,
-        "variation_index": project.variation_index,
+        # Imported and pre-family projects predate Studio's variation
+        # metadata. Keep those historical records readable without mutating
+        # them from a GET; their root is the compatibility "Original".
+        "variation_index": project.variation_index or 1,
         "variation_label": project.variation_label,
         "active_asset_id": active.id if active is not None else None,
         "revisions": [{

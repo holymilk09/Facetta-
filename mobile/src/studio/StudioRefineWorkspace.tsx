@@ -37,7 +37,8 @@ const PATHS: readonly { id: ComponentCatalogPath; label: string; help: string }[
 
 export type StudioRefineApi = Pick<StudioGateway,
   'getComponentCatalog' | 'getStudioComponentTargeting' | 'readMarkup'>
-  & Partial<Pick<StudioGateway, 'getProject' | 'reviseStudioFacts'>>;
+  & Partial<Pick<StudioGateway,
+    'getProject' | 'prepareStudioComponentMap' | 'reviseStudioFacts'>>;
 
 export interface StudioRefineWorkspaceProps {
   api: StudioRefineApi;
@@ -196,19 +197,34 @@ export function StudioRefineWorkspace({
       return () => { current = false; };
     }
     setTargetingLoading(true);
-    void api.getStudioComponentTargeting(exactLineage.sourceAssetId).then((result) => {
+    const loadTargeting = async () => {
+      const sourceAssetId = exactLineage.sourceAssetId;
+      let result = await api.getStudioComponentTargeting(sourceAssetId);
+      if (!current) return;
+      const canPrepare = result.error === null
+        && result.data.asset_id === sourceAssetId
+        && result.data.jewelry_type === 'ring'
+        && result.data.component_map.scope === 'ring_v1'
+        && result.data.catalog_paths.length > 0
+        && result.data.catalog_paths.every((candidate) => (
+          candidate.status === 'unmapped'
+          && candidate.reason_code === 'component_map_not_found'
+        ))
+        && typeof api.prepareStudioComponentMap === 'function';
+      if (canPrepare) result = await api.prepareStudioComponentMap!(sourceAssetId);
       if (!current) return;
       setTargetingLoading(false);
       if (result.error !== null) {
-        setTargetingError('Precise component targeting could not be verified for this revision. Describe an appearance change or use Mark up instead.');
+        setTargetingError('Precise component targeting is not available for this revision. Describe an appearance change or use Mark up instead.');
         return;
       }
-      if (result.data.asset_id !== exactLineage.sourceAssetId) {
+      if (result.data.asset_id !== sourceAssetId) {
         setTargetingError('Component targeting belongs to a different revision. Reopen the latest design before refining it.');
         return;
       }
       setTargeting(result.data);
-    });
+    };
+    void loadTargeting();
     return () => { current = false; };
   }, [api, exactSpecification, lineage?.sourceAssetId]);
 
@@ -819,7 +835,7 @@ export function StudioRefineWorkspace({
               : capability?.status === 'unmapped'
                 ? 'Precise targeting has not been mapped for this revision.'
                 : capability?.status === 'unresolved'
-                  ? 'This path needs calibrated structural mapping before it can preserve component identity.'
+                  ? 'This design is not ready for that precise component change yet. Use Describe or Mark up so Facetta can keep the rest unchanged.'
                   : 'Precise component targeting is not released for this category.';
             return (
               <Pressable

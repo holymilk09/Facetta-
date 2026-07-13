@@ -1900,3 +1900,41 @@ test('decodes only the designer-safe exact component targeting contract', () => 
   });
   expect((targeting as any)?.catalog_paths[0].polygons).toBeUndefined();
 });
+
+test('prepares an exact revision component map through the trusted seam', async () => {
+  const payload = {
+    schema_version: 'facetta.studio-component-targeting.v1',
+    asset_id: 'asset 1',
+    asset_sha256: 'a'.repeat(64),
+    jewelry_type: 'ring',
+    component_map: {
+      state: 'ready', scope: 'ring_v1', map_sha256: 'b'.repeat(64),
+      mapper_contract: 'facetta.grok-ring-component-map.v1',
+      raster_width: 1024, raster_height: 1024,
+    },
+    catalog_paths: [{
+      component_path: 'stone.cut', status: 'ready',
+      required_component_kinds: ['center_stone', 'prongs', 'setting'],
+      component_ids: ['center_stone', 'prongs', 'setting'], reason_code: null,
+    }],
+    authority: 'exact_revision_image_editing_only',
+  };
+  const fetcher = jest.fn<Promise<Response>, [RequestInfo | URL, RequestInit?]>(
+    async () => ({
+      ok: true, status: 200, text: async () => JSON.stringify(payload),
+    } as unknown as Response),
+  );
+  const api = createTrustedApiClient({ baseUrl: 'https://facetta.test', fetcher });
+
+  const result = await api.prepareStudioComponentMap('asset 1');
+
+  expect(result.error).toBeNull();
+  expect(result.data?.catalog_paths[0]?.component_ids).toEqual([
+    'center_stone', 'prongs', 'setting',
+  ]);
+  expect(String(fetcher.mock.calls[0]?.[0])).toBe(
+    'https://facetta.test/assets/asset%201/studio-component-map',
+  );
+  expect(fetcher.mock.calls[0]?.[1]?.method).toBe('POST');
+  expect(JSON.parse(String(fetcher.mock.calls[0]?.[1]?.body))).toEqual({});
+});

@@ -23,12 +23,15 @@ from facetta.db import (
     ImageRunReview,
     PreviewCandidateRecord,
     Project,
+    ProjectRevisionRecord,
+    RevisionComponentMapRecord,
     StudioJobRecord,
     get_db,
 )
 from facetta.api.catalog import StudioComponentTargetingResponse
 from facetta.design_form import NormalizedPoint, NormalizedPolygon
 from facetta.catalog_preview_candidates import (
+    CatalogPreviewJobError,
     clear_catalog_preview_candidates_for_tests,
 )
 from facetta import catalog_component_targeting
@@ -38,6 +41,7 @@ from facetta.image_agent import (
     DesignerEditDomain,
     ImageQualityFailure,
     ImageQualityReport,
+    ImageProviderFailure,
     JewelryImageAgent,
     ProviderImage,
     QualityCheck,
@@ -381,6 +385,63 @@ def test_structural_mapper_readiness_is_path_specific_and_operationally_visible(
     }
 
 
+def test_attested_source_mapper_prepares_exact_revision_targeting_idempotently(
+    catalog_client,
+    example_spec,
+):
+    client, SessionFactory = catalog_client
+    project = _create_project(client, example_spec, SessionFactory)
+    source_mapper_calls: list[str] = []
+
+    class SourceMapper:
+        def __call__(self, **_kwargs):
+            raise AssertionError("source preparation must not run the child mapper")
+
+        def map_source(self, *, asset_id, image):
+            source_mapper_calls.append(asset_id)
+            return _component_map(asset_id, image)
+
+    with SessionFactory() as db:
+        db.execute(RevisionComponentMapRecord.__table__.delete())
+        db.commit()
+    catalog_component_targeting.configure_catalog_structural_component_mapper(
+        SourceMapper(),
+        mapper_contract="test.catalog-map.v1",
+        calibration_evidence_sha256="f" * 64,
+        supported_paths={"stone.cut"},
+        readiness_probe=lambda: True,
+    )
+
+    prepared = client.post(
+        f"/assets/{project['active_asset_id']}/studio-component-map"
+    )
+    replay = client.post(
+        f"/assets/{project['active_asset_id']}/studio-component-map"
+    )
+
+    assert prepared.status_code == 200, prepared.text
+    assert replay.status_code == 200, replay.text
+    assert source_mapper_calls == [project["active_asset_id"]]
+    body = prepared.json()
+    assert body["authority"] == "exact_revision_image_editing_only"
+    assert body["component_map"]["state"] == "ready"
+    paths = {item["component_path"]: item for item in body["catalog_paths"]}
+    assert paths["stone.cut"]["status"] == "ready"
+    assert paths["stone.cut"]["required_component_kinds"] == [
+        "center_stone",
+        "prongs",
+        "setting",
+    ]
+    assert paths["setting.style"]["status"] == "unresolved"
+    with SessionFactory() as db:
+        stored = load_revision_component_map(db, project["active_asset_id"])
+        assert stored is not None
+        assert stored.calibration_evidence_sha256 == "f" * 64
+        assert db.scalar(
+            select(func.count()).select_from(RevisionComponentMapRecord)
+        ) == 1
+
+
 def test_unhealthy_structural_mapper_never_advertises_targetability(
     catalog_client,
     example_spec,
@@ -413,6 +474,7 @@ def test_calibrated_structural_mapper_reconciles_and_persists_child_map(
 ):
     client, SessionFactory = catalog_client
     project = _create_project(client, example_spec, SessionFactory)
+    mapper_calls: list[str] = []
 
     def mapper(
         *,
@@ -421,6 +483,7 @@ def test_calibrated_structural_mapper_reconciles_and_persists_child_map(
         child_image,
         **_kwargs,
     ):
+        mapper_calls.append(child_asset_id)
         components = tuple(
             component.model_copy(
                 update={
@@ -458,6 +521,18 @@ def test_calibrated_structural_mapper_reconciles_and_persists_child_map(
         json=_request(component_path="setting.style", option_id="6_prong_basket"),
     )
     assert preview.status_code == 201, preview.text
+    assert len(mapper_calls) == 1
+    with SessionFactory() as db:
+        candidate = db.get(
+            PreviewCandidateRecord,
+            preview.json()["candidate"]["candidate_id"],
+        )
+        assert candidate is not None
+        proposed = RevisionComponentMap.model_validate(
+            candidate.payload["proposed_child_component_map"]
+        )
+        assert proposed.asset_id == candidate.id
+        assert proposed.calibration_evidence_sha256 == "a" * 64
 
     accepted = client.post(
         preview.json()["candidate"]["accept_url"],
@@ -468,23 +543,26 @@ def test_calibrated_structural_mapper_reconciles_and_persists_child_map(
     )
 
     assert accepted.status_code == 201, accepted.text
+    assert len(mapper_calls) == 1, "Apply must not rerun structural mapping"
     with SessionFactory() as db:
         child_map = load_revision_component_map(db, accepted.json()["asset_id"])
         assert child_map is not None
         assert child_map.mapper_contract == "test.calibrated-child-map.v1"
+        assert child_map.calibration_evidence_sha256 == "a" * 64
         assert all(
             component.parent_component_id == component.component_id
             for component in child_map.components
         )
 
 
-def test_structural_mapper_output_contract_mismatch_fails_before_persistence(
+def test_structural_mapper_output_contract_mismatch_fails_during_preview(
     catalog_client,
     example_spec,
     monkeypatch,
 ):
     client, SessionFactory = catalog_client
     project = _create_project(client, example_spec, SessionFactory)
+    job = _studio_job(client, project)
 
     def mapper(*, parent_map, child_asset_id, child_image, **_kwargs):
         return RevisionComponentMap(
@@ -515,18 +593,75 @@ def test_structural_mapper_output_contract_mismatch_fails_before_persistence(
     )
     preview = client.post(
         f"/assets/{project['active_asset_id']}/catalog/preview",
-        json=_request(component_path="setting.style", option_id="6_prong_basket"),
+        json=_request(
+            component_path="setting.style",
+            option_id="6_prong_basket",
+            studio_job_id=job["job_id"],
+        ),
     )
-    assert preview.status_code == 201, preview.text
-
-    accepted = client.post(
-        preview.json()["candidate"]["accept_url"],
-        json={"expected_design_version": 1, "created_by": "usr_catalog"},
-    )
-
-    assert accepted.status_code == 409, accepted.text
-    assert accepted.json()["code"] == "component_mapping_unresolved"
+    assert preview.status_code == 409, preview.text
+    assert preview.json()["code"] == "component_mapping_unresolved"
     assert _counts(SessionFactory) == {"versions": 1, "assets": 1, "runs": 1}
+    with SessionFactory() as db:
+        assert db.scalar(
+            select(func.count()).select_from(PreviewCandidateRecord)
+        ) == 0
+        run = db.get(ImageRun, preview.json()["image_run_id"])
+        current_job = db.get(StudioJobRecord, job["job_id"])
+        assert run is not None and run.status == "failed"
+        assert current_job is not None and current_job.status == "failed"
+        assert current_job.completed_outputs == current_job.charged_outputs == 0
+        assert current_job.error_code == "component_mapping_unresolved"
+
+
+def test_structural_warning_never_creates_accept_capability_or_charges_job(
+    catalog_client,
+    example_spec,
+    monkeypatch,
+):
+    client, SessionFactory = catalog_client
+    project = _create_project(client, example_spec, SessionFactory)
+    job = _studio_job(client, project)
+
+    def mapper(**_kwargs):
+        raise AssertionError("warning structural output must not reach child mapping")
+
+    catalog_component_targeting.configure_catalog_structural_component_mapper(
+        mapper,
+        mapper_contract="test.warning-gate.v1",
+        calibration_evidence_sha256="f" * 64,
+        supported_paths={"setting.style"},
+        readiness_probe=lambda: True,
+    )
+    monkeypatch.setattr(
+        "facetta.api.catalog._trusted_image_agent",
+        lambda: _ResultAgent(QualityVerdict.WARN),
+    )
+
+    preview = client.post(
+        f"/assets/{project['active_asset_id']}/catalog/preview",
+        json=_request(
+            component_path="setting.style",
+            option_id="6_prong_basket",
+            studio_job_id=job["job_id"],
+        ),
+    )
+
+    assert preview.status_code == 422, preview.text
+    body = preview.json()
+    assert body["code"] == "catalog_structural_qa_unresolved"
+    assert "candidate" not in body
+    with SessionFactory() as db:
+        run = db.get(ImageRun, body["image_run_id"])
+        current_job = db.get(StudioJobRecord, job["job_id"])
+        assert run is not None and run.status == "failed"
+        assert run.accepted_asset_id is None
+        assert db.scalar(
+            select(func.count()).select_from(PreviewCandidateRecord)
+        ) == 0
+        assert current_job is not None and current_job.status == "failed"
+        assert current_job.completed_outputs == current_job.charged_outputs == 0
+        assert current_job.error_code == "catalog_structural_qa_unresolved"
 
 
 @pytest.mark.parametrize("decision", ("apply", "variation"))
@@ -538,8 +673,24 @@ def test_structural_decision_fails_atomically_if_child_mapper_becomes_unavailabl
 ):
     client, SessionFactory = catalog_client
     project = _create_project(client, example_spec, SessionFactory)
+    def mapper(*, parent_map, child_asset_id, child_image, **_kwargs):
+        return RevisionComponentMap(
+            asset_id=child_asset_id,
+            asset_sha256=hashlib.sha256(child_image).hexdigest(),
+            raster_width=parent_map.raster_width,
+            raster_height=parent_map.raster_height,
+            jewelry_type="ring",
+            mapper_contract="test.unavailable-after-preview.v1",
+            components=tuple(
+                component.model_copy(
+                    update={"parent_component_id": component.component_id}
+                )
+                for component in parent_map.components
+            ),
+        )
+
     catalog_component_targeting.configure_catalog_structural_component_mapper(
-        lambda **_kwargs: None,
+        mapper,
         mapper_contract="test.unavailable-after-preview.v1",
         calibration_evidence_sha256="b" * 64,
         supported_paths={"setting.style"},
@@ -571,12 +722,16 @@ def test_structural_decision_fails_atomically_if_child_mapper_becomes_unavailabl
             json={"created_by": "usr_catalog", "label": "Oval direction"},
         )
 
-    assert terminal.status_code == 409, terminal.text
-    assert terminal.json()["code"] == "component_mapping_unresolved"
+    assert terminal.status_code == 410, terminal.text
+    assert terminal.json()["code"] in {
+        "catalog_preview_unavailable",
+        "preview_candidate_unavailable",
+    }
     assert _counts(SessionFactory) == {"versions": 1, "assets": 1, "runs": 1}
     with SessionFactory() as db:
         durable = db.get(PreviewCandidateRecord, body["candidate"]["candidate_id"])
-        assert durable is not None and durable.status == "reviewing"
+        assert durable is not None and durable.status == "expired"
+        assert bytes(durable.image) == b""
         assert db.scalar(select(func.count()).select_from(ImageRunReview)) == 0
 
 
@@ -910,10 +1065,21 @@ def test_catalog_pass_preview_is_temporary_until_explicit_apply(
         review = db.scalar(
             select(ImageRunReview).where(ImageRunReview.run_id == run.id)
         )
+        revision = db.scalar(
+            select(ProjectRevisionRecord).where(
+                ProjectRevisionRecord.asset_id == accepted_body["asset_id"]
+            )
+        )
         assert run.status == "preview_ready"
         assert run.accepted_asset_id is None
         assert review is not None
         assert review.accepted_asset_id == accepted_body["asset_id"]
+        assert revision is not None and revision.action == "edit"
+        assert revision.raw_intent["component_path"] == "metal.color"
+        assert revision.interpretation["source_sha256"] == plan.source_hash
+        assert revision.interpretation["output_sha256"] == hashlib.sha256(
+            _png((220, 170, 175))
+        ).hexdigest()
         durable = db.get(PreviewCandidateRecord, body["candidate"]["candidate_id"])
         assert durable is not None
         assert durable.status == "applied"
@@ -976,11 +1142,12 @@ def test_catalog_preview_reopen_fails_closed_when_mask_lineage_is_tampered(
 ):
     client, SessionFactory = catalog_client
     project = _create_project(client, example_spec, SessionFactory)
+    job = _studio_job(client, project)
     agent = _ResultAgent(QualityVerdict.PASS)
     monkeypatch.setattr("facetta.api.catalog._trusted_image_agent", lambda: agent)
     preview = client.post(
         f"/assets/{project['active_asset_id']}/catalog/preview",
-        json=_request(),
+        json=_request(studio_job_id=job["job_id"]),
     ).json()
     candidate_id = preview["candidate"]["candidate_id"]
     with SessionFactory() as db:
@@ -993,6 +1160,19 @@ def test_catalog_preview_reopen_fails_closed_when_mask_lineage_is_tampered(
         db.commit()
 
     reopened = client.get(preview["candidate"]["preview_url"])
+    assert reopened.status_code == 410
+    assert reopened.json()["code"] == "catalog_preview_unavailable"
+    # A failed review read is itself terminal lifecycle evidence. The user
+    # must not need to attempt Apply before Activity leaves `reviewing`.
+    with SessionFactory() as db:
+        durable = db.get(PreviewCandidateRecord, candidate_id)
+        current_job = db.get(StudioJobRecord, job["job_id"])
+        assert durable is not None and durable.status == "expired"
+        assert durable.resolved_at is not None and bytes(durable.image) == b""
+        assert current_job is not None and current_job.status == "failed"
+        assert current_job.completed_outputs == current_job.charged_outputs == 0
+        assert current_job.error_code == "catalog_preview_unavailable"
+
     accepted = client.post(
         preview["candidate"]["accept_url"],
         json={
@@ -1001,11 +1181,100 @@ def test_catalog_preview_reopen_fails_closed_when_mask_lineage_is_tampered(
         },
     )
 
-    assert reopened.status_code == 410
-    assert reopened.json()["code"] == "catalog_preview_unavailable"
     assert accepted.status_code == 410
     assert len(agent.plans) == 1, "lineage rejection must never regenerate"
     assert _counts(SessionFactory) == {"versions": 1, "assets": 1, "runs": 1}
+    with SessionFactory() as db:
+        durable = db.get(PreviewCandidateRecord, candidate_id)
+        current_job = db.get(StudioJobRecord, job["job_id"])
+        assert durable is not None and durable.status == "expired"
+        assert durable.resolved_at is not None and bytes(durable.image) == b""
+        assert current_job is not None and current_job.status == "failed"
+        assert current_job.completed_outputs == current_job.charged_outputs == 0
+        assert current_job.error_code == "catalog_preview_unavailable"
+
+
+def test_catalog_preview_list_terminalizes_tampered_reviewing_job(
+    catalog_client,
+    example_spec,
+    monkeypatch,
+):
+    client, SessionFactory = catalog_client
+    project = _create_project(client, example_spec, SessionFactory)
+    job = _studio_job(client, project)
+    monkeypatch.setattr(
+        "facetta.api.catalog._trusted_image_agent",
+        lambda: _ResultAgent(QualityVerdict.PASS),
+    )
+    preview = client.post(
+        f"/assets/{project['active_asset_id']}/catalog/preview",
+        json=_request(studio_job_id=job["job_id"]),
+    ).json()
+    candidate_id = preview["candidate"]["candidate_id"]
+    with SessionFactory() as db:
+        record = db.get(PreviewCandidateRecord, candidate_id)
+        assert record is not None
+        record.output_sha256 = "0" * 64
+        db.commit()
+
+    reopened = client.get(
+        f"/assets/{project['active_asset_id']}/catalog/previews"
+    )
+
+    assert reopened.status_code == 200, reopened.text
+    assert reopened.json()["candidates"] == []
+    with SessionFactory() as db:
+        durable = db.get(PreviewCandidateRecord, candidate_id)
+        current_job = db.get(StudioJobRecord, job["job_id"])
+        assert durable is not None and durable.status == "expired"
+        assert durable.resolved_at is not None and bytes(durable.image) == b""
+        assert current_job is not None and current_job.status == "failed"
+        assert current_job.completed_outputs == current_job.charged_outputs == 0
+        assert current_job.error_code == "catalog_preview_unavailable"
+
+
+def test_catalog_preview_tampered_variation_settles_reviewing_job_without_branch(
+    catalog_client,
+    example_spec,
+    monkeypatch,
+):
+    client, SessionFactory = catalog_client
+    project = _create_project(client, example_spec, SessionFactory)
+    job = _studio_job(client, project)
+    monkeypatch.setattr(
+        "facetta.api.catalog._trusted_image_agent",
+        lambda: _ResultAgent(QualityVerdict.PASS),
+    )
+    preview = client.post(
+        f"/assets/{project['active_asset_id']}/catalog/preview",
+        json=_request(studio_job_id=job["job_id"]),
+    ).json()
+    candidate_id = preview["candidate"]["candidate_id"]
+    with SessionFactory() as db:
+        record = db.get(PreviewCandidateRecord, candidate_id)
+        assert record is not None
+        record.output_sha256 = "0" * 64
+        db.commit()
+
+    rejected = client.post(
+        preview["candidate"]["save_as_variation_url"],
+        json={"created_by": "usr_catalog", "label": "Tampered direction"},
+    )
+
+    assert rejected.status_code == 410, rejected.text
+    assert rejected.json()["code"] == "preview_candidate_unavailable"
+    with SessionFactory() as db:
+        durable = db.get(PreviewCandidateRecord, candidate_id)
+        current_job = db.get(StudioJobRecord, job["job_id"])
+        assert db.scalar(select(func.count()).select_from(Project)) == 1
+        assert db.scalar(select(func.count()).select_from(ImageAsset)) == 1
+        assert db.scalar(select(func.count()).select_from(DesignVersion)) == 1
+        assert db.scalar(select(func.count()).select_from(ImageRunReview)) == 0
+        assert durable is not None and durable.status == "expired"
+        assert durable.resolved_at is not None and bytes(durable.image) == b""
+        assert current_job is not None and current_job.status == "failed"
+        assert current_job.completed_outputs == current_job.charged_outputs == 0
+        assert current_job.error_code == "catalog_preview_unavailable"
 
 
 def test_catalog_preview_saves_exact_spec_directly_as_variation(
@@ -1103,11 +1372,12 @@ def test_catalog_preview_accept_rejects_stale_exact_source_without_rerun(
 ):
     client, SessionFactory = catalog_client
     project = _create_project(client, example_spec, SessionFactory)
+    job = _studio_job(client, project)
     agent = _ResultAgent(QualityVerdict.PASS)
     monkeypatch.setattr("facetta.api.catalog._trusted_image_agent", lambda: agent)
     preview = client.post(
         f"/assets/{project['active_asset_id']}/catalog/preview",
-        json=_request(),
+        json=_request(studio_job_id=job["job_id"]),
     ).json()
 
     newer = client.post(
@@ -1128,6 +1398,15 @@ def test_catalog_preview_accept_rejects_stale_exact_source_without_rerun(
     assert stale.json()["code"] == "catalog_preview_unavailable"
     assert len(agent.plans) == 2
     assert _counts(SessionFactory) == {"versions": 2, "assets": 2, "runs": 2}
+    with SessionFactory() as db:
+        durable = db.get(
+            PreviewCandidateRecord, preview["candidate"]["candidate_id"])
+        current_job = db.get(StudioJobRecord, job["job_id"])
+        assert durable is not None and durable.status == "expired"
+        assert durable.resolved_at is not None and bytes(durable.image) == b""
+        assert current_job is not None and current_job.status == "failed"
+        assert current_job.completed_outputs == current_job.charged_outputs == 0
+        assert current_job.error_code == "catalog_preview_unavailable"
 
 
 def test_catalog_preview_discard_removes_only_temporary_bytes(
@@ -1222,6 +1501,152 @@ def test_catalog_preview_rejects_non_refine_job_before_provider_or_evidence(
         job = db.get(StudioJobRecord, wrong_job["job_id"])
         assert job is not None and job.status == "running"
         assert job.completed_outputs == 0 and job.charged_outputs == 0
+
+
+def test_catalog_preview_replay_rejects_reviewing_job_before_provider(
+    catalog_client,
+    example_spec,
+    monkeypatch,
+):
+    client, SessionFactory = catalog_client
+    project = _create_project(client, example_spec, SessionFactory)
+    job = _studio_job(client, project)
+    agent = _ResultAgent(QualityVerdict.PASS)
+    monkeypatch.setattr("facetta.api.catalog._trusted_image_agent", lambda: agent)
+    request = _request(studio_job_id=job["job_id"])
+
+    first = client.post(
+        f"/assets/{project['active_asset_id']}/catalog/preview",
+        json=request,
+    )
+    replay = client.post(
+        f"/assets/{project['active_asset_id']}/catalog/preview",
+        json=request,
+    )
+
+    assert first.status_code == 201, first.text
+    assert replay.status_code == 409, replay.text
+    assert replay.json()["code"] == "catalog_preview_job_invalid"
+    assert len(agent.plans) == 1
+    with SessionFactory() as db:
+        assert db.scalar(select(func.count()).select_from(ImageRun)) == 1
+        assert db.scalar(select(func.count()).select_from(
+            PreviewCandidateRecord)) == 1
+        current_job = db.get(StudioJobRecord, job["job_id"])
+        assert current_job is not None and current_job.status == "reviewing"
+        assert current_job.completed_outputs == current_job.charged_outputs == 0
+
+
+def test_catalog_preview_candidate_binding_failure_leaves_no_preview_ready_run(
+    catalog_client,
+    example_spec,
+    monkeypatch,
+):
+    client, SessionFactory = catalog_client
+    project = _create_project(client, example_spec, SessionFactory)
+    job = _studio_job(client, project)
+    agent = _ResultAgent(QualityVerdict.PASS)
+    monkeypatch.setattr("facetta.api.catalog._trusted_image_agent", lambda: agent)
+
+    def reject_binding(*_args, **_kwargs):
+        raise CatalogPreviewJobError("simulated concurrent job settlement")
+
+    monkeypatch.setattr(
+        "facetta.api.catalog.store_catalog_preview_candidate",
+        reject_binding,
+    )
+
+    rejected = client.post(
+        f"/assets/{project['active_asset_id']}/catalog/preview",
+        json=_request(studio_job_id=job["job_id"]),
+    )
+
+    assert rejected.status_code == 409, rejected.text
+    assert rejected.json()["code"] == "catalog_preview_job_invalid"
+    assert len(agent.plans) == 1
+    with SessionFactory() as db:
+        assert db.scalar(select(func.count()).select_from(ImageRun)) == 0
+        assert db.scalar(select(func.count()).select_from(
+            PreviewCandidateRecord)) == 0
+        current_job = db.get(StudioJobRecord, job["job_id"])
+        assert current_job is not None and current_job.status == "running"
+        assert current_job.completed_outputs == current_job.charged_outputs == 0
+
+
+@pytest.mark.parametrize(
+    ("surface", "corruption"),
+    (
+        ("list", "missing_next_spec"),
+        ("image", "invalid_next_spec"),
+        ("apply", "missing_spec_lineage"),
+    ),
+)
+def test_catalog_preview_malformed_payload_fails_closed_and_settles_job(
+    catalog_client,
+    example_spec,
+    monkeypatch,
+    surface,
+    corruption,
+):
+    client, SessionFactory = catalog_client
+    project = _create_project(client, example_spec, SessionFactory)
+    job = _studio_job(client, project)
+    agent = _ResultAgent(QualityVerdict.PASS)
+    monkeypatch.setattr("facetta.api.catalog._trusted_image_agent", lambda: agent)
+    preview_response = client.post(
+        f"/assets/{project['active_asset_id']}/catalog/preview",
+        json=_request(studio_job_id=job["job_id"]),
+    )
+    assert preview_response.status_code == 201, preview_response.text
+    preview = preview_response.json()
+    candidate_id = preview["candidate"]["candidate_id"]
+    with SessionFactory() as db:
+        record = db.get(PreviewCandidateRecord, candidate_id)
+        assert record is not None
+        payload = dict(record.payload)
+        if corruption == "missing_next_spec":
+            payload.pop("next_spec")
+        elif corruption == "invalid_next_spec":
+            payload["next_spec"] = "not-a-specification"
+        else:
+            payload.pop("source_spec_visual_hash")
+        record.payload = payload
+        db.commit()
+
+    if surface == "list":
+        rejected = client.get(
+            f"/assets/{project['active_asset_id']}/catalog/previews"
+        )
+        assert rejected.status_code == 200, rejected.text
+        assert rejected.json()["candidates"] == []
+    elif surface == "image":
+        rejected = client.get(preview["candidate"]["preview_url"])
+        assert rejected.status_code == 410, rejected.text
+        assert rejected.json()["code"] == "catalog_preview_unavailable"
+    else:
+        rejected = client.post(
+            preview["candidate"]["accept_url"],
+            json={
+                "expected_design_version": 1,
+                "created_by": "usr_catalog",
+            },
+        )
+        assert rejected.status_code == 410, rejected.text
+        assert rejected.json()["code"] == "catalog_preview_unavailable"
+
+    assert len(agent.plans) == 1
+    with SessionFactory() as db:
+        durable = db.get(PreviewCandidateRecord, candidate_id)
+        current_job = db.get(StudioJobRecord, job["job_id"])
+        assert durable is not None and durable.status == "expired"
+        assert durable.resolved_at is not None and bytes(durable.image) == b""
+        assert current_job is not None and current_job.status == "failed"
+        assert current_job.progress == 1
+        assert current_job.completed_outputs == current_job.charged_outputs == 0
+        assert current_job.error_code == "catalog_preview_unavailable"
+        assert db.scalar(select(func.count()).select_from(ImageAsset)) == 1
+        assert db.scalar(select(func.count()).select_from(DesignVersion)) == 1
+        assert db.scalar(select(func.count()).select_from(ImageRunReview)) == 0
 
 
 @pytest.mark.parametrize("decision", ("apply", "variation"))
@@ -1381,6 +1806,123 @@ def test_catalog_preview_hard_failure_has_evidence_and_no_candidate(
         run = db.get(ImageRun, body["image_run_id"])
         assert run.status == "failed"
         assert run.accepted_asset_id is None
+
+
+@pytest.mark.parametrize(
+    ("failure_kind", "expected_status", "expected_code"),
+    (
+        ("provider", 502, "image_provider_failed"),
+        ("quality", 422, "image_quality_failed"),
+    ),
+)
+def test_catalog_preview_execution_failure_settles_refine_job_without_charge(
+    catalog_client,
+    example_spec,
+    monkeypatch,
+    failure_kind,
+    expected_status,
+    expected_code,
+):
+    client, SessionFactory = catalog_client
+    project = _create_project(client, example_spec, SessionFactory)
+    job = _studio_job(client, project)
+
+    class FailingAgent:
+        def run(self, plan, **_kwargs):
+            if failure_kind == "provider":
+                raise ImageProviderFailure(
+                    "the image provider failed",
+                    plan=plan,
+                )
+            report = ImageQualityReport(
+                verdict=QualityVerdict.FAIL,
+                checks=(
+                    QualityCheck(
+                        code="outside_mask_drift",
+                        passed=False,
+                        severity=CheckSeverity.HARD,
+                        message="protected jewelry changed outside the target",
+                    ),
+                ),
+                score=20,
+            )
+            raise ImageQualityFailure(
+                "no candidate passed jewelry QA: outside_mask_drift",
+                report=report,
+                plan=plan,
+            )
+
+    monkeypatch.setattr(
+        "facetta.api.catalog._trusted_image_agent", lambda: FailingAgent(),
+    )
+    failed = client.post(
+        f"/assets/{project['active_asset_id']}/catalog/preview",
+        json=_request(studio_job_id=job["job_id"]),
+    )
+
+    assert failed.status_code == expected_status, failed.text
+    body = failed.json()
+    assert body["code"] == expected_code
+    assert body["image_run_id"] is not None
+    assert _counts(SessionFactory) == {"versions": 1, "assets": 1, "runs": 1}
+    with SessionFactory() as db:
+        run = db.get(ImageRun, body["image_run_id"])
+        current_job = db.get(StudioJobRecord, job["job_id"])
+        assert run is not None and run.status == "failed"
+        assert run.accepted_asset_id is None
+        assert db.scalar(select(func.count()).select_from(
+            PreviewCandidateRecord)) == 0
+        assert current_job is not None and current_job.status == "failed"
+        assert current_job.progress == 1
+        assert current_job.completed_outputs == current_job.charged_outputs == 0
+        assert current_job.error_code == expected_code
+
+
+def test_catalog_preview_lineage_incomplete_persists_failure_and_settles_job(
+    catalog_client,
+    example_spec,
+    monkeypatch,
+):
+    client, SessionFactory = catalog_client
+    project = _create_project(client, example_spec, SessionFactory)
+    job = _studio_job(client, project)
+    delegate = _ResultAgent(QualityVerdict.PASS)
+
+    class IncompleteLineageAgent:
+        def run(self, plan, **kwargs):
+            result = delegate.run(plan, **kwargs)
+            plan.source_hash = None
+            return result.model_copy(update={"plan": plan})
+
+    monkeypatch.setattr(
+        "facetta.api.catalog._trusted_image_agent",
+        lambda: IncompleteLineageAgent(),
+    )
+    failed = client.post(
+        f"/assets/{project['active_asset_id']}/catalog/preview",
+        json=_request(studio_job_id=job["job_id"]),
+    )
+
+    assert failed.status_code == 500, failed.text
+    body = failed.json()
+    assert body["code"] == "catalog_preview_lineage_incomplete"
+    assert body["image_run_id"] is not None
+    assert len(delegate.plans) == 1
+    with SessionFactory() as db:
+        run = db.get(ImageRun, body["image_run_id"])
+        current_job = db.get(StudioJobRecord, job["job_id"])
+        assert run is not None and run.status == "failed"
+        assert run.accepted_asset_id is None
+        assert run.source_hash is None
+        assert run.error_category == "catalog_preview_lineage_incomple"
+        assert db.scalar(select(func.count()).select_from(
+            PreviewCandidateRecord)) == 0
+        assert current_job is not None and current_job.status == "failed"
+        assert current_job.progress == 1
+        assert current_job.completed_outputs == current_job.charged_outputs == 0
+        assert current_job.error_code == "catalog_preview_lineage_incomplete"
+        assert db.scalar(select(func.count()).select_from(ImageAsset)) == 1
+        assert db.scalar(select(func.count()).select_from(DesignVersion)) == 1
 
 
 def test_catalog_preview_accept_database_failure_rolls_back_atomic_pair(

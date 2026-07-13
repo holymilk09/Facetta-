@@ -153,16 +153,26 @@ successful structural change advances image and specification atomically.
 The product chooses instant versus structural execution from the component and
 delta contract. Designers choose the change they want, not a provider or model.
 
-Structural component-map continuity is currently a disabled production
-capability, not an implied feature. The repository contains the typed mapper
-seam and strict reconciliation/persistence boundary, but no calibrated mapper
-implementation. Activation requires an explicit stable mapper contract, the
-SHA-256 of its externally approved calibration evidence, its exact supported
-catalog paths, and a passing runtime readiness probe. Capability discovery is
-path-specific, `/health` reports `unconfigured`, `unhealthy`, or `ready`, and
-the returned child map must carry the activated mapper contract before it can
-be reconciled or persisted. Configuration alone never creates polygons and an
-unhealthy, unsupported, throwing, or contract-mismatched mapper fails closed.
+Structural component-map continuity now has a ring-first production adapter,
+but remains disabled until externally reviewed calibration evidence is mounted
+and explicitly activated. The first release contract supports center-stone cut
+changes only. It maps the source revision on demand, treats the center stone,
+prongs, and setting as one coupled edit scope, and maps the generated child
+while it is still a temporary PreviewCandidate. Structural warnings are never
+accept-capable. Apply and Save as Variation only revalidate and atomically
+persist the already reviewed map; they do not make a late provider call.
+
+Activation requires the fixed mapper contract, the verified SHA-256 of an
+external calibration artifact, the exact supported catalog path, and a passing
+runtime readiness probe. Capability discovery is path-specific, `/health`
+reports `unconfigured`, `unhealthy`, or `ready`, and both source and child maps
+carry the activated evidence digest. Revocation, evidence drift, an unhealthy
+mapper, uncovered changed pixels, outside-target drift, missing semantic
+inventory, or a contract mismatch fails closed and settles the linked Refine
+job with zero charged outputs. Component maps remain exact-revision raster edit
+evidence only; they are never CAD, measurement, manufacturability, or Factory
+authority. Setting-style mapping and additional jewelry categories remain
+gated work.
 
 ## Division of labor
 

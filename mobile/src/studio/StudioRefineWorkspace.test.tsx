@@ -159,6 +159,126 @@ describe('StudioRefineWorkspace', () => {
     await waitFor(() => expect(onApplied).toHaveBeenCalledWith(project));
   });
 
+  test('keeps a structural cut direction temporary and bound to the exact revision', async () => {
+    const structuralTargeting: StudioComponentTargeting = {
+      ...readyTargeting,
+      catalog_paths: readyTargeting.catalog_paths.map((candidate) => (
+        candidate.component_path === 'stone.cut'
+          ? {
+            ...candidate,
+            status: 'ready' as const,
+            required_component_kinds: ['center_stone', 'prongs', 'setting'],
+            component_ids: ['center', 'prongs', 'setting'],
+            reason_code: null,
+          }
+          : candidate
+      )),
+    };
+    const cutCatalog = {
+      component_path: 'stone.cut' as const,
+      display: 'Stone cut',
+      applicable_jewelry_types: ['ring'],
+      image_agent_status: 'catalog_ready' as const,
+      options: [{
+        id: 'emerald_cut', display: 'Emerald cut', visual_geometry: [],
+        isolation_target: 'Center stone, prongs, and setting',
+        frozen_facts: ['shank', 'shoulders', 'gallery'],
+        factory_fields: {}, derived_factory_fields: [], selection_requirements: [],
+      }],
+    };
+    const getComponentCatalog = jest.fn(async (componentPath: string) => ({
+      data: componentPath === 'stone.cut' ? cutCatalog : catalog,
+      error: null,
+      status: 200,
+    }));
+    const previewCatalogRefine = jest.fn(async () => ({
+      data: {
+        lineage: {
+          projectId: 'project_1', sourceAssetId: 'asset_2', sourceDesignVersion: 2,
+        },
+        componentPath: 'stone.cut' as const,
+        optionId: 'emerald_cut',
+        candidate: {
+          id: 'candidate_cut', jobId: 'run_cut', sourceRevisionId: 'asset_2',
+          assetUrl: 'https://test/cut-preview.png', verdict: 'pass' as const,
+          status: 'pending_review' as const, checks: [], temporary: true,
+          expiresAt: null, decision: null, decidedAt: null, canonicalRevisionId: null,
+        },
+      },
+      error: null,
+      status: 201,
+    }));
+    const applyCatalogRefine = jest.fn(async () => ({
+      data: { candidate: {}, project }, error: null, status: 201,
+    }));
+    const onApplied = jest.fn();
+
+    await renderWithAuth(
+      <StudioRefineWorkspace
+        api={{
+          getComponentCatalog,
+          getStudioComponentTargeting: jest.fn(async () => ({
+            data: structuralTargeting, error: null, status: 200,
+          })),
+          readMarkup: jest.fn(),
+        }}
+        gateway={{
+          previewCatalogRefine, applyCatalogRefine, discardCatalogRefine: jest.fn(),
+        } as any}
+        lineage={{ projectId: 'project_1', sourceAssetId: 'asset_2', sourceDesignVersion: 2 }}
+        sourceImageUrl="https://test/source.png"
+        createdBy="designer"
+        onApplied={onApplied}
+      />,
+    );
+
+    await waitFor(() => expect(
+      screen.getByLabelText('Stone cut component path').props.accessibilityState.disabled,
+    ).toBe(false));
+    await act(async () => {
+      fireEvent.press(screen.getByLabelText('Stone cut component path'));
+      await Promise.resolve();
+    });
+    await waitFor(() => expect(getComponentCatalog).toHaveBeenCalledWith('stone.cut'));
+    await act(async () => {
+      fireEvent.press(await screen.findByText('Emerald cut'));
+      await Promise.resolve();
+    });
+    await act(async () => {
+      fireEvent.press(screen.getByText('Preview change'));
+      await Promise.resolve();
+    });
+    await waitFor(() => expect(previewCatalogRefine).toHaveBeenCalledWith({
+      projectId: 'project_1',
+      sourceAssetId: 'asset_2',
+      sourceDesignVersion: 2,
+      createdBy: 'designer',
+      componentPath: 'stone.cut',
+      optionId: 'emerald_cut',
+    }));
+    expect(await screen.findByText('Nothing has changed yet.')).toBeTruthy();
+    expect(screen.getByLabelText('Temporary refinement preview')).toBeTruthy();
+    await act(async () => {
+      fireEvent.press(screen.getByText('Apply as new revision'));
+      await Promise.resolve();
+    });
+    expect(applyCatalogRefine).not.toHaveBeenCalled();
+    expect(onApplied).not.toHaveBeenCalled();
+
+    await act(async () => {
+      fireEvent(screen.getByLabelText('Exact source revision'), 'load');
+      await Promise.resolve();
+    });
+    await act(async () => {
+      fireEvent.press(screen.getByText('Apply as new revision'));
+      await Promise.resolve();
+    });
+    await waitFor(() => expect(applyCatalogRefine).toHaveBeenCalledWith({
+      candidateId: 'candidate_cut', createdBy: 'designer',
+    }));
+    expect(onApplied).toHaveBeenCalledWith(project);
+  });
+
   test('refines a selected pre-spec direction without inventing specification authority', async () => {
     const getComponentCatalog = jest.fn();
     const previewVisualRefine = jest.fn(async () => ({
@@ -547,7 +667,7 @@ describe('StudioRefineWorkspace', () => {
       ...readyTargeting,
       component_map: { ...readyTargeting.component_map, state: 'unmapped', map_sha256: null },
       catalog_paths: readyTargeting.catalog_paths.map((candidate) => ({
-        ...candidate, status: 'unmapped' as const, component_ids: [], reason_code: 'component_map_missing',
+        ...candidate, status: 'unmapped' as const, component_ids: [], reason_code: 'component_map_not_found',
       })),
     };
     await renderWithAuth(
@@ -573,6 +693,48 @@ describe('StudioRefineWorkspace', () => {
     expect(previewCatalogRefine).not.toHaveBeenCalled();
   });
 
+  test('prepares an unmapped ring revision once and reveals safe component paths', async () => {
+    const getStudioComponentTargeting = jest.fn(async () => ({
+      data: {
+        ...readyTargeting,
+        component_map: { ...readyTargeting.component_map, state: 'unmapped' as const, map_sha256: null },
+        catalog_paths: readyTargeting.catalog_paths.map((candidate) => ({
+          ...candidate,
+          status: 'unmapped' as const,
+          component_ids: [],
+          reason_code: 'component_map_not_found',
+        })),
+      },
+      error: null,
+      status: 200,
+    }));
+    const prepareStudioComponentMap = jest.fn(async () => ({
+      data: readyTargeting, error: null, status: 200,
+    }));
+    const getComponentCatalog = jest.fn(async () => ({ data: catalog, error: null, status: 200 }));
+
+    await renderWithAuth(
+      <StudioRefineWorkspace
+        api={{
+          getComponentCatalog,
+          getStudioComponentTargeting,
+          prepareStudioComponentMap,
+          readMarkup: jest.fn(),
+        }}
+        gateway={{} as any}
+        lineage={{ projectId: 'project_1', sourceAssetId: 'asset_2', sourceDesignVersion: 2 }}
+        createdBy="designer"
+        onApplied={jest.fn()}
+      />,
+    );
+
+    await waitFor(() => expect(prepareStudioComponentMap).toHaveBeenCalledWith('asset_2'));
+    await waitFor(() => expect(
+      screen.getByLabelText('Component refine mode').props.accessibilityState.disabled,
+    ).toBe(false));
+    expect(getComponentCatalog).toHaveBeenCalledWith('metal.color');
+  });
+
   test('offers mapped material paths while disabling unresolved structural paths', async () => {
     await renderWithAuth(
       <StudioRefineWorkspace
@@ -593,6 +755,7 @@ describe('StudioRefineWorkspace', () => {
     ).toBe(false));
     expect(screen.getByLabelText('Stone cut component path').props.accessibilityState.disabled).toBe(true);
     expect(screen.getByLabelText('Setting component path').props.accessibilityState.disabled).toBe(true);
-    expect(screen.getAllByText(/needs calibrated structural mapping/i).length).toBeGreaterThanOrEqual(2);
+    expect(screen.getAllByText(/not ready for that precise component change yet/i).length).toBeGreaterThanOrEqual(2);
+    expect(screen.queryByText(/calibrated|structural mapping|component identity/i)).toBeNull();
   });
 });

@@ -4228,6 +4228,18 @@ export function createTrustedApiClient(options: TrustedApiClientOptions) {
       );
     },
 
+    prepareStudioComponentMap(assetId: string) {
+      return jsonCall(
+        `/assets/${encodeURIComponent(assetId)}/studio-component-map`,
+        'POST',
+        {},
+        (value) => {
+          const targeting = decodeStudioComponentTargeting(value);
+          return targeting?.asset_id === assetId ? targeting : null;
+        },
+      );
+    },
+
     getStoneVocabulary() {
       return call('/vocabulary/stones', decodeStoneVocabulary);
     },

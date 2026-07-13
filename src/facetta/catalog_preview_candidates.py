@@ -26,8 +26,14 @@ from facetta.json_types import JsonObject
 from facetta.project_backbone import is_primary_revision
 from facetta.revision_component_map import (
     ComponentMapError,
+    RevisionComponentMap,
+    bind_map_to_raster,
     component_map_hash,
     rasterize_component_masks,
+)
+from facetta.catalog_component_targeting import (
+    STRUCTURAL_CATALOG_PATHS,
+    catalog_structural_component_mapper_status,
 )
 from facetta.revision_component_map_store import load_revision_component_map
 from facetta.spec import Spec
@@ -78,6 +84,7 @@ class CatalogPreviewCandidate:
     component_map_sha256: str | None
     target_component_ids: tuple[str, ...]
     target_mask_sha256: str | None
+    proposed_child_component_map: RevisionComponentMap | None
     studio_job_id: str | None
 
 
@@ -85,8 +92,99 @@ def _utc(value: datetime) -> datetime:
     return value if value.tzinfo is not None else value.replace(tzinfo=timezone.utc)
 
 
-def _candidate(record: PreviewCandidateRecord) -> CatalogPreviewCandidate:
+def _validated_candidate_payload(
+    record: PreviewCandidateRecord,
+) -> tuple[
+    JsonObject,
+    Spec,
+    str,
+    str,
+    tuple[str, ...],
+    RevisionComponentMap | None,
+]:
+    """Parse every field a review read can expose before returning bytes.
+
+    Candidate payloads are durable but deliberately non-canonical. A corrupt
+    or partially migrated JSON document must therefore behave like failed QA:
+    fail closed so the caller can expire the row and settle its linked job,
+    rather than leaking a Pydantic/KeyError 500 from list, image, or Apply.
+    """
+
     payload = record.payload
+    try:
+        if not isinstance(payload, dict):
+            raise TypeError("candidate payload is not an object")
+        verdict = payload["verdict"]
+        if verdict not in {"pass", "warn"}:
+            raise ValueError("candidate verdict is invalid")
+        source_spec_hash = payload["source_spec_visual_hash"]
+        target_spec_hash = payload["target_spec_visual_hash"]
+        if not (
+            isinstance(source_spec_hash, str)
+            and len(source_spec_hash) == 16
+            and isinstance(target_spec_hash, str)
+            and len(target_spec_hash) == 16
+        ):
+            raise ValueError("candidate specification lineage is incomplete")
+        for key in (
+            "requested_change",
+            "region_description",
+            "component_path",
+            "option_id",
+        ):
+            if not isinstance(payload[key], str) or not payload[key].strip():
+                raise ValueError(f"candidate {key} is invalid")
+        raw_changes = payload["spec_change"]
+        if not isinstance(raw_changes, list) or not all(
+            isinstance(change, dict) for change in raw_changes
+        ):
+            raise TypeError("candidate specification changes are invalid")
+        if not isinstance(payload["qa"], dict) or not isinstance(
+            payload["routing"], dict
+        ):
+            raise TypeError("candidate execution evidence is invalid")
+        drift = payload.get("drift")
+        if drift is not None and (
+            not isinstance(drift, (int, float)) or isinstance(drift, bool)
+        ):
+            raise TypeError("candidate drift evidence is invalid")
+        next_spec = Spec.model_validate(payload["next_spec"])
+        raw_target_ids = payload.get("target_component_ids", ())
+        if not isinstance(raw_target_ids, (list, tuple)) or not all(
+            isinstance(component_id, str) and component_id.strip()
+            for component_id in raw_target_ids
+        ):
+            raise TypeError("candidate component lineage is invalid")
+        target_component_ids = tuple(raw_target_ids)
+        raw_child_map = payload.get("proposed_child_component_map")
+        proposed_child_map = (
+            RevisionComponentMap.model_validate(raw_child_map)
+            if raw_child_map is not None
+            else None
+        )
+    except (KeyError, TypeError, ValueError) as exc:
+        raise CatalogPreviewUnavailable(
+            "the catalog preview payload is incomplete or invalid"
+        ) from exc
+    return (
+        payload,
+        next_spec,
+        source_spec_hash,
+        target_spec_hash,
+        target_component_ids,
+        proposed_child_map,
+    )
+
+
+def _candidate(record: PreviewCandidateRecord) -> CatalogPreviewCandidate:
+    (
+        payload,
+        next_spec,
+        source_spec_hash,
+        target_spec_hash,
+        target_component_ids,
+        proposed_child_map,
+    ) = _validated_candidate_payload(record)
     return CatalogPreviewCandidate(
         candidate_id=record.id,
         run_id=record.image_run_id,
@@ -97,14 +195,14 @@ def _candidate(record: PreviewCandidateRecord) -> CatalogPreviewCandidate:
         expected_design_version=record.expected_design_version or 0,
         source_hash=record.source_sha256,
         output_hash=record.output_sha256,
-        source_spec_visual_hash=payload["source_spec_visual_hash"],
-        target_spec_visual_hash=payload["target_spec_visual_hash"],
+        source_spec_visual_hash=source_spec_hash,
+        target_spec_visual_hash=target_spec_hash,
         image_bytes=bytes(record.image),
         media_type=record.media_type,
         requested_change=payload["requested_change"],
         region_description=payload["region_description"],
         drift=payload.get("drift"),
-        next_spec=Spec.model_validate(payload["next_spec"]),
+        next_spec=next_spec,
         component_path=payload["component_path"],
         option_id=payload["option_id"],
         spec_change=tuple(payload["spec_change"]),
@@ -113,8 +211,9 @@ def _candidate(record: PreviewCandidateRecord) -> CatalogPreviewCandidate:
         created_by=record.owner,
         expires_at=_utc(record.expires_at),
         component_map_sha256=payload.get("component_map_sha256"),
-        target_component_ids=tuple(payload.get("target_component_ids", ())),
+        target_component_ids=target_component_ids,
         target_mask_sha256=payload.get("target_mask_sha256"),
+        proposed_child_component_map=proposed_child_map,
         studio_job_id=record.studio_job_id,
     )
 
@@ -150,7 +249,7 @@ def _bind_refine_job(
     ):
         raise CatalogPreviewJobError(
             "this candidate requires a canonical one-output Studio Refine job")
-    if job.status not in {"running", "reviewing"}:
+    if job.status != "running":
         raise CatalogPreviewJobError(
             f"the Studio Refine job is already {job.status}")
     if (
@@ -173,7 +272,8 @@ def validate_catalog_preview_refine_job(
     source_asset_id: str,
 ) -> None:
     """Fail before provider work; store revalidates under lock before binding."""
-    job = db.get(StudioJobRecord, job_id)
+    job = db.scalar(select(StudioJobRecord).where(
+        StudioJobRecord.id == job_id).with_for_update())
     canonical = studio_job_action_definition("refine")
     if job is None or job.owner != owner:
         raise CatalogPreviewJobError("the Studio Refine job is unavailable")
@@ -185,7 +285,7 @@ def validate_catalog_preview_refine_job(
     ):
         raise CatalogPreviewJobError(
             "this candidate requires a canonical one-output Studio Refine job")
-    if job.status not in {"running", "reviewing"}:
+    if job.status != "running":
         raise CatalogPreviewJobError(
             f"the Studio Refine job is already {job.status}")
     if (
@@ -199,6 +299,9 @@ def validate_catalog_preview_refine_job(
 def _settle_zero_job(
     db: Session,
     record: PreviewCandidateRecord,
+    *,
+    status: Literal["failed", "canceled"] = "canceled",
+    error_code: str | None = None,
 ) -> None:
     if record.studio_job_id is None:
         return
@@ -217,23 +320,85 @@ def _settle_zero_job(
     ):
         raise CatalogPreviewJobError(
             "the catalog preview Studio Refine job is unavailable")
-    if job.charged_outputs != 0:
+    if job.completed_outputs != 0 or job.charged_outputs != 0:
         raise CatalogPreviewJobError(
-            "a charged Studio Refine job cannot settle as zero output")
-    if job.status == "canceled":
+            "a completed or charged Studio Refine job cannot settle as zero output")
+    if job.status in {"failed", "canceled"}:
         if job.completed_outputs != 0:
             raise CatalogPreviewJobError(
-                "the canceled Studio Refine job has inconsistent output evidence")
-        return
+                "the terminal Studio Refine job has inconsistent output evidence")
+        if job.status == status and job.error_code == error_code:
+            return
+        if job.status == "canceled" and job.error_code is None:
+            return
+        raise CatalogPreviewJobError(
+            f"the Studio Refine job is already {job.status}")
     if job.status not in {"running", "reviewing"}:
         raise CatalogPreviewJobError(
             f"the Studio Refine job cannot settle from {job.status}")
-    job.status = "canceled"
+    job.status = status
     job.progress = 1
     job.completed_outputs = 0
     job.charged_outputs = 0
-    job.error_code = None
+    job.error_code = error_code
     job.updated_at = utcnow()
+
+
+def settle_catalog_preview_refine_job_failure(
+    db: Session,
+    *,
+    job_id: str,
+    owner: str,
+    project_root_id: str,
+    source_asset_id: str,
+    error_code: str,
+    commit: bool = True,
+) -> None:
+    """Fail one exact Refine job after provider or jewelry-QA rejection.
+
+    Execution can fail before a temporary candidate exists, so this settlement
+    validates the same immutable job binding used by candidate storage. Failed
+    attempts are evidence, never billable outputs.
+    """
+
+    job = db.scalar(select(StudioJobRecord).where(
+        StudioJobRecord.id == job_id,
+    ).with_for_update())
+    canonical = studio_job_action_definition("refine")
+    if (
+        job is None
+        or job.owner != owner
+        or job.action_id != "refine"
+        or job.lane != canonical.lane
+        or job.credits_per_output != canonical.credits_per_output
+        or job.requested_outputs != 1
+        or job.active_design_id != project_root_id
+        or job.source_revision_id != source_asset_id
+    ):
+        raise CatalogPreviewJobError(
+            "the catalog preview Studio Refine job is unavailable")
+    if job.completed_outputs != 0 or job.charged_outputs != 0:
+        raise CatalogPreviewJobError(
+            "a completed or charged Studio Refine job cannot fail this preview")
+    normalized_error = error_code[:64]
+    if job.status in {"running", "reviewing"}:
+        job.status = "failed"
+        job.progress = 1
+        job.completed_outputs = 0
+        job.charged_outputs = 0
+        job.error_code = normalized_error
+        job.updated_at = utcnow()
+        if commit:
+            db.commit()
+        else:
+            db.flush()
+        return
+    if job.status == "failed" and job.error_code == normalized_error:
+        return
+    if job.status == "canceled" and job.error_code is None:
+        return
+    raise CatalogPreviewJobError(
+        f"the Studio Refine job is already {job.status}")
 
 
 def _expire(db: Session, record: PreviewCandidateRecord) -> None:
@@ -242,6 +407,42 @@ def _expire(db: Session, record: PreviewCandidateRecord) -> None:
     record.image = b""
     record.resolved_at = utcnow()
     db.commit()
+
+
+def invalidate_catalog_preview_candidate(
+    db: Session,
+    run_id: str,
+    candidate_id: str,
+    *,
+    owner: str,
+    error_code: str = "catalog_preview_unavailable",
+) -> bool:
+    """Atomically close a stale preview and its uncharged Refine job.
+
+    The lineage validator intentionally raises before returning candidate
+    bytes. This exact-row cleanup turns that rejected review into terminal
+    evidence without ever promoting pixels or specification state.
+    """
+
+    record = db.scalar(select(PreviewCandidateRecord).where(
+        PreviewCandidateRecord.id == candidate_id,
+        PreviewCandidateRecord.image_run_id == run_id,
+        PreviewCandidateRecord.kind == "catalog_revision",
+        PreviewCandidateRecord.owner == owner,
+    ).with_for_update())
+    if record is None or record.status != "reviewing":
+        return False
+    _settle_zero_job(
+        db,
+        record,
+        status="failed",
+        error_code=error_code[:64],
+    )
+    record.status = "expired"
+    record.image = b""
+    record.resolved_at = utcnow()
+    db.commit()
+    return True
 
 
 def _owned_reviewing_record(
@@ -285,7 +486,14 @@ def _owned_reviewing_record(
         if source is not None else None
     )
     output_hash = hashlib.sha256(bytes(record.image)).hexdigest()
-    payload = record.payload
+    (
+        payload,
+        next_spec,
+        expected_source_spec_hash,
+        expected_target_spec_hash,
+        target_component_ids,
+        proposed_child,
+    ) = _validated_candidate_payload(record)
     version = (
         db.get(DesignVersion, (root.design_id, record.expected_design_version))
         if root is not None
@@ -299,13 +507,10 @@ def _owned_reviewing_record(
     source_spec_hash = (
         spec_visual_hash(source_spec) if source_spec is not None else None
     )
-    target_spec_hash = spec_visual_hash(
-        Spec.model_validate(payload["next_spec"])
-    )
+    target_spec_hash = spec_visual_hash(next_spec)
     component_lineage_valid = True
     expected_map_hash = payload.get("component_map_sha256")
     expected_mask_hash = payload.get("target_mask_sha256")
-    target_component_ids = tuple(payload.get("target_component_ids", ()))
     has_component_lineage = any((
         expected_map_hash is not None,
         expected_mask_hash is not None,
@@ -343,6 +548,26 @@ def _owned_reviewing_record(
                 )
         except (ComponentMapError, TypeError, ValueError):
             component_lineage_valid = False
+    proposed_child_map_valid = True
+    if payload.get("component_path") in STRUCTURAL_CATALOG_PATHS:
+        try:
+            if proposed_child is None:
+                raise ComponentMapError(
+                    "the structural child component map is unavailable",
+                    code="component_mapping_unresolved",
+                )
+            bind_map_to_raster(proposed_child, bytes(record.image))
+            mapper_status = catalog_structural_component_mapper_status()
+            proposed_child_map_valid = (
+                proposed_child.asset_id == record.id
+                and proposed_child.mapper_contract == mapper_status.mapper_contract
+                and proposed_child.calibration_evidence_sha256
+                == mapper_status.calibration_evidence_sha256
+                and mapper_status.state == "ready"
+                and payload["component_path"] in mapper_status.supported_paths
+            )
+        except (ComponentMapError, TypeError, ValueError):
+            proposed_child_map_valid = False
     if (
         project is None
         or project.owner != owner
@@ -354,16 +579,17 @@ def _owned_reviewing_record(
         or source.design_version != record.expected_design_version
         or source_hash != record.source_sha256
         or output_hash != record.output_sha256
-        or source_spec_hash != payload["source_spec_visual_hash"]
-        or target_spec_hash != payload["target_spec_visual_hash"]
+        or source_spec_hash != expected_source_spec_hash
+        or target_spec_hash != expected_target_spec_hash
         or run is None
         or run.created_by != owner
         or run.project_root_id != record.project_root_id
         or run.source_asset_id != record.source_asset_id
         or run.source_hash != record.source_sha256
-        or run.source_spec_visual_hash != payload["source_spec_visual_hash"]
-        or run.spec_visual_hash != payload["target_spec_visual_hash"]
+        or run.source_spec_visual_hash != expected_source_spec_hash
+        or run.spec_visual_hash != expected_target_spec_hash
         or not component_lineage_valid
+        or not proposed_child_map_valid
     ):
         raise CatalogPreviewUnavailable(
             "the catalog preview no longer matches the exact image/spec source"
@@ -398,6 +624,7 @@ def store_catalog_preview_candidate(
     component_map_sha256: str | None = None,
     target_component_ids: tuple[str, ...] = (),
     target_mask_sha256: str | None = None,
+    proposed_child_component_map: RevisionComponentMap | None = None,
     studio_job_id: str | None = None,
 ) -> CatalogPreviewCandidate:
     if studio_job_id is not None:
@@ -409,8 +636,15 @@ def store_catalog_preview_candidate(
             source_asset_id=source_asset_id,
         )
     now = utcnow()
+    candidate_id = new_id("cand")
+    if proposed_child_component_map is not None:
+        bind_map_to_raster(proposed_child_component_map, image_bytes)
+        payload = proposed_child_component_map.model_dump(mode="json")
+        payload["asset_id"] = candidate_id
+        proposed_child_component_map = RevisionComponentMap.model_validate(payload)
+        bind_map_to_raster(proposed_child_component_map, image_bytes)
     record = PreviewCandidateRecord(
-        id=new_id("cand"),
+        id=candidate_id,
         image_run_id=run_id,
         owner=created_by,
         project_root_id=project_root_id,
@@ -440,6 +674,11 @@ def store_catalog_preview_candidate(
             "component_map_sha256": component_map_sha256,
             "target_component_ids": list(target_component_ids),
             "target_mask_sha256": target_mask_sha256,
+            "proposed_child_component_map": (
+                proposed_child_component_map.model_dump(mode="json")
+                if proposed_child_component_map is not None
+                else None
+            ),
         },
         created_at=now,
         expires_at=now + timedelta(seconds=_TTL_SECONDS),
@@ -503,6 +742,15 @@ def list_catalog_preview_candidates(
                 db, record.image_run_id, record.id, owner=owner,
             )
         except CatalogPreviewUnavailable:
+            # A resume read is a real lifecycle observation. Do not silently
+            # hide invalid bytes while their exact Activity job remains stuck
+            # in review.
+            invalidate_catalog_preview_candidate(
+                db,
+                record.image_run_id,
+                record.id,
+                owner=owner,
+            )
             continue
         candidates.append(_candidate(current))
     return tuple(candidates)

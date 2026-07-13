@@ -62,6 +62,31 @@ function variationDisplayName(variation: DesignFamilyVariation): string {
   return `Variation ${variation.variation_index} · ${variationName(variation)}`;
 }
 
+/**
+ * Project `updated_at` represents activity on the variation as a whole. It can
+ * move for presentation or marketing work without appending a design revision,
+ * so this is only a navigation/cover heuristic—not revision recency.
+ */
+function mostRecentlyActiveVariation(
+  variations: DesignFamilyVariation[],
+): DesignFamilyVariation | undefined {
+  return [...variations].sort((left, right) => {
+    const leftUpdatedAt = Date.parse(left.updated_at);
+    const rightUpdatedAt = Date.parse(right.updated_at);
+    if (Number.isNaN(leftUpdatedAt) !== Number.isNaN(rightUpdatedAt)) {
+      return Number.isNaN(rightUpdatedAt) ? 1 : -1;
+    }
+    if (!Number.isNaN(leftUpdatedAt) && rightUpdatedAt !== leftUpdatedAt) {
+      return rightUpdatedAt - leftUpdatedAt;
+    }
+    const sourceTimestampDifference = right.updated_at.localeCompare(left.updated_at);
+    if (sourceTimestampDifference !== 0) return sourceTimestampDifference;
+    const indexDifference = right.variation_index - left.variation_index;
+    if (indexDifference !== 0) return indexDifference;
+    return left.root_id.localeCompare(right.root_id);
+  })[0];
+}
+
 function dateLabel(value: string): string {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return 'Date unavailable';
@@ -350,11 +375,14 @@ export function StudioCollectionsWorkspace({
         ) : (
           <View style={styles.variationGrid}>
             {families?.map((familyItem) => {
-              const representative = familyItem.variations[0];
-              const cover = familyItem.variations.find((item) => item.cover_asset_id !== null)?.cover_asset_id ?? null;
+              const representative = mostRecentlyActiveVariation(familyItem.variations);
+              const cover = representative?.cover_asset_id ?? null;
               return (
                 <Pressable
                   key={familyItem.family_id}
+                  accessibilityLabel={representative === undefined
+                    ? `Open ${familyItem.title}`
+                    : `Open recently active variation: ${variationName(representative)}`}
                   disabled={representative === undefined}
                   onPress={() => representative !== undefined && openFromFamilyIndex(representative.root_id)}
                   style={styles.variationCard}>
@@ -363,6 +391,9 @@ export function StudioCollectionsWorkspace({
                   )}
                   <Text style={styles.variationTitle}>{familyItem.title}</Text>
                   <Text style={styles.meta}>{familyItem.variations.length} variation{familyItem.variations.length === 1 ? '' : 's'}</Text>
+                  {representative !== undefined && (
+                    <Text style={styles.meta}>Recently active · {variationName(representative)}</Text>
+                  )}
                 </Pressable>
               );
             })}
