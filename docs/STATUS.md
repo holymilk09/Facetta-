@@ -35,7 +35,17 @@ Apply to Preview-first decisions: the ring harness requires explicit operator
 Accept or Discard, while the necklace evaluation defaults to no mutation and
 may explicitly Save as Variation or Discard.
 
-Local validation for these slices: 1,542 backend tests, 240 Jest tests, 67
+Exact-reference imports now use authenticated
+`POST /studio/projects/import-confirmed`. Canonical imports require the
+independent source-component audit to name the SHA-256 of the exact uploaded
+bytes before one transaction creates the project, immutable Design v1, and
+byte-identical imported asset. The shared service keeps validation and
+persistence behavior identical for the deprecated development-only
+`/projects/from-image` compatibility route, while production rejects missing
+or stale source-audit bindings and actor spoofing. All four live exact-reference
+harnesses and the trusted client now use the Studio route.
+
+Local validation for these slices: 1,558 backend tests, 241 Jest tests, 68
 Studio contract tests, TypeScript, and Expo export pass. This remains local
 contract and interface validation; the external corpus, designer/GIA review,
 founder acceptance, and staging isolation gates remain unmet.
