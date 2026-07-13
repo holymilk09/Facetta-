@@ -23,6 +23,58 @@ describe('StudioPresentWorkspace', () => {
     expect(screen.getByText('Present always starts from one saved revision.')).toBeTruthy();
   });
 
+  test('opens the already-saved Library destination without generation or a job', async () => {
+    const onOpenCollections = jest.fn();
+    const generation = {
+      createBeautyPresentation: jest.fn(),
+      createProductPresentation: jest.fn(),
+      createMarketingPresentation: jest.fn(),
+      createPreSpecPresentation: jest.fn(),
+    };
+    await renderPresent(<StudioPresentWorkspace
+      gateway={{
+        ...generation,
+        acceptPresentationCandidate: jest.fn(), discardPresentationCandidate: jest.fn(),
+        acceptPreSpecPresentation: jest.fn(), discardPreSpecPresentation: jest.fn(),
+      } as any}
+      lineage={lineage}
+      createdBy="designer"
+      onOpenCollections={onOpenCollections}
+    />);
+
+    await act(async () => { fireEvent.press(screen.getByRole('radio', { name: 'Library' })); });
+    expect(screen.getByText('Already saved · 0 credits')).toBeTruthy();
+    expect(screen.getByText(/Viewing it creates no copy or job/i)).toBeTruthy();
+    expect(screen.queryByText(/Generate .*preview/i)).toBeNull();
+    fireEvent.press(screen.getByText('View in Collections'));
+    expect(onOpenCollections).toHaveBeenCalledTimes(1);
+    Object.values(generation).forEach((method) => expect(method).not.toHaveBeenCalled());
+  });
+
+  test('labels an earlier Library source instead of silently presenting the current revision', async () => {
+    const onOpenCollections = jest.fn();
+    await renderPresent(<StudioPresentWorkspace
+      gateway={{
+        createBeautyPresentation: jest.fn(), createProductPresentation: jest.fn(),
+        createMarketingPresentation: jest.fn(), createPreSpecPresentation: jest.fn(),
+        acceptPresentationCandidate: jest.fn(), discardPresentationCandidate: jest.fn(),
+        acceptPreSpecPresentation: jest.fn(), discardPreSpecPresentation: jest.fn(),
+      } as any}
+      lineage={lineage}
+      createdBy="designer"
+      reviewSourceIsActive={false}
+      onOpenCollections={onOpenCollections}
+    />);
+
+    await act(async () => {
+      fireEvent.press(screen.getByRole('radio', { name: 'Library' }));
+    });
+    expect(screen.getByText(/This earlier source remains in immutable history/i)).toBeTruthy();
+    expect(screen.queryByText('View in Collections')).toBeNull();
+    fireEvent.press(screen.getByText('View project history'));
+    expect(onOpenCollections).toHaveBeenCalledTimes(1);
+  });
+
   test('restores exact-revision presentation previews after remount', async () => {
     const acceptPresentationCandidate = jest.fn();
     const resumeExactPresentations = jest.fn(async () => ({
@@ -148,6 +200,7 @@ describe('StudioPresentWorkspace', () => {
     expect(screen.getByText('1 requested output · estimated 18 credits')).toBeTruthy();
     expect(screen.getByText(/Generation creates review previews only/i)).toBeTruthy();
     expect(screen.getByText(/charged only for the outputs you explicitly save/i)).toBeTruthy();
+    await act(async () => { fireEvent.press(screen.getByLabelText('Style and framing')); });
     fireEvent.press(screen.getByText('Product photo'));
     const generate = await screen.findByText('Create client product photo');
     await act(async () => { fireEvent.press(generate); });
@@ -225,7 +278,7 @@ describe('StudioPresentWorkspace', () => {
     await act(async () => {
       fireEvent.press(screen.getByText('Create another presentation'));
     });
-    expect(await screen.findByText('1 · Destination')).toBeTruthy();
+    expect(await screen.findByText('What do you need?')).toBeTruthy();
     expect(screen.getByText('Create client beauty render')).toBeTruthy();
   });
 

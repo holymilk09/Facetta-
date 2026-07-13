@@ -39,6 +39,8 @@ export interface StudioCollectionsWorkspaceProps {
   onProjectChanged: (project: ProjectDetail) => void;
   /** Opens the canonical Vary workspace for the currently active project. */
   onVaryCurrent: () => void;
+  /** Returns the selected exact variation to the canonical Refine workspace. */
+  onContinueRefining?: () => void;
   /** Host-owned authenticated delivery. Protected bytes are fetched only after Export. */
   deliverProtectedFile?: (request: {
     url: string;
@@ -192,6 +194,7 @@ export function StudioCollectionsWorkspace({
   onOpenProject,
   onProjectChanged,
   onVaryCurrent,
+  onContinueRefining,
   onShowAllFamilies,
   deliverProtectedFile,
 }: StudioCollectionsWorkspaceProps) {
@@ -204,6 +207,8 @@ export function StudioCollectionsWorkspace({
   const [viewingAllFamilies, setViewingAllFamilies] = useState(false);
   const [exportingAssetId, setExportingAssetId] = useState<string | null>(null);
   const [exportError, setExportError] = useState<string | null>(null);
+  const [showPresentationImages, setShowPresentationImages] = useState(false);
+  const [showRevisionHistory, setShowRevisionHistory] = useState(false);
 
   useEffect(() => {
     let current = true;
@@ -212,6 +217,8 @@ export function StudioCollectionsWorkspace({
     setCompareAssetIds([]);
     setExportingAssetId(null);
     setExportError(null);
+    setShowPresentationImages(false);
+    setShowRevisionHistory(false);
     if (project === null || viewingAllFamilies) {
       setLoading(true);
       setFamilies(null);
@@ -483,6 +490,15 @@ export function StudioCollectionsWorkspace({
               ? 'This is the first saved direction. Create a variation to begin its family.'
               : `${family.variations.length} variation${family.variations.length === 1 ? '' : 's'} · every revision preserved`}
           </Text>
+          {onContinueRefining !== undefined && (
+            <View style={styles.familyActions}>
+              <Button
+                title="Continue refining"
+                disabled={project.active_asset_id === null}
+                onPress={onContinueRefining}
+              />
+            </View>
+          )}
         </View>
       </View>
 
@@ -548,120 +564,156 @@ export function StudioCollectionsWorkspace({
       </View>
 
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Saved outputs</Text>
-        <Text style={styles.sectionCopy}>
-          Client, marketing, and view images live beside the exact design revision they came
-          from. They never replace design history.
-        </Text>
-        {savedOutputs.length === 0 ? (
-          <View style={styles.inlineEmpty}>
-            <Text style={styles.meta}>No presentation or view images have been saved for this variation.</Text>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`${showPresentationImages ? 'Hide' : 'Show'} presentation images (${savedOutputs.length})`}
+          accessibilityState={{ expanded: showPresentationImages }}
+          onPress={() => setShowPresentationImages((visible) => !visible)}
+          style={styles.disclosureRow}>
+          <View style={styles.disclosureCopy}>
+            <Text style={styles.sectionTitle}>Presentation images</Text>
+            <Text style={styles.meta}>
+              {savedOutputs.length} saved image{savedOutputs.length === 1 ? '' : 's'}
+            </Text>
           </View>
-        ) : (
-          <View style={styles.outputGrid}>
-            {savedOutputs.map((output) => (
-              <View key={output.asset_id} style={styles.outputCard}>
-                <Image
-                  accessibilityLabel={savedOutputLabel(output.capability)}
-                  source={{ uri: api.assetImageUrl(output.asset_id) }}
-                  resizeMode="cover"
-                  style={styles.outputImage}
-                />
-                <Text style={styles.variationTitle}>{savedOutputLabel(output.capability)}</Text>
-                <Text style={styles.lineage}>
-                  {savedOutputLineage(output, project, data.history.revisions)}
-                </Text>
-                {output.created_at !== null && <Text style={styles.meta}>{dateLabel(output.created_at)}</Text>}
-                {deliverProtectedFile !== undefined && (
-                  <Button
-                    title={exportingAssetId === output.asset_id
-                      ? `Exporting ${savedOutputLabel(output.capability).toLowerCase()}…`
-                      : `Export ${savedOutputLabel(output.capability).toLowerCase()}`}
-                    kind="ghost"
-                    disabled={exportingAssetId !== null}
-                    onPress={() => { void exportSavedOutput(output); }}
-                  />
-                )}
+          <Text style={styles.disclosureMark}>{showPresentationImages ? '−' : '+'}</Text>
+        </Pressable>
+        {showPresentationImages && (
+          <>
+            <Text style={styles.sectionCopy}>
+              Client, marketing, and view images live beside the exact design revision they came
+              from. They never replace design history.
+            </Text>
+            {savedOutputs.length === 0 ? (
+              <View style={styles.inlineEmpty}>
+                <Text style={styles.meta}>No presentation or view images have been saved for this variation.</Text>
               </View>
-            ))}
-          </View>
+            ) : (
+              <View style={styles.outputGrid}>
+                {savedOutputs.map((output) => (
+                  <View key={output.asset_id} style={styles.outputCard}>
+                    <Image
+                      accessibilityLabel={savedOutputLabel(output.capability)}
+                      source={{ uri: api.assetImageUrl(output.asset_id) }}
+                      resizeMode="cover"
+                      style={styles.outputImage}
+                    />
+                    <Text style={styles.variationTitle}>{savedOutputLabel(output.capability)}</Text>
+                    <Text style={styles.lineage}>
+                      {savedOutputLineage(output, project, data.history.revisions)}
+                    </Text>
+                    {output.created_at !== null && <Text style={styles.meta}>{dateLabel(output.created_at)}</Text>}
+                    {deliverProtectedFile !== undefined && (
+                      <Button
+                        title={exportingAssetId === output.asset_id
+                          ? `Exporting ${savedOutputLabel(output.capability).toLowerCase()}…`
+                          : `Export ${savedOutputLabel(output.capability).toLowerCase()}`}
+                        kind="ghost"
+                        disabled={exportingAssetId !== null}
+                        onPress={() => { void exportSavedOutput(output); }}
+                      />
+                    )}
+                  </View>
+                ))}
+              </View>
+            )}
+            {exportError !== null && <Notice kind="error" text={exportError} />}
+          </>
         )}
-        {exportError !== null && <Notice kind="error" text={exportError} />}
       </View>
 
-      {compared.length === 2 && (
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>
-            Comparing revision {compared[0].revision} and revision {compared[1].revision}
-          </Text>
-          <View style={styles.compareGrid}>
-            {compared.map((revision) => (
-              <View key={revision.asset_id} style={styles.compareCard}>
-                <StudioReviewImage
-                  accessibilityLabel={`Revision ${revision.revision} comparison`}
-                  inspectionLabel={`Revision ${revision.revision}`}
-                  source={{ uri: revision.image_url }}
-                  resizeMode="contain"
-                  style={styles.compareImage}
-                />
-                <Text style={styles.variationTitle}>Revision {revision.revision}</Text>
-                <Text style={styles.meta}>{dateLabel(revision.created_at)}</Text>
-                <Text style={styles.sectionCopy}>{revision.change_summary}</Text>
-                <Text style={styles.lineage}>{revisionLineage(revision, data.history.revisions)}</Text>
-              </View>
-            ))}
-          </View>
-        </View>
-      )}
-
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Saved revision history</Text>
-        <Text style={styles.sectionCopy}>
-          Compare two revisions. Restoring copies an earlier revision forward as a new one; nothing is overwritten.
-        </Text>
-        {data.history.revisions.length === 0 ? (
-          <View style={styles.inlineEmpty}>
-            <Text style={styles.meta}>No saved visual revisions are recorded for this design yet.</Text>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`${showRevisionHistory ? 'Hide' : 'Show'} revision history (${data.history.revisions.length})`}
+          accessibilityState={{ expanded: showRevisionHistory }}
+          onPress={() => {
+            if (showRevisionHistory) setCompareAssetIds([]);
+            setShowRevisionHistory(!showRevisionHistory);
+          }}
+          style={styles.disclosureRow}>
+          <View style={styles.disclosureCopy}>
+            <Text style={styles.sectionTitle}>Revision history</Text>
+            <Text style={styles.meta}>
+              {data.history.revisions.length} immutable revision{data.history.revisions.length === 1 ? '' : 's'}
+            </Text>
           </View>
-        ) : data.history.revisions.map((revision) => {
-          const active = revision.asset_id === activeAssetId;
-          const comparing = compareAssetIds.includes(revision.asset_id);
-          return (
-            <View key={revision.asset_id} style={styles.revisionRow}>
-              <Image source={{ uri: revision.image_url }} resizeMode="cover" style={styles.revisionThumb} />
-              <View style={styles.revisionCopy}>
-                <Text style={styles.variationTitle}>
-                  Revision {revision.revision}{active ? ' · Active' : ''}
+          <Text style={styles.disclosureMark}>{showRevisionHistory ? '−' : '+'}</Text>
+        </Pressable>
+        {showRevisionHistory && (
+          <>
+            <Text style={styles.sectionCopy}>
+              Compare two revisions. Restoring copies an earlier revision forward as a new one; nothing is overwritten.
+            </Text>
+            {compared.length === 2 && (
+              <View style={styles.compareArea}>
+                <Text style={styles.sectionTitle}>
+                  Comparing revision {compared[0].revision} and revision {compared[1].revision}
                 </Text>
-                <Text style={styles.meta}>{dateLabel(revision.created_at)}</Text>
-                <Text style={styles.sectionCopy}>{revision.change_summary}</Text>
-                <Text style={styles.lineage}>{revisionLineage(revision, data.history.revisions)}</Text>
+                <View style={styles.compareGrid}>
+                  {compared.map((revision) => (
+                    <View key={revision.asset_id} style={styles.compareCard}>
+                      <StudioReviewImage
+                        accessibilityLabel={`Revision ${revision.revision} comparison`}
+                        inspectionLabel={`Revision ${revision.revision}`}
+                        source={{ uri: revision.image_url }}
+                        resizeMode="contain"
+                        style={styles.compareImage}
+                      />
+                      <Text style={styles.variationTitle}>Revision {revision.revision}</Text>
+                      <Text style={styles.meta}>{dateLabel(revision.created_at)}</Text>
+                      <Text style={styles.sectionCopy}>{revision.change_summary}</Text>
+                      <Text style={styles.lineage}>{revisionLineage(revision, data.history.revisions)}</Text>
+                    </View>
+                  ))}
+                </View>
               </View>
-              <View style={styles.revisionActions}>
-                <Pressable
-                  accessibilityRole="checkbox"
-                  accessibilityState={{ checked: comparing }}
-                  accessibilityLabel={`Compare revision ${revision.revision}`}
-                  onPress={() => toggleComparison(revision.asset_id)}
-                  style={[styles.compareButton, comparing && styles.compareButtonSelected]}>
-                  <Text style={comparing ? styles.compareTextSelected : styles.compareText}>
-                    {comparing ? 'Selected' : 'Compare'}
-                  </Text>
-                </Pressable>
-                {!active && (
-                  <Button
-                    title={restoringAssetId === revision.asset_id
-                      ? 'Restoring…'
-                      : `Restore revision ${revision.revision} as new`}
-                    kind="ghost"
-                    disabled={restoringAssetId !== null || project.active_asset_id === null}
-                    onPress={() => { void restoreRevision(revision); }}
-                  />
-                )}
+            )}
+            {data.history.revisions.length === 0 ? (
+              <View style={styles.inlineEmpty}>
+                <Text style={styles.meta}>No saved visual revisions are recorded for this design yet.</Text>
               </View>
-            </View>
-          );
-        })}
+            ) : data.history.revisions.map((revision) => {
+              const active = revision.asset_id === activeAssetId;
+              const comparing = compareAssetIds.includes(revision.asset_id);
+              return (
+                <View key={revision.asset_id} style={styles.revisionRow}>
+                  <Image source={{ uri: revision.image_url }} resizeMode="cover" style={styles.revisionThumb} />
+                  <View style={styles.revisionCopy}>
+                    <Text style={styles.variationTitle}>
+                      Revision {revision.revision}{active ? ' · Active' : ''}
+                    </Text>
+                    <Text style={styles.meta}>{dateLabel(revision.created_at)}</Text>
+                    <Text style={styles.sectionCopy}>{revision.change_summary}</Text>
+                    <Text style={styles.lineage}>{revisionLineage(revision, data.history.revisions)}</Text>
+                  </View>
+                  <View style={styles.revisionActions}>
+                    <Pressable
+                      accessibilityRole="checkbox"
+                      accessibilityState={{ checked: comparing }}
+                      accessibilityLabel={`Compare revision ${revision.revision}`}
+                      onPress={() => toggleComparison(revision.asset_id)}
+                      style={[styles.compareButton, comparing && styles.compareButtonSelected]}>
+                      <Text style={comparing ? styles.compareTextSelected : styles.compareText}>
+                        {comparing ? 'Selected' : 'Compare'}
+                      </Text>
+                    </Pressable>
+                    {!active && (
+                      <Button
+                        title={restoringAssetId === revision.asset_id
+                          ? 'Restoring…'
+                          : `Restore revision ${revision.revision} as new`}
+                        kind="ghost"
+                        disabled={restoringAssetId !== null || project.active_asset_id === null}
+                        onPress={() => { void restoreRevision(revision); }}
+                      />
+                    )}
+                  </View>
+                </View>
+              );
+            })}
+          </>
+        )}
       </View>
     </ScrollView>
   );
@@ -686,6 +738,7 @@ const styles = StyleSheet.create({
   },
   familyCover: { width: '100%', height: 260, backgroundColor: theme.blush },
   familyCopy: { padding: 16 },
+  familyActions: { alignItems: 'flex-start', marginTop: 12 },
   eyebrow: {
     color: theme.accent, fontSize: 10, fontWeight: '700', letterSpacing: 1.2,
     textTransform: 'uppercase', marginBottom: 5,
@@ -698,6 +751,11 @@ const styles = StyleSheet.create({
   },
   sectionTitle: { color: theme.ink, fontFamily: theme.serif, fontSize: 17, marginBottom: 4 },
   sectionCopy: { color: theme.faint, fontSize: 12, lineHeight: 17 },
+  disclosureRow: {
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', gap: 12,
+  },
+  disclosureCopy: { flex: 1 },
+  disclosureMark: { color: theme.ink, fontSize: 22, lineHeight: 24 },
   inlineEmpty: { borderTopWidth: 1, borderTopColor: theme.line, marginTop: 12, paddingTop: 12 },
   variationGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 12 },
   variationCard: {
@@ -715,6 +773,7 @@ const styles = StyleSheet.create({
   },
   branchTitle: { color: theme.ink, fontSize: 13, fontWeight: '700', marginBottom: 4 },
   compareGrid: { flexDirection: 'row', gap: 10, marginTop: 10 },
+  compareArea: { borderTopWidth: 1, borderTopColor: theme.line, marginTop: 12, paddingTop: 12 },
   compareCard: { flex: 1, minWidth: 0 },
   compareImage: { width: '100%', height: 220, backgroundColor: theme.paper, marginBottom: 7 },
   revisionRow: {

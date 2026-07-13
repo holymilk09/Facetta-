@@ -249,6 +249,12 @@ destination changes packaging and permissions, not historical truth.
 
 ### Library
 
+- current Goal slice: a zero-credit navigation destination to the exact revision
+  already preserved in Collections; this creates no copy, revision, job, or
+  charge;
+- future scope, not yet implemented: a reusable pointer layer inside
+  Collections that binds every item to exact source identity, hashes, rights,
+  role, and quality evidence;
 - reusable designer-approved components, masks, palettes, materials, reference
   images, and family/variation exemplars;
 - searchable provenance, rights, scope, and quality evidence;
@@ -260,10 +266,13 @@ destination changes packaging and permissions, not historical truth.
 - validated facts, provenance, approvals, hashes, and clearly labeled files;
 - no visual guess or generic template presented as production geometry.
 
-The current client, marketing-pack, project/library, and factory endpoints
-provide destination foundations. The Studio shell exposes Collections and an
-explicit Configure -> Review Present flow for Client and Marketing outputs;
-Factory remains a separate, gated exact-revision destination.
+The current client, marketing-pack, project/Collections, and factory endpoints
+provide destination foundations. The Studio shell exposes a typed Library,
+Client, Marketing, and Factory destination registry. Library is only an
+instant-navigation meaning for existing canonical history; Client and Marketing
+use the explicit Configure -> Review Present flow; Factory remains a separate,
+gated exact-revision destination. The hidden legacy `/library` route is not the
+future reusable Library and remains outside the production Studio surface.
 
 ## Unified Studio shell
 
@@ -349,7 +358,8 @@ design or production geometry.
    records without rewriting history.
 4. Unify on-demand visual twins and component-aware edit routing.
 5. Add the instant masked configurator for geometry-preserving previews.
-6. Add destination packaging for Client, Marketing, Library, and optional
-   Factory promotion.
+6. Keep the implemented Client/Marketing packaging, zero-credit Collections
+   navigation, and optional Factory promotion stable; add the future reusable
+   Library pointer layer only as a separate, rights-aware product goal.
 7. Live-test design-derived mounting/section QA and factory discussion views.
 8. Apply the legacy removal gates only after founder acceptance.

@@ -278,10 +278,13 @@ was performed, so external beta remains gated on those external authorities.
 
 ## 2026-07-13 Studio review-authority and secured-capture checkpoint
 
-The renewed Studio journey is locally complete across its six intended steps:
+The renewed Studio journey is locally implemented across its six intended steps:
 mixed-source Create, one-to-four candidate selection, precise Refine, temporary
 side-by-side review, Family -> Variation -> immutable Revision organization,
-and Library/Client/Marketing destinations with Factory remaining optional.
+and a navigation-only Library choice plus Client/Marketing destinations, with
+Factory remaining optional. Library currently means the exact revision already
+preserved in Collections; it does not claim the future reusable component,
+mask, material, palette, or reference system is complete.
 Designer-facing review labels now use a closed vocabulary. Unknown evaluator,
 provider, model, QA, or routing labels collapse to neutral visual-consistency
 language instead of leaking backend terminology into the workspace.
@@ -636,9 +639,12 @@ optional Factory actions. First-class Design Family records, sibling
 Variations, immutable Revision history, comparison/restore, role-labeled
 references, temporary preview decisions, durable Studio jobs, and
 Client/Marketing presentation destinations are implemented through one typed
-Studio gateway. Create candidates are durable review directions rather than
-fake sequential revisions; the selected direction becomes the Original and
-other useful candidates can be kept explicitly as sibling Variations.
+Studio gateway. The zero-credit Library destination navigates to the exact
+revision already held in Collections without copying an asset, appending a
+revision, starting a job, or charging a credit. Create candidates are durable
+review directions rather than fake sequential revisions; the selected direction
+becomes the Original and other useful candidates can be kept explicitly as
+sibling Variations.
 
 The real-process Studio acceptance now runs ten deterministic projects through
 the production TypeScript client/gateway, HTTP, uvicorn/FastAPI, and disposable
@@ -663,6 +669,13 @@ SVG/DXF jewelry geometry remains compatibility/internal and non-authoritative
 until design-derived replacements pass structural QA, diverse live review, and
 the documented deletion gates. No compatibility code was declared complete or
 removed by this architecture update.
+
+Validation for the Collections and destination simplification checkpoint:
+1,709 backend tests, 252 Jest tests, 73 Studio contract tests, TypeScript, Ruff,
+Python compilation, Expo web export, the five-test production-surface gate, and
+the ten-project production TypeScript-client -> HTTP -> FastAPI acceptance all
+pass. The reusable component Library and external beta evidence remain outside
+this checkpoint.
 
 ## 2026-07-12 localized-edit trust audit
 

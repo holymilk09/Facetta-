@@ -131,12 +131,21 @@ jest.mock('./StudioPresentWorkspace', () => {
 
 jest.mock('./StudioCollectionsWorkspace', () => {
   const ReactLocal = require('react');
-  const { Pressable, Text } = require('react-native');
+  const { Pressable, Text, View } = require('react-native');
   return {
-    StudioCollectionsWorkspace: ({ project, onVaryCurrent }: any) => ReactLocal.createElement(
-      Pressable,
-      { accessibilityRole: 'button', onPress: onVaryCurrent },
-      ReactLocal.createElement(Text, null, `Vary exact ${project?.root_id ?? 'none'}`),
+    StudioCollectionsWorkspace: ({ project, onVaryCurrent, onContinueRefining }: any) => ReactLocal.createElement(
+      View,
+      null,
+      ReactLocal.createElement(
+        Pressable,
+        { accessibilityRole: 'button', onPress: onVaryCurrent },
+        ReactLocal.createElement(Text, null, `Vary exact ${project?.root_id ?? 'none'}`),
+      ),
+      ReactLocal.createElement(
+        Pressable,
+        { accessibilityRole: 'button', onPress: onContinueRefining },
+        ReactLocal.createElement(Text, null, 'Continue refining exact revision'),
+      ),
     ),
   };
 });
@@ -442,6 +451,20 @@ test('Collections delegates variation creation to Studio Vary with the exact act
   fireEvent.press(view.getAllByText('Collections').at(-1)!);
   fireEvent.press(await view.findByText('Vary exact project_1'));
   expect(await view.findByText('Vary route reached for project_1 via asset_1')).toBeTruthy();
+});
+
+test('Collections returns the selected exact revision to Refine', async () => {
+  authenticate();
+  const view = await render(<App />);
+
+  await waitFor(() => expect(view.getByText('Start from an idea or reference')).toBeTruthy());
+  fireEvent.press(view.getByText('Start from an idea or reference'));
+  fireEvent.press(await view.findByText('Save mocked direction'));
+  expect(await view.findByText('Refine route reached')).toBeTruthy();
+
+  fireEvent.press(view.getAllByText('Collections').at(-1)!);
+  fireEvent.press(await view.findByText('Continue refining exact revision'));
+  expect(await view.findByText('Refine route reached')).toBeTruthy();
 });
 
 test('Refine links directly to starting design review and returns after confirmation', async () => {

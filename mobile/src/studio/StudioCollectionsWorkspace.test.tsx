@@ -88,6 +88,7 @@ const callbacks = () => ({
   onOpenProject: jest.fn(),
   onProjectChanged: jest.fn(),
   onVaryCurrent: jest.fn(),
+  onContinueRefining: jest.fn(),
 });
 
 describe('StudioCollectionsWorkspace', () => {
@@ -189,6 +190,9 @@ describe('StudioCollectionsWorkspace', () => {
     await fireEvent.press(screen.getByLabelText('Open White metal study'));
     expect(handlers.onOpenProject).toHaveBeenCalledWith('project_white');
 
+    expect(screen.queryByLabelText('Compare revision 1')).toBeNull();
+    expect(screen.queryByText('Restore revision 1 as new')).toBeNull();
+    await fireEvent.press(screen.getByLabelText('Show revision history (2)'));
     await fireEvent.press(screen.getByLabelText('Compare revision 1'));
     await fireEvent.press(screen.getByLabelText('Compare revision 2'));
     expect(screen.getByText('Comparing revision 1 and revision 2')).toBeTruthy();
@@ -264,7 +268,15 @@ describe('StudioCollectionsWorkspace', () => {
       </AuthenticatedImageProvider>,
     );
 
-    expect(await screen.findByText('Saved outputs')).toBeTruthy();
+    expect(await screen.findByText('Presentation images')).toBeTruthy();
+    expect(screen.getByLabelText('Show presentation images (3)').props.accessibilityState).toEqual({
+      expanded: false,
+    });
+    expect(screen.queryByText('Client beauty render')).toBeNull();
+    await fireEvent.press(screen.getByLabelText('Show presentation images (3)'));
+    expect(screen.getByLabelText('Hide presentation images (3)').props.accessibilityState).toEqual({
+      expanded: true,
+    });
     expect(screen.getByText('Client beauty render')).toBeTruthy();
     expect(screen.getByText('Saved technical view')).toBeTruthy();
     expect(screen.getByText('Marketing image')).toBeTruthy();
@@ -315,6 +327,8 @@ describe('StudioCollectionsWorkspace', () => {
       />,
     );
 
+    await screen.findByText('Presentation images');
+    await fireEvent.press(screen.getByLabelText('Show presentation images (1)'));
     expect(await screen.findByText('Client beauty render')).toBeTruthy();
     expect(screen.getByText('Source details unavailable')).toBeTruthy();
     expect(screen.queryByText(/lineage/i)).toBeNull();
@@ -343,6 +357,8 @@ describe('StudioCollectionsWorkspace', () => {
       />,
     );
 
+    await screen.findByText('Presentation images');
+    await fireEvent.press(screen.getByLabelText('Show presentation images (1)'));
     await screen.findByText('Client beauty render');
     await fireEvent.press(screen.getByText('Export client beauty render'));
     expect(await screen.findByText(
@@ -362,13 +378,13 @@ describe('StudioCollectionsWorkspace', () => {
         {...handlers}
       />,
     );
-    await screen.findByText('Saved revision history');
+    await screen.findByText('Revision history');
     await fireEvent.press(screen.getByText('All families'));
     expect(await screen.findByText('Your design families')).toBeTruthy();
-    expect(screen.queryByText('Saved revision history')).toBeNull();
+    expect(screen.queryByText('Revision history')).toBeNull();
 
     await fireEvent.press(screen.getByText('Back to current variation'));
-    expect(await screen.findByText('Saved revision history')).toBeTruthy();
+    expect(await screen.findByText('Revision history')).toBeTruthy();
     expect(handlers.onOpenProject).not.toHaveBeenCalled();
   });
 
@@ -383,13 +399,15 @@ describe('StudioCollectionsWorkspace', () => {
         {...handlers}
       />,
     );
-    await screen.findByText('Saved revision history');
+    await screen.findByText('Revision history');
 
     expect(screen.queryByText('Variation name')).toBeNull();
     expect(screen.queryByPlaceholderText('Rose gold study')).toBeNull();
     await fireEvent.press(screen.getByText('Vary this revision'));
     expect(handlers.onVaryCurrent).toHaveBeenCalledTimes(1);
 
+    expect(screen.queryByText('Restore revision 1 as new')).toBeNull();
+    await fireEvent.press(screen.getByLabelText('Show revision history (2)'));
     await fireEvent.press(screen.getByText('Restore revision 1 as new'));
     await waitFor(() => expect(client.restoreStudioRevision).toHaveBeenCalledWith(
       'project_main',
@@ -403,6 +421,42 @@ describe('StudioCollectionsWorkspace', () => {
     expect(handlers.onProjectChanged).toHaveBeenCalledWith(expect.objectContaining({
       active_asset_id: 'asset_3',
     }));
+  });
+
+  test('keeps dense family records collapsed and continues refining the exact selected variation', async () => {
+    const handlers = callbacks();
+    await render(
+      <StudioCollectionsWorkspace
+        api={api()}
+        project={project}
+        createdBy="usr_designer"
+        {...handlers}
+      />,
+    );
+
+    expect(await screen.findByText('Sapphire orbit ring')).toBeTruthy();
+    expect(screen.getByLabelText('Show presentation images (0)').props.accessibilityState).toEqual({
+      expanded: false,
+    });
+    expect(screen.getByLabelText('Show revision history (2)').props.accessibilityState).toEqual({
+      expanded: false,
+    });
+    expect(screen.queryByText('No presentation or view images have been saved for this variation.')).toBeNull();
+    expect(screen.queryByLabelText('Compare revision 1')).toBeNull();
+    expect(screen.queryByText('Restore revision 1 as new')).toBeNull();
+
+    await fireEvent.press(screen.getByText('Continue refining'));
+    expect(handlers.onContinueRefining).toHaveBeenCalledTimes(1);
+    expect(handlers.onOpenProject).not.toHaveBeenCalled();
+
+    await fireEvent.press(screen.getByLabelText('Show revision history (2)'));
+    expect(screen.getByText('Revision 2 · Active')).toBeTruthy();
+    expect(screen.getByText('Refined from Revision 1 · Design facts confirmed')).toBeTruthy();
+    expect(screen.getByText('Restore revision 1 as new')).toBeTruthy();
+
+    await fireEvent.press(screen.getByLabelText('Hide revision history (2)'));
+    expect(screen.queryByText('Revision 2 · Active')).toBeNull();
+    expect(screen.queryByText('Restore revision 1 as new')).toBeNull();
   });
 
   test('does not invent family data when history is unavailable and still routes to Vary', async () => {

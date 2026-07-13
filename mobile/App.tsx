@@ -740,6 +740,7 @@ export default function App() {
             setSelectedCreativeAssetId(project.active_asset_id);
           }}
           onVaryCurrent={() => openStudioAction('vary')}
+          onContinueRefining={() => openStudioAction('refine')}
         />
       )}
       {tab === 'activity' && (

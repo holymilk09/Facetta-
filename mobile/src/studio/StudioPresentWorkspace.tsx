@@ -12,6 +12,9 @@ import type {
   PreSpecPresentationResult, ProductPhotoResult, ProjectDetail,
 } from '../trusted/types';
 import { getStudioAction } from './actions';
+import {
+  getStudioDestination, type StudioDestinationId,
+} from './destinations';
 import type {
   ExactStudioLineage, StudioExactPresentationPreview, StudioGateway, StudioGatewayError,
   StudioVisualLineage,
@@ -67,7 +70,7 @@ const framingLabel = (framing: ProductPhotoFraming): string => ({
   source: 'Keep source', square: 'Square', portrait: '4:5 portrait',
 })[framing];
 
-type Destination = 'client' | 'marketing';
+type Destination = Exclude<StudioDestinationId, 'factory'>;
 type ClientFormat = 'beauty' | 'product';
 type PresentationPhase = 'configure' | 'review';
 
@@ -202,6 +205,7 @@ export function StudioPresentWorkspace({
     'catalog_white', 'luxury_studio',
   ]);
   const [direction, setDirection] = useState('');
+  const [styleAndFramingOpen, setStyleAndFramingOpen] = useState(false);
   const [phase, setPhase] = useState<PresentationPhase>('configure');
   const [busy, setBusy] = useState(false);
   const [decidingId, setDecidingId] = useState<string | null>(null);
@@ -223,7 +227,8 @@ export function StudioPresentWorkspace({
   const visibleInfo = uiMatchesLineage ? info : null;
   const hasPendingReview = visibleCards.some((card) => card.status === 'review');
 
-  const outputCount = destination === 'marketing' ? marketingPresets.length : 1;
+  const outputCount = destination === 'library'
+    ? 0 : destination === 'marketing' ? marketingPresets.length : 1;
   const creditEstimate = outputCount * PRESENT_CREDITS;
   const requestLabel = destination === 'marketing'
     ? `Generate ${outputCount} presentation preview${outputCount === 1 ? '' : 's'}`
@@ -353,7 +358,8 @@ export function StudioPresentWorkspace({
   };
 
   const generate = async (): Promise<void> => {
-    if (lineage === null || phase !== 'configure' || busy || outputCount === 0
+    if (lineage === null || destination === 'library'
+      || phase !== 'configure' || busy || outputCount === 0
       || !reviewSourceIsActive) return;
     const requestedLineageKey = lineageKey;
     setBusy(true);
@@ -474,9 +480,9 @@ export function StudioPresentWorkspace({
 
   return (
     <ScrollView contentContainerStyle={styles.workspace}>
-      <Text style={styles.eyebrow}>PRESENT</Text>
-      <Text style={styles.title}>Turn this exact design into presentation imagery.</Text>
-      <Text style={styles.body}>Choose where the image is going. Facetta keeps the selected design revision fixed and stores presentation imagery separately.</Text>
+      <Text style={styles.eyebrow}>NEXT STEP</Text>
+      <Text style={styles.title}>What would you like to do with this exact design?</Text>
+      <Text style={styles.body}>It is already preserved in Collections. Return to it there, or create separate client and marketing imagery without changing the design.</Text>
       <View style={styles.lineageCard}>
         <Text style={styles.lineageLabel}>Exact source</Text>
         <Text style={styles.lineageValue}>{exactRevision}</Text>
@@ -484,22 +490,62 @@ export function StudioPresentWorkspace({
       {!reviewSourceIsActive && <Notice kind="info" text="This result was created from an earlier revision. Saving or generating from it is unavailable. You can discard the pending result without changing or charging the current design." />}
 
       {phase === 'configure' && <>
-        <Text style={styles.sectionTitle}>1 · {STUDIO_PRESENT_CONTROLS.destination.label}</Text>
+        <Text style={styles.sectionTitle}>What do you need?</Text>
         <View style={styles.destinationRow}>
-          {(['client', 'marketing'] as const).map((item) => (
-            <Pressable key={item} onPress={() => { setDestination(item); setInfo(null); }}
-              style={[styles.destinationCard, destination === item && styles.selectedCard]}>
-              <Text style={styles.destinationTitle}>{item === 'client' ? 'Client' : 'Marketing'}</Text>
-              <Text style={styles.cardCopy}>{item === 'client'
-                ? 'One polished image for a review or presentation.'
-                : 'A small, review-only ecommerce image set.'}</Text>
-            </Pressable>
-          ))}
+          {(['library', 'client', 'marketing'] as const).map((item) => {
+            const definition = getStudioDestination(item);
+            return (
+              <Pressable
+                key={item}
+                accessibilityRole="radio"
+                accessibilityLabel={definition.label}
+                accessibilityState={{ checked: destination === item }}
+                onPress={() => {
+                  setDestination(item);
+                  setInfo(null);
+                  setStyleAndFramingOpen(false);
+                }}
+                style={[styles.destinationCard, destination === item && styles.selectedCard]}>
+                <Text style={styles.destinationTitle}>{definition.label}</Text>
+                <Text style={styles.cardCopy}>{definition.description}</Text>
+              </Pressable>
+            );
+          })}
         </View>
 
-        {destination === 'client' ? (
+        {destination === 'library' ? (
+          <View style={styles.libraryCard}>
+            <Text style={styles.destinationTitle}>Already saved · 0 credits</Text>
+            <Text style={styles.cardCopy}>
+              {reviewSourceIsActive
+                ? 'This exact revision is already preserved with its family, variations, presentation images, and immutable history. Viewing it creates no copy or job.'
+                : 'This earlier source remains in immutable history. Collections opens the current variation; expand Revision history there to find this source. Viewing it creates no copy or job.'}
+            </Text>
+            {onOpenCollections !== undefined && (
+              <Button
+                title={reviewSourceIsActive ? 'View in Collections' : 'View project history'}
+                onPress={onOpenCollections}
+              />
+            )}
+          </View>
+        ) : <>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Style and framing"
+          accessibilityState={{ expanded: styleAndFramingOpen }}
+          onPress={() => setStyleAndFramingOpen((open) => !open)}
+          style={[styles.advancedDisclosure, styleAndFramingOpen && styles.selectedCard]}>
+          <View style={styles.disclosureCopy}>
+            <Text style={styles.destinationTitle}>Style &amp; framing</Text>
+            <Text style={styles.cardCopy}>
+              Optional. Facetta starts with useful defaults for this destination.
+            </Text>
+          </View>
+          <Text style={styles.disclosureGlyph}>{styleAndFramingOpen ? '−' : '+'}</Text>
+        </Pressable>
+
+        {styleAndFramingOpen && (destination === 'client' ? (
           <>
-            <Text style={styles.sectionTitle}>2 · Output</Text>
             <ChipRow label="Format" options={['beauty', 'product'] as const} value={clientFormat}
               onSelect={setClientFormat} render={(value) => value === 'beauty' ? 'Beauty render' : 'Product photo'} />
             {clientFormat === 'product' && <>
@@ -509,7 +555,6 @@ export function StudioPresentWorkspace({
           </>
         ) : (
           <>
-            <Text style={styles.sectionTitle}>2 · Outputs</Text>
             <Text style={styles.body}>Select only the scenes you need. Every selected scene is a requested output.</Text>
             <View style={styles.presetGrid}>{PRESETS.map((item) => {
               const selected = marketingPresets.includes(item);
@@ -520,10 +565,12 @@ export function StudioPresentWorkspace({
             })}</View>
             <ChipRow label="Framing" options={FRAMINGS} value={framing} onSelect={setFraming} render={framingLabel} />
           </>
-        )}
+        ))}
 
-        <Field label={STUDIO_PRESENT_CONTROLS.direction.label} value={direction} onChange={setDirection} multiline
-          placeholder="Soft daylight, generous negative space, understated styling…" />
+        {styleAndFramingOpen && (
+          <Field label={STUDIO_PRESENT_CONTROLS.direction.label} value={direction} onChange={setDirection} multiline
+            placeholder="Soft daylight, generous negative space, understated styling…" />
+        )}
 
         <View style={styles.costCard}>
           <Text style={styles.costTitle}>{outputCount} requested output{outputCount === 1 ? '' : 's'} · estimated {creditEstimate} credits</Text>
@@ -531,6 +578,7 @@ export function StudioPresentWorkspace({
         </View>
         <Button title={busy ? 'Generating and checking…' : requestLabel}
           disabled={busy || outputCount === 0 || !reviewSourceIsActive} onPress={() => { void generate(); }} />
+        </>}
       </>}
 
       {visibleError !== null && <Notice kind="error" text={visibleError} />}
@@ -641,6 +689,17 @@ const styles = StyleSheet.create({
   selectedCard: { borderColor: theme.accent, borderWidth: 2 },
   destinationTitle: { color: theme.ink, fontSize: 17, fontWeight: '800', marginBottom: 4 },
   cardCopy: { color: theme.faint, fontSize: 12, lineHeight: 18 },
+  libraryCard: {
+    padding: 16, borderRadius: radius.md, borderWidth: 1,
+    borderColor: theme.accent, backgroundColor: theme.card, gap: 10,
+  },
+  advancedDisclosure: {
+    padding: 14, borderRadius: radius.md, borderWidth: 1,
+    borderColor: theme.line, backgroundColor: theme.card,
+    flexDirection: 'row', alignItems: 'center', gap: 12,
+  },
+  disclosureCopy: { flex: 1 },
+  disclosureGlyph: { color: theme.accent, fontSize: 22, fontWeight: '600' },
   presetGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   presetCard: { minWidth: 150, padding: 11, borderRadius: radius.md, borderWidth: 1, borderColor: theme.line, backgroundColor: theme.card },
   presetTitle: { color: theme.ink, fontSize: 13, fontWeight: '700' },
