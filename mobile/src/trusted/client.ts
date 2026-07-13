@@ -444,6 +444,11 @@ export const decodeAssetSummary: Decoder<AssetSummary> = (value) => {
     root_id: text(pick(value, 'root_id', 'project_id'), assetId),
     parent_asset_id: nullableText(value.parent_asset_id),
     capability,
+    source_kind: value.source_kind === 'drawing'
+      || value.source_kind === 'photograph'
+      || value.source_kind === 'finished_render'
+      ? value.source_kind
+      : null,
     provenance: text(value.provenance, capability.toLowerCase()),
     revision: number(pick(value, 'revision', 'version')),
     design_id: nullableText(value.design_id),
@@ -3559,6 +3564,7 @@ export function createTrustedApiClient(options: TrustedApiClientOptions) {
         method: 'POST',
         body: encodeBody({
           image_base64: request.image_base64,
+          source_kind: request.source_kind,
           media_type: request.media_type ?? 'image/png',
           instruction: request.instruction
             ?? 'Create a polished fine-jewelry beauty render faithful to every visible design element in this source.',
@@ -3581,6 +3587,13 @@ export function createTrustedApiClient(options: TrustedApiClientOptions) {
               }),
           ...(request.collection === undefined ? {} : { collection: request.collection }),
           ...(request.tags === undefined ? {} : { tags: request.tags }),
+          ...(request.references === undefined ? {} : {
+            references: request.references.map((reference) => ({
+              role: reference.role,
+              image_base64: reference.image_base64,
+              media_type: reference.media_type,
+            })),
+          }),
         }),
       });
     },

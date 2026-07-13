@@ -51,6 +51,7 @@ from facetta.media import sniff_media_type
 from facetta.project_backbone import (
     accepted_creative_candidate,
     is_canonical_revision,
+    is_primary_revision,
 )
 from facetta.presentation import (
     PresentationScopeError,
@@ -733,11 +734,10 @@ def _selected_pre_spec_visual(
             "this route refines visuals only and cannot change specification-linked work",
             status_code=422,
         )
-    if (source.root_id != project.root_id
-            or source.capability != "CREATIVE_RENDER"):
+    if source.root_id != project.root_id or not is_primary_revision(source):
         raise StudioHistoryError(
             "visual_preview_source_invalid",
-            "select a pre-spec creative visual before refining it",
+            "select a canonical pre-spec visual before continuing",
             status_code=422,
         )
     if project.selected_candidate_asset_id != source.id:

@@ -32,7 +32,8 @@
     "ios": "expo start --ios",
     "web": "expo start --web",
     "test": "jest",
-    "test:studio": "tsx --test src/studio/*.test.ts"
+    "test:studio": "tsx --test src/studio/*.test.ts",
+    "test:studio-client-api": "PYTHONPATH=../src uv run python ../scripts/run_studio_client_api_acceptance.py"
   },
   "jest": {
     "preset": "jest-expo",

@@ -155,6 +155,10 @@ class ImageAsset(Base):
     # would turn uncertain provenance into false factory truth.
     design_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
     capability: Mapped[str] = mapped_column(String(48))  # which mode made it
+    # Explicit designer-declared semantics for uploaded Studio sources.  This
+    # stays nullable for generated/legacy assets; the service never guesses a
+    # photograph, drawing, or finished render from pixels.
+    source_kind: Mapped[str | None] = mapped_column(String(24), nullable=True)
     instruction: Mapped[str | None] = mapped_column(Text, nullable=True)
     region: Mapped[str | None] = mapped_column(Text, nullable=True)
     drift: Mapped[float | None] = mapped_column(Float, nullable=True)
@@ -1255,6 +1259,10 @@ def _apply_additive_migrations(engine) -> None:
         with engine.begin() as conn:
             conn.execute(text(
                 "ALTER TABLE image_assets ADD COLUMN design_version INTEGER"))
+    if "source_kind" not in existing:
+        with engine.begin() as conn:
+            conn.execute(text(
+                "ALTER TABLE image_assets ADD COLUMN source_kind VARCHAR(24)"))
 
     # Studio family/variation fields are nullable so every historical project
     # remains readable without a guessed family or branch. New families and

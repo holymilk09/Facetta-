@@ -156,20 +156,27 @@ def _preview(client: TestClient, **overrides):
     }
     payload.update(overrides)
     if "studio_job_id" not in payload:
-        payload["studio_job_id"] = _presentation_job(client)["job_id"]
+        payload["studio_job_id"] = _presentation_job(
+            client,
+            source_asset_id=payload["expected_active_asset_id"],
+        )["job_id"]
     return client.post(
         "/studio/projects/ast_direction/presentation-previews",
         json=payload,
     )
 
 
-def _presentation_job(client: TestClient):
+def _presentation_job(
+    client: TestClient,
+    *,
+    source_asset_id: str = "ast_direction",
+):
     response = client.post("/studio/jobs", json={
         "owner": "usr_studio",
         "action_id": "present",
         "lane": "fast_visual",
         "active_design_id": "ast_direction",
-        "source_revision_id": "ast_direction",
+        "source_revision_id": source_asset_id,
         "requested_outputs": 1,
         "credits_per_output": 18,
     })
@@ -249,6 +256,59 @@ def test_client_beauty_preview_save_preserves_pre_spec_authority(
         assert review is not None
         assert review.decision == "accepted"
         assert review.accepted_asset_id == derived.id
+
+
+def test_restored_pre_spec_revision_can_be_presented_and_saved_exactly(
+    presentation_client,
+):
+    client, Session = presentation_client
+    app.dependency_overrides[get_pre_spec_presentation_generator] = (
+        lambda: _generator([])
+    )
+    restored_bytes = _png((205, 198, 188))
+    with Session() as db:
+        restored = ImageAsset(
+            id="ast_restored_direction",
+            root_id="ast_direction",
+            parent_asset_id="ast_direction",
+            design_id=None,
+            design_version=None,
+            capability="RESTORED_REVISION",
+            source_kind="photograph",
+            instruction="Restored selected visual",
+            image=restored_bytes,
+            media_type="image/png",
+            created_by="usr_studio",
+        )
+        project = db.get(Project, "ast_direction")
+        assert project is not None
+        project.selected_candidate_asset_id = restored.id
+        db.add(restored)
+        db.commit()
+
+    preview = _preview(
+        client,
+        expected_active_asset_id="ast_restored_direction",
+    )
+    assert preview.status_code == 201, preview.text
+    body = preview.json()
+    assert body["source_asset_id"] == "ast_restored_direction"
+    saved = _decision(
+        client,
+        body,
+        "accept",
+        expected_active_asset_id="ast_restored_direction",
+    )
+    assert saved.status_code == 201, saved.text
+    accepted = saved.json()
+    assert accepted["project"]["active_asset_id"] == "ast_restored_direction"
+    with Session() as db:
+        derived = db.get(ImageAsset, accepted["asset_id"])
+        restored = db.get(ImageAsset, "ast_restored_direction")
+        assert derived is not None and restored is not None
+        assert derived.parent_asset_id == restored.id
+        assert bytes(restored.image) == restored_bytes
+        assert restored.source_kind == "photograph"
 
 
 def test_selectable_marketing_preview_discard_is_terminal_and_free_of_assets(

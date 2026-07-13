@@ -63,7 +63,7 @@ type CreateGateway = Pick<StudioGateway,
   'createFromPrompt' | 'createFromDrawing' | 'selectCreativeDirection'
 >;
 
-test('compares 1-4 candidates, locks the Original, and keeps another as a sibling variation', async () => {
+test('stages sibling variations locally and commits them only with the explicit Continue action', async () => {
   const createFromPrompt = jest.fn(async () => ({
     data: creativeProject(4), error: null, status: 201,
   }));
@@ -114,27 +114,38 @@ test('compares 1-4 candidates, locks the Original, and keeps another as a siblin
     owner: 'designer_1',
     title: 'A sculptural aquamarine collar.',
   }));
-  expect(await screen.findByText('Which direction should become active?')).toBeTruthy();
-  expect(screen.getByText(/Only the direction you save becomes the Original variation/i)).toBeTruthy();
-  expect(screen.getByText(/Keep as variation on any other useful direction/i)).toBeTruthy();
+  expect(await screen.findByText('Which direction do you want to refine?')).toBeTruthy();
+  expect(screen.getByText(/Your choice becomes the Original/i)).toBeTruthy();
+  expect(screen.getByText(/keep as a sibling variation/i)).toBeTruthy();
   expect(screen.getByText('Keep these directions & start another')).toBeTruthy();
   expect(screen.getByLabelText('Direction 1 preview').props.source.headers).toEqual({
     Authorization: 'Bearer first-party-token',
   });
   expect(screen.getByText(/visual directions.+not measurements or production instructions/i)).toBeTruthy();
   await fireEvent.press(screen.getAllByText('Keep as variation')[0]);
+  expect(selectCreativeDirection).not.toHaveBeenCalled();
+  expect(saveCreativeDirectionAsVariation).not.toHaveBeenCalled();
+  expect(onSave).not.toHaveBeenCalled();
+  expect(screen.getByText('Remove from kept variations')).toBeTruthy();
+
+  await fireEvent.press(screen.getByText('Remove from kept variations'));
+  expect(screen.getByText('Continue with Direction 1')).toBeTruthy();
+  expect(selectCreativeDirection).not.toHaveBeenCalled();
+  expect(saveCreativeDirectionAsVariation).not.toHaveBeenCalled();
+
+  await fireEvent.press(screen.getAllByText('Keep as variation')[0]);
+  await fireEvent.press(screen.getByLabelText('Direction 3'));
+  expect(screen.getByText('Continue with Direction 3 · keep 1 variation')).toBeTruthy();
+  await fireEvent.press(screen.getByText('Continue with Direction 3 · keep 1 variation'));
+  await waitFor(() => expect(selectCreativeDirection).toHaveBeenCalledWith(
+    'project_1', 'candidate_3', 'designer_1',
+  ));
   await waitFor(() => expect(saveCreativeDirectionAsVariation).toHaveBeenCalledWith({
-    projectId: 'project_1', candidateId: 'candidate_2', activeAssetId: 'candidate_1',
+    projectId: 'project_1', candidateId: 'candidate_2', activeAssetId: 'candidate_3',
     createdBy: 'designer_1', label: 'Direction 2',
   }));
-  expect(screen.getByText('Kept as variation')).toBeTruthy();
-  await fireEvent.press(screen.getByLabelText('Direction 3'));
-  await fireEvent.press(screen.getByText('Save selected direction'));
-  await waitFor(() => expect(selectCreativeDirection).toHaveBeenCalledWith(
-    'project_1', 'candidate_1', 'designer_1',
-  ));
   expect(onSave).toHaveBeenCalledWith(expect.objectContaining({
-    selectedAssetId: 'candidate_1',
+    selectedAssetId: 'candidate_3',
     sentence: 'A sculptural aquamarine collar.',
   }));
 });
@@ -164,11 +175,11 @@ test('reopens a durable reviewing Create job and settles that exact job on selec
     />,
   );
 
-  expect(await screen.findByText('Which direction should become active?')).toBeTruthy();
+  expect(await screen.findByText('Which direction do you want to refine?')).toBeTruthy();
   expect(createFromPrompt).not.toHaveBeenCalled();
   expect(createFromDrawing).not.toHaveBeenCalled();
   await fireEvent.press(screen.getByLabelText('Direction 2'));
-  await fireEvent.press(screen.getByText('Save selected direction'));
+  await fireEvent.press(screen.getByText('Continue with Direction 2'));
   await waitFor(() => expect(selectCreativeDirection).toHaveBeenCalledWith(
     'project_1', 'candidate_2', 'designer_1', 'studio_job_create',
   ));
@@ -191,10 +202,15 @@ test('keeps an already-created direction set when the designer starts another br
   />);
 
   await fireEvent.press(screen.getByText('Create 2 directions'));
-  expect(await screen.findByText(/Only the direction you save becomes the Original variation/i)).toBeTruthy();
+  expect(await screen.findByText(/Your choice becomes the Original/i)).toBeTruthy();
+  await fireEvent.press(screen.getAllByText('Keep as variation')[0]);
+  expect(screen.getByText('Continue with Direction 1 · keep 1 variation')).toBeTruthy();
   await fireEvent.press(screen.getByText('Keep these directions & start another'));
   expect(await screen.findByLabelText('Design sentence')).toBeTruthy();
-  expect(screen.queryByText(/Only the direction you save becomes the Original variation/i)).toBeNull();
+  expect(screen.queryByText(/Your choice becomes the Original/i)).toBeNull();
+  await fireEvent.press(screen.getByText('Create 2 directions'));
+  expect(await screen.findByText('Continue with Direction 1')).toBeTruthy();
+  expect(screen.queryByText(/keep 1 variation/i)).toBeNull();
 });
 
 test('sends every enabled role with the master geometry input', async () => {
@@ -222,14 +238,17 @@ test('sends every enabled role with the master geometry input', async () => {
     onSave: jest.fn(),
   }));
 
+  await fireEvent.press(screen.getByText('Add a drawing, photo, or render'));
+  expect(screen.getByText('What did you upload?')).toBeTruthy();
+  await fireEvent.press(screen.getByText('Drawing'));
   await fireEvent.press(screen.getByLabelText('References and output options'));
-  await fireEvent.press(screen.getAllByText('Add')[0]);
-  await fireEvent.press(screen.getAllByText('Add')[0]);
+  await fireEvent.press(screen.getByLabelText('Add Material & style reference'));
   await fireEvent.changeText(screen.getByLabelText('Design sentence'), 'Preserve the silhouette and make it feel lighter.');
   await fireEvent.press(screen.getByText('Create 2 directions'));
 
   await waitFor(() => expect(createProjectFromDrawing).toHaveBeenCalledWith({
     image_base64: 'bWFzdGVy',
+    source_kind: 'drawing',
     media_type: 'image/png',
     instruction: 'Preserve the silhouette and make it feel lighter.',
     references: [{
@@ -248,7 +267,7 @@ test('sends every enabled role with the master geometry input', async () => {
 test('starts from a master image without forcing a sentence', async () => {
   const master: StudioCreateReference = {
     id: 'master', role: 'master_geometry', label: 'Pendant photograph',
-    imageBase64: 'bWFzdGVy', mediaType: 'image/png',
+    imageBase64: 'bWFzdGVy', mediaType: 'image/png', sourceKind: 'photograph',
   };
   const createFromDrawing = jest.fn(async () => ({
     data: creativeProject(1), error: null, status: 201,
@@ -263,9 +282,14 @@ test('starts from a master image without forcing a sentence', async () => {
     onSave: jest.fn(),
   }));
 
+  expect(screen.getByLabelText('Visual source preview').props.source.uri).toBe(
+    'data:image/png;base64,bWFzdGVy',
+  );
+  expect(screen.getByLabelText('Replace visual source')).toBeTruthy();
   await fireEvent.press(screen.getByText('Create 2 directions'));
   await waitFor(() => expect(createFromDrawing).toHaveBeenCalledWith({
     image_base64: 'bWFzdGVy',
+    source_kind: 'photograph',
     media_type: 'image/png',
     references: [],
     variation_count: 2,
@@ -289,8 +313,7 @@ test('surfaces picker failures instead of leaving Add as a silent dead end', asy
     onSave: jest.fn(),
   }));
 
-  await fireEvent.press(screen.getByLabelText('References and output options'));
-  await fireEvent.press(screen.getAllByText('Add')[0]);
+  await fireEvent.press(screen.getByText('Add a drawing, photo, or render'));
 
   expect(await screen.findByText(/Choose a PNG, JPEG, or WebP image/)).toBeTruthy();
   expect(onRequestReference).toHaveBeenCalledWith('master_geometry');
@@ -331,8 +354,7 @@ test('explains when image selection is unavailable instead of silently ignoring 
     onSave: jest.fn(),
   }));
 
-  await fireEvent.press(screen.getByLabelText('References and output options'));
-  await fireEvent.press(screen.getAllByText('Add')[0]);
+  await fireEvent.press(screen.getByText('Add a drawing, photo, or render'));
 
   expect(await screen.findByText(/Image selection is unavailable here/)).toBeTruthy();
 });

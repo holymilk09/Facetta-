@@ -640,7 +640,7 @@ def _require_exact_source(
             )
         if (
             source.root_id != project.root_id
-            or source.capability != "CREATIVE_RENDER"
+            or not is_primary_revision(source)
             or (require_active and project.selected_candidate_asset_id != source.id)
             or expected_active_asset_id != source.id
             or expected_source_sha256 != current_hash

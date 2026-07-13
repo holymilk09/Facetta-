@@ -26,6 +26,7 @@ from facetta.db import (
     ProjectRevisionRecord,
     PreviewCandidateRecord,
     get_db,
+    StudioJobRecord,
 )
 from facetta.image_agent import (
     ImageOperation,
@@ -79,6 +80,7 @@ def studio_preview_client():
                 design_id=None,
                 design_version=None,
                 capability="CREATIVE_RENDER",
+                source_kind="photograph",
                 instruction="Initial direction",
                 image=SOURCE,
                 media_type="image/png",
@@ -215,6 +217,7 @@ def test_preview_does_not_mutate_canonical_history_and_apply_is_atomic(
         assert child is not None
         assert child.parent_asset_id == "ast_selected"
         assert child.capability == "GLOBAL_RESTYLE"
+        assert child.source_kind == "photograph"
         assert child.design_id is None
         assert child.design_version is None
         assert bytes(child.image) == CANDIDATE
@@ -241,6 +244,53 @@ def test_preview_does_not_mutate_canonical_history_and_apply_is_atomic(
         assert bytes(durable.image) == b""
 
     assert client.get(body["candidate"]["preview_url"]).status_code == 410
+
+
+def test_visual_apply_atomically_settles_accepted_studio_job(
+    studio_preview_client,
+):
+    client, Session = studio_preview_client
+    app.dependency_overrides[get_studio_visual_preview_generator] = (
+        lambda: _generator([])
+    )
+    created = client.post("/studio/jobs", json={
+        "owner": "usr_studio",
+        "action_id": "refine",
+        "lane": "trusted_structural",
+        "active_design_id": "ast_selected",
+        "source_revision_id": "ast_selected",
+        "requested_outputs": 1,
+        "credits_per_output": 20,
+    })
+    assert created.status_code == 201, created.text
+    job_id = created.json()["job_id"]
+    running = client.patch(f"/studio/jobs/{job_id}", json={
+        "owner": "usr_studio",
+        "status": "running",
+        "progress": 0.05,
+    })
+    assert running.status_code == 200, running.text
+
+    preview = _preview(client, studio_job_id=job_id)
+    assert preview.status_code == 201, preview.text
+    body = preview.json()
+    accepted = client.post(
+        f"/studio/image-runs/{body['image_run_id']}/visual-candidates/"
+        f"{body['candidate']['candidate_id']}/accept",
+        json={
+            "created_by": "usr_studio",
+            "expected_active_asset_id": "ast_selected",
+        },
+    )
+    assert accepted.status_code == 201, accepted.text
+    with Session() as db:
+        job = db.get(StudioJobRecord, job_id)
+        assert job is not None
+        assert job.status == "succeeded"
+        assert job.completed_outputs == 1
+        assert job.charged_outputs == 1
+        assert job.active_design_id == "ast_selected"
+        assert job.source_revision_id == "ast_selected"
 
 
 def test_discard_is_terminal_and_creates_no_canonical_revision(

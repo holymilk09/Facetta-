@@ -729,10 +729,21 @@ export function createStudioGateway(
   };
 
   const creativeOutputCount = (project: ProjectDetail, requested: number): number => {
+    // New Studio projects keep generated directions outside the immutable
+    // revision chain until the designer explicitly selects one. Count that
+    // canonical pre-selection collection first; revisions/active_revision are
+    // compatibility fallbacks for already-selected and historical payloads.
+    const directions = project.creative_candidates?.filter((candidate) => (
+      candidate.capability === 'CREATIVE_RENDER'
+      && candidate.design_version === null
+    )).length ?? 0;
     const outputs = project.revisions.filter(
       (revision) => revision.asset.capability === 'CREATIVE_RENDER',
     ).length;
-    return Math.min(requested, Math.max(outputs, project.active_revision === null ? 0 : 1));
+    return Math.min(
+      requested,
+      Math.max(directions, outputs, project.active_revision === null ? 0 : 1),
+    );
   };
 
   const getFactoryEligibility = async (
@@ -1529,8 +1540,9 @@ export function createStudioGateway(
         stored.preview.candidate, 'apply', now().toISOString(), result.data.new_asset_id,
       );
       stored.preview = { ...stored.preview, candidate };
-      const succeeded = await transitionJob(stored.studioJob, 'succeeded', 1, 1);
-      if (succeeded.error !== null) return succeeded;
+      // The acceptance endpoint appends the revision and settles accepted
+      // output billing in one backend transaction. A public lifecycle update
+      // here would either double-settle or report completion without authority.
       return { data: { candidate, project: result.data.project }, error: null, status: result.status };
     },
 
@@ -1615,8 +1627,7 @@ export function createStudioGateway(
         stored.preview.candidate, 'save_as_variation', now().toISOString(),
         result.data.project.active_asset_id,
       );
-      const succeeded = await transitionJob(stored.studioJob, 'succeeded', 1, 1);
-      if (succeeded.error !== null) return succeeded;
+      // Variation acceptance and billing are likewise atomic on the backend.
       visualCandidates.delete(request.candidateId);
       return {
         data: {

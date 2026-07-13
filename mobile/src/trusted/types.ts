@@ -122,6 +122,8 @@ export interface AssetSummary {
   root_id: string;
   parent_asset_id: string | null;
   capability: string;
+  /** Designer-declared only; absent on payloads saved before source semantics. */
+  source_kind?: CreativeSourceKind | null;
   provenance: string;
   revision: number | null;
   design_id: string | null;
@@ -137,6 +139,8 @@ export interface AssetSummary {
   created_at: string | null;
   legacy_provenance: boolean;
 }
+
+export type CreativeSourceKind = 'drawing' | 'photograph' | 'finished_render';
 
 export interface SpecChange {
   path: string;
@@ -453,6 +457,7 @@ export interface CreateProjectFromImageRequest {
 
 export interface CreateProjectFromDrawingRequest {
   image_base64: string;
+  source_kind: CreativeSourceKind;
   media_type?: 'image/png' | 'image/jpeg' | 'image/webp';
   instruction?: string;
   variation_count?: 1 | 2 | 3 | 4;

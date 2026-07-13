@@ -503,6 +503,7 @@ describe('trusted API decoders', () => {
 
     await api.createProjectFromDrawing({
       image_base64: 'c291cmNl',
+      source_kind: 'photograph',
       media_type: 'image/png',
       instruction: 'Preserve every visible element and render in platinum.',
       variation_count: 3,
@@ -511,6 +512,11 @@ describe('trusted API decoders', () => {
       title: 'Concept',
       source_region_description: 'Front necklace elevation',
       source_region: { x: 0.2, y: 0.1, width: 0.6, height: 0.5 },
+      references: [{
+        role: 'material_style',
+        image_base64: 'bWF0ZXJpYWw=',
+        media_type: 'image/jpeg',
+      }],
     });
     await api.promoteCreativeCandidate('project one', 'candidate one', {
       created_by: 'usr_designer',
@@ -521,11 +527,17 @@ describe('trusted API decoders', () => {
     expect(fetcher.mock.calls[0]?.[0]).toBe(
       'https://facetta.test/projects/from-drawing');
     expect(JSON.parse(String(fetcher.mock.calls[0]?.[1]?.body))).toMatchObject({
+      source_kind: 'photograph',
       variation_count: 3,
       starting_variant: 10,
       instruction: 'Preserve every visible element and render in platinum.',
       source_region_description: 'Front necklace elevation',
       source_region: { x: 0.2, y: 0.1, width: 0.6, height: 0.5 },
+      references: [{
+        role: 'material_style',
+        image_base64: 'bWF0ZXJpYWw=',
+        media_type: 'image/jpeg',
+      }],
     });
     expect(fetcher.mock.calls[1]?.[0]).toBe(
       'https://facetta.test/projects/project%20one/creative-candidates/candidate%20one/promote');

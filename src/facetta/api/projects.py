@@ -236,6 +236,7 @@ class AssetSummary(BaseModel):
     root_id: str
     parent_asset_id: str | None
     capability: str
+    source_kind: Literal["drawing", "photograph", "finished_render"] | None
     provenance: str
     revision: int | None
     design_version: int | None
@@ -365,11 +366,15 @@ class CreativeRoleReferenceRequest(BaseModel):
 
 
 class ProjectFromDrawingRequest(BaseModel):
-    """Neutral image/drawing intake; no quality or source-maturity labels."""
+    """One media intake with explicit, designer-declared source semantics."""
 
     model_config = ConfigDict(extra="forbid")
 
     image_base64: Annotated[str, Field(min_length=1, max_length=14_000_000)]
+    # Compatibility: historical `/from-drawing` clients had no source label.
+    # The legacy route name is the only honest fallback; current Studio always
+    # sends the designer's explicit choice.
+    source_kind: Literal["drawing", "photograph", "finished_render"] = "drawing"
     media_type: Literal["image/png", "image/jpeg", "image/webp"] | None = None
     instruction: Annotated[str, Field(min_length=3, max_length=1000)] = (
         "Create a polished fine-jewelry beauty render faithful to every visible "
@@ -851,13 +856,19 @@ def _asset_summary(
     )
     provenance = (
         "legacy_unversioned" if legacy
-        else PROVENANCE_BY_CAPABILITY.get(
-            asset.capability, "derived_artifact"))
+        else (
+            f"designer_supplied_{asset.source_kind}"
+            if asset.capability == "CREATIVE_SOURCE" and asset.source_kind
+            else PROVENANCE_BY_CAPABILITY.get(
+                asset.capability, "derived_artifact")
+        )
+    )
     item = {
         "asset_id": asset.id,
         "root_id": asset.root_id,
         "parent_asset_id": asset.parent_asset_id,
         "capability": asset.capability,
+        "source_kind": asset.source_kind,
         "provenance": provenance,
         "revision": revisions.get(asset.id),
         "design_version": asset.design_version,
@@ -1562,6 +1573,7 @@ def create_project_from_drawing(
         db,
         source_image=image,
         source_media_type=detected,
+        source_kind=request.source_kind,
         render_source_image=(
             render_source
             if request.source_region is not None or decoded_references

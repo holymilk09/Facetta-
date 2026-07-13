@@ -35,6 +35,32 @@ const project = (creativeCount = 1): ProjectDetail => {
   };
 };
 
+const unselectedProject = (creativeCount: number): ProjectDetail => {
+  const base = project(0);
+  const candidates = Array.from(
+    { length: creativeCount },
+    (_, index) => ({
+      ...asset(`direction_${index + 1}`),
+      revision: null,
+      design_id: null,
+      design_version: null,
+    }),
+  );
+  return {
+    ...base,
+    design_id: null,
+    spec: null,
+    active_asset_id: null,
+    active_design_version: null,
+    active_revision: null,
+    revisions: [],
+    creative_candidates: candidates,
+    assets: candidates,
+    primary_revision_count: 0,
+    cover_asset_id: candidates[0]?.asset_id ?? null,
+  };
+};
+
 interface JobCall {
   jobId: string;
   request: any;
@@ -123,8 +149,8 @@ test('tracked prompt and drawing creation charge only after direction acceptance
   const selections: { projectId: string; candidateId: string; createdBy: string; studioJobId?: string }[] = [];
   const gateway = createStudioGateway({
     ...jobs.client,
-    createProjectFromPrompt: async () => ok(project(2), 201),
-    createProjectFromDrawing: async () => { drawingCalls += 1; return ok(project(2), 201); },
+    createProjectFromPrompt: async () => ok(unselectedProject(2), 201),
+    createProjectFromDrawing: async () => { drawingCalls += 1; return ok(unselectedProject(2), 201); },
     selectCreativeCandidate: async (
       projectId: string, candidateId: string, createdBy: string, studioJobId?: string,
     ) => {
@@ -160,7 +186,7 @@ test('tracked prompt and drawing creation charge only after direction acceptance
   ]);
 
   const drawing = await gateway.createFromDrawing({
-    image_base64: 'c2tldGNo', media_type: 'image/png', instruction: 'Preserve it',
+    image_base64: 'c2tldGNo', source_kind: 'drawing', media_type: 'image/png', instruction: 'Preserve it',
     variation_count: 2, owner: 'designer_1', title: 'Drawing',
   });
   assert.equal(drawing.error, null);

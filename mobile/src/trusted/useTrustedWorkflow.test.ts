@@ -263,6 +263,7 @@ describe('useTrustedWorkflow creative drawing intake', () => {
     await act(async () => {
       await result.current.createFromDrawing({
         image_base64: '  c291cmNl  ',
+        source_kind: 'finished_render',
         media_type: 'image/png',
         instruction: '  Preserve every visible link and render polished platinum.  ',
         variation_count: 3,
@@ -274,6 +275,7 @@ describe('useTrustedWorkflow creative drawing intake', () => {
 
     expect(createProjectFromDrawing).toHaveBeenCalledWith({
       image_base64: 'c291cmNl',
+      source_kind: 'finished_render',
       media_type: 'image/png',
       instruction: 'Preserve every visible link and render polished platinum.',
       variation_count: 3,
@@ -297,6 +299,7 @@ describe('useTrustedWorkflow creative drawing intake', () => {
     await act(async () => {
       await result.current.createFromDrawing({
         image_base64: '',
+        source_kind: 'drawing',
         instruction: 'render',
         title: 'Study',
       });
@@ -306,6 +309,7 @@ describe('useTrustedWorkflow creative drawing intake', () => {
     await act(async () => {
       await result.current.createFromDrawing({
         image_base64: 'c291cmNl',
+        source_kind: 'drawing',
         instruction: '   ',
         title: 'Study',
       });

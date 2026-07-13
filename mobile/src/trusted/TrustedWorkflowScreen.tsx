@@ -354,6 +354,7 @@ export function TrustedWorkflowScreen({
     if (createMode === 'drawing') {
       await workflow.createFromDrawing({
         image_base64: referenceBase64,
+        source_kind: 'drawing',
         media_type: referenceMediaType === 'image/jpeg'
           || referenceMediaType === 'image/webp'
           ? referenceMediaType

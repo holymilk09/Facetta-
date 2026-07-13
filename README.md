@@ -70,7 +70,17 @@ secrets override `.env` in production with no code change.
 
 ```sh
 PYTHONPATH=src uv run pytest -q
+cd mobile
+npm test -- --runInBand
+npm run test:studio
+npm run test:studio-client-api
 ```
+
+`test:studio-client-api` starts a disposable real uvicorn/FastAPI process and
+runs the production TypeScript trusted client and Studio gateway over HTTP. It
+uses temporary SQLite and deterministic offline image providers, so it verifies
+Create, review-before-Apply, immutable comparison/Restore, Activity accounting,
+and a saved Client derivative without paid-provider credentials or Factory.
 
 ## Run the API
 

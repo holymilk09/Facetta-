@@ -80,6 +80,8 @@ PROVENANCE_BY_CAPABILITY = {
     "RESTORED_REVISION": "restored_historical_revision",
 }
 
+CreativeSourceKind = Literal["drawing", "photograph", "finished_render"]
+
 
 def is_primary_revision(asset: ImageAsset) -> bool:
     return asset.capability in PRIMARY_REVISION_CAPABILITIES
@@ -538,6 +540,7 @@ def persist_creative_project(
     *,
     source_image: bytes,
     source_media_type: str,
+    source_kind: CreativeSourceKind,
     render_source_image: bytes | None = None,
     render_source_media_type: str | None = None,
     render_source_instruction: str | None = None,
@@ -560,6 +563,8 @@ def persist_creative_project(
     """
     if not candidates:
         raise ValueError("a creative project requires at least one candidate")
+    if source_kind not in {"drawing", "photograph", "finished_render"}:
+        raise ValueError("creative source kind is invalid")
     if any(not candidate.image for candidate in candidates):
         raise ValueError("creative candidate image must not be empty")
     allowed_reference_capabilities = {
@@ -584,6 +589,7 @@ def persist_creative_project(
         design_id=None,
         design_version=None,
         capability="CREATIVE_SOURCE",
+        source_kind=source_kind,
         instruction="Designer-supplied creative source",
         image=source_image,
         media_type=source_media_type,
@@ -601,6 +607,7 @@ def persist_creative_project(
             design_id=None,
             design_version=None,
             capability=render_source_capability,
+            source_kind=source_kind,
             instruction=(render_source_instruction or "Designer-selected source region"),
             image=render_source_image,
             media_type=(
@@ -643,6 +650,7 @@ def persist_creative_project(
             design_id=None,
             design_version=None,
             capability="CREATIVE_RENDER",
+            source_kind=source_kind,
             instruction=candidate.instruction,
             image=candidate.image,
             media_type=sniff_media_type(candidate.image),

@@ -958,6 +958,14 @@ def test_from_drawing_persists_variations_without_inventing_a_spec(
         "CREATIVE_RENDER", "CREATIVE_RENDER"]
     assert all("design_version" not in item for item in body["creative_candidates"])
     assert body["assets"][0]["capability"] == "CREATIVE_SOURCE"
+    # Compatibility payload omitted source_kind; the drawing-named route uses
+    # its documented legacy fallback without pixel inference.
+    assert body["assets"][0]["source_kind"] == "drawing"
+    assert body["assets"][0]["provenance"] == "designer_supplied_drawing"
+    assert all(
+        item["source_kind"] == "drawing"
+        for item in body["creative_candidates"]
+    )
     assert len(body["image_run_ids"]) == 2
 
     with Session() as db:
@@ -975,6 +983,39 @@ def test_from_drawing_persists_variations_without_inventing_a_spec(
             "REFERENCE_RENDER", "REFERENCE_RENDER"]
         assert [run.variant for run in runs] == [7, 8]
         assert all(run.status == "review_required" for run in runs)
+
+
+@pytest.mark.parametrize(
+    ("source_kind", "expected_provenance"),
+    [
+        ("photograph", "designer_supplied_photograph"),
+        ("finished_render", "designer_supplied_finished_render"),
+    ],
+)
+def test_from_drawing_preserves_explicit_source_semantics_in_reopened_history(
+    creative_client, source_kind: str, expected_provenance: str,
+):
+    client, _Session = creative_client
+    app.dependency_overrides[get_creative_render_generator] = lambda: (
+        lambda _source, _instruction, variant: _creative_result(variant)
+    )
+
+    created = client.post("/projects/from-drawing", json={
+        **_request(variation_count=1),
+        "source_kind": source_kind,
+    })
+    assert created.status_code == 201, created.text
+    root_id = created.json()["root_id"]
+    reopened = client.get(f"/projects/{root_id}")
+    assert reopened.status_code == 200, reopened.text
+    body = reopened.json()
+    source = next(
+        item for item in body["assets"]
+        if item["capability"] == "CREATIVE_SOURCE"
+    )
+    assert source["source_kind"] == source_kind
+    assert source["provenance"] == expected_provenance
+    assert body["creative_candidates"][0]["source_kind"] == source_kind
 
 
 def test_from_drawing_role_board_is_canonical_persisted_and_reopenable(
@@ -1058,7 +1099,7 @@ def test_from_drawing_role_board_is_canonical_persisted_and_reopenable(
     assert len(body["creative_candidates"]) == 4
     assets = {asset["capability"]: asset for asset in body["assets"]}
     assert assets["CREATIVE_SOURCE"]["provenance"] == (
-        "designer_supplied_source"
+        "designer_supplied_drawing"
     )
     assert assets["CREATIVE_REFERENCE_BOARD"]["provenance"] == (
         "role_labeled_reference_board"
@@ -1271,7 +1312,7 @@ def test_from_drawing_isolates_and_persists_exact_multi_view_source_region(
     assert "one view of one finished piece" in calls[0][1]
     body = response.json()
     assets = {asset["capability"]: asset for asset in body["assets"]}
-    assert assets["CREATIVE_SOURCE"]["provenance"] == "designer_supplied_source"
+    assert assets["CREATIVE_SOURCE"]["provenance"] == "designer_supplied_drawing"
     assert assets["CREATIVE_SOURCE_REGION"]["provenance"] == (
         "designer_selected_source_region"
     )

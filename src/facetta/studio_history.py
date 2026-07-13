@@ -324,6 +324,7 @@ def fork_preview_candidate_variation(
         design_id=design_id,
         design_version=design_version,
         capability="VARIATION_BRANCH",
+        source_kind=source.source_kind,
         instruction=f"Saved reviewed candidate as variation from {source.id}",
         image=candidate.image_bytes,
         media_type=candidate.media_type,
@@ -498,7 +499,7 @@ def _validate_pre_spec_visual_candidate(
             "this Studio visual route cannot edit specification-linked work",
             status_code=422,
         )
-    if source.root_id != project.root_id or source.capability != "CREATIVE_RENDER":
+    if source.root_id != project.root_id or not is_primary_revision(source):
         raise StudioHistoryError(
             "visual_preview_source_invalid",
             "the preview source is not a canonical pre-spec visual",
@@ -578,6 +579,7 @@ def apply_pre_spec_visual_candidate(
             "GLOBAL_RESTYLE"
             if candidate.scope == "appearance" else "LOCALIZED_EDIT"
         ),
+        source_kind=source.source_kind,
         instruction=candidate.requested_change,
         region=(
             "designer-marked region" if candidate.scope == "marked_region" else None
@@ -643,6 +645,27 @@ def apply_pre_spec_visual_candidate(
                 "stale_asset_revision",
                 "the selected visual changed before the preview could be applied",
             )
+        if candidate.studio_job_id is not None:
+            from facetta.studio_jobs import (
+                StudioJobAccountingError,
+                record_accepted_studio_job_outputs,
+            )
+
+            try:
+                record_accepted_studio_job_outputs(
+                    db,
+                    job_id=candidate.studio_job_id,
+                    owner=created_by,
+                    completed_outputs=1,
+                    active_design_id=project.root_id,
+                    source_revision_id=source.id,
+                )
+            except StudioJobAccountingError as exc:
+                db.rollback()
+                raise StudioHistoryError(
+                    "visual_preview_job_resolution_conflict",
+                    str(exc),
+                ) from exc
         if commit:
             db.commit()
         else:
@@ -928,6 +951,7 @@ def fork_project_variation(
         design_id=new_design_id,
         design_version=new_design_version,
         capability="VARIATION_BRANCH",
+        source_kind=source.source_kind,
         instruction=f"Saved as variation from {source.id}",
         image=bytes(source.image),
         media_type=source.media_type,
@@ -1134,6 +1158,7 @@ def restore_project_revision(
         design_id=None,
         design_version=next_version,
         capability="RESTORED_REVISION",
+        source_kind=selected.source_kind,
         instruction=f"Restored from revision asset {selected.id}",
         image=bytes(selected.image),
         media_type=selected.media_type,
