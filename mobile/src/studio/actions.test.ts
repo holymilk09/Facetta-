@@ -62,7 +62,7 @@ test('the rail hides an empty More menu and exposes secondary exact-design desti
   }).at(-1)?.id, 'more');
 });
 
-test('pre-spec directions expose Refine and Present while keeping Views spec-backed', () => {
+test('Views stay absent before design facts and appear only for an exact revision', () => {
   const selectedCreativeDirection = {
     ...emptyContext,
     activeDesignId: 'project_1',
@@ -72,6 +72,17 @@ test('pre-spec directions expose Refine and Present while keeping Views spec-bac
   assert.deepEqual(
     getStudioRailActions(selectedCreativeDirection).map((action) => action.id),
     ['create', 'vary', 'refine', 'present'],
+  );
+  assert.deepEqual(
+    getStudioRailActions({
+      ...selectedCreativeDirection,
+      hasExactSpecification: true,
+    }).map((action) => action.id),
+    ['create', 'vary', 'refine', 'views', 'present', 'more'],
+  );
+  assert.deepEqual(
+    [getStudioAction('views').label, getStudioAction('views').shortLabel],
+    ['Generate technical views', 'Views'],
   );
 });
 

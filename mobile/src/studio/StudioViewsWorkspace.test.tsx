@@ -65,6 +65,10 @@ describe('StudioViewsWorkspace', () => {
       </AuthenticatedImageProvider>,
     );
 
+    expect(screen.getByText('TECHNICAL VIEWS')).toBeTruthy();
+    expect(screen.getByText('See the confirmed design from another angle.')).toBeTruthy();
+    expect(screen.getByText(/confirmed design facts/)).toBeTruthy();
+    expect(screen.getByText('Confirmed design · Version 4')).toBeTruthy();
     expect(screen.getByText('1 requested output × 15 credits = estimated 15 credits')).toBeTruthy();
     await act(async () => { fireEvent.press(screen.getByText('Front')); });
     await act(async () => { fireEvent.press(screen.getByText('Preview view')); });
@@ -174,7 +178,7 @@ describe('StudioViewsWorkspace', () => {
     });
     expect(screen.queryByText('Your design is still unchanged.')).toBeNull();
     expect(screen.queryByText('A saved view preview was resumed for review.')).toBeNull();
-    expect(screen.getByText('Saved source · Version 5')).toBeTruthy();
+    expect(screen.getByText('Confirmed design · Version 5')).toBeTruthy();
 
     await act(async () => { resolveB?.({ data: previewB, error: null, status: 200 }); });
     expect(await screen.findByLabelText(/Temporary side view/)).toBeTruthy();

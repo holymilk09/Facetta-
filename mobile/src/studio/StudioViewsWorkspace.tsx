@@ -240,10 +240,11 @@ export function StudioViewsWorkspace({
 
   return (
     <ScrollView contentContainerStyle={styles.workspace}>
-      <Text style={styles.eyebrow}>VIEWS</Text>
-      <Text style={styles.title}>See the same design from another angle.</Text>
+      <Text style={styles.eyebrow}>TECHNICAL VIEWS</Text>
+      <Text style={styles.title}>See the confirmed design from another angle.</Text>
       <Text style={styles.body}>
-        Choose one useful technical view. You will review a temporary result before anything is saved.
+        Choose one line-art angle generated from this revision and its confirmed design facts.
+        You will review a temporary result before anything is saved.
       </Text>
       {!reviewSourceIsActive && <Notice kind="info" text="This Activity result was created from an earlier revision. Only its existing preview can be reviewed or discarded." />}
       <View style={styles.viewGrid}>
@@ -261,8 +262,8 @@ export function StudioViewsWorkspace({
         ))}
       </View>
       <View style={styles.sourceCard}>
-        <Text style={styles.sourceLabel}>Selected saved source</Text>
-        <Text style={styles.sourceValue}>Saved source · Version {lineage.sourceDesignVersion}</Text>
+        <Text style={styles.sourceLabel}>Confirmed saved source</Text>
+        <Text style={styles.sourceValue}>Confirmed design · Version {lineage.sourceDesignVersion}</Text>
       </View>
       {visibleNotice !== null && <Notice kind="ok" text={visibleNotice} />}
       {savedForLineage && onOpenCollections !== undefined && (

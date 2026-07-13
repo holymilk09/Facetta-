@@ -329,6 +329,8 @@ describe('StudioRefineWorkspace', () => {
     expect(screen.getByLabelText('Component refine mode').props.accessibilityState.disabled).toBe(true);
     expect(screen.getByText('Unlock precise ring edits')).toBeTruthy();
     expect(screen.getByText(/image-derived starting facts/i)).toBeTruthy();
+    expect(screen.getByText(/Technical views become available after those facts are recorded/)).toBeTruthy();
+    expect(screen.getByText(/you can keep refining or presenting without them/)).toBeTruthy();
     await act(async () => { fireEvent.press(screen.getByText('Review starting design')); });
     expect(onReviewStartingDesign).toHaveBeenCalledTimes(1);
     await act(async () => {

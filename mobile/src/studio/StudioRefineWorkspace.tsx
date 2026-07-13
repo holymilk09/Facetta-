@@ -818,7 +818,7 @@ export function StudioRefineWorkspace({
         <View style={styles.startingFactsCard}>
           <View style={styles.startingFactsCopy}>
             <Text style={styles.advancedDisclosureTitle}>Unlock precise ring edits</Text>
-            <Text style={styles.pathHelp}>For a ring direction, review the image-derived starting facts before changing components or construction. Estimates stay clearly separate from facts you confirm.</Text>
+            <Text style={styles.pathHelp}>For a ring direction, review the image-derived starting facts before changing components or construction. Estimates stay clearly separate from facts you confirm. Technical views become available after those facts are recorded; you can keep refining or presenting without them.</Text>
           </View>
           {onReviewStartingDesign !== undefined && (
             <Button title="Review starting design" kind="ghost" onPress={onReviewStartingDesign} />

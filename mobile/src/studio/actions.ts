@@ -88,9 +88,9 @@ export const STUDIO_ACTIONS: readonly StudioActionDefinition[] = [
   {
     ...jobAction('views'),
     id: 'views',
-    label: 'Generate views',
+    label: 'Generate technical views',
     shortLabel: 'Views',
-    description: 'Create consistent angles and presentation views from this revision.',
+    description: 'Create consistent line-art angles from this revision and its confirmed design facts.',
     referenceRoles: ['master_geometry', 'construction_detail'],
     requiresActiveDesign: true,
     createsJob: true,

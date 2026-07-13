@@ -396,6 +396,7 @@ test('Refine links directly to starting design review and returns after confirma
   expect(await view.findByText('Refine route reached')).toBeTruthy();
   expect(view.queryByLabelText('More actions')).toBeNull();
   expect(view.queryByText('Starting design facts')).toBeNull();
+  expect(view.queryByLabelText('Generate technical views')).toBeNull();
 
   fireEvent.press(await view.findByText('Review starting design'));
   fireEvent.press(await view.findByText('Confirm mocked design'));
@@ -404,6 +405,11 @@ test('Refine links directly to starting design review and returns after confirma
   expect(view.queryByText('Confirm mocked design')).toBeNull();
   expect(view.queryByText('Your design families')).toBeNull();
   expect(view.queryByText(/Factory/i)).toBeNull();
+  expect(view.getByLabelText('Generate technical views')).toBeTruthy();
+  fireEvent.press(view.getByLabelText('Generate technical views'));
+  expect(await view.findByText('Views route reached')).toBeTruthy();
+  fireEvent.press(view.getByLabelText('Refine this design'));
+  expect(await view.findByText('Refine route reached')).toBeTruthy();
   expect(view.getByLabelText('More actions')).toBeTruthy();
   fireEvent.press(view.getByLabelText('More actions'));
   expect(await view.findByText('Specifications')).toBeTruthy();
