@@ -31,10 +31,12 @@ from facetta.db import (
     get_db,
 )
 from facetta.image_agent import (
+    CheckSeverity,
     ImageOperation,
     ImageQualityReport,
     JewelryImageAgent,
     ProviderImage,
+    QualityCheck,
     QualityVerdict,
     build_image_plan,
 )
@@ -65,7 +67,12 @@ def _accepted_result(
         def evaluate(self, *_args, **_kwargs):
             return ImageQualityReport(
                 verdict=QualityVerdict.PASS,
-                checks=(),
+                checks=(QualityCheck(
+                    code="fixture_quality",
+                    passed=True,
+                    severity=CheckSeverity.HARD,
+                    message="fixture candidate passed",
+                ),),
                 score=97,
             )
 

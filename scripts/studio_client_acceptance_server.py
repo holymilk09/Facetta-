@@ -344,7 +344,12 @@ def _accepted_result(
         def evaluate(self, *_args, **_kwargs):
             return ImageQualityReport(
                 verdict=QualityVerdict.PASS,
-                checks=(),
+                checks=(QualityCheck(
+                    code="acceptance_fixture_quality",
+                    passed=True,
+                    severity=CheckSeverity.HARD,
+                    message="Acceptance fixture candidate passed.",
+                ),),
                 score=98,
             )
 

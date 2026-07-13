@@ -802,7 +802,16 @@ def test_history_asset_and_visual_candidate_reads_deny_other_principal(
             media_type="image/png",
             requested_change="polish",
             scope="appearance",
-            qa={},
+            qa={
+                "verdict": "pass",
+                "accepted": True,
+                "review_required": False,
+                "checks": [{
+                    "code": "fixture_quality",
+                    "passed": True,
+                    "severity": "hard",
+                }],
+            },
             created_by="usr_owner",
         )
     preview = client.get(

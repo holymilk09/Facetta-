@@ -48,6 +48,7 @@ from facetta.spec import Spec
 from facetta.studio_visual_candidates import (
     StudioVisualCandidateUnavailable,
     clear_studio_visual_candidates_for_tests,
+    store_studio_visual_candidate,
 )
 
 
@@ -136,7 +137,12 @@ def _generator(calls: list[dict]):
             def evaluate(self, *_args, **_kwargs):
                 return ImageQualityReport(
                     verdict=QualityVerdict.PASS,
-                    checks=(),
+                    checks=(QualityCheck(
+                        code="fixture_quality",
+                        passed=True,
+                        severity=CheckSeverity.HARD,
+                        message="fixture candidate passed",
+                    ),),
                     score=96,
                 )
 
@@ -191,6 +197,131 @@ def _counts(Session) -> dict[str, int]:
             "records": db.scalar(
                 select(func.count()).select_from(ProjectRevisionRecord)),
         }
+
+
+@pytest.mark.parametrize(
+    ("verdict", "qa"),
+    [
+        (
+            "pass",
+            {
+                "verdict": "fail",
+                "accepted": False,
+                "review_required": False,
+                "checks": [],
+            },
+        ),
+        (
+            "pass",
+            {
+                "verdict": "pass",
+                "accepted": True,
+                "review_required": False,
+                "checks": [],
+            },
+        ),
+        (
+            "pass",
+            {
+                "verdict": "pass",
+                "accepted": True,
+                "review_required": False,
+                "checks": [{
+                    "code": "outside_drift",
+                    "passed": False,
+                    "severity": "hard",
+                }],
+            },
+        ),
+        (
+            "warn",
+            {
+                "verdict": "warn",
+                "accepted": False,
+                "review_required": False,
+                "checks": [],
+            },
+        ),
+    ],
+)
+def test_visual_candidate_store_rejects_failed_or_inconsistent_qa_before_write(
+    studio_preview_client,
+    verdict,
+    qa,
+):
+    _client, Session = studio_preview_client
+    before = _counts(Session)
+    with Session() as db:
+        with pytest.raises(
+            StudioVisualCandidateUnavailable,
+            match="failed or has incomplete QA evidence",
+        ):
+            store_studio_visual_candidate(
+                db,
+                run_id="run_failed_qa",
+                verdict=verdict,
+                project_root_id="ast_selected",
+                source_asset_id="ast_selected",
+                expected_selected_candidate_asset_id="ast_selected",
+                source_hash=hashlib.sha256(SOURCE).hexdigest(),
+                image_bytes=CANDIDATE,
+                media_type="image/png",
+                requested_change="Make it warmer",
+                scope="appearance",
+                qa=qa,
+                created_by="usr_studio",
+            )
+        assert db.scalar(
+            select(func.count()).select_from(PreviewCandidateRecord)
+        ) == 0
+    assert _counts(Session) == before
+
+
+def test_tampered_failed_qa_candidate_cannot_become_canonical(
+    studio_preview_client,
+):
+    client, Session = studio_preview_client
+    app.dependency_overrides[get_studio_visual_preview_generator] = (
+        lambda: _generator([])
+    )
+    preview = _preview(client).json()
+    candidate_id = preview["candidate"]["candidate_id"]
+    run_id = preview["image_run_id"]
+    with Session() as db:
+        record = db.get(PreviewCandidateRecord, candidate_id)
+        assert record is not None
+        payload = dict(record.payload)
+        payload["qa"] = {
+            "verdict": "fail",
+            "accepted": False,
+            "review_required": False,
+            "checks": [{
+                "code": "outside_drift",
+                "passed": False,
+                "severity": "hard",
+            }],
+        }
+        record.payload = payload
+        db.commit()
+
+    rejected = client.post(
+        f"/studio/image-runs/{run_id}/visual-candidates/{candidate_id}/accept",
+        json={
+            "created_by": "usr_studio",
+            "expected_active_asset_id": "ast_selected",
+        },
+    )
+    assert rejected.status_code == 410, rejected.text
+    assert rejected.json()["code"] == "visual_preview_unavailable"
+    with Session() as db:
+        assert db.scalar(select(func.count()).select_from(ImageAsset)) == 1
+        assert db.scalar(select(func.count()).select_from(ImageRunReview)) == 0
+        assert db.scalar(select(func.count()).select_from(
+            ProjectRevisionRecord)) == 0
+        record = db.get(PreviewCandidateRecord, candidate_id)
+        assert record is not None
+        assert record.status == "expired"
+        assert bytes(record.image) == b""
 
 
 def test_preview_does_not_mutate_canonical_history_and_apply_is_atomic(
