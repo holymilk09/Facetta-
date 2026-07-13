@@ -209,7 +209,9 @@ def revalidate_factory_job_for_execution(
     if job_snapshot is None:
         raise FactoryJobContextError("the Factory job is unavailable")
     if job_snapshot.action_id != "factory":
-        return job_snapshot
+        raise FactoryJobContextError(
+            "the supplied Studio job is not a Factory job"
+        )
     if job_snapshot.status != "queued":
         raise FactoryJobContextError(
             f"Factory job cannot start from {job_snapshot.status}"

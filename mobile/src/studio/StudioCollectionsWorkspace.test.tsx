@@ -223,7 +223,7 @@ describe('StudioCollectionsWorkspace', () => {
       data: null,
       error: {
         code: 'INVALID_RESPONSE', message: 'History response is unavailable.',
-        category: 'decode' as const, status: 200, retryable: false,
+        category: 'invalid_response' as const, status: 200, retryable: false,
       },
       status: 200,
     };

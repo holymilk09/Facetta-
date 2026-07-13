@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import hashlib
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends
@@ -21,12 +22,15 @@ from facetta.auth import (
     require_principal_boundary,
 )
 from facetta.catalog_preview_candidates import (
+    CatalogPreviewJobError,
     CatalogPreviewUnavailable,
     discard_catalog_preview_candidate,
     get_catalog_preview_candidate,
     list_catalog_preview_candidates,
     resolve_catalog_preview_candidate,
+    settle_catalog_preview_acceptance,
     store_catalog_preview_candidate,
+    validate_catalog_preview_refine_job,
 )
 from facetta.chain_geometry import chain_factory_blockers
 from facetta.component_catalog import (
@@ -46,6 +50,7 @@ from facetta.image_agent import (
     JewelryImageAgent,
     build_image_plan,
 )
+from facetta.image_agent.planning import bind_localization_mask
 from facetta.image_run_store import (
     persist_image_agent_failure,
     persist_image_agent_result,
@@ -53,6 +58,13 @@ from facetta.image_run_store import (
 from facetta.json_types import JsonObject, JsonValue
 from facetta.media import sniff_media_type
 from facetta.project_backbone import is_primary_revision
+from facetta.revision_component_map import (
+    ComponentMapError,
+    RevisionComponentMap,
+    component_map_hash,
+    rasterize_component_masks,
+)
+from facetta.revision_component_map_store import load_revision_component_map
 from facetta.spec import ChainGeometry, ChainProduction, Spec
 from facetta.studio_history import StudioHistoryError, fork_preview_candidate_variation
 from facetta.trusted_revision import (
@@ -103,6 +115,12 @@ class CatalogApplyRequest(BaseModel):
     chain_production: ChainProduction | None = None
 
 
+class CatalogPreviewRequest(CatalogApplyRequest):
+    """Catalog edit inputs plus the optional durable Studio review ledger."""
+
+    studio_job_id: Annotated[str | None, Field(min_length=1, max_length=32)] = None
+
+
 class CatalogPreviewAcceptRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -146,6 +164,7 @@ class CatalogPreviewCandidateSummary(BaseModel):
     discard_url: str
     save_as_variation_url: str
     verdict: Literal["pass", "warn"]
+    studio_job_id: str | None = None
     expires_in_seconds: int = 7200
 
 
@@ -229,6 +248,35 @@ class _PreparedCatalogRevision:
     option: ComponentCatalogOption
     selection: CatalogSelectionResult
     instruction: str
+
+
+@dataclass(frozen=True)
+class _CatalogComponentTarget:
+    """One exact mapped region authorized for a ring catalog edit."""
+
+    component_map: RevisionComponentMap
+    component_ids: tuple[str, ...]
+    component_kinds: tuple[str, ...]
+    map_sha256: str
+    mask_bytes: bytes
+    mask_sha256: str
+
+
+# Component-map v1 is deliberately ring-only.  Each released ring catalog
+# path names the complete semantic region it is allowed to alter.  In
+# particular, a metal edit is an aggregate of every resolved metal-bearing
+# component; an unresolved member cannot be skipped to make the request pass.
+_RING_CATALOG_TARGET_KINDS: dict[str, tuple[str, ...]] = {
+    "stone.cut": ("center_stone",),
+    "stone.color": ("center_stone",),
+    "setting.style": ("prongs", "setting"),
+    "metal.material": (
+        "prongs", "setting", "shank", "shoulders", "gallery", "metal_zone",
+    ),
+    "metal.color": (
+        "prongs", "setting", "shank", "shoulders", "gallery", "metal_zone",
+    ),
+}
 
 
 def _trusted_image_agent() -> JewelryImageAgent:
@@ -614,15 +662,94 @@ def _prepare_catalog_revision(
     )
 
 
+def _catalog_component_target(
+    db: Session,
+    prepared: _PreparedCatalogRevision,
+    *,
+    component_path: str,
+) -> _CatalogComponentTarget | None:
+    """Resolve a ring catalog path to an immutable source-map mask.
+
+    Necklace component maps are not part of the v1 contract.  Their existing
+    category-specific chain path remains unchanged; all released ring material
+    and structural paths fail closed before plan compilation/provider access.
+    """
+    if prepared.context.spec.jewelry_type != "ring":
+        return None
+    target_kinds = _RING_CATALOG_TARGET_KINDS.get(component_path)
+    if target_kinds is None:
+        raise CatalogApplyError(
+            "catalog_target_mapping_unavailable",
+            "this ring catalog path has no released component-target policy",
+            status_code=409,
+            category="capability",
+            context={"component_path": component_path},
+        )
+    try:
+        component_map = load_revision_component_map(
+            db, prepared.context.asset.id)
+        if component_map is None:
+            raise ComponentMapError(
+                "the active ring revision is explicitly unmapped",
+                code="component_map_not_found",
+            )
+        if component_map.jewelry_type != "ring":  # defensive for future maps
+            raise ComponentMapError(
+                "the active revision does not have a ring component map",
+                code="component_map_jewelry_type_mismatch",
+            )
+        components = tuple(
+            component
+            for component in component_map.components
+            if component.kind in target_kinds
+        )
+        present_kinds = {component.kind for component in components}
+        missing_kinds = tuple(
+            kind for kind in target_kinds if kind not in present_kinds
+        )
+        if missing_kinds:
+            raise ComponentMapError(
+                "the active revision is unmapped for catalog target kinds: "
+                + ", ".join(missing_kinds),
+                code="catalog_target_unmapped",
+            )
+        # rasterize_component_masks performs membership and resolution checks
+        # for every identity and rejects an empty aggregate.
+        component_ids = tuple(
+            component.component_id for component in components
+        )
+        mask_bytes = rasterize_component_masks(component_map, component_ids)
+    except ComponentMapError as exc:
+        raise CatalogApplyError(
+            exc.code,
+            exc.detail,
+            context={
+                "component_path": component_path,
+                "required_component_kinds": list(target_kinds),
+                "source_asset_id": prepared.context.asset.id,
+            },
+        ) from exc
+    map_sha256 = component_map_hash(component_map)
+    return _CatalogComponentTarget(
+        component_map=component_map,
+        component_ids=component_ids,
+        component_kinds=target_kinds,
+        map_sha256=map_sha256,
+        mask_bytes=mask_bytes,
+        mask_sha256=hashlib.sha256(mask_bytes).hexdigest(),
+    )
+
+
 def _catalog_image_plan(
     prepared: _PreparedCatalogRevision,
     *,
     variant: int,
+    target: _CatalogComponentTarget | None,
 ):
     context = prepared.context
     selection = prepared.selection
     option = prepared.option
-    return build_image_plan(
+    plan = build_image_plan(
         ImageOperation.LOCAL_EDIT,
         prepared.instruction,
         spec=selection.spec,
@@ -640,6 +767,22 @@ def _catalog_image_plan(
             f"{selection.isolation_target}"
         ),
         variant=variant,
+    )
+    if target is None:
+        return plan
+    return bind_localization_mask(
+        plan,
+        target.mask_bytes,
+        provenance="revision_component_map",
+        evidence={
+            "schema_version": target.component_map.schema_version,
+            "source_asset_id": context.asset.id,
+            "component_map_sha256": target.map_sha256,
+            "target_component_ids": list(target.component_ids),
+            "target_component_kinds": list(target.component_kinds),
+            "mask_sha256": target.mask_sha256,
+            "authority": "exact_source_revision_image_editing_only",
+        },
     )
 
 
@@ -701,7 +844,7 @@ def _catalog_selection_error_response(exc: CatalogSelectionError) -> JSONRespons
 )
 def preview_catalog_revision(
     active_asset_id: str,
-    request: CatalogApplyRequest,
+    request: CatalogPreviewRequest,
     db: DbSession,
     principal: PrincipalDep,
 ):
@@ -722,10 +865,31 @@ def preview_catalog_revision(
     context = prepared.context
     selection = prepared.selection
     try:
-        plan = _catalog_image_plan(prepared, variant=request.variant)
+        target = _catalog_component_target(
+            db, prepared, component_path=request.component_path)
+    except CatalogApplyError as exc:
+        return _error_response(exc)
+    if request.studio_job_id is not None:
+        try:
+            validate_catalog_preview_refine_job(
+                db,
+                job_id=request.studio_job_id,
+                owner=actor,
+                project_root_id=context.project.root_id,
+                source_asset_id=context.asset.id,
+            )
+        except CatalogPreviewJobError as exc:
+            return _error_response(CatalogApplyError(
+                "catalog_preview_job_invalid", str(exc),
+                status_code=409, category="conflict",
+            ))
+    try:
+        plan = _catalog_image_plan(
+            prepared, variant=request.variant, target=target)
         result = _trusted_image_agent().run(
             plan,
             source_image=bytes(context.asset.image),
+            mask_bytes=(target.mask_bytes if target is not None else None),
         )
     except ImageAgentError as exc:
         run_id = None
@@ -775,30 +939,44 @@ def preview_catalog_revision(
         "pass" if result.accepted else "warn")
     raw_changes: tuple[JsonObject, ...] = tuple(
         dict(change) for change in selection.spec_change)
-    candidate = store_catalog_preview_candidate(
-        db,
-        run_id=run_id,
-        verdict=verdict,
-        project_root_id=context.project.root_id,
-        source_asset_id=context.asset.id,
-        expected_active_asset_id=context.asset.id,
-        expected_design_version=context.design_version,
-        source_hash=plan.source_hash,
-        source_spec_visual_hash=plan.source_spec_visual_hash,
-        target_spec_visual_hash=plan.spec_visual_hash,
-        image_bytes=result.image_bytes,
-        media_type=sniff_media_type(result.image_bytes),
-        requested_change=prepared.instruction,
-        region_description=selection.isolation_target,
-        drift=_candidate_drift(result),
-        next_spec=selection.spec,
-        component_path=request.component_path,
-        option_id=request.option_id,
-        spec_change=raw_changes,
-        qa=qa,
-        routing=routing,
-        created_by=actor,
-    )
+    try:
+        candidate = store_catalog_preview_candidate(
+            db,
+            run_id=run_id,
+            verdict=verdict,
+            project_root_id=context.project.root_id,
+            source_asset_id=context.asset.id,
+            expected_active_asset_id=context.asset.id,
+            expected_design_version=context.design_version,
+            source_hash=plan.source_hash,
+            source_spec_visual_hash=plan.source_spec_visual_hash,
+            target_spec_visual_hash=plan.spec_visual_hash,
+            image_bytes=result.image_bytes,
+            media_type=sniff_media_type(result.image_bytes),
+            requested_change=prepared.instruction,
+            region_description=selection.isolation_target,
+            drift=_candidate_drift(result),
+            next_spec=selection.spec,
+            component_path=request.component_path,
+            option_id=request.option_id,
+            spec_change=raw_changes,
+            qa=qa,
+            routing=routing,
+            created_by=actor,
+            component_map_sha256=(
+                target.map_sha256 if target is not None else None),
+            target_component_ids=(
+                target.component_ids if target is not None else ()),
+            target_mask_sha256=(
+                target.mask_sha256 if target is not None else None),
+            studio_job_id=request.studio_job_id,
+        )
+    except CatalogPreviewJobError as exc:
+        db.rollback()
+        return _error_response(CatalogApplyError(
+            "catalog_preview_job_invalid", str(exc),
+            status_code=409, category="conflict",
+        ))
     base_url = (
         f"/image-runs/{run_id}/catalog-candidates/{candidate.candidate_id}"
     )
@@ -827,6 +1005,7 @@ def preview_catalog_revision(
             discard_url=base_url,
             save_as_variation_url=f"{base_url}/save-as-variation",
             verdict=verdict,
+            studio_job_id=candidate.studio_job_id,
         ),
     )
     if verdict == "warn":
@@ -876,6 +1055,7 @@ def reopen_catalog_previews(
         "spec_change": list(candidate.spec_change),
         "qa": candidate.qa,
         "routing": candidate.routing,
+        "studio_job_id": candidate.studio_job_id,
         "expires_at": candidate.expires_at.isoformat(),
     } for candidate in candidates]}
 
@@ -901,7 +1081,8 @@ def get_catalog_preview_image(
         candidate = get_catalog_preview_candidate(
             db, run_id, candidate_id, owner=run.created_by,
         )
-    except CatalogPreviewUnavailable as exc:
+    except (CatalogPreviewUnavailable, CatalogPreviewJobError) as exc:
+        db.rollback()
         return JSONResponse(status_code=410, content={
             "code": "catalog_preview_unavailable",
             "category": "conflict",
@@ -937,7 +1118,8 @@ def discard_catalog_preview(
         discard_catalog_preview_candidate(
             db, run_id, candidate_id, owner=run.created_by,
         )
-    except CatalogPreviewUnavailable as exc:
+    except (CatalogPreviewUnavailable, CatalogPreviewJobError) as exc:
+        db.rollback()
         return JSONResponse(status_code=410, content={
             "code": "catalog_preview_unavailable",
             "category": "conflict",
@@ -978,10 +1160,18 @@ def accept_catalog_preview(
             terminal_asset_id=accepted.asset_id,
             commit=False,
         )
+        settle_catalog_preview_acceptance(db, candidate, owner=actor)
         db.commit()
     except CatalogPreviewUnavailable as exc:
         return JSONResponse(status_code=410, content={
             "code": "catalog_preview_unavailable",
+            "category": "conflict",
+            "detail": str(exc),
+        })
+    except CatalogPreviewJobError as exc:
+        db.rollback()
+        return JSONResponse(status_code=409, content={
+            "code": "catalog_preview_job_conflict",
             "category": "conflict",
             "detail": str(exc),
         })
@@ -1082,10 +1272,17 @@ def apply_catalog_revision(
     selection = prepared.selection
     instruction = prepared.instruction
     try:
-        plan = _catalog_image_plan(prepared, variant=request.variant)
+        target = _catalog_component_target(
+            db, prepared, component_path=request.component_path)
+    except CatalogApplyError as exc:
+        return _error_response(exc)
+    try:
+        plan = _catalog_image_plan(
+            prepared, variant=request.variant, target=target)
         result = _trusted_image_agent().run(
             plan,
             source_image=bytes(context.asset.image),
+            mask_bytes=(target.mask_bytes if target is not None else None),
         )
     except ImageAgentError as exc:
         run_id = None

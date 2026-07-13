@@ -20,7 +20,13 @@ def load_revision_component_map(
     record = db.get(RevisionComponentMapRecord, asset_id)
     if record is None:
         return None
-    component_map = RevisionComponentMap.model_validate(record.map_json)
+    try:
+        component_map = RevisionComponentMap.model_validate(record.map_json)
+    except Exception as exc:
+        raise ComponentMapError(
+            "persisted component map does not match the revision-map contract",
+            code="component_map_record_invalid",
+        ) from exc
     if component_map_hash(component_map) != record.map_sha256:
         raise ComponentMapError(
             "persisted component map content hash is invalid",

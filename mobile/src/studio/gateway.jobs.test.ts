@@ -177,13 +177,16 @@ test('tracked generation failures close the job without charging output', async 
 
 test('catalog preview keeps image-run and Studio-job identities separate through apply', async () => {
   const jobs = tracking();
+  let previewStudioJobId: string | undefined;
   const next = project(1);
   next.active_asset_id = 'asset_2';
   next.active_revision = { ...asset('asset_2', 'LOCALIZED_EDIT'), design_version: 2 };
   next.active_design_version = 2;
   const gateway = createStudioGateway({
     ...jobs.client,
-    previewCatalogSelection: async () => ok({
+    previewCatalogSelection: async (_assetId: string, request: any) => {
+      previewStudioJobId = request.studio_job_id;
+      return ok({
       status: 'preview_ready', component_path: 'metal.color', option_id: 'rose',
       isolation_target: 'metal', source_asset_id: 'candidate_1', design_version: 1,
       image_run_id: 'image_run_catalog', spec_change: [], next_spec: {}, qa: quality,
@@ -192,9 +195,10 @@ test('catalog preview keeps image-run and Studio-job identities separate through
         run_id: 'image_run_catalog', candidate_id: 'candidate_catalog',
         preview_url: 'https://test/preview.png', accept_url: '/accept', discard_url: '/discard',
         save_as_variation_url: '/save-as-variation',
-        verdict: 'pass', expires_in_seconds: 600,
+        verdict: 'pass', studio_job_id: request.studio_job_id, expires_in_seconds: 600,
       },
-    }, 201),
+    }, 201);
+    },
     acceptCatalogPreview: async () => ok({
       status: 'accepted', asset_id: 'asset_2', design_version: 2,
       image_run_id: 'image_run_catalog', spec_change: [], project: next,
@@ -206,15 +210,15 @@ test('catalog preview keeps image-run and Studio-job identities separate through
     createdBy: 'designer_1', componentPath: 'metal.color', optionId: 'rose',
   });
   assert.equal(preview.data?.candidate.jobId, 'image_run_catalog');
+  assert.equal(previewStudioJobId, 'studio_job_1');
   assert.equal(jobs.transitions[0]?.jobId, 'studio_job_1');
-  assert.equal(jobs.transitions[1]?.request.status, 'reviewing');
+  assert.deepEqual(jobs.transitions.map((call) => call.request.status), ['running']);
 
   const applied = await gateway.applyCatalogRefine({
     candidateId: 'candidate_catalog', createdBy: 'designer_1',
   });
   assert.equal(applied.error, null);
-  assert.equal(jobs.transitions.at(-1)?.request.status, 'succeeded');
-  assert.equal(jobs.transitions.at(-1)?.request.completed_outputs, 1);
+  assert.deepEqual(jobs.transitions.map((call) => call.request.status), ['running']);
 });
 
 test('saving a catalog preview variation resolves Activity once with one completed output', async () => {
@@ -227,7 +231,7 @@ test('saving a catalog preview variation resolves Activity once with one complet
   };
   const gateway = createStudioGateway({
     ...jobs.client,
-    previewCatalogSelection: async () => ok({
+    previewCatalogSelection: async (_assetId: string, request: any) => ok({
       status: 'preview_ready', component_path: 'metal.color', option_id: 'rose',
       isolation_target: 'metal', source_asset_id: 'candidate_1', design_version: 1,
       image_run_id: 'image_run_variation', spec_change: [], next_spec: {}, qa: quality,
@@ -235,7 +239,8 @@ test('saving a catalog preview variation resolves Activity once with one complet
       project: project(1), candidate: {
         run_id: 'image_run_variation', candidate_id: 'candidate_variation',
         preview_url: 'https://test/preview.png', accept_url: '/accept', discard_url: '/discard',
-        save_as_variation_url: '/save-as-variation', verdict: 'pass', expires_in_seconds: 600,
+        save_as_variation_url: '/save-as-variation', verdict: 'pass',
+        studio_job_id: request.studio_job_id, expires_in_seconds: 600,
       },
     }, 201),
     saveCatalogPreviewAsVariation: async () => ok({
@@ -253,10 +258,66 @@ test('saving a catalog preview variation resolves Activity once with one complet
     candidateId: 'candidate_variation', createdBy: 'designer_1', label: 'Rose halo',
   });
   assert.equal(saved.error, null);
-  const completions = jobs.transitions.filter((call) => call.request.status === 'succeeded');
-  assert.equal(completions.length, 1);
-  assert.equal(completions[0]?.jobId, 'studio_job_1');
-  assert.equal(completions[0]?.request.completed_outputs, 1);
+  assert.deepEqual(jobs.transitions.map((call) => call.request.status), ['running']);
+});
+
+test('a restarted gateway resumes catalog review by its durable exact Refine job', async () => {
+  let acceptedCandidate: string | null = null;
+  let publicTerminalTransitions = 0;
+  const next = project(1);
+  next.active_asset_id = 'asset_2';
+  next.active_revision = { ...asset('asset_2', 'LOCALIZED_EDIT'), design_version: 2 };
+  next.active_design_version = 2;
+  const reviewingJob: StudioJobRecord = {
+    job_id: 'studio_job_catalog_resume', owner: 'designer_1', action_id: 'refine',
+    lane: 'trusted_structural', status: 'reviewing', progress: 0.9,
+    active_design_id: 'project_1', source_revision_id: 'candidate_1', error_code: null,
+    created_at: '2026-07-12T00:00:00Z', updated_at: '2026-07-12T00:00:01Z',
+    billing: {
+      requested_outputs: 1, credits_per_output: 20, estimated_credits: 20,
+      completed_outputs: 0, charged_outputs: 0, charged_credits: 0,
+      policy: 'Only accepted outputs are charged.',
+    },
+  };
+  const gateway = createStudioGateway({
+    listStudioJobs: async () => ok({ jobs: [reviewingJob] }),
+    listCatalogPreviews: async () => ok({ candidates: [{
+      candidate: {
+        run_id: 'image_run_resume', candidate_id: 'candidate_catalog_resume',
+        preview_url: 'https://test/resume.png', accept_url: '/accept',
+        discard_url: '/discard', save_as_variation_url: '/save-as-variation',
+        verdict: 'pass', studio_job_id: reviewingJob.job_id, expires_in_seconds: 600,
+      },
+      source_asset_id: 'candidate_1', component_path: 'metal.color', option_id: 'rose',
+      requested_change: 'Apply rose gold', next_spec: {}, spec_change: [], qa: quality,
+      routing: { attempt_count: 1, used_retry: false, used_fallback: false,
+        cache_hit: false, run_id: 'image_run_resume' },
+      expires_at: '2099-01-01T00:00:00Z',
+    }] }),
+    acceptCatalogPreview: async (candidate: any) => {
+      acceptedCandidate = candidate.candidate_id;
+      return ok({
+        status: 'accepted' as const, asset_id: 'asset_2', design_version: 2,
+        image_run_id: 'image_run_resume', spec_change: [], project: next,
+      }, 201);
+    },
+    transitionStudioJob: async () => {
+      publicTerminalTransitions += 1;
+      throw new Error('catalog decisions are server-settled');
+    },
+  } as any, { trackJobs: true });
+
+  const resumed = await gateway.resumeRefine({
+    projectId: 'project_1', sourceAssetId: 'candidate_1', sourceDesignVersion: 1,
+  }, 'designer_1');
+  assert.equal(resumed.error, null);
+  assert.equal(resumed.data?.candidate.id, 'candidate_catalog_resume');
+  const accepted = await gateway.applyCatalogRefine({
+    candidateId: 'candidate_catalog_resume', createdBy: 'designer_1',
+  });
+  assert.equal(accepted.error, null);
+  assert.equal(acceptedCandidate, 'candidate_catalog_resume');
+  assert.equal(publicTerminalTransitions, 0);
 });
 
 test('discarded view delegates atomic zero-charge Activity completion to the durable endpoint', async () => {

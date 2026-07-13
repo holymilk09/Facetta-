@@ -457,6 +457,137 @@ def test_factory_job_uses_persisted_exact_revision_eligibility(client):
     assert queued["source_revision_id"] == eligible[1]
 
 
+def test_factory_pack_preparation_is_backend_authoritative_and_charges_once(client):
+    factory = STUDIO_JOB_ACTIONS["factory"]
+    project_id, source_id = _seed_project(
+        client,
+        project_id="project_factory_pack_settlement",
+        exact_specification=True,
+        factory_eligible=True,
+    )
+    checklist = client.post(
+        f"/assets/{source_id}/checklist",
+        json={"mode": "auto_pin", "created_by": "usr_designer"},
+    )
+    assert checklist.status_code == 201, checklist.text
+    for item in checklist.json()["items"]:
+        confirmed = client.post(
+            f"/assets/{source_id}/checklist/respond",
+            json={
+                "item_key": item["key"],
+                "approved": True,
+                "created_by": "usr_designer",
+            },
+        )
+        assert confirmed.status_code == 201, confirmed.text
+    queued = _create(
+        client,
+        outputs=1,
+        action_id="factory",
+        lane=factory.lane,
+        credits=factory.credits_per_output,
+        active_design_id=project_id,
+        source_revision_id=source_id,
+    )
+
+    prepared = client.post(
+        f"/projects/{project_id}/factory-pack",
+        json={"studio_job_id": queued["job_id"], "owner": "usr_designer"},
+    )
+    assert prepared.status_code == 200, prepared.text
+    assert prepared.json()["project_id"] == project_id
+    assert prepared.json()["asset_id"] == source_id
+
+    settled = client.get(
+        f"/studio/jobs/{queued['job_id']}",
+        params={"owner": "usr_designer"},
+    ).json()
+    assert settled["status"] == "succeeded"
+    assert settled["billing"]["completed_outputs"] == 1
+    assert settled["billing"]["charged_outputs"] == 1
+    assert settled["billing"]["charged_credits"] == factory.credits_per_output
+
+    repeated = client.post(
+        f"/projects/{project_id}/factory-pack",
+        json={"studio_job_id": queued["job_id"], "owner": "usr_designer"},
+    )
+    assert repeated.status_code == 409
+    after = client.get(
+        f"/studio/jobs/{queued['job_id']}",
+        params={"owner": "usr_designer"},
+    ).json()
+    assert after["billing"]["charged_outputs"] == 1
+
+
+def test_factory_pack_preparation_failure_is_terminal_and_never_charged(client):
+    factory = STUDIO_JOB_ACTIONS["factory"]
+    project_id, source_id = _seed_project(
+        client,
+        project_id="project_factory_pack_incomplete",
+        exact_specification=True,
+        factory_eligible=True,
+    )
+    queued = _create(
+        client,
+        outputs=1,
+        action_id="factory",
+        lane=factory.lane,
+        credits=factory.credits_per_output,
+        active_design_id=project_id,
+        source_revision_id=source_id,
+    )
+
+    rejected = client.post(
+        f"/projects/{project_id}/factory-pack",
+        json={"studio_job_id": queued["job_id"], "owner": "usr_designer"},
+    )
+    assert rejected.status_code == 409
+    assert rejected.json()["code"] == "factory_fact_confirmation_incomplete"
+    failed = client.get(
+        f"/studio/jobs/{queued['job_id']}",
+        params={"owner": "usr_designer"},
+    ).json()
+    assert failed["status"] == "failed"
+    assert failed["billing"]["completed_outputs"] == 0
+    assert failed["billing"]["charged_outputs"] == 0
+    assert failed["billing"]["charged_credits"] == 0
+
+
+def test_factory_pack_preparation_rejects_a_non_factory_job_token(client):
+    project_id, source_id = _seed_project(
+        client,
+        project_id="project_factory_wrong_job_action",
+        exact_specification=True,
+        factory_eligible=True,
+    )
+    refine = STUDIO_JOB_ACTIONS["refine"]
+    queued = _create(
+        client,
+        outputs=1,
+        action_id="refine",
+        lane=refine.lane,
+        credits=refine.credits_per_output,
+        active_design_id=project_id,
+        source_revision_id=source_id,
+    )
+
+    rejected = client.post(
+        f"/projects/{project_id}/factory-pack",
+        json={"studio_job_id": queued["job_id"], "owner": "usr_designer"},
+    )
+
+    assert rejected.status_code == 409
+    assert "not a Factory job" in rejected.json()["detail"]
+    unchanged = client.get(
+        f"/studio/jobs/{queued['job_id']}",
+        params={"owner": "usr_designer"},
+    ).json()
+    assert unchanged["status"] == "queued"
+    assert unchanged["billing"]["completed_outputs"] == 0
+    assert unchanged["billing"]["charged_outputs"] == 0
+    assert unchanged["billing"]["charged_credits"] == 0
+
+
 def test_factory_job_rechecks_under_lock_before_insert(client, monkeypatch):
     factory = STUDIO_JOB_ACTIONS["factory"]
     project_id, source_id = _seed_project(

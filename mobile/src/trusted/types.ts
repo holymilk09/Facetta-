@@ -1223,6 +1223,11 @@ export interface CatalogApplyRequest {
   chain_production?: ChainProduction;
 }
 
+export interface CatalogPreviewRequest extends CatalogApplyRequest {
+  /** Durable one-output Refine job settled atomically with the preview decision. */
+  studio_job_id?: string;
+}
+
 /**
  * A provider-evaluated catalog edit that has not yet changed project history.
  * The three URLs are short-lived capability URLs and are normalized by the
@@ -1236,6 +1241,7 @@ export interface CatalogPreviewCandidate {
   discard_url: string;
   save_as_variation_url: string;
   verdict: 'pass' | 'warn';
+  studio_job_id?: string | null;
   expires_in_seconds: number;
 }
 

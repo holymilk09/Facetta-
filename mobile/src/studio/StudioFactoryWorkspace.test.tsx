@@ -23,6 +23,27 @@ const manifest = {
   bundle_url: 'https://test/pack', manifest_sha256: 'b'.repeat(64),
 };
 
+const approvedChecklist = {
+  checklist_id: 'check_1', asset_id: 'asset_7', design_id: 'design_1', design_version: 4,
+  mode: 'auto_pin' as const,
+  items: [{ key: 'identity', label: 'Design identity', fact: 'Halo ring', section: 'identity', ref: null, index: null, target_element_id: null }],
+  answers: { identity: { item_key: 'identity', approved: true, note: null, understood_as: null, created_by: 'designer', created_at: '2026-07-13T00:00:00Z' } },
+  outstanding: [], approved_count: 1, total: 1, completed: true, all_approved: true, pinned: true,
+};
+
+const readyProject = {
+  root_id: 'project_1', active_asset_id: 'asset_7', active_design_version: 4,
+  pinned_revision: { asset_id: 'asset_7', design_version: 4 },
+  approval: approvedChecklist, factory_ready: true, factory_blockers: [],
+};
+
+const withReadiness = (api: Record<string, unknown>, project: any = readyProject) => ({
+  getProject: jest.fn(async () => ({ data: project, error: null, status: 200 })),
+  createChecklist: jest.fn(async () => ({ data: approvedChecklist, error: null, status: 201 })),
+  respondChecklist: jest.fn(async () => ({ data: approvedChecklist, error: null, status: 201 })),
+  ...api,
+});
+
 const job = (status: string) => ({
   job_id: 'job_1', owner: 'designer', action_id: 'factory' as const,
   lane: 'trusted_structural' as const, status, progress: status === 'succeeded' ? 1 : 0.05,
@@ -36,10 +57,9 @@ const job = (status: string) => ({
 describe('StudioFactoryWorkspace', () => {
   test('prepares an exact review pack through a transparently billed Factory job', async () => {
     const createStudioJob = jest.fn(async () => ({ data: job('queued'), error: null, status: 201 }));
-    const transitionStudioJob = jest.fn(async (_id, request) => ({ data: job(request.status), error: null, status: 200 }));
-    const getFactoryPack = jest.fn(async () => ({ data: manifest, error: null, status: 200 }));
+    const prepareFactoryPack = jest.fn(async () => ({ data: manifest, error: null, status: 200 }));
     const deliverProtectedFile = jest.fn(async () => {});
-    await render(<StudioFactoryWorkspace api={{ createStudioJob, transitionStudioJob, getFactoryPack } as any}
+    await render(<StudioFactoryWorkspace api={withReadiness({ createStudioJob, prepareFactoryPack }) as any}
       lineage={lineage} createdBy="designer" deliverProtectedFile={deliverProtectedFile} />);
 
     expect(screen.getByText('1 requested output × 28 credits = estimated 28 credits')).toBeTruthy();
@@ -48,9 +68,9 @@ describe('StudioFactoryWorkspace', () => {
     expect(createStudioJob).toHaveBeenCalledWith(expect.objectContaining({
       active_design_id: 'project_1', source_revision_id: 'asset_7', credits_per_output: 28,
     }));
-    expect(transitionStudioJob).toHaveBeenLastCalledWith('job_1', expect.objectContaining({
-      status: 'succeeded', completed_outputs: 1,
-    }));
+    expect(prepareFactoryPack).toHaveBeenCalledWith('project_1', {
+      studio_job_id: 'job_1', owner: 'designer',
+    });
     expect(screen.getByText('review-sheet.svg')).toBeTruthy();
     await act(async () => { fireEvent.press(screen.getByText('Open review-sheet.svg')); });
     expect(deliverProtectedFile).toHaveBeenCalledWith({
@@ -63,42 +83,86 @@ describe('StudioFactoryWorkspace', () => {
     expect(screen.queryByText(/provider|QA/i)).toBeNull();
   });
 
-  test('fails closed and records zero-output failure when pack lineage mismatches', async () => {
-    const transitionStudioJob = jest.fn(async (_id, request) => ({ data: job(request.status), error: null, status: 200 }));
-    await render(<StudioFactoryWorkspace api={{
+  test('fails closed when a malformed pack response mismatches exact lineage', async () => {
+    await render(<StudioFactoryWorkspace api={withReadiness({
       createStudioJob: jest.fn(async () => ({ data: job('queued'), error: null, status: 201 })),
-      transitionStudioJob,
-      getFactoryPack: jest.fn(async () => ({ data: { ...manifest, pinned_asset_id: 'asset_other' }, error: null, status: 200 })),
-    } as any} lineage={lineage} createdBy="designer" deliverProtectedFile={jest.fn()} />);
+      prepareFactoryPack: jest.fn(async () => ({ data: { ...manifest, pinned_asset_id: 'asset_other' }, error: null, status: 200 })),
+    }) as any} lineage={lineage} createdBy="designer" deliverProtectedFile={jest.fn()} />);
     await act(async () => { fireEvent.press(screen.getByText('Prepare production-review material')); });
     expect(await screen.findByText(/did not match the selected revision/i)).toBeTruthy();
-    expect(transitionStudioJob).toHaveBeenLastCalledWith('job_1', expect.objectContaining({ status: 'failed' }));
     expect(screen.queryByText('Review material prepared')).toBeNull();
   });
 
   test('file delivery failure is retryable without a new job, history mutation, or charge', async () => {
     const createStudioJob = jest.fn(async () => ({ data: job('queued'), error: null, status: 201 }));
-    const transitionStudioJob = jest.fn(async (_id, request) => ({ data: job(request.status), error: null, status: 200 }));
     const deliverProtectedFile = jest.fn()
       .mockRejectedValueOnce(new Error('network'))
       .mockResolvedValueOnce(undefined);
-    await render(<StudioFactoryWorkspace api={{
+    await render(<StudioFactoryWorkspace api={withReadiness({
       createStudioJob,
-      transitionStudioJob,
-      getFactoryPack: jest.fn(async () => ({ data: manifest, error: null, status: 200 })),
-    } as any} lineage={lineage} createdBy="designer" deliverProtectedFile={deliverProtectedFile} />);
+      prepareFactoryPack: jest.fn(async () => ({ data: manifest, error: null, status: 200 })),
+    }) as any} lineage={lineage} createdBy="designer" deliverProtectedFile={deliverProtectedFile} />);
+
+    await waitFor(() => expect(screen.getByText('Prepare production-review material')).toBeTruthy());
 
     await act(async () => { fireEvent.press(screen.getByText('Prepare production-review material')); });
     await act(async () => { fireEvent.press(screen.getByText('Open review-sheet.svg')); });
     expect(await screen.findByText(/credit record are unchanged/i)).toBeTruthy();
     expect(createStudioJob).toHaveBeenCalledTimes(1);
-    expect(transitionStudioJob).toHaveBeenCalledTimes(2);
 
     await act(async () => { fireEvent.press(screen.getByText('Retry protected file')); });
     expect(deliverProtectedFile).toHaveBeenCalledTimes(2);
     expect(createStudioJob).toHaveBeenCalledTimes(1);
-    expect(transitionStudioJob).toHaveBeenCalledTimes(2);
     expect(screen.queryByText(/credit record are unchanged/i)).toBeNull();
+  });
+
+  test('creates and completes an exact-fact checklist before revealing preparation', async () => {
+    const pendingChecklist = {
+      ...approvedChecklist,
+      answers: {}, outstanding: ['identity'], approved_count: 0,
+      completed: false, all_approved: false, pinned: false,
+    };
+    const blockedProject = {
+      ...readyProject,
+      pinned_revision: null,
+      approval: null,
+      factory_ready: false,
+      factory_blockers: [{
+        code: 'approval_required', subject_id: 'asset_7',
+        detail: 'Confirm the exact design facts.', required_resolution: 'Complete the checklist.',
+      }],
+    };
+    const reviewingProject = { ...blockedProject, approval: pendingChecklist };
+    const getProject = jest.fn()
+      .mockResolvedValueOnce({ data: blockedProject, error: null, status: 200 })
+      .mockResolvedValueOnce({ data: reviewingProject, error: null, status: 200 })
+      .mockResolvedValueOnce({ data: readyProject, error: null, status: 200 });
+    const createChecklist = jest.fn(async () => ({ data: pendingChecklist, error: null, status: 201 }));
+    const respondChecklist = jest.fn(async () => ({ data: approvedChecklist, error: null, status: 201 }));
+    const onProjectUpdated = jest.fn();
+    await render(<StudioFactoryWorkspace api={{
+      getProject, createChecklist, respondChecklist,
+      createStudioJob: jest.fn(), prepareFactoryPack: jest.fn(),
+    } as any} lineage={lineage} createdBy="designer" deliverProtectedFile={jest.fn()}
+    onProjectUpdated={onProjectUpdated} />);
+
+    expect(await screen.findByText('Start exact-fact checklist')).toBeTruthy();
+    expect(screen.queryByText('Prepare production-review material')).toBeNull();
+    expect(screen.getByText('• Confirm the exact design facts.')).toBeTruthy();
+
+    await act(async () => { fireEvent.press(screen.getByText('Start exact-fact checklist')); });
+    expect(await screen.findByText('Confirm fact')).toBeTruthy();
+    expect(createChecklist).toHaveBeenCalledWith('asset_7', {
+      created_by: 'designer', mode: 'auto_pin',
+    });
+
+    await act(async () => { fireEvent.press(screen.getByText('Confirm fact')); });
+    expect(await screen.findByText('Ready for optional Factory preparation')).toBeTruthy();
+    expect(screen.getByText('Prepare production-review material')).toBeTruthy();
+    expect(respondChecklist).toHaveBeenCalledWith('asset_7', expect.objectContaining({
+      item_key: 'identity', approved: true, interpret: false,
+    }));
+    expect(onProjectUpdated).toHaveBeenLastCalledWith(readyProject);
   });
 
   test('authenticated delivery fetches same-origin bytes before web or native delivery', async () => {

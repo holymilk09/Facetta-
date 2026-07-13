@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import {
   Platform, ScrollView, Share, StyleSheet, Text, View,
 } from 'react-native';
@@ -6,16 +6,18 @@ import { File, Paths } from 'expo-file-system';
 
 import { Button, Notice } from '../components';
 import { radius, theme } from '../theme';
-import type { TrustedApiClient } from '../trusted/client';
-import type { FactoryPackManifest } from '../trusted/types';
+import type {
+  ApprovalSummary, FactoryPackManifest, ProjectDetail,
+} from '../trusted/types';
 import { getStudioAction } from './actions';
 import { designerErrorMessage } from './designerErrorMessage';
-import type { ExactStudioLineage } from './gateway';
+import type { ExactStudioLineage, StudioGateway } from './gateway';
 
 const FACTORY_CREDITS = getStudioAction('factory').creditEstimate ?? 0;
 
-export type StudioFactoryApi = Pick<TrustedApiClient,
-  'createStudioJob' | 'transitionStudioJob' | 'getFactoryPack'>;
+export type StudioFactoryApi = Pick<StudioGateway,
+  'createStudioJob' | 'prepareFactoryPack'
+  | 'getProject' | 'createChecklist' | 'respondChecklist'>;
 
 export interface StudioProtectedFileRequest {
   url: string;
@@ -89,17 +91,83 @@ export interface StudioFactoryWorkspaceProps {
   lineage: ExactStudioLineage | null;
   createdBy: string;
   deliverProtectedFile: (request: StudioProtectedFileRequest) => Promise<void>;
+  onProjectUpdated?: (project: ProjectDetail) => void;
 }
 
 export function StudioFactoryWorkspace({
-  api, lineage, createdBy, deliverProtectedFile,
+  api, lineage, createdBy, deliverProtectedFile, onProjectUpdated,
 }: StudioFactoryWorkspaceProps) {
+  const [project, setProject] = useState<ProjectDetail | null>(null);
+  const [approval, setApproval] = useState<ApprovalSummary | null>(null);
+  const [readinessBusy, setReadinessBusy] = useState(false);
+  const [readinessError, setReadinessError] = useState<string | null>(null);
   const [pack, setPack] = useState<FactoryPackManifest | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [deliveryError, setDeliveryError] = useState<string | null>(null);
   const [pendingDelivery, setPendingDelivery] = useState<StudioProtectedFileRequest | null>(null);
   const [delivering, setDelivering] = useState<string | null>(null);
+
+  const refreshReadiness = useCallback(async (): Promise<ProjectDetail | null> => {
+    if (lineage === null) return null;
+    const result = await api.getProject(lineage.projectId);
+    if (result.error !== null
+      || result.data.active_asset_id !== lineage.sourceAssetId
+      || result.data.active_design_version !== lineage.sourceDesignVersion) {
+      setReadinessError(result.error === null
+        ? 'This design changed while Factory readiness was open. Reopen the exact revision before continuing.'
+        : designerErrorMessage(result.error, 'factory'));
+      return null;
+    }
+    setProject(result.data);
+    setApproval(result.data.approval);
+    setReadinessError(null);
+    onProjectUpdated?.(result.data);
+    return result.data;
+  }, [api, lineage, onProjectUpdated]);
+
+  useEffect(() => {
+    setProject(null);
+    setApproval(null);
+    setPack(null);
+    if (lineage !== null) void refreshReadiness();
+  }, [lineage?.projectId, lineage?.sourceAssetId, lineage?.sourceDesignVersion]);
+
+  const startChecklist = async (): Promise<void> => {
+    if (lineage === null || readinessBusy) return;
+    setReadinessBusy(true);
+    setReadinessError(null);
+    const result = await api.createChecklist(lineage.sourceAssetId, {
+      created_by: createdBy,
+      mode: 'auto_pin',
+    });
+    if (result.error !== null) {
+      setReadinessError(designerErrorMessage(result.error, 'factory'));
+    } else {
+      setApproval(result.data);
+      await refreshReadiness();
+    }
+    setReadinessBusy(false);
+  };
+
+  const approveFact = async (itemKey: string): Promise<void> => {
+    if (lineage === null || readinessBusy) return;
+    setReadinessBusy(true);
+    setReadinessError(null);
+    const result = await api.respondChecklist(lineage.sourceAssetId, {
+      item_key: itemKey,
+      approved: true,
+      created_by: createdBy,
+      interpret: false,
+    });
+    if (result.error !== null) {
+      setReadinessError(designerErrorMessage(result.error, 'factory'));
+    } else {
+      setApproval(result.data);
+      await refreshReadiness();
+    }
+    setReadinessBusy(false);
+  };
 
   const deliver = async (request: StudioProtectedFileRequest): Promise<void> => {
     if (delivering !== null) return;
@@ -137,42 +205,22 @@ export function StudioFactoryWorkspace({
       return;
     }
     const jobId = created.data.job_id;
-    const running = await api.transitionStudioJob(jobId, {
-      owner: createdBy, status: 'running', progress: 0.05,
+    const result = await api.prepareFactoryPack(lineage.projectId, {
+      studio_job_id: jobId,
+      owner: createdBy,
     });
-    if (running.error !== null) {
-      await api.transitionStudioJob(jobId, {
-        owner: createdBy, status: 'failed', progress: 0.1,
-        error_code: 'factory_context_changed',
-      });
-      setBusy(false);
-      setError(designerErrorMessage(running.error, 'factory'));
-      return;
-    }
-    const result = await api.getFactoryPack(lineage.projectId);
     const exact = result.error === null
       && result.data.project_id === lineage.projectId
       && result.data.pinned_asset_id === lineage.sourceAssetId
       && result.data.design_version === lineage.sourceDesignVersion;
     if (result.error !== null || !exact) {
-      await api.transitionStudioJob(jobId, {
-        owner: createdBy, status: 'failed', progress: 0.9,
-        error_code: result.error?.code ?? 'factory_lineage_mismatch',
-      });
       setBusy(false);
       setError(result.error === null
-        ? 'The prepared material did not match the selected revision, so it was not delivered or charged.'
+        ? 'The prepared material did not match the selected revision, so it was not displayed. Check Activity before trying again.'
         : designerErrorMessage(result.error, 'factory'));
       return;
     }
-    const succeeded = await api.transitionStudioJob(jobId, {
-      owner: createdBy, status: 'succeeded', progress: 1, completed_outputs: 1,
-    });
     setBusy(false);
-    if (succeeded.error !== null) {
-      setError('Facetta prepared the material but could not verify its Activity record. Reopen the design before trying again.');
-      return;
-    }
     setPack(result.data);
   };
 
@@ -185,17 +233,76 @@ export function StudioFactoryWorkspace({
     );
   }
 
+  const exactPinnedRevision = project?.pinned_revision?.asset_id === lineage.sourceAssetId
+    && project?.pinned_revision?.design_version === lineage.sourceDesignVersion;
+  const factoryReady = project?.factory_ready === true && exactPinnedRevision;
+  const blockers = project?.factory_blockers ?? [];
+
   return (
     <ScrollView contentContainerStyle={styles.workspace}>
-      <Text style={styles.eyebrow}>OPTIONAL FACTORY PREPARATION</Text>
-      <Text style={styles.title}>Prepare this exact revision for production review.</Text>
+      <Text style={styles.eyebrow}>OPTIONAL FACTORY READINESS</Text>
+      <Text style={styles.title}>Review this exact revision before sharing it with a manufacturer.</Text>
       <Text style={styles.body}>
-        This creates review material for a jeweler or manufacturer. It is not a production-ready claim,
-        and it does not alter the selected Studio revision.
+        Confirm only facts you know are correct. This is a readiness review—not a production-ready claim—and it never alters the selected Studio revision.
       </Text>
-      <Notice kind="info" text={`Exact revision ${lineage.sourceDesignVersion} is pinned for this request.`} />
+      <Notice kind="info" text={`Exact revision ${lineage.sourceDesignVersion} is selected for this readiness review.`} />
+      {readinessError !== null && <Notice kind="error" text={readinessError} />}
+      {project === null ? (
+        <Text style={styles.small}>Checking the exact revision and its readiness record…</Text>
+      ) : (
+        <View style={styles.packCard}>
+          <Text style={styles.packTitle}>{factoryReady ? 'Ready for optional Factory preparation' : 'Readiness review'}</Text>
+          {blockers.length > 0 && (
+            <View style={styles.blockerList}>
+              <Text style={styles.sectionTitle}>What still needs attention</Text>
+              {blockers.map((blocker) => (
+                <Text key={`${blocker.code}:${blocker.subject_id}`} style={styles.blockerText}>• {blocker.detail}</Text>
+              ))}
+            </View>
+          )}
+          {approval === null ? (
+            <>
+              <Text style={styles.body}>Create a checklist derived from this revision's exact specification. Each confirmation is recorded against this immutable revision.</Text>
+              <Button
+                title={readinessBusy ? 'Creating checklist…' : 'Start exact-fact checklist'}
+                disabled={readinessBusy}
+                onPress={() => { void startChecklist(); }}
+              />
+            </>
+          ) : (
+            <>
+              <Text style={styles.body}>{approval.approved_count} of {approval.total} exact facts confirmed</Text>
+              {approval.items.map((item) => {
+                const confirmed = approval.answers[item.key]?.approved === true;
+                return (
+                  <View key={item.key} style={styles.factRow}>
+                    <View style={styles.artifactCopy}>
+                      <Text style={styles.artifactName}>{item.label}</Text>
+                      <Text style={styles.small}>{item.fact}</Text>
+                    </View>
+                    {confirmed ? (
+                      <Text style={styles.confirmed}>Confirmed</Text>
+                    ) : (
+                      <Button
+                        title="Confirm fact"
+                        kind="ghost"
+                        disabled={readinessBusy}
+                        onPress={() => { void approveFact(item.key); }}
+                      />
+                    )}
+                  </View>
+                );
+              })}
+              {!approval.all_approved && (
+                <Notice kind="info" text="If a fact is wrong, return to Refine or Advanced specifications. Do not confirm it just to unlock Factory." />
+              )}
+            </>
+          )}
+          {factoryReady && <Notice kind="ok" text="All required facts are confirmed and this exact revision is pinned. Factory remains optional." />}
+        </View>
+      )}
       {error !== null && <Notice kind="error" text={error} />}
-      {pack === null ? (
+      {!factoryReady ? null : pack === null ? (
         <>
           <Text style={styles.creditEstimate}>
             1 requested output × {FACTORY_CREDITS} credits = estimated {FACTORY_CREDITS} credits
@@ -275,6 +382,13 @@ const styles = StyleSheet.create({
   packCard: { borderWidth: 1, borderColor: theme.line, borderRadius: radius.md, padding: 16, gap: 10, backgroundColor: theme.card },
   packTitle: { color: theme.ink, fontSize: 18, fontWeight: '800' },
   sectionTitle: { color: theme.ink, fontSize: 12, fontWeight: '800', letterSpacing: 1.2, marginTop: 4 },
+  blockerList: { gap: 6 },
+  blockerText: { color: theme.faint, fontSize: 13, lineHeight: 19 },
+  factRow: {
+    borderTopWidth: 1, borderTopColor: theme.line, paddingTop: 10, gap: 10,
+    flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',
+  },
+  confirmed: { color: theme.ok, fontSize: 12, fontWeight: '800' },
   artifactRow: {
     borderTopWidth: 1, borderTopColor: theme.line, paddingTop: 8, gap: 8,
     flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between',

@@ -20,6 +20,7 @@ from facetta.auth import (
 )
 from facetta.db import (
     FeedbackEvent, ImageAttempt, ImageRun, ImageRunReview, Project, get_db,
+    utcnow,
 )
 from facetta.factory_pack import (
     FactoryPackUnavailable,
@@ -36,6 +37,12 @@ from facetta.studio_markup_candidates import (
     accept_studio_markup_candidate,
     discard_studio_markup_candidate,
     get_studio_markup_candidate,
+)
+from facetta.studio_jobs import (
+    FactoryJobContextError,
+    StudioJobAccountingError,
+    record_accepted_studio_job_outputs,
+    revalidate_factory_job_for_execution,
 )
 from facetta.warning_candidates import (
     discard_markup_warning_candidate,
@@ -565,6 +572,84 @@ def get_factory_pack_manifest(project_id: str, db: DbSession):
     pack = _pack_or_error(db, project_id)
     if isinstance(pack, JSONResponse):
         return pack
+    return pack.manifest
+
+
+class PrepareFactoryPackRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    studio_job_id: Annotated[str, Field(min_length=1, max_length=32)]
+    owner: Annotated[str, Field(min_length=1, max_length=32)]
+
+
+@router.post(
+    "/projects/{project_id}/factory-pack",
+    response_model=FactoryPackManifest,
+)
+def prepare_factory_pack(
+    project_id: str,
+    request: PrepareFactoryPackRequest,
+    db: DbSession,
+    principal: PrincipalDep,
+):
+    """Build and bill one exact Factory output in one backend transaction.
+
+    The queued job is the server-held CAS token for the active revision and
+    approval generation. A successful response means the deterministic pack
+    exists and exactly one accepted output was charged. Failed or stale work
+    is terminal with zero charge.
+    """
+    principal_actor(principal, request.owner)
+    try:
+        job = revalidate_factory_job_for_execution(
+            db, job_id=request.studio_job_id, owner=request.owner,
+        )
+    except FactoryJobContextError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    if job.active_design_id != project_id:
+        job.status = "failed"
+        job.progress = 1
+        job.completed_outputs = 0
+        job.charged_outputs = 0
+        job.error_code = "factory_project_mismatch"
+        job.updated_at = utcnow()
+        db.commit()
+        raise HTTPException(
+            status_code=409,
+            detail="the Factory job is not bound to this project",
+        )
+    job.status = "running"
+    job.progress = 0.5
+    job.updated_at = utcnow()
+    db.flush()
+    try:
+        pack = build_factory_pack(db, project_id)
+    except FactoryPackUnavailable as exc:
+        job.status = "failed"
+        job.progress = 1
+        job.completed_outputs = 0
+        job.charged_outputs = 0
+        job.error_code = exc.code
+        job.updated_at = utcnow()
+        db.commit()
+        return JSONResponse(status_code=exc.status_code, content={
+            "code": exc.code,
+            "category": ("validation" if exc.status_code == 422 else "approval"),
+            "detail": exc.detail,
+        })
+    try:
+        record_accepted_studio_job_outputs(
+            db,
+            job_id=job.id,
+            owner=request.owner,
+            completed_outputs=1,
+            active_design_id=project_id,
+            source_revision_id=job.source_revision_id,
+        )
+    except StudioJobAccountingError as exc:
+        db.rollback()
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    db.commit()
     return pack.manifest
 
 

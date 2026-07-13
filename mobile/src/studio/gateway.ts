@@ -4,10 +4,11 @@ import type {
   ApiResult,
   BeautyRenderRequest,
   BeautyRenderResult,
-  CatalogApplyRequest,
+  CatalogPreviewRequest,
   CatalogPreviewAcceptResult,
   CatalogPreviewCandidate,
   CatalogPreviewResult,
+  ComponentCatalog,
   CreateLineArtRequest,
   CreateProjectFromBriefRequest,
   CreateProjectFromDrawingRequest,
@@ -154,7 +155,7 @@ export interface StudioVisualPreview {
 export interface StudioCatalogPreview {
   candidate: PreviewCandidate;
   lineage: ExactStudioLineage;
-  componentPath: CatalogApplyRequest['component_path'];
+  componentPath: CatalogPreviewRequest['component_path'];
   optionId: string;
 }
 
@@ -178,12 +179,12 @@ export interface StudioVariationRequest extends StudioVisualLineage {
 
 export interface StudioCatalogPreviewRequest extends ExactStudioLineage {
   createdBy: string;
-  componentPath: CatalogApplyRequest['component_path'];
+  componentPath: CatalogPreviewRequest['component_path'];
   optionId: string;
   variant?: number;
   stoneSpecies?: string;
-  chainGeometry?: CatalogApplyRequest['chain_geometry'];
-  chainProduction?: CatalogApplyRequest['chain_production'];
+  chainGeometry?: CatalogPreviewRequest['chain_geometry'];
+  chainProduction?: CatalogPreviewRequest['chain_production'];
 }
 
 export interface StudioMarkupPreviewRequest extends ExactStudioLineage {
@@ -291,6 +292,17 @@ type GatewayTrustedClient = Pick<TrustedApiClient,
   | 'recordImageRunFeedback'
   | 'getProject'
   | 'getFactoryPack'
+  | 'prepareFactoryPack'
+  | 'createChecklist'
+  | 'respondChecklist'
+  | 'getComponentCatalog'
+  | 'readMarkup'
+  | 'reviseStudioFacts'
+  | 'getDesignFamily'
+  | 'listDesignFamilies'
+  | 'getStudioProjectHistory'
+  | 'restoreStudioRevision'
+  | 'assetImageUrl'
   | 'createStudioJob'
   | 'listStudioJobs'
   | 'transitionStudioJob'
@@ -739,6 +751,125 @@ export function createStudioGateway(
   };
 
   return {
+    /**
+     * Studio-facing reads and mutations intentionally live on this facade.
+     * Workspaces should depend on these contracts rather than the much larger
+     * trusted client, while the gateway remains the sole compatibility seam.
+     */
+    async getProject(
+      ...args: Parameters<GatewayTrustedClient['getProject']>
+    ) {
+      return mapResult(await client.getProject(...args));
+    },
+
+    async getComponentCatalog(
+      ...args: Parameters<GatewayTrustedClient['getComponentCatalog']>
+    ): Promise<StudioGatewayResult<ComponentCatalog>> {
+      const result = await client.getComponentCatalog(...args);
+      if (result.error !== null) {
+        return {
+          data: null,
+          error: mapError(result.error as ApiError),
+          status: result.status,
+        };
+      }
+      return result;
+    },
+
+    async readMarkup(
+      ...args: Parameters<GatewayTrustedClient['readMarkup']>
+    ) {
+      return mapResult(await client.readMarkup(...args));
+    },
+
+    async reviseStudioFacts(
+      ...args: Parameters<GatewayTrustedClient['reviseStudioFacts']>
+    ) {
+      return mapResult(await client.reviseStudioFacts(...args));
+    },
+
+    async getDesignFamily(
+      ...args: Parameters<GatewayTrustedClient['getDesignFamily']>
+    ) {
+      return mapResult(await client.getDesignFamily(...args));
+    },
+
+    async listDesignFamilies(
+      ...args: Parameters<GatewayTrustedClient['listDesignFamilies']>
+    ) {
+      return mapResult(await client.listDesignFamilies(...args));
+    },
+
+    async getStudioProjectHistory(
+      ...args: Parameters<GatewayTrustedClient['getStudioProjectHistory']>
+    ) {
+      return mapResult(await client.getStudioProjectHistory(...args));
+    },
+
+    async restoreStudioRevision(
+      ...args: Parameters<GatewayTrustedClient['restoreStudioRevision']>
+    ) {
+      return mapResult(await client.restoreStudioRevision(...args));
+    },
+
+    async saveAsVariation(
+      ...args: Parameters<GatewayTrustedClient['saveAsVariation']>
+    ) {
+      return mapResult(await client.saveAsVariation(...args));
+    },
+
+    assetImageUrl(...args: Parameters<GatewayTrustedClient['assetImageUrl']>) {
+      return client.assetImageUrl(...args);
+    },
+
+    async listStudioJobs(
+      ...args: Parameters<GatewayTrustedClient['listStudioJobs']>
+    ) {
+      return mapResult(await client.listStudioJobs(...args));
+    },
+
+    async cancelStudioJob(
+      ...args: Parameters<GatewayTrustedClient['cancelStudioJob']>
+    ) {
+      return mapResult(await client.cancelStudioJob(...args));
+    },
+
+    async createStudioJob(
+      ...args: Parameters<GatewayTrustedClient['createStudioJob']>
+    ) {
+      return mapResult(await client.createStudioJob(...args));
+    },
+
+    async transitionStudioJob(
+      ...args: Parameters<GatewayTrustedClient['transitionStudioJob']>
+    ) {
+      return mapResult(await client.transitionStudioJob(...args));
+    },
+
+    async getFactoryPack(
+      ...args: Parameters<GatewayTrustedClient['getFactoryPack']>
+    ) {
+      return mapResult(await client.getFactoryPack(...args));
+    },
+
+    async prepareFactoryPack(
+      ...args: Parameters<GatewayTrustedClient['prepareFactoryPack']>
+    ) {
+      return mapResult(await client.prepareFactoryPack(...args));
+    },
+
+    async createChecklist(
+      ...args: Parameters<GatewayTrustedClient['createChecklist']>
+    ) {
+      return mapResult(await client.createChecklist(...args));
+    },
+
+    async respondChecklist(
+      ...args: Parameters<GatewayTrustedClient['respondChecklist']>
+    ) {
+      return mapResult(await client.respondChecklist(...args));
+    },
+
     async loadDesignConfirmation(request: StudioVisualLineage & {
       createdBy: string; notes?: string;
     }): Promise<StudioGatewayResult<StudioDesignConfirmationReview>> {
@@ -1033,6 +1164,27 @@ export function createStudioGateway(
           || left.candidate.candidate_id.localeCompare(right.candidate.candidate_id)
         )).at(-1);
         if (latest === undefined) return { data: null, error: null, status: result.status };
+        const catalogJobId = latest.candidate.studio_job_id ?? null;
+        const catalogJob = catalogJobId === null ? null
+          : jobs?.error === null
+            ? jobs.data.jobs.find((job) => (
+              job.job_id === catalogJobId
+              && job.action_id === 'refine'
+              && job.status === 'reviewing'
+              && job.active_design_id === lineage.projectId
+              && job.source_revision_id === lineage.sourceAssetId
+            )) ?? null
+            : null;
+        if (trackJobs && (catalogJobId === null || catalogJob === null)) {
+          return gatewayError(
+            'RESUME_REFINE_JOB_MISMATCH',
+            'This pending component preview is not bound to its exact Activity request.',
+            'conflict', 409,
+          );
+        }
+        const catalogStudioJob = catalogJob === null ? null : {
+          jobId: catalogJob.job_id, owner: createdBy,
+        };
         const candidate: PreviewCandidate = {
           id: latest.candidate.candidate_id,
           jobId: latest.candidate.run_id,
@@ -1047,7 +1199,7 @@ export function createStudioGateway(
         };
         catalogCandidates.set(candidate.id, {
           trusted: latest.candidate, preview: candidate, lineage,
-          proposedSpec: latest.next_spec, studioJob,
+          proposedSpec: latest.next_spec, studioJob: catalogStudioJob,
         });
         return {
           data: {
@@ -1353,7 +1505,7 @@ export function createStudioGateway(
       };
       const started = await startJob('refine', request.createdBy, 1, lineage);
       if (started.error !== null) return started;
-      const trustedRequest: CatalogApplyRequest = {
+      const trustedRequest: CatalogPreviewRequest = {
         component_path: request.componentPath,
         option_id: request.optionId,
         expected_design_version: request.sourceDesignVersion,
@@ -1362,6 +1514,7 @@ export function createStudioGateway(
         ...(request.stoneSpecies === undefined ? {} : { stone_species: request.stoneSpecies }),
         ...(request.chainGeometry === undefined ? {} : { chain_geometry: request.chainGeometry }),
         ...(request.chainProduction === undefined ? {} : { chain_production: request.chainProduction }),
+        ...(started.data === null ? {} : { studio_job_id: started.data.jobId }),
       };
       const result = await callTracked(
         started.data,
@@ -1372,6 +1525,7 @@ export function createStudioGateway(
         result.data.source_asset_id !== request.sourceAssetId
         || result.data.design_version !== request.sourceDesignVersion
         || result.data.project.root_id !== request.projectId
+        || (result.data.candidate.studio_job_id ?? null) !== (started.data?.jobId ?? null)
       ) {
         await failJob(started.data, 'INVALID_PREVIEW_LINEAGE', 0.9);
         return gatewayError(
@@ -1402,8 +1556,6 @@ export function createStudioGateway(
         proposedSpec: result.data.next_spec,
         studioJob: started.data,
       });
-      const reviewing = await transitionJob(started.data, 'reviewing', 0.9);
-      if (reviewing.error !== null) return reviewing;
       return {
         data: {
           candidate,
@@ -1426,14 +1578,16 @@ export function createStudioGateway(
       if (stored.preview.status !== 'pending_review') return gatewayError(
         'CANDIDATE_NOT_REVIEWABLE', 'This preview already has a final decision.', 'conflict', 409,
       );
-      const result = await callTracked(stored.studioJob, () => client.acceptCatalogPreview(
+      const result = await client.acceptCatalogPreview(
         stored.trusted,
         {
           expected_design_version: stored.lineage.sourceDesignVersion,
           created_by: request.createdBy,
         },
-      ));
-      if (result.error !== null) return result;
+      );
+      if (result.error !== null) return {
+        data: null, error: mapError(result.error), status: result.status,
+      };
       const projectLineage = exactLineage(result.data.project);
       if (
         result.data.image_run_id !== stored.preview.jobId
@@ -1441,7 +1595,6 @@ export function createStudioGateway(
         || projectLineage === null
         || projectLineage.sourceAssetId !== result.data.asset_id
       ) {
-        await failJob(stored.studioJob, 'INVALID_ACCEPT_LINEAGE', 0.95);
         return gatewayError(
           'INVALID_ACCEPT_LINEAGE',
           'The accepted preview did not produce the expected canonical revision.',
@@ -1453,8 +1606,6 @@ export function createStudioGateway(
         stored.preview, 'apply', now().toISOString(), result.data.asset_id,
       );
       stored.preview = candidate;
-      const succeeded = await transitionJob(stored.studioJob, 'succeeded', 1, 1);
-      if (succeeded.error !== null) return succeeded;
       return { data: { candidate, project: result.data.project }, error: null, status: result.status };
     },
 
@@ -1468,14 +1619,12 @@ export function createStudioGateway(
       if (stored.preview.status !== 'pending_review') return gatewayError(
         'CANDIDATE_NOT_REVIEWABLE', 'This preview already has a final decision.', 'conflict', 409,
       );
-      const result = await callTracked(
-        stored.studioJob, () => client.discardCatalogPreview(stored.trusted),
-      );
-      if (result.error !== null) return result;
+      const result = await client.discardCatalogPreview(stored.trusted);
+      if (result.error !== null) return {
+        data: null, error: mapError(result.error), status: result.status,
+      };
       const candidate = decidePreviewCandidate(stored.preview, 'discard', now().toISOString());
       stored.preview = candidate;
-      const dismissed = await cancelJob(stored.studioJob);
-      if (dismissed.error !== null) return dismissed;
       return { data: { candidate, project: null }, error: null, status: result.status };
     },
 
@@ -1493,10 +1642,12 @@ export function createStudioGateway(
       if (stored.preview.status !== 'pending_review') return gatewayError(
         'CANDIDATE_NOT_REVIEWABLE', 'This preview already has a final decision.', 'conflict', 409,
       );
-      const result = await callTracked(stored.studioJob, () => client.saveCatalogPreviewAsVariation(
+      const result = await client.saveCatalogPreviewAsVariation(
         stored.trusted, { created_by: request.createdBy, label },
-      ));
-      if (result.error !== null) return result;
+      );
+      if (result.error !== null) return {
+        data: null, error: mapError(result.error), status: result.status,
+      };
       const source = await client.getProject(stored.lineage.projectId);
       if (
         source.error !== null
@@ -1508,7 +1659,6 @@ export function createStudioGateway(
         || result.data.design_version !== 1
         || !preservesProposedSpec(result.data.project.spec, stored.proposedSpec)
       ) {
-        await failJob(stored.studioJob, 'INVALID_CATALOG_VARIATION_LINEAGE', 0.95);
         return gatewayError(
           'INVALID_CATALOG_VARIATION_LINEAGE',
           'The saved variation did not preserve the proposed specification and source revision.',
@@ -1519,8 +1669,6 @@ export function createStudioGateway(
         stored.preview, 'save_as_variation', now().toISOString(),
         result.data.project.active_asset_id,
       );
-      const succeeded = await transitionJob(stored.studioJob, 'succeeded', 1, 1);
-      if (succeeded.error !== null) return succeeded;
       catalogCandidates.delete(request.candidateId);
       return {
         data: {

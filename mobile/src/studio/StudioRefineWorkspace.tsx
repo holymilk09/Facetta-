@@ -6,7 +6,6 @@ import { AuthenticatedImage as Image } from '../AuthenticatedImage';
 
 import { Button, ChipRow, Field, Notice } from '../components';
 import { radius, theme } from '../theme';
-import type { TrustedApiClient } from '../trusted/client';
 import type {
   ComponentCatalog, ComponentCatalogOption, ComponentCatalogPath,
   ConfirmedMarkupAnnotation, JsonObject, JsonValue, ProjectDetail, StudioFactPath,
@@ -35,8 +34,8 @@ const PATHS: readonly { id: ComponentCatalogPath; label: string; help: string }[
   { id: 'chain.style', label: 'Chain', help: 'Preview a supported chain direction.' },
 ] as const;
 
-export type StudioRefineApi = Pick<TrustedApiClient, 'getComponentCatalog' | 'readMarkup'>
-  & Partial<Pick<TrustedApiClient, 'getProject' | 'reviseStudioFacts'>>;
+export type StudioRefineApi = Pick<StudioGateway, 'getComponentCatalog' | 'readMarkup'>
+  & Partial<Pick<StudioGateway, 'getProject' | 'reviseStudioFacts'>>;
 
 export interface StudioRefineWorkspaceProps {
   api: StudioRefineApi;

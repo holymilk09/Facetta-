@@ -11,7 +11,6 @@ import { AuthenticatedImage as Image } from '../AuthenticatedImage';
 
 import { Button, Field, Notice } from '../components';
 import { theme } from '../theme';
-import type { TrustedApiClient } from '../trusted/client';
 import type {
   DesignFamilyDetail,
   DesignFamilyVariation,
@@ -20,8 +19,9 @@ import type {
   StudioProjectHistory,
 } from '../trusted/types';
 import { designerErrorMessage } from './designerErrorMessage';
+import type { StudioGateway } from './gateway';
 
-export type StudioCollectionsApi = Pick<TrustedApiClient,
+export type StudioCollectionsApi = Pick<StudioGateway,
   | 'getDesignFamily'
   | 'listDesignFamilies'
   | 'getStudioProjectHistory'

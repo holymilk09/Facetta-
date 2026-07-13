@@ -172,7 +172,7 @@ export default function App() {
         requireAccessToken: true,
         onAuthenticationFailure: expireAuthenticatedSession,
       },
-      { trackJobs: true },
+      { trackJobs: true, factoryEnabled: true },
     ),
     [apiUrl, expireAuthenticatedSession, session],
   );
@@ -214,10 +214,10 @@ export default function App() {
     activeRevisionId: studioProject?.active_asset_id ?? selectedCreativeAssetId,
     hasExactSpecification: exactStudioLineage !== null,
     hasSelectedPreSpecVisual: confirmStudioLineage !== null && exactStudioLineage === null,
-    // Factory stays absent from ordinary Studio work. The backend project
-    // decision is the only signal that can reveal this optional destination;
-    // job creation rechecks the exact revision and eligibility server-side.
-    factoryEnabled: studioProject?.factory_ready === true,
+    // Readiness appears only for an exact specification. The actual Factory
+    // destination remains hidden until the backend project says this exact
+    // revision is eligible; job creation rechecks that decision server-side.
+    factoryEnabled: exactStudioLineage !== null,
     factoryEligible: studioProject?.factory_ready === true,
   }), [activeDesignId, confirmStudioLineage, exactStudioLineage, selectedCreativeAssetId, studioProject]);
   const hasActiveRevision = Boolean(actionContext.activeDesignId && actionContext.activeRevisionId);
@@ -513,7 +513,7 @@ export default function App() {
           ) : selectedActionId === 'refine' || selectedActionId === 'specifications' ? (
             <StudioRefineWorkspace
               key={selectedActionId}
-              api={trustedApi}
+              api={studioGateway}
               gateway={studioGateway}
               lineage={exactStudioLineage ?? visualStudioLineage}
               createdBy={designer}
@@ -571,12 +571,13 @@ export default function App() {
               onContinueRefining={() => openStudioAction('refine')}
               onOpenCollections={() => setTab('collections')}
             />
-          ) : selectedActionId === 'factory' ? (
+          ) : selectedActionId === 'factory' || selectedActionId === 'factory_readiness' ? (
             <StudioFactoryWorkspace
-              api={trustedApi}
+              api={studioGateway}
               lineage={exactStudioLineage}
               createdBy={designer}
               deliverProtectedFile={deliverProtectedFile}
+              onProjectUpdated={setStudioProject}
             />
           ) : (
             <View style={styles.workspaceNotice}>
@@ -590,7 +591,7 @@ export default function App() {
       )}
       {tab === 'collections' && (
         <StudioCollectionsWorkspace
-          api={trustedApi}
+          api={studioGateway}
           project={studioProject}
           createdBy={designer}
           onOpenProject={(projectId) => {
@@ -608,7 +609,7 @@ export default function App() {
       )}
       {tab === 'activity' && (
         <StudioActivityWorkspace
-          api={trustedApi}
+          api={studioGateway}
           owner={designer}
           onOpenReview={(job) => {
             if (job.active_design_id === null) return;

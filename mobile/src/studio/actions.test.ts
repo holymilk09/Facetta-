@@ -30,7 +30,7 @@ test('only Create is visible without an active design', () => {
   );
 });
 
-test('Factory stays inside More and requires explicit eligibility', () => {
+test('Factory readiness precedes the eligibility-gated Factory destination inside More', () => {
   const active = {
     ...emptyContext,
     activeDesignId: 'dsn_1',
@@ -40,7 +40,7 @@ test('Factory stays inside More and requires explicit eligibility', () => {
   };
   assert.deepEqual(
     getVisibleStudioActions(active, 'more').map((action) => action.id),
-    ['specifications'],
+    ['specifications', 'factory_readiness'],
   );
   assert.deepEqual(
     getVisibleStudioActions({ ...active, factoryEligible: true }, 'more').map((action) => action.id),

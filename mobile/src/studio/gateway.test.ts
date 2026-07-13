@@ -93,6 +93,36 @@ function fakeClient(overrides: Partial<GatewayClient> = {}): GatewayClient {
   } as GatewayClient;
 }
 
+test('Studio facade owns project and Activity reads and normalizes trusted errors', async () => {
+  const getProject = async (projectId: string) => {
+    assert.equal(projectId, 'project_1');
+    return ok(project());
+  };
+  const listStudioJobs = async () => ({
+    data: null,
+    error: {
+      code: 'TEMPORARY_FAILURE', message: 'Try again.', category: 'unknown' as const,
+      status: 503, retryable: true,
+    },
+    status: 503,
+  });
+  const gateway = createStudioGateway(fakeClient({
+    getProject,
+    listStudioJobs,
+    assetImageUrl: (assetId: string) => `https://facetta.test/assets/${assetId}`,
+  }));
+
+  const loaded = await gateway.getProject('project_1');
+  assert.equal(loaded.error, null);
+  assert.equal(loaded.data?.active_asset_id, 'asset_1');
+  assert.equal(gateway.assetImageUrl('asset_1'), 'https://facetta.test/assets/asset_1');
+
+  const activity = await gateway.listStudioJobs('designer_1');
+  assert.equal(activity.data, null);
+  assert.equal(activity.error?.category, 'unavailable');
+  assert.equal(activity.error?.retryable, true);
+});
+
 const catalogPreview = (): CatalogPreviewResult => ({
   status: 'preview_ready',
   component_path: 'metal.color',

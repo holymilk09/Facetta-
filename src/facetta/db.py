@@ -649,6 +649,8 @@ class PreviewCandidateRecord(Base):
     media_type: Mapped[str] = mapped_column(String(24), nullable=False)
     kind: Mapped[str] = mapped_column(String(24), nullable=False, index=True)
     status: Mapped[str] = mapped_column(String(16), nullable=False, index=True)
+    studio_job_id: Mapped[str | None] = mapped_column(
+        ForeignKey("studio_jobs.id"), nullable=True)
     payload: Mapped[dict] = mapped_column(SpecJSON, nullable=False)
     terminal_asset_id: Mapped[str | None] = mapped_column(
         ForeignKey("image_assets.id"), nullable=True)
@@ -663,6 +665,13 @@ class PreviewCandidateRecord(Base):
         DateTime(timezone=True), nullable=True)
 
     __table_args__ = (
+        Index(
+            "uq_preview_candidates_studio_job_id",
+            "studio_job_id",
+            unique=True,
+            sqlite_where=text("studio_job_id IS NOT NULL"),
+            postgresql_where=text("studio_job_id IS NOT NULL"),
+        ),
         CheckConstraint(
             "kind IN ('studio_visual', 'catalog_revision')",
             name="ck_preview_candidate_kind",
@@ -1384,6 +1393,32 @@ def _apply_additive_migrations(engine) -> None:
                     conn.execute(text(
                         "ALTER TABLE studio_presentation_candidates "
                         f"ADD COLUMN {column} {declaration}"))
+
+    # Catalog/visual PreviewCandidate rows predate durable StudioJob binding.
+    # Historical candidates remain readable with NULL; new catalog previews
+    # bind one canonical Refine job to one temporary candidate.
+    if inspector.has_table("preview_candidates"):
+        preview_columns = {
+            c["name"] for c in inspector.get_columns("preview_candidates")
+        }
+        if "studio_job_id" not in preview_columns:
+            with engine.begin() as conn:
+                conn.execute(text(
+                    "ALTER TABLE preview_candidates "
+                    "ADD COLUMN studio_job_id VARCHAR(32) "
+                    "REFERENCES studio_jobs(id)"
+                ))
+        preview_indexes = {
+            item["name"]
+            for item in inspect(engine).get_indexes("preview_candidates")
+        }
+        if "uq_preview_candidates_studio_job_id" not in preview_indexes:
+            with engine.begin() as conn:
+                conn.execute(text(
+                    "CREATE UNIQUE INDEX uq_preview_candidates_studio_job_id "
+                    "ON preview_candidates (studio_job_id) "
+                    "WHERE studio_job_id IS NOT NULL"
+                ))
 
 
 def normalize_database_url(url: str) -> str:

@@ -18,6 +18,7 @@ import type {
   CatalogPreviewCandidate,
   CatalogPreviewDiscardResult,
   CatalogPreviewListResult,
+  CatalogPreviewRequest,
   CatalogPreviewResult,
   CatalogWarningCandidate,
   ChecklistCreateRequest,
@@ -1856,6 +1857,8 @@ const decodeCatalogPreviewCandidate: Decoder<CatalogPreviewCandidate> = (value) 
   const discardUrl = nullableText(value.discard_url);
   const saveAsVariationUrl = nullableText(value.save_as_variation_url);
   const expiresInSeconds = number(value.expires_in_seconds);
+  const studioJobId = value.studio_job_id === null
+    ? null : nullableText(value.studio_job_id);
   if (
     runId === null || candidateId === null || previewUrl === null
     || acceptUrl === null || discardUrl === null || saveAsVariationUrl === null
@@ -1878,6 +1881,7 @@ const decodeCatalogPreviewCandidate: Decoder<CatalogPreviewCandidate> = (value) 
     discard_url: discardUrl,
     save_as_variation_url: saveAsVariationUrl,
     verdict: value.verdict,
+    studio_job_id: studioJobId,
     expires_in_seconds: expiresInSeconds,
   };
 };
@@ -1958,6 +1962,7 @@ interface CatalogPreviewListWireItem {
   qa: ImageQualityReport;
   routing: ImageRoutingSummary;
   expires_at: string;
+  studio_job_id: string | null;
 }
 
 const decodeCatalogPreviewListWire: Decoder<{ candidates: CatalogPreviewListWireItem[] }> = (value) => {
@@ -1978,6 +1983,8 @@ const decodeCatalogPreviewListWire: Decoder<{ candidates: CatalogPreviewListWire
     const routing = decodeRouting(item.routing);
     const expiresAt = nullableText(item.expires_at);
     const verdict = item.verdict;
+    const studioJobId = item.studio_job_id === null
+      ? null : nullableText(item.studio_job_id);
     if (
       candidateId === null || imageRunId === null || sourceAssetId === null
       || previewUrl === null || saveAsVariationUrl === null || componentPath === null || optionId === null
@@ -1993,6 +2000,7 @@ const decodeCatalogPreviewListWire: Decoder<{ candidates: CatalogPreviewListWire
       component_path: componentPath, option_id: optionId,
       requested_change: requestedChange, next_spec: nextSpec,
       spec_change: specChange, qa, routing, expires_at: expiresAt,
+      studio_job_id: studioJobId,
     };
   });
   return candidates.some((item) => item === null)
@@ -4206,12 +4214,16 @@ export function createTrustedApiClient(options: TrustedApiClientOptions) {
 
     async previewCatalogSelection(
       activeAssetId: string,
-      request: CatalogApplyRequest,
+      request: CatalogPreviewRequest,
     ): Promise<ApiResult<CatalogPreviewResult>> {
       const result = await jsonCall(
         `/assets/${encodeURIComponent(activeAssetId)}/catalog/preview`,
         'POST',
-        catalogApplyBody(request),
+        {
+          ...catalogApplyBody(request),
+          ...(request.studio_job_id === undefined
+            ? {} : { studio_job_id: request.studio_job_id }),
+        },
         decodeCatalogPreviewResult,
       );
       if (result.error !== null) return result;
@@ -4263,6 +4275,7 @@ export function createTrustedApiClient(options: TrustedApiClientOptions) {
           discard_url: root,
           save_as_variation_url: item.save_as_variation_url,
           verdict: item.verdict,
+          studio_job_id: item.studio_job_id,
           expires_in_seconds: Math.max(1, expiresInSeconds),
         }, baseUrl);
         return candidate === null || expiresInSeconds < 1 ? null : {
@@ -5071,6 +5084,30 @@ export function createTrustedApiClient(options: TrustedApiClientOptions) {
     async getFactoryPack(projectId: string): Promise<ApiResult<FactoryPackManifest>> {
       const result = await call(`/projects/${encodeURIComponent(projectId)}/factory-pack`,
         decodeFactoryPackManifest);
+      if (result.error !== null) return result;
+      const bundleUrl = result.data.bundle_url
+        || `${baseUrl}/projects/${encodeURIComponent(projectId)}/factory-pack.zip`;
+      return {
+        ...result,
+        data: {
+          ...result.data,
+          bundle_url: bundleUrl,
+          artifacts: result.data.artifacts.map((artifact) => ({
+            ...artifact,
+            url: artifact.url || bundleUrl,
+          })),
+        },
+      };
+    },
+
+    async prepareFactoryPack(
+      projectId: string,
+      request: { studio_job_id: string; owner: string },
+    ): Promise<ApiResult<FactoryPackManifest>> {
+      const result = await jsonCall(
+        `/projects/${encodeURIComponent(projectId)}/factory-pack`,
+        'POST', request, decodeFactoryPackManifest,
+      );
       if (result.error !== null) return result;
       const bundleUrl = result.data.bundle_url
         || `${baseUrl}/projects/${encodeURIComponent(projectId)}/factory-pack.zip`;

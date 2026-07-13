@@ -271,18 +271,52 @@ def rasterize_component_mask(
     component_id: str,
 ) -> bytes:
     """Rasterize white-edit/black-preserve polygons at the bound dimensions."""
-    component = component_map.component(component_id)
+    return rasterize_component_masks(component_map, (component_id,))
+
+
+def rasterize_component_masks(
+    component_map: RevisionComponentMap,
+    component_ids: tuple[str, ...],
+) -> bytes:
+    """Rasterize the exact union of resolved semantic component regions.
+
+    Catalog edits can legitimately target a semantic aggregate (for example,
+    all visible ring metal).  The aggregate must still be made exclusively
+    from resolved identities in one immutable, raster-bound component map.
+    Missing, unresolved, or empty target sets fail before any image provider
+    can receive the request.
+    """
+    if not component_ids:
+        raise ComponentMapError(
+            "a component edit requires at least one mapped target",
+            code="target_component_required",
+        )
+    if len(component_ids) != len(set(component_ids)):
+        raise ComponentMapError(
+            "component edit targets must be unique",
+            code="target_component_duplicate",
+        )
+    components = tuple(
+        component_map.component(component_id)
+        for component_id in component_ids
+    )
     mask = Image.new(
         "L", (component_map.raster_width, component_map.raster_height), 0
     )
     draw = ImageDraw.Draw(mask)
     max_x = component_map.raster_width - 1
     max_y = component_map.raster_height - 1
-    for polygon in component.polygons:
-        draw.polygon(
-            [(round(point.x * max_x), round(point.y * max_y))
-             for point in polygon.points],
-            fill=255,
+    for component in components:
+        for polygon in component.polygons:
+            draw.polygon(
+                [(round(point.x * max_x), round(point.y * max_y))
+                 for point in polygon.points],
+                fill=255,
+            )
+    if mask.getbbox() is None:
+        raise ComponentMapError(
+            "mapped target regions rasterized to an empty mask",
+            code="target_component_mask_empty",
         )
     output = io.BytesIO()
     mask.save(output, format="PNG", optimize=True)

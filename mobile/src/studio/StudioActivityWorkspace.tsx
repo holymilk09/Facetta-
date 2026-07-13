@@ -10,11 +10,11 @@ import {
 
 import { Button, Notice } from '../components';
 import { theme } from '../theme';
-import type { TrustedApiClient } from '../trusted/client';
 import type { StudioJobAction, StudioJobRecord, StudioJobStatus } from '../trusted/types';
 import { designerErrorMessage } from './designerErrorMessage';
+import type { StudioGateway } from './gateway';
 
-export type StudioActivityApi = Pick<TrustedApiClient,
+export type StudioActivityApi = Pick<StudioGateway,
   'listStudioJobs' | 'cancelStudioJob'
 >;
 

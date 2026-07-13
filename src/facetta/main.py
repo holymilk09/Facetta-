@@ -58,6 +58,14 @@ PRODUCTION_CATALOG_PATHS = frozenset({
     "/assets/{active_asset_id}/catalog/previews",
 })
 
+PRODUCTION_TRUSTED_PATHS = frozenset({
+    "/image-runs/{run_id}/candidates/{candidate_id}/image",
+    "/image-runs/{run_id}/candidates/{candidate_id}/accept",
+    "/image-runs/{run_id}/candidates/{candidate_id}/discard",
+    "/projects/{project_id}/factory-pack",
+    "/projects/{project_id}/factory-pack.zip",
+})
+
 
 def _production_spec_router() -> APIRouter:
     router = APIRouter()
@@ -124,7 +132,10 @@ def create_app() -> FastAPI:
     application.include_router(projects.router)
     application.include_router(studio.router)
     application.include_router(studio_facts.router)
-    application.include_router(trusted.router)
+    application.include_router(
+        _filtered_router(trusted.router, PRODUCTION_TRUSTED_PATHS)
+        if production else trusted.router
+    )
     if not production:
         application.include_router(designs.router)
         application.include_router(share.router)

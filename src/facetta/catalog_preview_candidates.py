@@ -17,13 +17,25 @@ from facetta.db import (
     ImageRun,
     PreviewCandidateRecord,
     Project,
+    StudioJobRecord,
     new_id,
     utcnow,
 )
 from facetta.image_identity import spec_visual_hash
 from facetta.json_types import JsonObject
 from facetta.project_backbone import is_primary_revision
+from facetta.revision_component_map import (
+    ComponentMapError,
+    component_map_hash,
+    rasterize_component_masks,
+)
+from facetta.revision_component_map_store import load_revision_component_map
 from facetta.spec import Spec
+from facetta.studio_jobs import (
+    StudioJobAccountingError,
+    record_accepted_studio_job_outputs,
+    studio_job_action_definition,
+)
 
 
 _TTL_SECONDS = 2 * 60 * 60
@@ -31,6 +43,10 @@ _TTL_SECONDS = 2 * 60 * 60
 
 class CatalogPreviewUnavailable(LookupError):
     """The temporary preview is foreign, terminal, expired, or stale."""
+
+
+class CatalogPreviewJobError(ValueError):
+    """A temporary catalog candidate cannot bind or settle its Refine job."""
 
 
 @dataclass(frozen=True)
@@ -59,6 +75,10 @@ class CatalogPreviewCandidate:
     routing: JsonObject
     created_by: str
     expires_at: datetime
+    component_map_sha256: str | None
+    target_component_ids: tuple[str, ...]
+    target_mask_sha256: str | None
+    studio_job_id: str | None
 
 
 def _utc(value: datetime) -> datetime:
@@ -92,6 +112,10 @@ def _candidate(record: PreviewCandidateRecord) -> CatalogPreviewCandidate:
         routing=payload["routing"],
         created_by=record.owner,
         expires_at=_utc(record.expires_at),
+        component_map_sha256=payload.get("component_map_sha256"),
+        target_component_ids=tuple(payload.get("target_component_ids", ())),
+        target_mask_sha256=payload.get("target_mask_sha256"),
+        studio_job_id=record.studio_job_id,
     )
 
 
@@ -105,7 +129,115 @@ def _active_primary(db: Session, root_id: str) -> ImageAsset | None:
     return primary[-1] if primary else None
 
 
+def _bind_refine_job(
+    db: Session,
+    *,
+    job_id: str,
+    owner: str,
+    project_root_id: str,
+    source_asset_id: str,
+) -> None:
+    job = db.scalar(select(StudioJobRecord).where(
+        StudioJobRecord.id == job_id).with_for_update())
+    canonical = studio_job_action_definition("refine")
+    if job is None or job.owner != owner:
+        raise CatalogPreviewJobError("the Studio Refine job is unavailable")
+    if (
+        job.action_id != "refine"
+        or job.lane != canonical.lane
+        or job.credits_per_output != canonical.credits_per_output
+        or job.requested_outputs != 1
+    ):
+        raise CatalogPreviewJobError(
+            "this candidate requires a canonical one-output Studio Refine job")
+    if job.status not in {"running", "reviewing"}:
+        raise CatalogPreviewJobError(
+            f"the Studio Refine job is already {job.status}")
+    if (
+        job.active_design_id != project_root_id
+        or job.source_revision_id != source_asset_id
+    ):
+        raise CatalogPreviewJobError(
+            "the Studio Refine job belongs to another exact revision")
+    job.status = "reviewing"
+    job.progress = max(job.progress, 0.9)
+    job.updated_at = utcnow()
+
+
+def validate_catalog_preview_refine_job(
+    db: Session,
+    *,
+    job_id: str,
+    owner: str,
+    project_root_id: str,
+    source_asset_id: str,
+) -> None:
+    """Fail before provider work; store revalidates under lock before binding."""
+    job = db.get(StudioJobRecord, job_id)
+    canonical = studio_job_action_definition("refine")
+    if job is None or job.owner != owner:
+        raise CatalogPreviewJobError("the Studio Refine job is unavailable")
+    if (
+        job.action_id != "refine"
+        or job.lane != canonical.lane
+        or job.credits_per_output != canonical.credits_per_output
+        or job.requested_outputs != 1
+    ):
+        raise CatalogPreviewJobError(
+            "this candidate requires a canonical one-output Studio Refine job")
+    if job.status not in {"running", "reviewing"}:
+        raise CatalogPreviewJobError(
+            f"the Studio Refine job is already {job.status}")
+    if (
+        job.active_design_id != project_root_id
+        or job.source_revision_id != source_asset_id
+    ):
+        raise CatalogPreviewJobError(
+            "the Studio Refine job belongs to another exact revision")
+
+
+def _settle_zero_job(
+    db: Session,
+    record: PreviewCandidateRecord,
+) -> None:
+    if record.studio_job_id is None:
+        return
+    job = db.scalar(select(StudioJobRecord).where(
+        StudioJobRecord.id == record.studio_job_id).with_for_update())
+    canonical = studio_job_action_definition("refine")
+    if (
+        job is None
+        or job.owner != record.owner
+        or job.action_id != "refine"
+        or job.lane != canonical.lane
+        or job.credits_per_output != canonical.credits_per_output
+        or job.requested_outputs != 1
+        or job.active_design_id != record.project_root_id
+        or job.source_revision_id != record.source_asset_id
+    ):
+        raise CatalogPreviewJobError(
+            "the catalog preview Studio Refine job is unavailable")
+    if job.charged_outputs != 0:
+        raise CatalogPreviewJobError(
+            "a charged Studio Refine job cannot settle as zero output")
+    if job.status == "canceled":
+        if job.completed_outputs != 0:
+            raise CatalogPreviewJobError(
+                "the canceled Studio Refine job has inconsistent output evidence")
+        return
+    if job.status not in {"running", "reviewing"}:
+        raise CatalogPreviewJobError(
+            f"the Studio Refine job cannot settle from {job.status}")
+    job.status = "canceled"
+    job.progress = 1
+    job.completed_outputs = 0
+    job.charged_outputs = 0
+    job.error_code = None
+    job.updated_at = utcnow()
+
+
 def _expire(db: Session, record: PreviewCandidateRecord) -> None:
+    _settle_zero_job(db, record)
     record.status = "expired"
     record.image = b""
     record.resolved_at = utcnow()
@@ -161,13 +293,56 @@ def _owned_reviewing_record(
         and record.expected_design_version is not None
         else None
     )
+    source_spec = (
+        Spec.model_validate(version.spec) if version is not None else None
+    )
     source_spec_hash = (
-        spec_visual_hash(Spec.model_validate(version.spec))
-        if version is not None else None
+        spec_visual_hash(source_spec) if source_spec is not None else None
     )
     target_spec_hash = spec_visual_hash(
         Spec.model_validate(payload["next_spec"])
     )
+    component_lineage_valid = True
+    expected_map_hash = payload.get("component_map_sha256")
+    expected_mask_hash = payload.get("target_mask_sha256")
+    target_component_ids = tuple(payload.get("target_component_ids", ()))
+    has_component_lineage = any((
+        expected_map_hash is not None,
+        expected_mask_hash is not None,
+        bool(target_component_ids),
+    ))
+    # Ring catalog previews created before component targeting became
+    # authoritative cannot be grandfathered into Apply: they have no proof of
+    # the region shown to the provider. Necklace mapping remains out of v1.
+    component_lineage_required = (
+        source_spec is not None and source_spec.jewelry_type == "ring"
+    )
+    if component_lineage_required and not has_component_lineage:
+        component_lineage_valid = False
+    elif has_component_lineage and not (
+        isinstance(expected_map_hash, str)
+        and isinstance(expected_mask_hash, str)
+        and bool(target_component_ids)
+    ):
+        component_lineage_valid = False
+    elif has_component_lineage:
+        try:
+            component_map = load_revision_component_map(
+                db, record.source_asset_id)
+            if component_map is None or not target_component_ids:
+                component_lineage_valid = False
+            else:
+                current_mask = rasterize_component_masks(
+                    component_map, target_component_ids)
+                current_mask_hash = hashlib.sha256(current_mask).hexdigest()
+                component_lineage_valid = (
+                    component_map_hash(component_map) == expected_map_hash
+                    and current_mask_hash == expected_mask_hash
+                    and run is not None
+                    and run.mask_hash == expected_mask_hash
+                )
+        except (ComponentMapError, TypeError, ValueError):
+            component_lineage_valid = False
     if (
         project is None
         or project.owner != owner
@@ -188,6 +363,7 @@ def _owned_reviewing_record(
         or run.source_hash != record.source_sha256
         or run.source_spec_visual_hash != payload["source_spec_visual_hash"]
         or run.spec_visual_hash != payload["target_spec_visual_hash"]
+        or not component_lineage_valid
     ):
         raise CatalogPreviewUnavailable(
             "the catalog preview no longer matches the exact image/spec source"
@@ -219,7 +395,19 @@ def store_catalog_preview_candidate(
     qa: JsonObject,
     routing: JsonObject,
     created_by: str,
+    component_map_sha256: str | None = None,
+    target_component_ids: tuple[str, ...] = (),
+    target_mask_sha256: str | None = None,
+    studio_job_id: str | None = None,
 ) -> CatalogPreviewCandidate:
+    if studio_job_id is not None:
+        _bind_refine_job(
+            db,
+            job_id=studio_job_id,
+            owner=created_by,
+            project_root_id=project_root_id,
+            source_asset_id=source_asset_id,
+        )
     now = utcnow()
     record = PreviewCandidateRecord(
         id=new_id("cand"),
@@ -235,6 +423,7 @@ def store_catalog_preview_candidate(
         media_type=media_type,
         kind="catalog_revision",
         status="reviewing",
+        studio_job_id=studio_job_id,
         payload={
             "verdict": verdict,
             "source_spec_visual_hash": source_spec_visual_hash,
@@ -248,6 +437,9 @@ def store_catalog_preview_candidate(
             "spec_change": list(spec_change),
             "qa": qa,
             "routing": routing,
+            "component_map_sha256": component_map_sha256,
+            "target_component_ids": list(target_component_ids),
+            "target_mask_sha256": target_mask_sha256,
         },
         created_at=now,
         expires_at=now + timedelta(seconds=_TTL_SECONDS),
@@ -340,6 +532,8 @@ def resolve_catalog_preview_candidate(
         terminal_asset_id is None or review_id is None
     ):
         raise ValueError("accepted previews require asset and review identities")
+    if status == "discarded":
+        _settle_zero_job(db, record)
     record.status = status
     record.terminal_asset_id = terminal_asset_id
     record.review_id = review_id
@@ -362,6 +556,28 @@ def discard_catalog_preview_candidate(
     resolve_catalog_preview_candidate(
         db, run_id, candidate_id, owner=owner, status="discarded",
     )
+
+
+def settle_catalog_preview_acceptance(
+    db: Session,
+    candidate: CatalogPreviewCandidate,
+    *,
+    owner: str,
+) -> None:
+    """Settle one accepted output inside the caller's canonical transaction."""
+    if candidate.studio_job_id is None:
+        return
+    try:
+        record_accepted_studio_job_outputs(
+            db,
+            job_id=candidate.studio_job_id,
+            owner=owner,
+            completed_outputs=1,
+            active_design_id=candidate.project_root_id,
+            source_revision_id=candidate.source_asset_id,
+        )
+    except StudioJobAccountingError as exc:
+        raise CatalogPreviewJobError(str(exc)) from exc
 
 
 def clear_catalog_preview_candidates_for_tests() -> None:
