@@ -44,17 +44,22 @@ describe('StudioViewsWorkspace', () => {
 
   test('previews from exact lineage and saves only after explicit review', async () => {
     const onSaved = jest.fn();
+    const onOpenCollections = jest.fn();
     const previewLineArtView = jest.fn(async () => ({ data: preview, error: null, status: 202 }));
+    const assetImageUrl = jest.fn(() => 'https://test/source.png');
     const acceptLineArtView = jest.fn(async () => ({
       data: { preview, project }, error: null, status: 201,
     }));
     await render(
       <AuthenticatedImageProvider allowedOrigin="https://test" headers={{ Authorization: 'Bearer first-party-token' }}>
         <StudioViewsWorkspace
-          gateway={{ previewLineArtView, acceptLineArtView, discardLineArtView: jest.fn() } as any}
+          gateway={{
+            previewLineArtView, assetImageUrl, acceptLineArtView, discardLineArtView: jest.fn(),
+          } as any}
           lineage={lineage}
           createdBy="designer"
           onSaved={onSaved}
+          onOpenCollections={onOpenCollections}
           imageRequestHeaders={{ Authorization: 'Bearer first-party-token' }}
         />
       </AuthenticatedImageProvider>,
@@ -65,6 +70,14 @@ describe('StudioViewsWorkspace', () => {
     await act(async () => { fireEvent.press(screen.getByText('Preview view')); });
     expect(await screen.findByText('Your design is still unchanged.')).toBeTruthy();
     expect(previewLineArtView).toHaveBeenCalledWith({ ...lineage, createdBy: 'designer', view: 'front' });
+    expect(assetImageUrl).toHaveBeenCalledWith('asset_7');
+    expect(screen.getByText('Compare before saving')).toBeTruthy();
+    expect(screen.getByText('Exact source · unchanged')).toBeTruthy();
+    expect(screen.getByText('Candidate · not saved')).toBeTruthy();
+    expect(screen.getByLabelText('Exact source revision').props.source).toEqual({
+      uri: 'https://test/source.png',
+      headers: { Authorization: 'Bearer first-party-token' },
+    });
     expect(screen.getByLabelText('Temporary front view').props.source.headers).toEqual({
       Authorization: 'Bearer first-party-token',
     });
@@ -73,6 +86,8 @@ describe('StudioViewsWorkspace', () => {
     await act(async () => { fireEvent.press(screen.getByText('Save view')); });
     await waitFor(() => expect(onSaved).toHaveBeenCalledWith(project));
     expect(screen.getByText('View saved beside the design. The active design revision did not change.')).toBeTruthy();
+    fireEvent.press(screen.getByText('Open in Collections'));
+    expect(onOpenCollections).toHaveBeenCalledTimes(1);
   });
 
   test('disables saving when fidelity checks reject the preview', async () => {
@@ -95,6 +110,26 @@ describe('StudioViewsWorkspace', () => {
     fireEvent.press(await screen.findByText('Save view'));
     expect(acceptLineArtView).not.toHaveBeenCalled();
     expect(screen.getByText('This view cannot be saved')).toBeTruthy();
+  });
+
+  test('does not save when the exact source cannot be displayed for comparison', async () => {
+    const acceptLineArtView = jest.fn();
+    await render(
+      <StudioViewsWorkspace
+        gateway={{
+          previewLineArtView: jest.fn(async () => ({ data: preview, error: null, status: 202 })),
+          acceptLineArtView,
+          discardLineArtView: jest.fn(),
+        } as any}
+        lineage={lineage}
+        createdBy="designer"
+        onSaved={jest.fn()}
+      />,
+    );
+    await act(async () => { fireEvent.press(screen.getByText('Preview view')); });
+    expect(await screen.findByText(/exact source cannot be displayed/i)).toBeTruthy();
+    fireEvent.press(screen.getByText('Save view'));
+    expect(acceptLineArtView).not.toHaveBeenCalled();
   });
 
   test('restores a durable temporary view after the workspace remounts', async () => {
@@ -139,7 +174,7 @@ describe('StudioViewsWorkspace', () => {
     });
     expect(screen.queryByText('Your design is still unchanged.')).toBeNull();
     expect(screen.queryByText('A saved view preview was resumed for review.')).toBeNull();
-    expect(screen.getByText('Confirmed revision 5')).toBeTruthy();
+    expect(screen.getByText('Design facts version 5')).toBeTruthy();
 
     await act(async () => { resolveB?.({ data: previewB, error: null, status: 200 }); });
     expect(await screen.findByLabelText(/Temporary side view/)).toBeTruthy();

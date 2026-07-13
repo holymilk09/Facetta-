@@ -38,6 +38,12 @@ export interface StudioCollectionsWorkspaceProps {
   onOpenProject: (projectId: string) => void;
   onProjectChanged: (project: ProjectDetail) => void;
   onVariationCreated: (project: ProjectDetail) => void;
+  /** Host-owned authenticated delivery. Protected bytes are fetched only after Export. */
+  deliverProtectedFile?: (request: {
+    url: string;
+    name: string;
+    mediaType: string;
+  }) => Promise<void>;
   /** Optional host navigation; the workspace has an internal fallback. */
   onShowAllFamilies?: () => void;
 }
@@ -113,6 +119,18 @@ const savedOutputLabel = (capability: string): string => ({
   FACTORY_DRAWING: 'Factory review drawing',
 })[capability] ?? 'Saved output';
 
+function savedOutputFileName(output: AssetSummary): string {
+  const stem = savedOutputLabel(output.capability).toLowerCase().replace(/[^a-z0-9]+/g, '-');
+  const extension = ({
+    'image/jpeg': 'jpg',
+    'image/png': 'png',
+    'image/webp': 'webp',
+    'image/avif': 'avif',
+    'image/svg+xml': 'svg',
+  })[output.media_type] ?? 'bin';
+  return `facetta-${stem}.${extension}`;
+}
+
 function savedOutputLineage(
   output: AssetSummary,
   project: ProjectDetail,
@@ -121,16 +139,24 @@ function savedOutputLineage(
   const revisionsByAsset = new Map(revisions.map((revision) => (
     [revision.asset_id, revision] as const
   )));
-  const assetsById = new Map(project.assets.map((asset) => [asset.asset_id, asset] as const));
+  const assetsById = new Map(
+    [...project.assets, ...project.derived_assets].map((asset) => (
+      [asset.asset_id, asset] as const
+    )),
+  );
   const visited = new Set<string>();
   let sourceId = output.parent_asset_id;
   while (sourceId !== null && !visited.has(sourceId)) {
     visited.add(sourceId);
     const sourceRevision = revisionsByAsset.get(sourceId);
     if (sourceRevision !== undefined) return `From Revision ${sourceRevision.revision}`;
-    sourceId = assetsById.get(sourceId)?.parent_asset_id ?? null;
+    const sourceAsset = assetsById.get(sourceId);
+    if (sourceAsset === undefined) {
+      return 'Source revision unavailable · lineage not shown';
+    }
+    sourceId = sourceAsset.parent_asset_id;
   }
-  return 'Saved beside this variation · exact source retained';
+  return 'Source revision unavailable · lineage not shown';
 }
 
 export function StudioCollectionsWorkspace({
@@ -141,6 +167,7 @@ export function StudioCollectionsWorkspace({
   onProjectChanged,
   onVariationCreated,
   onShowAllFamilies,
+  deliverProtectedFile,
 }: StudioCollectionsWorkspaceProps) {
   const [data, setData] = useState<WorkspaceData | null>(null);
   const [loading, setLoading] = useState(project !== null);
@@ -151,6 +178,8 @@ export function StudioCollectionsWorkspace({
   const [restoringAssetId, setRestoringAssetId] = useState<string | null>(null);
   const [families, setFamilies] = useState<DesignFamilyDetail[] | null>(null);
   const [viewingAllFamilies, setViewingAllFamilies] = useState(false);
+  const [exportingAssetId, setExportingAssetId] = useState<string | null>(null);
+  const [exportError, setExportError] = useState<string | null>(null);
 
   useEffect(() => {
     let current = true;
@@ -158,6 +187,8 @@ export function StudioCollectionsWorkspace({
     setError(null);
     setCompareAssetIds([]);
     setVariationLabel('');
+    setExportingAssetId(null);
+    setExportError(null);
     if (project === null || viewingAllFamilies) {
       setLoading(true);
       setFamilies(null);
@@ -211,6 +242,23 @@ export function StudioCollectionsWorkspace({
     });
     return () => { current = false; };
   }, [api, createdBy, project?.root_id, viewingAllFamilies]);
+
+  const exportSavedOutput = async (output: AssetSummary): Promise<void> => {
+    if (deliverProtectedFile === undefined) return;
+    setExportingAssetId(output.asset_id);
+    setExportError(null);
+    try {
+      await deliverProtectedFile({
+        url: api.assetImageUrl(output.asset_id),
+        name: savedOutputFileName(output),
+        mediaType: output.media_type,
+      });
+    } catch {
+      setExportError(`Facetta could not export the ${savedOutputLabel(output.capability).toLowerCase()}. Try again.`);
+    } finally {
+      setExportingAssetId(null);
+    }
+  };
 
   const showAllFamilies = (): void => {
     if (onShowAllFamilies !== undefined) {
@@ -532,10 +580,21 @@ export function StudioCollectionsWorkspace({
                   {savedOutputLineage(output, project, data.history.revisions)}
                 </Text>
                 {output.created_at !== null && <Text style={styles.meta}>{dateLabel(output.created_at)}</Text>}
+                {deliverProtectedFile !== undefined && (
+                  <Button
+                    title={exportingAssetId === output.asset_id
+                      ? `Exporting ${savedOutputLabel(output.capability).toLowerCase()}…`
+                      : `Export ${savedOutputLabel(output.capability).toLowerCase()}`}
+                    kind="ghost"
+                    disabled={exportingAssetId !== null}
+                    onPress={() => { void exportSavedOutput(output); }}
+                  />
+                )}
               </View>
             ))}
           </View>
         )}
+        {exportError !== null && <Notice kind="error" text={exportError} />}
       </View>
 
       {compared.length === 2 && (

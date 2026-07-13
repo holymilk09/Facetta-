@@ -175,7 +175,14 @@ describe('StudioCollectionsWorkspace', () => {
       ],
       derived_assets: [
         {
-          asset_id: 'client_output', root_id: 'project_main', parent_asset_id: 'asset_2',
+          asset_id: 'presentation_source', root_id: 'project_main', parent_asset_id: 'asset_2',
+          capability: 'EVALUATION_IMAGE', provenance: 'generated_concept', revision: null,
+          design_id: 'design_ring', design_version: 2, region: null, instruction: null,
+          drift: 0.01, pinned: false, media_type: 'image/png', image_url: 'https://test/source.png',
+          created_by: 'usr_designer', created_at: '2026-07-12T03:30:00Z', legacy_provenance: false,
+        },
+        {
+          asset_id: 'client_output', root_id: 'project_main', parent_asset_id: 'presentation_source',
           capability: 'CLIENT_BEAUTY_RENDER', provenance: 'generated_concept', revision: null,
           design_id: 'design_ring', design_version: 2, region: null, instruction: null,
           drift: 0.01, pinned: false, media_type: 'image/png', image_url: 'https://test/client.png',
@@ -188,9 +195,17 @@ describe('StudioCollectionsWorkspace', () => {
           drift: 0.01, pinned: false, media_type: 'image/png', image_url: 'https://test/view.png',
           created_by: 'usr_designer', created_at: '2026-07-12T03:00:00Z', legacy_provenance: false,
         },
+        {
+          asset_id: 'marketing_output', root_id: 'project_main', parent_asset_id: 'asset_2',
+          capability: 'MARKETING_IMAGE', provenance: 'generated_concept', revision: null,
+          design_id: 'design_ring', design_version: 2, region: null, instruction: null,
+          drift: 0.01, pinned: false, media_type: 'image/webp', image_url: 'https://test/marketing.webp',
+          created_by: 'usr_designer', created_at: '2026-07-12T05:00:00Z', legacy_provenance: false,
+        },
       ],
     };
     const client = api();
+    const deliverProtectedFile = jest.fn(async () => undefined);
     await render(
       <AuthenticatedImageProvider
         allowedOrigin="https://test"
@@ -199,6 +214,7 @@ describe('StudioCollectionsWorkspace', () => {
           api={client}
           project={savedProject}
           createdBy="usr_designer"
+          deliverProtectedFile={deliverProtectedFile}
           {...callbacks()}
         />
       </AuthenticatedImageProvider>,
@@ -207,11 +223,87 @@ describe('StudioCollectionsWorkspace', () => {
     expect(await screen.findByText('Saved outputs')).toBeTruthy();
     expect(screen.getByText('Client beauty render')).toBeTruthy();
     expect(screen.getByText('Saved technical view')).toBeTruthy();
-    expect(screen.getAllByText('From Revision 2')).toHaveLength(2);
+    expect(screen.getByText('Marketing image')).toBeTruthy();
+    expect(screen.getAllByText('From Revision 2')).toHaveLength(3);
     expect(screen.getByLabelText('Client beauty render').props.source.headers).toEqual({
       Authorization: 'Bearer first-party-token',
     });
     expect(screen.queryByText(/generated_concept|designer_confirmed|CLIENT_BEAUTY_RENDER|LINE_ART/i)).toBeNull();
+    expect(deliverProtectedFile).not.toHaveBeenCalled();
+
+    await fireEvent.press(screen.getByText('Export client beauty render'));
+    await waitFor(() => expect(deliverProtectedFile).toHaveBeenCalledWith({
+      url: 'https://test/assets/client_output.png',
+      name: 'facetta-client-beauty-render.png',
+      mediaType: 'image/png',
+    }));
+    await fireEvent.press(screen.getByText('Export saved technical view'));
+    await waitFor(() => expect(deliverProtectedFile).toHaveBeenCalledWith({
+      url: 'https://test/assets/view_output.png',
+      name: 'facetta-saved-technical-view.png',
+      mediaType: 'image/png',
+    }));
+    await fireEvent.press(screen.getByText('Export marketing image'));
+    await waitFor(() => expect(deliverProtectedFile).toHaveBeenCalledWith({
+      url: 'https://test/assets/marketing_output.png',
+      name: 'facetta-marketing-image.webp',
+      mediaType: 'image/webp',
+    }));
+  });
+
+  test('fails closed when a saved output source cannot be resolved', async () => {
+    const unresolvedProject: ProjectDetail = {
+      ...project,
+      derived_assets: [{
+        asset_id: 'client_output', root_id: 'project_main', parent_asset_id: 'missing_source',
+        capability: 'CLIENT_BEAUTY_RENDER', provenance: 'generated_concept', revision: null,
+        design_id: 'design_ring', design_version: 2, region: null, instruction: null,
+        drift: 0.01, pinned: false, media_type: 'image/png', image_url: 'https://test/client.png',
+        created_by: 'usr_designer', created_at: '2026-07-12T04:00:00Z', legacy_provenance: false,
+      }],
+    };
+    await render(
+      <StudioCollectionsWorkspace
+        api={api()}
+        project={unresolvedProject}
+        createdBy="usr_designer"
+        {...callbacks()}
+      />,
+    );
+
+    expect(await screen.findByText('Client beauty render')).toBeTruthy();
+    expect(screen.getByText('Source revision unavailable · lineage not shown')).toBeTruthy();
+    expect(screen.queryByText(/exact source retained/i)).toBeNull();
+  });
+
+  test('reports a protected export failure without opening or changing the saved output', async () => {
+    const savedProject: ProjectDetail = {
+      ...project,
+      derived_assets: [{
+        asset_id: 'client_output', root_id: 'project_main', parent_asset_id: 'asset_2',
+        capability: 'CLIENT_BEAUTY_RENDER', provenance: 'generated_concept', revision: null,
+        design_id: 'design_ring', design_version: 2, region: null, instruction: null,
+        drift: 0.01, pinned: false, media_type: 'image/png', image_url: 'https://test/client.png',
+        created_by: 'usr_designer', created_at: '2026-07-12T04:00:00Z', legacy_provenance: false,
+      }],
+    };
+    const deliverProtectedFile = jest.fn(async () => { throw new Error('Session expired'); });
+    await render(
+      <StudioCollectionsWorkspace
+        api={api()}
+        project={savedProject}
+        createdBy="usr_designer"
+        deliverProtectedFile={deliverProtectedFile}
+        {...callbacks()}
+      />,
+    );
+
+    await screen.findByText('Client beauty render');
+    await fireEvent.press(screen.getByText('Export client beauty render'));
+    expect(await screen.findByText(
+      'Facetta could not export the client beauty render. Try again.',
+    )).toBeTruthy();
+    expect(screen.getByText('Client beauty render')).toBeTruthy();
   });
 
   test('navigates to All families and back without requiring host-level state changes', async () => {

@@ -1,29 +1,31 @@
 # Facetta
 
-A design-to-manufacturing platform for the jewelry industry. Designers describe a piece
-via structured parameters drawn from a controlled gemological vocabulary; the system
-compiles that into an immutable spec object which drives every output — an annotated
-technical sheet for factories, an interactive 3D preview, and (later) photoreal client
-renders.
+Facetta Studio is an AI jewelry-design workspace built around a short, reversible loop:
+start from a sentence or reference, choose a direction, refine it without unrelated
+drift, and keep every useful variation and revision. An exact saved revision can become
+a client image, marketing asset, or optional factory-review package when the designer
+chooses. Factory is a destination, not a required stage of design.
 
 Read `CLAUDE.md` for the project constitution, `docs/PRD.md` for product requirements,
 `docs/SPEC_SCHEMA.md` for the spec object schema, and `TASKS.md` for the build order.
 
-## Trusted jewelry workflow (internal milestone)
+## Trusted Studio workflow
 
-The canonical product loop is **Create → Refine → Approve → Factory**. A
-category-neutral designer prompt or source drawing/image can first create one
-to four review-only visual candidates through `POST /projects/from-prompt` or
-`POST /projects/from-drawing`. A chosen candidate must be promoted into an
-exact designer-confirmed specification before approval. Structured ring
-projects can also start through `POST /projects/from-brief` or
-`POST /projects/from-image`; confirmed markup creates an immutable visual/spec
-revision; approval binds that exact pair; and the project factory-pack endpoint
-exports authoritative confirmed facts plus review-only visual references. The
-deterministic SVG/DXF are explicitly schematic dimensional diagrams—not
-production drawings or buildable jewelry geometry. Production handoff still
-requires a designer-approved, design-derived technical drawing and/or
-tolerance-bearing CAD/master geometry.
+The primary product loop is **Create → choose → refine → compare → keep**. A
+category-neutral designer prompt, drawing, photograph, render, or set of role-labeled
+references can create one to four review-only visual candidates through
+`POST /projects/from-prompt` or `POST /projects/from-drawing`. Structural and material
+edits remain temporary until the designer explicitly applies them or saves them as a
+variation. Apply and Restore append immutable revisions; they never overwrite the
+active revision in place.
+
+Client, marketing, and view outputs stay attached to the exact revision that produced
+them. Factory preparation is optional and appears only for an eligible revision. It
+uses the trusted specification, approval, provenance, and review services behind the
+simpler Studio interface. The deterministic SVG/DXF are explicitly schematic
+dimensional diagrams—not production drawings or buildable jewelry geometry.
+Production handoff still requires a designer-approved, design-derived technical
+drawing and/or tolerance-bearing CAD/master geometry.
 
 Grok is primary for image work. Every trusted candidate passes structured
 jewelry QA, receives one failure-specific Grok correction when needed, and may

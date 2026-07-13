@@ -94,6 +94,8 @@ export interface StudioPresentWorkspaceProps {
   lineage: ExactStudioLineage | StudioVisualLineage | null;
   createdBy: string;
   onProjectUpdated?: (project: ProjectDetail) => void;
+  /** Optional host navigation shown after at least one presentation is saved. */
+  onOpenCollections?: () => void;
   imageRequestHeaders?: Readonly<Record<string, string>>;
   resumeReviewJobId?: string;
   reviewSourceIsActive?: boolean;
@@ -187,7 +189,7 @@ function exactResumeCard(result: StudioExactPresentationPreview): PresentationCa
 }
 
 export function StudioPresentWorkspace({
-  gateway, lineage, createdBy, onProjectUpdated, imageRequestHeaders,
+  gateway, lineage, createdBy, onProjectUpdated, onOpenCollections, imageRequestHeaders,
   resumeReviewJobId, reviewSourceIsActive = true,
 }: StudioPresentWorkspaceProps) {
   const [destination, setDestination] = useState<Destination>('client');
@@ -224,7 +226,7 @@ export function StudioPresentWorkspace({
     : clientFormat === 'beauty' ? 'Create client beauty render' : 'Create client product photo';
   const exactRevision = useMemo(() => lineage === null ? null
     : 'sourceDesignVersion' in lineage
-      ? `Confirmed revision ${lineage.sourceDesignVersion}`
+      ? `Saved design · facts version ${lineage.sourceDesignVersion}`
       : 'Selected visual direction · specification not confirmed', [lineage]);
   const sourceImageUrl = lineage === null || typeof gateway.assetImageUrl !== 'function'
     ? null : gateway.assetImageUrl(lineage.sourceAssetId);
@@ -508,6 +510,9 @@ export function StudioPresentWorkspace({
         disabled={busy || outputCount === 0 || !reviewSourceIsActive} onPress={() => { void generate(); }} />
 
       {visibleInfo !== null && <Notice kind="info" text={visibleInfo} />}
+      {visibleCards.some((card) => card.status === 'saved') && onOpenCollections !== undefined && (
+        <Button title="Open in Collections" kind="ghost" onPress={onOpenCollections} />
+      )}
       {visibleFailures.map((failure) => <Notice key={failure} kind="error" text={failure} />)}
       {visibleCards.length > 0 && <View style={styles.results}>
         <Text style={styles.sectionTitle}>Results</Text>

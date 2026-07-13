@@ -572,6 +572,7 @@ export default function App() {
                 ? activityReview.lineage : exactStudioLineage}
               createdBy={designer}
               onSaved={setStudioProject}
+              onOpenCollections={() => setTab('collections')}
               imageRequestHeaders={authenticatedImageHeaders}
               resumeReviewJobId={activityReview?.job.action_id === 'views'
                 ? activityReview.job.job_id : undefined}
@@ -596,6 +597,7 @@ export default function App() {
                 ? activityReview.lineage : exactStudioLineage ?? visualStudioLineage}
               createdBy={designer}
               onProjectUpdated={setStudioProject}
+              onOpenCollections={() => setTab('collections')}
               imageRequestHeaders={authenticatedImageHeaders}
               resumeReviewJobId={activityReview?.job.action_id === 'present'
                 ? activityReview.job.job_id : undefined}
@@ -640,6 +642,7 @@ export default function App() {
           api={studioGateway}
           project={studioProject}
           createdBy={designer}
+          deliverProtectedFile={deliverProtectedFile}
           onOpenProject={(projectId) => {
             void hydrateProject({ projectId, destination: 'collections' });
           }}

@@ -28,17 +28,20 @@ type ViewId = typeof VIEWS[number]['id'];
 
 export interface StudioViewsWorkspaceProps {
   gateway: Pick<StudioGateway,
-    'previewLineArtView' | 'resumeViews' | 'acceptLineArtView' | 'discardLineArtView'>;
+    'previewLineArtView' | 'resumeViews' | 'acceptLineArtView' | 'discardLineArtView'>
+    & Partial<Pick<StudioGateway, 'assetImageUrl'>>;
   lineage: ExactStudioLineage | null;
   createdBy: string;
   onSaved: (project: ProjectDetail) => void;
+  /** Optional host navigation shown only after a view is saved. */
+  onOpenCollections?: () => void;
   imageRequestHeaders?: Readonly<Record<string, string>>;
   resumeReviewJobId?: string;
   reviewSourceIsActive?: boolean;
 }
 
 export function StudioViewsWorkspace({
-  gateway, lineage, createdBy, onSaved, imageRequestHeaders,
+  gateway, lineage, createdBy, onSaved, onOpenCollections, imageRequestHeaders,
   resumeReviewJobId, reviewSourceIsActive = true,
 }: StudioViewsWorkspaceProps) {
   const [view, setView] = useState<ViewId>('three_quarter');
@@ -46,6 +49,7 @@ export function StudioViewsWorkspace({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const [savedForLineage, setSavedForLineage] = useState(false);
   const lineageKey = lineage === null ? 'none'
     : `${lineage.projectId}:${lineage.sourceAssetId}:${lineage.sourceDesignVersion}`;
   const lineageKeyRef = useRef(lineageKey);
@@ -59,11 +63,14 @@ export function StudioViewsWorkspace({
     && preview.lineage.sourceAssetId === lineage.sourceAssetId
     && preview.lineage.sourceDesignVersion === lineage.sourceDesignVersion
     ? preview : null;
+  const sourceImageUrl = lineage === null || typeof gateway.assetImageUrl !== 'function'
+    ? null : gateway.assetImageUrl(lineage.sourceAssetId);
 
   useEffect(() => {
     setUiLineageKey(lineageKey);
     setPreview(null);
     setNotice(null);
+    setSavedForLineage(false);
     setError(null);
     setBusy(false);
     if (lineage === null || typeof gateway.resumeViews !== 'function') return undefined;
@@ -105,7 +112,7 @@ export function StudioViewsWorkspace({
 
   const accept = async (): Promise<void> => {
     if (previewForLineage === null || busy || previewForLineage.verdict === 'fail'
-      || !reviewSourceIsActive) return;
+      || !reviewSourceIsActive || sourceImageUrl === null) return;
     const requestedLineageKey = lineageKey;
     setBusy(true);
     setError(null);
@@ -123,6 +130,7 @@ export function StudioViewsWorkspace({
       return;
     }
     setPreview(null);
+    setSavedForLineage(true);
     setNotice('View saved beside the design. The active design revision did not change.');
     onSaved(result.data.project);
   };
@@ -166,12 +174,40 @@ export function StudioViewsWorkspace({
           it does not replace the active revision.
         </Text>
         {!reviewSourceIsActive && <Notice kind="info" text="This view was created from an earlier revision. Saving it is unavailable, but you can discard it without changing or charging the current design." />}
-        <Image
-          accessibilityLabel={`Temporary ${previewForLineage.view} view`}
-          source={{ uri: previewForLineage.previewUrl }}
-          imageRequestHeaders={imageRequestHeaders}
-          style={styles.preview}
-        />
+        <View style={styles.comparisonCard}>
+          <Text style={styles.comparisonTitle}>Compare before saving</Text>
+          <Text style={styles.comparisonDetail}>
+            Check that the full form, setting, and proportions still match the exact source.
+          </Text>
+          <View style={styles.comparisonRow}>
+            {sourceImageUrl !== null && (
+              <View style={styles.comparisonPanel}>
+                <Text style={styles.comparisonLabel}>Exact source · unchanged</Text>
+                <Image
+                  accessibilityLabel="Exact source revision"
+                  source={{ uri: sourceImageUrl }}
+                  imageRequestHeaders={imageRequestHeaders}
+                  style={styles.preview}
+                />
+              </View>
+            )}
+            <View style={styles.comparisonPanel}>
+              <Text style={styles.comparisonLabel}>Candidate · not saved</Text>
+              <Image
+                accessibilityLabel={`Temporary ${previewForLineage.view} view`}
+                source={{ uri: previewForLineage.previewUrl }}
+                imageRequestHeaders={imageRequestHeaders}
+                style={styles.preview}
+              />
+            </View>
+          </View>
+        </View>
+        {sourceImageUrl === null && (
+          <Notice
+            kind="error"
+            text="The exact source cannot be displayed, so this view cannot be saved. Reopen the design and compare again."
+          />
+        )}
         <View style={styles.reviewCard}>
           <Text style={styles.reviewTitle}>{rejected ? 'This view cannot be saved' : 'Ready for your review'}</Text>
           {previewForLineage.checks.length === 0 ? (
@@ -192,7 +228,11 @@ export function StudioViewsWorkspace({
         {visibleError !== null && <Notice kind="error" text={visibleError} />}
         <View style={styles.actions}>
           <Button title={busy ? 'Working…' : 'Discard'} kind="ghost" disabled={busy} onPress={() => { void discard(); }} />
-          <Button title={busy ? 'Working…' : 'Save view'} disabled={busy || rejected || !reviewSourceIsActive} onPress={() => { void accept(); }} />
+          <Button
+            title={busy ? 'Working…' : 'Save view'}
+            disabled={busy || rejected || !reviewSourceIsActive || sourceImageUrl === null}
+            onPress={() => { void accept(); }}
+          />
         </View>
       </ScrollView>
     );
@@ -221,10 +261,13 @@ export function StudioViewsWorkspace({
         ))}
       </View>
       <View style={styles.sourceCard}>
-        <Text style={styles.sourceLabel}>Exact source</Text>
-        <Text style={styles.sourceValue}>Confirmed revision {lineage.sourceDesignVersion}</Text>
+        <Text style={styles.sourceLabel}>Selected saved source</Text>
+        <Text style={styles.sourceValue}>Design facts version {lineage.sourceDesignVersion}</Text>
       </View>
       {visibleNotice !== null && <Notice kind="ok" text={visibleNotice} />}
+      {savedForLineage && onOpenCollections !== undefined && (
+        <Button title="Open in Collections" kind="ghost" onPress={onOpenCollections} />
+      )}
       {visibleError !== null && <Notice kind="error" text={visibleError} />}
       <Text style={styles.creditEstimate}>
         1 requested output × {VIEWS_CREDITS_PER_OUTPUT} credits = estimated {VIEWS_CREDITS_PER_OUTPUT} credits
@@ -249,7 +292,13 @@ const styles = StyleSheet.create({
   sourceCard: { borderWidth: 1, borderColor: theme.line, borderRadius: radius.md, padding: 13, backgroundColor: theme.card },
   sourceLabel: { color: theme.faint, fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 1 },
   sourceValue: { color: theme.ink, fontSize: 13, marginTop: 4 },
-  preview: { width: '100%', maxWidth: 720, aspectRatio: 1.25, borderRadius: radius.lg, backgroundColor: theme.line },
+  comparisonCard: { borderWidth: 1, borderColor: theme.line, borderRadius: radius.lg, padding: 14, backgroundColor: theme.card, gap: 6 },
+  comparisonTitle: { color: theme.ink, fontSize: 16, fontWeight: '800' },
+  comparisonDetail: { color: theme.faint, fontSize: 12, lineHeight: 18 },
+  comparisonRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 4 },
+  comparisonPanel: { flex: 1, minWidth: 220, maxWidth: 350, gap: 5 },
+  comparisonLabel: { color: theme.faint, fontSize: 10, fontWeight: '800', textTransform: 'uppercase' },
+  preview: { width: '100%', aspectRatio: 1.25, borderRadius: radius.md, backgroundColor: theme.line },
   reviewCard: { borderWidth: 1, borderColor: theme.line, borderRadius: radius.md, padding: 14, backgroundColor: theme.card, gap: 8 },
   reviewTitle: { color: theme.ink, fontWeight: '800', fontSize: 16 },
   checkRow: { flexDirection: 'row', gap: 10, alignItems: 'flex-start' },

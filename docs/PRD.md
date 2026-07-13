@@ -1,5 +1,12 @@
 # Facetta — Product Requirements
 
+> **Historical foundation, not the active Studio product contract.** This document
+> records the original specification-first milestone and remains useful for trusted
+> factory-review constraints. Current product hierarchy, navigation, authority, and
+> acceptance requirements live in `docs/ai-first-studio-architecture.md`, `TASKS.md`,
+> and `docs/STUDIO_EXTERNAL_BETA_GATES.md`. In particular, Factory is optional and
+> deterministic jewelry geometry is never design or production authority.
+
 ## Problem
 Jewelry designers hand-draw dimensioned technical sheets for factories and separately
 mock up visuals for clients. Text-to-image AI cannot do this job: it hallucinates

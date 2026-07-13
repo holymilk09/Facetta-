@@ -214,11 +214,12 @@ verified trusted foundation; unchecked items are not implemented claims.
 - [x] Document the AI-first product loop, hierarchy, authority boundaries,
   optional factory lane, destinations, and legacy removal criteria without
   rewriting current evidence.
-- [ ] Add an additive `DesignFamily` grouping model and APIs. Treat existing
+- [x] Add an additive `DesignFamily` grouping model and APIs. Treat existing
   Projects as variations and preserve every immutable asset/spec revision and
   historical link.
-- [ ] Wire the redesign around global Create, Explore, and Organize navigation;
-  keep factory actions as an optional exact-revision promotion lane.
+- [x] Wire the redesign around global Studio, Collections, Activity, and Learn
+  navigation with contextual Create, Vary, Refine, Views, Present, and More;
+  keep Factory as an eligible optional exact-revision destination.
 - [ ] Unify current render, reference-render, line-art, product-photo, and
   marketing operations behind an on-demand visual-twin contract with exact
   source-revision provenance and category-safe QA.
@@ -231,8 +232,9 @@ verified trusted foundation; unchecked items are not implemented claims.
 - [ ] Route shape, topology, count, setting, mounting, shank, and chain changes
   through structural AI edits with source/candidate vision comparison and
   atomic image/spec revisions.
-- [ ] Add explicit Client, Marketing/Ecommerce, Library, and Factory
-  destinations. Preserve exact-revision provenance and rights at every export.
+- [x] Add explicit Client, Marketing/Ecommerce, Library, and optional Factory
+  destinations. Preserve exact-revision provenance, require review before Save,
+  and fetch protected exports only after an authenticated user action.
 - [ ] Integrate and live-test design-derived mounting/section QA before any AI
   technical view can be retained as a designer-confirmed discussion artifact.
 - [ ] Remove generic deterministic jewelry-geometry routes only after all

@@ -87,7 +87,7 @@ describe('StudioPresentWorkspace', () => {
     });
     expect(screen.queryByText('Results')).toBeNull();
     expect(screen.queryByText('1 saved preview resumed for review.')).toBeNull();
-    expect(screen.getByText('Confirmed revision 5')).toBeTruthy();
+    expect(screen.getByText('Saved design · facts version 5')).toBeTruthy();
 
     await act(async () => { resolveB?.(resumed('candidate_b', lineageB)); });
     expect(await screen.findByText('Results')).toBeTruthy();
@@ -95,6 +95,7 @@ describe('StudioPresentWorkspace', () => {
 
   test('creates a client product photo from the exact source and shows cost first', async () => {
     const onProjectUpdated = jest.fn();
+    const onOpenCollections = jest.fn();
     const createProductPresentation = jest.fn(async () => ({
       data: {
         status: 'review_required', project_id: 'project_1', image_run_id: 'run_1',
@@ -124,9 +125,10 @@ describe('StudioPresentWorkspace', () => {
       lineage={lineage}
       createdBy="designer"
       onProjectUpdated={onProjectUpdated}
+      onOpenCollections={onOpenCollections}
     />);
 
-    expect(screen.getByText('Confirmed revision 4')).toBeTruthy();
+    expect(screen.getByText('Saved design · facts version 4')).toBeTruthy();
     expect(screen.queryByText(/asset_4/)).toBeNull();
     expect(screen.getByText('1 requested output · estimated 18 credits')).toBeTruthy();
     expect(screen.getByText(/Generation creates review previews only/i)).toBeTruthy();
@@ -149,6 +151,9 @@ describe('StudioPresentWorkspace', () => {
     }));
     expect(await screen.findByText(/Saved presentation .* Review recommended/)).toBeTruthy();
     expect(onProjectUpdated).toHaveBeenCalledWith({ root_id: 'project_1' });
+    expect(screen.getAllByText('Open in Collections')).toHaveLength(1);
+    fireEvent.press(screen.getByText('Open in Collections'));
+    expect(onOpenCollections).toHaveBeenCalledTimes(1);
   });
 
   test('lets a designer discard a beauty preview without saving it', async () => {
