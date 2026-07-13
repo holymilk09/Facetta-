@@ -504,6 +504,58 @@ def test_exact_present_groups_one_to_four_charge_only_the_accepted_output(
         assert db.scalar(select(func.count()).select_from(ImageRunReview)) == count
 
 
+def test_activity_expiry_settles_present_group_to_exact_accepted_subset(
+    exact_candidates,
+):
+    client, Session, spec, version = exact_candidates
+    job_id, candidates = _presentation_group(
+        Session, spec, version, 3, "activity_subset",
+    )
+    accept_path, accept_body = _present_decision(candidates[0], "accept")
+    accepted = client.post(accept_path, json=accept_body)
+    assert accepted.status_code == 201, accepted.text
+
+    with Session() as db:
+        for candidate in candidates[1:]:
+            record = db.get(
+                StudioPresentationCandidateRecord, candidate.candidate_id,
+            )
+            assert record is not None
+            record.expires_at = utcnow() - timedelta(seconds=1)
+        db.commit()
+        before_assets = db.scalar(select(func.count()).select_from(ImageAsset))
+        before_reviews = db.scalar(
+            select(func.count()).select_from(ImageRunReview)
+        )
+
+    activity = client.get(
+        f"/studio/jobs/{job_id}", params={"owner": OWNER},
+    )
+    assert activity.status_code == 200, activity.text
+    assert activity.json()["status"] == "succeeded"
+    assert activity.json()["billing"]["completed_outputs"] == 1
+    assert activity.json()["billing"]["charged_outputs"] == 1
+
+    repeated = client.get(
+        f"/studio/jobs/{job_id}", params={"owner": OWNER},
+    )
+    assert repeated.status_code == 200
+    assert repeated.json() == activity.json()
+    with Session() as db:
+        expired = [
+            db.get(StudioPresentationCandidateRecord, candidate.candidate_id)
+            for candidate in candidates[1:]
+        ]
+        assert all(record is not None for record in expired)
+        assert all(record.status == "expired" for record in expired)
+        assert all(bytes(record.image) == b"" for record in expired)
+        assert all(record.resolved_at is not None for record in expired)
+        assert db.scalar(select(func.count()).select_from(ImageAsset)) == before_assets
+        assert db.scalar(
+            select(func.count()).select_from(ImageRunReview)
+        ) == before_reviews
+
+
 def test_exact_present_discard_all_is_free_and_stale_group_rolls_back(
     exact_candidates,
 ):

@@ -410,19 +410,7 @@ def _owned_record(
         raise StudioViewCandidateUnavailable(
             "the Studio View candidate is unavailable", status_code=404)
     if record.status == "reviewing" and _utc(record.expires_at) <= utcnow():
-        record.status = "expired"
-        record.image = b""
-        record.resolved_at = utcnow()
-        job = _exact_view_job(db, record)
-        if job is not None:
-            if job.status in {"running", "reviewing"}:
-                job.status = "canceled"
-                job.progress = 1
-                job.completed_outputs = 0
-                job.charged_outputs = 0
-                job.error_code = None
-                job.reservation_kind = None
-                job.updated_at = utcnow()
+        _expire_record(db, record)
         db.commit()
         raise StudioViewCandidateUnavailable(
             "the Studio View candidate expired before a decision")
@@ -451,6 +439,48 @@ def _owned_record(
         raise StudioViewCandidateUnavailable(
             "the Studio View candidate job binding is invalid")
     return record
+
+
+def _expire_record(db: Session, record: StudioViewCandidateRecord) -> None:
+    now = utcnow()
+    record.status = "expired"
+    record.image = b""
+    record.resolved_at = now
+    job = _exact_view_job(db, record)
+    if job is not None and job.status in {"running", "reviewing"}:
+        job.status = "canceled"
+        job.progress = 1
+        job.completed_outputs = 0
+        job.charged_outputs = 0
+        job.error_code = None
+        job.reservation_kind = None
+        job.updated_at = now
+
+
+def expire_stale_studio_view_candidates(
+    db: Session,
+    *,
+    owner: str,
+    job_id: str | None = None,
+) -> int:
+    """Expire due, job-backed View previews before Activity serialization."""
+
+    query = select(StudioViewCandidateRecord).where(
+        StudioViewCandidateRecord.owner == owner,
+        StudioViewCandidateRecord.status == "reviewing",
+        StudioViewCandidateRecord.studio_job_id.is_not(None),
+        StudioViewCandidateRecord.expires_at <= utcnow(),
+    )
+    if job_id is not None:
+        query = query.where(StudioViewCandidateRecord.studio_job_id == job_id)
+    records = list(db.scalars(
+        query.order_by(StudioViewCandidateRecord.id).with_for_update()
+    ))
+    for record in records:
+        _expire_record(db, record)
+    if records:
+        db.commit()
+    return len(records)
 
 
 def _require_unambiguous_job_binding(

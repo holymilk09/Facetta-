@@ -421,12 +421,43 @@ def settle_catalog_preview_refine_job_failure(
         f"the Studio Refine job is already {job.status}")
 
 
-def _expire(db: Session, record: PreviewCandidateRecord) -> None:
+def _expire_record(db: Session, record: PreviewCandidateRecord) -> None:
     _settle_zero_job(db, record)
     record.status = "expired"
     record.image = b""
     record.resolved_at = utcnow()
+
+
+def _expire(db: Session, record: PreviewCandidateRecord) -> None:
+    _expire_record(db, record)
     db.commit()
+
+
+def expire_stale_catalog_preview_candidates(
+    db: Session,
+    *,
+    owner: str,
+    job_id: str | None = None,
+) -> int:
+    """Expire due, job-backed catalog previews before Activity serialization."""
+
+    query = select(PreviewCandidateRecord).where(
+        PreviewCandidateRecord.owner == owner,
+        PreviewCandidateRecord.kind == "catalog_revision",
+        PreviewCandidateRecord.status == "reviewing",
+        PreviewCandidateRecord.studio_job_id.is_not(None),
+        PreviewCandidateRecord.expires_at <= utcnow(),
+    )
+    if job_id is not None:
+        query = query.where(PreviewCandidateRecord.studio_job_id == job_id)
+    records = list(db.scalars(
+        query.order_by(PreviewCandidateRecord.id).with_for_update()
+    ))
+    for record in records:
+        _expire_record(db, record)
+    if records:
+        db.commit()
+    return len(records)
 
 
 def invalidate_catalog_preview_candidate(

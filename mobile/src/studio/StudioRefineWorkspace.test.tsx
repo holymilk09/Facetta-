@@ -171,6 +171,27 @@ describe('StudioRefineWorkspace', () => {
     expect(screen.getByText('Visual consistency')).toBeTruthy();
     expect(screen.queryByText(/Grok|QA|model routing|evaluator trace/i)).toBeNull();
     expect(onApplied).not.toHaveBeenCalled();
+    expect(screen.getByTestId('refine-comparison-inspector')).toBeTruthy();
+    expect(screen.getByLabelText('Inspect comparison in detail')).toBeTruthy();
+    expect(screen.getByText('Apply as new revision').parent?.props.accessibilityState.disabled).toBe(true);
+    await act(async () => {
+      fireEvent.press(screen.getByLabelText('Inspect comparison in detail'));
+    });
+    expect(screen.getByText('Inspect source and temporary preview')).toBeTruthy();
+    await act(async () => {
+      fireEvent(screen.getByLabelText('Preview: Temporary refinement candidate detail view'), 'load');
+    });
+    expect(screen.getByText('Apply as new revision').parent?.props.accessibilityState.disabled).toBe(true);
+    await act(async () => {
+      fireEvent.press(screen.getByLabelText('Show Source: Exact selected revision in detail'));
+    });
+    await act(async () => {
+      fireEvent(screen.getByLabelText('Source: Exact selected revision detail view'), 'load');
+    });
+    expect(screen.getByText('Apply as new revision').parent?.props.accessibilityState.disabled).toBe(true);
+    await act(async () => {
+      fireEvent.press(screen.getByLabelText('Close comparison inspector'));
+    });
     await act(async () => {
       fireEvent(screen.getByLabelText('Exact source revision'), 'load');
       fireEvent(screen.getByLabelText('Temporary refinement preview'), 'error');
@@ -291,7 +312,8 @@ describe('StudioRefineWorkspace', () => {
       executionMode: 'provider',
     }));
     expect(await screen.findByText('Nothing has changed yet.')).toBeTruthy();
-    expect(screen.getByText(/Standard provider preview · estimated 20 credits/)).toBeTruthy();
+    expect(screen.getByText(/Standard preview · estimated 20 credits/)).toBeTruthy();
+    expect(screen.queryByText(/provider/i)).toBeNull();
     expect(screen.getByLabelText('Temporary refinement preview')).toBeTruthy();
     await act(async () => {
       fireEvent.press(screen.getByText('Apply as new revision'));
@@ -530,6 +552,8 @@ describe('StudioRefineWorkspace', () => {
       }),
     })));
     expect(await screen.findByText('Nothing has changed yet.')).toBeTruthy();
+    expect(screen.queryByTestId('refine-comparison-inspector')).toBeNull();
+    expect(screen.getByLabelText('Temporary refinement preview')).toBeTruthy();
   });
 
   test('reopens an exact-lineage pending preview for authenticated source comparison and Apply', async () => {
@@ -590,6 +614,57 @@ describe('StudioRefineWorkspace', () => {
       candidateId: 'candidate_resumed', createdBy: 'designer',
     });
     expect(onApplied).toHaveBeenCalledWith(project);
+  });
+
+  test('keeps Apply unavailable for a stale-source preview after both compact images load', async () => {
+    const resumeRefine = jest.fn(async () => ({
+      data: {
+        kind: 'catalog' as const,
+        understoodAs: 'A pending component preview was restored for review.',
+        candidate: {
+          id: 'candidate_stale', jobId: 'run_stale', sourceRevisionId: 'asset_1',
+          assetUrl: 'https://test/stale.png', verdict: 'pass' as const,
+          status: 'pending_review' as const, checks: [], temporary: true,
+          expiresAt: '2099-01-01T00:00:00Z', decision: null,
+          decidedAt: null, canonicalRevisionId: null,
+        },
+      },
+      error: null,
+      status: 200,
+    }));
+    const applyCatalogRefine = jest.fn();
+
+    await renderWithAuth(
+      <StudioRefineWorkspace
+        api={{
+          getComponentCatalog: jest.fn(async () => ({ data: catalog, error: null, status: 200 })),
+          getStudioComponentTargeting: getReadyTargeting,
+          readMarkup: jest.fn(),
+        }}
+        gateway={{
+          resumeRefine, previewCatalogRefine: jest.fn(), applyCatalogRefine,
+          discardCatalogRefine: jest.fn(), previewMarkupRefine: jest.fn(),
+          applyMarkupRefine: jest.fn(), discardMarkupRefine: jest.fn(),
+          previewVisualRefine: jest.fn(), applyVisualRefine: jest.fn(),
+          discardVisualRefine: jest.fn(),
+        } as any}
+        lineage={{ projectId: 'project_1', sourceAssetId: 'asset_1', sourceDesignVersion: 1 }}
+        createdBy="designer"
+        sourceImageUrl="https://test/source-stale.png"
+        reviewSourceIsActive={false}
+        onApplied={jest.fn()}
+      />,
+    );
+
+    expect(await screen.findByText(/created from an earlier revision/i)).toBeTruthy();
+    expect(screen.getByTestId('refine-comparison-inspector')).toBeTruthy();
+    await act(async () => {
+      fireEvent(screen.getByLabelText('Exact source revision'), 'load');
+      fireEvent(screen.getByLabelText('Temporary refinement preview'), 'load');
+    });
+    expect(screen.getByText('Apply as new revision').parent?.props.accessibilityState.disabled).toBe(true);
+    fireEvent.press(screen.getByText('Apply as new revision'));
+    expect(applyCatalogRefine).not.toHaveBeenCalled();
   });
 
   test('asks for a name and saves one catalog preview variation without applying the source', async () => {
@@ -840,9 +915,101 @@ describe('StudioRefineWorkspace', () => {
     await waitFor(() => expect(
       screen.getByLabelText('Metal color component path').props.accessibilityState.disabled,
     ).toBe(false));
+    expect(screen.getByLabelText('Stone color component path').props.accessibilityState.disabled).toBe(true);
+    expect(screen.getByText(/Record the exact stone species/i)).toBeTruthy();
     expect(screen.getByLabelText('Stone cut component path').props.accessibilityState.disabled).toBe(true);
     expect(screen.getByLabelText('Setting component path').props.accessibilityState.disabled).toBe(true);
     expect(screen.getAllByText(/not ready for that precise component change yet/i).length).toBeGreaterThanOrEqual(2);
     expect(screen.queryByText(/calibrated|structural mapping|component identity/i)).toBeNull();
+    expect(screen.getByText(/Every change creates a temporary candidate/i)).toBeTruthy();
+  });
+
+  test('loads stone colors only with the exact lineage-checked stone species', async () => {
+    const stoneColorCatalog: ComponentCatalog = {
+      component_path: 'stone.color' as const,
+      display: 'Stone color', applicable_jewelry_types: ['ring'],
+      image_agent_status: 'catalog_ready' as const,
+      preview_execution_modes: ['provider'],
+      options: [{
+        id: 'cornflower_blue', display: 'Cornflower blue', visual_geometry: [],
+        isolation_target: 'Center stone', frozen_facts: ['stone geometry', 'setting geometry'],
+        factory_fields: {}, derived_factory_fields: [], selection_requirements: [],
+      }],
+    };
+    const getComponentCatalog = jest.fn(async (componentPath: string) => ({
+      data: componentPath === 'stone.color' ? stoneColorCatalog : catalog,
+      error: null,
+      status: 200,
+    }));
+
+    await renderWithAuth(
+      <StudioRefineWorkspace
+        api={{
+          getComponentCatalog,
+          getStudioComponentTargeting: getReadyTargeting,
+          getProject: jest.fn(async () => ({
+            data: exactFactProject, error: null, status: 200,
+          })),
+          readMarkup: jest.fn(),
+        }}
+        gateway={{} as any}
+        lineage={{ projectId: 'project_1', sourceAssetId: 'asset_2', sourceDesignVersion: 2 }}
+        createdBy="designer"
+        onApplied={jest.fn()}
+      />,
+    );
+
+    await waitFor(() => expect(screen.getByLabelText('Component refine mode')).toBeTruthy());
+    await act(async () => { fireEvent.press(screen.getByLabelText('Component refine mode')); });
+    await waitFor(() => expect(
+      screen.getByLabelText('Stone color component path').props.accessibilityState.disabled,
+    ).toBe(false));
+    await act(async () => { fireEvent.press(screen.getByLabelText('Stone color component path')); });
+    await waitFor(() => expect(getComponentCatalog).toHaveBeenCalledWith('stone.color', {
+      stoneSpecies: 'sapphire',
+    }));
+    expect(await screen.findByText('Cornflower blue')).toBeTruthy();
+  });
+
+  test('fails closed when the species-scoped stone color catalog is unavailable', async () => {
+    const getComponentCatalog = jest.fn(async (componentPath: string) => (
+      componentPath === 'stone.color'
+        ? {
+          data: null,
+          error: {
+            code: 'stone_species_invalid', message: 'unknown gemstone species',
+            category: 'validation' as const, status: 422, retryable: false,
+          },
+          status: 422,
+        }
+        : { data: catalog, error: null, status: 200 }
+    ));
+
+    await renderWithAuth(
+      <StudioRefineWorkspace
+        api={{
+          getComponentCatalog,
+          getStudioComponentTargeting: getReadyTargeting,
+          getProject: jest.fn(async () => ({
+            data: exactFactProject, error: null, status: 200,
+          })),
+          readMarkup: jest.fn(),
+        }}
+        gateway={{ previewCatalogRefine: jest.fn() } as any}
+        lineage={{ projectId: 'project_1', sourceAssetId: 'asset_2', sourceDesignVersion: 2 }}
+        createdBy="designer"
+        onApplied={jest.fn()}
+      />,
+    );
+
+    await waitFor(() => expect(screen.getByLabelText('Component refine mode')).toBeTruthy());
+    await act(async () => { fireEvent.press(screen.getByLabelText('Component refine mode')); });
+    await waitFor(() => expect(
+      screen.getByLabelText('Stone color component path').props.accessibilityState.disabled,
+    ).toBe(false));
+    await act(async () => { fireEvent.press(screen.getByLabelText('Stone color component path')); });
+    expect(await screen.findByText('Check the requested change or reference, then try again.')).toBeTruthy();
+    expect(screen.queryByText(/stone_species_invalid|unknown gemstone species/i)).toBeNull();
+    expect(screen.getByText('Preview change').parent?.props.accessibilityState.disabled).toBe(true);
   });
 });

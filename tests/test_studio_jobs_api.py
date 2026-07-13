@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import hashlib
 from collections.abc import Iterator
 from datetime import timedelta
 
@@ -21,8 +22,15 @@ from facetta.db import (
     Design,
     DesignVersion,
     ImageAsset,
+    ImageRun,
+    ImageRunReview,
+    PreviewCandidateRecord,
     Project,
+    ProjectRevisionRecord,
     StudioJobRecord,
+    StudioMarkupCandidateRecord,
+    StudioPresentationCandidateRecord,
+    StudioViewCandidateRecord,
     get_db,
     utcnow,
 )
@@ -171,6 +179,140 @@ def _transition(
         "progress": progress,
         **extra,
     })
+
+
+def _seed_expired_activity_candidate(
+    client: TestClient,
+    *,
+    candidate_kind: str,
+    owner: str = "usr_designer",
+) -> tuple[str, type, str]:
+    action_id = {
+        "catalog_revision": "refine",
+        "studio_visual": "refine",
+        "markup": "refine",
+        "view": "views",
+        "presentation": "present",
+    }[candidate_kind]
+    suffix = f"{candidate_kind[:8]}_{owner[-5:]}"
+    project_id, source_id = _seed_project(
+        client,
+        project_id=f"prj_exp_{suffix}",
+        owner=owner,
+        exact_specification=True,
+    )
+    definition = STUDIO_JOB_ACTIONS[action_id]
+    job = _create(
+        client,
+        owner=owner,
+        outputs=1,
+        action_id=action_id,
+        lane=definition.lane,
+        credits=definition.credits_per_output,
+        active_design_id=project_id,
+        source_revision_id=source_id,
+    )
+    actor = "usr_designer" if owner == "usr_designer" else owner
+    response = client.patch(f"/studio/jobs/{job['job_id']}", json={
+        "owner": actor, "status": "running", "progress": 0.2,
+    })
+    assert response.status_code == 200
+    response = client.patch(f"/studio/jobs/{job['job_id']}", json={
+        "owner": actor, "status": "reviewing", "progress": 0.9,
+    })
+    assert response.status_code == 200
+
+    now = utcnow()
+    image = f"expired-{candidate_kind}".encode()
+    source_hash = hashlib.sha256(b"studio-job-test-image").hexdigest()
+    output_hash = hashlib.sha256(image).hexdigest()
+    candidate_id = f"cand_exp_{suffix}"
+    run_id = f"run_exp_{suffix}"
+    sessions = client.app_state["session_factory"]
+    with sessions() as db:
+        db.add(ImageRun(
+            id=run_id,
+            project_root_id=project_id,
+            source_asset_id=source_id,
+            operation="VISUAL_ONLY_EDIT",
+            normalized_intent={},
+            prompt_version="activity-expiry-test.v1",
+            source_hash=source_hash,
+            variant=0,
+            status="review_required",
+            created_by=owner,
+        ))
+        common = {
+            "id": candidate_id,
+            "image_run_id": run_id,
+            "owner": owner,
+            "project_root_id": project_id,
+            "source_asset_id": source_id,
+            "image": image,
+            "media_type": "image/png",
+            "status": "reviewing",
+            "studio_job_id": job["job_id"],
+            "created_at": now - timedelta(hours=2),
+            "expires_at": now - timedelta(hours=1),
+        }
+        if candidate_kind in {"catalog_revision", "studio_visual"}:
+            record = PreviewCandidateRecord(
+                **common,
+                expected_active_asset_id=source_id,
+                expected_design_version=1,
+                source_sha256=source_hash,
+                output_sha256=output_hash,
+                kind=candidate_kind,
+                payload={},
+            )
+            model = PreviewCandidateRecord
+        elif candidate_kind == "markup":
+            record = StudioMarkupCandidateRecord(
+                **common,
+                expected_active_asset_id=source_id,
+                design_version=1,
+                source_sha256=source_hash,
+                output_sha256=output_hash,
+                source_spec_visual_hash="a" * 16,
+                target_spec_visual_hash="b" * 16,
+                operation="VISUAL_ONLY_EDIT",
+                asset_capability="JEWELRY_RENDER",
+                requested_change="Expire temporary markup",
+                region_description="center stone",
+                payload={},
+            )
+            model = StudioMarkupCandidateRecord
+        elif candidate_kind == "view":
+            record = StudioViewCandidateRecord(
+                **common,
+                source_sha256=source_hash,
+                output_sha256=output_hash,
+                spec_visual_hash="a" * 16,
+                design_version=1,
+                view="front",
+                requested_change="Expire temporary view",
+                qa={},
+                routing={},
+            )
+            model = StudioViewCandidateRecord
+        else:
+            record = StudioPresentationCandidateRecord(
+                **common,
+                expected_active_asset_id=source_id,
+                source_sha256=source_hash,
+                output_sha256=output_hash,
+                destination="marketing",
+                capability="MARKETING_IMAGE",
+                requested_change="Expire temporary presentation",
+                preset="luxury_studio",
+                framing="portrait",
+                qa={},
+                design_version=None,
+            )
+            model = StudioPresentationCandidateRecord
+        db.add(record)
+        db.commit()
+    return job["job_id"], model, candidate_id
 
 
 def test_fresh_schema_contains_persistent_studio_jobs():
@@ -381,6 +523,99 @@ def test_activity_read_expires_orphaned_view_reservation_without_charge(client):
     assert expired.json()["error_code"] == "view_reservation_expired"
     assert expired.json()["billing"]["completed_outputs"] == 0
     assert expired.json()["billing"]["charged_outputs"] == 0
+
+
+@pytest.mark.parametrize("candidate_kind", [
+    "catalog_revision",
+    "studio_visual",
+    "markup",
+    "view",
+    "presentation",
+])
+def test_activity_read_reconciles_expired_candidate_without_canonical_writes(
+    client,
+    candidate_kind,
+):
+    job_id, model, candidate_id = _seed_expired_activity_candidate(
+        client, candidate_kind=candidate_kind,
+    )
+    sessions = client.app_state["session_factory"]
+    with sessions() as db:
+        before = {
+            "assets": db.scalar(select(func.count()).select_from(ImageAsset)),
+            "versions": db.scalar(select(func.count()).select_from(DesignVersion)),
+            "revisions": db.scalar(
+                select(func.count()).select_from(ProjectRevisionRecord)
+            ),
+            "reviews": db.scalar(
+                select(func.count()).select_from(ImageRunReview)
+            ),
+        }
+
+    reconciled = client.get(
+        f"/studio/jobs/{job_id}", params={"owner": "usr_designer"},
+    )
+    assert reconciled.status_code == 200, reconciled.text
+    assert reconciled.json()["status"] == "canceled"
+    assert reconciled.json()["progress"] == 1
+    assert reconciled.json()["billing"]["completed_outputs"] == 0
+    assert reconciled.json()["billing"]["charged_outputs"] == 0
+    assert reconciled.json()["billing"]["charged_credits"] == 0
+
+    # Repeated reads are idempotent, and status-filtered Activity sees the
+    # newly reconciled terminal truth instead of an unusable review action.
+    repeated = client.get(
+        f"/studio/jobs/{job_id}", params={"owner": "usr_designer"},
+    )
+    assert repeated.status_code == 200
+    assert repeated.json() == reconciled.json()
+    reviewing = client.get("/studio/jobs", params={
+        "owner": "usr_designer", "status": "reviewing",
+    })
+    canceled = client.get("/studio/jobs", params={
+        "owner": "usr_designer", "status": "canceled",
+    })
+    assert job_id not in {item["job_id"] for item in reviewing.json()["jobs"]}
+    assert job_id in {item["job_id"] for item in canceled.json()["jobs"]}
+
+    with sessions() as db:
+        candidate = db.get(model, candidate_id)
+        assert candidate is not None
+        assert candidate.status == "expired"
+        assert bytes(candidate.image) == b""
+        assert candidate.resolved_at is not None
+        assert {
+            "assets": db.scalar(select(func.count()).select_from(ImageAsset)),
+            "versions": db.scalar(select(func.count()).select_from(DesignVersion)),
+            "revisions": db.scalar(
+                select(func.count()).select_from(ProjectRevisionRecord)
+            ),
+            "reviews": db.scalar(
+                select(func.count()).select_from(ImageRunReview)
+            ),
+        } == before
+
+
+def test_activity_candidate_reconciliation_is_owner_scoped(client):
+    job_id, model, candidate_id = _seed_expired_activity_candidate(
+        client, candidate_kind="studio_visual", owner="usr_other",
+    )
+    mine = client.get("/studio/jobs", params={"owner": "usr_designer"})
+    assert mine.status_code == 200
+    assert job_id not in {item["job_id"] for item in mine.json()["jobs"]}
+
+    sessions = client.app_state["session_factory"]
+    with sessions() as db:
+        candidate = db.get(model, candidate_id)
+        job = db.get(StudioJobRecord, job_id)
+        assert candidate is not None and candidate.status == "reviewing"
+        assert job is not None and job.status == "reviewing"
+
+    theirs = client.get(
+        f"/studio/jobs/{job_id}", params={"owner": "usr_other"},
+    )
+    assert theirs.status_code == 200
+    assert theirs.json()["status"] == "canceled"
 
 
 def test_owner_filtering_and_cross_owner_reads_fail_closed(client):

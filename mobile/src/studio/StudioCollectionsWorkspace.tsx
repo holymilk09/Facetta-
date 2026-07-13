@@ -21,7 +21,7 @@ import type {
 } from '../trusted/types';
 import { designerErrorMessage } from './designerErrorMessage';
 import type { StudioGateway } from './gateway';
-import { StudioReviewImage } from './StudioReviewImage';
+import { StudioComparisonInspector } from './StudioComparisonInspector';
 
 export type StudioCollectionsApi = Pick<StudioGateway,
   | 'getDesignFamily'
@@ -690,16 +690,24 @@ export function StudioCollectionsWorkspace({
                 <Text style={styles.sectionTitle}>
                   Comparing revision {compared[0].revision} and revision {compared[1].revision}
                 </Text>
-                <View style={styles.compareGrid}>
+                <StudioComparisonInspector
+                  before={{
+                    accessibilityLabel: `Revision ${compared[0].revision} comparison`,
+                    label: `Revision ${compared[0].revision}`,
+                    source: { uri: compared[0].image_url },
+                  }}
+                  after={{
+                    accessibilityLabel: `Revision ${compared[1].revision} comparison`,
+                    label: `Revision ${compared[1].revision}`,
+                    source: { uri: compared[1].image_url },
+                  }}
+                  compactHeight={340}
+                  inspectionTitle={`Compare Revision ${compared[0].revision} with Revision ${compared[1].revision}`}
+                  testID="selected-revision-comparison"
+                />
+                <View style={styles.compareMetadataGrid}>
                   {compared.map((revision) => (
                     <View key={revision.asset_id} style={styles.compareCard}>
-                      <StudioReviewImage
-                        accessibilityLabel={`Revision ${revision.revision} comparison`}
-                        inspectionLabel={`Revision ${revision.revision}`}
-                        source={{ uri: revision.image_url }}
-                        resizeMode="contain"
-                        style={styles.compareImage}
-                      />
                       <Text style={styles.variationTitle}>Revision {revision.revision}</Text>
                       <Text style={styles.meta}>{dateLabel(revision.created_at)}</Text>
                       <Text style={styles.sectionCopy}>{revision.change_summary}</Text>
@@ -818,10 +826,9 @@ const styles = StyleSheet.create({
     borderTopWidth: 1, borderTopColor: theme.line, marginTop: 14, paddingTop: 14,
   },
   branchTitle: { color: theme.ink, fontSize: 13, fontWeight: '700', marginBottom: 4 },
-  compareGrid: { flexDirection: 'row', gap: 10, marginTop: 10 },
   compareArea: { borderTopWidth: 1, borderTopColor: theme.line, marginTop: 12, paddingTop: 12 },
+  compareMetadataGrid: { flexDirection: 'row', gap: 10, marginTop: 10 },
   compareCard: { flex: 1, minWidth: 0 },
-  compareImage: { width: '100%', height: 220, backgroundColor: theme.paper, marginBottom: 7 },
   revisionRow: {
     borderTopWidth: 1, borderTopColor: theme.line, paddingTop: 12, marginTop: 12,
     flexDirection: 'row', flexWrap: 'wrap', gap: 10, alignItems: 'center',

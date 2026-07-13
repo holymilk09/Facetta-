@@ -22,6 +22,7 @@ import type {
 import { designerReviewState } from './designerReviewLanguage';
 import { STUDIO_PRESENT_CONTROLS } from './workspaceControls';
 import { useVisualReviewReadiness } from './useVisualReviewReadiness';
+import { StudioComparisonInspector } from './StudioComparisonInspector';
 import { StudioReviewImage } from './StudioReviewImage';
 
 export { STUDIO_PRESENT_CONTROLS } from './workspaceControls';
@@ -605,19 +606,6 @@ export function StudioPresentWorkspace({
       {visibleCards.length > 0 && <View style={styles.results}>
         <Text style={styles.sectionTitle}>Results</Text>
         <View style={styles.reviewWorkspace}>
-          {sourceImageUrl !== null && <View style={styles.sourcePanel}>
-            <Text style={styles.comparisonLabel}>Exact source · unchanged</Text>
-            <StudioReviewImage
-              accessibilityLabel="Exact source revision"
-              inspectionLabel="Exact source revision"
-              source={{ uri: sourceImageUrl }}
-              imageRequestHeaders={imageRequestHeaders}
-              onLoad={() => visualReview.markReady(sourceVisualKey)}
-              onError={() => visualReview.markFailed(sourceVisualKey)}
-              style={styles.sourcePreview}
-            />
-            <Text style={styles.sourceGuidance}>Use this one fixed reference to check the form, setting, and proportions of every output.</Text>
-          </View>}
           {sourceImageUrl === null && (
             <Notice
               kind="error"
@@ -626,19 +614,46 @@ export function StudioPresentWorkspace({
           )}
           <View style={styles.candidateGrid}>
             {visibleCards.map((card) => <View key={card.id} style={styles.resultCard}>
-              {card.imageUrl !== null && <View style={styles.candidateImage}>
-                <Text style={styles.comparisonLabel}>{card.status === 'review'
-                  ? 'Candidate · review before saving' : 'Saved presentation'}</Text>
-                <StudioReviewImage
-                  accessibilityLabel={card.title}
-                  inspectionLabel={`${card.title} ${card.status === 'review' ? 'candidate' : 'saved presentation'}`}
-                  source={{ uri: card.imageUrl }}
-                  imageRequestHeaders={imageRequestHeaders}
-                  onLoad={() => visualReview.markReady(cardVisualKey(card))}
-                  onError={() => visualReview.markFailed(cardVisualKey(card))}
-                  style={styles.preview}
+              {card.imageUrl !== null && card.status === 'review' && sourceImageUrl !== null && (
+                <StudioComparisonInspector
+                  before={{
+                    accessibilityLabel: 'Exact source revision',
+                    label: exactRevision ?? 'Selected source',
+                    roleLabel: 'Source',
+                    source: { uri: sourceImageUrl },
+                    imageRequestHeaders,
+                    onLoad: () => visualReview.markReady(sourceVisualKey),
+                    onError: () => visualReview.markFailed(sourceVisualKey),
+                  }}
+                  after={{
+                    accessibilityLabel: card.title,
+                    label: card.title,
+                    roleLabel: 'Candidate',
+                    source: { uri: card.imageUrl },
+                    imageRequestHeaders,
+                    onLoad: () => visualReview.markReady(cardVisualKey(card)),
+                    onError: () => visualReview.markFailed(cardVisualKey(card)),
+                  }}
+                  compactHeight={300}
+                  inspectionTitle={`Compare the selected design with ${card.title}`}
+                  testID={`presentation-comparison-${card.id}`}
                 />
-              </View>}
+              )}
+              {card.imageUrl !== null && (card.status === 'saved' || sourceImageUrl === null) && (
+                <View style={styles.candidateImage}>
+                  <Text style={styles.comparisonLabel}>{card.status === 'saved'
+                    ? 'Saved presentation' : 'Candidate · source unavailable'}</Text>
+                  <StudioReviewImage
+                    accessibilityLabel={card.title}
+                    inspectionLabel={`${card.title} ${card.status === 'review' ? 'candidate' : 'saved presentation'}`}
+                    source={{ uri: card.imageUrl }}
+                    imageRequestHeaders={imageRequestHeaders}
+                    onLoad={() => visualReview.markReady(cardVisualKey(card))}
+                    onError={() => visualReview.markFailed(cardVisualKey(card))}
+                    style={styles.preview}
+                  />
+                </View>
+              )}
               <View style={styles.resultCopy}>
                 <Text style={styles.resultTitle}>{card.title}</Text>
                 <Text style={styles.cardCopy}>{card.detail}</Text>
@@ -707,12 +722,9 @@ const styles = StyleSheet.create({
   costTitle: { color: theme.ink, fontSize: 14, fontWeight: '800' },
   costCopy: { color: theme.faint, fontSize: 12, lineHeight: 18, marginTop: 4 },
   results: { gap: 10 },
-  reviewWorkspace: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'flex-start', gap: 12 },
-  sourcePanel: { width: 230, gap: 6, padding: 10, borderWidth: 1, borderColor: theme.gold, borderRadius: radius.md, backgroundColor: theme.goldSoft },
-  sourceGuidance: { color: theme.faint, fontSize: 11, lineHeight: 16 },
-  sourcePreview: { width: '100%', aspectRatio: 1, borderRadius: radius.sm, backgroundColor: theme.line },
+  reviewWorkspace: { gap: 12 },
   candidateGrid: { flex: 1, minWidth: 240, flexDirection: 'row', flexWrap: 'wrap', alignItems: 'flex-start', gap: 10 },
-  resultCard: { flexGrow: 1, flexBasis: 240, maxWidth: 340, gap: 10, borderWidth: 1, borderColor: theme.line, borderRadius: radius.md, padding: 10, backgroundColor: theme.card },
+  resultCard: { flexGrow: 1, flexBasis: 360, maxWidth: 560, gap: 10, borderWidth: 1, borderColor: theme.line, borderRadius: radius.md, padding: 10, backgroundColor: theme.card },
   candidateImage: { gap: 5 },
   comparisonLabel: { color: theme.faint, fontSize: 10, fontWeight: '800', textTransform: 'uppercase' },
   preview: { width: '100%', aspectRatio: 1, borderRadius: radius.sm, backgroundColor: theme.line },

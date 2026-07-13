@@ -324,14 +324,45 @@ def fail_reserved_studio_visual_job(
     db.commit()
 
 
-def _expire(db: Session, record: PreviewCandidateRecord) -> None:
+def _expire_record(db: Session, record: PreviewCandidateRecord) -> None:
     _settle_zero_output_job(
         db, record, status="canceled", error_code=None,
     )
     record.status = "expired"
     record.image = b""
     record.resolved_at = utcnow()
+
+
+def _expire(db: Session, record: PreviewCandidateRecord) -> None:
+    _expire_record(db, record)
     db.commit()
+
+
+def expire_stale_studio_visual_candidates(
+    db: Session,
+    *,
+    owner: str,
+    job_id: str | None = None,
+) -> int:
+    """Expire due, job-backed visual previews before Activity serialization."""
+
+    query = select(PreviewCandidateRecord).where(
+        PreviewCandidateRecord.owner == owner,
+        PreviewCandidateRecord.kind == "studio_visual",
+        PreviewCandidateRecord.status == "reviewing",
+        PreviewCandidateRecord.studio_job_id.is_not(None),
+        PreviewCandidateRecord.expires_at <= utcnow(),
+    )
+    if job_id is not None:
+        query = query.where(PreviewCandidateRecord.studio_job_id == job_id)
+    records = list(db.scalars(
+        query.order_by(PreviewCandidateRecord.id).with_for_update()
+    ))
+    for record in records:
+        _expire_record(db, record)
+    if records:
+        db.commit()
+    return len(records)
 
 
 def invalidate_studio_visual_candidate(

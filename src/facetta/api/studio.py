@@ -85,6 +85,9 @@ from facetta.studio_history import (
     fork_project_variation,
     restore_project_revision,
 )
+from facetta.studio_candidate_reconciliation import (
+    reconcile_studio_review_jobs,
+)
 from facetta.studio_jobs import (
     FactoryJobContextError,
     STUDIO_JOB_ACTIONS,
@@ -95,7 +98,6 @@ from facetta.studio_jobs import (
 from facetta.studio_visual_candidates import (
     StudioVisualCandidateUnavailable,
     StudioVisualJobError,
-    expire_stale_studio_visual_reservations,
     fail_reserved_studio_visual_job,
     get_studio_visual_candidate,
     invalidate_studio_visual_candidate,
@@ -128,7 +130,6 @@ from facetta.studio_view_candidates import (
     StudioViewError,
     accept_studio_view_candidate,
     discard_studio_view_candidate,
-    expire_stale_studio_view_reservations,
     get_studio_view_candidate,
     list_studio_view_candidates,
 )
@@ -697,8 +698,7 @@ def list_studio_jobs(
     status: StudioJobStatus | None = None,
 ):
     principal_actor(principal, owner)
-    expire_stale_studio_visual_reservations(db, owner=owner)
-    expire_stale_studio_view_reservations(db, owner=owner)
+    reconcile_studio_review_jobs(db, owner=owner)
     query = select(StudioJobRecord).where(StudioJobRecord.owner == owner)
     if status is not None:
         query = query.where(StudioJobRecord.status == status)
@@ -716,12 +716,7 @@ def get_studio_job(
     principal: PrincipalDep,
 ):
     principal_actor(principal, owner)
-    expire_stale_studio_visual_reservations(
-        db, owner=owner, job_id=job_id,
-    )
-    expire_stale_studio_view_reservations(
-        db, owner=owner, job_id=job_id,
-    )
+    reconcile_studio_review_jobs(db, owner=owner, job_id=job_id)
     return _studio_job(_owned_job(db, job_id, owner))
 
 

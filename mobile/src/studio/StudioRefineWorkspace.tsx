@@ -23,6 +23,7 @@ import {
 import { designerErrorMessage } from './designerErrorMessage';
 import { getStudioAction } from './actions';
 import { useVisualReviewReadiness } from './useVisualReviewReadiness';
+import { StudioComparisonInspector } from './StudioComparisonInspector';
 import { StudioReviewImage } from './StudioReviewImage';
 
 const REFINE_CREDITS_PER_OUTPUT = getStudioAction('refine').creditEstimate ?? 0;
@@ -193,6 +194,13 @@ export function StudioRefineWorkspace({
     ? null : `refine-candidate:${preview.candidate.id}:${preview.candidate.assetUrl}`;
   const comparisonVisualKeys = [sourceVisualKey, candidateVisualKey] as const;
   const comparisonReady = visualReview.allReady(comparisonVisualKeys);
+  const exactStoneSpecies = useMemo(() => {
+    const spec = factProject?.spec;
+    if (spec === null || spec === undefined) return null;
+    const species = factValue(spec, 'stone.species');
+    if (typeof species !== 'string' || species.trim().length === 0) return null;
+    return species.trim();
+  }, [factProject]);
 
   useEffect(() => {
     let current = true;
@@ -238,10 +246,12 @@ export function StudioRefineWorkspace({
     (candidate) => candidate.component_path === path,
   ) ?? null;
   const readyPaths = useMemo(() => targeting?.catalog_paths.filter(
-    (candidate) => candidate.status === 'ready',
-  ) ?? [], [targeting]);
+    (candidate) => candidate.status === 'ready'
+      && (candidate.component_path !== 'stone.color' || exactStoneSpecies !== null),
+  ) ?? [], [exactStoneSpecies, targeting]);
   const componentAvailable = exactSpecification && !targetingLoading && readyPaths.length > 0;
-  const selectedPathReady = targetability?.status === 'ready';
+  const selectedPathReady = targetability?.status === 'ready'
+    && (path !== 'stone.color' || exactStoneSpecies !== null);
 
   useEffect(() => {
     if (targetingLoading || targeting === null || selectedPathReady || readyPaths.length === 0) return;
@@ -265,7 +275,17 @@ export function StudioRefineWorkspace({
     setCatalog(null);
     setOptionId(null);
     setError(null);
-    void api.getComponentCatalog(path).then((result) => {
+    let request;
+    if (path === 'stone.color') {
+      if (exactStoneSpecies === null) {
+        setLoading(false);
+        return () => { current = false; };
+      }
+      request = api.getComponentCatalog(path, { stoneSpecies: exactStoneSpecies });
+    } else {
+      request = api.getComponentCatalog(path);
+    }
+    void request.then((result) => {
       if (!current) return;
       setLoading(false);
       if (result.error !== null) {
@@ -276,8 +296,8 @@ export function StudioRefineWorkspace({
       setOptionId(result.data.options[0]?.id ?? null);
     });
     return () => { current = false; };
-  }, [api, exactSpecification, mode, path, lineage?.sourceAssetId, selectedPathReady,
-    targetingLoading]);
+  }, [api, exactSpecification, exactStoneSpecies, mode, path, lineage?.sourceAssetId,
+    selectedPathReady, targetingLoading]);
 
   useEffect(() => {
     if (!exactSpecification && mode === 'component') setMode('instruction');
@@ -686,41 +706,55 @@ export function StudioRefineWorkspace({
             kind="info"
             text={preview.executionMode === 'instant'
               ? 'Quick preview · 0 credits'
-              : `Standard provider preview · estimated ${preview.estimatedCredits ?? REFINE_CREDITS_PER_OUTPUT} credits if you Apply or Save as Variation`}
+              : `Standard preview · estimated ${preview.estimatedCredits ?? REFINE_CREDITS_PER_OUTPUT} credits if you Apply or Save as Variation`}
           />
         )}
         {understoodAs !== null && <Notice kind="info" text={understoodAs} />}
         {!reviewSourceIsActive && (
           <Notice kind="info" text="This result was created from an earlier revision. Apply is unavailable. You can save it as a new variation or discard it without changing the current design." />
         )}
-        <View style={styles.compareRow}>
-          {sourceImageUrl !== null && (
+        {sourceImageUrl !== null ? (
+          <StudioComparisonInspector
+            before={{
+              label: exactLineage === null
+                ? 'Selected saved direction'
+                : 'Exact selected revision',
+              roleLabel: 'Source',
+              accessibilityLabel: 'Exact source revision',
+              source: { uri: sourceImageUrl },
+              imageRequestHeaders,
+              onLoad: () => visualReview.markReady(sourceVisualKey),
+              onError: () => visualReview.markFailed(sourceVisualKey),
+            }}
+            after={{
+              label: 'Temporary refinement candidate',
+              roleLabel: 'Preview',
+              accessibilityLabel: 'Temporary refinement preview',
+              source: { uri: preview.candidate.assetUrl },
+              imageRequestHeaders,
+              onLoad: () => visualReview.markReady(candidateVisualKey),
+              onError: () => visualReview.markFailed(candidateVisualKey),
+            }}
+            inspectionTitle="Inspect source and temporary preview"
+            inspectionHelp="Compare matching jewelry regions for geometry, setting, proportion, material, and unintended drift before deciding."
+            testID="refine-comparison-inspector"
+          />
+        ) : (
+          <View style={styles.compareRow}>
             <View style={styles.comparePane}>
-              <Text style={styles.compareLabel}>SOURCE</Text>
+              <Text style={styles.compareLabel}>PREVIEW</Text>
               <StudioReviewImage
-                accessibilityLabel="Exact source revision"
-                inspectionLabel="Exact source revision"
-                source={{ uri: sourceImageUrl }}
+                accessibilityLabel="Temporary refinement preview"
+                inspectionLabel="Temporary refinement candidate"
+                source={{ uri: preview.candidate.assetUrl }}
                 imageRequestHeaders={imageRequestHeaders}
-                onLoad={() => visualReview.markReady(sourceVisualKey)}
-                onError={() => visualReview.markFailed(sourceVisualKey)}
+                onLoad={() => visualReview.markReady(candidateVisualKey)}
+                onError={() => visualReview.markFailed(candidateVisualKey)}
                 style={styles.preview}
               />
             </View>
-          )}
-          <View style={styles.comparePane}>
-            <Text style={styles.compareLabel}>PREVIEW</Text>
-            <StudioReviewImage
-              accessibilityLabel="Temporary refinement preview"
-              inspectionLabel="Temporary refinement candidate"
-              source={{ uri: preview.candidate.assetUrl }}
-              imageRequestHeaders={imageRequestHeaders}
-              onLoad={() => visualReview.markReady(candidateVisualKey)}
-              onError={() => visualReview.markFailed(candidateVisualKey)}
-              style={styles.preview}
-            />
           </View>
-        </View>
+        )}
         {!comparisonReady && (
           <Notice
             kind="error"
@@ -790,7 +824,7 @@ export function StudioRefineWorkspace({
     <ScrollView contentContainerStyle={styles.workspace}>
       <Text style={styles.eyebrow}>REFINE</Text>
       <Text style={styles.title}>Change one thing. Keep the rest.</Text>
-      <Text style={styles.body}>Choose how to target one change. Every route creates a temporary candidate before anything enters design history.</Text>
+      <Text style={styles.body}>Choose how to target one change. Every change creates a temporary candidate before anything enters design history.</Text>
 
       {!reviewSourceIsActive && <Notice kind="info" text="This Activity result was created from an earlier revision. Review the existing preview below; creating or applying another change from this source is unavailable." />}
 
@@ -865,8 +899,11 @@ export function StudioRefineWorkspace({
             const capability = targeting?.catalog_paths.find(
               (candidate) => candidate.component_path === item.id,
             ) ?? null;
-            const unavailable = capability?.status !== 'ready';
-            const help = capability?.status === 'ready' ? item.help
+            const missingStoneSpecies = item.id === 'stone.color' && exactStoneSpecies === null;
+            const unavailable = capability?.status !== 'ready' || missingStoneSpecies;
+            const help = capability?.status === 'ready' && missingStoneSpecies
+              ? 'Record the exact stone species in Advanced design facts before choosing a color.'
+              : capability?.status === 'ready' ? item.help
               : capability?.status === 'unmapped'
                 ? 'Precise targeting has not been mapped for this revision.'
                 : capability?.status === 'unresolved'

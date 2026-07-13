@@ -13,7 +13,7 @@ from datetime import datetime, timedelta, timezone
 import hashlib
 from typing import Literal
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -211,20 +211,7 @@ def _owned_record(
             "the presentation preview is unavailable", status_code=404
         )
     if record.status == "reviewing" and _utc(record.expires_at) <= utcnow():
-        record.status = "expired"
-        record.image = b""
-        record.resolved_at = utcnow()
-        job = _exact_present_job(db, record)
-        if record.design_version is not None and job is not None:
-            _settle_exact_present_job(
-                db, job_id=job.id, owner=record.owner)
-        elif job is not None:
-            if job.status not in {"succeeded", "failed", "canceled"}:
-                job.status = "canceled"
-                job.completed_outputs = 0
-                job.charged_outputs = 0
-                job.error_code = None
-                job.updated_at = utcnow()
+        _expire_record(db, record)
         db.commit()
         raise StudioPresentationCandidateUnavailable(
             "the presentation preview expired before a decision"
@@ -336,6 +323,67 @@ def _settle_exact_present_job(
             "presentation_candidate_qa_invalid" if qa_invalid else None
         )
         job.updated_at = utcnow()
+
+
+def _expire_record(
+    db: Session,
+    record: StudioPresentationCandidateRecord,
+) -> None:
+    now = utcnow()
+    record.status = "expired"
+    record.image = b""
+    record.resolved_at = now
+    job = _exact_present_job(db, record)
+    if record.design_version is not None and job is not None:
+        _settle_exact_present_job(db, job_id=job.id, owner=record.owner)
+    elif job is not None and job.status not in {
+        "succeeded", "failed", "canceled",
+    }:
+        job.status = "canceled"
+        job.progress = 1
+        job.completed_outputs = 0
+        job.charged_outputs = 0
+        job.error_code = None
+        job.updated_at = now
+
+
+def expire_stale_studio_presentation_candidates(
+    db: Session,
+    *,
+    owner: str,
+    job_id: str | None = None,
+) -> int:
+    """Expire due, job-backed Present previews before Activity serialization."""
+
+    query = select(StudioPresentationCandidateRecord).where(
+        StudioPresentationCandidateRecord.owner == owner,
+        StudioPresentationCandidateRecord.status == "reviewing",
+        StudioPresentationCandidateRecord.expires_at <= utcnow(),
+    )
+    if job_id is None:
+        query = query.where(or_(
+            StudioPresentationCandidateRecord.studio_job_id.is_not(None),
+            StudioPresentationCandidateRecord.id.in_(select(
+                StudioPresentationCandidateJobLink.candidate_id
+            )),
+        ))
+    else:
+        query = query.where(or_(
+            StudioPresentationCandidateRecord.studio_job_id == job_id,
+            StudioPresentationCandidateRecord.id.in_(select(
+                StudioPresentationCandidateJobLink.candidate_id
+            ).where(
+                StudioPresentationCandidateJobLink.studio_job_id == job_id
+            )),
+        ))
+    records = list(db.scalars(
+        query.order_by(StudioPresentationCandidateRecord.id).with_for_update()
+    ))
+    for record in records:
+        _expire_record(db, record)
+    if records:
+        db.commit()
+    return len(records)
 
 
 def _fail_invalid_store_job(

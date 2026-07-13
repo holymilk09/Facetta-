@@ -5,6 +5,43 @@ Read `CLAUDE.md` (constitution — binding), `README.md` (endpoints/layout),
 `docs/DATA_WANTED.md` (open research asks). This file is the delta: what is
 DONE beyond the original TASKS.md build order, and what is next.
 
+## 2026-07-14 synchronized comparison and Activity-truth checkpoint
+
+Refine, Views, unsaved Present candidates, and Collections revision comparison
+now use one shared before/after decision surface. Phones keep source and
+candidate in a single toggleable viewport instead of stacking them into a
+memory test; larger screens use a split view. The full inspector applies one
+shared 1x/2x/4x zoom and one scroll coordinate system to both images. Only the
+compact source and candidate loads can authorize Apply or Save; loading or
+zooming detail images cannot satisfy the review gate. Immutable source and
+temporary-candidate labels remain visible throughout inspection.
+
+Refine's visible Stone color action now fails closed until the exact,
+lineage-checked specification contains a stone species. The species is passed
+to the scoped catalog request, invalid or unavailable palettes remain
+unselectable, and designer copy no longer exposes provider terminology.
+
+Activity now reconciles expired temporary Catalog, Visual, Markup, Views, and
+Present candidates before returning job list or detail state. Each domain
+retains authority for its own row-locked expiration and billing settlement.
+Expired bytes are cleared, zero accepted outputs remain free, accepted Present
+subsets charge exactly the saved outputs, repeated reads are idempotent, and an
+owner's read cannot settle another owner's work. Durable Create directions are
+intentionally excluded because they are saved directions rather than temporary
+review pixels.
+
+Local validation for this checkpoint is green: 1,754 backend tests; all 36
+mobile Jest suites (276 tests); 76 Studio contract tests; TypeScript; Ruff;
+Python byte-compilation; Expo web export; diff hygiene; and the complete
+ten-project production TypeScript-client -> HTTP -> FastAPI acceptance run.
+That run used no Factory path and failed QA produced zero canonical revisions,
+accepted outputs, or charges.
+
+The frozen 144-image provider corpus, independent designer/GIA review, founder
+approval, enrolled external authority, and live two-principal HTTPS staging
+evidence remain external beta gates and were not performed by this local
+checkpoint.
+
 ## 2026-07-14 historical Refine variation checkpoint
 
 Activity can now preserve a useful Refine result even after the source project

@@ -167,6 +167,12 @@ successful structural change advances image and specification atomically.
 The product chooses instant versus structural execution from the component and
 delta contract. Designers choose the change they want, not a provider or model.
 
+Stone-color catalogs are species-scoped. Studio may expose that component path
+only after the selected exact revision has loaded a lineage-matching
+specification with a recorded `stone.species`; the UI forwards that fact to the
+catalog request and fails closed if it is absent or rejected. A generic color
+card that reaches an unscoped 422 is not a truthful visible workflow.
+
 Structural component-map continuity now has a ring-first production adapter,
 but remains disabled until externally reviewed calibration evidence is mounted
 and explicitly activated. The first release contract supports center-stone cut
@@ -302,7 +308,11 @@ The primary application surface is now one outcome-first shell:
   exact-revision eligibility;
 - Guided creation shows the brief, one optional presentation direction,
   collection, and save; detailed jewelry controls are hidden behind
-  **Advanced specifications**; and
+  **Advanced specifications**;
+- source/candidate decisions use one synchronized comparison surface: a
+  toggleable viewport on phones and split view with shared zoom/scroll on larger
+  screens. Compact images alone own Apply/Save readiness; the detail inspector
+  cannot authorize a decision; and
 - the previous feature-flagged trusted workspace remains an internal module,
   not a competing top-level product entry.
 
@@ -318,6 +328,15 @@ terminal transition owns completion. Backend and generated mobile definitions
 must reject missing, invalid, or contradictory combinations. In particular,
 Vary cannot create an Activity job, while a candidate-review job cannot be
 settled generically after its durable candidate enters review.
+
+Activity list and detail reads reconcile expired temporary review candidates
+before serializing a `StudioJob`. The coordinator first narrows work by the
+owner's reviewing action IDs, then delegates Catalog, Visual, Markup, Views,
+and Present expiration to their canonical domain settlement. This prevents an
+expired candidate from remaining indefinitely visible as Ready to review,
+clears its temporary bytes, preserves accepted-subset billing, and remains
+idempotent. Create is outside this cleanup path because selected Create
+directions are durable history rather than expiring preview decisions.
 
 ## State and authority
 

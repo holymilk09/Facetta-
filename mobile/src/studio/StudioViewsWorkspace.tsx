@@ -15,7 +15,7 @@ import {
 import { designerErrorMessage } from './designerErrorMessage';
 import { getStudioAction } from './actions';
 import { useVisualReviewReadiness } from './useVisualReviewReadiness';
-import { StudioReviewImage } from './StudioReviewImage';
+import { StudioComparisonInspector } from './StudioComparisonInspector';
 
 const VIEWS_CREDITS_PER_OUTPUT = getStudioAction('views').creditEstimate ?? 0;
 
@@ -188,34 +188,31 @@ export function StudioViewsWorkspace({
           <Text style={styles.comparisonDetail}>
             Check that the full form, setting, and proportions still match the exact source.
           </Text>
-          <View style={styles.comparisonRow}>
-            {sourceImageUrl !== null && (
-              <View style={styles.comparisonPanel}>
-                <Text style={styles.comparisonLabel}>Exact source · unchanged</Text>
-                <StudioReviewImage
-                  accessibilityLabel="Exact source revision"
-                  inspectionLabel="Exact source revision"
-                  source={{ uri: sourceImageUrl }}
-                  imageRequestHeaders={imageRequestHeaders}
-                  onLoad={() => visualReview.markReady(sourceVisualKey)}
-                  onError={() => visualReview.markFailed(sourceVisualKey)}
-                  style={styles.preview}
-                />
-              </View>
-            )}
-            <View style={styles.comparisonPanel}>
-              <Text style={styles.comparisonLabel}>Candidate · not saved</Text>
-              <StudioReviewImage
-                accessibilityLabel={`Temporary ${previewForLineage.view} view`}
-                inspectionLabel={`Temporary ${previewForLineage.view.replace('_', '-')} view candidate`}
-                source={{ uri: previewForLineage.previewUrl }}
-                imageRequestHeaders={imageRequestHeaders}
-                onLoad={() => visualReview.markReady(candidateVisualKey)}
-                onError={() => visualReview.markFailed(candidateVisualKey)}
-                style={styles.preview}
-              />
-            </View>
-          </View>
+          {sourceImageUrl !== null && (
+            <StudioComparisonInspector
+              before={{
+                accessibilityLabel: 'Exact source revision',
+                label: `Saved source · Version ${lineage.sourceDesignVersion}`,
+                roleLabel: 'Source',
+                source: { uri: sourceImageUrl },
+                imageRequestHeaders,
+                onLoad: () => visualReview.markReady(sourceVisualKey),
+                onError: () => visualReview.markFailed(sourceVisualKey),
+              }}
+              after={{
+                accessibilityLabel: `Temporary ${previewForLineage.view} view`,
+                label: `Temporary ${previewForLineage.view.replace('_', '-')} view`,
+                roleLabel: 'Candidate',
+                source: { uri: previewForLineage.previewUrl },
+                imageRequestHeaders,
+                onLoad: () => visualReview.markReady(candidateVisualKey),
+                onError: () => visualReview.markFailed(candidateVisualKey),
+              }}
+              compactHeight={320}
+              inspectionTitle={`Compare the exact source with the ${previewForLineage.view.replace('_', '-')} view`}
+              testID="views-source-candidate-comparison"
+            />
+          )}
         </View>
         {sourceImageUrl === null && (
           <Notice
@@ -319,10 +316,6 @@ const styles = StyleSheet.create({
   comparisonCard: { borderWidth: 1, borderColor: theme.line, borderRadius: radius.lg, padding: 14, backgroundColor: theme.card, gap: 6 },
   comparisonTitle: { color: theme.ink, fontSize: 16, fontWeight: '800' },
   comparisonDetail: { color: theme.faint, fontSize: 12, lineHeight: 18 },
-  comparisonRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 4 },
-  comparisonPanel: { flex: 1, minWidth: 220, maxWidth: 350, gap: 5 },
-  comparisonLabel: { color: theme.faint, fontSize: 10, fontWeight: '800', textTransform: 'uppercase' },
-  preview: { width: '100%', aspectRatio: 1.25, borderRadius: radius.md, backgroundColor: theme.line },
   reviewCard: { borderWidth: 1, borderColor: theme.line, borderRadius: radius.md, padding: 14, backgroundColor: theme.card, gap: 8 },
   reviewTitle: { color: theme.ink, fontWeight: '800', fontSize: 16 },
   checkRow: { flexDirection: 'row', gap: 10, alignItems: 'flex-start' },

@@ -210,8 +210,9 @@ describe('StudioPresentWorkspace', () => {
       preset: 'catalog_white', framing: 'square', presentation_only: true,
     }));
     expect(await screen.findByText('Not saved · choose what to keep')).toBeTruthy();
-    expect(screen.getByText('Exact source · unchanged')).toBeTruthy();
-    expect(screen.getByText('Candidate · review before saving')).toBeTruthy();
+    expect(screen.getByTestId('presentation-comparison-candidate_1')).toBeTruthy();
+    expect(screen.getByText('Source: Saved source · Version 4')).toBeTruthy();
+    expect(screen.getByText('Candidate: Catalog white needs review')).toBeTruthy();
     expect(screen.queryByText('1 · Destination')).toBeNull();
     expect(screen.queryByText('Create client product photo')).toBeNull();
     expect(screen.queryByText(/canonical|quality|QA/i)).toBeNull();
@@ -542,11 +543,14 @@ describe('StudioPresentWorkspace', () => {
     await waitFor(() => expect(calls).toHaveLength(2));
     expect(calls.map((call) => call.preset)).toEqual(['catalog_white', 'luxury_studio']);
     expect(await screen.findByText('2 of 2 requested outputs are ready for review. Your selected visual is unchanged.')).toBeTruthy();
-    expect(screen.getAllByText('Exact source · unchanged')).toHaveLength(1);
-    expect(screen.getAllByText('Candidate · review before saving')).toHaveLength(2);
-    expect(screen.getByLabelText('Exact source revision')).toBeTruthy();
+    expect(screen.getAllByText('Source: Selected visual direction · specification not confirmed')).toHaveLength(2);
+    expect(screen.getByText('Candidate: Catalog white')).toBeTruthy();
+    expect(screen.getByText('Candidate: Luxury studio')).toBeTruthy();
+    expect(screen.getAllByLabelText('Exact source revision')).toHaveLength(2);
+    expect(screen.getByTestId('presentation-comparison-candidate_catalog_white')).toBeTruthy();
+    expect(screen.getByTestId('presentation-comparison-candidate_luxury_studio')).toBeTruthy();
     await act(async () => {
-      fireEvent(screen.getByLabelText('Exact source revision'), 'load');
+      fireEvent(screen.getAllByLabelText('Exact source revision')[0], 'load');
       fireEvent(screen.getByLabelText('Catalog white'), 'load');
     });
     const saveButtons = screen.getAllByText('Save presentation');

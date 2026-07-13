@@ -76,8 +76,9 @@ describe('StudioViewsWorkspace', () => {
     expect(previewLineArtView).toHaveBeenCalledWith({ ...lineage, createdBy: 'designer', view: 'front' });
     expect(assetImageUrl).toHaveBeenCalledWith('asset_7');
     expect(screen.getByText('Compare before saving')).toBeTruthy();
-    expect(screen.getByText('Exact source · unchanged')).toBeTruthy();
-    expect(screen.getByText('Candidate · not saved')).toBeTruthy();
+    expect(screen.getByTestId('views-source-candidate-comparison')).toBeTruthy();
+    expect(screen.getByText('Source: Saved source · Version 4')).toBeTruthy();
+    expect(screen.getByText('Candidate: Temporary front view')).toBeTruthy();
     expect(screen.getByLabelText('Exact source revision').props.source).toEqual({
       uri: 'https://test/source.png',
       headers: { Authorization: 'Bearer first-party-token' },
@@ -86,6 +87,22 @@ describe('StudioViewsWorkspace', () => {
       Authorization: 'Bearer first-party-token',
     });
     expect(onSaved).not.toHaveBeenCalled();
+
+    await act(async () => {
+      fireEvent.press(screen.getByLabelText('Inspect comparison in detail'));
+    });
+    expect(screen.getByLabelText('Candidate: Temporary front view detail view')).toBeTruthy();
+    expect(screen.queryByLabelText('Source: Saved source · Version 4 detail view')).toBeNull();
+    await act(async () => {
+      fireEvent.press(screen.getByLabelText('Show Source: Saved source · Version 4 in detail'));
+    });
+    expect(screen.getByLabelText('Source: Saved source · Version 4 detail view')).toBeTruthy();
+    expect(screen.queryByLabelText('Candidate: Temporary front view detail view')).toBeNull();
+    fireEvent.press(screen.getByText('Save view'));
+    expect(acceptLineArtView).not.toHaveBeenCalled();
+    await act(async () => {
+      fireEvent.press(screen.getByLabelText('Close comparison inspector'));
+    });
 
     fireEvent.press(screen.getByText('Save view'));
     expect(acceptLineArtView).not.toHaveBeenCalled();
@@ -176,7 +193,9 @@ describe('StudioViewsWorkspace', () => {
       : new Promise((resolve) => { resolveB = resolve; }));
     const gateway = {
       resumeViews, previewLineArtView: jest.fn(), acceptLineArtView: jest.fn(),
-      discardLineArtView: jest.fn(),
+      discardLineArtView: jest.fn(), assetImageUrl: jest.fn((assetId: string) => (
+        `https://test/${assetId}.png`
+      )),
     } as any;
     const rendered = await render(<StudioViewsWorkspace
       gateway={gateway} lineage={lineage} createdBy="designer" onSaved={jest.fn()}
@@ -193,8 +212,8 @@ describe('StudioViewsWorkspace', () => {
     expect(screen.getByText('Confirmed design · Version 5')).toBeTruthy();
 
     await act(async () => { resolveB?.({ data: previewB, error: null, status: 200 }); });
-    expect(await screen.findByLabelText(
-      'Inspect Temporary side view candidate in detail',
-    )).toBeTruthy();
+    expect(await screen.findByTestId('views-source-candidate-comparison')).toBeTruthy();
+    expect(screen.getByText('Source: Saved source · Version 5')).toBeTruthy();
+    expect(screen.getByText('Candidate: Temporary side view')).toBeTruthy();
   });
 });

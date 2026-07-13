@@ -198,6 +198,16 @@ describe('StudioCollectionsWorkspace', () => {
     await fireEvent.press(screen.getByLabelText('Compare revision 1'));
     await fireEvent.press(screen.getByLabelText('Compare revision 2'));
     expect(screen.getByText('Comparing revision 1 and revision 2')).toBeTruthy();
+    expect(screen.getByTestId('selected-revision-comparison')).toBeTruthy();
+    expect(screen.getByText('Before: Revision 1')).toBeTruthy();
+    expect(screen.getByText('After: Revision 2')).toBeTruthy();
+    expect(screen.getByLabelText('Revision 1 comparison').props.source.headers).toEqual({
+      Authorization: 'Bearer first-party-token',
+    });
+    expect(screen.getByLabelText('Revision 2 comparison').props.source.headers).toEqual({
+      Authorization: 'Bearer first-party-token',
+    });
+    expect(screen.getByLabelText('Inspect comparison in detail')).toBeTruthy();
     expect(screen.getAllByText('Original direction · Design facts confirmed').length).toBeGreaterThan(0);
     expect(screen.getAllByText('Refined from Revision 1 · Design facts confirmed').length).toBeGreaterThan(0);
     expect(screen.getAllByText('Jul 12, 2026').length).toBeGreaterThan(0);
