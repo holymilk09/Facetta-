@@ -30,6 +30,9 @@ from facetta.db import (
 )
 from facetta.image_identity import spec_visual_hash
 from facetta.media import sniff_media_type
+from facetta.revision_component_map_store import (
+    copy_revision_component_map_for_identical_raster,
+)
 from facetta.spec import Spec
 
 if TYPE_CHECKING:
@@ -80,6 +83,40 @@ PROVENANCE_BY_CAPABILITY = {
 
 def is_primary_revision(asset: ImageAsset) -> bool:
     return asset.capability in PRIMARY_REVISION_CAPABILITIES
+
+
+def is_canonical_revision(asset: ImageAsset) -> bool:
+    """Whether an asset belongs to an accepted Variation revision history.
+
+    Creative renders without a design-version binding are alternative directions
+    awaiting selection.  They are durable provenance, but numbering them as
+    revisions makes independent candidates look like edits of one another.
+    """
+
+    return is_primary_revision(asset) and not (
+        asset.capability == "CREATIVE_RENDER" and asset.design_version is None
+    )
+
+
+def accepted_creative_candidate(
+    chain: list[ImageAsset], active_asset_id: str | None,
+) -> ImageAsset | None:
+    """Return the creative direction on the active Variation's ancestor chain."""
+
+    if active_asset_id is None:
+        return None
+    by_id = {asset.id: asset for asset in chain}
+    cursor = by_id.get(active_asset_id)
+    seen: set[str] = set()
+    while cursor is not None and cursor.id not in seen:
+        seen.add(cursor.id)
+        if cursor.capability == "CREATIVE_RENDER" and cursor.design_version is None:
+            return cursor
+        cursor = (
+            by_id.get(cursor.parent_asset_id)
+            if cursor.parent_asset_id is not None else None
+        )
+    return None
 
 
 class DesignAlreadyLinked(ValueError):
@@ -879,6 +916,12 @@ def promote_creative_candidate(
         db.add_all([promoted, record])
         ensure_design_chain_available(db, design_id, root_id)
         db.flush()
+        copy_revision_component_map_for_identical_raster(
+            db,
+            source_asset_id=candidate.id,
+            child_asset_id=promoted.id,
+            child_image_bytes=bytes(promoted.image),
+        )
         db.commit()
     except Exception:
         db.rollback()

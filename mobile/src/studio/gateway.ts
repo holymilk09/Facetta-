@@ -283,6 +283,7 @@ type GatewayTrustedClient = Pick<TrustedApiClient,
   | 'createProjectFromPrompt'
   | 'selectCreativeCandidate'
   | 'saveAsVariation'
+  | 'saveCreativeCandidateAsVariation'
   | 'previewCatalogSelection'
   | 'listCatalogPreviews'
   | 'acceptCatalogPreview'
@@ -1164,6 +1165,36 @@ export function createStudioGateway(
           'The variation response did not preserve the requested source revision.',
           'invalid_response',
           result.status,
+        );
+      }
+      return result;
+    },
+
+    async saveCreativeDirectionAsVariation(request: {
+      projectId: string;
+      candidateId: string;
+      activeAssetId: string;
+      createdBy: string;
+      label: string;
+    }): Promise<StudioGatewayResult<SaveAsVariationResult>> {
+      const result = await client.saveCreativeCandidateAsVariation(
+        request.projectId,
+        request.candidateId,
+        {
+          created_by: request.createdBy,
+          expected_active_asset_id: request.activeAssetId,
+          expected_design_version: null,
+          label: request.label,
+        },
+      );
+      if (result.error !== null) {
+        return { data: null, error: mapError(result.error), status: result.status };
+      }
+      if (result.data.source_asset_id !== request.candidateId) {
+        return gatewayError(
+          'INVALID_VARIATION_LINEAGE',
+          'The saved variation did not preserve the chosen direction.',
+          'invalid_response', result.status,
         );
       }
       return result;

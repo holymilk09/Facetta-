@@ -56,6 +56,11 @@ export function runTrustedClientDecoderTests(): void {
       design_version: 1,
       image_url: '/assets/ast_root/image',
     }],
+    creative_candidates: [{
+      asset_id: 'ast_direction', root_id: 'ast_root', capability: 'CREATIVE_RENDER',
+      provenance: 'pre_spec_creative_candidate', revision: null, design_version: null,
+      image_url: '/assets/ast_direction/image',
+    }],
     assets: [],
     derived_assets: [],
     factory_ready: false,
@@ -85,6 +90,9 @@ export function runTrustedClientDecoderTests(): void {
     'factory-readiness blockers should survive project normalization');
   assert(project?.factory_blockers[1]?.component_id === 'stone.assembly_hint.shoulder',
     'source-component blockers should survive project normalization');
+  assert(project?.creative_candidates?.[0]?.asset_id === 'ast_direction'
+    && project.creative_candidates[0]?.revision === null,
+  'pre-spec directions should decode separately from canonical revisions');
 
   const variation = decodeSaveAsVariationResult({
     status: 'variation_created',
@@ -643,6 +651,54 @@ describe('trusted API decoders', () => {
       error: null,
       status: 201,
     });
+  });
+
+  test('keeps an unselected Create candidate through the dedicated variation route', async () => {
+    const fetcher = jest.fn(async (
+      _input: RequestInfo | URL,
+      _init?: RequestInit,
+    ) => ({
+      ok: true,
+      status: 201,
+      text: async () => JSON.stringify({
+        status: 'variation_created', family_id: 'fam_create', variation_index: 2,
+        source_project_id: 'project original', source_asset_id: 'candidate kept',
+        project: {
+          id: 'variation kept', root_id: 'variation kept', title: 'Direction 2',
+          owner: 'usr_designer', state: 'refining', design_id: null,
+          active_asset_id: 'variation kept', active_design_version: null,
+          active_revision: {
+            asset_id: 'variation kept', root_id: 'variation kept',
+            capability: 'VARIATION_BRANCH', provenance: 'studio_variation_branch',
+            revision: 1, design_version: null,
+            image_url: '/assets/variation kept/image',
+          },
+          revisions: [], creative_candidates: [], assets: [], derived_assets: [],
+          factory_ready: false, factory_blockers: [], primary_revision_count: 1,
+          has_factory_drawing: false,
+        },
+      }),
+    } as unknown as Response));
+    const api = createTrustedApiClient({ baseUrl: 'https://facetta.test', fetcher });
+
+    const result = await api.saveCreativeCandidateAsVariation(
+      'project original', 'candidate kept', {
+        created_by: 'usr_designer', expected_active_asset_id: 'candidate original',
+        expected_design_version: null, label: 'Direction 2',
+      },
+    );
+
+    expect(fetcher.mock.calls[0]?.[0]).toBe(
+      'https://facetta.test/studio/projects/project%20original/creative-candidates/candidate%20kept/variations',
+    );
+    expect(JSON.parse(String(fetcher.mock.calls[0]?.[1]?.body))).toEqual({
+      created_by: 'usr_designer', expected_active_asset_id: 'candidate original',
+      expected_design_version: null, label: 'Direction 2',
+    });
+    expect(result.data?.source_asset_id).toBe('candidate kept');
+    expect(result.data?.project.active_revision?.image_url).toBe(
+      'https://facetta.test/assets/variation kept/image',
+    );
   });
 
   test('preserves structured stale-version errors when variation branching is rejected', async () => {

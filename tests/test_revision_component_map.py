@@ -20,6 +20,7 @@ from facetta.db import (
     ImageAsset,
     ImmutableRevisionComponentMapError,
     RevisionComponentMapRecord,
+    Project,
     get_db,
 )
 from facetta.design_form import NormalizedPoint, NormalizedPolygon
@@ -38,7 +39,11 @@ from facetta.revision_component_map import (
     polygon_hash,
     rasterize_component_mask,
 )
-from facetta.revision_component_map_store import add_revision_component_map
+from facetta.revision_component_map_store import (
+    add_revision_component_map,
+    load_revision_component_map,
+)
+from facetta.studio_history import fork_project_variation
 
 from conftest import HALO_SPEC
 
@@ -100,6 +105,47 @@ def _map(
         mapper_contract="test.mapper.v1",
         components=tuple(components),
     )
+
+
+def test_exact_variation_branch_carries_component_identity_map():
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    with sessionmaker(bind=engine, autoflush=False)() as db:
+        image = _png()
+        source = ImageAsset(
+            id="ast_mapped_source", root_id="ast_mapped_source",
+            parent_asset_id=None, design_version=None,
+            capability="IMPORTED_REFERENCE", image=image, media_type="image/png",
+            created_by="designer",
+        )
+        project = Project(
+            root_id=source.id, owner="designer", title="Mapped variation", tags=[],
+        )
+        db.add_all([source, project])
+        db.flush()
+        add_revision_component_map(
+            db, _map(source.id, image), image_bytes=image, parent_asset_id=None,
+        )
+        db.commit()
+
+        result = fork_project_variation(
+            db,
+            project_root_id=project.root_id,
+            source_asset_id=source.id,
+            expected_active_asset_id=source.id,
+            expected_design_version=None,
+            variation_label="Mapped sibling",
+            created_by="designer",
+        )
+
+        child_map = load_revision_component_map(db, result.asset_id)
+        assert child_map is not None
+        assert child_map.asset_id == result.asset_id
+        assert child_map.asset_sha256 == hashlib.sha256(image).hexdigest()
+        assert child_map.mapper_contract == "facetta.byte-identical-map-copy.v1"
+        assert {component.component_id for component in child_map.components} == {
+            component.component_id for component in _map(source.id, image).components
+        }
 
 
 @pytest.fixture

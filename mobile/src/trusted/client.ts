@@ -623,6 +623,15 @@ export const decodeProjectDetail: Decoder<ProjectDetail> = (value) => {
   }
   revisions.sort((left, right) => left.revision - right.revision);
 
+  const rawCreativeCandidates = Array.isArray(value.creative_candidates)
+    ? value.creative_candidates : [];
+  const creativeCandidates = rawCreativeCandidates
+    .map(decodeAssetSummary)
+    .filter((asset): asset is AssetSummary => asset !== null)
+    .filter((asset) => (
+      asset.capability === 'CREATIVE_RENDER' && asset.design_version === null
+    ));
+
   const rawDerived = Array.isArray(value.derived_assets) ? value.derived_assets : [];
   const derivedAssets = rawDerived
     .map(decodeAssetSummary)
@@ -671,6 +680,7 @@ export const decodeProjectDetail: Decoder<ProjectDetail> = (value) => {
     active_revision: activeRevision,
     pinned_revision: pinnedRevision,
     revisions,
+    creative_candidates: creativeCandidates,
     assets: allAssets,
     derived_assets: derivedAssets,
     approval,
@@ -4571,6 +4581,34 @@ export function createTrustedApiClient(options: TrustedApiClientOptions) {
     ): Promise<ApiResult<SaveAsVariationResult>> {
       const result = await call(
         `/studio/projects/${encodeURIComponent(projectRootId)}/variations`,
+        decodeSaveAsVariationResult,
+        {
+          method: 'POST',
+          body: encodeBody({
+            created_by: request.created_by,
+            expected_active_asset_id: request.expected_active_asset_id,
+            expected_design_version: request.expected_design_version ?? null,
+            label: request.label,
+          }),
+        },
+      );
+      if (result.error !== null) return result;
+      return {
+        ...result,
+        data: {
+          ...result.data,
+          project: projectWithUrls(result.data.project, baseUrl),
+        },
+      };
+    },
+
+    async saveCreativeCandidateAsVariation(
+      projectRootId: string,
+      candidateId: string,
+      request: SaveAsVariationRequest,
+    ): Promise<ApiResult<SaveAsVariationResult>> {
+      const result = await call(
+        `/studio/projects/${encodeURIComponent(projectRootId)}/creative-candidates/${encodeURIComponent(candidateId)}/variations`,
         decodeSaveAsVariationResult,
         {
           method: 'POST',

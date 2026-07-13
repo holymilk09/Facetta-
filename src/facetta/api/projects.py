@@ -103,8 +103,10 @@ from facetta.project_backbone import (
     PersistedProjectInput,
     PROVENANCE_BY_CAPABILITY,
     SourceAssetInput,
+    accepted_creative_candidate,
     get_brief_project_generator,
     is_primary_revision,
+    is_canonical_revision,
     persist_project_v1,
     persist_creative_project,
     persist_prompt_creative_project,
@@ -302,6 +304,7 @@ class ProjectDetail(BaseModel):
     active_revision: AssetSummary | None
     pinned_revision: AssetSummary | None
     revisions: list[AssetSummary]
+    creative_candidates: list[AssetSummary]
     derived_assets: list[AssetSummary]
     assets: list[AssetSummary]
     items: list[AssetSummary]
@@ -771,7 +774,12 @@ def _cover_asset(chain: list[ImageAsset]) -> ImageAsset | None:
 
 def project_card(db: Session, project: Project) -> dict:
     chain = project_chain(db, project.root_id)
-    primary = [a for a in chain if is_primary_revision(a)]
+    primary = [a for a in chain if is_canonical_revision(a)]
+    selected_candidate = accepted_creative_candidate(
+        chain, project.selected_candidate_asset_id,
+    )
+    if selected_candidate is not None:
+        primary.insert(0, selected_candidate)
     kinds = Counter(a.capability for a in chain)
     selected = (
         next((asset for asset in chain
@@ -817,9 +825,15 @@ def _latest_spec(db: Session, design_id: str | None) -> DesignVersion | None:
     ).scalars().first()
 
 
-def _revision_numbers(chain: list[ImageAsset]) -> dict[str, int]:
+def _revision_numbers(
+    chain: list[ImageAsset], selected_candidate_asset_id: str | None = None,
+) -> dict[str, int]:
+    canonical = [a for a in chain if is_canonical_revision(a)]
+    selected = accepted_creative_candidate(chain, selected_candidate_asset_id)
+    if selected is not None:
+        canonical.insert(0, selected)
     return {asset.id: revision for revision, asset in enumerate(
-        (a for a in chain if is_primary_revision(a)), start=1)}
+        canonical, start=1)}
 
 
 def _asset_summary(
@@ -932,14 +946,20 @@ def _approval_for_active(
 def project_detail(db: Session, project: Project,
                    include_images: bool = False) -> dict:
     chain = project_chain(db, project.root_id)
-    revision_numbers = _revision_numbers(chain)
+    revision_numbers = _revision_numbers(
+        chain, project.selected_candidate_asset_id,
+    )
     primary = [a for a in chain if a.id in revision_numbers]
+    creative_candidates = [
+        asset for asset in chain
+        if asset.capability == "CREATIVE_RENDER" and asset.design_version is None
+    ]
     active = primary[-1] if primary else None
     if (project.selected_candidate_asset_id is not None
-            and not any(asset.design_version is not None for asset in primary)):
-        selected = next((asset for asset in primary
+            and not primary):
+        selected = next((asset for asset in creative_candidates
                          if asset.id == project.selected_candidate_asset_id), None)
-        if selected is not None and selected.design_version is None:
+        if selected is not None:
             active = selected
     pinned_candidates = [a for a in primary if a.pinned_at is not None]
     pinned = (max(pinned_candidates, key=lambda a: a.pinned_at)
@@ -1044,8 +1064,14 @@ def project_detail(db: Session, project: Project,
         "active_revision": by_id.get(active.id) if active else None,
         "pinned_revision": by_id.get(pinned.id) if pinned else None,
         "revisions": [by_id[a.id] for a in primary],
-        "derived_assets": [item for item in summaries
-                           if item["revision"] is None],
+        "creative_candidates": [by_id[a.id] for a in creative_candidates],
+        "derived_assets": [
+            item for item in summaries
+            if item["revision"] is None
+            and item["asset_id"] not in {
+                candidate.id for candidate in creative_candidates
+            }
+        ],
         "assets": summaries,
         "items": summaries,
         "approval": approval,
@@ -1225,6 +1251,21 @@ def select_project_creative_candidate(
             detail="the selected asset is not a pre-spec creative candidate",
         )
     if (
+        project.selected_candidate_asset_id not in (None, candidate.id)
+        and db.scalar(
+            select(Project.root_id).where(
+                Project.branched_from_project_root_id == project.root_id
+            ).limit(1)
+        ) is not None
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "the Original direction is locked after a sibling variation "
+                "has been saved"
+            ),
+        )
+    if (
         request.studio_job_id is not None
         and project.selected_candidate_asset_id not in (None, candidate.id)
     ):
@@ -1252,6 +1293,7 @@ def select_project_creative_candidate(
     if project.selected_candidate_asset_id != candidate.id:
         project.selected_candidate_asset_id = candidate.id
         project.updated_at = utcnow()
+    ensure_project_family(db, project)
     db.commit()
     db.refresh(project)
     return project_detail(db, project)
@@ -1324,7 +1366,6 @@ def create_project_from_prompt(
     project = db.get(Project, persisted.root_id)
     if project is None:  # pragma: no cover - transaction invariant
         raise RuntimeError("persisted prompt project is unavailable")
-    ensure_project_family(db, project)
     db.commit()
     db.refresh(project)
     return project_detail(db, project)
@@ -1555,7 +1596,6 @@ def create_project_from_drawing(
     project = db.get(Project, persisted.root_id)
     if project is None:  # pragma: no cover - transaction invariant
         raise RuntimeError("persisted creative project is unavailable")
-    ensure_project_family(db, project)
     db.commit()
     db.refresh(project)
     return project_detail(db, project)

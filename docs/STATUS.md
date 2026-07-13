@@ -1,6 +1,6 @@
 # Project status — read me first in a new session
 
-Last updated: 2026-07-12 · branch `codex/trusted-project-workflow`.
+Last updated: 2026-07-13 · branch `codex/facetta-integration`.
 Read `CLAUDE.md` (constitution — binding), `README.md` (endpoints/layout),
 `docs/DATA_WANTED.md` (open research asks). This file is the delta: what is
 DONE beyond the original TASKS.md build order, and what is next.
@@ -14,16 +14,23 @@ optional promotion lane for a selected immutable revision. The target hierarchy
 is Design Family -> Variation -> Revision, with a current `Project` serving as
 the persisted variation container until an additive family model exists.
 
-This is an architecture decision, not a claim that the complete studio shell
-has shipped. Implemented foundations include immutable project/image/spec
-revisions, pre-spec candidates, category-neutral reference and prompt renders,
-typed component catalogs, stable design-form elements, saved masks, structural
-edit domains, QA-gated retries, derived ecommerce assets, project/library
-reads, exact-revision approval, and factory readiness gates. Still pending are
-a first-class Design Family entity, redesign navigation around the global loop,
-one on-demand visual-twin command surface, a unified component graph and instant
-masked configurator, destination packaging across Client/Marketing/Library/
-Factory, and removal of generic deterministic jewelry schematics.
+The integrated Studio shell now uses global Studio, Collections, Activity, and
+Learn navigation with contextual Create, Vary, Refine, Views, Present, and
+optional Factory actions. First-class Design Family records, sibling
+Variations, immutable Revision history, comparison/restore, role-labeled
+references, temporary preview decisions, durable Studio jobs, and
+Client/Marketing presentation destinations are implemented through one typed
+Studio gateway. Create candidates are durable review directions rather than
+fake sequential revisions; the selected direction becomes the Original and
+other useful candidates can be kept explicitly as sibling Variations.
+
+Remaining product/reliability work includes a calibrated production component
+mapper for initially unmapped creative candidates, broader cross-category
+component graphs, a complete instant masked configurator, design-derived
+factory discussion views, and the external beta evidence in
+`STUDIO_EXTERNAL_BETA_GATES.md`. Generic deterministic jewelry schematics remain
+internal/non-authoritative until their documented replacement and deletion
+gates pass.
 
 The engineering invariant is stricter than the legacy implementation: AI
 creates jewelry geometry and vision checks it; deterministic code records,

@@ -214,7 +214,7 @@ def test_preview_does_not_mutate_canonical_history_and_apply_is_atomic(
         child = db.get(ImageAsset, applied["new_asset_id"])
         assert child is not None
         assert child.parent_asset_id == "ast_selected"
-        assert child.capability == "CREATIVE_RENDER"
+        assert child.capability == "GLOBAL_RESTYLE"
         assert child.design_id is None
         assert child.design_version is None
         assert bytes(child.image) == CANDIDATE

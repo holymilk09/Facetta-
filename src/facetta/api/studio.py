@@ -48,7 +48,10 @@ from facetta.image_run_store import (
     persist_image_agent_result,
 )
 from facetta.media import sniff_media_type
-from facetta.project_backbone import is_primary_revision
+from facetta.project_backbone import (
+    accepted_creative_candidate,
+    is_canonical_revision,
+)
 from facetta.presentation import (
     PresentationScopeError,
     ProductPhotoFraming,
@@ -2117,6 +2120,44 @@ def save_as_variation(
 
 
 @router.post(
+    "/projects/{project_root_id}/creative-candidates/{candidate_id}/variations",
+    status_code=201,
+)
+def save_creative_candidate_as_variation(
+    project_root_id: str,
+    candidate_id: str,
+    request: SaveVariationRequest,
+    db: DbSession,
+):
+    """Keep an unselected Create direction as a named sibling Variation."""
+
+    try:
+        result = fork_project_variation(
+            db,
+            project_root_id=project_root_id,
+            source_asset_id=candidate_id,
+            expected_active_asset_id=request.expected_active_asset_id,
+            expected_design_version=request.expected_design_version,
+            variation_label=request.label,
+            created_by=request.created_by,
+            allow_unselected_creative_candidate=True,
+        )
+    except StudioHistoryError as exc:
+        return _error(exc)
+    project = db.get(Project, result.project_root_id)
+    if project is None:  # pragma: no cover - transaction invariant
+        raise HTTPException(status_code=500, detail="variation project not found")
+    return {
+        "status": "variation_created",
+        "family_id": result.family_id,
+        "variation_index": result.variation_index,
+        "source_project_id": project.branched_from_project_root_id,
+        "source_asset_id": project.branched_from_asset_id,
+        "project": project_detail(db, project),
+    }
+
+
+@router.post(
     "/projects/{project_root_id}/revisions/{asset_id}/restore",
     status_code=201,
 )
@@ -2164,7 +2205,12 @@ def studio_history(project_root_id: str, db: DbSession):
     chain.sort(key=lambda asset: (
         asset.id != project_root_id, asset.created_at, asset.id,
     ))
-    primary = [asset for asset in chain if is_primary_revision(asset)]
+    primary = [asset for asset in chain if is_canonical_revision(asset)]
+    selected_candidate = accepted_creative_candidate(
+        chain, project.selected_candidate_asset_id,
+    )
+    if selected_candidate is not None:
+        primary.insert(0, selected_candidate)
     active = primary[-1] if primary else None
     if (project.selected_candidate_asset_id is not None
             and not any(asset.design_version is not None for asset in primary)):

@@ -88,6 +88,7 @@ EXPECTED_PRODUCTION_OPERATIONS = (
         "/studio/presentation-candidates/{run_id}/{candidate_id}/accept",
         "/studio/presentation-candidates/{run_id}/{candidate_id}/discard",
         "/studio/projects/{project_root_id}/variations",
+        "/studio/projects/{project_root_id}/creative-candidates/{candidate_id}/variations",
         "/studio/projects/{project_root_id}/revisions/{asset_id}/restore",
         "/studio/projects/{project_root_id}/facts/revise",
     )

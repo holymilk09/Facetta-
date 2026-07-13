@@ -30,6 +30,32 @@ exit code and the generated JSON alongside the human sign-off.
   bind its manifest/config hashes, all source/candidate/mask artifact hashes,
   canonical persistence evidence, source coverage, scores, and the completed
   named GIA-trained false-positive/false-negative review.
+  That review must include one boolean decision for every selected
+  `kind/evaluation_id/source_filename` result; the verifier recomputes the
+  false-positive and false-negative counts from those decisions.
+
+### Prepare the review packet
+
+The secured live executor writes a `facetta-frozen-capture.v1` object with its
+attempt rows and canonical persistence result. Each attempt names the frozen
+`source_filename`, kind, evaluation ID, attempt number, machine acceptance and
+scores, plus candidate path and (for edits) mask path. Do not hand-copy hashes.
+Build an unsigned review packet locally:
+
+```bash
+PYTHONPATH=src .venv/bin/python scripts/prepare_frozen_corpus_review.py \
+  --source-dir /secure/path/to/founder-reference-directory \
+  --capture /secure/path/to/frozen-capture.json \
+  --out /secure/path/to/unsigned-review-packet.json
+```
+
+The builder makes zero provider calls, verifies every referenced frozen source,
+derives source/candidate/mask SHA-256 values, and generates one pending reviewer
+decision per observed result. Its output is intentionally unsigned with
+`completed: false`, null decisions, and `pending_review` coverage. The
+GIA-trained reviewer completes those fields, verifies the images, recomputes
+the declared confusion summary, and signs the entire canonical payload outside
+the repository. The replay verifier rejects the packet until that happens.
 
 ### Execute
 
@@ -60,15 +86,40 @@ The output directory is the canonical machine-result location for this run:
 - `command-result.json` and `exit-code.txt` — invocation summary and retained
   process result.
 
-Record founder approval against the SHA-256 of `results.json` in the release
-ticket or a sign-off record stored beside these two files. The GIA-trained
-review is part of the signed replay; the founder approval is the separate
-release decision. Neither may be inferred from scores alone.
+The GIA-trained review is part of the signed replay. Founder approval is a
+second release decision because it must bind the already-generated
+`results.json` bytes. Enroll `founder_public_key` in the frozen config using the
+same key-id/path/SHA-256 shape as `reviewer_public_key`; keep its private key
+outside the repository. After reviewing the result, the founder signs a
+`facetta-founder-approval.v1` record containing `results_sha256`, decision
+`approved`, founder name, timezone-qualified `approved_at`, and release-ticket
+identifier. Then compile the final decision:
+
+```bash
+set +x
+umask 077
+set +e
+PYTHONPATH=src .venv/bin/python scripts/verify_frozen_corpus_release.py \
+  --results "$ARTIFACT_DIR/results.json" \
+  --approval /secure/path/to/signed-founder-approval.json \
+  --outdir "$ARTIFACT_DIR" \
+  > "$ARTIFACT_DIR/final-command-result.json"
+FINAL_EXIT=$?
+set -e
+printf '%s\n' "$FINAL_EXIT" > "$ARTIFACT_DIR/final-exit-code.txt"
+test "$FINAL_EXIT" -eq 0
+```
+
+The final machine authority is `final-decision.json` with
+`external_beta_ready: true`. Neither approval may be inferred from scores, and
+editing `results.json` after approval invalidates the founder signature.
 
 ### Pass criteria
 
-The command must exit `0`, `results.json.status` must be `pass`, and
-`results.json.release_ready` must be `true`. All of the following must hold:
+The replay command and final-decision command must both exit `0`;
+`results.json.status` must be `pass`, `results.json.release_ready` must be
+`true`, and `final-decision.json.external_beta_ready` must be `true`. All of the
+following must hold:
 
 - Definition and implementation pins pass without manifest/config drift.
 - Source integrity is `144/144`, and signed quality source coverage is
@@ -79,6 +130,9 @@ The command must exit `0`, `results.json.status` must be `pass`, and
   least `85`; mean edit fidelity is at least `90`.
 - No evaluation uses more than `3` attempts, and replayed outside-mask drift is
   at most `0.18`.
+- Signed reviewer acceptance for the manifest's quick-appearance class is at
+  least `0.90`. Structural results meet mean fidelity `90`, have no major
+  drift, and every structural outside-mask replay is at most `0.18`.
 - Canonical API persistence evidence is present and the count of rejected
   candidates that became active assets is exactly `0`.
 - The Ed25519 signature verifies against the pinned reviewer public key, the
@@ -87,8 +141,9 @@ The command must exit `0`, `results.json.status` must be `pass`, and
 - The run reports `0` provider calls; this command verifies a captured replay
   and must not regenerate images.
 
-Any nonzero exit, `release_ready: false`, incomplete/unsigned evidence,
-missing founder approval, or missing GIA review leaves this gate `unmet`.
+Any nonzero exit, `release_ready: false`, `external_beta_ready: false`,
+incomplete/unsigned evidence, missing founder approval, or missing GIA review
+leaves this gate `unmet`.
 
 ## Gate 2: live two-principal staging isolation
 

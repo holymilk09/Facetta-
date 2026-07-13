@@ -163,6 +163,10 @@ PRODUCTION_STUDIO_OPERATIONS: frozenset[RouteOperation] = frozenset({
     ("POST", "/studio/projects/{project_root_id}/variations"),
     (
         "POST",
+        "/studio/projects/{project_root_id}/creative-candidates/{candidate_id}/variations",
+    ),
+    (
+        "POST",
         "/studio/projects/{project_root_id}/revisions/{asset_id}/restore",
     ),
     ("GET", "/studio/projects/{project_root_id}/history"),

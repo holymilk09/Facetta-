@@ -38,7 +38,7 @@ export interface StudioCreateSelection {
 export interface StudioCreateWorkspaceProps {
   gateway: Pick<StudioGateway,
     'createFromPrompt' | 'createFromDrawing' | 'selectCreativeDirection'
-  >;
+  > & Partial<Pick<StudioGateway, 'saveCreativeDirectionAsVariation'>>;
   owner: string;
   initialSentence?: string;
   initialReferences?: readonly StudioCreateReference[];
@@ -56,11 +56,13 @@ const labelForRole = (role: CreateReferenceRole) => (
 );
 
 export function creativeCandidates(project: ProjectDetail): readonly AssetSummary[] {
-  const revisions = project.revisions
-    .map((revision) => revision.asset)
-    .filter((asset) => asset.capability === 'CREATIVE_RENDER');
-  if (revisions.length > 0) return revisions;
-  return project.active_revision === null ? [] : [project.active_revision];
+  if ((project.creative_candidates?.length ?? 0) > 0) {
+    return project.creative_candidates ?? [];
+  }
+  // Compatibility for snapshots created before the explicit candidate contract.
+  return project.assets.filter((asset) => (
+    asset.capability === 'CREATIVE_RENDER' && asset.design_version === null
+  ));
 }
 
 export function StudioCreateWorkspace({
@@ -88,6 +90,8 @@ export function StudioCreateWorkspace({
   const [selectionStudioJobId, setSelectionStudioJobId] = useState<string | null>(
     resumeStudioJobId,
   );
+  const [savedCandidateIds, setSavedCandidateIds] = useState<Set<string>>(new Set());
+  const [originalLocked, setOriginalLocked] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -165,6 +169,44 @@ export function StudioCreateWorkspace({
     setSelectedAssetId(nextCandidates[0].asset_id);
   };
 
+  const keepDirectionAsVariation = async (
+    candidate: AssetSummary, index: number,
+  ): Promise<void> => {
+    if (project === null || selectedAssetId === null || busy) return;
+    if (gateway.saveCreativeDirectionAsVariation === undefined) {
+      setError('Saving another direction is unavailable here. Keep reviewing this set and try again later.');
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    const selected = selectionStudioJobId === null
+      ? await gateway.selectCreativeDirection(project.root_id, selectedAssetId, owner)
+      : await gateway.selectCreativeDirection(
+          project.root_id, selectedAssetId, owner, selectionStudioJobId,
+        );
+    if (selected.error !== null) {
+      setBusy(false);
+      setError(designerErrorMessage(selected.error, 'create'));
+      return;
+    }
+    setSelectionStudioJobId(null);
+    setOriginalLocked(true);
+    const saved = await gateway.saveCreativeDirectionAsVariation({
+      projectId: project.root_id,
+      candidateId: candidate.asset_id,
+      activeAssetId: selected.data.active_asset_id ?? selectedAssetId,
+      createdBy: owner,
+      label: `Direction ${index + 1}`,
+    });
+    setBusy(false);
+    if (saved.error !== null) {
+      setError(designerErrorMessage(saved.error, 'vary'));
+      return;
+    }
+    setProject(selected.data);
+    setSavedCandidateIds((current) => new Set(current).add(candidate.asset_id));
+  };
+
   if (project !== null) {
     return (
       <ScrollView style={styles.root} contentContainerStyle={styles.content}>
@@ -174,7 +216,7 @@ export function StudioCreateWorkspace({
           These are visual directions—not measurements or production instructions.
         </Text>
         <Text style={styles.retainedCopy}>
-          Every direction in this set is already retained in Collections. Starting another sentence keeps them and creates a separate set.
+          Only the direction you save becomes the Original variation and starts its immutable revision history. Use Keep as variation on any other useful direction before continuing.
         </Text>
         <View style={styles.candidateGrid}>
           {candidates.map((candidate, index) => {
@@ -186,7 +228,9 @@ export function StudioCreateWorkspace({
                 accessibilityState={{ checked: selected }}
                 accessibilityLabel={`Direction ${index + 1}`}
                 style={[styles.candidateCard, selected && styles.candidateCardSelected]}
-                onPress={() => setSelectedAssetId(candidate.asset_id)}>
+                onPress={() => {
+                  if (!originalLocked) setSelectedAssetId(candidate.asset_id);
+                }}>
                 {candidate.image_url === null ? (
                   <View style={styles.imageFallback}><Text style={styles.imageFallbackText}>Preview unavailable</Text></View>
                 ) : (
@@ -198,7 +242,27 @@ export function StudioCreateWorkspace({
                 )}
                 <View style={styles.candidateCopy}>
                   <Text style={styles.candidateTitle}>Direction {index + 1}</Text>
-                  <Text style={styles.candidateMeta}>{selected ? 'Selected' : 'Tap to choose'}</Text>
+                  <Text style={styles.candidateMeta}>{selected
+                    ? originalLocked ? 'Original variation' : 'Selected'
+                    : originalLocked ? 'Available to keep' : 'Tap to choose'}</Text>
+                  {!selected && (
+                    <Pressable
+                      accessibilityRole="button"
+                      accessibilityState={{
+                        disabled: busy || savedCandidateIds.has(candidate.asset_id),
+                      }}
+                      disabled={busy || savedCandidateIds.has(candidate.asset_id)}
+                      style={styles.keepButton}
+                      onPress={(event) => {
+                        event.stopPropagation();
+                        void keepDirectionAsVariation(candidate, index);
+                      }}>
+                      <Text style={styles.keepButtonText}>
+                        {savedCandidateIds.has(candidate.asset_id)
+                          ? 'Kept as variation' : 'Keep as variation'}
+                      </Text>
+                    </Pressable>
+                  )}
                 </View>
               </Pressable>
             );
@@ -384,5 +448,7 @@ const styles = StyleSheet.create({
   candidateCopy: { padding: 12 },
   candidateTitle: { color: theme.ink, fontSize: 13, fontWeight: '700' },
   candidateMeta: { color: theme.faint, fontSize: 10, marginTop: 3 },
+  keepButton: { alignSelf: 'flex-start', borderWidth: 1, borderColor: theme.line, borderRadius: radius.pill, paddingHorizontal: 10, paddingVertical: 6, marginTop: 10 },
+  keepButtonText: { color: theme.ink, fontSize: 10, fontWeight: '700' },
   footerActions: { gap: 0 },
 });

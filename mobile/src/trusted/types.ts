@@ -228,6 +228,8 @@ export interface ProjectDetail {
   active_revision: AssetSummary | null;
   pinned_revision: AssetSummary | null;
   revisions: ProjectRevision[];
+  /** Durable pre-selection directions; never numbered as Variation revisions. */
+  creative_candidates?: AssetSummary[];
   assets: AssetSummary[];
   derived_assets: AssetSummary[];
   approval: ApprovalSummary | null;

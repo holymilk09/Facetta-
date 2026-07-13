@@ -14,6 +14,7 @@ import hashlib
 import json
 from collections import defaultdict
 from pathlib import Path
+from statistics import mean
 from typing import Any
 
 from PIL import Image
@@ -112,6 +113,23 @@ def _validate_manifest(manifest: Json) -> tuple[list[Json], list[str]]:
             errors.append(f"{field} must be a non-empty list")
         elif _duplicate_values(list(map(str, values))):
             errors.append(f"{field} contains duplicates")
+    operation_classes = evaluation.get("operation_classes")
+    if not isinstance(operation_classes, dict):
+        errors.append("operation_classes must be an object")
+    else:
+        quick = operation_classes.get("quick_appearance")
+        structural = operation_classes.get("structural")
+        if not isinstance(quick, list) or not isinstance(structural, list):
+            errors.append(
+                "operation_classes must declare quick_appearance and structural lists"
+            )
+        else:
+            classified = list(map(str, quick)) + list(map(str, structural))
+            if _duplicate_values(classified):
+                errors.append("operation classes contain duplicate assignments")
+            operation_ids = set(map(str, evaluation.get("operation_ids", [])))
+            if set(classified) != operation_ids:
+                errors.append("operation classes must partition operation_ids exactly")
     return rows, errors
 
 
@@ -135,6 +153,7 @@ def _validate_config(
         "mean_edit_fidelity": 90,
         "max_attempts": 3,
         "max_outside_mask_drift": 0.18,
+        "quick_appearance_designer_acceptance_rate": 0.90,
     }
     if not isinstance(thresholds, dict):
         errors.append("config thresholds must be an object")
@@ -149,7 +168,8 @@ def _validate_config(
         not isinstance(frozen.get(key), str) or not frozen.get(key)
         for key in (
             "ring_contract", "prompt_bundle", "evaluator_bundle", "routing",
-            "live_runner",
+            "live_runner", "replay_verifier", "replay_runner",
+            "release_verifier", "packet_builder", "packet_runner",
         )
     ):
         errors.append("config frozen_components are incomplete")
@@ -157,6 +177,8 @@ def _validate_config(
         root = repository_root.resolve()
         for key in (
             "ring_contract", "prompt_bundle", "evaluator_bundle", "live_runner",
+            "replay_verifier", "replay_runner", "release_verifier",
+            "packet_builder", "packet_runner",
         ):
             value = str(frozen[key])
             if "@sha256:" not in value:
@@ -529,7 +551,9 @@ def _replay_quality(
                 errors.append(f"render:{key[1]} lacks scored capture evidence")
                 continue
             rows.append({
-                "kind": "render", "case": f"{key[1]}@{source_filename}", "score": score,
+                "kind": "render", "case": f"{key[1]}@{source_filename}",
+                "evaluation_id": key[1], "source_filename": source_filename,
+                "score": score,
                 "hard_gate_pass": hard_pass, "attempts": attempts_used,
             })
             continue
@@ -559,6 +583,7 @@ def _replay_quality(
         })
         rows.append({
             "kind": "edit", "case": f"{key[1]}@{source_filename}", "score": score,
+            "evaluation_id": key[1], "source_filename": source_filename,
             "applied": bool(selected.get("accepted")) and applied and drift_pass,
             "attempts": attempts_used, "severity": severity,
             "expected_valid": True,
@@ -570,6 +595,63 @@ def _replay_quality(
         errors.append("canonical persistence evidence is missing")
     release = evaluate_release_gates(rows, persistence_evidence=persistence)
     reviewer = evidence.get("reviewer_review")
+    review_decisions = reviewer.get("decisions") if isinstance(reviewer, dict) else None
+    decision_errors: list[str] = []
+    decision_by_key: dict[tuple[str, str, str], Json] = {}
+    if not isinstance(review_decisions, list):
+        decision_errors.append("reviewer decisions must be a list")
+        review_decisions = []
+    for decision in review_decisions:
+        if not isinstance(decision, dict):
+            decision_errors.append("every reviewer decision must be an object")
+            continue
+        key = (
+            str(decision.get("kind") or ""),
+            str(decision.get("evaluation_id") or ""),
+            str(decision.get("source_filename") or ""),
+        )
+        if key in decision_by_key:
+            decision_errors.append(
+                "duplicate reviewer decision: " + ":".join(key)
+            )
+        if type(decision.get("accepted")) is not bool:
+            decision_errors.append(
+                "reviewer decision lacks boolean accepted: " + ":".join(key)
+            )
+        decision_by_key[key] = decision
+    selected_keys = {
+        (str(row["kind"]), str(row["evaluation_id"]), str(row["source_filename"]))
+        for row in rows
+    }
+    if set(decision_by_key) != selected_keys:
+        missing_decisions = sorted(selected_keys - set(decision_by_key))
+        extra_decisions = sorted(set(decision_by_key) - selected_keys)
+        if missing_decisions:
+            decision_errors.append(
+                "missing reviewer decisions: "
+                + ", ".join(":".join(key) for key in missing_decisions)
+            )
+        if extra_decisions:
+            decision_errors.append(
+                "unexpected reviewer decisions: "
+                + ", ".join(":".join(key) for key in extra_decisions)
+            )
+    machine_by_key = {
+        (str(row["kind"]), str(row["evaluation_id"]), str(row["source_filename"])):
+        (
+            bool(row.get("hard_gate_pass"))
+            if row["kind"] == "render" else bool(row.get("applied"))
+        )
+        for row in rows
+    }
+    false_positives = sum(
+        machine_by_key.get(key) is True and decision.get("accepted") is False
+        for key, decision in decision_by_key.items()
+    )
+    false_negatives = sum(
+        machine_by_key.get(key) is False and decision.get("accepted") is True
+        for key, decision in decision_by_key.items()
+    )
     review_complete = (
         isinstance(reviewer, dict)
         and reviewer.get("completed") is True
@@ -578,18 +660,82 @@ def _replay_quality(
         and reviewer.get("qualification") == "GIA-trained"
         and type(reviewer.get("false_positives")) is int
         and type(reviewer.get("false_negatives")) is int
+        and reviewer.get("false_positives") == false_positives
+        and reviewer.get("false_negatives") == false_negatives
+        and not decision_errors
     )
     if not review_complete:
         errors.append("GIA-trained reviewer evidence is incomplete")
+    errors.extend(decision_errors)
+
+    operation_classes = evaluation["operation_classes"]
+    quick_ids = set(map(str, operation_classes["quick_appearance"]))
+    structural_ids = set(map(str, operation_classes["structural"]))
+    quick_keys = {
+        key for key in selected_keys if key[0] == "edit" and key[1] in quick_ids
+    }
+    quick_accepted = sum(
+        decision_by_key.get(key, {}).get("accepted") is True for key in quick_keys
+    )
+    quick_rate = quick_accepted / len(quick_keys) if quick_keys else 0.0
+    quick_pass = (
+        bool(quick_keys)
+        and quick_rate >= float(
+            thresholds["quick_appearance_designer_acceptance_rate"]
+        )
+    )
+    structural_rows = [
+        row for row in rows
+        if row["kind"] == "edit" and row["evaluation_id"] in structural_ids
+    ]
+    structural_scores = [float(row["score"]) for row in structural_rows]
+    structural_mean = mean(structural_scores) if structural_scores else 0.0
+    structural_drift = [
+        row for row in replayed_drift if row["evaluation_id"] in structural_ids
+    ]
+    structural_pass = (
+        bool(structural_rows)
+        and structural_mean >= float(thresholds["mean_edit_fidelity"])
+        and len(structural_drift) == len(structural_rows)
+        and all(row["pass"] for row in structural_drift)
+        and all(row.get("severity") != "major" for row in structural_rows)
+    )
+    classified_gates = {
+        "quick_appearance": {
+            "evaluation_count": len(quick_keys),
+            "designer_accepted_count": quick_accepted,
+            "designer_acceptance_rate": round(quick_rate, 4),
+            "threshold": thresholds["quick_appearance_designer_acceptance_rate"],
+            "pass": quick_pass,
+        },
+        "structural": {
+            "evaluation_count": len(structural_rows),
+            "mean_edit_fidelity": round(structural_mean, 2),
+            "minimum_mean_edit_fidelity": thresholds["mean_edit_fidelity"],
+            "outside_mask_drift_threshold": thresholds["max_outside_mask_drift"],
+            "pass": structural_pass,
+        },
+    }
     all_drift_pass = bool(replayed_drift) and all(row["pass"] for row in replayed_drift)
+    base_machine_gates_pass = all((
+        release.get("hard_gate_pass") is True,
+        release.get("spec_render_conformance_pass") is True,
+        release.get("all_localized_edits_within_three_attempts") is True,
+        release.get("edit_fidelity_pass") is True,
+        release.get("zero_major_unintended_drift") is True,
+        release.get("persistence_evidence_verified") is True,
+        release.get("zero_rejected_candidates_persisted") is True,
+    ))
     passed = (
         not errors
         and observed_evaluations == expected
         and signature["status"] == "verified"
         and coverage["status"] == "pass"
-        and release.get("automated_gates_pass") is True
+        and base_machine_gates_pass
         and all_drift_pass
         and review_complete
+        and quick_pass
+        and structural_pass
     )
     return {
         "status": "pass" if passed else "fail",
@@ -602,7 +748,12 @@ def _replay_quality(
         "outside_mask_replay": replayed_drift,
         "all_outside_mask_drift_pass": all_drift_pass,
         "release_gates": release,
+        "classified_release_gates": classified_gates,
         "reviewer_review_complete": review_complete,
+        "reviewer_confusion_counts": {
+            "false_positives": false_positives,
+            "false_negatives": false_negatives,
+        },
     }
 
 

@@ -14,7 +14,7 @@ const candidate = (index: number): AssetSummary => ({
   parent_asset_id: null,
   capability: 'CREATIVE_RENDER',
   provenance: 'pre_spec_creative_candidate',
-  revision: index,
+  revision: null,
   design_id: null,
   design_version: null,
   region: null,
@@ -40,26 +40,18 @@ const creativeProject = (count: number): ProjectDetail => {
     state: 'refining',
     design_id: null,
     spec: null,
-    active_asset_id: candidates[0].asset_id,
+    active_asset_id: null,
     active_design_version: null,
-    active_revision: candidates[0],
+    active_revision: null,
     pinned_revision: null,
-    revisions: candidates.map((asset, index) => ({
-      revision: index + 1,
-      asset,
-      spec_version: null,
-      spec_change: [],
-      ignored_fields: [],
-      qa: null,
-      routing: null,
-      created_at: null,
-    })),
+    revisions: [],
+    creative_candidates: candidates,
     assets: candidates,
     derived_assets: [],
     approval: null,
     factory_ready: false,
     factory_blockers: [],
-    primary_revision_count: count,
+    primary_revision_count: 0,
     has_factory_drawing: false,
     cover_asset_id: candidates[0].asset_id,
     created_at: null,
@@ -71,7 +63,7 @@ type CreateGateway = Pick<StudioGateway,
   'createFromPrompt' | 'createFromDrawing' | 'selectCreativeDirection'
 >;
 
-test('requests 1-4 prompt candidates, lets the designer choose, then saves only that direction', async () => {
+test('compares 1-4 candidates, locks the Original, and keeps another as a sibling variation', async () => {
   const createFromPrompt = jest.fn(async () => ({
     data: creativeProject(4), error: null, status: 201,
   }));
@@ -79,6 +71,16 @@ test('requests 1-4 prompt candidates, lets the designer choose, then saves only 
     data: { ...creativeProject(4), selected_candidate_asset_id: candidateId, active_asset_id: candidateId },
     error: null,
     status: 200,
+  }));
+  const saveCreativeDirectionAsVariation = jest.fn(async ({ candidateId }) => ({
+    data: {
+      status: 'variation_created' as const,
+      family_id: 'family_1', variation_index: 2,
+      source_project_id: 'project_1', source_asset_id: candidateId,
+      project: creativeProject(1),
+    },
+    error: null,
+    status: 201,
   }));
   const onSave = jest.fn();
   await render(
@@ -88,6 +90,7 @@ test('requests 1-4 prompt candidates, lets the designer choose, then saves only 
       <StudioCreateWorkspace
         gateway={{
           createFromPrompt, createFromDrawing: jest.fn(), selectCreativeDirection,
+          saveCreativeDirectionAsVariation,
         } as CreateGateway}
         owner="designer_1"
         onSave={onSave}
@@ -109,20 +112,26 @@ test('requests 1-4 prompt candidates, lets the designer choose, then saves only 
     title: 'A sculptural aquamarine collar.',
   }));
   expect(await screen.findByText('Which direction should become active?')).toBeTruthy();
-  expect(screen.getByText(/Every direction in this set is already retained/i)).toBeTruthy();
-  expect(screen.getByText(/already retained in Collections/i)).toBeTruthy();
+  expect(screen.getByText(/Only the direction you save becomes the Original variation/i)).toBeTruthy();
+  expect(screen.getByText(/Keep as variation on any other useful direction/i)).toBeTruthy();
   expect(screen.getByText('Keep these directions & start another')).toBeTruthy();
   expect(screen.getByLabelText('Direction 1 preview').props.source.headers).toEqual({
     Authorization: 'Bearer first-party-token',
   });
   expect(screen.getByText(/visual directions.+not measurements or production instructions/i)).toBeTruthy();
+  await fireEvent.press(screen.getAllByText('Keep as variation')[0]);
+  await waitFor(() => expect(saveCreativeDirectionAsVariation).toHaveBeenCalledWith({
+    projectId: 'project_1', candidateId: 'candidate_2', activeAssetId: 'candidate_1',
+    createdBy: 'designer_1', label: 'Direction 2',
+  }));
+  expect(screen.getByText('Kept as variation')).toBeTruthy();
   await fireEvent.press(screen.getByLabelText('Direction 3'));
   await fireEvent.press(screen.getByText('Save selected direction'));
   await waitFor(() => expect(selectCreativeDirection).toHaveBeenCalledWith(
-    'project_1', 'candidate_3', 'designer_1',
+    'project_1', 'candidate_1', 'designer_1',
   ));
   expect(onSave).toHaveBeenCalledWith(expect.objectContaining({
-    selectedAssetId: 'candidate_3',
+    selectedAssetId: 'candidate_1',
     sentence: 'A sculptural aquamarine collar.',
   }));
 });
@@ -179,10 +188,10 @@ test('keeps an already-created direction set when the designer starts another br
   />);
 
   await fireEvent.press(screen.getByText('Create 2 directions'));
-  expect(await screen.findByText(/already retained in Collections/i)).toBeTruthy();
+  expect(await screen.findByText(/Only the direction you save becomes the Original variation/i)).toBeTruthy();
   await fireEvent.press(screen.getByText('Keep these directions & start another'));
   expect(await screen.findByLabelText('Design sentence')).toBeTruthy();
-  expect(screen.queryByText(/already retained in Collections/i)).toBeNull();
+  expect(screen.queryByText(/Only the direction you save becomes the Original variation/i)).toBeNull();
 });
 
 test('sends every enabled role with the master geometry input', async () => {

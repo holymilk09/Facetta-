@@ -64,14 +64,22 @@ def _fixture(tmp_path: Path) -> dict[str, Any]:
             "category": "ring",
             "ring_source_filenames": [first.name],
             "render_case_ids": ["render-one"],
-            "operation_ids": ["edit-one"],
+            "operation_ids": ["edit-one", "edit-structural"],
+            "operation_classes": {
+                "quick_appearance": ["edit-one"],
+                "structural": ["edit-structural"],
+            },
         },
     })
     config = tmp_path / "config.json"
     components = tmp_path / "components"
     components.mkdir()
     component_files: dict[str, Path] = {}
-    for name in ("ring_contract", "prompt_bundle", "evaluator_bundle", "live_runner"):
+    for name in (
+        "ring_contract", "prompt_bundle", "evaluator_bundle", "live_runner",
+        "replay_verifier", "replay_runner", "release_verifier",
+        "packet_builder", "packet_runner",
+    ):
         path = components / f"{name}.py"
         path.write_text(f"# frozen {name}\n")
         component_files[name] = path
@@ -98,6 +106,7 @@ def _fixture(tmp_path: Path) -> dict[str, Any]:
             "mean_edit_fidelity": 90,
             "max_attempts": 3,
             "max_outside_mask_drift": 0.18,
+            "quick_appearance_designer_acceptance_rate": 0.90,
         },
         "reviewer_public_key": {
             "key_id": "test-reviewer-v1",
@@ -123,7 +132,8 @@ def _fixture(tmp_path: Path) -> dict[str, Any]:
             },
             {
                 "filename": second.name, "source_sha256": _sha(second),
-                "evaluation_ids": ["edit-one"], "quality_status": "pass",
+                "evaluation_ids": ["edit-one", "edit-structural"],
+                "quality_status": "pass",
             },
         ],
         "attempts": [
@@ -148,6 +158,17 @@ def _fixture(tmp_path: Path) -> dict[str, Any]:
                 "candidate_image_sha256": _sha(edit_candidate),
                 "mask_image": str(mask), "mask_image_sha256": _sha(mask),
             },
+            {
+                "kind": "edit", "evaluation_id": "edit-structural",
+                "attempt": 1, "accepted": True,
+                "source_filename": second.name, "source_sha256": _sha(second),
+                "edit_fidelity_score": 95, "severity": "none",
+                "change_applied": True, "source_image": str(second),
+                "source_image_sha256": _sha(second),
+                "candidate_image": str(edit_candidate),
+                "candidate_image_sha256": _sha(edit_candidate),
+                "mask_image": str(mask), "mask_image_sha256": _sha(mask),
+            },
         ],
         "persistence_evidence": {
             "verified": True,
@@ -159,6 +180,20 @@ def _fixture(tmp_path: Path) -> dict[str, Any]:
             "completed": True, "reviewer": "test reviewer",
             "qualification": "GIA-trained",
             "false_positives": 0, "false_negatives": 0,
+            "decisions": [
+                {
+                    "kind": "render", "evaluation_id": "render-one",
+                    "source_filename": first.name, "accepted": True,
+                },
+                {
+                    "kind": "edit", "evaluation_id": "edit-one",
+                    "source_filename": second.name, "accepted": True,
+                },
+                {
+                    "kind": "edit", "evaluation_id": "edit-structural",
+                    "source_filename": second.name, "accepted": True,
+                },
+            ],
         },
     }
     paths: dict[str, Any] = {
@@ -320,6 +355,53 @@ def test_rejected_candidate_persisted_fails_release_gate(tmp_path: Path):
     assert result["release_ready"] is False
 
 
+def test_quick_appearance_reviewer_acceptance_is_a_release_gate(tmp_path: Path):
+    paths = _fixture(tmp_path)
+    evidence = _refresh_evidence_hashes(paths)
+    decision = next(
+        row for row in evidence["reviewer_review"]["decisions"]
+        if row["evaluation_id"] == "edit-one"
+    )
+    decision["accepted"] = False
+    evidence["reviewer_review"]["false_positives"] = 1
+    _write_signed(paths, evidence)
+    result = _run(paths)
+    gate = result["quality"]["classified_release_gates"]["quick_appearance"]
+    assert gate["designer_acceptance_rate"] == 0
+    assert gate["threshold"] == 0.9
+    assert gate["pass"] is False
+    assert result["release_ready"] is False
+
+
+def test_structural_fidelity_is_classified_independently(tmp_path: Path):
+    paths = _fixture(tmp_path)
+    evidence = _refresh_evidence_hashes(paths)
+    structural = next(
+        row for row in evidence["attempts"]
+        if row["evaluation_id"] == "edit-structural"
+    )
+    structural["edit_fidelity_score"] = 89
+    _write_signed(paths, evidence)
+    result = _run(paths)
+    gate = result["quality"]["classified_release_gates"]["structural"]
+    assert gate["mean_edit_fidelity"] == 89
+    assert gate["pass"] is False
+    assert result["release_ready"] is False
+
+
+def test_reviewer_confusion_summary_must_match_decisions(tmp_path: Path):
+    paths = _fixture(tmp_path)
+    evidence = _refresh_evidence_hashes(paths)
+    evidence["reviewer_review"]["false_negatives"] = 9
+    _write_signed(paths, evidence)
+    result = _run(paths)
+    assert result["quality"]["reviewer_confusion_counts"] == {
+        "false_positives": 0, "false_negatives": 0,
+    }
+    assert result["quality"]["reviewer_review_complete"] is False
+    assert result["release_ready"] is False
+
+
 def test_unsigned_evidence_fails_signature_gate(tmp_path: Path):
     paths = _fixture(tmp_path)
     evidence = json.loads(paths["evidence"].read_text())
@@ -360,15 +442,15 @@ def test_missing_manifest_source_coverage_claim_fails(tmp_path: Path):
 def test_signed_coverage_claim_without_source_attempt_fails(tmp_path: Path):
     paths = _fixture(tmp_path)
     evidence = _refresh_evidence_hashes(paths)
-    edit = next(row for row in evidence["attempts"] if row["kind"] == "edit")
-    edit.update({
-        "source_filename": paths["first"].name,
-        "source_sha256": _sha(paths["first"]),
-        "source_image": str(paths["first"]),
-        "source_image_sha256": _sha(paths["first"]),
-        "candidate_image": str(paths["render_candidate"]),
-        "candidate_image_sha256": _sha(paths["render_candidate"]),
-    })
+    for edit in (row for row in evidence["attempts"] if row["kind"] == "edit"):
+        edit.update({
+            "source_filename": paths["first"].name,
+            "source_sha256": _sha(paths["first"]),
+            "source_image": str(paths["first"]),
+            "source_image_sha256": _sha(paths["first"]),
+            "candidate_image": str(paths["render_candidate"]),
+            "candidate_image_sha256": _sha(paths["render_candidate"]),
+        })
     _write_signed(paths, evidence)
     result = _run(paths)
     coverage = result["quality"]["source_coverage"]

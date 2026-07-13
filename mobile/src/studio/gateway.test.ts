@@ -374,6 +374,47 @@ test('variation source mismatch is rejected instead of silently branching latest
   assert.equal(result.error?.code, 'INVALID_VARIATION_LINEAGE');
 });
 
+test('keeps an explicit Create candidate as a sibling and verifies its exact source', async () => {
+  let receivedCandidate = '';
+  const gateway = createStudioGateway(fakeClient({
+    saveCreativeCandidateAsVariation: async (_projectId, candidateId) => {
+      receivedCandidate = candidateId;
+      return ok({
+        status: 'variation_created',
+        family_id: 'family_1', variation_index: 2,
+        source_project_id: 'project_1', source_asset_id: candidateId,
+        project: project('variation_2', 1),
+      }, 201);
+    },
+  }));
+
+  const result = await gateway.saveCreativeDirectionAsVariation({
+    projectId: 'project_1', candidateId: 'candidate_2', activeAssetId: 'candidate_1',
+    createdBy: 'designer_1', label: 'Direction 2',
+  });
+
+  assert.equal(result.error, null);
+  assert.equal(receivedCandidate, 'candidate_2');
+  assert.equal(result.data?.source_asset_id, 'candidate_2');
+});
+
+test('rejects a Create variation response rebound to a different candidate', async () => {
+  const gateway = createStudioGateway(fakeClient({
+    saveCreativeCandidateAsVariation: async () => ok({
+      status: 'variation_created',
+      family_id: 'family_1', variation_index: 2,
+      source_project_id: 'project_1', source_asset_id: 'candidate_other',
+      project: project('variation_2', 1),
+    }, 201),
+  }));
+
+  const result = await gateway.saveCreativeDirectionAsVariation({
+    projectId: 'project_1', candidateId: 'candidate_2', activeAssetId: 'candidate_1',
+    createdBy: 'designer_1', label: 'Direction 2',
+  });
+  assert.equal(result.error?.code, 'INVALID_VARIATION_LINEAGE');
+});
+
 test('Factory remains disabled until explicitly enabled and backend-eligible', async () => {
   let projectReads = 0;
   const disabled = createStudioGateway(fakeClient({

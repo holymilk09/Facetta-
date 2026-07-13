@@ -19,6 +19,12 @@ PYTHONPATH=src .venv/bin/python scripts/run_frozen_corpus_gate.py \
   --outdir /tmp/facetta-frozen-corpus-gate
 ```
 
+Machine captures should be converted to the review schema with
+`scripts/prepare_frozen_corpus_review.py`. The packet builder hash-binds every
+source, candidate, and edit mask and creates pending decision rows; it never
+calls a provider, fills a human decision, or signs evidence. This removes
+manual hash transcription while preserving the human review boundary.
+
 The command intentionally exits nonzero with image quality `not_run` until
 `--evidence` points to a complete `facetta-frozen-replay.v1` JSON capture. A
 replay pins the manifest/config hashes and contains:
@@ -34,12 +40,29 @@ replay pins the manifest/config hashes and contains:
   candidates that became active assets;
 - completed GIA-trained false-positive/false-negative review.
 
+The signed reviewer block contains one decision for every selected
+`kind/evaluation_id/source_filename` result. The verifier derives confusion
+counts from those decisions instead of trusting summary numbers. It also
+evaluates the workload classes declared in the manifest: quick appearance
+edits require at least 90% reviewer acceptance within the three-attempt cap;
+structural edits must meet the frozen fidelity and outside-mask drift
+thresholds. Missing, duplicate, or unclassified decisions fail closed.
+
 Scores, persistence assertions, source coverage, artifact declarations, and
 review assertions are one canonical JSON payload signed with Ed25519. The
 reviewer public-key file is configured outside the evidence and its SHA-256 is
 pinned in `config.json`. The production key is intentionally unconfigured
 until the reviewer enrollment step is complete; no key or unsigned evidence
 can become release-ready.
+
+Founder approval is deliberately not folded into `results.json`: it must bind
+the exact bytes the founder reviewed. After reviewer replay passes, enroll the
+separate `founder_public_key`, create and sign a
+`facetta-founder-approval.v1` record bound to the SHA-256 of `results.json`, and
+run `scripts/verify_frozen_corpus_release.py`. Only its
+`final-decision.json.external_beta_ready: true` satisfies the complete corpus
+gate. The repository ships with both production public keys unconfigured and
+contains no human sign-off.
 
 The offline replay verifies artifact hashes and recalculates outside-mask drift
 from the captured pixels. Coverage counts come from verified attempts, never

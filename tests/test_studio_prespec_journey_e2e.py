@@ -159,7 +159,8 @@ def test_complete_prespec_studio_journey_preserves_every_direction(
     assert created_response.status_code == 201, created_response.text
     created = created_response.json()
     root_id = created["root_id"]
-    assert len(created["revisions"]) == 3
+    assert created["revisions"] == []
+    assert len(created["creative_candidates"]) == 3
     assert set(prompt_outputs) == {11, 12, 13}
     assert created["factory_ready"] is False
     assert "design_id" not in created
@@ -167,8 +168,9 @@ def test_complete_prespec_studio_journey_preserves_every_direction(
 
     # Choose the middle displayed direction, proving downstream work does not
     # silently snap to the last generated sibling.
-    selected_id = created["revisions"][1]["asset_id"]
-    last_id = created["revisions"][-1]["asset_id"]
+    first_id = created["creative_candidates"][0]["asset_id"]
+    selected_id = created["creative_candidates"][1]["asset_id"]
+    last_id = created["creative_candidates"][-1]["asset_id"]
     assert selected_id != last_id
     selected_image = _stored_image(Session, selected_id)
     last_image = _stored_image(Session, last_id)
@@ -181,6 +183,31 @@ def test_complete_prespec_studio_journey_preserves_every_direction(
     selected = selected_response.json()
     assert selected["selected_candidate_asset_id"] == selected_id
     assert selected["active_asset_id"] == selected_id
+    assert [item["asset_id"] for item in selected["revisions"]] == [selected_id]
+
+    kept_response = client.post(
+        f"/studio/projects/{root_id}/creative-candidates/{last_id}/variations",
+        json={
+            "created_by": "usr_journey",
+            "expected_active_asset_id": selected_id,
+            "expected_design_version": None,
+            "label": "Third generated direction",
+        },
+    )
+    assert kept_response.status_code == 201, kept_response.text
+    kept = kept_response.json()
+    assert kept["source_asset_id"] == last_id
+    assert _stored_image(Session, kept["project"]["active_asset_id"]) == last_image
+
+    reselection = client.post(
+        f"/projects/{root_id}/creative-candidates/{first_id}/select",
+        json={"created_by": "usr_journey"},
+    )
+    assert reselection.status_code == 409, reselection.text
+    assert "Original direction is locked" in reselection.json()["detail"]
+    assert client.get(f"/projects/{root_id}").json()[
+        "selected_candidate_asset_id"
+    ] == selected_id
 
     preview_response = client.post(
         f"/studio/projects/{root_id}/visual-previews",
@@ -216,12 +243,11 @@ def test_complete_prespec_studio_journey_preserves_every_direction(
     assert reopened_response.status_code == 200, reopened_response.text
     reopened = reopened_response.json()
     assert reopened["active_asset_id"] == applied_id
-    assert len(reopened["revisions"]) == 4
-    assert {item["asset_id"] for item in reopened["revisions"]} >= {
-        selected_id,
-        last_id,
-        applied_id,
+    assert len(reopened["revisions"]) == 2
+    assert {item["asset_id"] for item in reopened["revisions"]} == {
+        selected_id, applied_id,
     }
+    assert last_id not in {item["asset_id"] for item in reopened["revisions"]}
     applied_history = next(
         item for item in reopened["revisions"]
         if item["asset_id"] == applied_id
@@ -271,7 +297,7 @@ def test_complete_prespec_studio_journey_preserves_every_direction(
 
     final_history = client.get(f"/studio/projects/{root_id}/history").json()
     assert final_history["active_asset_id"] == restored_id
-    assert len(final_history["revisions"]) == 5
+    assert len(final_history["revisions"]) == 3
     restored_history = next(
         item for item in final_history["revisions"]
         if item["asset_id"] == restored_id
@@ -307,7 +333,7 @@ def test_complete_prespec_studio_journey_preserves_every_direction(
         assert db.scalar(select(func.count()).select_from(DesignVersion)) == 0
         assert db.scalar(select(func.count()).select_from(ApprovalChecklist)) == 0
         projects = list(db.scalars(select(Project)))
-        assert len(projects) == 2
+        assert len(projects) == 3
         assets = list(db.scalars(select(ImageAsset)))
         assert all(asset.design_id is None for asset in assets)
         assert all(asset.design_version is None for asset in assets)
@@ -470,7 +496,8 @@ def test_ten_mixed_source_projects_reopen_branch_compare_and_restore(
         assert created["factory_ready"] is False
         assert created.get("design_id") is None
         assert created.get("spec") is None
-        assert len(created["revisions"]) == 2
+        assert created["revisions"] == []
+        assert len(created["creative_candidates"]) == 2
         capabilities = {asset["capability"] for asset in created["assets"]}
         if case["kind"] in {"drawing", "role_labeled"}:
             assert "CREATIVE_SOURCE" in capabilities
@@ -481,15 +508,15 @@ def test_ten_mixed_source_projects_reopen_branch_compare_and_restore(
             if len(case["references"]) == 3:
                 assert "CREATIVE_REFERENCE_CONSTRUCTION_DETAIL" in capabilities
 
-        first_id = created["revisions"][0]["asset_id"]
-        selected_id = created["revisions"][1]["asset_id"]
+        first_id = created["creative_candidates"][0]["asset_id"]
+        selected_id = created["creative_candidates"][1]["asset_id"]
         first_image = _stored_image(Session, first_id)
         selected_image = _stored_image(Session, selected_id)
         immutable_images[first_id] = first_image
         immutable_images[selected_id] = selected_image
         assert first_image != selected_image
-        assert created["revisions"][0]["sha256"] != (
-            created["revisions"][1]["sha256"]
+        assert created["creative_candidates"][0]["sha256"] != (
+            created["creative_candidates"][1]["sha256"]
         )
 
         selected = client.post(
@@ -509,7 +536,7 @@ def test_ten_mixed_source_projects_reopen_branch_compare_and_restore(
         before_history = before.json()
         assert before_history["active_asset_id"] == selected_id
         assert [item["asset_id"] for item in before_history["revisions"]] == [
-            first_id, selected_id,
+            selected_id,
         ]
 
         branch_response = client.post(
@@ -532,7 +559,9 @@ def test_ten_mixed_source_projects_reopen_branch_compare_and_restore(
             Session, branch_project["active_asset_id"],
         ) == selected_image
 
-        restore_response = client.post(
+        # An unselected sibling is a candidate direction, not a historical
+        # revision of this Variation, so Restore must fail closed.
+        candidate_restore = client.post(
             f"/studio/projects/{project_id}/revisions/{first_id}/restore",
             json={
                 "created_by": owner,
@@ -540,22 +569,12 @@ def test_ten_mixed_source_projects_reopen_branch_compare_and_restore(
                 "expected_design_version": None,
             },
         )
-        assert restore_response.status_code == 201, restore_response.text
-        restored = restore_response.json()
-        restored_id = restored["new_asset_id"]
-        assert restored_id not in {first_id, selected_id}
-        assert restored["restored_from_asset_id"] == first_id
-        assert restored["new_design_version"] is None
-        assert _stored_image(Session, restored_id) == first_image
+        assert candidate_restore.status_code == 422, candidate_restore.text
+        assert candidate_restore.json()["code"] == "restore_source_not_revision"
 
         after = client.get(f"/studio/projects/{project_id}/history").json()
-        assert after["active_asset_id"] == restored_id
-        assert len(after["revisions"]) == 3
-        restored_history = after["revisions"][-1]
-        assert restored_history["asset_id"] == restored_id
-        assert restored_history["parent_asset_id"] == selected_id
-        assert restored_history["restored_from_asset_id"] == first_id
-        assert restored_history["action"] == "restore"
+        assert after["active_asset_id"] == selected_id
+        assert [item["asset_id"] for item in after["revisions"]] == [selected_id]
         assert _stored_image(Session, first_id) == first_image
         assert _stored_image(Session, selected_id) == selected_image
 

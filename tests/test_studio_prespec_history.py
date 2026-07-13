@@ -93,28 +93,16 @@ def test_variation_branches_the_selected_creative_candidate_not_last_generated()
         assert branch_record.interpretation["source_sha256"] == selected_hash
         assert branch_record.interpretation["output_sha256"] == selected_hash
 
-        restored = restore_project_revision(
-            db,
-            project_root_id=project.root_id,
-            restore_asset_id=generated_later.id,
-            expected_active_asset_id=selected.id,
-            expected_design_version=None,
-            created_by="designer",
-        )
-        db.refresh(project)
-        restored_asset = db.get(ImageAsset, restored.asset_id)
-        assert restored_asset is not None
-        assert restored_asset.parent_asset_id == selected.id
-        assert bytes(restored_asset.image) == b"later"
-        assert project.selected_candidate_asset_id == restored_asset.id
-        restore_record = db.scalar(select(ProjectRevisionRecord).where(
-            ProjectRevisionRecord.asset_id == restored_asset.id
-        ))
-        later_hash = hashlib.sha256(b"later").hexdigest()
-        assert restore_record is not None
-        assert restore_record.interpretation["source_sha256"] == later_hash
-        assert restore_record.interpretation["output_sha256"] == later_hash
-        assert restore_record.interpretation["parent_sha256"] == selected_hash
+        with pytest.raises(StudioHistoryError) as error:
+            restore_project_revision(
+                db,
+                project_root_id=project.root_id,
+                restore_asset_id=generated_later.id,
+                expected_active_asset_id=selected.id,
+                expected_design_version=None,
+                created_by="designer",
+            )
+        assert error.value.code == "restore_source_not_revision"
 
 
 def test_pre_spec_branch_and_restore_require_the_project_owner():
@@ -228,7 +216,7 @@ def test_restore_rejects_source_bytes_that_drift_from_recorded_hash():
         earlier = ImageAsset(
             id="ast_restore_earlier", root_id=active.id,
             parent_asset_id=active.id, design_version=None,
-            capability="CREATIVE_RENDER", image=b"recorded earlier source",
+            capability="RESTORED_REVISION", image=b"recorded earlier source",
             media_type="image/png", created_by="designer",
         )
         db.add_all([

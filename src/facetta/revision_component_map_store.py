@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+
 from sqlalchemy.orm import Session
 
 from facetta.db import ImageAsset, RevisionComponentMapRecord
@@ -65,3 +67,57 @@ def add_revision_component_map(
     db.add(record)
     db.flush()
     return record
+
+
+def copy_revision_component_map_for_identical_raster(
+    db: Session,
+    *,
+    source_asset_id: str,
+    child_asset_id: str,
+    child_image_bytes: bytes,
+) -> RevisionComponentMapRecord | None:
+    """Carry exact image-isolation evidence onto a byte-identical child.
+
+    Confirmation promotes a selected creative candidate by appending a new,
+    immutable Design v1 asset whose raster bytes are identical to the reviewed
+    candidate.  Re-running vision for that transition would be slower and
+    could introduce different polygons; dropping an existing map would make a
+    previously targetable direction inexplicably unmapped.  Exact byte
+    identity is sufficient evidence to rebind the same normalized regions and
+    stable component IDs to the child asset.
+
+    Absence is intentionally preserved as absence.  This function never
+    derives geometry, and callers therefore keep Component Refine fail-closed
+    when the source candidate has not been mapped by a calibrated mapper.
+    """
+    source = load_revision_component_map(db, source_asset_id)
+    if source is None:
+        return None
+    child_sha256 = hashlib.sha256(child_image_bytes).hexdigest()
+    if child_sha256 != source.asset_sha256:
+        raise ComponentMapError(
+            "component-map evidence can only cross a byte-identical revision",
+            code="component_map_identical_raster_required",
+        )
+    payload = source.model_dump(mode="json")
+    payload.update({
+        "asset_id": child_asset_id,
+        "asset_sha256": child_sha256,
+        "mapper_contract": "facetta.byte-identical-map-copy.v1",
+        "components": [
+            {
+                **component,
+                # Exact raster identity proves that every stable component on
+                # the child is the same observed component as on its parent.
+                "parent_component_id": component["component_id"],
+            }
+            for component in payload["components"]
+        ],
+    })
+    child = RevisionComponentMap.model_validate(payload)
+    return add_revision_component_map(
+        db,
+        child,
+        image_bytes=child_image_bytes,
+        parent_asset_id=source_asset_id,
+    )

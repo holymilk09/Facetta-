@@ -25,17 +25,18 @@ from facetta.creative_workflow import (
 from facetta.db import (
     Base,
     Design,
-    DesignFamily,
     DesignVersion,
     ImageAsset,
     ImageRun,
     Project,
     ProjectRevisionRecord,
+    RevisionComponentMapRecord,
     StudioConfirmationDraft,
     StudioJobRecord,
     get_db,
     utcnow,
 )
+from facetta.design_form import NormalizedPoint, NormalizedPolygon
 from facetta.image_agent import (
     CheckSeverity,
     CreativeRenderInspection,
@@ -58,6 +59,12 @@ from facetta.image_region import crop_normalized_region
 from facetta.image_identity import spec_visual_hash
 from facetta.main import app
 from facetta.project_backbone import claim_creative_project_design
+from facetta.revision_component_map import (
+    RevisionComponent,
+    RevisionComponentMap,
+    polygon_hash,
+)
+from facetta.revision_component_map_store import add_revision_component_map
 from facetta.spec import Spec
 
 
@@ -68,6 +75,49 @@ def _png(color: tuple[int, int, int]) -> bytes:
 
 
 SOURCE = _png((245, 245, 245))
+
+
+_RING_COMPONENTS = (
+    ("center", "center_stone"),
+    ("prongs", "prongs"),
+    ("setting", "setting"),
+    ("shank", "shank"),
+    ("shoulders", "shoulders"),
+    ("gallery", "gallery"),
+    ("metal", "metal_zone"),
+    ("background", "background"),
+)
+
+
+def _exact_component_map(asset_id: str, image: bytes) -> RevisionComponentMap:
+    components = []
+    for index, (component_id, kind) in enumerate(_RING_COMPONENTS):
+        offset = min(index, 5) * 0.02
+        polygons = (NormalizedPolygon(points=(
+            NormalizedPoint(x=0.1 + offset, y=0.1 + offset),
+            NormalizedPoint(x=0.4 + offset, y=0.1 + offset),
+            NormalizedPoint(x=0.4 + offset, y=0.4 + offset),
+            NormalizedPoint(x=0.1 + offset, y=0.4 + offset),
+        )),)
+        components.append(RevisionComponent(
+            component_id=component_id,
+            kind=kind,
+            label=component_id.title(),
+            resolution="resolved",
+            polygons=polygons,
+            polygon_sha256=polygon_hash(polygons),
+        ))
+    with Image.open(io.BytesIO(image)) as raster:
+        width, height = raster.size
+    return RevisionComponentMap(
+        asset_id=asset_id,
+        asset_sha256=hashlib.sha256(image).hexdigest(),
+        raster_width=width,
+        raster_height=height,
+        jewelry_type="ring",
+        mapper_contract="test.calibrated-candidate-map.v1",
+        components=tuple(components),
+    )
 
 
 class _CreativeInspector:
@@ -642,15 +692,16 @@ def test_from_prompt_persists_independent_candidates_without_source_or_spec(
     assert "design_id" not in body
     assert "spec" not in body
     assert body["factory_ready"] is False
-    assert len(body["revisions"]) == 3
+    assert body["revisions"] == []
+    assert len(body["creative_candidates"]) == 3
     assert all(item["capability"] == "CREATIVE_RENDER"
-               for item in body["revisions"])
+               for item in body["creative_candidates"])
     assert all(item["provenance"] == "pre_spec_creative_candidate"
-               for item in body["revisions"])
+               for item in body["creative_candidates"])
     assert not any(item["capability"] == "CREATIVE_SOURCE"
                    for item in body["assets"])
-    assert body["root_id"] == body["revisions"][0]["asset_id"]
-    selected_id = body["revisions"][1]["asset_id"]
+    assert body["root_id"] == body["creative_candidates"][0]["asset_id"]
+    selected_id = body["creative_candidates"][1]["asset_id"]
     selected = client.post(
         f"/projects/{body['root_id']}/creative-candidates/{selected_id}/select",
         json={"created_by": "usr_designer"},
@@ -668,7 +719,6 @@ def test_from_prompt_persists_independent_candidates_without_source_or_spec(
         assert saved_project.family_id is not None
         assert saved_project.variation_index == 1
         assert saved_project.variation_label == "Original"
-        assert db.get(DesignFamily, saved_project.family_id) is not None
         assert db.scalar(select(func.count()).select_from(Project)) == 1
         assert db.scalar(select(func.count()).select_from(Design)) == 0
         assert db.scalar(select(func.count()).select_from(DesignVersion)) == 0
@@ -692,7 +742,7 @@ def test_creative_selection_atomically_settles_reviewing_create_job_after_restar
     )
     assert created.status_code == 201, created.text
     project = created.json()
-    selected_id = project["revisions"][1]["asset_id"]
+    selected_id = project["creative_candidates"][1]["asset_id"]
     job_id = _reviewing_create_job(
         client,
         project_id=project["root_id"],
@@ -749,7 +799,7 @@ def test_creative_selection_job_cas_rejects_stale_project_and_prior_selection(
     first_job_id = _reviewing_create_job(
         client, project_id=first["root_id"], requested_outputs=2,
     )
-    second_candidate = second["revisions"][1]["asset_id"]
+    second_candidate = second["creative_candidates"][1]["asset_id"]
 
     wrong_project = client.post(
         f"/projects/{second['root_id']}/creative-candidates/"
@@ -759,7 +809,7 @@ def test_creative_selection_job_cas_rejects_stale_project_and_prior_selection(
     assert wrong_project.status_code == 409
     assert "not bound to the selected project" in wrong_project.json()["detail"]
 
-    first_candidates = [item["asset_id"] for item in first["revisions"]]
+    first_candidates = [item["asset_id"] for item in first["creative_candidates"]]
     legacy_selection = client.post(
         f"/projects/{first['root_id']}/creative-candidates/"
         f"{first_candidates[0]}/select",
@@ -799,7 +849,7 @@ def test_creative_selection_rejects_wrong_job_source_without_partial_writes(
     created = client.post(
         "/projects/from-prompt", json=_prompt_request(variation_count=2)
     ).json()
-    candidate_ids = [item["asset_id"] for item in created["revisions"]]
+    candidate_ids = [item["asset_id"] for item in created["creative_candidates"]]
     job_id = _reviewing_create_job(
         client, project_id=created["root_id"], requested_outputs=2,
     )
@@ -841,7 +891,7 @@ def test_creative_selection_rejects_foreign_create_job_without_partial_writes(
     created = client.post(
         "/projects/from-prompt", json=_prompt_request(variation_count=1)
     ).json()
-    candidate_id = created["revisions"][0]["asset_id"]
+    candidate_id = created["creative_candidates"][0]["asset_id"]
     foreign_job_id = _reviewing_create_job(
         client,
         project_id=created["root_id"],
@@ -904,18 +954,18 @@ def test_from_drawing_persists_variations_without_inventing_a_spec(
     assert "latest_design_version" not in body
     assert "spec" not in body
     assert body["factory_ready"] is False
-    assert [item["capability"] for item in body["revisions"]] == [
+    assert [item["capability"] for item in body["creative_candidates"]] == [
         "CREATIVE_RENDER", "CREATIVE_RENDER"]
-    assert all("design_version" not in item for item in body["revisions"])
+    assert all("design_version" not in item for item in body["creative_candidates"])
     assert body["assets"][0]["capability"] == "CREATIVE_SOURCE"
     assert len(body["image_run_ids"]) == 2
 
     with Session() as db:
         saved_project = db.get(Project, body["root_id"])
         assert saved_project is not None
-        assert saved_project.family_id is not None
-        assert saved_project.variation_index == 1
-        assert saved_project.variation_label == "Original"
+        assert saved_project.family_id is None
+        assert saved_project.variation_index is None
+        assert saved_project.variation_label is None
         assert db.scalar(select(func.count()).select_from(Project)) == 1
         assert db.scalar(select(func.count()).select_from(Design)) == 0
         assert db.scalar(select(func.count()).select_from(DesignVersion)) == 0
@@ -1004,7 +1054,8 @@ def test_from_drawing_role_board_is_canonical_persisted_and_reopenable(
             reference["image_base64"]
         )).hexdigest() in instruction
 
-    assert len(body["revisions"]) == 4
+    assert body["revisions"] == []
+    assert len(body["creative_candidates"]) == 4
     assets = {asset["capability"]: asset for asset in body["assets"]}
     assert assets["CREATIVE_SOURCE"]["provenance"] == (
         "designer_supplied_source"
@@ -1110,7 +1161,7 @@ def test_role_labeled_references_preserve_candidate_count_boundaries(
         )],
     })
     assert response.status_code == 201, response.text
-    assert len(response.json()["revisions"]) == variation_count
+    assert len(response.json()["creative_candidates"]) == variation_count
     assert variants == list(range(7, 7 + variation_count))
 
 
@@ -1469,7 +1520,7 @@ def test_selected_creative_candidate_can_be_read_without_persisting_spec(
         lambda: (lambda _source, _instruction, selected: _creative_result(selected)))
     created = client.post(
         "/projects/from-drawing", json=_request(variation_count=1)).json()
-    candidate_id = created["revisions"][0]["asset_id"]
+    candidate_id = created["creative_candidates"][0]["asset_id"]
     expected = Spec.model_validate(audited_import_spec(EXAMPLE_SPEC))
 
     def read_candidate(request):
@@ -1506,7 +1557,7 @@ def test_confirm_design_projects_typed_designer_facts_and_exact_hashes(
     created = client.post(
         "/projects/from-drawing", json=_request(variation_count=1)
     ).json()
-    candidate_id = created["revisions"][0]["asset_id"]
+    candidate_id = created["creative_candidates"][0]["asset_id"]
     raw = audited_import_spec(EXAMPLE_SPEC)
     raw["dimension_provenance"] = {
         "stone.dimensions_mm.length": {
@@ -1575,7 +1626,7 @@ def test_confirm_design_exposes_source_questions_without_internal_control_copy(
     created = client.post(
         "/projects/from-drawing", json=_request(variation_count=1)
     ).json()
-    candidate_id = created["revisions"][0]["asset_id"]
+    candidate_id = created["creative_candidates"][0]["asset_id"]
     assert client.post(
         f"/projects/{created['id']}/creative-candidates/{candidate_id}/select",
         json={"created_by": "usr_designer"},
@@ -1641,7 +1692,7 @@ def test_designer_confirms_profile_against_exact_server_candidate_bytes(
         "/projects/from-drawing",
         json=_request(variation_count=1),
     ).json()
-    candidate_id = created["revisions"][0]["asset_id"]
+    candidate_id = created["creative_candidates"][0]["asset_id"]
     candidate_bytes = _png((87, 60, 30))
 
     response = client.post(
@@ -1683,7 +1734,7 @@ def test_profile_confirmation_rejects_repeated_partial_target(
         "/projects/from-drawing",
         json=_request(variation_count=1),
     ).json()
-    candidate_id = created["revisions"][0]["asset_id"]
+    candidate_id = created["creative_candidates"][0]["asset_id"]
 
     response = client.post(
         f"/projects/{created['id']}/creative-candidates/{candidate_id}/"
@@ -1705,7 +1756,7 @@ def test_creative_candidate_confirmation_uses_exact_server_held_bytes(
         lambda: (lambda _source, _instruction, selected: _creative_result(selected)))
     created = client.post(
         "/projects/from-drawing", json=_request(variation_count=1)).json()
-    candidate_id = created["revisions"][0]["asset_id"]
+    candidate_id = created["creative_candidates"][0]["asset_id"]
     raw = audited_import_spec(EXAMPLE_SPEC)
     raw["source_component_coverage"]["components"][0][
         "independent_audit"
@@ -1763,7 +1814,7 @@ def test_alternate_drawing_candidate_confirmation_stays_current_after_promotion(
             for asset in candidate_assets
         )
     assert selected_id in {
-        revision["asset_id"] for revision in created_body["revisions"]
+        candidate["asset_id"] for candidate in created_body["creative_candidates"]
     }
     selected_response = client.post(
         f"/projects/{project_id}/creative-candidates/{selected_id}/select",
@@ -1874,7 +1925,7 @@ def test_creative_candidate_mapping_reaudit_receives_stored_candidate_image(
         lambda: (lambda _source, _instruction, selected: _creative_result(selected)))
     created = client.post(
         "/projects/from-drawing", json=_request(variation_count=1)).json()
-    candidate_id = created["revisions"][0]["asset_id"]
+    candidate_id = created["creative_candidates"][0]["asset_id"]
     spec = Spec.model_validate(audited_import_spec(EXAMPLE_SPEC))
 
     def resolve(request):
@@ -1907,7 +1958,7 @@ def test_creative_candidate_cannot_be_approved_pinned_or_factory_exported(
         "/projects/from-drawing", json=_request(variation_count=1))
     assert created.status_code == 201
     body = created.json()
-    candidate_id = body["active_asset_id"]
+    candidate_id = body["creative_candidates"][0]["asset_id"]
     project_id = body["root_id"]
 
     checklist = client.post(
@@ -1938,7 +1989,7 @@ def test_designer_can_promote_exactly_one_candidate_to_immutable_spec_v1(
     project_id = body["root_id"]
     # Confirming a direction must follow the persisted selection, including
     # when the designer chose a non-first candidate.
-    selected_id = body["revisions"][1]["asset_id"]
+    selected_id = body["creative_candidates"][1]["asset_id"]
     selected = client.post(
         f"/projects/{project_id}/creative-candidates/{selected_id}/select",
         json={"created_by": "usr_designer"},
@@ -1962,11 +2013,11 @@ def test_designer_can_promote_exactly_one_candidate_to_immutable_spec_v1(
     assert result["active_revision"]["parent_asset_id"] == selected_id
     creative = [item for item in result["revisions"]
                 if item["capability"] == "CREATIVE_RENDER"]
-    assert len(creative) == 2
+    assert len(creative) == 1
     assert all(item["provenance"] == "pre_spec_creative_candidate"
                for item in creative)
     assert all(item["legacy_provenance"] is False for item in creative)
-    second_id = body["revisions"][0]["asset_id"]
+    second_id = body["creative_candidates"][0]["asset_id"]
 
     replay = client.post(
         f"/projects/{project_id}/creative-candidates/{selected_id}/promote",
@@ -2007,6 +2058,128 @@ def test_designer_can_promote_exactly_one_candidate_to_immutable_spec_v1(
         assert record.raw_intent["kind"] == "confirm_design"
         assert record.raw_intent["selected_candidate_asset_id"] == selected_id
         assert record.interpretation["factory_authority"] is False
+
+
+def test_confirm_design_v1_preserves_exact_candidate_component_map(
+    creative_client,
+):
+    client, Session = creative_client
+    app.dependency_overrides[get_creative_render_generator] = (
+        lambda: (lambda _source, _instruction, variant: _creative_result(variant))
+    )
+    created = client.post(
+        "/projects/from-drawing", json=_request(variation_count=1)
+    )
+    assert created.status_code == 201, created.text
+    body = created.json()
+    project_id = body["root_id"]
+    with Session() as db:
+        candidate_id = db.scalar(select(ImageAsset.id).where(
+            ImageAsset.root_id == project_id,
+            ImageAsset.capability == "CREATIVE_RENDER",
+        ))
+        assert candidate_id is not None
+    assert client.post(
+        f"/projects/{project_id}/creative-candidates/{candidate_id}/select",
+        json={"created_by": "usr_designer"},
+    ).status_code == 200
+    with Session() as db:
+        candidate = db.get(ImageAsset, candidate_id)
+        assert candidate is not None
+        image = bytes(candidate.image)
+        add_revision_component_map(
+            db,
+            _exact_component_map(candidate.id, image),
+            image_bytes=image,
+            parent_asset_id=candidate.parent_asset_id,
+        )
+        db.commit()
+
+    promoted = client.post(
+        f"/projects/{project_id}/creative-candidates/{candidate_id}/promote",
+        json=_promotion_payload(
+            client,
+            project_id,
+            candidate_id,
+            audited_import_spec(EXAMPLE_SPEC),
+        ),
+    )
+
+    assert promoted.status_code == 200, promoted.text
+    active_id = promoted.json()["active_asset_id"]
+    targeting = client.get(f"/assets/{active_id}/studio-component-targeting")
+    assert targeting.status_code == 200, targeting.text
+    targeting_body = targeting.json()
+    assert targeting_body["component_map"]["state"] == "ready"
+    assert targeting_body["component_map"]["mapper_contract"] == (
+        "facetta.byte-identical-map-copy.v1"
+    )
+    assert {
+        path["component_path"]
+        for path in targeting_body["catalog_paths"]
+        if path["status"] == "ready"
+    } == {"stone.color", "metal.material", "metal.color"}
+    with Session() as db:
+        child_record = db.get(RevisionComponentMapRecord, active_id)
+        assert child_record is not None
+        assert child_record.parent_asset_id == candidate_id
+        assert {
+            component["parent_component_id"]
+            for component in child_record.map_json["components"]
+        } == {component_id for component_id, _kind in _RING_COMPONENTS}
+
+
+def test_confirm_design_v1_without_calibrated_map_stays_fail_closed(
+    creative_client,
+):
+    client, Session = creative_client
+    app.dependency_overrides[get_creative_render_generator] = (
+        lambda: (lambda _source, _instruction, variant: _creative_result(variant))
+    )
+    created = client.post(
+        "/projects/from-drawing", json=_request(variation_count=1)
+    )
+    assert created.status_code == 201, created.text
+    body = created.json()
+    project_id = body["root_id"]
+    with Session() as db:
+        candidate_id = db.scalar(select(ImageAsset.id).where(
+            ImageAsset.root_id == project_id,
+            ImageAsset.capability == "CREATIVE_RENDER",
+        ))
+        assert candidate_id is not None
+    assert client.post(
+        f"/projects/{project_id}/creative-candidates/{candidate_id}/select",
+        json={"created_by": "usr_designer"},
+    ).status_code == 200
+
+    promoted = client.post(
+        f"/projects/{project_id}/creative-candidates/{candidate_id}/promote",
+        json=_promotion_payload(
+            client,
+            project_id,
+            candidate_id,
+            audited_import_spec(EXAMPLE_SPEC),
+        ),
+    )
+
+    assert promoted.status_code == 200, promoted.text
+    active_id = promoted.json()["active_asset_id"]
+    targeting = client.get(f"/assets/{active_id}/studio-component-targeting")
+    assert targeting.status_code == 200, targeting.text
+    assert targeting.json()["component_map"] == {
+        "state": "unmapped",
+        "scope": "ring_v1",
+        "map_sha256": None,
+        "mapper_contract": None,
+        "raster_width": None,
+        "raster_height": None,
+    }
+    assert {
+        path["reason_code"] for path in targeting.json()["catalog_paths"]
+    } == {"component_map_not_found"}
+    with Session() as db:
+        assert db.get(RevisionComponentMapRecord, active_id) is None
 
 
 def test_two_sessions_observe_exactly_one_atomic_root_claim(creative_client):
@@ -2055,8 +2228,8 @@ def test_creative_candidate_confirmation_cas_drift_has_no_partial_writes(
     assert created.status_code == 201, created.text
     body = created.json()
     project_id = body["root_id"]
-    selected_id = body["revisions"][1]["asset_id"]
-    other_id = body["revisions"][0]["asset_id"]
+    selected_id = body["creative_candidates"][1]["asset_id"]
+    other_id = body["creative_candidates"][0]["asset_id"]
     selected = client.post(
         f"/projects/{project_id}/creative-candidates/{selected_id}/select",
         json={"created_by": "usr_designer"},
@@ -2103,8 +2276,8 @@ def test_opaque_confirmation_token_rejects_invalid_binding_without_writes(
         lambda: (lambda _source, _instruction, variant: _creative_result(variant)))
     body = client.post("/projects/from-drawing", json=_request()).json()
     project_id = body["root_id"]
-    selected_id = body["revisions"][1]["asset_id"]
-    other_id = body["revisions"][0]["asset_id"]
+    selected_id = body["creative_candidates"][1]["asset_id"]
+    other_id = body["creative_candidates"][0]["asset_id"]
     assert client.post(
         f"/projects/{project_id}/creative-candidates/{selected_id}/select",
         json={"created_by": "usr_designer"},
@@ -2133,7 +2306,7 @@ def test_opaque_confirmation_token_rejects_invalid_binding_without_writes(
             "title": "Other project",
         }).json()
         path_project = other["root_id"]
-        path_candidate = other["revisions"][0]["asset_id"]
+        path_candidate = other["creative_candidates"][0]["asset_id"]
         assert client.post(
             f"/projects/{path_project}/creative-candidates/"
             f"{path_candidate}/select",
@@ -2162,7 +2335,7 @@ def test_promote_rejects_client_spec_even_with_recomputed_hash(
         lambda: (lambda _source, _instruction, variant: _creative_result(variant)))
     body = client.post("/projects/from-drawing", json=_request()).json()
     project_id = body["root_id"]
-    selected_id = body["revisions"][0]["asset_id"]
+    selected_id = body["creative_candidates"][0]["asset_id"]
     assert client.post(
         f"/projects/{project_id}/creative-candidates/{selected_id}/select",
         json={"created_by": "usr_designer"},
@@ -2193,7 +2366,7 @@ def test_confirm_design_cleans_expired_unused_drafts_but_keeps_consumed(
         lambda: (lambda _source, _instruction, variant: _creative_result(variant)))
     body = client.post("/projects/from-drawing", json=_request()).json()
     project_id = body["root_id"]
-    selected_id = body["revisions"][0]["asset_id"]
+    selected_id = body["creative_candidates"][0]["asset_id"]
     assert client.post(
         f"/projects/{project_id}/creative-candidates/{selected_id}/select",
         json={"created_by": "usr_designer"},
@@ -2233,7 +2406,7 @@ def test_confirm_design_cleans_expired_unused_drafts_but_keeps_consumed(
     other = client.post("/projects/from-drawing", json={
         **_request(), "title": "Cleanup trigger",
     }).json()
-    other_id = other["revisions"][0]["asset_id"]
+    other_id = other["creative_candidates"][0]["asset_id"]
     assert client.post(
         f"/projects/{other['root_id']}/creative-candidates/{other_id}/select",
         json={"created_by": "usr_designer"},
@@ -2257,7 +2430,7 @@ def test_prompt_root_candidate_promotes_into_the_same_trusted_spec_path(
     assert created.status_code == 201, created.text
     body = created.json()
     selected_id = body["root_id"]
-    assert selected_id == body["revisions"][0]["asset_id"]
+    assert selected_id == body["creative_candidates"][0]["asset_id"]
     selected = client.post(
         f"/projects/{body['root_id']}/creative-candidates/{selected_id}/select",
         json={"created_by": "usr_designer"},

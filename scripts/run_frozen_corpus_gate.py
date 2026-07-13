@@ -29,7 +29,13 @@ def _report(result: dict[str, object]) -> str:
     assert isinstance(sources, dict)
     assert isinstance(quality, dict)
     coverage = quality.get("source_coverage", {})
+    classified = quality.get("classified_release_gates", {})
     assert isinstance(coverage, dict)
+    assert isinstance(classified, dict)
+    quick = classified.get("quick_appearance", {})
+    structural = classified.get("structural", {})
+    assert isinstance(quick, dict)
+    assert isinstance(structural, dict)
     return "\n".join([
         "# Frozen founder corpus gate",
         "",
@@ -42,10 +48,16 @@ def _report(result: dict[str, object]) -> str:
         "- Signed quality source coverage: "
         f"`{coverage.get('completed_source_count', 0)}/"
         f"{coverage.get('expected_source_count', sources['expected'])}`",
+        "- Quick-appearance reviewer acceptance: "
+        f"`{quick.get('designer_acceptance_rate', 'not_run')}` "
+        f"(pass: `{quick.get('pass', False)}`)",
+        "- Structural fidelity/drift class: "
+        f"`{structural.get('pass', False)}`",
         "- Provider calls: `0`",
         "",
         "Source integrity is not image quality. An absent or incomplete replay, "
-        "canonical persistence proof, or GIA-trained review fails closed.",
+        "canonical persistence proof, or GIA-trained review fails closed. "
+        "Founder approval is verified separately against these exact result bytes.",
         "",
     ])
 

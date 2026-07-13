@@ -22,12 +22,19 @@ from facetta.db import (
     new_id,
     utcnow,
 )
-from facetta.project_backbone import is_primary_revision
+from facetta.project_backbone import (
+    accepted_creative_candidate,
+    is_canonical_revision,
+    is_primary_revision,
+)
 from facetta.catalog_component_targeting import (
     prepare_catalog_child_component_map,
 )
 from facetta.revision_component_map import ComponentMapError
 from facetta.revision_component_map_store import add_revision_component_map
+from facetta.revision_component_map_store import (
+    copy_revision_component_map_for_identical_raster,
+)
 from facetta.specdiff import diff_specs, summarize_changes
 from facetta.studio_visual_candidates import StudioVisualCandidate
 
@@ -567,7 +574,10 @@ def apply_pre_spec_visual_candidate(
         parent_asset_id=source.id,
         design_id=None,
         design_version=None,
-        capability="CREATIVE_RENDER",
+        capability=(
+            "GLOBAL_RESTYLE"
+            if candidate.scope == "appearance" else "LOCALIZED_EDIT"
+        ),
         instruction=candidate.requested_change,
         region=(
             "designer-marked region" if candidate.scope == "marked_region" else None
@@ -783,6 +793,7 @@ def fork_project_variation(
     expected_design_version: int | None,
     variation_label: str,
     created_by: str,
+    allow_unselected_creative_candidate: bool = False,
 ) -> VariationBranchResult:
     """Copy one exact revision into an independent sibling project."""
 
@@ -816,7 +827,12 @@ def fork_project_variation(
             "stale_asset_revision",
             "the active design changed before the variation could be saved",
         )
-    if source.id != active.id:
+    is_unselected_creative_candidate = (
+        allow_unselected_creative_candidate
+        and source.capability == "CREATIVE_RENDER"
+        and source.design_version is None
+    )
+    if source.id != active.id and not is_unselected_creative_candidate:
         raise StudioHistoryError(
             "variation_source_not_active",
             "restore an older revision first or branch from the active design",
@@ -957,6 +973,13 @@ def fork_project_variation(
     project.updated_at = now
     db.add_all([new_asset, new_project, record])
     try:
+        db.flush()
+        copy_revision_component_map_for_identical_raster(
+            db,
+            source_asset_id=source.id,
+            child_asset_id=new_asset.id,
+            child_image_bytes=bytes(new_asset.image),
+        )
         db.commit()
     except IntegrityError as exc:
         db.rollback()
@@ -1011,10 +1034,16 @@ def restore_project_revision(
             "the selected historical revision is not in this project",
             status_code=404,
         )
-    if not is_primary_revision(selected):
+    accepted_candidate = accepted_creative_candidate(
+        _project_chain(db, project_root_id), project.selected_candidate_asset_id,
+    )
+    if not (
+        is_canonical_revision(selected)
+        or selected.id == getattr(accepted_candidate, "id", None)
+    ):
         raise StudioHistoryError(
             "restore_source_not_revision",
-            "only a primary visual revision can be restored",
+            "only an accepted variation revision can be restored",
             status_code=422,
         )
     if active is None or active.id != expected_active_asset_id:
