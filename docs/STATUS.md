@@ -5,6 +5,31 @@ Read `CLAUDE.md` (constitution — binding), `README.md` (endpoints/layout),
 `docs/DATA_WANTED.md` (open research asks). This file is the delta: what is
 DONE beyond the original TASKS.md build order, and what is next.
 
+## 2026-07-13 Studio IA and production-surface consolidation checkpoint
+
+The designer-facing Studio no longer presents `Starting design facts` as a
+second destination under More. Fact review remains available only from the
+Refine context that owns it, so the action rail does not imply a mandatory
+Create -> Refine -> Confirm sequence. `Views` remains a compact rail label,
+but its full action and workspace copy now say `Technical views` and identify
+the output as temporary line art derived from an exact revision and confirmed
+design facts. It stays absent before those facts exist; Refine explains the
+optional unlock while preserving continued refinement and presentation.
+
+The deprecated direct `POST /assets/{asset_id}/pin` compatibility handler is
+no longer mounted in production. Test and development environments retain it
+for historical compatibility, while production Studio pinning remains owned
+by exact-version checklist completion and the atomic Factory-review flow. No
+OpenAPI handler, historical reader, or trusted service was deleted. A separate
+caller audit identified the old trusted screen composition as orphaned, but it
+was deliberately retained because founder end-to-end acceptance and the other
+documented deletion gates have not yet passed.
+
+Local validation for these slices: 1,534 backend tests, 239 Jest tests, 67
+Studio contract tests, TypeScript, and Expo export pass. This remains local
+contract and interface validation; the external corpus, designer/GIA review,
+founder acceptance, and staging isolation gates remain unmet.
+
 ## 2026-07-13 secured corpus execution-evidence checkpoint
 
 The frozen provider-call plan and capture envelope are now v2 fail-closed
