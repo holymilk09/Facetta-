@@ -495,6 +495,7 @@ export interface CreateProjectFromDrawingRequest {
   source_region_description?: string;
   source_region?: NormalizedSourceRegion;
   references?: CreativeRoleReferenceRequest[];
+  studio_job_id?: string;
 }
 
 export interface CreativeRoleReferenceRequest {
@@ -511,6 +512,7 @@ export interface CreateProjectFromPromptRequest {
   title: string;
   collection?: string;
   tags?: string[];
+  studio_job_id?: string;
 }
 
 /**

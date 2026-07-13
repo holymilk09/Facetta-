@@ -12,13 +12,20 @@ import io
 import pytest
 from fastapi.testclient import TestClient
 from PIL import Image, ImageDraw
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 import facetta.api.assets as assets_mod
 import facetta.specagent as agent
-from facetta.db import Base, get_db
+from facetta.db import (
+    Base,
+    ImageRun,
+    StudioJobRecord,
+    StudioMarkupCandidateRecord,
+    get_db,
+    utcnow,
+)
 from facetta.main import app
 
 from conftest import HALO_SPEC
@@ -73,7 +80,11 @@ def client(monkeypatch):
                         lambda ref, cand: {"consistent": True,
                                            "differences": [],
                                            "severity": "none", "checked": True})
-    yield TestClient(app)
+    test_client = TestClient(app)
+    # Keep the public fixture shape unchanged while allowing authority tests
+    # to inspect the same in-memory ledger used by the HTTP request.
+    test_client._facetta_session_factory = TestSession
+    yield test_client
     app.dependency_overrides.clear()
 
 
@@ -84,11 +95,16 @@ def _design(client) -> str:
     return r.json()["design_id"]
 
 
-def _linked_asset(client) -> tuple[str, str]:
+def _linked_asset(
+    client,
+    *,
+    created_by: str = "usr_pending",
+) -> tuple[str, str]:
     design_id = _design(client)
     r = client.post("/assets/render",
                     json={"piece_description": "a halo ring",
-                          "design_id": design_id})
+                          "design_id": design_id,
+                          "created_by": created_by})
     assert r.status_code == 201, r.text
     return r.json()["asset_id"], design_id
 
@@ -120,6 +136,150 @@ class TestReadMarkup:
 
 
 class TestMarkupEndpoints:
+    def test_production_preview_requires_job_before_edit_planning(
+        self,
+        client,
+        monkeypatch,
+    ):
+        calls: list[bool] = []
+        monkeypatch.setattr(
+            "facetta.grokedit.grok_plan_scoped_edit",
+            lambda *_args, **_kwargs: calls.append(True),
+        )
+        monkeypatch.setenv("FACETTA_ENV", "production")
+        asset_id, _design_id = _linked_asset(client)
+
+        response = client.post(f"/assets/{asset_id}/markup/apply", json={
+            "annotations": [{
+                "region_description": "the background",
+                "change_instruction": "make the background warmer",
+            }],
+            "created_by": "usr_ana",
+            "preview_only": True,
+            "update_spec": False,
+        })
+
+        assert response.status_code == 422, response.text
+        assert response.json()["code"] == "studio_job_required"
+        assert calls == []
+
+    def test_studio_preview_run_candidate_and_job_commit_atomically(
+        self,
+        client,
+        monkeypatch,
+    ):
+        from facetta.image_agent import (
+            CheckSeverity,
+            ImageQualityReport,
+            JewelryImageAgent,
+            ProviderImage,
+            QualityCheck,
+            QualityVerdict,
+        )
+        from facetta.studio_markup_candidates import (
+            store_studio_markup_candidate as real_store_candidate,
+        )
+
+        provider_calls: list[bool] = []
+
+        class Provider:
+            def execute(self, plan, route, prompt, *, source_image, mask_bytes):
+                provider_calls.append(True)
+                return ProviderImage(image_bytes=_png((76, 68, 61)))
+
+        class PassingEvaluator:
+            def evaluate(self, plan, candidate, *, source_image, mask_bytes):
+                return ImageQualityReport(
+                    verdict=QualityVerdict.PASS,
+                    checks=(QualityCheck(
+                        code="geometry_preserved",
+                        passed=True,
+                        severity=CheckSeverity.HARD,
+                        message="jewelry geometry stayed fixed",
+                    ),),
+                    score=98,
+                )
+
+        monkeypatch.setattr(
+            assets_mod,
+            "_trusted_image_agent",
+            lambda: JewelryImageAgent(Provider(), PassingEvaluator()),
+        )
+        self._mock_apply(monkeypatch)
+        monkeypatch.setenv("FACETTA_ENV", "production")
+        asset_id, _design_id = _linked_asset(client, created_by="usr_ana")
+        Session = client._facetta_session_factory
+        now = utcnow()
+        with Session() as db:
+            db.add(StudioJobRecord(
+                id="job_markup_atomic",
+                owner="usr_ana",
+                action_id="refine",
+                lane="trusted_structural",
+                status="running",
+                progress=0.05,
+                active_design_id=asset_id,
+                source_revision_id=asset_id,
+                requested_outputs=1,
+                credits_per_output=20,
+                completed_outputs=0,
+                charged_outputs=0,
+                created_at=now,
+                updated_at=now,
+            ))
+            db.commit()
+
+        request = {
+            "expected_design_version": 1,
+            "update_spec": True,
+            "preview_only": True,
+            "created_by": "usr_ana",
+            "studio_job_id": "job_markup_atomic",
+            "annotations": [{
+                "region_description": "the halo, upper arc",
+                "change_instruction": "raise the melee to 1.3 mm",
+                "target_section": "side_stones",
+                "index": 0,
+            }],
+        }
+
+        def fail_candidate_store(*_args, **_kwargs):
+            raise RuntimeError("simulated candidate persistence failure")
+
+        monkeypatch.setattr(
+            "facetta.studio_markup_candidates.store_studio_markup_candidate",
+            fail_candidate_store,
+        )
+        with pytest.raises(RuntimeError, match="candidate persistence"):
+            client.post(f"/assets/{asset_id}/markup/apply", json=request)
+
+        with Session() as db:
+            job = db.get(StudioJobRecord, "job_markup_atomic")
+            assert job is not None and job.status == "running"
+            assert db.scalar(select(func.count()).select_from(ImageRun)) == 0
+            assert db.scalar(
+                select(func.count()).select_from(StudioMarkupCandidateRecord)
+            ) == 0
+
+        monkeypatch.setattr(
+            "facetta.studio_markup_candidates.store_studio_markup_candidate",
+            real_store_candidate,
+        )
+        created = client.post(f"/assets/{asset_id}/markup/apply", json=request)
+        assert created.status_code == 201, created.text
+        with Session() as db:
+            job = db.get(StudioJobRecord, "job_markup_atomic")
+            assert job is not None and job.status == "reviewing"
+            assert db.scalar(select(func.count()).select_from(ImageRun)) == 1
+            assert db.scalar(
+                select(func.count()).select_from(StudioMarkupCandidateRecord)
+            ) == 1
+
+        replay = client.post(f"/assets/{asset_id}/markup/apply", json=request)
+        assert replay.status_code == 409, replay.text
+        assert replay.json()["code"] == "studio_job_terminal"
+        assert provider_calls == [True, True]
+
     def test_read_echoes_and_files_the_notes_leaf(self, client, monkeypatch):
         monkeypatch.setattr(assets_mod, "read_markup",
                             lambda clean, marked: dict(READING))

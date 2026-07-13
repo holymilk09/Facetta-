@@ -17,7 +17,10 @@ from PIL import Image
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from facetta.api.error_mapping import image_agent_error_response
+from facetta.api.error_mapping import (
+    image_agent_error_response,
+    provider_studio_job_error_response,
+)
 from facetta.api.projects import (
     ProductPhotoRequest,
     ProjectDetail,
@@ -68,6 +71,10 @@ from facetta.presentation import (
     ProductPhotoFraming,
     ProductPhotoPreset,
     compile_product_photo_brief,
+)
+from facetta.provider_job_gate import (
+    ProviderStudioJobError,
+    require_provider_studio_job,
 )
 from facetta.specagent import mask_from_markup
 from facetta.studio_history import (
@@ -946,6 +953,19 @@ def create_visual_preview(
 ):
     """Generate a temporary pre-spec appearance preview without mutation."""
 
+    if request.studio_job_id is None:
+        try:
+            require_provider_studio_job(
+                db,
+                job_id=None,
+                owner=request.created_by,
+                action_id="refine",
+                requested_outputs=1,
+                active_design_id=project_id,
+                source_revision_id=request.expected_active_asset_id,
+            )
+        except ProviderStudioJobError as exc:
+            return provider_studio_job_error_response(exc)
     if request.studio_job_id is not None:
         try:
             reserve_studio_visual_job(

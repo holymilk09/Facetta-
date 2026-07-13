@@ -44,7 +44,8 @@ from facetta.creative_reference_board import (
     build_creative_reference_board,
 )
 from facetta.api.error_mapping import (
-    image_agent_error_response, render_unavailable_response,
+    image_agent_error_response, provider_studio_job_error_response,
+    render_unavailable_response,
 )
 from facetta.auth import (
     AuthenticatedPrincipal,
@@ -132,6 +133,10 @@ from facetta.presentation import (
     PresentationScopeError,
     compile_product_photo_brief,
     get_marketing_image_generator,
+)
+from facetta.provider_job_gate import (
+    ProviderStudioJobError,
+    require_provider_studio_job,
 )
 from facetta.preliminary_sheet import sheet_readiness_blockers
 from facetta.render import RenderUnavailable
@@ -399,6 +404,7 @@ class ProjectFromDrawingRequest(BaseModel):
     title: Annotated[str, Field(min_length=1, max_length=200)]
     collection: Annotated[str, Field(min_length=1, max_length=80)] | None = None
     tags: Annotated[list[str], Field(max_length=24)] = Field(default_factory=list)
+    studio_job_id: Annotated[str, Field(min_length=1, max_length=32)] | None = None
 
     # A professional plate often repeats one finished piece as front, side,
     # and enlarged construction views. The designer may isolate the exact view
@@ -439,6 +445,7 @@ class ProjectFromPromptRequest(BaseModel):
     title: Annotated[str, Field(min_length=1, max_length=200)]
     collection: Annotated[str, Field(min_length=1, max_length=80)] | None = None
     tags: Annotated[list[str], Field(max_length=24)] = Field(default_factory=list)
+    studio_job_id: Annotated[str, Field(min_length=1, max_length=32)] | None = None
 
 
 class CreativeCandidatePromoteRequest(BaseModel):
@@ -1625,7 +1632,17 @@ def create_project_from_prompt(
     remain designer-review candidates and cannot enter approval or factory
     export until one is selected and bound to a confirmed exact specification.
     """
-    principal_actor(principal, request.owner)
+    actor = principal_actor(principal, request.owner)
+    try:
+        studio_job = require_provider_studio_job(
+            db,
+            job_id=request.studio_job_id,
+            owner=actor,
+            action_id="create",
+            requested_outputs=request.variation_count,
+        )
+    except ProviderStudioJobError as exc:
+        return provider_studio_job_error_response(exc)
     generated = []
     for offset in range(request.variation_count):
         variant = request.starting_variant + offset
@@ -1672,6 +1689,7 @@ def create_project_from_prompt(
         title=request.title,
         collection=request.collection,
         tags=request.tags,
+        studio_job=studio_job,
     )
     project = db.get(Project, persisted.root_id)
     if project is None:  # pragma: no cover - transaction invariant
@@ -1691,13 +1709,23 @@ def create_project_from_drawing(
     generate: CreativeGeneratorDep,
     principal: PrincipalDep,
 ):
-    principal_actor(principal, request.owner)
     """Create reviewable beauty renders without inventing a factory spec.
 
     Provider and QA work completes before the one product transaction. A hard
     QA/provider failure leaves no Project, ImageAsset, Design, or DesignVersion.
     Completed attempt evidence is still retained as append-only observability.
     """
+    actor = principal_actor(principal, request.owner)
+    try:
+        studio_job = require_provider_studio_job(
+            db,
+            job_id=request.studio_job_id,
+            owner=actor,
+            action_id="create",
+            requested_outputs=request.variation_count,
+        )
+    except ProviderStudioJobError as exc:
+        return provider_studio_job_error_response(exc)
     try:
         image = base64.b64decode(request.image_base64, validate=True)
     except (binascii.Error, ValueError):
@@ -1903,6 +1931,7 @@ def create_project_from_drawing(
         title=request.title,
         collection=request.collection,
         tags=request.tags,
+        studio_job=studio_job,
     )
     project = db.get(Project, persisted.root_id)
     if project is None:  # pragma: no cover - transaction invariant
@@ -2706,6 +2735,19 @@ def render_project_revision(
                 for blocker in coverage_blockers
             ],
         })
+    if request.studio_job_id is None:
+        try:
+            require_provider_studio_job(
+                db,
+                job_id=None,
+                owner=request.created_by,
+                action_id="present",
+                requested_outputs=1,
+                active_design_id=root_id,
+                source_revision_id=source.id,
+            )
+        except ProviderStudioJobError as exc:
+            return provider_studio_job_error_response(exc)
     if request.studio_job_id is not None:
         try:
             reserve_exact_studio_presentation_job(
@@ -2999,6 +3041,20 @@ def create_product_photo(
             "detail": str(exc),
         })
 
+    if request.studio_job_id is None:
+        try:
+            require_provider_studio_job(
+                db,
+                job_id=None,
+                owner=request.created_by,
+                action_id="present",
+                requested_outputs=1,
+                active_design_id=root_id,
+                source_revision_id=source.id,
+            )
+        except ProviderStudioJobError as exc:
+            return provider_studio_job_error_response(exc)
+
     if request.studio_job_id is not None:
         try:
             reserve_exact_studio_presentation_job(
@@ -3272,6 +3328,20 @@ def create_marketing_pack(
             "code": "presentation_scope_violation",
             "detail": str(exc),
         })
+
+    if request.studio_job_id is None:
+        try:
+            require_provider_studio_job(
+                db,
+                job_id=None,
+                owner=request.created_by,
+                action_id="present",
+                requested_outputs=len(request.presets),
+                active_design_id=root_id,
+                source_revision_id=source.id,
+            )
+        except ProviderStudioJobError as exc:
+            return provider_studio_job_error_response(exc)
 
     if request.studio_job_id is not None:
         try:
@@ -3638,6 +3708,19 @@ def create_project_line_art(
             "error_category": "validation_failure",
             "detail": [issue.as_detail() for issue in validated.issues],
         })
+    if request.studio_job_id is None:
+        try:
+            require_provider_studio_job(
+                db,
+                job_id=None,
+                owner=request.created_by,
+                action_id="views",
+                requested_outputs=1,
+                active_design_id=root_id,
+                source_revision_id=source.id,
+            )
+        except ProviderStudioJobError as exc:
+            return provider_studio_job_error_response(exc)
     source_control = bytes(source.image)
     selection_payload = None
     region_description = request.source_region_description

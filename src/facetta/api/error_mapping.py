@@ -6,6 +6,7 @@ from fastapi.responses import JSONResponse
 
 from facetta.image_agent import FailureCategory, ImageAgentError
 from facetta.json_types import JsonObject
+from facetta.provider_job_gate import ProviderStudioJobError
 from facetta.render import RenderUnavailable
 
 
@@ -51,3 +52,19 @@ def image_agent_error_response(
     if extra:
         content.update(extra)
     return JSONResponse(status_code=status, content=content)
+
+
+def provider_studio_job_error_response(
+    error: ProviderStudioJobError,
+) -> JSONResponse:
+    """Keep the provider gate's fail-closed response uniform across routers."""
+
+    return JSONResponse(status_code=error.status_code, content={
+        "code": error.code,
+        "category": (
+            "not_found" if error.status_code == 404
+            else "conflict" if error.status_code == 409
+            else "validation"
+        ),
+        "detail": error.detail,
+    })

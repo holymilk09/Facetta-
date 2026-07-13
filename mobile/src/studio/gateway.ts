@@ -1106,7 +1106,10 @@ export function createStudioGateway(
       const requested = request.variation_count ?? 1;
       const started = await startJob('create', request.owner, requested);
       if (started.error !== null) return started;
-      const result = await callTracked(started.data, () => client.createProjectFromPrompt(request));
+      const result = await callTracked(started.data, () => client.createProjectFromPrompt({
+        ...request,
+        ...(started.data === null ? {} : { studio_job_id: started.data.jobId }),
+      }));
       if (result.error !== null) return result;
       const completedOutputs = creativeOutputCount(result.data, requested);
       if (completedOutputs === 0) {
@@ -1133,7 +1136,10 @@ export function createStudioGateway(
       const requested = request.variation_count ?? 1;
       const started = await startJob('create', request.owner, requested);
       if (started.error !== null) return started;
-      const result = await callTracked(started.data, () => client.createProjectFromDrawing(request));
+      const result = await callTracked(started.data, () => client.createProjectFromDrawing({
+        ...request,
+        ...(started.data === null ? {} : { studio_job_id: started.data.jobId }),
+      }));
       if (result.error !== null) return result;
       const completedOutputs = creativeOutputCount(result.data, requested);
       if (completedOutputs === 0) {

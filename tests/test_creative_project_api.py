@@ -59,7 +59,11 @@ from facetta.image_agent.prompts import (
 from facetta.image_region import crop_normalized_region
 from facetta.image_identity import spec_visual_hash
 from facetta.main import app
-from facetta.project_backbone import claim_creative_project_design
+from facetta.project_backbone import (
+    CreativeCandidateInput,
+    claim_creative_project_design,
+    persist_prompt_creative_project,
+)
 from facetta.revision_component_map import (
     RevisionComponent,
     RevisionComponentMap,
@@ -594,6 +598,30 @@ def _reviewing_create_job(
     return job_id
 
 
+def _running_create_job(
+    client: TestClient,
+    *,
+    requested_outputs: int,
+    owner: str = "usr_designer",
+) -> str:
+    created = client.post("/studio/jobs", json={
+        "owner": owner,
+        "action_id": "create",
+        "lane": "fast_visual",
+        "requested_outputs": requested_outputs,
+        "credits_per_output": 15,
+    })
+    assert created.status_code == 201, created.text
+    job_id = created.json()["job_id"]
+    running = client.patch(f"/studio/jobs/{job_id}", json={
+        "owner": owner,
+        "status": "running",
+        "progress": 0.05,
+    })
+    assert running.status_code == 200, running.text
+    return job_id
+
+
 def _promotion_payload(
     client: TestClient,
     project_id: str,
@@ -671,6 +699,138 @@ def _profile_confirmation_payload(spec: dict) -> dict:
         },
         "created_by": "usr_designer",
     }
+
+
+def test_production_create_requires_valid_job_before_provider_cost(
+    creative_client,
+    monkeypatch,
+):
+    client, Session = creative_client
+    prompt_calls: list[int] = []
+    drawing_calls: list[int] = []
+
+    def prompt_generate(_instruction: str, variant: int):
+        prompt_calls.append(variant)
+        return _prompt_creative_result(variant)
+
+    def drawing_generate(_source: bytes, _instruction: str, variant: int):
+        drawing_calls.append(variant)
+        return _creative_result(variant)
+
+    app.dependency_overrides[get_creative_prompt_generator] = (
+        lambda: prompt_generate
+    )
+    app.dependency_overrides[get_creative_render_generator] = (
+        lambda: drawing_generate
+    )
+    monkeypatch.setenv("FACETTA_ENV", "production")
+
+    missing_prompt = client.post(
+        "/projects/from-prompt", json=_prompt_request(variation_count=1),
+    )
+    missing_drawing = client.post(
+        "/projects/from-drawing", json=_request(variation_count=1),
+    )
+    assert missing_prompt.status_code == 422
+    assert missing_prompt.json()["code"] == "studio_job_required"
+    assert missing_drawing.status_code == 422
+    assert missing_drawing.json()["code"] == "studio_job_required"
+    assert prompt_calls == []
+    assert drawing_calls == []
+
+    wrong_count_job = _running_create_job(client, requested_outputs=2)
+    wrong_count = client.post("/projects/from-prompt", json={
+        **_prompt_request(variation_count=1),
+        "studio_job_id": wrong_count_job,
+    })
+    assert wrong_count.status_code == 422
+    assert wrong_count.json()["code"] == "studio_job_invalid"
+    assert prompt_calls == []
+
+    valid_job = _running_create_job(client, requested_outputs=1)
+    created = client.post("/projects/from-prompt", json={
+        **_prompt_request(variation_count=1),
+        "studio_job_id": valid_job,
+    })
+    assert created.status_code == 201, created.text
+    assert prompt_calls == [4]
+    project_id = created.json()["root_id"]
+    with Session() as db:
+        durable_job = db.get(StudioJobRecord, valid_job)
+        durable_project = db.get(Project, project_id)
+        assert durable_job is not None
+        assert durable_project is not None
+        # The provider authorization and project become durable together. The
+        # client may later report reviewing, but replay prevention does not
+        # depend on that second request.
+        assert durable_job.active_design_id == durable_project.root_id
+        assert durable_job.status == "running"
+
+    replay = client.post("/projects/from-prompt", json={
+        **_prompt_request(variation_count=1),
+        "studio_job_id": valid_job,
+    })
+    assert replay.status_code == 409
+    assert replay.json()["code"] == "studio_job_terminal"
+    assert prompt_calls == [4]
+
+    drawing_job = _running_create_job(client, requested_outputs=1)
+    drawing = client.post("/projects/from-drawing", json={
+        **_request(variation_count=1),
+        "studio_job_id": drawing_job,
+    })
+    assert drawing.status_code == 201, drawing.text
+    assert len(drawing_calls) == 1
+    with Session() as db:
+        durable_drawing_job = db.get(StudioJobRecord, drawing_job)
+        assert durable_drawing_job is not None
+        assert durable_drawing_job.active_design_id == drawing.json()["root_id"]
+
+    drawing_replay = client.post("/projects/from-drawing", json={
+        **_request(variation_count=1),
+        "studio_job_id": drawing_job,
+    })
+    assert drawing_replay.status_code == 409
+    assert drawing_replay.json()["code"] == "studio_job_terminal"
+    assert len(drawing_calls) == 1
+
+
+def test_create_job_binding_rolls_back_with_project_persistence(
+    creative_client,
+    monkeypatch,
+):
+    client, Session = creative_client
+    job_id = _running_create_job(client, requested_outputs=1)
+    generated = _prompt_creative_result(4)
+
+    def fail_run_persistence(*_args, **_kwargs):
+        raise RuntimeError("simulated image-run persistence failure")
+
+    monkeypatch.setattr(
+        "facetta.image_run_store.persist_image_agent_result",
+        fail_run_persistence,
+    )
+    with Session() as db:
+        job = db.get(StudioJobRecord, job_id)
+        assert job is not None and job.active_design_id is None
+        with pytest.raises(RuntimeError, match="simulated image-run"):
+            persist_prompt_creative_project(
+                db,
+                candidates=(CreativeCandidateInput(
+                    image=generated.image_bytes,
+                    instruction="Sapphire orbit",
+                    image_run=generated,
+                ),),
+                owner="usr_designer",
+                title="Atomic Create",
+                studio_job=job,
+            )
+
+    with Session() as db:
+        durable_job = db.get(StudioJobRecord, job_id)
+        assert durable_job is not None
+        assert durable_job.active_design_id is None
+        assert db.scalar(select(func.count()).select_from(Project)) == 0
 
 
 def test_from_prompt_persists_independent_candidates_without_source_or_spec(

@@ -126,7 +126,6 @@ PRODUCTION_PROJECT_OPERATIONS: frozenset[RouteOperation] = frozenset({
     ),
     ("GET", "/projects/{root_id}"),
     ("POST", "/projects/{root_id}/marketing-pack"),
-    ("POST", "/projects/{root_id}/visual-twin/views"),
     ("POST", "/projects/{root_id}/line-art"),
 })
 

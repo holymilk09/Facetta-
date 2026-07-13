@@ -148,6 +148,28 @@ def _pack_request(project: dict, presets: list[str]) -> dict[str, object]:
     }
 
 
+def test_production_marketing_pack_requires_job_before_generator(
+    marketing_client,
+    monkeypatch,
+):
+    client, _Session = marketing_client
+    project = _project(client)
+    calls: list[bool] = []
+    app.dependency_overrides[get_marketing_image_generator] = (
+        lambda: lambda *_args, **_kwargs: calls.append(True)
+    )
+    monkeypatch.setenv("FACETTA_ENV", "production")
+
+    response = client.post(
+        f"/projects/{project['root_id']}/marketing-pack",
+        json=_pack_request(project, ["catalog_white"]),
+    )
+
+    assert response.status_code == 422, response.text
+    assert response.json()["code"] == "studio_job_required"
+    assert calls == []
+
+
 def test_pack_candidates_are_reviewable_and_accept_as_derived_assets(
     marketing_client,
 ):

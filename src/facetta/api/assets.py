@@ -21,7 +21,8 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from facetta.api.error_mapping import (
-    image_agent_error_response, render_unavailable_response,
+    image_agent_error_response, provider_studio_job_error_response,
+    render_unavailable_response,
 )
 from facetta.auth import (
     AuthenticatedPrincipal,
@@ -45,6 +46,10 @@ from facetta.markup_snapshot import (
     composite_markup_snapshot,
 )
 from facetta.project_backbone import is_primary_revision
+from facetta.provider_job_gate import (
+    ProviderStudioJobError,
+    require_provider_studio_job,
+)
 from facetta.render import RenderUnavailable, _sniff_media_type
 from facetta.revision_component_map import (
     bind_map_to_raster,
@@ -779,6 +784,19 @@ def markup_apply(
                 "expected_design_version": request.expected_design_version,
                 "current_design_version": linked[1]})
 
+    try:
+        require_provider_studio_job(
+            db,
+            job_id=request.studio_job_id,
+            owner=actor,
+            action_id="refine",
+            requested_outputs=1,
+            active_design_id=asset.root_id,
+            source_revision_id=asset.id,
+        )
+    except ProviderStudioJobError as exc:
+        return provider_studio_job_error_response(exc)
+
     current = asset
     steps: list[dict] = []
     for note in request.annotations:
@@ -1217,6 +1235,12 @@ def markup_apply(
                     project_root_id=asset.root_id,
                     source_asset_id=current.id,
                     created_by=request.created_by,
+                    # A Studio preview holds the Refine job lock until its
+                    # durable candidate moves that same job to reviewing.
+                    # Persist run evidence in the candidate transaction so a
+                    # failed candidate write cannot release a still-running
+                    # job with orphaned, replayable provider output.
+                    commit=request.studio_job_id is None,
                 )
                 routing_summary["run_id"] = run_id
                 from time import monotonic

@@ -1503,6 +1503,35 @@ def test_catalog_preview_rejects_non_refine_job_before_provider_or_evidence(
         assert job.completed_outputs == 0 and job.charged_outputs == 0
 
 
+def test_production_catalog_preview_requires_job_before_provider(
+    catalog_client,
+    example_spec,
+    monkeypatch,
+):
+    client, SessionFactory = catalog_client
+    project = _create_project(client, example_spec, SessionFactory)
+    provider_calls: list[bool] = []
+    monkeypatch.setattr(
+        "facetta.api.catalog._trusted_image_agent",
+        lambda: provider_calls.append(True),
+    )
+    monkeypatch.setenv("FACETTA_ENV", "production")
+
+    response = client.post(
+        f"/assets/{project['active_asset_id']}/catalog/preview",
+        json=_request(),
+    )
+
+    assert response.status_code == 422, response.text
+    assert response.json()["code"] == "studio_job_required"
+    assert provider_calls == []
+    with SessionFactory() as db:
+        assert db.scalar(select(func.count()).select_from(ImageRun)) == 0
+        assert db.scalar(
+            select(func.count()).select_from(PreviewCandidateRecord)
+        ) == 0
+
+
 def test_catalog_preview_replay_rejects_reviewing_job_before_provider(
     catalog_client,
     example_spec,

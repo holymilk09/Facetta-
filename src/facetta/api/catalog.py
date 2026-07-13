@@ -13,7 +13,10 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from facetta.api.error_mapping import image_agent_error_response
+from facetta.api.error_mapping import (
+    image_agent_error_response,
+    provider_studio_job_error_response,
+)
 from facetta.api.projects import ProjectDetail, project_chain, project_detail
 from facetta.auth import (
     AuthenticatedPrincipal,
@@ -70,6 +73,10 @@ from facetta.image_run_store import (
 from facetta.json_types import JsonObject, JsonValue
 from facetta.media import sniff_media_type
 from facetta.project_backbone import is_primary_revision
+from facetta.provider_job_gate import (
+    ProviderStudioJobError,
+    require_provider_studio_job,
+)
 from facetta.revision_component_map import (
     ComponentMapError,
     RevisionComponentMap,
@@ -1072,6 +1079,19 @@ def preview_catalog_revision(
 
     context = prepared.context
     selection = prepared.selection
+    if request.studio_job_id is None:
+        try:
+            require_provider_studio_job(
+                db,
+                job_id=None,
+                owner=actor,
+                action_id="refine",
+                requested_outputs=1,
+                active_design_id=context.project.root_id,
+                source_revision_id=context.asset.id,
+            )
+        except ProviderStudioJobError as exc:
+            return provider_studio_job_error_response(exc)
     if request.studio_job_id is not None:
         try:
             # Hold the exact job row through provider execution and candidate

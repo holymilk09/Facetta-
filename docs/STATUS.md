@@ -5,6 +5,33 @@ Read `CLAUDE.md` (constitution — binding), `README.md` (endpoints/layout),
 `docs/DATA_WANTED.md` (open research asks). This file is the delta: what is
 DONE beyond the original TASKS.md build order, and what is next.
 
+## 2026-07-13 production provider-job authority checkpoint
+
+Every provider-backed production generation path now requires a canonical,
+running `StudioJob` before provider work begins. The shared gate validates the
+authenticated owner, action, lane, pricing, output count, lifecycle, and exact
+design/revision lineage. Create jobs are single-use: prompt and drawing requests
+bind the generated project to the job in the same persistence transaction, so
+replay cannot spend twice or create an untracked second project. Existing
+candidate-specific Refine, Views, and Present reservations remain the stronger
+decision boundary after this common production check.
+
+Markup Refine now stores image-run evidence, the temporary preview candidate,
+and the job's move to `reviewing` atomically. A failed candidate write leaves no
+orphaned provider result and the job remains safely retryable. The old direct
+visual-twin Views primitive is retained for historical development/evaluation
+callers but is no longer mounted in production; active Studio Views uses the
+exact-revision, job-bound workflow. Internal retries and failed QA attempts
+therefore remain evidence without becoming hidden user charges or canonical
+design history.
+
+Local validation for this checkpoint: 1,595 backend tests, 205 affected-route
+tests, 242 Jest tests, 68 Studio contract tests, TypeScript, Ruff, Python
+compilation, Expo web export, and the production TypeScript-client -> HTTP ->
+FastAPI acceptance pass. The frozen 144-image corpus, designer/GIA and founder
+reviews, and live two-principal HTTPS staging run remain external prerequisites
+and have not been performed.
+
 ## 2026-07-13 Studio authority and external-release checkpoint
 
 The four global Studio destinations are now an explicit accessible tab set:

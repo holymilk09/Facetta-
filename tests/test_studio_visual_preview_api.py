@@ -199,6 +199,24 @@ def _counts(Session) -> dict[str, int]:
         }
 
 
+def test_production_visual_preview_requires_job_before_generator(
+    studio_preview_client,
+    monkeypatch,
+):
+    client, _Session = studio_preview_client
+    calls: list[dict] = []
+    app.dependency_overrides[get_studio_visual_preview_generator] = (
+        lambda: _generator(calls)
+    )
+    monkeypatch.setenv("FACETTA_ENV", "production")
+
+    response = _preview(client)
+
+    assert response.status_code == 422, response.text
+    assert response.json()["code"] == "studio_job_required"
+    assert calls == []
+
+
 @pytest.mark.parametrize(
     ("verdict", "qa"),
     [

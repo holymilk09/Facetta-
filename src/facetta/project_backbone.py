@@ -36,6 +36,7 @@ from facetta.revision_component_map_store import (
 from facetta.spec import Spec
 
 if TYPE_CHECKING:
+    from facetta.db import StudioJobRecord
     from facetta.image_agent import ImageAgentResult
 
 
@@ -604,6 +605,7 @@ def persist_creative_project(
     title: str,
     collection: str | None = None,
     tags: list[str] | None = None,
+    studio_job: StudioJobRecord | None = None,
 ) -> PersistedCreativeProjectResult:
     """Atomically store a pre-spec source and its reviewable render variants.
 
@@ -711,6 +713,19 @@ def persist_creative_project(
         for candidate in candidates
     ]
     try:
+        if studio_job is not None:
+            if (
+                studio_job.owner != owner
+                or studio_job.action_id != "create"
+                or studio_job.active_design_id is not None
+                or studio_job.source_revision_id is not None
+                or studio_job.requested_outputs != len(candidates)
+            ):
+                raise ValueError(
+                    "Studio Create job is not an unbound canonical request"
+                )
+            studio_job.active_design_id = root_id
+            studio_job.updated_at = now
         db.add_all([
             root,
             project,
@@ -752,6 +767,7 @@ def persist_prompt_creative_project(
     title: str,
     collection: str | None = None,
     tags: list[str] | None = None,
+    studio_job: StudioJobRecord | None = None,
 ) -> PersistedCreativeProjectResult:
     """Atomically store independent prompt-generated, pre-spec candidates.
 
@@ -792,6 +808,19 @@ def persist_prompt_creative_project(
         updated_at=now,
     )
     try:
+        if studio_job is not None:
+            if (
+                studio_job.owner != owner
+                or studio_job.action_id != "create"
+                or studio_job.active_design_id is not None
+                or studio_job.source_revision_id is not None
+                or studio_job.requested_outputs != len(candidates)
+            ):
+                raise ValueError(
+                    "Studio Create job is not an unbound canonical request"
+                )
+            studio_job.active_design_id = root_id
+            studio_job.updated_at = now
         db.add_all([*rows, project])
         from facetta.image_run_store import persist_image_agent_result
 
