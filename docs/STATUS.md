@@ -25,7 +25,17 @@ caller audit identified the old trusted screen composition as orphaned, but it
 was deliberately retained because founder end-to-end acceptance and the other
 documented deletion gates have not yet passed.
 
-Local validation for these slices: 1,534 backend tests, 239 Jest tests, 67
+Active Studio Present traffic now uses canonical, authenticated
+`/studio/projects/{root_id}/beauty-render` and `/product-photo` routes. Both
+require an accounted Studio job and review-only presentation semantics, then
+delegate to the existing trusted transactions. The older project render and
+product-photo handlers remain deprecated development compatibility routes and
+are absent from production. Two live catalog harnesses also moved from direct
+Apply to Preview-first decisions: the ring harness requires explicit operator
+Accept or Discard, while the necklace evaluation defaults to no mutation and
+may explicitly Save as Variation or Discard.
+
+Local validation for these slices: 1,542 backend tests, 240 Jest tests, 67
 Studio contract tests, TypeScript, and Expo export pass. This remains local
 contract and interface validation; the external corpus, designer/GIA review,
 founder acceptance, and staging isolation gates remain unmet.
