@@ -39,8 +39,8 @@ export interface StudioCreateSelection {
 
 export interface StudioCreateWorkspaceProps {
   gateway: Pick<StudioGateway,
-    'createFromPrompt' | 'createFromDrawing' | 'selectCreativeDirection'
-  > & Partial<Pick<StudioGateway, 'saveCreativeDirectionAsVariation'>>;
+    'createFromPrompt' | 'createFromDrawing' | 'completeCreativeDirectionReview'
+  >;
   owner: string;
   initialSentence?: string;
   initialReferences?: readonly StudioCreateReference[];
@@ -101,8 +101,6 @@ export function StudioCreateWorkspace({
     resumeStudioJobId,
   );
   const [stagedCandidateIds, setStagedCandidateIds] = useState<Set<string>>(new Set());
-  const [savedCandidateIds, setSavedCandidateIds] = useState<Set<string>>(new Set());
-  const [originalLocked, setOriginalLocked] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -184,7 +182,7 @@ export function StudioCreateWorkspace({
   };
 
   const toggleDirectionToKeep = (candidateId: string): void => {
-    if (busy || originalLocked) return;
+    if (busy) return;
     setStagedCandidateIds((current) => {
       const next = new Set(current);
       if (next.has(candidateId)) next.delete(candidateId);
@@ -195,62 +193,36 @@ export function StudioCreateWorkspace({
 
   const continueWithSelection = async (): Promise<void> => {
     if (project === null || selectedAssetId === null || busy) return;
-    if (stagedCandidateIds.size > 0 && gateway.saveCreativeDirectionAsVariation === undefined) {
-      setError('Saving another direction is unavailable here. Remove the kept variations or try again later.');
-      return;
-    }
 
     setBusy(true);
     setError(null);
-    let selectedProject = project;
-    let activeAssetId = project.active_asset_id ?? selectedAssetId;
-
-    if (!originalLocked) {
-      const selected = selectionStudioJobId === null
-        ? await gateway.selectCreativeDirection(project.root_id, selectedAssetId, owner)
-        : await gateway.selectCreativeDirection(
-            project.root_id, selectedAssetId, owner, selectionStudioJobId,
-          );
-      if (selected.error !== null) {
-        setBusy(false);
-        setError(designerErrorMessage(selected.error, 'create'));
-        return;
-      }
-      selectedProject = selected.data;
-      activeAssetId = selected.data.active_asset_id ?? selectedAssetId;
-      setProject(selected.data);
-      setSelectionStudioJobId(null);
-      setOriginalLocked(true);
-    }
-
-    const directionsToKeep = candidates.filter((candidate) => (
+    const retained = candidates.filter((candidate) => (
       candidate.asset_id !== selectedAssetId && stagedCandidateIds.has(candidate.asset_id)
-    ));
-    for (const candidate of directionsToKeep) {
+    )).map((candidate) => {
       const index = candidates.findIndex((item) => item.asset_id === candidate.asset_id);
-      const saved = await gateway.saveCreativeDirectionAsVariation!({
-        projectId: project.root_id,
+      return {
         candidateId: candidate.asset_id,
-        activeAssetId,
-        createdBy: owner,
         label: `Direction ${index + 1}`,
-      });
-      if (saved.error !== null) {
-        setBusy(false);
-        setError(designerErrorMessage(saved.error, 'vary'));
-        return;
-      }
-      setSavedCandidateIds((current) => new Set(current).add(candidate.asset_id));
-      setStagedCandidateIds((current) => {
-        const remaining = new Set(current);
-        remaining.delete(candidate.asset_id);
-        return remaining;
-      });
+      };
+    });
+    const committed = await gateway.completeCreativeDirectionReview({
+      projectId: project.root_id,
+      selectedCandidateId: selectedAssetId,
+      retained,
+      createdBy: owner,
+      ...(selectionStudioJobId === null ? {} : { studioJobId: selectionStudioJobId }),
+    });
+    if (committed.error !== null) {
+      setBusy(false);
+      setError(designerErrorMessage(committed.error, 'create'));
+      return;
     }
 
     setBusy(false);
+    setProject(committed.data.project);
+    setSelectionStudioJobId(null);
     onSave({
-      project: selectedProject,
+      project: committed.data.project,
       selectedAssetId,
       sentence: sentence.trim(),
       references,
@@ -272,8 +244,7 @@ export function StudioCreateWorkspace({
           {candidates.map((candidate, index) => {
             const selected = selectedAssetId === candidate.asset_id;
             const stagedToKeep = stagedCandidateIds.has(candidate.asset_id);
-            const savedAsVariation = savedCandidateIds.has(candidate.asset_id);
-            const candidateDisabled = busy || originalLocked;
+            const candidateDisabled = busy;
             return (
               <Pressable
                 key={candidate.asset_id}
@@ -303,28 +274,24 @@ export function StudioCreateWorkspace({
                 <View style={styles.candidateCopy}>
                   <Text style={styles.candidateTitle}>Direction {index + 1}</Text>
                   <Text style={styles.candidateMeta}>{selected
-                    ? originalLocked ? 'Original' : 'Selected as Original'
-                    : savedAsVariation ? 'Saved as variation' : stagedToKeep ? 'Will be kept as a variation' : originalLocked ? 'Not kept' : 'Tap to choose'}</Text>
+                    ? 'Selected as Original'
+                    : stagedToKeep ? 'Will be kept as a variation' : 'Tap to choose'}</Text>
                   {!selected && (
                     <Pressable
                       accessibilityRole="button"
-                      accessibilityLabel={savedAsVariation
-                        ? `Direction ${index + 1} saved as variation`
-                        : `${stagedToKeep ? 'Remove' : 'Keep'} Direction ${index + 1} ${stagedToKeep ? 'from' : 'as'} variations`}
+                      accessibilityLabel={`${stagedToKeep ? 'Remove' : 'Keep'} Direction ${index + 1} ${stagedToKeep ? 'from' : 'as'} variations`}
                       accessibilityState={{
-                        disabled: candidateDisabled || savedAsVariation,
+                        disabled: candidateDisabled,
                         selected: stagedToKeep,
                       }}
-                      disabled={candidateDisabled || savedAsVariation}
+                      disabled={candidateDisabled}
                       style={styles.keepButton}
                       onPress={(event) => {
                         event.stopPropagation();
                         toggleDirectionToKeep(candidate.asset_id);
                       }}>
                       <Text style={styles.keepButtonText}>
-                        {savedAsVariation
-                          ? 'Saved as variation'
-                          : stagedToKeep ? 'Remove from kept variations' : 'Keep as variation'}
+                        {stagedToKeep ? 'Remove from kept variations' : 'Keep as variation'}
                       </Text>
                     </Pressable>
                   )}
@@ -340,8 +307,6 @@ export function StudioCreateWorkspace({
             setSelectedAssetId(null);
             setSelectionStudioJobId(null);
             setStagedCandidateIds(new Set());
-            setSavedCandidateIds(new Set());
-            setOriginalLocked(false);
           }}>
             <Text style={styles.secondaryButtonText}>Leave in Activity &amp; start another</Text>
           </Pressable>

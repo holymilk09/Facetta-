@@ -8,6 +8,7 @@ import type {
   CatalogPreviewAcceptResult,
   CatalogPreviewCandidate,
   CatalogPreviewResult,
+  CommitCreativeDirectionsResult,
   ComponentCatalog,
   CreateLineArtRequest,
   CreateProjectFromBriefRequest,
@@ -73,6 +74,14 @@ export interface ExactStudioLineage {
 export interface StudioVisualLineage {
   projectId: string;
   sourceAssetId: string;
+}
+
+export interface StudioCreativeDirectionReviewRequest {
+  projectId: string;
+  selectedCandidateId: string;
+  retained: readonly { candidateId: string; label: string }[];
+  createdBy: string;
+  studioJobId?: string;
 }
 
 export type StudioDesignFactAuthority = 'suggested' | 'estimated' | 'designer_supplied';
@@ -283,6 +292,7 @@ type GatewayTrustedClient = Pick<TrustedApiClient,
   | 'createProjectFromDrawing'
   | 'createProjectFromPrompt'
   | 'selectCreativeCandidate'
+  | 'commitCreativeDirections'
   | 'saveAsVariation'
   | 'saveCreativeCandidateAsVariation'
   | 'previewCatalogSelection'
@@ -1161,6 +1171,63 @@ export function createStudioGateway(
       // job atomically with candidate selection. A second client transition
       // would reintroduce restart sensitivity and could double-settle billing.
       creativeJobs.delete(projectId);
+      return result;
+    },
+
+    async completeCreativeDirectionReview(
+      request: StudioCreativeDirectionReviewRequest,
+    ): Promise<StudioGatewayResult<CommitCreativeDirectionsResult>> {
+      const retainedCandidateIds = request.retained.map((direction) => direction.candidateId);
+      const valid = request.projectId.trim().length > 0
+        && request.selectedCandidateId.trim().length > 0
+        && request.createdBy.trim().length > 0
+        && request.retained.length <= 3
+        && request.retained.every((direction) => (
+          direction.candidateId.trim().length > 0 && direction.label.trim().length > 0
+        ))
+        && !retainedCandidateIds.includes(request.selectedCandidateId)
+        && new Set(retainedCandidateIds).size === retainedCandidateIds.length;
+      if (!valid) return gatewayError(
+        'INVALID_CREATIVE_DIRECTION_REVIEW',
+        'Choose one Original and review the directions you want to keep.',
+        'validation', 422,
+      );
+
+      const tracked = creativeJobs.get(request.projectId) ?? null;
+      const studioJobId = request.studioJobId ?? tracked?.jobId;
+      const result = await client.commitCreativeDirections(request.projectId, {
+        created_by: request.createdBy,
+        selected_candidate_id: request.selectedCandidateId,
+        retained: request.retained.map((direction) => ({
+          candidate_id: direction.candidateId,
+          label: direction.label.trim(),
+        })),
+        ...(studioJobId === undefined ? {} : { studio_job_id: studioJobId }),
+      });
+      if (result.error !== null) {
+        return { data: null, error: mapError(result.error), status: result.status };
+      }
+
+      const selectedAssetId = result.data.project.selected_candidate_asset_id
+        ?? result.data.project.active_asset_id;
+      const returnedCandidateIds = result.data.retained_variations.map(
+        (variation) => variation.source_asset_id,
+      );
+      if (
+        selectedAssetId !== request.selectedCandidateId
+        || result.data.retained_variations.length !== retainedCandidateIds.length
+        || result.data.retained_variations.some((variation) => (
+          variation.source_project_id !== request.projectId
+        ))
+        || new Set(returnedCandidateIds).size !== returnedCandidateIds.length
+        || retainedCandidateIds.some((candidateId) => !returnedCandidateIds.includes(candidateId))
+      ) return gatewayError(
+        'INVALID_CREATIVE_DIRECTION_COMMIT',
+        'The saved direction set did not match your review.',
+        'invalid_response', result.status,
+      );
+
+      creativeJobs.delete(request.projectId);
       return result;
     },
 

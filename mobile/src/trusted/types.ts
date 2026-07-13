@@ -279,6 +279,29 @@ export interface SaveAsVariationResult {
   project: ProjectDetail;
 }
 
+/** One additional Create direction retained beside the selected Original. */
+export interface RetainedCreativeDirectionRequest {
+  candidate_id: string;
+  label: string;
+}
+
+/**
+ * Commits the complete Create review as one server transaction. The selected
+ * direction and every retained sibling are decided together so a retry can
+ * never expose a partially saved direction set.
+ */
+export interface CommitCreativeDirectionsRequest {
+  created_by: string;
+  selected_candidate_id: string;
+  retained: RetainedCreativeDirectionRequest[];
+  studio_job_id?: string;
+}
+
+export interface CommitCreativeDirectionsResult {
+  project: ProjectDetail;
+  retained_variations: SaveAsVariationResult[];
+}
+
 export type StudioRevisionAction = 'created' | 'edit' | 'restore';
 
 /** One append-only entry in a Variation's immutable Studio history. */

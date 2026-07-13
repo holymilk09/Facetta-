@@ -601,6 +601,67 @@ describe('trusted API decoders', () => {
     });
   });
 
+  test('commits the selected Original and retained Create directions in one request', async () => {
+    const responseProject = {
+      id: 'project original', root_id: 'project original', title: 'Lariat',
+      owner: 'usr_designer', state: 'refining', design_id: null,
+      selected_candidate_asset_id: 'candidate primary',
+      active_asset_id: 'candidate primary', active_design_version: null,
+      revisions: [], creative_candidates: [], assets: [], derived_assets: [],
+      factory_ready: false, factory_blockers: [], primary_revision_count: 1,
+      has_factory_drawing: false,
+    };
+    const fetcher = jest.fn(async (
+      _input: RequestInfo | URL,
+      _init?: RequestInit,
+    ) => ({
+      ok: true,
+      status: 200,
+      text: async () => JSON.stringify({
+        project: responseProject,
+        retained_variations: [{
+          status: 'variation_created', family_id: 'fam_create', variation_index: 2,
+          source_project_id: 'project original', source_asset_id: 'candidate kept',
+          project: {
+            ...responseProject,
+            id: 'variation kept', root_id: 'variation kept', title: 'Direction 2',
+            selected_candidate_asset_id: null, active_asset_id: 'variation kept',
+            active_revision: {
+              asset_id: 'variation kept', root_id: 'variation kept',
+              capability: 'VARIATION_BRANCH', provenance: 'studio_variation_branch',
+              revision: 1, design_version: null,
+              image_url: '/assets/variation kept/image',
+            },
+          },
+        }],
+      }),
+    } as unknown as Response));
+    const api = createTrustedApiClient({ baseUrl: 'https://facetta.test', fetcher });
+
+    const result = await api.commitCreativeDirections('project original', {
+      created_by: 'usr_designer',
+      selected_candidate_id: 'candidate primary',
+      retained: [{ candidate_id: 'candidate kept', label: 'Direction 2' }],
+      studio_job_id: 'studio job create',
+    });
+
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(fetcher.mock.calls[0]?.[0]).toBe(
+      'https://facetta.test/projects/project%20original/creative-directions/commit',
+    );
+    expect(JSON.parse(String(fetcher.mock.calls[0]?.[1]?.body))).toEqual({
+      created_by: 'usr_designer',
+      selected_candidate_id: 'candidate primary',
+      retained: [{ candidate_id: 'candidate kept', label: 'Direction 2' }],
+      studio_job_id: 'studio job create',
+    });
+    expect(result.data?.project.selected_candidate_asset_id).toBe('candidate primary');
+    expect(result.data?.retained_variations[0]?.source_asset_id).toBe('candidate kept');
+    expect(result.data?.retained_variations[0]?.project.active_revision?.image_url).toBe(
+      'https://facetta.test/assets/variation kept/image',
+    );
+  });
+
   test('saves an exact active revision as a sibling variation and resolves its project URLs', async () => {
     const fetcher = jest.fn(async (
       _input: RequestInfo | URL,

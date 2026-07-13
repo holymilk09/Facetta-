@@ -770,6 +770,31 @@ class Project(Base):
     )
 
 
+class StudioCreateDecisionRecord(Base):
+    """One atomic, retry-safe decision for a project's Create review.
+
+    The selected Original and any retained sibling directions are committed as
+    one unit.  ``project_root_id`` is the idempotency boundary: a concurrent or
+    repeated request can only observe the first complete decision, never add a
+    second set of sibling projects.
+    """
+
+    __tablename__ = "studio_create_decisions"
+
+    project_root_id: Mapped[str] = mapped_column(
+        ForeignKey("projects.root_id"), primary_key=True)
+    owner: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    selected_candidate_asset_id: Mapped[str] = mapped_column(
+        ForeignKey("image_assets.id"), nullable=False)
+    retained_directions: Mapped[list] = mapped_column(
+        SpecJSON, nullable=False, default=list)
+    studio_job_id: Mapped[str | None] = mapped_column(
+        ForeignKey("studio_jobs.id"), nullable=True, index=True)
+    created_by: Mapped[str] = mapped_column(String(32), nullable=False)
+    committed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow)
+
+
 class StudioConfirmationDraft(Base):
     """One-time server-held design facts for a selected Studio candidate."""
 

@@ -20,6 +20,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 from sqlalchemy import delete, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from facetta.chain_geometry import chain_factory_blockers
@@ -62,6 +63,7 @@ from facetta.db import (
     ImageAsset,
     ImageRun,
     Project,
+    StudioCreateDecisionRecord,
     StudioConfirmationDraft,
     get_db,
     new_id,
@@ -129,7 +131,11 @@ from facetta.presentation import (
 from facetta.preliminary_sheet import sheet_readiness_blockers
 from facetta.render import RenderUnavailable
 from facetta.spec import Spec
-from facetta.studio_history import ensure_project_family
+from facetta.studio_history import (
+    StudioHistoryError,
+    ensure_project_family,
+    fork_project_variation,
+)
 from facetta.studio_jobs import (
     StudioJobAccountingError,
     settle_create_studio_job_selection,
@@ -442,6 +448,54 @@ class CreativeCandidateSelectRequest(BaseModel):
 
     created_by: Annotated[str, Field(min_length=1, max_length=32)]
     studio_job_id: Annotated[str, Field(min_length=1, max_length=32)] | None = None
+
+
+class RetainedCreativeDirectionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    candidate_id: Annotated[str, Field(min_length=1, max_length=32)]
+    label: Annotated[str, Field(min_length=1, max_length=120)]
+
+
+class CreativeDirectionCommitRequest(BaseModel):
+    """One complete designer decision for a generated Create review."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    selected_candidate_id: Annotated[str, Field(min_length=1, max_length=32)]
+    retained: Annotated[
+        list[RetainedCreativeDirectionRequest], Field(max_length=3)
+    ] = Field(default_factory=list)
+    created_by: Annotated[str, Field(min_length=1, max_length=32)]
+    studio_job_id: Annotated[str, Field(min_length=1, max_length=32)] | None = None
+
+    @model_validator(mode="after")
+    def validate_candidate_set(self):
+        retained_ids = [item.candidate_id for item in self.retained]
+        if len(set(retained_ids)) != len(retained_ids):
+            raise ValueError("each retained creative direction must be unique")
+        if self.selected_candidate_id in retained_ids:
+            raise ValueError(
+                "the selected Original cannot also be retained as a sibling"
+            )
+        normalized_labels = [item.label.strip() for item in self.retained]
+        if any(not label for label in normalized_labels):
+            raise ValueError("each retained creative direction requires a label")
+        return self
+
+
+class CreativeDirectionVariationResponse(BaseModel):
+    status: Literal["variation_created"]
+    family_id: str
+    variation_index: int
+    source_project_id: str
+    source_asset_id: str
+    project: ProjectDetail
+
+
+class CreativeDirectionCommitResponse(BaseModel):
+    project: ProjectDetail
+    retained_variations: list[CreativeDirectionVariationResponse]
 
 
 class CreativeCandidateDraftRequest(BaseModel):
@@ -1261,6 +1315,279 @@ def _owned_current_confirmable_pre_spec_asset(
             ),
         )
     return project, current
+
+
+def _normalized_retained_directions(
+    request: CreativeDirectionCommitRequest,
+) -> list[dict[str, str]]:
+    return [
+        {"candidate_id": item.candidate_id, "label": item.label.strip()}
+        for item in request.retained
+    ]
+
+
+def _creative_direction_commit_response(
+    db: Session,
+    *,
+    project: Project,
+    decision: StudioCreateDecisionRecord,
+    request: CreativeDirectionCommitRequest,
+) -> CreativeDirectionCommitResponse:
+    """Return one durable decision only when the retry payload is exact."""
+
+    requested = _normalized_retained_directions(request)
+    stored = list(decision.retained_directions or [])
+    stored_request = [
+        {
+            "candidate_id": str(item.get("candidate_id", "")),
+            "label": str(item.get("label", "")),
+        }
+        for item in stored
+    ]
+    if (
+        decision.owner != request.created_by
+        or decision.selected_candidate_asset_id != request.selected_candidate_id
+        or decision.studio_job_id != request.studio_job_id
+        or stored_request != requested
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "the Create review was already committed with a different "
+                "selection or retained-direction set"
+            ),
+        )
+    if project.selected_candidate_asset_id != decision.selected_candidate_asset_id:
+        raise HTTPException(
+            status_code=409,
+            detail="the committed Create decision no longer matches the project",
+        )
+
+    retained: list[CreativeDirectionVariationResponse] = []
+    for item in stored:
+        child_root_id = str(item.get("project_root_id", ""))
+        child = db.get(Project, child_root_id) if child_root_id else None
+        if (
+            child is None
+            or child.owner != decision.owner
+            or child.branched_from_project_root_id != project.root_id
+            or child.branched_from_asset_id != item.get("candidate_id")
+            or child.variation_label != item.get("label")
+            or child.family_id != item.get("family_id")
+            or child.variation_index != item.get("variation_index")
+        ):
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "the committed Create decision has incomplete sibling "
+                    "variation evidence"
+                ),
+            )
+        retained.append(CreativeDirectionVariationResponse(
+            status="variation_created",
+            family_id=str(item["family_id"]),
+            variation_index=int(item["variation_index"]),
+            source_project_id=project.root_id,
+            source_asset_id=str(item["candidate_id"]),
+            project=project_detail(db, child),
+        ))
+    return CreativeDirectionCommitResponse(
+        project=project_detail(db, project),
+        retained_variations=retained,
+    )
+
+
+def _existing_creative_direction_commit(
+    db: Session,
+    *,
+    project_id: str,
+    request: CreativeDirectionCommitRequest,
+) -> CreativeDirectionCommitResponse | None:
+    project = db.get(Project, project_id)
+    decision = db.get(StudioCreateDecisionRecord, project_id)
+    if project is None or decision is None:
+        return None
+    return _creative_direction_commit_response(
+        db, project=project, decision=decision, request=request,
+    )
+
+
+@router.post(
+    "/{project_id}/creative-directions/commit",
+    response_model=CreativeDirectionCommitResponse,
+    response_model_exclude_none=True,
+)
+def commit_project_creative_directions(
+    project_id: str,
+    request: CreativeDirectionCommitRequest,
+    db: DbSession,
+    principal: PrincipalDep,
+):
+    """Atomically choose Original and retain up to three sibling directions.
+
+    Candidate selection, family creation, sibling projects, immutable branch
+    evidence, and Create-job settlement share one transaction.  The durable
+    decision row makes an exact retry safe after a timeout or concurrent
+    request; a different or partial prior decision fails closed.
+    """
+
+    principal_actor(principal, request.created_by)
+    project = db.scalar(select(Project).where(
+        Project.root_id == project_id,
+    ).with_for_update())
+    if project is None:
+        raise HTTPException(status_code=404, detail="creative project not found")
+    if project.owner != request.created_by:
+        raise HTTPException(
+            status_code=403,
+            detail="only the project owner may commit a Create review",
+        )
+
+    existing = db.scalar(select(StudioCreateDecisionRecord).where(
+        StudioCreateDecisionRecord.project_root_id == project_id,
+    ).with_for_update())
+    if existing is not None:
+        return _creative_direction_commit_response(
+            db, project=project, decision=existing, request=request,
+        )
+
+    root = db.scalar(select(ImageAsset).where(
+        ImageAsset.id == project.root_id,
+    ).with_for_update())
+    if root is None:
+        raise HTTPException(status_code=404, detail="creative project not found")
+    if root.design_id is not None:
+        raise HTTPException(
+            status_code=409,
+            detail="Create directions can be committed only before design confirmation",
+        )
+    if project.selected_candidate_asset_id is not None:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "the project has a partial legacy Create selection; reload "
+                "without committing another direction set"
+            ),
+        )
+    prior_branch = db.scalar(select(Project.root_id).where(
+        Project.branched_from_project_root_id == project.root_id,
+    ).limit(1))
+    if prior_branch is not None:
+        raise HTTPException(
+            status_code=409,
+            detail="the project already has sibling variations outside this decision",
+        )
+
+    retained_request = _normalized_retained_directions(request)
+    requested_ids = {
+        request.selected_candidate_id,
+        *(item["candidate_id"] for item in retained_request),
+    }
+    locked_candidates = list(db.scalars(
+        select(ImageAsset)
+        .where(ImageAsset.id.in_(requested_ids))
+        .order_by(ImageAsset.id)
+        .with_for_update()
+    ))
+    by_id = {candidate.id: candidate for candidate in locked_candidates}
+    if set(by_id) != requested_ids:
+        raise HTTPException(status_code=404, detail="creative candidate not found")
+    for candidate in locked_candidates:
+        if (
+            candidate.root_id != project.root_id
+            or candidate.capability != "CREATIVE_RENDER"
+            or candidate.design_version is not None
+            or candidate.design_id is not None
+            or not is_primary_revision(candidate)
+        ):
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "every committed direction must be a pre-spec creative "
+                    "candidate from this project"
+                ),
+            )
+
+    selected = by_id[request.selected_candidate_id]
+    try:
+        available_outputs = len(list(db.scalars(select(ImageAsset.id).where(
+            ImageAsset.root_id == project.root_id,
+            ImageAsset.capability == "CREATIVE_RENDER",
+            ImageAsset.design_version.is_(None),
+        ))))
+        if request.studio_job_id is not None:
+            settle_create_studio_job_selection(
+                db,
+                job_id=request.studio_job_id,
+                owner=request.created_by,
+                project_root_id=project.root_id,
+                source_revision_id=selected.id,
+                available_outputs=available_outputs,
+            )
+
+        project.selected_candidate_asset_id = selected.id
+        project.updated_at = utcnow()
+        ensure_project_family(db, project)
+
+        retained_records: list[dict[str, object]] = []
+        for retained in retained_request:
+            result = fork_project_variation(
+                db,
+                project_root_id=project.root_id,
+                source_asset_id=retained["candidate_id"],
+                expected_active_asset_id=selected.id,
+                expected_design_version=None,
+                variation_label=retained["label"],
+                created_by=request.created_by,
+                allow_unselected_creative_candidate=True,
+                commit=False,
+            )
+            retained_records.append({
+                "candidate_id": retained["candidate_id"],
+                "label": retained["label"],
+                "family_id": result.family_id,
+                "variation_index": result.variation_index,
+                "project_root_id": result.project_root_id,
+                "asset_id": result.asset_id,
+            })
+
+        decision = StudioCreateDecisionRecord(
+            project_root_id=project.root_id,
+            owner=project.owner,
+            selected_candidate_asset_id=selected.id,
+            retained_directions=retained_records,
+            studio_job_id=request.studio_job_id,
+            created_by=request.created_by,
+            committed_at=utcnow(),
+        )
+        db.add(decision)
+        db.flush()
+        db.commit()
+    except (StudioHistoryError, StudioJobAccountingError, IntegrityError) as exc:
+        db.rollback()
+        retry = _existing_creative_direction_commit(
+            db, project_id=project_id, request=request,
+        )
+        if retry is not None:
+            return retry
+        if isinstance(exc, StudioHistoryError):
+            raise HTTPException(
+                status_code=exc.status_code, detail=exc.detail,
+            ) from exc
+        if isinstance(exc, StudioJobAccountingError):
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        raise HTTPException(
+            status_code=409,
+            detail="another Create decision committed first; reload and retry",
+        ) from exc
+    except Exception:
+        db.rollback()
+        raise
+
+    db.refresh(project)
+    return _creative_direction_commit_response(
+        db, project=project, decision=decision, request=request,
+    )
 
 
 @router.post(

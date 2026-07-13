@@ -803,6 +803,21 @@ def ensure_project_family(db: Session, project: Project) -> DesignFamily:
     if project.family_id is not None:
         family = db.get(DesignFamily, project.family_id)
         if family is None:
+            # Production sessions disable autoflush. A higher-level atomic
+            # command can therefore call this helper twice before its newly
+            # created family has been flushed into the identity map/database.
+            # Reuse that exact pending row instead of misclassifying it as
+            # missing historical data or forcing an early transaction flush.
+            family = next(
+                (
+                    pending
+                    for pending in db.new
+                    if isinstance(pending, DesignFamily)
+                    and pending.id == project.family_id
+                ),
+                None,
+            )
+        if family is None:
             raise StudioHistoryError(
                 "design_family_unavailable",
                 "the variation references a missing design family",
@@ -831,8 +846,17 @@ def fork_project_variation(
     variation_label: str,
     created_by: str,
     allow_unselected_creative_candidate: bool = False,
+    commit: bool = True,
 ) -> VariationBranchResult:
-    """Copy one exact revision into an independent sibling project."""
+    """Copy one exact revision into an independent sibling project.
+
+    ``commit=False`` lets a higher-level command combine several sibling
+    branches with its own canonical state and accounting records.  The helper
+    still flushes every row and component-map copy so constraint failures are
+    discovered inside that caller-owned transaction. Any persistence failure
+    rolls back that whole transaction; callers must not continue after a
+    failed branch.
+    """
 
     project = db.scalar(
         select(Project).where(Project.root_id == project_root_id).with_for_update()
@@ -1022,7 +1046,8 @@ def fork_project_variation(
             child_asset_id=new_asset.id,
             child_image_bytes=bytes(new_asset.image),
         )
-        db.commit()
+        if commit:
+            db.commit()
     except IntegrityError as exc:
         db.rollback()
         raise StudioHistoryError(

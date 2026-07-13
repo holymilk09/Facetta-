@@ -5,7 +5,7 @@ Read `CLAUDE.md` (constitution — binding), `README.md` (endpoints/layout),
 `docs/DATA_WANTED.md` (open research asks). This file is the delta: what is
 DONE beyond the original TASKS.md build order, and what is next.
 
-## 2026-07-13 refined-direction confirmation and consolidation checkpoint
+## 2026-07-13 atomic Create and capture-planning checkpoint
 
 The pre-spec journey no longer dead-ends after refinement. The backend now
 identifies one server-authoritative `confirmable_pre_spec` asset: it must be the
@@ -25,24 +25,41 @@ Factory copy now consistently says `factory review material`, and onboarding
 asks designers to mark the extra directions they actually want to retain
 instead of implying every unchosen candidate is permanently discoverable.
 
+Create review now has one typed, transaction-owned decision boundary. Studio
+submits the selected Original and up to three retained sibling directions in a
+single request. The backend locks the project and candidates, creates Family
+and Variation records, records exact source provenance, and settles the bound
+Create job in the same transaction. A durable project-scoped decision makes an
+identical lost-response retry return the same branch identities without a
+second charge. A changed retry, foreign candidate, stale candidate, or partial
+legacy selection fails closed. Real-HTTP acceptance also reproduces production
+sessions with autoflush disabled and proves that invalid retained input leaves
+selection, family, branches, revisions, and billing untouched.
+
 Frozen-corpus output is also more honest. The technical/GIA compiler and signed
 founder finalizer now emit only `corpus_gate_ready`; neither may claim
 `external_beta_ready` without the separate staging authority. The finalizer
 binds its decision to the versioned gate schema/run kind, exact config and
 manifest hashes, corpus identity, current frozen implementation pins, and the
-founder-approved result bytes. This does not make the external gate runnable:
-the secured 144-image capture executor, a frozen per-source workload, a signed
-staging attestation, and a combined release controller still need to be built;
+founder-approved result bytes. The frozen per-source workload and provider-call
+planner now exist and separate 144-source integrity from the 58-source ring
+quality slice. This still does not make the external gate runnable: the secured
+capture executor, replay-compiler workload integration, a signed staging
+attestation, and a combined release controller still need to be built;
 external sources, reviewer/founder keys, and staging principals remain
 `not_run` / `unmet`.
 
-Local validation at this checkpoint: 1,484 backend tests, 237 Jest tests, 64
+Local validation at this checkpoint: 1,492 backend tests, 239 Jest tests, 67
 Studio contract tests, TypeScript, Ruff, Expo web export, corpus-definition
 pin validation, and the production TypeScript-client -> HTTP -> FastAPI
 acceptance all pass. The production acceptance still covers ten mixed-source
-projects plus exact ring structural refinement with no Factory use; the new
-refine-first Design v1 bytes/hash and stale-source boundary is covered by the
-real FastAPI persistence test.
+projects plus exact ring structural refinement with no Factory use. It now also
+proves atomic Original-plus-sibling retention, exact retry idempotency, full
+rollback on a foreign retained candidate, refine-first Design v1 bytes/hash,
+and the stale-source boundary through real FastAPI persistence. No provider
+corpus run or human review was performed; the external source directory,
+secured executor, signing keys, GIA review, founder approval, and staging
+principals remain unavailable and therefore unmet.
 
 ## 2026-07-13 resumed Studio integration checkpoint
 

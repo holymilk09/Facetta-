@@ -27,6 +27,8 @@ from facetta.api.studio import (
     get_studio_visual_preview_generator,
 )
 from facetta.api import catalog as catalog_api
+from facetta.api import projects as projects_api
+from facetta.api.specs import PhotoRequest
 from facetta import catalog_component_targeting
 from facetta.catalog_structural_mapper import (
     GROK_RING_COMPONENT_MAPPER_CONTRACT,
@@ -72,6 +74,7 @@ from facetta.vocabulary import get_vocabulary
 
 
 Box = tuple[float, float, float, float]
+STRUCTURAL_PRE_SPEC_PROMPT = "__FACETTA_ACCEPTANCE_STRUCTURAL_PRE_SPEC_RING__"
 
 
 # This is an acceptance-only segmentation fixture, not corpus calibration.
@@ -414,7 +417,11 @@ def _quality_rejected_result(plan, image: bytes):
 
 
 def _prompt_generator(prompt: str, variant: int):
-    image = _png(_fixture_color("prompt", prompt, variant))
+    image = (
+        _semantic_ring_png()
+        if prompt == STRUCTURAL_PRE_SPEC_PROMPT
+        else _png(_fixture_color("prompt", prompt, variant))
+    )
     plan = build_image_plan(
         ImageOperation.CREATIVE_GENERATE,
         prompt,
@@ -463,9 +470,13 @@ def _visual_preview_generator(
 ):
     assert scope == "appearance"
     assert mask is None
-    image = _png(_fixture_color(
-        "visual-preview", source, instruction, scope, mask or b"", variant,
-    ))
+    image = (
+        source
+        if instruction.startswith("Warm the yellow-gold appearance")
+        else _png(_fixture_color(
+            "visual-preview", source, instruction, scope, mask or b"", variant,
+        ))
+    )
     plan = build_image_plan(
         ImageOperation.REFERENCE_RENDER,
         instruction,
@@ -549,15 +560,11 @@ def _acceptance_canonical_state(owner: str) -> dict[str, int]:
         }
 
 
-@app.get("/__acceptance__/confirmed-ring-fixture")
-def _acceptance_confirmed_ring_fixture() -> dict:
-    """Supply only deterministic setup data; all mutations use real routes."""
-    image = _semantic_ring_png()
-    return {
-        "image_base64": base64.b64encode(image).decode("ascii"),
-        "media_type": "image/png",
-        "confirmed_spec": _confirmed_ring_spec(image),
-    }
+def _acceptance_design_reader(request: PhotoRequest) -> Spec:
+    """Read deterministic facts only for the disposable structural fixture."""
+
+    image = base64.b64decode(request.image_base64, validate=True)
+    return Spec.model_validate(_confirmed_ring_spec(image))
 
 
 def _database():
@@ -583,6 +590,7 @@ app.dependency_overrides[get_studio_visual_preview_generator] = (
 app.dependency_overrides[get_pre_spec_presentation_generator] = (
     lambda: _presentation_generator
 )
+projects_api.from_photo = _acceptance_design_reader
 
 # Exercise the production catalog plan, persistence, candidate, job, and Apply
 # paths while keeping this disposable harness offline. The evidence hash

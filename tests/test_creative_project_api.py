@@ -31,6 +31,7 @@ from facetta.db import (
     Project,
     ProjectRevisionRecord,
     RevisionComponentMapRecord,
+    StudioCreateDecisionRecord,
     StudioConfirmationDraft,
     StudioJobRecord,
     get_db,
@@ -922,6 +923,202 @@ def test_creative_selection_rejects_foreign_create_job_without_partial_writes(
         assert job.status == "reviewing"
         assert job.completed_outputs == 0
         assert job.charged_outputs == 0
+
+
+def test_creative_direction_commit_is_atomic_billed_once_and_retry_safe(
+    creative_client,
+):
+    client, Session = creative_client
+    # Match the production get_db session. Without autoflush, the second
+    # ensure_project_family call must still reuse the pending family created by
+    # the atomic command rather than treating it as missing.
+    Session.configure(autoflush=False)
+    app.dependency_overrides[get_creative_prompt_generator] = (
+        lambda: (lambda _instruction, variant: _prompt_creative_result(variant))
+    )
+    created = client.post(
+        "/projects/from-prompt", json=_prompt_request(variation_count=4)
+    )
+    assert created.status_code == 201, created.text
+    project = created.json()
+    candidates = [
+        item["asset_id"] for item in project["creative_candidates"]
+    ]
+    job_id = _reviewing_create_job(
+        client, project_id=project["root_id"], requested_outputs=4,
+    )
+    payload = {
+        "selected_candidate_id": candidates[1],
+        "retained": [
+            {"candidate_id": candidates[0], "label": "Botanical frame"},
+            {"candidate_id": candidates[3], "label": "Open silhouette"},
+        ],
+        "created_by": "usr_designer",
+        "studio_job_id": job_id,
+    }
+
+    committed = client.post(
+        f"/projects/{project['root_id']}/creative-directions/commit",
+        json=payload,
+    )
+    assert committed.status_code == 200, committed.text
+    body = committed.json()
+    assert body["project"]["selected_candidate_asset_id"] == candidates[1]
+    assert [item["source_asset_id"] for item in body["retained_variations"]] == [
+        candidates[0], candidates[3]
+    ]
+    assert [
+        item["variation_index"] for item in body["retained_variations"]
+    ] == [2, 3]
+    branch_ids = [
+        item["project"]["root_id"] for item in body["retained_variations"]
+    ]
+    assert len(set(branch_ids)) == 2
+
+    # An exact retry returns the same durable branch identities and cannot
+    # create or charge anything twice.
+    retried = client.post(
+        f"/projects/{project['root_id']}/creative-directions/commit",
+        json=payload,
+    )
+    assert retried.status_code == 200, retried.text
+    assert [
+        item["project"]["root_id"]
+        for item in retried.json()["retained_variations"]
+    ] == branch_ids
+
+    # Once one complete decision wins, a competing payload cannot fill in an
+    # extra branch or rename evidence after a timeout/race.
+    mismatched = copy.deepcopy(payload)
+    mismatched["retained"][0]["label"] = "Changed after commit"
+    rejected = client.post(
+        f"/projects/{project['root_id']}/creative-directions/commit",
+        json=mismatched,
+    )
+    assert rejected.status_code == 409
+    assert "already committed" in rejected.json()["detail"]
+
+    with Session() as db:
+        original = db.get(Project, project["root_id"])
+        decision = db.get(StudioCreateDecisionRecord, project["root_id"])
+        job = db.get(StudioJobRecord, job_id)
+        branches = list(db.scalars(select(Project).where(
+            Project.branched_from_project_root_id == project["root_id"]
+        ).order_by(Project.variation_index)))
+        assert original is not None
+        assert original.selected_candidate_asset_id == candidates[1]
+        assert original.variation_index == 1
+        assert decision is not None
+        assert decision.selected_candidate_asset_id == candidates[1]
+        assert [
+            item["project_root_id"] for item in decision.retained_directions
+        ] == branch_ids
+        assert [branch.root_id for branch in branches] == branch_ids
+        assert [branch.branched_from_asset_id for branch in branches] == [
+            candidates[0], candidates[3]
+        ]
+        assert job is not None
+        assert job.status == "succeeded"
+        assert job.completed_outputs == 4
+        assert job.charged_outputs == 4
+        assert db.scalar(select(func.count()).select_from(Project)) == 3
+        assert db.scalar(
+            select(func.count()).select_from(ProjectRevisionRecord)
+        ) == 2
+
+
+def test_creative_direction_commit_rolls_back_invalid_retained_candidate(
+    creative_client,
+):
+    client, Session = creative_client
+    app.dependency_overrides[get_creative_prompt_generator] = (
+        lambda: (lambda _instruction, variant: _prompt_creative_result(variant))
+    )
+    first = client.post(
+        "/projects/from-prompt", json=_prompt_request(variation_count=3)
+    ).json()
+    other_request = _prompt_request(variation_count=1)
+    other_request["title"] = "Foreign exploration"
+    other_request["starting_variant"] = 30
+    other = client.post("/projects/from-prompt", json=other_request).json()
+    first_candidates = [
+        item["asset_id"] for item in first["creative_candidates"]
+    ]
+    foreign_candidate = other["creative_candidates"][0]["asset_id"]
+    job_id = _reviewing_create_job(
+        client, project_id=first["root_id"], requested_outputs=3,
+    )
+
+    response = client.post(
+        f"/projects/{first['root_id']}/creative-directions/commit",
+        json={
+            "selected_candidate_id": first_candidates[1],
+            "retained": [
+                {"candidate_id": first_candidates[0], "label": "Valid first"},
+                {"candidate_id": foreign_candidate, "label": "Wrong project"},
+            ],
+            "created_by": "usr_designer",
+            "studio_job_id": job_id,
+        },
+    )
+    assert response.status_code == 409
+    assert "from this project" in response.json()["detail"]
+
+    with Session() as db:
+        project = db.get(Project, first["root_id"])
+        job = db.get(StudioJobRecord, job_id)
+        assert project is not None
+        assert project.selected_candidate_asset_id is None
+        assert project.family_id is None
+        assert db.get(StudioCreateDecisionRecord, first["root_id"]) is None
+        assert db.scalar(select(func.count()).select_from(Project).where(
+            Project.branched_from_project_root_id == first["root_id"]
+        )) == 0
+        assert db.scalar(
+            select(func.count()).select_from(ProjectRevisionRecord)
+        ) == 0
+        assert job is not None
+        assert job.status == "reviewing"
+        assert job.source_revision_id is None
+        assert job.completed_outputs == 0
+        assert job.charged_outputs == 0
+
+
+def test_creative_direction_commit_rejects_partial_legacy_state(
+    creative_client,
+):
+    client, Session = creative_client
+    app.dependency_overrides[get_creative_prompt_generator] = (
+        lambda: (lambda _instruction, variant: _prompt_creative_result(variant))
+    )
+    created = client.post(
+        "/projects/from-prompt", json=_prompt_request(variation_count=2)
+    ).json()
+    candidates = [
+        item["asset_id"] for item in created["creative_candidates"]
+    ]
+    legacy = client.post(
+        f"/projects/{created['root_id']}/creative-candidates/"
+        f"{candidates[0]}/select",
+        json={"created_by": "usr_designer"},
+    )
+    assert legacy.status_code == 200, legacy.text
+
+    response = client.post(
+        f"/projects/{created['root_id']}/creative-directions/commit",
+        json={
+            "selected_candidate_id": candidates[0],
+            "retained": [
+                {"candidate_id": candidates[1], "label": "Late sibling"},
+            ],
+            "created_by": "usr_designer",
+        },
+    )
+    assert response.status_code == 409
+    assert "partial legacy Create selection" in response.json()["detail"]
+    with Session() as db:
+        assert db.get(StudioCreateDecisionRecord, created["root_id"]) is None
+        assert db.scalar(select(func.count()).select_from(Project)) == 1
 
 
 def test_from_prompt_validates_variation_bounds(creative_client):

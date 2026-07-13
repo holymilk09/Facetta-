@@ -29,6 +29,8 @@ import type {
   ConfirmSourceCoverageResult,
   ConfirmCreativeCandidateProfileRequest,
   ConfirmCreativeCandidateProfileResult,
+  CommitCreativeDirectionsRequest,
+  CommitCreativeDirectionsResult,
   ComponentCatalog,
   ComponentCatalogOption,
   ComponentCatalogPath,
@@ -735,6 +737,17 @@ export const decodeSaveAsVariationResult: Decoder<SaveAsVariationResult> = (valu
     source_project_id: sourceProjectId,
     source_asset_id: sourceAssetId,
     project,
+  };
+};
+
+export const decodeCommitCreativeDirectionsResult: Decoder<CommitCreativeDirectionsResult> = (value) => {
+  if (!isRecord(value) || !Array.isArray(value.retained_variations)) return null;
+  const project = decodeProjectDetail(value.project);
+  const retainedVariations = value.retained_variations.map(decodeSaveAsVariationResult);
+  if (project === null || retainedVariations.some((variation) => variation === null)) return null;
+  return {
+    project,
+    retained_variations: retainedVariations as SaveAsVariationResult[],
   };
 };
 
@@ -3630,6 +3643,40 @@ export function createTrustedApiClient(options: TrustedApiClientOptions) {
           }),
         },
       );
+    },
+
+    async commitCreativeDirections(
+      projectId: string,
+      request: CommitCreativeDirectionsRequest,
+    ): Promise<ApiResult<CommitCreativeDirectionsResult>> {
+      const result = await call(
+        `/projects/${encodeURIComponent(projectId)}/creative-directions/commit`,
+        decodeCommitCreativeDirectionsResult,
+        {
+          method: 'POST',
+          body: encodeBody({
+            created_by: request.created_by,
+            selected_candidate_id: request.selected_candidate_id,
+            retained: request.retained.map((direction) => ({
+              candidate_id: direction.candidate_id,
+              label: direction.label,
+            })),
+            ...(request.studio_job_id === undefined
+              ? {} : { studio_job_id: request.studio_job_id }),
+          }),
+        },
+      );
+      if (result.error !== null) return result;
+      return {
+        ...result,
+        data: {
+          project: projectWithUrls(result.data.project, baseUrl),
+          retained_variations: result.data.retained_variations.map((variation) => ({
+            ...variation,
+            project: projectWithUrls(variation.project, baseUrl),
+          })),
+        },
+      };
     },
 
     async createVisualPreview(projectId: string, request: CreateVisualPreviewRequest) {

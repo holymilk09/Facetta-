@@ -65,6 +65,7 @@ EXPECTED_PRODUCTION_OPERATIONS = (
         "/projects/from-prompt",
         "/projects/from-drawing",
         "/projects/{project_id}/creative-candidates/{candidate_id}/select",
+        "/projects/{project_id}/creative-directions/commit",
         "/projects/{project_id}/creative-candidates/{candidate_id}/confirm-design",
         "/projects/{project_id}/creative-candidates/{candidate_id}/promote",
         "/projects/{root_id}/render",

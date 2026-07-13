@@ -238,6 +238,27 @@ def validate_frozen_component_pins(
             continue
         if file_sha256(candidate) != expected_hash:
             errors.append(f"config frozen component {key} implementation drifted")
+    # The capture spine was added after the replay schema.  Existing synthetic
+    # fixtures remain valid, while any production config that declares these
+    # components gets the same path and byte-level pin verification.
+    for key in ("capture_workload", "capture_planner", "capture_planner_cli"):
+        if key not in frozen:
+            continue
+        value = frozen.get(key)
+        if not isinstance(value, str) or "@sha256:" not in value:
+            errors.append(f"config frozen component {key} is not hash-pinned")
+            continue
+        relative, expected_hash = value.rsplit("@sha256:", 1)
+        candidate = (root / relative).resolve()
+        if (
+            not relative or Path(relative).is_absolute()
+            or not candidate.is_relative_to(root)
+            or not candidate.is_file()
+        ):
+            errors.append(f"config frozen component {key} path is unavailable")
+            continue
+        if file_sha256(candidate) != expected_hash:
+            errors.append(f"config frozen component {key} implementation drifted")
     return errors
 
 

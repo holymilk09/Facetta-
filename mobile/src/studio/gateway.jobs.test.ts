@@ -215,6 +215,45 @@ test('a restarted gateway settles the durable reviewing Create job supplied by A
   assert.deepEqual(selections, [{ studioJobId: 'studio_job_rehydrated' }]);
 });
 
+test('atomic Create review forwards the same-session durable job exactly once', async () => {
+  const jobs = tracking();
+  const commits: { projectId: string; studioJobId?: string }[] = [];
+  const gateway = createStudioGateway({
+    ...jobs.client,
+    createProjectFromPrompt: async () => ok(unselectedProject(3), 201),
+    commitCreativeDirections: async (projectId: string, request: { studio_job_id?: string }) => {
+      commits.push({ projectId, studioJobId: request.studio_job_id });
+      return ok({
+        project: {
+          ...project(3), selected_candidate_asset_id: 'direction_3',
+          active_asset_id: 'direction_3',
+        },
+        retained_variations: [{
+          status: 'variation_created' as const,
+          family_id: 'family_1', variation_index: 2,
+          source_project_id: 'project_1', source_asset_id: 'direction_2',
+          project: project(1),
+        }],
+      }, 200);
+    },
+  } as any, { trackJobs: true });
+
+  await gateway.createFromPrompt({
+    prompt: 'Sapphire orbit', variation_count: 3, owner: 'designer_1', title: 'Orbit',
+  });
+  const committed = await gateway.completeCreativeDirectionReview({
+    projectId: 'project_1', selectedCandidateId: 'direction_3',
+    retained: [{ candidateId: 'direction_2', label: 'Direction 2' }],
+    createdBy: 'designer_1',
+  });
+
+  assert.equal(committed.error, null);
+  assert.deepEqual(commits, [{ projectId: 'project_1', studioJobId: 'studio_job_1' }]);
+  assert.deepEqual(jobs.transitions.map((call) => call.request.status), [
+    'running', 'reviewing',
+  ]);
+});
+
 test('tracked generation failures close the job without charging output', async () => {
   const jobs = tracking();
   const gateway = createStudioGateway({

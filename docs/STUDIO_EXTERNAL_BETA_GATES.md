@@ -33,13 +33,39 @@ exit code and the generated JSON alongside the human sign-off.
   That review must include one boolean decision for every selected
   `kind/evaluation_id/source_filename` result; the verifier recomputes the
   false-positive and false-negative counts from those decisions.
+- `docs/evals/frozen-founder-corpus-v1/workload.json` must pass definition
+  validation. It explicitly separates 144-source integrity from the 58-source
+  ring quality slice and expands the latter into 1,044 source/evaluation
+  sequences. A plan file is not capture evidence.
 
 ### Prepare the review packet
 
-The secured live executor writes a `facetta-frozen-capture.v1` object with its
+Before secured execution, generate the deterministic provider-call plan:
+
+```bash
+PYTHONPATH=src .venv/bin/python scripts/plan_frozen_corpus_capture.py \
+  --out /secure/path/to/provider-call-plan.json plan
+```
+
+This performs zero provider calls and leaves `corpus_gate_ready: false`. The
+secured live executor writes a `facetta-frozen-capture.v1` object with its
 attempt rows and canonical persistence result. Each attempt names the frozen
 `source_filename`, kind, evaluation ID, attempt number, machine acceptance and
-scores, plus candidate path and (for edits) mask path. Do not hand-copy hashes.
+scores, plus relative candidate path and (for edits) mask path with hashes. The
+envelope also pins the manifest/config/workload and a canonical-persistence
+evidence file, then receives a separate Ed25519 executor signature. Validate
+that machine envelope before review packet construction; this signature is not
+the later GIA reviewer signature:
+
+```bash
+PYTHONPATH=src .venv/bin/python scripts/plan_frozen_corpus_capture.py \
+  validate-capture \
+  --capture /secure/path/to/frozen-capture.json \
+  --capture-public-key /secure/path/to/executor-public-key \
+  --capture-key-id secured-executor-v1
+```
+
+Do not hand-copy hashes.
 Build an unsigned review packet locally:
 
 ```bash
@@ -126,8 +152,10 @@ The replay command and final-decision command must both exit `0`;
 following must hold:
 
 - Definition and implementation pins pass without manifest/config drift.
-- Source integrity is `144/144`, and signed quality source coverage is
-  `144/144` with the signed evaluation IDs exactly matching verified attempts.
+- Source integrity is `144/144`; quality assignments match the pinned
+  58-source ring workload matrix and the signed evaluation IDs exactly match
+  verified attempts. Until the replay compiler consumes that matrix directly,
+  this external gate remains `unmet` even if capture-envelope validation passes.
 - Every declared render and edit evaluation has artifact-verified evidence;
   every edit has replayable source, candidate, and mask pixels.
 - Render hard-gate pass rate is at least `0.90`; mean render conformance is at

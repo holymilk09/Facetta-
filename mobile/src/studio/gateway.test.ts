@@ -184,6 +184,66 @@ test('persists a chosen creative direction without inventing specification autho
   assert.equal(result.data?.active_design_version, null);
 });
 
+test('commits an Original and all retained directions through one atomic client call', async () => {
+  const selected = {
+    ...project('candidate_3'),
+    design_id: null,
+    spec: null,
+    active_design_version: null,
+    selected_candidate_asset_id: 'candidate_3',
+  };
+  const retainedVariation = {
+    status: 'variation_created' as const,
+    family_id: 'family_1', variation_index: 2,
+    source_project_id: 'project_1', source_asset_id: 'candidate_2',
+    project: project('variation_2'),
+  };
+  const commitCalls: unknown[][] = [];
+  const commitCreativeDirections = async (...args: unknown[]) => {
+    commitCalls.push(args);
+    return ok({
+      project: selected,
+      retained_variations: [retainedVariation],
+    }, 200);
+  };
+  const gateway = createStudioGateway(fakeClient({ commitCreativeDirections }));
+
+  const result = await gateway.completeCreativeDirectionReview({
+    projectId: 'project_1', selectedCandidateId: 'candidate_3',
+    retained: [{ candidateId: 'candidate_2', label: ' Direction 2 ' }],
+    createdBy: 'designer_1', studioJobId: 'studio_job_create',
+  });
+
+  assert.equal(result.error, null);
+  assert.equal(commitCalls.length, 1);
+  assert.deepEqual(commitCalls[0], ['project_1', {
+    created_by: 'designer_1', selected_candidate_id: 'candidate_3',
+    retained: [{ candidate_id: 'candidate_2', label: 'Direction 2' }],
+    studio_job_id: 'studio_job_create',
+  }]);
+  assert.equal(result.data?.retained_variations[0]?.source_asset_id, 'candidate_2');
+});
+
+test('rejects a partial or rebound atomic Create response', async () => {
+  const gateway = createStudioGateway(fakeClient({
+    commitCreativeDirections: async () => ok({
+      project: {
+        ...project('candidate_other'),
+        selected_candidate_asset_id: 'candidate_other',
+      },
+      retained_variations: [],
+    }, 200),
+  }));
+
+  const result = await gateway.completeCreativeDirectionReview({
+    projectId: 'project_1', selectedCandidateId: 'candidate_3',
+    retained: [{ candidateId: 'candidate_2', label: 'Direction 2' }],
+    createdBy: 'designer_1',
+  });
+
+  assert.equal(result.error?.code, 'INVALID_CREATIVE_DIRECTION_COMMIT');
+});
+
 test('saves an exact catalog preview as a named sibling without advancing its source', async () => {
   let saveCalls = 0;
   const sibling = {

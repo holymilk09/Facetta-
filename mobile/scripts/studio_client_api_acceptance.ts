@@ -17,6 +17,7 @@ import type {
   CreativeSourceKind,
   JsonObject,
   ProjectDetail,
+  SaveAsVariationResult,
 } from '../src/trusted/types';
 
 const baseUrl = process.argv[2];
@@ -25,7 +26,9 @@ assert(baseUrl, 'usage: tsx scripts/studio_client_api_acceptance.ts BASE_URL');
 const actor = 'usr_client_api_acceptance';
 const failedQaActor = 'usr_failed_qa_acceptance';
 const structuralActor = 'usr_structural_api_acceptance';
+const atomicRollbackActor = 'usr_atomic_rollback_acceptance';
 const FAILED_QA_FIXTURE_PROMPT = '__FACETTA_ACCEPTANCE_FORCE_QA_FAIL__';
+const STRUCTURAL_PRE_SPEC_PROMPT = '__FACETTA_ACCEPTANCE_STRUCTURAL_PRE_SPEC_RING__';
 const trustedClient = createTrustedApiClient({ baseUrl });
 const gateway = createStudioGateway(trustedClient, { trackJobs: true });
 
@@ -51,6 +54,8 @@ interface AcceptanceResult {
   directionCount: number;
   canonicalRevisionCount: number;
   staleApplyRejected: boolean;
+  atomicCreateDecision: boolean;
+  atomicRetryIdempotent: boolean;
 }
 
 interface AcceptanceCanonicalState {
@@ -65,12 +70,6 @@ interface AcceptanceCanonicalState {
   completed_outputs: number;
 }
 
-interface ConfirmedRingFixture {
-  image_base64: string;
-  media_type: 'image/png';
-  confirmed_spec: JsonObject;
-}
-
 interface StructuralCutAcceptanceResult {
   projectId: string;
   sourceAssetId: string;
@@ -78,9 +77,21 @@ interface StructuralCutAcceptanceResult {
   sourceDesignVersion: 1;
   acceptedDesignVersion: 2;
   previewWasTemporary: true;
-  canonicalRevisionCountBeforeApply: 1;
-  canonicalRevisionCountAfterApply: 2;
+  canonicalRevisionCountBeforeApply: 3;
+  canonicalRevisionCountAfterApply: 4;
   chargedOutputs: 1;
+  preSpecRefineConfirmedAsDesignV1: true;
+}
+
+interface AtomicRollbackAcceptanceResult {
+  projectId: string;
+  foreignProjectId: string;
+  invalidRetainedCandidateRejected: true;
+  canonicalStateUnchanged: true;
+  selectionRolledBack: true;
+  familyRolledBack: true;
+  branchRolledBack: true;
+  jobSettlementRolledBack: true;
 }
 
 const CASES: readonly AcceptanceCase[] = [
@@ -179,18 +190,23 @@ function assertReferencePersistence(project: ProjectDetail, roles: readonly Refe
   }
 }
 
+async function reviewingCreateJobId(owner: string, projectId: string): Promise<string> {
+  const activity = value(await gateway.listStudioJobs(owner), 'Read reviewing Create job');
+  const matches = activity.jobs.filter((job) => (
+    job.action_id === 'create'
+    && job.status === 'reviewing'
+    && job.active_design_id === projectId
+  ));
+  assert.equal(matches.length, 1, `expected one reviewing Create job for ${projectId}`);
+  return matches[0]!.job_id;
+}
+
 async function canonicalState(owner: string): Promise<AcceptanceCanonicalState> {
   const response = await fetch(
     `${baseUrl}/__acceptance__/canonical-state/${encodeURIComponent(owner)}`,
   );
   assert.equal(response.status, 200, 'acceptance state probe failed');
   return await response.json() as AcceptanceCanonicalState;
-}
-
-async function confirmedRingFixture(): Promise<ConfirmedRingFixture> {
-  const response = await fetch(`${baseUrl}/__acceptance__/confirmed-ring-fixture`);
-  assert.equal(response.status, 200, 'confirmed-ring acceptance fixture failed');
-  return await response.json() as ConfirmedRingFixture;
 }
 
 async function runStructuralCutCase(): Promise<StructuralCutAcceptanceResult> {
@@ -206,16 +222,52 @@ async function runStructuralCutCase(): Promise<StructuralCutAcceptanceResult> {
     completed_outputs: 0,
   }, 'structural fixture owner did not start isolated');
 
-  const fixture = await confirmedRingFixture();
-  const imported = value(await trustedClient.createProjectFromImage({
-    image_base64: fixture.image_base64,
-    media_type: fixture.media_type,
-    confirmed_spec: fixture.confirmed_spec,
+  const created = value(await trustedClient.createProjectFromPrompt({
+    prompt: STRUCTURAL_PRE_SPEC_PROMPT,
+    variation_count: 1,
+    starting_variant: 1,
     owner: structuralActor,
     title: 'Acceptance: confirmed ring stone-cut refinement',
     collection: 'Studio structural acceptance',
     tags: ['client-api', 'structural', 'stone-cut', 'no-factory'],
-  }), 'Structural: import designer-confirmed ring');
+  }), 'Structural: create pre-spec ring direction');
+  const creative = created.creative_candidates?.[0];
+  assert(creative, 'Structural: deterministic creative direction missing');
+  const selected = value(await trustedClient.selectCreativeCandidate(
+    created.root_id, creative.asset_id, structuralActor,
+  ), 'Structural: select pre-spec ring direction');
+  assert.equal(selected.confirmable_pre_spec, true);
+
+  const preSpecPreview = value(await gateway.previewVisualRefine({
+    projectId: selected.root_id,
+    sourceAssetId: creative.asset_id,
+    createdBy: structuralActor,
+    instruction: 'Warm the yellow-gold appearance while preserving the ring geometry.',
+    scope: 'appearance',
+    variant: 1,
+  }), 'Structural: preview pre-spec appearance refinement');
+  assert.equal(preSpecPreview.candidate.temporary, true);
+  const preSpecApplied = value(await gateway.applyVisualRefine({
+    candidateId: preSpecPreview.candidate.id,
+    createdBy: structuralActor,
+  }), 'Structural: apply pre-spec appearance refinement');
+  assert(preSpecApplied.project, 'Structural: Apply did not return the updated project');
+  const refinedPreSpecId = preSpecApplied.project.active_asset_id;
+  assert(refinedPreSpecId, 'Structural: applied pre-spec child missing');
+  assert.equal(preSpecApplied.project.confirmable_pre_spec, true);
+  assert.notEqual(refinedPreSpecId, creative.asset_id);
+
+  const confirmation = value(await trustedClient.confirmCreativeCandidateDesign(
+    created.root_id,
+    refinedPreSpecId,
+    { created_by: structuralActor, run_independent_audit: true },
+  ), 'Structural: review refined pre-spec direction');
+  assert.equal(confirmation.candidate_id, refinedPreSpecId);
+  const imported = value(await trustedClient.promoteCreativeCandidate(
+    created.root_id,
+    refinedPreSpecId,
+    { created_by: structuralActor, confirmation_token: confirmation.confirmation_token },
+  ), 'Structural: confirm refined direction as Design v1');
   assert.equal(imported.active_design_version, 1);
   assert(imported.active_revision);
   const sourceAssetId = imported.active_asset_id;
@@ -228,15 +280,15 @@ async function runStructuralCutCase(): Promise<StructuralCutAcceptanceResult> {
   const canonicalAfterImport = await canonicalState(structuralActor);
   assert.deepEqual(canonicalAfterImport, {
     projects: 1,
-    image_assets: 1,
-    revision_records: 0,
+    image_assets: 3,
+    revision_records: 2,
     designs: 1,
     design_versions: 1,
-    accepted_image_reviews: 0,
+    accepted_image_reviews: 1,
     failed_image_runs: 0,
-    charged_outputs: 0,
-    completed_outputs: 0,
-  }, 'confirmed import did not establish exactly one canonical revision');
+    charged_outputs: 1,
+    completed_outputs: 1,
+  }, 'refine-first confirmation did not establish exact Design v1 atomically');
 
   const beforeMap = value(
     await gateway.getStudioComponentTargeting(sourceAssetId),
@@ -273,7 +325,7 @@ async function runStructuralCutCase(): Promise<StructuralCutAcceptanceResult> {
     await gateway.getStudioProjectHistory(imported.root_id),
     'Structural: history before preview',
   );
-  assert.equal(sourceHistory.revisions.length, 1);
+  assert.equal(sourceHistory.revisions.length, 3);
   assert.equal(sourceHistory.active_asset_id, sourceAssetId);
   const sourceHash = await sha256(imported.active_revision.image_url!);
 
@@ -302,7 +354,7 @@ async function runStructuralCutCase(): Promise<StructuralCutAcceptanceResult> {
     await gateway.getStudioProjectHistory(imported.root_id),
     'Structural: history while preview is temporary',
   );
-  assert.equal(historyDuringReview.revisions.length, 1);
+  assert.equal(historyDuringReview.revisions.length, 3);
   assert.equal(historyDuringReview.active_asset_id, sourceAssetId);
   const reopenedDuringReview = value(
     await gateway.getProject(imported.root_id),
@@ -325,8 +377,10 @@ async function runStructuralCutCase(): Promise<StructuralCutAcceptanceResult> {
     await gateway.listStudioJobs(structuralActor),
     'Structural: reviewing Activity',
   );
-  assert.equal(reviewingActivity.jobs.length, 1);
-  const reviewingJob = reviewingActivity.jobs[0];
+  assert.equal(reviewingActivity.jobs.length, 2);
+  const reviewingJob = reviewingActivity.jobs.find((job) => (
+    job.status === 'reviewing' && job.source_revision_id === sourceAssetId
+  ));
   assert(reviewingJob);
   assert.equal(reviewingJob.action_id, 'refine');
   assert.equal(reviewingJob.lane, 'trusted_structural');
@@ -352,10 +406,10 @@ async function runStructuralCutCase(): Promise<StructuralCutAcceptanceResult> {
     await gateway.getStudioProjectHistory(imported.root_id),
     'Structural: reopen accepted history',
   );
-  assert.equal(acceptedHistory.revisions.length, 2);
+  assert.equal(acceptedHistory.revisions.length, 4);
   assert.equal(acceptedHistory.active_asset_id, acceptedAssetId);
-  assert.equal(acceptedHistory.revisions[1]?.parent_asset_id, sourceAssetId);
-  assert.equal(acceptedHistory.revisions[1]?.design_version, 2);
+  assert.equal(acceptedHistory.revisions[3]?.parent_asset_id, sourceAssetId);
+  assert.equal(acceptedHistory.revisions[3]?.design_version, 2);
   const reopenedAccepted = value(
     await gateway.getProject(imported.root_id),
     'Structural: reopen accepted project',
@@ -367,22 +421,24 @@ async function runStructuralCutCase(): Promise<StructuralCutAcceptanceResult> {
 
   assert.deepEqual(await canonicalState(structuralActor), {
     projects: 1,
-    image_assets: 2,
-    revision_records: 1,
+    image_assets: 4,
+    revision_records: 3,
     designs: 1,
     design_versions: 2,
-    accepted_image_reviews: 1,
+    accepted_image_reviews: 2,
     failed_image_runs: 0,
-    charged_outputs: 1,
-    completed_outputs: 1,
+    charged_outputs: 2,
+    completed_outputs: 2,
   }, 'Apply did not settle exactly one charged canonical revision');
 
   const settledActivity = value(
     await gateway.listStudioJobs(structuralActor),
     'Structural: settled Activity',
   );
-  assert.equal(settledActivity.jobs.length, 1);
-  const settledJob = settledActivity.jobs[0];
+  assert.equal(settledActivity.jobs.length, 2);
+  const settledJob = settledActivity.jobs.find((job) => (
+    job.source_revision_id === sourceAssetId
+  ));
   assert(settledJob);
   assert.equal(settledJob.status, 'succeeded');
   assert.equal(settledJob.billing.completed_outputs, 1);
@@ -396,9 +452,10 @@ async function runStructuralCutCase(): Promise<StructuralCutAcceptanceResult> {
     sourceDesignVersion: 1,
     acceptedDesignVersion: 2,
     previewWasTemporary: true,
-    canonicalRevisionCountBeforeApply: 1,
-    canonicalRevisionCountAfterApply: 2,
+    canonicalRevisionCountBeforeApply: 3,
+    canonicalRevisionCountAfterApply: 4,
     chargedOutputs: 1,
+    preSpecRefineConfirmedAsDesignV1: true,
   };
 }
 
@@ -455,6 +512,97 @@ async function runFailedQaCase(): Promise<void> {
   assert.equal(failedCreate.billing.charged_credits, 0);
 }
 
+async function runAtomicCreateRollbackCase(): Promise<AtomicRollbackAcceptanceResult> {
+  assert.deepEqual(await canonicalState(atomicRollbackActor), {
+    projects: 0,
+    image_assets: 0,
+    revision_records: 0,
+    designs: 0,
+    design_versions: 0,
+    accepted_image_reviews: 0,
+    failed_image_runs: 0,
+    charged_outputs: 0,
+    completed_outputs: 0,
+  }, 'atomic rollback fixture owner did not start isolated');
+
+  const created = value(await gateway.createFromPrompt({
+    prompt: 'An acceptance ring with three restrained directions.',
+    variation_count: 3,
+    starting_variant: 81,
+    owner: atomicRollbackActor,
+    title: 'Acceptance: atomic Create rollback',
+    collection: 'Studio atomic acceptance',
+    tags: ['client-api', 'atomic-create', 'rollback', 'no-factory'],
+  }), 'Atomic rollback: create primary directions');
+  const foreign = value(await gateway.createFromPrompt({
+    prompt: 'A separate acceptance ring whose direction must be rejected as foreign.',
+    variation_count: 1,
+    starting_variant: 91,
+    owner: atomicRollbackActor,
+    title: 'Acceptance: foreign Create direction',
+    collection: 'Studio atomic acceptance',
+    tags: ['client-api', 'atomic-create', 'foreign-candidate', 'no-factory'],
+  }), 'Atomic rollback: create foreign direction');
+  const candidates = created.creative_candidates ?? [];
+  const foreignCandidate = foreign.creative_candidates?.[0];
+  assert.equal(candidates.length, 3);
+  assert(foreignCandidate);
+  const jobId = await reviewingCreateJobId(atomicRollbackActor, created.root_id);
+  const before = await canonicalState(atomicRollbackActor);
+
+  const rejected = await gateway.completeCreativeDirectionReview({
+    projectId: created.root_id,
+    selectedCandidateId: candidates[1]!.asset_id,
+    retained: [
+      { candidateId: candidates[0]!.asset_id, label: 'Valid sibling first' },
+      { candidateId: foreignCandidate.asset_id, label: 'Foreign sibling must fail' },
+    ],
+    createdBy: atomicRollbackActor,
+    studioJobId: jobId,
+  });
+  assert.equal(rejected.data, null, 'foreign retained direction unexpectedly committed');
+  assert(rejected.error, 'foreign retained direction did not return a typed error');
+  assert.equal(rejected.status, 409);
+
+  const after = await canonicalState(atomicRollbackActor);
+  assert.deepEqual(after, before, 'invalid retained direction partially changed canonical counts or billing');
+  const reopened = value(
+    await gateway.getProject(created.root_id),
+    'Atomic rollback: reopen primary project',
+  );
+  assert.equal(reopened.selected_candidate_asset_id ?? null, null);
+  assert.equal(reopened.revisions.length, 0);
+  const history = value(
+    await gateway.getStudioProjectHistory(created.root_id),
+    'Atomic rollback: inspect primary history',
+  );
+  assert.equal(history.family_id, null);
+  assert.equal(history.revisions.length, 0);
+
+  const activity = value(
+    await gateway.listStudioJobs(atomicRollbackActor),
+    'Atomic rollback: inspect Activity',
+  );
+  const job = activity.jobs.find((item) => item.job_id === jobId);
+  assert(job, 'atomic rollback Create job disappeared');
+  assert.equal(job.status, 'reviewing');
+  assert.equal(job.source_revision_id, null);
+  assert.equal(job.billing.completed_outputs, 0);
+  assert.equal(job.billing.charged_outputs, 0);
+  assert.equal(job.billing.charged_credits, 0);
+
+  return {
+    projectId: created.root_id,
+    foreignProjectId: foreign.root_id,
+    invalidRetainedCandidateRejected: true,
+    canonicalStateUnchanged: true,
+    selectionRolledBack: true,
+    familyRolledBack: true,
+    branchRolledBack: true,
+    jobSettlementRolledBack: true,
+  };
+}
+
 async function create(caseDefinition: AcceptanceCase, index: number): Promise<ProjectDetail> {
   const common = {
     variation_count: caseDefinition.directionCount,
@@ -496,11 +644,83 @@ async function runCase(caseDefinition: AcceptanceCase, index: number): Promise<A
     `${label}: direction bytes are not mutually distinct`,
   );
 
-  const selected = value(await gateway.selectCreativeDirection(
-    created.root_id,
-    chosenDirection.asset_id,
-    actor,
-  ), `${label}: Select and save direction`);
+  // One mixed-source case crosses the complete atomic Create-decision seam:
+  // choose Original and retain a sibling in the same server transaction.
+  // Every other case keeps exercising the backward-compatible selection and
+  // explicit branch paths until their callers have migrated.
+  const useAtomicCreateDecision = index === 1;
+  let selected: ProjectDetail;
+  let branch: SaveAsVariationResult | null = null;
+  let branchSourceDirection = chosenDirection;
+  let atomicRetryIdempotent = false;
+  if (useAtomicCreateDecision) {
+    assert(candidates.length >= 2, `${label}: atomic case requires a sibling direction`);
+    branchSourceDirection = candidates[0]!;
+    const studioJobId = await reviewingCreateJobId(actor, created.root_id);
+    const request = {
+      projectId: created.root_id,
+      selectedCandidateId: chosenDirection.asset_id,
+      retained: [{
+        candidateId: branchSourceDirection.asset_id,
+        label: `${label} retained sibling`,
+      }],
+      createdBy: actor,
+      studioJobId,
+    } as const;
+    const committed = value(
+      await gateway.completeCreativeDirectionReview(request),
+      `${label}: Commit Original and retained sibling atomically`,
+    );
+    selected = committed.project;
+    assert.equal(committed.retained_variations.length, 1);
+    branch = committed.retained_variations[0]!;
+    assert.equal(branch.source_asset_id, branchSourceDirection.asset_id);
+
+    const stateAfterCommit = await canonicalState(actor);
+    const activityAfterCommit = value(
+      await gateway.listStudioJobs(actor),
+      `${label}: Activity after atomic commit`,
+    );
+    const settledJob = activityAfterCommit.jobs.find((job) => job.job_id === studioJobId);
+    assert(settledJob, `${label}: atomically settled Create job missing`);
+    assert.equal(settledJob.status, 'succeeded');
+    assert.equal(settledJob.billing.completed_outputs, candidates.length);
+    assert.equal(settledJob.billing.charged_outputs, candidates.length);
+
+    // This is the real lost-response retry shape: the exact request, including
+    // its durable job id, returns the same sibling identity and cannot append
+    // a project/revision or settle the job twice.
+    const retried = value(
+      await gateway.completeCreativeDirectionReview(request),
+      `${label}: Retry exact atomic Create decision`,
+    );
+    assert.equal(retried.project.selected_candidate_asset_id, chosenDirection.asset_id);
+    assert.deepEqual(
+      retried.retained_variations.map((variation) => variation.project.root_id),
+      committed.retained_variations.map((variation) => variation.project.root_id),
+    );
+    assert.deepEqual(
+      await canonicalState(actor),
+      stateAfterCommit,
+      `${label}: exact retry duplicated canonical records or billing`,
+    );
+    const activityAfterRetry = value(
+      await gateway.listStudioJobs(actor),
+      `${label}: Activity after exact retry`,
+    );
+    assert.deepEqual(
+      activityAfterRetry.jobs.find((job) => job.job_id === studioJobId),
+      settledJob,
+      `${label}: exact retry settled or charged the Create job twice`,
+    );
+    atomicRetryIdempotent = true;
+  } else {
+    selected = value(await gateway.selectCreativeDirection(
+      created.root_id,
+      chosenDirection.asset_id,
+      actor,
+    ), `${label}: Select and save direction`);
+  }
   assert.equal(selected.active_asset_id, chosenDirection.asset_id);
   assert.equal(selected.revisions.length, 1);
   assertSourceKind(selected, caseDefinition.sourceKind, `${label}: selected revision`);
@@ -510,15 +730,18 @@ async function runCase(caseDefinition: AcceptanceCase, index: number): Promise<A
   assertSourceKind(reopened, caseDefinition.sourceKind, `${label}: reopened revision`);
   assertReferencePersistence(reopened, caseDefinition.references ?? []);
 
-  const branch = value(await gateway.saveCurrentAsVariation({
-    projectId: reopened.root_id,
-    sourceAssetId: chosenDirection.asset_id,
-    sourceDesignVersion: null,
-    createdBy: actor,
-    label: `${label} exploration`,
-  }), `${label}: Branch exact selected revision`);
+  if (!useAtomicCreateDecision) {
+    branch = value(await gateway.saveCurrentAsVariation({
+      projectId: reopened.root_id,
+      sourceAssetId: chosenDirection.asset_id,
+      sourceDesignVersion: null,
+      createdBy: actor,
+      label: `${label} exploration`,
+    }), `${label}: Branch exact selected revision`);
+  }
+  assert(branch, `${label}: variation branch missing after Create review`);
   assert.equal(branch.source_project_id, reopened.root_id);
-  assert.equal(branch.source_asset_id, chosenDirection.asset_id);
+  assert.equal(branch.source_asset_id, branchSourceDirection.asset_id);
   assert.notEqual(branch.project.root_id, reopened.root_id);
   assert.equal(branch.project.factory_ready, false);
   assert.equal(
@@ -535,10 +758,14 @@ async function runCase(caseDefinition: AcceptanceCase, index: number): Promise<A
   assert.equal(reopenedBranch.active_asset_id, branch.project.active_asset_id);
   assert.equal(reopenedBranch.selected_candidate_asset_id, reopenedBranch.active_asset_id);
   assertSourceKind(reopenedBranch, caseDefinition.sourceKind, `${label}: reopened variation`);
+  const reopenedBranchSource = reopened.assets.find(
+    (asset) => asset.asset_id === branchSourceDirection.asset_id,
+  );
+  assert(reopenedBranchSource?.image_url, `${label}: branch source image URL missing`);
   assert.equal(
     await sha256(reopenedBranch.active_revision!.image_url!),
-    await sha256(reopened.active_revision!.image_url!),
-    `${label}: branch did not preserve exact selected bytes`,
+    await sha256(reopenedBranchSource.image_url),
+    `${label}: branch did not preserve exact source direction bytes`,
   );
 
   const beforePreviewHistory = value(
@@ -698,12 +925,15 @@ async function runCase(caseDefinition: AcceptanceCase, index: number): Promise<A
     directionCount: candidates.length,
     canonicalRevisionCount: finalHistory.revisions.length,
     staleApplyRejected,
+    atomicCreateDecision: useAtomicCreateDecision,
+    atomicRetryIdempotent,
   };
 }
 
 async function main(): Promise<void> {
   await runFailedQaCase();
   const structuralCut = await runStructuralCutCase();
+  const atomicRollback = await runAtomicCreateRollbackCase();
 
   const results: AcceptanceResult[] = [];
   for (const [index, caseDefinition] of CASES.entries()) {
@@ -711,6 +941,16 @@ async function main(): Promise<void> {
   }
 
   assert.equal(results.length, 10);
+  assert.equal(
+    results.filter((item) => item.atomicCreateDecision).length,
+    1,
+    'exactly one mixed-source project must use the atomic Create-decision seam',
+  );
+  assert.equal(
+    results.filter((item) => item.atomicRetryIdempotent).length,
+    1,
+    'the atomic mixed-source decision must prove exact retry idempotency',
+  );
   assert.deepEqual(new Set(results.map((item) => item.sourceKind)), new Set([
     null, 'drawing', 'photograph', 'finished_render',
   ]));
@@ -768,6 +1008,11 @@ async function main(): Promise<void> {
       accepted_outputs: 0,
       charged_outputs: 0,
       failed_evidence_runs: 1,
+    },
+    atomic_create: {
+      mixed_source_case: results.find((item) => item.atomicCreateDecision)?.id,
+      retry_idempotent: true,
+      invalid_retained_rollback: atomicRollback,
     },
     structural_cut: structuralCut,
     canonical_mutation_before_acceptance: false,

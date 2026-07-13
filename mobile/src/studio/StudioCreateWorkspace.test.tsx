@@ -60,27 +60,24 @@ const creativeProject = (count: number): ProjectDetail => {
 };
 
 type CreateGateway = Pick<StudioGateway,
-  'createFromPrompt' | 'createFromDrawing' | 'selectCreativeDirection'
+  'createFromPrompt' | 'createFromDrawing' | 'completeCreativeDirectionReview'
 >;
 
 test('stages sibling variations locally and commits them only with the explicit Continue action', async () => {
   const createFromPrompt = jest.fn(async () => ({
     data: creativeProject(4), error: null, status: 201,
   }));
-  const selectCreativeDirection = jest.fn(async (_projectId, candidateId) => ({
-    data: { ...creativeProject(4), selected_candidate_asset_id: candidateId, active_asset_id: candidateId },
-    error: null,
-    status: 200,
-  }));
-  const saveCreativeDirectionAsVariation = jest.fn(async ({ candidateId }) => ({
+  const completeCreativeDirectionReview = jest.fn(async ({ selectedCandidateId }) => ({
     data: {
-      status: 'variation_created' as const,
-      family_id: 'family_1', variation_index: 2,
-      source_project_id: 'project_1', source_asset_id: candidateId,
-      project: creativeProject(1),
+      project: {
+        ...creativeProject(4),
+        selected_candidate_asset_id: selectedCandidateId,
+        active_asset_id: selectedCandidateId,
+      },
+      retained_variations: [],
     },
     error: null,
-    status: 201,
+    status: 200,
   }));
   const onSave = jest.fn();
   await render(
@@ -89,8 +86,7 @@ test('stages sibling variations locally and commits them only with the explicit 
       headers={{ Authorization: 'Bearer first-party-token' }}>
       <StudioCreateWorkspace
         gateway={{
-          createFromPrompt, createFromDrawing: jest.fn(), selectCreativeDirection,
-          saveCreativeDirectionAsVariation,
+          createFromPrompt, createFromDrawing: jest.fn(), completeCreativeDirectionReview,
         } as CreateGateway}
         owner="designer_1"
         onSave={onSave}
@@ -123,27 +119,24 @@ test('stages sibling variations locally and commits them only with the explicit 
   });
   expect(screen.getByText(/visual directions.+not measurements or production instructions/i)).toBeTruthy();
   await fireEvent.press(screen.getAllByText('Keep as variation')[0]);
-  expect(selectCreativeDirection).not.toHaveBeenCalled();
-  expect(saveCreativeDirectionAsVariation).not.toHaveBeenCalled();
+  expect(completeCreativeDirectionReview).not.toHaveBeenCalled();
   expect(onSave).not.toHaveBeenCalled();
   expect(screen.getByText('Remove from kept variations')).toBeTruthy();
 
   await fireEvent.press(screen.getByText('Remove from kept variations'));
   expect(screen.getByText('Continue with Direction 1')).toBeTruthy();
-  expect(selectCreativeDirection).not.toHaveBeenCalled();
-  expect(saveCreativeDirectionAsVariation).not.toHaveBeenCalled();
+  expect(completeCreativeDirectionReview).not.toHaveBeenCalled();
 
   await fireEvent.press(screen.getAllByText('Keep as variation')[0]);
   await fireEvent.press(screen.getByLabelText('Direction 3'));
   expect(screen.getByText('Continue with Direction 3 · keep 1 variation')).toBeTruthy();
   await fireEvent.press(screen.getByText('Continue with Direction 3 · keep 1 variation'));
-  await waitFor(() => expect(selectCreativeDirection).toHaveBeenCalledWith(
-    'project_1', 'candidate_3', 'designer_1',
-  ));
-  await waitFor(() => expect(saveCreativeDirectionAsVariation).toHaveBeenCalledWith({
-    projectId: 'project_1', candidateId: 'candidate_2', activeAssetId: 'candidate_3',
-    createdBy: 'designer_1', label: 'Direction 2',
-  }));
+  await waitFor(() => expect(completeCreativeDirectionReview).toHaveBeenCalledTimes(1));
+  expect(completeCreativeDirectionReview).toHaveBeenCalledWith({
+    projectId: 'project_1', selectedCandidateId: 'candidate_3',
+    retained: [{ candidateId: 'candidate_2', label: 'Direction 2' }],
+    createdBy: 'designer_1',
+  });
   expect(onSave).toHaveBeenCalledWith(expect.objectContaining({
     selectedAssetId: 'candidate_3',
     sentence: 'A sculptural aquamarine collar.',
@@ -153,11 +146,14 @@ test('stages sibling variations locally and commits them only with the explicit 
 test('reopens a durable reviewing Create job and settles that exact job on selection', async () => {
   const createFromPrompt = jest.fn();
   const createFromDrawing = jest.fn();
-  const selectCreativeDirection = jest.fn(async (_projectId, candidateId) => ({
+  const completeCreativeDirectionReview = jest.fn(async ({ selectedCandidateId }) => ({
     data: {
-      ...creativeProject(3),
-      selected_candidate_asset_id: candidateId,
-      active_asset_id: candidateId,
+      project: {
+        ...creativeProject(3),
+        selected_candidate_asset_id: selectedCandidateId,
+        active_asset_id: selectedCandidateId,
+      },
+      retained_variations: [],
     },
     error: null,
     status: 200,
@@ -166,7 +162,7 @@ test('reopens a durable reviewing Create job and settles that exact job on selec
   await render(
     <StudioCreateWorkspace
       gateway={{
-        createFromPrompt, createFromDrawing, selectCreativeDirection,
+        createFromPrompt, createFromDrawing, completeCreativeDirectionReview,
       } as CreateGateway}
       owner="designer_1"
       resumeProject={creativeProject(3)}
@@ -180,11 +176,65 @@ test('reopens a durable reviewing Create job and settles that exact job on selec
   expect(createFromDrawing).not.toHaveBeenCalled();
   await fireEvent.press(screen.getByLabelText('Direction 2'));
   await fireEvent.press(screen.getByText('Continue with Direction 2'));
-  await waitFor(() => expect(selectCreativeDirection).toHaveBeenCalledWith(
-    'project_1', 'candidate_2', 'designer_1', 'studio_job_create',
-  ));
+  await waitFor(() => expect(completeCreativeDirectionReview).toHaveBeenCalledWith({
+    projectId: 'project_1', selectedCandidateId: 'candidate_2', retained: [],
+    createdBy: 'designer_1', studioJobId: 'studio_job_create',
+  }));
   expect(onSave).toHaveBeenCalledWith(expect.objectContaining({
     selectedAssetId: 'candidate_2',
+  }));
+});
+
+test('keeps the complete review staged after an atomic commit error and retries the same decision', async () => {
+  const completedProject = {
+    ...creativeProject(3),
+    selected_candidate_asset_id: 'candidate_3',
+    active_asset_id: 'candidate_3',
+  };
+  const completeCreativeDirectionReview = jest.fn()
+    .mockResolvedValueOnce({
+      data: null,
+      error: {
+        code: 'NETWORK_ERROR', category: 'network', status: 0,
+        message: 'Connection lost before the response.', retryable: true,
+      },
+      status: 0,
+    })
+    .mockResolvedValueOnce({
+      data: { project: completedProject, retained_variations: [] },
+      error: null,
+      status: 200,
+    });
+  const onSave = jest.fn();
+  await render(<StudioCreateWorkspace
+    gateway={{
+      createFromPrompt: jest.fn(), createFromDrawing: jest.fn(),
+      completeCreativeDirectionReview,
+    } as CreateGateway}
+    owner="designer_1"
+    resumeProject={creativeProject(3)}
+    resumeStudioJobId="studio_job_create"
+    onSave={onSave}
+  />);
+
+  await fireEvent.press(screen.getAllByText('Keep as variation')[0]);
+  await fireEvent.press(screen.getByLabelText('Direction 3'));
+  const continueLabel = 'Continue with Direction 3 · keep 1 variation';
+  await fireEvent.press(screen.getByText(continueLabel));
+
+  await waitFor(() => expect(completeCreativeDirectionReview).toHaveBeenCalledTimes(1));
+  expect(onSave).not.toHaveBeenCalled();
+  expect(await screen.findByText(continueLabel)).toBeTruthy();
+
+  await fireEvent.press(screen.getByText(continueLabel));
+  await waitFor(() => expect(completeCreativeDirectionReview).toHaveBeenCalledTimes(2));
+  expect(completeCreativeDirectionReview.mock.calls[0]).toEqual(
+    completeCreativeDirectionReview.mock.calls[1],
+  );
+  expect(onSave).toHaveBeenCalledTimes(1);
+  expect(onSave).toHaveBeenCalledWith(expect.objectContaining({
+    project: completedProject,
+    selectedAssetId: 'candidate_3',
   }));
 });
 
@@ -194,7 +244,7 @@ test('keeps an already-created direction set when the designer starts another br
   }));
   await render(<StudioCreateWorkspace
     gateway={{
-      createFromPrompt, createFromDrawing: jest.fn(), selectCreativeDirection: jest.fn(),
+      createFromPrompt, createFromDrawing: jest.fn(), completeCreativeDirectionReview: jest.fn(),
     } as CreateGateway}
     owner="designer_1"
     initialSentence="First direction"
@@ -231,7 +281,7 @@ test('sends every enabled role with the master geometry input', async () => {
     gateway: {
       createFromPrompt,
       createFromDrawing: createProjectFromDrawing,
-      selectCreativeDirection: jest.fn(),
+      completeCreativeDirectionReview: jest.fn(),
     } as unknown as CreateGateway,
     owner: 'designer_1',
     onRequestReference,
@@ -275,7 +325,7 @@ test('starts from a master image without forcing a sentence', async () => {
   await render(React.createElement(StudioCreateWorkspace, {
     gateway: {
       createFromPrompt: jest.fn(), createFromDrawing,
-      selectCreativeDirection: jest.fn(),
+      completeCreativeDirectionReview: jest.fn(),
     } as unknown as CreateGateway,
     owner: 'designer_1',
     initialReferences: [master],
@@ -306,7 +356,7 @@ test('surfaces picker failures instead of leaving Add as a silent dead end', asy
     gateway: {
       createFromPrompt: jest.fn(),
       createFromDrawing: jest.fn(),
-      selectCreativeDirection: jest.fn(),
+      completeCreativeDirectionReview: jest.fn(),
     } as unknown as CreateGateway,
     owner: 'designer_1',
     onRequestReference,
@@ -331,7 +381,7 @@ test('does not expose backend diagnostics when generation fails', async () => {
         status: 500,
       })),
       createFromDrawing: jest.fn(),
-      selectCreativeDirection: jest.fn(),
+      completeCreativeDirectionReview: jest.fn(),
     } as unknown as CreateGateway,
     owner: 'designer_1',
     onSave: jest.fn(),
@@ -348,7 +398,7 @@ test('explains when image selection is unavailable instead of silently ignoring 
     gateway: {
       createFromPrompt: jest.fn(),
       createFromDrawing: jest.fn(),
-      selectCreativeDirection: jest.fn(),
+      completeCreativeDirectionReview: jest.fn(),
     } as unknown as CreateGateway,
     owner: 'designer_1',
     onSave: jest.fn(),
