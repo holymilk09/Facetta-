@@ -53,6 +53,7 @@ export interface StudioRefineWorkspaceProps {
   createdBy: string;
   sourceImageUrl?: string | null;
   initialAdvancedFactsOpen?: boolean;
+  onReviewStartingDesign?: () => void;
   onApplied: (project: ProjectDetail) => void;
   onVariationCreated?: (project: ProjectDetail) => void;
   imageRequestHeaders?: Readonly<Record<string, string>>;
@@ -140,7 +141,7 @@ function friendlyFactOption(value: string): string {
 
 export function StudioRefineWorkspace({
   api, gateway, lineage, createdBy, sourceImageUrl = null, initialAdvancedFactsOpen = false,
-  onApplied, onVariationCreated,
+  onReviewStartingDesign, onApplied, onVariationCreated,
   imageRequestHeaders, resumeReviewJobId, reviewSourceIsActive = true,
 }: StudioRefineWorkspaceProps) {
   const exactLineage = hasExactSpecification(lineage) ? lineage : null;
@@ -814,7 +815,15 @@ export function StudioRefineWorkspace({
       )}
 
       {!exactSpecification && (
-        <Notice kind="info" text="Design facts are not confirmed yet. You can refine appearance or a marked region; component and construction changes unlock after those facts are reviewed." />
+        <View style={styles.startingFactsCard}>
+          <View style={styles.startingFactsCopy}>
+            <Text style={styles.advancedDisclosureTitle}>Unlock precise ring edits</Text>
+            <Text style={styles.pathHelp}>For a ring direction, review the image-derived starting facts before changing components or construction. Estimates stay clearly separate from facts you confirm.</Text>
+          </View>
+          {onReviewStartingDesign !== undefined && (
+            <Button title="Review starting design" kind="ghost" onPress={onReviewStartingDesign} />
+          )}
+        </View>
       )}
 
       {targetingError !== null && <Notice kind="error" text={targetingError} />}
@@ -1009,6 +1018,11 @@ const styles = StyleSheet.create({
   advancedDisclosureOpen: { borderColor: theme.accent, backgroundColor: theme.card },
   advancedDisclosureCopy: { flex: 1 },
   advancedDisclosureTitle: { color: theme.ink, fontWeight: '700', fontSize: 14, marginBottom: 3 },
+  startingFactsCard: {
+    borderWidth: 1, borderColor: theme.accent, borderRadius: radius.md, padding: 13,
+    backgroundColor: theme.card, flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 12,
+  },
+  startingFactsCopy: { flexGrow: 1, flexShrink: 1, flexBasis: 360 },
   disclosureGlyph: { color: theme.accent, fontSize: 22, fontWeight: '500' },
   disabledCard: { opacity: 0.48 },
   pathCard: { width: 180, borderWidth: 1, borderColor: theme.line, borderRadius: radius.md, padding: 12, backgroundColor: theme.card },

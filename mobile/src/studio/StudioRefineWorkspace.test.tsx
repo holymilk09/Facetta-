@@ -146,10 +146,12 @@ describe('StudioRefineWorkspace', () => {
         lineage={{ projectId: 'project_1', sourceAssetId: 'asset_2', sourceDesignVersion: 2 }}
         sourceImageUrl="https://test/source.png"
         createdBy="designer"
+        onReviewStartingDesign={jest.fn()}
         onApplied={onApplied}
       />,
     );
 
+    expect(screen.queryByText('Review starting design')).toBeNull();
     expect(screen.getByText('1 requested output × 20 credits = estimated 20 credits')).toBeTruthy();
     await act(async () => { fireEvent.press(await screen.findByText('Preview change')); });
     expect(await screen.findByText('Nothing has changed yet.')).toBeTruthy();
@@ -306,6 +308,7 @@ describe('StudioRefineWorkspace', () => {
       }, error: null, status: 201,
     }));
     const onApplied = jest.fn();
+    const onReviewStartingDesign = jest.fn();
     await renderWithAuth(
       <StudioRefineWorkspace
         api={{ getComponentCatalog, getStudioComponentTargeting: getReadyTargeting, readMarkup: jest.fn() }}
@@ -317,13 +320,17 @@ describe('StudioRefineWorkspace', () => {
         lineage={{ projectId: 'project_1', sourceAssetId: 'creative_1' }}
         sourceImageUrl="https://test/source.png"
         createdBy="designer"
+        onReviewStartingDesign={onReviewStartingDesign}
         onApplied={onApplied}
       />,
     );
 
     expect(getComponentCatalog).not.toHaveBeenCalled();
     expect(screen.getByLabelText('Component refine mode').props.accessibilityState.disabled).toBe(true);
-    expect(screen.getByText(/Design facts are not confirmed yet/i)).toBeTruthy();
+    expect(screen.getByText('Unlock precise ring edits')).toBeTruthy();
+    expect(screen.getByText(/image-derived starting facts/i)).toBeTruthy();
+    await act(async () => { fireEvent.press(screen.getByText('Review starting design')); });
+    expect(onReviewStartingDesign).toHaveBeenCalledTimes(1);
     await act(async () => {
       fireEvent.changeText(
         screen.getByPlaceholderText(/make the presentation softer/i),
@@ -342,6 +349,32 @@ describe('StudioRefineWorkspace', () => {
     await act(async () => { fireEvent.press(screen.getByText('Apply as new revision')); });
     await waitFor(() => expect(onApplied).toHaveBeenCalledWith(preSpecProject));
     expect(preSpecProject.active_design_version).toBeNull();
+  });
+
+  test('does not offer starting-design review without an eligible selected visual', async () => {
+    await renderWithAuth(
+      <StudioRefineWorkspace
+        api={{
+          getComponentCatalog: jest.fn(),
+          getStudioComponentTargeting: getReadyTargeting,
+          readMarkup: jest.fn(),
+        }}
+        gateway={{
+          previewVisualRefine: jest.fn(), applyVisualRefine: jest.fn(),
+          discardVisualRefine: jest.fn(), previewCatalogRefine: jest.fn(),
+          applyCatalogRefine: jest.fn(), discardCatalogRefine: jest.fn(),
+          previewMarkupRefine: jest.fn(), applyMarkupRefine: jest.fn(),
+          discardMarkupRefine: jest.fn(),
+        }}
+        lineage={{ projectId: 'project_1', sourceAssetId: 'source_not_confirmable' }}
+        sourceImageUrl="https://test/source.png"
+        createdBy="designer"
+        onApplied={jest.fn()}
+      />,
+    );
+
+    expect(screen.getByText('Unlock precise ring edits')).toBeTruthy();
+    expect(screen.queryByText('Review starting design')).toBeNull();
   });
 
   test('routes pre-spec annotation through exact saved markup provenance', async () => {

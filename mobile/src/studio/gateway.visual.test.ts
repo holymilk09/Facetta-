@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { createStudioGateway } from './gateway';
-import type { ImageQualityReport, ProjectDetail } from '../trusted/types';
+import type { ImageQualityReport, ProjectDetail, StudioJobRecord } from '../trusted/types';
 
 const ok = <T>(data: T, status = 200) => ({ data, error: null, status } as const);
 
@@ -18,6 +18,19 @@ const quality = (verdict: 'pass' | 'warn' | 'fail' = 'pass'): ImageQualityReport
     key: 'geometry', label: 'Geometry', verdict,
     severity: 'hard', message: verdict === 'fail' ? 'Outside drift exceeded.' : 'Preserved.',
   }],
+});
+
+const studioJob = (status: StudioJobRecord['status']): StudioJobRecord => ({
+  job_id: 'job_visual', owner: 'designer_1', action_id: 'refine',
+  lane: 'trusted_structural', status, progress: status === 'queued' ? 0 : 0.05,
+  active_design_id: 'project_visual', source_revision_id: 'asset_source',
+  error_code: null, created_at: '2026-07-12T00:00:00Z',
+  updated_at: '2026-07-12T00:00:00Z',
+  billing: {
+    requested_outputs: 1, credits_per_output: 20, estimated_credits: 20,
+    completed_outputs: 0, charged_outputs: 0, charged_credits: 0,
+    policy: 'Only accepted requested outputs are charged.',
+  },
 });
 
 const asset = (assetId: string, parentAssetId: string | null, revision: number) => ({
@@ -165,6 +178,53 @@ test('discard is terminal and never returns a changed project', async () => {
     candidateId: 'candidate_discard', createdBy: 'designer_1',
   });
   assert.equal(replay.error?.code, 'CANDIDATE_NOT_REVIEWABLE');
+});
+
+test('tracked visual discard relies on atomic backend settlement without client cancellation', async () => {
+  const transitions: string[] = [];
+  let cancellations = 0;
+  const client = {
+    ...baseClient(),
+    createStudioJob: async () => ok(studioJob('queued'), 201),
+    transitionStudioJob: async (_jobId: string, request: any) => {
+      transitions.push(request.status);
+      return ok(studioJob(request.status));
+    },
+    cancelStudioJob: async () => {
+      cancellations += 1;
+      return ok(studioJob('canceled'));
+    },
+    createVisualPreview: async (_projectId: string, request: any) => {
+      assert.equal(request.studio_job_id, 'job_visual');
+      return ok({
+        project_id: 'project_visual', source_asset_id: 'asset_source',
+        image_run_id: 'run_tracked_discard',
+        candidate: {
+          candidate_id: 'candidate_tracked_discard',
+          preview_url: 'https://facetta.test/tracked-preview.png',
+          save_as_variation_url: 'https://facetta.test/studio/image-runs/run_tracked_discard/visual-candidates/candidate_tracked_discard/save-as-variation',
+          verdict: 'pass' as const, qa: quality(),
+        },
+      }, 201);
+    },
+    discardVisualPreview: async () => ok({
+      status: 'discarded' as const, project_id: 'project_visual',
+      source_asset_id: 'asset_source', candidate_id: 'candidate_tracked_discard',
+    }),
+  };
+  const gateway = createStudioGateway(client as any, { trackJobs: true });
+  const preview = await gateway.previewVisualRefine({
+    projectId: 'project_visual', sourceAssetId: 'asset_source',
+    createdBy: 'designer_1', instruction: 'soften the reflection', scope: 'appearance',
+  });
+  assert.equal(preview.error, null);
+  const discarded = await gateway.discardVisualRefine({
+    candidateId: 'candidate_tracked_discard', createdBy: 'designer_1',
+  });
+  assert.equal(discarded.error, null);
+  assert.equal(discarded.data?.candidate.status, 'discarded');
+  assert.deepEqual(transitions, ['running']);
+  assert.equal(cancellations, 0);
 });
 
 test('failed-fidelity visual candidates cannot become canonical', async () => {

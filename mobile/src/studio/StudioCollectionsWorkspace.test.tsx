@@ -316,7 +316,8 @@ describe('StudioCollectionsWorkspace', () => {
     );
 
     expect(await screen.findByText('Client beauty render')).toBeTruthy();
-    expect(screen.getByText('Source revision unavailable · lineage not shown')).toBeTruthy();
+    expect(screen.getByText('Source details unavailable')).toBeTruthy();
+    expect(screen.queryByText(/lineage/i)).toBeNull();
     expect(screen.queryByText(/exact source retained/i)).toBeNull();
   });
 

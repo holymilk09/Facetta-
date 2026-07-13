@@ -117,7 +117,7 @@ test('stages sibling variations locally and commits them only with the explicit 
   expect(await screen.findByText('Which direction do you want to refine?')).toBeTruthy();
   expect(screen.getByText(/Your choice becomes the Original/i)).toBeTruthy();
   expect(screen.getByText(/keep as a sibling variation/i)).toBeTruthy();
-  expect(screen.getByText('Keep these directions & start another')).toBeTruthy();
+  expect(screen.getByText('Leave in Activity & start another')).toBeTruthy();
   expect(screen.getByLabelText('Direction 1 preview').props.source.headers).toEqual({
     Authorization: 'Bearer first-party-token',
   });
@@ -205,7 +205,7 @@ test('keeps an already-created direction set when the designer starts another br
   expect(await screen.findByText(/Your choice becomes the Original/i)).toBeTruthy();
   await fireEvent.press(screen.getAllByText('Keep as variation')[0]);
   expect(screen.getByText('Continue with Direction 1 · keep 1 variation')).toBeTruthy();
-  await fireEvent.press(screen.getByText('Keep these directions & start another'));
+  await fireEvent.press(screen.getByText('Leave in Activity & start another'));
   expect(await screen.findByLabelText('Design sentence')).toBeTruthy();
   expect(screen.queryByText(/Your choice becomes the Original/i)).toBeNull();
   await fireEvent.press(screen.getByText('Create 2 directions'));

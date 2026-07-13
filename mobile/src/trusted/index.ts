@@ -41,10 +41,6 @@ export type {
   CatalogFactoryDelta,
   ComponentCatalogPanelProps,
 } from './ComponentCatalogPanel';
-export { TrustedWorkflowScreen } from './TrustedWorkflowScreen';
-export type { TrustedWorkflowScreenProps } from './TrustedWorkflowScreen';
-export { TrustedWorkspaceEntry } from './TrustedWorkspaceEntry';
-export type { TrustedWorkspaceEntryProps } from './TrustedWorkspaceEntry';
 export {
   changedSourceCoverageResolutions,
   sourceCoverageAllowsCreation,

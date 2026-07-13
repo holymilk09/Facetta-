@@ -22,12 +22,13 @@ The production Studio shell also removes avoidable navigation repetition:
 action workspaces use one compact return control, returning designers can open
 saved work directly from Studio, and Activity polls only while work is queued
 or running. Ring-only fact confirmation is no longer presented as a universal
-primary action. It is explicitly labeled `Ring facts` under More. Factory
+primary action. Pre-spec Refine links directly to `Review starting design`,
+and the same ring-truthful workflow is labeled `Starting design facts` under More. Factory
 language remains absent until the backend reports that the exact revision is
-both entitled and eligible; the older readiness registry entry is retained
-internally during migration but is not visible.
+both entitled and eligible. The duplicate legacy readiness entry is removed
+from the public Studio action contract; compatibility readers remain internal.
 
-Local validation at this checkpoint: 1,467 backend tests, 234 Jest tests, 61
+Local validation at this checkpoint: 1,478 backend tests, 236 Jest tests, 64
 Studio contract tests, TypeScript, Ruff, Expo web export, and the production
 TypeScript-client -> HTTP -> FastAPI acceptance all pass. The acceptance covers
 ten mixed-source projects plus a confirmed ring `stone.cut` preview/Apply
@@ -65,7 +66,7 @@ tie-breaking. This is intentionally described as project activity—not the
 newest immutable design revision—because presentation and marketing work can
 also advance a variation's `updated_at` timestamp.
 
-Local validation for this checkpoint: 1,467 backend tests, 234 Jest tests, 61
+Local validation for this checkpoint: 1,478 backend tests, 236 Jest tests, 64
 Studio contract tests, TypeScript, Ruff, production OpenAPI surface equality,
 Expo web export, the ten-project production client-to-HTTP matrix, and its
 confirmed ring structural preview/Apply journey all pass. The structural

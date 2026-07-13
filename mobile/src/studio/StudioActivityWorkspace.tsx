@@ -37,7 +37,7 @@ const ACTION_LABELS: Record<StudioJobAction, string> = {
 const STATUS_LABELS: Record<StudioJobStatus, string> = {
   queued: 'Waiting',
   running: 'Creating',
-  reviewing: 'Checking result',
+  reviewing: 'Ready to review',
   succeeded: 'Ready',
   failed: 'Did not finish',
   canceled: 'Canceled',

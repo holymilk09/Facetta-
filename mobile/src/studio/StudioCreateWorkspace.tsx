@@ -343,7 +343,7 @@ export function StudioCreateWorkspace({
             setSavedCandidateIds(new Set());
             setOriginalLocked(false);
           }}>
-            <Text style={styles.secondaryButtonText}>Keep these directions &amp; start another</Text>
+            <Text style={styles.secondaryButtonText}>Leave in Activity &amp; start another</Text>
           </Pressable>
           <Pressable
             accessibilityRole="button"

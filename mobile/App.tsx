@@ -359,7 +359,7 @@ export default function App() {
         <LoginScreen
           onSignIn={(s) => {
             if (sessionAccessToken(s) === null) {
-              throw new Error('This sign-in method is not connected to Facetta’s authenticated API yet.');
+              throw new Error('This sign-in method is not available yet. Please choose another option.');
             }
             adoptAuthenticatedSession(s);
           }}
@@ -568,6 +568,9 @@ export default function App() {
               reviewSourceIsActive={activityReview?.job.action_id === 'refine'
                 ? activityReview.sourceIsActive : true}
               initialAdvancedFactsOpen={selectedActionId === 'specifications'}
+              onReviewStartingDesign={confirmStudioLineage !== null
+                ? () => openStudioAction('confirm')
+                : undefined}
               onApplied={(project) => {
                 setStudioProject(project);
                 setSelectedCreativeAssetId(project.active_asset_id);
@@ -633,7 +636,7 @@ export default function App() {
               onContinueRefining={() => openStudioAction('refine')}
               onOpenCollections={() => setTab('collections')}
             />
-          ) : selectedActionId === 'factory' || selectedActionId === 'factory_readiness' ? (
+          ) : selectedActionId === 'factory' ? (
             <StudioFactoryWorkspace
               api={studioGateway}
               lineage={exactStudioLineage}
@@ -645,7 +648,7 @@ export default function App() {
             <View style={styles.workspaceNotice}>
               <Text style={styles.workspaceNoticeTitle}>{getStudioAction(selectedActionId).label}</Text>
               <Text style={styles.workspaceNoticeBody}>
-                This destination will use the exact active revision. It is hidden from production use until its preview-and-accept contract is complete.
+                This destination will use the exact active revision. It will appear here when it is ready to use.
               </Text>
             </View>
           )}

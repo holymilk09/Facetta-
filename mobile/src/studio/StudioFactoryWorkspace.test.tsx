@@ -63,6 +63,8 @@ describe('StudioFactoryWorkspace', () => {
       lineage={lineage} createdBy="designer" deliverProtectedFile={deliverProtectedFile} />);
 
     expect(screen.getByText('1 requested output × 28 credits = estimated 28 credits')).toBeTruthy();
+    expect(screen.getByText('You pay only for a usable requested output. Unsuccessful results cost 0 credits.')).toBeTruthy();
+    expect(screen.queryByText(/internal retries/i)).toBeNull();
     await act(async () => { fireEvent.press(screen.getByText('Prepare production-review material')); });
     await waitFor(() => expect(screen.getByText('Review material prepared')).toBeTruthy());
     expect(createStudioJob).toHaveBeenCalledWith(expect.objectContaining({

@@ -29,10 +29,22 @@ from facetta.studio_jobs import studio_job_action_definition
 
 
 _TTL_SECONDS = 2 * 60 * 60
+_JOB_RESERVATION_TTL_SECONDS = 15 * 60
+_JOB_RESERVATION_KIND = "studio_visual"
 
 
 class StudioVisualCandidateUnavailable(LookupError):
     """The candidate is foreign, expired, terminal, or has stale lineage."""
+
+
+class StudioVisualJobError(ValueError):
+    """A visual Refine request is not bound to one canonical Activity job."""
+
+    def __init__(self, code: str, detail: str, *, status_code: int = 409):
+        self.code = code
+        self.detail = detail
+        self.status_code = status_code
+        super().__init__(detail)
 
 
 @dataclass(frozen=True)
@@ -117,6 +129,7 @@ def _settle_zero_output_job(
         job.status = status
         job.progress = 1
         job.error_code = error_code
+        job.reservation_kind = None
         job.updated_at = utcnow()
         return
     if job.status == status and job.error_code == error_code:
@@ -124,6 +137,190 @@ def _settle_zero_output_job(
     raise StudioVisualCandidateUnavailable(
         f"the visual preview Studio Refine job is already {job.status}"
     )
+
+
+def expire_stale_studio_visual_reservations(
+    db: Session,
+    *,
+    owner: str | None = None,
+    job_id: str | None = None,
+) -> int:
+    """Fail crash-orphaned visual reservations without charging an output.
+
+    Provider work intentionally runs outside a database transaction. A process
+    can therefore disappear after reserving Activity but before it stores an
+    ImageRun or candidate. Activity reads and retries lazily recover only the
+    exact reservation marker, only after its lease has elapsed, and only when
+    no candidate was persisted.
+    """
+
+    cutoff = utcnow() - timedelta(seconds=_JOB_RESERVATION_TTL_SECONDS)
+    query = select(StudioJobRecord).where(
+        StudioJobRecord.action_id == "refine",
+        StudioJobRecord.status == "reviewing",
+        StudioJobRecord.reservation_kind == _JOB_RESERVATION_KIND,
+        StudioJobRecord.updated_at <= cutoff,
+    )
+    if owner is not None:
+        query = query.where(StudioJobRecord.owner == owner)
+    if job_id is not None:
+        query = query.where(StudioJobRecord.id == job_id)
+    jobs = list(db.scalars(query.order_by(StudioJobRecord.id).with_for_update()))
+    expired = 0
+    for job in jobs:
+        candidate_id = db.scalar(select(PreviewCandidateRecord.id).where(
+            PreviewCandidateRecord.studio_job_id == job.id,
+        ))
+        if candidate_id is not None:
+            continue
+        job.status = "failed"
+        job.progress = 1
+        job.completed_outputs = 0
+        job.charged_outputs = 0
+        job.error_code = "visual_preview_reservation_expired"
+        job.reservation_kind = None
+        job.updated_at = utcnow()
+        expired += 1
+    if expired:
+        db.commit()
+    return expired
+
+
+def reserve_studio_visual_job(
+    db: Session,
+    *,
+    job_id: str,
+    owner: str,
+    project_root_id: str,
+    source_asset_id: str,
+) -> None:
+    """Claim one exact Refine job before validation or provider work begins."""
+
+    expired = expire_stale_studio_visual_reservations(
+        db, owner=owner, job_id=job_id,
+    )
+    if expired:
+        raise StudioVisualJobError(
+            "visual_preview_job_reservation_expired",
+            "the previous visual generation stopped before producing a reviewable output; "
+            "start a new Refine request",
+        )
+
+    job = db.scalar(select(StudioJobRecord).where(
+        StudioJobRecord.id == job_id,
+    ).with_for_update())
+    canonical = studio_job_action_definition("refine")
+    if job is None or job.owner != owner:
+        raise StudioVisualJobError(
+            "visual_preview_job_unavailable",
+            "the Studio Refine job is unavailable",
+            status_code=404,
+        )
+    if (
+        job.action_id != "refine"
+        or job.lane != canonical.lane
+        or job.credits_per_output != canonical.credits_per_output
+        or job.requested_outputs != 1
+    ):
+        raise StudioVisualJobError(
+            "visual_preview_job_invalid",
+            "this endpoint requires a canonical one-output Studio Refine job",
+            status_code=422,
+        )
+    if job.status != "running":
+        raise StudioVisualJobError(
+            "visual_preview_job_terminal",
+            f"the Studio Refine job cannot generate from {job.status}",
+        )
+    if db.scalar(select(PreviewCandidateRecord.id).where(
+        PreviewCandidateRecord.studio_job_id == job_id,
+    )) is not None:
+        raise StudioVisualJobError(
+            "visual_preview_job_terminal",
+            "the Studio Refine job already has an output",
+        )
+    for field, expected in (
+        ("active_design_id", project_root_id),
+        ("source_revision_id", source_asset_id),
+    ):
+        current = getattr(job, field)
+        if current is not None and current != expected:
+            raise StudioVisualJobError(
+                "visual_preview_job_lineage_mismatch",
+                "the Studio Refine job belongs to a different exact revision",
+                status_code=422,
+            )
+        setattr(job, field, expected)
+    # Reviewing is the durable server-side reservation. The candidate decision
+    # endpoint now owns every later terminal transition and its billing effect.
+    job.status = "reviewing"
+    job.progress = max(job.progress, 0.5)
+    job.error_code = None
+    job.reservation_kind = _JOB_RESERVATION_KIND
+    job.updated_at = utcnow()
+    db.commit()
+
+
+def fail_reserved_studio_visual_job(
+    db: Session,
+    *,
+    job_id: str,
+    owner: str,
+    error_code: str,
+) -> None:
+    """Atomically preserve pending evidence and close a reserved job uncharged."""
+
+    job = db.scalar(select(StudioJobRecord).where(
+        StudioJobRecord.id == job_id,
+    ).with_for_update())
+    if job is None or job.owner != owner:
+        db.rollback()
+        raise StudioVisualJobError(
+            "visual_preview_job_resolution_conflict",
+            "the reserved Studio Refine job cannot be failed",
+        )
+    if db.scalar(select(PreviewCandidateRecord.id).where(
+        PreviewCandidateRecord.studio_job_id == job_id,
+    )) is not None:
+        db.rollback()
+        raise StudioVisualJobError(
+            "visual_preview_job_resolution_conflict",
+            "a reviewable output already belongs to this Studio Refine job",
+        )
+    canonical = studio_job_action_definition("refine")
+    if (
+        job.action_id != "refine"
+        or job.lane != canonical.lane
+        or job.credits_per_output != canonical.credits_per_output
+        or job.requested_outputs != 1
+        or job.completed_outputs != 0
+        or job.charged_outputs != 0
+    ):
+        db.rollback()
+        raise StudioVisualJobError(
+            "visual_preview_job_resolution_conflict",
+            "the reserved Studio Refine job cannot be failed",
+        )
+    if job.status == "reviewing" and job.reservation_kind == _JOB_RESERVATION_KIND:
+        job.status = "failed"
+        job.progress = 1
+        job.error_code = error_code[:64]
+        job.reservation_kind = None
+        job.updated_at = utcnow()
+    elif job.status == "failed":
+        # A concurrent trusted failure may have won the job CAS. Keep that
+        # terminal reason, but commit any pending ImageRun/attempt evidence from
+        # this request instead of rolling it back or returning a secondary 500.
+        job.progress = 1
+        job.reservation_kind = None
+        job.updated_at = utcnow()
+    else:
+        db.rollback()
+        raise StudioVisualJobError(
+            "visual_preview_job_resolution_conflict",
+            "the reserved Studio Refine job cannot be failed",
+        )
+    db.commit()
 
 
 def _expire(db: Session, record: PreviewCandidateRecord) -> None:
@@ -248,12 +445,15 @@ def store_studio_visual_candidate(
     studio_job_id: str | None = None,
 ) -> StudioVisualCandidate:
     if studio_job_id is not None:
-        job = db.get(StudioJobRecord, studio_job_id)
+        job = db.scalar(select(StudioJobRecord).where(
+            StudioJobRecord.id == studio_job_id,
+        ).with_for_update())
         canonical = studio_job_action_definition("refine")
         if (job is None or job.owner != created_by or job.action_id != "refine"
                 or job.lane != canonical.lane
                 or job.credits_per_output != canonical.credits_per_output
-                or job.requested_outputs != 1 or job.status != "running"):
+                or job.requested_outputs != 1 or job.status != "reviewing"
+                or job.reservation_kind != _JOB_RESERVATION_KIND):
             raise StudioVisualCandidateUnavailable(
                 "the Studio Refine job is unavailable or invalid")
         for field, expected in (("active_design_id", project_root_id),
@@ -376,6 +576,25 @@ def resolve_studio_visual_candidate(
         raise StudioVisualCandidateUnavailable("the visual preview is unavailable")
     if status in {"applied", "saved_as_variation"} and terminal_asset_id is None:
         raise ValueError("accepted previews require a terminal asset")
+    if status == "discarded":
+        _settle_zero_output_job(
+            db, record, status="canceled", error_code=None,
+        )
+    elif record.studio_job_id is not None:
+        job = db.scalar(select(StudioJobRecord).where(
+            StudioJobRecord.id == record.studio_job_id,
+        ).with_for_update())
+        if (
+            job is None
+            or job.owner != owner
+            or job.status != "succeeded"
+            or job.completed_outputs != 1
+            or job.charged_outputs != 1
+        ):
+            raise StudioVisualCandidateUnavailable(
+                "the accepted visual preview Studio Refine job is unavailable"
+            )
+        job.reservation_kind = None
     record.status = status
     record.terminal_asset_id = terminal_asset_id
     record.review_id = review_id

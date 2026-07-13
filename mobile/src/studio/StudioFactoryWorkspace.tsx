@@ -308,7 +308,7 @@ export function StudioFactoryWorkspace({
             1 requested output × {FACTORY_CREDITS} credits = estimated {FACTORY_CREDITS} credits
           </Text>
           <Text style={styles.small}>
-            Failed preparation and internal retries are not charged. A successful verified pack charges once.
+            You pay only for a usable requested output. Unsuccessful results cost 0 credits.
           </Text>
           <Button
             title={busy ? 'Preparing review material…' : 'Prepare production-review material'}

@@ -168,6 +168,7 @@ describe('StudioActivityWorkspace', () => {
       onOpenReview={onOpenReview}
     />);
 
+    expect(await view.findByText('Ready to review')).toBeTruthy();
     await act(async () => { fireEvent.press(await view.findByText('Review result')); });
     expect(onOpenReview).toHaveBeenCalledWith(reviewing);
     expect(view.queryByText('Open design')).toBeNull();

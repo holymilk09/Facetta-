@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+from datetime import timedelta
 
 import pytest
 from fastapi.testclient import TestClient
@@ -12,6 +13,7 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from conftest import EXAMPLE_SPEC
+from facetta.api import studio as studio_api
 from facetta.api.studio import get_studio_visual_preview_generator
 from facetta.db import (
     ApprovalChecklist,
@@ -27,17 +29,22 @@ from facetta.db import (
     PreviewCandidateRecord,
     get_db,
     StudioJobRecord,
+    utcnow,
 )
 from facetta.image_agent import (
+    CheckSeverity,
     ImageOperation,
+    ImageProviderFailure,
     ImageQualityReport,
     JewelryImageAgent,
     ProviderImage,
+    QualityCheck,
     QualityVerdict,
     build_image_plan,
 )
 from facetta.main import app
 from facetta.studio_visual_candidates import (
+    StudioVisualCandidateUnavailable,
     clear_studio_visual_candidates_for_tests,
 )
 
@@ -150,6 +157,27 @@ def _preview(client: TestClient, **overrides):
         "/studio/projects/ast_selected/visual-previews", json=payload)
 
 
+def _running_refine_job(client: TestClient) -> str:
+    created = client.post("/studio/jobs", json={
+        "owner": "usr_studio",
+        "action_id": "refine",
+        "lane": "trusted_structural",
+        "active_design_id": "ast_selected",
+        "source_revision_id": "ast_selected",
+        "requested_outputs": 1,
+        "credits_per_output": 20,
+    })
+    assert created.status_code == 201, created.text
+    job_id = created.json()["job_id"]
+    running = client.patch(f"/studio/jobs/{job_id}", json={
+        "owner": "usr_studio",
+        "status": "running",
+        "progress": 0.05,
+    })
+    assert running.status_code == 200, running.text
+    return job_id
+
+
 def _counts(Session) -> dict[str, int]:
     with Session() as db:
         return {
@@ -253,23 +281,7 @@ def test_visual_apply_atomically_settles_accepted_studio_job(
     app.dependency_overrides[get_studio_visual_preview_generator] = (
         lambda: _generator([])
     )
-    created = client.post("/studio/jobs", json={
-        "owner": "usr_studio",
-        "action_id": "refine",
-        "lane": "trusted_structural",
-        "active_design_id": "ast_selected",
-        "source_revision_id": "ast_selected",
-        "requested_outputs": 1,
-        "credits_per_output": 20,
-    })
-    assert created.status_code == 201, created.text
-    job_id = created.json()["job_id"]
-    running = client.patch(f"/studio/jobs/{job_id}", json={
-        "owner": "usr_studio",
-        "status": "running",
-        "progress": 0.05,
-    })
-    assert running.status_code == 200, running.text
+    job_id = _running_refine_job(client)
 
     preview = _preview(client, studio_job_id=job_id)
     assert preview.status_code == 201, preview.text
@@ -291,6 +303,390 @@ def test_visual_apply_atomically_settles_accepted_studio_job(
         assert job.charged_outputs == 1
         assert job.active_design_id == "ast_selected"
         assert job.source_revision_id == "ast_selected"
+
+
+def test_visual_discard_atomically_cancels_bound_job_without_charge(
+    studio_preview_client,
+):
+    client, Session = studio_preview_client
+    app.dependency_overrides[get_studio_visual_preview_generator] = (
+        lambda: _generator([])
+    )
+    job_id = _running_refine_job(client)
+    preview = _preview(client, studio_job_id=job_id)
+    assert preview.status_code == 201, preview.text
+    body = preview.json()
+    with Session() as db:
+        reserved = db.get(StudioJobRecord, job_id)
+        assert reserved is not None
+        assert reserved.status == "reviewing"
+        assert reserved.completed_outputs == 0
+        assert reserved.charged_outputs == 0
+
+    discarded = client.post(
+        f"/studio/image-runs/{body['image_run_id']}/visual-candidates/"
+        f"{body['candidate']['candidate_id']}/discard",
+        json={
+            "created_by": "usr_studio",
+            "expected_active_asset_id": "ast_selected",
+        },
+    )
+    assert discarded.status_code == 200, discarded.text
+    with Session() as db:
+        job = db.get(StudioJobRecord, job_id)
+        candidate = db.get(
+            PreviewCandidateRecord, body["candidate"]["candidate_id"])
+        assert job is not None
+        assert job.status == "canceled"
+        assert job.progress == 1
+        assert job.completed_outputs == 0
+        assert job.charged_outputs == 0
+        assert job.error_code is None
+        assert candidate is not None and candidate.status == "discarded"
+        assert db.scalar(select(func.count()).select_from(
+            ProjectRevisionRecord)) == 0
+
+
+def test_visual_reserved_job_rejects_public_terminal_transition(
+    studio_preview_client,
+):
+    client, Session = studio_preview_client
+    app.dependency_overrides[get_studio_visual_preview_generator] = (
+        lambda: _generator([])
+    )
+    job_id = _running_refine_job(client)
+    preview = _preview(client, studio_job_id=job_id)
+    assert preview.status_code == 201, preview.text
+
+    raced = client.patch(f"/studio/jobs/{job_id}", json={
+        "owner": "usr_studio",
+        "status": "failed",
+        "progress": 1,
+        "error_code": "stale_client_failure",
+    })
+    assert raced.status_code == 409, raced.text
+    assert "candidate decision" in raced.json()["detail"]
+    body = preview.json()
+    discarded = client.post(
+        f"/studio/image-runs/{body['image_run_id']}/visual-candidates/"
+        f"{body['candidate']['candidate_id']}/discard",
+        json={
+            "created_by": "usr_studio",
+            "expected_active_asset_id": "ast_selected",
+        },
+    )
+    assert discarded.status_code == 200, discarded.text
+    with Session() as db:
+        job = db.get(StudioJobRecord, job_id)
+        assert job is not None
+        assert job.status == "canceled"
+        assert job.reservation_kind is None
+        assert job.completed_outputs == 0
+        assert job.charged_outputs == 0
+
+
+def test_orphaned_visual_reservation_expires_before_safe_retry(
+    studio_preview_client,
+):
+    client, Session = studio_preview_client
+    calls: list[dict] = []
+    app.dependency_overrides[get_studio_visual_preview_generator] = (
+        lambda: _generator(calls)
+    )
+    job_id = _running_refine_job(client)
+    with Session() as db:
+        job = db.get(StudioJobRecord, job_id)
+        assert job is not None
+        job.status = "reviewing"
+        job.progress = 0.5
+        job.reservation_kind = "studio_visual"
+        job.updated_at = utcnow() - timedelta(minutes=16)
+        db.commit()
+
+    recovered = _preview(client, studio_job_id=job_id)
+    assert recovered.status_code == 409, recovered.text
+    assert recovered.json()["code"] == "visual_preview_job_reservation_expired"
+    assert calls == []
+    with Session() as db:
+        job = db.get(StudioJobRecord, job_id)
+        assert job is not None
+        assert job.status == "failed"
+        assert job.error_code == "visual_preview_reservation_expired"
+        assert job.reservation_kind is None
+        assert job.completed_outputs == 0
+        assert job.charged_outputs == 0
+
+
+def test_activity_read_recovers_orphaned_visual_reservation(
+    studio_preview_client,
+):
+    client, Session = studio_preview_client
+    job_id = _running_refine_job(client)
+    with Session() as db:
+        job = db.get(StudioJobRecord, job_id)
+        assert job is not None
+        job.status = "reviewing"
+        job.progress = 0.5
+        job.reservation_kind = "studio_visual"
+        job.updated_at = utcnow() - timedelta(minutes=16)
+        db.commit()
+
+    activity = client.get("/studio/jobs", params={"owner": "usr_studio"})
+    assert activity.status_code == 200, activity.text
+    recovered = next(
+        job for job in activity.json()["jobs"] if job["job_id"] == job_id
+    )
+    assert recovered["status"] == "failed"
+    assert recovered["error_code"] == "visual_preview_reservation_expired"
+    assert recovered["billing"]["charged_outputs"] == 0
+
+
+def test_visual_reservation_rejects_foreign_invalid_reused_and_misbound_jobs(
+    studio_preview_client,
+):
+    client, Session = studio_preview_client
+    calls: list[dict] = []
+    app.dependency_overrides[get_studio_visual_preview_generator] = (
+        lambda: _generator(calls)
+    )
+
+    foreign_job = _running_refine_job(client)
+    foreign = _preview(
+        client, studio_job_id=foreign_job, created_by="usr_intruder",
+    )
+    assert foreign.status_code == 404
+    assert foreign.json()["code"] == "visual_preview_job_unavailable"
+
+    invalid_job = _running_refine_job(client)
+    with Session() as db:
+        job = db.get(StudioJobRecord, invalid_job)
+        assert job is not None
+        job.requested_outputs = 2
+        db.commit()
+    invalid = _preview(client, studio_job_id=invalid_job)
+    assert invalid.status_code == 422
+    assert invalid.json()["code"] == "visual_preview_job_invalid"
+
+    misbound_job = _running_refine_job(client)
+    with Session() as db:
+        job = db.get(StudioJobRecord, misbound_job)
+        assert job is not None
+        job.source_revision_id = "ast_other_revision"
+        db.commit()
+    misbound = _preview(client, studio_job_id=misbound_job)
+    assert misbound.status_code == 422
+    assert misbound.json()["code"] == "visual_preview_job_lineage_mismatch"
+
+    reused_job = _running_refine_job(client)
+    first = _preview(client, studio_job_id=reused_job)
+    assert first.status_code == 201, first.text
+    reused = _preview(client, studio_job_id=reused_job)
+    assert reused.status_code == 409
+    assert reused.json()["code"] == "visual_preview_job_terminal"
+    assert len(calls) == 1
+
+
+def test_visual_failure_reconciliation_preserves_evidence_after_trusted_race(
+    studio_preview_client,
+):
+    client, Session = studio_preview_client
+    job_id = _running_refine_job(client)
+
+    def race_then_generate(source, instruction, scope, mask, variant):
+        with Session() as race_db:
+            job = race_db.get(StudioJobRecord, job_id)
+            assert job is not None and job.status == "reviewing"
+            job.status = "failed"
+            job.progress = 1
+            job.error_code = "trusted_competing_failure"
+            job.reservation_kind = None
+            race_db.commit()
+        return _generator([])(source, instruction, scope, mask, variant)
+
+    app.dependency_overrides[get_studio_visual_preview_generator] = (
+        lambda: race_then_generate
+    )
+    failed = _preview(client, studio_job_id=job_id)
+    assert failed.status_code == 409, failed.text
+    assert failed.json()["code"] == "visual_preview_candidate_unavailable"
+    with Session() as db:
+        job = db.get(StudioJobRecord, job_id)
+        runs = list(db.scalars(select(ImageRun)))
+        assert job is not None
+        assert job.status == "failed"
+        assert job.error_code == "trusted_competing_failure"
+        assert job.completed_outputs == 0
+        assert job.charged_outputs == 0
+        assert len(runs) == 1
+        assert runs[0].status == "failed"
+        assert db.scalar(select(func.count()).select_from(
+            PreviewCandidateRecord)) == 0
+
+
+def test_visual_provider_failure_atomically_fails_bound_job_without_charge(
+    studio_preview_client,
+):
+    client, Session = studio_preview_client
+
+    def fail_provider(source, instruction, scope, mask, variant):
+        plan = build_image_plan(
+            ImageOperation.REFERENCE_RENDER,
+            instruction,
+            source_image=source,
+            mask_bytes=mask,
+            mask_provenance=("test_markup" if mask is not None else None),
+            variant=variant,
+        )
+        raise ImageProviderFailure("provider unavailable", plan=plan)
+
+    app.dependency_overrides[get_studio_visual_preview_generator] = (
+        lambda: fail_provider
+    )
+    job_id = _running_refine_job(client)
+    failed = _preview(client, studio_job_id=job_id)
+    assert failed.status_code == 502, failed.text
+    assert failed.json()["code"] == "image_provider_failed"
+    with Session() as db:
+        job = db.get(StudioJobRecord, job_id)
+        run = db.scalar(select(ImageRun))
+        assert job is not None
+        assert job.status == "failed"
+        assert job.progress == 1
+        assert job.completed_outputs == 0
+        assert job.charged_outputs == 0
+        assert job.error_code == "image_provider_failed"
+        assert run is not None and run.status == "failed"
+        assert db.scalar(select(func.count()).select_from(
+            PreviewCandidateRecord)) == 0
+
+
+def test_visual_qa_failure_atomically_fails_bound_job_without_charge(
+    studio_preview_client,
+):
+    client, Session = studio_preview_client
+
+    def fail_quality(source, instruction, scope, mask, variant):
+        plan = build_image_plan(
+            ImageOperation.REFERENCE_RENDER,
+            instruction,
+            source_image=source,
+            mask_bytes=mask,
+            mask_provenance=("test_markup" if mask is not None else None),
+            variant=variant,
+        )
+
+        class Provider:
+            def execute(self, *_args, **_kwargs):
+                return ProviderImage(image_bytes=CANDIDATE)
+
+        class Evaluator:
+            def evaluate(self, *_args, **_kwargs):
+                return ImageQualityReport(
+                    verdict=QualityVerdict.FAIL,
+                    checks=(QualityCheck(
+                        code="source_design_preserved",
+                        passed=False,
+                        severity=CheckSeverity.HARD,
+                        message="geometry drifted",
+                    ),),
+                    score=20,
+                )
+
+        return JewelryImageAgent(Provider(), Evaluator()).run(
+            plan, source_image=source, mask_bytes=mask)
+
+    app.dependency_overrides[get_studio_visual_preview_generator] = (
+        lambda: fail_quality
+    )
+    job_id = _running_refine_job(client)
+    failed = _preview(client, studio_job_id=job_id)
+    assert failed.status_code == 422, failed.text
+    assert failed.json()["code"] == "image_quality_failed"
+    with Session() as db:
+        job = db.get(StudioJobRecord, job_id)
+        run = db.scalar(select(ImageRun))
+        assert job is not None
+        assert job.status == "failed"
+        assert job.completed_outputs == 0
+        assert job.charged_outputs == 0
+        assert job.error_code == "image_quality_failed"
+        assert run is not None and run.status == "failed"
+        assert db.scalar(select(func.count()).select_from(
+            PreviewCandidateRecord)) == 0
+
+
+def test_visual_candidate_store_failure_preserves_failed_evidence_and_job(
+    studio_preview_client,
+    monkeypatch,
+):
+    client, Session = studio_preview_client
+    app.dependency_overrides[get_studio_visual_preview_generator] = (
+        lambda: _generator([])
+    )
+
+    def reject_candidate(*_args, **_kwargs):
+        raise StudioVisualCandidateUnavailable(
+            "the generated output could not be bound to the reserved job")
+
+    monkeypatch.setattr(
+        studio_api, "store_studio_visual_candidate", reject_candidate)
+    job_id = _running_refine_job(client)
+    failed = _preview(client, studio_job_id=job_id)
+    assert failed.status_code == 409, failed.text
+    assert failed.json()["code"] == "visual_preview_candidate_unavailable"
+    with Session() as db:
+        job = db.get(StudioJobRecord, job_id)
+        runs = list(db.scalars(select(ImageRun)))
+        assert job is not None
+        assert job.status == "failed"
+        assert job.completed_outputs == 0
+        assert job.charged_outputs == 0
+        assert job.error_code == "visual_preview_candidate_unavailable"
+        assert len(runs) == 1
+        assert runs[0].status == "failed"
+        assert db.scalar(select(func.count()).select_from(
+            PreviewCandidateRecord)) == 0
+
+
+def test_stale_visual_request_fails_reserved_job_before_provider_work(
+    studio_preview_client,
+):
+    client, Session = studio_preview_client
+    calls: list[dict] = []
+    app.dependency_overrides[get_studio_visual_preview_generator] = (
+        lambda: _generator(calls)
+    )
+    job_id = _running_refine_job(client)
+    with Session() as db:
+        sibling = ImageAsset(
+            id="ast_new_selection",
+            root_id="ast_selected",
+            parent_asset_id="ast_selected",
+            design_version=None,
+            capability="CREATIVE_RENDER",
+            image=CANDIDATE,
+            media_type="image/png",
+            created_by="usr_studio",
+        )
+        db.add(sibling)
+        db.flush()
+        db.get(Project, "ast_selected").selected_candidate_asset_id = sibling.id
+        db.commit()
+
+    failed = _preview(client, studio_job_id=job_id)
+    assert failed.status_code == 409, failed.text
+    assert failed.json()["code"] == "stale_asset_revision"
+    assert calls == []
+    with Session() as db:
+        job = db.get(StudioJobRecord, job_id)
+        assert job is not None
+        assert job.status == "failed"
+        assert job.completed_outputs == 0
+        assert job.charged_outputs == 0
+        assert job.error_code == "stale_asset_revision"
+        assert db.scalar(select(func.count()).select_from(ImageRun)) == 0
+        assert db.scalar(select(func.count()).select_from(
+            PreviewCandidateRecord)) == 0
 
 
 def test_discard_is_terminal_and_creates_no_canonical_revision(
@@ -383,6 +779,41 @@ def test_visual_preview_saves_directly_as_independent_variation(
     assert repeated.status_code == 410
 
 
+def test_bound_visual_save_as_variation_charges_exactly_one_output(
+    studio_preview_client,
+):
+    client, Session = studio_preview_client
+    app.dependency_overrides[get_studio_visual_preview_generator] = (
+        lambda: _generator([])
+    )
+    job_id = _running_refine_job(client)
+    preview = _preview(client, studio_job_id=job_id)
+    assert preview.status_code == 201, preview.text
+    body = preview.json()
+
+    saved = client.post(
+        f"/studio/image-runs/{body['image_run_id']}/visual-candidates/"
+        f"{body['candidate']['candidate_id']}/save-as-variation",
+        json={"created_by": "usr_studio", "label": "Bound warm metal"},
+    )
+    assert saved.status_code == 201, saved.text
+    with Session() as db:
+        job = db.get(StudioJobRecord, job_id)
+        source = db.get(Project, "ast_selected")
+        candidate = db.get(
+            PreviewCandidateRecord, body["candidate"]["candidate_id"])
+        assert job is not None
+        assert job.status == "succeeded"
+        assert job.completed_outputs == 1
+        assert job.charged_outputs == 1
+        assert job.reservation_kind is None
+        assert source is not None
+        assert source.selected_candidate_asset_id == "ast_selected"
+        assert candidate is not None
+        assert candidate.status == "saved_as_variation"
+        assert candidate.terminal_asset_id == saved.json()["project"]["root_id"]
+
+
 def test_visual_apply_resolution_failure_rolls_back_canonical_append(
     studio_preview_client, monkeypatch,
 ):
@@ -423,30 +854,8 @@ def test_apply_rejects_stale_selected_visual_and_source_hash(
     app.dependency_overrides[get_studio_visual_preview_generator] = (
         lambda: _generator([])
     )
-    created = client.post("/studio/jobs", json={
-        "owner": "usr_studio",
-        "action_id": "refine",
-        "lane": "trusted_structural",
-        "active_design_id": "ast_selected",
-        "source_revision_id": "ast_selected",
-        "requested_outputs": 1,
-        "credits_per_output": 20,
-    })
-    assert created.status_code == 201, created.text
-    job_id = created.json()["job_id"]
-    running = client.patch(f"/studio/jobs/{job_id}", json={
-        "owner": "usr_studio",
-        "status": "running",
-        "progress": 0.05,
-    })
-    assert running.status_code == 200, running.text
+    job_id = _running_refine_job(client)
     first = _preview(client, studio_job_id=job_id).json()
-    reviewing = client.patch(f"/studio/jobs/{job_id}", json={
-        "owner": "usr_studio",
-        "status": "reviewing",
-        "progress": 0.9,
-    })
-    assert reviewing.status_code == 200, reviewing.text
     with Session() as db:
         sibling = ImageAsset(
             id="ast_other",

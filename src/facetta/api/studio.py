@@ -76,10 +76,14 @@ from facetta.studio_jobs import (
 )
 from facetta.studio_visual_candidates import (
     StudioVisualCandidateUnavailable,
+    StudioVisualJobError,
+    expire_stale_studio_visual_reservations,
+    fail_reserved_studio_visual_job,
     get_studio_visual_candidate,
     invalidate_studio_visual_candidate,
     list_studio_visual_candidates,
     remove_studio_visual_candidate,
+    reserve_studio_visual_job,
     store_studio_visual_candidate,
 )
 from facetta.studio_markup_candidates import (
@@ -465,9 +469,21 @@ def _studio_job(job: StudioJobRecord) -> dict:
     }
 
 
-def _owned_job(db: Session, job_id: str, owner: str) -> StudioJobRecord:
-    job = db.get(StudioJobRecord, job_id)
-    if job is None or job.owner != owner:
+def _owned_job(
+    db: Session,
+    job_id: str,
+    owner: str,
+    *,
+    for_update: bool = False,
+) -> StudioJobRecord:
+    query = select(StudioJobRecord).where(
+        StudioJobRecord.id == job_id,
+        StudioJobRecord.owner == owner,
+    )
+    if for_update:
+        query = query.with_for_update()
+    job = db.scalar(query)
+    if job is None:
         # Do not disclose another owner's job identity.
         raise HTTPException(status_code=404, detail=f"unknown Studio job '{job_id}'")
     return job
@@ -591,6 +607,7 @@ def list_studio_jobs(
     status: StudioJobStatus | None = None,
 ):
     principal_actor(principal, owner)
+    expire_stale_studio_visual_reservations(db, owner=owner)
     query = select(StudioJobRecord).where(StudioJobRecord.owner == owner)
     if status is not None:
         query = query.where(StudioJobRecord.status == status)
@@ -608,6 +625,9 @@ def get_studio_job(
     principal: PrincipalDep,
 ):
     principal_actor(principal, owner)
+    expire_stale_studio_visual_reservations(
+        db, owner=owner, job_id=job_id,
+    )
     return _studio_job(_owned_job(db, job_id, owner))
 
 
@@ -619,7 +639,7 @@ def transition_studio_job(
     principal: PrincipalDep,
 ):
     principal_actor(principal, request.owner)
-    job = _owned_job(db, job_id, request.owner)
+    job = _owned_job(db, job_id, request.owner, for_update=True)
     if (
         job.action_id == "factory"
         and job.status == "queued"
@@ -635,6 +655,18 @@ def transition_studio_job(
         raise HTTPException(
             status_code=409,
             detail=f"invalid Studio job transition: {job.status} -> {request.status}",
+        )
+    if (
+        job.action_id == "refine"
+        and job.status == "reviewing"
+        and job.reservation_kind == "studio_visual"
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "this visual Refine job is owned by its candidate decision; "
+                "use Apply, Save as Variation, or Discard"
+            ),
         )
     if request.progress < job.progress:
         raise HTTPException(status_code=409, detail="Studio job progress cannot move backward")
@@ -695,7 +727,7 @@ def cancel_studio_job(
     principal: PrincipalDep,
 ):
     principal_actor(principal, request.owner)
-    job = _owned_job(db, job_id, request.owner)
+    job = _owned_job(db, job_id, request.owner, for_update=True)
     if "canceled" not in _JOB_TRANSITIONS[job.status]:
         raise HTTPException(
             status_code=409,
@@ -851,6 +883,24 @@ def create_visual_preview(
 ):
     """Generate a temporary pre-spec appearance preview without mutation."""
 
+    if request.studio_job_id is not None:
+        try:
+            reserve_studio_visual_job(
+                db,
+                job_id=request.studio_job_id,
+                owner=request.created_by,
+                project_root_id=project_id,
+                source_asset_id=request.expected_active_asset_id,
+            )
+        except StudioVisualJobError as exc:
+            return JSONResponse(status_code=exc.status_code, content={
+                "code": exc.code,
+                "category": (
+                    "not_found" if exc.status_code == 404 else "validation"
+                    if exc.status_code == 422 else "conflict"
+                ),
+                "detail": exc.detail,
+            })
     try:
         project, source = _selected_pre_spec_visual(
             db,
@@ -868,6 +918,13 @@ def create_visual_preview(
             source=bytes(source.image),
         )
     except StudioHistoryError as exc:
+        if request.studio_job_id is not None:
+            fail_reserved_studio_visual_job(
+                db,
+                job_id=request.studio_job_id,
+                owner=request.created_by,
+                error_code=exc.code,
+            )
         return _error(exc)
 
     try:
@@ -887,18 +944,52 @@ def create_visual_preview(
                 project_root_id=project.root_id,
                 source_asset_id=source.id,
                 created_by=request.created_by,
+                commit=request.studio_job_id is None,
             )
             if exc.plan is not None else None
         )
+        if request.studio_job_id is not None:
+            fail_reserved_studio_visual_job(
+                db,
+                job_id=request.studio_job_id,
+                owner=request.created_by,
+                error_code=exc.code,
+            )
         return image_agent_error_response(exc, image_run_id=run_id)
+    except Exception:
+        if request.studio_job_id is not None:
+            fail_reserved_studio_visual_job(
+                db,
+                job_id=request.studio_job_id,
+                owner=request.created_by,
+                error_code="unexpected_generation_failure",
+            )
+        raise
 
     expected_hash = hashlib.sha256(bytes(source.image)).hexdigest()
     if (result.plan.operation is not ImageOperation.REFERENCE_RENDER
             or result.plan.source_hash != expected_hash):
+        run_id = persist_image_agent_result(
+            db,
+            result,
+            project_root_id=project.root_id,
+            source_asset_id=source.id,
+            created_by=request.created_by,
+            status_override="failed",
+            commit=request.studio_job_id is None,
+        )
+        if request.studio_job_id is not None:
+            fail_reserved_studio_visual_job(
+                db,
+                job_id=request.studio_job_id,
+                owner=request.created_by,
+                error_code="visual_preview_lineage_incomplete",
+            )
         return JSONResponse(status_code=500, content={
             "code": "visual_preview_lineage_incomplete",
             "category": "internal",
             "detail": "the generated preview is not bound to the exact selected source",
+            "image_run_id": run_id,
         })
     if not result.accepted and not result.review_required:
         run_id = persist_image_agent_result(
@@ -907,7 +998,16 @@ def create_visual_preview(
             project_root_id=project.root_id,
             source_asset_id=source.id,
             created_by=request.created_by,
+            status_override="failed",
+            commit=request.studio_job_id is None,
         )
+        if request.studio_job_id is not None:
+            fail_reserved_studio_visual_job(
+                db,
+                job_id=request.studio_job_id,
+                owner=request.created_by,
+                error_code="visual_preview_failed_quality",
+            )
         return JSONResponse(status_code=422, content={
             "code": "visual_preview_failed_quality",
             "category": "quality",
@@ -925,27 +1025,56 @@ def create_visual_preview(
         status_override=(
             "preview_ready" if result.accepted else "review_required"
         ),
+        commit=False,
     )
     verdict: Literal["pass", "warn"] = (
         "pass" if result.accepted else "warn"
     )
     qa = _visual_preview_qa(result)
-    candidate = store_studio_visual_candidate(
-        db,
-        run_id=run_id,
-        verdict=verdict,
-        project_root_id=project.root_id,
-        source_asset_id=source.id,
-        expected_selected_candidate_asset_id=source.id,
-        source_hash=expected_hash,
-        image_bytes=result.image_bytes,
-        media_type=sniff_media_type(result.image_bytes),
-        requested_change=request.instruction.strip(),
-        scope=request.scope,
-        qa=qa,
-        created_by=request.created_by,
-        studio_job_id=request.studio_job_id,
-    )
+    try:
+        candidate = store_studio_visual_candidate(
+            db,
+            run_id=run_id,
+            verdict=verdict,
+            project_root_id=project.root_id,
+            source_asset_id=source.id,
+            expected_selected_candidate_asset_id=source.id,
+            source_hash=expected_hash,
+            image_bytes=result.image_bytes,
+            media_type=sniff_media_type(result.image_bytes),
+            requested_change=request.instruction.strip(),
+            scope=request.scope,
+            qa=qa,
+            created_by=request.created_by,
+            studio_job_id=request.studio_job_id,
+        )
+    except StudioVisualCandidateUnavailable as exc:
+        # Candidate binding/persistence failed after generation. Roll back the
+        # unreviewable output, then preserve one failed run and settle the exact
+        # reserved job in the same zero-charge transaction.
+        db.rollback()
+        failed_run_id = persist_image_agent_result(
+            db,
+            result,
+            project_root_id=project.root_id,
+            source_asset_id=source.id,
+            created_by=request.created_by,
+            status_override="failed",
+            commit=request.studio_job_id is None,
+        )
+        if request.studio_job_id is not None:
+            fail_reserved_studio_visual_job(
+                db,
+                job_id=request.studio_job_id,
+                owner=request.created_by,
+                error_code="visual_preview_candidate_unavailable",
+            )
+        return JSONResponse(status_code=409, content={
+            "code": "visual_preview_candidate_unavailable",
+            "category": "conflict",
+            "detail": str(exc),
+            "image_run_id": failed_run_id,
+        })
     payload = {
         "project_id": project.root_id,
         "source_asset_id": source.id,

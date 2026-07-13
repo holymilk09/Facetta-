@@ -174,7 +174,7 @@ describe('StudioViewsWorkspace', () => {
     });
     expect(screen.queryByText('Your design is still unchanged.')).toBeNull();
     expect(screen.queryByText('A saved view preview was resumed for review.')).toBeNull();
-    expect(screen.getByText('Design facts version 5')).toBeTruthy();
+    expect(screen.getByText('Saved source · Version 5')).toBeTruthy();
 
     await act(async () => { resolveB?.({ data: previewB, error: null, status: 200 }); });
     expect(await screen.findByLabelText(/Temporary side view/)).toBeTruthy();

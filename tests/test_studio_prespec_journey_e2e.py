@@ -450,21 +450,25 @@ def test_ten_mixed_source_projects_reopen_branch_compare_and_restore(
         },
         {
             "kind": "drawing",
+            "source_kind": "drawing",
             "source": _png((32, 42, 52)),
             "instruction": "Render this pencil ring sketch faithfully.",
         },
         {
-            "kind": "drawing",
+            "kind": "photograph",
+            "source_kind": "photograph",
             "source": _png((62, 72, 82)),
             "instruction": "Preserve this photographed pendant silhouette.",
         },
         {
-            "kind": "drawing",
+            "kind": "finished_render",
+            "source_kind": "finished_render",
             "source": _png((92, 102, 112)),
-            "instruction": "Render this drawing-style brooch reference.",
+            "instruction": "Preserve this finished brooch render as the master direction.",
         },
         {
             "kind": "role_labeled",
+            "source_kind": "photograph",
             "source": _png((122, 132, 142)),
             "instruction": "Keep the master geometry; use references by role.",
             "references": [
@@ -474,6 +478,7 @@ def test_ten_mixed_source_projects_reopen_branch_compare_and_restore(
         },
         {
             "kind": "role_labeled",
+            "source_kind": "finished_render",
             "source": _png((152, 162, 172)),
             "instruction": "Keep the exact master; apply only advisory roles.",
             "references": [
@@ -510,6 +515,7 @@ def test_ten_mixed_source_projects_reopen_branch_compare_and_restore(
                 **common,
                 "image_base64": base64.b64encode(source).decode(),
                 "media_type": "image/png",
+                "source_kind": case["source_kind"],
                 "instruction": case["instruction"],
                 "references": case.get("references", []),
             })
@@ -523,8 +529,20 @@ def test_ten_mixed_source_projects_reopen_branch_compare_and_restore(
         assert created["revisions"] == []
         assert len(created["creative_candidates"]) == 2
         capabilities = {asset["capability"] for asset in created["assets"]}
-        if case["kind"] in {"drawing", "role_labeled"}:
+        if "source_kind" in case:
             assert "CREATIVE_SOURCE" in capabilities
+            source_asset = next(
+                asset for asset in created["assets"]
+                if asset["capability"] == "CREATIVE_SOURCE"
+            )
+            assert source_asset["source_kind"] == case["source_kind"]
+            assert source_asset["provenance"] == (
+                f"designer_supplied_{case['source_kind']}"
+            )
+            assert {
+                candidate["source_kind"]
+                for candidate in created["creative_candidates"]
+            } == {case["source_kind"]}
         if case["kind"] == "role_labeled":
             assert "CREATIVE_REFERENCE_BOARD" in capabilities
             assert "CREATIVE_REFERENCE_MATERIAL_STYLE" in capabilities
@@ -582,7 +600,17 @@ def test_ten_mixed_source_projects_reopen_branch_compare_and_restore(
         # creation response retained by this test.
         reopened = client.get(f"/projects/{project_id}")
         assert reopened.status_code == 200, reopened.text
-        assert reopened.json()["active_asset_id"] == applied_id
+        reopened_project = reopened.json()
+        assert reopened_project["active_asset_id"] == applied_id
+        if "source_kind" in case:
+            reopened_source = next(
+                asset for asset in reopened_project["assets"]
+                if asset["capability"] == "CREATIVE_SOURCE"
+            )
+            assert reopened_source["source_kind"] == case["source_kind"]
+            assert reopened_source["provenance"] == (
+                f"designer_supplied_{case['source_kind']}"
+            )
         before = client.get(f"/studio/projects/{project_id}/history")
         assert before.status_code == 200, before.text
         before_history = before.json()

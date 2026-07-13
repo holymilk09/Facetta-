@@ -314,6 +314,10 @@ class StudioJobRecord(Base):
     completed_outputs: Mapped[int] = mapped_column(Integer, default=0)
     charged_outputs: Mapped[int] = mapped_column(Integer, default=0)
     error_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # Non-null only while a backend-owned candidate workflow holds the job's
+    # reviewing state.  Public lifecycle reports must not race that decision.
+    reservation_kind: Mapped[str | None] = mapped_column(
+        String(24), nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(
@@ -353,6 +357,10 @@ class StudioJobRecord(Base):
         CheckConstraint(
             "charged_outputs >= 0 AND charged_outputs <= completed_outputs",
             name="ck_studio_job_charge_within_completed",
+        ),
+        CheckConstraint(
+            "reservation_kind IS NULL OR reservation_kind = 'studio_visual'",
+            name="ck_studio_job_reservation_kind",
         ),
         CheckConstraint(
             "charged_outputs = 0 OR status = 'succeeded'",
@@ -1426,6 +1434,29 @@ def _apply_additive_migrations(engine) -> None:
                     "CREATE UNIQUE INDEX uq_preview_candidates_studio_job_id "
                     "ON preview_candidates (studio_job_id) "
                     "WHERE studio_job_id IS NOT NULL"
+                ))
+
+    # Visual Refine generation now records a durable backend-owned reservation
+    # while provider work is outside the database transaction. Historical jobs
+    # remain unreserved and retain their existing lifecycle behavior.
+    if inspector.has_table("studio_jobs"):
+        studio_job_columns = {
+            c["name"] for c in inspector.get_columns("studio_jobs")
+        }
+        if "reservation_kind" not in studio_job_columns:
+            with engine.begin() as conn:
+                conn.execute(text(
+                    "ALTER TABLE studio_jobs "
+                    "ADD COLUMN reservation_kind VARCHAR(24)"
+                ))
+        studio_job_indexes = {
+            item["name"] for item in inspect(engine).get_indexes("studio_jobs")
+        }
+        if "ix_studio_jobs_reservation_kind" not in studio_job_indexes:
+            with engine.begin() as conn:
+                conn.execute(text(
+                    "CREATE INDEX ix_studio_jobs_reservation_kind "
+                    "ON studio_jobs (reservation_kind)"
                 ))
 
 

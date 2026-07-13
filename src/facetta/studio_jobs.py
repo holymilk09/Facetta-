@@ -387,6 +387,7 @@ def record_accepted_studio_job_outputs(
     job.completed_outputs = completed_outputs
     job.charged_outputs = completed_outputs
     job.error_code = None
+    job.reservation_kind = None
     job.updated_at = utcnow()
     db.flush()
     return job

@@ -262,7 +262,7 @@ export function StudioViewsWorkspace({
       </View>
       <View style={styles.sourceCard}>
         <Text style={styles.sourceLabel}>Selected saved source</Text>
-        <Text style={styles.sourceValue}>Design facts version {lineage.sourceDesignVersion}</Text>
+        <Text style={styles.sourceValue}>Saved source · Version {lineage.sourceDesignVersion}</Text>
       </View>
       {visibleNotice !== null && <Notice kind="ok" text={visibleNotice} />}
       {savedForLineage && onOpenCollections !== undefined && (

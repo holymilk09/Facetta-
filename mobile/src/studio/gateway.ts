@@ -624,20 +624,6 @@ export function createStudioGateway(
     await transitionJob(job, 'failed', progress, undefined, code);
   };
 
-  const cancelJob = async (
-    job: ActiveStudioJob | null,
-  ): Promise<StudioGatewayResult<StudioJobRecord | null>> => {
-    if (job === null) return { data: null, error: null, status: 0 };
-    try {
-      const result = await client.cancelStudioJob(job.jobId, job.owner);
-      return result.error === null
-        ? result
-        : { data: null, error: mapError(result.error), status: result.status };
-    } catch (error) {
-      return trackingError(error);
-    }
-  };
-
   const finishPresentationGroup = async (
     group: PresentationGroup,
   ): Promise<StudioGatewayResult<StudioJobRecord | null>> => {
@@ -1505,8 +1491,9 @@ export function createStudioGateway(
         preview,
         studioJob: started.data,
       });
-      const reviewing = await transitionJob(started.data, 'reviewing', 0.9);
-      if (reviewing.error !== null) return reviewing;
+      // The visual-preview endpoint reserves the exact Refine job before
+      // provider work and owns its reviewing state. The candidate decision
+      // endpoints are the only authority for terminal status and billing.
       return { data: preview, error: null, status: result.status };
     },
 
@@ -1587,8 +1574,8 @@ export function createStudioGateway(
         stored.preview.candidate, 'discard', now().toISOString(),
       );
       stored.preview = { ...stored.preview, candidate };
-      const dismissed = await cancelJob(stored.studioJob);
-      if (dismissed.error !== null) return dismissed;
+      // Discard and zero-charge Activity settlement are one backend
+      // transaction. Generic cancellation cannot run from reviewing.
       return { data: { candidate, project: null }, error: null, status: result.status };
     },
 

@@ -91,13 +91,27 @@ jest.mock('./StudioCreateWorkspace', () => {
 
 jest.mock('./StudioRefineWorkspace', () => {
   const ReactLocal = require('react');
-  const { Text } = require('react-native');
+  const { Pressable, Text, View } = require('react-native');
   return {
-    StudioRefineWorkspace: ({ initialAdvancedFactsOpen }: { initialAdvancedFactsOpen?: boolean }) => (
+    StudioRefineWorkspace: ({ initialAdvancedFactsOpen, lineage, onReviewStartingDesign }: {
+      initialAdvancedFactsOpen?: boolean;
+      lineage?: { sourceDesignVersion?: number } | null;
+      onReviewStartingDesign?: () => void;
+    }) => ReactLocal.createElement(
+      View,
+      null,
       ReactLocal.createElement(
         Text, null,
         initialAdvancedFactsOpen ? 'Advanced specifications route reached' : 'Refine route reached',
-      )
+      ),
+      lineage !== null && lineage?.sourceDesignVersion === undefined
+        && onReviewStartingDesign !== undefined
+        ? ReactLocal.createElement(
+          Pressable,
+          { accessibilityRole: 'button', onPress: onReviewStartingDesign },
+          ReactLocal.createElement(Text, null, 'Review starting design'),
+        )
+        : null,
     ),
   };
 });
@@ -239,6 +253,40 @@ const hydratedProject = {
   has_factory_drawing: false, cover_asset_id: 'asset_hydrated', created_at: null, updated_at: null,
 };
 
+const nonConfirmablePreSpecProject = {
+  ...hydratedProject,
+  design_id: null,
+  spec: null,
+  active_design_version: null,
+  selected_candidate_asset_id: null,
+  active_revision: {
+    ...hydratedProject.active_revision,
+    capability: 'SOURCE_REFERENCE',
+    provenance: 'designer_supplied_photograph',
+    design_id: null,
+    design_version: null,
+  },
+  revisions: [{
+    ...hydratedProject.revisions[0],
+    asset: {
+      ...hydratedProject.revisions[0].asset,
+      capability: 'SOURCE_REFERENCE',
+      provenance: 'designer_supplied_photograph',
+      design_id: null,
+      design_version: null,
+    },
+    spec_version: null,
+  }],
+  assets: [{
+    ...hydratedProject.active_revision,
+    capability: 'SOURCE_REFERENCE',
+    provenance: 'designer_supplied_photograph',
+    design_id: null,
+    design_version: null,
+  }],
+  factory_ready: false,
+};
+
 const authenticate = () => {
   markOnboarded();
   saveSession({
@@ -293,7 +341,7 @@ test('Collections delegates variation creation to Studio Vary with the exact act
   expect(await view.findByText('Vary route reached for project_1 via asset_1')).toBeTruthy();
 });
 
-test('confirming Design v1 returns immediately to Refine without a Collections or Factory detour', async () => {
+test('Refine links directly to starting design review and returns after confirmation', async () => {
   markOnboarded();
   saveSession({
     provider: 'email', email: 'designer@example.com', name: 'Designer',
@@ -307,8 +355,7 @@ test('confirming Design v1 returns immediately to Refine without a Collections o
   fireEvent.press(await view.findByText('Save mocked direction'));
   expect(await view.findByText('Refine route reached')).toBeTruthy();
 
-  fireEvent.press(view.getByLabelText('More actions'));
-  fireEvent.press(await view.findByText('Ring facts'));
+  fireEvent.press(await view.findByText('Review starting design'));
   fireEvent.press(await view.findByText('Confirm mocked design'));
 
   expect(await view.findByText('Refine route reached')).toBeTruthy();
@@ -376,6 +423,21 @@ test.each([
     await hydration.promise;
   });
   expect(await view.findByText(expected)).toBeTruthy();
+});
+
+test('Activity Refine does not offer design-fact review for a non-confirmable pre-spec source', async () => {
+  authenticate();
+  mockGetProject.mockResolvedValue({
+    data: nonConfirmablePreSpecProject, error: null, status: 200,
+  });
+  const view = await render(<App />);
+  await waitFor(() => expect(view.getByText('Start from an idea or reference')).toBeTruthy());
+  fireEvent.press(view.getAllByText('Activity').at(-1)!);
+  const review = await view.findByText('Review refine');
+  await act(async () => { fireEvent.press(review); });
+
+  expect(await view.findByText('Refine route reached')).toBeTruthy();
+  expect(view.queryByText('Review starting design')).toBeNull();
 });
 
 test('Activity reviewing Create rehydrates the saved candidate chooser and durable job id', async () => {

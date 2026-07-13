@@ -177,11 +177,11 @@ function savedOutputLineage(
     if (sourceRevision !== undefined) return `From Revision ${sourceRevision.revision}`;
     const sourceAsset = assetsById.get(sourceId);
     if (sourceAsset === undefined) {
-      return 'Source revision unavailable · lineage not shown';
+      return 'Source details unavailable';
     }
     sourceId = sourceAsset.parent_asset_id;
   }
-  return 'Source revision unavailable · lineage not shown';
+  return 'Source details unavailable';
 }
 
 export function StudioCollectionsWorkspace({

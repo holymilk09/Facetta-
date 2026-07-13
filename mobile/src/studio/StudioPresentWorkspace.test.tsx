@@ -91,7 +91,7 @@ describe('StudioPresentWorkspace', () => {
     });
     expect(screen.queryByText('Results')).toBeNull();
     expect(screen.queryByText('1 saved preview resumed for review.')).toBeNull();
-    expect(screen.getByText('Saved design · facts version 5')).toBeTruthy();
+    expect(screen.getByText('Saved source · Version 5')).toBeTruthy();
 
     await act(async () => { resolveB?.(resumed('candidate_b', lineageB)); });
     expect(await screen.findByText('Results')).toBeTruthy();
@@ -132,7 +132,7 @@ describe('StudioPresentWorkspace', () => {
       onOpenCollections={onOpenCollections}
     />);
 
-    expect(screen.getByText('Saved design · facts version 4')).toBeTruthy();
+    expect(screen.getByText('Saved source · Version 4')).toBeTruthy();
     expect(screen.queryByText(/asset_4/)).toBeNull();
     expect(screen.getByText('1 requested output · estimated 18 credits')).toBeTruthy();
     expect(screen.getByText(/Generation creates review previews only/i)).toBeTruthy();

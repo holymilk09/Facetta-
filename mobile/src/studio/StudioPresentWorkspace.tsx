@@ -226,7 +226,7 @@ export function StudioPresentWorkspace({
     : clientFormat === 'beauty' ? 'Create client beauty render' : 'Create client product photo';
   const exactRevision = useMemo(() => lineage === null ? null
     : 'sourceDesignVersion' in lineage
-      ? `Saved design · facts version ${lineage.sourceDesignVersion}`
+      ? `Saved source · Version ${lineage.sourceDesignVersion}`
       : 'Selected visual direction · specification not confirmed', [lineage]);
   const sourceImageUrl = lineage === null || typeof gateway.assetImageUrl !== 'function'
     ? null : gateway.assetImageUrl(lineage.sourceAssetId);

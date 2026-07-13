@@ -7,7 +7,6 @@ export type StudioActionId =
   | 'present'
   | 'more'
   | 'specifications'
-  | 'factory_readiness'
   | 'factory';
 
 export type StudioLane = 'instant' | 'fast_visual' | 'trusted_structural';
@@ -22,6 +21,21 @@ export type ReferenceRole =
   | 'scene_reference';
 
 export type StudioFieldKind = 'text' | 'select' | 'reference' | 'toggle';
+
+export type StudioInputRequirement =
+  | 'brief_or_reference'
+  | 'direction'
+  | 'instruction'
+  | 'view_set'
+  | 'destination'
+  | 'design_facts';
+
+export type StudioContextRequirement =
+  | 'active_project'
+  | 'active_revision'
+  | 'selected_pre_spec_visual'
+  | 'exact_specification'
+  | 'factory_eligible';
 
 export interface StudioActionFieldDefinition {
   id: string;
@@ -41,6 +55,12 @@ export type StudioOutputType =
 
 export type StudioAuthority = 'visual_preview' | 'design_record' | 'production_review';
 
+/**
+ * Declarative fields can be rendered from this registry. Host-rendered actions
+ * own conditional or server-derived controls in their dedicated workspace.
+ */
+export type StudioUiSchemaMode = 'declarative_fields' | 'host_rendered';
+
 export interface StudioActionContext {
   activeDesignId: string | null;
   activeRevisionId: string | null;
@@ -58,6 +78,10 @@ export interface StudioActionDefinition {
   description: string;
   lane: StudioLane | null;
   referenceRoles: readonly ReferenceRole[];
+  inputRequirements: readonly StudioInputRequirement[];
+  contextRequirements: readonly StudioContextRequirement[];
+  uiSchemaMode: StudioUiSchemaMode;
+  /** Provider-neutral fields when uiSchemaMode is declarative_fields. */
   fields: readonly StudioActionFieldDefinition[];
   outputType: StudioOutputType;
   creditEstimate: number | null;

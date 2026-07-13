@@ -75,7 +75,7 @@ test('pre-spec directions expose Refine and Present while keeping Views spec-bac
   );
 });
 
-test('ring fact review is secondary for a selected pre-spec visual and never exposes Factory', () => {
+test('starting design fact review is secondary for a selected pre-spec visual and never exposes Factory', () => {
   const preSpec = {
     ...emptyContext,
     activeDesignId: 'project_1',
@@ -84,7 +84,7 @@ test('ring fact review is secondary for a selected pre-spec visual and never exp
   };
   assert.equal(getStudioRailActions(preSpec).some((action) => action.id === 'confirm'), false);
   assert.equal(getVisibleStudioActions(preSpec, 'more').some((action) => (
-    action.id === 'confirm' && action.shortLabel === 'Ring facts'
+    action.id === 'confirm' && action.shortLabel === 'Starting design facts'
   )), true);
   assert.equal(getVisibleStudioActions(preSpec, 'more').some((action) => action.id === 'factory'), false);
   assert.equal(getVisibleStudioActions({
@@ -105,6 +105,8 @@ test('the current branch action is transparent and does not charge for generatio
 
 test('action schemas match the controls rendered by Create and Present', () => {
   const create = getStudioAction('create');
+  assert.deepEqual(create.inputRequirements, ['brief_or_reference']);
+  assert.deepEqual(create.contextRequirements, []);
   const createReferences = create.fields.filter((field) => field.kind === 'reference');
   assert.deepEqual(
     createReferences.map((field) => ({ id: field.id, role: field.referenceRole })),
@@ -115,6 +117,11 @@ test('action schemas match the controls rendered by Create and Present', () => {
   assert.deepEqual(create.referenceRoles, STUDIO_CREATE_REFERENCE_CONTROLS.map(({ role }) => role));
 
   const present = getStudioAction('present');
+  assert.deepEqual(present.inputRequirements, ['destination']);
+  assert.deepEqual(
+    present.contextRequirements,
+    ['active_project', 'active_revision'],
+  );
   assert.deepEqual(
     present.fields.map(({ id, label }) => ({ id, label })),
     [
@@ -130,6 +137,44 @@ test('action schemas match the controls rendered by Create and Present', () => {
   );
   assert.equal(present.fields.some((field) => field.kind === 'reference'), false);
   assert.deepEqual(present.referenceRoles, ['master_geometry']);
+});
+
+test('every action exposes typed input, context, authority, pricing, and UI schema', () => {
+  for (const id of [
+    'create', 'vary', 'refine', 'confirm', 'views', 'present', 'more',
+    'specifications', 'factory',
+  ] as const) {
+    const action = getStudioAction(id);
+    assert.ok(Array.isArray(action.inputRequirements), `${id} input requirements`);
+    assert.ok(Array.isArray(action.contextRequirements), `${id} context requirements`);
+    assert.ok(Array.isArray(action.fields), `${id} UI schema`);
+    assert.ok(
+      action.uiSchemaMode === 'declarative_fields' || action.uiSchemaMode === 'host_rendered',
+      `${id} UI schema mode`,
+    );
+    if (action.uiSchemaMode === 'host_rendered') {
+      assert.deepEqual(action.fields, [], `${id} host-rendered actions do not advertise fake fields`);
+    }
+    assert.ok('creditEstimate' in action, `${id} credit estimate`);
+    assert.ok('authority' in action, `${id} authority`);
+  }
+});
+
+test('dynamic design-fact workflows explicitly use their dedicated host UI', () => {
+  for (const id of ['confirm', 'specifications'] as const) {
+    const action = getStudioAction(id);
+    assert.equal(action.uiSchemaMode, 'host_rendered');
+    assert.deepEqual(action.inputRequirements, ['design_facts']);
+    assert.deepEqual(action.fields, []);
+  }
+  assert.deepEqual(
+    getStudioAction('confirm').contextRequirements,
+    ['active_project', 'active_revision', 'selected_pre_spec_visual'],
+  );
+  assert.deepEqual(
+    getStudioAction('specifications').contextRequirements,
+    ['active_project', 'active_revision', 'exact_specification'],
+  );
 });
 
 test('StudioJob lifecycle rejects terminal-state mutation', () => {

@@ -3,9 +3,19 @@ import {
 } from './contracts';
 import { STUDIO_JOB_ACTION_MANIFEST } from './generatedActionManifest';
 
-const jobAction = (id: keyof typeof STUDIO_JOB_ACTION_MANIFEST) => (
-  STUDIO_JOB_ACTION_MANIFEST[id]
-);
+const jobAction = (id: keyof typeof STUDIO_JOB_ACTION_MANIFEST) => {
+  const definition = STUDIO_JOB_ACTION_MANIFEST[id];
+  return {
+    lane: definition.lane,
+    inputRequirements: definition.input_requirements,
+    contextRequirements: definition.context_requirements,
+    uiSchemaMode: 'declarative_fields' as const,
+    fields: definition.ui_schema,
+    outputType: definition.output_type,
+    creditEstimate: definition.credits_per_output,
+    authority: definition.authority,
+  };
+};
 
 const activeDesign = (context: StudioActionContext) => (
   Boolean(context.activeDesignId) && Boolean(context.activeRevisionId)
@@ -25,9 +35,6 @@ export const STUDIO_ACTIONS: readonly StudioActionDefinition[] = [
     referenceRoles: [
       'master_geometry', 'material_style', 'construction_detail', 'brand_direction',
     ],
-    fields: jobAction('create').ui_schema,
-    outputType: jobAction('create').output_type,
-    creditEstimate: jobAction('create').credits_per_output,
     requiresActiveDesign: false,
     createsJob: true,
     placement: 'primary',
@@ -40,9 +47,6 @@ export const STUDIO_ACTIONS: readonly StudioActionDefinition[] = [
     shortLabel: 'Vary',
     description: 'Copy the exact active revision into a named sibling without replacing it.',
     referenceRoles: ['master_geometry'],
-    fields: jobAction('vary').ui_schema,
-    outputType: jobAction('vary').output_type,
-    creditEstimate: jobAction('vary').credits_per_output,
     requiresActiveDesign: true,
     createsJob: false,
     placement: 'primary',
@@ -55,9 +59,6 @@ export const STUDIO_ACTIONS: readonly StudioActionDefinition[] = [
     shortLabel: 'Refine',
     description: 'Preview a targeted change while protecting the rest of the design.',
     referenceRoles: ['master_geometry', 'construction_detail', 'edit_mask'],
-    fields: jobAction('refine').ui_schema,
-    outputType: jobAction('refine').output_type,
-    creditEstimate: jobAction('refine').credits_per_output,
     requiresActiveDesign: true,
     createsJob: true,
     placement: 'primary',
@@ -65,18 +66,15 @@ export const STUDIO_ACTIONS: readonly StudioActionDefinition[] = [
   },
   {
     id: 'confirm',
-    label: 'Review ring design facts',
-    shortLabel: 'Ring facts',
-    description: 'For ring designs, record the identity and dimensions you know while keeping estimates clearly separate.',
+    label: 'Review starting design facts',
+    shortLabel: 'Starting design facts',
+    description: 'For ring directions, record the identity and dimensions you know while keeping image-derived estimates clearly separate.',
     lane: 'instant',
     referenceRoles: ['master_geometry', 'construction_detail'],
-    fields: [
-      { id: 'design_name', label: 'Design name', kind: 'text', required: true },
-      { id: 'ring_size', label: 'Ring size', kind: 'text', required: false },
-      { id: 'top_width', label: 'Top width', kind: 'text', required: false },
-      { id: 'band_width', label: 'Band width', kind: 'text', required: false },
-      { id: 'stone_dimensions', label: 'Stone dimensions', kind: 'text', required: false },
-    ],
+    inputRequirements: ['design_facts'],
+    contextRequirements: ['active_project', 'active_revision', 'selected_pre_spec_visual'],
+    uiSchemaMode: 'host_rendered',
+    fields: [],
     outputType: 'none',
     creditEstimate: 0,
     authority: 'design_record',
@@ -94,9 +92,6 @@ export const STUDIO_ACTIONS: readonly StudioActionDefinition[] = [
     shortLabel: 'Views',
     description: 'Create consistent angles and presentation views from this revision.',
     referenceRoles: ['master_geometry', 'construction_detail'],
-    fields: jobAction('views').ui_schema,
-    outputType: jobAction('views').output_type,
-    creditEstimate: jobAction('views').credits_per_output,
     requiresActiveDesign: true,
     createsJob: true,
     placement: 'primary',
@@ -109,9 +104,6 @@ export const STUDIO_ACTIONS: readonly StudioActionDefinition[] = [
     shortLabel: 'Present',
     description: 'Prepare client beauty views or a reviewable marketing image set.',
     referenceRoles: ['master_geometry'],
-    fields: jobAction('present').ui_schema,
-    outputType: jobAction('present').output_type,
-    creditEstimate: jobAction('present').credits_per_output,
     requiresActiveDesign: true,
     createsJob: true,
     placement: 'primary',
@@ -124,6 +116,9 @@ export const STUDIO_ACTIONS: readonly StudioActionDefinition[] = [
     description: 'Open optional destinations and utilities.',
     lane: null,
     referenceRoles: [],
+    inputRequirements: [],
+    contextRequirements: ['active_project', 'active_revision'],
+    uiSchemaMode: 'host_rendered',
     fields: [],
     outputType: 'none',
     creditEstimate: null,
@@ -140,6 +135,9 @@ export const STUDIO_ACTIONS: readonly StudioActionDefinition[] = [
     description: 'Review or correct recorded design facts on the exact revision.',
     lane: 'instant',
     referenceRoles: ['master_geometry', 'construction_detail'],
+    inputRequirements: ['design_facts'],
+    contextRequirements: ['active_project', 'active_revision', 'exact_specification'],
+    uiSchemaMode: 'host_rendered',
     fields: [],
     outputType: 'none',
     creditEstimate: 0,
@@ -150,34 +148,12 @@ export const STUDIO_ACTIONS: readonly StudioActionDefinition[] = [
     isAvailable: exactDesign,
   },
   {
-    id: 'factory_readiness',
-    label: 'Prepare for Factory',
-    shortLabel: 'Factory readiness',
-    description: 'Review exact design facts and resolve blockers before optional Factory preparation.',
-    lane: 'instant',
-    referenceRoles: ['master_geometry', 'construction_detail'],
-    fields: [],
-    outputType: 'none',
-    creditEstimate: 0,
-    authority: 'design_record',
-    requiresActiveDesign: true,
-    createsJob: false,
-    placement: 'more',
-    // Kept in the typed registry for compatibility while a neutral readiness
-    // experience is designed under Advanced specifications. Factory language
-    // is not exposed in Studio until the exact revision is actually eligible.
-    isAvailable: () => false,
-  },
-  {
     ...jobAction('factory'),
     id: 'factory',
     label: 'Prepare Factory review pack',
     shortLabel: 'Factory',
     description: 'Prepare an eligible exact revision for optional manufacturer review.',
     referenceRoles: ['master_geometry', 'construction_detail'],
-    fields: jobAction('factory').ui_schema,
-    outputType: jobAction('factory').output_type,
-    creditEstimate: jobAction('factory').credits_per_output,
     requiresActiveDesign: true,
     createsJob: true,
     placement: 'more',
