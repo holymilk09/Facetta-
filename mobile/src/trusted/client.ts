@@ -4840,8 +4840,12 @@ export function createTrustedApiClient(options: TrustedApiClientOptions) {
     },
 
     async createBeautyRender(projectId: string, request: BeautyRenderRequest) {
+      const studioPresentation = request.presentation_only === true
+        && request.studio_job_id !== undefined;
       const result = await jsonCall(
-        `/projects/${encodeURIComponent(projectId)}/render`,
+        studioPresentation
+          ? `/studio/projects/${encodeURIComponent(projectId)}/beauty-render`
+          : `/projects/${encodeURIComponent(projectId)}/render`,
         'POST',
         {
           created_by: request.created_by,
@@ -4885,8 +4889,12 @@ export function createTrustedApiClient(options: TrustedApiClientOptions) {
     },
 
     async createProductPhoto(projectId: string, request: ProductPhotoRequest) {
+      const studioPresentation = request.presentation_only === true
+        && request.studio_job_id !== undefined;
       const result = await jsonCall(
-        `/projects/${encodeURIComponent(projectId)}/product-photo`,
+        studioPresentation
+          ? `/studio/projects/${encodeURIComponent(projectId)}/product-photo`
+          : `/projects/${encodeURIComponent(projectId)}/product-photo`,
         'POST',
         {
           created_by: request.created_by,

@@ -18,7 +18,14 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from facetta.api.error_mapping import image_agent_error_response
-from facetta.api.projects import project_card, project_detail
+from facetta.api.projects import (
+    ProductPhotoRequest,
+    ProjectRenderRequest,
+    create_product_photo,
+    project_card,
+    project_detail,
+    render_project_revision,
+)
 from facetta.auth import (
     AuthenticatedPrincipal,
     principal_actor,
@@ -146,6 +153,20 @@ class StudioCapabilities(BaseModel):
     workspace_entitlements_available: Literal[False] = False
 
 
+class StudioBeautyRenderRequest(ProjectRenderRequest):
+    """Exact-revision Client preview bound to one accounted Studio job."""
+
+    presentation_only: Literal[True]
+    studio_job_id: Annotated[str, Field(min_length=1, max_length=32)]
+
+
+class StudioProductPhotoRequest(ProductPhotoRequest):
+    """Exact-revision product preview bound to one accounted Studio job."""
+
+    presentation_only: Literal[True]
+    studio_job_id: Annotated[str, Field(min_length=1, max_length=32)]
+
+
 @router.get("/capabilities", response_model=StudioCapabilities)
 def get_studio_capabilities(principal: PrincipalDep) -> StudioCapabilities:
     """Return server-owned capabilities for the authenticated Studio actor.
@@ -158,6 +179,30 @@ def get_studio_capabilities(principal: PrincipalDep) -> StudioCapabilities:
             enabled=has_factory_entitlement(principal),
         ),
     )
+
+
+@router.post("/projects/{root_id}/beauty-render", status_code=201)
+def create_studio_beauty_render(
+    root_id: str,
+    request: StudioBeautyRenderRequest,
+    db: DbSession,
+    principal: PrincipalDep,
+):
+    """Delegate an exact, review-only Client render to trusted persistence."""
+    principal_actor(principal, request.created_by)
+    return render_project_revision(root_id, request, db)
+
+
+@router.post("/projects/{root_id}/product-photo", status_code=201)
+def create_studio_product_photo(
+    root_id: str,
+    request: StudioProductPhotoRequest,
+    db: DbSession,
+    principal: PrincipalDep,
+):
+    """Delegate exact product photography without exposing legacy mutation."""
+    principal_actor(principal, request.created_by)
+    return create_product_photo(root_id, request, db)
 
 
 class SaveVariationRequest(BaseModel):

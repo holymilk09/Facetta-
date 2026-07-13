@@ -125,8 +125,6 @@ PRODUCTION_PROJECT_OPERATIONS: frozenset[RouteOperation] = frozenset({
         "/projects/{project_id}/creative-candidates/{candidate_id}/promote",
     ),
     ("GET", "/projects/{root_id}"),
-    ("POST", "/projects/{root_id}/render"),
-    ("POST", "/projects/{root_id}/product-photo"),
     ("POST", "/projects/{root_id}/marketing-pack"),
     ("POST", "/projects/{root_id}/visual-twin/views"),
     ("POST", "/projects/{root_id}/line-art"),
@@ -139,6 +137,8 @@ PRODUCTION_STUDIO_OPERATIONS: frozenset[RouteOperation] = frozenset({
     ("GET", "/studio/jobs/{job_id}"),
     ("PATCH", "/studio/jobs/{job_id}"),
     ("POST", "/studio/jobs/{job_id}/cancel"),
+    ("POST", "/studio/projects/{root_id}/beauty-render"),
+    ("POST", "/studio/projects/{root_id}/product-photo"),
     ("POST", "/studio/projects/{project_id}/visual-previews"),
     (
         "GET",

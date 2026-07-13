@@ -1092,7 +1092,7 @@ describe('trusted API decoders', () => {
       'https://facetta.test/image-runs/run_1/candidates/cand_1/image');
   });
 
-  test('posts an exact confirmed version to the project beauty-render route', async () => {
+  test('posts an exact confirmed version to the Studio beauty-render route', async () => {
     const fetcher = jest.fn(async (
       _input: RequestInfo | URL,
       _init?: RequestInit,
@@ -1126,12 +1126,16 @@ describe('trusted API decoders', () => {
       expected_design_version: 4,
       instruction: 'Use a neutral studio presentation and preserve the confirmed design.',
       variant: 2,
+      presentation_only: true,
+      studio_job_id: 'job_present_beauty',
     });
 
     expect(result.error).toBeNull();
     expect(fetcher).toHaveBeenCalledTimes(1);
     const [url, init] = fetcher.mock.calls[0]!;
-    expect(url).toBe('https://facetta.test/projects/project%20imported/render');
+    expect(url).toBe(
+      'https://facetta.test/studio/projects/project%20imported/beauty-render',
+    );
     expect(init?.method).toBe('POST');
     expect(JSON.parse(String(init?.body))).toEqual({
       created_by: 'usr_designer',
@@ -1140,12 +1144,75 @@ describe('trusted API decoders', () => {
       expected_design_version: 4,
       instruction: 'Use a neutral studio presentation and preserve the confirmed design.',
       variant: 2,
+      presentation_only: true,
+      studio_job_id: 'job_present_beauty',
     });
     expect(result.data?.status === 'review_required'
       ? result.data.warning_candidate.preview_url
       : null).toBe(
       'https://facetta.test/image-runs/run_beauty/candidates/candidate_beauty/image',
     );
+  });
+
+  test('posts an accounted exact version to the Studio product-photo route', async () => {
+    const fetcher = jest.fn(async (
+      _input: RequestInfo | URL,
+      _init?: RequestInit,
+    ) => ({
+      ok: true,
+      status: 202,
+      text: async () => JSON.stringify({
+        status: 'review_required',
+        project_id: 'project imported',
+        image_run_id: 'run_product',
+        quality_report: { verdict: 'warn', checks: [] },
+        routing: { attempt_count: 1, used_retry: false, used_fallback: false },
+        presentation: {
+          preset: 'catalog_white',
+          framing: 'square',
+          source_asset_id: 'asset_active_primary',
+          design_version: 4,
+        },
+        warning_candidate: {
+          run_id: 'run_product',
+          candidate_id: 'candidate_product',
+          preview_url: '/studio/image-runs/run_product/presentation-candidates/candidate_product/image',
+          qa: { verdict: 'warn', checks: [] },
+          operation: 'VISUAL_ONLY_EDIT',
+          requested_change: 'Clean catalog presentation.',
+          studio_job_id: 'job_present_product',
+        },
+      }),
+    } as unknown as Response));
+    const api = createTrustedApiClient({ baseUrl: 'https://facetta.test', fetcher });
+
+    const result = await api.createProductPhoto('project imported', {
+      created_by: 'usr_designer',
+      expected_asset_id: 'asset_active_primary',
+      expected_design_version: 4,
+      preset: 'catalog_white',
+      framing: 'square',
+      presentation_only: true,
+      studio_job_id: 'job_present_product',
+    });
+
+    expect(result.error).toBeNull();
+    const [url, init] = fetcher.mock.calls[0]!;
+    expect(url).toBe(
+      'https://facetta.test/studio/projects/project%20imported/product-photo',
+    );
+    expect(JSON.parse(String(init?.body))).toEqual({
+      created_by: 'usr_designer',
+      expected_asset_id: 'asset_active_primary',
+      expected_design_version: 4,
+      preset: 'catalog_white',
+      framing: 'square',
+      custom_instruction: '',
+      variant: 0,
+      presentation_only: true,
+      studio_job_id: 'job_present_product',
+    });
+    expect(result.data?.status).toBe('review_required');
   });
 
   test('posts an isolated normalized source region to the line-art route', async () => {

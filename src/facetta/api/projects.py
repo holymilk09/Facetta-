@@ -2649,7 +2649,7 @@ def get_project(root_id: str, db: DbSession, include_images: bool = False):
     return project_detail(db, project, include_images=include_images)
 
 
-@router.post("/{root_id}/render", status_code=201)
+@router.post("/{root_id}/render", status_code=201, deprecated=True)
 def render_project_revision(
     root_id: str,
     request: ProjectRenderRequest,
@@ -3015,7 +3015,7 @@ def _designer_review_result(result):
     })
 
 
-@router.post("/{root_id}/product-photo", status_code=201)
+@router.post("/{root_id}/product-photo", status_code=201, deprecated=True)
 def create_product_photo(
     root_id: str,
     request: ProductPhotoRequest,

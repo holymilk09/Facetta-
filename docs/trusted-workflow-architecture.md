@@ -49,11 +49,13 @@ The first-slice public boundary is intentionally small:
 - Project creation and retrieval: category-neutral `POST /projects/from-prompt`,
   structured-ring `POST /projects/from-brief`, neutral
   `POST /projects/from-drawing`, designer-confirmed `POST /projects/from-image`,
-  candidate promotion, persisted `POST /projects/{root_id}/render`, and
+  candidate promotion, Studio-owned
+  `POST /studio/projects/{root_id}/beauty-render`, and
   `GET /projects/{root_id}`.
-- Ecommerce presentation: `POST /projects/{root_id}/product-photo` executes a
-  `VISUAL_ONLY_EDIT`, freezes the jewelry and exact spec version, stores clean
-  `PRODUCT_PHOTO` bytes, and sends QA warnings through explicit review.
+- Ecommerce presentation: `POST /studio/projects/{root_id}/product-photo`
+  executes a `VISUAL_ONLY_EDIT`, freezes the jewelry and exact spec version,
+  and holds clean `CLIENT_PRODUCT_PHOTO` bytes for explicit review before
+  derived-asset persistence.
   `POST /projects/{root_id}/marketing-pack` creates one to four temporary scene
   candidates; accepted outputs are exact-version `MARKETING_IMAGE` derivatives,
   so the approved/pinned primary revision and factory readiness do not change.
@@ -321,7 +323,8 @@ The route inventory uses four classifications:
   or Advanced specifications capability. It may still be HTTP-visible during
   consolidation, but it is not a second workflow entry point.
 - **Deprecated compatibility**: has callers or test coverage, but bypasses the
-  persisted project/image-agent boundary. Migrate callers, then remove it.
+  canonical Studio action/job/preview boundary or the persisted project/image-
+  agent boundary. Migrate callers, then remove it.
 - **Dead/conflicting**: a duplicate alias or compiler/provider control with no
   product reason to remain public. It is still gated from deletion by the same
   acceptance and history checks as deprecated code.
