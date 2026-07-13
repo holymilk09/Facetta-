@@ -68,8 +68,10 @@ from facetta.db import (
     ApprovalResponse,
     DesignVersion,
     ImageAsset,
+    ImageAttempt,
     ImageRun,
     Project,
+    ProjectRevisionRecord,
     StudioCreateDecisionRecord,
     StudioConfirmationDraft,
     get_db,
@@ -1263,6 +1265,91 @@ def _normalized_retained_directions(
     ]
 
 
+def _creative_candidate_generation_run(
+    db: Session,
+    *,
+    project: Project,
+    candidate: ImageAsset,
+) -> ImageRun:
+    """Resolve one candidate's exact immutable generation evidence.
+
+    Creative directions can be persisted while their run remains
+    ``review_required``, so ``ImageRun.accepted_asset_id`` intentionally cannot
+    identify the candidate before the designer chooses it.  The immutable
+    attempt output hash is the exact byte-level seam.  Missing or ambiguous
+    evidence must fail the whole Create decision instead of recording guessed
+    provenance for the Original.
+    """
+
+    output_sha256 = hashlib.sha256(bytes(candidate.image)).hexdigest()
+    runs = list(db.scalars(
+        select(ImageRun)
+        .where(
+            ImageRun.project_root_id == project.root_id,
+            ImageRun.created_by == project.owner,
+            ImageRun.operation.in_((
+                ImageOperation.CREATIVE_GENERATE.value,
+                ImageOperation.REFERENCE_RENDER.value,
+            )),
+            ImageRun.status.in_(("accepted", "review_required")),
+            select(ImageAttempt.id).where(
+                ImageAttempt.run_id == ImageRun.id,
+                ImageAttempt.output_hash == output_sha256,
+            ).exists(),
+        )
+        .order_by(ImageRun.id)
+        .with_for_update()
+    ))
+    if len(runs) != 1:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "the selected Create direction has missing or ambiguous "
+                "generation provenance"
+            ),
+        )
+    run = runs[0]
+    if run.accepted_asset_id not in {None, candidate.id}:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "the selected Create direction generation evidence belongs "
+                "to another asset"
+            ),
+        )
+    if run.source_asset_id is not None:
+        source = db.get(ImageAsset, run.source_asset_id)
+        if (
+            source is None
+            or source.root_id != project.root_id
+            or run.source_hash != hashlib.sha256(bytes(source.image)).hexdigest()
+        ):
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "the selected Create direction generation source no "
+                    "longer matches its recorded provenance"
+                ),
+            )
+    elif run.source_hash is not None:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "the selected Create direction has an unresolved generation "
+                "source"
+            ),
+        )
+    if run.input_hash is None or len(run.input_hash) != 64:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "the selected Create direction has incomplete generation "
+                "input provenance"
+            ),
+        )
+    return run
+
+
 def _creative_direction_commit_response(
     db: Session,
     *,
@@ -1446,6 +1533,11 @@ def commit_project_creative_directions(
             )
 
     selected = by_id[request.selected_candidate_id]
+    selected_run = _creative_candidate_generation_run(
+        db,
+        project=project,
+        candidate=selected,
+    )
     try:
         available_outputs = len(list(db.scalars(select(ImageAsset.id).where(
             ImageAsset.root_id == project.root_id,
@@ -1465,6 +1557,46 @@ def commit_project_creative_directions(
         project.selected_candidate_asset_id = selected.id
         project.updated_at = utcnow()
         ensure_project_family(db, project)
+
+        selected_source_id = selected_run.source_asset_id or selected.id
+        selected_source = db.get(ImageAsset, selected_source_id)
+        if selected_source is None:  # pragma: no cover - helper invariant
+            raise HTTPException(
+                status_code=409,
+                detail="the selected Create direction source is unavailable",
+            )
+        selected_source_sha256 = hashlib.sha256(
+            bytes(selected_source.image)
+        ).hexdigest()
+        selected_output_sha256 = hashlib.sha256(bytes(selected.image)).hexdigest()
+        selected_revision = ProjectRevisionRecord(
+            id=new_id("prr"),
+            asset_id=selected.id,
+            action="created",
+            raw_intent={
+                "kind": "create_direction_commit",
+                "create_decision_project_root_id": project.root_id,
+                "selected_candidate_asset_id": selected.id,
+                "source_asset_id": selected_source_id,
+                "image_run_id": selected_run.id,
+                "studio_job_id": request.studio_job_id,
+            },
+            interpretation={
+                "operation": "select_original_direction",
+                "source_sha256": selected_source_sha256,
+                "output_sha256": selected_output_sha256,
+                "generation_operation": selected_run.operation,
+                "generation_input_sha256": selected_run.input_hash,
+                "generation_prompt_version": selected_run.prompt_version,
+                "generation_status": selected_run.status,
+                "specification_created": False,
+                "factory_authority": False,
+            },
+            change_summary="Selected this reviewed Create direction as Original.",
+            created_by=request.created_by,
+            created_at=utcnow(),
+        )
+        db.add(selected_revision)
 
         retained_records: list[dict[str, object]] = []
         for retained in retained_request:

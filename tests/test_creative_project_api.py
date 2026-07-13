@@ -27,6 +27,7 @@ from facetta.db import (
     Design,
     DesignVersion,
     ImageAsset,
+    ImageAttempt,
     ImageRun,
     Project,
     ProjectRevisionRecord,
@@ -1184,7 +1185,245 @@ def test_creative_direction_commit_is_atomic_billed_once_and_retry_safe(
         assert db.scalar(select(func.count()).select_from(Project)) == 3
         assert db.scalar(
             select(func.count()).select_from(ProjectRevisionRecord)
-        ) == 2
+        ) == 3
+        revision_records = list(db.scalars(
+            select(ProjectRevisionRecord).order_by(ProjectRevisionRecord.id)
+        ))
+        original_revision = next(
+            record for record in revision_records
+            if record.asset_id == candidates[1]
+        )
+        selected_asset = db.get(ImageAsset, candidates[1])
+        selected_run = db.get(
+            ImageRun, original_revision.raw_intent["image_run_id"]
+        )
+        assert selected_asset is not None
+        assert selected_run is not None
+        selected_sha256 = hashlib.sha256(
+            bytes(selected_asset.image)
+        ).hexdigest()
+        assert original_revision.action == "created"
+        assert original_revision.raw_intent == {
+            "kind": "create_direction_commit",
+            "create_decision_project_root_id": project["root_id"],
+            "selected_candidate_asset_id": candidates[1],
+            "source_asset_id": candidates[1],
+            "image_run_id": selected_run.id,
+            "studio_job_id": job_id,
+        }
+        assert original_revision.interpretation == {
+            "operation": "select_original_direction",
+            "source_sha256": selected_sha256,
+            "output_sha256": selected_sha256,
+            "generation_operation": "CREATIVE_GENERATE",
+            "generation_input_sha256": selected_run.input_hash,
+            "generation_prompt_version": selected_run.prompt_version,
+            "generation_status": "review_required",
+            "specification_created": False,
+            "factory_authority": False,
+            "source_asset_id": candidates[1],
+        }
+        matching_attempt = db.scalar(select(ImageAttempt).where(
+            ImageAttempt.run_id == selected_run.id,
+            ImageAttempt.output_hash == selected_sha256,
+        ))
+        assert matching_attempt is not None
+        original_revision_id = original_revision.id
+
+    history = client.get(f"/studio/projects/{project['root_id']}/history")
+    assert history.status_code == 200, history.text
+    stored_original = next(
+        revision for revision in history.json()["revisions"]
+        if revision["asset_id"] == candidates[1]
+    )
+    assert stored_original["raw_intent"]["kind"] == "create_direction_commit"
+    assert stored_original["raw_intent"]["image_run_id"] == selected_run.id
+    assert stored_original["interpretation"]["source_sha256"] == selected_sha256
+    assert stored_original["interpretation"]["output_sha256"] == selected_sha256
+    assert all(
+        revision["raw_intent"].get("kind") != "legacy_or_pre_studio"
+        for revision in history.json()["revisions"]
+        if revision["asset_id"] == candidates[1]
+    )
+
+    with Session() as db:
+        persisted = db.get(ProjectRevisionRecord, original_revision_id)
+        assert persisted is not None
+        assert db.scalar(
+            select(func.count()).select_from(ProjectRevisionRecord)
+        ) == 3
+
+
+@pytest.mark.parametrize("evidence_state", ["missing", "ambiguous"])
+def test_creative_direction_commit_fails_closed_without_exact_generation_evidence(
+    creative_client,
+    evidence_state: str,
+):
+    client, Session = creative_client
+    app.dependency_overrides[get_creative_prompt_generator] = (
+        lambda: (lambda _instruction, variant: _prompt_creative_result(variant))
+    )
+    created = client.post(
+        "/projects/from-prompt", json=_prompt_request(variation_count=2)
+    )
+    assert created.status_code == 201, created.text
+    project = created.json()
+    candidates = [
+        item["asset_id"] for item in project["creative_candidates"]
+    ]
+    selected_id = candidates[1]
+
+    with Session() as db:
+        selected_asset = db.get(ImageAsset, selected_id)
+        assert selected_asset is not None
+        selected_sha256 = hashlib.sha256(
+            bytes(selected_asset.image)
+        ).hexdigest()
+        selected_run = db.scalar(
+            select(ImageRun)
+            .join(ImageAttempt, ImageAttempt.run_id == ImageRun.id)
+            .where(
+                ImageRun.project_root_id == project["root_id"],
+                ImageAttempt.output_hash == selected_sha256,
+            )
+        )
+        assert selected_run is not None
+        if evidence_state == "missing":
+            db.execute(
+                update(ImageAttempt)
+                .where(
+                    ImageAttempt.run_id == selected_run.id,
+                    ImageAttempt.output_hash == selected_sha256,
+                )
+                .values(output_hash="0" * 64)
+            )
+        else:
+            duplicate_run = ImageRun(
+                id="run_ambiguous_candidate",
+                project_root_id=selected_run.project_root_id,
+                source_asset_id=selected_run.source_asset_id,
+                operation=selected_run.operation,
+                normalized_intent=dict(selected_run.normalized_intent),
+                prompt_version=selected_run.prompt_version,
+                input_hash=selected_run.input_hash,
+                source_hash=selected_run.source_hash,
+                mask_hash=selected_run.mask_hash,
+                spec_visual_hash=selected_run.spec_visual_hash,
+                source_spec_visual_hash=selected_run.source_spec_visual_hash,
+                variant=selected_run.variant,
+                status=selected_run.status,
+                accepted_asset_id=None,
+                error_category=selected_run.error_category,
+                created_by=selected_run.created_by,
+                created_at=utcnow(),
+            )
+            db.add_all([
+                duplicate_run,
+                ImageAttempt(
+                    id="iat_ambiguous_candidate",
+                    run_id=duplicate_run.id,
+                    attempt_number=1,
+                    provider="fixture",
+                    model="fixture",
+                    cached=False,
+                    qa_verdict="warn",
+                    qa_checks=[],
+                    output_hash=selected_sha256,
+                    usage={},
+                    created_at=utcnow(),
+                ),
+            ])
+        db.commit()
+
+    job_id = _reviewing_create_job(
+        client, project_id=project["root_id"], requested_outputs=2,
+    )
+    response = client.post(
+        f"/projects/{project['root_id']}/creative-directions/commit",
+        json={
+            "selected_candidate_id": selected_id,
+            "retained": [{
+                "candidate_id": candidates[0],
+                "label": "Sibling direction",
+            }],
+            "created_by": "usr_designer",
+            "studio_job_id": job_id,
+        },
+    )
+    assert response.status_code == 409
+    assert "missing or ambiguous generation provenance" in response.json()[
+        "detail"
+    ]
+
+    with Session() as db:
+        stored_project = db.get(Project, project["root_id"])
+        job = db.get(StudioJobRecord, job_id)
+        assert stored_project is not None
+        assert stored_project.selected_candidate_asset_id is None
+        assert stored_project.family_id is None
+        assert db.get(
+            StudioCreateDecisionRecord, project["root_id"]
+        ) is None
+        assert db.scalar(select(func.count()).select_from(Project).where(
+            Project.branched_from_project_root_id == project["root_id"]
+        )) == 0
+        assert db.scalar(
+            select(func.count()).select_from(ProjectRevisionRecord)
+        ) == 0
+        assert job is not None
+        assert job.status == "reviewing"
+        assert job.source_revision_id is None
+        assert job.completed_outputs == 0
+        assert job.charged_outputs == 0
+
+
+def test_creative_direction_commit_binds_original_to_uploaded_source_lineage(
+    creative_client,
+):
+    client, Session = creative_client
+    app.dependency_overrides[get_creative_render_generator] = lambda: (
+        lambda _source, _instruction, variant: _creative_result(variant)
+    )
+    created = client.post(
+        "/projects/from-drawing", json=_request(variation_count=1)
+    )
+    assert created.status_code == 201, created.text
+    project = created.json()
+    candidate_id = project["creative_candidates"][0]["asset_id"]
+    job_id = _reviewing_create_job(
+        client, project_id=project["root_id"], requested_outputs=1,
+    )
+
+    committed = client.post(
+        f"/projects/{project['root_id']}/creative-directions/commit",
+        json={
+            "selected_candidate_id": candidate_id,
+            "retained": [],
+            "created_by": "usr_designer",
+            "studio_job_id": job_id,
+        },
+    )
+    assert committed.status_code == 200, committed.text
+
+    with Session() as db:
+        record = db.scalar(select(ProjectRevisionRecord).where(
+            ProjectRevisionRecord.asset_id == candidate_id
+        ))
+        assert record is not None
+        run = db.get(ImageRun, record.raw_intent["image_run_id"])
+        assert run is not None
+        assert run.source_asset_id == project["root_id"]
+        assert record.raw_intent["source_asset_id"] == project["root_id"]
+        assert record.interpretation["source_asset_id"] == project["root_id"]
+        assert record.interpretation["source_sha256"] == hashlib.sha256(
+            SOURCE
+        ).hexdigest()
+        assert record.interpretation["generation_operation"] == (
+            "REFERENCE_RENDER"
+        )
+        assert record.interpretation["generation_input_sha256"] == (
+            run.input_hash
+        )
 
 
 def test_creative_direction_commit_rolls_back_invalid_retained_candidate(

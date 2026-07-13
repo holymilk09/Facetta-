@@ -44,6 +44,8 @@ describe('StudioPresentWorkspace', () => {
     />);
     expect(await screen.findByText('Catalog white')).toBeTruthy();
     expect(screen.getByText('1 saved preview resumed for review.')).toBeTruthy();
+    expect(screen.queryByText('1 · Destination')).toBeNull();
+    expect(screen.queryByText('Create client beauty render')).toBeNull();
     expect(screen.getByText(/exact source cannot be displayed/i)).toBeTruthy();
     fireEvent.press(screen.getByText('Save presentation'));
     expect(acceptPresentationCandidate).not.toHaveBeenCalled();
@@ -148,6 +150,8 @@ describe('StudioPresentWorkspace', () => {
     expect(await screen.findByText('Not saved · choose what to keep')).toBeTruthy();
     expect(screen.getByText('Exact source · unchanged')).toBeTruthy();
     expect(screen.getByText('Candidate · review before saving')).toBeTruthy();
+    expect(screen.queryByText('1 · Destination')).toBeNull();
+    expect(screen.queryByText('Create client product photo')).toBeNull();
     expect(screen.queryByText(/canonical|quality|QA/i)).toBeNull();
     await act(async () => { fireEvent.press(screen.getByText('Save presentation')); });
     await waitFor(() => expect(acceptPresentationCandidate).toHaveBeenCalledWith({
@@ -155,6 +159,7 @@ describe('StudioPresentWorkspace', () => {
     }));
     expect(await screen.findByText(/Saved presentation .* Review recommended/)).toBeTruthy();
     expect(onProjectUpdated).toHaveBeenCalledWith({ root_id: 'project_1' });
+    expect(screen.getByText('Create another presentation')).toBeTruthy();
     expect(screen.getAllByText('Open in Collections')).toHaveLength(1);
     fireEvent.press(screen.getByText('Open in Collections'));
     expect(onOpenCollections).toHaveBeenCalledTimes(1);
@@ -195,6 +200,65 @@ describe('StudioPresentWorkspace', () => {
     });
     expect(await screen.findByText('Presentation discarded. Your selected design revision is unchanged.')).toBeTruthy();
     expect(screen.queryByText('Beauty render needs review')).toBeNull();
+    expect(screen.getByText('Create another presentation')).toBeTruthy();
+    await act(async () => {
+      fireEvent.press(screen.getByText('Create another presentation'));
+    });
+    expect(await screen.findByText('1 · Destination')).toBeTruthy();
+    expect(screen.getByText('Create client beauty render')).toBeTruthy();
+  });
+
+  test('keeps an unresolved presentation visible until its decision succeeds', async () => {
+    const discardPresentationCandidate = jest.fn()
+      .mockResolvedValueOnce({
+        data: null,
+        error: {
+          code: 'temporary_failure', message: 'temporary failure',
+          category: 'network', status: 503, retryable: true,
+        },
+        status: 503,
+      })
+      .mockResolvedValueOnce({
+        data: { candidateId: 'candidate_pending', project: { root_id: 'project_1' } },
+        error: null,
+        status: 200,
+      });
+    const createBeautyPresentation = jest.fn(async () => ({
+      data: {
+        status: 'review_required', project_id: 'project_1', source_asset_id: 'asset_4',
+        image_run_id: 'run_pending', quality_report: { verdict: 'pass' }, routing: {},
+        warning_candidate: {
+          run_id: 'run_pending', candidate_id: 'candidate_pending',
+          preview_url: 'https://test/pending.png',
+        },
+      },
+      error: null,
+      status: 202,
+    }));
+    await render(<StudioPresentWorkspace
+      gateway={{
+        createBeautyPresentation, createProductPresentation: jest.fn(),
+        createMarketingPresentation: jest.fn(), acceptPresentationCandidate: jest.fn(),
+        discardPresentationCandidate, assetImageUrl: jest.fn(() => 'https://test/source.png'),
+      } as any}
+      lineage={lineage}
+      createdBy="designer"
+    />);
+
+    await act(async () => { fireEvent.press(screen.getByText('Create client beauty render')); });
+    expect(await screen.findByText('Beauty render needs review')).toBeTruthy();
+    expect(screen.queryByText('Create client beauty render')).toBeNull();
+    await act(async () => { fireEvent.press(screen.getByText('Discard')); });
+    expect(screen.getByText('Beauty render needs review')).toBeTruthy();
+    expect(screen.queryByText('Create another presentation')).toBeNull();
+    expect(createBeautyPresentation).toHaveBeenCalledTimes(1);
+    expect(await screen.findByText(
+      'Facetta could not reach the image service. Check your connection and try again.',
+    )).toBeTruthy();
+
+    await act(async () => { fireEvent.press(screen.getByText('Discard')); });
+    expect(screen.queryByText('Beauty render needs review')).toBeNull();
+    expect(screen.getByText('Create another presentation')).toBeTruthy();
   });
 
   test('fails closed instead of displaying a generation-time auto-saved Client output', async () => {
@@ -438,5 +502,7 @@ describe('StudioPresentWorkspace', () => {
     expect(await screen.findByText('1 saved preview resumed for review.')).toBeTruthy();
     expect(screen.getByText('Catalog white')).toBeTruthy();
     expect(screen.getByText('Not saved · choose what to keep')).toBeTruthy();
+    expect(screen.queryByText('1 · Destination')).toBeNull();
+    expect(screen.queryByText('Create client beauty render')).toBeNull();
   });
 });

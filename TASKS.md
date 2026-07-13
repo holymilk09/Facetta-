@@ -197,8 +197,9 @@
   sections, and assembly—not generic template geometry. Keep confirmed facts
   code-lettered; require designer review and a CAD/master reference before any
   production-ready claim.
-- [ ] Merge the parallel redesign, then wire the trusted screen into app
-  navigation without overwriting redesign-owned files.
+- [x] Integrate the trusted contracts into the redesign through the typed
+  Studio gateway and four-destination navigation without transplanting the
+  large trusted screen or overwriting redesign-owned presentation files.
 - [ ] Run the complete frozen ring matrix with the configured OpenAI fallback
   (or FAL when added), named canonical-API persistence evidence, and no source
   overrides. Focused OpenAI fallback is live; band geometry still fails safely.

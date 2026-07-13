@@ -72,7 +72,6 @@ function fakeClient(overrides: Partial<GatewayClient> = {}): GatewayClient {
     throw new Error('Unexpected client method');
   };
   return {
-    createProjectFromBrief: unsupported,
     createProjectFromPrompt: unsupported,
     selectCreativeCandidate: unsupported,
     saveAsVariation: unsupported,
@@ -615,10 +614,6 @@ test('Confirm removes expired opaque drafts before later access', async () => {
 test('Create, Views, and Present forward typed inputs without model or provider controls', async () => {
   const calls: string[] = [];
   const gateway = createStudioGateway(fakeClient({
-    createProjectFromBrief: async (request) => {
-      calls.push(`brief:${request.brief}`);
-      return ok(project(), 201);
-    },
     createProjectFromPrompt: async (request) => {
       calls.push(`prompt:${request.prompt}`);
       return ok(project(), 201);
@@ -640,7 +635,7 @@ test('Create, Views, and Present forward typed inputs without model or provider 
       return unavailable();
     },
   }));
-  await gateway.createFromBrief({ brief: 'Emerald collar', owner: 'designer_1' });
+  assert.equal('createFromBrief' in gateway, false);
   await gateway.createFromPrompt({ prompt: 'Emerald collar', owner: 'designer_1', title: 'Collar' });
   await gateway.createLineArtView({
     projectId: 'project_1', sourceAssetId: 'asset_1', sourceDesignVersion: 1,
@@ -658,7 +653,6 @@ test('Create, Views, and Present forward typed inputs without model or provider 
     presets: ['catalog_white', 'luxury_studio'],
   });
   assert.deepEqual(calls, [
-    'brief:Emerald collar',
     'prompt:Emerald collar',
     'view:asset_1:1:three_quarter',
     'beauty:asset_1:1',

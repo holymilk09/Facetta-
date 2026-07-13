@@ -261,8 +261,9 @@ destination changes packaging and permissions, not historical truth.
 - no visual guess or generic template presented as production geometry.
 
 The current client, marketing-pack, project/library, and factory endpoints
-provide destination foundations. The Studio shell exposes Collections and
-contextual Present actions; a fully dynamic destination form remains open work.
+provide destination foundations. The Studio shell exposes Collections and an
+explicit Configure -> Review Present flow for Client and Marketing outputs;
+Factory remains a separate, gated exact-revision destination.
 
 ## Unified Studio shell
 

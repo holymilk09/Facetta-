@@ -71,10 +71,15 @@ def test_structured_ring_brief_is_evaluation_compatibility_only() -> None:
     harness = (ROOT / "scripts/run_prompt_brief_e2e.py").read_text()
     inventory = (ROOT / "docs/trusted-workflow-route-inventory.md").read_text()
     client = (ROOT / "mobile/src/trusted/client.ts").read_text()
+    trusted_workflow = (ROOT / "mobile/src/trusted/useTrustedWorkflow.ts").read_text()
     gateway = (ROOT / "mobile/src/studio/gateway.ts").read_text()
 
     assert '"/projects/from-brief"' in harness
     assert "`POST /projects/from-brief` | Deprecated compatibility" in inventory
     assert "Active Studio sentence creation uses `POST /projects/from-prompt`" in inventory
     assert "@deprecated Hidden structured-ring compatibility" in client
-    assert "@deprecated Hidden structured-ring compatibility" in gateway
+    assert "createProjectFromBrief(request" in client
+    assert "createFromBrief" in trusted_workflow
+    assert "createFromBrief" not in gateway
+    assert "createProjectFromBrief" not in gateway
+    assert "CreateProjectFromBriefRequest" not in gateway

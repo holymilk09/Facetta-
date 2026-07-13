@@ -68,6 +68,7 @@ const framingLabel = (framing: ProductPhotoFraming): string => ({
 
 type Destination = 'client' | 'marketing';
 type ClientFormat = 'beauty' | 'product';
+type PresentationPhase = 'configure' | 'review';
 
 interface PresentationCard {
   id: string;
@@ -200,6 +201,7 @@ export function StudioPresentWorkspace({
     'catalog_white', 'luxury_studio',
   ]);
   const [direction, setDirection] = useState('');
+  const [phase, setPhase] = useState<PresentationPhase>('configure');
   const [busy, setBusy] = useState(false);
   const [decidingId, setDecidingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -218,6 +220,7 @@ export function StudioPresentWorkspace({
   const visibleFailures = uiMatchesLineage ? failures : [];
   const visibleError = uiMatchesLineage ? error : null;
   const visibleInfo = uiMatchesLineage ? info : null;
+  const hasPendingReview = visibleCards.some((card) => card.status === 'review');
 
   const outputCount = destination === 'marketing' ? marketingPresets.length : 1;
   const creditEstimate = outputCount * PRESENT_CREDITS;
@@ -237,6 +240,7 @@ export function StudioPresentWorkspace({
     setFailures([]);
     setInfo(null);
     setError(null);
+    setPhase('configure');
     setBusy(false);
     setDecidingId(null);
     if (lineage === null) return undefined;
@@ -255,6 +259,7 @@ export function StudioPresentWorkspace({
         }
         if (result.data.length === 0) return;
         setCards((current) => current.length > 0 ? current : result.data.map(exactResumeCard));
+        setPhase('review');
         setInfo((current) => current ?? (
           `${result.data.length} saved preview${result.data.length === 1 ? '' : 's'} resumed for review.`
         ));
@@ -272,6 +277,7 @@ export function StudioPresentWorkspace({
         }
         if (result.data.length === 0) return;
         setCards((current) => current.length > 0 ? current : result.data.map(preSpecCard));
+        setPhase('review');
         setInfo((current) => current ?? (
           `${result.data.length} saved preview${result.data.length === 1 ? '' : 's'} resumed for review.`
         ));
@@ -337,7 +343,8 @@ export function StudioPresentWorkspace({
   };
 
   const generate = async (): Promise<void> => {
-    if (lineage === null || busy || outputCount === 0 || !reviewSourceIsActive) return;
+    if (lineage === null || phase !== 'configure' || busy || outputCount === 0
+      || !reviewSourceIsActive) return;
     const requestedLineageKey = lineageKey;
     setBusy(true);
     setError(null);
@@ -359,6 +366,7 @@ export function StudioPresentWorkspace({
         setBusy(false);
         if (result.error !== null) return setError(designerPresentationError(result.error));
         setCards([preSpecCard(result.data)]);
+        setPhase('review');
         setInfo('Preview ready. Save it as client material or discard it; your selected visual is unchanged.');
         return;
       }
@@ -381,6 +389,7 @@ export function StudioPresentWorkspace({
         ? [] : [designerPresentationError(result.error)]);
       setCards(ready.map(preSpecCard));
       setFailures(failed);
+      if (ready.length > 0) setPhase('review');
       setInfo(`${ready.length} of ${marketingPresets.length} requested outputs are ready for review. Your selected visual is unchanged.`);
       return;
     }
@@ -401,6 +410,7 @@ export function StudioPresentWorkspace({
         return;
       }
       setCards([beautyCard(result.data)]);
+      setPhase('review');
       setInfo('Preview ready for review. Nothing was saved or charged.');
       return;
     }
@@ -422,6 +432,7 @@ export function StudioPresentWorkspace({
         return;
       }
       setCards([productCard(result.data)]);
+      setPhase('review');
       setInfo('Preview ready for review. Nothing was saved or charged.');
       return;
     }
@@ -440,6 +451,7 @@ export function StudioPresentWorkspace({
     setFailures(result.data.failures.map((failure) => (
       `${presetLabel(failure.preset)}: ${designerPresentationFailure(failure)}`
     )));
+    if (result.data.candidate_count > 0) setPhase('review');
     setInfo(`${result.data.candidate_count} of ${result.data.requested_count} requested outputs are ready for review. Nothing changed your design revision.`);
   };
 
@@ -461,60 +473,77 @@ export function StudioPresentWorkspace({
       </View>
       {!reviewSourceIsActive && <Notice kind="info" text="This result was created from an earlier revision. Saving or generating from it is unavailable. You can discard the pending result without changing or charging the current design." />}
 
-      <Text style={styles.sectionTitle}>1 · {STUDIO_PRESENT_CONTROLS.destination.label}</Text>
-      <View style={styles.destinationRow}>
-        {(['client', 'marketing'] as const).map((item) => (
-          <Pressable key={item} onPress={() => { setDestination(item); setCards([]); setInfo(null); }}
-            style={[styles.destinationCard, destination === item && styles.selectedCard]}>
-            <Text style={styles.destinationTitle}>{item === 'client' ? 'Client' : 'Marketing'}</Text>
-            <Text style={styles.cardCopy}>{item === 'client'
-              ? 'One polished image for a review or presentation.'
-              : 'A small, review-only ecommerce image set.'}</Text>
-          </Pressable>
-        ))}
-      </View>
+      {phase === 'configure' && <>
+        <Text style={styles.sectionTitle}>1 · {STUDIO_PRESENT_CONTROLS.destination.label}</Text>
+        <View style={styles.destinationRow}>
+          {(['client', 'marketing'] as const).map((item) => (
+            <Pressable key={item} onPress={() => { setDestination(item); setInfo(null); }}
+              style={[styles.destinationCard, destination === item && styles.selectedCard]}>
+              <Text style={styles.destinationTitle}>{item === 'client' ? 'Client' : 'Marketing'}</Text>
+              <Text style={styles.cardCopy}>{item === 'client'
+                ? 'One polished image for a review or presentation.'
+                : 'A small, review-only ecommerce image set.'}</Text>
+            </Pressable>
+          ))}
+        </View>
 
-      {destination === 'client' ? (
-        <>
-          <Text style={styles.sectionTitle}>2 · Output</Text>
-          <ChipRow label="Format" options={['beauty', 'product'] as const} value={clientFormat}
-            onSelect={setClientFormat} render={(value) => value === 'beauty' ? 'Beauty render' : 'Product photo'} />
-          {clientFormat === 'product' && <>
-            <ChipRow label="Photography direction" options={PRESETS} value={preset} onSelect={setPreset} render={presetLabel} />
+        {destination === 'client' ? (
+          <>
+            <Text style={styles.sectionTitle}>2 · Output</Text>
+            <ChipRow label="Format" options={['beauty', 'product'] as const} value={clientFormat}
+              onSelect={setClientFormat} render={(value) => value === 'beauty' ? 'Beauty render' : 'Product photo'} />
+            {clientFormat === 'product' && <>
+              <ChipRow label="Photography direction" options={PRESETS} value={preset} onSelect={setPreset} render={presetLabel} />
+              <ChipRow label="Framing" options={FRAMINGS} value={framing} onSelect={setFraming} render={framingLabel} />
+            </>}
+          </>
+        ) : (
+          <>
+            <Text style={styles.sectionTitle}>2 · Outputs</Text>
+            <Text style={styles.body}>Select only the scenes you need. Every selected scene is a requested output.</Text>
+            <View style={styles.presetGrid}>{PRESETS.map((item) => {
+              const selected = marketingPresets.includes(item);
+              return <Pressable key={item} accessibilityRole="checkbox" accessibilityState={{ checked: selected }}
+                onPress={() => togglePreset(item)} style={[styles.presetCard, selected && styles.selectedCard]}>
+                <Text style={styles.presetTitle}>{selected ? '✓ ' : ''}{presetLabel(item)}</Text>
+              </Pressable>;
+            })}</View>
             <ChipRow label="Framing" options={FRAMINGS} value={framing} onSelect={setFraming} render={framingLabel} />
-          </>}
-        </>
-      ) : (
-        <>
-          <Text style={styles.sectionTitle}>2 · Outputs</Text>
-          <Text style={styles.body}>Select only the scenes you need. Every selected scene is a requested output.</Text>
-          <View style={styles.presetGrid}>{PRESETS.map((item) => {
-            const selected = marketingPresets.includes(item);
-            return <Pressable key={item} accessibilityRole="checkbox" accessibilityState={{ checked: selected }}
-              onPress={() => togglePreset(item)} style={[styles.presetCard, selected && styles.selectedCard]}>
-              <Text style={styles.presetTitle}>{selected ? '✓ ' : ''}{presetLabel(item)}</Text>
-            </Pressable>;
-          })}</View>
-          <ChipRow label="Framing" options={FRAMINGS} value={framing} onSelect={setFraming} render={framingLabel} />
-        </>
-      )}
+          </>
+        )}
 
-      <Field label={STUDIO_PRESENT_CONTROLS.direction.label} value={direction} onChange={setDirection} multiline
-        placeholder="Soft daylight, generous negative space, understated styling…" />
+        <Field label={STUDIO_PRESENT_CONTROLS.direction.label} value={direction} onChange={setDirection} multiline
+          placeholder="Soft daylight, generous negative space, understated styling…" />
 
-      <View style={styles.costCard}>
-        <Text style={styles.costTitle}>{outputCount} requested output{outputCount === 1 ? '' : 's'} · estimated {creditEstimate} credits</Text>
-        <Text style={styles.costCopy}>Generation creates review previews only. You are charged only for the outputs you explicitly save. Discarded, stale, and unusable results cost 0 credits.</Text>
-      </View>
+        <View style={styles.costCard}>
+          <Text style={styles.costTitle}>{outputCount} requested output{outputCount === 1 ? '' : 's'} · estimated {creditEstimate} credits</Text>
+          <Text style={styles.costCopy}>Generation creates review previews only. You are charged only for the outputs you explicitly save. Discarded, stale, and unusable results cost 0 credits.</Text>
+        </View>
+        <Button title={busy ? 'Generating and checking…' : requestLabel}
+          disabled={busy || outputCount === 0 || !reviewSourceIsActive} onPress={() => { void generate(); }} />
+      </>}
+
       {visibleError !== null && <Notice kind="error" text={visibleError} />}
-      <Button title={busy ? 'Generating and checking…' : requestLabel}
-        disabled={busy || outputCount === 0 || !reviewSourceIsActive} onPress={() => { void generate(); }} />
 
       {visibleInfo !== null && <Notice kind="info" text={visibleInfo} />}
       {visibleCards.some((card) => card.status === 'saved') && onOpenCollections !== undefined && (
         <Button title="Open in Collections" kind="ghost" onPress={onOpenCollections} />
       )}
       {visibleFailures.map((failure) => <Notice key={failure} kind="error" text={failure} />)}
+      {phase === 'review' && !hasPendingReview && reviewSourceIsActive && (
+        <Button
+          title="Create another presentation"
+          kind="ghost"
+          disabled={decidingId !== null}
+          onPress={() => {
+            setPhase('configure');
+            setCards([]);
+            setFailures([]);
+            setInfo(null);
+            setError(null);
+          }}
+        />
+      )}
       {visibleCards.length > 0 && <View style={styles.results}>
         <Text style={styles.sectionTitle}>Results</Text>
         <View style={styles.reviewWorkspace}>

@@ -11,7 +11,6 @@ import type {
   CommitCreativeDirectionsResult,
   ComponentCatalog,
   CreateLineArtRequest,
-  CreateProjectFromBriefRequest,
   CreateProjectFromDrawingRequest,
   CreateProjectFromPromptRequest,
   CreateVisualPreviewRequest,
@@ -28,7 +27,6 @@ import type {
   PreSpecPresentationResult,
   ProductPhotoRequest,
   ProductPhotoResult,
-  ProjectCreationResult,
   ProjectDetail,
   SaveAsVariationResult,
   StudioJobAction,
@@ -288,7 +286,6 @@ export interface StudioFactoryEligibility {
 }
 
 type GatewayTrustedClient = Pick<TrustedApiClient,
-  | 'createProjectFromBrief'
   | 'createProjectFromDrawing'
   | 'createProjectFromPrompt'
   | 'selectCreativeCandidate'
@@ -1093,11 +1090,6 @@ export function createStudioGateway(
         error: null,
         status: promoted.status,
       };
-    },
-
-    /** @deprecated Hidden structured-ring compatibility; active Create uses createFromPrompt. */
-    createFromBrief(request: CreateProjectFromBriefRequest): Promise<StudioGatewayResult<ProjectCreationResult>> {
-      return client.createProjectFromBrief(request).then(mapResult);
     },
 
     async createFromPrompt(

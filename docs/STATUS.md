@@ -5,6 +5,39 @@ Read `CLAUDE.md` (constitution — binding), `README.md` (endpoints/layout),
 `docs/DATA_WANTED.md` (open research asks). This file is the delta: what is
 DONE beyond the original TASKS.md build order, and what is next.
 
+## 2026-07-13 Studio review-continuity and Original-provenance checkpoint
+
+Present now separates configuration from candidate review. Once any preview is
+ready—or a durable preview is resumed—the destination, output, direction, cost,
+and generation controls leave the screen until every candidate has been saved
+or discarded. A failed decision keeps its unresolved candidate visible, and a
+designer can start another presentation only after completing the current
+review. This removes the previous path where changing destination could hide a
+live review decision while preserving its backend job.
+
+The selected Create direction now receives its own immutable revision record in
+the same transaction that chooses Original, creates retained sibling
+variations, and settles the Create job. The record binds the exact image run,
+attempt output hash, generation input hash, prompt version, source bytes, output
+bytes, decision project, and Studio job. Missing, ambiguous, or mismatched
+generation evidence fails with no selection, family, branch, revision, job
+settlement, or user charge. Exact retries return the one stored decision and do
+not append a duplicate record.
+
+The active Studio gateway no longer exposes the deprecated structured-ring
+brief method. That compatibility path remains deliberately isolated to the
+hidden trusted workflow and historical evaluation harness until the documented
+deletion gates pass; active sentence creation continues through the
+category-neutral prompt route.
+
+Local validation for this checkpoint: 1,622 backend tests, 243 Jest tests, 69
+Studio contract tests, TypeScript, Ruff, Python compilation, Expo web export,
+and the production TypeScript-client -> HTTP -> FastAPI acceptance pass. The
+acceptance covers ten mixed-source projects without Factory and confirms no
+canonical mutation before acceptance. No real 144-image corpus run,
+designer/GIA review, founder approval, or live two-principal HTTPS staging run
+was performed, so external beta remains gated on those external authorities.
+
 ## 2026-07-13 Studio review-authority and secured-capture checkpoint
 
 The renewed Studio journey is locally complete across its six intended steps:
