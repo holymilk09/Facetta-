@@ -55,3 +55,26 @@ def test_necklace_direction_is_review_only_or_saved_as_variation() -> None:
     assert 'candidate["save_as_variation_url"]' in source
     assert '"catalog_preview_review_required"' in source
     assert '"catalog_variation_saved"' in source
+
+
+def test_active_studio_sentence_creation_uses_category_neutral_prompt() -> None:
+    workspace = (ROOT / "mobile/src/studio/StudioCreateWorkspace.tsx").read_text()
+    app_shell = (ROOT / "mobile/App.tsx").read_text()
+
+    assert "'createFromPrompt' | 'createFromDrawing'" in workspace
+    assert "gateway.createFromPrompt" in workspace
+    assert "createFromBrief" not in workspace
+    assert "TrustedWorkflowScreen" not in app_shell
+
+
+def test_structured_ring_brief_is_evaluation_compatibility_only() -> None:
+    harness = (ROOT / "scripts/run_prompt_brief_e2e.py").read_text()
+    inventory = (ROOT / "docs/trusted-workflow-route-inventory.md").read_text()
+    client = (ROOT / "mobile/src/trusted/client.ts").read_text()
+    gateway = (ROOT / "mobile/src/studio/gateway.ts").read_text()
+
+    assert '"/projects/from-brief"' in harness
+    assert "`POST /projects/from-brief` | Deprecated compatibility" in inventory
+    assert "Active Studio sentence creation uses `POST /projects/from-prompt`" in inventory
+    assert "@deprecated Hidden structured-ring compatibility" in client
+    assert "@deprecated Hidden structured-ring compatibility" in gateway

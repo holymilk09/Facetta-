@@ -3534,6 +3534,7 @@ export function createTrustedApiClient(options: TrustedApiClientOptions) {
 
     baseUrl,
 
+    /** @deprecated Hidden structured-ring compatibility; Studio uses createProjectFromPrompt. */
     createProjectFromBrief(request: CreateProjectFromBriefRequest) {
       return projectCreationCall('/projects/from-brief', {
         method: 'POST',
@@ -3548,6 +3549,7 @@ export function createTrustedApiClient(options: TrustedApiClientOptions) {
       });
     },
 
+    /** @deprecated Hidden structured-ring compatibility warning review. */
     acceptBriefWarningCandidate(candidateId: string, createdBy: string) {
       return projectCreationCall(
         `/projects/from-brief/candidates/${encodeURIComponent(candidateId)}/accept`,

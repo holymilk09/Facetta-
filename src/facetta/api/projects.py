@@ -2401,6 +2401,7 @@ def _persist_brief_generation(
     "/from-brief", status_code=201, response_model=ProjectDetail,
     response_model_exclude_none=True,
     responses={202: {"model": ProjectCreationWarning}},
+    deprecated=True,
 )
 def create_project_from_brief(
     request: ProjectFromBriefRequest,
@@ -2442,7 +2443,10 @@ def create_project_from_brief(
     return _persist_brief_generation(db, generated, request)
 
 
-@router.get("/from-brief/candidates/{candidate_id}/image")
+@router.get(
+    "/from-brief/candidates/{candidate_id}/image",
+    deprecated=True,
+)
 def get_brief_warning_image(candidate_id: str, principal: PrincipalDep):
     try:
         candidate = get_brief_warning_candidate(candidate_id)
@@ -2466,6 +2470,7 @@ def get_brief_warning_image(candidate_id: str, principal: PrincipalDep):
     response_model=ProjectDetail,
     response_model_exclude_none=True,
     responses={202: {"model": ProjectCreationWarning}},
+    deprecated=True,
 )
 def accept_brief_warning(
     candidate_id: str,

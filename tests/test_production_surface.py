@@ -176,6 +176,8 @@ def test_production_hides_legacy_admin_and_protects_spec_adapters(monkeypatch):
             ("post", "/assets/known/technical-drawing"),
             ("get", "/assets/known/component-map"),
             ("post", "/projects/from-brief"),
+            ("get", "/projects/from-brief/candidates/known/image"),
+            ("post", "/projects/from-brief/candidates/known/accept"),
             ("post", "/projects/from-image"),
             ("post", "/projects/known/render"),
             ("post", "/projects/known/product-photo"),
@@ -192,6 +194,27 @@ def test_production_hides_legacy_admin_and_protects_spec_adapters(monkeypatch):
             # `/projects/{root_id}` shape and return method-not-allowed; it
             # must never resolve to an authenticated product handler.
             assert hidden.status_code in {404, 405}
+
+
+def test_structured_ring_brief_routes_are_deprecated_compatibility(
+    monkeypatch,
+):
+    monkeypatch.setenv("FACETTA_ENV", "test")
+    test_app = create_app()
+    paths = test_app.openapi()["paths"]
+
+    assert paths["/projects/from-prompt"]["post"].get("deprecated") is not True
+    assert paths["/projects/from-brief"]["post"]["deprecated"] is True
+    assert (
+        paths["/projects/from-brief/candidates/{candidate_id}/image"]["get"]
+        ["deprecated"]
+        is True
+    )
+    assert (
+        paths["/projects/from-brief/candidates/{candidate_id}/accept"]["post"]
+        ["deprecated"]
+        is True
+    )
 
 
 def test_production_rejects_wildcard_cors(monkeypatch):

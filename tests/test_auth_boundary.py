@@ -24,6 +24,7 @@ from facetta.db import (
     FeedbackEvent, ImageAsset, ImageRun, Project, get_db, utcnow,
 )
 from facetta.auth import validate_auth_configuration
+from facetta.creative_workflow import get_creative_prompt_generator
 from facetta.main import app
 from facetta.studio_visual_candidates import store_studio_visual_candidate
 
@@ -250,6 +251,65 @@ def test_cross_owner_project_read_is_denied(auth_client):
     )
     assert response.status_code == 403
     assert response.json()["detail"]["code"] == "project_access_denied"
+
+
+@pytest.mark.parametrize(
+    ("headers", "owner", "status", "code"),
+    (
+        ({}, "usr_owner", 401, "authentication_required"),
+        (
+            {"Authorization": f"Bearer {OWNER_TOKEN}"},
+            "usr_other",
+            403,
+            "principal_actor_mismatch",
+        ),
+    ),
+)
+def test_prompt_creation_rejects_missing_or_spoofed_principal_before_generation(
+    auth_client,
+    headers: dict[str, str],
+    owner: str,
+    status: int,
+    code: str,
+):
+    client, Session = auth_client
+    generator_calls: list[tuple[str, int]] = []
+
+    def generate(prompt: str, variant: int):
+        generator_calls.append((prompt, variant))
+        raise AssertionError("unauthorized prompt reached the image generator")
+
+    app.dependency_overrides[get_creative_prompt_generator] = lambda: generate
+    with Session() as db:
+        before = (
+            db.scalar(select(func.count()).select_from(Project)),
+            db.scalar(select(func.count()).select_from(Design)),
+            db.scalar(select(func.count()).select_from(ImageAsset)),
+            db.scalar(select(func.count()).select_from(ImageRun)),
+        )
+
+    response = client.post(
+        "/projects/from-prompt",
+        headers=headers,
+        json={
+            "prompt": "A platinum floral lariat necklace with emerald leaves",
+            "variation_count": 2,
+            "owner": owner,
+            "title": "Emerald lariat exploration",
+        },
+    )
+
+    assert response.status_code == status
+    assert response.json()["detail"]["code"] == code
+    assert generator_calls == []
+    with Session() as db:
+        after = (
+            db.scalar(select(func.count()).select_from(Project)),
+            db.scalar(select(func.count()).select_from(Design)),
+            db.scalar(select(func.count()).select_from(ImageAsset)),
+            db.scalar(select(func.count()).select_from(ImageRun)),
+        )
+    assert after == before
 
 
 def test_studio_routes_share_the_same_required_principal_boundary(auth_client):

@@ -15,7 +15,7 @@ Caller abbreviations:
 | Method and path | Class | Observed caller evidence | Replacement or disposition |
 |---|---|---|---|
 | `GET /health` | Canonical | Operational probes; `test_validate_api.py` | Retain as operational health check. |
-| `POST /projects/from-brief` | Canonical | Trusted client; `test_project_backbone.py` | Structured ring-brief project entry. |
+| `POST /projects/from-brief` | Deprecated compatibility | Hidden trusted-workflow screen; prompt-brief evaluation harness; `test_project_backbone.py` | Retained outside production for historical structured-ring evaluation and warning-review fixtures. Active Studio sentence creation uses `POST /projects/from-prompt`; this route must not return to the public allowlist. |
 | `POST /projects/from-prompt` | Canonical | Trusted client; `test_creative_project_api.py` | Category-neutral designer prompt entry. Runs one to four `CREATIVE_GENERATE` variants through direction/coherence QA, atomically persists no source/spec/version, and requires explicit selected-candidate promotion before approval or factory work. |
 | `POST /projects/from-drawing` | Canonical | `test_creative_project_api.py` | Neutral drawing/image entry. Runs one to four explicit `REFERENCE_RENDER` variants through source-fidelity QA, persists no partial project on hard failure, and creates no specification or factory authority. |
 | `POST /studio/projects/import-confirmed` | Canonical | Studio trusted client; four exact-reference live harnesses; `test_confirmed_import_studio_api.py` | Authenticated designer-confirmed image entry. Requires the independent component audit to name the exact uploaded source SHA-256, then atomically creates the project, immutable Design v1, and byte-identical imported reference. |
@@ -36,8 +36,8 @@ Caller abbreviations:
 | `POST /projects/{root_id}/visual-twin/views` | Canonical | `test_visual_twin_api.py` | Generates each requested ring projection as an independent, review-only image-agent run. Passed and warning candidates remain temporary until explicit designer acceptance and never replace the active revision or specification. |
 | `POST /projects/{root_id}/line-art` | Canonical | Drawing workflow/project tests; canonical live line-art eval | Creates a temporary geometry-only drawing from the active revision. QA pass still requires explicit designer confirmation before `LINE_ART` becomes a derived asset. |
 | `POST /projects/{root_id}/line-art/{line_art_asset_id}/colorize` | Canonical | Drawing workflow/project/material-drift tests; `designer-corrected-full-e2e-2026-07-11` | Colors only a confirmed line drawing from the exact spec. Keeps the active revision/spec unchanged, sends corroborated material loss through targeted correction/hard failure, and holds conflicting raster/vision evidence for explicit review. |
-| `GET /projects/from-brief/candidates/{candidate_id}/image` | Canonical | Trusted creation review; `test_project_backbone.py` | Temporary concept/spec-render warning preview; never a project asset. |
-| `POST /projects/from-brief/candidates/{candidate_id}/accept` | Canonical | Trusted client; `test_project_backbone.py` | Continue or persist only after explicit designer review. |
+| `GET /projects/from-brief/candidates/{candidate_id}/image` | Deprecated compatibility | Hidden trusted-workflow warning review; prompt-brief evaluation harness; `test_project_backbone.py` | Retained outside production so historical structured-ring warning candidates can still be inspected; never a project asset. |
+| `POST /projects/from-brief/candidates/{candidate_id}/accept` | Deprecated compatibility | Hidden trusted-workflow warning review; prompt-brief evaluation harness; `test_project_backbone.py` | Retained outside production to preserve the historical continue-or-persist transaction after explicit review. Active Studio uses the category-neutral Create candidate decision flow. |
 | `GET /projects/{root_id}` | Canonical | Trusted client; project/library tests | Canonical project read model. |
 | `GET /studio/families/{family_id}` | Canonical | `test_studio_domain_models.py` | Returns one Design Family and its ordered, independently versioned project variations without collapsing their histories. |
 | `GET /studio/families` | Canonical | Studio Collections workspace; Trusted client; `test_studio_domain_models.py` | Lists canonical Design Families, optionally owner-filtered, while retaining each variation's independent project identity and branch provenance. |
@@ -91,7 +91,7 @@ Caller abbreviations:
 
 | Method and path | Class | Observed caller evidence | Replacement or disposition |
 |---|---|---|---|
-| `POST /assets/render` | Deprecated compatibility | Asset/library/checklist tests; live script | Replace creation with `POST /projects/from-brief`. |
+| `POST /assets/render` | Deprecated compatibility | Asset/library/checklist tests; live script | Replace sentence creation with `POST /projects/from-prompt`; keep exact confirmed imports on `POST /studio/projects/import-confirmed`. |
 | `GET /assets/{asset_id}` | Internal primitive | Asset/checklist tests | Retain as a narrow asset read until all consumers use `ProjectDetail`. |
 | `GET /assets/{asset_id}/image` | Canonical | Trusted client constructs this URL; project payloads return it | Retain; image bytes stay out of project JSON. |
 | `GET /assets/{asset_id}/component-map` | Canonical | Trusted component-aware editing | Returns the accepted revision's stable semantic component IDs and normalized regions without exposing provider internals. |
@@ -174,9 +174,9 @@ Caller abbreviations:
 | `POST /specs/from-plate` | Internal primitive | Trusted reference-draft client; plate compiler/source-audit/hand-off tests | Plate draft with explicit major-component coverage. Trusted callers request a blind-first independent audit; unresolved, unmapped, failed, and inconclusive items remain visible blockers. |
 | `POST /specs/source-coverage/resolve` | Internal primitive | Trusted reference-draft client; source-component resolution/audit tests | Pure unpersisted batch resolver for existing stable source-component mappings. Semantic changes clear prior audit evidence; the persisted project revision workflow remains the product edit boundary. |
 | `POST /specs/source-coverage/confirm` | Internal primitive | `test_source_component_confirmation.py` | Pure internal-studio review boundary for an inconclusive independent audit. It changes no spec values, cannot override failed/missing audits, and binds visible-source or designer-defined-target confirmation to exact source bytes and visual-spec hash. |
-| `POST /specs/assist` | Internal primitive | `test_assistant.py` | May collect a brief, but creation must finish through `/projects/from-brief`. |
+| `POST /specs/assist` | Internal primitive | `test_assistant.py` | May collect a brief, but active Studio sentence creation must finish through `/projects/from-prompt`. |
 | `POST /specs/swap-stone` | Internal primitive | Stone-library tests | Retain validated Advanced editor primitive. |
-| `POST /specs/from-concept` | Deprecated compatibility | Concept tests/docs | Direct mobile use is replaced by atomic `/projects/from-brief`. |
+| `POST /specs/from-concept` | Deprecated compatibility | Concept tests/docs | Active Studio confirms and promotes an exact selected `POST /projects/from-prompt` or drawing candidate instead of creating specification authority through this adapter. |
 | `POST /specs/build` | Deprecated compatibility | Build/spec-agent tests/docs | Remove mega orchestration after founder acceptance. |
 | `POST /specs/jewelry-render` | Deprecated compatibility | Agent-mode tests | Replace with persisted image-agent `CONCEPT_GENERATE`/`SPEC_RENDER`. |
 | `POST /specs/localized-edit` | Deprecated compatibility | Agent-mode/house-style tests | Replace with confirmed asset markup apply. |

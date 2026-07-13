@@ -45,7 +45,14 @@ persistence behavior identical for the deprecated development-only
 or stale source-audit bindings and actor spoofing. All four live exact-reference
 harnesses and the trusted client now use the Studio route.
 
-Local validation for these slices: 1,558 backend tests, 241 Jest tests, 68
+Active sentence creation remains the category-neutral one-to-four-candidate
+`POST /projects/from-prompt` journey. The older structured-ring
+`/projects/from-brief` route and its warning-review endpoints are now explicitly
+deprecated compatibility, remain available only to hidden development/test
+fixtures and the historical evaluation harness, and stay absent from the
+production Studio surface.
+
+Local validation for these slices: 1,563 backend tests, 241 Jest tests, 68
 Studio contract tests, TypeScript, and Expo export pass. This remains local
 contract and interface validation; the external corpus, designer/GIA review,
 founder acceptance, and staging isolation gates remain unmet.
@@ -354,8 +361,9 @@ coherence, prompt-adherence, and output-hygiene QA. It persists only reviewable
 `CREATIVE_RENDER` candidates—no fake source asset, Design, DesignVersion,
 measurement, or factory claim. The first candidate safely serves as the chain
 root, and root or alternate candidates promote through the same exact audited
-spec-v1 boundary. The old ring brief remains available as “Structured ring
-brief.”
+spec-v1 boundary. The old “Structured ring brief” route and warning-review loop
+remain hidden development/test compatibility for historical evaluation; they
+are not mounted on the production Studio surface.
 
 Live evidence exposed and fixed a real evaluator false positive. Grok's first
 necklace candidate was visually strong but drew more than the requested five

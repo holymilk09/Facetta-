@@ -47,8 +47,7 @@ states `factory_review_only`, never production-ready.
 The first-slice public boundary is intentionally small:
 
 - Project creation and retrieval: category-neutral `POST /projects/from-prompt`,
-  structured-ring `POST /projects/from-brief`, neutral
-  `POST /projects/from-drawing`, exact-source designer-confirmed
+  neutral `POST /projects/from-drawing`, exact-source designer-confirmed
   `POST /studio/projects/import-confirmed`,
   candidate promotion, Studio-owned
   `POST /studio/projects/{root_id}/beauty-render`, and
@@ -67,10 +66,11 @@ The first-slice public boundary is intentionally small:
   material identity is evaluated inside the image-agent loop so corroborated
   loss drives a targeted Grok correction. Cross-modality raster/vision
   disagreement is held as a temporary warning for explicit designer review.
-- Brief candidates that receive a QA warning remain temporary and use the
-  nested `/projects/from-brief/candidates/{candidate_id}` preview/accept loop;
-  concept acceptance continues into spec extraction/rendering before any
-  project row exists.
+- The historical structured-ring brief and its nested warning-candidate
+  preview/accept loop remain development/test compatibility only. They retain
+  their continue-before-persist transaction for evaluation fixtures, but are
+  not an active Studio creation path and are absent from the production
+  allowlist.
 - Persisted annotation: `POST /assets/{asset_id}/markup/read` and
   `POST /assets/{asset_id}/markup/apply`.
 - Deterministic component controls:

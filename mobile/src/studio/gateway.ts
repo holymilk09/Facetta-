@@ -1095,6 +1095,7 @@ export function createStudioGateway(
       };
     },
 
+    /** @deprecated Hidden structured-ring compatibility; active Create uses createFromPrompt. */
     createFromBrief(request: CreateProjectFromBriefRequest): Promise<StudioGatewayResult<ProjectCreationResult>> {
       return client.createProjectFromBrief(request).then(mapResult);
     },
