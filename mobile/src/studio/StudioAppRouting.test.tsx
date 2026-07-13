@@ -394,6 +394,8 @@ test('Refine links directly to starting design review and returns after confirma
   fireEvent.press(view.getByText('Start from an idea or reference'));
   fireEvent.press(await view.findByText('Save mocked direction'));
   expect(await view.findByText('Refine route reached')).toBeTruthy();
+  expect(view.queryByLabelText('More actions')).toBeNull();
+  expect(view.queryByText('Starting design facts')).toBeNull();
 
   fireEvent.press(await view.findByText('Review starting design'));
   fireEvent.press(await view.findByText('Confirm mocked design'));

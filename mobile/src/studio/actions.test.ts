@@ -71,11 +71,11 @@ test('pre-spec directions expose Refine and Present while keeping Views spec-bac
   };
   assert.deepEqual(
     getStudioRailActions(selectedCreativeDirection).map((action) => action.id),
-    ['create', 'vary', 'refine', 'present', 'more'],
+    ['create', 'vary', 'refine', 'present'],
   );
 });
 
-test('starting design fact review is secondary for a selected pre-spec visual and never exposes Factory', () => {
+test('starting design fact review is internal for a selected pre-spec visual and never exposes Factory', () => {
   const preSpec = {
     ...emptyContext,
     activeDesignId: 'project_1',
@@ -83,16 +83,19 @@ test('starting design fact review is secondary for a selected pre-spec visual an
     hasSelectedPreSpecVisual: true,
   };
   assert.equal(getStudioRailActions(preSpec).some((action) => action.id === 'confirm'), false);
-  assert.equal(getVisibleStudioActions(preSpec, 'more').some((action) => (
+  assert.equal(getVisibleStudioActions(preSpec, 'internal').some((action) => (
     action.id === 'confirm' && action.shortLabel === 'Starting design facts'
   )), true);
+  assert.equal(getVisibleStudioActions(preSpec, 'more').some((action) => (
+    action.id === 'confirm' || action.shortLabel === 'Starting design facts'
+  )), false);
   assert.equal(getVisibleStudioActions(preSpec, 'more').some((action) => action.id === 'factory'), false);
   assert.equal(getVisibleStudioActions({
     ...preSpec, hasSelectedPreSpecVisual: false,
-  }, 'more').some((action) => action.id === 'confirm'), false);
+  }, 'internal').some((action) => action.id === 'confirm'), false);
   assert.equal(getVisibleStudioActions({
     ...preSpec, hasExactSpecification: true,
-  }, 'more').some((action) => action.id === 'confirm'), false);
+  }, 'internal').some((action) => action.id === 'confirm'), false);
 });
 
 test('the current branch action is transparent and does not charge for generation', () => {

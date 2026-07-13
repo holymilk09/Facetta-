@@ -88,7 +88,12 @@ export interface StudioActionDefinition {
   authority: StudioAuthority | null;
   requiresActiveDesign: boolean;
   createsJob: boolean;
-  placement: 'primary' | 'more';
+  /**
+   * Internal actions remain addressable by the host, but never become a
+   * competing rail or More-menu destination. They are entered only from the
+   * workspace that owns their supporting context.
+   */
+  placement: 'primary' | 'more' | 'internal';
   isAvailable: (context: StudioActionContext) => boolean;
 }
 
