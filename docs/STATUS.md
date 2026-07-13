@@ -5,6 +5,37 @@ Read `CLAUDE.md` (constitution — binding), `README.md` (endpoints/layout),
 `docs/DATA_WANTED.md` (open research asks). This file is the delta: what is
 DONE beyond the original TASKS.md build order, and what is next.
 
+## 2026-07-13 resumed Studio integration checkpoint
+
+The canceled Codex tracking record did not remove the recovered work. The
+trusted recovery branch remains independently preserved, and the unified
+Studio integration continues on `codex/facetta-integration`.
+
+This checkpoint closes two review-state hazards. A stale pre-spec visual
+candidate is now terminalized together with its exact uncharged Refine job,
+clears temporary bytes, and cannot create a revision or review decision.
+Generic Activity cancellation now fails closed once a job reaches `reviewing`;
+candidate-specific Apply, Save as Variation, and Discard remain the atomic
+decision boundary.
+
+The production Studio shell also removes avoidable navigation repetition:
+action workspaces use one compact return control, returning designers can open
+saved work directly from Studio, and Activity polls only while work is queued
+or running. Ring-only fact confirmation is no longer presented as a universal
+primary action. It is explicitly labeled `Ring facts` under More. Factory
+language remains absent until the backend reports that the exact revision is
+both entitled and eligible; the older readiness registry entry is retained
+internally during migration but is not visible.
+
+Local validation at this checkpoint: 1,439 backend tests, 230 Jest tests, 61
+Studio contract tests, TypeScript, Ruff, Expo web export, and the ten-project
+production TypeScript-client -> HTTP -> FastAPI acceptance all pass. The
+acceptance reports no canonical mutation before acceptance, no canonical
+asset/revision or charge from failed QA, and no Factory use. These local
+results do not satisfy the two external gates: the signed frozen 144-image
+corpus with founder/GIA review and live two-principal HTTPS staging isolation
+remain `not_run` / `unmet` in `STUDIO_EXTERNAL_BETA_GATES.md`.
+
 ## 2026-07-12 AI-first studio architecture direction
 
 The target product architecture is now recorded in

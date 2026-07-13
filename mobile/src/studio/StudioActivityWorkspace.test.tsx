@@ -34,6 +34,10 @@ function api(overrides: Partial<StudioActivityApi> = {}): StudioActivityApi {
 }
 
 describe('StudioActivityWorkspace', () => {
+  afterEach(() => {
+    jest.useRealTimers();
+  });
+
   test('loads only the current owner and explains requested-output billing', async () => {
     const client = api();
     const view = await render(<StudioActivityWorkspace api={client} owner="usr_designer" />);
@@ -93,6 +97,58 @@ describe('StudioActivityWorkspace', () => {
 
     expect(await view.findByText('Facetta could not connect. Check your connection and try again.')).toBeTruthy();
     expect(view.queryByText('Nothing is running yet')).toBeNull();
+  });
+
+  test('polls queued and running work, then stops after settlement', async () => {
+    jest.useFakeTimers();
+    const settled: StudioJobRecord = {
+      ...running,
+      status: 'succeeded',
+      progress: 1,
+      billing: {
+        ...running.billing,
+        completed_outputs: 4,
+        charged_outputs: 4,
+        charged_credits: 28,
+      },
+    };
+    const listStudioJobs = jest.fn()
+      .mockResolvedValueOnce({ data: { jobs: [running] }, error: null, status: 200 })
+      .mockResolvedValue({ data: { jobs: [settled] }, error: null, status: 200 });
+    const view = await render(<StudioActivityWorkspace
+      api={api({ listStudioJobs })}
+      owner="usr_designer"
+    />);
+
+    expect(await view.findByText('Creating')).toBeTruthy();
+    expect(listStudioJobs).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      jest.advanceTimersByTime(3_000);
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(await view.findByText('Ready')).toBeTruthy();
+    expect(listStudioJobs).toHaveBeenCalledTimes(2);
+
+    await act(async () => {
+      jest.advanceTimersByTime(9_000);
+      await Promise.resolve();
+    });
+    expect(listStudioJobs).toHaveBeenCalledTimes(2);
+  });
+
+  test('empty state names only actions that create Activity jobs', async () => {
+    const view = await render(<StudioActivityWorkspace
+      api={api({
+        listStudioJobs: jest.fn(async () => ({
+          data: { jobs: [] }, error: null, status: 200,
+        })),
+      })}
+      owner="usr_designer"
+    />);
+
+    expect(await view.findByText(/Generation requests from Create, Refine, Views, and Present/)).toBeTruthy();
+    expect(view.queryByText(/Vary/)).toBeNull();
   });
 
   test('routes a reviewing Refine job back to its pending decision', async () => {

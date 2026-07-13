@@ -81,11 +81,91 @@ def _candidate(record: PreviewCandidateRecord) -> StudioVisualCandidate:
     )
 
 
+def _settle_zero_output_job(
+    db: Session,
+    record: PreviewCandidateRecord,
+    *,
+    status: Literal["failed", "canceled"],
+    error_code: str | None,
+) -> None:
+    """Settle the candidate's exact Refine job without charging an output."""
+
+    if record.studio_job_id is None:
+        return
+    job = db.scalar(select(StudioJobRecord).where(
+        StudioJobRecord.id == record.studio_job_id,
+    ).with_for_update())
+    canonical = studio_job_action_definition("refine")
+    if (
+        job is None
+        or job.owner != record.owner
+        or job.action_id != "refine"
+        or job.lane != canonical.lane
+        or job.credits_per_output != canonical.credits_per_output
+        or job.requested_outputs != 1
+        or job.active_design_id != record.project_root_id
+        or job.source_revision_id != record.source_asset_id
+    ):
+        raise StudioVisualCandidateUnavailable(
+            "the visual preview Studio Refine job is unavailable"
+        )
+    if job.completed_outputs != 0 or job.charged_outputs != 0:
+        raise StudioVisualCandidateUnavailable(
+            "a completed or charged Studio Refine job cannot reject this preview"
+        )
+    if job.status in {"running", "reviewing"}:
+        job.status = status
+        job.progress = 1
+        job.error_code = error_code
+        job.updated_at = utcnow()
+        return
+    if job.status == status and job.error_code == error_code:
+        return
+    raise StudioVisualCandidateUnavailable(
+        f"the visual preview Studio Refine job is already {job.status}"
+    )
+
+
 def _expire(db: Session, record: PreviewCandidateRecord) -> None:
+    _settle_zero_output_job(
+        db, record, status="canceled", error_code=None,
+    )
     record.status = "expired"
     record.image = b""
     record.resolved_at = utcnow()
     db.commit()
+
+
+def invalidate_studio_visual_candidate(
+    db: Session,
+    run_id: str,
+    candidate_id: str,
+    *,
+    owner: str,
+    error_code: str = "visual_preview_unavailable",
+) -> bool:
+    """Atomically close a stale preview and its uncharged Activity job.
+
+    A missing, foreign, or already-terminal candidate is intentionally a
+    no-op. Only the exact owned reviewing row may settle its linked Refine job.
+    """
+
+    record = db.scalar(select(PreviewCandidateRecord).where(
+        PreviewCandidateRecord.id == candidate_id,
+        PreviewCandidateRecord.image_run_id == run_id,
+        PreviewCandidateRecord.kind == "studio_visual",
+        PreviewCandidateRecord.owner == owner,
+    ).with_for_update())
+    if record is None or record.status != "reviewing":
+        return False
+    _settle_zero_output_job(
+        db, record, status="failed", error_code=error_code[:64],
+    )
+    record.status = "expired"
+    record.image = b""
+    record.resolved_at = utcnow()
+    db.commit()
+    return True
 
 
 def _owned_reviewing_record(

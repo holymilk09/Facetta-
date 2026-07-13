@@ -65,9 +65,9 @@ export const STUDIO_ACTIONS: readonly StudioActionDefinition[] = [
   },
   {
     id: 'confirm',
-    label: 'Confirm design details',
-    shortLabel: 'Confirm',
-    description: 'Record the ring identity and the dimensions you know, while keeping estimates clearly separate.',
+    label: 'Review ring design facts',
+    shortLabel: 'Ring facts',
+    description: 'For ring designs, record the identity and dimensions you know while keeping estimates clearly separate.',
     lane: 'instant',
     referenceRoles: ['master_geometry', 'construction_detail'],
     fields: [
@@ -82,7 +82,7 @@ export const STUDIO_ACTIONS: readonly StudioActionDefinition[] = [
     authority: 'design_record',
     requiresActiveDesign: true,
     createsJob: false,
-    placement: 'primary',
+    placement: 'more',
     isAvailable: (context) => activeDesign(context)
       && context.hasSelectedPreSpecVisual
       && !context.hasExactSpecification,
@@ -163,9 +163,10 @@ export const STUDIO_ACTIONS: readonly StudioActionDefinition[] = [
     requiresActiveDesign: true,
     createsJob: false,
     placement: 'more',
-    isAvailable: (context) => (
-      exactDesign(context) && context.factoryEnabled && !context.factoryEligible
-    ),
+    // Kept in the typed registry for compatibility while a neutral readiness
+    // experience is designed under Advanced specifications. Factory language
+    // is not exposed in Studio until the exact revision is actually eligible.
+    isAvailable: () => false,
   },
   {
     ...jobAction('factory'),

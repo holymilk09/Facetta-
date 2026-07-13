@@ -899,9 +899,17 @@ def test_failed_and_canceled_jobs_never_charge(client):
         f"/studio/jobs/{reviewing_id}/cancel",
         json={"owner": "usr_designer"},
     )
-    assert dismissed.status_code == 200
-    assert dismissed.json()["status"] == "canceled"
-    assert dismissed.json()["billing"]["charged_credits"] == 0
+    assert dismissed.status_code == 409
+    assert dismissed.json()["detail"] == (
+        "Studio job cannot be canceled from reviewing"
+    )
+    still_reviewing = client.get(
+        f"/studio/jobs/{reviewing_id}",
+        params={"owner": "usr_designer"},
+    )
+    assert still_reviewing.status_code == 200
+    assert still_reviewing.json()["status"] == "reviewing"
+    assert still_reviewing.json()["billing"]["charged_credits"] == 0
 
     cancel_again = client.post(
         f"/studio/jobs/{canceled_id}/cancel",

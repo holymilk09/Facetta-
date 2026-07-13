@@ -263,11 +263,20 @@ test('saving a selected direction continues to Refine and authenticates its Stud
   expect(await view.findByText('Refine route reached')).toBeTruthy();
   expect(view.queryByText('Your design families')).toBeNull();
 
-  fireEvent.press(view.getByText('Close'));
+  fireEvent.press(view.getByLabelText('Back to Studio'));
   const cover = await view.findByLabelText('Current design cover');
   expect(cover.props.source.headers).toEqual({
     Authorization: 'Bearer server-issued-test-token',
   });
+});
+
+test('Studio home opens Collections through the saved-work continuation', async () => {
+  authenticate();
+  const view = await render(<App />);
+
+  const continuation = await view.findByLabelText('Continue saved work');
+  fireEvent.press(continuation);
+  expect(await view.findByText('Vary exact none')).toBeTruthy();
 });
 
 test('Collections delegates variation creation to Studio Vary with the exact active project', async () => {
@@ -298,7 +307,8 @@ test('confirming Design v1 returns immediately to Refine without a Collections o
   fireEvent.press(await view.findByText('Save mocked direction'));
   expect(await view.findByText('Refine route reached')).toBeTruthy();
 
-  fireEvent.press(view.getByLabelText('Confirm design details'));
+  fireEvent.press(view.getByLabelText('More actions'));
+  fireEvent.press(await view.findByText('Ring facts'));
   fireEvent.press(await view.findByText('Confirm mocked design'));
 
   expect(await view.findByText('Refine route reached')).toBeTruthy();

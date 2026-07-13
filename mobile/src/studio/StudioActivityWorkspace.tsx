@@ -84,6 +84,16 @@ export function StudioActivityWorkspace({
     void load();
   }, [load]);
 
+  const hasActiveJob = jobs?.some((job) => (
+    job.status === 'queued' || job.status === 'running'
+  )) === true;
+
+  useEffect(() => {
+    if (!hasActiveJob) return () => {};
+    const timer = setTimeout(() => { void load(); }, 3_000);
+    return () => clearTimeout(timer);
+  }, [hasActiveJob, jobs, load]);
+
   const cancel = async (job: StudioJobRecord) => {
     setCancelingId(job.job_id);
     setError(null);
@@ -123,7 +133,7 @@ export function StudioActivityWorkspace({
       {jobs.length === 0 && error === null ? (
         <View style={styles.empty}>
           <Text style={styles.emptyTitle}>Nothing is running yet</Text>
-          <Text style={styles.muted}>Start with Create, Vary, Refine, Views, or Present. Your requests will stay visible here.</Text>
+          <Text style={styles.muted}>Generation requests from Create, Refine, Views, and Present will stay visible here.</Text>
         </View>
       ) : jobs.map((job) => {
         const cancellable = job.status === 'queued' || job.status === 'running';

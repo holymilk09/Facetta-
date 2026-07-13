@@ -423,7 +423,30 @@ def test_apply_rejects_stale_selected_visual_and_source_hash(
     app.dependency_overrides[get_studio_visual_preview_generator] = (
         lambda: _generator([])
     )
-    first = _preview(client).json()
+    created = client.post("/studio/jobs", json={
+        "owner": "usr_studio",
+        "action_id": "refine",
+        "lane": "trusted_structural",
+        "active_design_id": "ast_selected",
+        "source_revision_id": "ast_selected",
+        "requested_outputs": 1,
+        "credits_per_output": 20,
+    })
+    assert created.status_code == 201, created.text
+    job_id = created.json()["job_id"]
+    running = client.patch(f"/studio/jobs/{job_id}", json={
+        "owner": "usr_studio",
+        "status": "running",
+        "progress": 0.05,
+    })
+    assert running.status_code == 200, running.text
+    first = _preview(client, studio_job_id=job_id).json()
+    reviewing = client.patch(f"/studio/jobs/{job_id}", json={
+        "owner": "usr_studio",
+        "status": "reviewing",
+        "progress": 0.9,
+    })
+    assert reviewing.status_code == 200, reviewing.text
     with Session() as db:
         sibling = ImageAsset(
             id="ast_other",
@@ -448,7 +471,7 @@ def test_apply_rejects_stale_selected_visual_and_source_hash(
     )
     assert stale.status_code == 410
     assert stale.json()["code"] == "visual_preview_unavailable"
-    discarded = client.post(
+    unavailable = client.post(
         f"/studio/image-runs/{first['image_run_id']}/visual-candidates/"
         f"{first['candidate']['candidate_id']}/discard",
         json={
@@ -456,7 +479,25 @@ def test_apply_rejects_stale_selected_visual_and_source_hash(
             "expected_active_asset_id": "ast_selected",
         },
     )
-    assert discarded.status_code == 200
+    assert unavailable.status_code == 410
+
+    with Session() as db:
+        candidate = db.get(
+            PreviewCandidateRecord, first["candidate"]["candidate_id"])
+        assert candidate is not None
+        assert candidate.status == "expired"
+        assert candidate.resolved_at is not None
+        assert bytes(candidate.image) == b""
+        job = db.get(StudioJobRecord, job_id)
+        assert job is not None
+        assert job.status == "failed"
+        assert job.progress == 1
+        assert job.completed_outputs == 0
+        assert job.charged_outputs == 0
+        assert job.error_code == "visual_preview_unavailable"
+        assert db.scalar(select(func.count()).select_from(ImageRunReview)) == 0
+        assert db.scalar(select(func.count()).select_from(
+            ProjectRevisionRecord)) == 0
 
     with Session() as db:
         db.get(Project, "ast_selected").selected_candidate_asset_id = "ast_selected"

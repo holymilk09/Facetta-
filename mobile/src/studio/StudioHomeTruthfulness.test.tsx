@@ -19,6 +19,7 @@ test('signed-in Studio home offers one start decision without a duplicate featur
   const view = await render(<App />);
 
   await waitFor(() => expect(view.getByText('Start from an idea or reference')).toBeTruthy());
+  expect(view.getByLabelText('Continue saved work')).toBeTruthy();
   expect(view.queryByText('Creative studios')).toBeNull();
   expect(view.queryByText('Preserve a new direction')).toBeNull();
   expect(view.queryByText('Prepare presentation imagery')).toBeNull();

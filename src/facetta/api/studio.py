@@ -77,6 +77,7 @@ from facetta.studio_jobs import (
 from facetta.studio_visual_candidates import (
     StudioVisualCandidateUnavailable,
     get_studio_visual_candidate,
+    invalidate_studio_visual_candidate,
     list_studio_visual_candidates,
     remove_studio_visual_candidate,
     store_studio_visual_candidate,
@@ -410,7 +411,10 @@ PreSpecPresentationGeneratorDep = Annotated[
 _JOB_TRANSITIONS: dict[str, frozenset[str]] = {
     "queued": frozenset({"running", "canceled", "failed"}),
     "running": frozenset({"reviewing", "canceled", "failed"}),
-    "reviewing": frozenset({"succeeded", "failed", "canceled"}),
+    # Once an output is in review, its candidate-specific Accept/Discard
+    # endpoint owns the atomic candidate + job decision. Generic cancellation
+    # would otherwise strand a reviewable candidate behind a canceled job.
+    "reviewing": frozenset({"succeeded", "failed"}),
     "succeeded": frozenset(),
     "failed": frozenset(),
     "canceled": frozenset(),
@@ -1028,12 +1032,32 @@ def accept_visual_preview(
         )
         db.commit()
     except StudioVisualCandidateUnavailable as exc:
+        invalidate_studio_visual_candidate(
+            db,
+            run_id,
+            candidate_id,
+            owner=request.created_by,
+        )
         return JSONResponse(status_code=410, content={
             "code": "visual_preview_unavailable",
             "category": "conflict",
             "detail": str(exc),
         })
     except StudioHistoryError as exc:
+        if exc.code in {
+            "stale_asset_revision",
+            "visual_preview_already_reviewed",
+            "visual_preview_run_mismatch",
+            "visual_preview_source_hash_mismatch",
+            "visual_preview_unavailable",
+        }:
+            invalidate_studio_visual_candidate(
+                db,
+                run_id,
+                candidate_id,
+                owner=request.created_by,
+                error_code=exc.code,
+            )
         return _error(exc)
     project = db.get(Project, accepted.project_root_id)
     if project is None:  # pragma: no cover - transaction invariant

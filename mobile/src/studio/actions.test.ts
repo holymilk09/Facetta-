@@ -30,7 +30,7 @@ test('only Create is visible without an active design', () => {
   );
 });
 
-test('Factory readiness precedes the eligibility-gated Factory destination inside More', () => {
+test('Factory remains absent until the exact revision is eligible', () => {
   const active = {
     ...emptyContext,
     activeDesignId: 'dsn_1',
@@ -40,7 +40,7 @@ test('Factory readiness precedes the eligibility-gated Factory destination insid
   };
   assert.deepEqual(
     getVisibleStudioActions(active, 'more').map((action) => action.id),
-    ['specifications', 'factory_readiness'],
+    ['specifications'],
   );
   assert.deepEqual(
     getVisibleStudioActions({ ...active, factoryEligible: true }, 'more').map((action) => action.id),
@@ -71,25 +71,28 @@ test('pre-spec directions expose Refine and Present while keeping Views spec-bac
   };
   assert.deepEqual(
     getStudioRailActions(selectedCreativeDirection).map((action) => action.id),
-    ['create', 'vary', 'refine', 'confirm', 'present'],
+    ['create', 'vary', 'refine', 'present', 'more'],
   );
 });
 
-test('Confirm appears only for the selected pre-spec visual and never exposes Factory', () => {
+test('ring fact review is secondary for a selected pre-spec visual and never exposes Factory', () => {
   const preSpec = {
     ...emptyContext,
     activeDesignId: 'project_1',
     activeRevisionId: 'asset_1',
     hasSelectedPreSpecVisual: true,
   };
-  assert.equal(getStudioRailActions(preSpec).some((action) => action.id === 'confirm'), true);
+  assert.equal(getStudioRailActions(preSpec).some((action) => action.id === 'confirm'), false);
+  assert.equal(getVisibleStudioActions(preSpec, 'more').some((action) => (
+    action.id === 'confirm' && action.shortLabel === 'Ring facts'
+  )), true);
   assert.equal(getVisibleStudioActions(preSpec, 'more').some((action) => action.id === 'factory'), false);
-  assert.equal(getStudioRailActions({
+  assert.equal(getVisibleStudioActions({
     ...preSpec, hasSelectedPreSpecVisual: false,
-  }).some((action) => action.id === 'confirm'), false);
-  assert.equal(getStudioRailActions({
+  }, 'more').some((action) => action.id === 'confirm'), false);
+  assert.equal(getVisibleStudioActions({
     ...preSpec, hasExactSpecification: true,
-  }).some((action) => action.id === 'confirm'), false);
+  }, 'more').some((action) => action.id === 'confirm'), false);
 });
 
 test('the current branch action is transparent and does not charge for generation', () => {

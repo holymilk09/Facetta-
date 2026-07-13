@@ -497,6 +497,20 @@ export default function App() {
               onPress={() => openStudioAction('refine')}
             />
           )}
+          {!hasActiveRevision && (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Continue saved work"
+              style={styles.savedWorkCard}
+              onPress={() => setTab('collections')}>
+              <View style={styles.savedWorkCopy}>
+                <Text style={styles.savedWorkEyebrow}>SAVED WORK</Text>
+                <Text style={styles.savedWorkTitle}>Continue saved work</Text>
+                <Text style={styles.savedWorkBody}>Open Collections to continue a design family or revision.</Text>
+              </View>
+              <Text style={styles.savedWorkArrow}>→</Text>
+            </Pressable>
+          )}
           <StudioCard
             image={designImage}
             imageLabel="New design inspiration"
@@ -514,12 +528,12 @@ export default function App() {
       {tab === 'studio' && studioView === 'action' && (
         <View style={styles.actionWorkspace}>
           <View style={styles.actionContextBanner}>
-            <View style={styles.actionContextCopy}>
-              <Text style={styles.actionContextEyebrow}>STUDIO</Text>
-              <Text style={styles.actionContextBody}>{getStudioAction(selectedActionId).description}</Text>
-            </View>
-            <Pressable onPress={() => setStudioView('home')}>
-              <Text style={styles.actionContextClose}>Close</Text>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Back to Studio"
+              style={styles.actionContextBack}
+              onPress={() => setStudioView('home')}>
+              <Text style={styles.actionContextBackText}>← Studio</Text>
             </Pressable>
           </View>
           {selectedActionId === 'create' ? (
@@ -837,17 +851,14 @@ const styles = StyleSheet.create({
   actionContextBanner: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
     borderBottomWidth: 1,
     borderBottomColor: theme.line,
     backgroundColor: theme.card,
     paddingHorizontal: 18,
-    paddingVertical: 10,
+    paddingVertical: 8,
   },
-  actionContextCopy: { flex: 1, paddingRight: 14 },
-  actionContextEyebrow: { color: '#6f52d9', fontSize: 9, fontWeight: '800', letterSpacing: 1.1 },
-  actionContextBody: { color: theme.faint, fontSize: 11, lineHeight: 16, marginTop: 3 },
-  actionContextClose: { color: theme.ink, fontSize: 12, fontWeight: '600' },
+  actionContextBack: { paddingVertical: 3, paddingRight: 10 },
+  actionContextBackText: { color: theme.ink, fontSize: 12, fontWeight: '700' },
   dashboard: { flex: 1, backgroundColor: '#15121c' },
   dashboardContent: {
     width: '100%',
@@ -871,6 +882,24 @@ const styles = StyleSheet.create({
   livePillText: { fontSize: 10, letterSpacing: 1.4, fontWeight: '700', color: '#d4c8ff' },
   dashboardTitle: { fontFamily: theme.serif, fontSize: 31, lineHeight: 36, color: '#ffffff', maxWidth: 360 },
   dashboardBody: { fontSize: 13, lineHeight: 20, color: '#aaa2b5', marginTop: 10, maxWidth: 380 },
+  savedWorkCard: {
+    width: '100%',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: '#41364f',
+    backgroundColor: '#221d2b',
+    paddingHorizontal: 18,
+    paddingVertical: 16,
+    marginBottom: 12,
+  },
+  savedWorkCopy: { flex: 1, paddingRight: 16 },
+  savedWorkEyebrow: { color: '#b9a6ff', fontSize: 9, fontWeight: '800', letterSpacing: 1.2 },
+  savedWorkTitle: { color: '#ffffff', fontSize: 17, fontWeight: '700', marginTop: 4 },
+  savedWorkBody: { color: '#aaa2b5', fontSize: 12, lineHeight: 18, marginTop: 4 },
+  savedWorkArrow: { color: '#b9a6ff', fontSize: 22, fontWeight: '600' },
   studioCard: {
     width: '48.5%',
     aspectRatio: 0.92,
