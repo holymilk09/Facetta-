@@ -20,7 +20,10 @@ from sqlalchemy.orm import Session
 from facetta.api.error_mapping import image_agent_error_response
 from facetta.api.projects import (
     ProductPhotoRequest,
+    ProjectDetail,
+    ProjectFromImageRequest,
     ProjectRenderRequest,
+    confirmed_import_response,
     create_product_photo,
     project_card,
     project_detail,
@@ -165,6 +168,21 @@ class StudioProductPhotoRequest(ProductPhotoRequest):
 
     presentation_only: Literal[True]
     studio_job_id: Annotated[str, Field(min_length=1, max_length=32)]
+
+
+@router.post(
+    "/projects/import-confirmed",
+    status_code=201,
+    response_model=ProjectDetail,
+    response_model_exclude_none=True,
+)
+def import_confirmed_studio_project(
+    request: ProjectFromImageRequest,
+    db: DbSession,
+    principal: PrincipalDep,
+):
+    """Create Design v1 only from an exact source-bound confirmed audit."""
+    return confirmed_import_response(request, db, principal)
 
 
 @router.get("/capabilities", response_model=StudioCapabilities)

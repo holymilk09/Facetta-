@@ -25,6 +25,12 @@ from sqlalchemy.orm import Session
 
 from facetta.chain_geometry import chain_factory_blockers
 from facetta.checklist import checklist_status
+from facetta.confirmed_import import (
+    ConfirmedImportCommand,
+    ConfirmedImportRejected,
+    ConfirmedImportSourceAuditPolicy,
+    import_confirmed_project,
+)
 from facetta.concept import ConceptInvalid
 from facetta.creative_workflow import (
     CreativePromptGenerator,
@@ -101,7 +107,6 @@ from facetta.project_backbone import (
     BriefProjectGenerator,
     BriefProjectGeneratorUnavailable,
     CreativeCandidateInput,
-    DesignAlreadyLinked,
     PersistedProjectInput,
     PROVENANCE_BY_CAPABILITY,
     SourceAssetInput,
@@ -1185,81 +1190,6 @@ def _validate_ring_spec(spec: Spec):
     return result.spec, None
 
 
-def _validate_confirmed_import_spec(spec: Spec):
-    """Validate the categories accepted by designer-confirmed image import.
-
-    Brief generation remains ring-only. Necklace import is deliberately
-    limited to the existing pendant-necklace template and must name a carrier
-    chain; missing manufacturing facts remain visible factory blockers and
-    cannot be used by the catalog route until explicitly supplied.
-    """
-    if spec.jewelry_type == "ring":
-        return _validate_ring_spec(spec)
-    if spec.jewelry_type != "necklace":
-        return None, JSONResponse(status_code=422, content={
-            "error_category": "validation_failure",
-            "detail": (
-                "designer-confirmed project import currently supports rings "
-                "and pendant necklaces only"
-            ),
-        })
-    if spec.template != "cluster_pendant" or spec.chain is None:
-        return None, JSONResponse(status_code=422, content={
-            "error_category": "validation_failure",
-            "detail": (
-                "a trusted necklace import requires template "
-                "'cluster_pendant' and an explicit carrier-chain section"
-            ),
-        })
-    result = validate_spec(spec, get_vocabulary())
-    if not result.ok:
-        return None, JSONResponse(status_code=422, content={
-            "error_category": "validation_failure",
-            "detail": [issue.as_detail() for issue in result.issues],
-        })
-    return result.spec, None
-
-
-def _confirmed_import_coverage_error(
-    spec: Spec,
-    source_image: bytes | None = None,
-) -> JSONResponse | None:
-    """Fail closed for new imports without exact audited source accounting."""
-    coverage = spec.source_component_coverage
-    if coverage is None:
-        return JSONResponse(status_code=422, content={
-            "error_category": "validation_failure",
-            "code": "source_component_coverage_required",
-            "detail": (
-                "a new image import requires server-reviewed source-component "
-                "coverage; extract the source, resolve every visible component, "
-                "and complete the independent audit before project creation"
-            ),
-        })
-    blockers = source_component_factory_blockers(
-        coverage,
-        valid_spec_paths=valid_source_component_spec_paths(spec),
-        current_spec_visual_hash=spec_visual_hash(spec),
-        current_source_hash=(
-            hashlib.sha256(source_image).hexdigest()
-            if source_image is not None else None
-        ),
-    )
-    if not blockers:
-        return None
-    return JSONResponse(status_code=409, content={
-        "error_category": "validation_failure",
-        "code": "source_component_coverage_incomplete",
-        "detail": (
-            "every visible source component must map to the exact confirmed "
-            "specification and pass independent audit before project creation"
-        ),
-        "factory_blockers": [
-            blocker.model_dump(mode="json") for blocker in blockers
-        ],
-    })
-
-
 def _owned_creative_candidate(
     db: Session,
     *,
@@ -2303,63 +2233,51 @@ def promote_project_creative_candidate(
 
 @router.post(
     "/from-image", status_code=201, response_model=ProjectDetail,
-    response_model_exclude_none=True,
+    response_model_exclude_none=True, deprecated=True,
 )
 def create_project_from_image(
     request: ProjectFromImageRequest,
     db: DbSession,
     principal: PrincipalDep,
 ):
-    """Persist a designer-confirmed ring or pendant-necklace reference."""
-    principal_actor(principal, request.owner)
-    try:
-        image = base64.b64decode(request.image_base64, validate=True)
-    except (binascii.Error, ValueError):
-        return JSONResponse(status_code=422, content={
-            "error_category": "validation_failure",
-            "detail": "image_base64 is not valid base64",
-        })
-    detected = _uploaded_media_type(image)
-    if detected is None:
-        return JSONResponse(status_code=422, content={
-            "error_category": "validation_failure",
-            "detail": "upload must be a PNG, JPEG, or WebP image",
-        })
-    if request.media_type is not None and request.media_type != detected:
-        return JSONResponse(status_code=422, content={
-            "error_category": "validation_failure",
-            "detail": (f"media_type says {request.media_type}, but the upload "
-                       f"is {detected}"),
-        })
-    spec, error = _validate_confirmed_import_spec(request.spec)
-    if error:
-        return error
-    coverage_error = _confirmed_import_coverage_error(spec, image)
-    if coverage_error is not None:
-        return coverage_error
+    """Deprecated development compatibility for confirmed image import."""
+    return confirmed_import_response(
+        request,
+        db,
+        principal,
+        source_audit_policy="legacy_compatible",
+    )
 
+
+def confirmed_import_response(
+    request: ProjectFromImageRequest,
+    db: Session,
+    principal: AuthenticatedPrincipal,
+    *,
+    source_audit_policy: ConfirmedImportSourceAuditPolicy = "exact",
+):
+    """Shared authenticated HTTP adapter for canonical and legacy routes."""
+    actor = principal_actor(principal, request.owner)
     try:
-        result = persist_project_v1(
+        result = import_confirmed_project(
             db,
-            PersistedProjectInput(
-                spec=spec,
-                primary_image=image,
-                primary_capability="IMPORTED_REFERENCE",
-                primary_instruction="Designer-confirmed imported reference",
-                primary_media_type=detected,
+            ConfirmedImportCommand(
+                image_base64=request.image_base64,
+                media_type=request.media_type,
+                spec=request.spec,
+                actor=actor,
+                title=request.title,
+                collection=request.collection,
+                tags=tuple(request.tags),
+                source_audit_policy=source_audit_policy,
             ),
-            owner=request.owner,
-            title=request.title,
-            collection=request.collection,
-            tags=request.tags,
         )
-    except DesignAlreadyLinked as exc:
-        return JSONResponse(status_code=409, content={
-            "error_category": "design_already_linked",
-            "detail": str(exc),
-            "existing_root_id": exc.root_id,
-        })
-    return project_detail(db, db.get(Project, result.root_id))
+    except ConfirmedImportRejected as exc:
+        return JSONResponse(status_code=exc.status_code, content=exc.content)
+    project = db.get(Project, result.root_id)
+    if project is None:  # pragma: no cover - committed service invariant
+        raise RuntimeError("confirmed import committed without its project")
+    return project_detail(db, project)
 
 
 def _brief_warning_response(

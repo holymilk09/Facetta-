@@ -476,7 +476,7 @@ def run(
 
     from facetta.media import sniff_media_type
 
-    created_response = client.post("/projects/from-image", json={
+    created_response = client.post("/studio/projects/import-confirmed", json={
         "image_base64": base64.b64encode(source_bytes).decode(),
         "media_type": sniff_media_type(source_bytes),
         "spec": spec.model_dump(mode="json"),

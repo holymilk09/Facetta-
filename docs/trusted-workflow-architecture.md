@@ -48,7 +48,8 @@ The first-slice public boundary is intentionally small:
 
 - Project creation and retrieval: category-neutral `POST /projects/from-prompt`,
   structured-ring `POST /projects/from-brief`, neutral
-  `POST /projects/from-drawing`, designer-confirmed `POST /projects/from-image`,
+  `POST /projects/from-drawing`, exact-source designer-confirmed
+  `POST /studio/projects/import-confirmed`,
   candidate promotion, Studio-owned
   `POST /studio/projects/{root_id}/beauty-render`, and
   `GET /projects/{root_id}`.

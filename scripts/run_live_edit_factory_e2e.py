@@ -259,7 +259,7 @@ def run(run_name: str) -> int:
     client = _client()
     created = _expect(
         "create project from independently audited reference",
-        client.post("/projects/from-image", json={
+        client.post("/studio/projects/import-confirmed", json={
             "image_base64": base64.b64encode(source).decode(),
             "media_type": "image/jpeg",
             "spec": spec.model_dump(mode="json"),

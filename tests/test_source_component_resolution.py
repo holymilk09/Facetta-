@@ -401,6 +401,7 @@ def test_draft_api_applies_batch_without_persistence_and_returns_readiness(
         "source_kind": body["source_kind"],
         "components": body["components"],
         "audited_spec_visual_hash": None,
+        "audited_source_sha256": None,
     }
 
 

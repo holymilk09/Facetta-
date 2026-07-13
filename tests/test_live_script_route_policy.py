@@ -9,6 +9,24 @@ ROOT = Path(__file__).resolve().parent.parent
 @pytest.mark.parametrize(
     "relative_path",
     (
+        "scripts/run_designer_corrected_e2e.py",
+        "scripts/run_standard_halo_full_e2e.py",
+        "scripts/run_live_edit_factory_e2e.py",
+        "scripts/run_necklace_chain_catalog_eval.py",
+    ),
+)
+def test_exact_reference_scripts_use_canonical_studio_import(
+    relative_path: str,
+) -> None:
+    source = (ROOT / relative_path).read_text()
+
+    assert "/studio/projects/import-confirmed" in source
+    assert "/projects/from-image" not in source
+
+
+@pytest.mark.parametrize(
+    "relative_path",
+    (
         "scripts/run_live_edit_factory_e2e.py",
         "scripts/run_necklace_chain_catalog_eval.py",
     ),

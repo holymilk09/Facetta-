@@ -35,7 +35,21 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from facetta.config import load_env_file  # noqa: E402
 from facetta.db import Base, get_db  # noqa: E402
+from facetta.image_identity import spec_visual_hash  # noqa: E402
 from facetta.main import app  # noqa: E402
+from facetta.media import sniff_media_type  # noqa: E402
+from facetta.source_component_audit import (  # noqa: E402
+    audit_source_component_coverage,
+)
+from facetta.source_component_coverage import (  # noqa: E402
+    source_component_factory_blockers,
+)
+from facetta.source_component_resolution import (  # noqa: E402
+    valid_source_component_spec_paths,
+)
+from facetta.source_component_seed import (  # noqa: E402
+    seed_imported_reference_coverage,
+)
 from facetta.spec import Spec  # noqa: E402
 from facetta.validation import validate_spec  # noqa: E402
 from facetta.vocabulary import get_vocabulary  # noqa: E402
@@ -76,7 +90,7 @@ def _corrected_spec() -> Spec:
             "cut": "marquise",
             "carat": 0.015,
             "dimensions_mm": {"length": 2.5, "width": 1.3, "depth": 0.8},
-            "color": {"trade": "colorless", "gia": "F"},
+            "color": {"trade": "F Colorless", "gia": "F"},
             "clarity": None,
             "origin": None,
             "treatment": None,
@@ -89,7 +103,7 @@ def _corrected_spec() -> Spec:
             "cut": "round_brilliant",
             "carat": 0.007,
             "dimensions_mm": {"length": 1.2, "width": 1.2, "depth": 0.73},
-            "color": {"trade": "colorless", "gia": "F"},
+            "color": {"trade": "F Colorless", "gia": "F"},
             "clarity": None,
             "origin": None,
             "treatment": None,
@@ -155,15 +169,38 @@ def run(run_name: str, *, test_accept_color_warning: bool = False) -> None:
     client = _client()
     source_bytes = REFERENCE.read_bytes()
     spec = _corrected_spec()
+    audit_evidence: list[dict] = []
+    coverage = audit_source_component_coverage(
+        source_bytes,
+        seed_imported_reference_coverage(spec),
+        spec=spec,
+        evidence_sink=audit_evidence.append,
+    )
+    spec = spec.model_copy(update={"source_component_coverage": coverage})
+    coverage_blockers = source_component_factory_blockers(
+        coverage,
+        valid_spec_paths=valid_source_component_spec_paths(spec),
+        current_spec_visual_hash=spec_visual_hash(spec),
+        current_source_hash=coverage.audited_source_sha256,
+    )
+    _write_json(outdir / "source-coverage-audit-evidence.json", audit_evidence)
+    if coverage_blockers:
+        raise RuntimeError(
+            "corrected reference source coverage is not importable: "
+            + json.dumps([
+                blocker.model_dump(mode="json")
+                for blocker in coverage_blockers
+            ])
+        )
     _write_json(outdir / "corrected-test-spec.json", spec.model_dump(mode="json"))
 
     created = _expect(
         "create project from corrected reference",
         client.post(
-            "/projects/from-image",
+            "/studio/projects/import-confirmed",
             json={
                 "image_base64": base64.b64encode(source_bytes).decode(),
-                "media_type": "image/jpeg",
+                "media_type": sniff_media_type(source_bytes),
                 "spec": spec.model_dump(mode="json"),
                 "owner": "usr_test_designer",
                 "title": "Leaf ring corrected-spec live acceptance",

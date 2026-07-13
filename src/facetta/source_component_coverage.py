@@ -175,6 +175,9 @@ class SourceComponentCoverage(_FrozenStrictModel):
     source_kind: Literal["designer_plate", "imported_reference"]
     components: Annotated[tuple[SourceVisibleComponent, ...], Field(min_length=1)]
     audited_spec_visual_hash: SpecVisualHash | None = None
+    # Optional so historical specifications remain readable. Canonical Studio
+    # imports require this value and compare it with the exact uploaded bytes.
+    audited_source_sha256: Sha256Hex | None = None
 
     @model_validator(mode="after")
     def require_unique_component_ids(self) -> SourceComponentCoverage:

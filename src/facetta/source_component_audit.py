@@ -1223,4 +1223,5 @@ def audit_source_component_coverage(
         audited_spec_visual_hash=(
             spec_visual_hash(spec) if spec is not None else None
         ),
+        audited_source_sha256=hashlib.sha256(source_image).hexdigest(),
     )

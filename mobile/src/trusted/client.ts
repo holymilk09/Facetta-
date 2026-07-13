@@ -3559,7 +3559,7 @@ export function createTrustedApiClient(options: TrustedApiClientOptions) {
     },
 
     createProjectFromImage(request: CreateProjectFromImageRequest) {
-      return projectCall('/projects/from-image', {
+      return projectCall('/studio/projects/import-confirmed', {
         method: 'POST',
         body: encodeBody({
           image_base64: request.image_base64,

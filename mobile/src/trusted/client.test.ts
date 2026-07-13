@@ -547,6 +547,47 @@ describe('trusted API decoders', () => {
     });
   });
 
+  test('posts confirmed exact references only to the canonical Studio import route', async () => {
+    const fetcher = jest.fn(async (
+      _input: RequestInfo | URL,
+      _init?: RequestInit,
+    ) => ({
+      ok: true,
+      status: 201,
+      text: async () => JSON.stringify({
+        id: 'ast_import', root_id: 'ast_import', title: 'Confirmed ring',
+        owner: 'usr_designer', state: 'refining', active_asset_id: 'ast_import',
+        active_design_version: 1, revisions: [], assets: [], derived_assets: [],
+        factory_ready: false, factory_blockers: [], primary_revision_count: 1,
+        has_factory_drawing: false,
+      }),
+    } as unknown as Response));
+    const api = createTrustedApiClient({ baseUrl: 'https://facetta.test', fetcher });
+
+    await api.createProjectFromImage({
+      image_base64: 'c291cmNl',
+      media_type: 'image/png',
+      confirmed_spec: {},
+      owner: 'usr_designer',
+      title: 'Confirmed ring',
+      collection: 'Exact references',
+      tags: ['confirmed'],
+    });
+
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(fetcher.mock.calls[0]?.[0]).toBe(
+      'https://facetta.test/studio/projects/import-confirmed',
+    );
+    expect(JSON.parse(String(fetcher.mock.calls[0]?.[1]?.body))).toMatchObject({
+      image_base64: 'c291cmNl',
+      media_type: 'image/png',
+      owner: 'usr_designer',
+      title: 'Confirmed ring',
+      collection: 'Exact references',
+      tags: ['confirmed'],
+    });
+  });
+
   test('posts a category-neutral multi-candidate prompt project', async () => {
     const fetcher = jest.fn(async (
       _input: RequestInfo | URL,
