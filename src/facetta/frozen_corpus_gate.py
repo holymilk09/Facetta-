@@ -25,6 +25,14 @@ from cryptography.hazmat.primitives.serialization import load_pem_public_key
 
 from facetta.image_agent.drift import outside_mask_drift
 from facetta.frozen_capture_workload import validate_workload_definition
+from facetta.frozen_evidence_paths import (
+    confined_path,
+    evidence_root as resolve_evidence_root,
+    validate_artifact_index,
+)
+from facetta.frozen_persistence_attestation import (
+    verify_persistence_attestation,
+)
 from facetta.ring_evals import evaluate_release_gates
 
 
@@ -217,6 +225,32 @@ def _validate_config(
                 errors.append("reviewer public-key file is unavailable")
             elif file_sha256(candidate) != expected_hash:
                 errors.append("reviewer public-key file hash differs from config")
+    runner_key = config.get("canonical_api_runner_public_key")
+    if runner_key is not None:
+        if not isinstance(runner_key, dict):
+            errors.append("canonical_api_runner_public_key must be null or an object")
+        else:
+            key_id = runner_key.get("key_id")
+            relative = runner_key.get("path")
+            expected_hash = runner_key.get("sha256")
+            root = repository_root.resolve()
+            candidate = (
+                (root / str(relative)).resolve()
+                if isinstance(relative, str) else None
+            )
+            if not isinstance(key_id, str) or not key_id.strip():
+                errors.append("canonical API runner public key_id is missing")
+            if (
+                candidate is None or not isinstance(relative, str)
+                or Path(relative).is_absolute()
+                or not candidate.is_relative_to(root)
+                or not candidate.is_file()
+            ):
+                errors.append("canonical API runner public-key file is unavailable")
+            elif file_sha256(candidate) != expected_hash:
+                errors.append(
+                    "canonical API runner public-key file hash differs from config"
+                )
     return errors
 
 
@@ -259,7 +293,10 @@ def validate_frozen_component_pins(
     # The capture spine was added after the replay schema.  Existing synthetic
     # fixtures remain valid, while any production config that declares these
     # components gets the same path and byte-level pin verification.
-    for key in ("capture_workload", "capture_planner", "capture_planner_cli"):
+    for key in (
+        "capture_workload", "capture_planner", "capture_planner_cli",
+        "persistence_verifier", "evidence_path_contract",
+    ):
         if key not in frozen:
             continue
         value = frozen.get(key)
@@ -280,14 +317,25 @@ def validate_frozen_component_pins(
     return errors
 
 
-def _verify_sources(rows: list[Json], source_dir: Path) -> Json:
+def _verify_sources(
+    rows: list[Json], source_dir: Path, evidence_root: Path,
+) -> Json:
     failures: list[Json] = []
     verified = 0
     for row in rows:
         filename = str(row.get("filename") or "")
-        path = source_dir / filename
-        if not path.is_file():
+        try:
+            path = confined_path(
+                evidence_root,
+                source_dir / filename,
+                label=f"frozen source {filename}",
+                kind="file",
+            )
+            if not path.is_relative_to(source_dir):
+                raise ValueError(f"frozen source {filename} escapes source directory")
+        except ValueError as exc:
             failures.append({"filename": filename, "code": "missing"})
+            failures[-1]["detail"] = str(exc)
             continue
         digest = file_sha256(path)
         if digest != row.get("sha256"):
@@ -315,13 +363,6 @@ def _verify_sources(rows: list[Json], source_dir: Path) -> Json:
         "verified": verified,
         "failures": failures,
     }
-
-
-def _resolve_capture(base: Path, value: object) -> Path | None:
-    if not isinstance(value, str) or not value:
-        return None
-    path = Path(value)
-    return path if path.is_absolute() else base / path
 
 
 def _reviewer_public_key(
@@ -381,12 +422,23 @@ def _verify_signature(
 
 def _verify_declared_artifact(
     row: Json,
-    evidence_dir: Path,
+    evidence_root: Path,
+    artifact_bindings: dict[str, str],
     field: str,
     errors: list[str],
     label: str,
 ) -> Path | None:
-    path = _resolve_capture(evidence_dir, row.get(field))
+    value = row.get(field)
+    try:
+        path = confined_path(
+            evidence_root,
+            str(value or ""),
+            label=f"{label} {field}",
+            kind="file",
+            require_relative=True,
+        )
+    except ValueError:
+        path = None
     expected_hash = row.get(f"{field}_sha256")
     if path is None or not path.is_file():
         errors.append(f"{label} lacks {field} artifact")
@@ -394,7 +446,22 @@ def _verify_declared_artifact(
     if not isinstance(expected_hash, str) or file_sha256(path) != expected_hash:
         errors.append(f"{label} {field} artifact hash mismatch")
         return None
+    if artifact_bindings.get(str(value)) != expected_hash:
+        errors.append(f"{label} {field} is absent from the artifact index")
+        return None
     return path
+
+
+def _artifact_bindings(evidence: Json, evidence_root: Path, errors: list[str]) -> dict[str, str]:
+    index = evidence.get("artifact_index")
+    errors.extend(validate_artifact_index(index, evidence_root))
+    if not isinstance(index, dict) or not isinstance(index.get("artifacts"), list):
+        return {}
+    return {
+        str(row.get("path")): str(row.get("sha256"))
+        for row in index["artifacts"]
+        if isinstance(row, dict)
+    }
 
 
 def _source_coverage(
@@ -510,6 +577,7 @@ def _replay_quality(
     config_hash: str,
     workload_hash: str,
     repository_root: Path,
+    evidence_root: Path,
 ) -> Json:
     errors: list[str] = []
     if evidence.get("schema_version") != "facetta-frozen-replay.v1":
@@ -520,6 +588,33 @@ def _replay_quality(
         errors.append("replay config hash differs from frozen config")
     if evidence.get("workload_sha256") != workload_hash:
         errors.append("replay workload hash differs from frozen workload")
+    artifact_bindings = _artifact_bindings(evidence, evidence_root, errors)
+    capture_provenance = evidence.get("capture_provenance")
+    persistence_binding_raw = evidence.get("persistence_evidence_binding")
+    indexed_bindings = [
+        (
+            capture_provenance.get("capture_artifact"),
+            capture_provenance.get("capture_sha256"),
+            "capture artifact",
+        ),
+        (
+            capture_provenance.get("executor_public_key_artifact"),
+            capture_provenance.get("executor_public_key_sha256"),
+            "executor public key",
+        ),
+        (
+            persistence_binding_raw.get("artifact"),
+            persistence_binding_raw.get("sha256"),
+            "persistence evidence",
+        ),
+    ] if isinstance(capture_provenance, dict) and isinstance(
+        persistence_binding_raw, dict
+    ) else []
+    if not indexed_bindings:
+        errors.append("capture and persistence artifact bindings are incomplete")
+    for artifact, digest, label in indexed_bindings:
+        if not isinstance(artifact, str) or artifact_bindings.get(artifact) != digest:
+            errors.append(f"{label} is absent from the artifact index")
     signature = _verify_signature(evidence, config, repository_root)
     if signature["status"] != "verified":
         errors.append(str(signature.get("error") or "replay signature is not verified"))
@@ -568,6 +663,7 @@ def _replay_quality(
     thresholds = config["thresholds"]
     max_attempts = int(thresholds["max_attempts"])
     rows: list[Json] = []
+    selected_result_set: list[Json] = []
     replayed_drift: list[Json] = []
     artifact_paths: dict[int, dict[str, Path]] = {}
     verified_source_evaluations: dict[str, set[tuple[str, str]]] = defaultdict(set)
@@ -588,7 +684,7 @@ def _replay_quality(
         paths: dict[str, Path] = {}
         for field in ("source_image", "candidate_image"):
             artifact = _verify_declared_artifact(
-                captured, evidence_path.parent, field, errors, label,
+                captured, evidence_root, artifact_bindings, field, errors, label,
             )
             if artifact is not None:
                 paths[field] = artifact
@@ -597,7 +693,12 @@ def _replay_quality(
             binding_valid = False
         if captured.get("kind") == "edit":
             mask = _verify_declared_artifact(
-                captured, evidence_path.parent, "mask_image", errors, label,
+                captured,
+                evidence_root,
+                artifact_bindings,
+                "mask_image",
+                errors,
+                label,
             )
             if mask is not None:
                 paths["mask_image"] = mask
@@ -670,6 +771,15 @@ def _replay_quality(
             if not _valid_score(score) or type(hard_pass) is not bool:
                 errors.append(f"render:{key[1]} lacks scored capture evidence")
                 continue
+            selected_result_set.append({
+                "kind": "render",
+                "evaluation_id": key[1],
+                "source_filename": source_filename,
+                "selected_attempt": selected.get("attempt"),
+                "candidate_image_sha256": selected.get(
+                    "candidate_image_sha256"
+                ),
+            })
             rows.append({
                 "kind": "render", "case": f"{key[1]}@{source_filename}",
                 "evaluation_id": key[1], "source_filename": source_filename,
@@ -704,6 +814,13 @@ def _replay_quality(
             continue
         drift = outside_mask_drift(parent.read_bytes(), child.read_bytes(), mask.read_bytes())
         drift_pass = drift <= float(thresholds["max_outside_mask_drift"])
+        selected_result_set.append({
+            "kind": "edit",
+            "evaluation_id": key[1],
+            "source_filename": source_filename,
+            "selected_attempt": selected.get("attempt"),
+            "candidate_image_sha256": selected.get("candidate_image_sha256"),
+        })
         replayed_drift.append({
             "evaluation_id": key[1], "source_filename": source_filename,
             "attempt": selected.get("attempt"),
@@ -717,11 +834,49 @@ def _replay_quality(
             "expected_valid": True,
         })
 
-    persistence = evidence.get("persistence_evidence")
-    if not isinstance(persistence, dict):
-        persistence = {}
-        errors.append("canonical persistence evidence is missing")
-    release = evaluate_release_gates(rows, persistence_evidence=persistence)
+    capture_provenance = evidence.get("capture_provenance")
+    capture_run_id = (
+        capture_provenance.get("corpus_run_id")
+        if isinstance(capture_provenance, dict) else None
+    )
+    if not isinstance(capture_provenance, dict) or not (
+        isinstance(capture_run_id, str)
+        and bool(capture_run_id.strip())
+        and capture_provenance.get("capture_sha256")
+        == evidence.get("capture_sha256")
+        and capture_provenance.get("executor_signature_status") == "verified"
+        and isinstance(capture_provenance.get("capture_validation"), dict)
+        and capture_provenance["capture_validation"].get("status") == "pass"
+    ):
+        errors.append("signed capture provenance lacks a verified corpus_run_id")
+        capture_run_id = ""
+    persistence_verification = verify_persistence_attestation(
+        evidence.get("persistence_evidence"),
+        config=config,
+        repository_root=repository_root,
+        config_sha256=config_hash,
+        workload_sha256=workload_hash,
+        workload_id=str(workload.get("workload_id") or ""),
+        corpus_id=str(workload.get("corpus_id") or ""),
+        expected_corpus_run_id=capture_run_id,
+        expected_result_set=selected_result_set,
+    )
+    if persistence_verification["status"] != "pass":
+        errors.extend(
+            "canonical persistence: " + str(error)
+            for error in persistence_verification["errors"]
+        )
+    persistence_binding = persistence_verification["bindings"]
+    release = evaluate_release_gates(rows, persistence_evidence={
+        "verified": persistence_verification["status"] == "pass",
+        "method": "signed_canonical_api_runner_attestation",
+        "result_set": persistence_binding["result_set_sha256"],
+        "rejected_active_asset_count": (
+            0 if persistence_verification["checks"][
+                "zero_rejected_candidates_persisted"
+            ] else None
+        ),
+    })
     reviewer = evidence.get("reviewer_review")
     review_decisions = reviewer.get("decisions") if isinstance(reviewer, dict) else None
     decision_errors: list[str] = []
@@ -896,6 +1051,7 @@ def _replay_quality(
         "outside_mask_replay": replayed_drift,
         "all_outside_mask_drift_pass": all_drift_pass,
         "release_gates": release,
+        "persistence_attestation": persistence_verification,
         "classified_release_gates": classified_gates,
         "reviewer_review_complete": review_complete,
         "all_reviewer_decisions_accepted": all_reviewer_accepted,
@@ -913,6 +1069,7 @@ def compile_frozen_corpus_gate(
     evidence_path: Path | None = None,
     repository_root: Path | None = None,
     workload_path: Path | None = None,
+    evidence_root: Path | None = None,
 ) -> Json:
     manifest = _load_object(manifest_path)
     config = _load_object(config_path)
@@ -949,21 +1106,54 @@ def compile_frozen_corpus_gate(
         manifest_hash,
         resolved_repository_root,
     )
-    source_integrity = _verify_sources(rows, source_dir) if rows else {
+    path_errors: list[str] = []
+    resolved_evidence_root: Path | None = None
+    resolved_source_dir: Path | None = None
+    resolved_evidence_path: Path | None = None
+    try:
+        if evidence_root is None:
+            raise ValueError("an explicit evidence root is required")
+        resolved_evidence_root = resolve_evidence_root(evidence_root)
+        resolved_source_dir = confined_path(
+            resolved_evidence_root,
+            source_dir,
+            label="source directory",
+            kind="directory",
+        )
+        if evidence_path is not None:
+            resolved_evidence_path = confined_path(
+                resolved_evidence_root,
+                evidence_path,
+                label="replay evidence",
+                kind="file",
+            )
+    except ValueError as exc:
+        path_errors.append(str(exc))
+    source_integrity = (
+        _verify_sources(rows, resolved_source_dir, resolved_evidence_root)
+        if rows and resolved_source_dir is not None and resolved_evidence_root is not None
+        else {
         "status": "fail", "expected": 0, "verified": 0,
-        "failures": [{"code": "manifest_invalid"}],
-    }
+        "failures": [{"code": "path_or_manifest_invalid", "details": path_errors}],
+    })
     evidence: Json | None = None
     evidence_binding: Json | None = None
-    if evidence_path is not None:
-        evidence = _load_object(evidence_path)
+    if resolved_evidence_path is not None and resolved_evidence_root is not None:
+        evidence = _load_object(resolved_evidence_path)
         signature = evidence.get("signature")
+        capture_provenance = evidence.get("capture_provenance")
         evidence_binding = {
-            "path": str(evidence_path),
-            "sha256": file_sha256(evidence_path),
+            "path": resolved_evidence_path.relative_to(
+                resolved_evidence_root
+            ).as_posix(),
+            "sha256": file_sha256(resolved_evidence_path),
             "schema_version": evidence.get("schema_version"),
             "workload_sha256": evidence.get("workload_sha256"),
             "capture_sha256": evidence.get("capture_sha256"),
+            "corpus_run_id": (
+                capture_provenance.get("corpus_run_id")
+                if isinstance(capture_provenance, dict) else None
+            ),
             "reviewer_key_id": (
                 signature.get("key_id") if isinstance(signature, dict) else None
             ),
@@ -972,6 +1162,20 @@ def compile_frozen_corpus_gate(
         quality: Json = {
             "status": "not_run",
             "errors": ["no captured replay evidence was supplied"],
+            "signature": {"status": "not_run"},
+            "source_coverage": {
+                "status": "not_run",
+                "expected_source_count": workload_validation.get(
+                    "quality_source_count", 0,
+                ),
+                "completed_source_count": 0,
+            },
+            "release_gates": {"status": "not_evaluated"},
+        }
+    elif path_errors:
+        quality = {
+            "status": "not_run",
+            "errors": path_errors,
             "signature": {"status": "not_run"},
             "source_coverage": {
                 "status": "not_run",
@@ -996,12 +1200,14 @@ def compile_frozen_corpus_gate(
         }
     else:
         assert evidence is not None
+        assert resolved_evidence_path is not None
+        assert resolved_evidence_root is not None
         quality = _replay_quality(
-            evidence, evidence_path, manifest, config, workload,
+            evidence, resolved_evidence_path, manifest, config, workload,
             manifest_hash, config_hash, file_sha256(resolved_workload_path),
-            resolved_repository_root,
+            resolved_repository_root, resolved_evidence_root,
         )
-    definition_errors = manifest_errors + config_errors + workload_errors
+    definition_errors = manifest_errors + config_errors + workload_errors + path_errors
     passed = (
         not definition_errors
         and source_integrity["status"] == "pass"

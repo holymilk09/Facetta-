@@ -11,6 +11,7 @@ import base64
 import hashlib
 import json
 from collections import defaultdict
+from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
@@ -18,11 +19,23 @@ from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 from cryptography.hazmat.primitives.serialization import load_pem_public_key
 
+from facetta.image_agent.contracts import ImageOperation
+from facetta.image_agent.prompts import PROMPT_VERSIONS
+from facetta.ring_evals import (
+    CANONICAL_RING_EDITS,
+    RING_GOLDEN_CASES,
+    apply_canonical_ring_edit,
+    build_ring_golden_spec,
+)
+
 
 Json = dict[str, Any]
 WORKLOAD_SCHEMA = "facetta-frozen-capture-workload.v1"
-PLAN_SCHEMA = "facetta-frozen-provider-call-plan.v1"
-CAPTURE_SCHEMA = "facetta-frozen-capture.v1"
+PLAN_SCHEMA = "facetta-frozen-provider-call-plan.v2"
+CAPTURE_SCHEMA = "facetta-frozen-capture.v2"
+RESOLVED_ASSIGNMENT_SCHEMA = "facetta-frozen-resolved-assignment.v1"
+ASSIGNMENT_BUNDLE_SCHEMA = "facetta-frozen-assignment-bundle.v1"
+EXECUTOR_TRUST_SCHEMA = "facetta-frozen-executor-trust.v1"
 
 
 def file_sha256(path: Path) -> str:
@@ -42,6 +55,18 @@ def _hex_digest(value: object) -> bool:
         and len(value) == 64
         and all(character in "0123456789abcdef" for character in value)
     )
+
+
+def canonical_object_sha256(value: object) -> str:
+    """Hash one JSON-compatible contract without filesystem ambiguity."""
+
+    encoded = json.dumps(
+        value,
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
 
 
 def _duplicates(values: list[str]) -> list[str]:
@@ -71,6 +96,323 @@ def _pinned_path(config: Json, key: str, root: Path) -> tuple[Path, str]:
     if not _hex_digest(expected_hash) or file_sha256(candidate) != expected_hash:
         raise ValueError(f"config frozen component {key} implementation drifted")
     return candidate, expected_hash
+
+
+def _executor_trust(config: Json, root: Path) -> tuple[Path, str, str]:
+    """Resolve the only executor identity allowed to sign this config.
+
+    Capture validation deliberately does not trust a key supplied only on the
+    command line. The key id, path and exact public-key bytes must already be
+    enrolled in the hash-bound frozen config.
+    """
+
+    trust = config.get("executor_trust")
+    if not isinstance(trust, dict):
+        raise ValueError("config executor trust is not enrolled")
+    if trust.get("schema_version") != EXECUTOR_TRUST_SCHEMA:
+        raise ValueError("config executor trust schema is unsupported")
+    if trust.get("status") != "enrolled":
+        raise ValueError("config executor trust is not enrolled")
+    key_id = trust.get("key_id")
+    if not isinstance(key_id, str) or not key_id.strip():
+        raise ValueError("config executor key_id is empty")
+    value = trust.get("public_key")
+    if not isinstance(value, str) or "@sha256:" not in value:
+        raise ValueError("config executor public key is not hash-pinned")
+    relative, expected_hash = value.rsplit("@sha256:", 1)
+    candidate = (root.resolve() / relative).resolve()
+    if (
+        not relative
+        or Path(relative).is_absolute()
+        or not candidate.is_relative_to(root.resolve())
+        or not candidate.is_file()
+    ):
+        raise ValueError("config executor public key path is unavailable")
+    if not _hex_digest(expected_hash) or file_sha256(candidate) != expected_hash:
+        raise ValueError("config executor public key drifted")
+    try:
+        _load_capture_public_key(candidate)
+    except (OSError, TypeError, ValueError) as exc:
+        raise ValueError("config executor public key is invalid") from exc
+    return candidate, key_id, expected_hash
+
+
+def _resolved_assignment(
+    source: Json,
+    evaluation: Json,
+    config: Json,
+    binding: Json | None,
+) -> Json:
+    """Resolve one provider-free execution and scoring contract.
+
+    The returned object contains no provider output and performs no provider
+    call. It freezes every semantic input an executor needs so the signed
+    capture cannot substitute a different prompt, spec, edit or score target.
+    """
+
+    evaluation_id = str(evaluation["evaluation_id"])
+    kind = str(evaluation["kind"])
+    operation_class = str(evaluation["operation_class"])
+    thresholds = config.get("thresholds")
+    if not isinstance(thresholds, dict):
+        raise ValueError("frozen config thresholds are unavailable")
+    components = config.get("frozen_components")
+    if not isinstance(components, dict):
+        raise ValueError("frozen config components are unavailable")
+    component_binding = {
+        key: components.get(key)
+        for key in ("ring_contract", "prompt_bundle", "evaluator_bundle", "routing")
+    }
+    if any(not isinstance(value, str) or not value for value in component_binding.values()):
+        raise ValueError("resolved assignment requires frozen execution components")
+
+    source_input: Json = {
+        "filename": str(source["filename"]),
+        "sha256": str(source["sha256"]),
+        "role": "provider_source_and_fidelity_reference",
+    }
+    cases = {case.id: case for case in RING_GOLDEN_CASES}
+    edits = {edit.id: edit for edit in CANONICAL_RING_EDITS}
+    if kind == "render":
+        case = cases.get(evaluation_id)
+        if case is None:
+            raise ValueError(f"unknown frozen render evaluation: {evaluation_id}")
+        canonical_target_spec = build_ring_golden_spec(case).model_dump(mode="json")
+        operation = ImageOperation.SPEC_RENDER
+        evaluation_contract: Json = {
+            "case": asdict(case),
+            "canonical_target_spec": canonical_target_spec,
+            "canonical_target_spec_sha256": canonical_object_sha256(
+                canonical_target_spec
+            ),
+        }
+        scoring: Json = {
+            "metric": "score_spec_conformance.v1",
+            "candidate_input": "candidate_image_sha256",
+            "minimum_mean_score": thresholds.get("mean_render_conformance"),
+            "hard_gate_pass_rate": thresholds.get("render_hard_gate_pass_rate"),
+            "accepted_candidate_required": True,
+        }
+    elif kind == "edit":
+        edit = edits.get(evaluation_id)
+        if edit is None or not edit.expected_valid:
+            raise ValueError(f"unknown or invalid frozen edit evaluation: {evaluation_id}")
+        operation = (
+            ImageOperation.VISUAL_ONLY_EDIT
+            if edit.visual_only
+            else ImageOperation.LOCAL_EDIT
+        )
+        evaluation_contract = {
+            "edit": {
+                **asdict(edit),
+                "allowed_delta_prefixes": list(edit.allowed_delta_prefixes),
+                "frozen_facts": list(edit.frozen_facts),
+            },
+        }
+        scoring = {
+            "metric": "score_edit_fidelity.v1",
+            "reference_input": "source_input.sha256",
+            "candidate_input": "candidate_image_sha256",
+            "mask_input": "mask_image_sha256",
+            "intended_change": edit.instruction,
+            "minimum_mean_score": thresholds.get("mean_edit_fidelity"),
+            "maximum_outside_mask_drift": thresholds.get("max_outside_mask_drift"),
+            "mask_requires_selected_and_protected_pixels": True,
+        }
+    else:
+        raise ValueError(f"unsupported frozen evaluation kind: {kind}")
+
+    binding_errors: list[str] = []
+    if not isinstance(binding, dict):
+        binding_errors.append("reviewed source-specific assignment binding is missing")
+        binding = {}
+    elif binding.get("schema_version") != "facetta-frozen-source-assignment.v1":
+        binding_errors.append("source-specific assignment schema is unsupported")
+    for field in (
+        "review_evidence_sha256",
+        "source_spec_evidence_sha256",
+        "component_map_sha256",
+        "region_evidence_sha256",
+    ):
+        if not _hex_digest(binding.get(field)):
+            binding_errors.append(f"source-specific {field} is not hash-bound")
+    if binding.get("review_status") != "approved":
+        binding_errors.append("source-specific assignment is not approved")
+    applicability = binding.get("applicability")
+    if applicability not in {"execute", "not_applicable"}:
+        binding_errors.append("source-specific applicability is not terminal")
+    if applicability == "not_applicable":
+        reason = binding.get("not_applicable_reason")
+        if not isinstance(reason, str) or not reason.strip():
+            binding_errors.append("not-applicable assignment requires a reviewed reason")
+        if not binding_errors:
+            return {
+                "schema_version": RESOLVED_ASSIGNMENT_SCHEMA,
+                "kind": kind,
+                "evaluation_id": evaluation_id,
+                "operation_class": operation_class,
+                "source_input": source_input,
+                "assignment_resolved": True,
+                "resolution_status": "not_applicable",
+                "execution_ready": False,
+                "resolution_errors": [],
+                "evaluation_contract": evaluation_contract,
+                "applicability": {
+                    "status": "not_applicable",
+                    "reason": reason,
+                    "review_evidence_sha256": binding["review_evidence_sha256"],
+                },
+                "execution": None,
+                "scoring": scoring,
+                "frozen_component_bindings": component_binding,
+            }
+
+    source_spec = binding.get("source_spec")
+    target_spec = binding.get("target_spec")
+    if not isinstance(source_spec, dict) or not isinstance(target_spec, dict):
+        binding_errors.append("reviewed source and target specifications are required")
+    else:
+        try:
+            from facetta.spec import Spec
+
+            source_spec = Spec.model_validate(source_spec).model_dump(mode="json")
+            target_spec = Spec.model_validate(target_spec).model_dump(mode="json")
+        except Exception:
+            binding_errors.append("reviewed source or target specification is invalid")
+    intent = binding.get("instruction")
+    region = binding.get("region_description")
+    frozen_facts = binding.get("frozen_facts")
+    if not isinstance(intent, str) or not intent.strip():
+        binding_errors.append("source-specific instruction is missing")
+    if kind == "render":
+        expected_intent = f"frozen founder corpus render: {evaluation_id}"
+        if intent != expected_intent:
+            binding_errors.append("source-specific render instruction differs")
+        if target_spec != evaluation_contract["canonical_target_spec"]:
+            binding_errors.append("source-specific render target differs from canonical case")
+        if region is not None:
+            binding_errors.append("render assignment cannot declare a local region")
+    else:
+        edit = edits[evaluation_id]
+        if intent != edit.instruction:
+            binding_errors.append("source-specific edit instruction differs")
+        expected_region = None if edit.visual_only else edit.region
+        if region != expected_region:
+            binding_errors.append("source-specific edit region differs")
+        if frozen_facts != list(edit.frozen_facts):
+            binding_errors.append("source-specific frozen facts differ")
+        if isinstance(source_spec, dict) and isinstance(target_spec, dict):
+            try:
+                expected_target, issues = apply_canonical_ring_edit(
+                    Spec.model_validate(source_spec), edit
+                )
+                expected_target_raw = (
+                    expected_target.model_dump(mode="json")
+                    if expected_target is not None else None
+                )
+                if issues or expected_target_raw != target_spec:
+                    binding_errors.append(
+                        "source-specific edit target does not match the canonical delta"
+                    )
+            except Exception:
+                binding_errors.append("source-specific canonical edit cannot be applied")
+    if not isinstance(frozen_facts, list) or not all(
+        isinstance(value, str) and value.strip() for value in frozen_facts
+    ):
+        binding_errors.append("source-specific frozen facts are missing")
+
+    execution_ready = not binding_errors
+    execution: Json | None = None
+    if execution_ready:
+        execution = {
+            "image_operation": operation.value,
+            "prompt_version": PROMPT_VERSIONS[operation],
+            "intent": intent,
+            "source_image_required": True,
+            "source_spec": source_spec,
+            "target_spec": target_spec,
+            "region_description": region,
+            "frozen_facts": frozen_facts,
+            "expected_output": (
+                "one photorealistic image faithful to the validated target spec "
+                "and the source design identity"
+                if kind == "render"
+                else "only the requested presentation change"
+                if operation is ImageOperation.VISUAL_ONLY_EDIT
+                else "the requested local change and no unrelated redesign"
+            ),
+            "variant": 0,
+            "fallback_allowed": True,
+            "maximum_attempts": int(thresholds["max_attempts"]),
+            "review_evidence_sha256": binding["review_evidence_sha256"],
+            "source_spec_evidence_sha256": binding["source_spec_evidence_sha256"],
+            "component_map_sha256": binding["component_map_sha256"],
+            "region_evidence_sha256": binding["region_evidence_sha256"],
+        }
+
+    return {
+        "schema_version": RESOLVED_ASSIGNMENT_SCHEMA,
+        "kind": kind,
+        "evaluation_id": evaluation_id,
+        "operation_class": operation_class,
+        "source_input": source_input,
+        "assignment_resolved": execution_ready,
+        "resolution_status": "execute" if execution_ready else "unresolved",
+        "execution_ready": execution_ready,
+        "resolution_errors": binding_errors,
+        "evaluation_contract": evaluation_contract,
+        "execution": execution,
+        "scoring": scoring,
+        "frozen_component_bindings": component_binding,
+    }
+
+
+def _assignment_bindings(
+    config: Json,
+    workload_path: Path,
+    root: Path,
+) -> tuple[dict[tuple[str, str, str], Json], Json]:
+    """Load an optional, separately reviewed and hash-pinned input bundle."""
+
+    components = config.get("frozen_components")
+    pin = components.get("resolved_assignment_bundle") if isinstance(components, dict) else None
+    if pin is None:
+        return {}, {
+            "status": "not_enrolled",
+            "bundle_sha256": None,
+            "assignment_count": 0,
+        }
+    bundle_path, bundle_hash = _pinned_path(config, "resolved_assignment_bundle", root)
+    bundle = _load_object(bundle_path)
+    if bundle.get("schema_version") != ASSIGNMENT_BUNDLE_SCHEMA:
+        raise ValueError("resolved assignment bundle schema is unsupported")
+    if bundle.get("workload_sha256") != file_sha256(workload_path):
+        raise ValueError("resolved assignment bundle workload hash differs")
+    corpus_run_id = bundle.get("corpus_run_id")
+    if not isinstance(corpus_run_id, str) or not corpus_run_id.strip():
+        raise ValueError("resolved assignment bundle corpus_run_id is empty")
+    rows = bundle.get("assignments")
+    if not isinstance(rows, list) or not all(isinstance(row, dict) for row in rows):
+        raise ValueError("resolved assignment bundle assignments must be objects")
+    resolved: dict[tuple[str, str, str], Json] = {}
+    for row in rows:
+        key = (
+            str(row.get("source_filename") or ""),
+            str(row.get("kind") or ""),
+            str(row.get("evaluation_id") or ""),
+        )
+        if key in resolved:
+            raise ValueError("resolved assignment bundle contains duplicate assignments")
+        binding = row.get("binding")
+        if not all(key) or not isinstance(binding, dict):
+            raise ValueError("resolved assignment bundle row is incomplete")
+        resolved[key] = binding
+    return resolved, {
+        "status": "enrolled",
+        "bundle_sha256": bundle_hash,
+        "corpus_run_id": corpus_run_id,
+        "assignment_count": len(resolved),
+    }
 
 
 def validate_workload_definition(
@@ -259,9 +601,32 @@ def build_provider_call_plan(
     if validation["status"] != "pass":
         raise ValueError("invalid workload definition: " + "; ".join(validation["errors"]))
     workload = _load_object(workload_path)
+    config = _load_object(config_path)
+    root = (repository_root or Path(__file__).resolve().parents[2]).resolve()
+    assignment_bindings, assignment_bundle = _assignment_bindings(
+        config, workload_path, root,
+    )
     ring_set_id = str(workload["ring_quality_evaluation_set_id"])
     evaluations = workload["evaluation_sets"][ring_set_id]
-    max_attempts = int(_load_object(config_path)["thresholds"]["max_attempts"])
+    max_attempts = int(config["thresholds"]["max_attempts"])
+    try:
+        _, executor_key_id, executor_public_key_sha256 = _executor_trust(
+            config,
+            root,
+        )
+        executor_trust = {
+            "status": "enrolled",
+            "key_id": executor_key_id,
+            "public_key_sha256": executor_public_key_sha256,
+        }
+    except ValueError:
+        # Planning remains provider-free and useful before enrollment. Capture
+        # validation below is the authority and fails closed without this key.
+        executor_trust = {
+            "status": "not_enrolled",
+            "key_id": None,
+            "public_key_sha256": None,
+        }
     items: list[Json] = []
     for source in sorted(workload["sources"], key=lambda row: row["filename"]):
         quality = source.get("quality")
@@ -274,6 +639,12 @@ def build_provider_call_plan(
             kind = str(evaluation["kind"])
             evaluation_id = str(evaluation["evaluation_id"])
             stem = f"{Path(source['filename']).stem}--{kind}--{evaluation_id}"
+            binding = assignment_bindings.get((
+                str(source["filename"]), kind, evaluation_id,
+            ))
+            resolved_inputs = _resolved_assignment(
+                source, evaluation, config, binding,
+            )
             items.append({
                 "source_filename": source["filename"],
                 "source_sha256": source["sha256"],
@@ -281,10 +652,28 @@ def build_provider_call_plan(
                 "kind": kind,
                 "evaluation_id": evaluation_id,
                 "operation_class": evaluation.get("operation_class"),
+                "resolved_inputs": resolved_inputs,
+                "resolved_inputs_sha256": canonical_object_sha256(resolved_inputs),
                 "maximum_attempts": max_attempts,
                 "candidate_artifact_stem": stem,
                 "mask_artifact_stem": stem + "--mask" if kind == "edit" else None,
             })
+    execution_ready_count = sum(
+        bool(item["resolved_inputs"]["execution_ready"]) for item in items
+    )
+    assignment_resolved_count = sum(
+        bool(item["resolved_inputs"]["assignment_resolved"]) for item in items
+    )
+    not_applicable_count = sum(
+        item["resolved_inputs"]["resolution_status"] == "not_applicable"
+        for item in items
+    )
+    extra_bindings = len(set(assignment_bindings) - {
+        (item["source_filename"], item["kind"], item["evaluation_id"])
+        for item in items
+    })
+    if extra_bindings:
+        raise ValueError("resolved assignment bundle contains unplanned assignments")
     return {
         "schema_version": PLAN_SCHEMA,
         "status": "plan_ready",
@@ -296,9 +685,23 @@ def build_provider_call_plan(
         "integrity_source_count": validation["integrity_source_count"],
         "quality_source_count": validation["quality_source_count"],
         "planned_evaluation_sequence_count": len(items),
-        "maximum_provider_attempt_count": len(items) * max_attempts,
+        "maximum_provider_attempt_count": execution_ready_count * max_attempts,
+        "logical_scope_maximum_attempt_count": len(items) * max_attempts,
+        "executor_trust": executor_trust,
+        "assignment_bundle": assignment_bundle,
+        "corpus_run_id": assignment_bundle.get("corpus_run_id"),
+        "resolved_sequence_count": assignment_resolved_count,
+        "execution_ready_sequence_count": execution_ready_count,
+        "not_applicable_sequence_count": not_applicable_count,
+        "unresolved_sequence_count": len(items) - assignment_resolved_count,
         "items": items,
-        "capture_status": "not_run",
+        "capture_status": (
+            "not_run"
+            if execution_ready_count == len(items)
+            else "blocked_unresolved_assignments"
+            if assignment_resolved_count != len(items)
+            else "blocked_non_executable_assignments"
+        ),
         "corpus_gate_ready": False,
     }
 
@@ -352,9 +755,28 @@ def validate_capture_envelope(
         repository_root=repository_root,
     )
     capture = _load_object(capture_path)
+    config = _load_object(config_path)
+    root = (repository_root or Path(__file__).resolve().parents[2]).resolve()
     errors: list[str] = []
+    if plan["unresolved_sequence_count"]:
+        errors.append(
+            "frozen plan contains unresolved source-specific assignments; "
+            "capture is forbidden"
+        )
+    if plan["not_applicable_sequence_count"]:
+        errors.append(
+            "frozen plan contains reviewed non-applicable logical assignments; "
+            "capture v2 cannot treat them as provider attempts"
+        )
+    if plan["executor_trust"]["status"] != "enrolled":
+        errors.append("frozen plan has no enrolled executor")
     if capture.get("schema_version") != CAPTURE_SCHEMA:
         errors.append("unsupported capture schema_version")
+    corpus_run_id = capture.get("corpus_run_id")
+    if not isinstance(corpus_run_id, str) or not corpus_run_id.strip():
+        errors.append("capture corpus_run_id is empty")
+    elif corpus_run_id != plan.get("corpus_run_id"):
+        errors.append("capture corpus_run_id differs from the preassigned plan run")
     for field in ("manifest_sha256", "config_sha256", "workload_sha256"):
         if capture.get(field) != plan[field]:
             errors.append(f"capture {field} differs from the frozen plan")
@@ -385,6 +807,8 @@ def validate_capture_envelope(
             continue
         if row.get("source_sha256") != planned["source_sha256"]:
             errors.append(f"capture source hash differs for attempt {index}")
+        if row.get("resolved_inputs_sha256") != planned["resolved_inputs_sha256"]:
+            errors.append(f"capture resolved inputs hash differs for attempt {index}")
         if type(row.get("accepted")) is not bool:
             errors.append(f"capture attempt {index} accepted must be boolean")
         if key[0] == "render":
@@ -455,26 +879,46 @@ def validate_capture_envelope(
 
     signature = capture.get("signature")
     signature_status = "not_verified"
+    trusted_public_key_path: Path | None = None
+    trusted_key_id: str | None = None
+    trusted_public_key_hash: str | None = None
     try:
-        public_key_hash = file_sha256(capture_public_key_path)
+        trusted_public_key_path, trusted_key_id, trusted_public_key_hash = (
+            _executor_trust(config, root)
+        )
+    except ValueError as exc:
+        errors.append(str(exc))
+    try:
+        supplied_public_key_hash = file_sha256(capture_public_key_path)
     except OSError:
-        public_key_hash = None
+        supplied_public_key_hash = None
         errors.append("capture public key is unavailable")
-    if not capture_key_id.strip():
-        errors.append("capture key_id is empty")
+    if trusted_public_key_path is not None and (
+        capture_public_key_path.resolve() != trusted_public_key_path
+        or supplied_public_key_hash != trusted_public_key_hash
+    ):
+        errors.append("capture public key is not the config-enrolled executor key")
+    if not capture_key_id.strip() or (
+        trusted_key_id is not None and capture_key_id != trusted_key_id
+    ):
+        errors.append("capture key_id is not the config-enrolled executor key_id")
     if not isinstance(signature, dict):
         errors.append("capture is unsigned")
     elif (
         signature.get("algorithm") != "Ed25519"
         or signature.get("key_id") != capture_key_id
-        or signature.get("public_key_sha256") != public_key_hash
+        or signature.get("public_key_sha256") != supplied_public_key_hash
+        or (
+            trusted_public_key_hash is not None
+            and signature.get("public_key_sha256") != trusted_public_key_hash
+        )
         or not isinstance(signature.get("value"), str)
     ):
         errors.append("capture signature metadata is invalid")
-    else:
+    elif trusted_public_key_path is not None:
         try:
             decoded = base64.b64decode(signature["value"], validate=True)
-            _load_capture_public_key(capture_public_key_path).verify(
+            _load_capture_public_key(trusted_public_key_path).verify(
                 decoded,
                 canonical_capture_payload(capture),
             )
@@ -488,6 +932,11 @@ def validate_capture_envelope(
         "provider_calls": 0,
         "errors": errors,
         "signature_status": signature_status,
+        "corpus_run_id": (
+            corpus_run_id
+            if isinstance(corpus_run_id, str) and corpus_run_id.strip()
+            else None
+        ),
         "planned_evaluation_sequence_count": len(expected),
         "captured_evaluation_sequence_count": len(set(expected) & set(grouped)),
         "captured_attempt_count": len(attempts),

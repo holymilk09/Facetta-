@@ -14,6 +14,11 @@ from facetta.frozen_corpus_gate import (
     canonical_evidence_payload,
     compile_frozen_corpus_gate,
 )
+from facetta.frozen_evidence_paths import build_artifact_index
+from facetta.frozen_persistence_attestation import (
+    canonical_attestation_payload,
+    result_set_sha256,
+)
 
 
 def _json(path: Path, value: object) -> None:
@@ -39,6 +44,47 @@ def _sign(paths: dict[str, Any], evidence: dict[str, Any]) -> None:
 
 
 def _write_signed(paths: dict[str, Any], evidence: dict[str, Any]) -> None:
+    persistence_path = paths["persistence_artifact"]
+    _json(persistence_path, evidence["persistence_evidence"])
+    evidence["persistence_evidence_binding"] = {
+        "artifact": persistence_path.relative_to(paths["root"]).as_posix(),
+        "sha256": _sha(persistence_path),
+    }
+    artifact_rows: list[tuple[str, str, str]] = [
+        (
+            evidence["capture_provenance"]["capture_artifact"],
+            evidence["capture_provenance"]["capture_sha256"],
+            "signed_capture",
+        ),
+        (
+            evidence["capture_provenance"]["executor_public_key_artifact"],
+            evidence["capture_provenance"]["executor_public_key_sha256"],
+            "executor_public_key",
+        ),
+        (
+            evidence["persistence_evidence_binding"]["artifact"],
+            evidence["persistence_evidence_binding"]["sha256"],
+            "persistence_evidence",
+        ),
+    ]
+    for row in evidence["attempts"]:
+        identity = (
+            f"{row['kind']}:{row['evaluation_id']}:"
+            f"{row['source_filename']}:attempt-{row['attempt']}"
+        )
+        artifact_rows.extend([
+            (row["source_image"], row["source_image_sha256"], f"source:{identity}"),
+            (
+                row["candidate_image"],
+                row["candidate_image_sha256"],
+                f"candidate:{identity}",
+            ),
+        ])
+        if row["kind"] == "edit":
+            artifact_rows.append((
+                row["mask_image"], row["mask_image_sha256"], f"mask:{identity}",
+            ))
+    evidence["artifact_index"] = build_artifact_index(artifact_rows)
     _sign(paths, evidence)
     _json(paths["evidence"], evidence)
 
@@ -74,6 +120,7 @@ def _fixture(tmp_path: Path) -> dict[str, Any]:
     workload = tmp_path / "workload.json"
     _json(workload, {
         "schema_version": "facetta-frozen-capture-workload.v1",
+        "workload_id": "test-workload-v1",
         "corpus_id": "test-corpus",
         "config_id": "test-config",
         "manifest_sha256": _sha(manifest),
@@ -135,6 +182,12 @@ def _fixture(tmp_path: Path) -> dict[str, Any]:
         encoding=serialization.Encoding.Raw,
         format=serialization.PublicFormat.Raw,
     ))
+    runner_private_key = Ed25519PrivateKey.generate()
+    runner_key = tmp_path / "canonical-api-runner-v1.pub"
+    runner_key.write_bytes(runner_private_key.public_key().public_bytes(
+        encoding=serialization.Encoding.Raw,
+        format=serialization.PublicFormat.Raw,
+    ))
     _json(config, {
         "schema_version": "facetta-frozen-gate-config.v1",
         "config_id": "test-config",
@@ -160,6 +213,11 @@ def _fixture(tmp_path: Path) -> dict[str, Any]:
             "path": reviewer_key.name,
             "sha256": _sha(reviewer_key),
         },
+        "canonical_api_runner_public_key": {
+            "key_id": "canonical-api-runner-v1",
+            "path": runner_key.name,
+            "sha256": _sha(runner_key),
+        },
     })
     render_candidate = tmp_path / "render-candidate.png"
     edit_candidate = tmp_path / "edit-candidate.png"
@@ -170,11 +228,24 @@ def _fixture(tmp_path: Path) -> dict[str, Any]:
     edit_mask.putpixel((0, 0), 255)
     edit_mask.save(mask)
     evidence = tmp_path / "evidence.json"
+    capture_artifact = tmp_path / "capture.json"
+    capture_artifact.write_text('{"signed":true}\n')
+    persistence_artifact = tmp_path / "persistence.json"
     evidence_value: dict[str, Any] = {
         "schema_version": "facetta-frozen-replay.v1",
         "manifest_sha256": _sha(manifest),
         "config_sha256": _sha(config),
         "workload_sha256": _sha(workload),
+        "capture_sha256": _sha(capture_artifact),
+        "capture_provenance": {
+            "corpus_run_id": "corpus-run-test-1",
+            "capture_artifact": capture_artifact.name,
+            "capture_sha256": _sha(capture_artifact),
+            "executor_public_key_artifact": reviewer_key.name,
+            "executor_public_key_sha256": _sha(reviewer_key),
+            "executor_signature_status": "verified",
+            "capture_validation": {"status": "pass"},
+        },
         "source_coverage": [
             {
                 "filename": first.name, "source_sha256": _sha(first),
@@ -190,9 +261,9 @@ def _fixture(tmp_path: Path) -> dict[str, Any]:
                 "operation_class": "render_conformance",
                 "attempt": 1, "accepted": True,
                 "source_filename": first.name, "source_sha256": _sha(first),
-                "source_image": str(first),
+                "source_image": first.relative_to(tmp_path).as_posix(),
                 "source_image_sha256": _sha(first),
-                "candidate_image": str(render_candidate),
+                "candidate_image": render_candidate.name,
                 "candidate_image_sha256": _sha(render_candidate),
                 "render_conformance_score": 90, "hard_gate_pass": True,
             },
@@ -202,11 +273,12 @@ def _fixture(tmp_path: Path) -> dict[str, Any]:
                 "attempt": 1, "accepted": True,
                 "source_filename": first.name, "source_sha256": _sha(first),
                 "edit_fidelity_score": 95, "severity": "none",
-                "change_applied": True, "source_image": str(first),
+                "change_applied": True,
+                "source_image": first.relative_to(tmp_path).as_posix(),
                 "source_image_sha256": _sha(first),
-                "candidate_image": str(edit_candidate),
+                "candidate_image": edit_candidate.name,
                 "candidate_image_sha256": _sha(edit_candidate),
-                "mask_image": str(mask), "mask_image_sha256": _sha(mask),
+                "mask_image": mask.name, "mask_image_sha256": _sha(mask),
             },
             {
                 "kind": "edit", "evaluation_id": "edit-structural",
@@ -214,19 +286,14 @@ def _fixture(tmp_path: Path) -> dict[str, Any]:
                 "attempt": 1, "accepted": True,
                 "source_filename": first.name, "source_sha256": _sha(first),
                 "edit_fidelity_score": 95, "severity": "none",
-                "change_applied": True, "source_image": str(first),
+                "change_applied": True,
+                "source_image": first.relative_to(tmp_path).as_posix(),
                 "source_image_sha256": _sha(first),
-                "candidate_image": str(edit_candidate),
+                "candidate_image": edit_candidate.name,
                 "candidate_image_sha256": _sha(edit_candidate),
-                "mask_image": str(mask), "mask_image_sha256": _sha(mask),
+                "mask_image": mask.name, "mask_image_sha256": _sha(mask),
             },
         ],
-        "persistence_evidence": {
-            "verified": True,
-            "method": "canonical_project_api_integration",
-            "result_set": "test-result",
-            "rejected_active_asset_count": 0,
-        },
         "reviewer_review": {
             "completed": True, "reviewer": "test reviewer",
             "qualification": "GIA-trained",
@@ -254,8 +321,61 @@ def _fixture(tmp_path: Path) -> dict[str, Any]:
         "evidence": evidence, "first": first, "second": second,
         "prompt_bundle": component_files["prompt_bundle"],
         "private_key": private_key, "reviewer_key": reviewer_key,
+        "runner_private_key": runner_private_key, "runner_key": runner_key,
         "render_candidate": render_candidate, "edit_candidate": edit_candidate,
+        "capture_artifact": capture_artifact,
+        "persistence_artifact": persistence_artifact,
     }
+    selected_result_set = [
+        {
+            "kind": row["kind"],
+            "evaluation_id": row["evaluation_id"],
+            "source_filename": row["source_filename"],
+            "selected_attempt": row["attempt"],
+            "candidate_image_sha256": row["candidate_image_sha256"],
+        }
+        for row in evidence_value["attempts"]
+    ]
+    attestation: dict[str, Any] = {
+        "schema_version": "facetta-canonical-persistence-attestation.v1",
+        "canonical_api_schema_version": "facetta-canonical-project-api.v1",
+        "attestation_id": "persistence-test-1",
+        "corpus_run_id": "corpus-run-test-1",
+        "commit_sha": "d" * 40,
+        "config_id": "test-config",
+        "config_sha256": _sha(config),
+        "workload_id": "test-workload-v1",
+        "workload_sha256": _sha(workload),
+        "corpus_id": "test-corpus",
+        "result_set_schema_version": "facetta-frozen-selected-result-set.v1",
+        "result_set": selected_result_set,
+        "result_set_sha256": result_set_sha256(selected_result_set),
+        "result_count": len(selected_result_set),
+        "checks": {
+            "atomic_image_spec_persistence": {
+                "status": "pass",
+                "verified_result_count": len(selected_result_set),
+                "image_and_spec_committed_together": True,
+                "partial_commit_count": 0,
+            },
+            "stale_write_rejection": {
+                "status": "pass", "attempted_count": 2,
+                "rejected_count": 2, "canonical_mutation_count": 0,
+            },
+            "rejected_candidate_persistence": {
+                "status": "pass", "tested_rejected_candidate_count": 2,
+                "active_asset_count": 0,
+            },
+        },
+    }
+    attestation["signature"] = {
+        "algorithm": "Ed25519",
+        "key_id": "canonical-api-runner-v1",
+        "value": base64.b64encode(runner_private_key.sign(
+            canonical_attestation_payload(attestation)
+        )).decode("ascii"),
+    }
+    evidence_value["persistence_evidence"] = attestation
     _write_signed(paths, evidence_value)
     return paths
 
@@ -266,6 +386,7 @@ def _run(paths: dict[str, Any], *, evidence: bool = True) -> dict:
         paths["evidence"] if evidence else None,
         repository_root=paths["root"],
         workload_path=paths["workload"],
+        evidence_root=paths["root"],
     )
 
 
@@ -293,11 +414,12 @@ def test_complete_offline_replay_can_pass(tmp_path: Path):
     assert result["quality"]["status"] == "pass"
     assert result["quality"]["signature"]["status"] == "verified"
     assert result["evidence"] == {
-        "path": str(paths["evidence"]),
+        "path": paths["evidence"].name,
         "sha256": _sha(paths["evidence"]),
         "schema_version": "facetta-frozen-replay.v1",
         "workload_sha256": _sha(paths["workload"]),
-        "capture_sha256": None,
+        "capture_sha256": _sha(paths["capture_artifact"]),
+        "corpus_run_id": "corpus-run-test-1",
         "reviewer_key_id": "test-reviewer-v1",
     }
     assert result["quality"]["source_coverage"] == {
@@ -423,13 +545,49 @@ def test_metric_failure_fails_release_gate(tmp_path: Path):
 def test_rejected_candidate_persisted_fails_release_gate(tmp_path: Path):
     paths = _fixture(tmp_path)
     evidence = _refresh_evidence_hashes(paths)
-    evidence["persistence_evidence"]["rejected_active_asset_count"] = 1
+    evidence["persistence_evidence"]["checks"][
+        "rejected_candidate_persistence"
+    ]["active_asset_count"] = 1
     _write_signed(paths, evidence)
     result = _run(paths)
     assert result["quality"]["release_gates"][
         "zero_rejected_candidates_persisted"
     ] is False
     assert result["corpus_gate_ready"] is False
+
+
+def test_shallow_persistence_self_assertion_fails_gate(tmp_path: Path):
+    paths = _fixture(tmp_path)
+    evidence = _refresh_evidence_hashes(paths)
+    evidence["persistence_evidence"] = {
+        "verified": True,
+        "method": "canonical_project_api_integration",
+        "result_set": "test-result",
+        "rejected_active_asset_count": 0,
+    }
+    _write_signed(paths, evidence)
+    result = _run(paths)
+    assert result["quality"]["persistence_attestation"]["status"] == "fail"
+    assert result["quality"]["release_gates"][
+        "persistence_evidence_verified"
+    ] is False
+    assert any(
+        "persistence attestation schema_version" in error
+        for error in result["quality"]["errors"]
+    )
+
+
+def test_persistence_attestation_cannot_replay_across_capture_runs(tmp_path: Path):
+    paths = _fixture(tmp_path)
+    evidence = _refresh_evidence_hashes(paths)
+    evidence["capture_provenance"]["corpus_run_id"] = "another-run"
+    _write_signed(paths, evidence)
+    result = _run(paths)
+    assert result["corpus_gate_ready"] is False
+    assert any(
+        "corpus_run_id differs from signed capture" in error
+        for error in result["quality"]["errors"]
+    )
 
 
 def test_quick_appearance_reviewer_acceptance_is_a_release_gate(tmp_path: Path):
@@ -543,6 +701,93 @@ def test_attempt_artifact_hash_mismatch_fails(tmp_path: Path):
     assert result["corpus_gate_ready"] is False
 
 
+def test_replay_rejects_absolute_artifact_reference(tmp_path: Path):
+    paths = _fixture(tmp_path)
+    evidence = _refresh_evidence_hashes(paths)
+    evidence["attempts"][0]["candidate_image"] = str(paths["render_candidate"])
+    _write_signed(paths, evidence)
+
+    result = _run(paths)
+    assert result["corpus_gate_ready"] is False
+    assert any(
+        "must be evidence-root-relative" in error
+        or "lacks candidate_image artifact" in error
+        for error in result["quality"]["errors"]
+    )
+
+
+def test_replay_rejects_traversal_artifact_reference(tmp_path: Path):
+    paths = _fixture(tmp_path)
+    outside = tmp_path.parent / "outside-candidate.png"
+    _image(outside, "white")
+    evidence = _refresh_evidence_hashes(paths)
+    evidence["attempts"][0]["candidate_image"] = "../outside-candidate.png"
+    evidence["attempts"][0]["candidate_image_sha256"] = _sha(outside)
+    _write_signed(paths, evidence)
+
+    result = _run(paths)
+    assert result["corpus_gate_ready"] is False
+    assert any(
+        "escapes the evidence root" in error
+        for error in result["quality"]["errors"]
+    )
+
+
+def test_replay_rejects_symlink_artifact_escape(tmp_path: Path):
+    paths = _fixture(tmp_path)
+    outside = tmp_path.parent / "symlink-candidate.png"
+    _image(outside, "white")
+    link = paths["root"] / "escaped-candidate.png"
+    link.symlink_to(outside)
+    evidence = _refresh_evidence_hashes(paths)
+    evidence["attempts"][0]["candidate_image"] = link.name
+    evidence["attempts"][0]["candidate_image_sha256"] = _sha(outside)
+    _write_signed(paths, evidence)
+
+    result = _run(paths)
+    assert result["corpus_gate_ready"] is False
+    assert any(
+        "escapes the evidence root" in error
+        for error in result["quality"]["errors"]
+    )
+
+
+def test_replay_artifact_must_be_in_canonical_index(tmp_path: Path):
+    paths = _fixture(tmp_path)
+    evidence = _refresh_evidence_hashes(paths)
+    indexed = evidence["artifact_index"]["artifacts"]
+    evidence["artifact_index"]["artifacts"] = [
+        row for row in indexed if row["path"] != paths["render_candidate"].name
+    ]
+    _sign(paths, evidence)
+    _json(paths["evidence"], evidence)
+
+    result = _run(paths)
+    assert result["corpus_gate_ready"] is False
+    assert any(
+        "artifact_index canonical hash differs" in error
+        or "absent from the artifact index" in error
+        for error in result["quality"]["errors"]
+    )
+
+
+def test_replay_file_must_resolve_beneath_explicit_evidence_root(tmp_path: Path):
+    paths = _fixture(tmp_path)
+    outside = tmp_path.parent / "outside-replay.json"
+    outside.write_bytes(paths["evidence"].read_bytes())
+    result = compile_frozen_corpus_gate(
+        paths["manifest"],
+        paths["config"],
+        paths["source_dir"],
+        outside,
+        repository_root=paths["root"],
+        workload_path=paths["workload"],
+        evidence_root=paths["root"],
+    )
+    assert result["corpus_gate_ready"] is False
+    assert "replay evidence escapes the evidence root" in result["quality"]["errors"]
+
+
 def test_non_ring_quality_attempt_is_an_unexpected_assignment(tmp_path: Path):
     paths = _fixture(tmp_path)
     evidence = _refresh_evidence_hashes(paths)
@@ -550,7 +795,7 @@ def test_non_ring_quality_attempt_is_an_unexpected_assignment(tmp_path: Path):
     extra.update({
         "source_filename": paths["second"].name,
         "source_sha256": _sha(paths["second"]),
-        "source_image": str(paths["second"]),
+        "source_image": paths["second"].relative_to(paths["root"]).as_posix(),
         "source_image_sha256": _sha(paths["second"]),
     })
     evidence["attempts"].append(extra)

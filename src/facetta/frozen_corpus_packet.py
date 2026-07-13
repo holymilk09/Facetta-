@@ -19,6 +19,12 @@ from facetta.frozen_capture_workload import (
     file_sha256,
     validate_capture_envelope,
 )
+from facetta.frozen_evidence_paths import (
+    build_artifact_index,
+    confined_path,
+    evidence_root as resolve_evidence_root,
+    relative_artifact_path,
+)
 
 
 Json = dict[str, Any]
@@ -32,13 +38,23 @@ def _load_object(path: Path, *, label: str | None = None) -> Json:
     return value
 
 
-def _capture_artifact(capture_path: Path, value: object, *, label: str) -> Path:
+def _capture_artifact(
+    capture_path: Path,
+    evidence_root: Path,
+    value: object,
+    *,
+    label: str,
+) -> Path:
     if not isinstance(value, str) or not value or Path(value).is_absolute():
-        raise ValueError(f"{label} path is invalid")
-    root = capture_path.parent.resolve()
-    artifact = (root / value).resolve()
-    if not artifact.is_relative_to(root) or not artifact.is_file():
-        raise ValueError(f"{label} is unavailable")
+        raise ValueError(f"{label} must be capture-relative")
+    artifact = confined_path(
+        evidence_root,
+        capture_path.parent / value,
+        label=label,
+        kind="file",
+    )
+    if not artifact.is_relative_to(capture_path.parent.resolve()):
+        raise ValueError(f"{label} escapes the capture directory")
     return artifact
 
 
@@ -49,6 +65,7 @@ def prepare_frozen_corpus_review_packet(
     source_dir: Path,
     capture_path: Path,
     *,
+    evidence_root: Path,
     capture_public_key_path: Path,
     capture_key_id: str,
     repository_root: Path | None = None,
@@ -61,12 +78,25 @@ def prepare_frozen_corpus_review_packet(
     qualified human supplies every decision and signs the packet separately.
     """
 
+    root = resolve_evidence_root(evidence_root)
+    resolved_source_dir = confined_path(
+        root, source_dir, label="source directory", kind="directory",
+    )
+    resolved_capture_path = confined_path(
+        root, capture_path, label="capture artifact", kind="file",
+    )
+    resolved_capture_public_key = confined_path(
+        root,
+        capture_public_key_path,
+        label="executor public key",
+        kind="file",
+    )
     validation = validate_capture_envelope(
-        capture_path,
+        resolved_capture_path,
         manifest_path,
         config_path,
         workload_path,
-        capture_public_key_path=capture_public_key_path,
+        capture_public_key_path=resolved_capture_public_key,
         capture_key_id=capture_key_id,
         repository_root=repository_root,
     )
@@ -76,7 +106,7 @@ def prepare_frozen_corpus_review_packet(
         )
 
     manifest = _load_object(manifest_path)
-    capture = _load_object(capture_path)
+    capture = _load_object(resolved_capture_path)
     if capture.get("schema_version") != CAPTURE_SCHEMA:
         # Kept explicit even though the secured validator already rejects it.
         raise ValueError("unsupported capture schema_version")
@@ -105,10 +135,16 @@ def prepare_frozen_corpus_review_packet(
     # integrity is a separate gate and is not inferred from this subset.
     source_paths: dict[str, Path] = {}
     for filename, expected_hash in quality_sources.items():
-        source = (source_dir / filename).resolve()
+        if Path(filename).is_absolute() or len(Path(filename).parts) != 1:
+            raise ValueError(f"quality source filename is not portable: {filename}")
+        source = confined_path(
+            root,
+            resolved_source_dir / filename,
+            label=f"quality source {filename}",
+            kind="file",
+        )
         if (
-            not source.is_relative_to(source_dir.resolve())
-            or not source.is_file()
+            not source.is_relative_to(resolved_source_dir)
             or file_sha256(source) != expected_hash
         ):
             raise ValueError(f"quality source hash differs or is unavailable: {filename}")
@@ -131,25 +167,31 @@ def prepare_frozen_corpus_review_packet(
         filename = key[2]
         row = dict(raw)
         row["operation_class"] = planned["operation_class"]
-        row["source_image"] = str(source_paths[filename])
+        row["source_image"] = relative_artifact_path(
+            root,
+            source_paths[filename],
+            label=f"quality source {filename}",
+        )
         row["source_image_sha256"] = planned["source_sha256"]
         for field in ("candidate_image", "mask_image"):
             if field == "mask_image" and key[0] != "edit":
                 continue
             artifact = _capture_artifact(
-                capture_path,
+                resolved_capture_path,
+                root,
                 row.get(field),
                 label=f"capture attempt {index} {field}",
             )
             # Preserve the signed hash and replace only the path with an exact,
             # local path suitable for the offline human/replay process.
-            row[field] = str(artifact)
+            row[field] = relative_artifact_path(root, artifact, label=field)
         evidence_attempts.append(row)
         coverage[filename].add(key[1])
 
     persistence_ref = capture["persistence_evidence_ref"]
     persistence_path = _capture_artifact(
-        capture_path,
+        resolved_capture_path,
+        root,
         persistence_ref.get("relative_path"),
         label="capture persistence evidence",
     )
@@ -158,12 +200,50 @@ def prepare_frozen_corpus_review_packet(
         label="capture persistence evidence",
     )
     persistence_binding = {
-        "artifact": str(persistence_path),
+        "artifact": relative_artifact_path(
+            root, persistence_path, label="persistence evidence",
+        ),
         "sha256": persistence_ref["sha256"],
         "capture_relative_path": persistence_ref["relative_path"],
     }
 
-    capture_sha256 = file_sha256(capture_path)
+    capture_sha256 = file_sha256(resolved_capture_path)
+    capture_artifact = relative_artifact_path(
+        root, resolved_capture_path, label="capture artifact",
+    )
+    key_artifact = relative_artifact_path(
+        root, resolved_capture_public_key, label="executor public key",
+    )
+    artifact_rows: list[tuple[str, str, str]] = [
+        (capture_artifact, capture_sha256, "signed_capture"),
+        (key_artifact, file_sha256(resolved_capture_public_key), "executor_public_key"),
+        (
+            persistence_binding["artifact"],
+            persistence_binding["sha256"],
+            "persistence_evidence",
+        ),
+    ]
+    for filename, source in source_paths.items():
+        artifact_rows.append((
+            relative_artifact_path(root, source, label=f"quality source {filename}"),
+            quality_sources[filename],
+            f"quality_source:{filename}",
+        ))
+    for row in evidence_attempts:
+        identity = (
+            f"{row['kind']}:{row['evaluation_id']}:"
+            f"{row['source_filename']}:attempt-{row['attempt']}"
+        )
+        artifact_rows.append((
+            row["candidate_image"],
+            row["candidate_image_sha256"],
+            f"candidate:{identity}",
+        ))
+        if row["kind"] == "edit":
+            artifact_rows.append((
+                row["mask_image"], row["mask_image_sha256"], f"mask:{identity}",
+            ))
+    artifact_index = build_artifact_index(artifact_rows)
     decision_keys = sorted(expected)
     return {
         "schema_version": PACKET_SCHEMA,
@@ -173,12 +253,17 @@ def prepare_frozen_corpus_review_packet(
         # Required at the replay schema's top level so the compiled result and
         # subsequent founder approval can bind the exact signed capture bytes.
         "capture_sha256": capture_sha256,
+        "artifact_index": artifact_index,
         "capture_provenance": {
             "schema_version": CAPTURE_SCHEMA,
-            "capture_artifact": str(capture_path.resolve()),
+            "corpus_run_id": capture["corpus_run_id"],
+            "capture_artifact": capture_artifact,
             "capture_sha256": capture_sha256,
             "executor_key_id": capture_key_id,
-            "executor_public_key_sha256": file_sha256(capture_public_key_path),
+            "executor_public_key_artifact": key_artifact,
+            "executor_public_key_sha256": file_sha256(
+                resolved_capture_public_key
+            ),
             "executor_signature": capture["signature"],
             "executor_signature_status": "verified",
             "capture_validation": validation,

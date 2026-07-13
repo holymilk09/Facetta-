@@ -11,6 +11,10 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
 from facetta.frozen_corpus_gate import compile_frozen_corpus_gate  # noqa: E402
+from facetta.frozen_evidence_paths import (  # noqa: E402
+    confined_output_path,
+    evidence_root,
+)
 
 
 DEFAULT_MANIFEST = (
@@ -73,23 +77,29 @@ def main() -> int:
     parser.add_argument("--manifest", type=Path, default=DEFAULT_MANIFEST)
     parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
     parser.add_argument("--workload", type=Path, default=DEFAULT_WORKLOAD)
+    parser.add_argument("--evidence-root", type=Path, required=True)
     parser.add_argument("--source-dir", type=Path, required=True)
     parser.add_argument("--evidence", type=Path)
     parser.add_argument("--outdir", type=Path, required=True)
     args = parser.parse_args()
+    resolved_evidence_root = evidence_root(args.evidence_root)
+    output_dir = confined_output_path(
+        resolved_evidence_root, args.outdir, label="gate output directory",
+    )
     result = compile_frozen_corpus_gate(
         args.manifest, args.config, args.source_dir, args.evidence,
         workload_path=args.workload,
+        evidence_root=resolved_evidence_root,
     )
-    args.outdir.mkdir(parents=True, exist_ok=True)
-    (args.outdir / "results.json").write_text(
+    output_dir.mkdir(parents=True, exist_ok=True)
+    (output_dir / "results.json").write_text(
         json.dumps(result, indent=2, sort_keys=True) + "\n"
     )
-    (args.outdir / "report.md").write_text(_report(result))
+    (output_dir / "report.md").write_text(_report(result))
     print(json.dumps({
         "status": result["status"],
         "corpus_gate_ready": result["corpus_gate_ready"],
-        "artifacts": str(args.outdir),
+        "artifacts": output_dir.relative_to(resolved_evidence_root).as_posix(),
     }, indent=2))
     return 0 if result["corpus_gate_ready"] is True else 1
 

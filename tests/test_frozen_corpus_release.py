@@ -66,6 +66,7 @@ def _fixture(tmp_path: Path) -> dict[str, Any]:
     workload = tmp_path / "workload.json"
     _json(workload, {
         "schema_version": "facetta-frozen-capture-workload.v1",
+        "workload_id": "test-workload-v1",
         "config_id": "test-config",
         "corpus_id": "test-corpus",
         "manifest_sha256": "a" * 64,
@@ -106,6 +107,11 @@ def _fixture(tmp_path: Path) -> dict[str, Any]:
             "key_id": "reviewer-v1", "path": reviewer_public_key.name,
             "sha256": _sha(reviewer_public_key),
         },
+        "canonical_api_runner_public_key": {
+            "key_id": "canonical-api-runner-v1",
+            "path": reviewer_public_key.name,
+            "sha256": _sha(reviewer_public_key),
+        },
     })
     results = tmp_path / "results.json"
     _json(results, {
@@ -129,6 +135,7 @@ def _fixture(tmp_path: Path) -> dict[str, Any]:
             "schema_version": "facetta-frozen-replay.v1",
             "workload_sha256": _sha(workload),
             "capture_sha256": "c" * 64,
+            "corpus_run_id": "corpus-run-test-1",
             "reviewer_key_id": "reviewer-v1",
         },
         "implementation": {"frozen_components": frozen_components},
@@ -155,6 +162,40 @@ def _fixture(tmp_path: Path) -> dict[str, Any]:
             "integrity_source_count": 144,
             "quality_source_count": 58,
             "all_outside_mask_drift_pass": True,
+            "persistence_attestation": {
+                "schema_version": (
+                    "facetta-canonical-persistence-verification.v1"
+                ),
+                "status": "pass",
+                "errors": [],
+                "provider_calls": 0,
+                "signature": {
+                    "status": "verified", "key_id": "canonical-api-runner-v1",
+                },
+                "bindings": {
+                    "attestation_id": "persistence-test-1",
+                    "corpus_run_id": "corpus-run-test-1",
+                    "commit_sha": "d" * 40,
+                    "canonical_api_schema_version": (
+                        "facetta-canonical-project-api.v1"
+                    ),
+                    "config_id": "test-config",
+                    "config_sha256": _sha(config),
+                    "workload_id": "test-workload-v1",
+                    "workload_sha256": _sha(workload),
+                    "corpus_id": "test-corpus",
+                    "result_set_schema_version": (
+                        "facetta-frozen-selected-result-set.v1"
+                    ),
+                    "result_set_sha256": "e" * 64,
+                    "result_count": 1_044,
+                },
+                "checks": {
+                    "atomic_image_spec_persistence": True,
+                    "stale_write_rejection": True,
+                    "zero_rejected_candidates_persisted": True,
+                },
+            },
             "release_gates": {
                 "hard_gate_pass": True,
                 "spec_render_conformance_pass": True,
@@ -221,6 +262,7 @@ def test_exact_signed_founder_decision_passes_corpus_gate_only(tmp_path: Path):
     assert result["gate_bindings"]["workload_sha256"] == _sha(paths["workload"])
     assert result["gate_bindings"]["replay_sha256"] == "b" * 64
     assert result["gate_bindings"]["capture_sha256"] == "c" * 64
+    assert result["gate_bindings"]["corpus_run_id"] == "corpus-run-test-1"
     assert result["gate_bindings"]["reviewer_key_id"] == "reviewer-v1"
     assert result["gate_bindings"]["derived_scope"] == {
         "integrity_source_count": 144,
@@ -381,6 +423,20 @@ def test_quality_signature_key_must_match_enrolled_reviewer(tmp_path: Path):
     result = _run(paths)
     assert result["corpus_gate_ready"] is False
     assert any("replay signature" in error for error in result["errors"])
+
+
+def test_founder_cannot_approve_failed_persistence_attestation(tmp_path: Path):
+    paths = _fixture(tmp_path)
+    results = json.loads(paths["results"].read_text())
+    results["quality"]["persistence_attestation"]["checks"][
+        "stale_write_rejection"
+    ] = False
+    _json(paths["results"], results)
+    result = _run(paths)
+    assert result["corpus_gate_ready"] is False
+    assert any(
+        "signed persistence attestation" in error for error in result["errors"]
+    )
 
 
 def test_pinned_workload_must_preserve_144_by_58_by_18_scope(tmp_path: Path):

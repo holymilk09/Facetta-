@@ -4,6 +4,7 @@ import base64
 import hashlib
 import json
 from pathlib import Path
+from typing import Any
 
 import pytest
 from cryptography.hazmat.primitives import serialization
@@ -15,6 +16,13 @@ from facetta.frozen_capture_workload import (
     canonical_capture_payload,
 )
 from facetta.frozen_corpus_packet import prepare_frozen_corpus_review_packet
+from facetta.frozen_evidence_paths import confined_output_path
+from facetta.ring_evals import (
+    CANONICAL_RING_EDITS,
+    RING_GOLDEN_CASES,
+    apply_canonical_ring_edit,
+    build_ring_golden_spec,
+)
 
 
 def _json(path: Path, value: object) -> None:
@@ -26,7 +34,39 @@ def _sha(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def _fixture(tmp_path: Path) -> dict[str, Path | str]:
+def _binding(evaluation_id: str, kind: str) -> dict[str, object]:
+    cases = {case.id: case for case in RING_GOLDEN_CASES}
+    if kind == "render":
+        source = build_ring_golden_spec(cases[evaluation_id])
+        target = source
+        instruction = f"frozen founder corpus render: {evaluation_id}"
+        region = None
+        frozen = ["reviewed synthetic source geometry"]
+    else:
+        edit = next(item for item in CANONICAL_RING_EDITS if item.id == evaluation_id)
+        source = build_ring_golden_spec(cases[edit.golden_case_id])
+        target, issues = apply_canonical_ring_edit(source, edit)
+        assert target is not None and not issues
+        instruction = edit.instruction
+        region = None if edit.visual_only else edit.region
+        frozen = list(edit.frozen_facts)
+    return {
+        "schema_version": "facetta-frozen-source-assignment.v1",
+        "review_status": "approved",
+        "applicability": "execute",
+        "review_evidence_sha256": "4" * 64,
+        "source_spec_evidence_sha256": "5" * 64,
+        "component_map_sha256": "6" * 64,
+        "region_evidence_sha256": "7" * 64,
+        "source_spec": source.model_dump(mode="json"),
+        "target_spec": target.model_dump(mode="json"),
+        "instruction": instruction,
+        "region_description": region,
+        "frozen_facts": frozen,
+    }
+
+
+def _fixture(tmp_path: Path) -> dict[str, Any]:
     root = tmp_path / "repo"
     sources = root / "sources"
     sources.mkdir(parents=True)
@@ -45,7 +85,7 @@ def _fixture(tmp_path: Path) -> dict[str, Path | str]:
         ],
         "evaluation_slice": {
             "ring_source_filenames": [ring.name],
-            "render_case_ids": ["render-one"],
+            "render_case_ids": ["round-solitaire-yellow-4-narrow"],
             "operation_ids": ["metal-color"],
             "operation_classes": {
                 "quick_appearance": ["metal-color"],
@@ -66,7 +106,7 @@ def _fixture(tmp_path: Path) -> dict[str, Path | str]:
         "evaluation_sets": {"ring-full-v1": [
             {
                 "kind": "render",
-                "evaluation_id": "render-one",
+                "evaluation_id": "round-solitaire-yellow-4-narrow",
                 "operation_class": "render_conformance",
             },
             {
@@ -93,13 +133,56 @@ def _fixture(tmp_path: Path) -> dict[str, Path | str]:
             },
         ],
     })
+    assignment_bundle = root / "assignments.json"
+    _json(assignment_bundle, {
+        "schema_version": "facetta-frozen-assignment-bundle.v1",
+        "workload_sha256": _sha(workload),
+        "corpus_run_id": "packet-fixture-run-v1",
+        "assignments": [
+            {
+                "source_filename": ring.name,
+                "kind": kind,
+                "evaluation_id": evaluation_id,
+                "binding": _binding(evaluation_id, kind),
+            }
+            for kind, evaluation_id in (
+                ("render", "round-solitaire-yellow-4-narrow"),
+                ("edit", "metal-color"),
+            )
+        ],
+    })
+    private_key = Ed25519PrivateKey.generate()
+    public_key = root / "executor.pub"
+    public_key.write_bytes(private_key.public_key().public_bytes(
+        encoding=serialization.Encoding.Raw,
+        format=serialization.PublicFormat.Raw,
+    ))
     config = root / "config.json"
     _json(config, {
         "config_id": "fixture-config-v1",
         "manifest_sha256": _sha(manifest),
-        "thresholds": {"max_attempts": 3},
+        "thresholds": {
+            "max_attempts": 3,
+            "mean_render_conformance": 85,
+            "render_hard_gate_pass_rate": 0.9,
+            "mean_edit_fidelity": 90,
+            "max_outside_mask_drift": 0.18,
+        },
         "frozen_components": {
             "capture_workload": f"workload.json@sha256:{_sha(workload)}",
+            "resolved_assignment_bundle": (
+                f"assignments.json@sha256:{_sha(assignment_bundle)}"
+            ),
+            "ring_contract": "fixture-ring-contract@sha256:" + "1" * 64,
+            "prompt_bundle": "fixture-prompt-bundle@sha256:" + "2" * 64,
+            "evaluator_bundle": "fixture-evaluator-bundle@sha256:" + "3" * 64,
+            "routing": "fixture-provider-free-routing.v1",
+        },
+        "executor_trust": {
+            "schema_version": "facetta-frozen-executor-trust.v1",
+            "status": "enrolled",
+            "key_id": "executor-test-v1",
+            "public_key": f"executor.pub@sha256:{_sha(public_key)}",
         },
     })
     plan = build_provider_call_plan(
@@ -116,6 +199,7 @@ def _fixture(tmp_path: Path) -> dict[str, Path | str]:
             "evaluation_id": planned["evaluation_id"],
             "source_filename": planned["source_filename"],
             "source_sha256": planned["source_sha256"],
+            "resolved_inputs_sha256": planned["resolved_inputs_sha256"],
             "attempt": 1,
             "accepted": True,
             "candidate_image": candidate.name,
@@ -141,7 +225,8 @@ def _fixture(tmp_path: Path) -> dict[str, Path | str]:
         "rejected_candidates_became_active_assets": 0,
     })
     capture = {
-        "schema_version": "facetta-frozen-capture.v1",
+        "schema_version": "facetta-frozen-capture.v2",
+        "corpus_run_id": plan["corpus_run_id"],
         "manifest_sha256": plan["manifest_sha256"],
         "config_sha256": plan["config_sha256"],
         "workload_sha256": plan["workload_sha256"],
@@ -152,12 +237,6 @@ def _fixture(tmp_path: Path) -> dict[str, Path | str]:
         },
         "signature": None,
     }
-    private_key = Ed25519PrivateKey.generate()
-    public_key = root / "executor.pub"
-    public_key.write_bytes(private_key.public_key().public_bytes(
-        encoding=serialization.Encoding.Raw,
-        format=serialization.PublicFormat.Raw,
-    ))
     capture["signature"] = {
         "algorithm": "Ed25519",
         "key_id": "executor-test-v1",
@@ -176,18 +255,20 @@ def _fixture(tmp_path: Path) -> dict[str, Path | str]:
         "sources": sources,
         "capture": capture_path,
         "public_key": public_key,
+        "private_key": private_key,
         "persistence": persistence,
         "key_id": "executor-test-v1",
     }
 
 
-def _prepare(fixture: dict[str, Path | str]) -> dict[str, object]:
+def _prepare(fixture: dict[str, Any]) -> dict[str, object]:
     return prepare_frozen_corpus_review_packet(
         fixture["manifest"],  # type: ignore[arg-type]
         fixture["config"],  # type: ignore[arg-type]
         fixture["workload"],  # type: ignore[arg-type]
         fixture["sources"],  # type: ignore[arg-type]
         fixture["capture"],  # type: ignore[arg-type]
+        evidence_root=fixture["root"],  # type: ignore[arg-type]
         capture_public_key_path=fixture["public_key"],  # type: ignore[arg-type]
         capture_key_id=str(fixture["key_id"]),
         repository_root=fixture["root"],  # type: ignore[arg-type]
@@ -240,6 +321,84 @@ def test_packet_embeds_exact_hash_bound_persistence_object(tmp_path: Path):
         fixture["persistence"],  # type: ignore[arg-type]
     )
     assert packet["capture_provenance"]["executor_signature_status"] == "verified"
+    assert packet["capture_provenance"]["corpus_run_id"] == "packet-fixture-run-v1"
+    referenced_paths = {
+        packet["capture_provenance"]["capture_artifact"],
+        packet["capture_provenance"]["executor_public_key_artifact"],
+        packet["persistence_evidence_binding"]["artifact"],
+    }
+    for attempt in packet["attempts"]:
+        referenced_paths.update({
+            attempt["source_image"], attempt["candidate_image"],
+        })
+        if attempt["kind"] == "edit":
+            referenced_paths.add(attempt["mask_image"])
+    assert all(not Path(path).is_absolute() for path in referenced_paths)
+    indexed_paths = {
+        row["path"] for row in packet["artifact_index"]["artifacts"]
+    }
+    assert referenced_paths <= indexed_paths
+
+
+def test_packet_rejects_capture_outside_evidence_root(tmp_path: Path):
+    fixture = _fixture(tmp_path)
+    outside = tmp_path / "outside-capture.json"
+    outside.write_bytes(fixture["capture"].read_bytes())  # type: ignore[union-attr]
+
+    with pytest.raises(ValueError, match="capture artifact escapes the evidence root"):
+        prepare_frozen_corpus_review_packet(
+            fixture["manifest"],  # type: ignore[arg-type]
+            fixture["config"],  # type: ignore[arg-type]
+            fixture["workload"],  # type: ignore[arg-type]
+            fixture["sources"],  # type: ignore[arg-type]
+            outside,
+            evidence_root=fixture["root"],  # type: ignore[arg-type]
+            capture_public_key_path=fixture["public_key"],  # type: ignore[arg-type]
+            capture_key_id=str(fixture["key_id"]),
+            repository_root=fixture["root"],  # type: ignore[arg-type]
+        )
+
+
+def test_packet_rejects_executor_key_outside_evidence_root(tmp_path: Path):
+    fixture = _fixture(tmp_path)
+    outside_key = tmp_path / "outside-executor.pub"
+    outside_key.write_bytes(fixture["public_key"].read_bytes())
+
+    with pytest.raises(ValueError, match="executor public key escapes the evidence root"):
+        prepare_frozen_corpus_review_packet(
+            fixture["manifest"],
+            fixture["config"],
+            fixture["workload"],
+            fixture["sources"],
+            fixture["capture"],
+            evidence_root=fixture["root"],
+            capture_public_key_path=outside_key,
+            capture_key_id=str(fixture["key_id"]),
+            repository_root=fixture["root"],
+        )
+
+
+def test_review_packet_output_must_stay_beneath_evidence_root(tmp_path: Path):
+    root = tmp_path / "evidence"
+    root.mkdir()
+    with pytest.raises(ValueError, match="review packet output escapes"):
+        confined_output_path(
+            root.resolve(),
+            tmp_path / "outside-review.json",
+            label="review packet output",
+        )
+
+
+def test_packet_rejects_source_symlink_escape(tmp_path: Path):
+    fixture = _fixture(tmp_path)
+    source = fixture["sources"] / "ring.png"  # type: ignore[operator]
+    outside = tmp_path / "outside-ring.png"
+    outside.write_bytes(source.read_bytes())
+    source.unlink()
+    source.symlink_to(outside)
+
+    with pytest.raises(ValueError, match="quality source ring.png escapes the evidence root"):
+        _prepare(fixture)
 
 
 def test_packet_rejects_unsigned_capture(tmp_path: Path):
@@ -270,12 +429,8 @@ def test_packet_rejects_non_object_persistence_contents(tmp_path: Path):
 
     # Re-sign after changing the binding so capture provenance is valid; packet
     # conversion must still reject contents that replay cannot consume.
-    key = Ed25519PrivateKey.generate()
+    key = fixture["private_key"]
     public_key = fixture["public_key"]
-    public_key.write_bytes(key.public_key().public_bytes(  # type: ignore[union-attr]
-        encoding=serialization.Encoding.Raw,
-        format=serialization.PublicFormat.Raw,
-    ))
     capture["signature"] = {
         "algorithm": "Ed25519",
         "key_id": fixture["key_id"],

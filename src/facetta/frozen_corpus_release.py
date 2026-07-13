@@ -185,11 +185,16 @@ def _validate_compiled_result_internals(
         reviewer_key.get("key_id") if isinstance(reviewer_key, dict) else None
     )
     evidence = results.get("evidence")
+    evidence_corpus_run_id = (
+        evidence.get("corpus_run_id") if isinstance(evidence, dict) else None
+    )
     if not isinstance(evidence, dict) or not (
         evidence.get("schema_version") == "facetta-frozen-replay.v1"
         and _sha256_value(evidence.get("sha256"))
         and evidence.get("workload_sha256") == workload_hash
         and _sha256_value(evidence.get("capture_sha256"))
+        and isinstance(evidence_corpus_run_id, str)
+        and bool(evidence_corpus_run_id.strip())
         and isinstance(configured_reviewer_key_id, str)
         and bool(configured_reviewer_key_id.strip())
         and evidence.get("reviewer_key_id") == configured_reviewer_key_id
@@ -259,6 +264,53 @@ def _validate_compiled_result_internals(
         errors.append("frozen-corpus reviewer decisions are not all accepted")
     if quality.get("all_outside_mask_drift_pass") is not True:
         errors.append("frozen-corpus outside-mask replay is not a clean pass")
+    runner_key = config.get("canonical_api_runner_public_key")
+    runner_key_id = (
+        runner_key.get("key_id") if isinstance(runner_key, dict) else None
+    )
+    persistence = quality.get("persistence_attestation")
+    persistence_signature = (
+        persistence.get("signature") if isinstance(persistence, dict) else None
+    )
+    persistence_bindings = (
+        persistence.get("bindings") if isinstance(persistence, dict) else None
+    )
+    persistence_checks = (
+        persistence.get("checks") if isinstance(persistence, dict) else None
+    )
+    compiled_config = results.get("config")
+    compiled_config_hash = (
+        compiled_config.get("sha256")
+        if isinstance(compiled_config, dict) else None
+    )
+    if not isinstance(persistence, dict) or not (
+        persistence.get("schema_version")
+        == "facetta-canonical-persistence-verification.v1"
+        and persistence.get("status") == "pass"
+        and persistence.get("errors") == []
+        and persistence.get("provider_calls") == 0
+        and isinstance(persistence_signature, dict)
+        and persistence_signature.get("status") == "verified"
+        and isinstance(runner_key_id, str)
+        and bool(runner_key_id.strip())
+        and persistence_signature.get("key_id") == runner_key_id
+        and isinstance(persistence_bindings, dict)
+        and persistence_bindings.get("config_id") == config.get("config_id")
+        and persistence_bindings.get("config_sha256")
+        == compiled_config_hash
+        and persistence_bindings.get("workload_sha256") == workload_hash
+        and persistence_bindings.get("corpus_id") == config.get("corpus_id")
+        and persistence_bindings.get("result_count") == assignment_count
+        and _sha256_value(persistence_bindings.get("result_set_sha256"))
+        and isinstance(persistence_bindings.get("corpus_run_id"), str)
+        and persistence_bindings.get("corpus_run_id") == evidence_corpus_run_id
+        and isinstance(persistence_checks, dict)
+        and all(persistence_checks.get(check) is True for check in (
+            "atomic_image_spec_persistence", "stale_write_rejection",
+            "zero_rejected_candidates_persisted",
+        ))
+    ):
+        errors.append("frozen-corpus signed persistence attestation is not a clean pass")
 
     release_gates = quality.get("release_gates")
     required_release_gates = (
@@ -440,6 +492,15 @@ def verify_frozen_corpus_release(
 
     passed = not errors and signature_status == "verified"
     result_evidence = results.get("evidence")
+    result_quality = results.get("quality")
+    result_persistence = (
+        result_quality.get("persistence_attestation")
+        if isinstance(result_quality, dict) else None
+    )
+    persistence_bindings = (
+        result_persistence.get("bindings")
+        if isinstance(result_persistence, dict) else None
+    )
     return {
         "schema_version": "facetta-frozen-corpus-release-decision.v2",
         "status": "pass" if passed else "incomplete_or_failed",
@@ -463,6 +524,10 @@ def verify_frozen_corpus_release(
                 result_evidence.get("capture_sha256")
                 if isinstance(result_evidence, dict) else None
             ),
+            "corpus_run_id": (
+                result_evidence.get("corpus_run_id")
+                if isinstance(result_evidence, dict) else None
+            ),
             "reviewer_key_id": (
                 result_evidence.get("reviewer_key_id")
                 if isinstance(result_evidence, dict) else None
@@ -472,6 +537,10 @@ def verify_frozen_corpus_release(
                 "quality_source_count": quality_count,
                 "quality_assignment_count": assignment_count,
             },
+            "persistence_attestation": (
+                persistence_bindings
+                if isinstance(persistence_bindings, dict) else None
+            ),
             "config_id": config.get("config_id"),
             "corpus_id": result_corpus_id,
             "implementation_pins_sha256": (

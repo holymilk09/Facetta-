@@ -5,6 +5,41 @@ Read `CLAUDE.md` (constitution — binding), `README.md` (endpoints/layout),
 `docs/DATA_WANTED.md` (open research asks). This file is the delta: what is
 DONE beyond the original TASKS.md build order, and what is next.
 
+## 2026-07-13 secured corpus execution-evidence checkpoint
+
+The frozen provider-call plan and capture envelope are now v2 fail-closed
+contracts. The pinned workload still declares 1,044 logical ring assignments
+(58 sources x 18 evaluations) and a 3,132-attempt logical ceiling, but those
+counts are not an executable provider matrix. Every assignment now requires a
+reviewed, hash-pinned source-specific binding with an explicit applicability
+decision and canonical `resolved_inputs_sha256`. The production configuration
+deliberately has no resolved assignment bundle or enrolled executor key, so it
+currently reports 0 execution-ready assignments, 0 maximum executable provider
+attempts, and cannot produce an accepted live capture.
+
+Canonical persistence is no longer accepted as an unsigned JSON assertion. A
+separate Ed25519 attestation from a config-enrolled canonical API runner must
+bind the exact preassigned `corpus_run_id`, commit, API schema, frozen
+definition, selected result-set digest, atomic image/specification behavior,
+stale-write rejection, and zero persisted rejected candidates. The production
+API-runner key is intentionally unenrolled. Review-packet and replay commands
+also require one explicit evidence root; all sources, captures, keys,
+persistence evidence, candidates, masks, and outputs must remain inside it and
+are referenced through a canonical root-relative, sorted, hash-bound artifact
+index. Traversal, absolute paths, symlink escape, missing index membership, and
+hash drift fail closed.
+
+Local validation for this slice: the complete backend passes 1,534 tests, and
+all 81 focused frozen capture, packet, replay, persistence, release, and
+production-surface tests pass. This is contract
+validation only; no provider corpus run, designer review, GIA review, founder
+approval, or staging release was performed. External beta remains blocked on a
+reviewed per-source assignment/applicability bundle; enrolled executor,
+canonical API runner, reviewer, and founder keys; the real 144-source corpus;
+measured machine scores; an independently classified 58-source ring sample; a
+separate designer-acceptance signal; and the combined corpus-plus-staging
+release controller.
+
 ## 2026-07-13 workload-bound corpus evidence checkpoint
 
 The frozen external-quality gate now consumes one pinned workload from capture

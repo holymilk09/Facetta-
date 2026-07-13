@@ -20,28 +20,41 @@ exit code and the generated JSON alongside the human sign-off.
   `docs/evals/frozen-founder-corpus-v1/manifest.json`.
 - `docs/evals/frozen-founder-corpus-v1/config.json` must still match its pinned
   manifest and implementation hashes. Its current
-  `current_evidence_status` is `not_run` and `reviewer_public_key` is `null`, so
-  the gate cannot pass yet.
-- **Freeze key enrollment before capture.** Configure both the GIA reviewer and
-  founder Ed25519 public keys by key ID, path, and SHA-256 in `config.json`
-  before generating the provider-call plan, capture, replay, or `results.json`.
+  `current_evidence_status` is `not_run`; its executor, canonical API runner,
+  reviewer, and founder keys are unenrolled; and it has no resolved assignment
+  bundle, so the gate cannot pass yet.
+- **Resolve the workload before capture.** The 1,044 rows are a logical review
+  scope, not 1,044 executable jobs. Independently review and hash-pin one
+  source-specific assignment/applicability bundle with concrete regions and
+  references, a canonical resolved-input hash for every logical row, and a
+  preassigned `corpus_run_id`. Do not make provider calls for unresolved or
+  `not_applicable` rows; revise the workload if an operation is not applicable.
+  The production plan currently reports zero execution-ready rows and zero
+  maximum executable attempts.
+- **Freeze key enrollment before capture.** Configure the executor, canonical
+  API runner, GIA reviewer, and founder Ed25519 public keys by key ID, path, and
+  SHA-256 in `config.json` before generating the final provider-call plan,
+  capture, replay, or `results.json`.
   The capture and replay bind the exact config hash, so adding the founder key
-  after execution would invalidate that evidence. Keep both private signing
-  keys outside the repository and outside the run artifacts. The reviewer
-  signs the completed replay; the founder signs only the already-generated
-  result bytes later. Neither public-key enrollment is an approval.
+  after execution would invalidate that evidence. Keep all private signing
+  keys outside the repository and outside the run artifacts. The executor
+  signs capture, the API runner signs persistence, the reviewer signs the
+  completed replay, and the founder signs only the already-generated result
+  bytes later. Public-key enrollment is not approval.
 - The replay passed to `--evidence` must be one complete
   `facetta-frozen-replay.v1` JSON payload signed by that enrolled key. It must
   bind its manifest/config hashes, all source/candidate/mask artifact hashes,
-  canonical persistence evidence, source coverage, scores, and the completed
-  named GIA-trained false-positive/false-negative review.
+  the canonical API runner's signed persistence attestation, source coverage,
+  scores, and the completed named GIA-trained false-positive/false-negative
+  review.
   That review must include one boolean decision for every selected
   `kind/evaluation_id/source_filename` result; the verifier recomputes the
   false-positive and false-negative counts from those decisions.
 - `docs/evals/frozen-founder-corpus-v1/workload.json` must pass definition
   validation. It explicitly separates 144-source integrity from the 58-source
   ring quality slice and expands the latter into 1,044 source/evaluation
-  sequences. A plan file is not capture evidence.
+  logical sequences. A plan file, including a synthetically complete plan, is
+  not capture evidence.
 
 ### Prepare the review packet
 
@@ -52,13 +65,16 @@ PYTHONPATH=src .venv/bin/python scripts/plan_frozen_corpus_capture.py \
   --out /secure/path/to/provider-call-plan.json plan
 ```
 
-This performs zero provider calls and leaves `corpus_gate_ready: false`. The
-secured live executor writes a `facetta-frozen-capture.v1` object with its
+This performs zero provider calls and leaves `corpus_gate_ready: false`. With
+the repository's production config it must also report zero execution-ready
+assignments. Only after assignment and key enrollment may the secured live
+executor write a `facetta-frozen-capture.v2` object with its
 attempt rows and canonical persistence result. Each attempt names the frozen
 `source_filename`, kind, evaluation ID, attempt number, machine acceptance and
 scores, plus relative candidate path and (for edits) mask path with hashes. The
-envelope also pins the manifest/config/workload and a canonical-persistence
-evidence file, then receives a separate Ed25519 executor signature. Validate
+envelope also pins the preassigned `corpus_run_id`, manifest/config/workload,
+assignment and resolved-input hashes, and a separately signed canonical API
+persistence attestation, then receives an Ed25519 executor signature. Validate
 that machine envelope before review packet construction; this signature is not
 the later GIA reviewer signature:
 
@@ -75,18 +91,19 @@ Build an unsigned review packet locally:
 
 ```bash
 PYTHONPATH=src .venv/bin/python scripts/prepare_frozen_corpus_review.py \
-  --source-dir /secure/path/to/founder-reference-directory \
-  --capture /secure/path/to/frozen-capture.json \
-  --capture-public-key /secure/path/to/executor-public-key \
+  --evidence-root /secure/path/to/evidence-root \
+  --source-dir /secure/path/to/evidence-root/founder-reference-directory \
+  --capture /secure/path/to/evidence-root/frozen-capture.json \
+  --capture-public-key /secure/path/to/evidence-root/executor-public-key \
   --capture-key-id secured-executor-v1 \
-  --out /secure/path/to/unsigned-review-packet.json
+  --out /secure/path/to/evidence-root/unsigned-review-packet.json
 ```
 
 The builder makes zero provider calls and first requires the capture's executor
-signature, exact plan coverage, artifact hashes, and persistence binding to
+signature, exact plan coverage, artifact hashes, and signed persistence binding to
 validate. It verifies every ring-quality source referenced by the pinned
 workload, derives replay paths without changing the signed hashes, embeds the
-hash-bound persistence JSON, and generates exactly one pending reviewer
+verified persistence attestation, and generates exactly one pending reviewer
 decision per declared 58-source/evaluation assignment. Full 144-source byte and
 image integrity remains a separate prerequisite. The packet's top-level
 `capture_sha256` and nested capture provenance both bind the exact signed
@@ -101,6 +118,12 @@ records their identity in capture provenance; key custody/enrollment is an
 external operational control, not something a locally self-generated key can
 satisfy by itself.
 
+All referenced sources, capture, executor key, signed persistence attestation,
+candidates, edit masks, replay packet, and gate outputs must stay within the
+explicit evidence root. The packet and replay use only root-relative paths and
+a canonical sorted artifact index. Absolute references, traversal, symlink
+escape, omitted index entries, or hash drift invalidate the run.
+
 ### Execute
 
 Run from the repository root. Use secured operator-selected paths; do not copy
@@ -110,12 +133,14 @@ directory.
 ```bash
 set +x
 umask 077
-ARTIFACT_DIR=/secure/path/to/gate-artifacts/frozen-founder-corpus-v1
+EVIDENCE_ROOT=/secure/path/to/evidence-root
+ARTIFACT_DIR="$EVIDENCE_ROOT/gate-artifacts/frozen-founder-corpus-v1"
 mkdir -p "$ARTIFACT_DIR"
 set +e
 PYTHONPATH=src .venv/bin/python scripts/run_frozen_corpus_gate.py \
-  --source-dir /secure/path/to/founder-reference-directory \
-  --evidence /secure/path/to/signed-facetta-frozen-replay.v1.json \
+  --evidence-root "$EVIDENCE_ROOT" \
+  --source-dir "$EVIDENCE_ROOT/founder-reference-directory" \
+  --evidence "$EVIDENCE_ROOT/signed-facetta-frozen-replay.v1.json" \
   --outdir "$ARTIFACT_DIR" > "$ARTIFACT_DIR/command-result.json"
 GATE_EXIT=$?
 set -e
@@ -183,8 +208,11 @@ following must hold:
 - Signed reviewer acceptance for the manifest's quick-appearance class is at
   least `0.90`. Structural results meet mean fidelity `90`, have no major
   drift, and every structural outside-mask replay is at most `0.18`.
-- Canonical API persistence evidence is present and the count of rejected
-  candidates that became active assets is exactly `0`.
+- The config-enrolled canonical API runner's Ed25519 persistence attestation
+  binds the exact capture `corpus_run_id`, commit, API schema, frozen
+  definitions, and selected result set; proves atomic image/specification
+  persistence and stale-write rejection; and reports exactly `0` rejected
+  candidates becoming active assets.
 - The Ed25519 signature verifies against the pinned reviewer public key, the
   GIA-trained review is complete with false-positive/false-negative counts,
   and founder approval is recorded against this exact result hash.
