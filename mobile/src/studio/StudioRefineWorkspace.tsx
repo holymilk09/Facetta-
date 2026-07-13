@@ -2,7 +2,6 @@ import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View,
 } from 'react-native';
-import { AuthenticatedImage as Image } from '../AuthenticatedImage';
 
 import { Button, ChipRow, Field, Notice } from '../components';
 import { radius, theme } from '../theme';
@@ -24,6 +23,7 @@ import {
 import { designerErrorMessage } from './designerErrorMessage';
 import { getStudioAction } from './actions';
 import { useVisualReviewReadiness } from './useVisualReviewReadiness';
+import { StudioReviewImage } from './StudioReviewImage';
 
 const REFINE_CREDITS_PER_OUTPUT = getStudioAction('refine').creditEstimate ?? 0;
 
@@ -675,8 +675,9 @@ export function StudioRefineWorkspace({
           {sourceImageUrl !== null && (
             <View style={styles.comparePane}>
               <Text style={styles.compareLabel}>SOURCE</Text>
-              <Image
+              <StudioReviewImage
                 accessibilityLabel="Exact source revision"
+                inspectionLabel="Exact source revision"
                 source={{ uri: sourceImageUrl }}
                 imageRequestHeaders={imageRequestHeaders}
                 onLoad={() => visualReview.markReady(sourceVisualKey)}
@@ -687,8 +688,9 @@ export function StudioRefineWorkspace({
           )}
           <View style={styles.comparePane}>
             <Text style={styles.compareLabel}>PREVIEW</Text>
-            <Image
+            <StudioReviewImage
               accessibilityLabel="Temporary refinement preview"
+              inspectionLabel="Temporary refinement candidate"
               source={{ uri: preview.candidate.assetUrl }}
               imageRequestHeaders={imageRequestHeaders}
               onLoad={() => visualReview.markReady(candidateVisualKey)}

@@ -4,7 +4,6 @@ import React, {
 import {
   Pressable, ScrollView, StyleSheet, Text, View,
 } from 'react-native';
-import { AuthenticatedImage as Image } from '../AuthenticatedImage';
 
 import { Button, ChipRow, Field, Notice } from '../components';
 import { radius, theme } from '../theme';
@@ -20,6 +19,7 @@ import type {
 import { designerReviewState } from './designerReviewLanguage';
 import { STUDIO_PRESENT_CONTROLS } from './workspaceControls';
 import { useVisualReviewReadiness } from './useVisualReviewReadiness';
+import { StudioReviewImage } from './StudioReviewImage';
 
 export { STUDIO_PRESENT_CONTROLS } from './workspaceControls';
 
@@ -559,8 +559,9 @@ export function StudioPresentWorkspace({
         <View style={styles.reviewWorkspace}>
           {sourceImageUrl !== null && <View style={styles.sourcePanel}>
             <Text style={styles.comparisonLabel}>Exact source · unchanged</Text>
-            <Image
+            <StudioReviewImage
               accessibilityLabel="Exact source revision"
+              inspectionLabel="Exact source revision"
               source={{ uri: sourceImageUrl }}
               imageRequestHeaders={imageRequestHeaders}
               onLoad={() => visualReview.markReady(sourceVisualKey)}
@@ -580,8 +581,9 @@ export function StudioPresentWorkspace({
               {card.imageUrl !== null && <View style={styles.candidateImage}>
                 <Text style={styles.comparisonLabel}>{card.status === 'review'
                   ? 'Candidate · review before saving' : 'Saved presentation'}</Text>
-                <Image
+                <StudioReviewImage
                   accessibilityLabel={card.title}
+                  inspectionLabel={`${card.title} ${card.status === 'review' ? 'candidate' : 'saved presentation'}`}
                   source={{ uri: card.imageUrl }}
                   imageRequestHeaders={imageRequestHeaders}
                   onLoad={() => visualReview.markReady(cardVisualKey(card))}

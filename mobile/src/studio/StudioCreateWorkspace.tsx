@@ -13,6 +13,7 @@ import {
   STUDIO_CREATE_REFERENCE_CONTROLS, type CreateReferenceRole,
 } from './workspaceControls';
 import { useVisualReviewReadiness } from './useVisualReviewReadiness';
+import { StudioReviewImage } from './StudioReviewImage';
 
 export { STUDIO_CREATE_REFERENCE_CONTROLS } from './workspaceControls';
 export type { CreateReferenceRole } from './workspaceControls';
@@ -280,8 +281,9 @@ export function StudioCreateWorkspace({
                 {candidate.image_url === null ? (
                   <View style={styles.imageFallback}><Text style={styles.imageFallbackText}>Preview unavailable</Text></View>
                 ) : (
-                  <Image
+                  <StudioReviewImage
                     accessibilityLabel={`Direction ${index + 1} preview`}
+                    inspectionLabel={`Direction ${index + 1}`}
                     source={{ uri: candidate.image_url }}
                     onLoad={() => visualReview.markReady(visualKey)}
                     onError={() => visualReview.markFailed(visualKey)}

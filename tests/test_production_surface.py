@@ -43,14 +43,6 @@ EXPECTED_PRODUCTION_OPERATIONS = (
     )
     | _operations(
         "POST",
-        "/specs/validate",
-        "/specs/catalog/select",
-        "/specs/stone/select",
-        "/specs/sheet.svg",
-        "/specs/from-photo",
-        "/specs/from-plate",
-        "/specs/source-coverage/resolve",
-        "/specs/source-coverage/confirm",
         "/assets/{asset_id}/markup/read",
         "/assets/{asset_id}/markup/apply",
         "/assets/{asset_id}/studio-component-map",
@@ -112,7 +104,7 @@ def test_production_method_path_surface_is_exact(monkeypatch):
     assert actual == EXPECTED_PRODUCTION_OPERATIONS
 
 
-def test_production_hides_legacy_admin_and_protects_spec_adapters(monkeypatch):
+def test_production_hides_legacy_admin_and_stateless_spec_adapters(monkeypatch):
     monkeypatch.setenv("FACETTA_ENV", "production")
     monkeypatch.setenv("FACETTA_AUTH_MODE", "supabase")
     monkeypatch.setenv(
@@ -124,14 +116,6 @@ def test_production_hides_legacy_admin_and_protects_spec_adapters(monkeypatch):
     with TestClient(production_app) as client:
         assert client.get("/health").status_code == 200
         for method, path in (
-            ("post", "/specs/from-photo"),
-            ("post", "/specs/from-plate"),
-            ("post", "/specs/validate"),
-            ("post", "/specs/catalog/select"),
-            ("post", "/specs/stone/select"),
-            ("post", "/specs/sheet.svg"),
-            ("post", "/specs/source-coverage/resolve"),
-            ("post", "/specs/source-coverage/confirm"),
             ("post", "/studio/projects/import-confirmed"),
             ("post", "/projects/known/creative-directions/commit"),
             ("get", "/projects/missing"),
@@ -163,6 +147,14 @@ def test_production_hides_legacy_admin_and_protects_spec_adapters(monkeypatch):
             ("get", "/users"),
             ("get", "/stones"),
             ("post", "/designs/known/versions/1/share"),
+            ("post", "/specs/from-photo"),
+            ("post", "/specs/from-plate"),
+            ("post", "/specs/validate"),
+            ("post", "/specs/catalog/select"),
+            ("post", "/specs/stone/select"),
+            ("post", "/specs/sheet.svg"),
+            ("post", "/specs/source-coverage/resolve"),
+            ("post", "/specs/source-coverage/confirm"),
             ("post", "/specs/build"),
             ("post", "/specs/jewelry-render"),
             ("post", "/assets/known/catalog/apply"),

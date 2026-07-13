@@ -491,7 +491,7 @@ describe('StudioPresentWorkspace', () => {
     expect(await screen.findByText('2 of 2 requested outputs are ready for review. Your selected visual is unchanged.')).toBeTruthy();
     expect(screen.getAllByText('Exact source · unchanged')).toHaveLength(1);
     expect(screen.getAllByText('Candidate · review before saving')).toHaveLength(2);
-    expect(screen.getAllByLabelText(/Exact source revision/)).toHaveLength(1);
+    expect(screen.getByLabelText('Exact source revision')).toBeTruthy();
     await act(async () => {
       fireEvent(screen.getByLabelText('Exact source revision'), 'load');
       fireEvent(screen.getByLabelText('Catalog white'), 'load');

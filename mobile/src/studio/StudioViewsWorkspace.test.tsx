@@ -193,6 +193,8 @@ describe('StudioViewsWorkspace', () => {
     expect(screen.getByText('Confirmed design · Version 5')).toBeTruthy();
 
     await act(async () => { resolveB?.({ data: previewB, error: null, status: 200 }); });
-    expect(await screen.findByLabelText(/Temporary side view/)).toBeTruthy();
+    expect(await screen.findByLabelText(
+      'Inspect Temporary side view candidate in detail',
+    )).toBeTruthy();
   });
 });

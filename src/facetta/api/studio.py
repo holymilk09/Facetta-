@@ -495,6 +495,14 @@ _JOB_TRANSITIONS: dict[str, frozenset[str]] = {
     "canceled": frozenset(),
 }
 
+# Once these actions reach reviewing, a durable candidate exists and its
+# candidate-specific Apply/Save/Discard transaction is the only authority that
+# may settle the job. A generic lifecycle report must not strand that candidate
+# or fabricate a terminal state without the canonical decision.
+_CANDIDATE_OWNED_REVIEW_ACTIONS = frozenset({
+    "create", "refine", "views", "present",
+})
+
 _BILLING_POLICY = (
     "Only requested outputs accepted by a backend decision are charged. "
     "Client completion reports, internal retries, and failed review attempts "
@@ -732,23 +740,14 @@ def transition_studio_job(
             detail=f"invalid Studio job transition: {job.status} -> {request.status}",
         )
     if (
-        job.action_id == "refine"
-        and job.status == "reviewing"
-        and job.reservation_kind == "studio_visual"
+        job.status == "reviewing"
+        and job.action_id in _CANDIDATE_OWNED_REVIEW_ACTIONS
     ):
         raise HTTPException(
             status_code=409,
             detail=(
-                "this visual Refine job is owned by its candidate decision; "
-                "use Apply, Save as Variation, or Discard"
-            ),
-        )
-    if job.action_id == "views" and job.status == "reviewing":
-        raise HTTPException(
-            status_code=409,
-            detail=(
-                "this Views job is owned by its candidate decision; "
-                "use Apply or Discard"
+                f"this {job.action_id} job is owned by its candidate decision; "
+                "use its Apply, Save, or Discard action"
             ),
         )
     if request.progress < job.progress:

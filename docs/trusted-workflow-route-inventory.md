@@ -155,6 +155,11 @@ Caller abbreviations:
 
 ## Stateless specification routes
 
+These adapters remain mounted in test and development for compatibility and
+for the eventual Advanced Specifications escape hatch. None are mounted on the
+public production beta; active Studio creation, refinement, presentation, and
+Factory review use persisted project, asset, candidate, and Studio routes.
+
 | Method and path | Class | Observed caller evidence | Replacement or disposition |
 |---|---|---|---|
 | `POST /specs/validate` | Internal primitive | Legacy client; validation/fit tests | Retain pure validation behind Advanced specifications and services. |

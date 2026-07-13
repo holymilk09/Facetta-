@@ -66,9 +66,9 @@ selling team access or delegating Factory permission.
 
 The production application surface omits legacy Designs, Library, Users,
 Saved Stones, and share-administration routers; it also disables OpenAPI/Swagger
-and wildcard CORS. Only the eight specification adapters consumed by Studio
-are mounted and require the same principal boundary; provider-heavy legacy
-build/render routes are absent. The production Assets surface is limited to
+and wildcard CORS. Stateless specification adapters are development-only and
+retain the same principal boundary there; provider-heavy legacy build/render
+routes are absent. The production Assets surface is limited to
 authenticated image reads and Studio's temporary markup read/preview seam;
 direct render, view, restyle, video, pin, and technical-drawing routes are not
 mounted. Catalog preview/candidate routes additionally authorize the canonical

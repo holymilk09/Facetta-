@@ -5,6 +5,43 @@ Read `CLAUDE.md` (constitution — binding), `README.md` (endpoints/layout),
 `docs/DATA_WANTED.md` (open research asks). This file is the delta: what is
 DONE beyond the original TASKS.md build order, and what is next.
 
+## 2026-07-13 inspectable and candidate-owned Studio review checkpoint
+
+Every consequential Studio visual can now be inspected at jewelry-detail
+scale before a designer decides. Create directions, Refine source/candidate
+pairs, Technical-view source/candidate pairs, Present source/outputs, and
+Collection revision comparisons share one authenticated full-screen inspector
+with 1x, 2x, and 4x zoom plus two-axis panning. The inspector explicitly calls
+out prongs, stone outlines, pave spacing, edges, and unintended drift. Its
+detail image deliberately owns no render-readiness callback: opening or zooming
+the modal cannot authorize Apply, Save, or selection; only the compact image in
+the actual decision surface can satisfy the existing fail-closed render gate.
+
+Create, Refine, Views, and Present jobs are now candidate-owned once they enter
+`reviewing`. The public generic lifecycle endpoint can no longer mark those
+jobs succeeded or failed, strand a durable candidate, or fabricate completion
+outside its candidate transaction. Apply, Save as Variation, Save
+presentation/view, and Discard remain the canonical settlement authorities;
+pre-review provider failure is still allowed and remains zero-charge. Tests
+also preserve malformed historical bindings as fail-closed compatibility cases
+rather than recreating them through the public API.
+
+The public production beta no longer mounts any stateless `/specs/*` adapter.
+Those routes and their historical clients remain intact, authenticated, and
+tested in development for compatibility and the eventual Advanced
+Specifications escape hatch. The production surface now exposes only persisted
+Studio/project/asset/candidate services, while legacy state remains readable
+without becoming a second visible workflow.
+
+Local validation for this checkpoint: 1,633 backend tests, 247 Jest tests, 68
+Studio contract tests, TypeScript, Ruff, Python compilation, Expo web export,
+the exact production route-surface tests, and the complete ten-project
+production TypeScript-client -> HTTP -> FastAPI acceptance pass. The rendered
+unauthenticated entry and six-step tour were inspected locally; authenticated
+candidate inspection still requires a configured Supabase session. The frozen
+144-image corpus, independent designer/GIA review, founder approval, and live
+two-principal HTTPS staging evidence remain the external beta gates.
+
 ## 2026-07-13 exact Studio context and Views reservation checkpoint
 
 Every saved-design Studio action now keeps the exact working context visible.

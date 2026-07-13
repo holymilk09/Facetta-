@@ -31,6 +31,7 @@ from facetta.studio_jobs import (
     STUDIO_JOB_ACTIONS,
     StudioJobAccountingError,
     record_accepted_studio_job_outputs,
+    settle_create_studio_job_selection,
 )
 from facetta.studio_view_candidates import reserve_studio_view_job
 
@@ -188,15 +189,27 @@ def test_fresh_schema_contains_persistent_studio_jobs():
     }
 
 
-def test_job_lifecycle_is_persistent_and_client_completion_never_charges(client):
-    job = _create(client, outputs=3)
+def test_non_candidate_job_lifecycle_is_persistent_and_client_completion_never_charges(client):
+    project_id, source_id = _seed_project(
+        client, project_id="project_vary_lifecycle",
+    )
+    definition = STUDIO_JOB_ACTIONS["vary"]
+    job = _create(
+        client,
+        outputs=3,
+        action_id="vary",
+        lane=definition.lane,
+        credits=definition.credits_per_output,
+        active_design_id=project_id,
+        source_revision_id=source_id,
+    )
     job_id = job["job_id"]
 
     assert job["status"] == "queued"
     assert job["billing"] == {
         "requested_outputs": 3,
-        "credits_per_output": 15,
-        "estimated_credits": 45,
+        "credits_per_output": 0,
+        "estimated_credits": 0,
         "completed_outputs": 0,
         "charged_outputs": 0,
         "charged_credits": 0,
@@ -235,30 +248,31 @@ def test_job_lifecycle_is_persistent_and_client_completion_never_charges(client)
     assert immutable.status_code == 409
 
 
-def test_reviewing_view_job_is_owned_by_its_candidate_decision(client):
-    project_id, source_id = _seed_project(
-        client, project_id="project_views_reserved", exact_specification=True,
-    )
-    definition = STUDIO_JOB_ACTIONS["views"]
+@pytest.mark.parametrize("action_id", ["create", "refine", "views", "present"])
+def test_reviewing_candidate_jobs_are_owned_by_their_candidate_decision(
+    client,
+    action_id,
+):
+    project_id = None
+    source_id = None
+    if action_id != "create":
+        project_id, source_id = _seed_project(
+            client,
+            project_id=f"project_{action_id}_candidate_owned",
+            exact_specification=action_id == "views",
+        )
+    definition = STUDIO_JOB_ACTIONS[action_id]
     job = _create(
         client,
         outputs=1,
-        action_id="views",
+        action_id=action_id,
         lane=definition.lane,
         credits=definition.credits_per_output,
         active_design_id=project_id,
         source_revision_id=source_id,
     )
     assert _transition(client, job["job_id"], "running", 0.2).status_code == 200
-    sessions = client.app_state["session_factory"]
-    with sessions() as db:
-        reserve_studio_view_job(
-            db,
-            job_id=job["job_id"],
-            owner="usr_designer",
-            project_root_id=project_id,
-            source_asset_id=source_id,
-        )
+    assert _transition(client, job["job_id"], "reviewing", 0.8).status_code == 200
 
     for status, extra in (
         ("succeeded", {"completed_outputs": 1}),
@@ -270,8 +284,34 @@ def test_reviewing_view_job_is_owned_by_its_candidate_decision(client):
 
     persisted = client.get(
         f"/studio/jobs/{job['job_id']}", params={"owner": "usr_designer"},
+    )
+    assert persisted.status_code == 200
+    assert persisted.json()["status"] == "reviewing"
+    assert persisted.json()["billing"]["completed_outputs"] == 0
+    assert persisted.json()["billing"]["charged_outputs"] == 0
+
+
+def test_running_candidate_job_can_still_fail_before_review(client):
+    job = _create(client, outputs=1)
+    assert _transition(client, job["job_id"], "running", 0.2).status_code == 200
+
+    failed = _transition(
+        client,
+        job["job_id"],
+        "failed",
+        1,
+        error_code="generation_unavailable",
+    )
+
+    assert failed.status_code == 200
+    assert failed.json()["status"] == "failed"
+    assert failed.json()["billing"]["completed_outputs"] == 0
+    assert failed.json()["billing"]["charged_outputs"] == 0
+
+    persisted = client.get(
+        f"/studio/jobs/{job['job_id']}", params={"owner": "usr_designer"},
     ).json()
-    assert persisted["status"] == "reviewing"
+    assert persisted["status"] == "failed"
     assert persisted["billing"]["charged_outputs"] == 0
 
 
@@ -901,7 +941,19 @@ def test_backend_acceptance_helper_is_the_only_charge_authority():
 
 
 def test_progress_and_charge_invariants_reject_inconsistent_updates(client):
-    job_id = _create(client, outputs=1)["job_id"]
+    project_id, source_id = _seed_project(
+        client, project_id="project_vary_invariants",
+    )
+    definition = STUDIO_JOB_ACTIONS["vary"]
+    job_id = _create(
+        client,
+        outputs=1,
+        action_id="vary",
+        lane=definition.lane,
+        credits=definition.credits_per_output,
+        active_design_id=project_id,
+        source_revision_id=source_id,
+    )["job_id"]
     assert _transition(client, job_id, "running", 0.6).status_code == 200
 
     backward = _transition(client, job_id, "reviewing", 0.5)
@@ -947,14 +999,35 @@ def test_creation_job_lineage_can_bind_once_but_never_drift(client):
     })
     assert drift.status_code == 409
 
-    accepted = client.patch(f"/studio/jobs/{job_id}", json={
+    generic_acceptance = client.patch(f"/studio/jobs/{job_id}", json={
         "owner": "usr_designer", "status": "succeeded", "progress": 1,
         "completed_outputs": 1,
         "active_design_id": "project_created",
         "source_revision_id": "candidate_selected",
     })
-    assert accepted.status_code == 200
-    assert accepted.json()["source_revision_id"] == "candidate_selected"
+    assert generic_acceptance.status_code == 409
+
+    sessions = client.app_state["session_factory"]
+    with sessions() as db:
+        accepted = settle_create_studio_job_selection(
+            db,
+            job_id=job_id,
+            owner="usr_designer",
+            project_root_id="project_created",
+            source_revision_id="candidate_selected",
+            available_outputs=1,
+        )
+        db.commit()
+        assert accepted.status == "succeeded"
+        assert accepted.source_revision_id == "candidate_selected"
+        assert accepted.charged_outputs == 1
+
+    persisted = client.get(
+        f"/studio/jobs/{job_id}", params={"owner": "usr_designer"},
+    ).json()
+    assert persisted["status"] == "succeeded"
+    assert persisted["source_revision_id"] == "candidate_selected"
+    assert persisted["billing"]["charged_outputs"] == 1
 
 
 def test_failed_and_canceled_jobs_never_charge(client):

@@ -21,6 +21,7 @@ import type {
 } from '../trusted/types';
 import { designerErrorMessage } from './designerErrorMessage';
 import type { StudioGateway } from './gateway';
+import { StudioReviewImage } from './StudioReviewImage';
 
 export type StudioCollectionsApi = Pick<StudioGateway,
   | 'getDesignFamily'
@@ -596,7 +597,13 @@ export function StudioCollectionsWorkspace({
           <View style={styles.compareGrid}>
             {compared.map((revision) => (
               <View key={revision.asset_id} style={styles.compareCard}>
-                <Image source={{ uri: revision.image_url }} resizeMode="contain" style={styles.compareImage} />
+                <StudioReviewImage
+                  accessibilityLabel={`Revision ${revision.revision} comparison`}
+                  inspectionLabel={`Revision ${revision.revision}`}
+                  source={{ uri: revision.image_url }}
+                  resizeMode="contain"
+                  style={styles.compareImage}
+                />
                 <Text style={styles.variationTitle}>Revision {revision.revision}</Text>
                 <Text style={styles.meta}>{dateLabel(revision.created_at)}</Text>
                 <Text style={styles.sectionCopy}>{revision.change_summary}</Text>

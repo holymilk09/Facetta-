@@ -59,17 +59,6 @@ def health() -> dict:
     }
 
 
-PRODUCTION_SPEC_PATHS = frozenset({
-    "/specs/validate",
-    "/specs/catalog/select",
-    "/specs/stone/select",
-    "/specs/sheet.svg",
-    "/specs/from-photo",
-    "/specs/from-plate",
-    "/specs/source-coverage/resolve",
-    "/specs/source-coverage/confirm",
-})
-
 PRODUCTION_ASSET_PATHS = frozenset({
     "/assets/{asset_id}/markup/read",
     "/assets/{asset_id}/markup/apply",
@@ -206,15 +195,6 @@ PRODUCTION_STUDIO_FACT_OPERATIONS: frozenset[RouteOperation] = frozenset({
 })
 
 
-def _production_spec_router() -> APIRouter:
-    router = APIRouter()
-    router.routes.extend(
-        route for route in specs.router.routes
-        if getattr(route, "path", None) in PRODUCTION_SPEC_PATHS
-    )
-    return router
-
-
 def _filtered_router(source: APIRouter, paths: frozenset[str]) -> APIRouter:
     router = APIRouter()
     router.routes.extend(
@@ -282,16 +262,16 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
-    # Production exposes only the canonical Studio control plane plus the
-    # authenticated specification adapters it still consumes. Legacy Builder,
-    # design/library/user/stone administration, and capability-share routes
-    # remain available in test/development for migration, never on the public
-    # beta surface.
+    # Production exposes only the canonical Studio control plane. Stateless
+    # specification adapters, legacy Builder, design/library/user/stone
+    # administration, and capability-share routes remain available in
+    # test/development for migration, never on the public beta surface.
     application.include_router(vocabulary.router)
-    application.include_router(
-        _production_spec_router() if production else specs.router,
-        dependencies=[Depends(require_authenticated_principal)],
-    )
+    if not production:
+        application.include_router(
+            specs.router,
+            dependencies=[Depends(require_authenticated_principal)],
+        )
     application.include_router(
         _filtered_router(assets.router, PRODUCTION_ASSET_PATHS)
         if production else assets.router

@@ -1017,14 +1017,14 @@ def test_creative_selection_rejects_wrong_job_source_without_partial_writes(
     job_id = _reviewing_create_job(
         client, project_id=created["root_id"], requested_outputs=2,
     )
-    bound = client.patch(f"/studio/jobs/{job_id}", json={
-        "owner": "usr_designer",
-        "status": "succeeded",
-        "progress": 1,
-        "completed_outputs": 2,
-        "source_revision_id": candidate_ids[0],
-    })
-    assert bound.status_code == 200, bound.text
+    # Simulate a malformed or historical review row already bound to another
+    # candidate. Public lifecycle transitions can no longer create this state;
+    # the candidate decision still has to reject it without a partial write.
+    with Session() as db:
+        malformed = db.get(StudioJobRecord, job_id)
+        assert malformed is not None
+        malformed.source_revision_id = candidate_ids[0]
+        db.commit()
 
     response = client.post(
         f"/projects/{created['root_id']}/creative-candidates/"
@@ -1041,7 +1041,7 @@ def test_creative_selection_rejects_wrong_job_source_without_partial_writes(
         assert project.selected_candidate_asset_id is None
         assert job is not None
         assert job.source_revision_id == candidate_ids[0]
-        # Public lifecycle transitions never create a charge.
+        # A mismatched historical binding never creates a charge.
         assert job.charged_outputs == 0
 
 
