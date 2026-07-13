@@ -14,6 +14,8 @@ never become founder approval.
 
 Usage:
     PYTHONPATH=src uv run python scripts/run_necklace_chain_catalog_eval.py RUN_NAME
+    PYTHONPATH=src uv run python scripts/run_necklace_chain_catalog_eval.py \
+        RUN_NAME --generated-control --review-decision save-as-variation
 """
 
 from __future__ import annotations
@@ -332,7 +334,12 @@ def _source_spec(
     return validation.spec
 
 
-def run(run_name: str, *, generated_control: bool = False) -> None:
+def run(
+    run_name: str,
+    *,
+    generated_control: bool = False,
+    review_decision: str | None = None,
+) -> None:
     load_env_file(ROOT / ".env")
     outdir = ROOT / "docs" / "evals" / run_name
     outdir.mkdir(parents=True, exist_ok=True)
@@ -505,8 +512,8 @@ def run(run_name: str, *, generated_control: bool = False) -> None:
     created = created_response.json()
     result["project_persisted"] = True
     result["project"] = created
-    apply_response = client.post(
-        f"/assets/{created['active_asset_id']}/catalog/apply",
+    preview_response = client.post(
+        f"/assets/{created['active_asset_id']}/catalog/preview",
         json={
             "component_path": "chain.style",
             "option_id": "curb",
@@ -535,42 +542,69 @@ def run(run_name: str, *, generated_control: bool = False) -> None:
         },
     )
     try:
-        apply_body = apply_response.json()
+        preview_body = preview_response.json()
     except Exception:
-        apply_body = {"raw": apply_response.text}
+        preview_body = {"raw": preview_response.text}
 
     candidate_file = None
     image_run = None
-    if apply_response.status_code in {201, 202}:
-        run_id = apply_body["image_run_id"]
+    variation = None
+    if preview_response.status_code in {201, 202}:
+        run_id = preview_body["image_run_id"]
         run_response = client.get(f"/image-runs/{run_id}")
         image_run = run_response.json() if run_response.status_code == 200 else {
             "status": run_response.status_code,
             "body": run_response.text,
         }
-        if apply_response.status_code == 201:
-            image_response = client.get(f"/assets/{apply_body['asset_id']}/image")
-            candidate_file = "accepted-chain-edit.png"
-        else:
-            image_response = client.get(
-                apply_body["warning_candidate"]["preview_url"]
-            )
-            candidate_file = "warning-chain-edit.png"
+        candidate = preview_body["candidate"]
+        image_response = client.get(candidate["preview_url"])
+        candidate_file = (
+            "warning-chain-edit.png"
+            if candidate["verdict"] == "warn"
+            else "reviewable-chain-edit.png"
+        )
         if image_response.status_code == 200:
             (outdir / candidate_file).write_bytes(image_response.content)
 
-    result["stage"] = (
-        "catalog_apply_completed"
-        if apply_response.status_code in {201, 202}
-        else "catalog_apply_failed"
-    )
-    result["catalog_apply"] = {
-        "http_status": apply_response.status_code,
-        "body": apply_body,
+        if review_decision == "save-as-variation":
+            variation_response = client.post(
+                candidate["save_as_variation_url"],
+                json={
+                    "created_by": "usr_test_designer",
+                    "label": "Curb chain direction",
+                },
+            )
+            try:
+                variation = variation_response.json()
+            except Exception:
+                variation = {"raw": variation_response.text}
+            if variation_response.status_code != 201:
+                result["stage"] = "catalog_variation_save_failed"
+                result["variation_http_status"] = variation_response.status_code
+            else:
+                result["stage"] = "catalog_variation_saved"
+        elif review_decision == "discard":
+            discard_response = client.delete(candidate["discard_url"])
+            if discard_response.status_code != 204:
+                result["stage"] = "catalog_preview_discard_failed"
+                result["discard_http_status"] = discard_response.status_code
+                result["discard_body"] = discard_response.text[:1600]
+            else:
+                result["stage"] = "catalog_preview_discarded"
+        else:
+            result["stage"] = "catalog_preview_review_required"
+
+    if preview_response.status_code not in {201, 202}:
+        result["stage"] = "catalog_preview_failed"
+    result["catalog_preview"] = {
+        "http_status": preview_response.status_code,
+        "body": preview_body,
     }
     result["image_run"] = image_run
     result["candidate_file"] = candidate_file
-    result["auto_accepted_warning"] = False
+    result["review_decision"] = review_decision
+    result["variation"] = variation
+    result["auto_accepted_candidate"] = False
     _write_json(outdir / "results.json", result)
     _write_readme(
         outdir,
@@ -579,7 +613,8 @@ def run(run_name: str, *, generated_control: bool = False) -> None:
         stage=str(result["stage"]),
     )
     print(json.dumps({
-        "http_status": apply_response.status_code,
+        "http_status": preview_response.status_code,
+        "stage": result["stage"],
         "result": str(outdir / "results.json"),
         "candidate": candidate_file,
     }, indent=2))
@@ -593,8 +628,20 @@ def main() -> None:
         action="store_true",
         help="generate a clean single-necklace control before the persisted edit",
     )
+    parser.add_argument(
+        "--review-decision",
+        choices=("save-as-variation", "discard"),
+        help=(
+            "explicit unapproved test-operator decision for the temporary "
+            "catalog preview; omit to stop at review without canonical mutation"
+        ),
+    )
     args = parser.parse_args()
-    run(args.run_name, generated_control=args.generated_control)
+    run(
+        args.run_name,
+        generated_control=args.generated_control,
+        review_decision=args.review_decision,
+    )
 
 
 if __name__ == "__main__":

@@ -271,7 +271,7 @@ def run(run_name: str) -> int:
     project_id = created["root_id"]
     source_asset_id = created["active_asset_id"]
     edit_response = client.post(
-        f"/assets/{source_asset_id}/catalog/apply",
+        f"/assets/{source_asset_id}/catalog/preview",
         json={
             "component_path": "metal.color",
             "option_id": "rose",
@@ -293,38 +293,46 @@ def run(run_name: str) -> int:
         print("STOP edit did not produce a reviewable candidate", flush=True)
         return 3
 
-    if edit_response.status_code == 202:
-        warning = edit["warning_candidate"]
-        edited_bytes = client.get(warning["preview_url"]).content
-        edited_name = "rose-gold-edit-warning.png"
-    else:
-        edited_bytes = client.get(f"/assets/{edit['asset_id']}/image").content
-        edited_name = "rose-gold-edit.png"
+    candidate = edit["candidate"]
+    candidate_response = client.get(candidate["preview_url"])
+    if candidate_response.status_code != 200:
+        raise RuntimeError(
+            "catalog preview image returned "
+            f"{candidate_response.status_code}: {candidate_response.text[:1600]}"
+        )
+    edited_bytes = candidate_response.content
+    edited_name = (
+        "rose-gold-edit-warning.png"
+        if candidate["verdict"] == "warn"
+        else "rose-gold-edit.png"
+    )
     (outdir / edited_name).write_bytes(edited_bytes)
     print(f"REVIEW {outdir / edited_name}", flush=True)
     print("Type ACCEPT to continue to specification approval and factory pack:",
           flush=True)
     if sys.stdin.readline().strip() != "ACCEPT":
+        discarded = client.delete(candidate["discard_url"])
+        if discarded.status_code != 204:
+            raise RuntimeError(
+                "catalog preview discard returned "
+                f"{discarded.status_code}: {discarded.text[:1600]}"
+            )
         print("STOP operator did not accept visual candidate", flush=True)
         return 4
 
-    if edit_response.status_code == 202:
-        project = _expect(
-            "operator accepts warning candidate",
-            client.post(
-                f"/image-runs/{warning['run_id']}/candidates/"
-                f"{warning['candidate_id']}/accept",
-                json={
-                    "expected_design_version": 1,
-                    "created_by": "usr_operator_review_not_founder",
-                },
-            ),
-            (201,),
-        )
-        run_id = warning["run_id"]
-    else:
-        project = edit["project"]
-        run_id = edit["image_run_id"]
+    accepted = _expect(
+        "operator accepts reviewed catalog candidate",
+        client.post(
+            candidate["accept_url"],
+            json={
+                "expected_design_version": 1,
+                "created_by": "usr_operator_review_not_founder",
+            },
+        ),
+        (201,),
+    )
+    project = accepted["project"]
+    run_id = edit["image_run_id"]
     active_id = project["active_asset_id"]
     if project["active_design_version"] != 2:
         raise RuntimeError("isolated edit did not create immutable spec v2")
