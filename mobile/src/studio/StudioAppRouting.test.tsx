@@ -386,6 +386,41 @@ test('saving a selected direction continues to Refine and authenticates its Stud
   });
 });
 
+test('active design actions keep the exact saved revision visible and link to History', async () => {
+  authenticate();
+  const view = await render(<App />);
+
+  await waitFor(() => expect(view.getByText('Start from an idea or reference')).toBeTruthy());
+  fireEvent.press(view.getByText('Start from an idea or reference'));
+  expect(view.queryByTestId('active-design-context')).toBeNull();
+
+  fireEvent.press(await view.findByText('Save mocked direction'));
+  expect(await view.findByTestId('active-design-context')).toBeTruthy();
+  expect(view.getByText('Saved direction')).toBeTruthy();
+  expect(view.getByText('Current saved revision · Revision 1')).toBeTruthy();
+  expect(view.getByLabelText('Saved direction revision thumbnail').props.source.headers).toEqual({
+    Authorization: 'Bearer server-issued-test-token',
+  });
+
+  for (const action of ['Save as a variation', 'Present this design', 'Refine this design']) {
+    fireEvent.press(view.getByLabelText(action));
+    expect(await view.findByTestId('active-design-context')).toBeTruthy();
+    expect(view.getByText('Current saved revision · Revision 1')).toBeTruthy();
+  }
+
+  fireEvent.press(await view.findByText('Review starting design'));
+  fireEvent.press(await view.findByText('Confirm mocked design'));
+  expect(await view.findByText('Confirmed direction')).toBeTruthy();
+  expect(view.getByText('Current saved revision · Revision 2')).toBeTruthy();
+
+  fireEvent.press(view.getByLabelText('Generate technical views'));
+  expect(await view.findByTestId('active-design-context')).toBeTruthy();
+  expect(view.getByText('Current saved revision · Revision 2')).toBeTruthy();
+
+  fireEvent.press(view.getByLabelText('Open revision history'));
+  expect(await view.findByText('Vary exact project_1')).toBeTruthy();
+});
+
 test('Studio home opens Collections through the saved-work continuation', async () => {
   authenticate();
   const view = await render(<App />);

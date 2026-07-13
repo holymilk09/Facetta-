@@ -243,6 +243,27 @@ export default function App() {
   }), [activeDesignId, confirmStudioLineage, exactStudioLineage, factoryEntitled,
     selectedCreativeAssetId, studioProject]);
   const hasActiveRevision = Boolean(actionContext.activeDesignId && actionContext.activeRevisionId);
+  const actionSourceRevision = useMemo(() => {
+    if (studioProject === null || selectedActionId === 'create') return null;
+    const reviewSourceAssetId = activityReview !== null
+      && activityReview.job.action_id === selectedActionId
+      ? activityReview.lineage.sourceAssetId
+      : null;
+    const sourceAssetId = reviewSourceAssetId ?? studioProject.active_asset_id;
+    if (sourceAssetId === null) return null;
+    return [
+      studioProject.active_revision,
+      ...studioProject.revisions.map((revision) => revision.asset),
+      ...studioProject.assets,
+      ...(studioProject.creative_candidates ?? []),
+    ].find((asset) => asset?.asset_id === sourceAssetId) ?? null;
+  }, [activityReview, selectedActionId, studioProject]);
+  const actionSourceImageUrl = activityReview !== null
+    && activityReview.job.action_id === selectedActionId
+    ? activityReview.sourceImageUrl ?? actionSourceRevision?.image_url ?? null
+    : actionSourceRevision?.image_url ?? null;
+  const actionSourceIsCurrent = actionSourceRevision !== null
+    && actionSourceRevision.asset_id === studioProject?.active_asset_id;
   const studioActions = getStudioRailActions(actionContext);
   const moreActions = getVisibleStudioActions(actionContext, 'more');
   const isStudioHome = tab === 'studio' && studioView === 'home';
@@ -551,6 +572,40 @@ export default function App() {
               onPress={() => setStudioView('home')}>
               <Text style={styles.actionContextBackText}>← Studio</Text>
             </Pressable>
+            {studioProject !== null && actionSourceRevision !== null && (
+              <View testID="active-design-context" style={styles.actionDesignContext}>
+                {actionSourceImageUrl !== null ? (
+                  <Image
+                    accessibilityLabel={`${studioProject.title} revision thumbnail`}
+                    source={{ uri: actionSourceImageUrl }}
+                    style={styles.actionRevisionThumbnail}
+                    resizeMode="cover"
+                  />
+                ) : (
+                  <View style={[styles.actionRevisionThumbnail, styles.actionRevisionPlaceholder]}>
+                    <Text style={styles.actionRevisionPlaceholderText}>
+                      {actionSourceRevision.revision ?? '•'}
+                    </Text>
+                  </View>
+                )}
+                <View style={styles.actionDesignCopy}>
+                  <Text numberOfLines={1} style={styles.actionDesignTitle}>{studioProject.title}</Text>
+                  <Text numberOfLines={1} style={styles.actionRevisionLabel}>
+                    {actionSourceIsCurrent ? 'Current saved revision' : 'Review source'}
+                    {actionSourceRevision.revision === null
+                      ? ''
+                      : ` · Revision ${actionSourceRevision.revision}`}
+                  </Text>
+                </View>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Open revision history"
+                  style={styles.actionHistoryButton}
+                  onPress={() => setTab('collections')}>
+                  <Text style={styles.actionHistoryButtonText}>History</Text>
+                </Pressable>
+              </View>
+            )}
           </View>
           {selectedActionId === 'create' ? (
             <StudioCreateWorkspace
@@ -588,10 +643,12 @@ export default function App() {
                 ? () => openStudioAction('confirm')
                 : undefined}
               onApplied={(project) => {
+                setActivityReview(null);
                 setStudioProject(project);
                 setSelectedCreativeAssetId(project.active_asset_id);
               }}
               onVariationCreated={(project) => {
+                setActivityReview(null);
                 setStudioProject(project);
                 setSelectedCreativeAssetId(project.active_asset_id);
               }}
@@ -604,7 +661,10 @@ export default function App() {
                 && 'sourceDesignVersion' in activityReview.lineage
                 ? activityReview.lineage : exactStudioLineage}
               createdBy={designer}
-              onSaved={setStudioProject}
+              onSaved={(project) => {
+                setActivityReview(null);
+                setStudioProject(project);
+              }}
               onOpenCollections={() => setTab('collections')}
               imageRequestHeaders={authenticatedImageHeaders}
               resumeReviewJobId={activityReview?.job.action_id === 'views'
@@ -629,7 +689,10 @@ export default function App() {
               lineage={activityReview?.job.action_id === 'present'
                 ? activityReview.lineage : exactStudioLineage ?? visualStudioLineage}
               createdBy={designer}
-              onProjectUpdated={setStudioProject}
+              onProjectUpdated={(project) => {
+                setActivityReview(null);
+                setStudioProject(project);
+              }}
               onOpenCollections={() => setTab('collections')}
               imageRequestHeaders={authenticatedImageHeaders}
               resumeReviewJobId={activityReview?.job.action_id === 'present'
@@ -866,14 +929,54 @@ const styles = StyleSheet.create({
   actionContextBanner: {
     flexDirection: 'row',
     alignItems: 'center',
+    gap: 12,
     borderBottomWidth: 1,
     borderBottomColor: theme.line,
     backgroundColor: theme.card,
-    paddingHorizontal: 18,
-    paddingVertical: 8,
+    paddingHorizontal: 14,
+    paddingVertical: 9,
   },
-  actionContextBack: { paddingVertical: 3, paddingRight: 10 },
+  actionContextBack: {
+    paddingVertical: 9,
+    paddingRight: 12,
+    borderRightWidth: 1,
+    borderRightColor: theme.line,
+  },
   actionContextBackText: { color: theme.ink, fontSize: 12, fontWeight: '700' },
+  actionDesignContext: {
+    flex: 1,
+    minWidth: 0,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  actionRevisionThumbnail: {
+    width: 42,
+    height: 42,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    borderColor: theme.line,
+    backgroundColor: theme.blush,
+  },
+  actionRevisionPlaceholder: { alignItems: 'center', justifyContent: 'center' },
+  actionRevisionPlaceholderText: {
+    color: theme.accent,
+    fontFamily: theme.serif,
+    fontSize: 15,
+    fontWeight: '700',
+  },
+  actionDesignCopy: { flex: 1, minWidth: 0 },
+  actionDesignTitle: { color: theme.ink, fontSize: 13, fontWeight: '700' },
+  actionRevisionLabel: { color: theme.faint, fontSize: 10, marginTop: 3 },
+  actionHistoryButton: {
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: theme.line,
+    backgroundColor: theme.paper,
+    paddingHorizontal: 11,
+    paddingVertical: 7,
+  },
+  actionHistoryButtonText: { color: theme.ink, fontSize: 10, fontWeight: '700' },
   dashboard: { flex: 1, backgroundColor: '#15121c' },
   dashboardContent: {
     width: '100%',

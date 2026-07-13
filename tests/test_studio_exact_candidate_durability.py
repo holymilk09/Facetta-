@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+from datetime import timedelta
 import hashlib
 import io
 
@@ -28,6 +29,7 @@ from facetta.db import (
     StudioViewCandidateRecord,
     _apply_additive_migrations,
     get_db,
+    utcnow,
 )
 from facetta.image_identity import spec_visual_hash
 from facetta.main import app
@@ -38,6 +40,7 @@ from facetta.studio_presentation_candidates import (
 )
 from facetta.studio_view_candidates import (
     StudioViewError,
+    reserve_studio_view_job,
     store_studio_view_candidate,
 )
 
@@ -153,6 +156,13 @@ def _view_candidate(
     exact_hash = spec_visual_hash(Spec.model_validate(spec))
     with Session() as db:
         _job(db, f"job_view_{suffix}", "views", 1)
+        reserve_studio_view_job(
+            db,
+            job_id=f"job_view_{suffix}",
+            owner=OWNER,
+            project_root_id="ast_exact",
+            source_asset_id="ast_exact",
+        )
         _run(db, f"run_view_{suffix}", "VISUAL_ONLY_EDIT", exact_hash)
         return store_studio_view_candidate(
             db,
@@ -227,6 +237,99 @@ def test_exact_view_survives_restart_is_owner_scoped_and_accepts_derived_once(
         assert db.scalar(select(func.count()).select_from(ImageRunReview)) == 1
         assert job is not None and job.status == "succeeded"
         assert (job.completed_outputs, job.charged_outputs) == (1, 1)
+
+
+def test_view_job_reservation_is_single_use_before_provider_work(exact_candidates):
+    _client, Session, _spec, _version = exact_candidates
+    with Session() as db:
+        _job(db, "job_view_reserved_once", "views", 1)
+        reserve_studio_view_job(
+            db,
+            job_id="job_view_reserved_once",
+            owner=OWNER,
+            project_root_id="ast_exact",
+            source_asset_id="ast_exact",
+        )
+        with pytest.raises(StudioViewError) as duplicate:
+            reserve_studio_view_job(
+                db,
+                job_id="job_view_reserved_once",
+                owner=OWNER,
+                project_root_id="ast_exact",
+                source_asset_id="ast_exact",
+            )
+        assert duplicate.value.code == "view_job_terminal"
+    with Session() as db:
+        job = db.get(StudioJobRecord, "job_view_reserved_once")
+        assert job is not None and job.status == "reviewing"
+        assert job.reservation_kind == "studio_visual"
+        assert (job.completed_outputs, job.charged_outputs) == (0, 0)
+
+
+def test_legacy_duplicate_view_bindings_fail_closed_for_both_decisions(
+    exact_candidates,
+):
+    client, Session, spec, version = exact_candidates
+    candidate = _view_candidate(Session, spec, version, suffix="ambiguous")
+    exact_hash = spec_visual_hash(Spec.model_validate(spec))
+    engine = Session.kw["bind"]
+    with engine.begin() as connection:
+        connection.execute(text(
+            "DROP INDEX uq_studio_view_candidates_studio_job_id"
+        ))
+    with Session() as db:
+        _run(db, "run_view_ambiguous_sibling", "VISUAL_ONLY_EDIT", exact_hash)
+        now = utcnow()
+        sibling = StudioViewCandidateRecord(
+            id="cand_view_ambiguous_sibling",
+            image_run_id="run_view_ambiguous_sibling",
+            owner=OWNER,
+            project_root_id="ast_exact",
+            source_asset_id="ast_exact",
+            source_sha256=SOURCE_SHA,
+            output_sha256=hashlib.sha256(_png(41)).hexdigest(),
+            spec_visual_hash=exact_hash,
+            design_version=version,
+            view="front",
+            image=_png(41),
+            media_type="image/png",
+            requested_change="Ambiguous sibling",
+            qa=QA,
+            routing={},
+            status="reviewing",
+            studio_job_id=candidate.studio_job_id,
+            created_at=now,
+            expires_at=now + timedelta(hours=2),
+        )
+        db.add(sibling)
+        db.commit()
+
+    accept_path, accept_body = _view_decision(candidate, "accept")
+    rejected_accept = client.post(accept_path, json=accept_body)
+    assert rejected_accept.status_code == 409
+    assert rejected_accept.json()["code"] == "view_job_candidate_ambiguity"
+
+    sibling_candidate = type(candidate)(
+        **{
+            **candidate.__dict__,
+            "candidate_id": "cand_view_ambiguous_sibling",
+            "run_id": "run_view_ambiguous_sibling",
+            "view": "front",
+            "output_hash": hashlib.sha256(_png(41)).hexdigest(),
+            "image_bytes": _png(41),
+        }
+    )
+    discard_path, discard_body = _view_decision(sibling_candidate, "discard")
+    rejected_discard = client.post(discard_path, json=discard_body)
+    assert rejected_discard.status_code == 409
+    assert rejected_discard.json()["code"] == "view_job_candidate_ambiguity"
+
+    with Session() as db:
+        job = db.get(StudioJobRecord, candidate.studio_job_id)
+        assert job is not None and job.status == "reviewing"
+        assert (job.completed_outputs, job.charged_outputs) == (0, 0)
+        assert db.scalar(select(func.count()).select_from(ImageAsset)) == 1
+        assert db.scalar(select(func.count()).select_from(ImageRunReview)) == 0
 
 
 def test_exact_view_discard_is_idempotent_free_and_stale_cas_is_atomic(
@@ -488,6 +591,13 @@ def test_failed_hard_qa_cannot_be_accepted_or_charged(exact_candidates):
     }
     with Session() as db:
         _job(db, "job_view_failed_qa", "views", 1)
+        reserve_studio_view_job(
+            db,
+            job_id="job_view_failed_qa",
+            owner=OWNER,
+            project_root_id="ast_exact",
+            source_asset_id="ast_exact",
+        )
         _run(db, "run_view_failed_qa", "VISUAL_ONLY_EDIT", exact_hash)
         with pytest.raises(StudioViewError) as captured:
             store_studio_view_candidate(
@@ -786,3 +896,52 @@ def test_additive_startup_preserves_old_presentation_rows_and_adds_ledgers():
             "SELECT id, design_version, expected_active_asset_id "
             "FROM studio_presentation_candidates WHERE id='cand_old'"
         )).one() == ("cand_old", None, None)
+
+
+def test_view_job_unique_index_migration_is_additive_and_fail_closed():
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    index_name = "uq_studio_view_candidates_studio_job_id"
+    with engine.begin() as connection:
+        connection.execute(text(f"DROP INDEX {index_name}"))
+
+    _apply_additive_migrations(engine)
+    assert index_name in {
+        item["name"] for item in inspect(engine).get_indexes(
+            "studio_view_candidates")
+    }
+
+    with engine.begin() as connection:
+        connection.execute(text(f"DROP INDEX {index_name}"))
+        row = {
+            "owner": "usr_old",
+            "project": "ast_old",
+            "source": "ast_old",
+            "source_hash": "1" * 64,
+            "output_hash": "2" * 64,
+            "spec_hash": "3" * 16,
+            "job": "job_old_duplicate",
+        }
+        for ordinal in (1, 2):
+            connection.execute(text(
+                "INSERT INTO studio_view_candidates ("
+                "id,image_run_id,owner,project_root_id,source_asset_id,"
+                "source_sha256,output_sha256,spec_visual_hash,design_version,"
+                "view,image,media_type,requested_change,qa,routing,status,"
+                "studio_job_id,created_at,expires_at) VALUES ("
+                ":id,:run,:owner,:project,:source,:source_hash,:output_hash,"
+                ":spec_hash,1,'front',X'01','image/png','old view','{}','{}',"
+                "'reviewing',:job,CURRENT_TIMESTAMP,DATETIME('now','+1 hour'))"
+            ), {**row, "id": f"cand_old_{ordinal}", "run": f"run_old_{ordinal}"})
+
+    _apply_additive_migrations(engine)
+    _apply_additive_migrations(engine)
+    assert index_name not in {
+        item["name"] for item in inspect(engine).get_indexes(
+            "studio_view_candidates")
+    }
+    with engine.connect() as connection:
+        assert connection.execute(text(
+            "SELECT COUNT(*) FROM studio_view_candidates "
+            "WHERE studio_job_id='job_old_duplicate'"
+        )).scalar_one() == 2

@@ -127,6 +127,7 @@ from facetta.studio_view_candidates import (
     StudioViewError,
     accept_studio_view_candidate,
     discard_studio_view_candidate,
+    expire_stale_studio_view_reservations,
     get_studio_view_candidate,
     list_studio_view_candidates,
 )
@@ -678,6 +679,7 @@ def list_studio_jobs(
 ):
     principal_actor(principal, owner)
     expire_stale_studio_visual_reservations(db, owner=owner)
+    expire_stale_studio_view_reservations(db, owner=owner)
     query = select(StudioJobRecord).where(StudioJobRecord.owner == owner)
     if status is not None:
         query = query.where(StudioJobRecord.status == status)
@@ -696,6 +698,9 @@ def get_studio_job(
 ):
     principal_actor(principal, owner)
     expire_stale_studio_visual_reservations(
+        db, owner=owner, job_id=job_id,
+    )
+    expire_stale_studio_view_reservations(
         db, owner=owner, job_id=job_id,
     )
     return _studio_job(_owned_job(db, job_id, owner))
@@ -736,6 +741,14 @@ def transition_studio_job(
             detail=(
                 "this visual Refine job is owned by its candidate decision; "
                 "use Apply, Save as Variation, or Discard"
+            ),
+        )
+    if job.action_id == "views" and job.status == "reviewing":
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "this Views job is owned by its candidate decision; "
+                "use Apply or Discard"
             ),
         )
     if request.progress < job.progress:

@@ -5,6 +5,34 @@ Read `CLAUDE.md` (constitution — binding), `README.md` (endpoints/layout),
 `docs/DATA_WANTED.md` (open research asks). This file is the delta: what is
 DONE beyond the original TASKS.md build order, and what is next.
 
+## 2026-07-13 exact Studio context and Views reservation checkpoint
+
+Every saved-design Studio action now keeps the exact working context visible.
+Vary, Refine, Technical views, and Present show the authenticated design image,
+project title, and immutable revision number in one compact strip, with direct
+access to History. Activity review shows its exact source revision rather than
+silently substituting the latest project state, and successful decisions advance
+the strip to the newly active revision. Create remains intentionally free of a
+false saved-design context.
+
+One-output Technical views jobs now have one durable candidate authority. A
+short-lived reservation binds the exact job and revision before provider work,
+puts the job in review, and is cleared atomically when the candidate is stored
+or the attempt fails. A partial unique database index prevents new duplicate
+job bindings; additive migration preserves historical duplicates but leaves
+them fail-closed. Accept and Discard reject ambiguous historical bindings with
+no asset, revision, review, or charge, and abandoned reservations expire to a
+zero-output, zero-charge failure. Generic job transitions cannot bypass the
+candidate decision while a Views job is under review.
+
+Local validation for this checkpoint: 1,629 backend tests, 245 Jest tests, 68
+Studio contract tests, TypeScript, Ruff, Expo web export, and the complete
+ten-project production TypeScript-client -> HTTP -> FastAPI acceptance pass.
+The rendered unauthenticated shell was also inspected locally; authenticated
+visual review remains unavailable without a configured Supabase session. The
+frozen 144-image corpus, independent designer/GIA review, founder approval, and
+live two-principal HTTPS staging evidence remain the external beta gates.
+
 ## 2026-07-13 atomic Create authority checkpoint
 
 The deprecated single-candidate selector is no longer part of the production

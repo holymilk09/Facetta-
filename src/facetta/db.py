@@ -519,6 +519,13 @@ class StudioViewCandidateRecord(Base):
         DateTime(timezone=True), nullable=True)
 
     __table_args__ = (
+        Index(
+            "uq_studio_view_candidates_studio_job_id",
+            "studio_job_id",
+            unique=True,
+            sqlite_where=text("studio_job_id IS NOT NULL"),
+            postgresql_where=text("studio_job_id IS NOT NULL"),
+        ),
         CheckConstraint(
             "view IN ('front', 'three_quarter', 'side')",
             name="ck_studio_view_candidate_view",
@@ -1460,6 +1467,31 @@ def _apply_additive_migrations(engine) -> None:
                     "ON preview_candidates (studio_job_id) "
                     "WHERE studio_job_id IS NOT NULL"
                 ))
+
+    # A canonical Views job requests exactly one output and therefore owns at
+    # most one durable review candidate. Historical databases with duplicate
+    # bindings are preserved byte-for-byte: the application detects that
+    # ambiguity and refuses any new decision, while clean databases gain the
+    # database-level guard.
+    if inspector.has_table("studio_view_candidates"):
+        view_index_name = "uq_studio_view_candidates_studio_job_id"
+        view_indexes = {
+            item["name"]
+            for item in inspect(engine).get_indexes("studio_view_candidates")
+        }
+        if view_index_name not in view_indexes:
+            with engine.begin() as conn:
+                duplicate = conn.execute(text(
+                    "SELECT studio_job_id FROM studio_view_candidates "
+                    "WHERE studio_job_id IS NOT NULL "
+                    "GROUP BY studio_job_id HAVING COUNT(*) > 1 LIMIT 1"
+                )).first()
+                if duplicate is None:
+                    conn.execute(text(
+                        "CREATE UNIQUE INDEX " + view_index_name + " "
+                        "ON studio_view_candidates (studio_job_id) "
+                        "WHERE studio_job_id IS NOT NULL"
+                    ))
 
     # Visual Refine generation now records a durable backend-owned reservation
     # while provider work is outside the database transaction. Historical jobs

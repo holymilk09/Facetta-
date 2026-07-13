@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import copy
 from collections.abc import Iterator
+from datetime import timedelta
 
 import pytest
 from fastapi.testclient import TestClient
@@ -31,6 +32,7 @@ from facetta.studio_jobs import (
     StudioJobAccountingError,
     record_accepted_studio_job_outputs,
 )
+from facetta.studio_view_candidates import reserve_studio_view_job
 
 
 @pytest.fixture()
@@ -231,6 +233,85 @@ def test_job_lifecycle_is_persistent_and_client_completion_never_charges(client)
 
     immutable = _transition(client, job_id, "running", 1)
     assert immutable.status_code == 409
+
+
+def test_reviewing_view_job_is_owned_by_its_candidate_decision(client):
+    project_id, source_id = _seed_project(
+        client, project_id="project_views_reserved", exact_specification=True,
+    )
+    definition = STUDIO_JOB_ACTIONS["views"]
+    job = _create(
+        client,
+        outputs=1,
+        action_id="views",
+        lane=definition.lane,
+        credits=definition.credits_per_output,
+        active_design_id=project_id,
+        source_revision_id=source_id,
+    )
+    assert _transition(client, job["job_id"], "running", 0.2).status_code == 200
+    sessions = client.app_state["session_factory"]
+    with sessions() as db:
+        reserve_studio_view_job(
+            db,
+            job_id=job["job_id"],
+            owner="usr_designer",
+            project_root_id=project_id,
+            source_asset_id=source_id,
+        )
+
+    for status, extra in (
+        ("succeeded", {"completed_outputs": 1}),
+        ("failed", {"error_code": "client_reported_failure"}),
+    ):
+        blocked = _transition(client, job["job_id"], status, 1, **extra)
+        assert blocked.status_code == 409
+        assert "candidate decision" in blocked.json()["detail"]
+
+    persisted = client.get(
+        f"/studio/jobs/{job['job_id']}", params={"owner": "usr_designer"},
+    ).json()
+    assert persisted["status"] == "reviewing"
+    assert persisted["billing"]["charged_outputs"] == 0
+
+
+def test_activity_read_expires_orphaned_view_reservation_without_charge(client):
+    project_id, source_id = _seed_project(
+        client, project_id="project_views_orphaned", exact_specification=True,
+    )
+    definition = STUDIO_JOB_ACTIONS["views"]
+    job = _create(
+        client,
+        outputs=1,
+        action_id="views",
+        lane=definition.lane,
+        credits=definition.credits_per_output,
+        active_design_id=project_id,
+        source_revision_id=source_id,
+    )
+    assert _transition(client, job["job_id"], "running", 0.2).status_code == 200
+    sessions = client.app_state["session_factory"]
+    with sessions() as db:
+        reserve_studio_view_job(
+            db,
+            job_id=job["job_id"],
+            owner="usr_designer",
+            project_root_id=project_id,
+            source_asset_id=source_id,
+        )
+        record = db.get(StudioJobRecord, job["job_id"])
+        assert record is not None
+        record.updated_at = utcnow() - timedelta(minutes=16)
+        db.commit()
+
+    expired = client.get(
+        f"/studio/jobs/{job['job_id']}", params={"owner": "usr_designer"},
+    )
+    assert expired.status_code == 200
+    assert expired.json()["status"] == "failed"
+    assert expired.json()["error_code"] == "view_reservation_expired"
+    assert expired.json()["billing"]["completed_outputs"] == 0
+    assert expired.json()["billing"]["charged_outputs"] == 0
 
 
 def test_owner_filtering_and_cross_owner_reads_fail_closed(client):

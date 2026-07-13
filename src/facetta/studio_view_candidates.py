@@ -34,6 +34,8 @@ from facetta.studio_jobs import (
 
 
 _TTL = timedelta(hours=2)
+_JOB_RESERVATION_TTL_SECONDS = 15 * 60
+_JOB_RESERVATION_KIND = "studio_visual"
 StudioViewName = Literal["front", "three_quarter", "side"]
 StudioViewStatus = Literal["reviewing", "accepted", "discarded", "expired"]
 
@@ -131,10 +133,6 @@ def _view_job(
             "this endpoint requires a canonical one-output Studio View job",
             status_code=422,
         )
-    if job.status not in {"running", "reviewing"}:
-        raise StudioViewError(
-            "view_job_terminal", f"the Studio View job is already {job.status}",
-        )
     for field, expected in (
         ("active_design_id", project_root_id),
         ("source_revision_id", source_asset_id),
@@ -147,10 +145,63 @@ def _view_job(
                 status_code=422,
             )
         setattr(job, field, expected)
+    if (
+        job.status != "reviewing"
+        or job.reservation_kind != _JOB_RESERVATION_KIND
+    ):
+        raise StudioViewError(
+            "view_job_terminal",
+            f"the Studio View job cannot store an output from {job.status}",
+        )
+    if db.scalar(select(StudioViewCandidateRecord.id).where(
+        StudioViewCandidateRecord.studio_job_id == job_id,
+    )) is not None:
+        raise StudioViewError(
+            "view_job_terminal", "the Studio View job already has an output",
+        )
     job.status = "reviewing"
     job.progress = max(job.progress, 0.9)
     job.updated_at = utcnow()
     return job
+
+
+def expire_stale_studio_view_reservations(
+    db: Session,
+    *,
+    owner: str | None = None,
+    job_id: str | None = None,
+) -> int:
+    """Fail crash-orphaned View generation reservations without charging."""
+
+    cutoff = utcnow() - timedelta(seconds=_JOB_RESERVATION_TTL_SECONDS)
+    query = select(StudioJobRecord).where(
+        StudioJobRecord.action_id == "views",
+        StudioJobRecord.status == "reviewing",
+        StudioJobRecord.reservation_kind == _JOB_RESERVATION_KIND,
+        StudioJobRecord.updated_at <= cutoff,
+    )
+    if owner is not None:
+        query = query.where(StudioJobRecord.owner == owner)
+    if job_id is not None:
+        query = query.where(StudioJobRecord.id == job_id)
+    jobs = list(db.scalars(query.order_by(StudioJobRecord.id).with_for_update()))
+    expired = 0
+    for job in jobs:
+        if db.scalar(select(StudioViewCandidateRecord.id).where(
+            StudioViewCandidateRecord.studio_job_id == job.id,
+        )) is not None:
+            continue
+        job.status = "failed"
+        job.progress = 1
+        job.completed_outputs = 0
+        job.charged_outputs = 0
+        job.error_code = "view_reservation_expired"
+        job.reservation_kind = None
+        job.updated_at = utcnow()
+        expired += 1
+    if expired:
+        db.commit()
+    return expired
 
 
 def reserve_studio_view_job(
@@ -161,6 +212,15 @@ def reserve_studio_view_job(
     project_root_id: str,
     source_asset_id: str,
 ) -> None:
+    expired = expire_stale_studio_view_reservations(
+        db, owner=owner, job_id=job_id,
+    )
+    if expired:
+        raise StudioViewError(
+            "view_job_reservation_expired",
+            "the previous View generation stopped before producing a reviewable output; "
+            "start a new Views request",
+        )
     job = db.scalar(select(StudioJobRecord).where(
         StudioJobRecord.id == job_id).with_for_update())
     canonical = studio_job_action_definition("views")
@@ -184,6 +244,12 @@ def reserve_studio_view_job(
         raise StudioViewError(
             "view_job_terminal", f"the Studio View job cannot run from {job.status}",
         )
+    if job.reservation_kind is not None or db.scalar(select(
+        StudioViewCandidateRecord.id,
+    ).where(StudioViewCandidateRecord.studio_job_id == job_id)) is not None:
+        raise StudioViewError(
+            "view_job_terminal", "the Studio View job already has an output",
+        )
     for field, expected in (
         ("active_design_id", project_root_id),
         ("source_revision_id", source_asset_id),
@@ -196,6 +262,10 @@ def reserve_studio_view_job(
                 status_code=422,
             )
         setattr(job, field, expected)
+    job.status = "reviewing"
+    job.progress = max(job.progress, 0.5)
+    job.error_code = None
+    job.reservation_kind = _JOB_RESERVATION_KIND
     job.updated_at = utcnow()
     db.commit()
 
@@ -205,7 +275,7 @@ def fail_studio_view_job(
 ) -> None:
     job = db.scalar(select(StudioJobRecord).where(
         StudioJobRecord.id == job_id).with_for_update())
-    if job is None or job.owner != owner or job.status not in {"running", "reviewing"}:
+    if job is None or job.owner != owner or job.status != "reviewing":
         return
     if db.scalar(select(StudioViewCandidateRecord.id).where(
         StudioViewCandidateRecord.studio_job_id == job_id)) is not None:
@@ -215,6 +285,7 @@ def fail_studio_view_job(
     job.completed_outputs = 0
     job.charged_outputs = 0
     job.error_code = error_code[:64]
+    job.reservation_kind = None
     job.updated_at = utcnow()
     db.commit()
 
@@ -275,6 +346,7 @@ def store_studio_view_candidate(
             bound_job.completed_outputs = 0
             bound_job.charged_outputs = 0
             bound_job.error_code = "view_candidate_qa_invalid"
+            bound_job.reservation_kind = None
             bound_job.updated_at = utcnow()
             db.commit()
         raise StudioViewError(
@@ -305,6 +377,8 @@ def store_studio_view_candidate(
         expires_at=now + _TTL,
     )
     db.add(record)
+    if bound_job is not None:
+        bound_job.reservation_kind = None
     try:
         db.commit()
     except IntegrityError as exc:
@@ -347,6 +421,7 @@ def _owned_record(
                 job.completed_outputs = 0
                 job.charged_outputs = 0
                 job.error_code = None
+                job.reservation_kind = None
                 job.updated_at = utcnow()
         db.commit()
         raise StudioViewCandidateUnavailable(
@@ -363,6 +438,7 @@ def _owned_record(
                 job.completed_outputs = 0
                 job.charged_outputs = 0
                 job.error_code = "view_candidate_qa_invalid"
+                job.reservation_kind = None
                 job.updated_at = utcnow()
         db.commit()
         raise StudioViewCandidateUnavailable(
@@ -375,6 +451,25 @@ def _owned_record(
         raise StudioViewCandidateUnavailable(
             "the Studio View candidate job binding is invalid")
     return record
+
+
+def _require_unambiguous_job_binding(
+    db: Session,
+    record: StudioViewCandidateRecord,
+) -> None:
+    if record.studio_job_id is None:
+        return
+    bound = db.scalar(select(func.count()).select_from(
+        StudioViewCandidateRecord,
+    ).where(
+        StudioViewCandidateRecord.studio_job_id == record.studio_job_id,
+    ))
+    if bound != 1:
+        raise StudioViewError(
+            "view_job_candidate_ambiguity",
+            "multiple View candidates are bound to this one-output job; "
+            "no decision was saved",
+        )
 
 
 def get_studio_view_candidate(
@@ -528,6 +623,7 @@ def accept_studio_view_candidate(
             "view_candidate_already_resolved",
             f"this Studio View was already {record.status}",
         )
+    _require_unambiguous_job_binding(db, record)
     candidate = _candidate(record)
     project, _root, source, run = _require_exact_lineage(
         db,
@@ -615,6 +711,7 @@ def discard_studio_view_candidate(
             "view_candidate_already_resolved",
             f"this Studio View was already {record.status}",
         )
+    _require_unambiguous_job_binding(db, record)
     candidate = _candidate(record)
     _project, _root, _source, run = _require_exact_lineage(
         db,
@@ -654,6 +751,7 @@ def discard_studio_view_candidate(
         job.completed_outputs = 0
         job.charged_outputs = 0
         job.error_code = None
+        job.reservation_kind = None
         job.updated_at = now
     try:
         db.commit()
