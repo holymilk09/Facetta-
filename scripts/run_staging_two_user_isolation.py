@@ -26,7 +26,11 @@ from uuid import UUID
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
-from facetta.external_beta_release import required_staging_checks  # noqa: E402
+from facetta.external_beta_release import (  # noqa: E402
+    STAGING_DISALLOWED_LEGACY_OPERATIONS,
+    STAGING_RESULT_SCHEMA,
+    required_staging_checks,
+)
 
 
 @dataclass(frozen=True)
@@ -34,6 +38,7 @@ class HttpResult:
     status: int
     content_type: str = ""
     json_body: object | None = None
+    allowed_methods: frozenset[str] = frozenset()
 
 
 Transport = Callable[[str, str, str], HttpResult]
@@ -177,9 +182,26 @@ def http_transport(method: str, url: str, token: str) -> HttpResult:
                 json.loads(raw) if content_type == "application/json" and raw
                 else None
             )
-            return HttpResult(response.status, content_type, body)
+            allowed_methods = frozenset(
+                item.strip().upper()
+                for item in (response.headers.get("Allow") or "").split(",")
+                if item.strip()
+            )
+            return HttpResult(
+                response.status, content_type, body, allowed_methods,
+            )
     except HTTPError as exc:
-        return HttpResult(exc.code, exc.headers.get_content_type())
+        content_type = exc.headers.get_content_type() if exc.headers else ""
+        allowed_methods = frozenset(
+            item.strip().upper()
+            for item in (
+                (exc.headers.get("Allow") if exc.headers else None) or ""
+            ).split(",")
+            if item.strip()
+        )
+        return HttpResult(
+            exc.code, content_type, allowed_methods=allowed_methods,
+        )
     except (URLError, TimeoutError) as exc:
         raise RuntimeError("staging API is unreachable") from exc
 
@@ -328,6 +350,39 @@ def run_probe(config: StagingConfig, transport: Transport = http_transport) -> d
         )
         record(f"production_hides_{hidden_name}", 404, hidden.status)
 
+    # A path can collide with an allowed dynamic GET route (for example,
+    # /projects/from-image is also shaped like /projects/{root_id}). Therefore
+    # an exact 404 check would reject the safe production surface. OPTIONS
+    # exposes the mounted methods without invoking them: 404 is unmounted; 405
+    # is acceptable only when the retired mutating method is absent from Allow.
+    legacy_path_values = {
+        "project_id": quote(config.first.project_id, safe=""),
+        "asset_id": quote(config.first.asset_id, safe=""),
+        "design_id": "e2e-hidden",
+        "candidate_id": "e2e-hidden",
+        "line_art_asset_id": "e2e-hidden",
+        "run_id": "e2e-hidden",
+    }
+    for name, forbidden_method, path_template in (
+        STAGING_DISALLOWED_LEGACY_OPERATIONS
+    ):
+        path = path_template.format(**legacy_path_values)
+        legacy = transport(
+            "OPTIONS", f"{config.base_url}{path}", config.first.token,
+        )
+        record(
+            f"production_disallows_{name}",
+            True,
+            (
+                legacy.status == 404
+                or (
+                    legacy.status == 405
+                    and bool(legacy.allowed_methods)
+                    and forbidden_method not in legacy.allowed_methods
+                )
+            ),
+        )
+
     passed = all(check["passed"] for check in checks)
     expected_checks = required_staging_checks()
     if {row["name"]: row["expected"] for row in checks} != expected_checks:
@@ -348,7 +403,7 @@ def run_probe(config: StagingConfig, transport: Transport = http_transport) -> d
         sort_keys=True,
     ).encode("utf-8")).hexdigest()
     return {
-        "schema_version": "facetta-staging-isolation.v3",
+        "schema_version": STAGING_RESULT_SCHEMA,
         "run_kind": "read_only_two_principal_staging_probe",
         "target": {
             "origin_sha256": hashlib.sha256(

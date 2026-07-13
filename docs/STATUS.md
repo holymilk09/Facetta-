@@ -5,6 +5,39 @@ Read `CLAUDE.md` (constitution — binding), `README.md` (endpoints/layout),
 `docs/DATA_WANTED.md` (open research asks). This file is the delta: what is
 DONE beyond the original TASKS.md build order, and what is next.
 
+## 2026-07-14 Studio lineage, destination, and staging-isolation checkpoint
+
+Studio Refine now binds annotations to the exact source asset rather than its
+temporary URL. Refreshing the URL for the same asset preserves the designer's
+marks, while switching to another immutable revision clears stale markup and
+disables Preview until the new source is annotated. A mark from one revision
+can no longer be silently rebound to another.
+
+A QA-approved catalog Apply now appends its immutable
+`ProjectRevisionRecord` in the same transaction as the canonical image asset,
+design version, accepted image run, and active pointer. The record retains the
+exact instruction, region, source and output hashes, image-run identity,
+source and target specification hashes, operation, summarized change, and
+non-factory authority. Failed QA and database rollback leave no revision or
+partial canonical state.
+
+The production TypeScript client -> HTTP -> FastAPI acceptance matrix now
+reopens Library and creates an exact-revision Client or Marketing derivative
+for each of ten mixed-source projects. It proves five Client and five Marketing
+saves, ten non-mutating Library reopens, ten atomically charged presentation
+jobs, and zero Factory use. Staging isolation v4 also inspects read-only
+`OPTIONS` responses and fails closed when any of the 29 operations in the
+canonical production-hidden mutation inventory is mounted; a proxy-stripped
+method inventory also fails closed.
+
+Local validation is green: 1,772 backend tests; all 36 mobile Jest suites (280
+tests); 77 Studio contract tests; TypeScript; Ruff; Expo web export; diff
+hygiene; the complete ten-project production-client acceptance run; and frozen
+workload validation for 144 integrity sources, 58 quality sources, and 1,044
+planned sequences with zero provider calls. The signed corpus run, independent
+designer/GIA review, founder approval, six-role authority enrollment, and live
+two-principal PostgreSQL staging evidence remain unmet external-beta gates.
+
 ## 2026-07-14 restore authority and canonical presentation checkpoint
 
 Studio Restore now carries an existing immutable component map across the
@@ -239,12 +272,15 @@ recompute that audit. This proves distinct enrolled signing identities; the
 real-world people, qualifications, and independence still require external
 enrollment records and human verification.
 
-The live staging probe is now `facetta-staging-isolation.v3`. It calls the exact
+The live staging probe is now `facetta-staging-isolation.v4`. It calls the exact
 HTTPS origin's `/health`, requires Facetta to report the operator-selected
 immutable deployment revision, and requires the initialized persistence engine
 to be PostgreSQL before checking both principals in both directions. A caller
 can no longer relabel evidence from a different deployment or pass the gate on
-the local SQLite fallback.
+the local SQLite fallback. The same read-only probe now checks the deployed
+method inventory for every mutating operation the production surface classifies
+as hidden. A missing `Allow` header fails closed, and an accidental registry-
+listed legacy POST route fails the staging gate without being invoked.
 
 Validation at this checkpoint is green: 1,650 backend tests, the six production
 surface/route checks, all 35 mobile Jest suites (248 tests), TypeScript, Expo web

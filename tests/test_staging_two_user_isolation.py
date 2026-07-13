@@ -65,7 +65,7 @@ def test_read_only_two_user_probe_passes_without_logging_secrets():
     assert result["passed"] is True
     assert result["provider_calls"] == 0
     assert result["mutations"] == 0
-    assert result["schema_version"] == "facetta-staging-isolation.v3"
+    assert result["schema_version"] == "facetta-staging-isolation.v4"
     assert result["target"]["deployment_revision"] == "0123456789abcdef"
     assert len(result["target"]["origin_sha256"]) == 64
     assert len(result["target"]["fixture_set_sha256"]) == 64
@@ -144,4 +144,44 @@ def test_mounted_resource_route_cannot_false_pass_as_hidden_404():
     result = run_probe(_config(), mounted_transport)
     failed = {check["name"] for check in result["checks"] if not check["passed"]}
     assert "production_hides_share_e2e-hidden" in failed
+    assert result["passed"] is False
+
+
+def test_mounted_legacy_mutation_cannot_false_pass_as_hidden():
+    def mounted_legacy_transport(
+        method: str, url: str, token: str,
+    ) -> HttpResult:
+        if method == "OPTIONS" and url.endswith("/projects/from-brief"):
+            return HttpResult(405, allowed_methods=frozenset({"GET", "POST"}))
+        return _transport(method, url, token)
+
+    result = run_probe(_config(), mounted_legacy_transport)
+    failed = {check["name"] for check in result["checks"] if not check["passed"]}
+    assert failed == {"production_disallows_project_from_brief"}
+    assert result["passed"] is False
+
+
+def test_dynamic_get_collision_does_not_hide_a_safe_production_surface():
+    def production_collision_transport(
+        method: str, url: str, token: str,
+    ) -> HttpResult:
+        if method == "OPTIONS" and url.endswith("/projects/from-image"):
+            return HttpResult(405, allowed_methods=frozenset({"GET"}))
+        return _transport(method, url, token)
+
+    result = run_probe(_config(), production_collision_transport)
+    assert result["passed"] is True
+
+
+def test_method_not_allowed_without_allow_header_fails_closed():
+    def stripped_allow_transport(
+        method: str, url: str, token: str,
+    ) -> HttpResult:
+        if method == "OPTIONS" and url.endswith("/projects/from-brief"):
+            return HttpResult(405)
+        return _transport(method, url, token)
+
+    result = run_probe(_config(), stripped_allow_transport)
+    failed = {check["name"] for check in result["checks"] if not check["passed"]}
+    assert failed == {"production_disallows_project_from_brief"}
     assert result["passed"] is False

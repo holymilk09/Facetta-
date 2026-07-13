@@ -184,7 +184,7 @@ def _fixture(tmp_path: Path) -> dict[str, Any]:
     ]
     staging_results = tmp_path / "staging-results.json"
     _json(staging_results, {
-        "schema_version": "facetta-staging-isolation.v3",
+        "schema_version": "facetta-staging-isolation.v4",
         "run_kind": "read_only_two_principal_staging_probe",
         "target": {
             "origin_sha256": "a" * 64,

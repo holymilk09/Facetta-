@@ -24,7 +24,7 @@ from facetta.project_backbone import is_primary_revision
 from facetta.media import sniff_media_type
 from facetta.image_agent import ImageAgentResult
 from facetta.image_identity import spec_visual_hash
-from facetta.specdiff import diff_specs
+from facetta.specdiff import diff_specs, summarize_changes
 from facetta.spec import Spec
 from facetta.validation import validate_spec
 from facetta.vocabulary import get_vocabulary
@@ -401,11 +401,13 @@ def persist_spec_image_revision(
 
     before_spec = Spec.model_validate(before_row.spec)
     expected_source_hash = hashlib.sha256(bytes(source_asset.image)).hexdigest()
+    source_spec_hash = spec_visual_hash(before_spec)
+    target_spec_hash = spec_visual_hash(next_spec)
     if (
         image_run.plan.operation.value != "LOCAL_EDIT"
         or image_run.plan.source_hash != expected_source_hash
-        or image_run.plan.source_spec_visual_hash != spec_visual_hash(before_spec)
-        or image_run.plan.spec_visual_hash != spec_visual_hash(next_spec)
+        or image_run.plan.source_spec_visual_hash != source_spec_hash
+        or image_run.plan.spec_visual_hash != target_spec_hash
     ):
         raise TrustedSpecRevisionError(
             "image_plan_spec_mismatch",
@@ -474,6 +476,38 @@ def persist_spec_image_revision(
         created_by=created_by,
         commit=False,
     )
+    # A successful synchronized Apply is an immutable Studio revision, not
+    # merely a coincident image/spec pair. Persist the exact designer intent,
+    # generation lineage, and source/result hashes in this same transaction so
+    # history can never present a canonical asset without revision evidence.
+    revision = ProjectRevisionRecord(
+        id=new_id("prr"),
+        asset_id=child.id,
+        action="edit",
+        raw_intent={
+            "kind": "trusted_spec_image_revision",
+            "instruction": instruction,
+            "region": region,
+            "source_asset_id": source_asset.id,
+            "image_run_id": run_id,
+        },
+        interpretation={
+            "operation": image_run.plan.operation.value,
+            "source_sha256": expected_source_hash,
+            "output_sha256": hashlib.sha256(image_run.image_bytes).hexdigest(),
+            "source_spec_visual_hash": source_spec_hash,
+            "target_spec_visual_hash": target_spec_hash,
+            "image_run_id": run_id,
+            "factory_authority": False,
+        },
+        change_summary=(
+            summarize_changes(list(changes))
+            or "Applied one reviewed image and specification revision."
+        ),
+        created_by=created_by,
+        created_at=now,
+    )
+    db.add(revision)
     project.updated_at = now
     try:
         db.commit()

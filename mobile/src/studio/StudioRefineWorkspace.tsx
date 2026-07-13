@@ -186,6 +186,7 @@ export function StudioRefineWorkspace({
   const [activeFactGroup, setActiveFactGroup] = useState<FactGroupId>('identity');
   const [factReview, setFactReview] = useState<readonly FactChangeReview[] | null>(null);
   const decisionInFlight = useRef(false);
+  const annotationSourceAssetId = useRef<string | null>(lineage?.sourceAssetId ?? null);
   const visualReviewScope = `${lineage?.sourceAssetId ?? 'none'}:${sourceImageUrl ?? 'missing'}:${preview?.candidate.id ?? 'no-preview'}:${preview?.candidate.assetUrl ?? 'missing'}`;
   const visualReview = useVisualReviewReadiness(visualReviewScope);
   const sourceVisualKey = sourceImageUrl === null || sourceImageUrl === undefined
@@ -369,8 +370,15 @@ export function StudioRefineWorkspace({
     exactLineage?.sourceDesignVersion, resumeReviewJobId]);
 
   useEffect(() => {
-    setSnapshot((current) => ({ ...current, source_uri: sourceImageUrl ?? '' }));
-  }, [sourceImageUrl]);
+    const nextSourceAssetId = lineage?.sourceAssetId ?? null;
+    const sourceRevisionChanged = annotationSourceAssetId.current !== nextSourceAssetId;
+    annotationSourceAssetId.current = nextSourceAssetId;
+    setSnapshot((current) => ({
+      ...current,
+      source_uri: sourceImageUrl ?? '',
+      annotations: sourceRevisionChanged ? [] : current.annotations,
+    }));
+  }, [lineage?.sourceAssetId, sourceImageUrl]);
 
   const selected = useMemo(() => catalog?.options.find((option) => option.id === optionId) ?? null,
     [catalog, optionId]);

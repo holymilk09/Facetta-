@@ -161,7 +161,7 @@ fresh result to byte-match the retained result. A stale result, missing raw
 artifact, or v1 Boolean human review fails closed.
 
 The completed corpus decision may set `corpus_gate_ready: true`; it cannot set
-`external_beta_ready`. The independent-designer ledger, live staging v3
+`external_beta_ready`. The independent-designer ledger, live staging v4
 evidence, staging signature, and complete six-role authority bundle remain
 separate requirements of `scripts/verify_external_beta_release.py`. See
 `docs/STUDIO_EXTERNAL_BETA_GATES.md` for the exact combined command.

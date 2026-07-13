@@ -253,8 +253,13 @@ test "$STAGING_EXIT" -eq 0
 
 The owner reads must succeed, cross-owner reads and enumeration must fail with
 the expected status, unauthenticated reads must return `401`, and every
-legacy/admin/OpenAPI/docs surface in the probe must remain hidden. A separately
-enrolled staging reviewer signs `facetta-staging-isolation-approval.v1` against
+legacy/admin/OpenAPI/docs surface in the probe must remain hidden. The v4 probe
+also uses read-only `OPTIONS` discovery to require that every operation in the
+canonical production-hidden mutation inventory is absent. A `405` is acceptable
+only when its non-empty `Allow` header excludes the retired method; a missing
+header fails closed, while a safe collision with a retained `GET` does not.
+A separately enrolled staging reviewer signs
+`facetta-staging-isolation-approval.v1` against
 the exact result and exit-code bytes, origin, deployment revision, and fixture
 set. Exit `77` (missing fixtures), `2` (invalid/unreachable), or `1` (failed
 check) all leave this gate unmet.

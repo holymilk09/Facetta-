@@ -507,6 +507,60 @@ describe('StudioRefineWorkspace', () => {
     expect(screen.getByLabelText('Temporary refinement preview')).toBeTruthy();
   });
 
+  test('clears markup instead of rebinding it when the exact source revision changes', async () => {
+    const api = {
+      getComponentCatalog: jest.fn(),
+      getStudioComponentTargeting: getReadyTargeting,
+      readMarkup: jest.fn(),
+    };
+    const gateway = {
+      previewVisualRefine: jest.fn(), applyVisualRefine: jest.fn(),
+      discardVisualRefine: jest.fn(), previewCatalogRefine: jest.fn(),
+      applyCatalogRefine: jest.fn(), discardCatalogRefine: jest.fn(),
+      previewMarkupRefine: jest.fn(), applyMarkupRefine: jest.fn(),
+      discardMarkupRefine: jest.fn(),
+    };
+    const workspace = (sourceAssetId: string, sourceImageUrl: string) => (
+      <AuthenticatedImageProvider
+        allowedOrigin="https://test"
+        headers={{ Authorization: 'Bearer test-session-token' }}>
+        <StudioRefineWorkspace
+          api={api}
+          gateway={gateway}
+          lineage={{ projectId: 'project_1', sourceAssetId }}
+          sourceImageUrl={sourceImageUrl}
+          createdBy="designer"
+          onApplied={jest.fn()}
+        />
+      </AuthenticatedImageProvider>
+    );
+    const rendered = await render(workspace('creative_1', 'https://test/source-1.png'));
+
+    await act(async () => { fireEvent.press(screen.getByLabelText('Mark up refine mode')); });
+    const canvas = await screen.findByLabelText('Jewelry image annotation canvas');
+    await fireEvent(canvas, 'layout', {
+      nativeEvent: { layout: { x: 0, y: 0, width: 200, height: 160 } },
+    });
+    await fireEvent(canvas, 'responderGrant', responderEvent(20, 20));
+    await fireEvent(canvas, 'responderRelease', responderEvent(90, 80));
+    expect(screen.getByLabelText('Clear all annotations').props.accessibilityState).toEqual({
+      disabled: false,
+    });
+    expect(screen.getByText('Preview change').parent?.props.accessibilityState.disabled).toBe(false);
+
+    await rendered.rerender(workspace('creative_1', 'https://test/source-1-refreshed.png'));
+    expect(screen.getByLabelText('Clear all annotations').props.accessibilityState).toEqual({
+      disabled: false,
+    });
+
+    await rendered.rerender(workspace('creative_2', 'https://test/source-2.png'));
+    expect(screen.getByLabelText('Clear all annotations').props.accessibilityState).toEqual({
+      disabled: true,
+    });
+    expect(screen.getByText('Preview change').parent?.props.accessibilityState.disabled).toBe(true);
+    expect(screen.queryByLabelText('rectangle annotation annotation-1')).toBeNull();
+  });
+
   test('plain language is constrained to appearance and still previews first', async () => {
     const previewMarkupRefine = jest.fn(async () => ({
       data: {

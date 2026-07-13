@@ -2627,11 +2627,33 @@ def test_catalog_pass_uses_exact_specs_and_persists_one_atomic_revision(
         run = db.get(ImageRun, body["image_run_id"])
         child = db.get(ImageAsset, body["asset_id"])
         version = db.get(DesignVersion, (project["design_id"], 2))
+        revision = db.scalar(select(ProjectRevisionRecord).where(
+            ProjectRevisionRecord.asset_id == body["asset_id"]
+        ))
         assert run is not None and run.accepted_asset_id == child.id
         assert run.source_asset_id == project["active_asset_id"]
         assert child.parent_asset_id == project["active_asset_id"]
         assert child.design_version == 2
         assert version.spec["metal"]["color"] == "rose"
+        assert revision is not None and revision.action == "edit"
+        assert revision.raw_intent == {
+            "kind": "trusted_spec_image_revision",
+            "instruction": plan.intent,
+            "region": plan.region_description,
+            "source_asset_id": project["active_asset_id"],
+            "image_run_id": body["image_run_id"],
+        }
+        assert revision.interpretation["source_sha256"] == plan.source_hash
+        assert revision.interpretation["output_sha256"] == hashlib.sha256(
+            bytes(child.image)
+        ).hexdigest()
+        assert revision.interpretation["source_spec_visual_hash"] == (
+            plan.source_spec_visual_hash
+        )
+        assert revision.interpretation["target_spec_visual_hash"] == (
+            plan.spec_visual_hash
+        )
+        assert revision.interpretation["factory_authority"] is False
 
 
 def test_catalog_center_stone_color_persists_one_paired_species_revision(
@@ -2811,6 +2833,9 @@ def test_catalog_quality_failure_writes_evidence_only(
         run = db.get(ImageRun, response.json()["image_run_id"])
         assert run.status == "failed"
         assert run.accepted_asset_id is None
+        assert db.scalar(select(func.count()).select_from(
+            ProjectRevisionRecord
+        )) == 0
 
 
 def test_catalog_database_failure_rolls_back_image_spec_and_run_together(
@@ -2834,6 +2859,10 @@ def test_catalog_database_failure_rolls_back_image_spec_and_run_together(
             json=_request(),
         )
     assert _counts(SessionFactory) == baseline
+    with SessionFactory() as db:
+        assert db.scalar(select(func.count()).select_from(
+            ProjectRevisionRecord
+        )) == 0
 
 
 def test_old_primary_asset_is_rejected_before_provider(

@@ -56,6 +56,8 @@ interface AcceptanceResult {
   staleApplyRejected: boolean;
   atomicCreateDecision: boolean;
   atomicRetryIdempotent: boolean;
+  destination: 'client' | 'marketing';
+  destinationSavedWithoutDesignMutation: true;
 }
 
 interface AcceptanceCanonicalState {
@@ -924,6 +926,70 @@ async function runCase(caseDefinition: AcceptanceCase, index: number): Promise<A
     `${label}: restore did not preserve exact historical bytes`,
   );
 
+  // Finish the normal designer journey without entering Factory. Present is
+  // review-only even for a visual that has not yet been promoted to an exact
+  // specification: the output is saved as a derived asset while the selected
+  // design revision and immutable history stay unchanged.
+  const destination = index % 2 === 0 ? 'client' : 'marketing';
+  const beforePresentationActive = finalHistory.revisions.find(
+    (revision) => revision.asset_id === finalHistory.active_asset_id,
+  );
+  assert(beforePresentationActive, `${label}: active revision missing before presentation`);
+  const beforePresentationActiveHash = await sha256(beforePresentationActive.image_url);
+  const presentation = value(await gateway.createPreSpecPresentation(
+    reopenedBranch.root_id,
+    {
+      created_by: actor,
+      expected_active_asset_id: restored.new_asset_id,
+      destination,
+      client_format: 'product',
+      preset: destination === 'client' ? 'luxury_studio' : 'catalog_white',
+      framing: 'square',
+      variant: 80 + index,
+    },
+  ), `${label}: Create ${destination} presentation preview`);
+  assert.equal(presentation.status, 'review_required');
+  assert.equal(presentation.project_id, reopenedBranch.root_id);
+  assert.equal(presentation.source_asset_id, restored.new_asset_id);
+  assert.equal(presentation.design_version, null);
+  assert.equal(presentation.destination, destination);
+
+  const savedPresentation = value(await gateway.acceptPreSpecPresentation({
+    candidateId: presentation.candidate.candidate_id,
+    createdBy: actor,
+  }), `${label}: Save ${destination} presentation`);
+  assert.equal(savedPresentation.project.active_asset_id, restored.new_asset_id);
+  assert.equal(savedPresentation.project.active_design_version, null);
+  const expectedCapability = destination === 'client'
+    ? 'CLIENT_PRODUCT_PHOTO'
+    : 'MARKETING_IMAGE';
+  const savedDerivedAsset = savedPresentation.project.derived_assets.find((asset) => (
+    asset.parent_asset_id === restored.new_asset_id
+    && asset.design_version === null
+    && asset.capability === expectedCapability
+  ));
+  assert(savedDerivedAsset, `${label}: saved ${destination} asset lost exact revision lineage`);
+
+  const afterPresentationHistory = value(
+    await gateway.getStudioProjectHistory(reopenedBranch.root_id),
+    `${label}: Reopen history after ${destination} save`,
+  );
+  assert.equal(afterPresentationHistory.active_asset_id, finalHistory.active_asset_id);
+  assert.deepEqual(
+    afterPresentationHistory.revisions.map((revision) => revision.asset_id),
+    finalHistory.revisions.map((revision) => revision.asset_id),
+    `${label}: saving a ${destination} derivative changed canonical design history`,
+  );
+  const afterPresentationActive = afterPresentationHistory.revisions.find(
+    (revision) => revision.asset_id === afterPresentationHistory.active_asset_id,
+  );
+  assert(afterPresentationActive, `${label}: active revision missing after presentation`);
+  assert.equal(
+    await sha256(afterPresentationActive.image_url),
+    beforePresentationActiveHash,
+    `${label}: saving a ${destination} derivative changed canonical design bytes`,
+  );
+
   return {
     id: label,
     projectId: created.root_id,
@@ -935,6 +1001,8 @@ async function runCase(caseDefinition: AcceptanceCase, index: number): Promise<A
     staleApplyRejected,
     atomicCreateDecision: true,
     atomicRetryIdempotent,
+    destination,
+    destinationSavedWithoutDesignMutation: true,
   };
 }
 
@@ -969,15 +1037,22 @@ async function main(): Promise<void> {
   const activity = value(await gateway.listStudioJobs(actor), 'Activity');
   const creates = activity.jobs.filter((job) => job.action_id === 'create');
   const refines = activity.jobs.filter((job) => job.action_id === 'refine');
+  const presentations = activity.jobs.filter((job) => job.action_id === 'present');
   const succeededRefines = refines.filter((job) => job.status === 'succeeded');
+  const succeededPresentations = presentations.filter((job) => job.status === 'succeeded');
   const rejectedStaleRefines = refines.filter((job) => (
     job.status === 'failed' && job.error_code === 'visual_preview_unavailable'
   ));
   assert.equal(creates.length, 10, 'one durable Create job must exist per matrix project');
   assert.equal(succeededRefines.length, 10, 'one successful Refine job must exist per matrix project');
+  assert.equal(
+    succeededPresentations.length,
+    10,
+    'one saved Client or Marketing presentation must exist per matrix project',
+  );
   assert.equal(rejectedStaleRefines.length, 1, 'the stale Apply must leave one honest failed Refine job');
   assert.equal(refines.length, 11, 'only the deliberate stale candidate may add a Refine job');
-  for (const job of [...creates, ...succeededRefines]) {
+  for (const job of [...creates, ...succeededRefines, ...succeededPresentations]) {
     assert.equal(job.status, 'succeeded');
     assert(job.billing.charged_outputs > 0, `${job.action_id} was not charged atomically`);
   }
@@ -1009,6 +1084,13 @@ async function main(): Promise<void> {
       create: creates.length,
       refine_succeeded: succeededRefines.length,
       refine_stale_rejected: rejectedStaleRefines.length,
+      present_succeeded: succeededPresentations.length,
+    },
+    destinations: {
+      library_reopened_without_mutation: results.length,
+      client_saved: results.filter((item) => item.destination === 'client').length,
+      marketing_saved: results.filter((item) => item.destination === 'marketing').length,
+      factory_used: false,
     },
     failed_qa: {
       canonical_projects: 0,

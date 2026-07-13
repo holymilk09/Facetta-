@@ -44,10 +44,105 @@ CorpusVerifier = Callable[..., Json]
 AuthorityVerifier = Callable[[dict[str, Any], Path, datetime], Json]
 
 CORPUS_DECISION_SCHEMA = "facetta-frozen-corpus-release-decision.v2"
-STAGING_RESULT_SCHEMA = "facetta-staging-isolation.v3"
+STAGING_RESULT_SCHEMA = "facetta-staging-isolation.v4"
 STAGING_RUN_KIND = "read_only_two_principal_staging_probe"
 STAGING_APPROVAL_SCHEMA = "facetta-staging-isolation-approval.v1"
 EXTERNAL_BETA_DECISION_SCHEMA = "facetta-external-beta-release-decision.v1"
+
+# These mutating operations belong to superseded Builder/trusted-workflow
+# surfaces. A deployed external-beta API must not expose them, even though
+# compatibility handlers remain available in development for historical data
+# and migration tests. The live probe checks them with OPTIONS only, so it can
+# prove the requested method is absent without creating records or invoking a
+# provider. The tuple is shared with the probe to keep the signed-result
+# contract and the deployed observations exact.
+STAGING_DISALLOWED_LEGACY_OPERATIONS: tuple[tuple[str, str, str], ...] = (
+    (
+        "design_version_share",
+        "POST",
+        "/designs/{design_id}/versions/1/share",
+    ),
+    ("specs_from_photo", "POST", "/specs/from-photo"),
+    ("specs_from_plate", "POST", "/specs/from-plate"),
+    ("specs_validate", "POST", "/specs/validate"),
+    ("specs_catalog_select", "POST", "/specs/catalog/select"),
+    ("specs_stone_select", "POST", "/specs/stone/select"),
+    ("specs_sheet_svg", "POST", "/specs/sheet.svg"),
+    (
+        "specs_source_coverage_resolve",
+        "POST",
+        "/specs/source-coverage/resolve",
+    ),
+    (
+        "specs_source_coverage_confirm",
+        "POST",
+        "/specs/source-coverage/confirm",
+    ),
+    ("specs_build", "POST", "/specs/build"),
+    ("specs_jewelry_render", "POST", "/specs/jewelry-render"),
+    (
+        "asset_catalog_apply",
+        "POST",
+        "/assets/{asset_id}/catalog/apply",
+    ),
+    ("asset_render", "POST", "/assets/render"),
+    ("asset_views", "POST", "/assets/{asset_id}/views"),
+    (
+        "asset_localized_edit",
+        "POST",
+        "/assets/{asset_id}/localized-edit",
+    ),
+    (
+        "asset_global_restyle",
+        "POST",
+        "/assets/{asset_id}/global-restyle",
+    ),
+    ("asset_video", "POST", "/assets/{asset_id}/video"),
+    ("asset_pin", "POST", "/assets/{asset_id}/pin"),
+    (
+        "asset_technical_drawing",
+        "POST",
+        "/assets/{asset_id}/technical-drawing",
+    ),
+    ("project_from_brief", "POST", "/projects/from-brief"),
+    (
+        "project_from_brief_candidate_accept",
+        "POST",
+        "/projects/from-brief/candidates/{candidate_id}/accept",
+    ),
+    ("project_from_image", "POST", "/projects/from-image"),
+    (
+        "project_creative_candidate_select",
+        "POST",
+        "/projects/{project_id}/creative-candidates/{candidate_id}/select",
+    ),
+    ("project_render", "POST", "/projects/{project_id}/render"),
+    (
+        "project_product_photo",
+        "POST",
+        "/projects/{project_id}/product-photo",
+    ),
+    (
+        "project_visual_twin_views",
+        "POST",
+        "/projects/{project_id}/visual-twin/views",
+    ),
+    (
+        "project_creative_candidate_draft",
+        "POST",
+        "/projects/{project_id}/creative-candidates/{candidate_id}/draft",
+    ),
+    (
+        "project_line_art_colorize",
+        "POST",
+        "/projects/{project_id}/line-art/{line_art_asset_id}/colorize",
+    ),
+    (
+        "trusted_image_run_feedback",
+        "POST",
+        "/image-runs/{run_id}/feedback",
+    ),
+)
 
 
 def required_staging_checks() -> dict[str, object]:
@@ -83,6 +178,8 @@ def required_staging_checks() -> dict[str, object]:
         "asset_component_map", "openapi.json", "docs",
     ):
         checks[f"production_hides_{name}"] = 404
+    for name, _method, _path in STAGING_DISALLOWED_LEGACY_OPERATIONS:
+        checks[f"production_disallows_{name}"] = True
     return checks
 
 

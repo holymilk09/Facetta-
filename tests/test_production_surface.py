@@ -2,6 +2,7 @@
 
 from fastapi.testclient import TestClient
 
+from facetta.external_beta_release import STAGING_DISALLOWED_LEGACY_OPERATIONS
 from facetta.main import create_app
 
 
@@ -141,52 +142,66 @@ def test_production_hides_legacy_admin_and_stateless_spec_adapters(monkeypatch):
             )
             assert protected.status_code == 401
             assert protected.json()["detail"]["code"] == "authentication_required"
-        for method, path in (
-            ("get", "/designs"),
-            ("get", "/library"),
-            ("get", "/users"),
-            ("get", "/stones"),
-            ("post", "/designs/known/versions/1/share"),
-            ("post", "/specs/from-photo"),
-            ("post", "/specs/from-plate"),
-            ("post", "/specs/validate"),
-            ("post", "/specs/catalog/select"),
-            ("post", "/specs/stone/select"),
-            ("post", "/specs/sheet.svg"),
-            ("post", "/specs/source-coverage/resolve"),
-            ("post", "/specs/source-coverage/confirm"),
-            ("post", "/specs/build"),
-            ("post", "/specs/jewelry-render"),
-            ("post", "/assets/known/catalog/apply"),
-            ("post", "/assets/render"),
-            ("post", "/assets/known/views"),
-            ("post", "/assets/known/localized-edit"),
-            ("post", "/assets/known/global-restyle"),
-            ("post", "/assets/known/video"),
-            ("post", "/assets/known/pin"),
-            ("post", "/assets/known/technical-drawing"),
-            ("get", "/assets/known/component-map"),
-            ("post", "/projects/from-brief"),
-            ("get", "/projects/from-brief/candidates/known/image"),
-            ("post", "/projects/from-brief/candidates/known/accept"),
-            ("post", "/projects/from-image"),
-            ("post", "/projects/known/creative-candidates/candidate/select"),
-            ("post", "/projects/known/render"),
-            ("post", "/projects/known/product-photo"),
-            ("post", "/projects/known/visual-twin/views"),
-            ("post", "/projects/known/creative-candidates/candidate/draft"),
-            ("post", "/projects/known/line-art/line-art/colorize"),
-            ("get", "/image-runs/known"),
-            ("post", "/image-runs/known/feedback"),
+        for path in (
+            "/designs",
+            "/library",
+            "/users",
+            "/stones",
+            "/assets/known/component-map",
+            "/projects/from-brief/candidates/known/image",
+            "/image-runs/known",
         ):
-            hidden = (
-                client.post(path, json={}) if method == "post"
-                else client.get(path)
-            )
+            hidden = client.get(path)
             # A removed static operation may collide with the retained
             # `/projects/{root_id}` shape and return method-not-allowed; it
             # must never resolve to an authenticated product handler.
             assert hidden.status_code in {404, 405}
+        for name, method, path_template in (
+            STAGING_DISALLOWED_LEGACY_OPERATIONS
+        ):
+            path = path_template.format(
+                project_id="known",
+                asset_id="known",
+                design_id="known",
+                candidate_id="candidate",
+                line_art_asset_id="line-art",
+                run_id="known",
+            )
+            hidden = client.request(method, path, json={})
+            assert hidden.status_code in {404, 405}, name
+
+
+def test_production_method_discovery_excludes_staging_legacy_operations(
+    monkeypatch,
+):
+    """Mirror the read-only live probe against the local production router."""
+
+    monkeypatch.setenv("FACETTA_ENV", "production")
+    monkeypatch.setenv("FACETTA_AUTH_MODE", "supabase")
+    monkeypatch.setenv(
+        "FACETTA_SUPABASE_URL", "https://facetta-test.supabase.co",
+    )
+    production_app = create_app()
+    with TestClient(production_app) as client:
+        for name, forbidden_method, path_template in (
+            STAGING_DISALLOWED_LEGACY_OPERATIONS
+        ):
+            path = path_template.format(
+                project_id="known",
+                asset_id="known",
+                design_id="known",
+                candidate_id="candidate",
+                line_art_asset_id="line-art",
+                run_id="known",
+            )
+            response = client.options(path)
+            allowed_methods = {
+                item.strip().upper()
+                for item in response.headers.get("Allow", "").split(",")
+                if item.strip()
+            }
+            assert response.status_code in {404, 405}, name
+            assert forbidden_method not in allowed_methods, name
 
 
 def test_structured_ring_brief_routes_are_deprecated_compatibility(
