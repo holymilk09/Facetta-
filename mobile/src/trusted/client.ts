@@ -3629,6 +3629,7 @@ export function createTrustedApiClient(options: TrustedApiClientOptions) {
       });
     },
 
+    /** @deprecated Compatibility-only selection; Studio uses commitCreativeDirections. */
     selectCreativeCandidate(
       projectId: string,
       candidateId: string,

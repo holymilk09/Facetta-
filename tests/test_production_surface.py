@@ -63,7 +63,6 @@ EXPECTED_PRODUCTION_OPERATIONS = (
         "/image-runs/{run_id}/candidates/{candidate_id}/discard",
         "/projects/from-prompt",
         "/projects/from-drawing",
-        "/projects/{project_id}/creative-candidates/{candidate_id}/select",
         "/projects/{project_id}/creative-directions/commit",
         "/projects/{project_id}/creative-candidates/{candidate_id}/confirm-design",
         "/projects/{project_id}/creative-candidates/{candidate_id}/promote",
@@ -134,6 +133,7 @@ def test_production_hides_legacy_admin_and_protects_spec_adapters(monkeypatch):
             ("post", "/specs/source-coverage/resolve"),
             ("post", "/specs/source-coverage/confirm"),
             ("post", "/studio/projects/import-confirmed"),
+            ("post", "/projects/known/creative-directions/commit"),
             ("get", "/projects/missing"),
             ("get", "/studio/families"),
             ("post", "/assets/known/markup/read"),
@@ -178,6 +178,7 @@ def test_production_hides_legacy_admin_and_protects_spec_adapters(monkeypatch):
             ("get", "/projects/from-brief/candidates/known/image"),
             ("post", "/projects/from-brief/candidates/known/accept"),
             ("post", "/projects/from-image"),
+            ("post", "/projects/known/creative-candidates/candidate/select"),
             ("post", "/projects/known/render"),
             ("post", "/projects/known/product-photo"),
             ("post", "/projects/known/visual-twin/views"),
@@ -215,6 +216,19 @@ def test_structured_ring_brief_routes_are_deprecated_compatibility(
         ["deprecated"]
         is True
     )
+
+
+def test_legacy_creative_selection_is_deprecated_compatibility(monkeypatch):
+    monkeypatch.setenv("FACETTA_ENV", "test")
+    test_app = create_app()
+    paths = test_app.openapi()["paths"]
+
+    legacy_select = (
+        "/projects/{project_id}/creative-candidates/{candidate_id}/select"
+    )
+    atomic_commit = "/projects/{project_id}/creative-directions/commit"
+    assert paths[legacy_select]["post"]["deprecated"] is True
+    assert paths[atomic_commit]["post"].get("deprecated") is not True
 
 
 def test_production_rejects_wildcard_cors(monkeypatch):

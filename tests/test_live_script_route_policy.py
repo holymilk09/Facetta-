@@ -83,3 +83,24 @@ def test_structured_ring_brief_is_evaluation_compatibility_only() -> None:
     assert "createFromBrief" not in gateway
     assert "createProjectFromBrief" not in gateway
     assert "CreateProjectFromBriefRequest" not in gateway
+
+
+def test_legacy_creative_selection_is_not_an_active_studio_boundary() -> None:
+    inventory = (ROOT / "docs/trusted-workflow-route-inventory.md").read_text()
+    client = (ROOT / "mobile/src/trusted/client.ts").read_text()
+    gateway = (ROOT / "mobile/src/studio/gateway.ts").read_text()
+    workspace = (ROOT / "mobile/src/studio/StudioCreateWorkspace.tsx").read_text()
+    acceptance = (
+        ROOT / "mobile/scripts/studio_client_api_acceptance.ts"
+    ).read_text()
+
+    assert (
+        "`POST /projects/{project_id}/creative-candidates/{candidate_id}/select` "
+        "| Deprecated compatibility"
+    ) in inventory
+    assert "@deprecated Compatibility-only selection" in client
+    assert "selectCreativeCandidate" not in gateway
+    assert "selectCreativeDirection" not in gateway
+    assert "completeCreativeDirectionReview" in workspace
+    assert "gateway.selectCreativeDirection" not in acceptance
+    assert "trustedClient.selectCreativeCandidate" not in acceptance

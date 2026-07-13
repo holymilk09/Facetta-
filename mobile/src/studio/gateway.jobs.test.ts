@@ -146,17 +146,19 @@ test('job-centric review restores immutable stale source with fail-closed decisi
 test('tracked prompt and drawing creation charge only after direction acceptance', async () => {
   const jobs = tracking();
   let drawingCalls = 0;
-  const selections: { projectId: string; candidateId: string; createdBy: string; studioJobId?: string }[] = [];
+  const commits: { projectId: string; studioJobId?: string }[] = [];
   const gateway = createStudioGateway({
     ...jobs.client,
     createProjectFromPrompt: async () => ok(unselectedProject(2), 201),
     createProjectFromDrawing: async () => { drawingCalls += 1; return ok(unselectedProject(2), 201); },
-    selectCreativeCandidate: async (
-      projectId: string, candidateId: string, createdBy: string, studioJobId?: string,
-    ) => {
-      selections.push({ projectId, candidateId, createdBy, studioJobId });
+    commitCreativeDirections: async (projectId: string, request: { studio_job_id?: string }) => {
+      commits.push({ projectId, studioJobId: request.studio_job_id });
       return ok({
-        ...project(2), selected_candidate_asset_id: 'candidate_2', active_asset_id: 'candidate_2',
+        project: {
+          ...project(2), selected_candidate_asset_id: 'direction_2',
+          active_asset_id: 'direction_2',
+        },
+        retained_variations: [],
       });
     },
   } as any, { trackJobs: true });
@@ -176,11 +178,11 @@ test('tracked prompt and drawing creation charge only after direction acceptance
   assert.equal(jobs.transitions[1]?.request.active_design_id, 'project_1');
   assert.equal(jobs.transitions.some((call) => call.request.completed_outputs !== undefined), false);
 
-  await gateway.selectCreativeDirection('project_1', 'candidate_2', 'designer_1');
-  assert.deepEqual(selections[0], {
-    projectId: 'project_1', candidateId: 'candidate_2', createdBy: 'designer_1',
-    studioJobId: 'studio_job_1',
+  await gateway.completeCreativeDirectionReview({
+    projectId: 'project_1', selectedCandidateId: 'direction_2', retained: [],
+    createdBy: 'designer_1',
   });
+  assert.deepEqual(commits[0], { projectId: 'project_1', studioJobId: 'studio_job_1' });
   assert.deepEqual(jobs.transitions.map((call) => call.request.status), [
     'running', 'reviewing',
   ]);
@@ -196,23 +198,28 @@ test('tracked prompt and drawing creation charge only after direction acceptance
 });
 
 test('a restarted gateway settles the durable reviewing Create job supplied by Activity', async () => {
-  const selections: { studioJobId?: string }[] = [];
+  const commits: { studioJobId?: string }[] = [];
   const gateway = createStudioGateway({
-    selectCreativeCandidate: async (
-      _projectId: string, candidateId: string, _createdBy: string, studioJobId?: string,
+    commitCreativeDirections: async (
+      _projectId: string, request: { studio_job_id?: string },
     ) => {
-      selections.push({ studioJobId });
+      commits.push({ studioJobId: request.studio_job_id });
       return ok({
-        ...project(2), selected_candidate_asset_id: candidateId, active_asset_id: candidateId,
+        project: {
+          ...project(2), selected_candidate_asset_id: 'direction_2',
+          active_asset_id: 'direction_2',
+        },
+        retained_variations: [],
       });
     },
   } as any, { trackJobs: true });
 
-  const result = await gateway.selectCreativeDirection(
-    'project_1', 'candidate_2', 'designer_1', 'studio_job_rehydrated',
-  );
+  const result = await gateway.completeCreativeDirectionReview({
+    projectId: 'project_1', selectedCandidateId: 'direction_2', retained: [],
+    createdBy: 'designer_1', studioJobId: 'studio_job_rehydrated',
+  });
   assert.equal(result.error, null);
-  assert.deepEqual(selections, [{ studioJobId: 'studio_job_rehydrated' }]);
+  assert.deepEqual(commits, [{ studioJobId: 'studio_job_rehydrated' }]);
 });
 
 test('atomic Create review forwards the same-session durable job exactly once', async () => {

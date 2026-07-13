@@ -110,10 +110,6 @@ PRODUCTION_PROJECT_OPERATIONS: frozenset[RouteOperation] = frozenset({
     ("POST", "/projects/from-drawing"),
     (
         "POST",
-        "/projects/{project_id}/creative-candidates/{candidate_id}/select",
-    ),
-    (
-        "POST",
         "/projects/{project_id}/creative-directions/commit",
     ),
     (

@@ -1663,6 +1663,7 @@ def commit_project_creative_directions(
     "/{project_id}/creative-candidates/{candidate_id}/select",
     response_model=ProjectDetail,
     response_model_exclude_none=True,
+    deprecated=True,
 )
 def select_project_creative_candidate(
     project_id: str,
@@ -1671,7 +1672,7 @@ def select_project_creative_candidate(
     db: DbSession,
     principal: PrincipalDep,
 ):
-    """Persist the designer's chosen visual without inventing a specification."""
+    """Compatibility-only selection retained for historical project readers."""
     principal_actor(principal, request.created_by)
     project = db.scalar(
         select(Project).where(Project.root_id == project_id).with_for_update()

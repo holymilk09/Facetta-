@@ -75,7 +75,6 @@ const project = (activeAssetId: string): ProjectDetail => {
 const baseClient = () => ({
   createProjectFromDrawing: async () => { throw new Error('unexpected'); },
   createProjectFromPrompt: async () => { throw new Error('unexpected'); },
-  selectCreativeCandidate: async () => { throw new Error('unexpected'); },
   saveAsVariation: async () => { throw new Error('unexpected'); },
   previewCatalogSelection: async () => { throw new Error('unexpected'); },
   acceptCatalogPreview: async () => { throw new Error('unexpected'); },

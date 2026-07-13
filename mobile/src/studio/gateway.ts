@@ -288,7 +288,6 @@ export interface StudioFactoryEligibility {
 type GatewayTrustedClient = Pick<TrustedApiClient,
   | 'createProjectFromDrawing'
   | 'createProjectFromPrompt'
-  | 'selectCreativeCandidate'
   | 'commitCreativeDirections'
   | 'saveAsVariation'
   | 'saveCreativeCandidateAsVariation'
@@ -1149,27 +1148,6 @@ export function createStudioGateway(
       if (started.data !== null) {
         creativeJobs.set(result.data.root_id, started.data);
       }
-      return result;
-    },
-
-    async selectCreativeDirection(
-      projectId: string,
-      candidateId: string,
-      createdBy: string,
-      studioJobId?: string,
-    ): Promise<StudioGatewayResult<ProjectDetail>> {
-      const tracked = creativeJobs.get(projectId) ?? null;
-      const durableJobId = studioJobId ?? tracked?.jobId;
-      const result = await client.selectCreativeCandidate(
-        projectId, candidateId, createdBy, durableJobId,
-      );
-      if (result.error !== null) {
-        return { data: null, error: mapError(result.error), status: result.status };
-      }
-      // When present, the backend verifies and settles the durable reviewing
-      // job atomically with candidate selection. A second client transition
-      // would reintroduce restart sensitivity and could double-settle billing.
-      creativeJobs.delete(projectId);
       return result;
     },
 

@@ -233,9 +233,12 @@ async function runStructuralCutCase(): Promise<StructuralCutAcceptanceResult> {
   }), 'Structural: create pre-spec ring direction');
   const creative = created.creative_candidates?.[0];
   assert(creative, 'Structural: deterministic creative direction missing');
-  const selected = value(await trustedClient.selectCreativeCandidate(
-    created.root_id, creative.asset_id, structuralActor,
-  ), 'Structural: select pre-spec ring direction');
+  const selected = value(await gateway.completeCreativeDirectionReview({
+    projectId: created.root_id,
+    selectedCandidateId: creative.asset_id,
+    retained: [],
+    createdBy: structuralActor,
+  }), 'Structural: commit pre-spec ring direction').project;
   assert.equal(selected.confirmable_pre_spec, true);
 
   const preSpecPreview = value(await gateway.previewVisualRefine({
@@ -281,14 +284,14 @@ async function runStructuralCutCase(): Promise<StructuralCutAcceptanceResult> {
   assert.deepEqual(canonicalAfterImport, {
     projects: 1,
     image_assets: 3,
-    revision_records: 2,
+    revision_records: 3,
     designs: 1,
     design_versions: 1,
     accepted_image_reviews: 1,
     failed_image_runs: 0,
     charged_outputs: 1,
     completed_outputs: 1,
-  }, 'refine-first confirmation did not establish exact Design v1 atomically');
+  }, 'atomic Original, refine, and confirmation did not preserve exact Design v1 history');
 
   const beforeMap = value(
     await gateway.getStudioComponentTargeting(sourceAssetId),
@@ -422,7 +425,7 @@ async function runStructuralCutCase(): Promise<StructuralCutAcceptanceResult> {
   assert.deepEqual(await canonicalState(structuralActor), {
     projects: 1,
     image_assets: 4,
-    revision_records: 3,
+    revision_records: 4,
     designs: 1,
     design_versions: 2,
     accepted_image_reviews: 2,
@@ -644,49 +647,55 @@ async function runCase(caseDefinition: AcceptanceCase, index: number): Promise<A
     `${label}: direction bytes are not mutually distinct`,
   );
 
-  // One mixed-source case crosses the complete atomic Create-decision seam:
-  // choose Original and retain a sibling in the same server transaction.
-  // Every other case keeps exercising the backward-compatible selection and
-  // explicit branch paths until their callers have migrated.
-  const useAtomicCreateDecision = index === 1;
+  // Every mixed-source case crosses the atomic Create-decision seam. One case
+  // also retains a sibling in the same transaction and proves lost-response
+  // retry idempotency; the others continue to exercise explicit branching.
+  const retainSiblingAtomically = index === 1;
   let selected: ProjectDetail;
   let branch: SaveAsVariationResult | null = null;
   let branchSourceDirection = chosenDirection;
   let atomicRetryIdempotent = false;
-  if (useAtomicCreateDecision) {
+  if (retainSiblingAtomically) {
     assert(candidates.length >= 2, `${label}: atomic case requires a sibling direction`);
     branchSourceDirection = candidates[0]!;
-    const studioJobId = await reviewingCreateJobId(actor, created.root_id);
-    const request = {
-      projectId: created.root_id,
-      selectedCandidateId: chosenDirection.asset_id,
-      retained: [{
-        candidateId: branchSourceDirection.asset_id,
-        label: `${label} retained sibling`,
-      }],
-      createdBy: actor,
-      studioJobId,
-    } as const;
-    const committed = value(
-      await gateway.completeCreativeDirectionReview(request),
-      `${label}: Commit Original and retained sibling atomically`,
-    );
-    selected = committed.project;
-    assert.equal(committed.retained_variations.length, 1);
+  }
+  const studioJobId = await reviewingCreateJobId(actor, created.root_id);
+  const request = {
+    projectId: created.root_id,
+    selectedCandidateId: chosenDirection.asset_id,
+    retained: retainSiblingAtomically ? [{
+      candidateId: branchSourceDirection.asset_id,
+      label: `${label} retained sibling`,
+    }] : [],
+    createdBy: actor,
+    studioJobId,
+  } as const;
+  const committed = value(
+    await gateway.completeCreativeDirectionReview(request),
+    `${label}: Commit Original through the atomic Create decision`,
+  );
+  selected = committed.project;
+  assert.equal(
+    committed.retained_variations.length,
+    retainSiblingAtomically ? 1 : 0,
+  );
+  if (retainSiblingAtomically) {
     branch = committed.retained_variations[0]!;
     assert.equal(branch.source_asset_id, branchSourceDirection.asset_id);
+  }
 
-    const stateAfterCommit = await canonicalState(actor);
-    const activityAfterCommit = value(
-      await gateway.listStudioJobs(actor),
-      `${label}: Activity after atomic commit`,
-    );
-    const settledJob = activityAfterCommit.jobs.find((job) => job.job_id === studioJobId);
-    assert(settledJob, `${label}: atomically settled Create job missing`);
-    assert.equal(settledJob.status, 'succeeded');
-    assert.equal(settledJob.billing.completed_outputs, candidates.length);
-    assert.equal(settledJob.billing.charged_outputs, candidates.length);
+  const stateAfterCommit = await canonicalState(actor);
+  const activityAfterCommit = value(
+    await gateway.listStudioJobs(actor),
+    `${label}: Activity after atomic commit`,
+  );
+  const settledJob = activityAfterCommit.jobs.find((job) => job.job_id === studioJobId);
+  assert(settledJob, `${label}: atomically settled Create job missing`);
+  assert.equal(settledJob.status, 'succeeded');
+  assert.equal(settledJob.billing.completed_outputs, candidates.length);
+  assert.equal(settledJob.billing.charged_outputs, candidates.length);
 
+  if (retainSiblingAtomically) {
     // This is the real lost-response retry shape: the exact request, including
     // its durable job id, returns the same sibling identity and cannot append
     // a project/revision or settle the job twice.
@@ -714,12 +723,6 @@ async function runCase(caseDefinition: AcceptanceCase, index: number): Promise<A
       `${label}: exact retry settled or charged the Create job twice`,
     );
     atomicRetryIdempotent = true;
-  } else {
-    selected = value(await gateway.selectCreativeDirection(
-      created.root_id,
-      chosenDirection.asset_id,
-      actor,
-    ), `${label}: Select and save direction`);
   }
   assert.equal(selected.active_asset_id, chosenDirection.asset_id);
   assert.equal(selected.revisions.length, 1);
@@ -730,7 +733,7 @@ async function runCase(caseDefinition: AcceptanceCase, index: number): Promise<A
   assertSourceKind(reopened, caseDefinition.sourceKind, `${label}: reopened revision`);
   assertReferencePersistence(reopened, caseDefinition.references ?? []);
 
-  if (!useAtomicCreateDecision) {
+  if (!retainSiblingAtomically) {
     branch = value(await gateway.saveCurrentAsVariation({
       projectId: reopened.root_id,
       sourceAssetId: chosenDirection.asset_id,
@@ -925,7 +928,7 @@ async function runCase(caseDefinition: AcceptanceCase, index: number): Promise<A
     directionCount: candidates.length,
     canonicalRevisionCount: finalHistory.revisions.length,
     staleApplyRejected,
-    atomicCreateDecision: useAtomicCreateDecision,
+    atomicCreateDecision: true,
     atomicRetryIdempotent,
   };
 }
@@ -943,8 +946,8 @@ async function main(): Promise<void> {
   assert.equal(results.length, 10);
   assert.equal(
     results.filter((item) => item.atomicCreateDecision).length,
-    1,
-    'exactly one mixed-source project must use the atomic Create-decision seam',
+    10,
+    'every mixed-source project must use the atomic Create-decision seam',
   );
   assert.equal(
     results.filter((item) => item.atomicRetryIdempotent).length,
@@ -1010,7 +1013,8 @@ async function main(): Promise<void> {
       failed_evidence_runs: 1,
     },
     atomic_create: {
-      mixed_source_case: results.find((item) => item.atomicCreateDecision)?.id,
+      projects_committed_atomically: results.filter((item) => item.atomicCreateDecision).length,
+      retry_case: results.find((item) => item.atomicRetryIdempotent)?.id,
       retry_idempotent: true,
       invalid_retained_rollback: atomicRollback,
     },

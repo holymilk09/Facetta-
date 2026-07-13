@@ -73,7 +73,6 @@ function fakeClient(overrides: Partial<GatewayClient> = {}): GatewayClient {
   };
   return {
     createProjectFromPrompt: unsupported,
-    selectCreativeCandidate: unsupported,
     saveAsVariation: unsupported,
     previewCatalogSelection: unsupported,
     acceptCatalogPreview: unsupported,
@@ -158,29 +157,6 @@ const catalogPreview = (): CatalogPreviewResult => ({
     verdict: 'pass',
     expires_in_seconds: 600,
   },
-});
-
-test('persists a chosen creative direction without inventing specification authority', async () => {
-  const selected = {
-    ...project('candidate_2'),
-    design_id: null,
-    spec: null,
-    active_design_version: null,
-    selected_candidate_asset_id: 'candidate_2',
-  };
-  const gateway = createStudioGateway(fakeClient({
-    selectCreativeCandidate: async (projectId, candidateId, createdBy) => {
-      assert.equal(projectId, 'project_1');
-      assert.equal(candidateId, 'candidate_2');
-      assert.equal(createdBy, 'designer_1');
-      return ok(selected);
-    },
-  }));
-
-  const result = await gateway.selectCreativeDirection('project_1', 'candidate_2', 'designer_1');
-  assert.equal(result.error, null);
-  assert.equal(result.data?.selected_candidate_asset_id, 'candidate_2');
-  assert.equal(result.data?.active_design_version, null);
 });
 
 test('commits an Original and all retained directions through one atomic client call', async () => {
@@ -636,6 +612,7 @@ test('Create, Views, and Present forward typed inputs without model or provider 
     },
   }));
   assert.equal('createFromBrief' in gateway, false);
+  assert.equal('selectCreativeDirection' in gateway, false);
   await gateway.createFromPrompt({ prompt: 'Emerald collar', owner: 'designer_1', title: 'Collar' });
   await gateway.createLineArtView({
     projectId: 'project_1', sourceAssetId: 'asset_1', sourceDesignVersion: 1,

@@ -30,7 +30,6 @@ const quality = {
 
 const baseClient = () => ({
   createProjectFromPrompt: async () => { throw new Error('unexpected'); },
-  selectCreativeCandidate: async () => { throw new Error('unexpected'); },
   saveAsVariation: async () => { throw new Error('unexpected'); },
   previewCatalogSelection: async () => { throw new Error('unexpected'); },
   acceptCatalogPreview: async () => { throw new Error('unexpected'); },

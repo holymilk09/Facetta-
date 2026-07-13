@@ -5,6 +5,34 @@ Read `CLAUDE.md` (constitution — binding), `README.md` (endpoints/layout),
 `docs/DATA_WANTED.md` (open research asks). This file is the delta: what is
 DONE beyond the original TASKS.md build order, and what is next.
 
+## 2026-07-13 atomic Create authority checkpoint
+
+The deprecated single-candidate selector is no longer part of the production
+API or active Studio gateway. Studio Create now has one canonical acceptance
+authority: `POST /projects/{project_id}/creative-directions/commit`. That
+transaction establishes the immutable Original, preserves explicitly retained
+sibling directions, records the durable decision and revision provenance, and
+settles the bound Create job exactly once. The older selector remains mounted
+only in development/test as explicitly deprecated compatibility so historical
+projects and evaluation fixtures remain readable during migration.
+
+The real TypeScript-client -> HTTP -> FastAPI acceptance process now sends all
+ten sentence, drawing, photograph, finished-render, and role-labeled-reference
+projects through the atomic commit. It proves one lost-response retry is
+idempotent, invalid cross-project sibling retention rolls back canonical state
+and billing, each requested Create job settles once, no canonical mutation
+occurs before acceptance, and Factory is never required. The structural ring
+case now counts the immutable Original in its provenance history instead of
+accepting the legacy selector's unrecorded state transition.
+
+Local validation for this checkpoint: 1,624 backend tests, 244 Jest tests, 68
+Studio contract tests, TypeScript, Ruff, Python compilation, Expo web export,
+and the complete ten-project real-process client/API acceptance pass. Existing
+non-fatal Jest warnings remain the deprecated React Native `SafeAreaView` and
+overlapping `act()` diagnostics. External beta is still gated on the frozen
+144-image corpus, designer/GIA review, founder approval, and live two-principal
+HTTPS staging evidence.
+
 ## 2026-07-13 Studio rendered-review authority checkpoint
 
 Create, Refine, Views, and Present now share one fail-closed visual-review
