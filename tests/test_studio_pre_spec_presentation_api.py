@@ -30,10 +30,12 @@ from facetta.db import (
     utcnow,
 )
 from facetta.image_agent import (
+    CheckSeverity,
     ImageOperation,
     ImageQualityReport,
     JewelryImageAgent,
     ProviderImage,
+    QualityCheck,
     QualityVerdict,
     build_image_plan,
 )
@@ -132,7 +134,12 @@ def _generator(calls: list[dict]):
             def evaluate(self, *_args, **_kwargs):
                 return ImageQualityReport(
                     verdict=QualityVerdict.PASS,
-                    checks=(),
+                    checks=(QualityCheck(
+                        code="presentation_fidelity",
+                        passed=True,
+                        severity=CheckSeverity.HARD,
+                        message="the selected jewelry remained unchanged",
+                    ),),
                     score=97,
                 )
 
@@ -422,7 +429,12 @@ def test_pre_spec_lineage_mismatch_persists_failed_run_evidence(
             def evaluate(self, *_args, **_kwargs):
                 return ImageQualityReport(
                     verdict=QualityVerdict.PASS,
-                    checks=(),
+                    checks=(QualityCheck(
+                        code="presentation_fidelity",
+                        passed=True,
+                        severity=CheckSeverity.HARD,
+                        message="the selected jewelry remained unchanged",
+                    ),),
                     score=97,
                 )
 
@@ -557,6 +569,42 @@ def test_presentation_candidate_survives_refresh_and_is_owner_scoped(
         assert bytes(record.image) == CLIENT
         assert record.source_sha256 == SOURCE_HASH
         assert record.status == "reviewing"
+
+
+def test_tampered_pre_spec_qa_fails_closed_without_asset_or_charge(
+    presentation_client,
+):
+    client, Session = presentation_client
+    app.dependency_overrides[get_pre_spec_presentation_generator] = (
+        lambda: _generator([])
+    )
+    body = _preview(client).json()
+    candidate_id = body["candidate"]["candidate_id"]
+    job_id = body["candidate"]["studio_job_id"]
+    with Session() as db:
+        record = db.get(StudioPresentationCandidateRecord, candidate_id)
+        assert record is not None
+        record.qa = {}
+        db.commit()
+
+    resumed = client.get(
+        "/studio/presentation-candidates",
+        params={"owner": "usr_studio", "project_id": "ast_direction"},
+    )
+    assert resumed.status_code == 200
+    assert resumed.json() == {"candidates": []}
+    assert client.get(body["candidate"]["preview_url"]).status_code == 410
+    assert _decision(client, body, "accept").status_code == 409
+    with Session() as db:
+        record = db.get(StudioPresentationCandidateRecord, candidate_id)
+        job = db.get(StudioJobRecord, job_id)
+        assert record is not None and record.status == "expired"
+        assert bytes(record.image) == b""
+        assert job is not None and job.status == "failed"
+        assert job.error_code == "presentation_candidate_qa_invalid"
+        assert (job.completed_outputs, job.charged_outputs) == (0, 0)
+        assert db.scalar(select(func.count()).select_from(ImageAsset)) == 1
+        assert db.scalar(select(func.count()).select_from(ImageRunReview)) == 0
 
 
 def test_bound_job_is_charged_only_with_atomic_acceptance(

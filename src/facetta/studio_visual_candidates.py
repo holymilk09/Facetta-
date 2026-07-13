@@ -24,6 +24,7 @@ from facetta.db import (
     new_id,
     utcnow,
 )
+from facetta.candidate_qa import reviewable_candidate_qa
 from facetta.json_types import JsonObject
 from facetta.studio_jobs import studio_job_action_definition
 
@@ -91,48 +92,6 @@ def _candidate(record: PreviewCandidateRecord) -> StudioVisualCandidate:
         expires_at=_utc(record.expires_at),
         studio_job_id=record.studio_job_id,
     )
-
-
-def _reviewable_qa(verdict: str, qa: JsonObject) -> bool:
-    """Require self-consistent pass/warn evidence before review or acceptance.
-
-    The route already filters failed provider results.  The durable candidate
-    seam must independently enforce the same invariant because it is the last
-    boundary before temporary bytes can later be appended to canonical project
-    history.
-    """
-
-    checks = qa.get("checks")
-    if (
-        not isinstance(checks, list)
-        or not checks
-        or any(
-            not isinstance(check, dict)
-            or type(check.get("passed")) is not bool
-            or check.get("severity") not in {"hard", "warning"}
-            for check in checks
-        )
-    ):
-        return False
-    failed = [check for check in checks if check["passed"] is False]
-    hard_failure = any(check["severity"] == "hard" for check in failed)
-    if hard_failure or qa.get("verdict") != verdict:
-        return False
-    if verdict == "pass":
-        return (
-            not failed
-            and
-            qa.get("accepted") is True
-            and qa.get("review_required") is False
-        )
-    if verdict == "warn":
-        return (
-            bool(failed)
-            and
-            qa.get("accepted") is False
-            and qa.get("review_required") is True
-        )
-    return False
 
 
 def _settle_zero_output_job(
@@ -444,7 +403,7 @@ def _owned_reviewing_record(
         raise StudioVisualCandidateUnavailable(
             "the visual preview QA evidence is unavailable"
         ) from exc
-    if not _reviewable_qa(candidate.verdict, candidate.qa):
+    if not reviewable_candidate_qa(candidate.verdict, candidate.qa):
         raise StudioVisualCandidateUnavailable(
             "the visual preview failed or has incomplete QA evidence"
         )
@@ -496,7 +455,7 @@ def store_studio_visual_candidate(
     created_by: str,
     studio_job_id: str | None = None,
 ) -> StudioVisualCandidate:
-    if not _reviewable_qa(verdict, qa):
+    if not reviewable_candidate_qa(verdict, qa):
         raise StudioVisualCandidateUnavailable(
             "the visual preview failed or has incomplete QA evidence"
         )

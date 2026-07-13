@@ -31,7 +31,10 @@ from facetta.db import (
 from facetta.image_identity import spec_visual_hash
 from facetta.main import app
 from facetta.spec import Spec
-from facetta.studio_markup_candidates import store_studio_markup_candidate
+from facetta.studio_markup_candidates import (
+    StudioMarkupError,
+    store_studio_markup_candidate,
+)
 from facetta.warning_candidates import (
     MarkupWarningCandidate,
     clear_warning_candidates_for_tests,
@@ -102,6 +105,8 @@ def _store(
     suffix: str,
     next_spec: Spec | None = None,
     with_job: bool = True,
+    qa: dict | None = None,
+    job_source_asset_id: str = "ast_markup",
 ):
     output = _png(120 + len(suffix))
     source_spec_hash = spec_visual_hash(Spec.model_validate(spec))
@@ -130,7 +135,8 @@ def _store(
             db.add(StudioJobRecord(
                 id=job_id, owner=OWNER, action_id="refine",
                 lane="trusted_structural", status="running", progress=0.2,
-                active_design_id="ast_markup", source_revision_id="ast_markup",
+                active_design_id="ast_markup",
+                source_revision_id=job_source_asset_id,
                 requested_outputs=1, credits_per_output=20,
                 completed_outputs=0, charged_outputs=0,
             ))
@@ -152,7 +158,16 @@ def _store(
             drift=0.01,
             next_spec=next_spec,
             ignored_fields=(),
-            qa={"verdict": "pass", "review_required": False, "checks": []},
+            qa=qa if qa is not None else {
+                "verdict": "pass",
+                "accepted": True,
+                "review_required": False,
+                "checks": [{
+                    "code": "markup_fidelity",
+                    "passed": True,
+                    "severity": "hard",
+                }],
+            },
             routing={"attempt_count": 1},
             created_by=OWNER,
             expires_at=monotonic() + 3600,
@@ -323,3 +338,137 @@ def test_stale_active_revision_rejects_without_partial_terminal_rows(
         assert job.charged_outputs == 0
         assert db.scalar(select(func.count()).select_from(ImageRunReview)) == 1
         assert db.scalar(select(func.count()).select_from(ProjectRevisionRecord)) == 0
+
+
+def test_markup_warn_qa_remains_reviewable(markup_candidates):
+    client, Session, spec, version, source = markup_candidates
+    candidate = _store(
+        Session,
+        spec,
+        version,
+        source,
+        suffix="warning",
+        qa={
+            "verdict": "warn",
+            "accepted": False,
+            "review_required": True,
+            "checks": [{
+                "code": "minor_material_uncertainty",
+                "passed": False,
+                "severity": "warning",
+            }],
+        },
+    )
+    listed = client.get("/studio/projects/ast_markup/markup-candidates")
+    assert listed.status_code == 200
+    assert candidate.candidate_id in {
+        item["candidate_id"] for item in listed.json()["candidates"]
+    }
+
+
+def test_markup_invalid_store_fails_only_the_exact_bound_job(markup_candidates):
+    client, Session, spec, version, source = markup_candidates
+    with pytest.raises(StudioMarkupError) as captured:
+        _store(
+            Session, spec, version, source,
+            suffix="invalid_store", qa={},
+        )
+    assert captured.value.code == "markup_candidate_qa_invalid"
+    with Session() as db:
+        job = db.get(StudioJobRecord, "job_markup_invalid_store")
+        assert job is not None and job.status == "failed"
+        assert job.error_code == "markup_candidate_qa_invalid"
+        assert (job.completed_outputs, job.charged_outputs) == (0, 0)
+        assert db.get(
+            StudioMarkupCandidateRecord, "cand_markup_invalid_store"
+        ) is None
+
+    with pytest.raises(StudioMarkupError) as wrong_binding:
+        _store(
+            Session, spec, version, source,
+            suffix="wrong_job", qa={},
+            job_source_asset_id="ast_unrelated",
+        )
+    assert wrong_binding.value.code == "markup_job_lineage_mismatch"
+    with Session() as db:
+        unrelated = db.get(StudioJobRecord, "job_markup_wrong_job")
+        assert unrelated is not None and unrelated.status == "running"
+        assert unrelated.error_code is None
+        assert unrelated.charged_outputs == 0
+
+    candidate = _store(
+        Session, spec, version, source, suffix="tampered_job_link")
+    with Session() as db:
+        db.add(StudioJobRecord(
+            id="job_markup_unrelated",
+            owner=OWNER,
+            action_id="refine",
+            lane="trusted_structural",
+            status="running",
+            progress=0.2,
+            active_design_id="ast_markup",
+            source_revision_id="ast_unrelated",
+            requested_outputs=1,
+            credits_per_output=20,
+            completed_outputs=0,
+            charged_outputs=0,
+        ))
+        record = db.get(StudioMarkupCandidateRecord, candidate.candidate_id)
+        assert record is not None
+        record.studio_job_id = "job_markup_unrelated"
+        db.commit()
+    assert client.get(
+        "/studio/projects/ast_markup/markup-candidates"
+    ).json() == {"candidates": []}
+    with Session() as db:
+        record = db.get(StudioMarkupCandidateRecord, candidate.candidate_id)
+        unrelated = db.get(StudioJobRecord, "job_markup_unrelated")
+        assert record is not None and record.status == "expired"
+        assert unrelated is not None and unrelated.status == "running"
+        assert unrelated.error_code is None
+        assert unrelated.charged_outputs == 0
+
+
+def test_tampered_markup_qa_fails_closed_on_resume_image_and_decision(
+    markup_candidates,
+):
+    client, Session, spec, version, source = markup_candidates
+    candidate = _store(Session, spec, version, source, suffix="tampered_qa")
+    with Session() as db:
+        record = db.get(StudioMarkupCandidateRecord, candidate.candidate_id)
+        assert record is not None
+        payload = dict(record.payload)
+        payload["qa"] = {}
+        record.payload = payload
+        db.commit()
+
+    listed = client.get("/studio/projects/ast_markup/markup-candidates")
+    assert listed.status_code == 200
+    assert listed.json() == {"candidates": []}
+    image = client.get(
+        f"/studio/markup-candidates/{candidate.run_id}/"
+        f"{candidate.candidate_id}/image"
+    )
+    assert image.status_code == 410
+    decision = client.post(
+        f"/studio/markup-candidates/{candidate.run_id}/"
+        f"{candidate.candidate_id}/accept",
+        json={
+            "created_by": OWNER,
+            "expected_active_asset_id": "ast_markup",
+            "expected_design_version": version,
+        },
+    )
+    assert decision.status_code == 409
+    with Session() as db:
+        record = db.get(StudioMarkupCandidateRecord, candidate.candidate_id)
+        job = db.get(StudioJobRecord, candidate.studio_job_id)
+        assert record is not None and record.status == "expired"
+        assert bytes(record.image) == b""
+        assert job is not None and job.status == "failed"
+        assert job.error_code == "markup_candidate_qa_invalid"
+        assert (job.completed_outputs, job.charged_outputs) == (0, 0)
+        assert db.scalar(select(func.count()).select_from(ImageAsset)) == 1
+        assert db.scalar(select(func.count()).select_from(ImageRunReview)) == 0
+        assert db.scalar(select(func.count()).select_from(
+            ProjectRevisionRecord)) == 0

@@ -1602,12 +1602,65 @@ def test_catalog_preview_candidate_binding_failure_leaves_no_preview_ready_run(
         assert current_job.completed_outputs == current_job.charged_outputs == 0
 
 
+def test_catalog_preview_store_rejects_invalid_qa_and_settles_job_without_charge(
+    catalog_client,
+    example_spec,
+    monkeypatch,
+):
+    client, SessionFactory = catalog_client
+    project = _create_project(client, example_spec, SessionFactory)
+    job = _studio_job(client, project)
+    agent = _ResultAgent(QualityVerdict.PASS)
+    monkeypatch.setattr("facetta.api.catalog._trusted_image_agent", lambda: agent)
+    monkeypatch.setattr(
+        "facetta.api.catalog._quality_payload",
+        lambda _result: {
+            "verdict": "fail",
+            "accepted": False,
+            "review_required": False,
+            "checks": [{
+                "code": "outside_mask_drift",
+                "passed": False,
+                "severity": "hard",
+                "message": "protected jewelry changed outside the target",
+            }],
+        },
+    )
+
+    rejected = client.post(
+        f"/assets/{project['active_asset_id']}/catalog/preview",
+        json=_request(studio_job_id=job["job_id"]),
+    )
+
+    assert rejected.status_code == 409, rejected.text
+    assert rejected.json()["code"] == "catalog_preview_qa_invalid"
+    assert len(agent.plans) == 1
+    with SessionFactory() as db:
+        assert db.scalar(select(func.count()).select_from(
+            PreviewCandidateRecord)) == 0
+        assert db.scalar(select(func.count()).select_from(ImageAsset)) == 1
+        assert db.scalar(select(func.count()).select_from(DesignVersion)) == 1
+        assert db.scalar(select(func.count()).select_from(ImageRunReview)) == 0
+        runs = list(db.scalars(select(ImageRun)))
+        assert len(runs) == 1
+        assert runs[0].status == "failed"
+        assert runs[0].error_category == "catalog_preview_qa_invalid"
+        current_job = db.get(StudioJobRecord, job["job_id"])
+        assert current_job is not None and current_job.status == "failed"
+        assert current_job.progress == 1
+        assert current_job.completed_outputs == current_job.charged_outputs == 0
+        assert current_job.error_code == "catalog_preview_qa_invalid"
+
+
 @pytest.mark.parametrize(
     ("surface", "corruption"),
     (
         ("list", "missing_next_spec"),
         ("image", "invalid_next_spec"),
         ("apply", "missing_spec_lineage"),
+        ("list", "missing_qa_fields"),
+        ("image", "hard_failure_qa"),
+        ("apply", "qa_verdict_mismatch"),
     ),
 )
 def test_catalog_preview_malformed_payload_fails_closed_and_settles_job(
@@ -1637,8 +1690,25 @@ def test_catalog_preview_malformed_payload_fails_closed_and_settles_job(
             payload.pop("next_spec")
         elif corruption == "invalid_next_spec":
             payload["next_spec"] = "not-a-specification"
-        else:
+        elif corruption == "missing_spec_lineage":
             payload.pop("source_spec_visual_hash")
+        elif corruption == "missing_qa_fields":
+            payload["qa"] = {}
+        elif corruption == "hard_failure_qa":
+            payload["qa"] = {
+                "verdict": "fail",
+                "accepted": False,
+                "review_required": False,
+                "checks": [{
+                    "code": "outside_mask_drift",
+                    "passed": False,
+                    "severity": "hard",
+                }],
+            }
+        else:
+            qa = dict(payload["qa"])
+            qa["verdict"] = "warn"
+            payload["qa"] = qa
         record.payload = payload
         db.commit()
 

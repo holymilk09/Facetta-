@@ -35,6 +35,7 @@ from facetta.catalog_component_targeting import (
     STRUCTURAL_CATALOG_PATHS,
     catalog_structural_component_mapper_status,
 )
+from facetta.candidate_qa import reviewable_candidate_qa
 from facetta.revision_component_map_store import load_revision_component_map
 from facetta.spec import Spec
 from facetta.studio_jobs import (
@@ -49,6 +50,10 @@ _TTL_SECONDS = 2 * 60 * 60
 
 class CatalogPreviewUnavailable(LookupError):
     """The temporary preview is foreign, terminal, expired, or stale."""
+
+
+class CatalogPreviewQaInvalid(CatalogPreviewUnavailable):
+    """A generated catalog output lacks self-consistent reviewable QA."""
 
 
 class CatalogPreviewJobError(ValueError):
@@ -143,6 +148,8 @@ def _validated_candidate_payload(
             payload["routing"], dict
         ):
             raise TypeError("candidate execution evidence is invalid")
+        if not reviewable_candidate_qa(verdict, payload["qa"]):
+            raise ValueError("candidate QA evidence is not reviewable")
         drift = payload.get("drift")
         if drift is not None and (
             not isinstance(drift, (int, float)) or isinstance(drift, bool)
@@ -627,6 +634,10 @@ def store_catalog_preview_candidate(
     proposed_child_component_map: RevisionComponentMap | None = None,
     studio_job_id: str | None = None,
 ) -> CatalogPreviewCandidate:
+    if not reviewable_candidate_qa(verdict, qa):
+        raise CatalogPreviewQaInvalid(
+            "the catalog preview failed or has incomplete QA evidence"
+        )
     if studio_job_id is not None:
         _bind_refine_job(
             db,

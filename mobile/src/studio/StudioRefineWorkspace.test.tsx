@@ -125,6 +125,9 @@ describe('StudioRefineWorkspace', () => {
           assetUrl: 'https://test/preview.png', verdict: 'pass' as const,
           status: 'pending_review' as const, checks: [{
             id: 'drift', label: 'Outside drift', verdict: 'pass' as const, detail: 'Unrelated geometry stayed fixed.',
+          }, {
+            id: 'provider_trace', label: 'Grok QA model routing', verdict: 'warn' as const,
+            detail: 'Internal evaluator trace must remain server-side.',
           }], temporary: true, expiresAt: null, decision: null,
           decidedAt: null, canonicalRevisionId: null,
         },
@@ -155,6 +158,8 @@ describe('StudioRefineWorkspace', () => {
     expect(screen.getByText('1 requested output × 20 credits = estimated 20 credits')).toBeTruthy();
     await act(async () => { fireEvent.press(await screen.findByText('Preview change')); });
     expect(await screen.findByText('Nothing has changed yet.')).toBeTruthy();
+    expect(screen.getByText('Visual consistency')).toBeTruthy();
+    expect(screen.queryByText(/Grok|QA|model routing|evaluator trace/i)).toBeNull();
     expect(onApplied).not.toHaveBeenCalled();
     await act(async () => { fireEvent(screen.getByLabelText('Exact source revision'), 'load'); });
     await act(async () => { fireEvent.press(screen.getByText('Apply as new revision')); });

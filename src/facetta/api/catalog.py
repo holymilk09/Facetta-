@@ -27,6 +27,7 @@ from facetta.auth import (
 )
 from facetta.catalog_preview_candidates import (
     CatalogPreviewJobError,
+    CatalogPreviewQaInvalid,
     CatalogPreviewUnavailable,
     discard_catalog_preview_candidate,
     get_catalog_preview_candidate,
@@ -1391,6 +1392,40 @@ def preview_catalog_revision(
             proposed_child_component_map=proposed_child_component_map,
             studio_job_id=request.studio_job_id,
         )
+    except CatalogPreviewQaInvalid as exc:
+        # A malformed evaluator payload must not leave a reviewable candidate
+        # or a billable Activity job. Replace the rolled-back preview-ready run
+        # with terminal evidence and settle the exact Refine job at zero output.
+        db.rollback()
+        failed_run_id = persist_image_agent_result(
+            db,
+            result,
+            project_root_id=context.project.root_id,
+            source_asset_id=context.asset.id,
+            created_by=actor,
+            status_override="failed",
+            commit=False,
+        )
+        failed_run = db.get(ImageRun, failed_run_id)
+        if failed_run is not None:
+            failed_run.error_category = "catalog_preview_qa_invalid"
+        if request.studio_job_id is not None:
+            settle_catalog_preview_refine_job_failure(
+                db,
+                job_id=request.studio_job_id,
+                owner=actor,
+                project_root_id=context.project.root_id,
+                source_asset_id=context.asset.id,
+                error_code="catalog_preview_qa_invalid",
+                commit=False,
+            )
+        db.commit()
+        return JSONResponse(status_code=409, content={
+            "code": "catalog_preview_qa_invalid",
+            "category": "quality",
+            "detail": str(exc),
+            "image_run_id": failed_run_id,
+        })
     except (CatalogPreviewJobError, CatalogPreviewUnavailable) as exc:
         db.rollback()
         return _error_response(

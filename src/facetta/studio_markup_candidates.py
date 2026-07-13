@@ -11,6 +11,7 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from facetta.candidate_qa import reviewable_candidate_qa_payload
 from facetta.db import (
     DesignVersion,
     ImageAsset,
@@ -162,16 +163,68 @@ def _active_primary(db: Session, root_id: str) -> ImageAsset | None:
     return primary[-1] if primary else None
 
 
-def _reviewable(qa: dict) -> bool:
-    if qa.get("verdict") == "fail":
-        return False
-    checks = qa.get("checks")
-    return not (isinstance(checks, list) and any(
-        isinstance(check, dict)
-        and check.get("passed") is False
-        and check.get("severity") == "hard"
-        for check in checks
-    ))
+def _reviewable(qa: object) -> bool:
+    return reviewable_candidate_qa_payload(qa)
+
+
+def _exact_refine_job(
+    db: Session,
+    record: StudioMarkupCandidateRecord,
+) -> StudioJobRecord | None:
+    if record.studio_job_id is None:
+        return None
+    job = db.get(StudioJobRecord, record.studio_job_id)
+    canonical = studio_job_action_definition("refine")
+    if (
+        job is None
+        or job.owner != record.owner
+        or job.action_id != "refine"
+        or job.lane != canonical.lane
+        or job.credits_per_output != canonical.credits_per_output
+        or job.requested_outputs != 1
+        or job.active_design_id != record.project_root_id
+        or job.source_revision_id != record.source_asset_id
+    ):
+        return None
+    return job
+
+
+def _fail_invalid_candidate_job(
+    db: Session,
+    record: StudioMarkupCandidateRecord,
+) -> None:
+    record.status = "expired"
+    record.image = b""
+    record.resolved_at = utcnow()
+    job = _exact_refine_job(db, record)
+    if (
+        job is not None
+        and job.owner == record.owner
+        and job.status in {"running", "reviewing"}
+    ):
+        job.status = "failed"
+        job.progress = 1
+        job.completed_outputs = 0
+        job.charged_outputs = 0
+        job.error_code = "markup_candidate_qa_invalid"
+        job.updated_at = utcnow()
+
+
+def _fail_invalid_store_job(
+    db: Session,
+    *,
+    job: StudioJobRecord | None,
+) -> None:
+    if job is None:
+        return
+    if job.status in {"running", "reviewing"}:
+        job.status = "failed"
+        job.progress = 1
+        job.completed_outputs = 0
+        job.charged_outputs = 0
+        job.error_code = "markup_candidate_qa_invalid"
+        job.updated_at = utcnow()
+        db.commit()
 
 
 def _bind_refine_job(
@@ -181,7 +234,7 @@ def _bind_refine_job(
     owner: str,
     project_root_id: str,
     source_asset_id: str,
-) -> None:
+) -> StudioJobRecord:
     job = db.scalar(select(StudioJobRecord).where(
         StudioJobRecord.id == job_id).with_for_update())
     canonical = studio_job_action_definition("refine")
@@ -220,6 +273,7 @@ def _bind_refine_job(
     job.status = "reviewing"
     job.progress = max(job.progress, 0.9)
     job.updated_at = utcnow()
+    return job
 
 
 def store_studio_markup_candidate(
@@ -258,20 +312,27 @@ def store_studio_markup_candidate(
         or run.status != "review_required"
         or run.spec_visual_hash != target_spec_hash
         or run.source_spec_visual_hash not in {None, source_spec_hash}
-        or not _reviewable(candidate.qa)
     ):
         raise StudioMarkupError(
             "markup_candidate_lineage_invalid",
             "the candidate is not bound to the exact source, spec, run, and QA evidence",
             status_code=422,
         )
+    bound_job = None
     if studio_job_id is not None:
-        _bind_refine_job(
+        bound_job = _bind_refine_job(
             db,
             job_id=studio_job_id,
             owner=candidate.created_by,
             project_root_id=project.root_id,
             source_asset_id=source.id,
+        )
+    if not _reviewable(candidate.qa):
+        _fail_invalid_store_job(db, job=bound_job)
+        raise StudioMarkupError(
+            "markup_candidate_qa_invalid",
+            "the candidate QA evidence is incomplete or not reviewable",
+            status_code=422,
         )
     now = utcnow()
     record = StudioMarkupCandidateRecord(
@@ -343,9 +404,9 @@ def _owned_record(
         record.status = "expired"
         record.image = b""
         record.resolved_at = utcnow()
-        if record.studio_job_id is not None:
-            job = db.get(StudioJobRecord, record.studio_job_id)
-            if job is not None and job.status in {"running", "reviewing"}:
+        job = _exact_refine_job(db, record)
+        if job is not None:
+            if job.status in {"running", "reviewing"}:
                 job.status = "canceled"
                 job.progress = 1
                 job.completed_outputs = 0
@@ -355,6 +416,23 @@ def _owned_record(
         db.commit()
         raise StudioMarkupCandidateUnavailable(
             "the Studio markup candidate expired before a decision")
+    if record.status == "reviewing":
+        if _exact_refine_job(db, record) is None:
+            record.status = "expired"
+            record.image = b""
+            record.resolved_at = utcnow()
+            db.commit()
+            raise StudioMarkupCandidateUnavailable(
+                "the Studio markup candidate job binding is invalid"
+            )
+        payload = record.payload
+        qa = payload.get("qa") if isinstance(payload, dict) else None
+        if not _reviewable(qa):
+            _fail_invalid_candidate_job(db, record)
+            db.commit()
+            raise StudioMarkupCandidateUnavailable(
+                "the Studio markup candidate QA evidence is invalid"
+            )
     return record
 
 

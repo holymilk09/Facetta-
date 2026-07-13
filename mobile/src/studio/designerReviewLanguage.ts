@@ -10,13 +10,22 @@ export function designerReviewState(verdict: InternalReviewVerdict): string {
 
 export function designerCheckLabel(check: Pick<PreviewCheck, 'id' | 'label'>): string {
   const value = `${check.id} ${check.label}`.toLowerCase();
-  if (/(drift|geometry|identity|silhouette|proportion)/.test(value)) {
+  if (/(drift|geometry|identity|silhouette|proportion|topology|count|component|placement|shape|form)/.test(value)) {
     return 'Design preservation';
   }
   if (/(material|metal|color|finish|surface)/.test(value)) {
     return 'Material appearance';
   }
-  return check.label;
+  if (/(crop|frame|view|angle|background|shadow|lighting|text|watermark|composition)/.test(value)) {
+    return 'Image presentation';
+  }
+  if (/(setting|prong|mount|seat|gallery|clearance|attachment|intersection|hardware|chain|clasp)/.test(value)) {
+    return 'Construction consistency';
+  }
+  // Review labels originate below the Studio seam. Unknown labels must not
+  // surface provider names, evaluator jargon, internal codes, or prompt text
+  // in the designer interface. The exact evidence remains durable server-side.
+  return 'Visual consistency';
 }
 
 export function designerCheckDetail(

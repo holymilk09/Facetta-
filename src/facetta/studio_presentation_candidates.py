@@ -17,6 +17,10 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from facetta.candidate_qa import (
+    forced_review_candidate_qa,
+    reviewable_candidate_qa_payload,
+)
 from facetta.db import (
     DesignVersion,
     ImageAsset,
@@ -147,6 +151,42 @@ def _linked_job_id(
     ))
 
 
+def _exact_present_job(
+    db: Session,
+    record: StudioPresentationCandidateRecord,
+) -> StudioJobRecord | None:
+    linked_job_id = _linked_job_id(db, record)
+    if linked_job_id is None:
+        return None
+    job = db.get(StudioJobRecord, linked_job_id)
+    canonical = studio_job_action_definition("present")
+    if (
+        job is None
+        or job.owner != record.owner
+        or job.action_id != "present"
+        or job.lane != canonical.lane
+        or job.credits_per_output != canonical.credits_per_output
+        or job.active_design_id != record.project_root_id
+        or job.source_revision_id != record.source_asset_id
+    ):
+        return None
+    if record.design_version is None:
+        return job if (
+            record.studio_job_id == job.id and job.requested_outputs == 1
+        ) else None
+    link = db.scalar(select(StudioPresentationCandidateJobLink).where(
+        StudioPresentationCandidateJobLink.candidate_id == record.id,
+        StudioPresentationCandidateJobLink.studio_job_id == job.id,
+    ))
+    if (
+        link is None
+        or record.studio_job_id is not None
+        or not 0 <= link.output_ordinal < job.requested_outputs
+    ):
+        return None
+    return job
+
+
 def _owned_record(
     db: Session,
     run_id: str,
@@ -174,13 +214,12 @@ def _owned_record(
         record.status = "expired"
         record.image = b""
         record.resolved_at = utcnow()
-        linked_job_id = _linked_job_id(db, record)
-        if record.design_version is not None and linked_job_id is not None:
+        job = _exact_present_job(db, record)
+        if record.design_version is not None and job is not None:
             _settle_exact_present_job(
-                db, job_id=linked_job_id, owner=record.owner)
-        elif record.studio_job_id is not None:
-            job = db.get(StudioJobRecord, record.studio_job_id)
-            if job is not None and job.status not in {"succeeded", "failed", "canceled"}:
+                db, job_id=job.id, owner=record.owner)
+        elif job is not None:
+            if job.status not in {"succeeded", "failed", "canceled"}:
                 job.status = "canceled"
                 job.completed_outputs = 0
                 job.charged_outputs = 0
@@ -190,7 +229,53 @@ def _owned_record(
         raise StudioPresentationCandidateUnavailable(
             "the presentation preview expired before a decision"
         )
+    if record.status == "reviewing" and not _reviewable_qa(record):
+        _invalidate_candidate_qa(db, record)
+        db.commit()
+        raise StudioPresentationCandidateUnavailable(
+            "the presentation preview QA evidence is invalid"
+        )
+    if record.status == "reviewing" and _exact_present_job(db, record) is None:
+        record.status = "expired"
+        record.image = b""
+        record.resolved_at = utcnow()
+        db.commit()
+        raise StudioPresentationCandidateUnavailable(
+            "the presentation preview job binding is invalid"
+        )
     return record
+
+
+def _reviewable_qa(record: StudioPresentationCandidateRecord) -> bool:
+    if record.design_version is None:
+        return reviewable_candidate_qa_payload(record.qa)
+    return forced_review_candidate_qa(record.qa)
+
+
+def _invalidate_candidate_qa(
+    db: Session,
+    record: StudioPresentationCandidateRecord,
+) -> None:
+    record.status = "expired"
+    record.image = b""
+    record.resolved_at = utcnow()
+    job = _exact_present_job(db, record)
+    if job is None:
+        return
+    if record.design_version is not None:
+        if job.status in {"running", "reviewing"}:
+            job.error_code = "presentation_candidate_qa_invalid"
+            job.updated_at = utcnow()
+            _settle_exact_present_job(
+                db, job_id=job.id, owner=record.owner)
+        return
+    if job.status in {"running", "reviewing"}:
+        job.status = "failed"
+        job.progress = 1
+        job.completed_outputs = 0
+        job.charged_outputs = 0
+        job.error_code = "presentation_candidate_qa_invalid"
+        job.updated_at = utcnow()
 
 
 def _settle_exact_present_job(
@@ -242,12 +327,48 @@ def _settle_exact_present_job(
                 "presentation_job_resolution_conflict",
                 "the presentation job already has accepted output",
             )
-        job.status = "canceled"
+        qa_invalid = job.error_code == "presentation_candidate_qa_invalid"
+        job.status = "failed" if qa_invalid else "canceled"
         job.progress = 1
         job.completed_outputs = 0
         job.charged_outputs = 0
-        job.error_code = None
+        job.error_code = (
+            "presentation_candidate_qa_invalid" if qa_invalid else None
+        )
         job.updated_at = utcnow()
+
+
+def _fail_invalid_store_job(
+    db: Session,
+    *,
+    job: StudioJobRecord | None,
+) -> None:
+    if job is None:
+        return
+    if job.status not in {"queued", "running", "reviewing"}:
+        return
+    linked_records = list(db.scalars(select(
+        StudioPresentationCandidateRecord,
+    ).join(
+        StudioPresentationCandidateJobLink,
+        StudioPresentationCandidateJobLink.candidate_id
+        == StudioPresentationCandidateRecord.id,
+    ).where(
+        StudioPresentationCandidateJobLink.studio_job_id == job.id,
+        StudioPresentationCandidateRecord.status == "reviewing",
+    )))
+    now = utcnow()
+    for linked in linked_records:
+        linked.status = "expired"
+        linked.image = b""
+        linked.resolved_at = now
+    job.status = "failed"
+    job.progress = 1
+    job.completed_outputs = 0
+    job.charged_outputs = 0
+    job.error_code = "presentation_candidate_qa_invalid"
+    job.updated_at = now
+    db.commit()
 
 
 def _require_present_job(
@@ -486,14 +607,30 @@ def store_studio_presentation_candidate(
         raise ValueError("client presentation capability is invalid")
     if destination == "marketing" and capability != "MARKETING_IMAGE":
         raise ValueError("marketing presentation capability is invalid")
+    bound_job = None
     if studio_job_id is not None:
-        _require_present_job(
+        bound_job = _require_present_job(
             db,
             job_id=studio_job_id,
             owner=created_by,
             project_root_id=project_root_id,
             source_asset_id=source_asset_id,
             output_ordinal=output_ordinal,
+        )
+    qa_is_reviewable = (
+        reviewable_candidate_qa_payload(qa)
+        if design_version is None
+        else forced_review_candidate_qa(qa)
+    )
+    if not qa_is_reviewable:
+        _fail_invalid_store_job(
+            db,
+            job=bound_job,
+        )
+        raise StudioPresentationError(
+            "presentation_candidate_qa_invalid",
+            "the presentation QA evidence is incomplete or not reviewable",
+            status_code=422,
         )
     now = utcnow()
     record = StudioPresentationCandidateRecord(
@@ -709,13 +846,6 @@ def _require_exact_source(
                 "the presentation is not bound to the exact specification",
                 status_code=422,
             )
-    checks = candidate.qa.get("checks")
-    hard_failure = isinstance(checks, list) and any(
-        isinstance(check, dict)
-        and check.get("passed") is False
-        and check.get("severity") == "hard"
-        for check in checks
-    )
     if (
         run.project_root_id != project.root_id
         or run.source_asset_id != source.id
@@ -727,13 +857,10 @@ def _require_exact_source(
         or run.created_by != created_by
         or run.status not in {"preview_ready", "review_required"}
         or hashlib.sha256(candidate.image_bytes).hexdigest() != candidate.output_hash
-        or (
-            candidate.design_version is not None
-            and (
-                candidate.qa.get("review_required") is not True
-                or candidate.qa.get("verdict") == "fail"
-                or hard_failure
-            )
+        or not (
+            reviewable_candidate_qa_payload(candidate.qa)
+            if candidate.design_version is None
+            else forced_review_candidate_qa(candidate.qa)
         )
     ):
         raise StudioPresentationError(

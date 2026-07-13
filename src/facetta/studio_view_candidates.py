@@ -11,6 +11,7 @@ from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from facetta.candidate_qa import forced_review_candidate_qa
 from facetta.db import (
     DesignVersion,
     ImageAsset,
@@ -218,6 +219,28 @@ def fail_studio_view_job(
     db.commit()
 
 
+def _exact_view_job(
+    db: Session,
+    record: StudioViewCandidateRecord,
+) -> StudioJobRecord | None:
+    if record.studio_job_id is None:
+        return None
+    job = db.get(StudioJobRecord, record.studio_job_id)
+    canonical = studio_job_action_definition("views")
+    if (
+        job is None
+        or job.owner != record.owner
+        or job.action_id != "views"
+        or job.lane != canonical.lane
+        or job.credits_per_output != canonical.credits_per_output
+        or job.requested_outputs != 1
+        or job.active_design_id != record.project_root_id
+        or job.source_revision_id != record.source_asset_id
+    ):
+        return None
+    return job
+
+
 def store_studio_view_candidate(
     db: Session,
     *,
@@ -236,13 +259,28 @@ def store_studio_view_candidate(
     created_by: str,
     studio_job_id: str | None = None,
 ) -> StudioViewCandidate:
+    bound_job = None
     if studio_job_id is not None:
-        _view_job(
+        bound_job = _view_job(
             db,
             job_id=studio_job_id,
             owner=created_by,
             project_root_id=project_root_id,
             source_asset_id=source_asset_id,
+        )
+    if not forced_review_candidate_qa(qa):
+        if bound_job is not None:
+            bound_job.status = "failed"
+            bound_job.progress = 1
+            bound_job.completed_outputs = 0
+            bound_job.charged_outputs = 0
+            bound_job.error_code = "view_candidate_qa_invalid"
+            bound_job.updated_at = utcnow()
+            db.commit()
+        raise StudioViewError(
+            "view_candidate_qa_invalid",
+            "the View QA evidence is incomplete or not reviewable",
+            status_code=422,
         )
     now = utcnow()
     record = StudioViewCandidateRecord(
@@ -301,9 +339,9 @@ def _owned_record(
         record.status = "expired"
         record.image = b""
         record.resolved_at = utcnow()
-        if record.studio_job_id is not None:
-            job = db.get(StudioJobRecord, record.studio_job_id)
-            if job is not None and job.status in {"running", "reviewing"}:
+        job = _exact_view_job(db, record)
+        if job is not None:
+            if job.status in {"running", "reviewing"}:
                 job.status = "canceled"
                 job.progress = 1
                 job.completed_outputs = 0
@@ -313,6 +351,29 @@ def _owned_record(
         db.commit()
         raise StudioViewCandidateUnavailable(
             "the Studio View candidate expired before a decision")
+    if record.status == "reviewing" and not forced_review_candidate_qa(record.qa):
+        record.status = "expired"
+        record.image = b""
+        record.resolved_at = utcnow()
+        job = _exact_view_job(db, record)
+        if job is not None:
+            if job.status in {"running", "reviewing"}:
+                job.status = "failed"
+                job.progress = 1
+                job.completed_outputs = 0
+                job.charged_outputs = 0
+                job.error_code = "view_candidate_qa_invalid"
+                job.updated_at = utcnow()
+        db.commit()
+        raise StudioViewCandidateUnavailable(
+            "the Studio View candidate QA evidence is invalid")
+    if record.status == "reviewing" and _exact_view_job(db, record) is None:
+        record.status = "expired"
+        record.image = b""
+        record.resolved_at = utcnow()
+        db.commit()
+        raise StudioViewCandidateUnavailable(
+            "the Studio View candidate job binding is invalid")
     return record
 
 
@@ -358,21 +419,6 @@ def _active_primary(db: Session, project_root_id: str) -> ImageAsset | None:
         asset.id != project_root_id, asset.created_at, asset.id))
     primary = [asset for asset in chain if is_primary_revision(asset)]
     return primary[-1] if primary else None
-
-
-def _qa_reviewable(qa: dict) -> bool:
-    checks = qa.get("checks")
-    hard_failure = isinstance(checks, list) and any(
-        isinstance(check, dict)
-        and check.get("passed") is False
-        and check.get("severity") == "hard"
-        for check in checks
-    )
-    return (
-        qa.get("review_required") is True
-        and qa.get("verdict") != "fail"
-        and not hard_failure
-    )
 
 
 def _require_exact_lineage(
@@ -450,7 +496,7 @@ def _require_exact_lineage(
         or run.source_spec_visual_hash != exact_spec_hash
         or candidate.spec_hash != exact_spec_hash
         or hashlib.sha256(candidate.image_bytes).hexdigest() != candidate.output_hash
-        or not _qa_reviewable(candidate.qa)
+        or not forced_review_candidate_qa(candidate.qa)
     ):
         raise StudioViewError(
             "view_candidate_lineage_mismatch",
