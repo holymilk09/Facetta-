@@ -9,7 +9,7 @@ from datetime import timedelta
 import pytest
 from fastapi.testclient import TestClient
 from PIL import Image, ImageDraw
-from sqlalchemy import create_engine, func, select
+from sqlalchemy import create_engine, func, select, update
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -1075,7 +1075,13 @@ def test_historical_visual_decision_lock_fails_closed_on_lineage_tampering(
         elif tamper == "candidate_bytes":
             record.image = b"tampered candidate bytes"
         else:
-            run.source_asset_id = None
+            # Simulate corruption outside the guarded ORM write path so this
+            # test can still exercise the downstream fail-closed reader.
+            db.execute(
+                update(ImageRun)
+                .where(ImageRun.id == run.id)
+                .values(source_asset_id=None)
+            )
         db.commit()
 
     with Session() as db:
@@ -1325,7 +1331,13 @@ def test_owner_and_durable_run_lineage_fail_closed(studio_preview_client):
     with Session() as db:
         run = db.get(ImageRun, preview["image_run_id"])
         assert run is not None
-        run.project_root_id = "ast_different_project"
+        # Simulate an out-of-band database rewrite; normal ORM writes are
+        # rejected by the ImageRun append-only guard.
+        db.execute(
+            update(ImageRun)
+            .where(ImageRun.id == run.id)
+            .values(project_root_id="ast_different_project")
+        )
         db.commit()
     rejected = client.post(
         f"/studio/image-runs/{preview['image_run_id']}/visual-candidates/"

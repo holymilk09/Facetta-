@@ -1015,6 +1015,24 @@ class ImageRun(Base):
         DateTime(timezone=True), default=utcnow)
 
 
+class ImmutableImageRunError(RuntimeError):
+    """Raised when completed image-agent run evidence is rewritten."""
+
+
+@event.listens_for(ImageRun, "before_update")
+def _reject_image_run_update(_mapper, _connection, _target) -> None:
+    raise ImmutableImageRunError(
+        "image runs are immutable; append new execution evidence"
+    )
+
+
+@event.listens_for(ImageRun, "before_delete")
+def _reject_image_run_delete(_mapper, _connection, _target) -> None:
+    raise ImmutableImageRunError(
+        "image runs are immutable and cannot be deleted"
+    )
+
+
 class ImageAttempt(Base):
     """One immutable provider attempt and its jewelry-specific QA result."""
 
@@ -1053,6 +1071,24 @@ class ImageAttempt(Base):
     )
 
 
+class ImmutableImageAttemptError(RuntimeError):
+    """Raised when provider-attempt or QA evidence is rewritten."""
+
+
+@event.listens_for(ImageAttempt, "before_update")
+def _reject_image_attempt_update(_mapper, _connection, _target) -> None:
+    raise ImmutableImageAttemptError(
+        "image attempts are immutable; append new execution evidence"
+    )
+
+
+@event.listens_for(ImageAttempt, "before_delete")
+def _reject_image_attempt_delete(_mapper, _connection, _target) -> None:
+    raise ImmutableImageAttemptError(
+        "image attempts are immutable and cannot be deleted"
+    )
+
+
 class ImageRunReview(Base):
     """One append-only designer decision for a QA-warning candidate.
 
@@ -1073,6 +1109,24 @@ class ImageRunReview(Base):
     created_by: Mapped[str] = mapped_column(String(32))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=utcnow)
+
+
+class ImmutableImageRunReviewError(RuntimeError):
+    """Raised when an explicit designer review decision is rewritten."""
+
+
+@event.listens_for(ImageRunReview, "before_update")
+def _reject_image_run_review_update(_mapper, _connection, _target) -> None:
+    raise ImmutableImageRunReviewError(
+        "image run reviews are immutable; recorded decisions cannot be rewritten"
+    )
+
+
+@event.listens_for(ImageRunReview, "before_delete")
+def _reject_image_run_review_delete(_mapper, _connection, _target) -> None:
+    raise ImmutableImageRunReviewError(
+        "image run reviews are immutable and cannot be deleted"
+    )
 
 
 class DerivedArtifactMetadata(Base):

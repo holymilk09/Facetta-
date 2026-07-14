@@ -15,8 +15,14 @@ from facetta.db import (
     DesignFamily,
     DesignVersion,
     ImageAsset,
+    ImageAttempt,
+    ImageRun,
+    ImageRunReview,
     ImmutableDesignVersionError,
     ImmutableImageAssetError,
+    ImmutableImageAttemptError,
+    ImmutableImageRunError,
+    ImmutableImageRunReviewError,
     ImmutableProjectRevisionRecordError,
     InvalidProjectRevisionAssetError,
     Project,
@@ -78,6 +84,47 @@ def _revision(
         restored_from_asset_id=restored_from_asset_id,
         created_by="usr_studio",
     )
+
+
+def _image_evidence() -> tuple[ImageRun, ImageAttempt, ImageRunReview]:
+    run = ImageRun(
+        id="run_immutable",
+        project_root_id="prj_evidence",
+        source_asset_id="ast_source",
+        operation="local_edit",
+        normalized_intent={"instruction": "Keep the center stone."},
+        prompt_version="image-agent.v1",
+        input_hash="1" * 64,
+        source_hash="2" * 64,
+        mask_hash="3" * 64,
+        spec_visual_hash="4" * 64,
+        source_spec_visual_hash="5" * 64,
+        variant=0,
+        status="review_required",
+        accepted_asset_id=None,
+        created_by="usr_studio",
+    )
+    attempt = ImageAttempt(
+        id="iat_immutable",
+        run_id=run.id,
+        attempt_number=1,
+        provider="fixture",
+        model="fixture-v1",
+        qa_verdict="warn",
+        qa_checks=[{"check": "outside_drift", "passed": True}],
+        output_hash="6" * 64,
+        prompt_hash="7" * 64,
+        cache_key="8" * 64,
+        usage={"images": 1},
+    )
+    review = ImageRunReview(
+        id="irr_immutable",
+        run_id=run.id,
+        decision="accepted",
+        accepted_asset_id="ast_accepted",
+        created_by="usr_studio",
+    )
+    return run, attempt, review
 
 
 def test_fresh_schema_contains_studio_tables_and_project_metadata():
@@ -448,6 +495,126 @@ def test_image_assets_reject_canonical_mutation_and_delete_but_allow_pinning():
         with pytest.raises(ImmutableImageAssetError, match="cannot be deleted"):
             db.commit()
         db.rollback()
+
+
+def test_image_agent_evidence_allows_initial_append():
+    SessionFactory = _session_factory()
+    with SessionFactory() as db:
+        run, attempt, review = _image_evidence()
+        db.add_all([run, attempt, review])
+        db.commit()
+
+        assert db.get(ImageRun, run.id) is not None
+        assert db.get(ImageAttempt, attempt.id) is not None
+        assert db.get(ImageRunReview, review.id) is not None
+
+
+@pytest.mark.parametrize(
+    ("model", "row_id", "field", "replacement", "error_type"),
+    [
+        (ImageRun, "run_immutable", "id", "run_rewritten", ImmutableImageRunError),
+        (ImageRun, "run_immutable", "status", "accepted", ImmutableImageRunError),
+        (ImageRun, "run_immutable", "source_hash", "a" * 64, ImmutableImageRunError),
+        (
+            ImageRun,
+            "run_immutable",
+            "accepted_asset_id",
+            "ast_rewritten",
+            ImmutableImageRunError,
+        ),
+        (
+            ImageAttempt,
+            "iat_immutable",
+            "id",
+            "iat_rewritten",
+            ImmutableImageAttemptError,
+        ),
+        (
+            ImageAttempt,
+            "iat_immutable",
+            "output_hash",
+            "b" * 64,
+            ImmutableImageAttemptError,
+        ),
+        (
+            ImageAttempt,
+            "iat_immutable",
+            "qa_checks",
+            [{"check": "outside_drift", "passed": False}],
+            ImmutableImageAttemptError,
+        ),
+        (
+            ImageRunReview,
+            "irr_immutable",
+            "id",
+            "irr_rewritten",
+            ImmutableImageRunReviewError,
+        ),
+        (
+            ImageRunReview,
+            "irr_immutable",
+            "decision",
+            "discarded",
+            ImmutableImageRunReviewError,
+        ),
+        (
+            ImageRunReview,
+            "irr_immutable",
+            "accepted_asset_id",
+            "ast_rewritten",
+            ImmutableImageRunReviewError,
+        ),
+    ],
+)
+def test_image_agent_evidence_rejects_canonical_mutation(
+    model,
+    row_id: str,
+    field: str,
+    replacement,
+    error_type,
+):
+    SessionFactory = _session_factory()
+    with SessionFactory() as db:
+        db.add_all(_image_evidence())
+        db.commit()
+
+    with SessionFactory() as db:
+        record = db.get(model, row_id)
+        assert record is not None
+        original = getattr(record, field)
+        setattr(record, field, replacement)
+        with pytest.raises(error_type, match="immutable"):
+            db.commit()
+        db.rollback()
+
+        stored = db.get(model, row_id)
+        assert stored is not None
+        assert getattr(stored, field) == original
+
+
+@pytest.mark.parametrize(
+    ("model", "row_id", "error_type"),
+    [
+        (ImageRun, "run_immutable", ImmutableImageRunError),
+        (ImageAttempt, "iat_immutable", ImmutableImageAttemptError),
+        (ImageRunReview, "irr_immutable", ImmutableImageRunReviewError),
+    ],
+)
+def test_image_agent_evidence_rejects_delete(model, row_id: str, error_type):
+    SessionFactory = _session_factory()
+    with SessionFactory() as db:
+        db.add_all(_image_evidence())
+        db.commit()
+
+    with SessionFactory() as db:
+        record = db.get(model, row_id)
+        assert record is not None
+        db.delete(record)
+        with pytest.raises(error_type, match="cannot be deleted"):
+            db.commit()
+        db.rollback()
+
+        assert db.get(model, row_id) is not None
 
 
 def test_revision_records_reject_update_and_delete():

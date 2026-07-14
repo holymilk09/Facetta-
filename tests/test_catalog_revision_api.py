@@ -10,7 +10,7 @@ from copy import deepcopy
 import pytest
 from fastapi.testclient import TestClient
 from PIL import Image
-from sqlalchemy import create_engine, func, select
+from sqlalchemy import create_engine, func, select, update
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -1085,23 +1085,30 @@ def test_instant_gold_color_preview_fails_closed_for_lineage_tampering(
         routing = dict(payload["routing"])
         intent = dict(run.normalized_intent)
         contract = dict(intent["transform_contract"])
+        run_updates = {}
         if corruption == "routing_mode_removed":
             routing.pop("execution_mode")
         elif corruption == "run_input_hash":
-            run.input_hash = "0" * 64
+            run_updates["input_hash"] = "0" * 64
         elif corruption == "intent_source_hash":
             intent["source_sha256"] = "0" * 64
+            run_updates["normalized_intent"] = intent
         elif corruption == "intent_mask_hash":
             intent["mask_sha256"] = "0" * 64
+            run_updates["normalized_intent"] = intent
         elif corruption == "intent_output_hash":
             intent["output_sha256"] = "0" * 64
+            run_updates["normalized_intent"] = intent
         elif corruption == "transform_color":
             contract["controlled_color"] = "white"
             intent["transform_contract"] = contract
+            run_updates["normalized_intent"] = intent
         elif corruption == "payload_option":
             payload["option_id"] = "white"
         elif corruption == "prompt_version":
-            run.prompt_version = "facetta.instant-gold-color.tampered"
+            run_updates["prompt_version"] = (
+                "facetta.instant-gold-color.tampered"
+            )
         elif corruption == "provider_attempt":
             db.add(ImageAttempt(
                 id=new_id("att"),
@@ -1112,7 +1119,15 @@ def test_instant_gold_color_preview_fails_closed_for_lineage_tampering(
             ))
         payload["routing"] = routing
         record.payload = payload
-        run.normalized_intent = intent
+        if run_updates:
+            # These cases simulate database corruption outside the guarded ORM
+            # path so the downstream lineage reader remains independently
+            # fail-closed.
+            db.execute(
+                update(ImageRun)
+                .where(ImageRun.id == run.id)
+                .values(**run_updates)
+            )
         db.commit()
 
     reopened = client.get(preview["candidate"]["preview_url"])

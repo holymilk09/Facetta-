@@ -191,6 +191,7 @@ def auth_client(monkeypatch):
             operation="CREATIVE_GENERATE",
             normalized_intent={},
             prompt_version="auth-test.v1",
+            source_hash=hashlib.sha256(bytes(root.image)).hexdigest(),
             variant=0,
             status="review_required",
             created_by="usr_owner",
@@ -785,11 +786,7 @@ def test_history_asset_and_visual_candidate_reads_deny_other_principal(
         run = db.get(ImageRun, "run_owner")
         assert source is not None and run is not None
         source_hash = hashlib.sha256(bytes(source.image)).hexdigest()
-        run.project_root_id = "ast_auth_root"
-        run.source_asset_id = "ast_auth_root"
-        run.source_hash = source_hash
-        run.created_by = "usr_owner"
-        db.commit()
+        assert run.source_hash == source_hash
         candidate = store_studio_visual_candidate(
             db,
             run_id="run_owner",

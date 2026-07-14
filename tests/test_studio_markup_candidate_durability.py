@@ -10,7 +10,7 @@ from time import monotonic
 import pytest
 from fastapi.testclient import TestClient
 from PIL import Image
-from sqlalchemy import create_engine, func, select
+from sqlalchemy import create_engine, func, select, update
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -427,7 +427,13 @@ def test_historical_source_lock_fails_closed_for_tampered_exact_lineage(
         elif corruption == "run":
             run = db.get(ImageRun, candidate.run_id)
             assert run is not None
-            run.operation = "VISUAL_ONLY_EDIT"
+            # Simulate corruption outside the guarded ORM path so the
+            # downstream lineage lock is still verified independently.
+            db.execute(
+                update(ImageRun)
+                .where(ImageRun.id == run.id)
+                .values(operation="VISUAL_ONLY_EDIT")
+            )
         else:
             record.image = _png(223)
         db.commit()

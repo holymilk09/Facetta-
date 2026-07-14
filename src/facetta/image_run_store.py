@@ -48,6 +48,7 @@ def persist_image_agent_result(
     accepted_asset_id: str | None = None,
     created_by: str = "usr_pending",
     status_override: str | None = None,
+    error_category_override: str | None = None,
     commit: bool = True,
 ) -> str:
     """Store one immutable run and every attempt without candidate bytes.
@@ -55,6 +56,8 @@ def persist_image_agent_result(
     ``status_override`` is reserved for workflows where QA passed but product
     promotion still requires an explicit designer action (for example a
     temporary catalog preview).  Attempt verdicts remain the evaluator truth.
+    ``error_category_override`` lets a product gate record its terminal
+    classification in that same initial insert rather than rewriting the run.
     """
     run_id = new_id("run")
     run = ImageRun(
@@ -72,8 +75,14 @@ def persist_image_agent_result(
         variant=result.plan.variant,
         status=status_override or result.run.status.value,
         accepted_asset_id=(accepted_asset_id if result.accepted else None),
-        error_category=(result.run.error_category.value
-                        if result.run.error_category else None),
+        error_category=(
+            error_category_override
+            if error_category_override is not None
+            else (
+                result.run.error_category.value
+                if result.run.error_category else None
+            )
+        ),
         created_by=created_by,
     )
     attempts = [_attempt_row(run_id, attempt)

@@ -1446,11 +1446,9 @@ def preview_catalog_revision(
             source_asset_id=context.asset.id,
             created_by=actor,
             status_override="failed",
+            error_category_override=lineage_error.code[:32],
             commit=False,
         )
-        failed_run = db.get(ImageRun, run_id)
-        if failed_run is not None:
-            failed_run.error_category = lineage_error.code[:32]
         if request.studio_job_id is not None:
             try:
                 settle_catalog_preview_refine_job_failure(
@@ -1472,11 +1470,9 @@ def preview_catalog_revision(
                     source_asset_id=context.asset.id,
                     created_by=actor,
                     status_override="failed",
+                    error_category_override=lineage_error.code[:32],
                     commit=False,
                 )
-                failed_run = db.get(ImageRun, run_id)
-                if failed_run is not None:
-                    failed_run.error_category = lineage_error.code[:32]
                 db.commit()
                 return _error_response(
                     CatalogApplyError(
@@ -1550,11 +1546,9 @@ def preview_catalog_revision(
             source_asset_id=context.asset.id,
             created_by=actor,
             status_override="failed",
+            error_category_override=structural_error.code,
             commit=False,
         )
-        failed_run = db.get(ImageRun, run_id)
-        if failed_run is not None:
-            failed_run.error_category = structural_error.code
         if request.studio_job_id is not None:
             try:
                 settle_catalog_preview_refine_job_failure(
@@ -1576,11 +1570,9 @@ def preview_catalog_revision(
                     source_asset_id=context.asset.id,
                     created_by=actor,
                     status_override="failed",
+                    error_category_override=structural_error.code,
                     commit=False,
                 )
-                failed_run = db.get(ImageRun, run_id)
-                if failed_run is not None:
-                    failed_run.error_category = structural_error.code
                 db.commit()
                 return _error_response(
                     CatalogApplyError(
@@ -1647,11 +1639,9 @@ def preview_catalog_revision(
             source_asset_id=context.asset.id,
             created_by=actor,
             status_override="failed",
+            error_category_override="catalog_preview_qa_invalid",
             commit=False,
         )
-        failed_run = db.get(ImageRun, failed_run_id)
-        if failed_run is not None:
-            failed_run.error_category = "catalog_preview_qa_invalid"
         if request.studio_job_id is not None:
             settle_catalog_preview_refine_job_failure(
                 db,
