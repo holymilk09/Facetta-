@@ -349,7 +349,14 @@ jest.mock('./StudioConfirmWorkspace', () => {
             media_type: 'image/png', image_url: null, created_by: 'usr_designer',
             created_at: null, legacy_provenance: false,
           },
-          pinned_revision: null, revisions: [], assets: [], derived_assets: [],
+          pinned_revision: mockConfirmedFactoryReady ? {
+            asset_id: 'asset_exact_1', root_id: 'project_1', parent_asset_id: 'asset_1',
+            capability: 'SPEC_RENDER', provenance: 'confirmed_design', revision: 2,
+            design_id: 'design_1', design_version: 1, region: null,
+            instruction: 'Confirmed direction', drift: null, pinned: true,
+            media_type: 'image/png', image_url: null, created_by: 'usr_designer',
+            created_at: null, legacy_provenance: false,
+          } : null, revisions: [], assets: [], derived_assets: [],
           approval: null, factory_ready: mockConfirmedFactoryReady, factory_blockers: [],
           primary_revision_count: 2, has_factory_drawing: false,
           cover_asset_id: 'asset_exact_1', created_at: null, updated_at: null,
@@ -473,6 +480,23 @@ const hydratedProjectFor = (projectId: string, assetId: string) => ({
   })),
   cover_asset_id: assetId,
 });
+
+const eligibleFactoryProject = () => {
+  const project = hydratedProjectFor('project_1', 'asset_exact_1');
+  const pinned = {
+    ...project.active_revision,
+    design_version: 1,
+    pinned: true,
+  };
+  return {
+    ...project,
+    active_design_version: 1,
+    active_revision: pinned,
+    pinned_revision: pinned,
+    factory_ready: true,
+    factory_blockers: [],
+  };
+};
 
 const refinedPreSpecProject = {
   ...nonConfirmablePreSpecProject,
@@ -935,7 +959,7 @@ test('Collections sends the exact active revision to Present', async () => {
   expect(await view.findByText('Present route reached for asset_1')).toBeTruthy();
 });
 
-test('Collections opens optional Factory readiness for an entitled exact ring before pack readiness', async () => {
+test('Collections keeps Factory absent before authoritative pack eligibility', async () => {
   authenticate();
   const view = await render(<App />);
 
@@ -947,13 +971,13 @@ test('Collections opens optional Factory readiness for an entitled exact ring be
   expect(await view.findByText('Refine route reached')).toBeTruthy();
 
   fireEvent.press(view.getByRole('tab', { name: 'Collections' }));
-  await waitFor(() => expect(mockGetStudioCapabilities).toHaveBeenCalled());
-  fireEvent.press(await view.findByText('Review optional Factory readiness'));
-  expect(await view.findByText('Factory route reached for asset_exact_1')).toBeTruthy();
+  expect(view.queryByText('Review optional Factory readiness')).toBeNull();
+  expect(mockGetProject).not.toHaveBeenCalled();
 });
 
 test('Collections retains Factory readiness access for an exact ring that is already pack-ready', async () => {
   mockConfirmedFactoryReady = true;
+  mockGetProject.mockResolvedValue({ data: eligibleFactoryProject(), error: null, status: 200 });
   authenticate();
   const view = await render(<App />);
 
@@ -980,7 +1004,7 @@ test('Collections hides Factory readiness for an exact non-ring revision', async
   fireEvent.press(await view.findByText('Review starting design'));
   fireEvent.press(await view.findByText('Confirm mocked design'));
   expect(await view.findByText('Refine route reached')).toBeTruthy();
-  await waitFor(() => expect(mockGetStudioCapabilities).toHaveBeenCalled());
+  expect(mockGetStudioCapabilities).not.toHaveBeenCalled();
 
   fireEvent.press(view.getByRole('tab', { name: 'Collections' }));
   expect(view.queryByText('Review optional Factory readiness')).toBeNull();
@@ -988,6 +1012,7 @@ test('Collections hides Factory readiness for an exact non-ring revision', async
 
 test('Collections hides Factory readiness when the account lacks entitlement', async () => {
   mockFactoryReviewEnabled = false;
+  mockConfirmedFactoryReady = true;
   authenticate();
   const view = await render(<App />);
 
@@ -1004,6 +1029,8 @@ test('Collections hides Factory readiness when the account lacks entitlement', a
 });
 
 test('Refine links directly to starting design review and returns after confirmation', async () => {
+  mockConfirmedFactoryReady = true;
+  mockGetProject.mockResolvedValue({ data: eligibleFactoryProject(), error: null, status: 200 });
   markOnboarded();
   saveSession({
     provider: 'email', email: 'designer@example.com', name: 'Designer',
@@ -1016,18 +1043,21 @@ test('Refine links directly to starting design review and returns after confirma
   fireEvent.press(view.getByText('Start from an idea or reference'));
   fireEvent.press(await view.findByText('Save mocked direction'));
   expect(await view.findByText('Refine route reached')).toBeTruthy();
-  expect(view.queryByLabelText('More actions')).toBeNull();
-  expect(view.queryByText('Starting design facts')).toBeNull();
-  expect(view.queryByLabelText('Generate technical views')).toBeNull();
+  const unavailableViews = view.getByLabelText('Generate technical views');
+  expect(unavailableViews.props.accessibilityState).toEqual({ disabled: true });
+  expect(view.getByText('Confirm design facts first')).toBeTruthy();
+  fireEvent.press(view.getByLabelText('More actions'));
+  fireEvent.press(await view.findByText('Starting design facts'));
 
-  fireEvent.press(await view.findByText('Review starting design'));
   fireEvent.press(await view.findByText('Confirm mocked design'));
 
   expect(await view.findByText('Refine route reached')).toBeTruthy();
   expect(view.queryByText('Confirm mocked design')).toBeNull();
   expect(view.queryByText('Your design families')).toBeNull();
   expect(view.queryByText(/Factory/i)).toBeNull();
-  expect(view.getByLabelText('Generate technical views')).toBeTruthy();
+  expect(view.getByLabelText('Generate technical views').props.accessibilityState).toEqual({
+    disabled: false,
+  });
   fireEvent.press(view.getByLabelText('Generate technical views'));
   expect(await view.findByText('Views route reached')).toBeTruthy();
   fireEvent.press(view.getByLabelText('Refine this design'));

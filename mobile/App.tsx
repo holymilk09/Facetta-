@@ -13,7 +13,10 @@ import {
 } from './src/auth';
 import { LoginScreen, PasswordRecoveryScreen } from './src/LoginScreen';
 import { OnboardingScreen } from './src/OnboardingScreen';
-import { getStudioAction, getStudioRailActions, getVisibleStudioActions } from './src/studio/actions';
+import {
+  getStudioAction, getStudioActionUnavailableReason, getStudioRailActions,
+  getVisibleStudioActions,
+} from './src/studio/actions';
 import {
   StudioActionContext, StudioActionId, StudioWorkspaceActionId,
 } from './src/studio/contracts';
@@ -111,7 +114,7 @@ export default function App() {
   const apiUrl = DEFAULT_API_URL;
   const [designer, setDesigner] = useState(session?.designerId ?? '');
   const [showUtilityMenu, setShowUtilityMenu] = useState(false);
-  const [factoryEntitled, setFactoryEntitled] = useState(false);
+  const [factoryEligibleRevisionKey, setFactoryEligibleRevisionKey] = useState<string | null>(null);
   const [savedFamiliesState, setSavedFamiliesState] = useState<SavedFamiliesState>('unknown');
   const [studioProject, setStudioProject] = useState<ProjectDetail | null>(null);
   const [selectedCreativeAssetId, setSelectedCreativeAssetId] = useState<string | null>(null);
@@ -147,7 +150,7 @@ export default function App() {
     setCreateReview(null);
     setCreateDraft(EMPTY_STUDIO_CREATE_DRAFT);
     setActivityReview(null);
-    setFactoryEntitled(false);
+    setFactoryEligibleRevisionKey(null);
     setSavedFamiliesState('unknown');
   }, []);
   const clearAuthenticatedUi = useCallback(() => {
@@ -218,15 +221,6 @@ export default function App() {
   );
   useEffect(() => {
     let active = true;
-    setFactoryEntitled(false);
-    if (sessionAccessToken(session) === null) return () => { active = false; };
-    void studioGateway.getFactoryEntitlement().then((result) => {
-      if (active) setFactoryEntitled(result.error === null && result.data === true);
-    });
-    return () => { active = false; };
-  }, [session, studioGateway]);
-  useEffect(() => {
-    let active = true;
     setSavedFamiliesState('unknown');
     if (sessionAccessToken(session) === null || designer.trim() === '') {
       return () => { active = false; };
@@ -291,20 +285,44 @@ export default function App() {
   const isCreatingNewDesign = tab === 'studio'
     && studioView === 'action'
     && selectedActionId === 'create';
-  const factoryReadinessAvailable = exactStudioLineage !== null
-    && factoryEntitled
-    && studioProject?.spec?.jewelry_type === 'ring';
+  const factoryEligibilityCandidate = useMemo<ExactStudioLineage | null>(() => {
+    if (exactStudioLineage === null || studioProject?.factory_ready !== true) return null;
+    const pinned = studioProject.pinned_revision;
+    if (pinned === null
+      || pinned.asset_id !== exactStudioLineage.sourceAssetId
+      || pinned.design_version !== exactStudioLineage.sourceDesignVersion) return null;
+    return exactStudioLineage;
+  }, [exactStudioLineage, studioProject]);
+  const factoryEligibilityCandidateKey = factoryEligibilityCandidate === null
+    ? null
+    : `${factoryEligibilityCandidate.projectId}:${factoryEligibilityCandidate.sourceAssetId}:${factoryEligibilityCandidate.sourceDesignVersion}`;
+  useEffect(() => {
+    let active = true;
+    setFactoryEligibleRevisionKey(null);
+    if (factoryEligibilityCandidate === null
+      || factoryEligibilityCandidateKey === null
+      || sessionAccessToken(session) === null) return () => { active = false; };
+    void studioGateway.getFactoryEligibility(factoryEligibilityCandidate.projectId).then((result) => {
+      if (!active || result.error !== null) return;
+      const eligibility = result.data;
+      if (eligibility.eligible
+        && eligibility.pinnedAssetId === factoryEligibilityCandidate.sourceAssetId
+        && eligibility.designVersion === factoryEligibilityCandidate.sourceDesignVersion) {
+        setFactoryEligibleRevisionKey(factoryEligibilityCandidateKey);
+      }
+    });
+    return () => { active = false; };
+  }, [factoryEligibilityCandidate, factoryEligibilityCandidateKey, session, studioGateway]);
   const actionContext = useMemo<StudioActionContext>(() => ({
     activeDesignId,
     activeRevisionId: studioProject?.active_asset_id ?? selectedCreativeAssetId,
     hasExactSpecification: exactStudioLineage !== null,
     hasSelectedPreSpecVisual: confirmStudioLineage !== null && exactStudioLineage === null,
-    // Opening readiness is separate from pack authority. The optional
-    // workspace appears only for an entitled exact ring revision; its pack
-    // action and the backend still require this revision to be factory_ready.
-    factoryReadinessAvailable,
+    factoryEligible: factoryEligibilityCandidateKey !== null
+      && factoryEligibleRevisionKey === factoryEligibilityCandidateKey,
   }), [activeDesignId, confirmStudioLineage, exactStudioLineage,
-    factoryReadinessAvailable, selectedCreativeAssetId, studioProject]);
+    factoryEligibilityCandidateKey, factoryEligibleRevisionKey,
+    selectedCreativeAssetId, studioProject]);
   const hasActiveRevision = Boolean(actionContext.activeDesignId && actionContext.activeRevisionId);
   const actionSourceRevision = useMemo(() => {
     if (studioProject === null || isCreatingNewDesign) return null;
@@ -548,24 +566,36 @@ export default function App() {
       {tab === 'studio' && studioView === 'action' && !isCreatingNewDesign && (
         <View style={[styles.actionRail, isStudioHome && styles.actionRailDark]}>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.actionRailContent}>
-            {studioActions.map((action) => (
-              <Pressable
-                key={action.id}
-                accessibilityRole="button"
-                accessibilityLabel={action.label}
-                onPress={() => openStudioAction(action.id)}
-                style={[
-                  styles.actionChip,
-                  isStudioHome && styles.actionChipDark,
-                  studioView === 'action' && selectedActionId === action.id && styles.actionChipActive,
-                ]}>
-                <Text style={[
-                  styles.actionChipText,
-                  isStudioHome && styles.actionChipTextDark,
-                  studioView === 'action' && selectedActionId === action.id && styles.actionChipTextActive,
-                ]}>{action.shortLabel}</Text>
-              </Pressable>
-            ))}
+            {studioActions.map((action) => {
+              const unavailableReason = getStudioActionUnavailableReason(action, actionContext);
+              const unavailable = unavailableReason !== null;
+              return (
+                <Pressable
+                  key={action.id}
+                  accessibilityRole="button"
+                  accessibilityLabel={action.label}
+                  accessibilityHint={unavailableReason ?? undefined}
+                  accessibilityState={{ disabled: unavailable }}
+                  disabled={unavailable}
+                  onPress={() => openStudioAction(action.id)}
+                  style={[
+                    styles.actionChip,
+                    isStudioHome && styles.actionChipDark,
+                    unavailable && styles.actionChipDisabled,
+                    studioView === 'action' && selectedActionId === action.id && styles.actionChipActive,
+                  ]}>
+                  <Text style={[
+                    styles.actionChipText,
+                    isStudioHome && styles.actionChipTextDark,
+                    unavailable && styles.actionChipTextDisabled,
+                    studioView === 'action' && selectedActionId === action.id && styles.actionChipTextActive,
+                  ]}>{action.shortLabel}</Text>
+                  {unavailableReason !== null && (
+                    <Text style={styles.actionChipReason}>{unavailableReason}</Text>
+                  )}
+                </Pressable>
+              );
+            })}
           </ScrollView>
           {showMoreActions && (
             <View style={[styles.moreMenu, shadows.lifted]}>
@@ -1002,10 +1032,13 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
   },
   actionChipDark: { backgroundColor: '#221d2b', borderColor: '#41364f' },
+  actionChipDisabled: { opacity: 0.62 },
   actionChipActive: { backgroundColor: '#6f52d9', borderColor: '#896ff0' },
   actionChipText: { color: theme.faint, fontSize: 11, fontWeight: '600' },
   actionChipTextDark: { color: '#c8bdcf' },
+  actionChipTextDisabled: { color: theme.faint },
   actionChipTextActive: { color: '#ffffff' },
+  actionChipReason: { color: theme.faint, fontSize: 8, marginTop: 2 },
   moreMenu: {
     position: 'absolute',
     zIndex: 30,

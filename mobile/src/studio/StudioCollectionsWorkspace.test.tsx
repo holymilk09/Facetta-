@@ -561,7 +561,7 @@ describe('StudioCollectionsWorkspace', () => {
 
     await fireEvent.press(screen.getByText('Present this revision'));
     expect(handlers.onPresentCurrent).toHaveBeenCalledTimes(1);
-    expect(screen.queryByText('Review Factory readiness')).toBeNull();
+    expect(screen.queryByText('Prepare for Factory review')).toBeNull();
 
     await fireEvent.press(screen.getByText('Continue refining'));
     expect(handlers.onContinueRefining).toHaveBeenCalledTimes(1);
@@ -577,7 +577,7 @@ describe('StudioCollectionsWorkspace', () => {
     expect(screen.queryByText('Restore revision 1 as new')).toBeNull();
   });
 
-  test('shows Factory readiness beside Present only when the host verifies released scope', async () => {
+  test('shows Factory preparation beside Present only when the host verifies eligibility', async () => {
     const handlers = callbacks();
     const onPrepareFactoryCurrent = jest.fn();
     await render(
@@ -591,7 +591,7 @@ describe('StudioCollectionsWorkspace', () => {
     );
 
     expect(await screen.findByText('Use this exact revision')).toBeTruthy();
-    await fireEvent.press(screen.getByText('Review Factory readiness'));
+    await fireEvent.press(screen.getByText('Prepare for Factory review'));
     expect(onPrepareFactoryCurrent).toHaveBeenCalledTimes(1);
   });
 

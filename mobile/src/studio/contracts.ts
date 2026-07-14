@@ -81,12 +81,8 @@ export interface StudioActionContext {
   hasExactSpecification: boolean;
   /** A selected visual that has not yet been paired with confirmed design facts. */
   hasSelectedPreSpecVisual: boolean;
-  /**
-   * The exact active revision is inside the released Factory-readiness scope
-   * for this account. This opens the optional readiness workspace; it does not
-   * mean the revision is approved, pinned, or ready to generate a pack.
-   */
-  factoryReadinessAvailable: boolean;
+  /** The backend confirmed the exact active revision is Factory-eligible. */
+  factoryEligible: boolean;
 }
 
 export interface StudioActionDefinition {
@@ -109,9 +105,8 @@ export interface StudioActionDefinition {
   requiresActiveDesign: boolean;
   createsJob: boolean;
   /**
-   * Internal actions remain addressable by the host, but never become a
-   * competing rail or More-menu destination. They are entered only from the
-   * workspace that owns their supporting context.
+   * Internal actions remain addressable by the host without becoming a
+   * competing rail or More-menu destination.
    */
   placement: 'primary' | 'more' | 'internal';
   isAvailable: (context: StudioActionContext) => boolean;

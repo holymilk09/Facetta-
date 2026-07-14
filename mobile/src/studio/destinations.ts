@@ -13,8 +13,8 @@ export interface StudioDestinationContext {
   activeProjectId: string | null;
   activeRevisionId: string | null;
   hasExactSpecification: boolean;
-  /** Opens readiness only; pack creation still requires server `factory_ready`. */
-  factoryReadinessAvailable: boolean;
+  /** The backend confirmed the exact active revision is Factory-eligible. */
+  factoryEligible: boolean;
 }
 
 export interface StudioDestinationDefinition {
@@ -82,11 +82,11 @@ export const STUDIO_DESTINATIONS: readonly StudioDestinationDefinition[] = [
     ...jobPolicy(factoryAction),
     id: 'factory',
     label: 'Factory',
-    description: 'Review an exact ring revision before optional manufacturer sharing.',
+    description: 'Prepare an eligible exact ring revision for optional manufacturer review.',
     isAvailable: (context) => (
       hasSavedRevision(context)
       && context.hasExactSpecification
-      && context.factoryReadinessAvailable
+      && context.factoryEligible
     ),
   },
 ] as const;

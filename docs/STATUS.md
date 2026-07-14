@@ -5,6 +5,32 @@ Read `CLAUDE.md` (constitution — binding), `README.md` (endpoints/layout),
 `docs/DATA_WANTED.md` (open research asks). This file is the delta: what is
 DONE beyond the original TASKS.md build order, and what is next.
 
+## 2026-07-14 stable Studio actions and authoritative Factory eligibility checkpoint
+
+Every active design now keeps one stable action order: Create, Vary, Refine,
+Views, Present, and More. Views remains visible before design facts are exact,
+but is disabled with the explicit prerequisite `Confirm design facts first`.
+More exposes Starting design facts for a selected pre-spec direction and
+Advanced specifications after confirmation, so designers no longer have to
+infer hidden state from controls appearing and disappearing.
+
+Factory visibility now fails closed on the authoritative Studio gateway result
+for the exact active revision. Local entitlement, category, or readiness hints
+cannot expose Factory. The host first requires a locally exact, pinned,
+`factory_ready` candidate, then verifies backend eligibility and exact agreement
+on the pinned asset and design version. A stale response or active-revision
+change cannot keep Factory visible. Eligible copy now says Prepare for Factory
+review; pre-eligibility fact work stays under Starting design facts or Advanced
+specifications.
+
+No backend source changed in this checkpoint. The current 1,836-test full
+backend baseline remains applicable, and the focused external-beta machinery
+re-passed 225 tests. All 36 mobile Jest suites (319 tests), all 78 Studio
+contract tests, TypeScript, Expo web export, and diff hygiene pass. The signed
+144-image corpus with its 1,044 resolved assignments, independent designer/GIA
+review, founder approval, six-role authority enrollment, and live
+two-principal HTTPS/PostgreSQL staging evidence remain unmet external gates.
+
 ## 2026-07-14 Studio draft continuity, exact Refine lineage, and signed-capture replay checkpoint
 
 Studio Create now keeps the full sentence, role-labeled references, master

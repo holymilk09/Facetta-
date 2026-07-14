@@ -3,8 +3,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
-  getStudioAction, getStudioRailActions, getVisibleStudioActions, STUDIO_ACTIONS,
-  transitionStudioJob,
+  getStudioAction, getStudioActionUnavailableReason, getStudioRailActions,
+  getVisibleStudioActions, STUDIO_ACTIONS, transitionStudioJob,
 } from './actions';
 import {
   decidePreviewCandidate, PreviewCandidate, STUDIO_ACTION_IDS, StudioJob,
@@ -18,7 +18,7 @@ const emptyContext = {
   activeRevisionId: null,
   hasExactSpecification: false,
   hasSelectedPreSpecVisual: false,
-  factoryReadinessAvailable: false,
+  factoryEligible: false,
 };
 
 test('the action registry defines every Studio action exactly once', () => {
@@ -38,7 +38,7 @@ test('only Create is visible without an active design', () => {
   );
 });
 
-test('Factory readiness remains absent until an exact revision enters released scope', () => {
+test('Factory remains absent until the backend confirms exact-revision eligibility', () => {
   const active = {
     ...emptyContext,
     activeDesignId: 'dsn_1',
@@ -51,7 +51,7 @@ test('Factory readiness remains absent until an exact revision enters released s
   );
   assert.deepEqual(
     getVisibleStudioActions({
-      ...active, factoryReadinessAvailable: true,
+      ...active, factoryEligible: true,
     }, 'more').map((action) => action.id),
     ['specifications', 'factory'],
   );
@@ -61,26 +61,27 @@ test('Factory readiness remains absent until an exact revision enters released s
   assert.equal(factory.createsJob, true);
   assert.deepEqual(
     getVisibleStudioActions({
-      ...active, hasExactSpecification: false, factoryReadinessAvailable: true,
+      ...active, hasExactSpecification: false, factoryEligible: true,
     }, 'more').map((action) => action.id),
     [],
   );
 });
 
-test('the rail hides an empty More menu and exposes secondary exact-design destinations', () => {
+test('the active-design rail keeps the same six spatial destinations', () => {
   const active = {
     ...emptyContext,
     activeDesignId: 'dsn_1',
     activeRevisionId: 'rev_1',
     hasExactSpecification: false,
   };
-  assert.equal(getStudioRailActions(active).some((action) => action.id === 'more'), false);
-  assert.equal(getStudioRailActions({
+  const expected = ['create', 'vary', 'refine', 'views', 'present', 'more'];
+  assert.deepEqual(getStudioRailActions(active).map((action) => action.id), expected);
+  assert.deepEqual(getStudioRailActions({
     ...active, hasExactSpecification: true,
-  }).at(-1)?.id, 'more');
+  }).map((action) => action.id), expected);
 });
 
-test('Views stay absent before design facts and appear only for an exact revision', () => {
+test('Views stay visible with an explicit prerequisite until design facts are exact', () => {
   const selectedCreativeDirection = {
     ...emptyContext,
     activeDesignId: 'project_1',
@@ -89,7 +90,7 @@ test('Views stay absent before design facts and appear only for an exact revisio
   };
   assert.deepEqual(
     getStudioRailActions(selectedCreativeDirection).map((action) => action.id),
-    ['create', 'vary', 'refine', 'present'],
+    ['create', 'vary', 'refine', 'views', 'present', 'more'],
   );
   assert.deepEqual(
     getStudioRailActions({
@@ -102,9 +103,19 @@ test('Views stay absent before design facts and appear only for an exact revisio
     [getStudioAction('views').label, getStudioAction('views').shortLabel],
     ['Generate technical views', 'Views'],
   );
+  assert.equal(
+    getStudioActionUnavailableReason(getStudioAction('views'), selectedCreativeDirection),
+    'Confirm design facts first',
+  );
+  assert.equal(
+    getStudioActionUnavailableReason(getStudioAction('views'), {
+      ...selectedCreativeDirection, hasExactSpecification: true,
+    }),
+    null,
+  );
 });
 
-test('starting design fact review is internal for a selected pre-spec visual and never exposes Factory', () => {
+test('More exposes starting design facts for a pre-spec visual and never exposes Factory', () => {
   const preSpec = {
     ...emptyContext,
     activeDesignId: 'project_1',
@@ -112,19 +123,16 @@ test('starting design fact review is internal for a selected pre-spec visual and
     hasSelectedPreSpecVisual: true,
   };
   assert.equal(getStudioRailActions(preSpec).some((action) => action.id === 'confirm'), false);
-  assert.equal(getVisibleStudioActions(preSpec, 'internal').some((action) => (
-    action.id === 'confirm' && action.shortLabel === 'Starting design facts'
-  )), true);
   assert.equal(getVisibleStudioActions(preSpec, 'more').some((action) => (
     action.id === 'confirm' || action.shortLabel === 'Starting design facts'
-  )), false);
+  )), true);
   assert.equal(getVisibleStudioActions(preSpec, 'more').some((action) => action.id === 'factory'), false);
   assert.equal(getVisibleStudioActions({
     ...preSpec, hasSelectedPreSpecVisual: false,
-  }, 'internal').some((action) => action.id === 'confirm'), false);
+  }, 'more').some((action) => action.id === 'confirm'), false);
   assert.equal(getVisibleStudioActions({
     ...preSpec, hasExactSpecification: true,
-  }, 'internal').some((action) => action.id === 'confirm'), false);
+  }, 'more').some((action) => action.id === 'confirm'), false);
 });
 
 test('the current branch action is transparent and does not charge for generation', () => {

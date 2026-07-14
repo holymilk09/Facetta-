@@ -10,7 +10,7 @@ const savedContext = {
   activeProjectId: 'project_1',
   activeRevisionId: 'asset_4',
   hasExactSpecification: true,
-  factoryReadinessAvailable: true,
+  factoryEligible: true,
 };
 
 test('destination registry keeps Library non-mutating and zero credit', () => {
@@ -51,11 +51,11 @@ test('generated destinations inherit policy from canonical actions', () => {
   assert.deepEqual(factory.contextRequirements, canonicalFactory.contextRequirements);
 });
 
-test('Factory destination remains optional and readiness-scope gated', () => {
+test('Factory destination remains optional and backend-eligibility gated', () => {
   const factory = getStudioDestination('factory');
   assert.equal(factory.isAvailable(savedContext), true);
   assert.equal(factory.isAvailable({
-    ...savedContext, factoryReadinessAvailable: false,
+    ...savedContext, factoryEligible: false,
   }), false);
   assert.equal(factory.isAvailable({ ...savedContext, hasExactSpecification: false }), false);
 });

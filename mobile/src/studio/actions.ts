@@ -83,7 +83,7 @@ export const STUDIO_ACTIONS: readonly StudioActionDefinition[] = [
     authority: 'design_record',
     requiresActiveDesign: true,
     createsJob: false,
-    placement: 'internal',
+    placement: 'more',
     isAvailable: (context) => activeDesign(context)
       && context.hasSelectedPreSpecVisual
       && !context.hasExactSpecification,
@@ -155,18 +155,14 @@ export const STUDIO_ACTIONS: readonly StudioActionDefinition[] = [
   {
     ...jobAction('factory'),
     id: 'factory',
-    label: 'Review Factory readiness',
+    label: 'Prepare for Factory review',
     shortLabel: 'Factory',
-    description: 'Review an exact ring revision before optional manufacturer sharing.',
+    description: 'Prepare an eligible exact ring revision for optional manufacturer review.',
     referenceRoles: ['master_geometry', 'construction_detail'],
     requiresActiveDesign: true,
     placement: 'more',
-    // This availability opens the host-rendered readiness workspace only. The
-    // terminal job contract inherited above still requires `factory_eligible`,
-    // and that workspace does not reveal its pack CTA until the refreshed
-    // project is factory_ready for the exact pinned revision.
     isAvailable: (context) => (
-      exactDesign(context) && context.factoryReadinessAvailable
+      exactDesign(context) && context.factoryEligible
     ),
   },
 ] as const;
@@ -200,12 +196,29 @@ export function getVisibleStudioActions(
   );
 }
 
-/** Keep the contextual rail honest: More is absent until it has a destination. */
+/**
+ * Keep the active-design controls spatially stable. Availability determines
+ * whether a rail action can run, not whether the designer must rediscover it.
+ */
 export function getStudioRailActions(
   context: StudioActionContext,
 ): readonly StudioActionDefinition[] {
-  const moreAvailable = getVisibleStudioActions(context, 'more').length > 0;
-  return getVisibleStudioActions(context).filter((action) => (
-    action.id !== 'more' || moreAvailable
-  ));
+  if (!activeDesign(context)) return getVisibleStudioActions(context);
+  return STUDIO_ACTIONS.filter((action) => action.placement === 'primary');
+}
+
+export function getStudioActionUnavailableReason(
+  action: StudioActionDefinition,
+  context: StudioActionContext,
+): string | null {
+  if (action.id === 'more') {
+    return getVisibleStudioActions(context, 'more').length > 0
+      ? null
+      : 'No optional actions yet';
+  }
+  if (action.isAvailable(context)) return null;
+  if (action.id === 'views' && activeDesign(context) && !context.hasExactSpecification) {
+    return 'Confirm design facts first';
+  }
+  return action.requiresActiveDesign ? 'Open a saved revision first' : 'Unavailable';
 }
