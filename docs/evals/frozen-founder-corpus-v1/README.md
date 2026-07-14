@@ -70,22 +70,36 @@ preflight, attempt limit, artifact confinement, or signatures.
 ```bash
 set +x
 umask 077
+EVIDENCE_ROOT=/secure/path/to/evidence-root
 PYTHONPATH=src .venv/bin/python scripts/run_frozen_corpus_capture.py \
-  --evidence-root /secure/path/to/evidence-root \
-  --source-dir /secure/path/to/evidence-root/founder-reference-directory \
-  --execution-bundle /secure/path/to/evidence-root/execution-bundle.json \
-  --persistence-observations /secure/path/to/evidence-root/persistence-observations.json \
-  --output-dir /secure/path/to/evidence-root/signed-capture \
+  --evidence-root "$EVIDENCE_ROOT" \
+  --source-dir "$EVIDENCE_ROOT/founder-reference-directory" \
+  --execution-bundle "$EVIDENCE_ROOT/execution-bundle.json" \
+  --persistence-observations "$EVIDENCE_ROOT/persistence-observations.json" \
+  --output-dir "$EVIDENCE_ROOT/signed-capture" \
   --executor-private-key /separate/secret/path/executor.key \
   --canonical-api-private-key /separate/secret/path/api-runner.key \
   --commit-sha <exact-40-or-64-character-commit-sha> \
   --attestation-id <operator-issued-attestation-id>
 
+CAPTURE_PATH="$EVIDENCE_ROOT/signed-capture/capture.json"
+REPLAY_PATH="$EVIDENCE_ROOT/signed-facetta-frozen-replay.v1.json"
+test -f "$CAPTURE_PATH"
+
 PYTHONPATH=src .venv/bin/python scripts/plan_frozen_corpus_capture.py \
   validate-capture \
-  --capture /secure/path/to/evidence-root/frozen-capture.json \
-  --capture-public-key /secure/path/to/evidence-root/keys/executor.pub \
+  --capture "$CAPTURE_PATH" \
+  --capture-public-key "$EVIDENCE_ROOT/keys/executor.pub" \
   --capture-key-id secured-executor-v1
+
+PYTHONPATH=src .venv/bin/python scripts/prepare_frozen_corpus_review.py \
+  --packet-format replay-v1 \
+  --evidence-root "$EVIDENCE_ROOT" \
+  --source-dir "$EVIDENCE_ROOT/founder-reference-directory" \
+  --capture "$CAPTURE_PATH" \
+  --capture-public-key "$EVIDENCE_ROOT/keys/executor.pub" \
+  --capture-key-id secured-executor-v1 \
+  --out "$REPLAY_PATH"
 ```
 
 `facetta-frozen-capture.v2` binds the exact plan, run ID, manifest, config,
@@ -112,10 +126,10 @@ PYTHONPATH=src .venv/bin/python scripts/prepare_frozen_corpus_review.py \
   --packet-format blind-v2 \
   --review-seed <64-lowercase-hex-characters> \
   --reviewer-role gia_visual_fidelity_reviewer \
-  --evidence-root /secure/path/to/evidence-root \
-  --source-dir /secure/path/to/evidence-root/founder-reference-directory \
-  --capture /secure/path/to/evidence-root/frozen-capture.json \
-  --capture-public-key /secure/path/to/evidence-root/keys/executor.pub \
+  --evidence-root "$EVIDENCE_ROOT" \
+  --source-dir "$EVIDENCE_ROOT/founder-reference-directory" \
+  --capture "$CAPTURE_PATH" \
+  --capture-public-key "$EVIDENCE_ROOT/keys/executor.pub" \
   --capture-key-id secured-executor-v1 \
   --out /secure/path/to/evidence-root/review/gia-packet.json
 
@@ -123,10 +137,10 @@ PYTHONPATH=src .venv/bin/python scripts/prepare_frozen_corpus_review.py \
   --packet-format blind-v2 \
   --review-seed <different-64-lowercase-hex-characters> \
   --reviewer-role independent_jewelry_designer \
-  --evidence-root /secure/path/to/evidence-root \
-  --source-dir /secure/path/to/evidence-root/founder-reference-directory \
-  --capture /secure/path/to/evidence-root/frozen-capture.json \
-  --capture-public-key /secure/path/to/evidence-root/keys/executor.pub \
+  --evidence-root "$EVIDENCE_ROOT" \
+  --source-dir "$EVIDENCE_ROOT/founder-reference-directory" \
+  --capture "$CAPTURE_PATH" \
+  --capture-public-key "$EVIDENCE_ROOT/keys/executor.pub" \
   --capture-key-id secured-executor-v1 \
   --out /secure/path/to/evidence-root/review/designer-packet.json
 ```

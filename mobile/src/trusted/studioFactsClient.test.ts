@@ -57,6 +57,8 @@ describe('Studio fact revision client', () => {
       created_by: 'designer', changes: [
         { path: 'stone.dimensions_mm.length', value: 8.2 },
         { path: 'metal.color', value: 'rose' },
+        { path: 'setting.style', value: '4_prong_basket' },
+        { path: 'setting.prong_tip_mm', value: 0.9 },
       ],
     });
     expect(result.error).toBeNull();
@@ -69,6 +71,8 @@ describe('Studio fact revision client', () => {
       created_by: 'designer', changes: [
         { path: 'stone.dimensions_mm.length', value: 8.2 },
         { path: 'metal.color', value: 'rose' },
+        { path: 'setting.style', value: '4_prong_basket' },
+        { path: 'setting.prong_tip_mm', value: 0.9 },
       ],
     });
   });

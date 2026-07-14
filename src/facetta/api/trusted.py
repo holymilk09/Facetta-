@@ -46,7 +46,7 @@ from facetta.studio_jobs import (
     revalidate_factory_job_for_execution,
 )
 from facetta.warning_candidates import (
-    discard_markup_warning_candidate,
+    MarkupWarningCandidate, discard_markup_warning_candidate,
     WarningCandidateUnavailable, get_markup_warning_candidate,
 )
 from facetta.entitlements import require_factory_entitlement
@@ -87,6 +87,27 @@ class ImageAttemptSummary(BaseModel):
     verdict: str
     failed_checks: list[str]
     correction: str | None
+
+
+def _process_local_warning_actor(
+    db: Session,
+    principal: AuthenticatedPrincipal,
+    candidate: MarkupWarningCandidate,
+    requested_actor: str,
+) -> str:
+    """Resolve deprecated process-local reviews to canonical ownership.
+
+    Local-unbound mode cannot authenticate a body-supplied actor. Historical
+    clients nevertheless used a display actor that differed from the asset
+    uploader. Keep those clients readable while ensuring the service receives
+    the project owner as its authorization anchor. Deployed modes have already
+    bound ``requested_actor`` to the authenticated principal and image run.
+    """
+
+    if not principal.local_unbound:
+        return requested_actor
+    project = db.get(Project, candidate.project_root_id)
+    return project.owner if project is not None else requested_actor
 
 
 class ImageRunSummary(BaseModel):
@@ -446,11 +467,14 @@ def accept_warning_candidate(
                 "resolve presentation candidates through the Studio lineage endpoint",
                 status_code=422,
             )
+        actor = _process_local_warning_actor(
+            db, principal, candidate, request.created_by,
+        )
         accept_warning_revision(
             db,
             candidate,
             expected_design_version=request.expected_design_version,
-            created_by=request.created_by,
+            created_by=actor,
         )
     except WarningCandidateUnavailable as exc:
         return JSONResponse(status_code=410, content={
@@ -523,17 +547,28 @@ def discard_warning_candidate(
                 "resolve presentation candidates through the Studio lineage endpoint",
                 status_code=422,
             )
-        if candidate.created_by != request.created_by:
+        # Discard records a terminal decision without promoting candidate
+        # bytes. Historical local clients sometimes created the run under a
+        # display actor different from the root uploader, so bind this
+        # unauthenticated compatibility path to the candidate/run creator.
+        # Deployed modes still bind the supplied actor to the principal and
+        # image-run owner before reaching this route.
+        actor = (
+            candidate.created_by
+            if principal.local_unbound
+            else request.created_by
+        )
+        if candidate.created_by != actor:
             raise WarningCandidateUnavailable(
                 "only the candidate creator may discard it")
         discard_warning_revision(
             db,
             candidate,
             expected_design_version=candidate.expected_design_version,
-            created_by=request.created_by,
+            created_by=actor,
         )
         discard_markup_warning_candidate(
-            run_id, candidate_id, created_by=request.created_by,
+            run_id, candidate_id, created_by=actor,
         )
     except WarningCandidateUnavailable as exc:
         return JSONResponse(status_code=410, content={

@@ -21,6 +21,22 @@ from facetta.source_component_resolution import valid_source_component_spec_path
 
 FactAuthority = Literal["suggested", "estimated", "designer_supplied"]
 
+# Starting Facts is deliberately narrower than Advanced Specifications. Every
+# path here is either independently validatable or compiled through a coupled
+# component rule. Dense identity, geometry, and topology remain visible but
+# read-only until Studio has a grouped control that can express their required
+# dependencies without hidden drift.
+STARTING_FACT_EDITABLE_PATHS = frozenset({
+    "stone.color.trade",
+    "metal.karat",
+    "metal.color",
+    "metal.finish",
+    "band.profile",
+    "band.width_mm",
+    "band.thickness_mm",
+    "ring_size.value",
+})
+
 
 class _StudioConfirmModel(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -30,6 +46,8 @@ class StudioDesignerFact(_StudioConfirmModel):
     key: Annotated[str, Field(min_length=1, max_length=80)]
     label: Annotated[str, Field(min_length=1, max_length=120)]
     value: Annotated[str, Field(min_length=1, max_length=240)]
+    path: Annotated[str, Field(min_length=1, max_length=80)] | None = None
+    raw_value: str | int | float
     authority: FactAuthority
 
 
@@ -75,14 +93,17 @@ def _fact(
     key: str,
     label: str,
     value: object,
-    path: str,
+    path: str | None,
     suffix: str = "",
 ) -> StudioDesignerFact:
+    editable_path = path if path in STARTING_FACT_EDITABLE_PATHS else None
     return StudioDesignerFact(
         key=key,
         label=label,
         value=f"{value}{suffix}",
-        authority=_authority(spec, path),
+        path=editable_path,
+        raw_value=value,
+        authority=_authority(spec, path) if path is not None else "suggested",
     )
 
 
@@ -94,11 +115,11 @@ def _designer_fact_groups(spec: Spec) -> tuple[StudioDesignerFactGroup, ...]:
         facts=(
             _fact(
                 spec, key="jewelry_type", label="Jewelry type",
-                value=spec.jewelry_type, path="jewelry_type",
+                value=spec.jewelry_type, path=None,
             ),
             _fact(
                 spec, key="template", label="Design type",
-                value=spec.template, path="template",
+                value=spec.template, path=None,
             ),
         ),
     ))
@@ -115,7 +136,7 @@ def _designer_fact_groups(spec: Spec) -> tuple[StudioDesignerFactGroup, ...]:
         ),
         _fact(
             spec, key="color", label="Color", value=stone.color.trade,
-            path="stone.color",
+            path="stone.color.trade",
         ),
         _fact(
             spec, key="carat", label="Carat", value=stone.carat,
@@ -196,10 +217,15 @@ def _designer_fact_groups(spec: Spec) -> tuple[StudioDesignerFactGroup, ...]:
             ),
         ))
     if spec.ring_size is not None:
-        fit_facts.append(_fact(
-            spec, key="ring_size", label="Ring size",
-            value=f"{spec.ring_size.system} {spec.ring_size.value}",
-            path="ring_size.value",
+        fit_facts.extend((
+            _fact(
+                spec, key="ring_size_system", label="Sizing system",
+                value=spec.ring_size.system, path="ring_size.system",
+            ),
+            _fact(
+                spec, key="ring_size", label="Ring size",
+                value=spec.ring_size.value, path="ring_size.value",
+            ),
         ))
     if fit_facts:
         groups.append(StudioDesignerFactGroup(
@@ -216,12 +242,23 @@ def _designer_fact_groups(spec: Spec) -> tuple[StudioDesignerFactGroup, ...]:
                     key=f"group_{index + 1}",
                     label=f"Accent group {index + 1}",
                     value=f"{stone.count} x {stone.species}, {stone.cut}",
-                    path=f"side_stones[{index}]",
+                    path=None,
                 )
                 for index, stone in enumerate(spec.side_stones)
             ),
         ))
     return tuple(groups)
+
+
+def studio_editable_fact_paths(spec: Spec) -> frozenset[str]:
+    """Return the exact leaf paths projected as editable for this draft."""
+
+    return frozenset(
+        fact.path
+        for group in _designer_fact_groups(spec)
+        for fact in group.facts
+        if fact.path is not None
+    )
 
 
 def _source_questions(spec: Spec) -> tuple[str, ...]:

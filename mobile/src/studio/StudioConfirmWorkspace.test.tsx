@@ -9,10 +9,17 @@ const review: StudioDesignConfirmationReview = {
   reviewId: 'hidden_review',
   designerAcknowledged: false,
   factGroups: [{ key: 'design', label: 'Design identity', facts: [
-    { key: 'jewelry_type', label: 'Jewelry type', value: 'ring', authority: 'suggested' },
-    { key: 'template', label: 'Design type', value: 'solitaire', authority: 'estimated' },
+    { key: 'jewelry_type', label: 'Jewelry type', value: 'ring', path: null, rawValue: 'ring', authority: 'suggested' },
+    { key: 'template', label: 'Design type', value: 'solitaire', path: null, rawValue: 'solitaire', authority: 'estimated' },
+  ] }, { key: 'center_stone', label: 'Center stone', facts: [
+    { key: 'species', label: 'Stone', value: 'sapphire', path: null, rawValue: 'sapphire', authority: 'estimated' },
+    { key: 'color', label: 'Color', value: 'Royal Blue', path: 'stone.color.trade', rawValue: 'Royal Blue', authority: 'estimated' },
+  ] }, { key: 'setting', label: 'Setting', facts: [
+    { key: 'style', label: 'Setting', value: '4_prong_basket', path: null, rawValue: '4_prong_basket', authority: 'suggested' },
+  ] }, { key: 'metal', label: 'Metal', facts: [
+    { key: 'material', label: 'Metal', value: 'gold', path: null, rawValue: 'gold', authority: 'suggested' },
   ] }, { key: 'ring_fit', label: 'Sizing and proportions', facts: [
-    { key: 'ring_size', label: 'Ring size', value: 'US 6.5', authority: 'designer_supplied' },
+    { key: 'ring_size', label: 'Ring size', value: '6.5', path: 'ring_size.value', rawValue: 6.5, authority: 'designer_supplied' },
   ] }],
   unresolvedQuestions: [],
   sourceReview: { eligible: true, state: 'complete', reason: 'The selected visual has current evidence.' },
@@ -55,7 +62,7 @@ test('loads projected facts and renders all designer authority labels without in
   expect(screen.queryByText(/hidden_review|continuation|project_1|asset_7|provider|QA/i)).toBeNull();
 });
 
-test('cannot audit or save without explicit acknowledgement of image-derived suggestions', async () => {
+test('cannot audit or save without explicit acknowledgement of starting facts', async () => {
   const g = gateway();
   await render(<StudioConfirmWorkspace gateway={g} lineage={lineage} createdBy="designer" onSaved={jest.fn()} />);
   await waitFor(() => expect(screen.getByText('Jewelry type')).toBeTruthy());
@@ -64,9 +71,9 @@ test('cannot audit or save without explicit acknowledgement of image-derived sug
   await fireEvent.press(screen.getByText('Save starting facts'));
   expect(g.auditDesignConfirmation).not.toHaveBeenCalled();
   expect(g.saveDesignConfirmation).not.toHaveBeenCalled();
-  expect(screen.getByText(/image-derived suggestions/i)).toBeTruthy();
+  expect(screen.getAllByText(/unchanged estimates remain estimates/i).length).toBeGreaterThan(0);
   expect(screen.getByText(/appends a new immutable revision/i)).toBeTruthy();
-  expect(screen.getByText(/does not make the ring production-ready/i)).toBeTruthy();
+  expect(screen.getByText(/does not make the design production-ready/i)).toBeTruthy();
   expect(screen.queryByText(/Design v1|Create Design|Review starting design/i)).toBeNull();
 });
 
@@ -78,7 +85,7 @@ test('one save action stops after a failed audit', async () => {
   });
   await render(<StudioConfirmWorkspace gateway={g} lineage={lineage} createdBy="designer" onSaved={jest.fn()} />);
   await waitFor(() => expect(screen.getByText('Jewelry type')).toBeTruthy());
-  await fireEvent.press(screen.getByLabelText('I reviewed the image-derived suggestions'));
+  await fireEvent.press(screen.getByLabelText('I reviewed these starting facts'));
   await fireEvent.press(screen.getByText('Save starting facts'));
   await waitFor(() => expect(screen.getByText(/Answer the remaining/i)).toBeTruthy());
   expect(g.auditDesignConfirmation).toHaveBeenCalledTimes(1);
@@ -89,7 +96,7 @@ test('one acknowledgement-gated action audits, saves, and invokes callback in or
   const g = gateway(); const onSaved = jest.fn();
   await render(<StudioConfirmWorkspace gateway={g} lineage={lineage} createdBy="designer" onSaved={onSaved} />);
   await waitFor(() => expect(screen.getByText('Jewelry type')).toBeTruthy());
-  await fireEvent.press(screen.getByLabelText('I reviewed the image-derived suggestions'));
+  await fireEvent.press(screen.getByLabelText('I reviewed these starting facts'));
   await fireEvent.press(screen.getByText('Save starting facts'));
   await waitFor(() => expect(onSaved).toHaveBeenCalledWith(expect.objectContaining({ confirmationId: 'confirmation_1' })));
   expect(g.auditDesignConfirmation).toHaveBeenCalledTimes(1);
@@ -98,6 +105,46 @@ test('one acknowledgement-gated action audits, saves, and invokes callback in or
     .toBeLessThan(g.saveDesignConfirmation.mock.invocationCallOrder[0]);
   const audited = g.auditDesignConfirmation.mock.calls[0][0];
   expect(audited.factGroups[0].facts[0].authority).toBe('suggested');
+});
+
+test('edits independent facts while keeping coupled material, setting, and dense identity read-only', async () => {
+  const g = gateway();
+  await render(<StudioConfirmWorkspace gateway={g} lineage={lineage} createdBy="designer" onSaved={jest.fn()} />);
+  await waitFor(() => expect(screen.getByText('Jewelry type')).toBeTruthy());
+
+  expect(screen.queryByLabelText('Edit Metal')).toBeNull();
+  expect(screen.queryByLabelText('Edit Stone')).toBeNull();
+  await fireEvent.press(screen.getByLabelText('Edit Color'));
+  await fireEvent.changeText(screen.getByLabelText('Edit Color'), 'Cornflower Blue');
+  expect(screen.queryByLabelText('Edit Setting')).toBeNull();
+  await fireEvent.press(screen.getByLabelText('Edit Ring size'));
+  await fireEvent.changeText(screen.getByLabelText('Edit Ring size'), '7.25');
+  await fireEvent.press(screen.getByLabelText('I reviewed these starting facts'));
+  await fireEvent.press(screen.getByText('Save starting facts'));
+
+  await waitFor(() => expect(g.saveDesignConfirmation).toHaveBeenCalledTimes(1));
+  const audited = g.auditDesignConfirmation.mock.calls[0][0] as StudioDesignConfirmationReview;
+  const facts = audited.factGroups.flatMap((group) => group.facts);
+  expect(facts.find((fact) => fact.key === 'material')).toMatchObject({ path: null, rawValue: 'gold', authority: 'suggested' });
+  expect(facts.find((fact) => fact.path === 'stone.color.trade')).toMatchObject({ rawValue: 'Cornflower Blue', authority: 'designer_supplied' });
+  expect(facts.find((fact) => fact.key === 'species')).toMatchObject({ path: null, rawValue: 'sapphire', authority: 'estimated' });
+  expect(facts.find((fact) => fact.key === 'style')).toMatchObject({ path: null, rawValue: '4_prong_basket', authority: 'suggested' });
+  expect(facts.find((fact) => fact.path === 'ring_size.value')).toMatchObject({ rawValue: 7.25, authority: 'designer_supplied' });
+  expect(facts.find((fact) => fact.key === 'template')).toMatchObject({ rawValue: 'solitaire', authority: 'estimated' });
+});
+
+test('invalid numeric edits stay local and cannot reach audit or persistence', async () => {
+  const g = gateway();
+  await render(<StudioConfirmWorkspace gateway={g} lineage={lineage} createdBy="designer" onSaved={jest.fn()} />);
+  await waitFor(() => expect(screen.getByText('Ring size')).toBeTruthy());
+  await fireEvent.press(screen.getByLabelText('Edit Ring size'));
+  await fireEvent.changeText(screen.getByLabelText('Edit Ring size'), 'not-a-size');
+  await fireEvent.press(screen.getByLabelText('I reviewed these starting facts'));
+  expect(screen.getByText('Enter a valid value.')).toBeTruthy();
+  expect(screen.getByText('Save starting facts').parent?.props.accessibilityState).toEqual({ disabled: true });
+  await fireEvent.press(screen.getByText('Save starting facts'));
+  expect(g.auditDesignConfirmation).not.toHaveBeenCalled();
+  expect(g.saveDesignConfirmation).not.toHaveBeenCalled();
 });
 
 test('a save failure stays on Starting facts and does not navigate', async () => {
@@ -114,7 +161,7 @@ test('a save failure stays on Starting facts and does not navigate', async () =>
   });
   await render(<StudioConfirmWorkspace gateway={g} lineage={lineage} createdBy="designer" onSaved={onSaved} />);
   await waitFor(() => expect(screen.getByText('Jewelry type')).toBeTruthy());
-  await fireEvent.press(screen.getByLabelText('I reviewed the image-derived suggestions'));
+  await fireEvent.press(screen.getByLabelText('I reviewed these starting facts'));
   await fireEvent.press(screen.getByText('Save starting facts'));
   await waitFor(() => expect(screen.getByText(/could not connect/i)).toBeTruthy());
   expect(onSaved).not.toHaveBeenCalled();
@@ -130,10 +177,10 @@ test('switching A to B clears A immediately and ignores a late A load', async ()
   const view = await render(<StudioConfirmWorkspace gateway={g} lineage={{ projectId: 'project_a', sourceAssetId: 'candidate_a' }} createdBy="designer" onSaved={jest.fn()} />);
   await view.rerender(<StudioConfirmWorkspace gateway={g} lineage={{ projectId: 'project_b', sourceAssetId: 'candidate_b' }} createdBy="designer" onSaved={jest.fn()} />);
   expect(screen.queryByText('Jewelry type')).toBeNull();
-  const reviewB = { ...review, reviewId: 'review_b', factGroups: [{ key: 'design' as const, label: 'Design identity', facts: [{ key: 'template', label: 'B design', value: 'B', authority: 'suggested' as const }] }] };
+  const reviewB = { ...review, reviewId: 'review_b', factGroups: [{ key: 'design' as const, label: 'Design identity', facts: [{ key: 'template', label: 'B design', value: 'B', path: null, rawValue: 'B', authority: 'suggested' as const }] }] };
   await act(async () => b.resolve({ data: reviewB, error: null, status: 200 }));
   await waitFor(() => expect(screen.getByText('B design')).toBeTruthy());
-  const reviewA = { ...review, reviewId: 'review_a', factGroups: [{ key: 'design' as const, label: 'Design identity', facts: [{ key: 'template', label: 'A design', value: 'A', authority: 'suggested' as const }] }] };
+  const reviewA = { ...review, reviewId: 'review_a', factGroups: [{ key: 'design' as const, label: 'Design identity', facts: [{ key: 'template', label: 'A design', value: 'A', path: null, rawValue: 'A', authority: 'suggested' as const }] }] };
   await act(async () => a.resolve({ data: reviewA, error: null, status: 200 }));
   expect(screen.queryByText('A design')).toBeNull();
   expect(screen.getByText('B design')).toBeTruthy();
@@ -149,7 +196,7 @@ test('switching lineage invalidates a prior audit and cannot save its late respo
   });
   const view = await render(<StudioConfirmWorkspace gateway={g} lineage={{ projectId: 'project_a', sourceAssetId: 'candidate_a' }} createdBy="designer" onSaved={jest.fn()} />);
   await waitFor(() => expect(screen.getByText('Jewelry type')).toBeTruthy());
-  await fireEvent.press(screen.getByLabelText('I reviewed the image-derived suggestions'));
+  await fireEvent.press(screen.getByLabelText('I reviewed these starting facts'));
   await fireEvent.press(screen.getByText('Save starting facts'));
   await view.rerender(<StudioConfirmWorkspace gateway={g} lineage={{ projectId: 'project_b', sourceAssetId: 'candidate_b' }} createdBy="designer" onSaved={jest.fn()} />);
   await waitFor(() => expect(screen.getByText('Jewelry type')).toBeTruthy());
@@ -166,7 +213,7 @@ test('switching lineage after audit prevents a late save from navigating', async
   });
   const view = await render(<StudioConfirmWorkspace gateway={g} lineage={{ projectId: 'project_a', sourceAssetId: 'candidate_a' }} createdBy="designer" onSaved={onSaved} />);
   await waitFor(() => expect(screen.getByText('Jewelry type')).toBeTruthy());
-  await fireEvent.press(screen.getByLabelText('I reviewed the image-derived suggestions'));
+  await fireEvent.press(screen.getByLabelText('I reviewed these starting facts'));
   await fireEvent.press(screen.getByText('Save starting facts'));
   await waitFor(() => expect(g.saveDesignConfirmation).toHaveBeenCalledTimes(1));
   await view.rerender(<StudioConfirmWorkspace gateway={g} lineage={{ projectId: 'project_b', sourceAssetId: 'candidate_b' }} createdBy="designer" onSaved={onSaved} />);

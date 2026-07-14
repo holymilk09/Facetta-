@@ -206,8 +206,122 @@ def test_ring_size_fact_rederives_consistent_confirmed_inner_diameter(
         ]["status"] == "designer_confirmed"
 
 
+def test_coupled_component_facts_clear_only_their_required_dependents(
+    fact_store,
+):
+    sessions, _spec, _image, _updated_at = fact_store
+    with sessions() as db:
+        result = apply_studio_fact_revision(
+            db,
+            project_root_id="ast_facts_v1",
+            expected_active_asset_id="ast_facts_v1",
+            expected_design_version=1,
+            changes={
+                "metal.material": "platinum",
+                "setting.style": "bezel",
+            },
+            created_by="usr_designer",
+        )
+    assert result.status == "applied"
+    with sessions() as db:
+        stored = db.get(DesignVersion, ("dsn_facts", 2))
+        record = db.scalar(select(ProjectRevisionRecord).where(
+            ProjectRevisionRecord.asset_id == result.asset_id
+        ))
+        assert stored is not None and record is not None
+        assert stored.spec["metal"] == {
+            "material": "platinum",
+            "karat": None,
+            "color": None,
+            "finish": "high_polish",
+        }
+        assert stored.spec["setting"]["style"] == "bezel"
+        assert stored.spec["setting"]["prong_count"] is None
+        assert stored.spec["setting"]["prong_tip_mm"] is None
+        assert record.raw_intent["facts"] == {
+            "metal.material": "platinum",
+            "setting.style": "bezel",
+        }
+        assert set(record.interpretation["derived_fact_adjustments"]) == {
+            "metal.karat",
+            "metal.color",
+            "setting.prong_count",
+            "setting.prong_tip_mm",
+        }
+
+
+def test_coupled_component_facts_restore_with_explicit_dependencies(
+    fact_store,
+):
+    sessions, _spec, _image, _updated_at = fact_store
+    with sessions() as db:
+        simplified = apply_studio_fact_revision(
+            db,
+            project_root_id="ast_facts_v1",
+            expected_active_asset_id="ast_facts_v1",
+            expected_design_version=1,
+            changes={
+                "metal.material": "platinum",
+                "setting.style": "bezel",
+            },
+            created_by="usr_designer",
+        )
+    with sessions() as db:
+        restored = apply_studio_fact_revision(
+            db,
+            project_root_id="ast_facts_v1",
+            expected_active_asset_id=simplified.asset_id,
+            expected_design_version=2,
+            changes={
+                "metal.material": "gold",
+                "metal.karat": 18,
+                "metal.color": "yellow",
+                "setting.style": "4_prong_basket",
+                "setting.prong_tip_mm": 0.9,
+            },
+            created_by="usr_designer",
+        )
+    assert restored.status == "applied"
+    with sessions() as db:
+        stored = db.get(DesignVersion, ("dsn_facts", 3))
+        record = db.scalar(select(ProjectRevisionRecord).where(
+            ProjectRevisionRecord.asset_id == restored.asset_id
+        ))
+        assert stored is not None and record is not None
+        assert stored.spec["metal"] == {
+            "material": "gold",
+            "karat": 18,
+            "color": "yellow",
+            "finish": "high_polish",
+        }
+        assert stored.spec["setting"]["style"] == "4_prong_basket"
+        assert stored.spec["setting"]["prong_count"] == 4
+        assert stored.spec["setting"]["prong_tip_mm"] == 0.9
+        assert record.raw_intent["facts"] == {
+            "metal.material": "gold",
+            "metal.karat": 18,
+            "metal.color": "yellow",
+            "setting.style": "4_prong_basket",
+            "setting.prong_tip_mm": 0.9,
+        }
+        assert set(record.interpretation["derived_fact_adjustments"]) == {
+            "setting.prong_count",
+        }
+
+
 @pytest.mark.parametrize(("changes", "code"), [
     ({"notes_to_factory": "skip review"}, "fact_path_not_allowed"),
+    ({
+        "stone.color": {
+            "trade": "Royal Blue",
+            "gia": "vivid blue",
+            "hue_code": None,
+            "tone": None,
+            "saturation": None,
+        },
+        "stone.color.trade": "Cornflower Blue",
+    }, "fact_path_conflict"),
+    ({"setting.prong_count": 6}, "fact_dependency_conflict"),
     ({"band.width_mm": "wide"}, "fact_value_invalid"),
     ({"band.width_mm": -2.0}, "fact_value_invalid"),
     ({"stone.species": "unobtainium"}, "fact_revision_invalid"),

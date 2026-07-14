@@ -75,6 +75,7 @@ export function Field({
     <View style={styles.chipBlock}>
       <Text style={styles.fieldLabel}>{label}</Text>
       <TextInput
+        accessibilityLabel={label}
         style={[styles.input, multiline && styles.inputMultiline]}
         value={value}
         onChangeText={onChange}

@@ -35,11 +35,11 @@ const exactFactProject = {
     jewelry_type: 'ring',
     metal: { material: 'gold', karat: 18, color: 'yellow', finish: 'polished' },
     stone: {
-      species: 'sapphire', cut: 'oval', carat: 1.2,
+      species: 'sapphire', cut: 'oval_brilliant', carat: 1.2,
       dimensions_mm: { length: 8, width: 6, depth: 3.8 },
       color: { trade: 'royal_blue', gia: 'blue' },
     },
-    setting: { style: 'prong', prong_count: 4 },
+    setting: { style: '4_prong_basket', prong_count: 4, prong_tip_mm: 0.9 },
     band: { profile: 'half_round', width_mm: 2.1, thickness_mm: 1.8 },
     ring_size: { system: 'US', value: 6.5, inner_diameter_mm: 16.9 },
   },
@@ -1213,6 +1213,101 @@ describe('StudioRefineWorkspace', () => {
     await waitFor(() => expect(onApplied).toHaveBeenCalledWith(revisedProject));
     expect(onApplied).toHaveBeenCalledWith(revisedProject);
     expect(await screen.findByText('Save fact revision')).toBeTruthy();
+  });
+
+  test('restores gold and a prong setting only with their explicit grouped dependencies', async () => {
+    const coupledProject = {
+      ...exactFactProject,
+      spec: {
+        ...(exactFactProject.spec as any),
+        metal: { material: 'platinum', karat: null, color: null, finish: 'polished' },
+        setting: { style: 'bezel', prong_count: null, prong_tip_mm: null },
+      },
+    } as ProjectDetail;
+    const reviseStudioFacts = jest.fn(async () => ({
+      data: {
+        status: 'applied' as const, project_root_id: 'project_1', source_asset_id: 'asset_2',
+        asset_id: 'asset_3', design_id: 'design_1', previous_design_version: 2,
+        design_version: 3, spec_change: [], project_detail: coupledProject,
+      },
+      error: null, status: 200,
+    }));
+    await renderWithAuth(
+      <StudioRefineWorkspace
+        api={{
+          getComponentCatalog: jest.fn(),
+          getStudioComponentTargeting: jest.fn(),
+          getProject: jest.fn(async () => ({ data: coupledProject, error: null, status: 200 })),
+          reviseStudioFacts,
+          readMarkup: jest.fn(),
+        }}
+        gateway={{} as any}
+        lineage={{ projectId: 'project_1', sourceAssetId: 'asset_2', sourceDesignVersion: 2 }}
+        createdBy="designer"
+        workspaceMode="specifications"
+        onApplied={jest.fn()}
+      />,
+    );
+
+    await waitFor(() => expect(screen.getByLabelText('Identity fact group')).toBeTruthy());
+    await fireEvent.press(screen.getByText('Gold'));
+    await fireEvent.press(screen.getByText('Yellow'));
+    await fireEvent.changeText(screen.getByLabelText('Gold karat'), '18');
+    await fireEvent.press(screen.getByLabelText('Setting fact group'));
+    await fireEvent.press(await screen.findByText('4 Prong Basket'));
+    await fireEvent.changeText(screen.getByLabelText('Prong-tip gauge (mm)'), '0.9');
+    expect(screen.queryByText('Halo')).toBeNull();
+    expect(screen.queryByText('Pave')).toBeNull();
+    expect(screen.queryByText('Channel')).toBeNull();
+    await fireEvent.press(screen.getByText('Review fact changes'));
+    expect(await screen.findByText('Review only what changed')).toBeTruthy();
+    await fireEvent.press(screen.getByText('Save fact revision'));
+    await waitFor(() => expect(reviseStudioFacts).toHaveBeenCalledWith('project_1', {
+      expected_active_asset_id: 'asset_2',
+      expected_design_version: 2,
+      created_by: 'designer',
+      changes: [
+        { path: 'metal.material', value: 'gold' },
+        { path: 'metal.color', value: 'yellow' },
+        { path: 'metal.karat', value: 18 },
+        { path: 'setting.style', value: '4_prong_basket' },
+        { path: 'setting.prong_tip_mm', value: 0.9 },
+      ],
+    }));
+  });
+
+  test('hides setting constructions that are incompatible with the exact stone cut', async () => {
+    const emeraldProject = {
+      ...exactFactProject,
+      spec: {
+        ...(exactFactProject.spec as any),
+        stone: { ...(exactFactProject.spec as any).stone, cut: 'emerald_cut' },
+        setting: { style: 'bezel', prong_count: null, prong_tip_mm: null },
+      },
+    } as ProjectDetail;
+    await renderWithAuth(
+      <StudioRefineWorkspace
+        api={{
+          getComponentCatalog: jest.fn(),
+          getStudioComponentTargeting: jest.fn(),
+          getProject: jest.fn(async () => ({ data: emeraldProject, error: null, status: 200 })),
+          reviseStudioFacts: jest.fn(),
+          readMarkup: jest.fn(),
+        }}
+        gateway={{} as any}
+        lineage={{ projectId: 'project_1', sourceAssetId: 'asset_2', sourceDesignVersion: 2 }}
+        createdBy="designer"
+        workspaceMode="specifications"
+        onApplied={jest.fn()}
+      />,
+    );
+
+    await waitFor(() => expect(screen.getByLabelText('Setting fact group')).toBeTruthy());
+    await fireEvent.press(screen.getByLabelText('Setting fact group'));
+    expect(await screen.findByText('4 Prong Basket')).toBeTruthy();
+    expect(screen.queryByText('6 Prong Basket')).toBeNull();
+    expect(screen.getByText('Bezel')).toBeTruthy();
+    expect(screen.getByText('Semi Bezel')).toBeTruthy();
   });
 
   test('fails closed when the exact revision has no mapped component regions', async () => {

@@ -601,25 +601,6 @@ def accept_warning_revision(
             "only the candidate creator may accept this presentation",
             status_code=403,
         )
-    existing = db.scalar(
-        select(ImageRunReview).where(ImageRunReview.run_id == candidate.run_id)
-    )
-    if existing is not None and existing.accepted_asset_id is not None:
-        asset = db.get(ImageAsset, existing.accepted_asset_id)
-        root = db.get(ImageAsset, asset.root_id) if asset is not None else None
-        if asset is None or root is None or root.design_id is None:
-            raise WarningRevisionError(
-                "review_history_invalid",
-                "the prior review decision cannot be resolved",
-                status_code=500,
-            )
-        return AcceptedWarningRevision(
-            asset_id=asset.id,
-            design_id=root.design_id,
-            design_version=asset.design_version or expected_design_version,
-            spec_change=(),
-            review_id=existing.id,
-        )
 
     run = db.get(ImageRun, candidate.run_id)
     source = db.get(ImageAsset, candidate.source_asset_id)
@@ -629,16 +610,65 @@ def accept_warning_revision(
         .with_for_update()
     )
     root = db.get(ImageAsset, candidate.project_root_id)
-    if run is None or run.status != "review_required":
+    if source is None or project is None or root is None or root.design_id is None:
+        raise WarningRevisionError(
+            "warning_project_unavailable",
+            "the source project is no longer available",
+            status_code=404,
+        )
+    if run is None:
         raise WarningRevisionError(
             "warning_run_unavailable",
             "the image run is not awaiting designer review",
             status_code=404,
         )
-    if source is None or project is None or root is None or root.design_id is None:
+    if (
+        project.owner != created_by
+        or run.project_root_id != candidate.project_root_id
+        or run.source_asset_id != candidate.source_asset_id
+    ):
+        # The canonical project owner is the authorization anchor. Historical
+        # compatibility runs may retain an asset-uploader actor in
+        # ``run.created_by``; requiring equality there would lock the project
+        # owner out. Bind the opaque candidate to its durable run, source, and
+        # project before idempotent replay or mutation instead.
         raise WarningRevisionError(
-            "warning_project_unavailable",
-            "the source project is no longer available",
+            "warning_candidate_unavailable",
+            "the warning candidate is unavailable",
+            status_code=404,
+        )
+
+    existing = db.scalar(
+        select(ImageRunReview).where(ImageRunReview.run_id == candidate.run_id)
+    )
+    if existing is not None and existing.accepted_asset_id is not None:
+        asset = db.get(ImageAsset, existing.accepted_asset_id)
+        accepted_root = (
+            db.get(ImageAsset, asset.root_id) if asset is not None else None
+        )
+        if (
+            asset is None
+            or accepted_root is None
+            or accepted_root.design_id is None
+            or asset.root_id != project.root_id
+        ):
+            raise WarningRevisionError(
+                "review_history_invalid",
+                "the prior review decision cannot be resolved",
+                status_code=500,
+            )
+        return AcceptedWarningRevision(
+            asset_id=asset.id,
+            design_id=accepted_root.design_id,
+            design_version=asset.design_version or expected_design_version,
+            spec_change=(),
+            review_id=existing.id,
+        )
+
+    if run.status != "review_required":
+        raise WarningRevisionError(
+            "warning_run_unavailable",
+            "the image run is not awaiting designer review",
             status_code=404,
         )
     if source.root_id != candidate.project_root_id:

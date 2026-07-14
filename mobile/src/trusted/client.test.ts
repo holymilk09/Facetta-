@@ -553,6 +553,10 @@ describe('trusted API decoders', () => {
     await api.promoteCreativeCandidate('project one', 'candidate one', {
       created_by: 'usr_designer',
       confirmation_token: 'confirmation-token-1234567890123456',
+      corrections: [
+        { path: 'metal.material', value: 'platinum' },
+        { path: 'ring_size.value', value: 7.25 },
+      ],
     });
 
     expect(fetcher).toHaveBeenCalledTimes(2);
@@ -577,7 +581,51 @@ describe('trusted API decoders', () => {
     expect(JSON.parse(String(fetcher.mock.calls[1]?.[1]?.body))).toEqual({
       created_by: 'usr_designer',
       confirmation_token: 'confirmation-token-1234567890123456',
+      corrections: [
+        { path: 'metal.material', value: 'platinum' },
+        { path: 'ring_size.value', value: 7.25 },
+      ],
     });
+  });
+
+  test('decodes editable starting facts with typed raw values and read-only summaries', async () => {
+    const fetcher = jest.fn(async () => ({
+      ok: true,
+      status: 200,
+      text: async () => JSON.stringify({
+        confirmation_token: 'confirmation-token-1234567890123456',
+        expires_at: '2099-01-01T00:00:00Z',
+        candidate_id: 'candidate_1',
+        candidate_sha256: 'a'.repeat(64),
+        spec_visual_hash: 'b'.repeat(16),
+        fact_groups: [{ key: 'design', label: 'Design', facts: [{
+          key: 'template', label: 'Design type', value: 'solitaire',
+          path: null, raw_value: 'solitaire', authority: 'suggested',
+        }] }, { key: 'ring_fit', label: 'Ring and fit', facts: [{
+          key: 'ring_size', label: 'Ring size', value: '6.5',
+          path: 'ring_size.value', raw_value: 6.5, authority: 'estimated',
+        }] }],
+        unresolved_source_questions: [],
+        audit_eligibility: { eligible: true, state: 'complete', reason: 'Ready.' },
+      }),
+    } as unknown as Response));
+    const api = createTrustedApiClient({ baseUrl: 'https://facetta.test', fetcher });
+
+    const result = await api.confirmCreativeCandidateDesign('project_1', 'candidate_1', {
+      created_by: 'usr_designer',
+    });
+
+    expect(result.error).toBeNull();
+    expect(result.data?.fact_groups).toEqual([
+      { key: 'design', label: 'Design', facts: [{
+        key: 'template', label: 'Design type', value: 'solitaire',
+        path: null, raw_value: 'solitaire', authority: 'suggested',
+      }] },
+      { key: 'ring_fit', label: 'Ring and fit', facts: [{
+        key: 'ring_size', label: 'Ring size', value: '6.5',
+        path: 'ring_size.value', raw_value: 6.5, authority: 'estimated',
+      }] },
+    ]);
   });
 
   test('posts confirmed exact references only to the canonical Studio import route', async () => {

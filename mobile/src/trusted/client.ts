@@ -126,6 +126,7 @@ import type {
   StoneVocabularyEntry,
   StoneVocabularyOptions,
   StudioHistoryRevision,
+  StudioFactPath,
   StudioJobAction,
   StudioJobBilling,
   StudioJobLane,
@@ -273,6 +274,23 @@ const knownComponentCatalogPath = (value: unknown): ComponentCatalogPath | null 
     || value === 'metal.material'
     || value === 'metal.color'
     || value === 'setting.style'
+  ) return value;
+  return null;
+};
+
+const knownStudioFactPath = (value: unknown): StudioFactPath | null => {
+  if (
+    value === 'metal.material' || value === 'metal.color'
+    || value === 'metal.finish' || value === 'metal.karat'
+    || value === 'stone.species' || value === 'stone.cut'
+    || value === 'stone.color.trade' || value === 'stone.color.gia'
+    || value === 'stone.carat' || value === 'stone.dimensions_mm.length'
+    || value === 'stone.dimensions_mm.width' || value === 'stone.dimensions_mm.depth'
+    || value === 'setting.style' || value === 'setting.prong_count'
+    || value === 'setting.prong_tip_mm'
+    || value === 'band.profile' || value === 'band.width_mm'
+    || value === 'band.thickness_mm' || value === 'ring_size.system'
+    || value === 'ring_size.value'
   ) return value;
   return null;
 };
@@ -2448,16 +2466,33 @@ const decodeStudioConfirmDesignResponse: Decoder<StudioConfirmDesignResponse> = 
       const factKey = nullableText(fact.key);
       const factLabel = nullableText(fact.label);
       const factValue = nullableText(fact.value);
+      const path = fact.path === null ? null : knownStudioFactPath(fact.path);
+      const rawValue = typeof fact.raw_value === 'string'
+        ? fact.raw_value
+        : number(fact.raw_value);
       const authority = fact.authority;
       if (factKey === null || factLabel === null || factValue === null
+        || (fact.path !== null && path === null)
+        || rawValue === null || (typeof rawValue === 'string' && rawValue.trim().length === 0)
         || (authority !== 'suggested' && authority !== 'estimated'
           && authority !== 'designer_supplied')) return [];
-      return [{ key: factKey, label: factLabel, value: factValue, authority }];
+      return [{
+        key: factKey, label: factLabel, value: factValue,
+        path, raw_value: rawValue, authority,
+      }];
     });
     if (facts.length !== recordList(group.facts).length) return [];
     return [{ key: key as StudioConfirmDesignResponse['fact_groups'][number]['key'], label, facts: facts as StudioConfirmDesignResponse['fact_groups'][number]['facts'] }];
   });
   if (factGroups.length !== recordList(value.fact_groups).length) return null;
+  const factIdentities = factGroups.flatMap((group) => (
+    group.facts.map((fact) => `${group.key}.${fact.key}`)
+  ));
+  const editablePaths = factGroups.flatMap((group) => (
+    group.facts.flatMap((fact) => fact.path === null ? [] : [fact.path])
+  ));
+  if (new Set(factIdentities).size !== factIdentities.length
+    || new Set(editablePaths).size !== editablePaths.length) return null;
   return {
     confirmation_token: confirmationToken,
     expires_at: expiresAt,
@@ -3273,7 +3308,8 @@ const STUDIO_FACT_PATHS = new Set<string>([
   'metal.material', 'metal.color', 'metal.finish', 'metal.karat',
   'stone.species', 'stone.cut', 'stone.color.trade', 'stone.color.gia', 'stone.carat',
   'stone.dimensions_mm.length', 'stone.dimensions_mm.width', 'stone.dimensions_mm.depth',
-  'setting.style', 'setting.prong_count', 'band.profile', 'band.width_mm',
+  'setting.style', 'setting.prong_count', 'setting.prong_tip_mm',
+  'band.profile', 'band.width_mm',
   'band.thickness_mm', 'ring_size.system', 'ring_size.value',
 ]);
 
@@ -4245,6 +4281,12 @@ export function createTrustedApiClient(options: TrustedApiClientOptions) {
           body: encodeBody({
             created_by: request.created_by,
             confirmation_token: request.confirmation_token,
+            ...(request.corrections !== undefined && request.corrections.length > 0
+              ? { corrections: request.corrections.map((correction) => ({
+                path: correction.path,
+                value: correction.value,
+              })) }
+              : {}),
           }),
         },
       );

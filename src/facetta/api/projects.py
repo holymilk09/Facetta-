@@ -106,7 +106,7 @@ from facetta.image_agent import (
     build_image_plan,
 )
 from facetta.image_identity import spec_visual_hash
-from facetta.json_types import JsonObject
+from facetta.json_types import JsonObject, JsonValue
 from facetta.project_backbone import (
     BriefProjectGeneration,
     BriefProjectGenerator,
@@ -150,6 +150,7 @@ from facetta.studio_history import (
     ensure_project_family,
     fork_project_variation,
 )
+from facetta.studio_fact_changes import StudioFactChangeError
 from facetta.studio_jobs import (
     StudioJobAccountingError,
     settle_create_studio_job_selection,
@@ -464,11 +465,28 @@ class ProjectFromPromptRequest(BaseModel):
         return self
 
 
+class CreativeCandidateFactCorrection(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    path: Annotated[str, Field(min_length=1, max_length=80)]
+    value: JsonValue
+
+
 class CreativeCandidatePromoteRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     created_by: Annotated[str, Field(min_length=1, max_length=32)]
     confirmation_token: Annotated[str, Field(min_length=32, max_length=256)]
+    corrections: Annotated[
+        list[CreativeCandidateFactCorrection], Field(max_length=24)
+    ] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def require_unique_correction_paths(self) -> "CreativeCandidatePromoteRequest":
+        paths = [correction.path for correction in self.corrections]
+        if len(paths) != len(set(paths)):
+            raise ValueError("fact correction paths must be unique")
+        return self
 
 
 class CreativeCandidateSelectRequest(BaseModel):
@@ -2195,7 +2213,10 @@ def draft_project_creative_candidate(
 @router.post(
     "/{project_id}/creative-candidates/{candidate_id}/confirm-design",
     response_model=StudioConfirmDesignResponse,
-    response_model_exclude_none=True,
+    # ``path: null`` is an explicit read-only marker. Omitting it would make
+    # descriptive summaries indistinguishable from a malformed editable fact
+    # at the typed Studio boundary.
+    response_model_exclude_none=False,
 )
 def confirm_project_creative_candidate_design(
     project_id: str,
@@ -2473,7 +2494,17 @@ def promote_project_creative_candidate(
             candidate_asset_id=candidate_id,
             created_by=request.created_by,
             confirmation_token=request.confirmation_token,
+            fact_corrections={
+                correction.path: correction.value
+                for correction in request.corrections
+            },
         )
+    except StudioFactChangeError as exc:
+        return JSONResponse(status_code=422, content={
+            "code": exc.code,
+            "error_category": "validation_failure",
+            "detail": exc.detail,
+        })
     except ValueError as exc:
         return JSONResponse(status_code=409, content={
             "code": "creative_candidate_promotion_conflict",

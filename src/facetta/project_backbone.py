@@ -34,6 +34,13 @@ from facetta.revision_component_map_store import (
     copy_revision_component_map_for_identical_raster,
 )
 from facetta.spec import Spec
+from facetta.studio_fact_changes import (
+    StudioFactChangeError,
+    prepare_studio_fact_changes,
+)
+from facetta.studio_confirm import studio_editable_fact_paths
+from facetta.validation import validate_spec
+from facetta.vocabulary import get_vocabulary
 
 if TYPE_CHECKING:
     from facetta.db import StudioJobRecord
@@ -921,6 +928,7 @@ def promote_creative_candidate(
     candidate_asset_id: str,
     created_by: str,
     confirmation_token: str,
+    fact_corrections: dict[str, object] | None = None,
 ) -> PersistedCreativePromotionResult:
     """Create spec v1 from one explicitly selected creative candidate.
 
@@ -1001,10 +1009,35 @@ def promote_creative_candidate(
         raise ValueError(
             "the selected creative candidate bytes changed before confirmation"
         )
-    spec = Spec.model_validate(draft.spec)
-    current_spec_visual_hash = spec_visual_hash(spec)
-    if current_spec_visual_hash != draft.spec_visual_hash:
+    confirmed_spec = Spec.model_validate(draft.spec)
+    confirmation_spec_visual_hash = spec_visual_hash(confirmed_spec)
+    if confirmation_spec_visual_hash != draft.spec_visual_hash:
         raise ValueError("the confirmed design facts changed before promotion")
+    try:
+        corrections = fact_corrections or {}
+        hidden_paths = sorted(
+            set(corrections) - studio_editable_fact_paths(confirmed_spec)
+        )
+        if hidden_paths:
+            raise StudioFactChangeError(
+                "fact_path_not_reviewable",
+                "these facts were not editable in Starting Facts: "
+                + ", ".join(hidden_paths),
+            )
+        prepared = prepare_studio_fact_changes(
+            confirmed_spec, corrections,
+        )
+        validated = validate_spec(prepared.spec, get_vocabulary())
+        if not validated.ok:
+            raise StudioFactChangeError(
+                "fact_revision_invalid",
+                "the corrected facts do not form a valid jewelry specification",
+            )
+    except StudioFactChangeError:
+        db.rollback()
+        raise
+    spec = validated.spec
+    current_spec_visual_hash = spec_visual_hash(spec)
     design_id = new_id("dsn")
     stored_spec = spec.model_dump(mode="json")
     stored_spec.update({
@@ -1047,7 +1080,10 @@ def promote_creative_candidate(
             "kind": "confirm_design",
             "selected_candidate_asset_id": candidate.id,
             "candidate_sha256": candidate_sha256,
+            "confirmation_spec_visual_hash": confirmation_spec_visual_hash,
             "spec_visual_hash": current_spec_visual_hash,
+            "fact_corrections": dict(prepared.corrected_values),
+            "original_fact_values": dict(prepared.original_values),
         },
         interpretation={
             "operation": "promote_creative_candidate",
@@ -1055,6 +1091,19 @@ def promote_creative_candidate(
             "design_version": 1,
             "source_asset_id": candidate.id,
             "factory_authority": False,
+            "fact_authority": {
+                path: "designer_supplied"
+                for path in prepared.corrected_values
+            },
+            "derived_fact_adjustments": {
+                path: {
+                    "before": prepared.derived_original_values[path],
+                    "after": value,
+                    "authority": "deterministic_component_rule",
+                }
+                for path, value in prepared.derived_values.items()
+            },
+            "untouched_inferred_facts_preserved": True,
         },
         change_summary=(
             "Confirmed design facts for the selected visual and created "

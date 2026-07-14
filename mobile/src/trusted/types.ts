@@ -620,6 +620,7 @@ export type StudioFactPath =
   | 'stone.species' | 'stone.cut' | 'stone.color.trade' | 'stone.color.gia'
   | 'stone.carat' | 'stone.dimensions_mm.length' | 'stone.dimensions_mm.width'
   | 'stone.dimensions_mm.depth' | 'setting.style' | 'setting.prong_count'
+  | 'setting.prong_tip_mm'
   | 'band.profile' | 'band.width_mm' | 'band.thickness_mm'
   | 'ring_size.system' | 'ring_size.value';
 
@@ -760,6 +761,7 @@ export interface PreSpecPresentationDiscardResult {
 export interface PromoteCreativeCandidateRequest {
   created_by: string;
   confirmation_token: string;
+  corrections?: StudioFactChangeRequest[];
 }
 
 export interface ExtractCreativeCandidateDraftRequest {
@@ -774,6 +776,10 @@ export interface StudioConfirmFact {
   key: string;
   label: string;
   value: string;
+  /** Null for descriptive summaries that cannot alter the canonical specification. */
+  path: StudioFactPath | null;
+  /** Exact typed value used when the designer corrects an editable fact. */
+  raw_value: string | number;
   authority: StudioConfirmFactAuthority;
 }
 

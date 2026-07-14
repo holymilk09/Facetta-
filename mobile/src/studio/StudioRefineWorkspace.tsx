@@ -111,6 +111,7 @@ interface FactDefinition {
   group: FactGroupId;
   unit?: string;
   choices?: readonly string[];
+  allowWhenUnset?: boolean;
 }
 
 const FACT_GROUPS: readonly { id: FactGroupId; label: string; help: string }[] = [
@@ -123,9 +124,9 @@ const FACT_GROUPS: readonly { id: FactGroupId; label: string; help: string }[] =
 
 const FACTS: readonly FactDefinition[] = [
   { path: 'metal.material', label: 'Metal material', kind: 'choice', group: 'identity', choices: ['gold', 'platinum', 'silver'] },
-  { path: 'metal.color', label: 'Metal color', kind: 'choice', group: 'identity', choices: ['yellow', 'rose', 'white'] },
+  { path: 'metal.color', label: 'Metal color', kind: 'choice', group: 'identity', choices: ['yellow', 'rose', 'white'], allowWhenUnset: true },
   { path: 'metal.finish', label: 'Metal finish', kind: 'choice', group: 'identity', choices: ['polished', 'satin', 'brushed', 'matte'] },
-  { path: 'metal.karat', label: 'Gold karat', kind: 'integer', group: 'identity' },
+  { path: 'metal.karat', label: 'Gold karat', kind: 'integer', group: 'identity', allowWhenUnset: true },
   { path: 'stone.species', label: 'Stone species', kind: 'text', group: 'stone' },
   { path: 'stone.cut', label: 'Stone cut', kind: 'text', group: 'stone' },
   { path: 'stone.color.trade', label: 'Stone trade color', kind: 'text', group: 'stone' },
@@ -134,14 +135,25 @@ const FACTS: readonly FactDefinition[] = [
   { path: 'stone.dimensions_mm.length', label: 'Stone length', kind: 'number', group: 'dimensions', unit: 'mm' },
   { path: 'stone.dimensions_mm.width', label: 'Stone width', kind: 'number', group: 'dimensions', unit: 'mm' },
   { path: 'stone.dimensions_mm.depth', label: 'Stone depth', kind: 'number', group: 'dimensions', unit: 'mm' },
-  { path: 'setting.style', label: 'Setting style', kind: 'choice', group: 'setting', choices: ['prong', 'bezel', 'halo', 'pave', 'channel'] },
+  { path: 'setting.style', label: 'Setting style', kind: 'choice', group: 'setting', choices: ['4_prong_basket', '6_prong_basket', 'bezel', 'semi_bezel'] },
   { path: 'setting.prong_count', label: 'Prong count', kind: 'integer', group: 'setting' },
+  { path: 'setting.prong_tip_mm', label: 'Prong-tip gauge', kind: 'number', group: 'setting', unit: 'mm', allowWhenUnset: true },
   { path: 'band.profile', label: 'Band profile', kind: 'choice', group: 'construction', choices: ['half_round', 'flat', 'knife_edge', 'comfort_fit'] },
   { path: 'band.width_mm', label: 'Band width', kind: 'number', group: 'dimensions', unit: 'mm' },
   { path: 'band.thickness_mm', label: 'Band thickness', kind: 'number', group: 'dimensions', unit: 'mm' },
   { path: 'ring_size.system', label: 'Ring size system', kind: 'choice', group: 'identity', choices: ['US', 'UK', 'EU', 'JP', 'HK'] },
   { path: 'ring_size.value', label: 'Ring size', kind: 'text', group: 'identity' },
 ] as const;
+
+const settingChoicesForCut = (cut: string): readonly string[] => {
+  if (cut === 'round_brilliant' || cut === 'oval_brilliant') {
+    return ['4_prong_basket', '6_prong_basket', 'bezel', 'semi_bezel'];
+  }
+  if (cut === 'emerald_cut' || cut === 'cushion') {
+    return ['4_prong_basket', 'bezel', 'semi_bezel'];
+  }
+  return [];
+};
 
 interface FactChangeReview {
   definition: FactDefinition;
@@ -466,7 +478,7 @@ export function StudioRefineWorkspace({
     const spec = factProject?.spec;
     if (spec === null || spec === undefined) return [];
     return FACTS.filter((definition) => factValue(spec, definition.path) !== undefined
-      && factValue(spec, definition.path) !== null);
+      && (factValue(spec, definition.path) !== null || definition.allowWhenUnset));
   }, [factProject]);
 
   const groupedEditableFacts = useMemo(() => Object.fromEntries(
@@ -483,7 +495,21 @@ export function StudioRefineWorkspace({
     for (const definition of editableFacts) {
       const original = factValue(factProject.spec, definition.path);
       const raw = factDraft[definition.path]?.trim() ?? '';
-      if (raw.length === 0) return { changes: [], error: `${definition.label} cannot be empty.` };
+      if (raw.length === 0) {
+        const selectedMaterial = factDraft['metal.material']
+          ?? factText(factValue(factProject.spec, 'metal.material') ?? '');
+        const selectedSetting = factDraft['setting.style']
+          ?? factText(factValue(factProject.spec, 'setting.style') ?? '');
+        const requiredDependency = (
+          (definition.path === 'metal.karat' || definition.path === 'metal.color')
+            && selectedMaterial === 'gold'
+        ) || (
+          definition.path === 'setting.prong_tip_mm'
+            && ['4_prong_basket', '6_prong_basket'].includes(selectedSetting)
+        );
+        if (definition.allowWhenUnset && !requiredDependency) continue;
+        return { changes: [], error: `${definition.label} cannot be empty.` };
+      }
       let value: JsonValue = raw;
       if (definition.kind === 'number' || definition.kind === 'integer') {
         const parsed = Number(raw);
@@ -1149,9 +1175,14 @@ export function StudioRefineWorkspace({
             {groupedEditableFacts[activeFactGroup].map((definition) => {
               const value = factDraft[definition.path] ?? '';
               if (definition.kind === 'choice') {
-                const options = definition.choices?.includes(value)
-                  ? definition.choices
-                  : [value, ...(definition.choices ?? [])].filter(Boolean);
+                const controlledChoices = definition.path === 'setting.style'
+                  ? settingChoicesForCut(factDraft['stone.cut'] ?? factText(
+                    factValue(factProject?.spec as JsonObject, 'stone.cut') ?? '',
+                  ))
+                  : definition.choices;
+                const options = controlledChoices?.includes(value)
+                  ? controlledChoices
+                  : [value, ...(controlledChoices ?? [])].filter(Boolean);
                 return (
                   <ChipRow
                     key={definition.path}

@@ -135,6 +135,38 @@ def test_staging_runbook_declares_every_v6_seed_and_run_binding() -> None:
     assert "facetta-staging-isolation.v6" in text or "The v6 probe" in text
 
 
+def _assert_capture_replay_handoff(text: str) -> None:
+    bash = "\n".join(_bash_blocks(text))
+
+    capture_output = '--output-dir "$EVIDENCE_ROOT/signed-capture"'
+    capture_binding = 'CAPTURE_PATH="$EVIDENCE_ROOT/signed-capture/capture.json"'
+    replay_binding = (
+        'REPLAY_PATH="$EVIDENCE_ROOT/'
+        'signed-facetta-frozen-replay.v1.json"'
+    )
+    replay_builder = '--packet-format replay-v1'
+
+    assert capture_output in bash
+    assert capture_binding in bash
+    assert replay_binding in bash
+    assert 'test -f "$CAPTURE_PATH"' in bash
+    assert '--capture "$CAPTURE_PATH"' in bash
+    assert '--out "$REPLAY_PATH"' in bash
+    assert "/frozen-capture.json" not in bash
+    assert (
+        bash.index(capture_output)
+        < bash.index(capture_binding)
+        < bash.index(replay_builder)
+        < bash.index("scripts/run_frozen_corpus_gate.py")
+    )
+
+
+def test_canonical_runbook_materializes_the_exact_capture_replay_handoff() -> None:
+    _assert_capture_replay_handoff(
+        CANONICAL_RUNBOOK.read_text(encoding="utf-8"),
+    )
+
+
 def test_frozen_corpus_readme_retains_run_identity_and_noclobber_guards() -> None:
     text = CORPUS_README.read_text(encoding="utf-8")
     bash = "\n".join(_bash_blocks(text))
@@ -153,3 +185,4 @@ def test_frozen_corpus_readme_retains_run_identity_and_noclobber_guards() -> Non
     assert '> "$CORPUS_DIR/exit-code.txt"' in bash
     assert '> "$CORPUS_DIR/final-exit-code.txt"' in bash
     _assert_redirects_are_noclobber_protected(text)
+    _assert_capture_replay_handoff(text)

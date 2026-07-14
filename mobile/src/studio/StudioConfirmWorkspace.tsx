@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { Button, Notice } from '../components';
 import { radius, theme } from '../theme';
 import { designerErrorMessage } from './designerErrorMessage';
@@ -27,6 +27,14 @@ export function StudioConfirmWorkspace({ gateway, lineage, createdBy, onSaved }:
   const [audit, setAudit] = useState<StudioDesignConfirmationAudit | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [editingFacts, setEditingFacts] = useState<Record<string, boolean>>({});
+  const [factDrafts, setFactDrafts] = useState<Record<string, string>>({});
+  const [factErrors, setFactErrors] = useState<Record<string, string>>({});
+  const originalFactsRef = useRef(new Map<string, {
+    rawValue: string | number;
+    value: string;
+    authority: StudioDesignFactAuthority;
+  }>());
   const lineageKey = lineage === null ? null : `${lineage.projectId}:${lineage.sourceAssetId}`;
   const currentLineageKeyRef = useRef<string | null>(lineageKey);
   currentLineageKeyRef.current = lineageKey;
@@ -39,6 +47,10 @@ export function StudioConfirmWorkspace({ gateway, lineage, createdBy, onSaved }:
     setLoadedFor(null);
     setAudit(null);
     setError(null);
+    setEditingFacts({});
+    setFactDrafts({});
+    setFactErrors({});
+    originalFactsRef.current = new Map();
     if (lineage === null) {
       setBusy(false);
       return;
@@ -50,6 +62,12 @@ export function StudioConfirmWorkspace({ gateway, lineage, createdBy, onSaved }:
       setBusy(false);
       if (result.error !== null) setError(designerErrorMessage(result.error, 'confirm'));
       else {
+        originalFactsRef.current = new Map(result.data.factGroups.flatMap((group) => (
+          group.facts.filter((fact) => fact.path !== null).map((fact) => [
+            fact.path as string,
+            { rawValue: fact.rawValue, value: fact.value, authority: fact.authority },
+          ] as const)
+        )));
         setReview(result.data);
         setLoadedFor(`${lineage.projectId}:${lineage.sourceAssetId}`);
       }
@@ -63,7 +81,8 @@ export function StudioConfirmWorkspace({ gateway, lineage, createdBy, onSaved }:
   </View>;
 
   const saveStartingFacts = async () => {
-    if (currentReview === null || !currentReview.designerAcknowledged || busy) return;
+    if (currentReview === null || !currentReview.designerAcknowledged || busy
+      || Object.keys(factErrors).length > 0) return;
     const requestLineageKey = lineageKey;
     setBusy(true); setError(null);
     setAudit(null);
@@ -86,20 +105,92 @@ export function StudioConfirmWorkspace({ gateway, lineage, createdBy, onSaved }:
     else onSaved(saved.data);
   };
 
+  const editFact = (
+    path: string,
+    fact: StudioDesignConfirmationReview['factGroups'][number]['facts'][number],
+  ) => {
+    setEditingFacts((current) => ({ ...current, [path]: true }));
+    setFactDrafts((current) => ({
+      ...current,
+      [path]: current[path] ?? String(fact.rawValue),
+    }));
+  };
+
+  const changeFact = (path: string, text: string) => {
+    setFactDrafts((current) => ({ ...current, [path]: text }));
+    const original = originalFactsRef.current.get(path);
+    if (original === undefined) return;
+    const trimmed = text.trim();
+    const parsed = typeof original.rawValue === 'number' ? Number(trimmed) : trimmed;
+    const invalid = trimmed.length === 0
+      || (typeof original.rawValue === 'number'
+        && (!Number.isFinite(parsed) || typeof parsed !== 'number'));
+    if (invalid) {
+      setFactErrors((current) => ({ ...current, [path]: 'Enter a valid value.' }));
+      setAudit(null);
+      return;
+    }
+    setFactErrors((current) => {
+      const next = { ...current };
+      delete next[path];
+      return next;
+    });
+    setAudit(null);
+    setReview((current) => current === null ? null : {
+      ...current,
+      factGroups: current.factGroups.map((group) => ({
+        ...group,
+        facts: group.facts.map((fact) => {
+          if (fact.path !== path) return fact;
+          const unchanged = parsed === original.rawValue;
+          const rawText = String(original.rawValue);
+          const suffix = original.value.startsWith(rawText)
+            ? original.value.slice(rawText.length)
+            : '';
+          return {
+            ...fact,
+            value: unchanged ? original.value : `${parsed}${suffix}`,
+            rawValue: parsed,
+            authority: unchanged ? original.authority : 'designer_supplied',
+          };
+        }),
+      })),
+    });
+  };
+
   return <ScrollView style={styles.root} contentContainerStyle={styles.content}>
     <Text style={styles.eyebrow}>STARTING FACTS</Text>
-    <Text style={styles.title}>Check what Facetta understood.</Text>
-    <Text style={styles.body}>Facetta estimated these starting facts from the selected ring image. They may be wrong. Saving them appends a new immutable revision and leaves the earlier revision unchanged. This does not make the ring production-ready.</Text>
+    <Text style={styles.title}>Review and save starting facts.</Text>
+    <Text style={styles.body}>Facetta estimated these facts from the selected jewelry image. Correct anything you know now; unchanged estimates remain estimates. Saving appends a new immutable revision and leaves the earlier revision unchanged. This does not make the design production-ready.</Text>
     <View style={styles.sourceCard}><Text style={styles.sourceLabel}>Starting visual</Text><Text style={styles.sourceValue}>Exact selected visual</Text></View>
     {busy && currentReview === null ? <Text style={styles.body}>Loading design details…</Text> : null}
     {currentReview?.factGroups.map((group, index) => <View key={group.key} style={styles.group}>
       <Text style={styles.groupStep}>{index + 1} · {group.label.toUpperCase()}</Text>
       {group.facts.map((fact) => <View key={fact.key} style={styles.fact}>
         <Text style={styles.fieldLabel}>{fact.label}</Text>
-        <View style={styles.factValueRow}>
+        {fact.path !== null && editingFacts[fact.path] ? <>
+          <TextInput
+            accessibilityLabel={`Edit ${fact.label}`}
+            autoCapitalize="none"
+            editable={!busy}
+            keyboardType={typeof originalFactsRef.current.get(fact.path)?.rawValue === 'number'
+              ? 'decimal-pad' : 'default'}
+            onChangeText={(text) => changeFact(fact.path as string, text)}
+            style={[styles.factInput, factErrors[fact.path] && styles.factInputError]}
+            value={factDrafts[fact.path] ?? String(fact.rawValue)}
+          />
+          {factErrors[fact.path] ? <Text style={styles.fieldError}>{factErrors[fact.path]}</Text> : null}
+        </> : <View style={styles.factValueRow}>
           <Text accessibilityLabel={fact.label} style={styles.factValue}>{fact.value}</Text>
-          <Text style={styles.authorityBadge}>{authorityLabels[fact.authority]}</Text>
-        </View>
+          {fact.path !== null ? <Pressable
+            accessibilityLabel={`Edit ${fact.label}`}
+            disabled={busy}
+            onPress={() => editFact(fact.path as string, fact)}
+            style={styles.editButton}>
+            <Text style={styles.editButtonText}>Edit</Text>
+          </Pressable> : null}
+        </View>}
+        <Text style={styles.authorityBadge}>{authorityLabels[fact.authority]}</Text>
       </View>)}
     </View>)}
     {currentReview && <View style={styles.group}>
@@ -110,7 +201,7 @@ export function StudioConfirmWorkspace({ gateway, lineage, createdBy, onSaved }:
     </View>}
     {currentReview && <Pressable
       accessibilityRole="checkbox"
-      accessibilityLabel="I reviewed the image-derived suggestions"
+      accessibilityLabel="I reviewed these starting facts"
       accessibilityState={{ checked: currentReview.designerAcknowledged, disabled: busy }}
       disabled={busy}
       onPress={() => {
@@ -120,12 +211,12 @@ export function StudioConfirmWorkspace({ gateway, lineage, createdBy, onSaved }:
       }}
       style={[styles.acknowledgement, currentReview.designerAcknowledged && styles.acknowledgementSelected]}>
       <Text style={styles.ackMark}>{currentReview.designerAcknowledged ? '✓' : '○'}</Text>
-      <Text style={styles.ackText}>I reviewed these image-derived suggestions and accept them as the starting facts for this design.</Text>
+      <Text style={styles.ackText}>I reviewed these starting facts. Unchanged estimates remain estimates.</Text>
     </Pressable>}
     {currentAudit?.status === 'fail' && <Notice kind="error" text={currentAudit.issues.join(' ')} />}
     {error && <Notice kind="error" text={error} />}
     <View style={styles.actions}>
-      <Button title={busy ? 'Saving starting facts…' : 'Save starting facts'} disabled={busy || currentReview === null || !currentReview.designerAcknowledged} onPress={() => void saveStartingFacts()} />
+      <Button title={busy ? 'Saving starting facts…' : 'Save starting facts'} disabled={busy || currentReview === null || !currentReview.designerAcknowledged || Object.keys(factErrors).length > 0} onPress={() => void saveStartingFacts()} />
     </View>
   </ScrollView>;
 }
@@ -140,7 +231,11 @@ const styles = StyleSheet.create({
   groupStep: { color: '#6f52d9', fontSize: 10, fontWeight: '800', letterSpacing: 1.2 }, fact: { borderTopWidth: 1, borderTopColor: theme.line, paddingTop: 10, gap: 7 },
   fieldLabel: { color: theme.ink, fontSize: 12, fontWeight: '700' },
   factValueRow: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: 8 },
-  factValue: { color: theme.ink, fontSize: 14 }, authorityBadge: { color: '#6f52d9', backgroundColor: '#f0ebff', borderRadius: radius.pill, paddingHorizontal: 9, paddingVertical: 5, fontSize: 10, fontWeight: '800' },
+  factValue: { color: theme.ink, fontSize: 14 }, authorityBadge: { alignSelf: 'flex-start', color: '#6f52d9', backgroundColor: '#f0ebff', borderRadius: radius.pill, paddingHorizontal: 9, paddingVertical: 5, fontSize: 10, fontWeight: '800' },
+  factInput: { borderWidth: 1, borderColor: theme.line, borderRadius: radius.sm, backgroundColor: theme.paper, color: theme.ink, paddingHorizontal: 12, paddingVertical: 10, fontSize: 14 },
+  factInputError: { borderColor: '#b42318' }, fieldError: { color: '#b42318', fontSize: 11 },
+  editButton: { borderWidth: 1, borderColor: theme.line, borderRadius: radius.pill, paddingHorizontal: 11, paddingVertical: 6 },
+  editButtonText: { color: '#6f52d9', fontSize: 11, fontWeight: '800' },
   question: { color: theme.ink, fontSize: 13, lineHeight: 19 }, reviewReason: { color: theme.faint, fontSize: 12 },
   acknowledgement: { flexDirection: 'row', alignItems: 'flex-start', gap: 10, borderWidth: 1, borderColor: theme.line, borderRadius: radius.md, padding: 14, backgroundColor: theme.card },
   acknowledgementSelected: { borderColor: '#6f52d9', borderWidth: 2 }, ackMark: { color: '#6f52d9', fontSize: 18, fontWeight: '800' }, ackText: { flex: 1, color: theme.ink, fontSize: 13, lineHeight: 19 },

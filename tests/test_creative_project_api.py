@@ -2506,8 +2506,21 @@ def test_confirm_design_projects_typed_designer_facts_and_exact_hashes(
         for fact in group["facts"]
     }
     assert facts["length"]["authority"] == "estimated"
+    assert facts["length"]["path"] is None
+    assert facts["length"]["raw_value"] == 8.6
     assert facts["band_width"]["authority"] == "designer_supplied"
+    assert facts["band_width"]["path"] == "band.width_mm"
+    assert facts["band_width"]["raw_value"] == 1.8
     assert facts["species"]["authority"] == "suggested"
+    assert facts["species"]["path"] is None
+    assert facts["species"]["raw_value"] == "sapphire"
+    assert any(
+        fact["path"] == "stone.color.trade"
+        for group in body["fact_groups"]
+        for fact in group["facts"]
+    )
+    assert facts["jewelry_type"]["path"] is None
+    assert facts["template"]["path"] is None
     assert body["audit_eligibility"] == {
         "eligible": True,
         "state": "complete",
@@ -2589,6 +2602,194 @@ def test_confirm_design_exposes_source_questions_without_internal_control_copy(
         assert db.scalar(select(func.count()).select_from(Design)) == 1
         assert db.scalar(select(func.count()).select_from(DesignVersion)) == 1
     assert "qa" not in projection_text
+
+
+def test_starting_fact_corrections_promote_atomically_with_exact_provenance(
+    creative_client,
+    monkeypatch,
+):
+    client, Session = creative_client
+    app.dependency_overrides[get_creative_render_generator] = (
+        lambda: (lambda _source, _instruction, selected: _creative_result(selected))
+    )
+    created = client.post(
+        "/projects/from-drawing", json=_request(variation_count=1)
+    ).json()
+    project_id = created["id"]
+    candidate_id = created["creative_candidates"][0]["asset_id"]
+    selected = client.post(
+        f"/projects/{project_id}/creative-candidates/{candidate_id}/select",
+        json={"created_by": "usr_designer"},
+    )
+    assert selected.status_code == 200, selected.text
+
+    raw = audited_import_spec(EXAMPLE_SPEC)
+    raw["dimension_provenance"] = {
+        "stone.dimensions_mm.length": {
+            "status": "estimated_from_reference",
+            "method": "reference_vision",
+            "source": "selected visual",
+            "confidence": 0.8,
+        },
+        "band.width_mm": {
+            "status": "estimated_from_reference",
+            "method": "reference_vision",
+            "source": "selected visual",
+            "confidence": 0.7,
+        },
+    }
+    monkeypatch.setattr(
+        "facetta.api.projects.from_photo",
+        lambda _request: Spec.model_validate(raw),
+    )
+    confirmation = client.post(
+        f"/projects/{project_id}/creative-candidates/{candidate_id}/confirm-design",
+        json={"created_by": "usr_designer"},
+    )
+    assert confirmation.status_code == 200, confirmation.text
+    token = confirmation.json()["confirmation_token"]
+
+    promoted = client.post(
+        f"/projects/{project_id}/creative-candidates/{candidate_id}/promote",
+        json={
+            "created_by": "usr_designer",
+            "confirmation_token": token,
+            "corrections": [
+                {"path": "stone.color.trade", "value": "Cornflower Blue"},
+                {"path": "metal.finish", "value": "brushed"},
+                {"path": "band.width_mm", "value": 2.0},
+                {"path": "ring_size.value", "value": 7.0},
+            ],
+        },
+    )
+    assert promoted.status_code == 200, promoted.text
+
+    with Session() as db:
+        project = db.get(Project, project_id)
+        root = db.get(ImageAsset, project_id)
+        assert project is not None and root is not None and root.design_id is not None
+        stored = db.get(DesignVersion, (root.design_id, 1))
+        assert stored is not None
+        assert stored.spec["metal"]["material"] == "gold"
+        assert stored.spec["metal"]["karat"] == 18
+        assert stored.spec["metal"]["color"] == "yellow"
+        assert stored.spec["metal"]["finish"] == "brushed"
+        assert stored.spec["stone"]["color"]["trade"] == "Cornflower Blue"
+        assert stored.spec["setting"]["style"] == "4_prong_basket"
+        assert stored.spec["setting"]["prong_count"] == 4
+        assert stored.spec["setting"]["prong_tip_mm"] == 0.9
+        assert stored.spec["band"]["width_mm"] == 2.0
+        assert stored.spec["ring_size"]["value"] == 7.0
+        assert stored.spec["ring_size"]["inner_diameter_mm"] != 16.9
+        assert stored.spec["dimension_provenance"][
+            "ring_size.value"
+        ]["status"] == "designer_confirmed"
+        assert stored.spec["dimension_provenance"][
+            "stone.dimensions_mm.length"
+        ]["status"] == "estimated_from_reference"
+        assert stored.spec["dimension_provenance"][
+            "band.width_mm"
+        ]["status"] == "designer_confirmed"
+        record = db.scalar(select(ProjectRevisionRecord))
+        assert record is not None
+        assert record.raw_intent["fact_corrections"] == {
+            "stone.color.trade": "Cornflower Blue",
+            "metal.finish": "brushed",
+            "band.width_mm": 2.0,
+            "ring_size.value": 7.0,
+        }
+        assert record.raw_intent["original_fact_values"] == {
+            "stone.color.trade": "Royal Blue",
+            "metal.finish": "high_polish",
+            "band.width_mm": 1.8,
+            "ring_size.value": 6.5,
+        }
+        assert set(record.interpretation["fact_authority"]) == {
+            "stone.color.trade",
+            "metal.finish",
+            "band.width_mm",
+            "ring_size.value",
+        }
+        assert set(record.interpretation["fact_authority"].values()) == {
+            "designer_supplied"
+        }
+        assert record.interpretation["derived_fact_adjustments"] == {}
+        assert record.interpretation["untouched_inferred_facts_preserved"] is True
+
+
+@pytest.mark.parametrize(("path", "value", "code"), [
+    ("notes_to_factory", "skip review", "fact_path_not_reviewable"),
+    ("stone.species", "sapphire", "fact_path_not_reviewable"),
+    ("stone.color", {"trade": "Royal Blue"}, "fact_path_not_reviewable"),
+    ("metal.material", "platinum", "fact_path_not_reviewable"),
+    ("setting.style", "bezel", "fact_path_not_reviewable"),
+    ("band.width_mm", "wide", "fact_value_invalid"),
+    ("stone.color.trade", "unobtainium", "fact_revision_invalid"),
+])
+def test_invalid_starting_fact_correction_rolls_back_every_canonical_write(
+    creative_client,
+    monkeypatch,
+    path,
+    value,
+    code,
+):
+    client, Session = creative_client
+    app.dependency_overrides[get_creative_render_generator] = (
+        lambda: (lambda _source, _instruction, selected: _creative_result(selected))
+    )
+    created = client.post(
+        "/projects/from-drawing", json=_request(variation_count=1)
+    ).json()
+    project_id = created["id"]
+    candidate_id = created["creative_candidates"][0]["asset_id"]
+    assert client.post(
+        f"/projects/{project_id}/creative-candidates/{candidate_id}/select",
+        json={"created_by": "usr_designer"},
+    ).status_code == 200
+    monkeypatch.setattr(
+        "facetta.api.projects.from_photo",
+        lambda _request: Spec.model_validate(audited_import_spec(EXAMPLE_SPEC)),
+    )
+    confirmation = client.post(
+        f"/projects/{project_id}/creative-candidates/{candidate_id}/confirm-design",
+        json={"created_by": "usr_designer"},
+    )
+    assert confirmation.status_code == 200, confirmation.text
+    token = confirmation.json()["confirmation_token"]
+    token_hash = hashlib.sha256(token.encode("utf-8")).hexdigest()
+    with Session() as db:
+        project = db.get(Project, project_id)
+        assert project is not None
+        selected_before = project.selected_candidate_asset_id
+        asset_count = db.scalar(select(func.count()).select_from(ImageAsset))
+
+    response = client.post(
+        f"/projects/{project_id}/creative-candidates/{candidate_id}/promote",
+        json={
+            "created_by": "usr_designer",
+            "confirmation_token": token,
+            "corrections": [{"path": path, "value": value}],
+        },
+    )
+    assert response.status_code == 422, response.text
+    assert response.json()["code"] == code
+
+    with Session() as db:
+        project = db.get(Project, project_id)
+        root = db.get(ImageAsset, project_id)
+        draft = db.scalar(select(StudioConfirmationDraft).where(
+            StudioConfirmationDraft.token_sha256 == token_hash
+        ))
+        assert project is not None and root is not None and draft is not None
+        assert root.design_id is None
+        assert project.selected_candidate_asset_id == selected_before
+        assert draft.consumed_at is None
+        assert db.scalar(select(func.count()).select_from(Design)) == 0
+        assert db.scalar(select(func.count()).select_from(DesignVersion)) == 0
+        assert db.scalar(select(func.count()).select_from(
+            ProjectRevisionRecord
+        )) == 0
+        assert db.scalar(select(func.count()).select_from(ImageAsset)) == asset_count
 
 
 def test_designer_confirms_profile_against_exact_server_candidate_bytes(

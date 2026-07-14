@@ -678,7 +678,10 @@ test('Confirm keeps the opaque token private and separates duplicate project rev
         candidate_id: 'candidate_1', candidate_sha256: 'a'.repeat(64),
         spec_visual_hash: 'b'.repeat(16),
         fact_groups: [{ key: 'ring_fit', label: 'Sizing and proportions', facts: [
-          { key: 'ring_size', label: 'Ring size', value: 'US 6.5', authority: 'estimated' },
+          {
+            key: 'ring_size', label: 'Ring size', value: '6.5',
+            path: 'ring_size.value', raw_value: 6.5, authority: 'estimated',
+          },
         ] }],
         unresolved_source_questions: [],
         audit_eligibility: { eligible: true, state: 'complete', reason: 'Ready.' },
@@ -710,6 +713,72 @@ test('Confirm keeps the opaque token private and separates duplicate project rev
   assert.equal(saved.error, null);
   assert.equal(promoteRequest.confirmation_token, 'confirmation-token-1234567890123456');
   assert.equal(Object.keys(promoteRequest).sort().join(','), 'confirmation_token,created_by');
+});
+
+test('Starting facts send only typed changed paths while retaining the opaque confirmation token', async () => {
+  let promoteRequest: any = null;
+  const gateway = createStudioGateway(fakeClient({
+    confirmCreativeCandidateDesign: async () => ({
+      data: {
+        confirmation_token: 'confirmation-token-1234567890123456',
+        expires_at: '2099-01-01T00:00:00Z',
+        candidate_id: 'candidate_1', candidate_sha256: 'a'.repeat(64),
+        spec_visual_hash: 'b'.repeat(16),
+        fact_groups: [
+          { key: 'design', label: 'Design', facts: [{
+            key: 'template', label: 'Design type', value: 'solitaire',
+            path: null, raw_value: 'solitaire', authority: 'estimated',
+          }] },
+          { key: 'metal', label: 'Metal', facts: [{
+            key: 'material', label: 'Metal', value: 'gold',
+            path: 'metal.material', raw_value: 'gold', authority: 'suggested',
+          }] },
+          { key: 'ring_fit', label: 'Ring and fit', facts: [{
+            key: 'ring_size', label: 'Ring size', value: '6.5',
+            path: 'ring_size.value', raw_value: 6.5, authority: 'estimated',
+          }] },
+        ],
+        unresolved_source_questions: [],
+        audit_eligibility: { eligible: true, state: 'complete', reason: 'Ready.' },
+      }, error: null, status: 200,
+    }),
+    promoteCreativeCandidate: async (_projectId, _candidateId, request) => {
+      promoteRequest = request;
+      return { data: project('asset_corrected'), error: null, status: 201 };
+    },
+  }));
+  const loaded = await gateway.loadDesignConfirmation({
+    projectId: 'project_1', sourceAssetId: 'candidate_1', createdBy: 'designer_1',
+  });
+  assert.equal(loaded.error, null);
+  if (loaded.error !== null) return;
+  assert.equal('confirmation_token' in loaded.data, false);
+  const changed = {
+    ...loaded.data,
+    designerAcknowledged: true,
+    factGroups: loaded.data.factGroups.map((group) => ({
+      ...group,
+      facts: group.facts.map((fact) => fact.path === 'metal.material'
+        ? { ...fact, value: 'platinum', rawValue: 'platinum', authority: 'designer_supplied' as const }
+        : fact.path === 'ring_size.value'
+          ? { ...fact, value: '7.25', rawValue: 7.25, authority: 'designer_supplied' as const }
+          : fact),
+    })),
+  };
+  const audit = await gateway.auditDesignConfirmation(changed);
+  assert.equal(audit.error, null);
+  if (audit.error !== null) return;
+  assert.equal(audit.data.status, 'pass');
+  const saved = await gateway.saveDesignConfirmation(audit.data);
+  assert.equal(saved.error, null);
+  assert.deepEqual(promoteRequest, {
+    created_by: 'designer_1',
+    confirmation_token: 'confirmation-token-1234567890123456',
+    corrections: [
+      { path: 'metal.material', value: 'platinum' },
+      { path: 'ring_size.value', value: 7.25 },
+    ],
+  });
 });
 
 test('Starting facts preserve Factory source questions without blocking Studio', async () => {

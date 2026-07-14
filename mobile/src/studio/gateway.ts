@@ -18,6 +18,7 @@ import type {
   StudioCapabilities,
   ImageQualityReport,
   JsonObject,
+  JsonValue,
   MarketingPackRequest,
   MarketingPackResult,
   MarkupApplyRequest,
@@ -31,6 +32,7 @@ import type {
   StudioJobAction,
   StudioJobRecord,
   StudioMarkupResumeCandidate,
+  StudioFactPath,
 } from '../trusted/types';
 import { getStudioAction } from './actions';
 import {
@@ -87,6 +89,8 @@ export interface StudioProjectedFact {
   key: string;
   label: string;
   value: string;
+  path: StudioFactPath | null;
+  rawValue: string | number;
   authority: StudioDesignFactAuthority;
 }
 
@@ -541,15 +545,66 @@ export function createStudioGateway(
     capability: 'CLIENT_BEAUTY_RENDER' | 'CLIENT_PRODUCT_PHOTO' | 'MARKETING_IMAGE';
     group: PresentationGroup;
   }>();
-  const designConfirmations = new Map<string, {
+  type StoredDesignConfirmation = {
     lineage: StudioVisualLineage;
     createdBy: string;
     candidateSha256: string;
     specVisualHash: string;
     confirmationToken: string;
     expiresAt: string;
-    originalValues: Map<string, string>;
-  }>();
+    originalFacts: Map<string, {
+      path: StudioFactPath | null;
+      rawValue: string | number;
+      value: string;
+    }>;
+  };
+  const designConfirmations = new Map<string, StoredDesignConfirmation>();
+  const confirmationCorrections = (
+    review: StudioDesignConfirmationReview,
+    confirmation: StoredDesignConfirmation,
+  ): { corrections: { path: StudioFactPath; value: JsonValue }[]; issues: string[] } => {
+    const reviewedFacts = review.factGroups.flatMap((group) => group.facts.map((fact) => ({
+      identity: `${group.key}.${fact.key}`,
+      fact,
+    })));
+    const issues: string[] = [];
+    const corrections: { path: StudioFactPath; value: JsonValue }[] = [];
+    const correctedPaths = new Set<StudioFactPath>();
+    if (reviewedFacts.length !== confirmation.originalFacts.size) {
+      issues.push('Reload the selected visual before saving changed starting facts.');
+      return { corrections, issues };
+    }
+    for (const { identity, fact } of reviewedFacts) {
+      const original = confirmation.originalFacts.get(identity);
+      if (original === undefined || original.path !== fact.path) {
+        issues.push('Reload the selected visual before saving changed starting facts.');
+        continue;
+      }
+      const validRawValue = (typeof fact.rawValue === 'string'
+        && fact.rawValue.trim().length > 0)
+        || (typeof fact.rawValue === 'number' && Number.isFinite(fact.rawValue));
+      if (!validRawValue) {
+        issues.push(`${fact.label} needs a valid value.`);
+        continue;
+      }
+      const changed = fact.rawValue !== original.rawValue;
+      if (original.path === null) {
+        if (changed || fact.value !== original.value) {
+          issues.push(`${fact.label} is descriptive and cannot be edited here.`);
+        }
+        continue;
+      }
+      if (changed) {
+        if (correctedPaths.has(original.path)) {
+          issues.push(`${fact.label} duplicates another starting-fact correction.`);
+          continue;
+        }
+        correctedPaths.add(original.path);
+        corrections.push({ path: original.path, value: fact.rawValue });
+      }
+    }
+    return { corrections, issues };
+  };
   const pruneExpiredConfirmations = (): void => {
     const timestamp = now().getTime();
     designConfirmations.forEach((confirmation, reviewId) => {
@@ -1103,7 +1158,14 @@ export function createStudioGateway(
       ].join(':');
       const factGroups = result.data.fact_groups.map((group) => ({
         key: group.key, label: group.label,
-        facts: group.facts.map((fact) => ({ ...fact })),
+        facts: group.facts.map((fact) => ({
+          key: fact.key,
+          label: fact.label,
+          value: fact.value,
+          path: fact.path,
+          rawValue: fact.raw_value,
+          authority: fact.authority,
+        })),
       }));
       designConfirmations.set(reviewId, {
         lineage: request,
@@ -1112,8 +1174,12 @@ export function createStudioGateway(
         specVisualHash: result.data.spec_visual_hash,
         confirmationToken: result.data.confirmation_token,
         expiresAt: result.data.expires_at,
-        originalValues: new Map(factGroups.flatMap((group) => group.facts.map(
-          (fact) => [`${group.key}.${fact.key}`, fact.value] as const,
+        originalFacts: new Map(factGroups.flatMap((group) => group.facts.map(
+          (fact) => [`${group.key}.${fact.key}`, {
+            path: fact.path,
+            rawValue: fact.rawValue,
+            value: fact.value,
+          }] as const,
         ))),
       });
       return {
@@ -1137,16 +1203,12 @@ export function createStudioGateway(
         'CONFIRM_REVIEW_EXPIRED', 'Reload the selected visual before saving these details.',
         'conflict', 409,
       );
-      const changedValues = review.factGroups.flatMap((group) => group.facts.filter(
-        (fact) => stored.originalValues.get(`${group.key}.${fact.key}`) !== fact.value,
-      ));
+      const changeReview = confirmationCorrections(review, stored);
       const issues = [
         ...(review.designerAcknowledged ? [] : [
           'Acknowledge that these are image-derived suggestions before saving the starting facts.',
         ]),
-        ...(changedValues.length === 0 ? [] : [
-          'Save the suggested starting facts first, then refine changed facts as a new immutable revision.',
-        ]),
+        ...changeReview.issues,
       ];
       return {
         data: {
@@ -1174,12 +1236,20 @@ export function createStudioGateway(
         'CONFIRM_REVIEW_EXPIRED', 'Reload the selected visual before saving these details.',
         'conflict', 409,
       );
+      const changeReview = confirmationCorrections(audit.review, stored);
+      if (changeReview.issues.length > 0) return gatewayError(
+        'CONFIRM_FACTS_INVALID', changeReview.issues.join(' '),
+        'validation', 422,
+      );
       const promoted = await client.promoteCreativeCandidate(
         stored.lineage.projectId,
         stored.lineage.sourceAssetId,
         {
           created_by: stored.createdBy,
           confirmation_token: stored.confirmationToken,
+          ...(changeReview.corrections.length > 0
+            ? { corrections: changeReview.corrections }
+            : {}),
         },
       );
       if (promoted.error !== null) return { data: null, error: mapError(promoted.error), status: promoted.status };

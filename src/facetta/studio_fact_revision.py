@@ -2,13 +2,11 @@
 
 from __future__ import annotations
 
-import copy
 import hashlib
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Literal
 
-from pydantic import ValidationError
 from sqlalchemy import func, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -21,7 +19,6 @@ from facetta.db import (
     new_id,
     utcnow,
 )
-from facetta.dimension_provenance import mark_designer_adjusted_dimensions
 from facetta.project_backbone import is_primary_revision
 from facetta.revision_component_map import ComponentMapError
 from facetta.revision_component_map_store import (
@@ -29,36 +26,12 @@ from facetta.revision_component_map_store import (
 )
 from facetta.spec import Spec
 from facetta.specdiff import diff_specs, summarize_changes
+from facetta.studio_fact_changes import (
+    StudioFactChangeError,
+    prepare_studio_fact_changes,
+)
 from facetta.validation import validate_spec
 from facetta.vocabulary import get_vocabulary
-
-
-DESIGNER_SAFE_FACT_PATHS = frozenset({
-    "stone.species",
-    "stone.cut",
-    "stone.color",
-    "stone.color.trade",
-    "stone.color.gia",
-    "stone.color.hue_code",
-    "stone.color.tone",
-    "stone.color.saturation",
-    "stone.carat",
-    "stone.dimensions_mm",
-    "stone.dimensions_mm.length",
-    "stone.dimensions_mm.width",
-    "stone.dimensions_mm.depth",
-    "metal.material",
-    "metal.karat",
-    "metal.color",
-    "metal.finish",
-    "setting.style",
-    "setting.prong_count",
-    "band.profile",
-    "band.width_mm",
-    "band.thickness_mm",
-    "ring_size.system",
-    "ring_size.value",
-})
 
 
 class StudioFactRevisionError(ValueError):
@@ -98,36 +71,6 @@ def _project_chain_for_update(
     return chain
 
 
-def _set_fact(raw: dict, path: str, value: object) -> None:
-    keys = path.split(".")
-    current: object = raw
-    for key in keys[:-1]:
-        if not isinstance(current, dict) or key not in current:
-            raise StudioFactRevisionError(
-                "fact_path_unavailable",
-                f"the active specification has no editable fact path '{path}'",
-            )
-        current = current[key]
-    if not isinstance(current, dict) or keys[-1] not in current:
-        raise StudioFactRevisionError(
-            "fact_path_unavailable",
-            f"the active specification has no editable fact path '{path}'",
-        )
-    current[keys[-1]] = copy.deepcopy(value)
-
-
-def _fact_value(raw: dict, path: str) -> object:
-    current: object = raw
-    for key in path.split("."):
-        if not isinstance(current, dict) or key not in current:
-            raise StudioFactRevisionError(
-                "fact_path_unavailable",
-                f"the active specification has no editable fact path '{path}'",
-            )
-        current = current[key]
-    return copy.deepcopy(current)
-
-
 def _apply_studio_fact_revision(
     db: Session,
     *,
@@ -143,13 +86,6 @@ def _apply_studio_fact_revision(
         raise StudioFactRevisionError(
             "fact_changes_required", "submit at least one fact to review",
         )
-    unsafe = sorted(set(changes) - DESIGNER_SAFE_FACT_PATHS)
-    if unsafe:
-        raise StudioFactRevisionError(
-            "fact_path_not_allowed",
-            "these fact paths are not designer-editable: " + ", ".join(unsafe),
-        )
-
     project = db.scalar(
         select(Project)
         .where(Project.root_id == project_root_id)
@@ -196,35 +132,14 @@ def _apply_studio_fact_revision(
             "the active specification is not the latest immutable version",
         )
 
+    before = Spec.model_validate(source_version.spec)
     try:
-        before = Spec.model_validate(source_version.spec)
-        edited_raw = before.model_dump(mode="json")
-        for path, value in changes.items():
-            _set_fact(edited_raw, path, value)
-        if {"ring_size.system", "ring_size.value"} & set(changes):
-            ring_size = edited_raw.get("ring_size")
-            if isinstance(ring_size, dict):
-                # This value is deterministic vocabulary output, not a second
-                # designer input. Re-derive it from the submitted size.
-                ring_size["inner_diameter_mm"] = None
-            provenance = edited_raw.get("dimension_provenance")
-            if isinstance(provenance, dict):
-                provenance.pop("ring_size.inner_diameter_mm", None)
-        edited = Spec.model_validate(edited_raw)
-    except ValidationError as exc:
-        raise StudioFactRevisionError(
-            "fact_value_invalid", "a submitted fact has an invalid typed value",
-        ) from exc
-
-    requested_values = {
-        path: _fact_value(edited.model_dump(mode="json"), path)
-        for path in changes
-    }
-    before_values = {
-        path: _fact_value(before.model_dump(mode="json"), path)
-        for path in changes
-    }
-    if requested_values == before_values:
+        prepared = prepare_studio_fact_changes(before, changes)
+    except StudioFactChangeError as exc:
+        raise StudioFactRevisionError(exc.code, exc.detail) from exc
+    edited = prepared.spec
+    requested_values = dict(prepared.corrected_values)
+    if not prepared.changed:
         result = StudioFactRevisionResult(
             status="no_change",
             project_root_id=project.root_id,
@@ -238,7 +153,6 @@ def _apply_studio_fact_revision(
         db.rollback()
         return result
 
-    edited = mark_designer_adjusted_dimensions(before, edited)
     validated = validate_spec(edited, get_vocabulary())
     if not validated.ok:
         raise StudioFactRevisionError(
@@ -326,6 +240,14 @@ def _apply_studio_fact_revision(
                 "provider_used": False,
                 "factory_authority": False,
                 "credits_charged": 0,
+                "derived_fact_adjustments": {
+                    path: {
+                        "before": prepared.derived_original_values[path],
+                        "after": value,
+                        "authority": "deterministic_component_rule",
+                    }
+                    for path, value in prepared.derived_values.items()
+                },
                 "source_asset_id": active.id,
                 "source_sha256": source_hash,
                 "output_sha256": source_hash,

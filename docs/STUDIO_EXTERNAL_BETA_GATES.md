@@ -80,7 +80,7 @@ zero exit code from one run ID.
   Replay-v1 Boolean review fields remain compatibility data and cannot pass
   this gate.
 
-### Plan and validate the signed capture
+### Plan the signed capture
 
 ```bash
 PYTHONPATH=src .venv/bin/python scripts/plan_frozen_corpus_capture.py \
@@ -88,12 +88,6 @@ PYTHONPATH=src .venv/bin/python scripts/plan_frozen_corpus_capture.py \
 
 PYTHONPATH=src .venv/bin/python scripts/plan_frozen_corpus_capture.py \
   --out /secure/path/to/evidence-root/provider-call-plan.json plan
-
-PYTHONPATH=src .venv/bin/python scripts/plan_frozen_corpus_capture.py \
-  validate-capture \
-  --capture /secure/path/to/evidence-root/frozen-capture.json \
-  --capture-public-key /secure/path/to/evidence-root/keys/executor.pub \
-  --capture-key-id secured-executor-v1
 ```
 
 The repository production definition reports 144 integrity sources, 58 ring
@@ -164,6 +158,33 @@ PYTHONPATH=src .venv/bin/python scripts/run_frozen_corpus_capture.py \
   --attestation-id <operator-issued-attestation-id>
 ```
 
+The capture producer installs the signed envelope at
+`$EVIDENCE_ROOT/signed-capture/capture.json`. Validate that exact artifact,
+then materialize the complete provider-free replay consumed by the corpus gate.
+The replay builder revalidates the capture and makes zero provider calls.
+
+```bash
+EVIDENCE_ROOT="${EVIDENCE_ROOT:?set the retained evidence root}"
+CAPTURE_PATH="$EVIDENCE_ROOT/signed-capture/capture.json"
+REPLAY_PATH="$EVIDENCE_ROOT/signed-facetta-frozen-replay.v1.json"
+test -f "$CAPTURE_PATH"
+
+PYTHONPATH=src .venv/bin/python scripts/plan_frozen_corpus_capture.py \
+  validate-capture \
+  --capture "$CAPTURE_PATH" \
+  --capture-public-key "$EVIDENCE_ROOT/keys/executor.pub" \
+  --capture-key-id secured-executor-v1
+
+PYTHONPATH=src .venv/bin/python scripts/prepare_frozen_corpus_review.py \
+  --packet-format replay-v1 \
+  --evidence-root "$EVIDENCE_ROOT" \
+  --source-dir "$EVIDENCE_ROOT/founder-reference-directory" \
+  --capture "$CAPTURE_PATH" \
+  --capture-public-key "$EVIDENCE_ROOT/keys/executor.pub" \
+  --capture-key-id secured-executor-v1 \
+  --out "$REPLAY_PATH"
+```
+
 ### Prepare the blind GIA packet
 
 Generate a fresh secret 32-byte review seed outside the repository, record its
@@ -175,10 +196,10 @@ PYTHONPATH=src .venv/bin/python scripts/prepare_frozen_corpus_review.py \
   --packet-format blind-v2 \
   --review-seed <64-lowercase-hex-characters> \
   --reviewer-role gia_visual_fidelity_reviewer \
-  --evidence-root /secure/path/to/evidence-root \
-  --source-dir /secure/path/to/evidence-root/founder-reference-directory \
-  --capture /secure/path/to/evidence-root/frozen-capture.json \
-  --capture-public-key /secure/path/to/evidence-root/keys/executor.pub \
+  --evidence-root "$EVIDENCE_ROOT" \
+  --source-dir "$EVIDENCE_ROOT/founder-reference-directory" \
+  --capture "$CAPTURE_PATH" \
+  --capture-public-key "$EVIDENCE_ROOT/keys/executor.pub" \
   --capture-key-id secured-executor-v1 \
   --out /secure/path/to/evidence-root/review/gia-packet.json
 ```
@@ -367,7 +388,7 @@ PYTHONPATH=src .venv/bin/python scripts/prepare_frozen_corpus_review.py \
   --reviewer-role independent_jewelry_designer \
   --evidence-root "$EVIDENCE_ROOT" \
   --source-dir "$EVIDENCE_ROOT/founder-reference-directory" \
-  --capture "$EVIDENCE_ROOT/frozen-capture.json" \
+  --capture "$CAPTURE_PATH" \
   --capture-public-key "$EVIDENCE_ROOT/keys/executor.pub" \
   --capture-key-id secured-executor-v1 \
   --out "$EVIDENCE_ROOT/review/designer-packet.json"
