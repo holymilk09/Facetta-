@@ -672,6 +672,165 @@ describe('StudioRefineWorkspace', () => {
     expect(screen.queryByLabelText('rectangle annotation annotation-1')).toBeNull();
   });
 
+  test('does not rebind a draft or accept an A-to-B-to-A late preview', async () => {
+    let resolvePreview: ((value: any) => void) | null = null;
+    const previewVisualRefine = jest.fn(() => new Promise<any>((resolve) => {
+      resolvePreview = resolve;
+    }));
+    const api = {
+      getComponentCatalog: jest.fn(),
+      getStudioComponentTargeting: getReadyTargeting,
+      readMarkup: jest.fn(),
+    };
+    const gateway = {
+      previewVisualRefine, applyVisualRefine: jest.fn(), discardVisualRefine: jest.fn(),
+      previewCatalogRefine: jest.fn(), applyCatalogRefine: jest.fn(),
+      discardCatalogRefine: jest.fn(), previewMarkupRefine: jest.fn(),
+      applyMarkupRefine: jest.fn(), discardMarkupRefine: jest.fn(),
+    };
+    const workspace = (sourceAssetId: string, sourceImageUrl: string) => (
+      <AuthenticatedImageProvider
+        allowedOrigin="https://test"
+        headers={{ Authorization: 'Bearer test-session-token' }}>
+        <StudioRefineWorkspace
+          api={api}
+          gateway={gateway}
+          lineage={{ projectId: 'project_1', sourceAssetId }}
+          sourceImageUrl={sourceImageUrl}
+          createdBy="designer"
+          onApplied={jest.fn()}
+        />
+      </AuthenticatedImageProvider>
+    );
+    const rendered = await render(workspace('creative_1', 'https://test/source-1.png'));
+
+    await fireEvent.changeText(
+      rendered.getByPlaceholderText(/make the presentation softer/i),
+      'Warm only the shoulders',
+    );
+    await waitFor(() => expect(
+      rendered.getByPlaceholderText(/make the presentation softer/i).props.value,
+    ).toBe('Warm only the shoulders'));
+    await fireEvent.press(rendered.getByText('Preview change'));
+    await waitFor(() => expect(previewVisualRefine).toHaveBeenCalledWith(expect.objectContaining({
+      sourceAssetId: 'creative_1', instruction: 'Warm only the shoulders',
+    })));
+
+    await rendered.rerender(workspace('creative_2', 'https://test/source-2.png'));
+    await waitFor(() => expect(
+      rendered.getByPlaceholderText(/make the presentation softer/i).props.value,
+    ).toBe(''));
+    expect(rendered.getByText('Preview change').parent?.props.accessibilityState.disabled).toBe(true);
+
+    // Returning to the same lineage key must not revive work started in its earlier epoch.
+    await rendered.rerender(workspace('creative_1', 'https://test/source-1.png'));
+    expect(rendered.getByPlaceholderText(/make the presentation softer/i).props.value).toBe('');
+
+    await act(async () => {
+      resolvePreview?.({
+        data: {
+          lineage: { projectId: 'project_1', sourceAssetId: 'creative_1' },
+          instruction: 'Warm only the shoulders', scope: 'appearance' as const,
+          candidate: {
+            id: 'candidate_from_old_source', jobId: 'run_old_source',
+            sourceRevisionId: 'creative_1', assetUrl: 'https://test/old-preview.png',
+            verdict: 'pass' as const, status: 'pending_review' as const, checks: [],
+            temporary: true, expiresAt: null, decision: null, decidedAt: null,
+            canonicalRevisionId: null,
+          },
+        },
+        error: null,
+        status: 201,
+      });
+    });
+
+    expect(rendered.queryByText('Nothing has changed yet.')).toBeNull();
+    expect(rendered.queryByLabelText('Temporary refinement preview')).toBeNull();
+    expect(rendered.getByPlaceholderText(/make the presentation softer/i).props.value).toBe('');
+  });
+
+  test('ignores a late Apply completion after the designer switches source revisions', async () => {
+    const candidate = {
+      id: 'candidate_for_old_source', jobId: 'run_for_old_source',
+      sourceRevisionId: 'creative_1', assetUrl: 'https://test/old-preview.png',
+      verdict: 'pass' as const, status: 'pending_review' as const, checks: [],
+      temporary: true, expiresAt: null, decision: null, decidedAt: null,
+      canonicalRevisionId: null,
+    };
+    let resolveApply: ((value: any) => void) | null = null;
+    const applyVisualRefine = jest.fn(() => new Promise<any>((resolve) => {
+      resolveApply = resolve;
+    }));
+    const api = {
+      getComponentCatalog: jest.fn(),
+      getStudioComponentTargeting: getReadyTargeting,
+      readMarkup: jest.fn(),
+    };
+    const gateway = {
+      previewVisualRefine: jest.fn(async () => ({
+        data: {
+          lineage: { projectId: 'project_1', sourceAssetId: 'creative_1' },
+          instruction: 'Warm the metal', scope: 'appearance' as const, candidate,
+        },
+        error: null,
+        status: 201,
+      })),
+      applyVisualRefine,
+      discardVisualRefine: jest.fn(),
+      previewCatalogRefine: jest.fn(), applyCatalogRefine: jest.fn(),
+      discardCatalogRefine: jest.fn(), previewMarkupRefine: jest.fn(),
+      applyMarkupRefine: jest.fn(), discardMarkupRefine: jest.fn(),
+    };
+    const onApplied = jest.fn();
+    const workspace = (sourceAssetId: string, sourceImageUrl: string) => (
+      <AuthenticatedImageProvider
+        allowedOrigin="https://test"
+        headers={{ Authorization: 'Bearer test-session-token' }}>
+        <StudioRefineWorkspace
+          api={api}
+          gateway={gateway}
+          lineage={{ projectId: 'project_1', sourceAssetId }}
+          sourceImageUrl={sourceImageUrl}
+          createdBy="designer"
+          onApplied={onApplied}
+        />
+      </AuthenticatedImageProvider>
+    );
+    const rendered = await render(workspace('creative_1', 'https://test/source-1.png'));
+
+    await fireEvent.changeText(
+      rendered.getByPlaceholderText(/make the presentation softer/i),
+      'Warm the metal',
+    );
+    await waitFor(() => expect(
+      rendered.getByPlaceholderText(/make the presentation softer/i).props.value,
+    ).toBe('Warm the metal'));
+    await fireEvent.press(rendered.getByText('Preview change'));
+    expect(await rendered.findByText('Nothing has changed yet.')).toBeTruthy();
+    await fireEvent(rendered.getByLabelText('Exact source revision'), 'load');
+    await fireEvent(rendered.getByLabelText('Temporary refinement preview'), 'load');
+    await fireEvent.press(rendered.getByText('Apply as new revision'));
+    await waitFor(() => expect(applyVisualRefine).toHaveBeenCalledWith({
+      candidateId: 'candidate_for_old_source', createdBy: 'designer',
+    }));
+
+    await rendered.rerender(workspace('creative_2', 'https://test/source-2.png'));
+    await act(async () => {
+      resolveApply?.({
+        data: {
+          candidate: { ...candidate, status: 'applied' as const },
+          project: preSpecProject,
+        },
+        error: null,
+        status: 201,
+      });
+    });
+
+    expect(onApplied).not.toHaveBeenCalled();
+    expect(rendered.queryByText('Nothing has changed yet.')).toBeNull();
+    expect(rendered.getByPlaceholderText(/make the presentation softer/i).props.value).toBe('');
+  });
+
   test('plain language is constrained to appearance and still previews first', async () => {
     const previewMarkupRefine = jest.fn(async () => ({
       data: {

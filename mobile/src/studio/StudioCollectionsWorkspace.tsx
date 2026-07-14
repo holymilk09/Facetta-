@@ -37,6 +37,8 @@ export interface StudioCollectionsWorkspaceProps {
   createdBy: string;
   onOpenProject: (projectId: string) => void;
   onProjectChanged: (project: ProjectDetail) => void;
+  /** Opens Create from a confirmed empty Collections state. */
+  onStartDesign: () => void;
   /** Opens the canonical Vary workspace for the currently active project. */
   onVaryCurrent: () => void;
   /** Returns the selected exact variation to the canonical Refine workspace. */
@@ -197,6 +199,7 @@ export function StudioCollectionsWorkspace({
   createdBy,
   onOpenProject,
   onProjectChanged,
+  onStartDesign,
   onVaryCurrent,
   onContinueRefining,
   onPresentCurrent,
@@ -391,7 +394,10 @@ export function StudioCollectionsWorkspace({
         ) : families?.length === 0 ? (
           <View style={styles.emptyState}>
             <Text style={styles.emptyTitle}>No saved families yet</Text>
-            <Text style={styles.emptyCopy}>Create a direction in Studio and it will appear here.</Text>
+            <Text style={styles.emptyCopy}>Start a design and its saved directions will appear here.</Text>
+            <View style={styles.emptyAction}>
+              <Button title="Start a design" onPress={onStartDesign} />
+            </View>
           </View>
         ) : (
           <View style={styles.variationGrid}>
@@ -780,6 +786,7 @@ const styles = StyleSheet.create({
   },
   emptyTitle: { color: theme.ink, fontFamily: theme.serif, fontSize: 22, marginBottom: 8 },
   emptyCopy: { color: theme.faint, fontSize: 13, lineHeight: 19, textAlign: 'center', maxWidth: 420 },
+  emptyAction: { marginTop: 16 },
   familyHero: {
     borderWidth: 1, borderColor: theme.line, borderRadius: 20, overflow: 'hidden',
     backgroundColor: theme.card, marginBottom: 14,

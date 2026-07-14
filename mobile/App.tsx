@@ -42,6 +42,7 @@ import { designerErrorMessage } from './src/studio/designerErrorMessage';
 type Tab = 'studio' | 'collections' | 'activity' | 'learn';
 type StudioView = 'home' | 'action';
 type Stage = 'onboarding' | 'tour' | 'booting' | 'login' | 'recovery' | 'app';
+type SavedFamiliesState = 'unknown' | 'available' | 'empty' | 'unavailable';
 type ProjectHydrationDestination = 'collections' | 'create' | 'refine' | 'views' | 'present'
   | 'specifications';
 
@@ -108,6 +109,7 @@ export default function App() {
   const [designer, setDesigner] = useState(session?.designerId ?? '');
   const [showUtilityMenu, setShowUtilityMenu] = useState(false);
   const [factoryEntitled, setFactoryEntitled] = useState(false);
+  const [savedFamiliesState, setSavedFamiliesState] = useState<SavedFamiliesState>('unknown');
   const [studioProject, setStudioProject] = useState<ProjectDetail | null>(null);
   const [selectedCreativeAssetId, setSelectedCreativeAssetId] = useState<string | null>(null);
   const [createReview, setCreateReview] = useState<CreateReviewState | null>(null);
@@ -133,6 +135,7 @@ export default function App() {
     setCreateReview(null);
     setActivityReview(null);
     setFactoryEntitled(false);
+    setSavedFamiliesState('unknown');
     setStage('login');
   }, []);
   const expireAuthenticatedSession = useCallback(() => {
@@ -194,6 +197,26 @@ export default function App() {
     });
     return () => { active = false; };
   }, [session, studioGateway]);
+  useEffect(() => {
+    let active = true;
+    setSavedFamiliesState('unknown');
+    if (sessionAccessToken(session) === null || designer.trim() === '') {
+      return () => { active = false; };
+    }
+    if (studioProject !== null) {
+      setSavedFamiliesState('available');
+      return () => { active = false; };
+    }
+    void studioGateway.listDesignFamilies(designer).then((result) => {
+      if (!active) return;
+      setSavedFamiliesState(result.error === null
+        ? result.data.families.length > 0 ? 'available' : 'empty'
+        : 'unavailable');
+    }).catch(() => {
+      if (active) setSavedFamiliesState('unavailable');
+    });
+    return () => { active = false; };
+  }, [designer, session, studioGateway, studioProject]);
   const { width } = useWindowDimensions();
   const authenticatedImageHeaders = useMemo(() => {
     const token = sessionAccessToken(session);
@@ -429,7 +452,9 @@ export default function App() {
 
   return (
     <AuthenticatedImageProvider headers={authenticatedImageHeaders} allowedOrigin={apiUrl}>
-    <SafeAreaView style={[styles.root, isStudioHome && styles.rootDark]}>
+    <SafeAreaView
+      testID="authenticated-shell"
+      style={[styles.root, styles.authenticatedShell, isStudioHome && styles.rootDark]}>
       <StatusBar style={isStudioHome ? 'light' : 'dark'} />
       <View style={[styles.header, isStudioHome && styles.headerDark]}>
         <View>
@@ -465,6 +490,9 @@ export default function App() {
           </Pressable>
         </View>
       )}
+      <View
+        testID="authenticated-workspace-surface"
+        style={[styles.workspaceSurface, isStudioHome && styles.workspaceSurfaceDark]}>
       {projectHydration !== null && (
         <View style={styles.hydrationBanner}>
           {projectHydration.loading ? (
@@ -546,7 +574,7 @@ export default function App() {
               onPress={() => openStudioAction('refine')}
             />
           )}
-          {!hasActiveRevision && (
+          {!hasActiveRevision && savedFamiliesState === 'available' && (
             <Pressable
               accessibilityRole="button"
               accessibilityLabel="Continue saved work"
@@ -751,6 +779,7 @@ export default function App() {
             setStudioProject(project);
             setSelectedCreativeAssetId(project.active_asset_id);
           }}
+          onStartDesign={() => openStudioAction('create')}
           onVaryCurrent={() => openStudioAction('vary')}
           onContinueRefining={() => openStudioAction('refine')}
           onPresentCurrent={() => openStudioAction('present')}
@@ -808,6 +837,7 @@ export default function App() {
           ))}
         </ScrollView>
       )}
+      </View>
 
       <View style={[styles.bottomNav, isStudioHome && styles.bottomNavDark, shadows.soft]}>
         {([
@@ -848,6 +878,9 @@ export default function App() {
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: theme.paper },
+  authenticatedShell: { width: '100%', minHeight: '100%' },
+  workspaceSurface: { flex: 1, backgroundColor: theme.paper },
+  workspaceSurfaceDark: { backgroundColor: '#15121c' },
   booting: { alignItems: 'center', justifyContent: 'center', gap: 12 },
   bootingText: { color: theme.faint, fontSize: 13 },
   rootDark: { backgroundColor: '#15121c' },

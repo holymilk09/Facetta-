@@ -5,6 +5,49 @@ Read `CLAUDE.md` (constitution — binding), `README.md` (endpoints/layout),
 `docs/DATA_WANTED.md` (open research asks). This file is the delta: what is
 DONE beyond the original TASKS.md build order, and what is next.
 
+## 2026-07-14 exact-context web workflow checkpoint
+
+Studio Refine now invalidates every in-flight preview or decision when its
+exact project, source asset, or design version changes. Instructions, markup,
+component choices, design-fact review, and temporary candidates are cleared on
+that boundary. Late Preview, Apply, Discard, Save as Variation, markup-read,
+or fact-save responses are ignored even across an A -> B -> A switch or
+unmount, so an old request cannot reappear against a familiar-looking source.
+
+Visual-only Restore now closes its pre-specification concurrency gap with an
+explicit compare-and-set on the expected active asset. The byte-identical
+child, copied component map, provenance record, and active pointer still share
+one transaction; a competing Apply or Restore causes the entire proposed
+restore to roll back instead of leaving an accepted sibling or last-writer-wins
+pointer. Exact-specification projects continue to serialize through immutable
+DesignVersion history.
+
+Protected Studio images now use an authenticated same-origin fetch on web,
+validate a successful nonempty image response, and render a revocable object
+URL without placing bearer credentials in the display source. Replacement,
+unmount, and stale requests abort or revoke their bytes; failures expose only
+a bounded, generic retry. Native clients retain their authenticated image
+headers. This repairs the two-direction Create review path without relaxing
+the existing origin or sign-in fail-closed behavior.
+
+The authenticated shell now owns the full viewport on every route, eliminating
+the black root exposed beneath short light workspaces while preserving the dark
+Studio home. New accounts no longer see an invented "Continue saved work"
+choice: that action appears only after a one-shot family read confirms saved
+work. Confirmed-empty Collections offers a direct "Start a design" action back
+to canonical Create; unknown or unavailable family state makes no claim.
+
+Local validation is green: 1,785 backend tests; all 36 mobile Jest suites (300
+tests); 77 Studio contract tests; TypeScript; Ruff; Expo web export; diff
+hygiene; and the complete ten-project production TypeScript-client -> HTTP ->
+FastAPI acceptance run with no Factory use. The provider-free frozen definition
+still covers 144 integrity sources, 58 ring-quality sources, and 1,044 planned
+evaluation sequences with zero execution-ready sequences and zero provider
+calls. The credential-free staging probe exits `77` with
+`secrets_logged: false`. The signed live corpus, independent designer/GIA
+review, founder approval, authority enrollment, and live two-principal HTTPS
+staging evidence remain unmet external-beta gates.
+
 ## 2026-07-14 selection-order, source-provenance, and legacy-discovery checkpoint
 
 Studio project hydration now treats every Collections or Activity open as an

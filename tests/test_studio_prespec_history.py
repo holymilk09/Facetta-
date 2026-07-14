@@ -3,7 +3,7 @@
 import hashlib
 
 import pytest
-from sqlalchemy import create_engine, select, text
+from sqlalchemy import create_engine, select, text, update
 from sqlalchemy.orm import Session
 
 from facetta.db import Base, ImageAsset, Project, ProjectRevisionRecord
@@ -251,3 +251,105 @@ def test_restore_rejects_source_bytes_that_drift_from_recorded_hash():
                 expected_design_version=None, created_by="designer",
             )
         assert error.value.code == "restore_source_hash_mismatch"
+
+
+def test_pre_spec_restore_cas_rolls_back_a_late_competing_active_revision(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """A restore may not win after another accepted visual changes active state.
+
+    The component-map copy hook runs after the proposed child has been flushed,
+    which lets this test reproduce the otherwise timing-dependent interval
+    between initial validation and the final active-pointer write.
+    """
+
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    with Session(engine) as db:
+        earlier = ImageAsset(
+            id="ast_restore_cas_earlier",
+            root_id="ast_restore_cas_earlier",
+            parent_asset_id=None,
+            design_version=None,
+            capability="CREATIVE_RENDER",
+            image=b"earlier",
+            media_type="image/png",
+            created_by="designer",
+        )
+        active = ImageAsset(
+            id="ast_restore_cas_active",
+            root_id=earlier.id,
+            parent_asset_id=earlier.id,
+            design_version=None,
+            capability="LOCALIZED_EDIT",
+            image=b"active",
+            media_type="image/png",
+            created_by="designer",
+        )
+        competing = ImageAsset(
+            id="ast_restore_cas_competing",
+            root_id=earlier.id,
+            parent_asset_id=active.id,
+            design_version=None,
+            capability="LOCALIZED_EDIT",
+            image=b"competing",
+            media_type="image/png",
+            created_by="designer",
+        )
+        project = Project(
+            root_id=earlier.id,
+            owner="designer",
+            title="Restore compare-and-set",
+            tags=[],
+            selected_candidate_asset_id=active.id,
+        )
+        db.add_all([
+            earlier,
+            active,
+            competing,
+            project,
+            _record(earlier.id),
+            _record(active.id),
+        ])
+        db.commit()
+
+        def supersede_active_pointer(session, **_kwargs):
+            session.execute(
+                update(Project)
+                .where(Project.root_id == project.root_id)
+                .values(selected_candidate_asset_id=competing.id)
+            )
+            return None
+
+        monkeypatch.setattr(
+            "facetta.studio_history."
+            "copy_revision_component_map_for_identical_raster",
+            supersede_active_pointer,
+        )
+
+        with pytest.raises(StudioHistoryError) as error:
+            restore_project_revision(
+                db,
+                project_root_id=project.root_id,
+                restore_asset_id=earlier.id,
+                expected_active_asset_id=active.id,
+                expected_design_version=None,
+                created_by="designer",
+            )
+        assert error.value.code == "stale_asset_revision"
+
+        db.expire_all()
+        stored_project = db.get(Project, project.root_id)
+        assert stored_project is not None
+        assert stored_project.selected_candidate_asset_id == active.id
+        assert db.scalar(
+            select(ImageAsset).where(
+                ImageAsset.root_id == project.root_id,
+                ImageAsset.capability == "RESTORED_REVISION",
+            )
+        ) is None
+        assert db.scalar(
+            select(ProjectRevisionRecord).where(
+                ProjectRevisionRecord.action == "restore"
+            )
+        ) is None

@@ -2,9 +2,16 @@
 
 import React from 'react';
 import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
+import { StyleSheet } from 'react-native';
 import { clearSession, markOnboarded, saveSession } from '../auth';
+import { theme } from '../theme';
 
 const mockGetProject = jest.fn();
+const mockListDesignFamilies = jest.fn(async () => ({
+  data: { families: [{ family_id: 'family_saved' }] },
+  error: null,
+  status: 200,
+}));
 const mockGetStudioJob = jest.fn(async (jobId: string) => ({
   data: {
     job_id: jobId, owner: 'usr_designer', action_id: jobId.replace('job_', ''),
@@ -29,6 +36,7 @@ const deferred = <T,>() => {
 jest.mock('../trusted/client', () => ({
   createTrustedApiClient: () => ({
     getProject: mockGetProject,
+    listDesignFamilies: mockListDesignFamilies,
     getStudioJob: mockGetStudioJob,
     getStudioCapabilities: async () => ({
       data: {
@@ -142,6 +150,7 @@ jest.mock('./StudioCollectionsWorkspace', () => {
     StudioCollectionsWorkspace: ({
       project,
       onOpenProject,
+      onStartDesign,
       onVaryCurrent,
       onContinueRefining,
       onPresentCurrent,
@@ -158,6 +167,11 @@ jest.mock('./StudioCollectionsWorkspace', () => {
         Pressable,
         { accessibilityRole: 'button', onPress: () => onOpenProject('project_b') },
         ReactLocal.createElement(Text, null, 'Open project B'),
+      ),
+      ReactLocal.createElement(
+        Pressable,
+        { accessibilityRole: 'button', onPress: onStartDesign },
+        ReactLocal.createElement(Text, null, 'Start a design from Collections'),
       ),
       ReactLocal.createElement(
         Pressable,
@@ -266,6 +280,7 @@ import App from '../../App';
 afterEach(() => {
   clearSession();
   mockGetProject.mockReset();
+  mockListDesignFamilies.mockClear();
   mockGetStudioJob.mockClear();
 });
 
@@ -435,6 +450,33 @@ test('global navigation is exactly four named destinations and each opens its ro
   expect(view.queryByText(/Builder|Share design|Factory/i)).toBeNull();
 });
 
+test('authenticated shell fills short workspaces with the routed surface while Studio home stays dark', async () => {
+  authenticate();
+  const view = await render(<App />);
+
+  await waitFor(() => expect(view.getByText('Start from an idea or reference')).toBeTruthy());
+  expect(StyleSheet.flatten(view.getByTestId('authenticated-shell').props.style)).toEqual(
+    expect.objectContaining({ flex: 1, minHeight: '100%', backgroundColor: '#15121c' }),
+  );
+  expect(StyleSheet.flatten(view.getByTestId('authenticated-workspace-surface').props.style)).toEqual(
+    expect.objectContaining({ flex: 1, backgroundColor: '#15121c' }),
+  );
+
+  fireEvent.press(view.getByRole('tab', { name: 'Activity' }));
+  expect(await view.findByText('Review create')).toBeTruthy();
+  expect(StyleSheet.flatten(view.getByTestId('authenticated-shell').props.style)).toEqual(
+    expect.objectContaining({ flex: 1, minHeight: '100%', backgroundColor: theme.paper }),
+  );
+  expect(StyleSheet.flatten(view.getByTestId('authenticated-workspace-surface').props.style)).toEqual(
+    expect.objectContaining({ flex: 1, backgroundColor: theme.paper }),
+  );
+
+  fireEvent.press(view.getByRole('tab', { name: 'Studio' }));
+  expect(await view.findByText('Start from an idea or reference')).toBeTruthy();
+  expect(StyleSheet.flatten(view.getByTestId('authenticated-workspace-surface').props.style))
+    .toEqual(expect.objectContaining({ flex: 1, backgroundColor: '#15121c' }));
+});
+
 test('saving a selected direction continues to Refine and authenticates its Studio cover', async () => {
   markOnboarded();
   saveSession({
@@ -499,6 +541,17 @@ test('Studio home opens Collections through the saved-work continuation', async 
   const continuation = await view.findByLabelText('Continue saved work');
   fireEvent.press(continuation);
   expect(await view.findByText('Vary exact none')).toBeTruthy();
+});
+
+test('Collections can return an empty account directly to Create', async () => {
+  authenticate();
+  const view = await render(<App />);
+
+  fireEvent.press(await view.findByRole('tab', { name: 'Collections' }));
+  fireEvent.press(await view.findByText('Start a design from Collections'));
+
+  expect(await view.findByText('Save mocked direction')).toBeTruthy();
+  expect(view.getByRole('tab', { name: 'Studio' }).props.accessibilityState).toEqual({ selected: true });
 });
 
 test('the latest family selection wins when an older project request resolves last', async () => {

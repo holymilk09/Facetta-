@@ -186,7 +186,18 @@ export function StudioRefineWorkspace({
   const [activeFactGroup, setActiveFactGroup] = useState<FactGroupId>('identity');
   const [factReview, setFactReview] = useState<readonly FactChangeReview[] | null>(null);
   const decisionInFlight = useRef(false);
-  const annotationSourceAssetId = useRef<string | null>(lineage?.sourceAssetId ?? null);
+  const lineageKey = lineage === null
+    ? 'none'
+    : `${lineage.projectId}:${lineage.sourceAssetId}:${hasExactSpecification(lineage)
+      ? lineage.sourceDesignVersion
+      : 'visual'}`;
+  const lineageKeyRef = useRef(lineageKey);
+  const lineageEpochRef = useRef(0);
+  const draftLineageKey = useRef(lineageKey);
+  lineageKeyRef.current = lineageKey;
+  const lineageRequestIsCurrent = (requestedKey: string, requestedEpoch: number): boolean => (
+    lineageKeyRef.current === requestedKey && lineageEpochRef.current === requestedEpoch
+  );
   const visualReviewScope = `${lineage?.sourceAssetId ?? 'none'}:${sourceImageUrl ?? 'missing'}:${preview?.candidate.id ?? 'no-preview'}:${preview?.candidate.assetUrl ?? 'missing'}`;
   const visualReview = useVisualReviewReadiness(visualReviewScope);
   const sourceVisualKey = sourceImageUrl === null || sourceImageUrl === undefined
@@ -211,6 +222,15 @@ export function StudioRefineWorkspace({
     if (typeof species !== 'string' || species.trim().length === 0) return null;
     return species.trim();
   }, [factProject]);
+
+  useEffect(() => {
+    lineageEpochRef.current += 1;
+    const mountedEpoch = lineageEpochRef.current;
+    return () => {
+      // Invalidate work from both an earlier context and an unmounted workspace.
+      if (lineageEpochRef.current === mountedEpoch) lineageEpochRef.current += 1;
+    };
+  }, [lineageKey]);
 
   useEffect(() => {
     let current = true;
@@ -379,15 +399,27 @@ export function StudioRefineWorkspace({
     exactLineage?.sourceDesignVersion, resumeReviewJobId]);
 
   useEffect(() => {
-    const nextSourceAssetId = lineage?.sourceAssetId ?? null;
-    const sourceRevisionChanged = annotationSourceAssetId.current !== nextSourceAssetId;
-    annotationSourceAssetId.current = nextSourceAssetId;
+    const sourceRevisionChanged = draftLineageKey.current !== lineageKey;
+    draftLineageKey.current = lineageKey;
     setSnapshot((current) => ({
       ...current,
       source_uri: sourceImageUrl ?? '',
       annotations: sourceRevisionChanged ? [] : current.annotations,
     }));
-  }, [lineage?.sourceAssetId, sourceImageUrl]);
+    if (!sourceRevisionChanged) return;
+    // A designer's instruction and any pending decision belong to the exact source
+    // revision on which they were authored. Never silently rebind them to another design.
+    decisionInFlight.current = false;
+    setBusy(false);
+    setOptionId(null);
+    setInstruction('');
+    setUnderstoodAs(null);
+    setPreview(null);
+    setNamingVariation(false);
+    setVariationName('');
+    setFactReview(null);
+    setError(null);
+  }, [lineageKey, sourceImageUrl]);
 
   const selected = useMemo(() => catalog?.options.find((option) => option.id === optionId) ?? null,
     [catalog, optionId]);
@@ -474,6 +506,8 @@ export function StudioRefineWorkspace({
       exactLineage === null || factProject?.spec === null || factProject?.spec === undefined
       || typeof api.reviseStudioFacts !== 'function' || busy || decisionInFlight.current
     ) return;
+    const requestedLineageKey = lineageKey;
+    const requestedLineageEpoch = lineageEpochRef.current;
     const reviewed = collectFactChanges();
     if (reviewed.error !== null || factReview === null) {
       setError(reviewed.error ?? 'Review the changed facts before saving.');
@@ -492,6 +526,7 @@ export function StudioRefineWorkspace({
       created_by: createdBy,
       changes,
     });
+    if (!lineageRequestIsCurrent(requestedLineageKey, requestedLineageEpoch)) return;
     decisionInFlight.current = false;
     setBusy(false);
     if (result.error !== null) {
@@ -504,6 +539,8 @@ export function StudioRefineWorkspace({
   const makePreview = async (): Promise<void> => {
     if (lineage === null || busy || !reviewSourceIsActive) return;
     if (mode === 'facts') { reviewFacts(); return; }
+    const requestedLineageKey = lineageKey;
+    const requestedLineageEpoch = lineageEpochRef.current;
     setBusy(true);
     setError(null);
     setUnderstoodAs(null);
@@ -523,6 +560,7 @@ export function StudioRefineWorkspace({
         ...exactLineage, createdBy, componentPath: path, optionId: selected.id,
         executionMode: catalogPreviewMode,
       });
+      if (!lineageRequestIsCurrent(requestedLineageKey, requestedLineageEpoch)) return;
       setBusy(false);
       if (result.error !== null) { setError(designerErrorMessage(result.error, 'refine')); return; }
       setPreview({
@@ -550,6 +588,7 @@ export function StudioRefineWorkspace({
       const read = await api.readMarkup(lineage.sourceAssetId, {
         markup_snapshot: snapshot, created_by: createdBy,
       });
+      if (!lineageRequestIsCurrent(requestedLineageKey, requestedLineageEpoch)) return;
       if (read.error !== null) { setBusy(false); setError(designerErrorMessage(read.error, 'refine')); return; }
       if (exactLineage !== null
           && read.data.expected_design_version !== exactLineage.sourceDesignVersion) {
@@ -596,6 +635,7 @@ export function StudioRefineWorkspace({
             instruction: annotation.change_instruction,
             scope: 'appearance',
           });
+    if (!lineageRequestIsCurrent(requestedLineageKey, requestedLineageEpoch)) return;
     setBusy(false);
     if (result.error !== null) { setError(designerErrorMessage(result.error, 'refine')); return; }
     setPreview({
@@ -608,6 +648,8 @@ export function StudioRefineWorkspace({
     if (preview === null || busy || decisionInFlight.current
       || preview.candidate.verdict === 'reject' || !reviewSourceIsActive
       || !comparisonReady) return;
+    const requestedLineageKey = lineageKey;
+    const requestedLineageEpoch = lineageEpochRef.current;
     decisionInFlight.current = true;
     setBusy(true);
     setError(null);
@@ -616,6 +658,7 @@ export function StudioRefineWorkspace({
       : preview.kind === 'markup'
         ? await gateway.applyMarkupRefine({ candidateId: preview.candidate.id, createdBy })
         : await gateway.applyVisualRefine({ candidateId: preview.candidate.id, createdBy });
+    if (!lineageRequestIsCurrent(requestedLineageKey, requestedLineageEpoch)) return;
     setBusy(false);
     decisionInFlight.current = false;
     if (result.error !== null) {
@@ -633,6 +676,8 @@ export function StudioRefineWorkspace({
 
   const discard = async (): Promise<void> => {
     if (preview === null || busy || decisionInFlight.current) return;
+    const requestedLineageKey = lineageKey;
+    const requestedLineageEpoch = lineageEpochRef.current;
     decisionInFlight.current = true;
     setBusy(true);
     setError(null);
@@ -641,6 +686,7 @@ export function StudioRefineWorkspace({
       : preview.kind === 'markup'
         ? await gateway.discardMarkupRefine({ candidateId: preview.candidate.id, createdBy })
         : await gateway.discardVisualRefine({ candidateId: preview.candidate.id, createdBy });
+    if (!lineageRequestIsCurrent(requestedLineageKey, requestedLineageEpoch)) return;
     setBusy(false);
     decisionInFlight.current = false;
     if (result.error !== null) {
@@ -655,6 +701,8 @@ export function StudioRefineWorkspace({
   const saveAsVariation = async (): Promise<void> => {
     if (preview === null || busy || decisionInFlight.current
       || preview.candidate.verdict === 'reject' || !comparisonReady) return;
+    const requestedLineageKey = lineageKey;
+    const requestedLineageEpoch = lineageEpochRef.current;
     const label = variationName.trim();
     if (label.length === 0) {
       setError('Give this variation a short name before saving it.');
@@ -683,6 +731,7 @@ export function StudioRefineWorkspace({
       : await saveVisual!({
           candidateId: preview.candidate.id, createdBy, label,
         });
+    if (!lineageRequestIsCurrent(requestedLineageKey, requestedLineageEpoch)) return;
     setBusy(false);
     decisionInFlight.current = false;
     if (result.error !== null) {

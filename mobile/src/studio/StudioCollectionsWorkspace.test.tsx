@@ -88,12 +88,36 @@ function api(overrides: Partial<StudioCollectionsApi> = {}): StudioCollectionsAp
 const callbacks = () => ({
   onOpenProject: jest.fn(),
   onProjectChanged: jest.fn(),
+  onStartDesign: jest.fn(),
   onVaryCurrent: jest.fn(),
   onContinueRefining: jest.fn(),
   onPresentCurrent: jest.fn(),
 });
 
 describe('StudioCollectionsWorkspace', () => {
+  test('offers a direct Studio start only after Collections confirms there are no saved families', async () => {
+    const client = api({
+      listDesignFamilies: jest.fn(async () => ({
+        data: { families: [] }, error: null, status: 200,
+      })),
+    });
+    const handlers = callbacks();
+
+    await render(
+      <StudioCollectionsWorkspace
+        api={client}
+        project={null}
+        createdBy="usr_designer"
+        {...handlers}
+      />,
+    );
+
+    expect(await screen.findByText('No saved families yet')).toBeTruthy();
+    expect(screen.getByText('Start a design and its saved directions will appear here.')).toBeTruthy();
+    fireEvent.press(screen.getByText('Start a design'));
+    expect(handlers.onStartDesign).toHaveBeenCalledTimes(1);
+  });
+
   test('lists canonical design families when no project is selected', async () => {
     const client = api();
     const handlers = callbacks();
@@ -492,6 +516,7 @@ describe('StudioCollectionsWorkspace', () => {
             createdBy="usr_designer"
             onOpenProject={jest.fn()}
             onProjectChanged={setCurrentProject}
+            onStartDesign={jest.fn()}
             onVaryCurrent={jest.fn()}
             onContinueRefining={jest.fn()}
             onPresentCurrent={() => onPresent(currentProject.active_asset_id)}

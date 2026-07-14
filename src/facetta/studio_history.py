@@ -1221,13 +1221,16 @@ def restore_project_revision(
         created_at=now,
     )
     project.updated_at = now
-    if design_id is None:
-        # Pre-spec projects use the selected-candidate pointer as their exact
-        # active visual. A restore must advance that pointer to the appended
-        # child or reads would silently snap back to the old candidate.
-        project.selected_candidate_asset_id = restored_asset.id
     db.add(restored_asset)
     try:
+        # Exact projects serialize concurrent restores through their immutable
+        # DesignVersion number. Pre-spec projects have no version row, and
+        # SQLite ignores ``FOR UPDATE``. Advance their active visual with an
+        # explicit compare-and-set after the child has been flushed so a
+        # competing Apply/Restore cannot leave two accepted children while the
+        # last writer silently wins the project pointer. A failed CAS rolls the
+        # image and all later provenance writes back together.
+        db.flush()
         # Restore is a byte-identical copy of ``selected``. Preserve its exact
         # component-isolation evidence just as Save as Variation does, rather
         # than making a previously targetable revision silently unmapped.
@@ -1235,13 +1238,32 @@ def restore_project_revision(
         # source and validates both the stored map hash and raster binding when
         # evidence exists. Any inconsistency therefore aborts the image, spec,
         # history, active-pointer, and map writes together.
-        db.flush()
         copied_component_map = copy_revision_component_map_for_identical_raster(
             db,
             source_asset_id=selected.id,
             child_asset_id=restored_asset.id,
             child_image_bytes=bytes(restored_asset.image),
         )
+        if design_id is None:
+            active_update = db.execute(
+                update(Project)
+                .where(
+                    Project.root_id == project_root_id,
+                    Project.owner == created_by,
+                    Project.selected_candidate_asset_id
+                    == expected_active_asset_id,
+                )
+                .values(
+                    selected_candidate_asset_id=restored_asset.id,
+                    updated_at=now,
+                )
+            )
+            if active_update.rowcount != 1:
+                db.rollback()
+                raise StudioHistoryError(
+                    "stale_asset_revision",
+                    "the active design changed before the restore could be saved",
+                )
         # Revision records are immutable. Create the record only after map
         # validation/copying so its final provenance is written exactly once.
         db.add(
