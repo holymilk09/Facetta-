@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 import hashlib
+import json
 
 from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
@@ -19,6 +20,7 @@ from facetta.db import (
     ImageRunReview,
     Project,
     ProjectRevisionRecord,
+    StudioVariationDecisionRecord,
     new_id,
     utcnow,
 )
@@ -92,6 +94,66 @@ class VariationBranchResult:
     design_id: str | None
     design_version: int | None
     variation_index: int
+
+
+def _variation_request_fingerprint(
+    *,
+    project_root_id: str,
+    source_asset_id: str,
+    expected_active_asset_id: str,
+    expected_design_version: int | None,
+    variation_label: str,
+    created_by: str,
+) -> str:
+    payload = {
+        "created_by": created_by,
+        "expected_active_asset_id": expected_active_asset_id,
+        "expected_design_version": expected_design_version,
+        "project_root_id": project_root_id,
+        "source_asset_id": source_asset_id,
+        "variation_label": variation_label,
+    }
+    canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def _replay_variation_decision(
+    db: Session,
+    decision: StudioVariationDecisionRecord,
+    *,
+    request_fingerprint: str,
+) -> VariationBranchResult:
+    if decision.request_fingerprint != request_fingerprint:
+        raise StudioHistoryError(
+            "variation_operation_conflict",
+            "this variation operation id was already used for a different request",
+        )
+    project = db.get(Project, decision.result_project_root_id)
+    asset = db.get(ImageAsset, decision.result_asset_id)
+    if (
+        project is None
+        or asset is None
+        or project.root_id != asset.root_id
+        or project.family_id != decision.family_id
+        or project.variation_index != decision.variation_index
+        or project.branched_from_project_root_id != decision.source_project_root_id
+        or project.branched_from_asset_id != decision.source_asset_id
+    ):
+        raise StudioHistoryError(
+            "variation_decision_corrupt",
+            "the recorded variation result is incomplete",
+            status_code=500,
+        )
+    return VariationBranchResult(
+        family_id=decision.family_id,
+        project_root_id=project.root_id,
+        asset_id=asset.id,
+        source_project_id=decision.source_project_root_id,
+        source_asset_id=decision.source_asset_id,
+        design_id=asset.design_id,
+        design_version=asset.design_version,
+        variation_index=decision.variation_index,
+    )
 
 
 def fork_preview_candidate_variation(
@@ -855,6 +917,7 @@ def fork_project_variation(
     expected_design_version: int | None,
     variation_label: str,
     created_by: str,
+    operation_id: str | None = None,
     allow_unselected_creative_candidate: bool = False,
     commit: bool = True,
 ) -> VariationBranchResult:
@@ -867,6 +930,40 @@ def fork_project_variation(
     rolls back that whole transaction; callers must not continue after a
     failed branch.
     """
+
+    label = variation_label.strip()
+    if not label:
+        raise StudioHistoryError(
+            "variation_label_required",
+            "name the variation before saving it",
+            status_code=422,
+        )
+    normalized_operation_id = operation_id.strip() if operation_id is not None else None
+    if operation_id is not None and not normalized_operation_id:
+        raise StudioHistoryError(
+            "variation_operation_id_required",
+            "a variation operation id is required",
+            status_code=422,
+        )
+    request_fingerprint = _variation_request_fingerprint(
+        project_root_id=project_root_id,
+        source_asset_id=source_asset_id,
+        expected_active_asset_id=expected_active_asset_id,
+        expected_design_version=expected_design_version,
+        variation_label=label,
+        created_by=created_by,
+    )
+    if normalized_operation_id is not None:
+        existing_decision = db.get(
+            StudioVariationDecisionRecord,
+            (created_by, normalized_operation_id),
+        )
+        if existing_decision is not None:
+            return _replay_variation_decision(
+                db,
+                existing_decision,
+                request_fingerprint=request_fingerprint,
+            )
 
     project = db.scalar(
         select(Project).where(Project.root_id == project_root_id).with_for_update()
@@ -914,14 +1011,6 @@ def fork_project_variation(
             "stale_design_version",
             "the specification changed before the variation could be saved",
         )
-    label = variation_label.strip()
-    if not label:
-        raise StudioHistoryError(
-            "variation_label_required",
-            "name the variation before saving it",
-            status_code=422,
-        )
-
     source_sha256 = _verified_revision_hash(
         db,
         source,
@@ -1048,6 +1137,23 @@ def fork_project_variation(
     family.updated_at = now
     project.updated_at = now
     db.add_all([new_asset, new_project, record])
+    if normalized_operation_id is not None:
+        db.add(StudioVariationDecisionRecord(
+            owner=project.owner,
+            operation_id=normalized_operation_id,
+            request_fingerprint=request_fingerprint,
+            source_project_root_id=project.root_id,
+            source_asset_id=source.id,
+            expected_active_asset_id=expected_active_asset_id,
+            expected_design_version=expected_design_version,
+            variation_label=label,
+            result_project_root_id=new_root_id,
+            result_asset_id=new_asset.id,
+            family_id=family.id,
+            variation_index=variation_index,
+            created_by=created_by,
+            committed_at=now,
+        ))
     try:
         db.flush()
         copy_revision_component_map_for_identical_raster(
@@ -1060,6 +1166,17 @@ def fork_project_variation(
             db.commit()
     except IntegrityError as exc:
         db.rollback()
+        if normalized_operation_id is not None:
+            concurrent_decision = db.get(
+                StudioVariationDecisionRecord,
+                (created_by, normalized_operation_id),
+            )
+            if concurrent_decision is not None:
+                return _replay_variation_decision(
+                    db,
+                    concurrent_decision,
+                    request_fingerprint=request_fingerprint,
+                )
         raise StudioHistoryError(
             "variation_conflict",
             "another variation was saved at the same time; reload and retry",

@@ -1,8 +1,9 @@
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import {
   Pressable, ScrollView, StyleSheet, Text, TextInput, View,
 } from 'react-native';
 
+import { createClientOperationId } from '../operationId';
 import { radius, theme } from '../theme';
 import type { ProjectDetail } from '../trusted/types';
 import type { StudioGateway, StudioVariationRequest } from './gateway';
@@ -18,15 +19,35 @@ export interface StudioVaryWorkspaceProps {
   onCreated: (project: ProjectDetail) => void;
   onContinueRefining?: () => void;
   onOpenCollections?: () => void;
+  createOperationId?: () => string;
+}
+
+function defaultOperationId(): string {
+  return createClientOperationId('vary');
 }
 
 export function StudioVaryWorkspace({
   gateway, lineage, createdBy, onCreated, onContinueRefining, onOpenCollections,
+  createOperationId = defaultOperationId,
 }: StudioVaryWorkspaceProps) {
-  const [label, setLabel] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [createdLabel, setCreatedLabel] = useState<string | null>(null);
+  const lineageKey = lineage === null
+    ? 'none'
+    : `${createdBy}:${lineage.projectId}:${lineage.sourceAssetId}:${lineage.sourceDesignVersion ?? 'none'}`;
+  const operationRef = useRef<{ key: string; id: string } | null>(null);
+  if (operationRef.current === null) {
+    operationRef.current = { key: lineageKey, id: createOperationId() };
+  }
+  if (operationRef.current.key !== lineageKey) {
+    operationRef.current = { key: lineageKey, id: createOperationId() };
+  }
+  const [labelState, setLabelState] = useState({ key: lineageKey, value: '' });
+  const [busyKey, setBusyKey] = useState<string | null>(null);
+  const [errorState, setErrorState] = useState<{ key: string; message: string } | null>(null);
+  const [successState, setSuccessState] = useState<{ key: string; label: string } | null>(null);
+  const label = labelState.key === lineageKey ? labelState.value : '';
+  const busy = busyKey === lineageKey;
+  const error = errorState?.key === lineageKey ? errorState.message : null;
+  const createdLabel = successState?.key === lineageKey ? successState.label : null;
 
   if (lineage === null) {
     return (
@@ -40,20 +61,28 @@ export function StudioVaryWorkspace({
   const create = async (): Promise<void> => {
     const nextLabel = label.trim();
     if (!nextLabel || busy) return;
-    setBusy(true);
-    setError(null);
+    const requestLineageKey = lineageKey;
+    const operationId = operationRef.current!.id;
+    setBusyKey(requestLineageKey);
+    setErrorState(null);
     const result = await gateway.saveCurrentAsVariation({
       ...lineage,
       createdBy,
       label: nextLabel,
+      operationId,
     });
-    setBusy(false);
+    if (operationRef.current?.key !== requestLineageKey) return;
+    setBusyKey(null);
     if (result.error !== null) {
-      setError(designerErrorMessage(result.error, 'vary'));
+      setErrorState({
+        key: requestLineageKey,
+        message: designerErrorMessage(result.error, 'vary'),
+      });
       return;
     }
+    operationRef.current = { key: requestLineageKey, id: createOperationId() };
     onCreated(result.data.project);
-    setCreatedLabel(nextLabel);
+    setSuccessState({ key: requestLineageKey, label: nextLabel });
   };
 
   if (createdLabel !== null) {
@@ -93,7 +122,7 @@ export function StudioVaryWorkspace({
       <TextInput
         accessibilityLabel="Variation name"
         value={label}
-        onChangeText={setLabel}
+        onChangeText={(value) => setLabelState({ key: lineageKey, value })}
         placeholder="Rose gold study"
         placeholderTextColor={theme.faint}
         style={styles.input}

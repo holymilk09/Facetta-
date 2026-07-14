@@ -242,6 +242,13 @@ class SaveVariationRequest(BaseModel):
     label: Annotated[str, Field(min_length=1, max_length=120)]
 
 
+class SaveCurrentVariationRequest(SaveVariationRequest):
+    operation_id: Annotated[
+        str,
+        Field(min_length=8, max_length=64, pattern=r"^[A-Za-z0-9][A-Za-z0-9._:-]*$"),
+    ]
+
+
 class SavePreviewVariationRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -2376,7 +2383,7 @@ def _error(exc: StudioHistoryError) -> JSONResponse:
 @router.post("/projects/{project_root_id}/variations", status_code=201)
 def save_as_variation(
     project_root_id: str,
-    request: SaveVariationRequest,
+    request: SaveCurrentVariationRequest,
     db: DbSession,
 ):
     try:
@@ -2388,6 +2395,7 @@ def save_as_variation(
             expected_design_version=request.expected_design_version,
             variation_label=request.label,
             created_by=request.created_by,
+            operation_id=request.operation_id,
         )
     except StudioHistoryError as exc:
         return _error(exc)

@@ -265,14 +265,16 @@ def test_complete_prespec_studio_journey_preserves_every_direction(
     assert applied_history["action"] == "edit"
     assert applied_history["interpretation"]["factory_authority"] is False
 
+    branch_request = {
+        "created_by": "usr_journey",
+        "expected_active_asset_id": applied_id,
+        "expected_design_version": None,
+        "label": "Warm metal direction",
+        "operation_id": "vary:journey-warm-metal-0001",
+    }
     branch_response = client.post(
         f"/studio/projects/{root_id}/variations",
-        json={
-            "created_by": "usr_journey",
-            "expected_active_asset_id": applied_id,
-            "expected_design_version": None,
-            "label": "Warm metal direction",
-        },
+        json=branch_request,
     )
     assert branch_response.status_code == 201, branch_response.text
     branch = branch_response.json()
@@ -285,6 +287,22 @@ def test_complete_prespec_studio_journey_preserves_every_direction(
     assert branch_project.get("design_id") is None
     assert branch_project.get("spec") is None
     assert _stored_image(Session, branch_asset_id) == refined_bytes
+
+    # A transport retry after the first response is lost returns the exact
+    # committed sibling instead of charging for or creating another branch.
+    replay_response = client.post(
+        f"/studio/projects/{root_id}/variations",
+        json=branch_request,
+    )
+    assert replay_response.status_code == 201, replay_response.text
+    assert replay_response.json() == branch
+
+    mismatched_retry = client.post(
+        f"/studio/projects/{root_id}/variations",
+        json={**branch_request, "label": "Different direction"},
+    )
+    assert mismatched_retry.status_code == 409, mismatched_retry.text
+    assert mismatched_retry.json()["code"] == "variation_operation_conflict"
 
     restore_response = client.post(
         f"/studio/projects/{root_id}/revisions/{selected_id}/restore",
@@ -645,6 +663,7 @@ def test_ten_mixed_source_projects_reopen_branch_compare_and_restore(
                 "expected_active_asset_id": applied_id,
                 "expected_design_version": None,
                 "label": f"Direction {index + 1}B",
+                "operation_id": f"vary:journey-direction-{index + 1:04d}",
             },
         )
         assert branch_response.status_code == 201, branch_response.text

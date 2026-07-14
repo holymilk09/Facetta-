@@ -112,6 +112,7 @@ import type {
   ReviseStudioFactsRequest,
   ReviseStudioFactsResult,
   SaveAsVariationRequest,
+  SaveCurrentAsVariationRequest,
   SaveAsVariationResult,
   RestoreStudioRevisionRequest,
   RestoreStudioRevisionResult,
@@ -4823,7 +4824,7 @@ export function createTrustedApiClient(options: TrustedApiClientOptions) {
 
     async saveAsVariation(
       projectRootId: string,
-      request: SaveAsVariationRequest,
+      request: SaveCurrentAsVariationRequest,
     ): Promise<ApiResult<SaveAsVariationResult>> {
       const result = await call(
         `/studio/projects/${encodeURIComponent(projectRootId)}/variations`,
@@ -4835,6 +4836,7 @@ export function createTrustedApiClient(options: TrustedApiClientOptions) {
             expected_active_asset_id: request.expected_active_asset_id,
             expected_design_version: request.expected_design_version ?? null,
             label: request.label,
+            operation_id: request.operation_id,
           }),
         },
       );

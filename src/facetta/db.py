@@ -802,6 +802,56 @@ class StudioCreateDecisionRecord(Base):
         DateTime(timezone=True), default=utcnow)
 
 
+class StudioVariationDecisionRecord(Base):
+    """Durable idempotency boundary for one direct Studio Vary command.
+
+    The operation id is scoped to the authenticated designer.  Its request
+    fingerprint binds the exact source lineage, expected version, and label;
+    retries return the original child while reuse for a different command is
+    rejected instead of silently creating another sibling.
+    """
+
+    __tablename__ = "studio_variation_decisions"
+
+    owner: Mapped[str] = mapped_column(String(32), primary_key=True)
+    operation_id: Mapped[str] = mapped_column(String(64), primary_key=True)
+    request_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    source_project_root_id: Mapped[str] = mapped_column(
+        ForeignKey("projects.root_id"), nullable=False, index=True)
+    source_asset_id: Mapped[str] = mapped_column(
+        ForeignKey("image_assets.id"), nullable=False)
+    expected_active_asset_id: Mapped[str] = mapped_column(
+        ForeignKey("image_assets.id"), nullable=False)
+    expected_design_version: Mapped[int | None] = mapped_column(
+        Integer, nullable=True)
+    variation_label: Mapped[str] = mapped_column(String(120), nullable=False)
+    result_project_root_id: Mapped[str] = mapped_column(
+        ForeignKey("projects.root_id"), nullable=False, unique=True)
+    result_asset_id: Mapped[str] = mapped_column(
+        ForeignKey("image_assets.id"), nullable=False, unique=True)
+    family_id: Mapped[str] = mapped_column(
+        ForeignKey("design_families.id"), nullable=False)
+    variation_index: Mapped[int] = mapped_column(Integer, nullable=False)
+    created_by: Mapped[str] = mapped_column(String(32), nullable=False)
+    committed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow)
+
+    __table_args__ = (
+        CheckConstraint(
+            "length(trim(operation_id)) >= 8",
+            name="ck_studio_variation_operation_id",
+        ),
+        CheckConstraint(
+            "length(request_fingerprint) = 64",
+            name="ck_studio_variation_request_fingerprint",
+        ),
+        CheckConstraint(
+            "variation_index >= 2",
+            name="ck_studio_variation_index",
+        ),
+    )
+
+
 class StudioConfirmationDraft(Base):
     """One-time server-held design facts for a selected Studio candidate."""
 

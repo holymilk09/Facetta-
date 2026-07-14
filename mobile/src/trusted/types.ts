@@ -269,6 +269,11 @@ export interface SaveAsVariationRequest {
   label: string;
 }
 
+/** Direct Vary commands carry one stable id across transport retries. */
+export interface SaveCurrentAsVariationRequest extends SaveAsVariationRequest {
+  operation_id: string;
+}
+
 /** The canonical Studio response after an immutable variation branch is made. */
 export interface SaveAsVariationResult {
   status: 'variation_created';

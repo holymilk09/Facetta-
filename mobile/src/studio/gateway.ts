@@ -199,6 +199,7 @@ export interface StudioVariationRequest extends StudioVisualLineage {
   sourceDesignVersion: number | null;
   createdBy: string;
   label: string;
+  operationId: string;
 }
 
 export interface StudioCatalogPreviewRequest extends ExactStudioLineage {
@@ -1308,6 +1309,7 @@ export function createStudioGateway(
         expected_active_asset_id: request.sourceAssetId,
         expected_design_version: request.sourceDesignVersion,
         label: request.label,
+        operation_id: request.operationId,
       });
       if (result.error !== null) return { data: null, error: mapError(result.error), status: result.status };
       if (result.data.source_asset_id !== request.sourceAssetId) {

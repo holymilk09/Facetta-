@@ -1,15 +1,25 @@
 """Pre-spec Studio history must follow the designer-selected visual."""
 
 import hashlib
+from concurrent.futures import ThreadPoolExecutor
+from threading import Barrier
 
 import pytest
 from sqlalchemy import create_engine, select, text, update
 from sqlalchemy.orm import Session
 
-from facetta.db import Base, ImageAsset, Project, ProjectRevisionRecord
+import facetta.studio_history as studio_history_service
+from facetta.db import (
+    Base,
+    ImageAsset,
+    Project,
+    ProjectRevisionRecord,
+    StudioVariationDecisionRecord,
+)
 from facetta.api.studio import studio_history
 from facetta.studio_history import (
     StudioHistoryError,
+    ensure_project_family,
     fork_project_variation,
     restore_project_revision,
 )
@@ -22,6 +32,111 @@ def _record(asset_id: str) -> ProjectRevisionRecord:
         interpretation={"operation": "create_direction"},
         change_summary="Created a test direction.", created_by="designer",
     )
+
+
+def test_variation_operation_replays_exact_result_and_rejects_mismatched_reuse():
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    with Session(engine) as db:
+        source = ImageAsset(
+            id="ast_retry_source", root_id="ast_retry_source",
+            parent_asset_id=None, design_version=None,
+            capability="CREATIVE_RENDER", image=b"retry source",
+            media_type="image/png", created_by="designer",
+        )
+        db.add_all([
+            source,
+            Project(
+                root_id=source.id, owner="designer", title="Retry-safe Vary",
+                tags=[], selected_candidate_asset_id=source.id,
+            ),
+            _record(source.id),
+        ])
+        db.commit()
+
+        request = {
+            "project_root_id": source.id,
+            "source_asset_id": source.id,
+            "expected_active_asset_id": source.id,
+            "expected_design_version": None,
+            "variation_label": "Exact sibling",
+            "created_by": "designer",
+            "operation_id": "vary:domain-retry-0001",
+        }
+        first = fork_project_variation(db, **request)
+        replay = fork_project_variation(db, **request)
+
+        assert replay == first
+        assert db.query(StudioVariationDecisionRecord).count() == 1
+        assert db.query(Project).count() == 2
+        assert db.query(ImageAsset).count() == 2
+
+        with pytest.raises(StudioHistoryError) as conflict:
+            fork_project_variation(
+                db,
+                **{**request, "variation_label": "Changed sibling"},
+            )
+        assert conflict.value.code == "variation_operation_conflict"
+        assert conflict.value.status_code == 409
+        assert db.query(Project).count() == 2
+
+
+def test_concurrent_variation_retries_converge_on_one_committed_child(
+    tmp_path,
+    monkeypatch,
+):
+    engine = create_engine(
+        f"sqlite:///{tmp_path / 'vary-concurrency.sqlite'}",
+        connect_args={"check_same_thread": False, "timeout": 10},
+    )
+    Base.metadata.create_all(engine)
+    with Session(engine) as db:
+        source = ImageAsset(
+            id="ast_concurrent_source", root_id="ast_concurrent_source",
+            parent_asset_id=None, design_version=None,
+            capability="CREATIVE_RENDER", image=b"concurrent source",
+            media_type="image/png", created_by="designer",
+        )
+        project = Project(
+            root_id=source.id, owner="designer", title="Concurrent Vary",
+            tags=[], selected_candidate_asset_id=source.id,
+        )
+        db.add_all([source, project, _record(source.id)])
+        db.flush()
+        ensure_project_family(db, project)
+        db.commit()
+
+    branch_barrier = Barrier(2)
+    original_new_id = studio_history_service.new_id
+
+    def synchronized_new_id(prefix: str) -> str:
+        if prefix == "ast":
+            branch_barrier.wait(timeout=5)
+        return original_new_id(prefix)
+
+    monkeypatch.setattr(studio_history_service, "new_id", synchronized_new_id)
+    request = {
+        "project_root_id": "ast_concurrent_source",
+        "source_asset_id": "ast_concurrent_source",
+        "expected_active_asset_id": "ast_concurrent_source",
+        "expected_design_version": None,
+        "variation_label": "One sibling",
+        "created_by": "designer",
+        "operation_id": "vary:concurrent-retry-0001",
+    }
+
+    def create_branch():
+        with Session(engine) as db:
+            return fork_project_variation(db, **request)
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        results = list(executor.map(lambda _: create_branch(), range(2)))
+
+    assert results[0] == results[1]
+    with Session(engine) as db:
+        assert db.query(StudioVariationDecisionRecord).count() == 1
+        assert db.query(Project).count() == 2
+        assert db.query(ImageAsset).count() == 2
 
 
 def test_variation_branches_the_selected_creative_candidate_not_last_generated():

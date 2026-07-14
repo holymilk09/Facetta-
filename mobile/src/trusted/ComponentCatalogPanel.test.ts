@@ -326,6 +326,7 @@ describe('ComponentCatalogPanel', () => {
     await waitFor(() => expect(saveAsVariation).toHaveBeenCalledWith('ast_root', {
       created_by: 'usr_designer', expected_active_asset_id: 'ast_root',
       expected_design_version: 1, label: 'Explore Rose Gold',
+      operation_id: expect.stringMatching(/^catalog-vary:/),
     }));
     expect(onVariationCreated).toHaveBeenCalledWith(variation);
   });

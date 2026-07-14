@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Pressable,
   StyleSheet,
@@ -9,6 +9,7 @@ import {
 import { AuthenticatedImage as Image } from '../AuthenticatedImage';
 
 import { Button, Field, Notice } from '../components';
+import { createClientOperationId } from '../operationId';
 import { theme } from '../theme';
 import { ChainTargetEditor, type ChainTargetData } from './ChainTargetEditor';
 import type { TrustedApiClient } from './client';
@@ -171,6 +172,7 @@ export function ComponentCatalogPanel({
   const [stoneSearch, setStoneSearch] = useState('');
   const [variationBusy, setVariationBusy] = useState(false);
   const [variationError, setVariationError] = useState<string | null>(null);
+  const variationOperationRef = useRef<{ key: string; id: string } | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -312,6 +314,20 @@ export function ComponentCatalogPanel({
 
   const saveAsVariation = async (): Promise<void> => {
     if (selected === null || project.active_asset_id === null || variationBusy || reviewOnly) return;
+    const operationKey = [
+      project.root_id,
+      project.active_asset_id,
+      project.active_design_version ?? 'none',
+      selected.catalog.component_path,
+      selected.option.id,
+    ].join(':');
+    if (variationOperationRef.current?.key !== operationKey) {
+      variationOperationRef.current = {
+        key: operationKey,
+        id: createClientOperationId('catalog-vary'),
+      };
+    }
+    const operationId = variationOperationRef.current.id;
     if (preview !== null) await client.discardCatalogPreview(preview.candidate);
     setPreview(null);
     setVariationBusy(true);
@@ -321,12 +337,14 @@ export function ComponentCatalogPanel({
       expected_active_asset_id: project.active_asset_id,
       expected_design_version: project.active_design_version,
       label: `Explore ${selected.option.display}`,
+      operation_id: operationId,
     });
     setVariationBusy(false);
     if (response.error !== null) {
       setVariationError(response.error.message);
       return;
     }
+    variationOperationRef.current = null;
     onVariationCreated?.(response.data.project);
   };
 

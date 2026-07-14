@@ -782,6 +782,7 @@ describe('trusted API decoders', () => {
       expected_active_asset_id: 'ast source',
       expected_design_version: 4,
       label: 'Rose gold direction',
+      operation_id: 'vary:request-0001',
     });
 
     expect(fetcher).toHaveBeenCalledTimes(1);
@@ -792,6 +793,7 @@ describe('trusted API decoders', () => {
       expected_active_asset_id: 'ast source',
       expected_design_version: 4,
       label: 'Rose gold direction',
+      operation_id: 'vary:request-0001',
     });
     expect(result).toMatchObject({
       data: {
@@ -879,6 +881,7 @@ describe('trusted API decoders', () => {
       created_by: 'usr_designer',
       expected_active_asset_id: 'ast_old',
       label: 'Do not overwrite newer work',
+      operation_id: 'vary:request-0002',
     });
 
     expect(result).toEqual({

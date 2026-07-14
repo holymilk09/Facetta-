@@ -560,20 +560,25 @@ test('discard is terminal and never calls the accept endpoint', async () => {
 });
 
 test('variation source mismatch is rejected instead of silently branching latest', async () => {
+  let receivedOperationId = '';
   const gateway = createStudioGateway(fakeClient({
-    saveAsVariation: async () => ok({
-      status: 'variation_created',
-      family_id: 'family_1',
-      variation_index: 2,
-      source_project_id: 'project_1',
-      source_asset_id: 'different_asset',
-      project: project(),
-    }, 201),
+    saveAsVariation: async (_projectId, request) => {
+      receivedOperationId = request.operation_id;
+      return ok({
+        status: 'variation_created',
+        family_id: 'family_1',
+        variation_index: 2,
+        source_project_id: 'project_1',
+        source_asset_id: 'different_asset',
+        project: project(),
+      }, 201);
+    },
   }));
   const result = await gateway.saveCurrentAsVariation({
     projectId: 'project_1', sourceAssetId: 'asset_1', sourceDesignVersion: 1,
-    createdBy: 'designer_1', label: 'Variation B',
+    createdBy: 'designer_1', label: 'Variation B', operationId: 'vary:request-0001',
   });
+  assert.equal(receivedOperationId, 'vary:request-0001');
   assert.equal(result.error?.code, 'INVALID_VARIATION_LINEAGE');
 });
 

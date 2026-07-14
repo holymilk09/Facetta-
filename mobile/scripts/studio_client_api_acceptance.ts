@@ -747,6 +747,7 @@ async function runCase(caseDefinition: AcceptanceCase, index: number): Promise<A
       sourceDesignVersion: null,
       createdBy: actor,
       label: `${label} exploration`,
+      operationId: `vary:acceptance:${reopened.root_id}`,
     }), `${label}: Branch exact selected revision`);
   }
   assert(branch, `${label}: variation branch missing after Create review`);
