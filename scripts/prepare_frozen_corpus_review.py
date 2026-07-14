@@ -21,6 +21,9 @@ from facetta.frozen_corpus_packet import (  # noqa: E402
 from facetta.frozen_evidence_paths import (  # noqa: E402
     confined_output_path,
     evidence_root,
+    require_new_artifact_paths,
+    retained_cli_entrypoint,
+    write_new_text_artifact,
 )
 
 
@@ -63,6 +66,7 @@ def main() -> int:
         "capture_key_id": args.capture_key_id,
         "repository_root": ROOT,
     }
+    require_new_artifact_paths([output_path], root=resolved_evidence_root)
     if args.packet_format == "blind-v2":
         if args.review_seed is None:
             parser.error("--review-seed is required with --packet-format blind-v2")
@@ -87,8 +91,11 @@ def main() -> int:
             args.capture,
             **common,
         )
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_text(json.dumps(packet, indent=2, sort_keys=True) + "\n")
+    write_new_text_artifact(
+        output_path,
+        json.dumps(packet, indent=2, sort_keys=True) + "\n",
+        root=resolved_evidence_root,
+    )
     if args.packet_format == "blind-v2":
         summary = {
             "status": packet["review_status"],
@@ -118,4 +125,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(retained_cli_entrypoint(main))

@@ -15,6 +15,11 @@ from facetta.frozen_capture_workload import (  # noqa: E402
     validate_capture_envelope,
     validate_workload_definition,
 )
+from facetta.frozen_evidence_paths import (  # noqa: E402
+    require_new_artifact_paths,
+    retained_cli_entrypoint,
+    write_new_text_artifact,
+)
 
 
 DEFAULT_DIR = ROOT / "docs" / "evals" / "frozen-founder-corpus-v1"
@@ -34,6 +39,8 @@ def main() -> int:
     capture.add_argument("--capture-public-key", type=Path, required=True)
     capture.add_argument("--capture-key-id", required=True)
     args = parser.parse_args()
+    if args.out:
+        require_new_artifact_paths([args.out])
 
     if args.command == "validate-definition":
         result = validate_workload_definition(args.manifest, args.config, args.workload)
@@ -50,10 +57,10 @@ def main() -> int:
         )
     rendered = json.dumps(result, indent=2, sort_keys=True) + "\n"
     if args.out:
-        args.out.write_text(rendered)
+        write_new_text_artifact(args.out, rendered)
     print(rendered, end="")
     return 0 if result["status"] in {"pass", "plan_ready"} else 1
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(retained_cli_entrypoint(main))

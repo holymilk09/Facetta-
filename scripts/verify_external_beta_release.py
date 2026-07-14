@@ -12,6 +12,13 @@ ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "src"))
 
 from facetta.external_beta_release import verify_external_beta_release  # noqa: E402
+from facetta.frozen_evidence_paths import (  # noqa: E402
+    confined_output_path,
+    evidence_root,
+    require_new_artifact_paths,
+    retained_cli_entrypoint,
+    write_new_text_artifact,
+)
 
 
 def main() -> int:
@@ -40,6 +47,14 @@ def main() -> int:
     parser.add_argument("--outdir", type=Path, required=True)
     args = parser.parse_args()
 
+    resolved_evidence_root = evidence_root(args.corpus_evidence_root)
+    output_dir = confined_output_path(
+        resolved_evidence_root, args.outdir,
+        label="external beta decision output directory",
+    )
+    artifact = output_dir / "external-beta-decision.json"
+    require_new_artifact_paths([artifact], root=resolved_evidence_root)
+
     decision = verify_external_beta_release(
         args.corpus_decision,
         args.corpus_results,
@@ -59,9 +74,11 @@ def main() -> int:
         gia_review_packet_path=args.gia_review_packet,
         gia_review_ledger_path=args.gia_review_ledger,
     )
-    args.outdir.mkdir(parents=True, exist_ok=True)
-    artifact = args.outdir / "external-beta-decision.json"
-    artifact.write_text(json.dumps(decision, indent=2, sort_keys=True) + "\n")
+    write_new_text_artifact(
+        artifact,
+        json.dumps(decision, indent=2, sort_keys=True) + "\n",
+        root=resolved_evidence_root,
+    )
     print(json.dumps({
         "status": decision["status"],
         "external_beta_ready": decision["external_beta_ready"],
@@ -71,4 +88,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(retained_cli_entrypoint(main))

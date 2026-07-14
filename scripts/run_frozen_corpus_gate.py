@@ -14,6 +14,9 @@ from facetta.frozen_corpus_gate import compile_frozen_corpus_gate  # noqa: E402
 from facetta.frozen_evidence_paths import (  # noqa: E402
     confined_output_path,
     evidence_root,
+    require_new_artifact_paths,
+    retained_cli_entrypoint,
+    write_new_artifacts,
 )
 
 
@@ -88,6 +91,11 @@ def main() -> int:
     output_dir = confined_output_path(
         resolved_evidence_root, args.outdir, label="gate output directory",
     )
+    results_path = output_dir / "results.json"
+    report_path = output_dir / "report.md"
+    require_new_artifact_paths(
+        [results_path, report_path], root=resolved_evidence_root,
+    )
     result = compile_frozen_corpus_gate(
         args.manifest, args.config, args.source_dir, args.evidence,
         workload_path=args.workload,
@@ -95,11 +103,10 @@ def main() -> int:
         review_packet_path=args.gia_review_packet,
         review_ledger_path=args.gia_review_ledger,
     )
-    output_dir.mkdir(parents=True, exist_ok=True)
-    (output_dir / "results.json").write_text(
-        json.dumps(result, indent=2, sort_keys=True) + "\n"
-    )
-    (output_dir / "report.md").write_text(_report(result))
+    write_new_artifacts({
+        results_path: (json.dumps(result, indent=2, sort_keys=True) + "\n").encode(),
+        report_path: _report(result).encode(),
+    }, root=resolved_evidence_root)
     print(json.dumps({
         "status": result["status"],
         "corpus_gate_ready": result["corpus_gate_ready"],
@@ -109,4 +116,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(retained_cli_entrypoint(main))

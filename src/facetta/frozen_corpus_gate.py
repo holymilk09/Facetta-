@@ -418,7 +418,7 @@ def validate_frozen_component_pins(
     for key in (
         "capture_workload", "capture_planner", "capture_planner_cli",
         "capture_producer", "capture_producer_cli", "persistence_verifier",
-        "evidence_path_contract",
+        "evidence_path_contract", "release_verifier_cli",
     ):
         if key not in frozen:
             continue

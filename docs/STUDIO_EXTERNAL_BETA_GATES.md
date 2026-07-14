@@ -37,6 +37,26 @@ authority of a valid but unused enrollment. The production config deliberately
 keeps `release_authority_bundle` and all release keys `null` until real external
 enrollment is retained.
 
+## Retained run-directory safety
+
+Preassign three fresh, opaque identifiers in the release ticket before any
+external execution: `CORPUS_RUN_ID`, `STAGING_RUN_ID`, and
+`EXTERNAL_RELEASE_RUN_ID`. The corpus identifier must exactly equal the
+`corpus_run_id` already pinned by the reviewed assignment bundle and carried by
+the capture and replay. The staging and external-release identifiers must be
+assigned before their commands run and bound into the operator record. Never
+derive a run identifier from a clock after execution has started.
+
+Provision only the parent directories in advance. Each command below creates
+its leaf run directory with plain `mkdir`; an existing directory is a hard
+collision and the operator must stop rather than reuse or clean it. Do not
+replace these calls with `mkdir -p`. Every shell block that retains redirected
+output enables `set -C` first so an existing file cannot be overwritten.
+Artifact creation is atomic per file; a process or host failure can still leave
+an incomplete run directory. Such a directory is failed evidence, never a
+resume point. A valid gate requires the complete named artifact set and retained
+zero exit code from one run ID.
+
 ## Gate 1: signed frozen 144-image corpus
 
 ### Required inputs
@@ -183,8 +203,12 @@ invalidate the run.
 set +x
 umask 077
 EVIDENCE_ROOT=/secure/path/to/evidence-root
-CORPUS_DIR="$EVIDENCE_ROOT/gate-artifacts/frozen-founder-corpus-v1"
-mkdir -p "$CORPUS_DIR"
+CORPUS_RUN_ID="${CORPUS_RUN_ID:?preassign a fresh corpus run ID}"
+CORPUS_RUN_ROOT="$EVIDENCE_ROOT/gate-artifacts/frozen-founder-corpus-v1"
+CORPUS_DIR="$CORPUS_RUN_ROOT/$CORPUS_RUN_ID"
+test -d "$CORPUS_RUN_ROOT"
+mkdir "$CORPUS_DIR" || exit 1
+set -C
 set +e
 PYTHONPATH=src .venv/bin/python scripts/run_frozen_corpus_gate.py \
   --evidence-root "$EVIDENCE_ROOT" \
@@ -195,7 +219,7 @@ PYTHONPATH=src .venv/bin/python scripts/run_frozen_corpus_gate.py \
   --outdir "$CORPUS_DIR" > "$CORPUS_DIR/command-result.json"
 GATE_EXIT=$?
 set -e
-printf '%s\n' "$GATE_EXIT" > "$CORPUS_DIR/exit-code.txt"
+printf '%s\n' "$GATE_EXIT" > "$CORPUS_DIR/exit-code.txt" || exit 1
 test "$GATE_EXIT" -eq 0
 ```
 
@@ -205,6 +229,9 @@ receive the raw evidence again; it reruns the provider-free corpus compiler
 and requires the recomputed result to byte-match the retained result.
 
 ```bash
+set +x
+umask 077
+set -C
 set +e
 PYTHONPATH=src .venv/bin/python scripts/verify_frozen_corpus_release.py \
   --results "$CORPUS_DIR/results.json" \
@@ -219,7 +246,7 @@ PYTHONPATH=src .venv/bin/python scripts/verify_frozen_corpus_release.py \
   --outdir "$CORPUS_DIR" > "$CORPUS_DIR/final-command-result.json"
 FINAL_EXIT=$?
 set -e
-printf '%s\n' "$FINAL_EXIT" > "$CORPUS_DIR/final-exit-code.txt"
+printf '%s\n' "$FINAL_EXIT" > "$CORPUS_DIR/final-exit-code.txt" || exit 1
 test "$FINAL_EXIT" -eq 0
 ```
 
@@ -280,14 +307,18 @@ persistence engine. The local SQLite fallback cannot pass.
 ```bash
 set +x
 umask 077
-STAGING_DIR=/secure/path/to/gate-artifacts/staging-two-principal
-mkdir -p "$STAGING_DIR"
+STAGING_RUN_ID="${STAGING_RUN_ID:?preassign a fresh staging run ID}"
+STAGING_RUN_ROOT=/secure/path/to/gate-artifacts/staging-two-principal
+STAGING_DIR="$STAGING_RUN_ROOT/$STAGING_RUN_ID"
+test -d "$STAGING_RUN_ROOT"
+mkdir "$STAGING_DIR" || exit 1
+set -C
 set +e
 .venv/bin/python scripts/run_staging_two_user_isolation.py \
   > "$STAGING_DIR/results.json"
 STAGING_EXIT=$?
 set -e
-printf '%s\n' "$STAGING_EXIT" > "$STAGING_DIR/exit-code.txt"
+printf '%s\n' "$STAGING_EXIT" > "$STAGING_DIR/exit-code.txt" || exit 1
 test "$STAGING_EXIT" -eq 0
 ```
 
@@ -337,6 +368,14 @@ six-role authority bundle, verifies staging, and binds both retained zero
 exit-code files.
 
 ```bash
+set +x
+umask 077
+EXTERNAL_RELEASE_RUN_ID="${EXTERNAL_RELEASE_RUN_ID:?preassign a fresh external-release run ID}"
+EXTERNAL_RELEASE_RUN_ROOT="$EVIDENCE_ROOT/gate-artifacts/external-beta"
+EXTERNAL_RELEASE_DIR="$EXTERNAL_RELEASE_RUN_ROOT/$EXTERNAL_RELEASE_RUN_ID"
+test -d "$EXTERNAL_RELEASE_RUN_ROOT"
+mkdir "$EXTERNAL_RELEASE_DIR" || exit 1
+set -C
 set +e
 PYTHONPATH=src .venv/bin/python scripts/verify_external_beta_release.py \
   --corpus-decision "$CORPUS_DIR/final-decision.json" \
@@ -355,12 +394,16 @@ PYTHONPATH=src .venv/bin/python scripts/verify_external_beta_release.py \
   --staging-results "$STAGING_DIR/results.json" \
   --staging-approval "$EVIDENCE_ROOT/review/signed-staging-approval.json" \
   --staging-exit-code "$STAGING_DIR/exit-code.txt" \
-  --outdir "$EVIDENCE_ROOT/gate-artifacts/external-beta"
+  --outdir "$EXTERNAL_RELEASE_DIR" \
+  > "$EXTERNAL_RELEASE_DIR/command-result.json"
 COMBINED_EXIT=$?
 set -e
+printf '%s\n' "$COMBINED_EXIT" > "$EXTERNAL_RELEASE_DIR/exit-code.txt" || exit 1
 test "$COMBINED_EXIT" -eq 0
 ```
 
+`external-beta-decision.json` and its retained command result and exit code
+must remain together in the fresh external-release run directory.
 `external-beta-decision.json` is a derived authority. Missing raw evidence,
 v1 Boolean review data, packet/ledger mismatch, wrong reviewer profile,
 incomplete criteria, authority-bundle failure, nonzero retained exit code,

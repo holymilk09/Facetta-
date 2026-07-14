@@ -5,6 +5,35 @@ Read `CLAUDE.md` (constitution — binding), `README.md` (endpoints/layout),
 `docs/DATA_WANTED.md` (open research asks). This file is the delta: what is
 DONE beyond the original TASKS.md build order, and what is next.
 
+## 2026-07-14 retained release evidence and fresh-run checkpoint
+
+The frozen corpus and external-beta release chain now treats every named output
+as create-once evidence. Files are staged with private permissions, flushed and
+fsynced, then installed through no-replacement hard links. Multi-file writes
+preflight together and roll back only their own inode-matched outputs on an
+ordinary failure. Evidence-root writers traverse already validated directories
+through no-follow directory handles, so a concurrent parent symlink swap cannot
+redirect a retained artifact outside the secured root.
+
+The corpus planner, capture summary, blind packet, replay compiler, corpus
+decision, and combined external-beta decision all use this contract. Expected
+path or collision failures return stable provider-free JSON with a nonzero exit
+instead of an operational traceback. The release runbook now requires
+preassigned corpus, staging, and combined-release IDs, plain `mkdir` for each
+fresh leaf directory, shell noclobber before redirects, fatal retention errors,
+and abandonment rather than reuse of any interrupted run directory.
+
+Every production frozen component pin now matches the working tree, including
+the corpus finalizer CLI, staging probe, and combined release verifier. The
+provider-free definition passes with 144 integrity sources, 58 quality sources,
+1,044 planned sequences, zero provider calls, and no definition errors. The
+focused release chain passes 226 tests; all new retention, pin, and runbook
+regressions pass; Ruff and diff hygiene pass; and the complete backend passes
+1,855 tests. The existing Starlette/httpx deprecation remains warning-only. The
+signed live corpus, independent designer/GIA review, founder approval, six-role
+authority enrollment, and live two-principal HTTPS/PostgreSQL staging evidence
+remain unmet external gates.
+
 ## 2026-07-14 stable Studio actions and authoritative Factory eligibility checkpoint
 
 Every active design now keeps one stable action order: Create, Vary, Refine,

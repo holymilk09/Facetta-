@@ -21,6 +21,9 @@ from facetta.frozen_capture_producer import (  # noqa: E402
 from facetta.frozen_evidence_paths import (  # noqa: E402
     confined_output_path,
     evidence_root as resolve_evidence_root,
+    require_new_artifact_paths,
+    retained_cli_entrypoint,
+    write_new_text_artifact,
 )
 
 
@@ -83,10 +86,9 @@ def main() -> int:
                 raise ValueError(
                     "capture summary output must remain outside the atomic capture directory"
                 )
-            if summary_path.exists():
-                raise ValueError("capture summary output already exists")
-            if not summary_path.parent.is_dir():
-                raise ValueError("capture summary output parent is unavailable")
+            require_new_artifact_paths(
+                [summary_path], root=resolved_evidence_root,
+            )
         executor_id, api_id = _configured_key_ids(args.config)
         forbidden = (args.repository_root.resolve(), args.evidence_root.resolve())
         executor_signer = Ed25519PrivateKeySigner.from_file(
@@ -128,10 +130,12 @@ def main() -> int:
         }
     rendered = json.dumps(result, indent=2, sort_keys=True) + "\n"
     if summary_path is not None:
-        summary_path.write_text(rendered)
+        write_new_text_artifact(
+            summary_path, rendered, root=resolved_evidence_root,
+        )
     print(rendered, end="")
     return 0 if result["status"] == "pass" else 1
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(retained_cli_entrypoint(main))

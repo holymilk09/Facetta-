@@ -18,6 +18,24 @@ staging-reviewer key, or six-role authority bundle. All 1,044 quality rows are
 unresolved, so the executable provider budget is zero and release status is
 `not_run`.
 
+## Retained run-directory safety
+
+Preassign a fresh opaque `CORPUS_RUN_ID` in the release ticket before capture.
+It must exactly equal the `corpus_run_id` in the reviewed assignment bundle,
+capture, and replay. The staging and combined-release operators likewise
+preassign fresh `STAGING_RUN_ID` and `EXTERNAL_RELEASE_RUN_ID` values before
+their commands run. None of these identifiers may be generated after execution
+starts.
+
+Provision only parent directories ahead of time. Create each leaf run directory
+with plain `mkdir`, never `mkdir -p`, so a repeated identifier or stale directory
+fails immediately. Enable shell noclobber with `set -C` before every redirect
+that retains command output or an exit code. A retry receives a new run ID and a
+new directory; it never deletes, empties, or reuses the earlier evidence.
+Artifacts are installed atomically one file at a time, so an interrupted batch
+may leave an incomplete directory. It is not valid evidence and must never be
+resumed; only the complete artifact set plus its retained zero exit code passes.
+
 ## 1. Validate and resolve before provider work
 
 ```bash
@@ -130,17 +148,30 @@ attempts.
 ## 4. Compile and finalize the corpus gate
 
 ```bash
+set +x
+umask 077
 EVIDENCE_ROOT=/secure/path/to/evidence-root
-CORPUS_DIR="$EVIDENCE_ROOT/gate-artifacts/frozen-founder-corpus-v1"
+CORPUS_RUN_ID="${CORPUS_RUN_ID:?preassign a fresh corpus run ID}"
+CORPUS_RUN_ROOT="$EVIDENCE_ROOT/gate-artifacts/frozen-founder-corpus-v1"
+CORPUS_DIR="$CORPUS_RUN_ROOT/$CORPUS_RUN_ID"
+test -d "$CORPUS_RUN_ROOT"
+mkdir "$CORPUS_DIR" || exit 1
+set -C
 
+set +e
 PYTHONPATH=src .venv/bin/python scripts/run_frozen_corpus_gate.py \
   --evidence-root "$EVIDENCE_ROOT" \
   --source-dir "$EVIDENCE_ROOT/founder-reference-directory" \
   --evidence "$EVIDENCE_ROOT/signed-facetta-frozen-replay.v1.json" \
   --gia-review-packet "$EVIDENCE_ROOT/review/gia-packet.json" \
   --gia-review-ledger "$EVIDENCE_ROOT/review/signed-gia-ledger.json" \
-  --outdir "$CORPUS_DIR"
+  --outdir "$CORPUS_DIR" > "$CORPUS_DIR/command-result.json"
+GATE_EXIT=$?
+set -e
+printf '%s\n' "$GATE_EXIT" > "$CORPUS_DIR/exit-code.txt" || exit 1
+test "$GATE_EXIT" -eq 0
 
+set +e
 PYTHONPATH=src .venv/bin/python scripts/verify_frozen_corpus_release.py \
   --results "$CORPUS_DIR/results.json" \
   --approval "$EVIDENCE_ROOT/review/signed-founder-approval.json" \
@@ -151,7 +182,11 @@ PYTHONPATH=src .venv/bin/python scripts/verify_frozen_corpus_release.py \
   --workload docs/evals/frozen-founder-corpus-v1/workload.json \
   --gia-review-packet "$EVIDENCE_ROOT/review/gia-packet.json" \
   --gia-review-ledger "$EVIDENCE_ROOT/review/signed-gia-ledger.json" \
-  --outdir "$CORPUS_DIR"
+  --outdir "$CORPUS_DIR" > "$CORPUS_DIR/final-command-result.json"
+FINAL_EXIT=$?
+set -e
+printf '%s\n' "$FINAL_EXIT" > "$CORPUS_DIR/final-exit-code.txt" || exit 1
+test "$FINAL_EXIT" -eq 0
 ```
 
 The founder approval signs the exact `results.json` bytes. The finalizer also
@@ -165,6 +200,12 @@ The completed corpus decision may set `corpus_gate_ready: true`; it cannot set
 evidence, staging signature, and complete six-role authority bundle remain
 separate requirements of `scripts/verify_external_beta_release.py`. See
 `docs/STUDIO_EXTERNAL_BETA_GATES.md` for the exact combined command.
+
+That combined command must use a separately preassigned fresh
+`EXTERNAL_RELEASE_RUN_ID`, create
+`$EVIDENCE_ROOT/gate-artifacts/external-beta/$EXTERNAL_RELEASE_RUN_ID` with
+plain `mkdir`, enable `set -C` before retained redirects, and write its decision,
+command result, and exit code only inside that new directory.
 
 ## Fail-closed summary
 
