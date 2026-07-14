@@ -192,7 +192,7 @@ export function StudioViewsWorkspace({
             <StudioComparisonInspector
               before={{
                 accessibilityLabel: 'Exact source revision',
-                label: `Saved source · Version ${lineage.sourceDesignVersion}`,
+                label: 'Exact saved revision',
                 roleLabel: 'Source',
                 source: { uri: sourceImageUrl },
                 imageRequestHeaders,
@@ -283,7 +283,7 @@ export function StudioViewsWorkspace({
       </View>
       <View style={styles.sourceCard}>
         <Text style={styles.sourceLabel}>Confirmed saved source</Text>
-        <Text style={styles.sourceValue}>Confirmed design · Version {lineage.sourceDesignVersion}</Text>
+        <Text style={styles.sourceValue}>Exact saved revision</Text>
       </View>
       {visibleNotice !== null && <Notice kind="ok" text={visibleNotice} />}
       {savedForLineage && onOpenCollections !== undefined && (

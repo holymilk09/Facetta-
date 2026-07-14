@@ -1846,6 +1846,28 @@ describe('trusted API decoders', () => {
       ...payload,
       billing: { ...payload.billing, charged_credits: 28 },
     })).toBeNull();
+
+    const factory = {
+      ...payload,
+      action_id: 'factory',
+      lane: 'trusted_structural',
+      accepted_output_sha256: 'a'.repeat(64),
+      billing: {
+        requested_outputs: 1, credits_per_output: 28, estimated_credits: 28,
+        completed_outputs: 1, charged_outputs: 1, charged_credits: 28,
+        policy: 'Only accepted Factory output is charged.',
+      },
+    };
+    expect(decodeStudioJobRecord(factory)?.accepted_output_sha256).toBe('a'.repeat(64));
+    expect(decodeStudioJobRecord({
+      ...factory, accepted_output_sha256: null,
+    })).toBeNull();
+    expect(decodeStudioJobRecord({
+      ...factory,
+      billing: {
+        ...factory.billing, charged_outputs: 0, charged_credits: 0,
+      },
+    })).toBeNull();
   });
 
   test('uses owner-scoped Studio Activity routes and cancel command', async () => {

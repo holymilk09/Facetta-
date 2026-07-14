@@ -68,7 +68,8 @@ describe('StudioViewsWorkspace', () => {
     expect(screen.getByText('TECHNICAL VIEWS')).toBeTruthy();
     expect(screen.getByText('See the confirmed design from another angle.')).toBeTruthy();
     expect(screen.getByText(/confirmed design facts/)).toBeTruthy();
-    expect(screen.getByText('Confirmed design · Version 4')).toBeTruthy();
+    expect(screen.getByText('Exact saved revision')).toBeTruthy();
+    expect(screen.queryByText(/(?:Version|Design v)\s*4/i)).toBeNull();
     expect(screen.getByText('1 requested output × 15 credits = estimated 15 credits')).toBeTruthy();
     await act(async () => { fireEvent.press(screen.getByText('Front')); });
     await act(async () => { fireEvent.press(screen.getByText('Preview view')); });
@@ -77,7 +78,7 @@ describe('StudioViewsWorkspace', () => {
     expect(assetImageUrl).toHaveBeenCalledWith('asset_7');
     expect(screen.getByText('Compare before saving')).toBeTruthy();
     expect(screen.getByTestId('views-source-candidate-comparison')).toBeTruthy();
-    expect(screen.getByText('Source: Saved source · Version 4')).toBeTruthy();
+    expect(screen.getByText('Source: Exact saved revision')).toBeTruthy();
     expect(screen.getByText('Candidate: Temporary front view')).toBeTruthy();
     expect(screen.getByLabelText('Exact source revision').props.source).toEqual({
       uri: 'https://test/source.png',
@@ -92,11 +93,11 @@ describe('StudioViewsWorkspace', () => {
       fireEvent.press(screen.getByLabelText('Inspect comparison in detail'));
     });
     expect(screen.getByLabelText('Candidate: Temporary front view detail view')).toBeTruthy();
-    expect(screen.queryByLabelText('Source: Saved source · Version 4 detail view')).toBeNull();
+    expect(screen.queryByLabelText('Source: Exact saved revision detail view')).toBeNull();
     await act(async () => {
-      fireEvent.press(screen.getByLabelText('Show Source: Saved source · Version 4 in detail'));
+      fireEvent.press(screen.getByLabelText('Show Source: Exact saved revision in detail'));
     });
-    expect(screen.getByLabelText('Source: Saved source · Version 4 detail view')).toBeTruthy();
+    expect(screen.getByLabelText('Source: Exact saved revision detail view')).toBeTruthy();
     expect(screen.queryByLabelText('Candidate: Temporary front view detail view')).toBeNull();
     fireEvent.press(screen.getByText('Save view'));
     expect(acceptLineArtView).not.toHaveBeenCalled();
@@ -209,11 +210,13 @@ describe('StudioViewsWorkspace', () => {
     });
     expect(screen.queryByText('Your design is still unchanged.')).toBeNull();
     expect(screen.queryByText('A saved view preview was resumed for review.')).toBeNull();
-    expect(screen.getByText('Confirmed design · Version 5')).toBeTruthy();
+    expect(screen.getByText('Exact saved revision')).toBeTruthy();
+    expect(screen.queryByText(/(?:Version|Design v)\s*5/i)).toBeNull();
+    expect(resumeViews).toHaveBeenLastCalledWith(lineageB, 'designer');
 
     await act(async () => { resolveB?.({ data: previewB, error: null, status: 200 }); });
     expect(await screen.findByTestId('views-source-candidate-comparison')).toBeTruthy();
-    expect(screen.getByText('Source: Saved source · Version 5')).toBeTruthy();
+    expect(screen.getByText('Source: Exact saved revision')).toBeTruthy();
     expect(screen.getByText('Candidate: Temporary side view')).toBeTruthy();
   });
 });

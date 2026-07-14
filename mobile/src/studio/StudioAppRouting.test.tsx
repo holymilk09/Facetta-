@@ -183,9 +183,9 @@ jest.mock('./StudioRefineWorkspace', () => {
   const { Pressable, Text, View } = require('react-native');
   return {
     StudioRefineWorkspace: ({
-      initialAdvancedFactsOpen, lineage, onReviewStartingDesign, onOpenCollections, onPresent,
+      workspaceMode, lineage, onReviewStartingDesign, onOpenCollections, onPresent,
     }: {
-      initialAdvancedFactsOpen?: boolean;
+      workspaceMode?: 'refine' | 'specifications';
       lineage?: { sourceDesignVersion?: number } | null;
       onReviewStartingDesign?: () => void;
       onOpenCollections?: () => void;
@@ -195,7 +195,8 @@ jest.mock('./StudioRefineWorkspace', () => {
       null,
       ReactLocal.createElement(
         Text, null,
-        initialAdvancedFactsOpen ? 'Advanced specifications route reached' : 'Refine route reached',
+        workspaceMode === 'specifications'
+          ? 'Advanced specifications route reached' : 'Refine route reached',
       ),
       lineage !== null && lineage?.sourceDesignVersion === undefined
         && onReviewStartingDesign !== undefined
@@ -1088,6 +1089,7 @@ test('Views opens its starting-facts prerequisite and resumes after one save act
   expect(await view.findByText('Factory')).toBeTruthy();
   fireEvent.press(view.getByText('Specifications'));
   expect(await view.findByText('Advanced specifications route reached')).toBeTruthy();
+  expect(view.queryByText('Refine route reached')).toBeNull();
   fireEvent.press(view.getByLabelText('More actions'));
   fireEvent.press(await view.findByText('Factory'));
   expect(await view.findByText('Factory route reached for asset_exact_1')).toBeTruthy();

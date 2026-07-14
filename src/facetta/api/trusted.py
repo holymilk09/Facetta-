@@ -25,6 +25,7 @@ from facetta.db import (
 from facetta.factory_pack import (
     FactoryPackUnavailable,
     build_factory_pack,
+    factory_pack_manifest_sha256,
     factory_pack_zip,
 )
 from facetta.factory_sheet_plan import FactorySheetFactPlan
@@ -655,6 +656,7 @@ def prepare_factory_pack(
             completed_outputs=1,
             active_design_id=project_id,
             source_revision_id=job.source_revision_id,
+            accepted_output_sha256=factory_pack_manifest_sha256(pack),
         )
     except StudioJobAccountingError as exc:
         db.rollback()

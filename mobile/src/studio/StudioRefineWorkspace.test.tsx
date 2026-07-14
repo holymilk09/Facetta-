@@ -1078,7 +1078,39 @@ describe('StudioRefineWorkspace', () => {
     expect(onVariationCreated).not.toHaveBeenCalled();
   });
 
-  test('corrects a categorical fact and stone dimension with zero-credit immutable lineage', async () => {
+  test('keeps Advanced specifications out of the ordinary Refine workspace', async () => {
+    const getStudioComponentTargeting = jest.fn(async () => ({
+      data: readyTargeting, error: null, status: 200,
+    }));
+    await renderWithAuth(
+      <StudioRefineWorkspace
+        api={{
+          getComponentCatalog: jest.fn(async () => ({ data: catalog, error: null, status: 200 })),
+          getStudioComponentTargeting,
+          readMarkup: jest.fn(),
+          getProject: jest.fn(async () => ({
+            data: exactFactProject, error: null, status: 200,
+          })),
+          reviseStudioFacts: jest.fn(),
+        }}
+        gateway={{ resumeRefine: jest.fn(async () => ({
+          data: null, error: null, status: 200,
+        })) } as any}
+        lineage={{ projectId: 'project_1', sourceAssetId: 'asset_2', sourceDesignVersion: 2 }}
+        createdBy="designer"
+        onApplied={jest.fn()}
+      />,
+    );
+
+    expect(await screen.findByLabelText('Describe refine mode')).toBeTruthy();
+    expect(screen.queryByLabelText('Advanced design facts')).toBeNull();
+    expect(screen.queryByText('Review fact changes')).toBeNull();
+    expect(screen.queryByLabelText('Identity fact group')).toBeNull();
+    expect(screen.getByText('Preview change')).toBeTruthy();
+    expect(getStudioComponentTargeting).toHaveBeenCalledWith('asset_2');
+  });
+
+  test('corrects a categorical fact and stone dimension in the focused Specifications workspace', async () => {
     const revisedProject = {
       ...exactFactProject, active_asset_id: 'asset_3', active_design_version: 3,
     } as ProjectDetail;
@@ -1086,27 +1118,45 @@ describe('StudioRefineWorkspace', () => {
     const reviseStudioFacts = jest.fn(() => new Promise<any>((resolve) => {
       resolveRevision = resolve;
     }));
+    const getComponentCatalog = jest.fn(async () => ({ data: catalog, error: null, status: 200 }));
+    const getStudioComponentTargeting = jest.fn(async () => ({
+      data: readyTargeting, error: null, status: 200,
+    }));
+    const prepareStudioComponentMap = jest.fn();
+    const resumeRefine = jest.fn();
     const onApplied = jest.fn();
     await renderWithAuth(
       <StudioRefineWorkspace
         api={{
-          getComponentCatalog: jest.fn(async () => ({ data: catalog, error: null, status: 200 })),
-          getStudioComponentTargeting: getReadyTargeting,
+          getComponentCatalog,
+          getStudioComponentTargeting,
+          prepareStudioComponentMap,
           readMarkup: jest.fn(), getProject: jest.fn(async () => ({
             data: exactFactProject, error: null, status: 200,
           })), reviseStudioFacts,
         }}
-        gateway={{} as any}
+        gateway={{ resumeRefine } as any}
         lineage={{ projectId: 'project_1', sourceAssetId: 'asset_2', sourceDesignVersion: 2 }}
         createdBy="designer"
+        workspaceMode="specifications"
         onApplied={onApplied}
       />,
     );
 
-    expect(screen.queryByText('Facts')).toBeNull();
+    expect(screen.getByText('SPECIFICATIONS')).toBeTruthy();
+    expect(screen.getByText('Correct the recorded facts for this revision.')).toBeTruthy();
+    expect(screen.queryByText('REFINE')).toBeNull();
+    expect(screen.queryByLabelText('Component refine mode')).toBeNull();
+    expect(screen.queryByLabelText('Describe refine mode')).toBeNull();
+    expect(screen.queryByLabelText('Mark up refine mode')).toBeNull();
+    expect(screen.queryByText('Preview change')).toBeNull();
+    expect(screen.queryByLabelText('Advanced design facts')).toBeNull();
     expect(screen.queryByText('Stone species')).toBeNull();
-    await fireEvent.press(await screen.findByLabelText('Advanced design facts'));
     expect(await screen.findByText('Identity')).toBeTruthy();
+    expect(getStudioComponentTargeting).not.toHaveBeenCalled();
+    expect(prepareStudioComponentMap).not.toHaveBeenCalled();
+    expect(getComponentCatalog).not.toHaveBeenCalled();
+    expect(resumeRefine).not.toHaveBeenCalled();
     expect(screen.getByLabelText('Identity fact group').props.accessibilityState.expanded).toBe(true);
     expect(screen.getByLabelText('Stone fact group').props.accessibilityState.expanded).toBe(false);
     expect(screen.queryByText('Stone species')).toBeNull();

@@ -25,19 +25,19 @@ StudioExecutionMode = Literal[
     "instant_transaction", "candidate_job", "terminal_job",
 ]
 StudioReviewAuthority = Literal[
-    "none", "candidate_decision", "generic_transition",
+    "none", "candidate_decision", "backend_transaction",
 ]
 
 _EXECUTION_MODES = frozenset({
     "instant_transaction", "candidate_job", "terminal_job",
 })
 _REVIEW_AUTHORITIES = frozenset({
-    "none", "candidate_decision", "generic_transition",
+    "none", "candidate_decision", "backend_transaction",
 })
 _REVIEW_AUTHORITY_BY_EXECUTION_MODE = {
     "instant_transaction": "none",
     "candidate_job": "candidate_decision",
-    "terminal_job": "generic_transition",
+    "terminal_job": "backend_transaction",
 }
 
 
@@ -403,6 +403,7 @@ def record_accepted_studio_job_outputs(
     completed_outputs: int,
     active_design_id: str | None = None,
     source_revision_id: str | None = None,
+    accepted_output_sha256: str | None = None,
 ) -> StudioJobRecord:
     """Record a backend-authorized acceptance without committing.
 
@@ -432,6 +433,22 @@ def record_accepted_studio_job_outputs(
         or job.credits_per_output != canonical.credits_per_output
     ):
         raise StudioJobAccountingError("Studio job pricing is not canonical")
+    if canonical.review_authority == "backend_transaction":
+        if (
+            accepted_output_sha256 is None
+            or len(accepted_output_sha256) != 64
+            or any(
+                character not in "0123456789abcdef"
+                for character in accepted_output_sha256
+            )
+        ):
+            raise StudioJobAccountingError(
+                "backend-owned Studio acceptance requires SHA-256 output evidence"
+            )
+    elif accepted_output_sha256 is not None:
+        raise StudioJobAccountingError(
+            "output evidence is reserved for backend-owned Studio acceptance"
+        )
     for field, incoming in (
         ("active_design_id", active_design_id),
         ("source_revision_id", source_revision_id),
@@ -446,6 +463,7 @@ def record_accepted_studio_job_outputs(
             job.status == "succeeded"
             and job.completed_outputs == completed_outputs
             and job.charged_outputs == completed_outputs
+            and job.accepted_output_sha256 == accepted_output_sha256
         ):
             return job
         raise StudioJobAccountingError("Studio job outputs are already charged")
@@ -460,6 +478,7 @@ def record_accepted_studio_job_outputs(
     job.progress = 1
     job.completed_outputs = completed_outputs
     job.charged_outputs = completed_outputs
+    job.accepted_output_sha256 = accepted_output_sha256
     job.error_code = None
     job.reservation_kind = None
     job.updated_at = utcnow()

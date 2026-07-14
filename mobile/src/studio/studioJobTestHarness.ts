@@ -28,6 +28,7 @@ export function createStudioJobTestHarness(jobId = 'studio_job_test') {
       progress,
       active_design_id: transition?.active_design_id ?? request.active_design_id ?? null,
       source_revision_id: transition?.source_revision_id ?? request.source_revision_id ?? null,
+      accepted_output_sha256: null,
       error_code: transition?.error_code ?? null,
       created_at: '2026-07-12T00:00:00Z',
       updated_at: '2026-07-12T00:00:01Z',

@@ -92,7 +92,6 @@ from facetta.studio_jobs import (
     FactoryJobContextError,
     STUDIO_JOB_ACTIONS,
     lock_factory_job_context,
-    revalidate_factory_job_for_execution,
     studio_job_action_definition,
 )
 from facetta.studio_visual_candidates import (
@@ -542,6 +541,7 @@ def _studio_job(job: StudioJobRecord) -> dict:
         "progress": job.progress,
         "active_design_id": job.active_design_id,
         "source_revision_id": job.source_revision_id,
+        "accepted_output_sha256": job.accepted_output_sha256,
         "error_code": job.error_code,
         "created_at": timestamp(job.created_at),
         "updated_at": timestamp(job.updated_at),
@@ -756,17 +756,15 @@ def transition_studio_job(
 ):
     principal_actor(principal, request.owner)
     job = _owned_job(db, job_id, request.owner, for_update=True)
-    if (
-        job.action_id == "factory"
-        and job.status == "queued"
-        and request.status == "running"
-    ):
-        try:
-            job = revalidate_factory_job_for_execution(
-                db, job_id=job_id, owner=request.owner,
-            )
-        except FactoryJobContextError as exc:
-            raise HTTPException(status_code=409, detail=str(exc)) from exc
+    action = studio_job_action_definition(job.action_id)
+    if action.review_authority == "backend_transaction":
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"this {job.action_id} job is owned by its backend transaction; "
+                "use its dedicated preparation action"
+            ),
+        )
     if request.status not in _JOB_TRANSITIONS[job.status]:
         raise HTTPException(
             status_code=409,

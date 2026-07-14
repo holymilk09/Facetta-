@@ -81,6 +81,12 @@ def _json_bytes(value: JsonValue) -> bytes:
             + "\n").encode("utf-8")
 
 
+def factory_pack_manifest_sha256(pack: FactoryPack) -> str:
+    """Return the byte-stable identity persisted with Factory acceptance."""
+
+    return _sha256(_json_bytes(pack.manifest))
+
+
 def _chain(db: Session, root_id: str) -> list[ImageAsset]:
     return list(db.scalars(
         select(ImageAsset)

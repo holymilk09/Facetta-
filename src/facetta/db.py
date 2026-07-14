@@ -313,6 +313,12 @@ class StudioJobRecord(Base):
     credits_per_output: Mapped[int] = mapped_column(Integer)
     completed_outputs: Mapped[int] = mapped_column(Integer, default=0)
     charged_outputs: Mapped[int] = mapped_column(Integer, default=0)
+    # The byte-stable acceptance evidence for backend-owned terminal outputs.
+    # Factory stores the SHA-256 of approval-manifest.json before success and
+    # charging become visible as one atomic transaction.
+    accepted_output_sha256: Mapped[str | None] = mapped_column(
+        String(64), nullable=True,
+    )
     error_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
     # Non-null only while a backend-owned candidate workflow holds the job's
     # reviewing state.  Public lifecycle reports must not race that decision.
@@ -366,7 +372,52 @@ class StudioJobRecord(Base):
             "charged_outputs = 0 OR status = 'succeeded'",
             name="ck_studio_job_charge_requires_success",
         ),
+        CheckConstraint(
+            "accepted_output_sha256 IS NULL OR "
+            "(action_id = 'factory' AND status = 'succeeded')",
+            name="ck_studio_job_evidence_scope",
+        ),
+        CheckConstraint(
+            "action_id != 'factory' OR status != 'succeeded' OR "
+            "(requested_outputs = 1 AND completed_outputs = 1 AND "
+            "charged_outputs = 1 AND accepted_output_sha256 IS NOT NULL AND "
+            "length(accepted_output_sha256) = 64)",
+            name="ck_studio_job_factory_success_evidence",
+        ),
     )
+
+
+def _validate_factory_studio_job_success(
+    _mapper, _connection, target: StudioJobRecord,
+) -> None:
+    """Enforce Factory outcome truth on fresh and additive schemas alike."""
+
+    evidence = target.accepted_output_sha256
+    valid_evidence = (
+        isinstance(evidence, str)
+        and len(evidence) == 64
+        and all(character in "0123456789abcdef" for character in evidence)
+    )
+    if target.action_id == "factory" and target.status == "succeeded":
+        if (
+            target.requested_outputs != 1
+            or target.completed_outputs != 1
+            or target.charged_outputs != 1
+            or not valid_evidence
+        ):
+            raise ValueError(
+                "a succeeded Factory job requires one charged accepted pack "
+                "and its SHA-256 evidence"
+            )
+        return
+    if evidence is not None:
+        raise ValueError(
+            "accepted output evidence is reserved for succeeded Factory jobs"
+        )
+
+
+event.listen(StudioJobRecord, "before_insert", _validate_factory_studio_job_success)
+event.listen(StudioJobRecord, "before_update", _validate_factory_studio_job_success)
 
 
 class StudioPresentationCandidateRecord(Base):
@@ -1609,6 +1660,12 @@ def _apply_additive_migrations(engine) -> None:
                 conn.execute(text(
                     "ALTER TABLE studio_jobs "
                     "ADD COLUMN reservation_kind VARCHAR(24)"
+                ))
+        if "accepted_output_sha256" not in studio_job_columns:
+            with engine.begin() as conn:
+                conn.execute(text(
+                    "ALTER TABLE studio_jobs "
+                    "ADD COLUMN accepted_output_sha256 VARCHAR(64)"
                 ))
         studio_job_indexes = {
             item["name"] for item in inspect(engine).get_indexes("studio_jobs")

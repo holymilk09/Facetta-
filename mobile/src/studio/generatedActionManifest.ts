@@ -184,7 +184,7 @@ export const STUDIO_JOB_ACTION_MANIFEST = {
   "factory": {
     "lane": "trusted_structural",
     "execution_mode": "terminal_job",
-    "review_authority": "generic_transition",
+    "review_authority": "backend_transaction",
     "credits_per_output": 28,
     "min_requested_outputs": 1,
     "max_requested_outputs": 1,

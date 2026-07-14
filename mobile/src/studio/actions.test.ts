@@ -184,7 +184,7 @@ test('canonical job behavior is derived from manifest orchestration', () => {
       action.executionMode === 'candidate_job'
         ? 'candidate_decision'
         : action.executionMode === 'terminal_job'
-          ? 'generic_transition'
+          ? 'backend_transaction'
           : 'none',
     );
   }
@@ -304,17 +304,14 @@ test('StudioJob lifecycle derives candidate review authority from the registry',
   );
 
   const terminalJob = { ...job, actionId: 'factory' as const };
-  const terminalRunning = transitionStudioJob(
-    terminalJob, 'running', '2026-07-12T00:00:02Z',
+  assert.throws(
+    () => transitionStudioJob(terminalJob, 'running', '2026-07-12T00:00:02Z'),
+    /Invalid StudioJob transition/,
   );
-  const terminalReviewing = transitionStudioJob(
-    terminalRunning, 'reviewing', '2026-07-12T00:00:03Z',
+  assert.throws(
+    () => transitionStudioJob(terminalJob, 'failed', '2026-07-12T00:00:02Z'),
+    /Invalid StudioJob transition/,
   );
-  const succeeded = transitionStudioJob(
-    terminalReviewing, 'succeeded', '2026-07-12T00:00:04Z',
-  );
-  assert.equal(succeeded.progress, 1);
-  assert.throws(() => transitionStudioJob(succeeded, 'running', '2026-07-12T00:00:05Z'));
 });
 
 const preview = (verdict: PreviewCandidate['verdict']): PreviewCandidate => ({

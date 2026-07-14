@@ -12,7 +12,8 @@ import {
 const running: StudioJobRecord = {
   job_id: 'job_create', owner: 'usr_designer', action_id: 'create',
   lane: 'fast_visual', status: 'running', progress: 0.4,
-  active_design_id: 'design_ring', source_revision_id: null, error_code: null,
+  active_design_id: 'design_ring', source_revision_id: null,
+  accepted_output_sha256: null, error_code: null,
   created_at: '2026-07-12T01:00:00Z', updated_at: '2026-07-12T01:01:00Z',
   billing: {
     requested_outputs: 4, credits_per_output: 7, estimated_credits: 28,

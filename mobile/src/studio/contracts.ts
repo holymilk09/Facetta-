@@ -67,7 +67,7 @@ export type StudioExecutionMode =
 export type StudioReviewAuthority =
   | 'none'
   | 'candidate_decision'
-  | 'generic_transition';
+  | 'backend_transaction';
 
 /**
  * Declarative fields can be rendered from this registry. Host-rendered actions
@@ -216,6 +216,7 @@ export function canTransitionStudioJob(
   to: StudioJobStatus,
   reviewAuthority: StudioReviewAuthority,
 ): boolean {
+  if (reviewAuthority === 'backend_transaction') return false;
   if (from === 'reviewing' && reviewAuthority === 'candidate_decision') return false;
   return JOB_TRANSITIONS[from].includes(to);
 }

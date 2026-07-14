@@ -173,7 +173,8 @@ const catalogPreview = (): CatalogPreviewResult => ({
 const catalogStudioJob = (status: StudioJobRecord['status']): StudioJobRecord => ({
   job_id: 'studio_job_catalog', owner: 'designer_1', action_id: 'refine',
   lane: 'trusted_structural', status, progress: status === 'queued' ? 0 : 0.05,
-  active_design_id: 'project_1', source_revision_id: 'asset_1', error_code: null,
+  active_design_id: 'project_1', source_revision_id: 'asset_1',
+  accepted_output_sha256: null, error_code: null,
   created_at: '2026-07-13T00:00:00Z', updated_at: '2026-07-13T00:00:01Z',
   billing: {
     requested_outputs: 1, credits_per_output: 20, estimated_credits: 20,
@@ -957,7 +958,8 @@ test('Views resume from durable review state after a fresh gateway instance', as
     listStudioJobs: async () => ok({ jobs: [{
       job_id: 'job_resumed_view', owner: 'designer_1', action_id: 'views' as const,
       lane: 'fast_visual' as const, status: 'reviewing' as const, progress: 0.9,
-      active_design_id: 'project_1', source_revision_id: 'asset_1', error_code: null,
+      active_design_id: 'project_1', source_revision_id: 'asset_1',
+      accepted_output_sha256: null, error_code: null,
       created_at: '2026-07-13T00:00:00Z', updated_at: '2026-07-13T00:00:01Z',
       billing: { requested_outputs: 1, credits_per_output: 15, estimated_credits: 15,
         completed_outputs: 0, charged_outputs: 0, charged_credits: 0, policy: 'accepted outputs only' },

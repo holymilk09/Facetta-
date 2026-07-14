@@ -154,7 +154,9 @@ describe('StudioPresentWorkspace', () => {
     });
     expect(screen.queryByText('Results')).toBeNull();
     expect(screen.queryByText('1 saved preview resumed for review.')).toBeNull();
-    expect(screen.getByText('Saved source · Version 5')).toBeTruthy();
+    expect(screen.getByText('Exact saved revision')).toBeTruthy();
+    expect(screen.queryByText(/(?:Version|Design v)\s*5/i)).toBeNull();
+    expect(resumeExactPresentations).toHaveBeenLastCalledWith(lineageB, 'designer');
 
     await act(async () => { resolveB?.(resumed('candidate_b', lineageB)); });
     expect(await screen.findByText('Results')).toBeTruthy();
@@ -195,7 +197,8 @@ describe('StudioPresentWorkspace', () => {
       onOpenCollections={onOpenCollections}
     />);
 
-    expect(screen.getByText('Saved source · Version 4')).toBeTruthy();
+    expect(screen.getByText('Exact saved revision')).toBeTruthy();
+    expect(screen.queryByText(/(?:Version|Design v)\s*4/i)).toBeNull();
     expect(screen.getByText('What would you like to do with this exact design?')).toBeTruthy();
     expect(screen.getByText('Exact revision source')).toBeTruthy();
     expect(screen.queryByText(/asset_4/)).toBeNull();
@@ -213,7 +216,7 @@ describe('StudioPresentWorkspace', () => {
     }));
     expect(await screen.findByText('Not saved · choose what to keep')).toBeTruthy();
     expect(screen.getByTestId('presentation-comparison-candidate_1')).toBeTruthy();
-    expect(screen.getByText('Source: Saved source · Version 4')).toBeTruthy();
+    expect(screen.getByText('Source: Exact saved revision')).toBeTruthy();
     expect(screen.getByText('Candidate: Catalog white needs review')).toBeTruthy();
     expect(screen.queryByText('1 · Destination')).toBeNull();
     expect(screen.queryByText('Create client product photo')).toBeNull();

@@ -25,7 +25,8 @@ const studioJob = (status: StudioJobRecord['status']): StudioJobRecord => ({
   job_id: 'job_visual', owner: 'designer_1', action_id: 'refine',
   lane: 'trusted_structural', status, progress: status === 'queued' ? 0 : 0.05,
   active_design_id: 'project_visual', source_revision_id: 'asset_source',
-  error_code: null, created_at: '2026-07-12T00:00:00Z',
+  accepted_output_sha256: null, error_code: null,
+  created_at: '2026-07-12T00:00:00Z',
   updated_at: '2026-07-12T00:00:00Z',
   billing: {
     requested_outputs: 1, credits_per_output: 20, estimated_credits: 20,

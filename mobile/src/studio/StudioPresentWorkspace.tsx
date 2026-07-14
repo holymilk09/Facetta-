@@ -237,7 +237,7 @@ export function StudioPresentWorkspace({
   const hasExactRevision = lineage !== null && 'sourceDesignVersion' in lineage;
   const exactRevision = useMemo(() => lineage === null ? null
     : 'sourceDesignVersion' in lineage
-      ? `Saved source · Version ${lineage.sourceDesignVersion}`
+      ? 'Exact saved revision'
       : 'Selected visual direction · specification not confirmed', [lineage]);
   const sourceAccessibilityLabel = hasExactRevision
     ? 'Exact source revision' : 'Selected visual source';

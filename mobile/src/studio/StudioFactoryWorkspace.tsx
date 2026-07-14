@@ -245,7 +245,7 @@ export function StudioFactoryWorkspace({
       <Text style={styles.body}>
         Confirm only facts you know are correct. This is a readiness review—not a production-ready claim—and it never alters the selected Studio revision.
       </Text>
-      <Notice kind="info" text={`Exact revision ${lineage.sourceDesignVersion} is selected for this readiness review.`} />
+      <Notice kind="info" text="The exact saved revision is selected for this readiness review." />
       {readinessError !== null && <Notice kind="error" text={readinessError} />}
       {project === null ? (
         <Text style={styles.small}>Checking the exact revision and its readiness record…</Text>

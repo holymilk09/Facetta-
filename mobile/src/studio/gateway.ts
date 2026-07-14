@@ -646,6 +646,13 @@ export function createStudioGateway(
   ): Promise<StudioGatewayResult<StudioJobRecord | null>> => {
     if (job === null) return { data: null, error: null, status: 0 };
     const action = getStudioAction(job.actionId);
+    if (action.reviewAuthority === 'backend_transaction') {
+      return gatewayError(
+        'STUDIO_BACKEND_TRANSACTION_REQUIRED',
+        `This ${job.actionId} job is settled only by its dedicated backend transaction.`,
+        'conflict', 409,
+      );
+    }
     if (job.status === 'reviewing'
       && action.reviewAuthority === 'candidate_decision') {
       return gatewayError(

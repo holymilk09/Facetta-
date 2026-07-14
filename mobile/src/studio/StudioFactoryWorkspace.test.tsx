@@ -47,7 +47,9 @@ const withReadiness = (api: Record<string, unknown>, project: any = readyProject
 const job = (status: string) => ({
   job_id: 'job_1', owner: 'designer', action_id: 'factory' as const,
   lane: 'trusted_structural' as const, status, progress: status === 'succeeded' ? 1 : 0.05,
-  active_design_id: 'project_1', source_revision_id: 'asset_7', error_code: null,
+  active_design_id: 'project_1', source_revision_id: 'asset_7',
+  accepted_output_sha256: status === 'succeeded' ? 'a'.repeat(64) : null,
+  error_code: null,
   created_at: '2026-07-13T00:00:00Z', updated_at: '2026-07-13T00:00:00Z',
   billing: { requested_outputs: 1, credits_per_output: 28, estimated_credits: 28,
     completed_outputs: status === 'succeeded' ? 1 : 0, charged_outputs: status === 'succeeded' ? 1 : 0,
@@ -59,9 +61,13 @@ describe('StudioFactoryWorkspace', () => {
     const createStudioJob = jest.fn(async () => ({ data: job('queued'), error: null, status: 201 }));
     const prepareFactoryPack = jest.fn(async () => ({ data: manifest, error: null, status: 200 }));
     const deliverProtectedFile = jest.fn(async () => {});
-    await render(<StudioFactoryWorkspace api={withReadiness({ createStudioJob, prepareFactoryPack }) as any}
+    const readinessApi = withReadiness({ createStudioJob, prepareFactoryPack });
+    await render(<StudioFactoryWorkspace api={readinessApi as any}
       lineage={lineage} createdBy="designer" deliverProtectedFile={deliverProtectedFile} />);
 
+    expect(screen.getByText('The exact saved revision is selected for this readiness review.')).toBeTruthy();
+    expect(screen.queryByText(/(?:Version|Design v)\s*4/i)).toBeNull();
+    await waitFor(() => expect(readinessApi.getProject).toHaveBeenCalledWith('project_1'));
     expect(screen.getByText('1 requested output × 28 credits = estimated 28 credits')).toBeTruthy();
     expect(screen.getByText('You pay only for a usable requested output. Unsuccessful results cost 0 credits.')).toBeTruthy();
     expect(screen.queryByText(/internal retries/i)).toBeNull();

@@ -42,6 +42,8 @@ export type StudioRefineApi = Pick<StudioGateway,
   & Partial<Pick<StudioGateway,
     'getProject' | 'prepareStudioComponentMap' | 'reviseStudioFacts'>>;
 
+export type StudioRefineWorkspaceMode = 'refine' | 'specifications';
+
 export interface StudioRefineWorkspaceProps {
   api: StudioRefineApi;
   gateway: Pick<StudioGateway,
@@ -54,7 +56,7 @@ export interface StudioRefineWorkspaceProps {
   lineage: ExactStudioLineage | StudioVisualLineage | null;
   createdBy: string;
   sourceImageUrl?: string | null;
-  initialAdvancedFactsOpen?: boolean;
+  workspaceMode?: StudioRefineWorkspaceMode;
   onReviewStartingDesign?: () => void;
   onApplied: (project: ProjectDetail) => void;
   onVariationCreated?: (project: ProjectDetail) => void;
@@ -166,19 +168,21 @@ function friendlyFactOption(value: string): string {
 }
 
 export function StudioRefineWorkspace({
-  api, gateway, lineage, createdBy, sourceImageUrl = null, initialAdvancedFactsOpen = false,
+  api, gateway, lineage, createdBy, sourceImageUrl = null, workspaceMode = 'refine',
   onReviewStartingDesign, onApplied, onVariationCreated, onOpenCollections, onPresent,
   imageRequestHeaders, resumeReviewJobId, reviewSourceIsActive = true,
 }: StudioRefineWorkspaceProps) {
   const exactLineage = hasExactSpecification(lineage) ? lineage : null;
   const exactSpecification = exactLineage !== null;
   const [mode, setMode] = useState<'component' | 'instruction' | 'annotation' | 'facts'>(
-    exactSpecification && initialAdvancedFactsOpen ? 'facts' : 'instruction',
+    exactSpecification && workspaceMode === 'specifications' ? 'facts' : 'instruction',
   );
   const [path, setPath] = useState<ComponentCatalogPath>('metal.color');
   const [catalog, setCatalog] = useState<ComponentCatalog | null>(null);
   const [targeting, setTargeting] = useState<StudioComponentTargeting | null>(null);
-  const [targetingLoading, setTargetingLoading] = useState(exactSpecification);
+  const [targetingLoading, setTargetingLoading] = useState(
+    exactSpecification && workspaceMode === 'refine',
+  );
   const [targetingError, setTargetingError] = useState<string | null>(null);
   const [optionId, setOptionId] = useState<string | null>(null);
   const [preview, setPreview] = useState<{
@@ -205,9 +209,6 @@ export function StudioRefineWorkspace({
   const [factProject, setFactProject] = useState<ProjectDetail | null>(null);
   const [factDraft, setFactDraft] = useState<Partial<Record<StudioFactPath, string>>>({});
   const [factsLoading, setFactsLoading] = useState(false);
-  const [advancedFactsOpen, setAdvancedFactsOpen] = useState(
-    exactSpecification && initialAdvancedFactsOpen,
-  );
   const [activeFactGroup, setActiveFactGroup] = useState<FactGroupId>('identity');
   const [factReview, setFactReview] = useState<readonly FactChangeReview[] | null>(null);
   const decisionInFlight = useRef(false);
@@ -261,7 +262,7 @@ export function StudioRefineWorkspace({
     let current = true;
     setTargeting(null);
     setTargetingError(null);
-    if (exactLineage === null) {
+    if (workspaceMode !== 'refine' || exactLineage === null) {
       setTargetingLoading(false);
       return () => { current = false; };
     }
@@ -295,7 +296,7 @@ export function StudioRefineWorkspace({
     };
     void loadTargeting();
     return () => { current = false; };
-  }, [api, exactSpecification, lineage?.sourceAssetId]);
+  }, [api, exactSpecification, lineage?.sourceAssetId, workspaceMode]);
 
   const targetability = targeting?.catalog_paths.find(
     (candidate) => candidate.component_path === path,
@@ -399,7 +400,8 @@ export function StudioRefineWorkspace({
     let current = true;
     setPreview(null);
     setUnderstoodAs(null);
-    if (lineage === null || typeof gateway.resumeRefine !== 'function') {
+    if (workspaceMode !== 'refine'
+      || lineage === null || typeof gateway.resumeRefine !== 'function') {
       setResuming(false);
       return () => { current = false; };
     }
@@ -421,7 +423,7 @@ export function StudioRefineWorkspace({
     });
     return () => { current = false; };
   }, [createdBy, gateway, lineage?.projectId, lineage?.sourceAssetId,
-    exactLineage?.sourceDesignVersion, resumeReviewJobId]);
+    exactLineage?.sourceDesignVersion, resumeReviewJobId, workspaceMode]);
 
   useEffect(() => {
     const sourceRevisionChanged = draftLineageKey.current !== lineageKey;
@@ -802,7 +804,16 @@ export function StudioRefineWorkspace({
     );
   }
 
-  if (preview !== null) {
+  if (workspaceMode === 'specifications' && exactLineage === null) {
+    return (
+      <View style={styles.empty}>
+        <Text style={styles.title}>Choose an exact saved revision first</Text>
+        <Text style={styles.body}>Specifications can only update recorded facts on an exact revision.</Text>
+      </View>
+    );
+  }
+
+  if (workspaceMode === 'refine' && preview !== null) {
     const rejected = preview.candidate.verdict === 'reject';
     const variationSupported = preview.kind === 'catalog'
       ? gateway.saveCatalogPreviewAsVariation !== undefined
@@ -938,7 +949,7 @@ export function StudioRefineWorkspace({
 
   return (
     <ScrollView contentContainerStyle={styles.workspace}>
-      {acceptedOutcome !== null && (
+      {workspaceMode === 'refine' && acceptedOutcome !== null && (
         <View accessibilityRole="summary" style={styles.acceptedOutcomeCard}>
           <Text style={styles.acceptedOutcomeEyebrow}>SAVED</Text>
           <Text style={styles.acceptedOutcomeTitle}>{acceptedOutcome.kind === 'variation'
@@ -964,15 +975,20 @@ export function StudioRefineWorkspace({
           </View>
         </View>
       )}
-      <Text style={styles.eyebrow}>REFINE</Text>
-      <Text style={styles.title}>Change one thing. Keep the rest.</Text>
-      <Text style={styles.body}>Choose how to target one change. Every change creates a temporary candidate before anything enters design history.</Text>
+      <Text style={styles.eyebrow}>{workspaceMode === 'specifications'
+        ? 'SPECIFICATIONS' : 'REFINE'}</Text>
+      <Text style={styles.title}>{workspaceMode === 'specifications'
+        ? 'Correct the recorded facts for this revision.'
+        : 'Change one thing. Keep the rest.'}</Text>
+      <Text style={styles.body}>{workspaceMode === 'specifications'
+        ? 'Review only the facts that need correction. Saving appends an immutable specification revision without changing image pixels.'
+        : 'Choose how to target one change. Every change creates a temporary candidate before anything enters design history.'}</Text>
 
       {!reviewSourceIsActive && <Notice kind="info" text="This Activity result was created from an earlier revision. Review the existing preview below; creating or applying another change from this source is unavailable." />}
 
-      {resuming && <Notice kind="info" text="Checking for a pending preview from this exact revision…" />}
+      {workspaceMode === 'refine' && resuming && <Notice kind="info" text="Checking for a pending preview from this exact revision…" />}
 
-      <View style={styles.modeRow}>
+      {workspaceMode === 'refine' && <View style={styles.modeRow}>
         {([
           ['component', 'Component', 'Choose a controlled material or construction option.'],
           ['instruction', 'Describe', 'Describe an appearance-only change in plain language.'],
@@ -986,7 +1002,6 @@ export function StudioRefineWorkspace({
               accessibilityState={{ selected: mode === id }}
               onPress={() => {
                 setMode(id);
-                setAdvancedFactsOpen(false);
                 setFactReview(null);
                 setError(null);
               }}
@@ -995,30 +1010,10 @@ export function StudioRefineWorkspace({
               <Text style={styles.pathHelp}>{detail}</Text>
             </Pressable>
           ))}
-      </View>
+      </View>}
 
-      {exactSpecification && typeof api.reviseStudioFacts === 'function' && (
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel="Advanced design facts"
-          accessibilityState={{ expanded: advancedFactsOpen }}
-          onPress={() => {
-            const opening = !advancedFactsOpen;
-            setAdvancedFactsOpen(opening);
-            setMode(opening ? 'facts' : 'instruction');
-            setFactReview(null);
-            setError(null);
-          }}
-          style={[styles.advancedDisclosure, advancedFactsOpen && styles.advancedDisclosureOpen]}>
-          <View style={styles.advancedDisclosureCopy}>
-            <Text style={styles.advancedDisclosureTitle}>Advanced design facts</Text>
-            <Text style={styles.pathHelp}>Correct recorded specifications without changing image pixels.</Text>
-          </View>
-          <Text style={styles.disclosureGlyph}>{advancedFactsOpen ? '−' : '+'}</Text>
-        </Pressable>
-      )}
-
-      {!exactSpecification && onReviewStartingDesign !== undefined && (
+      {workspaceMode === 'refine'
+        && !exactSpecification && onReviewStartingDesign !== undefined && (
         <View style={styles.startingFactsCard}>
           <View style={styles.startingFactsCopy}>
             <Text style={styles.advancedDisclosureTitle}>Unlock precise ring edits</Text>
@@ -1028,13 +1023,15 @@ export function StudioRefineWorkspace({
         </View>
       )}
 
-      {targetingError !== null && <Notice kind="error" text={targetingError} />}
-      {exactSpecification && !targetingLoading && targetingError === null
+      {workspaceMode === 'refine'
+        && targetingError !== null && <Notice kind="error" text={targetingError} />}
+      {workspaceMode === 'refine'
+        && exactSpecification && !targetingLoading && targetingError === null
         && readyPaths.length === 0 && (
         <Notice kind="info" text="This revision has no precisely mapped component regions yet. Describe an appearance change or use Mark up; Facetta will not guess component geometry." />
       )}
 
-      {mode === 'component' && <>
+      {workspaceMode === 'refine' && mode === 'component' && <>
         <Text style={styles.sectionTitle}>1 · Component</Text>
         <View style={styles.pathGrid}>
           {PATHS.map((item) => {
@@ -1080,7 +1077,7 @@ export function StudioRefineWorkspace({
         )}
       </>}
 
-      {mode === 'instruction' && <>
+      {workspaceMode === 'refine' && mode === 'instruction' && <>
         <Field label="Appearance change" value={instruction} onChange={setInstruction} multiline
           placeholder="Make the presentation softer and more luminous while keeping every jewelry detail fixed…" />
         <Notice kind="info" text={exactSpecification
@@ -1088,13 +1085,13 @@ export function StudioRefineWorkspace({
           : 'Plain-language mode changes appearance only. Structural, stone, setting, and construction changes stay locked until design facts are confirmed.'} />
       </>}
 
-      {mode === 'annotation' && (sourceImageUrl === null ? (
+      {workspaceMode === 'refine' && mode === 'annotation' && (sourceImageUrl === null ? (
         <Notice kind="error" text="The exact active image is unavailable for annotation. Reopen the design or use Describe." />
       ) : <>
         <AnnotationCanvas sourceUri={sourceImageUrl} value={snapshot} onChange={setSnapshot} drawingEnabled />
         <Text style={styles.pathHelp}>Mark one region and add text or an arrow describing one change. Facetta will show its interpretation before Apply.</Text>
       </>)}
-      {mode === 'facts' && <>
+      {workspaceMode === 'specifications' && mode === 'facts' && <>
         <Notice kind="info" text="Fact corrections cost 0 credits. Image pixels stay unchanged while Facetta appends a new immutable specification revision." />
         {factsLoading ? <ActivityIndicator color={theme.accent} /> : editableFacts.length === 0 ? (
           <Notice kind="error" text="No designer-editable facts are available on this exact revision." />
@@ -1189,12 +1186,12 @@ export function StudioRefineWorkspace({
         </>)}
       </>}
       {error !== null && <Notice kind="error" text={error} />}
-      <Text style={styles.creditEstimate}>{mode === 'facts'
+      <Text style={styles.creditEstimate}>{workspaceMode === 'specifications'
         ? '0 credits · specification revision only'
         : mode === 'component' && catalogPreviewMode === 'instant'
           ? 'Quick preview · 0 credits'
           : `1 requested output × ${REFINE_CREDITS_PER_OUTPUT} credits = estimated ${REFINE_CREDITS_PER_OUTPUT} credits`}</Text>
-      {mode !== 'facts' ? (
+      {workspaceMode === 'refine' ? (
         <Button title={busy ? 'Creating preview…' : 'Preview change'} disabled={busy || !reviewSourceIsActive
           || (mode === 'component' && (selected === null || !selectedPathReady))
           || (mode === 'instruction' && !instruction.trim())
@@ -1228,11 +1225,6 @@ const styles = StyleSheet.create({
   acceptedOutcomeTitle: { color: theme.ink, fontSize: 18, fontWeight: '800' },
   acceptedOutcomeBody: { color: theme.faint, fontSize: 13, lineHeight: 19, maxWidth: 640 },
   acceptedOutcomeActions: { alignItems: 'flex-start', flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
-  advancedDisclosure: {
-    borderWidth: 1, borderColor: theme.line, borderRadius: radius.md, padding: 13,
-    backgroundColor: theme.paper, flexDirection: 'row', alignItems: 'center', gap: 12,
-  },
-  advancedDisclosureOpen: { borderColor: theme.accent, backgroundColor: theme.card },
   advancedDisclosureCopy: { flex: 1 },
   advancedDisclosureTitle: { color: theme.ink, fontWeight: '700', fontSize: 14, marginBottom: 3 },
   startingFactsCard: {
@@ -1240,7 +1232,6 @@ const styles = StyleSheet.create({
     backgroundColor: theme.card, flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 12,
   },
   startingFactsCopy: { flexGrow: 1, flexShrink: 1, flexBasis: 360 },
-  disclosureGlyph: { color: theme.accent, fontSize: 22, fontWeight: '500' },
   disabledCard: { opacity: 0.48 },
   pathCard: { width: 180, borderWidth: 1, borderColor: theme.line, borderRadius: radius.md, padding: 12, backgroundColor: theme.card },
   selectedCard: { borderColor: theme.accent, borderWidth: 2 },

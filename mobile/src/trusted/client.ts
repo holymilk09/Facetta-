@@ -1304,6 +1304,7 @@ export const decodeStudioJobRecord: Decoder<StudioJobRecord> = (value) => {
   const progress = number(value.progress);
   const createdAt = nullableText(value.created_at);
   const updatedAt = nullableText(value.updated_at);
+  const acceptedOutputSha256 = nullableText(value.accepted_output_sha256);
   const billing = decodeStudioJobBilling(value.billing);
   if (
     jobId === null || owner === null
@@ -1313,6 +1314,10 @@ export const decodeStudioJobRecord: Decoder<StudioJobRecord> = (value) => {
     || progress === null || progress < 0 || progress > 1
     || createdAt === null || updatedAt === null || billing === null
   ) return null;
+  const validAcceptedOutputSha256 = (
+    acceptedOutputSha256 !== null
+    && /^[0-9a-f]{64}$/.test(acceptedOutputSha256)
+  );
   if (
     (status === 'succeeded' && billing.completed_outputs < 1)
     || (
@@ -1324,6 +1329,20 @@ export const decodeStudioJobRecord: Decoder<StudioJobRecord> = (value) => {
       status !== 'succeeded'
       && (billing.completed_outputs !== 0 || billing.charged_outputs !== 0)
     )
+    || (
+      actionId === 'factory'
+      && status === 'succeeded'
+      && (
+        billing.requested_outputs !== 1
+        || billing.completed_outputs !== 1
+        || billing.charged_outputs !== 1
+        || !validAcceptedOutputSha256
+      )
+    )
+    || (
+      (actionId !== 'factory' || status !== 'succeeded')
+      && acceptedOutputSha256 !== null
+    )
   ) return null;
   return {
     job_id: jobId,
@@ -1334,6 +1353,7 @@ export const decodeStudioJobRecord: Decoder<StudioJobRecord> = (value) => {
     progress,
     active_design_id: nullableText(value.active_design_id),
     source_revision_id: nullableText(value.source_revision_id),
+    accepted_output_sha256: acceptedOutputSha256,
     error_code: nullableText(value.error_code),
     created_at: createdAt,
     updated_at: updatedAt,

@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import copy
 import hashlib
+import json
 from collections.abc import Iterator
 from datetime import timedelta
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, func, inspect, select
+from sqlalchemy import create_engine, func, inspect, select, text
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
@@ -324,14 +326,26 @@ def test_fresh_schema_contains_persistent_studio_jobs():
     assert {
         "owner", "action_id", "lane", "status", "progress",
         "requested_outputs", "credits_per_output", "completed_outputs",
-        "charged_outputs", "created_at", "updated_at",
+        "charged_outputs", "accepted_output_sha256", "created_at", "updated_at",
     } <= {
         column["name"]
         for column in inspector.get_columns(StudioJobRecord.__tablename__)
     }
 
 
-def test_terminal_job_lifecycle_is_persistent_and_client_completion_never_charges(client):
+@pytest.mark.parametrize(
+    ("status", "progress", "extra"),
+    [
+        ("running", 0.25, {}),
+        ("reviewing", 0.8, {}),
+        ("succeeded", 1, {"completed_outputs": 1}),
+        ("failed", 1, {"error_code": "client_report"}),
+        ("canceled", 1, {}),
+    ],
+)
+def test_factory_job_lifecycle_is_owned_exclusively_by_backend_transaction(
+    client, status, progress, extra,
+):
     project_id, source_id = _seed_project(
         client,
         project_id="project_factory_lifecycle",
@@ -370,27 +384,23 @@ def test_terminal_job_lifecycle_is_persistent_and_client_completion_never_charge
     assert "model" not in serialized_keys
     assert "attempt" not in serialized_keys
 
-    assert _transition(client, job_id, "running", 0.25).status_code == 200
-    assert _transition(client, job_id, "reviewing", 0.8).status_code == 200
-    succeeded = _transition(
-        client, job_id, "succeeded", 0.8, completed_outputs=1,
+    blocked = _transition(client, job_id, status, progress, **extra)
+    assert blocked.status_code == 409
+    assert blocked.json()["detail"] == (
+        "this factory job is owned by its backend transaction; "
+        "use its dedicated preparation action"
     )
-    assert succeeded.status_code == 200
-    result = succeeded.json()
-    assert result["status"] == "succeeded"
-    assert result["progress"] == 1
-    assert result["billing"]["completed_outputs"] == 1
-    assert result["billing"]["charged_outputs"] == 0
-    assert result["billing"]["charged_credits"] == 0
 
     persisted = client.get(
         f"/studio/jobs/{job_id}", params={"owner": "usr_designer"},
     )
     assert persisted.status_code == 200
-    assert persisted.json() == result
-
-    immutable = _transition(client, job_id, "running", 1)
-    assert immutable.status_code == 409
+    unchanged = persisted.json()
+    assert unchanged["status"] == "queued"
+    assert unchanged["progress"] == 0
+    assert unchanged["accepted_output_sha256"] is None
+    assert unchanged["billing"]["completed_outputs"] == 0
+    assert unchanged["billing"]["charged_outputs"] == 0
 
 
 def test_instant_transaction_cannot_create_or_orphan_a_studio_job(client):
@@ -764,7 +774,7 @@ def test_server_registry_matches_designer_action_contract():
         "present": (
             "destination", "presentation_pack", "visual_preview", "candidate_job", "candidate_decision",
         ),
-        "factory": (None, "factory_review_pack", "production_review", "terminal_job", "generic_transition"),
+        "factory": (None, "factory_review_pack", "production_review", "terminal_job", "backend_transaction"),
     }
     for action_id, (
         required_input, output_type, authority, execution_mode, review_authority,
@@ -978,6 +988,12 @@ def test_factory_pack_preparation_is_backend_authoritative_and_charges_once(clie
     assert settled["billing"]["completed_outputs"] == 1
     assert settled["billing"]["charged_outputs"] == 1
     assert settled["billing"]["charged_credits"] == factory.credits_per_output
+    expected_evidence = hashlib.sha256((
+        json.dumps(
+            prepared.json(), indent=2, sort_keys=True, ensure_ascii=False,
+        ) + "\n"
+    ).encode("utf-8")).hexdigest()
+    assert settled["accepted_output_sha256"] == expected_evidence
 
     repeated = client.post(
         f"/projects/{project_id}/factory-pack",
@@ -1136,7 +1152,10 @@ def test_factory_job_revalidates_again_before_running_provider_work(client):
         ))
         writer.commit()
 
-    blocked = _transition(client, queued["job_id"], "running", 0.1)
+    blocked = client.post(
+        f"/projects/{project_id}/factory-pack",
+        json={"studio_job_id": queued["job_id"], "owner": "usr_designer"},
+    )
     assert blocked.status_code == 409
     with sessions() as db:
         job = db.get(StudioJobRecord, queued["job_id"])
@@ -1196,7 +1215,10 @@ def test_factory_approval_generation_serializes_both_race_orders(client):
             ApprovalChecklist,
         )) == 1
 
-    canceled = _transition(client, queued["job_id"], "canceled", 1)
+    canceled = client.post(
+        f"/studio/jobs/{queued['job_id']}/cancel",
+        json={"owner": "usr_designer"},
+    )
     assert canceled.status_code == 200, canceled.text
 
     # Writer won the next serialization point: the negative append is durable,
@@ -1291,7 +1313,7 @@ def test_backend_acceptance_helper_is_the_only_charge_authority():
         db.rollback()
 
 
-def test_progress_and_charge_invariants_reject_inconsistent_updates(client):
+def test_factory_success_requires_backend_pack_evidence_and_exact_charge(client):
     project_id, source_id = _seed_project(
         client,
         project_id="project_factory_invariants",
@@ -1308,28 +1330,34 @@ def test_progress_and_charge_invariants_reject_inconsistent_updates(client):
         active_design_id=project_id,
         source_revision_id=source_id,
     )["job_id"]
-    assert _transition(client, job_id, "running", 0.6).status_code == 200
+    sessions = client.app_state["session_factory"]
+    with sessions() as db:
+        job = db.get(StudioJobRecord, job_id)
+        assert job is not None
+        job.status = "succeeded"
+        job.progress = 1
+        job.completed_outputs = 1
+        job.charged_outputs = 1
+        with pytest.raises(ValueError, match="SHA-256 evidence"):
+            db.commit()
+        db.rollback()
 
-    backward = _transition(client, job_id, "reviewing", 0.5)
-    assert backward.status_code == 409
-    reviewing = _transition(client, job_id, "reviewing", 0.9)
-    assert reviewing.status_code == 200
+        with pytest.raises(IntegrityError):
+            db.execute(text(
+                "UPDATE studio_jobs SET status = 'succeeded', progress = 1, "
+                "completed_outputs = 1, charged_outputs = 1 "
+                "WHERE id = :job_id"
+            ), {"job_id": job_id})
+            db.commit()
+        db.rollback()
 
-    no_output_count = _transition(client, job_id, "succeeded", 1)
-    assert no_output_count.status_code == 422
-    too_many = _transition(
-        client, job_id, "succeeded", 1, completed_outputs=2,
-    )
-    assert too_many.status_code == 422
-
-    self_charge = client.patch(f"/studio/jobs/{job_id}", json={
-        "owner": "usr_designer",
-        "status": "succeeded",
-        "progress": 1,
-        "completed_outputs": 1,
-        "charged_outputs": 1,
-    })
-    assert self_charge.status_code == 422
+    unchanged = client.get(
+        f"/studio/jobs/{job_id}", params={"owner": "usr_designer"},
+    ).json()
+    assert unchanged["status"] == "queued"
+    assert unchanged["accepted_output_sha256"] is None
+    assert unchanged["billing"]["completed_outputs"] == 0
+    assert unchanged["billing"]["charged_outputs"] == 0
 
 
 def test_creation_job_lineage_can_bind_once_but_never_drift(client):

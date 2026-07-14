@@ -15,12 +15,12 @@ EXECUTION_MODES = {
     "instant_transaction", "candidate_job", "terminal_job",
 }
 REVIEW_AUTHORITIES = {
-    "none", "candidate_decision", "generic_transition",
+    "none", "candidate_decision", "backend_transaction",
 }
 REVIEW_AUTHORITY_BY_EXECUTION_MODE = {
     "instant_transaction": "none",
     "candidate_job": "candidate_decision",
-    "terminal_job": "generic_transition",
+    "terminal_job": "backend_transaction",
 }
 
 

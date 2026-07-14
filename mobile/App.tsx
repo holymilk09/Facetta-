@@ -769,7 +769,8 @@ export default function App() {
                 ? activityReview.job.job_id : undefined}
               reviewSourceIsActive={activityReview?.job.action_id === 'refine'
                 ? activityReview.sourceIsActive : true}
-              initialAdvancedFactsOpen={selectedActionId === 'specifications'}
+              workspaceMode={selectedActionId === 'specifications'
+                ? 'specifications' : 'refine'}
               onReviewStartingDesign={confirmStudioLineage !== null
                 ? () => openStudioAction('confirm')
                 : undefined}

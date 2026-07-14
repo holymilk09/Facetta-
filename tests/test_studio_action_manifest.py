@@ -69,7 +69,7 @@ def test_manifest_generator_rejects_invalid_requested_output_ranges(
 @pytest.mark.parametrize("execution_mode,review_authority,minimum,maximum", [
     ("instant_transaction", "none", 1, 1),
     ("candidate_job", "candidate_decision", 0, 1),
-    ("terminal_job", "generic_transition", 0, 0),
+    ("terminal_job", "backend_transaction", 0, 0),
 ])
 def test_manifest_generator_enforces_output_range_by_execution_mode(
     execution_mode,

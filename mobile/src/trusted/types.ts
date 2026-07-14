@@ -408,6 +408,8 @@ export interface StudioJobRecord {
   progress: number;
   active_design_id: string | null;
   source_revision_id: string | null;
+  /** Exact accepted output evidence for backend-owned Factory transactions. */
+  accepted_output_sha256: string | null;
   error_code: string | null;
   created_at: string;
   updated_at: string;

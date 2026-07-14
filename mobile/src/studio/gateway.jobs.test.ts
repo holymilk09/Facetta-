@@ -75,7 +75,8 @@ function tracking() {
     job_id: id, owner: request.owner, action_id: request.action_id ?? 'create',
     lane: request.lane ?? 'fast_visual', status, progress: request.progress ?? 0,
     active_design_id: request.active_design_id ?? null,
-    source_revision_id: request.source_revision_id ?? null, error_code: request.error_code ?? null,
+    source_revision_id: request.source_revision_id ?? null,
+    accepted_output_sha256: null, error_code: request.error_code ?? null,
     created_at: '2026-07-12T00:00:00Z', updated_at: '2026-07-12T00:00:01Z',
     billing: {
       requested_outputs: request.requested_outputs ?? 1,
@@ -121,7 +122,8 @@ test('job-centric review restores immutable stale source with fail-closed decisi
   const reviewingJob: StudioJobRecord = {
     job_id: 'studio_job_stale_refine', owner: 'designer_1', action_id: 'refine',
     lane: 'trusted_structural', status: 'reviewing', progress: 0.9,
-    active_design_id: 'project_1', source_revision_id: 'candidate_1', error_code: null,
+    active_design_id: 'project_1', source_revision_id: 'candidate_1',
+    accepted_output_sha256: null, error_code: null,
     created_at: '2026-07-12T00:00:00Z', updated_at: '2026-07-12T00:00:01Z',
     billing: {
       requested_outputs: 1, credits_per_output: 20, estimated_credits: 20,
@@ -540,7 +542,8 @@ test('a restarted gateway resumes catalog review by its durable exact Refine job
   const reviewingJob: StudioJobRecord = {
     job_id: 'studio_job_catalog_resume', owner: 'designer_1', action_id: 'refine',
     lane: 'trusted_structural', status: 'reviewing', progress: 0.9,
-    active_design_id: 'project_1', source_revision_id: 'candidate_1', error_code: null,
+    active_design_id: 'project_1', source_revision_id: 'candidate_1',
+    accepted_output_sha256: null, error_code: null,
     created_at: '2026-07-12T00:00:00Z', updated_at: '2026-07-12T00:00:01Z',
     billing: {
       requested_outputs: 1, credits_per_output: 20, estimated_credits: 20,
