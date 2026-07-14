@@ -169,7 +169,9 @@ export function StudioCreateWorkspace({
   const [selectionStudioJobId, setSelectionStudioJobId] = useState<string | null>(
     resumeStudioJobId,
   );
-  const [stagedCandidateIds, setStagedCandidateIds] = useState<Set<string>>(new Set());
+  const [keepSiblingDirections, setKeepSiblingDirections] = useState(true);
+  const [individualPruningOpen, setIndividualPruningOpen] = useState(false);
+  const [excludedCandidateIds, setExcludedCandidateIds] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -183,12 +185,31 @@ export function StudioCreateWorkspace({
   const referenceVisualKey = (reference: StudioCreateReference): string => (
     `create-reference:${reference.role}:${reference.id}:${reference.mediaType}:${reference.imageBase64}`
   );
-  const decisionVisualKeys = candidates.filter((candidate) => (
-    candidate.asset_id === selectedAssetId || stagedCandidateIds.has(candidate.asset_id)
-  )).map(candidateVisualKey);
+  const intendedRetainedCandidates = useMemo(() => (
+    keepSiblingDirections
+      ? candidates.filter((candidate) => (
+          candidate.asset_id !== selectedAssetId
+          && !excludedCandidateIds.has(candidate.asset_id)
+        ))
+      : []
+  ), [candidates, excludedCandidateIds, keepSiblingDirections, selectedAssetId]);
+  const selectedCandidate = candidates.find(
+    (candidate) => candidate.asset_id === selectedAssetId,
+  ) ?? null;
+  const keepingAllSiblingDirections = keepSiblingDirections
+    && excludedCandidateIds.size === 0;
+  const keepingCustomSiblingDirections = keepSiblingDirections
+    && excludedCandidateIds.size > 0;
+  const selectedVisualKey = selectedCandidate === null ? null : candidateVisualKey(selectedCandidate);
+  const retainedVisualKeys = intendedRetainedCandidates.map(candidateVisualKey);
+  const decisionVisualKeys = [selectedVisualKey, ...retainedVisualKeys];
   const decisionVisualsReady = selectedAssetId !== null
-    && decisionVisualKeys.length === stagedCandidateIds.size + 1
+    && selectedCandidate !== null
     && visualReview.allReady(decisionVisualKeys);
+  const selectedVisualFailed = selectedAssetId !== null
+    && visualReview.anyFailed([selectedVisualKey]);
+  const retainedVisualFailed = retainedVisualKeys.length > 0
+    && visualReview.anyFailed(retainedVisualKeys);
   const masterReference = references.find((reference) => reference.role === 'master_geometry') ?? null;
   const sourceKind: CreativeSourceKind | null = masterReference?.sourceKind ?? null;
   const secondaryReferences = references.filter(
@@ -258,6 +279,9 @@ export function StudioCreateWorkspace({
     setProject(null);
     setSelectedAssetId(null);
     setSelectionStudioJobId(null);
+    setKeepSiblingDirections(true);
+    setIndividualPruningOpen(false);
+    setExcludedCandidateIds(new Set());
     const sourceTitle = prompt || submittedMaster?.label || 'Untitled reference study';
     const title = sourceTitle.length > 64 ? `${sourceTitle.slice(0, 61)}…` : sourceTitle;
     const result = submittedMaster === null
@@ -310,9 +334,9 @@ export function StudioCreateWorkspace({
     });
   };
 
-  const toggleDirectionToKeep = (candidateId: string, visualKey: string | null): void => {
-    if (busy || (!stagedCandidateIds.has(candidateId) && !visualReview.isReady(visualKey))) return;
-    setStagedCandidateIds((current) => {
+  const toggleDirectionExclusion = (candidateId: string): void => {
+    if (busy) return;
+    setExcludedCandidateIds((current) => {
       const next = new Set(current);
       if (next.has(candidateId)) next.delete(candidateId);
       else next.add(candidateId);
@@ -330,9 +354,7 @@ export function StudioCreateWorkspace({
     const requestSelectedAssetId = selectedAssetId;
     setBusy(true);
     setError(null);
-    const retained = candidates.filter((candidate) => (
-      candidate.asset_id !== selectedAssetId && stagedCandidateIds.has(candidate.asset_id)
-    )).map((candidate) => {
+    const retained = intendedRetainedCandidates.map((candidate) => {
       const index = candidates.findIndex((item) => item.asset_id === candidate.asset_id);
       return {
         candidateId: candidate.asset_id,
@@ -372,7 +394,9 @@ export function StudioCreateWorkspace({
     setProject(null);
     setSelectedAssetId(null);
     setSelectionStudioJobId(null);
-    setStagedCandidateIds(new Set());
+    setKeepSiblingDirections(true);
+    setIndividualPruningOpen(false);
+    setExcludedCandidateIds(new Set());
   };
 
   if (project !== null) {
@@ -384,12 +408,70 @@ export function StudioCreateWorkspace({
           These are visual directions—not measurements or production instructions.
         </Text>
         <Text style={styles.retainedCopy}>
-          Your choice becomes the Original and starts its immutable revision history. Mark any other useful direction to keep as a sibling variation, then continue once.
+          Your choice becomes the Original and starts its immutable revision history. Other directions stay in the same family by default, so you can return to them later.
         </Text>
+        {candidates.length > 1 && (
+          <View style={styles.retentionPanel}>
+            <Text style={styles.retentionTitle}>Keep other directions?</Text>
+            <Pressable
+              accessibilityRole="radio"
+              accessibilityLabel="Keep all other directions"
+              accessibilityState={{ checked: keepingAllSiblingDirections, disabled: busy }}
+              disabled={busy}
+              style={[
+                styles.retentionChoice,
+                keepingAllSiblingDirections && styles.retentionChoiceSelected,
+              ]}
+              onPress={() => {
+                setKeepSiblingDirections(true);
+                setIndividualPruningOpen(false);
+                setExcludedCandidateIds(new Set());
+              }}>
+              <Text style={styles.retentionChoiceTitle}>Keep all other directions</Text>
+              <Text style={styles.retentionChoiceHelp}>
+                Save them as sibling variations in this design family.
+              </Text>
+            </Pressable>
+            <Pressable
+              accessibilityRole="radio"
+              accessibilityLabel="Only keep my Original"
+              accessibilityState={{ checked: !keepSiblingDirections, disabled: busy }}
+              disabled={busy}
+              style={[
+                styles.retentionChoice,
+                !keepSiblingDirections && styles.retentionChoiceSelected,
+              ]}
+              onPress={() => {
+                setKeepSiblingDirections(false);
+                setIndividualPruningOpen(false);
+              }}>
+              <Text style={styles.retentionChoiceTitle}>Only keep my Original</Text>
+              <Text style={styles.retentionChoiceHelp}>Do not create sibling variations.</Text>
+            </Pressable>
+            {keepSiblingDirections && (
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Choose directions individually"
+                accessibilityState={{
+                  expanded: individualPruningOpen,
+                  disabled: busy,
+                  selected: keepingCustomSiblingDirections,
+                }}
+                disabled={busy}
+                style={styles.pruningDisclosure}
+                onPress={() => setIndividualPruningOpen((current) => !current)}>
+                <Text style={styles.pruningDisclosureText}>
+                  {individualPruningOpen ? 'Done choosing individually' : 'Choose individually'}
+                </Text>
+              </Pressable>
+            )}
+          </View>
+        )}
         <View style={styles.candidateGrid}>
           {candidates.map((candidate, index) => {
             const selected = selectedAssetId === candidate.asset_id;
-            const stagedToKeep = stagedCandidateIds.has(candidate.asset_id);
+            const excludedFromFamily = excludedCandidateIds.has(candidate.asset_id);
+            const intendedToKeep = keepSiblingDirections && !selected && !excludedFromFamily;
             const visualKey = candidateVisualKey(candidate);
             const visualReady = visualReview.isReady(visualKey);
             const candidateDisabled = busy;
@@ -418,33 +500,32 @@ export function StudioCreateWorkspace({
                   onPress={() => {
                     if (candidateDisabled) return;
                     setSelectedAssetId(candidate.asset_id);
-                    setStagedCandidateIds((current) => {
-                      const next = new Set(current);
-                      next.delete(candidate.asset_id);
-                      return next;
-                    });
                   }}>
                   <View style={styles.candidateCopy}>
                     <Text style={styles.candidateTitle}>Direction {index + 1}</Text>
                     <Text style={styles.candidateMeta}>{selected
                       ? 'Selected as Original'
-                      : stagedToKeep ? 'Will be kept as a variation' : 'Tap to choose'}</Text>
+                      : intendedToKeep
+                        ? visualReady
+                          ? 'Will be kept as a variation'
+                          : 'Will be kept after its preview loads'
+                        : 'Will not be kept · tap to choose as Original'}</Text>
                   </View>
                 </Pressable>
-                {!selected && (
+                {!selected && keepSiblingDirections && individualPruningOpen && (
                   <View style={styles.candidateAction}>
                     <Pressable
                       accessibilityRole="button"
-                      accessibilityLabel={`${stagedToKeep ? 'Remove' : 'Keep'} Direction ${index + 1} ${stagedToKeep ? 'from' : 'as'} variations`}
+                      accessibilityLabel={`${excludedFromFamily ? 'Include' : 'Exclude'} Direction ${index + 1} ${excludedFromFamily ? 'in' : 'from'} variations`}
                       accessibilityState={{
-                        disabled: candidateDisabled || (!visualReady && !stagedToKeep),
-                        selected: stagedToKeep,
+                        disabled: candidateDisabled,
+                        selected: !excludedFromFamily,
                       }}
-                      disabled={candidateDisabled || (!visualReady && !stagedToKeep)}
+                      disabled={candidateDisabled}
                       style={styles.keepButton}
-                      onPress={() => toggleDirectionToKeep(candidate.asset_id, visualKey)}>
+                      onPress={() => toggleDirectionExclusion(candidate.asset_id)}>
                       <Text style={styles.keepButtonText}>
-                        {stagedToKeep ? 'Remove from kept variations' : 'Keep as variation'}
+                        {excludedFromFamily ? 'Include as variation' : 'Exclude from variations'}
                       </Text>
                     </Pressable>
                   </View>
@@ -455,9 +536,13 @@ export function StudioCreateWorkspace({
         </View>
         {!decisionVisualsReady && selectedAssetId !== null && (
           <Text style={styles.reviewReadiness}>
-            {visualReview.anyFailed(decisionVisualKeys)
-              ? 'A selected direction could not be displayed. Choose another direction or remove it from kept variations before continuing.'
-              : 'Wait for every selected direction to finish loading before continuing.'}
+            {selectedVisualFailed
+              ? 'The selected Original could not be displayed. Choose another direction or try loading it again before continuing.'
+              : retainedVisualFailed
+                ? 'A direction set to be kept could not be displayed. Open Choose individually and exclude it, or try loading it again before continuing.'
+                : keepSiblingDirections && intendedRetainedCandidates.length > 0
+                  ? 'Wait for the Original and every direction you are keeping to finish loading before continuing.'
+                  : 'Wait for the Original to finish loading before continuing.'}
           </Text>
         )}
         {error !== null && <Text style={styles.error}>{error}</Text>}
@@ -478,9 +563,9 @@ export function StudioCreateWorkspace({
             onPress={() => void continueWithSelection()}>
             <Text style={styles.primaryButtonText}>{busy
               ? 'Saving directions…'
-              : `Continue with Direction ${candidates.findIndex((candidate) => candidate.asset_id === selectedAssetId) + 1}${stagedCandidateIds.size === 0
+              : `Continue with Direction ${candidates.findIndex((candidate) => candidate.asset_id === selectedAssetId) + 1}${intendedRetainedCandidates.length === 0
                 ? ''
-                : ` · keep ${stagedCandidateIds.size} variation${stagedCandidateIds.size === 1 ? '' : 's'}`}`}</Text>
+                : ` · keep ${intendedRetainedCandidates.length} variation${intendedRetainedCandidates.length === 1 ? '' : 's'}`}`}</Text>
           </Pressable>
         </View>
       </ScrollView>
@@ -737,6 +822,14 @@ const styles = StyleSheet.create({
   title: { color: theme.ink, fontFamily: theme.serif, fontSize: 30, lineHeight: 37, marginTop: 8 },
   body: { color: theme.faint, fontSize: 14, lineHeight: 21, marginTop: 8, maxWidth: 560 },
   retainedCopy: { color: theme.faint, fontSize: 12, lineHeight: 18, marginTop: 10, maxWidth: 560 },
+  retentionPanel: { borderWidth: 1, borderColor: theme.line, borderRadius: radius.lg, backgroundColor: theme.card, padding: 14, marginTop: 16, gap: 8 },
+  retentionTitle: { color: theme.ink, fontSize: 13, fontWeight: '700' },
+  retentionChoice: { minHeight: 44, justifyContent: 'center', borderWidth: 1, borderColor: theme.line, borderRadius: radius.md, paddingHorizontal: 12, paddingVertical: 9 },
+  retentionChoiceSelected: { borderColor: '#6f52d9', backgroundColor: '#eee9ff' },
+  retentionChoiceTitle: { color: theme.ink, fontSize: 12, fontWeight: '700' },
+  retentionChoiceHelp: { color: theme.faint, fontSize: 10, lineHeight: 15, marginTop: 2 },
+  pruningDisclosure: { minHeight: 44, alignSelf: 'flex-start', justifyContent: 'center', paddingHorizontal: 4 },
+  pruningDisclosureText: { color: '#5c3fc0', fontSize: 11, fontWeight: '700' },
   prompt: { minHeight: 112, borderWidth: 1, borderColor: theme.line, borderRadius: radius.lg, backgroundColor: theme.card, color: theme.ink, fontSize: 16, lineHeight: 23, padding: 16, marginTop: 22, textAlignVertical: 'top' },
   sectionTitle: { color: theme.ink, fontSize: 14, fontWeight: '700', marginTop: 22 },
   sectionHelp: { color: theme.faint, fontSize: 11, lineHeight: 16, marginTop: 4 },
