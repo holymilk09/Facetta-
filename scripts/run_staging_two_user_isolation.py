@@ -3,7 +3,8 @@
 
 The script never prints credentials or response bodies and performs no
 generation or persistence calls. It requires two already-seeded principals,
-projects, and image assets so ownership can be checked in both directions.
+projects, image assets, jobs, and fresh review candidates so ownership can be
+checked in both directions without invoking list-time reconciliation.
 """
 
 from __future__ import annotations
@@ -45,6 +46,13 @@ Transport = Callable[[str, str, str], HttpResult]
 
 
 @dataclass(frozen=True)
+class CandidateFixture:
+    kind: str
+    run_id: str
+    candidate_id: str
+
+
+@dataclass(frozen=True)
 class StagingIdentity:
     label: str
     token: str
@@ -52,6 +60,11 @@ class StagingIdentity:
     project_id: str
     family_id: str
     asset_id: str
+    job_id: str
+    candidates: tuple[CandidateFixture, ...]
+
+    def candidate(self, kind: str) -> CandidateFixture:
+        return next(candidate for candidate in self.candidates if candidate.kind == kind)
 
 
 @dataclass(frozen=True)
@@ -101,6 +114,10 @@ def load_config() -> StagingConfig:
             "project_id": _required(f"{prefix}_PROJECT_ID", missing),
             "family_id": _required(f"{prefix}_FAMILY_ID", missing),
             "asset_id": _required(f"{prefix}_ASSET_ID", missing),
+            "job_id": _required(f"{prefix}_JOB_ID", missing),
+            "candidate_fixtures": _required(
+                f"{prefix}_CANDIDATE_FIXTURES_JSON", missing,
+            ),
         }
     if missing:
         raise MissingConfiguration(sorted(missing))
@@ -118,9 +135,34 @@ def load_config() -> StagingConfig:
         values = identity_values[label]
         token = values["token"]
         identifier = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
-        for field in ("project_id", "family_id", "asset_id"):
+        for field in ("project_id", "family_id", "asset_id", "job_id"):
             if identifier.fullmatch(values[field]) is None:
                 raise ValueError(f"staging {field} is not a safe identifier")
+        try:
+            raw_candidates = json.loads(values["candidate_fixtures"])
+        except json.JSONDecodeError as exc:
+            raise ValueError("staging candidate fixtures are not valid JSON") from exc
+        kinds = {"catalog", "visual", "markup", "view", "presentation"}
+        if not isinstance(raw_candidates, dict) or set(raw_candidates) != kinds:
+            raise ValueError(
+                "staging candidate fixtures must exactly cover catalog, visual, "
+                "markup, view, and presentation"
+            )
+        candidates: list[CandidateFixture] = []
+        for kind in sorted(kinds):
+            raw = raw_candidates[kind]
+            if not isinstance(raw, dict) or set(raw) != {"run_id", "candidate_id"}:
+                raise ValueError(f"staging {kind} candidate fixture is invalid")
+            run_id = raw.get("run_id")
+            candidate_id = raw.get("candidate_id")
+            if (
+                not isinstance(run_id, str)
+                or not isinstance(candidate_id, str)
+                or identifier.fullmatch(run_id) is None
+                or identifier.fullmatch(candidate_id) is None
+            ):
+                raise ValueError(f"staging {kind} candidate identifiers are unsafe")
+            candidates.append(CandidateFixture(kind, run_id, candidate_id))
         return StagingIdentity(
             label=label,
             token=token,
@@ -128,6 +170,8 @@ def load_config() -> StagingConfig:
             project_id=values["project_id"],
             family_id=values["family_id"],
             asset_id=values["asset_id"],
+            job_id=values["job_id"],
+            candidates=tuple(candidates),
         )
 
     first = identity("A")
@@ -138,8 +182,19 @@ def load_config() -> StagingConfig:
         first.project_id == second.project_id
         or first.family_id == second.family_id
         or first.asset_id == second.asset_id
+        or first.job_id == second.job_id
     ):
         raise ValueError("staging identities must reference distinct seeded records")
+    first_candidates = {
+        (candidate.run_id, candidate.candidate_id) for candidate in first.candidates
+    }
+    second_candidates = {
+        (candidate.run_id, candidate.candidate_id) for candidate in second.candidates
+    }
+    if len(first_candidates) != 5 or len(second_candidates) != 5 or (
+        first_candidates & second_candidates
+    ):
+        raise ValueError("staging candidate fixtures must be distinct seeded records")
     return StagingConfig(
         base_url=base_url,
         deployment_revision=deployment_revision,
@@ -219,6 +274,58 @@ def run_probe(config: StagingConfig, transport: Transport = http_transport) -> d
             "observed": observed,
             "passed": observed == expected,
         })
+
+    def candidate_paths(
+        kind: str,
+        identity: StagingIdentity,
+    ) -> tuple[str, str, int, int]:
+        actor_query = urlencode({
+            "owner": identity.actor,
+            "project_id": identity.project_id,
+        })
+        if kind == "catalog":
+            return (
+                f"/assets/{quote(identity.asset_id, safe='')}/catalog/previews",
+                "/image-runs/{run_id}/catalog-candidates/{candidate_id}/image",
+                404,
+                404,
+            )
+        if kind == "visual":
+            return (
+                f"/studio/projects/{quote(identity.project_id, safe='')}/visual-candidates",
+                "/studio/image-runs/{run_id}/visual-candidates/{candidate_id}/image",
+                404,
+                404,
+            )
+        if kind == "markup":
+            return (
+                f"/studio/projects/{quote(identity.project_id, safe='')}/markup-candidates",
+                "/studio/markup-candidates/{run_id}/{candidate_id}/image",
+                404,
+                404,
+            )
+        if kind == "view":
+            return (
+                f"/studio/view-candidates?{actor_query}",
+                (
+                    "/studio/view-candidates/{run_id}/{candidate_id}/image?"
+                    + urlencode({"owner": identity.actor})
+                ),
+                403,
+                403,
+            )
+        if kind == "presentation":
+            return (
+                f"/studio/presentation-candidates?{actor_query}",
+                (
+                    "/studio/image-runs/{run_id}/presentation-candidates/"
+                    "{candidate_id}/image?"
+                    + urlencode({"owner": identity.actor})
+                ),
+                403,
+                403,
+            )
+        raise RuntimeError(f"unsupported candidate probe kind: {kind}")
 
     # Bind the operator-selected release identifier to the process reached at
     # the exact HTTPS origin.  Before this check, a caller could label evidence
@@ -327,10 +434,207 @@ def run_probe(config: StagingConfig, transport: Transport = http_transport) -> d
         )
         record(f"user_{own.label}_cannot_enumerate_other_family", 404, cross_family.status)
 
+        own_factory_pack = request(
+            own, f"/projects/{quote(own.project_id, safe='')}/factory-pack",
+        )
+        record(
+            f"user_{own.label}_factory_pack_route_is_addressable",
+            True,
+            own_factory_pack.status in {200, 409, 422},
+        )
+        cross_factory_pack = request(
+            own, f"/projects/{quote(other.project_id, safe='')}/factory-pack",
+        )
+        record(
+            f"user_{own.label}_cannot_read_other_factory_pack",
+            403,
+            cross_factory_pack.status,
+        )
+        own_factory_zip = request(
+            own, f"/projects/{quote(own.project_id, safe='')}/factory-pack.zip",
+        )
+        record(
+            f"user_{own.label}_factory_pack_zip_route_is_addressable",
+            True,
+            own_factory_zip.status in {200, 409, 422},
+        )
+        cross_factory_zip = request(
+            own, f"/projects/{quote(other.project_id, safe='')}/factory-pack.zip",
+        )
+        record(
+            f"user_{own.label}_cannot_download_other_factory_pack",
+            403,
+            cross_factory_zip.status,
+        )
+
+        own_checklist = request(
+            own, f"/assets/{quote(own.asset_id, safe='')}/checklist",
+        )
+        record(
+            f"user_{own.label}_checklist_route_is_addressable",
+            True,
+            own_checklist.status in {200, 404},
+        )
+        cross_checklist = request(
+            own, f"/assets/{quote(other.asset_id, safe='')}/checklist",
+        )
+        record(
+            f"user_{own.label}_cannot_read_other_checklist",
+            403,
+            cross_checklist.status,
+        )
+
+        own_targeting = request(
+            own,
+            f"/assets/{quote(own.asset_id, safe='')}/studio-component-targeting",
+        )
+        record(
+            f"user_{own.label}_component_targeting_route_is_addressable",
+            True,
+            own_targeting.status in {200, 409},
+        )
+        cross_targeting = request(
+            own,
+            f"/assets/{quote(other.asset_id, safe='')}/studio-component-targeting",
+        )
+        record(
+            f"user_{own.label}_cannot_read_other_component_targeting",
+            403,
+            cross_targeting.status,
+        )
+
+        cross_catalog_previews = request(
+            own, f"/assets/{quote(other.asset_id, safe='')}/catalog/previews",
+        )
+        record(
+            f"user_{own.label}_cannot_list_other_catalog_previews",
+            404,
+            cross_catalog_previews.status,
+        )
+
+        own_job = request(
+            own,
+            f"/studio/jobs/{quote(own.job_id, safe='')}?"
+            + urlencode({"owner": own.actor}),
+        )
+        record(f"user_{own.label}_reads_own_job", 200, own_job.status)
+        cross_job = request(
+            own,
+            f"/studio/jobs/{quote(other.job_id, safe='')}?"
+            + urlencode({"owner": own.actor}),
+        )
+        record(f"user_{own.label}_cannot_read_other_job", 404, cross_job.status)
+        spoofed_jobs = request(
+            own, "/studio/jobs?" + urlencode({"owner": other.actor}),
+        )
+        record(
+            f"user_{own.label}_cannot_spoof_job_owner",
+            403,
+            spoofed_jobs.status,
+        )
+
+        for kind in (
+            "catalog", "visual", "markup", "view", "presentation",
+        ):
+            list_path, image_template, cross_list_status, cross_image_status = (
+                candidate_paths(kind, own)
+            )
+            fixture = own.candidate(kind)
+            image_path = image_template.format(
+                run_id=quote(fixture.run_id, safe=""),
+                candidate_id=quote(fixture.candidate_id, safe=""),
+            )
+            other_fixture = other.candidate(kind)
+            cross_image_path = image_template.format(
+                run_id=quote(other_fixture.run_id, safe=""),
+                candidate_id=quote(other_fixture.candidate_id, safe=""),
+            )
+
+            if kind == "catalog":
+                cross_list_path = (
+                    f"/assets/{quote(other.asset_id, safe='')}/catalog/previews"
+                )
+            elif kind in {"visual", "markup"}:
+                cross_list_path = (
+                    f"/studio/projects/{quote(other.project_id, safe='')}/"
+                    f"{kind}-candidates"
+                )
+            else:
+                cross_list_path = list_path.replace(
+                    urlencode({
+                        "owner": own.actor,
+                        "project_id": own.project_id,
+                    }),
+                    urlencode({
+                        "owner": other.actor,
+                        "project_id": other.project_id,
+                    }),
+                )
+            if kind != "catalog":
+                cross_candidates = request(own, cross_list_path)
+                record(
+                    f"user_{own.label}_cannot_list_other_{kind}_candidates",
+                    cross_list_status,
+                    cross_candidates.status,
+                )
+
+            own_candidate_image = request(own, image_path)
+            record(
+                f"user_{own.label}_reads_own_{kind}_candidate_image",
+                200,
+                own_candidate_image.status,
+            )
+            record(
+                f"user_{own.label}_own_{kind}_candidate_is_image",
+                True,
+                own_candidate_image.content_type.startswith("image/"),
+            )
+            # Keep the authenticated actor and owner query aligned while
+            # changing only the bound object identifiers. Otherwise view and
+            # presentation endpoints could reject an owner spoof before
+            # exercising candidate-object isolation at all.
+            cross_candidate_image = request(own, cross_image_path)
+            record(
+                f"user_{own.label}_cannot_read_other_{kind}_candidate_image",
+                cross_image_status,
+                cross_candidate_image.status,
+            )
+            no_auth_candidate_image = transport(
+                "GET", f"{config.base_url}{image_path}", "",
+            )
+            record(
+                f"user_{own.label}_{kind}_candidate_image_requires_auth",
+                401,
+                no_auth_candidate_image.status,
+            )
+
     no_auth_families = transport(
         "GET", f"{config.base_url}/studio/families", "",
     )
     record("studio_families_require_auth", 401, no_auth_families.status)
+    no_auth_paths = {
+        "factory_packs_require_auth": (
+            f"/projects/{quote(config.first.project_id, safe='')}/factory-pack"
+        ),
+        "factory_pack_downloads_require_auth": (
+            f"/projects/{quote(config.first.project_id, safe='')}/factory-pack.zip"
+        ),
+        "asset_checklists_require_auth": (
+            f"/assets/{quote(config.first.asset_id, safe='')}/checklist"
+        ),
+        "component_targeting_requires_auth": (
+            f"/assets/{quote(config.first.asset_id, safe='')}/studio-component-targeting"
+        ),
+        "catalog_previews_require_auth": (
+            f"/assets/{quote(config.first.asset_id, safe='')}/catalog/previews"
+        ),
+        "studio_jobs_require_auth": (
+            "/studio/jobs?" + urlencode({"owner": config.first.actor})
+        ),
+    }
+    for name, path in no_auth_paths.items():
+        result = transport("GET", f"{config.base_url}{path}", "")
+        record(name, 401, result.status)
 
     for path in (
         "/designs", "/library", "/library/collections", "/users", "/stones",
@@ -397,6 +701,14 @@ def run_probe(config: StagingConfig, transport: Transport = http_transport) -> d
             "project_id": identity.project_id,
             "family_id": identity.family_id,
             "asset_id": identity.asset_id,
+            "job_id": identity.job_id,
+            "candidates": {
+                candidate.kind: {
+                    "run_id": candidate.run_id,
+                    "candidate_id": candidate.candidate_id,
+                }
+                for candidate in identity.candidates
+            },
         }
         for identity in (config.first, config.second)
     }

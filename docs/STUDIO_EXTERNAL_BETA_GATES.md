@@ -281,9 +281,12 @@ cannot emit `external_beta_ready`.
 ## Gate 2: live two-principal staging isolation
 
 Use two already-seeded, distinct Supabase principals. Each must own a different
-canonical project, Design Family, and image asset in the deployed
-production-filtered staging API. Recycle every API replica after seeding, then
-run the probe read-only.
+canonical project, Design Family, image asset, Studio job, and one fresh,
+QA-valid reviewing candidate in each of the catalog, visual, markup, view, and
+presentation stores in the deployed production-filtered staging API. Recycle
+every API replica after seeding, then run the probe read-only. The candidate
+fixtures must remain fresh for the whole probe so no GET performs expiry or
+reconciliation writes.
 
 The secret manager must inject:
 
@@ -294,11 +297,20 @@ FACETTA_STAGING_USER_A_ACCESS_TOKEN
 FACETTA_STAGING_USER_A_PROJECT_ID
 FACETTA_STAGING_USER_A_FAMILY_ID
 FACETTA_STAGING_USER_A_ASSET_ID
+FACETTA_STAGING_USER_A_JOB_ID
+FACETTA_STAGING_USER_A_CANDIDATE_FIXTURES_JSON
 FACETTA_STAGING_USER_B_ACCESS_TOKEN
 FACETTA_STAGING_USER_B_PROJECT_ID
 FACETTA_STAGING_USER_B_FAMILY_ID
 FACETTA_STAGING_USER_B_ASSET_ID
+FACETTA_STAGING_USER_B_JOB_ID
+FACETTA_STAGING_USER_B_CANDIDATE_FIXTURES_JSON
 ```
+
+Each candidate-fixtures value is a JSON object with exactly `catalog`,
+`visual`, `markup`, `view`, and `presentation` keys. Every value contains only
+the pre-seeded candidate's `run_id` and `candidate_id`. The probe validates and
+hash-binds these IDs but never prints the JSON or access tokens.
 
 The base URL must be an exact HTTPS origin. The live `/health` response must
 report the same immutable deployment revision and the initialized PostgreSQL
@@ -324,7 +336,7 @@ test "$STAGING_EXIT" -eq 0
 
 The owner reads must succeed, cross-owner reads and enumeration must fail with
 the expected status, unauthenticated reads must return `401`, and every
-legacy/admin/OpenAPI/docs surface in the probe must remain hidden. The v4 probe
+legacy/admin/OpenAPI/docs surface in the probe must remain hidden. The v5 probe
 also uses read-only `OPTIONS` discovery to require that every operation in the
 canonical production-hidden mutation inventory is absent. A `405` is acceptable
 only when its non-empty `Allow` header excludes the retired method; a missing

@@ -106,6 +106,26 @@ def test_zsh_noclobber_preserves_existing_evidence(tmp_path: Path) -> None:
     assert artifact.read_text(encoding="utf-8") == "signed-original\n"
 
 
+def test_staging_runbook_declares_every_v5_seed_binding() -> None:
+    text = CANONICAL_RUNBOOK.read_text(encoding="utf-8")
+
+    for label in ("A", "B"):
+        prefix = f"FACETTA_STAGING_USER_{label}"
+        for suffix in (
+            "ACCESS_TOKEN",
+            "PROJECT_ID",
+            "FAMILY_ID",
+            "ASSET_ID",
+            "JOB_ID",
+            "CANDIDATE_FIXTURES_JSON",
+        ):
+            assert f"{prefix}_{suffix}" in text
+    for kind in ("catalog", "visual", "markup", "view", "presentation"):
+        assert f"`{kind}`" in text
+    assert "fresh,\nQA-valid reviewing candidate" in text
+    assert "facetta-staging-isolation.v5" in text or "The v5 probe" in text
+
+
 def test_frozen_corpus_readme_retains_run_identity_and_noclobber_guards() -> None:
     text = CORPUS_README.read_text(encoding="utf-8")
     bash = "\n".join(_bash_blocks(text))

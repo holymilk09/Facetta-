@@ -44,7 +44,7 @@ CorpusVerifier = Callable[..., Json]
 AuthorityVerifier = Callable[[dict[str, Any], Path, datetime], Json]
 
 CORPUS_DECISION_SCHEMA = "facetta-frozen-corpus-release-decision.v2"
-STAGING_RESULT_SCHEMA = "facetta-staging-isolation.v4"
+STAGING_RESULT_SCHEMA = "facetta-staging-isolation.v5"
 STAGING_RUN_KIND = "read_only_two_principal_staging_probe"
 STAGING_APPROVAL_SCHEMA = "facetta-staging-isolation-approval.v1"
 EXTERNAL_BETA_DECISION_SCHEMA = "facetta-external-beta-release-decision.v1"
@@ -228,8 +228,44 @@ def required_staging_checks() -> dict[str, object]:
             f"user_{label}_cannot_spoof_family_owner": 403,
             f"user_{label}_reads_own_family": 200,
             f"user_{label}_cannot_enumerate_other_family": 404,
+            f"user_{label}_factory_pack_route_is_addressable": True,
+            f"user_{label}_cannot_read_other_factory_pack": 403,
+            f"user_{label}_factory_pack_zip_route_is_addressable": True,
+            f"user_{label}_cannot_download_other_factory_pack": 403,
+            f"user_{label}_checklist_route_is_addressable": True,
+            f"user_{label}_cannot_read_other_checklist": 403,
+            f"user_{label}_component_targeting_route_is_addressable": True,
+            f"user_{label}_cannot_read_other_component_targeting": 403,
+            f"user_{label}_cannot_list_other_catalog_previews": 404,
+            f"user_{label}_reads_own_job": 200,
+            f"user_{label}_cannot_read_other_job": 404,
+            f"user_{label}_cannot_spoof_job_owner": 403,
         })
+        for kind in (
+            "catalog", "visual", "markup", "view", "presentation",
+        ):
+            candidate_checks: dict[str, object] = {
+                f"user_{label}_reads_own_{kind}_candidate_image": 200,
+                f"user_{label}_own_{kind}_candidate_is_image": True,
+                f"user_{label}_cannot_read_other_{kind}_candidate_image": (
+                    403 if kind in {"view", "presentation"} else 404
+                ),
+                f"user_{label}_{kind}_candidate_image_requires_auth": 401,
+            }
+            if kind != "catalog":
+                candidate_checks[
+                    f"user_{label}_cannot_list_other_{kind}_candidates"
+                ] = 403 if kind in {"view", "presentation"} else 404
+            checks.update(candidate_checks)
     checks["studio_families_require_auth"] = 401
+    checks.update({
+        "factory_packs_require_auth": 401,
+        "factory_pack_downloads_require_auth": 401,
+        "asset_checklists_require_auth": 401,
+        "component_targeting_requires_auth": 401,
+        "catalog_previews_require_auth": 401,
+        "studio_jobs_require_auth": 401,
+    })
     for name in (
         "designs", "library", "library_collections", "users", "stones",
         "share_e2e-hidden", "asset_metadata", "asset_history",
