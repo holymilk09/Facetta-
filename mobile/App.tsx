@@ -260,21 +260,26 @@ export default function App() {
     if (activeAsset.design_version !== null) return null;
     return { projectId: studioProject.root_id, sourceAssetId: activeAssetId };
   }, [studioProject]);
+  const isCreatingNewDesign = tab === 'studio'
+    && studioView === 'action'
+    && selectedActionId === 'create';
+  const factoryReadinessAvailable = exactStudioLineage !== null
+    && factoryEntitled
+    && studioProject?.spec?.jewelry_type === 'ring';
   const actionContext = useMemo<StudioActionContext>(() => ({
     activeDesignId,
     activeRevisionId: studioProject?.active_asset_id ?? selectedCreativeAssetId,
     hasExactSpecification: exactStudioLineage !== null,
     hasSelectedPreSpecVisual: confirmStudioLineage !== null && exactStudioLineage === null,
-    // Readiness appears only for an exact specification. The actual Factory
-    // destination remains hidden until the backend project says this exact
-    // revision is eligible; job creation rechecks that decision server-side.
-    factoryEnabled: factoryEntitled,
-    factoryEligible: studioProject?.factory_ready === true,
-  }), [activeDesignId, confirmStudioLineage, exactStudioLineage, factoryEntitled,
-    selectedCreativeAssetId, studioProject]);
+    // Opening readiness is separate from pack authority. The optional
+    // workspace appears only for an entitled exact ring revision; its pack
+    // action and the backend still require this revision to be factory_ready.
+    factoryReadinessAvailable,
+  }), [activeDesignId, confirmStudioLineage, exactStudioLineage,
+    factoryReadinessAvailable, selectedCreativeAssetId, studioProject]);
   const hasActiveRevision = Boolean(actionContext.activeDesignId && actionContext.activeRevisionId);
   const actionSourceRevision = useMemo(() => {
-    if (studioProject === null || selectedActionId === 'create') return null;
+    if (studioProject === null || isCreatingNewDesign) return null;
     const reviewSourceAssetId = activityReview !== null
       && activityReview.job.action_id === selectedActionId
       ? activityReview.lineage.sourceAssetId
@@ -287,7 +292,7 @@ export default function App() {
       ...studioProject.assets,
       ...(studioProject.creative_candidates ?? []),
     ].find((asset) => asset?.asset_id === sourceAssetId) ?? null;
-  }, [activityReview, selectedActionId, studioProject]);
+  }, [activityReview, isCreatingNewDesign, selectedActionId, studioProject]);
   const actionSourceImageUrl = activityReview !== null
     && activityReview.job.action_id === selectedActionId
     ? activityReview.sourceImageUrl ?? actionSourceRevision?.image_url ?? null
@@ -512,7 +517,7 @@ export default function App() {
           )}
         </View>
       )}
-      {tab === 'studio' && studioView === 'action' && (
+      {tab === 'studio' && studioView === 'action' && !isCreatingNewDesign && (
         <View style={[styles.actionRail, isStudioHome && styles.actionRailDark]}>
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.actionRailContent}>
             {studioActions.map((action) => (
@@ -612,7 +617,7 @@ export default function App() {
               onPress={() => setStudioView('home')}>
               <Text style={styles.actionContextBackText}>← Studio</Text>
             </Pressable>
-            {studioProject !== null && actionSourceRevision !== null && (
+            {!isCreatingNewDesign && studioProject !== null && actionSourceRevision !== null && (
               <View testID="active-design-context" style={styles.actionDesignContext}>
                 {actionSourceImageUrl !== null ? (
                   <Image

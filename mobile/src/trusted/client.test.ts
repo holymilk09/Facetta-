@@ -1782,7 +1782,7 @@ describe('trusted API decoders', () => {
     expect(JSON.parse(String(init?.body))).toEqual(spec);
   });
 
-  test('decodes outcome-billed Studio jobs and rejects inconsistent charges', () => {
+  test('decodes server-authoritative Studio billing and rejects inconsistent charges', () => {
     const payload = {
       job_id: 'job_create', owner: 'usr_designer', action_id: 'create',
       lane: 'fast_visual', status: 'succeeded', progress: 1,
@@ -1797,6 +1797,48 @@ describe('trusted API decoders', () => {
     };
     expect(decodeStudioJobRecord(payload)?.billing.charged_credits).toBe(21);
     expect(decodeStudioJobList({ jobs: [payload] })?.jobs).toHaveLength(1);
+    expect(decodeStudioJobRecord({
+      ...payload,
+      billing: {
+        ...payload.billing,
+        completed_outputs: 2,
+        charged_outputs: 0,
+        charged_credits: 0,
+      },
+    })?.billing).toMatchObject({
+      completed_outputs: 2,
+      charged_outputs: 0,
+      charged_credits: 0,
+    });
+    expect(decodeStudioJobRecord({
+      ...payload,
+      billing: {
+        ...payload.billing,
+        completed_outputs: 2,
+        charged_outputs: 1,
+        charged_credits: 7,
+      },
+    })).toBeNull();
+    expect(decodeStudioJobRecord({
+      ...payload,
+      billing: {
+        ...payload.billing,
+        completed_outputs: 2,
+        charged_outputs: 3,
+        charged_credits: 21,
+      },
+    })).toBeNull();
+    expect(decodeStudioJobRecord({
+      ...payload,
+      status: 'reviewing',
+      progress: 0.8,
+      billing: {
+        ...payload.billing,
+        completed_outputs: 1,
+        charged_outputs: 0,
+        charged_credits: 0,
+      },
+    })).toBeNull();
     expect(decodeStudioJobRecord({
       ...payload,
       billing: { ...payload.billing, charged_credits: 28 },

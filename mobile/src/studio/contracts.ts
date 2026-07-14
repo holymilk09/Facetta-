@@ -81,8 +81,12 @@ export interface StudioActionContext {
   hasExactSpecification: boolean;
   /** A selected visual that has not yet been paired with confirmed design facts. */
   hasSelectedPreSpecVisual: boolean;
-  factoryEnabled: boolean;
-  factoryEligible: boolean;
+  /**
+   * The exact active revision is inside the released Factory-readiness scope
+   * for this account. This opens the optional readiness workspace; it does not
+   * mean the revision is approved, pinned, or ready to generate a pack.
+   */
+  factoryReadinessAvailable: boolean;
 }
 
 export interface StudioActionDefinition {

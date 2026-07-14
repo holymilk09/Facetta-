@@ -7,6 +7,17 @@ import { clearSession, markOnboarded, saveSession } from '../auth';
 import { theme } from '../theme';
 
 const mockGetProject = jest.fn();
+let mockFactoryReviewEnabled = true;
+let mockConfirmedJewelryType = 'ring';
+let mockConfirmedFactoryReady = false;
+const mockGetStudioCapabilities = jest.fn(async () => ({
+  data: {
+    factory_review: { enabled: mockFactoryReviewEnabled, scope: 'principal' },
+    workspace_entitlements_available: false,
+  },
+  error: null,
+  status: 200,
+}));
 const mockListDesignFamilies = jest.fn(async () => ({
   data: { families: [{ family_id: 'family_saved' }] },
   error: null,
@@ -38,14 +49,7 @@ jest.mock('../trusted/client', () => ({
     getProject: mockGetProject,
     listDesignFamilies: mockListDesignFamilies,
     getStudioJob: mockGetStudioJob,
-    getStudioCapabilities: async () => ({
-      data: {
-        factory_review: { enabled: true, scope: 'principal' },
-        workspace_entitlements_available: false,
-      },
-      error: null,
-      status: 200,
-    }),
+    getStudioCapabilities: mockGetStudioCapabilities,
   }),
 }));
 
@@ -205,7 +209,7 @@ jest.mock('./StudioCollectionsWorkspace', () => {
       onPrepareFactoryCurrent !== undefined ? ReactLocal.createElement(
         Text,
         { accessibilityRole: 'button', onPress: onPrepareFactoryCurrent },
-        'Prepare eligible Factory review',
+        'Review optional Factory readiness',
       ) : null,
     ),
   };
@@ -258,7 +262,7 @@ jest.mock('./StudioConfirmWorkspace', () => {
         project: {
           id: 'project_1', root_id: 'project_1', title: 'Confirmed direction',
           collection: null, tags: [], owner: 'usr_designer', state: 'refining',
-          design_id: 'design_1', spec: { jewelry_type: 'ring' },
+          design_id: 'design_1', spec: { jewelry_type: mockConfirmedJewelryType },
           active_asset_id: 'asset_exact_1', active_design_version: 1,
           selected_candidate_asset_id: 'asset_1',
           active_revision: {
@@ -270,7 +274,7 @@ jest.mock('./StudioConfirmWorkspace', () => {
             created_at: null, legacy_provenance: false,
           },
           pinned_revision: null, revisions: [], assets: [], derived_assets: [],
-          approval: null, factory_ready: true, factory_blockers: [],
+          approval: null, factory_ready: mockConfirmedFactoryReady, factory_blockers: [],
           primary_revision_count: 2, has_factory_drawing: false,
           cover_asset_id: 'asset_exact_1', created_at: null, updated_at: null,
         },
@@ -293,7 +297,11 @@ import App from '../../App';
 
 afterEach(() => {
   clearSession();
+  mockFactoryReviewEnabled = true;
+  mockConfirmedJewelryType = 'ring';
+  mockConfirmedFactoryReady = false;
   mockGetProject.mockReset();
+  mockGetStudioCapabilities.mockClear();
   mockListDesignFamilies.mockClear();
   mockGetStudioJob.mockClear();
 });
@@ -548,6 +556,37 @@ test('active design actions keep the exact saved revision visible and link to Hi
   expect(await view.findByText('Vary exact project_1')).toBeTruthy();
 });
 
+test('Create hides the previous design controls without forgetting the saved design', async () => {
+  authenticate();
+  const view = await render(<App />);
+
+  await fireEvent.press(await view.findByText('Start from an idea or reference'));
+  await fireEvent.press(await view.findByText('Save mocked direction'));
+  expect(await view.findByText('Refine route reached')).toBeTruthy();
+  expect(view.getByTestId('active-design-context')).toBeTruthy();
+
+  await fireEvent.press(view.getByLabelText('Create a design'));
+  expect(await view.findByText('Save mocked direction')).toBeTruthy();
+  for (const label of [
+    'Save as a variation',
+    'Refine this design',
+    'Present this design',
+    'More actions',
+    'Open revision history',
+  ]) {
+    expect(view.queryByLabelText(label)).toBeNull();
+  }
+  expect(view.queryByTestId('active-design-context')).toBeNull();
+
+  await fireEvent.press(view.getByLabelText('Back to Studio'));
+  const savedCover = await view.findByLabelText('Current design cover');
+  expect(view.getByText('Saved direction')).toBeTruthy();
+
+  await fireEvent.press(savedCover);
+  expect(await view.findByText('Refine route reached')).toBeTruthy();
+  expect(view.getByText('Current saved revision · Revision 1')).toBeTruthy();
+});
+
 test('Studio home opens Collections through the saved-work continuation', async () => {
   authenticate();
   const view = await render(<App />);
@@ -701,12 +740,12 @@ test('Collections sends the exact active revision to Present', async () => {
   expect(await view.findByText('Refine route reached')).toBeTruthy();
   fireEvent.press(view.getByRole('tab', { name: 'Collections' }));
 
-  expect(view.queryByText('Prepare eligible Factory review')).toBeNull();
+  expect(view.queryByText('Review optional Factory readiness')).toBeNull();
   fireEvent.press(await view.findByText('Present exact current revision'));
   expect(await view.findByText('Present route reached for asset_1')).toBeTruthy();
 });
 
-test('Collections exposes Factory only after the exact active revision is eligible', async () => {
+test('Collections opens optional Factory readiness for an entitled exact ring before pack readiness', async () => {
   authenticate();
   const view = await render(<App />);
 
@@ -718,7 +757,60 @@ test('Collections exposes Factory only after the exact active revision is eligib
   expect(await view.findByText('Refine route reached')).toBeTruthy();
 
   fireEvent.press(view.getByRole('tab', { name: 'Collections' }));
-  expect(await view.findByText('Prepare eligible Factory review')).toBeTruthy();
+  await waitFor(() => expect(mockGetStudioCapabilities).toHaveBeenCalled());
+  fireEvent.press(await view.findByText('Review optional Factory readiness'));
+  expect(await view.findByText('Factory route reached for asset_exact_1')).toBeTruthy();
+});
+
+test('Collections retains Factory readiness access for an exact ring that is already pack-ready', async () => {
+  mockConfirmedFactoryReady = true;
+  authenticate();
+  const view = await render(<App />);
+
+  await waitFor(() => expect(view.getByText('Start from an idea or reference')).toBeTruthy());
+  fireEvent.press(view.getByText('Start from an idea or reference'));
+  fireEvent.press(await view.findByText('Save mocked direction'));
+  fireEvent.press(await view.findByText('Review starting design'));
+  fireEvent.press(await view.findByText('Confirm mocked design'));
+  expect(await view.findByText('Refine route reached')).toBeTruthy();
+
+  fireEvent.press(view.getByRole('tab', { name: 'Collections' }));
+  fireEvent.press(await view.findByText('Review optional Factory readiness'));
+  expect(await view.findByText('Factory route reached for asset_exact_1')).toBeTruthy();
+});
+
+test('Collections hides Factory readiness for an exact non-ring revision', async () => {
+  mockConfirmedJewelryType = 'necklace';
+  authenticate();
+  const view = await render(<App />);
+
+  await waitFor(() => expect(view.getByText('Start from an idea or reference')).toBeTruthy());
+  fireEvent.press(view.getByText('Start from an idea or reference'));
+  fireEvent.press(await view.findByText('Save mocked direction'));
+  fireEvent.press(await view.findByText('Review starting design'));
+  fireEvent.press(await view.findByText('Confirm mocked design'));
+  expect(await view.findByText('Refine route reached')).toBeTruthy();
+  await waitFor(() => expect(mockGetStudioCapabilities).toHaveBeenCalled());
+
+  fireEvent.press(view.getByRole('tab', { name: 'Collections' }));
+  expect(view.queryByText('Review optional Factory readiness')).toBeNull();
+});
+
+test('Collections hides Factory readiness when the account lacks entitlement', async () => {
+  mockFactoryReviewEnabled = false;
+  authenticate();
+  const view = await render(<App />);
+
+  await waitFor(() => expect(view.getByText('Start from an idea or reference')).toBeTruthy());
+  fireEvent.press(view.getByText('Start from an idea or reference'));
+  fireEvent.press(await view.findByText('Save mocked direction'));
+  fireEvent.press(await view.findByText('Review starting design'));
+  fireEvent.press(await view.findByText('Confirm mocked design'));
+  expect(await view.findByText('Refine route reached')).toBeTruthy();
+  await waitFor(() => expect(mockGetStudioCapabilities).toHaveBeenCalled());
+
+  fireEvent.press(view.getByRole('tab', { name: 'Collections' }));
+  expect(view.queryByText('Review optional Factory readiness')).toBeNull();
 });
 
 test('Refine links directly to starting design review and returns after confirmation', async () => {

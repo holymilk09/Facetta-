@@ -5,6 +5,40 @@ Read `CLAUDE.md` (constitution — binding), `README.md` (endpoints/layout),
 `docs/DATA_WANTED.md` (open research asks). This file is the delta: what is
 DONE beyond the original TASKS.md build order, and what is next.
 
+## 2026-07-14 Studio Create isolation, billing authority, and reachable Factory readiness checkpoint
+
+Starting a new design now creates a clean Studio context even when another
+design is already open. The previous design's Vary, Refine, Present, More, and
+History controls are hidden while Create is active, so an unsaved direction
+cannot be displaced by an action targeting stale revision context. Returning
+to Studio restores the prior saved design without discarding it.
+
+The trusted mobile decoder now matches the public Studio billing contract.
+A succeeded job may report accepted outputs with zero charged outputs when the
+backend has not authorized a user charge; charged outputs may never exceed
+completed outputs, credit arithmetic remains exact, and any non-succeeded job
+with completed or charged outputs fails closed. Backend acceptance remains the
+only billing authority.
+
+Factory readiness is now reachable without making Factory part of the primary
+journey. An entitled exact ring revision exposes an optional readiness
+workspace before `factory_ready`, while non-rings and accounts without the
+entitlement do not. The workspace can collect and confirm exact design facts,
+but it cannot create a Studio job or review pack until a refreshed project says
+that the exact pinned revision is ready. The terminal Factory job retains its
+`factory_eligible` requirement and the backend rechecks it.
+
+No backend source changed in this checkpoint. The previous 1,788-test full
+backend run remains the integration baseline, and 51 focused Studio-job,
+ring-scope, and trusted-handoff server contracts re-passed. All 36 mobile Jest
+suites (305 tests), 78 Studio contract tests, TypeScript, Expo web export, and
+diff hygiene pass. The complete ten-project production TypeScript-client ->
+HTTP -> FastAPI acceptance run also passes with ten non-mutating Library
+reopens, five Client saves, five Marketing saves, zero Factory use, and zero
+canonical state or charges from failed QA. The signed live corpus, independent
+designer/GIA review, founder approval, authority enrollment, and live
+two-principal HTTPS staging evidence remain unmet external-beta gates.
+
 ## 2026-07-14 ring release scope, canonical markup routes, and Refine handoff checkpoint
 
 Factory eligibility now has an explicit release registry and is ring-only.

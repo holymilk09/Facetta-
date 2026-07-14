@@ -18,8 +18,7 @@ const emptyContext = {
   activeRevisionId: null,
   hasExactSpecification: false,
   hasSelectedPreSpecVisual: false,
-  factoryEnabled: false,
-  factoryEligible: false,
+  factoryReadinessAvailable: false,
 };
 
 test('the action registry defines every Studio action exactly once', () => {
@@ -39,21 +38,32 @@ test('only Create is visible without an active design', () => {
   );
 });
 
-test('Factory remains absent until the exact revision is eligible', () => {
+test('Factory readiness remains absent until an exact revision enters released scope', () => {
   const active = {
     ...emptyContext,
     activeDesignId: 'dsn_1',
     activeRevisionId: 'rev_1',
     hasExactSpecification: true,
-    factoryEnabled: true,
   };
   assert.deepEqual(
     getVisibleStudioActions(active, 'more').map((action) => action.id),
     ['specifications'],
   );
   assert.deepEqual(
-    getVisibleStudioActions({ ...active, factoryEligible: true }, 'more').map((action) => action.id),
+    getVisibleStudioActions({
+      ...active, factoryReadinessAvailable: true,
+    }, 'more').map((action) => action.id),
     ['specifications', 'factory'],
+  );
+  const factory = getStudioAction('factory');
+  assert.equal(factory.contextRequirements.includes('factory_eligible'), true);
+  assert.equal(factory.outputType, 'factory_review_pack');
+  assert.equal(factory.createsJob, true);
+  assert.deepEqual(
+    getVisibleStudioActions({
+      ...active, hasExactSpecification: false, factoryReadinessAvailable: true,
+    }, 'more').map((action) => action.id),
+    [],
   );
 });
 
@@ -63,7 +73,6 @@ test('the rail hides an empty More menu and exposes secondary exact-design desti
     activeDesignId: 'dsn_1',
     activeRevisionId: 'rev_1',
     hasExactSpecification: false,
-    factoryEnabled: true,
   };
   assert.equal(getStudioRailActions(active).some((action) => action.id === 'more'), false);
   assert.equal(getStudioRailActions({

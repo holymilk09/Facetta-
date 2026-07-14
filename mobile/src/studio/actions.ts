@@ -155,14 +155,18 @@ export const STUDIO_ACTIONS: readonly StudioActionDefinition[] = [
   {
     ...jobAction('factory'),
     id: 'factory',
-    label: 'Prepare Factory review pack',
+    label: 'Review Factory readiness',
     shortLabel: 'Factory',
-    description: 'Prepare an eligible exact revision for optional manufacturer review.',
+    description: 'Review an exact ring revision before optional manufacturer sharing.',
     referenceRoles: ['master_geometry', 'construction_detail'],
     requiresActiveDesign: true,
     placement: 'more',
+    // This availability opens the host-rendered readiness workspace only. The
+    // terminal job contract inherited above still requires `factory_eligible`,
+    // and that workspace does not reveal its pack CTA until the refreshed
+    // project is factory_ready for the exact pinned revision.
     isAvailable: (context) => (
-      exactDesign(context) && context.factoryEnabled && context.factoryEligible
+      exactDesign(context) && context.factoryReadinessAvailable
     ),
   },
 ] as const;

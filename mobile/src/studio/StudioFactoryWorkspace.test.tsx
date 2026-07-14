@@ -141,22 +141,28 @@ describe('StudioFactoryWorkspace', () => {
       .mockResolvedValueOnce({ data: readyProject, error: null, status: 200 });
     const createChecklist = jest.fn(async () => ({ data: pendingChecklist, error: null, status: 201 }));
     const respondChecklist = jest.fn(async () => ({ data: approvedChecklist, error: null, status: 201 }));
+    const createStudioJob = jest.fn();
+    const prepareFactoryPack = jest.fn();
     const onProjectUpdated = jest.fn();
     await render(<StudioFactoryWorkspace api={{
       getProject, createChecklist, respondChecklist,
-      createStudioJob: jest.fn(), prepareFactoryPack: jest.fn(),
+      createStudioJob, prepareFactoryPack,
     } as any} lineage={lineage} createdBy="designer" deliverProtectedFile={jest.fn()}
     onProjectUpdated={onProjectUpdated} />);
 
     expect(await screen.findByText('Start exact-fact checklist')).toBeTruthy();
     expect(screen.queryByText('Prepare factory review material')).toBeNull();
     expect(screen.getByText('• Confirm the exact design facts.')).toBeTruthy();
+    expect(createStudioJob).not.toHaveBeenCalled();
+    expect(prepareFactoryPack).not.toHaveBeenCalled();
 
     await act(async () => { fireEvent.press(screen.getByText('Start exact-fact checklist')); });
     expect(await screen.findByText('Confirm fact')).toBeTruthy();
     expect(createChecklist).toHaveBeenCalledWith('asset_7', {
       created_by: 'designer', mode: 'auto_pin',
     });
+    expect(createStudioJob).not.toHaveBeenCalled();
+    expect(prepareFactoryPack).not.toHaveBeenCalled();
 
     await act(async () => { fireEvent.press(screen.getByText('Confirm fact')); });
     expect(await screen.findByText('Ready for optional Factory preparation')).toBeTruthy();
@@ -165,6 +171,8 @@ describe('StudioFactoryWorkspace', () => {
       item_key: 'identity', approved: true, interpret: false,
     }));
     expect(onProjectUpdated).toHaveBeenLastCalledWith(readyProject);
+    expect(createStudioJob).not.toHaveBeenCalled();
+    expect(prepareFactoryPack).not.toHaveBeenCalled();
   });
 
   test('authenticated delivery fetches same-origin bytes before web or native delivery', async () => {

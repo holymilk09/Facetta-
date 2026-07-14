@@ -1278,7 +1278,7 @@ const decodeStudioJobBilling: Decoder<StudioJobBilling> = (value) => {
     || creditsPerOutput === null || creditsPerOutput < 0
     || estimatedCredits !== requestedOutputs * creditsPerOutput
     || completedOutputs === null || completedOutputs < 0 || completedOutputs > requestedOutputs
-    || chargedOutputs !== completedOutputs
+    || chargedOutputs === null || chargedOutputs < 0 || chargedOutputs > completedOutputs
     || chargedCredits !== chargedOutputs * creditsPerOutput
     || policy === null
   ) return null;
@@ -1311,6 +1311,18 @@ export const decodeStudioJobRecord: Decoder<StudioJobRecord> = (value) => {
     || status === null || !STUDIO_JOB_STATUSES.has(status)
     || progress === null || progress < 0 || progress > 1
     || createdAt === null || updatedAt === null || billing === null
+  ) return null;
+  if (
+    (status === 'succeeded' && billing.completed_outputs < 1)
+    || (
+      status === 'succeeded'
+      && billing.charged_outputs !== 0
+      && billing.charged_outputs !== billing.completed_outputs
+    )
+    || (
+      status !== 'succeeded'
+      && (billing.completed_outputs !== 0 || billing.charged_outputs !== 0)
+    )
   ) return null;
   return {
     job_id: jobId,

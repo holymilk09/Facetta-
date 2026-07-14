@@ -538,7 +538,7 @@ export function StudioCollectionsWorkspace({
             />
             {onPrepareFactoryCurrent !== undefined && (
               <Button
-                title="Prepare Factory review"
+                title="Review Factory readiness"
                 kind="ghost"
                 disabled={activeAssetId === null}
                 onPress={onPrepareFactoryCurrent}
