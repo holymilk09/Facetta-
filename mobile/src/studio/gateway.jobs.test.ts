@@ -481,7 +481,7 @@ test('a restarted gateway resumes catalog review by its durable exact Refine job
   assert.equal(publicTerminalTransitions, 0);
 });
 
-test('discarded view delegates atomic zero-charge Activity completion to the durable endpoint', async () => {
+test('Views binds the canonical preview request to its durable job before atomic zero-charge discard', async () => {
   const jobs = tracking();
   let lineArtRequest: any = null;
   const gateway = createStudioGateway({

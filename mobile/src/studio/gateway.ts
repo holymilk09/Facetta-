@@ -14,7 +14,6 @@ import type {
   CreateProjectFromDrawingRequest,
   CreateProjectFromPromptRequest,
   CreateVisualPreviewRequest,
-  DrawingConfirmationResult,
   FactoryPackManifest,
   StudioCapabilities,
   ImageQualityReport,
@@ -2255,19 +2254,6 @@ export function createStudioGateway(
         },
         error: null, status: result.status,
       };
-    },
-
-    createLineArtView(request: StudioViewRequest): Promise<StudioGatewayResult<DrawingConfirmationResult>> {
-      return client.createLineArt(request.projectId, {
-        created_by: request.createdBy,
-        expected_asset_id: request.sourceAssetId,
-        expected_design_version: request.sourceDesignVersion,
-        view: request.view,
-        ...(request.sourceRegionDescription === undefined
-          ? {} : { source_region_description: request.sourceRegionDescription }),
-        ...(request.sourceRegion === undefined ? {} : { source_region: request.sourceRegion }),
-        ...(request.variant === undefined ? {} : { variant: request.variant }),
-      }).then(mapResult);
     },
 
     async previewLineArtView(

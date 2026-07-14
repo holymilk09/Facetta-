@@ -747,17 +747,13 @@ test('Confirm removes expired opaque drafts before later access', async () => {
   assert.equal(stale.error?.code, 'CONFIRM_REVIEW_EXPIRED');
 });
 
-test('Create, Views, and Present use canonical typed seams without legacy fallbacks', async () => {
+test('Create and Present use canonical typed seams while Views exposes only its job-bound preview flow', async () => {
   const calls: string[] = [];
   let legacyPresentationCalls = 0;
   const client = fakeClient({
     createProjectFromPrompt: async (request) => {
       calls.push(`prompt:${request.prompt}`);
       return ok(project(), 201);
-    },
-    createLineArt: async (_projectId, request) => {
-      calls.push(`view:${request.expected_asset_id}:${request.expected_design_version}:${request.view}`);
-      return unavailable();
     },
     createStudioBeautyRender: async (_projectId, request) => {
       calls.push(`beauty:${request.expected_asset_id}:${request.expected_design_version}:${request.presentation_only}`);
@@ -785,11 +781,8 @@ test('Create, Views, and Present use canonical typed seams without legacy fallba
   const gateway = createStudioGateway(client);
   assert.equal('createFromBrief' in gateway, false);
   assert.equal('selectCreativeDirection' in gateway, false);
+  assert.equal('createLineArtView' in gateway, false);
   await gateway.createFromPrompt({ prompt: 'Emerald collar', owner: 'designer_1', title: 'Collar' });
-  await gateway.createLineArtView({
-    projectId: 'project_1', sourceAssetId: 'asset_1', sourceDesignVersion: 1,
-    createdBy: 'designer_1', view: 'three_quarter',
-  });
   await gateway.createBeautyPresentation('project_1', {
     created_by: 'designer_1', expected_asset_id: 'asset_1', expected_design_version: 1,
   });
@@ -803,7 +796,6 @@ test('Create, Views, and Present use canonical typed seams without legacy fallba
   });
   assert.deepEqual(calls, [
     'prompt:Emerald collar',
-    'view:asset_1:1:three_quarter',
     'beauty:asset_1:1:true',
     'product:asset_1:1:catalog_white:true',
     'marketing:asset_1:1:2',
