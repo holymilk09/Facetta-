@@ -3,8 +3,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
-  getStudioAction, getStudioActionUnavailableReason, getStudioRailActions,
-  getVisibleStudioActions, STUDIO_ACTIONS, transitionStudioJob,
+  getStudioAction, getStudioActionPrerequisite, getStudioActionUnavailableReason,
+  getStudioRailActions, getVisibleStudioActions, STUDIO_ACTIONS, transitionStudioJob,
 } from './actions';
 import {
   decidePreviewCandidate, PreviewCandidate, STUDIO_ACTION_IDS, StudioJob,
@@ -108,9 +108,35 @@ test('Views stay visible with an explicit prerequisite until design facts are ex
     'Confirm design facts first',
   );
   assert.equal(
+    getStudioActionPrerequisite(getStudioAction('views'), selectedCreativeDirection)?.id,
+    'confirm',
+  );
+  assert.equal(
     getStudioActionUnavailableReason(getStudioAction('views'), {
       ...selectedCreativeDirection, hasExactSpecification: true,
     }),
+    null,
+  );
+  assert.equal(
+    getStudioActionPrerequisite(getStudioAction('views'), {
+      ...selectedCreativeDirection, hasExactSpecification: true,
+    }),
+    null,
+  );
+  const nonConfirmableDirection = {
+    ...selectedCreativeDirection,
+    hasSelectedPreSpecVisual: false,
+  };
+  assert.equal(
+    getStudioActionUnavailableReason(getStudioAction('views'), nonConfirmableDirection),
+    'Choose a confirmable ring direction first',
+  );
+  assert.equal(
+    getStudioActionPrerequisite(getStudioAction('views'), nonConfirmableDirection),
+    null,
+  );
+  assert.equal(
+    getStudioActionPrerequisite(getStudioAction('present'), selectedCreativeDirection),
     null,
   );
 });

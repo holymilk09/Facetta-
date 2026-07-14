@@ -67,6 +67,50 @@ def test_active_studio_sentence_creation_uses_category_neutral_prompt() -> None:
     assert "TrustedWorkflowScreen" not in app_shell
 
 
+def test_legacy_trusted_workspace_is_quarantined_from_active_mobile_surface() -> None:
+    mobile_root = ROOT / "mobile"
+    studio_root = mobile_root / "src/studio"
+    active_sources = [mobile_root / "App.tsx"] + sorted(
+        path
+        for pattern in ("*.ts", "*.tsx")
+        for path in studio_root.glob(pattern)
+        if ".test." not in path.name
+    )
+    compatibility_symbols = (
+        "TrustedWorkflowScreen",
+        "TrustedWorkspaceEntry",
+        "TRUSTED_WORKSPACE_ENABLED",
+        "useTrustedWorkflow",
+        "workflowState",
+    )
+
+    for path in active_sources:
+        source = path.read_text()
+        for symbol in compatibility_symbols:
+            assert symbol not in source, f"{path.relative_to(ROOT)} imports {symbol}"
+
+    trusted_barrel = (mobile_root / "src/trusted/index.ts").read_text()
+    for symbol in compatibility_symbols:
+        assert symbol not in trusted_barrel
+
+    # Preserve the hidden harness and its migration callers until the founder,
+    # history, OpenAPI, and replacement-coverage deletion gates pass.
+    compatibility_entry = mobile_root / "src/trusted/TrustedWorkspaceEntry.tsx"
+    compatibility_screen = mobile_root / "src/trusted/TrustedWorkflowScreen.tsx"
+    compatibility_workflow = mobile_root / "src/trusted/useTrustedWorkflow.ts"
+    compatibility_state = mobile_root / "src/trusted/workflowState.ts"
+    assert all(path.is_file() for path in (
+        compatibility_entry,
+        compatibility_screen,
+        compatibility_workflow,
+        compatibility_state,
+    ))
+    assert "TrustedWorkflowScreen" in compatibility_entry.read_text()
+    workflow_source = compatibility_workflow.read_text()
+    assert "api.createBeautyRender(" in workflow_source
+    assert "api.createProductPhoto(" in workflow_source
+
+
 def test_structured_ring_brief_is_evaluation_compatibility_only() -> None:
     harness = (ROOT / "scripts/run_prompt_brief_e2e.py").read_text()
     inventory = (ROOT / "docs/trusted-workflow-route-inventory.md").read_text()

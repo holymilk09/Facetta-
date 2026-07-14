@@ -19,7 +19,6 @@ export type {
   CanvasAnnotation,
   NormalizedAnnotationPoint,
 } from './AnnotationCanvas';
-export { TRUSTED_WORKSPACE_ENABLED } from './feature';
 export {
   catalogFactoryDelta,
   componentCatalogPathsForSpec,
@@ -54,22 +53,4 @@ export type {
   SourceCoverageCorrectionMode,
   SourceCoverageCorrectionPanelProps,
 } from './SourceCoverageCorrectionPanel';
-export { useTrustedWorkflow } from './useTrustedWorkflow';
-export type {
-  MarkupConfirmation,
-  TrustedWorkflowController,
-  TrustedWorkflowOptions,
-} from './useTrustedWorkflow';
-export {
-  canSelectPhase,
-  initialTrustedWorkflowState,
-  phaseForProject,
-  trustedWorkflowReducer,
-} from './workflowState';
-export type {
-  PendingMarkup,
-  TrustedWorkflowEvent,
-  TrustedWorkflowState,
-  WorkflowOperation,
-} from './workflowState';
 export type * from './types';

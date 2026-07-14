@@ -14,8 +14,8 @@ import {
 import { LoginScreen, PasswordRecoveryScreen } from './src/LoginScreen';
 import { OnboardingScreen } from './src/OnboardingScreen';
 import {
-  getStudioAction, getStudioActionUnavailableReason, getStudioRailActions,
-  getVisibleStudioActions,
+  getStudioAction, getStudioActionPrerequisite, getStudioActionUnavailableReason,
+  getStudioRailActions, getVisibleStudioActions,
 } from './src/studio/actions';
 import {
   StudioActionContext, StudioActionId, StudioWorkspaceActionId,
@@ -49,6 +49,7 @@ type Tab = 'studio' | 'collections' | 'activity' | 'learn';
 type StudioView = 'home' | 'action';
 type Stage = 'onboarding' | 'tour' | 'booting' | 'login' | 'recovery' | 'app';
 type SavedFamiliesState = 'unknown' | 'available' | 'empty' | 'unavailable';
+type PostConfirmDestination = Extract<StudioWorkspaceActionId, 'refine' | 'views'>;
 type ProjectHydrationDestination = 'collections' | 'create' | 'refine' | 'views' | 'present'
   | 'specifications';
 
@@ -118,6 +119,7 @@ export default function App() {
   const [savedFamiliesState, setSavedFamiliesState] = useState<SavedFamiliesState>('unknown');
   const [studioProject, setStudioProject] = useState<ProjectDetail | null>(null);
   const [selectedCreativeAssetId, setSelectedCreativeAssetId] = useState<string | null>(null);
+  const [postConfirmDestination, setPostConfirmDestination] = useState<PostConfirmDestination>('refine');
   const [createReview, setCreateReview] = useState<CreateReviewState | null>(null);
   const [createDraft, setCreateDraft] = useState<StudioCreateDraft>(EMPTY_STUDIO_CREATE_DRAFT);
   const [activityReview, setActivityReview] = useState<StudioReviewJobEnvelope | null>(null);
@@ -147,6 +149,7 @@ export default function App() {
     setShowUtilityMenu(false);
     setStudioProject(null);
     setSelectedCreativeAssetId(null);
+    setPostConfirmDestination('refine');
     setCreateReview(null);
     setCreateDraft(EMPTY_STUDIO_CREATE_DRAFT);
     setActivityReview(null);
@@ -426,6 +429,7 @@ export default function App() {
     actionId: StudioActionId,
     preserveCreateReview = false,
     preserveActivityReview = false,
+    afterConfirmation: PostConfirmDestination = 'refine',
   ) => {
     if (actionId === 'more') {
       setShowMoreActions((visible) => !visible);
@@ -433,6 +437,7 @@ export default function App() {
     }
     if (!preserveCreateReview) setCreateReview(null);
     if (!preserveActivityReview) setActivityReview(null);
+    if (actionId === 'confirm') setPostConfirmDestination(afterConfirmation);
     setSelectedActionId(actionId);
     setShowMoreActions(false);
     setStudioView('action');
@@ -566,16 +571,29 @@ export default function App() {
           <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.actionRailContent}>
             {studioActions.map((action) => {
               const unavailableReason = getStudioActionUnavailableReason(action, actionContext);
-              const unavailable = unavailableReason !== null;
+              const prerequisite = getStudioActionPrerequisite(action, actionContext);
+              const unavailable = unavailableReason !== null && prerequisite === null;
+              const accessibilityLabel = prerequisite === null
+                ? action.label
+                : `${action.label}; ${unavailableReason}`;
               return (
                 <Pressable
                   key={action.id}
                   accessibilityRole="button"
-                  accessibilityLabel={action.label}
-                  accessibilityHint={unavailableReason ?? undefined}
+                  accessibilityLabel={accessibilityLabel}
+                  accessibilityHint={prerequisite === null
+                    ? unavailableReason ?? undefined
+                    : `Opens ${prerequisite.label}, then continues to ${action.shortLabel}.`}
                   accessibilityState={{ disabled: unavailable }}
                   disabled={unavailable}
-                  onPress={() => openStudioAction(action.id)}
+                  onPress={() => prerequisite === null
+                    ? openStudioAction(action.id)
+                    : openStudioAction(
+                      prerequisite.id,
+                      false,
+                      false,
+                      action.id === 'views' ? 'views' : 'refine',
+                    )}
                   style={[
                     styles.actionChip,
                     isStudioHome && styles.actionChipDark,
@@ -795,7 +813,7 @@ export default function App() {
               onSaved={(receipt) => {
                 setStudioProject(receipt.project);
                 setSelectedCreativeAssetId(receipt.project.active_asset_id);
-                openStudioAction('refine');
+                openStudioAction(postConfirmDestination);
               }}
             />
           ) : selectedActionId === 'present' ? (
@@ -1036,7 +1054,7 @@ const styles = StyleSheet.create({
   actionChipTextDark: { color: '#c8bdcf' },
   actionChipTextDisabled: { color: theme.faint },
   actionChipTextActive: { color: '#ffffff' },
-  actionChipReason: { color: theme.faint, fontSize: 8, marginTop: 2 },
+  actionChipReason: { color: theme.faint, fontSize: 10, lineHeight: 13, marginTop: 2 },
   moreMenu: {
     position: 'absolute',
     zIndex: 30,

@@ -1415,7 +1415,9 @@ failures do not discard successful candidates, and accepted scenes remain
 derived marketing assets. This paragraph describes the retained hidden
 workflow, not the active presentation: `mobile/App.tsx` now mounts the unified
 Studio shell, while `TrustedWorkspaceEntry` remains compatibility-only pending
-its separate migration gates.
+its separate migration gates. It is neither exported from the trusted module
+barrel nor mounted by the application; `EXPO_PUBLIC_TRUSTED_WORKSPACE` only
+affects a development/test host that explicitly mounts the retained harness.
 
 ## 2026-07-10 trusted workflow milestone
 
@@ -1438,9 +1440,11 @@ its separate migration gates.
   manifest, and can no longer masquerade as a factory-acceptable drawing.
   Production authority remains empty until a designer-approved, design-derived
   technical drawing and/or tolerance-bearing CAD/master reference exists.
-- The typed Expo workspace is staged behind
-  `EXPO_PUBLIC_TRUSTED_WORKSPACE`; the dirty parallel redesign remains the owner
-  of final presentation and app navigation wiring.
+- At this milestone, the typed Expo workspace was staged behind
+  `EXPO_PUBLIC_TRUSTED_WORKSPACE` while the parallel redesign owned final
+  presentation and app navigation wiring. That integration seam has since been
+  superseded by the unified Studio shell: the flag alone cannot expose the
+  compatibility workflow unless a development/test host mounts it explicitly.
 - Compatibility routes are inventoried and OpenAPI-deprecated, not deleted.
   Deletion waits for live ring gates, GIA evaluator review, founder acceptance,
   redesign merge, and caller migration.

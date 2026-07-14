@@ -1030,7 +1030,7 @@ test('Collections hides Factory readiness when the account lacks entitlement', a
   expect(view.queryByText('Review optional Factory readiness')).toBeNull();
 });
 
-test('Refine links directly to starting design review and returns after confirmation', async () => {
+test('Views opens its starting-facts prerequisite and resumes automatically after confirmation', async () => {
   mockConfirmedFactoryReady = true;
   mockGetProject.mockResolvedValue({ data: eligibleFactoryProject(), error: null, status: 200 });
   markOnboarded();
@@ -1045,23 +1045,25 @@ test('Refine links directly to starting design review and returns after confirma
   fireEvent.press(view.getByText('Start from an idea or reference'));
   fireEvent.press(await view.findByText('Save mocked direction'));
   expect(await view.findByText('Refine route reached')).toBeTruthy();
-  const unavailableViews = view.getByLabelText('Generate technical views');
-  expect(unavailableViews.props.accessibilityState).toEqual({ disabled: true });
+  const prerequisiteViews = view.getByLabelText(
+    'Generate technical views; Confirm design facts first',
+  );
+  expect(prerequisiteViews.props.accessibilityState).toEqual({ disabled: false });
   expect(view.getByText('Confirm design facts first')).toBeTruthy();
-  fireEvent.press(view.getByLabelText('More actions'));
-  fireEvent.press(await view.findByText('Starting design facts'));
+  expect(view.queryByText('Views route reached')).toBeNull();
+  fireEvent.press(prerequisiteViews);
+  expect(await view.findByText('Confirm mocked design')).toBeTruthy();
+  expect(view.queryByText('Views route reached')).toBeNull();
 
   fireEvent.press(await view.findByText('Confirm mocked design'));
 
-  expect(await view.findByText('Refine route reached')).toBeTruthy();
+  expect(await view.findByText('Views route reached')).toBeTruthy();
   expect(view.queryByText('Confirm mocked design')).toBeNull();
   expect(view.queryByText('Your design families')).toBeNull();
   expect(view.queryByText(/Factory/i)).toBeNull();
   expect(view.getByLabelText('Generate technical views').props.accessibilityState).toEqual({
     disabled: false,
   });
-  fireEvent.press(view.getByLabelText('Generate technical views'));
-  expect(await view.findByText('Views route reached')).toBeTruthy();
   fireEvent.press(view.getByLabelText('Refine this design'));
   expect(await view.findByText('Refine route reached')).toBeTruthy();
   expect(view.getByLabelText('More actions')).toBeTruthy();
@@ -1140,6 +1142,14 @@ test('Activity Refine does not offer design-fact review for a non-confirmable pr
 
   expect(await view.findByText('Refine route reached')).toBeTruthy();
   expect(view.queryByText('Review starting design')).toBeNull();
+  const unavailableViews = view.getByLabelText('Generate technical views');
+  expect(unavailableViews.props.accessibilityState).toEqual({ disabled: true });
+  expect(unavailableViews.props.accessibilityHint).toBe(
+    'Choose a confirmable ring direction first',
+  );
+  fireEvent.press(unavailableViews);
+  expect(view.queryByText('Confirm mocked design')).toBeNull();
+  expect(view.queryByText('Views route reached')).toBeNull();
 });
 
 test('Activity Refine keeps design-fact review on the current refined pre-spec child', async () => {

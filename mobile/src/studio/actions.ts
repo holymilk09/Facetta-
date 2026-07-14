@@ -218,7 +218,23 @@ export function getStudioActionUnavailableReason(
   }
   if (action.isAvailable(context)) return null;
   if (action.id === 'views' && activeDesign(context) && !context.hasExactSpecification) {
-    return 'Confirm design facts first';
+    return context.hasSelectedPreSpecVisual
+      ? 'Confirm design facts first'
+      : 'Choose a confirmable ring direction first';
   }
   return action.requiresActiveDesign ? 'Open a saved revision first' : 'Unavailable';
+}
+
+/**
+ * Resolve a safe, zero-credit action that can satisfy a blocked action's
+ * prerequisite. A caller may make the blocked destination actionable only
+ * when this function returns an available action.
+ */
+export function getStudioActionPrerequisite(
+  action: StudioActionDefinition,
+  context: StudioActionContext,
+): StudioActionDefinition | null {
+  if (action.id !== 'views' || action.isAvailable(context)) return null;
+  const confirm = getStudioAction('confirm');
+  return confirm.isAvailable(context) ? confirm : null;
 }

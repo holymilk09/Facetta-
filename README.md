@@ -327,9 +327,12 @@ Point the API URL field at your running backend (defaults to
 
 The production shell integrates trusted contracts through the typed Studio gateway;
 provider/model internals never enter designer navigation. The older comprehensive
-trusted screen remains an internal diagnostic surface behind
-`EXPO_PUBLIC_TRUSTED_WORKSPACE=true` and is not a competing product entry. Keep that
-diagnostic flag off in normal Studio builds. The trusted module includes category-neutral prompt and
+trusted screen is not mounted by `mobile/App.tsx` or exported from the trusted
+module barrel. Its source and direct tests remain as an internal compatibility
+harness until the documented deletion gates pass; `EXPO_PUBLIC_TRUSTED_WORKSPACE`
+only affects a development/test host that explicitly mounts that harness and does
+not create a destination in the current Studio shell. The trusted compatibility
+module includes category-neutral prompt and
 creative-first drawing/image intake with one to four candidates,
 candidate-to-audited-spec promotion,
 candidate-bound source correction/confirmation, and multi-preset ecommerce
