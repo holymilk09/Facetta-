@@ -2979,7 +2979,9 @@ def test_confirmed_necklace_import_and_chain_catalog_pass_are_one_exact_pair(
     client, SessionFactory = catalog_client
     project = _create_necklace_project(client)
     assert project["spec"]["jewelry_type"] == "necklace"
-    assert project["factory_blockers"] == []
+    assert [blocker["code"] for blocker in project["factory_blockers"]] == [
+        "factory_category_not_released",
+    ]
     source_asset_id = project["active_asset_id"]
     agent = _ResultAgent(QualityVerdict.PASS)
     monkeypatch.setattr("facetta.api.catalog._trusted_image_agent", lambda: agent)

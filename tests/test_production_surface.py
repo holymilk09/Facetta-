@@ -29,7 +29,6 @@ EXPECTED_PRODUCTION_OPERATIONS = (
         "/assets/{asset_id}/checklist",
         "/assets/{active_asset_id}/catalog/previews",
         "/image-runs/{run_id}/catalog-candidates/{candidate_id}/image",
-        "/image-runs/{run_id}/candidates/{candidate_id}/image",
         "/projects/{root_id}",
         "/projects/{project_id}/factory-pack",
         "/projects/{project_id}/factory-pack.zip",
@@ -58,8 +57,6 @@ EXPECTED_PRODUCTION_OPERATIONS = (
         "/assets/{active_asset_id}/catalog/preview",
         "/image-runs/{run_id}/catalog-candidates/{candidate_id}/accept",
         "/image-runs/{run_id}/catalog-candidates/{candidate_id}/save-as-variation",
-        "/image-runs/{run_id}/candidates/{candidate_id}/accept",
-        "/image-runs/{run_id}/candidates/{candidate_id}/discard",
         "/projects/from-prompt",
         "/projects/from-drawing",
         "/projects/{project_id}/creative-directions/commit",
@@ -353,6 +350,23 @@ def test_legacy_creative_selection_is_deprecated_compatibility(monkeypatch):
     atomic_commit = "/projects/{project_id}/creative-directions/commit"
     assert paths[legacy_select]["post"]["deprecated"] is True
     assert paths[atomic_commit]["post"].get("deprecated") is not True
+
+
+def test_generic_warning_candidate_routes_are_deprecated_compatibility(
+    monkeypatch,
+):
+    monkeypatch.setenv("FACETTA_ENV", "test")
+    paths = create_app().openapi()["paths"]
+    compatibility_path = "/image-runs/{run_id}/candidates/{candidate_id}"
+
+    assert paths[f"{compatibility_path}/image"]["get"]["deprecated"] is True
+    assert paths[f"{compatibility_path}/accept"]["post"]["deprecated"] is True
+    assert paths[f"{compatibility_path}/discard"]["post"]["deprecated"] is True
+    assert (
+        paths["/studio/markup-candidates/{run_id}/{candidate_id}/accept"]
+        ["post"].get("deprecated")
+        is not True
+    )
 
 
 def test_production_rejects_wildcard_cors(monkeypatch):

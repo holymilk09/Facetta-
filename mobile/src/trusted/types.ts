@@ -170,7 +170,7 @@ export interface ProjectRevision {
 
 export interface FactoryReadinessBlocker {
   code: string;
-  subject_kind: 'design_form' | 'source_component' | 'chain';
+  subject_kind: 'category' | 'design_form' | 'source_component' | 'chain';
   subject_id: string;
   element_id: string | null;
   component_id: string | null;

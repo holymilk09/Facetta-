@@ -607,9 +607,11 @@ const decodeFactoryReadinessBlocker: Decoder<FactoryReadinessBlocker> = (value) 
   if (code === null || subjectId === null || detail === null || requiredResolution === null) {
     return null;
   }
-  const subjectKind = value.subject_kind === 'source_component'
-    ? 'source_component'
-    : value.subject_kind === 'chain' ? 'chain' : 'design_form';
+  const subjectKind = value.subject_kind === 'category'
+    ? 'category'
+    : value.subject_kind === 'source_component'
+      ? 'source_component'
+      : value.subject_kind === 'chain' ? 'chain' : 'design_form';
   return {
     code,
     subject_kind: subjectKind,

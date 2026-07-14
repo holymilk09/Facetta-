@@ -267,6 +267,11 @@ class TestMarkupEndpoints:
         )
         created = client.post(f"/assets/{asset_id}/markup/apply", json=request)
         assert created.status_code == 201, created.text
+        warning = created.json()["warning_candidate"]
+        assert warning["preview_url"] == (
+            f"/studio/markup-candidates/{warning['run_id']}/"
+            f"{warning['candidate_id']}/image"
+        )
         with Session() as db:
             job = db.get(StudioJobRecord, "job_markup_atomic")
             assert job is not None and job.status == "reviewing"

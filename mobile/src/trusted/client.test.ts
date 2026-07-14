@@ -81,6 +81,14 @@ export function runTrustedClientDecoderTests(): void {
       label: 'Shoulder stones',
       detail: 'The visible shoulder stones were not mapped.',
       required_resolution: 'Map or explicitly resolve the source component.',
+    }, {
+      code: 'factory_category_not_released',
+      subject_kind: 'category',
+      subject_id: 'necklace',
+      role: 'factory_release_scope',
+      label: 'Necklace Factory review',
+      detail: 'Factory review is currently released for rings only.',
+      required_resolution: 'Keep the design in Studio.',
     }],
   });
   assert(project !== null, 'canonical ProjectDetail should decode');
@@ -91,6 +99,9 @@ export function runTrustedClientDecoderTests(): void {
     'factory-readiness blockers should survive project normalization');
   assert(project?.factory_blockers[1]?.component_id === 'stone.assembly_hint.shoulder',
     'source-component blockers should survive project normalization');
+  assert(project?.factory_blockers[2]?.subject_kind === 'category'
+    && project.factory_blockers[2]?.subject_id === 'necklace',
+  'category-release blockers should survive project normalization');
   assert(project?.creative_candidates?.[0]?.asset_id === 'ast_direction'
     && project.creative_candidates[0]?.revision === null,
   'pre-spec directions should decode separately from canonical revisions');

@@ -277,6 +277,60 @@ test('tracked generation failures close the job without charging output', async 
   assert.equal(jobs.transitions[1]?.request.completed_outputs, undefined);
 });
 
+test('tracked markup refuses compatibility-only candidates before review', async () => {
+  const jobs = tracking();
+  let genericDecisions = 0;
+  let boundJobId: string | undefined;
+  const gateway = createStudioGateway({
+    ...jobs.client,
+    applyMarkup: async (_assetId: string, request: any) => {
+      boundJobId = request.studio_job_id;
+      return ok({
+        revision: null, spec_version: 1, spec_change: [], ignored_fields: [],
+        qa: quality,
+        routing: {
+          attempt_count: 1, used_retry: false, used_fallback: false,
+          cache_hit: false, run_id: 'image_run_markup',
+        },
+        image_run_id: 'image_run_markup',
+        warning_candidate: {
+          run_id: 'image_run_markup', candidate_id: 'compatibility_only',
+          preview_url: '/image-runs/image_run_markup/candidates/compatibility_only/image',
+          qa: quality, operation: 'LOCAL_EDIT', requested_change: 'Soften the halo',
+          asset_capability: 'LOCALIZED_EDIT',
+        },
+      }, 201);
+    },
+    listStudioMarkupCandidates: async () => ok({ candidates: [] }),
+    acceptWarningCandidate: async () => {
+      genericDecisions += 1;
+      return ok(project(1));
+    },
+    discardWarningCandidate: async () => {
+      genericDecisions += 1;
+      return ok({ status: 'discarded' });
+    },
+  } as any, { trackJobs: true });
+
+  const result = await gateway.previewMarkupRefine({
+    projectId: 'project_1', sourceAssetId: 'candidate_1', sourceDesignVersion: 1,
+    createdBy: 'designer_1', annotation: {
+      region_description: 'halo', change_instruction: 'Soften the halo',
+      impact: 'visual_only', target_section: null, target_ref: null, index: null,
+      target_component_id: null, target_element_id: null,
+      form_view: 'three_quarter', mask_base64: null,
+    },
+  });
+
+  assert.equal(boundJobId, 'studio_job_1');
+  assert.equal(result.error?.code, 'DURABLE_MARKUP_PREVIEW_MISSING');
+  assert.equal(genericDecisions, 0);
+  // The backend owns candidate-decision settlement after entering review.
+  // The client fails closed without fabricating a terminal job transition.
+  assert.deepEqual(jobs.transitions.map((call) => call.request.status), ['running']);
+  assert.equal(jobs.transitions.some((call) => call.request.completed_outputs), false);
+});
+
 test('catalog preview keeps image-run and Studio-job identities separate through apply', async () => {
   const jobs = tracking();
   let previewStudioJobId: string | undefined;

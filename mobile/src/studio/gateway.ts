@@ -2120,6 +2120,14 @@ export function createStudioGateway(
       if (stored.preview.verdict === 'reject') return gatewayError(
         'CANDIDATE_REJECTED', 'A rejected preview cannot become design history.', 'quality', 422,
       );
+      if (trackJobs && stored.trusted === null) {
+        await failJob(stored.studioJob, 'DURABLE_MARKUP_PREVIEW_MISSING', 0.9);
+        return gatewayError(
+          'DURABLE_MARKUP_PREVIEW_MISSING',
+          'The temporary refinement could not be reopened safely.',
+          'invalid_response', 409,
+        );
+      }
       const result = stored.trusted === null
         ? await client.acceptWarningCandidate(
             stored.runId, stored.candidateId,
@@ -2160,6 +2168,14 @@ export function createStudioGateway(
       if (stored.preview.status !== 'pending_review') return gatewayError(
         'CANDIDATE_NOT_REVIEWABLE', 'This preview already has a final decision.', 'conflict', 409,
       );
+      if (trackJobs && stored.trusted === null) {
+        await failJob(stored.studioJob, 'DURABLE_MARKUP_PREVIEW_MISSING', 0.9);
+        return gatewayError(
+          'DURABLE_MARKUP_PREVIEW_MISSING',
+          'The temporary refinement could not be reopened safely.',
+          'invalid_response', 409,
+        );
+      }
       const result = stored.trusted === null
         ? await client.discardWarningCandidate(
             stored.runId, stored.candidateId, request.createdBy,

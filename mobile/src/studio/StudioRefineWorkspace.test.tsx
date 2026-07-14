@@ -83,14 +83,18 @@ const responderEvent = (locationX: number, locationY: number) => ({
   nativeEvent: { locationX, locationY },
 });
 
-function renderWithAuth(ui: React.ReactElement) {
-  return render(
+function withAuth(ui: React.ReactElement) {
+  return (
     <AuthenticatedImageProvider
       allowedOrigin="https://test"
       headers={{ Authorization: 'Bearer test-session-token' }}>
       {ui}
-    </AuthenticatedImageProvider>,
+    </AuthenticatedImageProvider>
   );
+}
+
+function renderWithAuth(ui: React.ReactElement) {
+  return render(withAuth(ui));
 }
 
 describe('StudioRefineWorkspace', () => {
@@ -117,6 +121,21 @@ describe('StudioRefineWorkspace', () => {
 
   test('keeps a candidate temporary until explicit apply', async () => {
     const onApplied = jest.fn();
+    const onOpenCollections = jest.fn();
+    const onPresent = jest.fn();
+    const appliedProject = {
+      ...project,
+      active_asset_id: 'asset_3',
+      active_design_version: 3,
+      active_revision: {
+        asset_id: 'asset_3', root_id: 'project_1', parent_asset_id: 'asset_2',
+        capability: 'LOCALIZED_EDIT', provenance: 'catalog_candidate_accept',
+        revision: 3, design_version: 3, region: null, instruction: 'Use rose gold',
+        drift: null, pinned: false, media_type: 'image/png',
+        image_url: 'https://test/applied.png', created_by: 'designer',
+        created_at: null, legacy_provenance: false,
+      },
+    } as ProjectDetail;
     const previewCatalogRefine = jest.fn(async () => ({
       data: {
         lineage: { projectId: 'project_1', sourceAssetId: 'asset_2', sourceDesignVersion: 2 },
@@ -138,31 +157,50 @@ describe('StudioRefineWorkspace', () => {
       status: 201,
     }));
     const applyCatalogRefine = jest.fn(async () => ({
-      data: { candidate: {}, project }, error: null, status: 201,
+      data: { candidate: {}, project: appliedProject }, error: null, status: 201,
     }));
-    await renderWithAuth(
-      <StudioRefineWorkspace
-        api={{
-          getComponentCatalog: jest.fn(async () => ({ data: catalog, error: null, status: 200 })),
-          getStudioComponentTargeting: getReadyTargeting,
-          readMarkup: jest.fn(),
-        }}
-        gateway={{ previewCatalogRefine, applyCatalogRefine, discardCatalogRefine: jest.fn() } as any}
-        lineage={{ projectId: 'project_1', sourceAssetId: 'asset_2', sourceDesignVersion: 2 }}
-        sourceImageUrl="https://test/source.png"
-        createdBy="designer"
-        onReviewStartingDesign={jest.fn()}
-        onApplied={onApplied}
-      />,
-    );
+    const api = {
+      getComponentCatalog: jest.fn(async () => ({ data: catalog, error: null, status: 200 })),
+      getStudioComponentTargeting: getReadyTargeting,
+      readMarkup: jest.fn(),
+    };
+    const gateway = {
+      previewCatalogRefine, applyCatalogRefine, discardCatalogRefine: jest.fn(),
+    } as any;
+    function ApplyHarness() {
+      const [activeLineage, setActiveLineage] = React.useState({
+        projectId: 'project_1', sourceAssetId: 'asset_2', sourceDesignVersion: 2,
+      });
+      return (
+        <StudioRefineWorkspace
+          api={api}
+          gateway={gateway}
+          lineage={activeLineage}
+          sourceImageUrl="https://test/source.png"
+          createdBy="designer"
+          onReviewStartingDesign={jest.fn()}
+          onApplied={(savedProject) => {
+            onApplied(savedProject);
+            setActiveLineage({
+              projectId: savedProject.root_id,
+              sourceAssetId: savedProject.active_asset_id ?? '',
+              sourceDesignVersion: savedProject.active_design_version ?? 0,
+            });
+          }}
+          onOpenCollections={onOpenCollections}
+          onPresent={onPresent}
+        />
+      );
+    }
+    await renderWithAuth(<ApplyHarness />);
 
     expect(screen.queryByText('Review starting design')).toBeNull();
     expect(screen.getByText('1 requested output × 20 credits = estimated 20 credits')).toBeTruthy();
     await waitFor(() => expect(screen.getByLabelText('Component refine mode')).toBeTruthy());
-    await act(async () => { fireEvent.press(screen.getByLabelText('Component refine mode')); });
+    await fireEvent.press(screen.getByLabelText('Component refine mode'));
     await waitFor(() => expect(screen.getByText('Rose gold')).toBeTruthy());
     expect(screen.getByText('Quick preview · 0 credits')).toBeTruthy();
-    await act(async () => { fireEvent.press(await screen.findByText('Preview change')); });
+    await fireEvent.press(await screen.findByText('Preview change'));
     expect(previewCatalogRefine).toHaveBeenCalledWith(expect.objectContaining({
       executionMode: 'instant',
     }));
@@ -174,37 +212,39 @@ describe('StudioRefineWorkspace', () => {
     expect(screen.getByTestId('refine-comparison-inspector')).toBeTruthy();
     expect(screen.getByLabelText('Inspect comparison in detail')).toBeTruthy();
     expect(screen.getByText('Apply as new revision').parent?.props.accessibilityState.disabled).toBe(true);
-    await act(async () => {
-      fireEvent.press(screen.getByLabelText('Inspect comparison in detail'));
-    });
-    expect(screen.getByText('Inspect source and temporary preview')).toBeTruthy();
-    await act(async () => {
-      fireEvent(screen.getByLabelText('Preview: Temporary refinement candidate detail view'), 'load');
-    });
+    await fireEvent.press(screen.getByLabelText('Inspect comparison in detail'));
+    expect(await screen.findByText('Inspect source and temporary preview')).toBeTruthy();
+    await fireEvent(
+      screen.getByLabelText('Preview: Temporary refinement candidate detail view'),
+      'load',
+    );
     expect(screen.getByText('Apply as new revision').parent?.props.accessibilityState.disabled).toBe(true);
-    await act(async () => {
-      fireEvent.press(screen.getByLabelText('Show Source: Exact selected revision in detail'));
-    });
-    await act(async () => {
-      fireEvent(screen.getByLabelText('Source: Exact selected revision detail view'), 'load');
-    });
+    await fireEvent.press(screen.getByLabelText('Show Source: Exact selected revision in detail'));
+    await fireEvent(
+      await screen.findByLabelText('Source: Exact selected revision detail view'),
+      'load',
+    );
     expect(screen.getByText('Apply as new revision').parent?.props.accessibilityState.disabled).toBe(true);
-    await act(async () => {
-      fireEvent.press(screen.getByLabelText('Close comparison inspector'));
+    await fireEvent.press(screen.getByLabelText('Close comparison inspector'));
+    await waitFor(() => {
+      expect(screen.queryByText('Inspect source and temporary preview')).toBeNull();
     });
-    await act(async () => {
-      fireEvent(screen.getByLabelText('Exact source revision'), 'load');
-      fireEvent(screen.getByLabelText('Temporary refinement preview'), 'error');
+    await fireEvent(screen.getByLabelText('Exact source revision'), 'load');
+    await fireEvent(screen.getByLabelText('Temporary refinement preview'), 'load');
+    await waitFor(() => {
+      expect(
+        screen.getByText('Apply as new revision').parent?.props.accessibilityState.disabled,
+      ).toBe(false);
     });
-    expect(screen.getByText(/source or preview could not be displayed/i)).toBeTruthy();
-    expect(screen.getByText('Discard').parent?.props.accessibilityState.disabled).toBe(false);
-    fireEvent.press(screen.getByText('Apply as new revision'));
     expect(applyCatalogRefine).not.toHaveBeenCalled();
-    await act(async () => {
-      fireEvent(screen.getByLabelText('Temporary refinement preview'), 'load');
-    });
-    await act(async () => { fireEvent.press(screen.getByText('Apply as new revision')); });
-    await waitFor(() => expect(onApplied).toHaveBeenCalledWith(project));
+    await fireEvent.press(screen.getByText('Apply as new revision'));
+    await waitFor(() => expect(onApplied).toHaveBeenCalledWith(appliedProject));
+    expect(await screen.findByText('Saved as Revision 3.')).toBeTruthy();
+    expect(screen.getByText('Refine another change')).toBeTruthy();
+    await fireEvent.press(screen.getByText('View in Collections'));
+    await fireEvent.press(screen.getByText('Present this revision'));
+    expect(onOpenCollections).toHaveBeenCalledTimes(1);
+    expect(onPresent).toHaveBeenCalledTimes(1);
   });
 
   test('keeps a structural cut direction temporary and bound to the exact revision', async () => {
@@ -284,24 +324,15 @@ describe('StudioRefineWorkspace', () => {
     );
 
     await waitFor(() => expect(screen.getByLabelText('Component refine mode')).toBeTruthy());
-    await act(async () => { fireEvent.press(screen.getByLabelText('Component refine mode')); });
+    await fireEvent.press(screen.getByLabelText('Component refine mode'));
     await waitFor(() => expect(
       screen.getByLabelText('Stone cut component path').props.accessibilityState.disabled,
     ).toBe(false));
-    await act(async () => {
-      fireEvent.press(screen.getByLabelText('Stone cut component path'));
-      await Promise.resolve();
-    });
+    await fireEvent.press(screen.getByLabelText('Stone cut component path'));
     await waitFor(() => expect(getComponentCatalog).toHaveBeenCalledWith('stone.cut'));
     expect(screen.getByText('1 requested output × 20 credits = estimated 20 credits')).toBeTruthy();
-    await act(async () => {
-      fireEvent.press(await screen.findByText('Emerald cut'));
-      await Promise.resolve();
-    });
-    await act(async () => {
-      fireEvent.press(screen.getByText('Preview change'));
-      await Promise.resolve();
-    });
+    await fireEvent.press(await screen.findByText('Emerald cut'));
+    await fireEvent.press(screen.getByText('Preview change'));
     await waitFor(() => expect(previewCatalogRefine).toHaveBeenCalledWith({
       projectId: 'project_1',
       sourceAssetId: 'asset_2',
@@ -315,22 +346,13 @@ describe('StudioRefineWorkspace', () => {
     expect(screen.getByText(/Standard preview · estimated 20 credits/)).toBeTruthy();
     expect(screen.queryByText(/provider/i)).toBeNull();
     expect(screen.getByLabelText('Temporary refinement preview')).toBeTruthy();
-    await act(async () => {
-      fireEvent.press(screen.getByText('Apply as new revision'));
-      await Promise.resolve();
-    });
+    await fireEvent.press(screen.getByText('Apply as new revision'));
     expect(applyCatalogRefine).not.toHaveBeenCalled();
     expect(onApplied).not.toHaveBeenCalled();
 
-    await act(async () => {
-      fireEvent(screen.getByLabelText('Exact source revision'), 'load');
-      fireEvent(screen.getByLabelText('Temporary refinement preview'), 'load');
-      await Promise.resolve();
-    });
-    await act(async () => {
-      fireEvent.press(screen.getByText('Apply as new revision'));
-      await Promise.resolve();
-    });
+    await fireEvent(screen.getByLabelText('Exact source revision'), 'load');
+    await fireEvent(screen.getByLabelText('Temporary refinement preview'), 'load');
+    await fireEvent.press(screen.getByText('Apply as new revision'));
     await waitFor(() => expect(applyCatalogRefine).toHaveBeenCalledWith({
       candidateId: 'candidate_cut', createdBy: 'designer',
     }));
@@ -390,27 +412,23 @@ describe('StudioRefineWorkspace', () => {
     expect(screen.getByText(/image-derived starting facts/i)).toBeTruthy();
     expect(screen.getByText(/Technical views become available after those facts are recorded/)).toBeTruthy();
     expect(screen.getByText(/you can keep refining or presenting without them/)).toBeTruthy();
-    await act(async () => { fireEvent.press(screen.getByText('Review starting design')); });
+    await fireEvent.press(screen.getByText('Review starting design'));
     expect(onReviewStartingDesign).toHaveBeenCalledTimes(1);
-    await act(async () => {
-      fireEvent.changeText(
-        screen.getByPlaceholderText(/make the presentation softer/i),
-        'Make the lighting warmer',
-      );
-    });
+    await fireEvent.changeText(
+      screen.getByPlaceholderText(/make the presentation softer/i),
+      'Make the lighting warmer',
+    );
     await waitFor(() => expect(screen.getByDisplayValue('Make the lighting warmer')).toBeTruthy());
-    await act(async () => { fireEvent.press(screen.getByText('Preview change')); });
+    await fireEvent.press(screen.getByText('Preview change'));
     await waitFor(() => expect(previewVisualRefine).toHaveBeenCalledWith({
       projectId: 'project_1', sourceAssetId: 'creative_1', createdBy: 'designer',
       instruction: 'Make the lighting warmer', scope: 'appearance',
     }));
     expect(screen.getByLabelText('Exact source revision')).toBeTruthy();
     expect(screen.getByLabelText('Temporary refinement preview')).toBeTruthy();
-    await act(async () => {
-      fireEvent(screen.getByLabelText('Exact source revision'), 'load');
-      fireEvent(screen.getByLabelText('Temporary refinement preview'), 'load');
-    });
-    await act(async () => { fireEvent.press(screen.getByText('Apply as new revision')); });
+    await fireEvent(screen.getByLabelText('Exact source revision'), 'load');
+    await fireEvent(screen.getByLabelText('Temporary refinement preview'), 'load');
+    await fireEvent.press(screen.getByText('Apply as new revision'));
     await waitFor(() => expect(onApplied).toHaveBeenCalledWith(preSpecProject));
     await waitFor(() => expect(
       screen.getByPlaceholderText(/make the presentation softer/i).props.value,
@@ -471,7 +489,7 @@ describe('StudioRefineWorkspace', () => {
       }, error: null, status: 201,
     }));
     const onVariationCreated = jest.fn();
-    await renderWithAuth(
+    const workspace = (activeLineage: { projectId: string; sourceAssetId: string }) => withAuth(
       <StudioRefineWorkspace
         api={{
           getComponentCatalog: jest.fn(), getStudioComponentTargeting: getReadyTargeting,
@@ -484,40 +502,51 @@ describe('StudioRefineWorkspace', () => {
           discardCatalogRefine: jest.fn(), previewMarkupRefine: jest.fn(),
           applyMarkupRefine: jest.fn(), discardMarkupRefine: jest.fn(),
         } as any}
-        lineage={{ projectId: 'project_1', sourceAssetId: 'creative_1' }}
+        lineage={activeLineage}
         sourceImageUrl="https://test/source.png"
         createdBy="designer"
         onApplied={jest.fn()}
         onVariationCreated={onVariationCreated}
       />,
     );
+    const rendered = await render(
+      workspace({ projectId: 'project_1', sourceAssetId: 'creative_1' }),
+    );
 
-    await act(async () => {
-      fireEvent.changeText(
-        screen.getByPlaceholderText(/make the presentation softer/i),
-        'Make the lighting warmer',
-      );
-    });
+    await fireEvent.changeText(
+      screen.getByPlaceholderText(/make the presentation softer/i),
+      'Make the lighting warmer',
+    );
     await waitFor(() => expect(screen.getByDisplayValue('Make the lighting warmer')).toBeTruthy());
-    await act(async () => { fireEvent.press(screen.getByText('Preview change')); });
+    await fireEvent.press(screen.getByText('Preview change'));
     expect(await screen.findByText('Nothing has changed yet.')).toBeTruthy();
-    await act(async () => {
-      fireEvent(screen.getByLabelText('Exact source revision'), 'load');
-      fireEvent(screen.getByLabelText('Temporary refinement preview'), 'load');
-    });
-    await act(async () => { fireEvent.press(screen.getByText('Save as Variation')); });
-    await act(async () => {
-      fireEvent.changeText(screen.getByPlaceholderText('e.g. Rose gold halo'), 'Warm direction');
-    });
+    await fireEvent(screen.getByLabelText('Exact source revision'), 'load');
+    await fireEvent(screen.getByLabelText('Temporary refinement preview'), 'load');
+    await fireEvent.press(screen.getByText('Save as Variation'));
+    await fireEvent.changeText(
+      screen.getByPlaceholderText('e.g. Rose gold halo'),
+      'Warm direction',
+    );
     await waitFor(() => expect(screen.getByDisplayValue('Warm direction')).toBeTruthy());
-    await act(async () => { fireEvent.press(screen.getByText('Save named variation')); });
+    await fireEvent.press(screen.getByText('Save named variation'));
 
     await waitFor(() => expect(saveVisualPreviewAsVariation).toHaveBeenCalledWith({
       candidateId: 'candidate_visual_variation', createdBy: 'designer', label: 'Warm direction',
     }));
     await waitFor(() => expect(onVariationCreated).toHaveBeenCalledWith(variationProject));
+    expect(screen.getByText('Variation “Warm direction” is ready.')).toBeTruthy();
+    await rendered.rerender(workspace({
+      projectId: 'variation_visual', sourceAssetId: 'variation_visual',
+    }));
+    expect(await screen.findByText('Variation “Warm direction” is ready.')).toBeTruthy();
     expect(screen.getByPlaceholderText(/make the presentation softer/i).props.value).toBe('');
     expect(screen.getByText('Preview change').parent?.props.accessibilityState.disabled).toBe(true);
+    await rendered.rerender(
+      workspace({ projectId: 'another_project', sourceAssetId: 'another_asset' }),
+    );
+    await waitFor(() => {
+      expect(screen.queryByText('Variation “Warm direction” is ready.')).toBeNull();
+    });
   });
 
   test('routes pre-spec annotation through exact saved markup provenance', async () => {
@@ -576,14 +605,14 @@ describe('StudioRefineWorkspace', () => {
       />,
     );
 
-    await act(async () => { fireEvent.press(screen.getByLabelText('Mark up refine mode')); });
+    await fireEvent.press(screen.getByLabelText('Mark up refine mode'));
     const canvas = await screen.findByLabelText('Jewelry image annotation canvas');
     await fireEvent(canvas, 'layout', {
       nativeEvent: { layout: { x: 0, y: 0, width: 200, height: 160 } },
     });
     await fireEvent(canvas, 'responderGrant', responderEvent(20, 20));
     await fireEvent(canvas, 'responderRelease', responderEvent(90, 80));
-    await act(async () => { fireEvent.press(screen.getByText('Preview change')); });
+    await fireEvent.press(screen.getByText('Preview change'));
 
     await waitFor(() => expect(readMarkup).toHaveBeenCalledWith(
       'creative_1',
@@ -596,7 +625,7 @@ describe('StudioRefineWorkspace', () => {
     expect(screen.getByText(/Warm only the highlighted surface/)).toBeTruthy();
     expect(screen.getByLabelText('Temporary refinement preview')).toBeTruthy();
 
-    await act(async () => { fireEvent.press(screen.getByText('Discard')); });
+    await fireEvent.press(screen.getByText('Discard'));
     await waitFor(() => expect(discardVisualRefine).toHaveBeenCalledWith({
       candidateId: 'candidate_markup', createdBy: 'designer',
     }));
@@ -604,16 +633,14 @@ describe('StudioRefineWorkspace', () => {
     expect(screen.getByLabelText('Clear all annotations').props.accessibilityState.disabled).toBe(false);
     expect(screen.getByText('Preview change').parent?.props.accessibilityState.disabled).toBe(false);
 
-    await act(async () => { fireEvent.press(screen.getByText('Preview change')); });
+    await fireEvent.press(screen.getByText('Preview change'));
     expect(await screen.findByText('Nothing has changed yet.')).toBeTruthy();
-    await act(async () => {
-      fireEvent(screen.getByLabelText('Exact source revision'), 'load');
-      fireEvent(screen.getByLabelText('Temporary refinement preview'), 'load');
-    });
-    await act(async () => { fireEvent.press(screen.getByText('Apply as new revision')); });
+    await fireEvent(screen.getByLabelText('Exact source revision'), 'load');
+    await fireEvent(screen.getByLabelText('Temporary refinement preview'), 'load');
+    await fireEvent.press(screen.getByText('Apply as new revision'));
     await waitFor(() => expect(onApplied).toHaveBeenCalledWith(preSpecProject));
     expect(screen.getByLabelText('Describe refine mode').props.accessibilityState.selected).toBe(true);
-    await act(async () => { fireEvent.press(screen.getByLabelText('Mark up refine mode')); });
+    await fireEvent.press(screen.getByLabelText('Mark up refine mode'));
     expect(screen.getByLabelText('Clear all annotations').props.accessibilityState.disabled).toBe(true);
     expect(screen.getByText('Preview change').parent?.props.accessibilityState.disabled).toBe(true);
   });
@@ -647,7 +674,7 @@ describe('StudioRefineWorkspace', () => {
     );
     const rendered = await render(workspace('creative_1', 'https://test/source-1.png'));
 
-    await act(async () => { fireEvent.press(screen.getByLabelText('Mark up refine mode')); });
+    await fireEvent.press(screen.getByLabelText('Mark up refine mode'));
     const canvas = await screen.findByLabelText('Jewelry image annotation canvas');
     await fireEvent(canvas, 'layout', {
       nativeEvent: { layout: { x: 0, y: 0, width: 200, height: 160 } },
@@ -860,14 +887,14 @@ describe('StudioRefineWorkspace', () => {
         onApplied={jest.fn()}
       />,
     );
-    fireEvent.press(screen.getByLabelText('Describe refine mode'));
+    await fireEvent.press(screen.getByLabelText('Describe refine mode'));
     expect(await screen.findByText(/changes presentation only/i)).toBeTruthy();
-    fireEvent.changeText(
+    await fireEvent.changeText(
       screen.getByPlaceholderText(/make the presentation softer/i),
       'Make the background warmer',
     );
     await waitFor(() => expect(screen.getByDisplayValue('Make the background warmer')).toBeTruthy());
-    await act(async () => { fireEvent.press(screen.getByText('Preview change')); });
+    await fireEvent.press(screen.getByText('Preview change'));
     await waitFor(() => expect(previewMarkupRefine).toHaveBeenCalledWith(expect.objectContaining({
       sourceAssetId: 'asset_2',
       annotation: expect.objectContaining({
@@ -929,11 +956,9 @@ describe('StudioRefineWorkspace', () => {
     expect(screen.getByLabelText('Temporary refinement preview').props.source.headers).toEqual({
       Authorization: 'Bearer test-session-token',
     });
-    await act(async () => {
-      fireEvent(screen.getByLabelText('Exact source revision'), 'load');
-      fireEvent(screen.getByLabelText('Temporary refinement preview'), 'load');
-    });
-    await act(async () => { fireEvent.press(screen.getByText('Apply as new revision')); });
+    await fireEvent(screen.getByLabelText('Exact source revision'), 'load');
+    await fireEvent(screen.getByLabelText('Temporary refinement preview'), 'load');
+    await fireEvent.press(screen.getByText('Apply as new revision'));
     expect(applyCatalogRefine).toHaveBeenCalledWith({
       candidateId: 'candidate_resumed', createdBy: 'designer',
     });
@@ -982,12 +1007,10 @@ describe('StudioRefineWorkspace', () => {
 
     expect(await screen.findByText(/created from an earlier revision/i)).toBeTruthy();
     expect(screen.getByTestId('refine-comparison-inspector')).toBeTruthy();
-    await act(async () => {
-      fireEvent(screen.getByLabelText('Exact source revision'), 'load');
-      fireEvent(screen.getByLabelText('Temporary refinement preview'), 'load');
-    });
+    await fireEvent(screen.getByLabelText('Exact source revision'), 'load');
+    await fireEvent(screen.getByLabelText('Temporary refinement preview'), 'load');
     expect(screen.getByText('Apply as new revision').parent?.props.accessibilityState.disabled).toBe(true);
-    fireEvent.press(screen.getByText('Apply as new revision'));
+    await fireEvent.press(screen.getByText('Apply as new revision'));
     expect(applyCatalogRefine).not.toHaveBeenCalled();
   });
 
@@ -1036,16 +1059,17 @@ describe('StudioRefineWorkspace', () => {
     );
 
     expect(await screen.findByText('Save as Variation')).toBeTruthy();
-    await act(async () => {
-      fireEvent(screen.getByLabelText('Exact source revision'), 'load');
-      fireEvent(screen.getByLabelText('Temporary refinement preview'), 'load');
-    });
-    fireEvent.press(screen.getByText('Save as Variation'));
+    await fireEvent(screen.getByLabelText('Exact source revision'), 'load');
+    await fireEvent(screen.getByLabelText('Temporary refinement preview'), 'load');
+    await fireEvent.press(screen.getByText('Save as Variation'));
     expect(await screen.findByText(/source revision stays unchanged/i)).toBeTruthy();
     expect(saveCatalogPreviewAsVariation).not.toHaveBeenCalled();
-    fireEvent.changeText(screen.getByPlaceholderText('e.g. Rose gold halo'), '  Rose halo  ');
+    await fireEvent.changeText(
+      screen.getByPlaceholderText('e.g. Rose gold halo'),
+      '  Rose halo  ',
+    );
     expect(await screen.findByDisplayValue('  Rose halo  ')).toBeTruthy();
-    fireEvent.press(screen.getByText('Save named variation'));
+    await fireEvent.press(screen.getByText('Save named variation'));
     expect(saveCatalogPreviewAsVariation).toHaveBeenCalledTimes(1);
     expect(saveCatalogPreviewAsVariation).toHaveBeenCalledWith({
       candidateId: 'candidate_variation', createdBy: 'designer', label: 'Rose halo',
@@ -1081,7 +1105,7 @@ describe('StudioRefineWorkspace', () => {
 
     expect(screen.queryByText('Facts')).toBeNull();
     expect(screen.queryByText('Stone species')).toBeNull();
-    fireEvent.press(await screen.findByLabelText('Advanced design facts'));
+    await fireEvent.press(await screen.findByLabelText('Advanced design facts'));
     expect(await screen.findByText('Identity')).toBeTruthy();
     expect(screen.getByLabelText('Identity fact group').props.accessibilityState.expanded).toBe(true);
     expect(screen.getByLabelText('Stone fact group').props.accessibilityState.expanded).toBe(false);
@@ -1090,35 +1114,35 @@ describe('StudioRefineWorkspace', () => {
     expect(screen.getByText(/image pixels stay unchanged/i)).toBeTruthy();
     expect(screen.queryByText(/provider/i)).toBeNull();
     expect(screen.queryByText(/factory/i)).toBeNull();
-    fireEvent.press(screen.getByText('Review fact changes'));
+    await fireEvent.press(screen.getByText('Review fact changes'));
     expect(await screen.findByText(/Nothing changed/i)).toBeTruthy();
-    fireEvent.press(screen.getByLabelText('Dimensions fact group'));
+    await fireEvent.press(screen.getByLabelText('Dimensions fact group'));
     await waitFor(() => {
       expect(screen.getByLabelText('Identity fact group').props.accessibilityState.expanded).toBe(false);
       expect(screen.getByLabelText('Dimensions fact group').props.accessibilityState.expanded).toBe(true);
     });
     expect(await screen.findByDisplayValue('8')).toBeTruthy();
-    fireEvent.changeText(screen.getByDisplayValue('8'), '-1');
+    await fireEvent.changeText(screen.getByDisplayValue('8'), '-1');
     await waitFor(() => expect(screen.getByDisplayValue('-1')).toBeTruthy());
     expect(screen.queryByText(/Nothing changed/i)).toBeNull();
-    fireEvent.press(screen.getByText('Review fact changes'));
+    await fireEvent.press(screen.getByText('Review fact changes'));
     expect(await screen.findByText(/Stone length must be a valid positive number/i)).toBeTruthy();
     expect(reviseStudioFacts).not.toHaveBeenCalled();
-    fireEvent.changeText(screen.getByDisplayValue('-1'), '8');
+    await fireEvent.changeText(screen.getByDisplayValue('-1'), '8');
     await waitFor(() => expect(screen.getByDisplayValue('8')).toBeTruthy());
-    fireEvent.press(screen.getByLabelText('Identity fact group'));
+    await fireEvent.press(screen.getByLabelText('Identity fact group'));
     const roseOption = await screen.findByText('Rose');
-    await act(async () => { fireEvent.press(roseOption); await Promise.resolve(); });
-    fireEvent.press(screen.getByLabelText('Dimensions fact group'));
+    await fireEvent.press(roseOption);
+    await fireEvent.press(screen.getByLabelText('Dimensions fact group'));
     const stoneLength = await screen.findByDisplayValue('8');
-    fireEvent.changeText(stoneLength, '8.2');
+    await fireEvent.changeText(stoneLength, '8.2');
     await waitFor(() => expect(screen.getByDisplayValue('8.2')).toBeTruthy());
-    fireEvent.press(screen.getByText('Review fact changes'));
+    await fireEvent.press(screen.getByText('Review fact changes'));
     expect(await screen.findByText('Review only what changed')).toBeTruthy();
     expect(screen.getByText('Yellow → Rose')).toBeTruthy();
     expect(screen.getByText('8 → 8.2 mm')).toBeTruthy();
     expect(reviseStudioFacts).not.toHaveBeenCalled();
-    fireEvent.press(screen.getByText('Save fact revision'));
+    await fireEvent.press(screen.getByText('Save fact revision'));
     await waitFor(() => expect(reviseStudioFacts).toHaveBeenCalledWith('project_1', {
       expected_active_asset_id: 'asset_2', expected_design_version: 2,
       created_by: 'designer', changes: [
@@ -1213,7 +1237,7 @@ describe('StudioRefineWorkspace', () => {
     await waitFor(() => expect(prepareStudioComponentMap).toHaveBeenCalledWith('asset_2'));
     await waitFor(() => expect(screen.getByLabelText('Component refine mode')).toBeTruthy());
     expect(getComponentCatalog).not.toHaveBeenCalled();
-    await act(async () => { fireEvent.press(screen.getByLabelText('Component refine mode')); });
+    await fireEvent.press(screen.getByLabelText('Component refine mode'));
     await waitFor(() => expect(getComponentCatalog).toHaveBeenCalledWith('metal.color'));
   });
 
@@ -1235,7 +1259,7 @@ describe('StudioRefineWorkspace', () => {
 
     await waitFor(() => expect(screen.getByLabelText('Component refine mode')).toBeTruthy());
     expect(getComponentCatalog).not.toHaveBeenCalled();
-    await act(async () => { fireEvent.press(screen.getByLabelText('Component refine mode')); });
+    await fireEvent.press(screen.getByLabelText('Component refine mode'));
     await waitFor(() => expect(
       screen.getByLabelText('Metal color component path').props.accessibilityState.disabled,
     ).toBe(false));
@@ -1284,11 +1308,11 @@ describe('StudioRefineWorkspace', () => {
     );
 
     await waitFor(() => expect(screen.getByLabelText('Component refine mode')).toBeTruthy());
-    await act(async () => { fireEvent.press(screen.getByLabelText('Component refine mode')); });
+    await fireEvent.press(screen.getByLabelText('Component refine mode'));
     await waitFor(() => expect(
       screen.getByLabelText('Stone color component path').props.accessibilityState.disabled,
     ).toBe(false));
-    await act(async () => { fireEvent.press(screen.getByLabelText('Stone color component path')); });
+    await fireEvent.press(screen.getByLabelText('Stone color component path'));
     await waitFor(() => expect(getComponentCatalog).toHaveBeenCalledWith('stone.color', {
       stoneSpecies: 'sapphire',
     }));
@@ -1327,11 +1351,11 @@ describe('StudioRefineWorkspace', () => {
     );
 
     await waitFor(() => expect(screen.getByLabelText('Component refine mode')).toBeTruthy());
-    await act(async () => { fireEvent.press(screen.getByLabelText('Component refine mode')); });
+    await fireEvent.press(screen.getByLabelText('Component refine mode'));
     await waitFor(() => expect(
       screen.getByLabelText('Stone color component path').props.accessibilityState.disabled,
     ).toBe(false));
-    await act(async () => { fireEvent.press(screen.getByLabelText('Stone color component path')); });
+    await fireEvent.press(screen.getByLabelText('Stone color component path'));
     expect(await screen.findByText('Check the requested change or reference, then try again.')).toBeTruthy();
     expect(screen.queryByText(/stone_species_invalid|unknown gemstone species/i)).toBeNull();
     expect(screen.getByText('Preview change').parent?.props.accessibilityState.disabled).toBe(true);

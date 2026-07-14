@@ -38,6 +38,7 @@ from facetta.factory_sheet_plan import (
     pending_factory_fact_paths,
 )
 from facetta.factory_schedule_pages import render_factory_schedule_pages
+from facetta.factory_scope import factory_category_blockers
 from facetta.project_backbone import is_primary_revision
 from facetta.spec import Spec
 from facetta.source_component_coverage import (
@@ -226,6 +227,11 @@ def build_factory_pack(db: Session, project_id: str) -> FactoryPack:
             "spec_validation_failed",
             "the approved specification no longer passes validation",
             status_code=422)
+
+    category_blockers = factory_category_blockers(validated.spec)
+    if category_blockers:
+        blocker = category_blockers[0]
+        raise FactoryPackUnavailable(blocker.code, blocker.message)
 
     form_blockers = unresolved_form_factory_blockers(
         validated.spec.design_form)

@@ -102,10 +102,14 @@ jest.mock('./StudioRefineWorkspace', () => {
   const ReactLocal = require('react');
   const { Pressable, Text, View } = require('react-native');
   return {
-    StudioRefineWorkspace: ({ initialAdvancedFactsOpen, lineage, onReviewStartingDesign }: {
+    StudioRefineWorkspace: ({
+      initialAdvancedFactsOpen, lineage, onReviewStartingDesign, onOpenCollections, onPresent,
+    }: {
       initialAdvancedFactsOpen?: boolean;
       lineage?: { sourceDesignVersion?: number } | null;
       onReviewStartingDesign?: () => void;
+      onOpenCollections?: () => void;
+      onPresent?: () => void;
     }) => ReactLocal.createElement(
       View,
       null,
@@ -121,6 +125,16 @@ jest.mock('./StudioRefineWorkspace', () => {
           ReactLocal.createElement(Text, null, 'Review starting design'),
         )
         : null,
+      onOpenCollections === undefined ? null : ReactLocal.createElement(
+        Pressable,
+        { accessibilityRole: 'button', onPress: onOpenCollections },
+        ReactLocal.createElement(Text, null, 'Refine handoff to Collections'),
+      ),
+      onPresent === undefined ? null : ReactLocal.createElement(
+        Pressable,
+        { accessibilityRole: 'button', onPress: onPresent },
+        ReactLocal.createElement(Text, null, 'Refine handoff to Present'),
+      ),
     ),
   };
 });
@@ -487,8 +501,8 @@ test('saving a selected direction continues to Refine and authenticates its Stud
   const view = await render(<App />);
 
   await waitFor(() => expect(view.getByText('Start from an idea or reference')).toBeTruthy());
-  fireEvent.press(view.getByText('Start from an idea or reference'));
-  fireEvent.press(await view.findByText('Save mocked direction'));
+  await fireEvent.press(view.getByText('Start from an idea or reference'));
+  await fireEvent.press(await view.findByText('Save mocked direction'));
   expect(await view.findByText('Refine route reached')).toBeTruthy();
   expect(view.queryByText('Your design families')).toBeNull();
 
@@ -658,6 +672,23 @@ test('Collections returns the selected exact revision to Refine', async () => {
   fireEvent.press(view.getAllByText('Collections').at(-1)!);
   fireEvent.press(await view.findByText('Continue refining exact revision'));
   expect(await view.findByText('Refine route reached')).toBeTruthy();
+});
+
+test('accepted Refine handoff opens Collections and Present for the exact active revision', async () => {
+  authenticate();
+  const view = await render(<App />);
+
+  await waitFor(() => expect(view.getByText('Start from an idea or reference')).toBeTruthy());
+  fireEvent.press(view.getByText('Start from an idea or reference'));
+  fireEvent.press(await view.findByText('Save mocked direction'));
+  expect(await view.findByText('Refine route reached')).toBeTruthy();
+
+  await fireEvent.press(view.getByText('Refine handoff to Collections'));
+  expect(await view.findByText('Vary exact project_1')).toBeTruthy();
+  await fireEvent.press(view.getByText('Continue refining exact revision'));
+  expect(await view.findByText('Refine route reached')).toBeTruthy();
+  await fireEvent.press(view.getByText('Refine handoff to Present'));
+  expect(await view.findByText('Present route reached for asset_1')).toBeTruthy();
 });
 
 test('Collections sends the exact active revision to Present', async () => {

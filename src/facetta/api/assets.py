@@ -1340,7 +1340,10 @@ def markup_apply(
                         "run_id": run_id,
                         "candidate_id": candidate.candidate_id,
                         "preview_url": (
-                            f"/image-runs/{run_id}/candidates/"
+                            f"/studio/markup-candidates/{run_id}/"
+                            f"{candidate.candidate_id}/image"
+                            if request.studio_job_id is not None
+                            else f"/image-runs/{run_id}/candidates/"
                             f"{candidate.candidate_id}/image"
                         ),
                         "qa": qa_report,

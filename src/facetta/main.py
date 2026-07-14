@@ -105,9 +105,6 @@ PRODUCTION_CATALOG_OPERATIONS: frozenset[RouteOperation] = frozenset({
 })
 
 PRODUCTION_TRUSTED_OPERATIONS: frozenset[RouteOperation] = frozenset({
-    ("GET", "/image-runs/{run_id}/candidates/{candidate_id}/image"),
-    ("POST", "/image-runs/{run_id}/candidates/{candidate_id}/accept"),
-    ("POST", "/image-runs/{run_id}/candidates/{candidate_id}/discard"),
     ("GET", "/projects/{project_id}/factory-pack"),
     ("POST", "/projects/{project_id}/factory-pack"),
     ("GET", "/projects/{project_id}/factory-pack.zip"),

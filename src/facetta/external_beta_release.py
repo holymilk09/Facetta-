@@ -150,6 +150,21 @@ STAGING_DISALLOWED_LEGACY_OPERATIONS: tuple[tuple[str, str, str], ...] = (
         "POST",
         "/image-runs/{run_id}/feedback",
     ),
+    (
+        "trusted_warning_candidate_image",
+        "GET",
+        "/image-runs/{run_id}/candidates/{candidate_id}/image",
+    ),
+    (
+        "trusted_warning_candidate_accept",
+        "POST",
+        "/image-runs/{run_id}/candidates/{candidate_id}/accept",
+    ),
+    (
+        "trusted_warning_candidate_discard",
+        "POST",
+        "/image-runs/{run_id}/candidates/{candidate_id}/discard",
+    ),
     ("design_edit", "POST", "/designs/{design_id}/edit"),
     ("design_annotate", "POST", "/designs/{design_id}/annotate"),
     (

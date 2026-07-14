@@ -692,6 +692,8 @@ export default function App() {
                 setStudioProject(project);
                 setSelectedCreativeAssetId(project.active_asset_id);
               }}
+              onOpenCollections={() => setTab('collections')}
+              onPresent={() => openStudioAction('present')}
               imageRequestHeaders={authenticatedImageHeaders}
             />
           ) : selectedActionId === 'views' ? (

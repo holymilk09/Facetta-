@@ -355,7 +355,7 @@ def test_factory_pack_discloses_reference_estimates_in_manifest_and_sheet(
         "estimated_from_reference")
 
 
-def test_legacy_necklace_stays_readable_but_chain_blocks_factory_release(
+def test_legacy_necklace_stays_readable_but_category_blocks_factory_release(
     trusted_client,
 ):
     client, Session = trusted_client
@@ -365,22 +365,19 @@ def test_legacy_necklace_stays_readable_but_chain_blocks_factory_release(
     detail = client.get(f"/projects/{project['root_id']}").json()
     assert detail["state"] == "approved"
     assert detail["factory_ready"] is False
-    chain_blockers = [
-        blocker for blocker in detail["factory_blockers"]
-        if blocker["subject_kind"] == "chain"
+    assert [(blocker["code"], blocker["subject_kind"], blocker["subject_id"])
+            for blocker in detail["factory_blockers"]] == [
+        ("factory_category_not_released", "category", "necklace"),
     ]
-    assert {blocker["code"] for blocker in chain_blockers} == {
-        "chain_geometry_missing",
-        "chain_production_reference_missing",
-        "chain_pendant_connection_missing",
-    }
 
     pack = client.get(f"/projects/{project['root_id']}/factory-pack")
     assert pack.status_code == 409, pack.text
-    assert pack.json()["code"] == "chain_manufacturing_incomplete"
+    assert pack.json()["code"] == "factory_category_not_released"
 
 
-def test_dimensioned_referenced_chain_is_exact_factory_truth(trusted_client):
+def test_dimensioned_referenced_necklace_stays_readable_but_is_not_released_for_factory(
+    trusted_client,
+):
     client, Session = trusted_client
     spec = json.loads(json.dumps(NECKLACE_SPEC))
     spec["chain"].update({
@@ -417,23 +414,25 @@ def test_dimensioned_referenced_chain_is_exact_factory_truth(trusted_client):
     _approve(client, project["active_asset_id"])
 
     detail = client.get(f"/projects/{project['root_id']}").json()
-    assert detail["state"] == "factory_ready"
-    assert detail["factory_blockers"] == []
+    assert detail["state"] == "approved"
+    assert detail["factory_ready"] is False
+    assert detail["design_id"] is not None
+    assert detail["active_design_version"] == 1
+    assert detail["spec"]["chain"]["production"]["reference"] == (
+        "RG-CABLE-2MM-18Y"
+    )
+    assert [(blocker["code"], blocker["subject_kind"], blocker["subject_id"])
+            for blocker in detail["factory_blockers"]] == [
+        ("factory_category_not_released", "category", "necklace"),
+    ]
     pack = client.get(f"/projects/{project['root_id']}/factory-pack")
-    assert pack.status_code == 200, pack.text
-    manifest = pack.json()
-    assert manifest["dimensions"]["estimated_fields"][0]["field_path"] == (
-        "chain.geometry.chain_width_mm")
+    assert pack.status_code == 409, pack.text
+    assert pack.json()["code"] == "factory_category_not_released"
+    assert "released for rings only" in pack.json()["detail"]
 
-    archive = client.get(
-        f"/projects/{project['root_id']}/factory-pack.zip")
-    with zipfile.ZipFile(io.BytesIO(archive.content)) as bundle:
-        sheet = bundle.read("facetta-sheet.svg").decode()
-        dxf = bundle.read("facetta-sheet.dxf").decode()
-        stored = json.loads(bundle.read("validated-spec.json"))
-    assert "RG-CABLE-2MM-18Y" in sheet
-    assert "end-ring OD 1.8 mm" in dxf
-    assert stored["chain"]["production"]["reference"] == "RG-CABLE-2MM-18Y"
+    archive = client.get(f"/projects/{project['root_id']}/factory-pack.zip")
+    assert archive.status_code == 409, archive.text
+    assert archive.json()["code"] == "factory_category_not_released"
 
 
 def test_import_blocks_unresolved_or_unaudited_source_components_atomically(

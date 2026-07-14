@@ -302,7 +302,10 @@ def get_image_run(run_id: str, db: DbSession):
     }
 
 
-@router.get("/image-runs/{run_id}/candidates/{candidate_id}/image")
+@router.get(
+    "/image-runs/{run_id}/candidates/{candidate_id}/image",
+    deprecated=True,
+)
 def get_warning_candidate_image(
     run_id: str,
     candidate_id: str,
@@ -395,6 +398,7 @@ def create_image_run_feedback(
     status_code=201,
     response_model=ProjectDetail,
     response_model_exclude_none=True,
+    deprecated=True,
 )
 def accept_warning_candidate(
     run_id: str,
@@ -469,6 +473,7 @@ def accept_warning_candidate(
 
 @router.post(
     "/image-runs/{run_id}/candidates/{candidate_id}/discard",
+    deprecated=True,
 )
 def discard_warning_candidate(
     run_id: str,

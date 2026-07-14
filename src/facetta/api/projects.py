@@ -96,6 +96,7 @@ from facetta.drawing_workflow import (
     compile_color_brief,
     compile_line_art_brief,
 )
+from facetta.factory_scope import factory_category_blockers
 from facetta.image_agent import (
     ImageAgentError,
     ImageAgentResult,
@@ -291,7 +292,9 @@ class ApprovalSummary(BaseModel):
 
 class FactoryReadinessBlocker(BaseModel):
     code: str
-    subject_kind: Literal["design_form", "source_component", "chain"]
+    subject_kind: Literal[
+        "category", "design_form", "source_component", "chain",
+    ]
     subject_id: str
     element_id: str | None = None
     component_id: str | None = None
@@ -1075,72 +1078,85 @@ def project_detail(db: Session, project: Project,
         exact = db.get(DesignVersion, (design_id, active.design_version))
         if exact is not None:
             active_spec = Spec.model_validate(exact.spec)
+            category_blockers = factory_category_blockers(active_spec)
             factory_blockers = [{
                 "code": blocker.code,
-                "subject_kind": "design_form",
-                "subject_id": blocker.element_id,
-                "element_id": blocker.element_id,
+                "subject_kind": "category",
+                "subject_id": blocker.subject_id,
+                "element_id": None,
                 "component_id": None,
                 "role": blocker.role,
                 "label": blocker.label,
                 "detail": blocker.message,
                 "required_resolution": blocker.required_resolution,
-            } for blocker in unresolved_form_factory_blockers(
-                active_spec.design_form)]
-            target_visual_hash = spec_visual_hash(active_spec)
-            source_evidence_hash = hashlib.sha256(
-                bytes(source_evidence_anchor_asset(
-                    db,
-                    active_asset=active,
-                ).image)
-            ).hexdigest()
-            source_blockers = source_component_factory_blockers(
-                active_spec.source_component_coverage,
-                valid_spec_paths=valid_source_component_spec_paths(active_spec),
-                current_spec_visual_hash=target_visual_hash,
-                current_source_hash=source_evidence_hash,
-            )
-            coverage = active_spec.source_component_coverage
-            source_blockers = apply_trusted_lineage_to_blockers(
-                source_blockers,
-                lineage_verified=has_trusted_visual_spec_lineage(
-                    db,
-                    active_asset=active,
-                    source_spec_visual_hash=(
-                        coverage.audited_spec_visual_hash
-                        if coverage is not None else None
+            } for blocker in category_blockers]
+            if not category_blockers:
+                factory_blockers.extend({
+                    "code": blocker.code,
+                    "subject_kind": "design_form",
+                    "subject_id": blocker.element_id,
+                    "element_id": blocker.element_id,
+                    "component_id": None,
+                    "role": blocker.role,
+                    "label": blocker.label,
+                    "detail": blocker.message,
+                    "required_resolution": blocker.required_resolution,
+                } for blocker in unresolved_form_factory_blockers(
+                    active_spec.design_form))
+                target_visual_hash = spec_visual_hash(active_spec)
+                source_evidence_hash = hashlib.sha256(
+                    bytes(source_evidence_anchor_asset(
+                        db,
+                        active_asset=active,
+                    ).image)
+                ).hexdigest()
+                source_blockers = source_component_factory_blockers(
+                    active_spec.source_component_coverage,
+                    valid_spec_paths=valid_source_component_spec_paths(active_spec),
+                    current_spec_visual_hash=target_visual_hash,
+                    current_source_hash=source_evidence_hash,
+                )
+                coverage = active_spec.source_component_coverage
+                source_blockers = apply_trusted_lineage_to_blockers(
+                    source_blockers,
+                    lineage_verified=has_trusted_visual_spec_lineage(
+                        db,
+                        active_asset=active,
+                        source_spec_visual_hash=(
+                            coverage.audited_spec_visual_hash
+                            if coverage is not None else None
+                        ),
+                        target_spec_visual_hash=target_visual_hash,
                     ),
-                    target_spec_visual_hash=target_visual_hash,
-                ),
-                source_confirmation_evidence_verified=(
-                    source_confirmation_evidence_matches(
-                        coverage,
-                        source_hash=source_evidence_hash,
-                    )
-                ),
-            )
-            factory_blockers.extend({
-                "code": blocker.code,
-                "subject_kind": "source_component",
-                "subject_id": blocker.component_id,
-                "element_id": None,
-                "component_id": blocker.component_id,
-                "role": "source_component",
-                "label": blocker.component_id.replace(".", " "),
-                "detail": blocker.message,
-                "required_resolution": blocker.required_resolution,
-            } for blocker in source_blockers)
-            factory_blockers.extend({
-                "code": blocker.code,
-                "subject_kind": "chain",
-                "subject_id": blocker.field_path,
-                "element_id": None,
-                "component_id": None,
-                "role": "chain_manufacturing",
-                "label": blocker.field_path.replace("_", " "),
-                "detail": blocker.message,
-                "required_resolution": blocker.required_resolution,
-            } for blocker in chain_factory_blockers(active_spec))
+                    source_confirmation_evidence_verified=(
+                        source_confirmation_evidence_matches(
+                            coverage,
+                            source_hash=source_evidence_hash,
+                        )
+                    ),
+                )
+                factory_blockers.extend({
+                    "code": blocker.code,
+                    "subject_kind": "source_component",
+                    "subject_id": blocker.component_id,
+                    "element_id": None,
+                    "component_id": blocker.component_id,
+                    "role": "source_component",
+                    "label": blocker.component_id.replace(".", " "),
+                    "detail": blocker.message,
+                    "required_resolution": blocker.required_resolution,
+                } for blocker in source_blockers)
+                factory_blockers.extend({
+                    "code": blocker.code,
+                    "subject_kind": "chain",
+                    "subject_id": blocker.field_path,
+                    "element_id": None,
+                    "component_id": None,
+                    "role": "chain_manufacturing",
+                    "label": blocker.field_path.replace("_", " "),
+                    "detail": blocker.message,
+                    "required_resolution": blocker.required_resolution,
+                } for blocker in chain_factory_blockers(active_spec))
     approval, state = _approval_for_active(
         db,
         active,

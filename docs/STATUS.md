@@ -5,6 +5,42 @@ Read `CLAUDE.md` (constitution — binding), `README.md` (endpoints/layout),
 `docs/DATA_WANTED.md` (open research asks). This file is the delta: what is
 DONE beyond the original TASKS.md build order, and what is next.
 
+## 2026-07-14 ring release scope, canonical markup routes, and Refine handoff checkpoint
+
+Factory eligibility now has an explicit release registry and is ring-only.
+Non-ring specifications and their immutable histories remain readable and
+usable in Studio, Collections, Client, and Marketing, while project detail
+returns a typed category blocker and both Factory pack endpoints reject the
+unreleased category before building review material. The approved archive's
+authority language is also aligned with its manifest: validated specification
+JSON and confirmed fact schedules are authoritative records; SVG, DXF, and
+discussion imagery remain non-production references.
+
+The generic warning-candidate image, accept, and discard routes are no longer
+mounted in production and are explicitly forbidden by the signed staging
+isolation inventory. They remain deprecated development-only compatibility
+readers while historical callers migrate. Active Studio markup decisions use
+the durable, owner-scoped candidate routes with exact run, candidate, and
+lineage identity; missing durable state fails closed instead of falling back
+to process-local candidates.
+
+After Apply or Save as Variation, Refine now confirms the exact immutable
+revision or named sibling variation and offers direct next actions to refine
+again, open Collections, or Present the active revision. The confirmation is
+bound to the returned lineage, survives the accepted-project refresh, and is
+cleared when a genuinely different lineage opens. No temporary candidate can
+be mistaken for canonical history before explicit acceptance.
+
+Local validation is green: 1,788 backend tests; all 36 mobile Jest suites (301
+tests); 78 Studio contract tests; TypeScript; focused Ruff; Expo web export;
+diff hygiene; and the complete ten-project production TypeScript-client ->
+HTTP -> FastAPI acceptance run. The acceptance run reopened Library ten times,
+saved five Client and five Marketing derivatives, used Factory zero times, and
+left failed QA with zero canonical projects, revisions, accepted outputs, or
+charges. The signed live corpus, independent designer/GIA review, founder
+approval, authority enrollment, and live two-principal HTTPS staging evidence
+remain unmet external-beta gates.
+
 ## 2026-07-14 exact-context web workflow checkpoint
 
 Studio Refine now invalidates every in-flight preview or decision when its

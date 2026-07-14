@@ -58,9 +58,33 @@ export interface StudioRefineWorkspaceProps {
   onReviewStartingDesign?: () => void;
   onApplied: (project: ProjectDetail) => void;
   onVariationCreated?: (project: ProjectDetail) => void;
+  onOpenCollections?: () => void;
+  onPresent?: () => void;
   imageRequestHeaders?: Readonly<Record<string, string>>;
   resumeReviewJobId?: string;
   reviewSourceIsActive?: boolean;
+}
+
+interface AcceptedRefineOutcome {
+  kind: 'revision' | 'variation';
+  lineageKey: string;
+  revision: number | null;
+  variationName: string | null;
+}
+
+function projectLineageKey(project: ProjectDetail): string | null {
+  if (project.active_asset_id === null) return null;
+  return `${project.root_id}:${project.active_asset_id}:${project.active_design_version ?? 'visual'}`;
+}
+
+function activeRevisionNumber(project: ProjectDetail): number | null {
+  if (project.active_asset_id === null) return null;
+  if (project.active_revision?.asset_id === project.active_asset_id) {
+    return project.active_revision.revision;
+  }
+  return project.revisions.find(
+    (revision) => revision.asset.asset_id === project.active_asset_id,
+  )?.asset.revision ?? null;
 }
 
 function optionDetail(option: ComponentCatalogOption): string {
@@ -143,7 +167,7 @@ function friendlyFactOption(value: string): string {
 
 export function StudioRefineWorkspace({
   api, gateway, lineage, createdBy, sourceImageUrl = null, initialAdvancedFactsOpen = false,
-  onReviewStartingDesign, onApplied, onVariationCreated,
+  onReviewStartingDesign, onApplied, onVariationCreated, onOpenCollections, onPresent,
   imageRequestHeaders, resumeReviewJobId, reviewSourceIsActive = true,
 }: StudioRefineWorkspaceProps) {
   const exactLineage = hasExactSpecification(lineage) ? lineage : null;
@@ -177,6 +201,7 @@ export function StudioRefineWorkspace({
   const [namingVariation, setNamingVariation] = useState(false);
   const [variationName, setVariationName] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const [acceptedOutcome, setAcceptedOutcome] = useState<AcceptedRefineOutcome | null>(null);
   const [factProject, setFactProject] = useState<ProjectDetail | null>(null);
   const [factDraft, setFactDraft] = useState<Partial<Record<StudioFactPath, string>>>({});
   const [factsLoading, setFactsLoading] = useState(false);
@@ -421,6 +446,12 @@ export function StudioRefineWorkspace({
     setError(null);
   }, [lineageKey, sourceImageUrl]);
 
+  useEffect(() => {
+    setAcceptedOutcome((current) => (
+      current === null || current.lineageKey === lineageKey ? current : null
+    ));
+  }, [lineageKey]);
+
   const selected = useMemo(() => catalog?.options.find((option) => option.id === optionId) ?? null,
     [catalog, optionId]);
   const catalogPreviewMode = path === 'metal.color'
@@ -538,6 +569,7 @@ export function StudioRefineWorkspace({
 
   const makePreview = async (): Promise<void> => {
     if (lineage === null || busy || !reviewSourceIsActive) return;
+    setAcceptedOutcome(null);
     if (mode === 'facts') { reviewFacts(); return; }
     const requestedLineageKey = lineageKey;
     const requestedLineageEpoch = lineageEpochRef.current;
@@ -669,6 +701,15 @@ export function StudioRefineWorkspace({
       setError('The accepted preview did not return a saved revision. Nothing was changed.');
       return;
     }
+    const acceptedLineageKey = projectLineageKey(result.data.project);
+    if (acceptedLineageKey !== null) {
+      setAcceptedOutcome({
+        kind: 'revision',
+        lineageKey: acceptedLineageKey,
+        revision: activeRevisionNumber(result.data.project),
+        variationName: null,
+      });
+    }
     setPreview(null);
     resetAcceptedDraft();
     onApplied(result.data.project);
@@ -737,6 +778,15 @@ export function StudioRefineWorkspace({
     if (result.error !== null) {
       setError(designerErrorMessage(result.error, 'refine'));
       return;
+    }
+    const acceptedLineageKey = projectLineageKey(result.data.project);
+    if (acceptedLineageKey !== null) {
+      setAcceptedOutcome({
+        kind: 'variation',
+        lineageKey: acceptedLineageKey,
+        revision: activeRevisionNumber(result.data.project),
+        variationName: label,
+      });
     }
     setPreview(null);
     resetAcceptedDraft();
@@ -888,6 +938,32 @@ export function StudioRefineWorkspace({
 
   return (
     <ScrollView contentContainerStyle={styles.workspace}>
+      {acceptedOutcome !== null && (
+        <View accessibilityRole="summary" style={styles.acceptedOutcomeCard}>
+          <Text style={styles.acceptedOutcomeEyebrow}>SAVED</Text>
+          <Text style={styles.acceptedOutcomeTitle}>{acceptedOutcome.kind === 'variation'
+            ? `Variation “${acceptedOutcome.variationName}” is ready.`
+            : acceptedOutcome.revision === null
+              ? 'Saved as a new immutable revision.'
+              : `Saved as Revision ${acceptedOutcome.revision}.`}</Text>
+          <Text style={styles.acceptedOutcomeBody}>{acceptedOutcome.kind === 'variation'
+            ? 'The source revision is unchanged. You are now working in this named sibling with its own immutable history.'
+            : 'The accepted preview is now the active immutable revision. The earlier revision remains in Collections.'}</Text>
+          <View style={styles.acceptedOutcomeActions}>
+            <Button
+              title="Refine another change"
+              kind="ghost"
+              onPress={() => setAcceptedOutcome(null)}
+            />
+            {onOpenCollections !== undefined && (
+              <Button title="View in Collections" kind="ghost" onPress={onOpenCollections} />
+            )}
+            {onPresent !== undefined && (
+              <Button title="Present this revision" onPress={onPresent} />
+            )}
+          </View>
+        </View>
+      )}
       <Text style={styles.eyebrow}>REFINE</Text>
       <Text style={styles.title}>Change one thing. Keep the rest.</Text>
       <Text style={styles.body}>Choose how to target one change. Every change creates a temporary candidate before anything enters design history.</Text>
@@ -1142,6 +1218,16 @@ const styles = StyleSheet.create({
   pathGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   modeRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 8 },
   modeCard: { width: 210, borderWidth: 1, borderColor: theme.line, borderRadius: radius.md, padding: 12, backgroundColor: theme.card },
+  acceptedOutcomeCard: {
+    backgroundColor: '#f1fbf6', borderColor: '#8ed8b6', borderRadius: radius.lg,
+    borderWidth: 1, gap: 8, marginBottom: 8, padding: 16,
+  },
+  acceptedOutcomeEyebrow: {
+    color: '#287556', fontSize: 10, fontWeight: '800', letterSpacing: 1.4,
+  },
+  acceptedOutcomeTitle: { color: theme.ink, fontSize: 18, fontWeight: '800' },
+  acceptedOutcomeBody: { color: theme.faint, fontSize: 13, lineHeight: 19, maxWidth: 640 },
+  acceptedOutcomeActions: { alignItems: 'flex-start', flexDirection: 'row', flexWrap: 'wrap', gap: 8 },
   advancedDisclosure: {
     borderWidth: 1, borderColor: theme.line, borderRadius: radius.md, padding: 13,
     backgroundColor: theme.paper, flexDirection: 'row', alignItems: 'center', gap: 12,
