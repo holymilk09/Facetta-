@@ -261,6 +261,133 @@ def test_restart_resume_legacy_image_and_atomic_apply(markup_candidates):
     assert conflict.status_code == 409
 
 
+def test_normalized_markup_preview_projects_and_applies_exact_revision(
+    markup_candidates,
+):
+    client, Session, spec, version, source = markup_candidates
+    candidate = _store(
+        Session,
+        spec,
+        version,
+        source,
+        suffix="normalized_apply",
+    )
+    with Session() as db:
+        before_counts = {
+            "assets": db.scalar(select(func.count()).select_from(ImageAsset)),
+            "reviews": db.scalar(select(func.count()).select_from(ImageRunReview)),
+            "revisions": db.scalar(
+                select(func.count()).select_from(ProjectRevisionRecord)
+            ),
+        }
+
+    listed = client.get("/studio/projects/ast_markup/preview-candidates")
+    assert listed.status_code == 200, listed.text
+    normalized = listed.json()["candidates"]
+    assert len(normalized) == 1
+    assert normalized[0]["candidate_id"] == candidate.candidate_id
+    assert normalized[0]["kind"] == "markup"
+    assert normalized[0]["operation"] == "VISUAL_ONLY_EDIT"
+    assert normalized[0]["region_description"] == "the marked region"
+    assert normalized[0]["expected_design_version"] == version
+    image = client.get(normalized[0]["preview_url"])
+    assert image.status_code == 200 and image.content == candidate.image_bytes
+
+    applied = client.post(
+        f"/studio/preview-candidates/{candidate.candidate_id}/decision",
+        json={
+            "created_by": OWNER,
+            "decision": "apply",
+            "expected_active_asset_id": "ast_markup",
+            "expected_design_version": version,
+        },
+    )
+    assert applied.status_code == 200, applied.text
+    assert applied.json()["kind"] == "markup"
+    assert applied.json()["status"] == "applied"
+    child_id = applied.json()["terminal_asset_id"]
+    assert child_id is not None
+    with Session() as db:
+        durable = db.get(StudioMarkupCandidateRecord, candidate.candidate_id)
+        job = db.get(StudioJobRecord, candidate.studio_job_id)
+        assert durable is not None and durable.status == "applied"
+        assert durable.terminal_asset_id == child_id
+        assert job is not None and job.status == "succeeded"
+        assert job.charged_outputs == 1
+        assert db.scalar(select(func.count()).select_from(ImageAsset)) == (
+            before_counts["assets"] + 1
+        )
+        assert db.scalar(select(func.count()).select_from(ImageRunReview)) == (
+            before_counts["reviews"] + 1
+        )
+        assert db.scalar(select(func.count()).select_from(
+            ProjectRevisionRecord
+        )) == before_counts["revisions"] + 1
+
+
+def test_normalized_markup_preview_saves_exact_variation(markup_candidates):
+    client, Session, spec, version, source = markup_candidates
+    next_raw = copy.deepcopy(spec)
+    next_raw["metal"]["finish"] = "satin"
+    candidate = _store(
+        Session,
+        spec,
+        version,
+        source,
+        suffix="normalized_variation",
+        next_spec=Spec.model_validate(next_raw),
+    )
+
+    saved = client.post(
+        f"/studio/preview-candidates/{candidate.candidate_id}/decision",
+        json={
+            "created_by": OWNER,
+            "decision": "save_as_variation",
+            "expected_active_asset_id": "ast_markup",
+            "expected_design_version": version,
+            "variation_label": "Satin normalized study",
+        },
+    )
+    assert saved.status_code == 200, saved.text
+    result = saved.json()
+    assert result["kind"] == "markup"
+    assert result["status"] == "saved_as_variation"
+    assert result["source_project_id"] == "ast_markup"
+    assert result["result_project_id"] != "ast_markup"
+    assert result["terminal_asset_id"] is not None
+    legacy_replay = client.post(
+        f"/studio/markup-candidates/{candidate.run_id}/"
+        f"{candidate.candidate_id}/save-as-variation",
+        json={"created_by": OWNER, "label": "Satin normalized study"},
+    )
+    assert legacy_replay.status_code == 201, legacy_replay.text
+    assert legacy_replay.json()["project"]["root_id"] == (
+        result["result_project_id"]
+    )
+    legacy_conflict = client.post(
+        f"/studio/markup-candidates/{candidate.run_id}/"
+        f"{candidate.candidate_id}/save-as-variation",
+        json={"created_by": OWNER, "label": "Another satin study"},
+    )
+    assert legacy_conflict.status_code == 409, legacy_conflict.text
+    assert legacy_conflict.json()["code"] == (
+        "preview_candidate_variation_conflict"
+    )
+    with Session() as db:
+        durable = db.get(StudioMarkupCandidateRecord, candidate.candidate_id)
+        sibling = db.get(Project, result["result_project_id"])
+        terminal = db.get(ImageAsset, result["terminal_asset_id"])
+        job = db.get(StudioJobRecord, candidate.studio_job_id)
+        assert durable is not None and durable.status == "saved_as_variation"
+        assert durable.payload["resolved_variation_label"] == (
+            "Satin normalized study"
+        )
+        assert sibling is not None and sibling.root_id != "ast_markup"
+        assert terminal is not None and terminal.root_id == sibling.root_id
+        assert job is not None and job.status == "succeeded"
+        assert job.charged_outputs == 1
+
+
 def test_save_as_variation_preserves_exact_spec_and_settles_job(markup_candidates):
     client, Session, spec, version, source = markup_candidates
     next_raw = copy.deepcopy(spec)
@@ -320,8 +447,37 @@ def test_save_as_variation_preserves_exact_spec_and_settles_job(markup_candidate
         job = db.get(StudioJobRecord, candidate.studio_job_id)
         assert durable is not None and durable.status == "saved_as_variation"
         assert durable.terminal_asset_id == sibling["active_asset_id"]
+        assert durable.payload["resolved_variation_label"] == (
+            "Satin marked study"
+        )
         assert job is not None and job.status == "succeeded"
         assert job.charged_outputs == 1
+    normalized_replay = client.post(
+        f"/studio/preview-candidates/{candidate.candidate_id}/decision",
+        json={
+            "created_by": OWNER,
+            "decision": "save_as_variation",
+            "expected_active_asset_id": "ast_markup",
+            "expected_design_version": version,
+            "variation_label": "Satin marked study",
+        },
+    )
+    assert normalized_replay.status_code == 200, normalized_replay.text
+    assert normalized_replay.json()["result_project_id"] == sibling["root_id"]
+    normalized_conflict = client.post(
+        f"/studio/preview-candidates/{candidate.candidate_id}/decision",
+        json={
+            "created_by": OWNER,
+            "decision": "save_as_variation",
+            "expected_active_asset_id": "ast_markup",
+            "expected_design_version": version,
+            "variation_label": "Another marked study",
+        },
+    )
+    assert normalized_conflict.status_code == 409, normalized_conflict.text
+    assert normalized_conflict.json()["code"] == (
+        "preview_candidate_variation_conflict"
+    )
 
 
 def test_historical_source_lock_is_variation_only_and_does_not_charge(
@@ -495,10 +651,10 @@ def test_stale_active_revision_rejects_without_partial_terminal_rows(
     assert rejected.status_code == 422, rejected.text
     assert rejected.json()["code"] == "markup_candidate_lineage_mismatch"
     discarded = client.post(
-        f"/studio/markup-candidates/{candidate.run_id}/"
-        f"{candidate.candidate_id}/discard",
+        f"/studio/preview-candidates/{candidate.candidate_id}/decision",
         json={
             "created_by": OWNER,
+            "decision": "discard",
             "expected_active_asset_id": "ast_markup",
             "expected_design_version": version,
         },

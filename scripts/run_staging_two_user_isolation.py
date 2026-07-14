@@ -50,6 +50,8 @@ class CandidateFixture:
     kind: str
     run_id: str
     candidate_id: str
+    source_asset_id: str
+    studio_job_id: str
 
 
 @dataclass(frozen=True)
@@ -164,18 +166,33 @@ def load_config() -> StagingConfig:
         candidates: list[CandidateFixture] = []
         for kind in sorted(kinds):
             raw = raw_candidates[kind]
-            if not isinstance(raw, dict) or set(raw) != {"run_id", "candidate_id"}:
+            if not isinstance(raw, dict) or set(raw) != {
+                "run_id", "candidate_id", "source_asset_id", "studio_job_id",
+            }:
                 raise ValueError(f"staging {kind} candidate fixture is invalid")
             run_id = raw.get("run_id")
             candidate_id = raw.get("candidate_id")
+            source_asset_id = raw.get("source_asset_id")
+            studio_job_id = raw.get("studio_job_id")
             if (
                 not isinstance(run_id, str)
                 or not isinstance(candidate_id, str)
+                or not isinstance(source_asset_id, str)
+                or not isinstance(studio_job_id, str)
                 or identifier.fullmatch(run_id) is None
                 or identifier.fullmatch(candidate_id) is None
+                or identifier.fullmatch(source_asset_id) is None
+                or identifier.fullmatch(studio_job_id) is None
+                or source_asset_id != values["asset_id"]
             ):
                 raise ValueError(f"staging {kind} candidate identifiers are unsafe")
-            candidates.append(CandidateFixture(kind, run_id, candidate_id))
+            candidates.append(CandidateFixture(
+                kind,
+                run_id,
+                candidate_id,
+                source_asset_id,
+                studio_job_id,
+            ))
         return StagingIdentity(
             label=label,
             token=token,
@@ -208,6 +225,19 @@ def load_config() -> StagingConfig:
         first_candidates & second_candidates
     ):
         raise ValueError("staging candidate fixtures must be distinct seeded records")
+    first_candidate_jobs = {
+        candidate.studio_job_id for candidate in first.candidates
+    }
+    second_candidate_jobs = {
+        candidate.studio_job_id for candidate in second.candidates
+    }
+    if (
+        len(first_candidate_jobs) != 5
+        or len(second_candidate_jobs) != 5
+        or ({first.job_id} | first_candidate_jobs)
+        & ({second.job_id} | second_candidate_jobs)
+    ):
+        raise ValueError("staging candidate fixtures must bind distinct Studio jobs")
     return StagingConfig(
         base_url=base_url,
         deployment_revision=deployment_revision,
@@ -289,6 +319,326 @@ def run_probe(config: StagingConfig, transport: Transport = http_transport) -> d
             "observed": observed,
             "passed": observed == expected,
         })
+
+    def collection_rows(result: HttpResult, name: str) -> list[dict] | None:
+        """Return a canonical JSON list or fail closed for malformed payloads."""
+
+        body = result.json_body
+        if (
+            result.status != 200
+            or result.content_type != "application/json"
+            or not isinstance(body, dict)
+            or set(body) != {name}
+        ):
+            return None
+        rows = body.get(name)
+        if not isinstance(rows, list) or not all(
+            isinstance(row, dict) for row in rows
+        ):
+            return None
+        return rows
+
+    def aware_timestamp(value: object, *, future: bool = False) -> bool:
+        if not isinstance(value, str):
+            return False
+        try:
+            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError:
+            return False
+        if parsed.tzinfo is None or parsed.utcoffset() is None:
+            return False
+        return not future or parsed > datetime.now(timezone.utc)
+
+    def sha256_or_none(value: object) -> bool:
+        return value is None or (
+            isinstance(value, str)
+            and re.fullmatch(r"[0-9a-f]{64}", value) is not None
+        )
+
+    def studio_job_shape_is_valid(row: dict) -> bool:
+        if set(row) != {
+            "job_id", "owner", "action_id", "lane", "status", "progress",
+            "active_design_id", "source_revision_id", "accepted_output_sha256",
+            "error_code", "created_at", "updated_at", "billing",
+        }:
+            return False
+        billing = row.get("billing")
+        if not isinstance(billing, dict) or set(billing) != {
+            "requested_outputs", "credits_per_output", "estimated_credits",
+            "completed_outputs", "charged_outputs", "charged_credits", "policy",
+        }:
+            return False
+        requested = billing.get("requested_outputs")
+        rate = billing.get("credits_per_output")
+        completed = billing.get("completed_outputs")
+        charged = billing.get("charged_outputs")
+        integers = (requested, rate, completed, charged)
+        progress = row.get("progress")
+        return (
+            row.get("action_id")
+            in {"create", "vary", "refine", "views", "present", "factory"}
+            and row.get("lane")
+            in {"instant", "fast_visual", "trusted_structural"}
+            and row.get("status")
+            in {"queued", "running", "reviewing", "succeeded", "failed", "canceled"}
+            and isinstance(progress, (int, float))
+            and not isinstance(progress, bool)
+            and 0 <= progress <= 1
+            and all(isinstance(value, int) and not isinstance(value, bool)
+                    for value in integers)
+            and 1 <= requested <= 4
+            and rate >= 0
+            and 0 <= completed <= requested
+            and 0 <= charged <= completed
+            and billing.get("estimated_credits") == requested * rate
+            and billing.get("charged_credits") == charged * rate
+            and isinstance(billing.get("policy"), str)
+            and bool(billing.get("policy"))
+            and sha256_or_none(row.get("accepted_output_sha256"))
+            and (
+                row.get("error_code") is None
+                or isinstance(row.get("error_code"), str)
+            )
+            and aware_timestamp(row.get("created_at"))
+            and aware_timestamp(row.get("updated_at"))
+        )
+
+    def own_jobs_are_tenant_scoped(
+        result: HttpResult,
+        own: StagingIdentity,
+        other: StagingIdentity,
+    ) -> bool:
+        rows = collection_rows(result, "jobs")
+        if rows is None:
+            return False
+        seen: set[str] = set()
+        expected_sources = {own.job_id: own.asset_id}
+        expected_sources.update({
+            candidate.studio_job_id: candidate.source_asset_id
+            for candidate in own.candidates
+        })
+        expected_counts = {job_id: 0 for job_id in expected_sources}
+        for row in rows:
+            job_id = row.get("job_id")
+            owner = row.get("owner")
+            active_design_id = row.get("active_design_id")
+            source_revision_id = row.get("source_revision_id")
+            if (
+                not studio_job_shape_is_valid(row)
+                or not isinstance(job_id, str)
+                or not job_id
+                or not isinstance(owner, str)
+                or not owner
+                or (
+                    active_design_id is not None
+                    and not isinstance(active_design_id, str)
+                )
+                or (
+                    source_revision_id is not None
+                    and not isinstance(source_revision_id, str)
+                )
+                or job_id in seen
+                or owner != own.actor
+                or job_id == other.job_id
+                or job_id in {
+                    candidate.studio_job_id for candidate in other.candidates
+                }
+                or active_design_id == other.project_id
+                or source_revision_id == other.asset_id
+            ):
+                return False
+            seen.add(job_id)
+            if job_id in expected_counts:
+                expected_counts[job_id] += 1
+                if (
+                    active_design_id != own.project_id
+                    or source_revision_id != expected_sources[job_id]
+                ):
+                    return False
+        return all(count == 1 for count in expected_counts.values())
+
+    def own_candidates_are_tenant_scoped(
+        result: HttpResult,
+        kind: str,
+        own: StagingIdentity,
+        other: StagingIdentity,
+        own_job_ids: set[str],
+    ) -> bool:
+        rows = collection_rows(result, "candidates")
+        if rows is None:
+            return False
+        own_fixture = own.candidate(kind)
+        other_fixture = other.candidate(kind)
+        project_field = {
+            "markup": "project_root_id",
+            "view": "project_id",
+            "presentation": "project_id",
+        }.get(kind)
+        seen: set[tuple[str, str]] = set()
+        own_fixture_count = 0
+        expected_keys = {
+            "catalog": {
+                "candidate_id", "image_run_id", "source_asset_id",
+                "component_path", "option_id", "requested_change", "verdict",
+                "preview_url", "save_as_variation_url", "next_spec",
+                "spec_change", "qa", "routing", "studio_job_id", "expires_at",
+            },
+            "visual": {
+                "candidate_id", "image_run_id", "source_asset_id", "preview_url",
+                "save_as_variation_url", "verdict", "requested_change", "scope",
+                "qa", "expires_at", "studio_job_id",
+            },
+            "markup": {
+                "candidate_id", "image_run_id", "project_root_id",
+                "source_asset_id", "expected_active_asset_id", "design_version",
+                "source_sha256", "output_sha256", "operation", "requested_change",
+                "region_description", "qa", "routing", "status", "studio_job_id",
+                "expires_at", "preview_url", "accept_url", "discard_url",
+                "save_as_variation_url",
+            },
+            "view": {
+                "candidate_id", "image_run_id", "studio_job_id", "project_id",
+                "source_asset_id", "source_sha256", "design_version", "view", "qa",
+                "status", "accepted_asset_id", "expires_at", "preview_url",
+            },
+            "presentation": {
+                "candidate_id", "image_run_id", "project_id", "source_asset_id",
+                "source_sha256", "design_version", "destination", "capability",
+                "preset", "framing", "qa", "status", "studio_job_id",
+                "accepted_asset_id", "expires_at", "preview_url",
+            },
+        }[kind]
+        for row in rows:
+            candidate_id = row.get("candidate_id")
+            image_run_id = row.get("image_run_id")
+            source_asset_id = row.get("source_asset_id")
+            studio_job_id = row.get("studio_job_id")
+            pair = (image_run_id, candidate_id)
+            if (
+                set(row) != expected_keys
+                or not isinstance(candidate_id, str)
+                or not candidate_id
+                or not isinstance(image_run_id, str)
+                or not image_run_id
+                or not isinstance(source_asset_id, str)
+                or not source_asset_id
+                or not isinstance(studio_job_id, str)
+                or not studio_job_id
+                or studio_job_id not in own_job_ids
+                or pair in seen
+                or pair == (other_fixture.run_id, other_fixture.candidate_id)
+                or source_asset_id != own.asset_id
+                or studio_job_id == other.job_id
+                or studio_job_id in {
+                    candidate.studio_job_id for candidate in other.candidates
+                }
+            ):
+                return False
+            if project_field is not None:
+                project_id = row.get(project_field)
+                if not isinstance(project_id, str) or project_id != own.project_id:
+                    return False
+            if kind == "markup" and row.get("expected_active_asset_id") != own.asset_id:
+                return False
+            base = {
+                "catalog": (
+                    f"/image-runs/{image_run_id}/catalog-candidates/{candidate_id}"
+                ),
+                "visual": (
+                    f"/studio/image-runs/{image_run_id}/visual-candidates/"
+                    f"{candidate_id}"
+                ),
+                "markup": (
+                    f"/studio/markup-candidates/{image_run_id}/{candidate_id}"
+                ),
+                "view": (
+                    f"/studio/view-candidates/{image_run_id}/{candidate_id}"
+                ),
+                "presentation": (
+                    f"/studio/image-runs/{image_run_id}/presentation-candidates/"
+                    f"{candidate_id}"
+                ),
+            }[kind]
+            expected_preview = (
+                f"{base}/image?owner={own.actor}"
+                if kind in {"view", "presentation"}
+                else f"{base}/image"
+            )
+            if (
+                row.get("preview_url") != expected_preview
+                or not aware_timestamp(row.get("expires_at"), future=True)
+                or not isinstance(row.get("qa"), dict)
+            ):
+                return False
+            if kind == "catalog" and not (
+                isinstance(row.get("component_path"), str)
+                and isinstance(row.get("option_id"), str)
+                and isinstance(row.get("requested_change"), str)
+                and isinstance(row.get("verdict"), str)
+                and row.get("save_as_variation_url") == f"{base}/save-as-variation"
+                and isinstance(row.get("next_spec"), dict)
+                and isinstance(row.get("spec_change"), list)
+                and isinstance(row.get("routing"), dict)
+            ):
+                return False
+            if kind == "visual" and not (
+                isinstance(row.get("verdict"), str)
+                and isinstance(row.get("requested_change"), str)
+                and isinstance(row.get("scope"), str)
+                and row.get("save_as_variation_url") == f"{base}/save-as-variation"
+            ):
+                return False
+            if kind == "markup" and not (
+                isinstance(row.get("design_version"), int)
+                and row.get("design_version") >= 1
+                and sha256_or_none(row.get("source_sha256"))
+                and row.get("source_sha256") is not None
+                and sha256_or_none(row.get("output_sha256"))
+                and row.get("output_sha256") is not None
+                and isinstance(row.get("operation"), str)
+                and isinstance(row.get("requested_change"), str)
+                and (
+                    row.get("region_description") is None
+                    or isinstance(row.get("region_description"), str)
+                )
+                and isinstance(row.get("routing"), dict)
+                and row.get("status") == "reviewing"
+                and row.get("accept_url") == f"{base}/accept"
+                and row.get("discard_url") == f"{base}/discard"
+                and row.get("save_as_variation_url") == f"{base}/save-as-variation"
+            ):
+                return False
+            if kind == "view" and not (
+                isinstance(row.get("design_version"), int)
+                and row.get("design_version") >= 1
+                and sha256_or_none(row.get("source_sha256"))
+                and row.get("source_sha256") is not None
+                and isinstance(row.get("view"), str)
+                and row.get("status") == "reviewing"
+                and row.get("accepted_asset_id") is None
+            ):
+                return False
+            if kind == "presentation" and not (
+                isinstance(row.get("design_version"), int)
+                and row.get("design_version") >= 1
+                and sha256_or_none(row.get("source_sha256"))
+                and row.get("source_sha256") is not None
+                and all(isinstance(row.get(field), str) for field in (
+                    "destination", "capability", "preset", "framing",
+                ))
+                and row.get("status") == "reviewing"
+                and row.get("accepted_asset_id") is None
+            ):
+                return False
+            seen.add(pair)
+            if pair == (own_fixture.run_id, own_fixture.candidate_id):
+                own_fixture_count += 1
+                if (
+                    source_asset_id != own_fixture.source_asset_id
+                    or studio_job_id != own_fixture.studio_job_id
+                ):
+                    return False
+        return own_fixture_count == 1
 
     def candidate_paths(
         kind: str,
@@ -533,6 +883,21 @@ def run_probe(config: StagingConfig, transport: Transport = http_transport) -> d
             + urlencode({"owner": own.actor}),
         )
         record(f"user_{own.label}_reads_own_job", 200, own_job.status)
+        own_jobs = request(
+            own, "/studio/jobs?" + urlencode({"owner": own.actor}),
+        )
+        record(f"user_{own.label}_lists_own_jobs", 200, own_jobs.status)
+        record(
+            f"user_{own.label}_job_results_are_tenant_scoped",
+            True,
+            own_jobs_are_tenant_scoped(own_jobs, own, other),
+        )
+        own_job_rows = collection_rows(own_jobs, "jobs")
+        own_job_ids = {
+            row["job_id"]
+            for row in (own_job_rows or [])
+            if isinstance(row.get("job_id"), str)
+        }
         cross_job = request(
             own,
             f"/studio/jobs/{quote(other.job_id, safe='')}?"
@@ -555,6 +920,19 @@ def run_probe(config: StagingConfig, transport: Transport = http_transport) -> d
                 candidate_paths(kind, own)
             )
             fixture = own.candidate(kind)
+            own_candidates = request(own, list_path)
+            record(
+                f"user_{own.label}_lists_own_{kind}_candidates",
+                200,
+                own_candidates.status,
+            )
+            record(
+                f"user_{own.label}_{kind}_candidate_results_are_tenant_scoped",
+                True,
+                own_candidates_are_tenant_scoped(
+                    own_candidates, kind, own, other, own_job_ids,
+                ),
+            )
             image_path = image_template.format(
                 run_id=quote(fixture.run_id, safe=""),
                 candidate_id=quote(fixture.candidate_id, safe=""),
@@ -721,6 +1099,8 @@ def run_probe(config: StagingConfig, transport: Transport = http_transport) -> d
                 candidate.kind: {
                     "run_id": candidate.run_id,
                     "candidate_id": candidate.candidate_id,
+                    "source_asset_id": candidate.source_asset_id,
+                    "studio_job_id": candidate.studio_job_id,
                 }
                 for candidate in identity.candidates
             },

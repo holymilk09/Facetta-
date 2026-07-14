@@ -332,8 +332,11 @@ FACETTA_STAGING_USER_B_CANDIDATE_FIXTURES_JSON
 
 Each candidate-fixtures value is a JSON object with exactly `catalog`,
 `visual`, `markup`, `view`, and `presentation` keys. Every value contains only
-the pre-seeded candidate's `run_id` and `candidate_id`. The probe validates and
-hash-binds these IDs but never prints the JSON or access tokens.
+the pre-seeded candidate's `run_id`, `candidate_id`, `source_asset_id`, and
+`studio_job_id`. The source must equal that principal's seeded active asset;
+the five candidate jobs must be distinct and present in the principal's own
+Studio-job list. The probe validates and hash-binds this lineage but never
+prints the JSON or access tokens.
 
 The base URL must be an exact HTTPS origin. The live `/health` response must
 report the same immutable deployment revision and the initialized PostgreSQL
@@ -362,8 +365,12 @@ test "$STAGING_EXIT" -eq 0
 
 The owner reads must succeed, cross-owner reads and enumeration must fail with
 the expected status, unauthenticated reads must return `401`, and every
-legacy/admin/OpenAPI/docs surface in the probe must remain hidden. The v6 probe
-also uses read-only `OPTIONS` discovery to require that every operation in the
+legacy/admin/OpenAPI/docs surface in the probe must remain hidden. The v7 probe
+fetches each principal's own Studio-job list plus all five own candidate lists.
+Each seeded job and candidate fixture must appear exactly once. Duplicate or
+malformed rows, the other principal's identifiers, and mismatched project or
+source-asset or candidate-job lineage fail closed before the evidence can pass.
+It also uses read-only `OPTIONS` discovery to require that every operation in the
 canonical production-hidden mutation inventory is absent. A `405` is acceptable
 only when its non-empty `Allow` header excludes the retired method; a missing
 header fails closed, while a safe collision with a retained `GET` does not.

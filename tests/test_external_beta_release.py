@@ -230,7 +230,7 @@ def _fixture(tmp_path: Path) -> dict[str, Any]:
     probed_at = (now - timedelta(minutes=30)).isoformat()
     approved_at = (now - timedelta(minutes=15)).isoformat()
     _json(staging_results, {
-        "schema_version": "facetta-staging-isolation.v6",
+        "schema_version": "facetta-staging-isolation.v7",
         "run_kind": "read_only_two_principal_staging_probe",
         "target": {
             "staging_run_id": "staging-run-fixture-v1",
@@ -818,6 +818,24 @@ def test_shallow_staging_pass_cannot_omit_required_check(tmp_path: Path):
     result = _verify(paths)
     assert result["external_beta_ready"] is False
     assert any("exactly cover" in error for error in result["errors"])
+
+
+def test_v6_staging_evidence_cannot_satisfy_v7_list_scope_contract(
+    tmp_path: Path,
+):
+    paths = _fixture(tmp_path)
+    value = json.loads(paths["staging_results"].read_text())
+    value["schema_version"] = "facetta-staging-isolation.v6"
+    _json(paths["staging_results"], value)
+    _sign_staging_approval(paths)
+
+    result = _verify(paths)
+
+    assert result["external_beta_ready"] is False
+    assert any(
+        "unsupported staging-isolation result schema_version" in error
+        for error in result["errors"]
+    )
 
 
 def test_malformed_staging_check_name_fails_closed_without_crashing(tmp_path: Path):

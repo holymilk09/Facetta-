@@ -659,6 +659,8 @@ describe('StudioCollectionsWorkspace', () => {
 
     await fireEvent.press(screen.getByText('Client'));
     expect(handlers.onSelectDestination).toHaveBeenCalledWith('client');
+    expect(screen.getByText('Use this revision')).toBeTruthy();
+    expect(screen.queryByText('Library')).toBeNull();
     expect(screen.queryByText('Factory')).toBeNull();
 
     await fireEvent.press(screen.getByText('Continue refining'));
@@ -687,9 +689,32 @@ describe('StudioCollectionsWorkspace', () => {
       />,
     );
 
-    expect(await screen.findByText('Where next?')).toBeTruthy();
+    expect(await screen.findByText('Use this revision')).toBeTruthy();
+    expect(screen.queryByText('Library')).toBeNull();
     await fireEvent.press(screen.getByText('Factory'));
     expect(handlers.onSelectDestination).toHaveBeenCalledWith('factory');
+  });
+
+  test('describes pre-spec Collections assets as saved visual directions', async () => {
+    const handlers = callbacks();
+    await render(
+      <StudioCollectionsWorkspace
+        api={api()}
+        project={{ ...project, active_design_version: null }}
+        createdBy="usr_designer"
+        {...handlers}
+        destinationContext={{
+          ...handlers.destinationContext,
+          hasExactSpecification: false,
+        }}
+      />,
+    );
+
+    expect(await screen.findByText(
+      'Prepare this saved visual direction for a client or marketing. Its design history will not change.',
+    )).toBeTruthy();
+    expect(screen.queryByText(/exact saved revision/)).toBeNull();
+    expect(screen.queryByText('Factory')).toBeNull();
   });
 
   test('does not invent family data when history is unavailable, then retries the exact project', async () => {
@@ -730,7 +755,8 @@ describe('StudioCollectionsWorkspace', () => {
 
     await fireEvent.press(screen.getByText('Retry'));
 
-    expect(await screen.findByText('Where next?')).toBeTruthy();
+    expect(await screen.findByText('Use this revision')).toBeTruthy();
+    expect(screen.queryByText('Library')).toBeNull();
     expect(screen.queryByText('Saved history is unavailable')).toBeNull();
     expect(getStudioProjectHistory).toHaveBeenCalledTimes(2);
     expect(getStudioProjectHistory).toHaveBeenLastCalledWith('project_main');

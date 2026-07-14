@@ -18,8 +18,10 @@ from facetta.db import (
     ImageAsset,
     ImageRun,
     ImageRunReview,
+    PreviewCandidateRecord,
     Project,
     ProjectRevisionRecord,
+    StudioMarkupCandidateRecord,
     StudioVariationDecisionRecord,
     new_id,
     utcnow,
@@ -156,6 +158,135 @@ def _replay_variation_decision(
     )
 
 
+def _preview_candidate_record_for_variation(
+    db: Session,
+    *,
+    kind: str,
+    run_id: str,
+    candidate_id: str,
+    created_by: str,
+) -> PreviewCandidateRecord | StudioMarkupCandidateRecord | None:
+    """Lock the exact owner-scoped candidate row used by either API seam."""
+
+    if kind == "studio_markup":
+        return db.scalar(
+            select(StudioMarkupCandidateRecord)
+            .where(
+                StudioMarkupCandidateRecord.id == candidate_id,
+                StudioMarkupCandidateRecord.image_run_id == run_id,
+                StudioMarkupCandidateRecord.owner == created_by,
+            )
+            .with_for_update()
+        )
+    if kind in {"studio_visual", "catalog_revision"}:
+        return db.scalar(
+            select(PreviewCandidateRecord)
+            .where(
+                PreviewCandidateRecord.id == candidate_id,
+                PreviewCandidateRecord.image_run_id == run_id,
+                PreviewCandidateRecord.owner == created_by,
+                PreviewCandidateRecord.kind == kind,
+            )
+            .with_for_update()
+        )
+    raise StudioHistoryError(
+        "preview_candidate_kind_invalid",
+        "the preview candidate kind is invalid",
+        status_code=422,
+    )
+
+
+def _replay_preview_candidate_variation(
+    db: Session,
+    record: PreviewCandidateRecord | StudioMarkupCandidateRecord,
+    *,
+    kind: str,
+    variation_label: str,
+    created_by: str,
+) -> VariationBranchResult:
+    """Return the one committed branch only for its original exact label.
+
+    Rows written before the normalized Studio seam did not copy the label into
+    candidate payload.  Their immutable revision intent remains authoritative;
+    an exact replay backfills the marker so all later calls use one persisted
+    idempotency contract.
+    """
+
+    terminal_asset_id = record.terminal_asset_id
+    if terminal_asset_id is None:
+        raise StudioHistoryError(
+            "preview_candidate_variation_corrupt",
+            "the saved variation has no terminal asset",
+            status_code=500,
+        )
+    asset = db.get(ImageAsset, terminal_asset_id)
+    project = db.get(Project, asset.root_id) if asset is not None else None
+    revision = db.scalar(
+        select(ProjectRevisionRecord).where(
+            ProjectRevisionRecord.asset_id == terminal_asset_id
+        )
+    )
+    payload = record.payload if isinstance(record.payload, dict) else {}
+    resolved_label = payload.get("resolved_variation_label")
+    if not isinstance(resolved_label, str):
+        raw_intent = revision.raw_intent if revision is not None else {}
+        historical_label = (
+            raw_intent.get("label") if isinstance(raw_intent, dict) else None
+        )
+        if not isinstance(historical_label, str) or not historical_label.strip():
+            raise StudioHistoryError(
+                "preview_candidate_variation_corrupt",
+                "the saved variation has no immutable label evidence",
+                status_code=500,
+            )
+        resolved_label = historical_label.strip()
+        record.payload = {
+            **payload,
+            "resolved_variation_label": resolved_label,
+        }
+    raw_intent = revision.raw_intent if revision is not None else {}
+    if (
+        asset is None
+        or project is None
+        or revision is None
+        or not isinstance(raw_intent, dict)
+        or project.owner != created_by
+        or asset.created_by != created_by
+        or project.root_id != asset.root_id
+        or project.family_id is None
+        or project.branched_from_project_root_id != record.project_root_id
+        or project.branched_from_asset_id != record.source_asset_id
+        or raw_intent.get("kind") != "save_preview_as_variation"
+        or raw_intent.get("preview_kind") != kind
+        or raw_intent.get("source_project_id") != record.project_root_id
+        or raw_intent.get("source_asset_id") != record.source_asset_id
+        or raw_intent.get("image_run_id") != record.image_run_id
+        or raw_intent.get("label") != resolved_label
+    ):
+        raise StudioHistoryError(
+            "preview_candidate_variation_corrupt",
+            "the saved variation lineage is incomplete",
+            status_code=500,
+        )
+    if resolved_label != variation_label:
+        raise StudioHistoryError(
+            "preview_candidate_variation_conflict",
+            "the preview candidate was saved with another variation label",
+        )
+    if payload.get("resolved_variation_label") != resolved_label:
+        db.commit()
+    return VariationBranchResult(
+        family_id=project.family_id,
+        project_root_id=project.root_id,
+        asset_id=asset.id,
+        source_project_id=record.project_root_id,
+        source_asset_id=record.source_asset_id,
+        design_id=asset.design_id,
+        design_version=asset.design_version,
+        variation_index=project.variation_index,
+    )
+
+
 def fork_preview_candidate_variation(
     db: Session,
     *,
@@ -191,6 +322,24 @@ def fork_preview_candidate_variation(
             "variation_label_required",
             "name the variation before saving it",
             status_code=422,
+        )
+    candidate_record = _preview_candidate_record_for_variation(
+        db,
+        kind=kind,
+        run_id=run_id,
+        candidate_id=candidate_id,
+        created_by=created_by,
+    )
+    if (
+        candidate_record is not None
+        and candidate_record.status == "saved_as_variation"
+    ):
+        return _replay_preview_candidate_variation(
+            db,
+            candidate_record,
+            kind=kind,
+            variation_label=label,
+            created_by=created_by,
         )
     try:
         if kind == "studio_visual":
@@ -462,6 +611,21 @@ def fork_preview_candidate_variation(
         created_by=created_by,
         created_at=now,
     )
+    candidate_payload = (
+        candidate_record.payload
+        if isinstance(candidate_record.payload, dict)
+        else {}
+    )
+    prior_label = candidate_payload.get("resolved_variation_label")
+    if prior_label is not None and prior_label != label:
+        raise StudioHistoryError(
+            "preview_candidate_variation_conflict",
+            "the preview candidate is bound to another variation label",
+        )
+    candidate_record.payload = {
+        **candidate_payload,
+        "resolved_variation_label": label,
+    }
     candidate_record.status = "saved_as_variation"
     candidate_record.terminal_asset_id = new_root_id
     candidate_record.review_id = review.id

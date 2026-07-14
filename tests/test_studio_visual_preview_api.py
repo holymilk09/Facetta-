@@ -14,8 +14,10 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from conftest import EXAMPLE_SPEC, audited_import_spec
+from facetta import studio_preview_candidates as preview_seam
 from facetta.api import studio as studio_api
 from facetta.api.studio import get_studio_visual_preview_generator
+from facetta.auth import AuthenticatedPrincipal, require_principal_boundary
 from facetta.db import (
     ApprovalChecklist,
     Base,
@@ -448,6 +450,304 @@ def test_preview_does_not_mutate_canonical_history_and_apply_is_atomic(
         assert bytes(durable.image) == b""
 
     assert client.get(body["candidate"]["preview_url"]).status_code == 410
+
+
+def test_normalized_visual_preview_contract_is_owned_cas_guarded_and_idempotent(
+    studio_preview_client,
+):
+    client, Session = studio_preview_client
+    app.dependency_overrides[get_studio_visual_preview_generator] = (
+        lambda: _generator([])
+    )
+    before = _counts(Session)
+    created = _preview(client)
+    assert created.status_code == 201, created.text
+    legacy = created.json()
+    candidate_id = legacy["candidate"]["candidate_id"]
+
+    # Creating and reopening a normalized candidate never appends canonical
+    # image/spec/revision truth.
+    listed = client.get("/studio/projects/ast_selected/preview-candidates")
+    assert listed.status_code == 200, listed.text
+    candidates = listed.json()["candidates"]
+    assert [item["kind"] for item in candidates] == ["visual"]
+    assert candidates[0]["candidate_id"] == candidate_id
+    assert candidates[0]["available_decisions"] == [
+        "apply", "save_as_variation", "discard",
+    ]
+    assert candidates[0]["preview_url"].endswith("?owner=usr_studio")
+    image = client.get(candidates[0]["preview_url"])
+    assert image.status_code == 200 and image.content == CANDIDATE
+    reopened = client.get(
+        f"/studio/preview-candidates/{candidate_id}",
+        params={"owner": "usr_studio"},
+    )
+    assert reopened.status_code == 200, reopened.text
+    assert reopened.json()["source_sha256"] == hashlib.sha256(SOURCE).hexdigest()
+    assert _counts(Session) == {**before, "runs": 1}
+
+    foreign = client.get(
+        f"/studio/preview-candidates/{candidate_id}",
+        params={"owner": "usr_someone_else"},
+    )
+    assert foreign.status_code == 404
+
+    stale = client.post(
+        f"/studio/preview-candidates/{candidate_id}/decision",
+        json={
+            "created_by": "usr_studio",
+            "decision": "apply",
+            "expected_active_asset_id": "ast_not_the_source",
+        },
+    )
+    assert stale.status_code == 409, stale.text
+    assert stale.json()["code"] == "preview_candidate_lineage_mismatch"
+    assert _counts(Session) == {**before, "runs": 1}
+
+    applied = client.post(
+        f"/studio/preview-candidates/{candidate_id}/decision",
+        json={
+            "created_by": "usr_studio",
+            "decision": "apply",
+            "expected_active_asset_id": "ast_selected",
+        },
+    )
+    assert applied.status_code == 200, applied.text
+    result = applied.json()
+    assert result["kind"] == "visual" and result["status"] == "applied"
+    assert result["terminal_asset_id"] is not None
+
+    replay = client.post(
+        f"/studio/preview-candidates/{candidate_id}/decision",
+        json={
+            "created_by": "usr_studio",
+            "decision": "apply",
+            "expected_active_asset_id": "ast_selected",
+        },
+    )
+    assert replay.status_code == 200, replay.text
+    assert replay.json() == result
+    after = _counts(Session)
+    assert after == {
+        **before,
+        "assets": before["assets"] + 1,
+        "runs": before["runs"] + 1,
+        "reviews": before["reviews"] + 1,
+        "records": before["records"] + 1,
+    }
+
+
+def test_normalized_visual_preview_rejects_tampered_qa_without_canonical_write(
+    studio_preview_client,
+):
+    client, Session = studio_preview_client
+    app.dependency_overrides[get_studio_visual_preview_generator] = (
+        lambda: _generator([])
+    )
+    created = _preview(client).json()
+    candidate_id = created["candidate"]["candidate_id"]
+    with Session() as db:
+        record = db.get(PreviewCandidateRecord, candidate_id)
+        assert record is not None
+        record.payload = {
+            **record.payload,
+            "qa": {
+                "verdict": "fail",
+                "accepted": False,
+                "review_required": False,
+                "checks": [{
+                    "code": "outside_drift",
+                    "passed": False,
+                    "severity": "hard",
+                }],
+            },
+        }
+        db.commit()
+
+    rejected = client.post(
+        f"/studio/preview-candidates/{candidate_id}/decision",
+        json={
+            "created_by": "usr_studio",
+            "decision": "apply",
+            "expected_active_asset_id": "ast_selected",
+        },
+    )
+    assert rejected.status_code == 410, rejected.text
+    assert rejected.json()["code"] == "preview_candidate_unavailable"
+    with Session() as db:
+        assert db.scalar(select(func.count()).select_from(ImageAsset)) == 1
+        assert db.scalar(select(func.count()).select_from(ImageRunReview)) == 0
+        assert db.scalar(select(func.count()).select_from(
+            ProjectRevisionRecord)) == 0
+        durable = db.get(PreviewCandidateRecord, candidate_id)
+        assert durable is not None and durable.status == "expired"
+        assert bytes(durable.image) == b""
+
+
+def test_normalized_visual_stale_discard_is_terminal_without_canonical_write(
+    studio_preview_client,
+):
+    client, Session = studio_preview_client
+    app.dependency_overrides[get_studio_visual_preview_generator] = (
+        lambda: _generator([])
+    )
+    created = _preview(client).json()
+    candidate_id = created["candidate"]["candidate_id"]
+    _advance_active_visual(Session)
+    before_discard = _counts(Session)
+
+    discarded = client.post(
+        f"/studio/preview-candidates/{candidate_id}/decision",
+        json={
+            "created_by": "usr_studio",
+            "decision": "discard",
+            "expected_active_asset_id": "ast_selected",
+        },
+    )
+    assert discarded.status_code == 200, discarded.text
+    assert discarded.json()["status"] == "discarded"
+    after_discard = _counts(Session)
+    assert after_discard == {
+        **before_discard,
+        "reviews": before_discard["reviews"] + 1,
+    }
+    with Session() as db:
+        project = db.get(Project, "ast_selected")
+        durable = db.get(PreviewCandidateRecord, candidate_id)
+        assert project is not None
+        assert project.selected_candidate_asset_id == "ast_newer"
+        assert durable is not None and durable.status == "discarded"
+        assert bytes(durable.image) == b""
+
+
+def test_normalized_visual_variation_replay_binds_exact_label(
+    studio_preview_client,
+):
+    client, Session = studio_preview_client
+    app.dependency_overrides[get_studio_visual_preview_generator] = (
+        lambda: _generator([])
+    )
+    preview = _preview(client).json()
+    candidate_id = preview["candidate"]["candidate_id"]
+    run_id = preview["image_run_id"]
+    request = {
+        "created_by": "usr_studio",
+        "decision": "save_as_variation",
+        "expected_active_asset_id": "ast_selected",
+        "variation_label": "Warm rose study",
+    }
+    saved = client.post(
+        f"/studio/preview-candidates/{candidate_id}/decision",
+        json=request,
+    )
+    assert saved.status_code == 200, saved.text
+    assert saved.json()["status"] == "saved_as_variation"
+    replay = client.post(
+        f"/studio/preview-candidates/{candidate_id}/decision",
+        json=request,
+    )
+    assert replay.status_code == 200 and replay.json() == saved.json()
+    legacy_replay = client.post(
+        f"/studio/image-runs/{run_id}/visual-candidates/{candidate_id}/"
+        "save-as-variation",
+        json={"created_by": "usr_studio", "label": "Warm rose study"},
+    )
+    assert legacy_replay.status_code == 201, legacy_replay.text
+    assert legacy_replay.json()["project"]["root_id"] == (
+        saved.json()["result_project_id"]
+    )
+    legacy_conflict = client.post(
+        f"/studio/image-runs/{run_id}/visual-candidates/{candidate_id}/"
+        "save-as-variation",
+        json={"created_by": "usr_studio", "label": "Another name"},
+    )
+    assert legacy_conflict.status_code == 409, legacy_conflict.text
+    assert legacy_conflict.json()["code"] == (
+        "preview_candidate_variation_conflict"
+    )
+
+    for conflicting_label, expected_status in (
+        ("Another name", 409),
+        (None, 422),
+    ):
+        conflicting = client.post(
+            f"/studio/preview-candidates/{candidate_id}/decision",
+            json={**request, "variation_label": conflicting_label},
+        )
+        assert conflicting.status_code == expected_status, conflicting.text
+    contradictory = client.post(
+        f"/studio/preview-candidates/{candidate_id}/decision",
+        json={
+            "created_by": "usr_studio",
+            "decision": "discard",
+            "expected_active_asset_id": "ast_selected",
+        },
+    )
+    assert contradictory.status_code == 409, contradictory.text
+    with Session() as db:
+        durable = db.get(PreviewCandidateRecord, candidate_id)
+        assert durable is not None
+        assert durable.payload["resolved_variation_label"] == "Warm rose study"
+
+
+def test_normalized_visual_authenticated_foreign_candidate_is_not_enumerable(
+    studio_preview_client,
+):
+    client, _Session = studio_preview_client
+    app.dependency_overrides[get_studio_visual_preview_generator] = (
+        lambda: _generator([])
+    )
+    candidate_id = _preview(client).json()["candidate"]["candidate_id"]
+    app.dependency_overrides[require_principal_boundary] = lambda: (
+        AuthenticatedPrincipal(subject="usr_someone_else")
+    )
+
+    foreign = client.get(f"/studio/preview-candidates/{candidate_id}")
+    assert foreign.status_code == 404, foreign.text
+    foreign_image = client.get(
+        f"/studio/preview-candidates/{candidate_id}/image"
+    )
+    assert foreign_image.status_code == 404, foreign_image.text
+
+
+def test_normalized_visual_apply_rolls_back_job_credit_and_canonical_rows(
+    studio_preview_client,
+    monkeypatch,
+):
+    client, Session = studio_preview_client
+    app.dependency_overrides[get_studio_visual_preview_generator] = (
+        lambda: _generator([])
+    )
+    job_id = _running_refine_job(client)
+    candidate_id = _preview(client, studio_job_id=job_id).json()["candidate"][
+        "candidate_id"
+    ]
+    before = _counts(Session)
+    monkeypatch.setattr(
+        preview_seam,
+        "remove_studio_visual_candidate",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(
+            RuntimeError("resolution failed")
+        ),
+    )
+
+    with pytest.raises(RuntimeError, match="resolution failed"):
+        client.post(
+            f"/studio/preview-candidates/{candidate_id}/decision",
+            json={
+                "created_by": "usr_studio",
+                "decision": "apply",
+                "expected_active_asset_id": "ast_selected",
+            },
+        )
+    assert _counts(Session) == before
+    with Session() as db:
+        durable = db.get(PreviewCandidateRecord, candidate_id)
+        job = db.get(StudioJobRecord, job_id)
+        assert durable is not None and durable.status == "reviewing"
+        assert durable.terminal_asset_id is None
+        assert job is not None and job.status == "reviewing"
+        assert (job.completed_outputs, job.charged_outputs) == (0, 0)
 
 
 def test_applied_pre_spec_child_is_the_only_confirmable_design_v1_source(
@@ -1153,13 +1453,39 @@ def test_visual_preview_saves_directly_as_independent_variation(
         assert durable is not None
         assert durable.status == "saved_as_variation"
         assert durable.terminal_asset_id == sibling_id
+        assert durable.payload["resolved_variation_label"] == "Warm metal"
         assert review is not None and review.accepted_asset_id == sibling_id
-    repeated = client.post(
+    normalized_replay = client.post(
+        f"/studio/preview-candidates/{candidate_id}/decision",
+        json={
+            "created_by": "usr_studio",
+            "decision": "save_as_variation",
+            "expected_active_asset_id": "ast_selected",
+            "variation_label": "Warm metal",
+        },
+    )
+    assert normalized_replay.status_code == 200, normalized_replay.text
+    assert normalized_replay.json()["result_project_id"] == sibling_id
+    normalized_conflict = client.post(
+        f"/studio/preview-candidates/{candidate_id}/decision",
+        json={
+            "created_by": "usr_studio",
+            "decision": "save_as_variation",
+            "expected_active_asset_id": "ast_selected",
+            "variation_label": "Duplicate",
+        },
+    )
+    assert normalized_conflict.status_code == 409, normalized_conflict.text
+    assert normalized_conflict.json()["code"] == (
+        "preview_candidate_variation_conflict"
+    )
+    exact_legacy_replay = client.post(
         f"/studio/image-runs/{run_id}/visual-candidates/{candidate_id}/"
         "save-as-variation",
-        json={"created_by": "usr_studio", "label": "Duplicate"},
+        json={"created_by": "usr_studio", "label": "Warm metal"},
     )
-    assert repeated.status_code == 410
+    assert exact_legacy_replay.status_code == 201, exact_legacy_replay.text
+    assert exact_legacy_replay.json()["project"]["root_id"] == sibling_id
 
 
 def test_bound_visual_save_as_variation_charges_exactly_one_output(

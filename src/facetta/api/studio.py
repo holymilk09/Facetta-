@@ -7,8 +7,9 @@ import binascii
 import hashlib
 import io
 from collections.abc import Callable
-from datetime import timezone
+from datetime import datetime, timezone
 from typing import Annotated, Literal
+from urllib.parse import quote
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import JSONResponse, Response
@@ -112,6 +113,14 @@ from facetta.studio_markup_candidates import (
     discard_studio_markup_candidate,
     get_studio_markup_candidate,
     list_studio_markup_candidates,
+)
+from facetta.studio_preview_candidates import (
+    StudioPreviewCandidate,
+    StudioPreviewCandidateError,
+    decide_studio_preview_candidate,
+    get_studio_preview_candidate,
+    get_studio_preview_image,
+    list_studio_preview_candidates,
 )
 from facetta.studio_presentation_candidates import (
     StudioPresentationCandidateUnavailable,
@@ -350,6 +359,94 @@ class ReviewMarkupCandidateRequest(BaseModel):
     created_by: Annotated[str, Field(min_length=1, max_length=32)]
     expected_active_asset_id: Annotated[str, Field(min_length=1, max_length=32)]
     expected_design_version: Annotated[int, Field(ge=1)]
+
+
+StudioPreviewKind = Literal["visual", "catalog_revision", "markup"]
+StudioPreviewStatus = Literal[
+    "reviewing", "applied", "saved_as_variation", "discarded", "expired",
+]
+StudioPreviewDecision = Literal["apply", "save_as_variation", "discard"]
+
+
+class StudioPreviewCandidateBase(BaseModel):
+    """Fields shared by every temporary Refine output."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    candidate_id: str
+    status: StudioPreviewStatus
+    image_run_id: str
+    project_root_id: str
+    source_asset_id: str
+    expected_active_asset_id: str
+    expected_design_version: int | None
+    source_sha256: str
+    output_sha256: str
+    requested_change: str
+    verdict: Literal["pass", "warn"] | None
+    qa: dict
+    studio_job_id: str | None
+    terminal_asset_id: str | None
+    created_at: datetime
+    expires_at: datetime
+    resolved_at: datetime | None
+    available_decisions: tuple[StudioPreviewDecision, ...]
+    preview_url: str
+    decision_url: str
+
+
+class StudioVisualPreviewCandidateResponse(StudioPreviewCandidateBase):
+    kind: Literal["visual"] = "visual"
+    scope: Literal["appearance", "marked_region"]
+
+
+class StudioCatalogPreviewCandidateResponse(StudioPreviewCandidateBase):
+    kind: Literal["catalog_revision"] = "catalog_revision"
+    component_path: str
+    option_id: str
+    spec_change: tuple[dict, ...]
+
+
+class StudioMarkupPreviewCandidateResponse(StudioPreviewCandidateBase):
+    kind: Literal["markup"] = "markup"
+    operation: str
+    region_description: str
+
+
+StudioPreviewCandidateResponse = Annotated[
+    StudioVisualPreviewCandidateResponse
+    | StudioCatalogPreviewCandidateResponse
+    | StudioMarkupPreviewCandidateResponse,
+    Field(discriminator="kind"),
+]
+
+
+class StudioPreviewCandidateListResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    candidates: list[StudioPreviewCandidateResponse]
+
+
+class DecideStudioPreviewCandidateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    created_by: Annotated[str, Field(min_length=1, max_length=32)]
+    decision: StudioPreviewDecision
+    expected_active_asset_id: Annotated[str, Field(min_length=1, max_length=32)]
+    expected_design_version: Annotated[int, Field(ge=1)] | None = None
+    variation_label: Annotated[str, Field(min_length=1, max_length=120)] | None = None
+
+
+class StudioPreviewCandidateDecisionResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    status: Literal["applied", "saved_as_variation", "discarded"]
+    candidate_id: str
+    kind: StudioPreviewKind
+    source_project_id: str
+    result_project_id: str
+    terminal_asset_id: str | None
+    studio_job_id: str | None
 
 
 class CreatePreSpecPresentationRequest(BaseModel):
@@ -1646,6 +1743,175 @@ def save_exact_markup_candidate_as_variation(
         "source_project_id": result.source_project_id,
         "source_asset_id": result.source_asset_id,
         "project": project_detail(db, project),
+    }
+
+
+def _studio_preview_error(exc: StudioPreviewCandidateError) -> JSONResponse:
+    return JSONResponse(status_code=exc.status_code, content={
+        "code": exc.code,
+        "category": (
+            "authorization" if exc.status_code == 403
+            else "validation" if exc.status_code == 422
+            else "conflict"
+        ),
+        "detail": exc.detail,
+    })
+
+
+def _studio_preview_owner(
+    principal: AuthenticatedPrincipal,
+    supplied_owner: str | None,
+) -> str:
+    """Resolve GET ownership without allowing query-label impersonation."""
+
+    if principal.local_unbound:
+        if supplied_owner is None:
+            raise HTTPException(
+                status_code=422,
+                detail="owner is required when local authentication is unbound",
+            )
+        return supplied_owner
+    assert principal.subject is not None
+    if supplied_owner is not None:
+        principal_actor(principal, supplied_owner)
+    return principal.subject
+
+
+def _studio_preview_payload(candidate: StudioPreviewCandidate) -> dict:
+    base = f"/studio/preview-candidates/{candidate.candidate_id}"
+    payload = {
+        "candidate_id": candidate.candidate_id,
+        "kind": candidate.kind,
+        "status": candidate.status,
+        "image_run_id": candidate.image_run_id,
+        "project_root_id": candidate.project_root_id,
+        "source_asset_id": candidate.source_asset_id,
+        "expected_active_asset_id": candidate.expected_active_asset_id,
+        "expected_design_version": candidate.expected_design_version,
+        "source_sha256": candidate.source_sha256,
+        "output_sha256": candidate.output_sha256,
+        "requested_change": candidate.requested_change,
+        "verdict": candidate.verdict,
+        "qa": candidate.qa,
+        "studio_job_id": candidate.studio_job_id,
+        "terminal_asset_id": candidate.terminal_asset_id,
+        "created_at": candidate.created_at,
+        "expires_at": candidate.expires_at,
+        "resolved_at": candidate.resolved_at,
+        "available_decisions": candidate.available_decisions,
+        "preview_url": (
+            f"{base}/image?owner={quote(candidate.owner, safe='')}"
+        ),
+        "decision_url": f"{base}/decision",
+        **candidate.detail,
+    }
+    return payload
+
+
+@router.get(
+    "/projects/{project_root_id}/preview-candidates",
+    response_model=StudioPreviewCandidateListResponse,
+)
+def list_normalized_studio_preview_candidates(
+    project_root_id: str,
+    db: DbSession,
+    principal: PrincipalDep,
+    include_resolved: bool = Query(False),
+):
+    """List one project's temporary Refine outputs through one typed seam."""
+
+    project = db.get(Project, project_root_id)
+    if project is None or (
+        not principal.local_unbound and project.owner != principal.subject
+    ):
+        raise HTTPException(status_code=404, detail="project unavailable")
+    candidates = list_studio_preview_candidates(
+        db,
+        owner=project.owner,
+        project_root_id=project_root_id,
+        include_resolved=include_resolved,
+    )
+    return {"candidates": [
+        _studio_preview_payload(candidate) for candidate in candidates
+    ]}
+
+
+@router.get(
+    "/preview-candidates/{candidate_id}",
+    response_model=StudioPreviewCandidateResponse,
+)
+def get_normalized_studio_preview_candidate(
+    candidate_id: str,
+    db: DbSession,
+    principal: PrincipalDep,
+    owner: Annotated[
+        str | None, Query(min_length=1, max_length=32)
+    ] = None,
+):
+    effective_owner = _studio_preview_owner(principal, owner)
+    try:
+        candidate = get_studio_preview_candidate(
+            db, candidate_id, owner=effective_owner,
+        )
+    except StudioPreviewCandidateError as exc:
+        return _studio_preview_error(exc)
+    return _studio_preview_payload(candidate)
+
+
+@router.get("/preview-candidates/{candidate_id}/image")
+def get_normalized_studio_preview_candidate_image(
+    candidate_id: str,
+    db: DbSession,
+    principal: PrincipalDep,
+    owner: Annotated[
+        str | None, Query(min_length=1, max_length=32)
+    ] = None,
+):
+    effective_owner = _studio_preview_owner(principal, owner)
+    try:
+        image = get_studio_preview_image(
+            db, candidate_id, owner=effective_owner,
+        )
+    except StudioPreviewCandidateError as exc:
+        return _studio_preview_error(exc)
+    return Response(
+        content=image.image_bytes,
+        media_type=image.media_type,
+        headers={"Cache-Control": "private, no-store"},
+    )
+
+
+@router.post(
+    "/preview-candidates/{candidate_id}/decision",
+    response_model=StudioPreviewCandidateDecisionResponse,
+)
+def decide_normalized_studio_preview_candidate(
+    candidate_id: str,
+    request: DecideStudioPreviewCandidateRequest,
+    db: DbSession,
+    principal: PrincipalDep,
+):
+    actor = principal_actor(principal, request.created_by)
+    try:
+        result = decide_studio_preview_candidate(
+            db,
+            candidate_id,
+            owner=actor,
+            decision=request.decision,
+            expected_active_asset_id=request.expected_active_asset_id,
+            expected_design_version=request.expected_design_version,
+            variation_label=request.variation_label,
+        )
+    except StudioPreviewCandidateError as exc:
+        return _studio_preview_error(exc)
+    return {
+        "status": result.status,
+        "candidate_id": result.candidate_id,
+        "kind": result.kind,
+        "source_project_id": result.source_project_id,
+        "result_project_id": result.result_project_id,
+        "terminal_asset_id": result.terminal_asset_id,
+        "studio_job_id": result.studio_job_id,
     }
 
 

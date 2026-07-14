@@ -145,6 +145,8 @@ const SAVED_OUTPUT_CAPABILITIES = new Set([
   'FACTORY_DRAWING',
 ]);
 
+const COLLECTIONS_DESTINATION_EXCLUSIONS = ['library'] as const;
+
 const savedOutputLabel = (capability: string): string => ({
   CLIENT_BEAUTY_RENDER: 'Client beauty render',
   CLIENT_PRODUCT_PHOTO: 'Client product photo',
@@ -546,16 +548,6 @@ export function StudioCollectionsWorkspace({
         </View>
       </View>
 
-      {destinationContext !== undefined && onSelectDestination !== undefined && (
-        <View style={styles.destinationCard}>
-          <StudioDestinationChooser
-            context={destinationContext}
-            description="Choose what to do with this exact saved revision. Its design history will not change."
-            onSelect={onSelectDestination}
-          />
-        </View>
-      )}
-
       <View style={styles.section}>
         <Text style={styles.sectionTitle}>Variations</Text>
         <Text style={styles.sectionCopy}>
@@ -616,6 +608,20 @@ export function StudioCollectionsWorkspace({
           />
         </View>
       </View>
+
+      {destinationContext !== undefined && onSelectDestination !== undefined && (
+        <View style={styles.destinationCard}>
+          <StudioDestinationChooser
+            context={destinationContext}
+            title="Use this revision"
+            description={destinationContext.hasExactSpecification
+              ? 'Prepare this exact saved revision for a client, marketing, or optional eligible Factory review. Its design history will not change.'
+              : 'Prepare this saved visual direction for a client or marketing. Its design history will not change.'}
+            excludeDestinations={COLLECTIONS_DESTINATION_EXCLUSIONS}
+            onSelect={onSelectDestination}
+          />
+        </View>
+      )}
 
       <View style={styles.section}>
         <Pressable
