@@ -183,13 +183,14 @@ jest.mock('./StudioRefineWorkspace', () => {
   const { Pressable, Text, View } = require('react-native');
   return {
     StudioRefineWorkspace: ({
-      workspaceMode, lineage, onReviewStartingDesign, onOpenCollections, onPresent,
+      workspaceMode, lineage, onReviewStartingDesign, destinationContext,
+      onSelectDestination,
     }: {
       workspaceMode?: 'refine' | 'specifications';
       lineage?: { sourceDesignVersion?: number } | null;
       onReviewStartingDesign?: () => void;
-      onOpenCollections?: () => void;
-      onPresent?: () => void;
+      destinationContext?: { activeRevisionId?: string | null };
+      onSelectDestination?: (destination: 'library' | 'client') => void;
     }) => ReactLocal.createElement(
       View,
       null,
@@ -206,14 +207,16 @@ jest.mock('./StudioRefineWorkspace', () => {
           ReactLocal.createElement(Text, null, 'Review starting design'),
         )
         : null,
-      onOpenCollections === undefined ? null : ReactLocal.createElement(
+      !destinationContext?.activeRevisionId
+        || onSelectDestination === undefined ? null : ReactLocal.createElement(
         Pressable,
-        { accessibilityRole: 'button', onPress: onOpenCollections },
+        { accessibilityRole: 'button', onPress: () => onSelectDestination('library') },
         ReactLocal.createElement(Text, null, 'Refine handoff to Collections'),
       ),
-      onPresent === undefined ? null : ReactLocal.createElement(
+      !destinationContext?.activeRevisionId
+        || onSelectDestination === undefined ? null : ReactLocal.createElement(
         Pressable,
-        { accessibilityRole: 'button', onPress: onPresent },
+        { accessibilityRole: 'button', onPress: () => onSelectDestination('client') },
         ReactLocal.createElement(Text, null, 'Refine handoff to Present'),
       ),
     ),
@@ -228,12 +231,17 @@ jest.mock('./StudioViewsWorkspace', () => {
 
 jest.mock('./StudioPresentWorkspace', () => {
   const ReactLocal = require('react');
-  const { Text } = require('react-native');
+  const { Text, View } = require('react-native');
   return {
-    StudioPresentWorkspace: ({ lineage }: any) => ReactLocal.createElement(
-      Text,
+    StudioPresentWorkspace: ({ lineage, initialDestination }: any) => ReactLocal.createElement(
+      View,
       null,
-      `Present route reached for ${lineage?.sourceAssetId ?? 'none'}`,
+      ReactLocal.createElement(
+        Text, null, `Present route reached for ${lineage?.sourceAssetId ?? 'none'}`,
+      ),
+      ReactLocal.createElement(
+        Text, null, `Present destination ${initialDestination ?? 'choose'}`,
+      ),
     ),
   };
 });
@@ -248,8 +256,8 @@ jest.mock('./StudioCollectionsWorkspace', () => {
       onStartDesign,
       onVaryCurrent,
       onContinueRefining,
-      onPresentCurrent,
-      onPrepareFactoryCurrent,
+      destinationContext,
+      onSelectDestination,
     }: any) => ReactLocal.createElement(
       View,
       null,
@@ -280,12 +288,20 @@ jest.mock('./StudioCollectionsWorkspace', () => {
       ),
       ReactLocal.createElement(
         Text,
-        { accessibilityRole: 'button', onPress: onPresentCurrent },
+        { accessibilityRole: 'button', onPress: () => onSelectDestination('client') },
         'Present exact current revision',
       ),
-      onPrepareFactoryCurrent !== undefined ? ReactLocal.createElement(
+      ReactLocal.createElement(
         Text,
-        { accessibilityRole: 'button', onPress: onPrepareFactoryCurrent },
+        { accessibilityRole: 'button', onPress: () => onSelectDestination('marketing') },
+        'Market exact current revision',
+      ),
+      destinationContext?.activeProjectId
+        && destinationContext?.activeRevisionId
+        && destinationContext?.hasExactSpecification
+        && destinationContext?.factoryEligible ? ReactLocal.createElement(
+        Text,
+        { accessibilityRole: 'button', onPress: () => onSelectDestination('factory') },
         'Review optional Factory readiness',
       ) : null,
     ),
@@ -1026,6 +1042,12 @@ test('Collections sends the exact active revision to Present', async () => {
   expect(view.queryByText('Review optional Factory readiness')).toBeNull();
   fireEvent.press(await view.findByText('Present exact current revision'));
   expect(await view.findByText('Present route reached for asset_1')).toBeTruthy();
+  expect(await view.findByText('Present destination client')).toBeTruthy();
+
+  fireEvent.press(view.getByRole('tab', { name: 'Collections' }));
+  fireEvent.press(await view.findByText('Market exact current revision'));
+  expect(await view.findByText('Present route reached for asset_1')).toBeTruthy();
+  expect(await view.findByText('Present destination marketing')).toBeTruthy();
 });
 
 test('Collections opens optional Factory readiness before the review pack is ready', async () => {

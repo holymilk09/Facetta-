@@ -25,14 +25,18 @@ test('branches only the hidden exact source and opens the child variation', asyn
   }));
   const onCreated = jest.fn();
   const onContinueRefining = jest.fn();
-  const onOpenCollections = jest.fn();
+  const onSelectDestination = jest.fn();
   await render(<StudioVaryWorkspace
     gateway={{ saveCurrentAsVariation } as any}
     lineage={{ projectId: 'project_1', sourceAssetId: 'asset_7', sourceDesignVersion: null }}
     createdBy="designer_1"
     onCreated={onCreated}
     onContinueRefining={onContinueRefining}
-    onOpenCollections={onOpenCollections}
+    destinationContext={{
+      activeProjectId: 'child_project', activeRevisionId: 'child_asset',
+      hasExactSpecification: false, factoryEligible: false,
+    }}
+    onSelectDestination={onSelectDestination}
     createOperationId={createOperationId}
   />);
 
@@ -49,9 +53,9 @@ test('branches only the hidden exact source and opens the child variation', asyn
   expect(await screen.findByText('Rose gold study is ready.')).toBeTruthy();
   expect(screen.queryByText('Create variation')).toBeNull();
   await fireEvent.press(screen.getByText('Continue refining'));
-  await fireEvent.press(screen.getByText('Open Collections'));
+  await fireEvent.press(screen.getByText('Library'));
   expect(onContinueRefining).toHaveBeenCalledTimes(1);
-  expect(onOpenCollections).toHaveBeenCalledTimes(1);
+  expect(onSelectDestination).toHaveBeenCalledWith('library');
   expect(saveCurrentAsVariation).toHaveBeenCalledTimes(1);
   expect(createOperationId).toHaveBeenCalledTimes(2);
 });

@@ -8,6 +8,8 @@ import { radius, theme } from '../theme';
 import type { ProjectDetail } from '../trusted/types';
 import type { StudioGateway, StudioVariationRequest } from './gateway';
 import { designerErrorMessage } from './designerErrorMessage';
+import { StudioDestinationChooser } from './StudioDestinationChooser';
+import type { StudioDestinationContext, StudioDestinationId } from './destinations';
 
 export type StudioVariationLineage = Pick<StudioVariationRequest,
   'projectId' | 'sourceAssetId' | 'sourceDesignVersion'>;
@@ -18,7 +20,8 @@ export interface StudioVaryWorkspaceProps {
   createdBy: string;
   onCreated: (project: ProjectDetail) => void;
   onContinueRefining?: () => void;
-  onOpenCollections?: () => void;
+  destinationContext?: StudioDestinationContext;
+  onSelectDestination?: (destinationId: StudioDestinationId) => void;
   createOperationId?: () => string;
 }
 
@@ -27,7 +30,8 @@ function defaultOperationId(): string {
 }
 
 export function StudioVaryWorkspace({
-  gateway, lineage, createdBy, onCreated, onContinueRefining, onOpenCollections,
+  gateway, lineage, createdBy, onCreated, onContinueRefining, destinationContext,
+  onSelectDestination,
   createOperationId = defaultOperationId,
 }: StudioVaryWorkspaceProps) {
   const lineageKey = lineage === null
@@ -90,19 +94,20 @@ export function StudioVaryWorkspace({
       <View style={styles.successState}>
         <Text style={styles.eyebrow}>VARIATION SAVED</Text>
         <Text style={styles.title}>{createdLabel} is ready.</Text>
-        <Text style={styles.body}>The source direction and its history are unchanged. Continue with this new variation or review the family in Collections.</Text>
+        <Text style={styles.body}>The source direction and its history are unchanged. Continue with this new variation or choose where it should go next.</Text>
         <View style={styles.successActions}>
           {onContinueRefining !== undefined && (
             <Pressable accessibilityRole="button" onPress={onContinueRefining} style={styles.primaryButton}>
               <Text style={styles.primaryButtonText}>Continue refining</Text>
             </Pressable>
           )}
-          {onOpenCollections !== undefined && (
-            <Pressable accessibilityRole="button" onPress={onOpenCollections} style={styles.secondaryButton}>
-              <Text style={styles.secondaryButtonText}>Open Collections</Text>
-            </Pressable>
-          )}
         </View>
+        {destinationContext !== undefined && onSelectDestination !== undefined && (
+          <StudioDestinationChooser
+            context={destinationContext}
+            onSelect={onSelectDestination}
+          />
+        )}
       </View>
     );
   }

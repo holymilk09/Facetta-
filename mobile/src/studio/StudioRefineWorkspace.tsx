@@ -25,6 +25,8 @@ import { getStudioAction } from './actions';
 import { useVisualReviewReadiness } from './useVisualReviewReadiness';
 import { StudioComparisonInspector } from './StudioComparisonInspector';
 import { StudioReviewImage } from './StudioReviewImage';
+import { StudioDestinationChooser } from './StudioDestinationChooser';
+import type { StudioDestinationContext, StudioDestinationId } from './destinations';
 
 const REFINE_CREDITS_PER_OUTPUT = getStudioAction('refine').creditEstimate ?? 0;
 
@@ -60,8 +62,8 @@ export interface StudioRefineWorkspaceProps {
   onReviewStartingDesign?: () => void;
   onApplied: (project: ProjectDetail) => void;
   onVariationCreated?: (project: ProjectDetail) => void;
-  onOpenCollections?: () => void;
-  onPresent?: () => void;
+  destinationContext?: StudioDestinationContext;
+  onSelectDestination?: (destinationId: StudioDestinationId) => void;
   imageRequestHeaders?: Readonly<Record<string, string>>;
   resumeReviewJobId?: string;
   reviewSourceIsActive?: boolean;
@@ -181,7 +183,8 @@ function friendlyFactOption(value: string): string {
 
 export function StudioRefineWorkspace({
   api, gateway, lineage, createdBy, sourceImageUrl = null, workspaceMode = 'refine',
-  onReviewStartingDesign, onApplied, onVariationCreated, onOpenCollections, onPresent,
+  onReviewStartingDesign, onApplied, onVariationCreated, destinationContext,
+  onSelectDestination,
   imageRequestHeaders, resumeReviewJobId, reviewSourceIsActive = true,
 }: StudioRefineWorkspaceProps) {
   const exactLineage = hasExactSpecification(lineage) ? lineage : null;
@@ -992,13 +995,13 @@ export function StudioRefineWorkspace({
               kind="ghost"
               onPress={() => setAcceptedOutcome(null)}
             />
-            {onOpenCollections !== undefined && (
-              <Button title="View in Collections" kind="ghost" onPress={onOpenCollections} />
-            )}
-            {onPresent !== undefined && (
-              <Button title="Present this revision" onPress={onPresent} />
-            )}
           </View>
+          {destinationContext !== undefined && onSelectDestination !== undefined && (
+            <StudioDestinationChooser
+              context={destinationContext}
+              onSelect={onSelectDestination}
+            />
+          )}
         </View>
       )}
       <Text style={styles.eyebrow}>{workspaceMode === 'specifications'

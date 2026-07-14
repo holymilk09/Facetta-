@@ -52,6 +52,21 @@ from facetta.ring_evals import evaluate_release_gates
 
 Json = dict[str, Any]
 
+_PRODUCTION_FROZEN_CONFIG_ID = "founder-ring-90-85-90-v1"
+_PRODUCTION_FROZEN_CORPUS_ID = "founder-reference-144-v1"
+_PRODUCTION_AUTHORING_PINS = (
+    "blind_review_ledger_authoring",
+    "blind_review_ledger_authoring_cli",
+)
+
+
+def _requires_production_authoring_pins(config: Json) -> bool:
+    return (
+        config.get("schema_version") == "facetta-frozen-gate-config.v1"
+        and config.get("config_id") == _PRODUCTION_FROZEN_CONFIG_ID
+        and config.get("corpus_id") == _PRODUCTION_FROZEN_CORPUS_ID
+    )
+
 
 _RELEASE_AUTHORITY_KEY_FIELDS = (
     ("canonical_api_runner", "canonical_api_runner_public_key"),
@@ -295,16 +310,19 @@ def _validate_config(
                     f"config threshold {key} must remain pinned to {expected}"
                 )
     frozen = config.get("frozen_components")
+    required_frozen_components = (
+        "ring_contract", "prompt_bundle", "evaluator_bundle", "routing",
+        "routing_contract",
+        "live_runner", "replay_verifier", "replay_runner",
+        "release_verifier", "packet_builder", "packet_runner",
+        "blind_review_contract", "release_authority_enrollment",
+        "release_authority_bundle",
+    )
+    if _requires_production_authoring_pins(config):
+        required_frozen_components += _PRODUCTION_AUTHORING_PINS
     if not isinstance(frozen, dict) or any(
         not isinstance(frozen.get(key), str) or not frozen.get(key)
-        for key in (
-            "ring_contract", "prompt_bundle", "evaluator_bundle", "routing",
-            "routing_contract",
-            "live_runner", "replay_verifier", "replay_runner",
-            "release_verifier", "packet_builder", "packet_runner",
-            "blind_review_contract", "release_authority_enrollment",
-            "release_authority_bundle",
-        )
+        for key in required_frozen_components
     ):
         errors.append("config frozen_components are incomplete")
     elif isinstance(frozen, dict):
@@ -415,12 +433,20 @@ def validate_frozen_component_pins(
     # The capture spine was added after the replay schema.  Existing synthetic
     # fixtures remain valid, while any production config that declares these
     # components gets the same path and byte-level pin verification.
+    production_authoring_pins = (
+        frozenset(_PRODUCTION_AUTHORING_PINS)
+        if _requires_production_authoring_pins(config)
+        else frozenset()
+    )
     for key in (
         "capture_workload", "capture_planner", "capture_planner_cli",
         "capture_producer", "capture_producer_cli", "persistence_verifier",
         "evidence_path_contract", "release_verifier_cli",
+        "blind_review_ledger_authoring", "blind_review_ledger_authoring_cli",
     ):
         if key not in frozen:
+            if key in production_authoring_pins:
+                errors.append(f"config frozen component {key} is not hash-pinned")
             continue
         value = frozen.get(key)
         if not isinstance(value, str) or "@sha256:" not in value:

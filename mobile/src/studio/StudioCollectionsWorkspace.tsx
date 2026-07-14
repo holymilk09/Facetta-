@@ -22,6 +22,8 @@ import type {
 import { designerErrorMessage } from './designerErrorMessage';
 import type { StudioGateway } from './gateway';
 import { StudioComparisonInspector } from './StudioComparisonInspector';
+import { StudioDestinationChooser } from './StudioDestinationChooser';
+import type { StudioDestinationContext, StudioDestinationId } from './destinations';
 
 export type StudioCollectionsApi = Pick<StudioGateway,
   | 'getDesignFamily'
@@ -43,10 +45,9 @@ export interface StudioCollectionsWorkspaceProps {
   onVaryCurrent: () => void;
   /** Returns the selected exact variation to the canonical Refine workspace. */
   onContinueRefining?: () => void;
-  /** Opens Present with the currently active immutable revision as its source. */
-  onPresentCurrent?: () => void;
-  /** Opens Factory only when the host has verified this exact revision is eligible. */
-  onPrepareFactoryCurrent?: () => void;
+  /** One registry-driven handoff for the currently active immutable revision. */
+  destinationContext?: StudioDestinationContext;
+  onSelectDestination?: (destinationId: StudioDestinationId) => void;
   /** Host-owned authenticated delivery. Protected bytes are fetched only after Export. */
   deliverProtectedFile?: (request: {
     url: string;
@@ -202,8 +203,8 @@ export function StudioCollectionsWorkspace({
   onStartDesign,
   onVaryCurrent,
   onContinueRefining,
-  onPresentCurrent,
-  onPrepareFactoryCurrent,
+  destinationContext,
+  onSelectDestination,
   onShowAllFamilies,
   deliverProtectedFile,
 }: StudioCollectionsWorkspaceProps) {
@@ -545,30 +546,13 @@ export function StudioCollectionsWorkspace({
         </View>
       </View>
 
-      {onPresentCurrent !== undefined && (
+      {destinationContext !== undefined && onSelectDestination !== undefined && (
         <View style={styles.destinationCard}>
-          <View style={styles.destinationCopy}>
-            <Text style={styles.eyebrow}>Use this exact revision</Text>
-            <Text style={styles.sectionTitle}>Ready for someone else to see?</Text>
-            <Text style={styles.sectionCopy}>
-              Create client or marketing imagery from the active revision without changing it.
-            </Text>
-          </View>
-          <View style={styles.destinationActions}>
-            <Button
-              title="Present this revision"
-              disabled={activeAssetId === null}
-              onPress={onPresentCurrent}
-            />
-            {onPrepareFactoryCurrent !== undefined && (
-              <Button
-                title="Prepare for Factory review"
-                kind="ghost"
-                disabled={activeAssetId === null}
-                onPress={onPrepareFactoryCurrent}
-              />
-            )}
-          </View>
+          <StudioDestinationChooser
+            context={destinationContext}
+            description="Choose what to do with this exact saved revision. Its design history will not change."
+            onSelect={onSelectDestination}
+          />
         </View>
       )}
 

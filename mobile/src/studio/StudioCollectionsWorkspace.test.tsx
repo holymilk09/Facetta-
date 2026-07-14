@@ -91,7 +91,13 @@ const callbacks = () => ({
   onStartDesign: jest.fn(),
   onVaryCurrent: jest.fn(),
   onContinueRefining: jest.fn(),
-  onPresentCurrent: jest.fn(),
+  destinationContext: {
+    activeProjectId: project.root_id,
+    activeRevisionId: project.active_asset_id,
+    hasExactSpecification: true,
+    factoryEligible: false,
+  },
+  onSelectDestination: jest.fn(),
 });
 
 describe('StudioCollectionsWorkspace', () => {
@@ -587,7 +593,7 @@ describe('StudioCollectionsWorkspace', () => {
         status: 201,
       })),
     });
-    const onPresent = jest.fn();
+    const onSelectDestination = jest.fn();
 
     function CollectionsHarness() {
       const [currentProject, setCurrentProject] = React.useState(project);
@@ -603,7 +609,15 @@ describe('StudioCollectionsWorkspace', () => {
             onStartDesign={jest.fn()}
             onVaryCurrent={jest.fn()}
             onContinueRefining={jest.fn()}
-            onPresentCurrent={() => onPresent(currentProject.active_asset_id)}
+            destinationContext={{
+              activeProjectId: currentProject.root_id,
+              activeRevisionId: currentProject.active_asset_id,
+              hasExactSpecification: currentProject.active_design_version !== null,
+              factoryEligible: false,
+            }}
+            onSelectDestination={(destinationId) => {
+              onSelectDestination(destinationId, currentProject.active_asset_id);
+            }}
           />
         </>
       );
@@ -617,8 +631,8 @@ describe('StudioCollectionsWorkspace', () => {
     expect(await screen.findByText('Harness active asset: asset_3')).toBeTruthy();
     expect(await screen.findByLabelText('Show revision history (3)')).toBeTruthy();
     expect(getStudioProjectHistory).toHaveBeenCalledTimes(2);
-    await fireEvent.press(screen.getByText('Present this revision'));
-    expect(onPresent).toHaveBeenCalledWith('asset_3');
+    await fireEvent.press(screen.getByText('Client'));
+    expect(onSelectDestination).toHaveBeenCalledWith('client', 'asset_3');
   });
 
   test('keeps dense family records collapsed and continues refining the exact selected variation', async () => {
@@ -643,9 +657,9 @@ describe('StudioCollectionsWorkspace', () => {
     expect(screen.queryByLabelText('Compare revision 1')).toBeNull();
     expect(screen.queryByText('Restore revision 1 as new')).toBeNull();
 
-    await fireEvent.press(screen.getByText('Present this revision'));
-    expect(handlers.onPresentCurrent).toHaveBeenCalledTimes(1);
-    expect(screen.queryByText('Prepare for Factory review')).toBeNull();
+    await fireEvent.press(screen.getByText('Client'));
+    expect(handlers.onSelectDestination).toHaveBeenCalledWith('client');
+    expect(screen.queryByText('Factory')).toBeNull();
 
     await fireEvent.press(screen.getByText('Continue refining'));
     expect(handlers.onContinueRefining).toHaveBeenCalledTimes(1);
@@ -661,22 +675,21 @@ describe('StudioCollectionsWorkspace', () => {
     expect(screen.queryByText('Restore revision 1 as new')).toBeNull();
   });
 
-  test('shows Factory preparation beside Present only when the host verifies eligibility', async () => {
+  test('shows Factory in the shared chooser only when the host verifies eligibility', async () => {
     const handlers = callbacks();
-    const onPrepareFactoryCurrent = jest.fn();
     await render(
       <StudioCollectionsWorkspace
         api={api()}
         project={project}
         createdBy="usr_designer"
         {...handlers}
-        onPrepareFactoryCurrent={onPrepareFactoryCurrent}
+        destinationContext={{ ...handlers.destinationContext, factoryEligible: true }}
       />,
     );
 
-    expect(await screen.findByText('Use this exact revision')).toBeTruthy();
-    await fireEvent.press(screen.getByText('Prepare for Factory review'));
-    expect(onPrepareFactoryCurrent).toHaveBeenCalledTimes(1);
+    expect(await screen.findByText('Where next?')).toBeTruthy();
+    await fireEvent.press(screen.getByText('Factory'));
+    expect(handlers.onSelectDestination).toHaveBeenCalledWith('factory');
   });
 
   test('does not invent family data when history is unavailable, then retries the exact project', async () => {
@@ -717,7 +730,7 @@ describe('StudioCollectionsWorkspace', () => {
 
     await fireEvent.press(screen.getByText('Retry'));
 
-    expect(await screen.findByText('Use this exact revision')).toBeTruthy();
+    expect(await screen.findByText('Where next?')).toBeTruthy();
     expect(screen.queryByText('Saved history is unavailable')).toBeNull();
     expect(getStudioProjectHistory).toHaveBeenCalledTimes(2);
     expect(getStudioProjectHistory).toHaveBeenLastCalledWith('project_main');

@@ -44,6 +44,9 @@ import { radius, shadows, theme } from './src/theme';
 import type { ProjectDetail } from './src/trusted/types';
 import { WorkflowShowcase } from './src/WorkflowShowcase';
 import { designerErrorMessage } from './src/studio/designerErrorMessage';
+import {
+  getStudioDestination, type StudioDestinationContext, type StudioDestinationId,
+} from './src/studio/destinations';
 
 type Tab = 'studio' | 'collections' | 'activity' | 'learn';
 type StudioView = 'home' | 'action';
@@ -120,6 +123,9 @@ export default function App() {
   const [studioProject, setStudioProject] = useState<ProjectDetail | null>(null);
   const [selectedCreativeAssetId, setSelectedCreativeAssetId] = useState<string | null>(null);
   const [postConfirmDestination, setPostConfirmDestination] = useState<PostConfirmDestination>('refine');
+  const [presentInitialDestination, setPresentInitialDestination] = useState<
+    'client' | 'marketing' | undefined
+  >(undefined);
   const [createReview, setCreateReview] = useState<CreateReviewState | null>(null);
   const [createDraft, setCreateDraft] = useState<StudioCreateDraft>(EMPTY_STUDIO_CREATE_DRAFT);
   const [activityReview, setActivityReview] = useState<StudioReviewJobEnvelope | null>(null);
@@ -150,6 +156,7 @@ export default function App() {
     setStudioProject(null);
     setSelectedCreativeAssetId(null);
     setPostConfirmDestination('refine');
+    setPresentInitialDestination(undefined);
     setCreateReview(null);
     setCreateDraft(EMPTY_STUDIO_CREATE_DRAFT);
     setActivityReview(null);
@@ -324,6 +331,12 @@ export default function App() {
   }), [activeDesignId, confirmStudioLineage, exactStudioLineage,
     factoryEligibilityCandidateKey, factoryEligibleRevisionKey,
     selectedCreativeAssetId, studioProject]);
+  const destinationContext = useMemo<StudioDestinationContext>(() => ({
+    activeProjectId: actionContext.activeDesignId,
+    activeRevisionId: actionContext.activeRevisionId,
+    hasExactSpecification: actionContext.hasExactSpecification,
+    factoryEligible: actionContext.factoryEligible,
+  }), [actionContext]);
   const hasActiveRevision = Boolean(actionContext.activeDesignId && actionContext.activeRevisionId);
   const actionSourceRevision = useMemo(() => {
     if (studioProject === null || isCreatingNewDesign) return null;
@@ -438,10 +451,25 @@ export default function App() {
     if (!preserveCreateReview) setCreateReview(null);
     if (!preserveActivityReview) setActivityReview(null);
     if (actionId === 'confirm') setPostConfirmDestination(afterConfirmation);
+    if (actionId === 'present') setPresentInitialDestination(undefined);
     setSelectedActionId(actionId);
     setShowMoreActions(false);
     setStudioView('action');
     setTab('studio');
+  };
+
+  const openStudioDestination = (destinationId: StudioDestinationId): void => {
+    if (!getStudioDestination(destinationId).isAvailable(destinationContext)) return;
+    if (destinationId === 'library') {
+      setTab('collections');
+      return;
+    }
+    if (destinationId === 'factory') {
+      openStudioAction('factory');
+      return;
+    }
+    openStudioAction('present');
+    setPresentInitialDestination(destinationId);
   };
 
   if (stage === 'onboarding') {
@@ -784,8 +812,8 @@ export default function App() {
                 setStudioProject(project);
                 setSelectedCreativeAssetId(project.active_asset_id);
               }}
-              onOpenCollections={() => setTab('collections')}
-              onPresent={() => openStudioAction('present')}
+              destinationContext={destinationContext}
+              onSelectDestination={openStudioDestination}
               imageRequestHeaders={authenticatedImageHeaders}
             />
           ) : selectedActionId === 'views' ? (
@@ -823,6 +851,7 @@ export default function App() {
               lineage={activityReview?.job.action_id === 'present'
                 ? activityReview.lineage : exactStudioLineage ?? visualStudioLineage}
               createdBy={designer}
+              initialDestination={presentInitialDestination}
               onProjectUpdated={(project) => {
                 setActivityReview(null);
                 setStudioProject(project);
@@ -847,7 +876,8 @@ export default function App() {
                 setSelectedCreativeAssetId(project.active_asset_id);
               }}
               onContinueRefining={() => openStudioAction('refine')}
-              onOpenCollections={() => setTab('collections')}
+              destinationContext={destinationContext}
+              onSelectDestination={openStudioDestination}
             />
           ) : selectedActionId === 'factory' ? (
             <StudioFactoryWorkspace
@@ -876,10 +906,8 @@ export default function App() {
           onStartDesign={() => openStudioAction('create')}
           onVaryCurrent={() => openStudioAction('vary')}
           onContinueRefining={() => openStudioAction('refine')}
-          onPresentCurrent={() => openStudioAction('present')}
-          onPrepareFactoryCurrent={getStudioAction('factory').isAvailable(actionContext)
-            ? () => openStudioAction('factory')
-            : undefined}
+          destinationContext={destinationContext}
+          onSelectDestination={openStudioDestination}
         />
       )}
       {tab === 'activity' && (

@@ -99,6 +99,7 @@ export interface StudioPresentWorkspaceProps {
     | 'discardPreSpecPresentation'> & Partial<Pick<StudioGateway, 'assetImageUrl'>>;
   lineage: ExactStudioLineage | StudioVisualLineage | null;
   createdBy: string;
+  initialDestination?: Destination;
   onProjectUpdated?: (project: ProjectDetail) => void;
   /** Optional host navigation shown after at least one presentation is saved. */
   onOpenCollections?: () => void;
@@ -195,10 +196,14 @@ function exactResumeCard(result: StudioExactPresentationPreview): PresentationCa
 }
 
 export function StudioPresentWorkspace({
-  gateway, lineage, createdBy, onProjectUpdated, onOpenCollections, imageRequestHeaders,
+  gateway, lineage, createdBy, initialDestination, onProjectUpdated,
+  onOpenCollections, imageRequestHeaders,
   resumeReviewJobId, reviewSourceIsActive = true,
 }: StudioPresentWorkspaceProps) {
-  const [destination, setDestination] = useState<Destination>('client');
+  const [destination, setDestination] = useState<Destination>(initialDestination ?? 'client');
+  const [destinationPickerOpen, setDestinationPickerOpen] = useState(
+    initialDestination === undefined,
+  );
   const [clientFormat, setClientFormat] = useState<ClientFormat>('beauty');
   const [preset, setPreset] = useState<ProductPhotoPreset>('catalog_white');
   const [framing, setFraming] = useState<ProductPhotoFraming>('square');
@@ -256,6 +261,9 @@ export function StudioPresentWorkspace({
   );
 
   useEffect(() => {
+    setDestination(initialDestination ?? 'client');
+    setDestinationPickerOpen(initialDestination === undefined);
+    setStyleAndFramingOpen(false);
     setUiLineageKey(lineageKey);
     setCards([]);
     setFailures([]);
@@ -305,7 +313,7 @@ export function StudioPresentWorkspace({
       });
     }
     return () => { active = false; };
-  }, [createdBy, gateway, lineageKey, resumeReviewJobId]);
+  }, [createdBy, gateway, initialDestination, lineageKey, resumeReviewJobId]);
 
   const togglePreset = (value: ProductPhotoPreset): void => {
     setMarketingPresets((current) => current.includes(value)
@@ -501,28 +509,47 @@ export function StudioPresentWorkspace({
       {!reviewSourceIsActive && <Notice kind="info" text="This result was created from an earlier revision. Saving or generating from it is unavailable. You can discard the pending result without changing or charging the current design." />}
 
       {phase === 'configure' && <>
-        <Text style={styles.sectionTitle}>What do you need?</Text>
-        <View style={styles.destinationRow}>
-          {(['library', 'client', 'marketing'] as const).map((item) => {
-            const definition = getStudioDestination(item);
-            return (
-              <Pressable
-                key={item}
-                accessibilityRole="radio"
-                accessibilityLabel={definition.label}
-                accessibilityState={{ checked: destination === item }}
-                onPress={() => {
-                  setDestination(item);
-                  setInfo(null);
-                  setStyleAndFramingOpen(false);
-                }}
-                style={[styles.destinationCard, destination === item && styles.selectedCard]}>
-                <Text style={styles.destinationTitle}>{definition.label}</Text>
-                <Text style={styles.cardCopy}>{definition.description}</Text>
-              </Pressable>
-            );
-          })}
-        </View>
+        {destinationPickerOpen ? <>
+          <Text style={styles.sectionTitle}>What do you need?</Text>
+          <View style={styles.destinationRow}>
+            {(['library', 'client', 'marketing'] as const).map((item) => {
+              const definition = getStudioDestination(item);
+              return (
+                <Pressable
+                  key={item}
+                  accessibilityRole="radio"
+                  accessibilityLabel={definition.label}
+                  accessibilityState={{ checked: destination === item }}
+                  onPress={() => {
+                    setDestination(item);
+                    setDestinationPickerOpen(false);
+                    setInfo(null);
+                    setStyleAndFramingOpen(false);
+                  }}
+                  style={[styles.destinationCard, destination === item && styles.selectedCard]}>
+                  <Text style={styles.destinationTitle}>{definition.label}</Text>
+                  <Text style={styles.cardCopy}>{definition.description}</Text>
+                </Pressable>
+              );
+            })}
+          </View>
+        </> : (
+          <View style={styles.advancedDisclosure}>
+            <View style={styles.disclosureCopy}>
+              <Text style={styles.destinationTitle}>
+                {getStudioDestination(destination).label} selected
+              </Text>
+              <Text style={styles.cardCopy}>
+                {getStudioDestination(destination).description}
+              </Text>
+            </View>
+            <Button
+              title="Change destination"
+              kind="ghost"
+              onPress={() => setDestinationPickerOpen(true)}
+            />
+          </View>
+        )}
 
         {destination === 'library' ? (
           <View style={styles.libraryCard}>

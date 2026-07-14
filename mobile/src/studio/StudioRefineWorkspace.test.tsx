@@ -121,8 +121,7 @@ describe('StudioRefineWorkspace', () => {
 
   test('keeps a candidate temporary until explicit apply', async () => {
     const onApplied = jest.fn();
-    const onOpenCollections = jest.fn();
-    const onPresent = jest.fn();
+    const onSelectDestination = jest.fn();
     const appliedProject = {
       ...project,
       active_asset_id: 'asset_3',
@@ -187,8 +186,13 @@ describe('StudioRefineWorkspace', () => {
               sourceDesignVersion: savedProject.active_design_version ?? 0,
             });
           }}
-          onOpenCollections={onOpenCollections}
-          onPresent={onPresent}
+          destinationContext={{
+            activeProjectId: activeLineage.projectId,
+            activeRevisionId: activeLineage.sourceAssetId,
+            hasExactSpecification: true,
+            factoryEligible: false,
+          }}
+          onSelectDestination={onSelectDestination}
         />
       );
     }
@@ -241,10 +245,11 @@ describe('StudioRefineWorkspace', () => {
     await waitFor(() => expect(onApplied).toHaveBeenCalledWith(appliedProject));
     expect(await screen.findByText('Saved as Revision 3.')).toBeTruthy();
     expect(screen.getByText('Refine another change')).toBeTruthy();
-    await fireEvent.press(screen.getByText('View in Collections'));
-    await fireEvent.press(screen.getByText('Present this revision'));
-    expect(onOpenCollections).toHaveBeenCalledTimes(1);
-    expect(onPresent).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText('Factory')).toBeNull();
+    await fireEvent.press(screen.getByText('Library'));
+    await fireEvent.press(screen.getByText('Client'));
+    expect(onSelectDestination).toHaveBeenNthCalledWith(1, 'library');
+    expect(onSelectDestination).toHaveBeenNthCalledWith(2, 'client');
   });
 
   test('keeps a structural cut direction temporary and bound to the exact revision', async () => {
