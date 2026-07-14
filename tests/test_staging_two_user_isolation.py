@@ -67,6 +67,8 @@ def _config() -> StagingConfig:
     return StagingConfig(
         base_url="https://staging.facetta.test",
         deployment_revision="0123456789abcdef",
+        staging_run_id="staging-run-fixture-v1",
+        external_release_run_id="external-release-fixture-v1",
         first=identity("A", "secret-a", "a" * 32),
         second=identity("B", "secret-b", "b" * 32),
     )
@@ -75,6 +77,10 @@ def _config() -> StagingConfig:
 def test_load_config_requires_and_binds_seeded_jobs_and_candidates(monkeypatch):
     monkeypatch.setenv("FACETTA_STAGING_BASE_URL", "https://staging.facetta.test")
     monkeypatch.setenv("FACETTA_STAGING_DEPLOYMENT_REVISION", "0123456789abcdef")
+    monkeypatch.setenv("FACETTA_STAGING_RUN_ID", "staging-run-fixture-v1")
+    monkeypatch.setenv(
+        "FACETTA_EXTERNAL_RELEASE_RUN_ID", "external-release-fixture-v1",
+    )
     for label, suffix, subject in (
         ("A", "a", "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"),
         ("B", "b", "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"),
@@ -94,6 +100,8 @@ def test_load_config_requires_and_binds_seeded_jobs_and_candidates(monkeypatch):
 
     assert config.first.job_id == "job-a"
     assert config.second.job_id == "job-b"
+    assert config.staging_run_id == "staging-run-fixture-v1"
+    assert config.external_release_run_id == "external-release-fixture-v1"
     assert {candidate.kind for candidate in config.first.candidates} == {
         "catalog", "visual", "markup", "view", "presentation",
     }
@@ -103,6 +111,10 @@ def test_load_config_requires_and_binds_seeded_jobs_and_candidates(monkeypatch):
 def test_load_config_rejects_incomplete_candidate_fixture_set(monkeypatch):
     monkeypatch.setenv("FACETTA_STAGING_BASE_URL", "https://staging.facetta.test")
     monkeypatch.setenv("FACETTA_STAGING_DEPLOYMENT_REVISION", "0123456789abcdef")
+    monkeypatch.setenv("FACETTA_STAGING_RUN_ID", "staging-run-fixture-v1")
+    monkeypatch.setenv(
+        "FACETTA_EXTERNAL_RELEASE_RUN_ID", "external-release-fixture-v1",
+    )
     for label, suffix, subject in (
         ("A", "a", "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"),
         ("B", "b", "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"),
@@ -274,8 +286,13 @@ def test_read_only_two_user_probe_passes_without_logging_secrets():
     assert result["passed"] is True
     assert result["provider_calls"] == 0
     assert result["mutations"] == 0
-    assert result["schema_version"] == "facetta-staging-isolation.v5"
+    assert result["schema_version"] == "facetta-staging-isolation.v6"
     assert result["target"]["deployment_revision"] == "0123456789abcdef"
+    assert result["target"]["staging_run_id"] == "staging-run-fixture-v1"
+    assert (
+        result["target"]["external_release_run_id"]
+        == "external-release-fixture-v1"
+    )
     assert len(result["target"]["origin_sha256"]) == 64
     assert len(result["target"]["fixture_set_sha256"]) == 64
     assert "secret-a" not in str(result)

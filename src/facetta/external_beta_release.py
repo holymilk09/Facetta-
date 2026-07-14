@@ -44,10 +44,11 @@ CorpusVerifier = Callable[..., Json]
 AuthorityVerifier = Callable[[dict[str, Any], Path, datetime], Json]
 
 CORPUS_DECISION_SCHEMA = "facetta-frozen-corpus-release-decision.v2"
-STAGING_RESULT_SCHEMA = "facetta-staging-isolation.v5"
+STAGING_RESULT_SCHEMA = "facetta-staging-isolation.v6"
 STAGING_RUN_KIND = "read_only_two_principal_staging_probe"
-STAGING_APPROVAL_SCHEMA = "facetta-staging-isolation-approval.v1"
-EXTERNAL_BETA_DECISION_SCHEMA = "facetta-external-beta-release-decision.v1"
+STAGING_APPROVAL_SCHEMA = "facetta-staging-isolation-approval.v2"
+EXTERNAL_BETA_DECISION_SCHEMA = "facetta-external-beta-release-decision.v2"
+MAX_STAGING_EVIDENCE_AGE_HOURS = 24.0
 
 # These operations belong to superseded Builder/trusted-workflow surfaces. A
 # deployed external-beta API must not expose them, even though compatibility
@@ -301,14 +302,27 @@ def _sha256_value(value: object) -> bool:
     )
 
 
-def _timezone_value(value: object) -> bool:
+def _timezone_datetime(value: object) -> datetime | None:
     if not isinstance(value, str):
-        return False
+        return None
     try:
         parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
     except ValueError:
-        return False
-    return parsed.tzinfo is not None
+        return None
+    if parsed.tzinfo is None:
+        return None
+    return parsed.astimezone(UTC)
+
+
+def _timezone_value(value: object) -> bool:
+    return _timezone_datetime(value) is not None
+
+
+def _run_id_value(value: object) -> bool:
+    return (
+        isinstance(value, str)
+        and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{6,127}", value) is not None
+    )
 
 
 def _zero_exit_code(path: Path, label: str, errors: list[str]) -> str:
@@ -661,7 +675,12 @@ def _designer_public_key(
         )
 
 
-def _validate_staging_result(staging: Json) -> list[str]:
+def _validate_staging_result(
+    staging: Json,
+    *,
+    expected_staging_run_id: str,
+    expected_external_release_run_id: str,
+) -> list[str]:
     errors: list[str] = []
     if staging.get("schema_version") != STAGING_RESULT_SCHEMA:
         errors.append("unsupported staging-isolation result schema_version")
@@ -680,12 +699,21 @@ def _validate_staging_result(staging: Json) -> list[str]:
     if not isinstance(target, dict) or not (
         _sha256_value(target.get("origin_sha256"))
         and _sha256_value(target.get("fixture_set_sha256"))
+        and _run_id_value(target.get("staging_run_id"))
+        and _run_id_value(target.get("external_release_run_id"))
         and isinstance(target.get("deployment_revision"), str)
         and re.fullmatch(r"[A-Za-z0-9._-]{7,128}", target["deployment_revision"])
         and _timezone_value(target.get("probed_at"))
         and target.get("transport") == "live_https"
     ):
         errors.append("staging-isolation target binding is incomplete or invalid")
+    if isinstance(target, dict):
+        if target.get("staging_run_id") != expected_staging_run_id:
+            errors.append("staging-isolation result staging_run_id differs from request")
+        if target.get("external_release_run_id") != expected_external_release_run_id:
+            errors.append(
+                "staging-isolation result external_release_run_id differs from request"
+            )
 
     rows = staging.get("checks")
     if not isinstance(rows, list) or not all(isinstance(row, dict) for row in rows):
@@ -726,6 +754,8 @@ def verify_external_beta_release(
     staging_approval_path: Path,
     staging_exit_code_path: Path,
     *,
+    staging_run_id: str,
+    external_release_run_id: str,
     repository_root: Path | None = None,
     corpus_manifest_path: Path | None = None,
     corpus_source_dir: Path | None = None,
@@ -748,6 +778,10 @@ def verify_external_beta_release(
     staging = _load_object(staging_results_path)
     staging_approval = _load_object(staging_approval_path)
     errors: list[str] = []
+    if not _run_id_value(staging_run_id):
+        errors.append("requested staging_run_id is invalid")
+    if not _run_id_value(external_release_run_id):
+        errors.append("requested external_release_run_id is invalid")
     authority_key_separation = release_authority_key_separation(config)
     errors.extend(authority_key_separation["errors"])
     decision_time = datetime.now(UTC)
@@ -866,6 +900,22 @@ def verify_external_beta_release(
     else:
         designer_threshold = float(configured_threshold)
 
+    configured_max_staging_age = (
+        thresholds.get("max_staging_evidence_age_hours")
+        if isinstance(thresholds, dict) else None
+    )
+    if (
+        isinstance(configured_max_staging_age, bool)
+        or not isinstance(configured_max_staging_age, (int, float))
+        or not 0 < float(configured_max_staging_age) <= MAX_STAGING_EVIDENCE_AGE_HOURS
+    ):
+        errors.append(
+            "max staging evidence age must be frozen between 0 and 24 hours"
+        )
+        max_staging_age_hours = 0.0
+    else:
+        max_staging_age_hours = float(configured_max_staging_age)
+
     quality = corpus_results.get("quality")
     release_gates = quality.get("release_gates") if isinstance(quality, dict) else None
     within_three_attempts = (
@@ -953,7 +1003,11 @@ def verify_external_beta_release(
     staging_probe_pin = _pinned_file(
         config, "staging_isolation_probe", root, errors,
     )
-    errors.extend(_validate_staging_result(staging))
+    errors.extend(_validate_staging_result(
+        staging,
+        expected_staging_run_id=staging_run_id,
+        expected_external_release_run_id=external_release_run_id,
+    ))
 
     staging_results_hash = file_sha256(staging_results_path)
     if staging_approval.get("schema_version") != STAGING_APPROVAL_SCHEMA:
@@ -968,16 +1022,37 @@ def verify_external_beta_release(
         value = staging_approval.get(field)
         if not isinstance(value, str) or not value.strip():
             errors.append(f"staging approval {field} is missing")
-    if not _timezone_value(staging_approval.get("approved_at")):
+    approved_at = _timezone_datetime(staging_approval.get("approved_at"))
+    if approved_at is None:
         errors.append("staging approval approved_at must include a timezone")
     target = staging.get("target") if isinstance(staging.get("target"), dict) else {}
     for field in (
+        "staging_run_id",
+        "external_release_run_id",
         "origin_sha256",
         "deployment_revision",
         "fixture_set_sha256",
     ):
         if staging_approval.get(field) != target.get(field):
             errors.append(f"staging approval {field} differs from the tested target")
+    if staging_approval.get("staging_run_id") != staging_run_id:
+        errors.append("staging approval staging_run_id differs from request")
+    if staging_approval.get("external_release_run_id") != external_release_run_id:
+        errors.append("staging approval external_release_run_id differs from request")
+
+    probed_at = _timezone_datetime(target.get("probed_at"))
+    if probed_at is not None:
+        if probed_at > decision_time:
+            errors.append("staging probed_at is in the future")
+        if max_staging_age_hours <= 0 or (
+            decision_time - probed_at
+        ).total_seconds() > max_staging_age_hours * 3600:
+            errors.append("staging evidence exceeds the frozen maximum age")
+    if approved_at is not None:
+        if approved_at > decision_time:
+            errors.append("staging approved_at is in the future")
+        if probed_at is not None and probed_at > approved_at:
+            errors.append("staging approval predates the staging probe")
 
     public_key, key_id, key_error = _staging_public_key(config, root)
     signature = staging_approval.get("signature")
@@ -1012,6 +1087,7 @@ def verify_external_beta_release(
         "schema_version": EXTERNAL_BETA_DECISION_SCHEMA,
         "status": "pass" if passed else "incomplete_or_failed",
         "external_beta_ready": passed,
+        "decision_time": decision_time.isoformat(),
         "provider_calls": 0,
         "mutations": 0,
         "independent_designer_review": {
@@ -1040,6 +1116,11 @@ def verify_external_beta_release(
             "origin_sha256": target.get("origin_sha256"),
             "deployment_revision": target.get("deployment_revision"),
             "fixture_set_sha256": target.get("fixture_set_sha256"),
+            "staging_run_id": target.get("staging_run_id"),
+            "external_release_run_id": target.get("external_release_run_id"),
+            "probed_at": target.get("probed_at"),
+            "approved_at": staging_approval.get("approved_at"),
+            "max_staging_evidence_age_hours": max_staging_age_hours,
             "external_beta_release_verifier_sha256": verifier_pin,
             "external_beta_release_cli_sha256": verifier_cli_pin,
             "staging_isolation_probe_sha256": staging_probe_pin,

@@ -284,10 +284,12 @@ def test_failed_external_beta_decision_is_retained_without_recomputation(
     output = evidence_root / "external-release" / "external-beta-decision.json"
     output.parent.mkdir()
     calls = 0
+    observed_kwargs: dict[str, object] = {}
 
-    def fake_verify(*_args: object, **_kwargs: object) -> dict[str, object]:
+    def fake_verify(*_args: object, **kwargs: object) -> dict[str, object]:
         nonlocal calls
         calls += 1
+        observed_kwargs.update(kwargs)
         return {
             "status": "blocked",
             "external_beta_ready": False,
@@ -317,6 +319,8 @@ def test_failed_external_beta_decision_is_retained_without_recomputation(
             "--staging-results", str(evidence_root / "staging-results.json"),
             "--staging-approval", str(evidence_root / "staging-approval.json"),
             "--staging-exit-code", str(evidence_root / "staging-exit.txt"),
+            "--staging-run-id", "staging-run-fixture-v1",
+            "--external-release-run-id", "external-release-fixture-v1",
             "--outdir", "external-release",
         ],
     )
@@ -329,4 +333,9 @@ def test_failed_external_beta_decision_is_retained_without_recomputation(
         verify_external_beta_release.main()
 
     assert calls == 1
+    assert observed_kwargs["staging_run_id"] == "staging-run-fixture-v1"
+    assert (
+        observed_kwargs["external_release_run_id"]
+        == "external-release-fixture-v1"
+    )
     assert output.read_bytes() == retained

@@ -71,6 +71,8 @@ class StagingIdentity:
 class StagingConfig:
     base_url: str
     deployment_revision: str
+    staging_run_id: str
+    external_release_run_id: str
     first: StagingIdentity
     second: StagingIdentity
 
@@ -106,6 +108,10 @@ def load_config() -> StagingConfig:
     deployment_revision = _required(
         "FACETTA_STAGING_DEPLOYMENT_REVISION", missing,
     )
+    staging_run_id = _required("FACETTA_STAGING_RUN_ID", missing)
+    external_release_run_id = _required(
+        "FACETTA_EXTERNAL_RELEASE_RUN_ID", missing,
+    )
     identity_values: dict[str, dict[str, str]] = {}
     for label in ("A", "B"):
         prefix = f"FACETTA_STAGING_USER_{label}"
@@ -130,6 +136,13 @@ def load_config() -> StagingConfig:
         raise ValueError("FACETTA_STAGING_BASE_URL must be an exact HTTPS origin")
     if re.fullmatch(r"[A-Za-z0-9._-]{7,128}", deployment_revision) is None:
         raise ValueError("staging deployment revision is not a safe release identifier")
+    run_identifier = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{6,127}$")
+    if run_identifier.fullmatch(staging_run_id) is None:
+        raise ValueError("FACETTA_STAGING_RUN_ID is not a safe release identifier")
+    if run_identifier.fullmatch(external_release_run_id) is None:
+        raise ValueError(
+            "FACETTA_EXTERNAL_RELEASE_RUN_ID is not a safe release identifier"
+        )
 
     def identity(label: str) -> StagingIdentity:
         values = identity_values[label]
@@ -198,6 +211,8 @@ def load_config() -> StagingConfig:
     return StagingConfig(
         base_url=base_url,
         deployment_revision=deployment_revision,
+        staging_run_id=staging_run_id,
+        external_release_run_id=external_release_run_id,
         first=first,
         second=second,
     )
@@ -722,6 +737,8 @@ def run_probe(config: StagingConfig, transport: Transport = http_transport) -> d
         "schema_version": STAGING_RESULT_SCHEMA,
         "run_kind": "read_only_two_principal_staging_probe",
         "target": {
+            "staging_run_id": config.staging_run_id,
+            "external_release_run_id": config.external_release_run_id,
             "origin_sha256": hashlib.sha256(
                 config.base_url.encode("utf-8")
             ).hexdigest(),

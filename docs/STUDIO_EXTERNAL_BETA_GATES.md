@@ -293,6 +293,8 @@ The secret manager must inject:
 ```text
 FACETTA_STAGING_BASE_URL
 FACETTA_STAGING_DEPLOYMENT_REVISION
+FACETTA_STAGING_RUN_ID
+FACETTA_EXTERNAL_RELEASE_RUN_ID
 FACETTA_STAGING_USER_A_ACCESS_TOKEN
 FACETTA_STAGING_USER_A_PROJECT_ID
 FACETTA_STAGING_USER_A_FAMILY_ID
@@ -320,6 +322,9 @@ persistence engine. The local SQLite fallback cannot pass.
 set +x
 umask 077
 STAGING_RUN_ID="${STAGING_RUN_ID:?preassign a fresh staging run ID}"
+EXTERNAL_RELEASE_RUN_ID="${EXTERNAL_RELEASE_RUN_ID:?preassign a fresh external-release run ID}"
+export FACETTA_STAGING_RUN_ID="$STAGING_RUN_ID"
+export FACETTA_EXTERNAL_RELEASE_RUN_ID="$EXTERNAL_RELEASE_RUN_ID"
 STAGING_RUN_ROOT=/secure/path/to/gate-artifacts/staging-two-principal
 STAGING_DIR="$STAGING_RUN_ROOT/$STAGING_RUN_ID"
 test -d "$STAGING_RUN_ROOT"
@@ -336,16 +341,19 @@ test "$STAGING_EXIT" -eq 0
 
 The owner reads must succeed, cross-owner reads and enumeration must fail with
 the expected status, unauthenticated reads must return `401`, and every
-legacy/admin/OpenAPI/docs surface in the probe must remain hidden. The v5 probe
+legacy/admin/OpenAPI/docs surface in the probe must remain hidden. The v6 probe
 also uses read-only `OPTIONS` discovery to require that every operation in the
 canonical production-hidden mutation inventory is absent. A `405` is acceptable
 only when its non-empty `Allow` header excludes the retired method; a missing
 header fails closed, while a safe collision with a retained `GET` does not.
 A separately enrolled staging reviewer signs
-`facetta-staging-isolation-approval.v1` against
-the exact result and exit-code bytes, origin, deployment revision, and fixture
-set. Exit `77` (missing fixtures), `2` (invalid/unreachable), or `1` (failed
-check) all leave this gate unmet.
+`facetta-staging-isolation-approval.v2` against the exact result and exit-code
+bytes, origin, deployment revision, fixture set, `staging_run_id`, and
+`external_release_run_id`. The signed `approved_at` must follow `probed_at`; both
+must be at or before the combined verifier decision time. The staging evidence
+must be no more than the frozen `max_staging_evidence_age_hours` (24 hours) old.
+Exit `77` (missing fixtures), `2` (invalid/unreachable), or `1` (failed check)
+all leave this gate unmet.
 
 ## Blind independent-designer review
 
@@ -406,6 +414,8 @@ PYTHONPATH=src .venv/bin/python scripts/verify_external_beta_release.py \
   --staging-results "$STAGING_DIR/results.json" \
   --staging-approval "$EVIDENCE_ROOT/review/signed-staging-approval.json" \
   --staging-exit-code "$STAGING_DIR/exit-code.txt" \
+  --staging-run-id "$STAGING_RUN_ID" \
+  --external-release-run-id "$EXTERNAL_RELEASE_RUN_ID" \
   --outdir "$EXTERNAL_RELEASE_DIR" \
   > "$EXTERNAL_RELEASE_DIR/command-result.json"
 COMBINED_EXIT=$?
@@ -414,7 +424,9 @@ printf '%s\n' "$COMBINED_EXIT" > "$EXTERNAL_RELEASE_DIR/exit-code.txt" || exit 1
 test "$COMBINED_EXIT" -eq 0
 ```
 
-`external-beta-decision.json` and its retained command result and exit code
+The v2 `external-beta-decision.json` repeats both preassigned run IDs, the probe
+and approval times, the frozen maximum age, and every signed byte hash in its
+gate bindings. `external-beta-decision.json` and its retained command result and exit code
 must remain together in the fresh external-release run directory.
 `external-beta-decision.json` is a derived authority. Missing raw evidence,
 v1 Boolean review data, packet/ledger mismatch, wrong reviewer profile,

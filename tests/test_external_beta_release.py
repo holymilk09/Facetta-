@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -121,6 +122,7 @@ def _fixture(tmp_path: Path) -> dict[str, Any]:
         "config_id": "fixture-config",
         "thresholds": {
             "quick_appearance_designer_acceptance_rate": 0.9,
+            "max_staging_evidence_age_hours": 24,
         },
         "frozen_components": {
             "external_beta_release_verifier": (
@@ -224,14 +226,19 @@ def _fixture(tmp_path: Path) -> dict[str, Any]:
         for name, expected in required_staging_checks().items()
     ]
     staging_results = tmp_path / "staging-results.json"
+    now = datetime.now(UTC)
+    probed_at = (now - timedelta(minutes=30)).isoformat()
+    approved_at = (now - timedelta(minutes=15)).isoformat()
     _json(staging_results, {
-        "schema_version": "facetta-staging-isolation.v5",
+        "schema_version": "facetta-staging-isolation.v6",
         "run_kind": "read_only_two_principal_staging_probe",
         "target": {
+            "staging_run_id": "staging-run-fixture-v1",
+            "external_release_run_id": "external-release-fixture-v1",
             "origin_sha256": "a" * 64,
             "deployment_revision": "0123456789abcdef",
             "fixture_set_sha256": "b" * 64,
-            "probed_at": "2026-07-13T12:00:00+08:00",
+            "probed_at": probed_at,
             "transport": "live_https",
         },
         "checks": checks,
@@ -304,6 +311,7 @@ def _fixture(tmp_path: Path) -> dict[str, Any]:
         "designer_packet": designer_packet,
         "designer_ledger": designer_ledger,
         "staging_approval": staging_approval,
+        "approved_at": approved_at,
     }
     _sign_designer_ledger(paths)
     _sign_staging_approval(paths)
@@ -313,13 +321,15 @@ def _fixture(tmp_path: Path) -> dict[str, Any]:
 def _sign_staging_approval(paths: dict[str, Any]) -> None:
     staging = json.loads(paths["staging_results"].read_text())
     value: dict[str, Any] = {
-        "schema_version": "facetta-staging-isolation-approval.v1",
+        "schema_version": "facetta-staging-isolation-approval.v2",
         "staging_results_sha256": _sha(paths["staging_results"]),
         "staging_exit_code_sha256": _sha(paths["staging_exit"]),
         "decision": "approved",
         "reviewer": "Test Release Reviewer",
-        "approved_at": "2026-07-13T12:30:00+08:00",
+        "approved_at": paths["approved_at"],
         "release_ticket": "FACETTA-STAGING-1",
+        "staging_run_id": staging["target"]["staging_run_id"],
+        "external_release_run_id": staging["target"]["external_release_run_id"],
         "origin_sha256": staging["target"]["origin_sha256"],
         "deployment_revision": staging["target"]["deployment_revision"],
         "fixture_set_sha256": staging["target"]["fixture_set_sha256"],
@@ -392,6 +402,9 @@ def _verify(
     paths: dict[str, Any],
     corpus_verifier=None,
     authority_verifier=None,
+    *,
+    staging_run_id: str = "staging-run-fixture-v1",
+    external_release_run_id: str = "external-release-fixture-v1",
 ) -> dict[str, Any]:
     if corpus_verifier is None:
         expected = paths["corpus_decision_value"]
@@ -430,6 +443,8 @@ def _verify(
         paths["staging_results"],
         paths["staging_approval"],
         paths["staging_exit"],
+        staging_run_id=staging_run_id,
+        external_release_run_id=external_release_run_id,
         repository_root=paths["root"],
         corpus_manifest_path=paths["corpus_manifest"],
         corpus_source_dir=paths["corpus_source_dir"],
@@ -446,7 +461,7 @@ def _verify(
 def test_exact_reverified_corpus_and_signed_staging_pass_together(tmp_path: Path):
     paths = _fixture(tmp_path)
     result = _verify(paths)
-    assert result["schema_version"] == "facetta-external-beta-release-decision.v1"
+    assert result["schema_version"] == "facetta-external-beta-release-decision.v2"
     assert result["external_beta_ready"] is True
     assert result["status"] == "pass"
     json.dumps(result)
@@ -456,6 +471,11 @@ def test_exact_reverified_corpus_and_signed_staging_pass_together(tmp_path: Path
     assert result["signatures"]["designer"]["status"] == "verified"
     assert result["signatures"]["staging_reviewer"]["status"] == "verified"
     assert result["gate_bindings"]["deployment_revision"] == "0123456789abcdef"
+    assert result["gate_bindings"]["staging_run_id"] == "staging-run-fixture-v1"
+    assert (
+        result["gate_bindings"]["external_release_run_id"]
+        == "external-release-fixture-v1"
+    )
     assert result["release_authority_bundle"]["status"] == "pass"
     assert (
         result["release_authority_bundle"]["status_list"]["artifact_sha256"]
@@ -686,6 +706,107 @@ def test_staging_result_tamper_breaks_exact_approval_binding(tmp_path: Path):
     result = _verify(paths)
     assert result["external_beta_ready"] is False
     assert any("exact result bytes" in error for error in result["errors"])
+
+
+def test_staging_evidence_cannot_be_replayed_under_different_run_ids(
+    tmp_path: Path,
+):
+    paths = _fixture(tmp_path)
+
+    result = _verify(
+        paths,
+        staging_run_id="staging-run-replay-v2",
+        external_release_run_id="external-release-replay-v2",
+    )
+
+    assert result["external_beta_ready"] is False
+    assert any("result staging_run_id differs" in error for error in result["errors"])
+    assert any(
+        "result external_release_run_id differs" in error
+        for error in result["errors"]
+    )
+    assert any("approval staging_run_id differs" in error for error in result["errors"])
+    assert any(
+        "approval external_release_run_id differs" in error
+        for error in result["errors"]
+    )
+
+
+def test_signed_staging_approval_cannot_target_a_different_release_run(
+    tmp_path: Path,
+):
+    paths = _fixture(tmp_path)
+    approval = json.loads(paths["staging_approval"].read_text())
+    approval["external_release_run_id"] = "external-release-other-v2"
+    approval["signature"] = {
+        "algorithm": "Ed25519",
+        "key_id": "staging-reviewer-v1",
+        "value": base64.b64encode(
+            paths["private"].sign(canonical_staging_approval_payload(approval))
+        ).decode("ascii"),
+    }
+    _json(paths["staging_approval"], approval)
+
+    result = _verify(paths)
+
+    assert result["signatures"]["staging_reviewer"]["status"] == "verified"
+    assert result["external_beta_ready"] is False
+    assert any(
+        "external_release_run_id differs from the tested target" in error
+        for error in result["errors"]
+    )
+
+
+def test_staging_evidence_older_than_frozen_limit_fails_closed(tmp_path: Path):
+    paths = _fixture(tmp_path)
+    staging = json.loads(paths["staging_results"].read_text())
+    staging["target"]["probed_at"] = (
+        datetime.now(UTC) - timedelta(hours=25)
+    ).isoformat()
+    _json(paths["staging_results"], staging)
+    paths["approved_at"] = (
+        datetime.now(UTC) - timedelta(hours=24, minutes=30)
+    ).isoformat()
+    _sign_staging_approval(paths)
+
+    result = _verify(paths)
+
+    assert result["external_beta_ready"] is False
+    assert any("exceeds the frozen maximum age" in error for error in result["errors"])
+
+
+def test_staging_probe_and_approval_timestamps_must_be_ordered_and_not_future(
+    tmp_path: Path,
+):
+    paths = _fixture(tmp_path)
+    staging = json.loads(paths["staging_results"].read_text())
+    staging["target"]["probed_at"] = (
+        datetime.now(UTC) + timedelta(minutes=30)
+    ).isoformat()
+    _json(paths["staging_results"], staging)
+    paths["approved_at"] = (
+        datetime.now(UTC) + timedelta(minutes=15)
+    ).isoformat()
+    _sign_staging_approval(paths)
+
+    result = _verify(paths)
+
+    assert result["external_beta_ready"] is False
+    assert any("probed_at is in the future" in error for error in result["errors"])
+    assert any("approved_at is in the future" in error for error in result["errors"])
+    assert any("approval predates the staging probe" in error for error in result["errors"])
+
+
+def test_frozen_staging_age_policy_cannot_exceed_24_hours(tmp_path: Path):
+    paths = _fixture(tmp_path)
+    config = json.loads(paths["config"].read_text())
+    config["thresholds"]["max_staging_evidence_age_hours"] = 48
+    _json(paths["config"], config)
+
+    result = _verify(paths)
+
+    assert result["external_beta_ready"] is False
+    assert any("frozen between 0 and 24 hours" in error for error in result["errors"])
 
 
 def test_shallow_staging_pass_cannot_omit_required_check(tmp_path: Path):

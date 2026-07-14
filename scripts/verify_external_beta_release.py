@@ -39,6 +39,8 @@ def main() -> int:
     parser.add_argument("--staging-results", type=Path, required=True)
     parser.add_argument("--staging-approval", type=Path, required=True)
     parser.add_argument("--staging-exit-code", type=Path, required=True)
+    parser.add_argument("--staging-run-id", required=True)
+    parser.add_argument("--external-release-run-id", required=True)
     parser.add_argument(
         "--config",
         type=Path,
@@ -66,6 +68,8 @@ def main() -> int:
         args.staging_results,
         args.staging_approval,
         args.staging_exit_code,
+        staging_run_id=args.staging_run_id,
+        external_release_run_id=args.external_release_run_id,
         corpus_manifest_path=args.corpus_manifest,
         corpus_source_dir=args.corpus_source_dir,
         corpus_evidence_path=args.corpus_evidence,

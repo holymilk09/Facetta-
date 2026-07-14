@@ -26,9 +26,9 @@
     "capture_producer_cli": "scripts/run_frozen_corpus_capture.py@sha256:47c421c500d7333806191e9c3ceb79b254b463c7fa5f53a5dc196e30792733a6",
     "persistence_verifier": "src/facetta/frozen_persistence_attestation.py@sha256:988b48c9f35757588369a61c1b0d2cbc24149e33d08b7c2c8f8663c765a12ea5",
     "evidence_path_contract": "src/facetta/frozen_evidence_paths.py@sha256:887e7bbfc6e35c0dae8632804e5101b4c66be9dfd9ea718fcdc6711e012b8082",
-    "staging_isolation_probe": "scripts/run_staging_two_user_isolation.py@sha256:5bc1dbf2984b145b4c83eeaf9c0f555b6eddf4aeb9814bda1bdd7ab2135a40a3",
-    "external_beta_release_verifier": "src/facetta/external_beta_release.py@sha256:8d60123bea6508472ca44d00e1fcaca9c12573bd045bb8e4e1afc23eb78e6d2f",
-    "external_beta_release_cli": "scripts/verify_external_beta_release.py@sha256:b8165d79c77d1746aa5a05e3c81a1775dec425bcd4941ac3aff37bb7dabaaeb3"
+    "staging_isolation_probe": "scripts/run_staging_two_user_isolation.py@sha256:291c1a0b26ab40f54dbb4747ac9ccd42d10225c0e2d1da342ed044ef390e4591",
+    "external_beta_release_verifier": "src/facetta/external_beta_release.py@sha256:2a2ec2b5bee943175dd172f89a9ca62ca4acc566bf0840a3faac7645a59a0bd2",
+    "external_beta_release_cli": "scripts/verify_external_beta_release.py@sha256:9a8a50b06cdeca5f034f785819aa6ae2997346fe06971482bb4a0864bc109047"
   },
   "thresholds": {
     "render_hard_gate_pass_rate": 0.9,
@@ -36,7 +36,8 @@
     "mean_edit_fidelity": 90,
     "max_attempts": 3,
     "max_outside_mask_drift": 0.18,
-    "quick_appearance_designer_acceptance_rate": 0.9
+    "quick_appearance_designer_acceptance_rate": 0.9,
+    "max_staging_evidence_age_hours": 24
   },
   "evidence_requirements": {
     "canonical_persistence": true,

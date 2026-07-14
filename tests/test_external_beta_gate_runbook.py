@@ -106,7 +106,7 @@ def test_zsh_noclobber_preserves_existing_evidence(tmp_path: Path) -> None:
     assert artifact.read_text(encoding="utf-8") == "signed-original\n"
 
 
-def test_staging_runbook_declares_every_v5_seed_binding() -> None:
+def test_staging_runbook_declares_every_v6_seed_and_run_binding() -> None:
     text = CANONICAL_RUNBOOK.read_text(encoding="utf-8")
 
     for label in ("A", "B"):
@@ -123,7 +123,16 @@ def test_staging_runbook_declares_every_v5_seed_binding() -> None:
     for kind in ("catalog", "visual", "markup", "view", "presentation"):
         assert f"`{kind}`" in text
     assert "fresh,\nQA-valid reviewing candidate" in text
-    assert "facetta-staging-isolation.v5" in text or "The v5 probe" in text
+    for variable in (
+        "FACETTA_STAGING_RUN_ID",
+        "FACETTA_EXTERNAL_RELEASE_RUN_ID",
+    ):
+        assert variable in text
+    assert '--staging-run-id "$STAGING_RUN_ID"' in text
+    assert '--external-release-run-id "$EXTERNAL_RELEASE_RUN_ID"' in text
+    assert "facetta-staging-isolation-approval.v2" in text
+    assert "max_staging_evidence_age_hours" in text
+    assert "facetta-staging-isolation.v6" in text or "The v6 probe" in text
 
 
 def test_frozen_corpus_readme_retains_run_identity_and_noclobber_guards() -> None:
