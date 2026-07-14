@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { createStudioGateway } from './gateway';
+import { createStudioJobTestHarness } from './studioJobTestHarness';
 import type { ImageQualityReport, ProjectDetail, StudioJobRecord } from '../trusted/types';
 
 const ok = <T>(data: T, status = 200) => ({ data, error: null, status } as const);
@@ -73,6 +74,7 @@ const project = (activeAssetId: string): ProjectDetail => {
 };
 
 const baseClient = () => ({
+  ...createStudioJobTestHarness('job_visual').client,
   createProjectFromDrawing: async () => { throw new Error('unexpected'); },
   createProjectFromPrompt: async () => { throw new Error('unexpected'); },
   saveAsVariation: async () => { throw new Error('unexpected'); },
@@ -80,8 +82,6 @@ const baseClient = () => ({
   acceptCatalogPreview: async () => { throw new Error('unexpected'); },
   discardCatalogPreview: async () => { throw new Error('unexpected'); },
   applyMarkup: async () => { throw new Error('unexpected'); },
-  acceptWarningCandidate: async () => { throw new Error('unexpected'); },
-  discardWarningCandidate: async () => { throw new Error('unexpected'); },
   createLineArt: async () => { throw new Error('unexpected'); },
   createStudioBeautyRender: async () => { throw new Error('unexpected'); },
   createStudioProductPhoto: async () => { throw new Error('unexpected'); },
@@ -89,8 +89,6 @@ const baseClient = () => ({
   recordImageRunFeedback: async () => { throw new Error('unexpected'); },
   getProject: async () => { throw new Error('unexpected'); },
   getFactoryPack: async () => { throw new Error('unexpected'); },
-  createStudioJob: async () => { throw new Error('unexpected'); },
-  transitionStudioJob: async () => { throw new Error('unexpected'); },
 });
 
 test('pre-spec visual refinement stays temporary until Apply appends an image-only revision', async () => {
@@ -102,6 +100,7 @@ test('pre-spec visual refinement stays temporary until Apply appends an image-on
       assert.deepEqual(request, {
         created_by: 'designer_1', expected_active_asset_id: 'asset_source',
         instruction: 'warm the gold', scope: 'appearance', variant: 3,
+        studio_job_id: 'job_visual',
       });
       return ok({
         project_id: projectId, source_asset_id: 'asset_source', image_run_id: 'run_visual',
@@ -210,7 +209,7 @@ test('tracked visual discard relies on atomic backend settlement without client 
       source_asset_id: 'asset_source', candidate_id: 'candidate_tracked_discard',
     }),
   };
-  const gateway = createStudioGateway(client as any, { trackJobs: true });
+  const gateway = createStudioGateway(client as any);
   const preview = await gateway.previewVisualRefine({
     projectId: 'project_visual', sourceAssetId: 'asset_source',
     createdBy: 'designer_1', instruction: 'soften the reflection', scope: 'appearance',
@@ -247,7 +246,7 @@ test('post-generation validation failure cannot generically fail a candidate-own
       },
     }, 201),
   };
-  const gateway = createStudioGateway(client as any, { trackJobs: true });
+  const gateway = createStudioGateway(client as any);
 
   const result = await gateway.previewVisualRefine({
     projectId: 'project_visual', sourceAssetId: 'asset_source',
@@ -379,5 +378,6 @@ test('marked-region refinement can reference server-validated markup instead of 
     created_by: 'designer_1', expected_active_asset_id: 'asset_source',
     instruction: 'cool the marked stone only', scope: 'marked_region',
     markup_asset_id: 'markup_asset_1',
+    studio_job_id: 'job_visual',
   });
 });

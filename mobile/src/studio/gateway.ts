@@ -280,8 +280,14 @@ export interface StudioPreSpecPresentationDecisionResult {
 
 export interface StudioFactoryEligibility {
   enabled: boolean;
+  /** May enter the optional readiness review for this exact revision. */
+  reviewEligible: boolean;
+  /** Checklist complete and the exact revision pinned for pack generation. */
+  packReady: boolean;
+  /** @deprecated Use reviewEligible. */
   eligible: boolean;
   projectId: string;
+  activeAssetId: string | null;
   pinnedAssetId: string | null;
   designVersion: number | null;
   blockers: readonly string[];
@@ -303,8 +309,6 @@ type GatewayTrustedClient = Pick<TrustedApiClient,
   | 'acceptStudioMarkupCandidate'
   | 'discardStudioMarkupCandidate'
   | 'saveStudioMarkupPreviewAsVariation'
-  | 'acceptWarningCandidate'
-  | 'discardWarningCandidate'
   | 'acceptPresentationCandidate'
   | 'discardPresentationCandidate'
   | 'listStudioViewCandidates'
@@ -349,8 +353,6 @@ type GatewayTrustedClient = Pick<TrustedApiClient,
 > & Partial<Pick<TrustedApiClient, 'getStudioCapabilities'>>;
 
 export interface StudioGatewayOptions {
-  /** Persist designer-visible Activity. Disabled for isolated adapters/tests. */
-  trackJobs?: boolean;
   now?: () => Date;
 }
 
@@ -501,7 +503,6 @@ export function createStudioGateway(
   client: GatewayTrustedClient,
   options: StudioGatewayOptions = {},
 ) {
-  const trackJobs = options.trackJobs ?? false;
   const now = options.now ?? (() => new Date());
   let confirmationReviewSequence = 0;
   // Same-session convenience only. The durable StudioJob id is sent to the
@@ -515,7 +516,7 @@ export function createStudioGateway(
     studioJob: ActiveStudioJob | null;
   }>();
   const markupCandidates = new Map<string, {
-    trusted: StudioMarkupResumeCandidate | null;
+    trusted: StudioMarkupResumeCandidate;
     runId: string;
     candidateId: string;
     preview: PreviewCandidate;
@@ -574,9 +575,9 @@ export function createStudioGateway(
 
   const requireCandidate = (candidateId: string) => catalogCandidates.get(candidateId) ?? null;
 
-  const trackingError = (error: unknown): StudioGatewayResult<never> => gatewayError(
+  const trackingError = (): StudioGatewayResult<never> => gatewayError(
     'STUDIO_ACTIVITY_UNAVAILABLE',
-    error instanceof Error ? error.message : 'Studio Activity could not be updated.',
+    'Studio Activity could not be updated. Try again before starting generation.',
     'unavailable',
     0,
     true,
@@ -588,7 +589,6 @@ export function createStudioGateway(
     requestedOutputs: number,
     lineage?: StudioVisualLineage,
   ): Promise<StudioGatewayResult<ActiveStudioJob | null>> => {
-    if (!trackJobs) return { data: null, error: null, status: 0 };
     const action = getStudioAction(actionId);
     if (!action.createsJob
       || action.executionMode === 'instant_transaction'
@@ -630,8 +630,8 @@ export function createStudioGateway(
         error: null,
         status: running.status,
       };
-    } catch (error) {
-      return trackingError(error);
+    } catch {
+      return trackingError();
     }
   };
 
@@ -670,8 +670,8 @@ export function createStudioGateway(
       }
       job.status = result.data.status;
       return result;
-    } catch (error) {
-      return trackingError(error);
+    } catch {
+      return trackingError();
     }
   };
 
@@ -743,7 +743,7 @@ export function createStudioGateway(
     jobId: string | null,
     owner: string,
     actionId: 'views' | 'present',
-    lineage: ExactStudioLineage,
+    lineage: ExactStudioLineage | StudioVisualLineage,
     candidateCount: number,
   ): Promise<StudioGatewayResult<ActiveStudioJob>> => {
     if (jobId === null) return gatewayError(
@@ -816,6 +816,7 @@ export function createStudioGateway(
 
   const getFactoryEligibility = async (
     projectId: string,
+    projectSnapshot?: ProjectDetail,
   ): Promise<StudioGatewayResult<StudioFactoryEligibility>> => {
     const capabilities = client.getStudioCapabilities === undefined
       ? gatewayError(
@@ -830,8 +831,11 @@ export function createStudioGateway(
     if (!capabilities.data.factory_review.enabled) return {
       data: {
         enabled: false,
+        reviewEligible: false,
+        packReady: false,
         eligible: false,
         projectId,
+        activeAssetId: null,
         pinnedAssetId: null,
         designVersion: null,
         blockers: ['Factory review is not enabled for this account.'],
@@ -839,21 +843,34 @@ export function createStudioGateway(
       error: null,
       status: 200,
     };
-    const result = await client.getProject(projectId);
+    const result = projectSnapshot === undefined
+      ? await client.getProject(projectId)
+      : { data: projectSnapshot, error: null, status: 200 } as const;
     if (result.error !== null) return { data: null, error: mapError(result.error), status: result.status };
     const pinned = result.data.pinned_revision;
+    const active = result.data.active_revision;
     const blockers = result.data.factory_blockers.map((blocker) => blocker.detail);
-    const eligible = result.data.factory_ready && pinned !== null
-      && pinned.design_version !== null && blockers.length === 0;
+    const exactActive = active !== null
+      && active.asset_id === result.data.active_asset_id
+      && active.design_version !== null
+      && active.design_version === result.data.active_design_version;
+    const reviewEligible = exactActive && blockers.length === 0;
+    const packReady = reviewEligible
+      && result.data.factory_ready
+      && pinned?.asset_id === active.asset_id
+      && pinned.design_version === active.design_version;
     return {
       data: {
         enabled: true,
-        eligible,
+        reviewEligible,
+        packReady,
+        eligible: reviewEligible,
         projectId: result.data.root_id,
+        activeAssetId: active?.asset_id ?? null,
         pinnedAssetId: pinned?.asset_id ?? null,
-        designVersion: pinned?.design_version ?? null,
-        blockers: eligible ? [] : blockers.length > 0
-          ? blockers : ['An approved, pinned revision is required.'],
+        designVersion: active?.design_version ?? null,
+        blockers: reviewEligible ? [] : blockers.length > 0
+          ? blockers : ['An exact design revision is required.'],
       },
       error: null,
       status: result.status,
@@ -1339,16 +1356,16 @@ export function createStudioGateway(
       createdBy: string,
       reviewJobId?: string,
     ): Promise<StudioGatewayResult<StudioResumedRefinePreview | null>> {
-      const jobs = trackJobs
-        ? await client.listStudioJobs(createdBy, 'reviewing') : null;
-      const matchingJob = jobs?.error === null
-        ? [...jobs.data.jobs].reverse().find((job) => (
-            job.action_id === 'refine'
-            && (reviewJobId === undefined || job.job_id === reviewJobId)
-            && job.active_design_id === lineage.projectId
-            && job.source_revision_id === lineage.sourceAssetId
-          )) ?? null
-        : null;
+      const jobs = await client.listStudioJobs(createdBy, 'reviewing');
+      if (jobs.error !== null) return {
+        data: null, error: mapError(jobs.error), status: jobs.status,
+      };
+      const matchingJob = [...jobs.data.jobs].reverse().find((job) => (
+        job.action_id === 'refine'
+        && (reviewJobId === undefined || job.job_id === reviewJobId)
+        && job.active_design_id === lineage.projectId
+        && job.source_revision_id === lineage.sourceAssetId
+      )) ?? null;
       const studioJob = matchingJob === null ? null : {
         jobId: matchingJob.job_id,
         owner: createdBy,
@@ -1367,16 +1384,23 @@ export function createStudioGateway(
         if (markupResult !== null && markupResult.error !== null) return {
           data: null, error: mapError(markupResult.error), status: markupResult.status,
         };
-        const latestMarkup = markupResult?.error === null
+        const matchingMarkup = markupResult?.error === null
           ? [...markupResult.data.candidates]
           .filter((item) => item.project_root_id === lineage.projectId
             && item.source_asset_id === lineage.sourceAssetId
             && item.design_version === lineage.sourceDesignVersion)
-          .filter((item) => matchingJob === null || item.studio_job_id === matchingJob.job_id)
+          : [];
+        const latestMarkup = matchingMarkup
+          .filter((item) => matchingJob !== null && item.studio_job_id === matchingJob.job_id)
           .sort((left, right) => (
             Date.parse(left.expires_at) - Date.parse(right.expires_at)
             || left.candidate_id.localeCompare(right.candidate_id)
-          )).at(-1) : undefined;
+          )).at(-1);
+        if (matchingMarkup.length > 0 && latestMarkup === undefined) return gatewayError(
+          'RESUME_REFINE_JOB_MISMATCH',
+          'This pending marked-region preview is not bound to its exact Activity request.',
+          'conflict', 409,
+        );
         if (latestMarkup !== undefined) {
           const candidate: PreviewCandidate = {
             id: latestMarkup.candidate_id,
@@ -1421,16 +1445,14 @@ export function createStudioGateway(
         if (latest === undefined) return { data: null, error: null, status: result.status };
         const catalogJobId = latest.candidate.studio_job_id ?? null;
         const catalogJob = catalogJobId === null ? null
-          : jobs?.error === null
-            ? jobs.data.jobs.find((job) => (
+          : jobs.data.jobs.find((job) => (
               job.job_id === catalogJobId
               && job.action_id === 'refine'
               && job.status === 'reviewing'
               && job.active_design_id === lineage.projectId
               && job.source_revision_id === lineage.sourceAssetId
-            )) ?? null
-            : null;
-        if (trackJobs && (catalogJobId === null || catalogJob === null)) {
+            )) ?? null;
+        if (catalogJobId === null || catalogJob === null) {
           return gatewayError(
             'RESUME_REFINE_JOB_MISMATCH',
             'This pending component preview is not bound to its exact Activity request.',
@@ -1481,11 +1503,18 @@ export function createStudioGateway(
         );
       }
       const latest = [...result.data.candidates]
-      .filter((item) => reviewJobId === undefined || item.studio_job_id === reviewJobId)
+      .filter((item) => matchingJob !== null
+        && item.studio_job_id === matchingJob.job_id
+        && (reviewJobId === undefined || item.studio_job_id === reviewJobId))
       .sort((left, right) => (
         Date.parse(left.expires_at) - Date.parse(right.expires_at)
         || left.candidate_id.localeCompare(right.candidate_id)
       )).at(-1);
+      if (latest === undefined && result.data.candidates.length > 0) return gatewayError(
+        'RESUME_REFINE_JOB_MISMATCH',
+        'This pending visual preview is not bound to its exact Activity request.',
+        'conflict', 409,
+      );
       if (latest === undefined) return { data: null, error: null, status: result.status };
       const candidate: PreviewCandidate = {
         id: latest.candidate_id,
@@ -2050,45 +2079,44 @@ export function createStudioGateway(
           result.status,
         );
       }
-      const durable = studioJob === null
-        ? null : await client.listStudioMarkupCandidates(lineage.projectId);
-      if (durable?.error !== null && durable !== null) return {
+      const durable = await client.listStudioMarkupCandidates(lineage.projectId);
+      if (durable.error !== null) return {
         data: null, error: mapError(durable.error), status: durable.status,
       };
-      const trusted = durable?.error === null ? durable.data.candidates.find((item) => (
+      const trusted = durable.data.candidates.find((item) => (
         item.candidate_id === warning.candidate_id
         && item.image_run_id === warning.run_id
         && item.studio_job_id === studioJob?.jobId
         && item.source_asset_id === lineage.sourceAssetId
         && item.design_version === lineage.sourceDesignVersion
-      )) : undefined;
-      if (studioJob !== null && trusted === undefined) {
+      ));
+      if (trusted === undefined) {
         await failJob(studioJob, 'DURABLE_MARKUP_PREVIEW_MISSING', 0.9);
         return gatewayError(
           'DURABLE_MARKUP_PREVIEW_MISSING',
           'The temporary refinement could not be reopened safely.',
-          'invalid_response', durable?.status ?? result.status,
+          'invalid_response', durable.status,
         );
       }
-      const candidateQa = trusted?.qa ?? warning.qa;
+      const candidateQa = trusted.qa;
       const candidateVerdict = candidateQa.verdict === 'fail'
         ? 'reject' as const : candidateQa.verdict;
       const candidate: PreviewCandidate = {
-        id: trusted?.candidate_id ?? warning.candidate_id,
-        jobId: trusted?.image_run_id ?? warning.run_id,
+        id: trusted.candidate_id,
+        jobId: trusted.image_run_id,
         sourceRevisionId: request.sourceAssetId,
-        assetUrl: trusted?.preview_url ?? warning.preview_url,
+        assetUrl: trusted.preview_url,
         verdict: candidateVerdict,
         status: 'pending_review',
         checks: qualityPreviewChecks(candidateQa),
         temporary: true,
-        expiresAt: trusted?.expires_at ?? null,
+        expiresAt: trusted.expires_at,
         decision: null,
         decidedAt: null,
         canonicalRevisionId: null,
       };
       markupCandidates.set(candidate.id, {
-        trusted: trusted ?? null,
+        trusted,
         runId: warning.run_id,
         candidateId: warning.candidate_id,
         preview: candidate,
@@ -2119,24 +2147,11 @@ export function createStudioGateway(
       if (stored.preview.verdict === 'reject') return gatewayError(
         'CANDIDATE_REJECTED', 'A rejected preview cannot become design history.', 'quality', 422,
       );
-      if (trackJobs && stored.trusted === null) {
-        await failJob(stored.studioJob, 'DURABLE_MARKUP_PREVIEW_MISSING', 0.9);
-        return gatewayError(
-          'DURABLE_MARKUP_PREVIEW_MISSING',
-          'The temporary refinement could not be reopened safely.',
-          'invalid_response', 409,
-        );
-      }
-      const result = stored.trusted === null
-        ? await client.acceptWarningCandidate(
-            stored.runId, stored.candidateId,
-            stored.lineage.sourceDesignVersion, request.createdBy,
-          )
-        : await client.acceptStudioMarkupCandidate(stored.trusted, {
-            expected_active_asset_id: stored.lineage.sourceAssetId,
-            expected_design_version: stored.lineage.sourceDesignVersion,
-            created_by: request.createdBy,
-          });
+      const result = await client.acceptStudioMarkupCandidate(stored.trusted, {
+        expected_active_asset_id: stored.lineage.sourceAssetId,
+        expected_design_version: stored.lineage.sourceDesignVersion,
+        created_by: request.createdBy,
+      });
       if (result.error !== null) return {
         data: null, error: mapError(result.error), status: result.status,
       };
@@ -2167,23 +2182,11 @@ export function createStudioGateway(
       if (stored.preview.status !== 'pending_review') return gatewayError(
         'CANDIDATE_NOT_REVIEWABLE', 'This preview already has a final decision.', 'conflict', 409,
       );
-      if (trackJobs && stored.trusted === null) {
-        await failJob(stored.studioJob, 'DURABLE_MARKUP_PREVIEW_MISSING', 0.9);
-        return gatewayError(
-          'DURABLE_MARKUP_PREVIEW_MISSING',
-          'The temporary refinement could not be reopened safely.',
-          'invalid_response', 409,
-        );
-      }
-      const result = stored.trusted === null
-        ? await client.discardWarningCandidate(
-            stored.runId, stored.candidateId, request.createdBy,
-          )
-        : await client.discardStudioMarkupCandidate(stored.trusted, {
-            expected_active_asset_id: stored.lineage.sourceAssetId,
-            expected_design_version: stored.lineage.sourceDesignVersion,
-            created_by: request.createdBy,
-          });
+      const result = await client.discardStudioMarkupCandidate(stored.trusted, {
+        expected_active_asset_id: stored.lineage.sourceAssetId,
+        expected_design_version: stored.lineage.sourceDesignVersion,
+        created_by: request.createdBy,
+      });
       if (result.error !== null) return {
         data: null, error: mapError(result.error), status: result.status,
       };
@@ -2198,11 +2201,6 @@ export function createStudioGateway(
       const stored = markupCandidates.get(request.candidateId);
       if (stored === undefined) return gatewayError(
         'CANDIDATE_NOT_FOUND', 'This preview is no longer available.', 'validation', 404,
-      );
-      if (stored.trusted === null) return gatewayError(
-        'VARIATION_REQUIRES_DURABLE_PREVIEW',
-        'Reopen this exact refinement from Activity before saving it as a variation.',
-        'unavailable', 409,
       );
       const label = request.label.trim();
       if (label.length === 0) return gatewayError(
@@ -2479,18 +2477,19 @@ export function createStudioGateway(
           || (reviewJobId !== undefined && candidate.studio_job_id !== reviewJobId)
           || !/^[0-9a-f]{64}$/.test(candidate.source_sha256)
           || preSpecPresentationCandidates.has(candidate.candidate_id)) continue;
+        const reviewJob = await requireReviewJob(
+          candidate.studio_job_id, createdBy, 'present', lineage, 1,
+        );
+        if (reviewJob.error !== null) return {
+          data: null, error: reviewJob.error, status: reviewJob.status,
+        };
         preSpecPresentationCandidates.set(candidate.candidate_id, {
           runId: candidate.image_run_id,
           candidateId: candidate.candidate_id,
           sourceHash: candidate.source_sha256,
           capability: candidate.capability,
           lineage,
-          studioJob: candidate.studio_job_id === null ? null : {
-            jobId: candidate.studio_job_id,
-            owner: createdBy,
-            actionId: 'present',
-            status: 'reviewing',
-          },
+          studioJob: reviewJob.data,
           status: 'pending_review',
         });
         resumed.push({

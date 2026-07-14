@@ -234,10 +234,15 @@ export function StudioPresentWorkspace({
   const requestLabel = destination === 'marketing'
     ? `Generate ${outputCount} presentation preview${outputCount === 1 ? '' : 's'}`
     : clientFormat === 'beauty' ? 'Create client beauty render' : 'Create client product photo';
+  const hasExactRevision = lineage !== null && 'sourceDesignVersion' in lineage;
   const exactRevision = useMemo(() => lineage === null ? null
     : 'sourceDesignVersion' in lineage
       ? `Saved source · Version ${lineage.sourceDesignVersion}`
       : 'Selected visual direction · specification not confirmed', [lineage]);
+  const sourceAccessibilityLabel = hasExactRevision
+    ? 'Exact source revision' : 'Selected visual source';
+  const sourceWaitLabel = hasExactRevision
+    ? 'the exact source revision' : 'the selected visual source';
   const sourceImageUrl = lineage === null || typeof gateway.assetImageUrl !== 'function'
     ? null : gateway.assetImageUrl(lineage.sourceAssetId);
   const visualReview = useVisualReviewReadiness(`${lineageKey}:${sourceImageUrl ?? 'missing'}`);
@@ -475,17 +480,22 @@ export function StudioPresentWorkspace({
   if (lineage === null) return (
     <View style={styles.empty}>
       <Text style={styles.title}>Choose a saved direction first</Text>
-      <Text style={styles.body}>Present always starts from one saved revision.</Text>
+      <Text style={styles.body}>Present always starts from one saved design source.</Text>
     </View>
   );
 
   return (
     <ScrollView contentContainerStyle={styles.workspace}>
       <Text style={styles.eyebrow}>NEXT STEP</Text>
-      <Text style={styles.title}>What would you like to do with this exact design?</Text>
-      <Text style={styles.body}>It is already preserved in Collections. Return to it there, or create separate client and marketing imagery without changing the design.</Text>
+      <Text style={styles.title}>{hasExactRevision
+        ? 'What would you like to do with this exact design?'
+        : 'What would you like to do with this saved visual direction?'}</Text>
+      <Text style={styles.body}>{hasExactRevision
+        ? 'It is already preserved in Collections. Return to it there, or create separate client and marketing imagery without changing the design.'
+        : 'This selected visual is already preserved in Collections. Return to it there, or create separate client and marketing imagery without claiming confirmed design facts.'}</Text>
       <View style={styles.lineageCard}>
-        <Text style={styles.lineageLabel}>Exact source</Text>
+        <Text style={styles.lineageLabel}>{hasExactRevision
+          ? 'Exact revision source' : 'Selected visual source'}</Text>
         <Text style={styles.lineageValue}>{exactRevision}</Text>
       </View>
       {!reviewSourceIsActive && <Notice kind="info" text="This result was created from an earlier revision. Saving or generating from it is unavailable. You can discard the pending result without changing or charging the current design." />}
@@ -609,7 +619,8 @@ export function StudioPresentWorkspace({
           {sourceImageUrl === null && (
             <Notice
               kind="error"
-              text="The exact source cannot be displayed, so these presentations cannot be saved. Reopen the design and compare again."
+              text={`${hasExactRevision
+                ? 'The exact source revision' : 'The selected visual source'} cannot be displayed, so these presentations cannot be saved. Reopen the design and compare again.`}
             />
           )}
           <View style={styles.candidateGrid}>
@@ -617,7 +628,7 @@ export function StudioPresentWorkspace({
               {card.imageUrl !== null && card.status === 'review' && sourceImageUrl !== null && (
                 <StudioComparisonInspector
                   before={{
-                    accessibilityLabel: 'Exact source revision',
+                    accessibilityLabel: sourceAccessibilityLabel,
                     label: exactRevision ?? 'Selected source',
                     roleLabel: 'Source',
                     source: { uri: sourceImageUrl },
@@ -635,7 +646,7 @@ export function StudioPresentWorkspace({
                     onError: () => visualReview.markFailed(cardVisualKey(card)),
                   }}
                   compactHeight={300}
-                  inspectionTitle={`Compare the selected design with ${card.title}`}
+                  inspectionTitle={`Compare ${sourceWaitLabel} with ${card.title}`}
                   testID={`presentation-comparison-${card.id}`}
                 />
               )}
@@ -663,7 +674,7 @@ export function StudioPresentWorkspace({
                     <Text style={styles.reviewReadiness}>
                       {visualReview.anyFailed([sourceVisualKey, cardVisualKey(card)])
                         ? 'This comparison could not be displayed. Generate it again or discard it.'
-                        : 'Wait for the exact source and this candidate to finish loading before saving.'}
+                        : `Wait for ${sourceWaitLabel} and this candidate to finish loading before saving.`}
                     </Text>
                   )}
                   <View style={styles.decisionRow}>

@@ -30,7 +30,7 @@ const atomicRollbackActor = 'usr_atomic_rollback_acceptance';
 const FAILED_QA_FIXTURE_PROMPT = '__FACETTA_ACCEPTANCE_FORCE_QA_FAIL__';
 const STRUCTURAL_PRE_SPEC_PROMPT = '__FACETTA_ACCEPTANCE_STRUCTURAL_PRE_SPEC_RING__';
 const trustedClient = createTrustedApiClient({ baseUrl });
-const gateway = createStudioGateway(trustedClient, { trackJobs: true });
+const gateway = createStudioGateway(trustedClient);
 
 const SOURCE_PNG = 'iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAIAAACQkWg2AAAAIklEQVR4nGPMq2hiIAUwkaSaYVQDcYCJSHVwMKqBGECyBgB/6AGI9C+U8AAAAABJRU5ErkJggg==';
 

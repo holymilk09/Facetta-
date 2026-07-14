@@ -132,7 +132,7 @@ test('job-centric review restores immutable stale source with fail-closed decisi
   const gateway = createStudioGateway({
     getStudioJob: async () => ok(reviewingJob),
     getProject: async () => ok(staleProject),
-  } as any, { trackJobs: true });
+  } as any);
 
   const resumed = await gateway.resumeReviewJob(reviewingJob.job_id, 'designer_1');
   assert.equal(resumed.error, null);
@@ -143,13 +143,17 @@ test('job-centric review restores immutable stale source with fail-closed decisi
   });
 });
 
-test('tracked prompt and drawing creation charge only after direction acceptance', async () => {
+test('durable jobs are the default and charge only after direction acceptance', async () => {
   const jobs = tracking();
   let drawingCalls = 0;
+  let promptJobId: string | undefined;
   const commits: { projectId: string; studioJobId?: string }[] = [];
   const gateway = createStudioGateway({
     ...jobs.client,
-    createProjectFromPrompt: async () => ok(unselectedProject(2), 201),
+    createProjectFromPrompt: async (request: { studio_job_id?: string }) => {
+      promptJobId = request.studio_job_id;
+      return ok(unselectedProject(2), 201);
+    },
     createProjectFromDrawing: async () => { drawingCalls += 1; return ok(unselectedProject(2), 201); },
     commitCreativeDirections: async (projectId: string, request: { studio_job_id?: string }) => {
       commits.push({ projectId, studioJobId: request.studio_job_id });
@@ -161,7 +165,7 @@ test('tracked prompt and drawing creation charge only after direction acceptance
         retained_variations: [],
       });
     },
-  } as any, { trackJobs: true });
+  } as any);
 
   const created = await gateway.createFromPrompt({
     prompt: 'Sapphire orbit', variation_count: 2, owner: 'designer_1', title: 'Orbit',
@@ -175,6 +179,7 @@ test('tracked prompt and drawing creation charge only after direction acceptance
   assert.deepEqual(jobs.transitions.slice(0, 2).map((call) => call.request.status), [
     'running', 'reviewing',
   ]);
+  assert.equal(promptJobId, 'studio_job_1');
   assert.equal(jobs.transitions[1]?.request.active_design_id, 'project_1');
   assert.equal(jobs.transitions.some((call) => call.request.completed_outputs !== undefined), false);
 
@@ -197,6 +202,117 @@ test('tracked prompt and drawing creation charge only after direction acceptance
   assert.equal(jobs.transitions.at(-1)?.request.status, 'reviewing');
 });
 
+test('job creation failure is safe and never invokes the provider mutation', async () => {
+  let providerCalls = 0;
+  const gateway = createStudioGateway({
+    createStudioJob: async () => { throw new Error('private transport detail'); },
+    createProjectFromPrompt: async () => {
+      providerCalls += 1;
+      return ok(unselectedProject(1), 201);
+    },
+  } as any);
+
+  const result = await gateway.createFromPrompt({
+    prompt: 'Orbit', owner: 'designer_1', title: 'Orbit',
+  });
+
+  assert.equal(result.error?.code, 'STUDIO_ACTIVITY_UNAVAILABLE');
+  assert.equal(result.error?.message,
+    'Studio Activity could not be updated. Try again before starting generation.');
+  assert.equal(result.error?.message.includes('private transport detail'), false);
+  assert.equal(providerCalls, 0);
+});
+
+test('resume Refine propagates Activity lookup failure before reading saved candidates', async () => {
+  let candidateReads = 0;
+  const gateway = createStudioGateway({
+    listStudioJobs: async () => ({
+      data: null,
+      error: {
+        code: 'ACTIVITY_OFFLINE', message: 'Activity is unavailable.',
+        category: 'server' as const, status: 503, retryable: true,
+      },
+      status: 503,
+    }),
+    listCatalogPreviews: async () => {
+      candidateReads += 1;
+      return ok({ candidates: [] });
+    },
+  } as any);
+
+  const result = await gateway.resumeRefine({
+    projectId: 'project_1', sourceAssetId: 'candidate_1', sourceDesignVersion: 1,
+  }, 'designer_1');
+
+  assert.equal(result.error?.code, 'ACTIVITY_OFFLINE');
+  assert.equal(candidateReads, 0);
+});
+
+test('resume Refine rejects a jobless saved visual before it becomes reviewable', async () => {
+  const gateway = createStudioGateway({
+    listStudioJobs: async () => ok({ jobs: [] }),
+    listVisualPreviews: async () => ok({ candidates: [{
+      candidate_id: 'candidate_jobless_visual', image_run_id: 'run_jobless_visual',
+      source_asset_id: 'candidate_1', preview_url: 'https://test/jobless-visual.png',
+      save_as_variation_url: '/save-as-variation', verdict: 'pass' as const,
+      requested_change: 'Warm the gold', scope: 'appearance' as const,
+      qa: quality, expires_at: '2099-01-01T00:00:00Z', studio_job_id: null,
+    }] }),
+  } as any);
+
+  const result = await gateway.resumeRefine({
+    projectId: 'project_1', sourceAssetId: 'candidate_1',
+  }, 'designer_1');
+
+  assert.equal(result.data, null);
+  assert.equal(result.error?.code, 'RESUME_REFINE_JOB_MISMATCH');
+});
+
+test('resume Refine rejects a jobless saved markup before it becomes reviewable', async () => {
+  const gateway = createStudioGateway({
+    listStudioJobs: async () => ok({ jobs: [] }),
+    listStudioMarkupCandidates: async () => ok({ candidates: [{
+      candidate_id: 'candidate_jobless_markup', image_run_id: 'run_jobless_markup',
+      project_root_id: 'project_1', source_asset_id: 'candidate_1',
+      expected_active_asset_id: 'candidate_1', design_version: 1,
+      operation: 'LOCAL_EDIT', requested_change: 'Soften the halo',
+      region_description: 'halo', qa: quality, status: 'reviewing' as const,
+      studio_job_id: null, expires_at: '2099-01-01T00:00:00Z',
+      preview_url: 'https://test/jobless-markup.png', accept_url: '/accept',
+      discard_url: '/discard', save_as_variation_url: '/save-as-variation',
+    }] }),
+  } as any);
+
+  const result = await gateway.resumeRefine({
+    projectId: 'project_1', sourceAssetId: 'candidate_1', sourceDesignVersion: 1,
+  }, 'designer_1');
+
+  assert.equal(result.data, null);
+  assert.equal(result.error?.code, 'RESUME_REFINE_JOB_MISMATCH');
+});
+
+test('resume Present rejects a jobless pre-spec candidate before it becomes reviewable', async () => {
+  const gateway = createStudioGateway({
+    listPreSpecPresentations: async () => ok({ candidates: [{
+      candidate_id: 'candidate_jobless_present', image_run_id: 'run_jobless_present',
+      project_id: 'project_visual', source_asset_id: 'asset_visual',
+      source_sha256: 'a'.repeat(64), design_version: null,
+      destination: 'client' as const, preview_url: 'https://test/jobless-present.png',
+      studio_job_id: null, capability: 'CLIENT_PRODUCT_PHOTO' as const,
+      preset: 'catalog_white' as const, framing: 'square' as const,
+      qa: quality, status: 'reviewing' as const, accepted_asset_id: null,
+      expires_at: '2099-01-01T00:00:00Z',
+    }] }),
+  } as any);
+
+  const result = await gateway.resumePreSpecPresentations({
+    projectId: 'project_visual', sourceAssetId: 'asset_visual',
+  }, 'designer_1');
+
+  assert.equal(result.data, null);
+  assert.equal(result.error?.code, 'STUDIO_REVIEW_JOB_MISSING');
+});
+
 test('a restarted gateway settles the durable reviewing Create job supplied by Activity', async () => {
   const commits: { studioJobId?: string }[] = [];
   const gateway = createStudioGateway({
@@ -212,7 +328,7 @@ test('a restarted gateway settles the durable reviewing Create job supplied by A
         retained_variations: [],
       });
     },
-  } as any, { trackJobs: true });
+  } as any);
 
   const result = await gateway.completeCreativeDirectionReview({
     projectId: 'project_1', selectedCandidateId: 'direction_2', retained: [],
@@ -243,7 +359,7 @@ test('atomic Create review forwards the same-session durable job exactly once', 
         }],
       }, 200);
     },
-  } as any, { trackJobs: true });
+  } as any);
 
   await gateway.createFromPrompt({
     prompt: 'Sapphire orbit', variation_count: 3, owner: 'designer_1', title: 'Orbit',
@@ -266,7 +382,7 @@ test('tracked generation failures close the job without charging output', async 
   const gateway = createStudioGateway({
     ...jobs.client,
     createProjectFromPrompt: async () => { throw new Error('generation offline'); },
-  } as any, { trackJobs: true });
+  } as any);
 
   const result = await gateway.createFromPrompt({
     prompt: 'Orbit', owner: 'designer_1', title: 'Orbit',
@@ -302,15 +418,7 @@ test('tracked markup refuses compatibility-only candidates before review', async
       }, 201);
     },
     listStudioMarkupCandidates: async () => ok({ candidates: [] }),
-    acceptWarningCandidate: async () => {
-      genericDecisions += 1;
-      return ok(project(1));
-    },
-    discardWarningCandidate: async () => {
-      genericDecisions += 1;
-      return ok({ status: 'discarded' });
-    },
-  } as any, { trackJobs: true });
+  } as any);
 
   const result = await gateway.previewMarkupRefine({
     projectId: 'project_1', sourceAssetId: 'candidate_1', sourceDesignVersion: 1,
@@ -359,7 +467,7 @@ test('catalog preview keeps image-run and Studio-job identities separate through
       status: 'accepted', asset_id: 'asset_2', design_version: 2,
       image_run_id: 'image_run_catalog', spec_change: [], project: next,
     }, 201),
-  } as any, { trackJobs: true });
+  } as any);
 
   const preview = await gateway.previewCatalogRefine({
     projectId: 'project_1', sourceAssetId: 'candidate_1', sourceDesignVersion: 1,
@@ -408,7 +516,7 @@ test('saving a catalog preview variation resolves Activity once with one complet
       design_id: 'design_variation', design_version: 1, project: sibling,
     }, 201),
     getProject: async () => ok(source),
-  } as any, { trackJobs: true });
+  } as any);
 
   await gateway.previewCatalogRefine({
     projectId: 'project_1', sourceAssetId: 'candidate_1', sourceDesignVersion: 1,
@@ -466,7 +574,7 @@ test('a restarted gateway resumes catalog review by its durable exact Refine job
       publicTerminalTransitions += 1;
       throw new Error('catalog decisions are server-settled');
     },
-  } as any, { trackJobs: true });
+  } as any);
 
   const resumed = await gateway.resumeRefine({
     projectId: 'project_1', sourceAssetId: 'candidate_1', sourceDesignVersion: 1,
@@ -502,7 +610,7 @@ test('Views binds the canonical preview request to its durable job before atomic
       status: 'discarded' as const, project_id: 'project_1', source_asset_id: 'candidate_1',
       design_version: 1, candidate_id: 'candidate_view',
     }),
-  } as any, { trackJobs: true });
+  } as any);
 
   await gateway.previewLineArtView({
     projectId: 'project_1', sourceAssetId: 'candidate_1', sourceDesignVersion: 1,
@@ -556,7 +664,7 @@ test('Present rejects generation-time acceptance and keeps review-only outputs u
         maximum_provider_attempts: 3, actual_attempts: 1, candidates: [], failures: [],
       }, 200);
     },
-  } as any, { trackJobs: true });
+  } as any);
 
   const bypassed = await gateway.createBeautyPresentation('project_1', {
     created_by: 'designer_1', expected_asset_id: 'candidate_1',
@@ -629,7 +737,7 @@ test('marketing presentation decisions resolve independently and charge only sav
         source_design_version: 1, candidate_id: candidateId,
       });
     },
-  } as any, { trackJobs: true });
+  } as any);
 
   const generated = await gateway.createMarketingPresentation('project_1', {
     created_by: 'designer_1', expected_asset_id: 'candidate_1', expected_design_version: 1,
@@ -720,7 +828,7 @@ test('pre-spec presentation jobs charge only saved derived outputs', async () =>
       source_asset_id: 'candidate_1', source_sha256: sourceHash,
       design_version: null, candidate_id: candidateId,
     }),
-  } as any, { trackJobs: true });
+  } as any);
 
   await gateway.createPreSpecPresentation('project_1', {
     created_by: 'designer_1', expected_active_asset_id: 'candidate_1',
@@ -772,7 +880,7 @@ test('presentation decisions fail closed if the selected revision changes before
     }, 202),
     getProject: async () => ok(stale),
     acceptPresentationCandidate: async () => { acceptCalls += 1; return ok({}); },
-  } as any, { trackJobs: true });
+  } as any);
 
   await gateway.createProductPresentation('project_1', {
     created_by: 'designer_1', expected_asset_id: 'candidate_1', expected_design_version: 1,
@@ -806,7 +914,7 @@ test('discarding the only exact presentation delegates atomic zero-charge settle
       status: 'discarded' as const, project_id: 'project_1', source_asset_id: 'candidate_1',
       source_design_version: 1, candidate_id: candidateId,
     }),
-  } as any, { trackJobs: true });
+  } as any);
 
   await gateway.createProductPresentation('project_1', {
     created_by: 'designer_1', expected_asset_id: 'candidate_1', expected_design_version: 1,
@@ -845,7 +953,7 @@ test('exact presentation decision errors leave the durable reviewing job untouch
         status: 409, retryable: false },
       status: 409,
     }),
-  } as any, { trackJobs: true });
+  } as any);
   await gateway.createProductPresentation('project_1', {
     created_by: 'designer_1', expected_asset_id: 'candidate_1', expected_design_version: 1,
     preset: 'catalog_white', framing: 'square', presentation_only: true,

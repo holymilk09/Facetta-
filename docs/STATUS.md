@@ -5,6 +5,40 @@ Read `CLAUDE.md` (constitution — binding), `README.md` (endpoints/layout),
 `docs/DATA_WANTED.md` (open research asks). This file is the delta: what is
 DONE beyond the original TASKS.md build order, and what is next.
 
+## 2026-07-14 canonical Studio Activity and optional Factory-review checkpoint
+
+Durable Studio Activity is now the only generation path through the Studio
+gateway. Callers can no longer disable job creation, and a provider mutation
+does not start if its Activity record cannot be created. Refine and Present
+resume only visual, component, marked-region, and presentation candidates that
+remain bound to a matching reviewing job and exact source lineage. Activity
+lookup failures stop candidate reads, jobless historical previews fail closed,
+and designer-facing tracking errors never expose transport diagnostics.
+
+Factory now distinguishes eligibility to enter the optional readiness review
+from readiness to generate a review pack. An entitled, unblocked exact ring can
+open the readiness workspace to complete facts and pin the revision; pack
+generation still requires the completed checklist, `factory_ready`, and the
+same exact pinned asset and design version. Factory remains absent from the
+mandatory Studio journey, and non-ring projects remain excluded from the first
+trusted Factory release.
+
+Present copy now describes a pre-spec source as a saved visual direction rather
+than claiming an immutable design revision. Exact confirmed designs retain the
+stronger exact-revision language. Factory-pack authority wording likewise
+describes generated geometry as schematic factory-review material rather than
+production authority.
+
+Local validation is green: 1,855 backend tests; all 36 mobile Jest suites (319
+tests); 83 Studio contract tests; TypeScript; Expo web export; diff hygiene;
+and the complete ten-project production TypeScript-client -> HTTP -> FastAPI
+acceptance run. The acceptance run reopened Library ten times, saved five
+Client and five Marketing derivatives, used Factory zero times, and left
+failed QA with zero canonical projects, revisions, accepted outputs, or
+charges. The signed live 144-image corpus, independent designer/GIA review,
+founder approval, six-role authority enrollment, and live two-principal
+HTTPS/PostgreSQL staging evidence remain unmet external gates.
+
 ## 2026-07-14 retained release evidence and fresh-run checkpoint
 
 The frozen corpus and external-beta release chain now treats every named output

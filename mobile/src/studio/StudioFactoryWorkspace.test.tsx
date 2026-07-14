@@ -118,7 +118,7 @@ describe('StudioFactoryWorkspace', () => {
     expect(screen.queryByText(/credit record are unchanged/i)).toBeNull();
   });
 
-  test('creates and completes an exact-fact checklist before revealing preparation', async () => {
+  test('moves an unready exact ring through checklist, pinning, and pack preparation', async () => {
     const pendingChecklist = {
       ...approvedChecklist,
       answers: {}, outstanding: ['identity'], approved_count: 0,
@@ -129,10 +129,7 @@ describe('StudioFactoryWorkspace', () => {
       pinned_revision: null,
       approval: null,
       factory_ready: false,
-      factory_blockers: [{
-        code: 'approval_required', subject_id: 'asset_7',
-        detail: 'Confirm the exact design facts.', required_resolution: 'Complete the checklist.',
-      }],
+      factory_blockers: [],
     };
     const reviewingProject = { ...blockedProject, approval: pendingChecklist };
     const getProject = jest.fn()
@@ -141,8 +138,12 @@ describe('StudioFactoryWorkspace', () => {
       .mockResolvedValueOnce({ data: readyProject, error: null, status: 200 });
     const createChecklist = jest.fn(async () => ({ data: pendingChecklist, error: null, status: 201 }));
     const respondChecklist = jest.fn(async () => ({ data: approvedChecklist, error: null, status: 201 }));
-    const createStudioJob = jest.fn();
-    const prepareFactoryPack = jest.fn();
+    const createStudioJob = jest.fn(async () => ({
+      data: job('queued'), error: null, status: 201,
+    }));
+    const prepareFactoryPack = jest.fn(async () => ({
+      data: manifest, error: null, status: 200,
+    }));
     const onProjectUpdated = jest.fn();
     await render(<StudioFactoryWorkspace api={{
       getProject, createChecklist, respondChecklist,
@@ -152,7 +153,6 @@ describe('StudioFactoryWorkspace', () => {
 
     expect(await screen.findByText('Start exact-fact checklist')).toBeTruthy();
     expect(screen.queryByText('Prepare factory review material')).toBeNull();
-    expect(screen.getByText('• Confirm the exact design facts.')).toBeTruthy();
     expect(createStudioJob).not.toHaveBeenCalled();
     expect(prepareFactoryPack).not.toHaveBeenCalled();
 
@@ -173,6 +173,17 @@ describe('StudioFactoryWorkspace', () => {
     expect(onProjectUpdated).toHaveBeenLastCalledWith(readyProject);
     expect(createStudioJob).not.toHaveBeenCalled();
     expect(prepareFactoryPack).not.toHaveBeenCalled();
+
+    await act(async () => {
+      fireEvent.press(screen.getByText('Prepare factory review material'));
+    });
+    expect(await screen.findByText('Review material prepared')).toBeTruthy();
+    expect(createStudioJob).toHaveBeenCalledWith(expect.objectContaining({
+      active_design_id: 'project_1', source_revision_id: 'asset_7',
+    }));
+    expect(prepareFactoryPack).toHaveBeenCalledWith('project_1', {
+      studio_job_id: 'job_1', owner: 'designer',
+    });
   });
 
   test('authenticated delivery fetches same-origin bytes before web or native delivery', async () => {

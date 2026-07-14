@@ -1,6 +1,6 @@
 """Deterministic factory-pack assembly for one approved project revision.
 
-Only validated specification data creates factory geometry and lettering.
+Only validated specification data creates schematic factory-review geometry and lettering.
 The approved raster is included as a visual reference, never represented as
 dimensional truth.
 """

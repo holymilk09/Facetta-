@@ -215,7 +215,6 @@ export default function App() {
         requireAccessToken: true,
         onAuthenticationFailure: expireAuthenticatedSession,
       },
-      { trackJobs: true },
     ),
     [apiUrl, expireAuthenticatedSession, session],
   );
@@ -286,11 +285,7 @@ export default function App() {
     && studioView === 'action'
     && selectedActionId === 'create';
   const factoryEligibilityCandidate = useMemo<ExactStudioLineage | null>(() => {
-    if (exactStudioLineage === null || studioProject?.factory_ready !== true) return null;
-    const pinned = studioProject.pinned_revision;
-    if (pinned === null
-      || pinned.asset_id !== exactStudioLineage.sourceAssetId
-      || pinned.design_version !== exactStudioLineage.sourceDesignVersion) return null;
+    if (exactStudioLineage === null || studioProject?.spec?.jewelry_type !== 'ring') return null;
     return exactStudioLineage;
   }, [exactStudioLineage, studioProject]);
   const factoryEligibilityCandidateKey = factoryEligibilityCandidate === null
@@ -302,17 +297,20 @@ export default function App() {
     if (factoryEligibilityCandidate === null
       || factoryEligibilityCandidateKey === null
       || sessionAccessToken(session) === null) return () => { active = false; };
-    void studioGateway.getFactoryEligibility(factoryEligibilityCandidate.projectId).then((result) => {
+    void studioGateway.getFactoryEligibility(
+      factoryEligibilityCandidate.projectId, studioProject ?? undefined,
+    ).then((result) => {
       if (!active || result.error !== null) return;
       const eligibility = result.data;
-      if (eligibility.eligible
-        && eligibility.pinnedAssetId === factoryEligibilityCandidate.sourceAssetId
+      if (eligibility.reviewEligible
+        && eligibility.activeAssetId === factoryEligibilityCandidate.sourceAssetId
         && eligibility.designVersion === factoryEligibilityCandidate.sourceDesignVersion) {
         setFactoryEligibleRevisionKey(factoryEligibilityCandidateKey);
       }
     });
     return () => { active = false; };
-  }, [factoryEligibilityCandidate, factoryEligibilityCandidateKey, session, studioGateway]);
+  }, [factoryEligibilityCandidate, factoryEligibilityCandidateKey, session, studioGateway,
+    studioProject]);
   const actionContext = useMemo<StudioActionContext>(() => ({
     activeDesignId,
     activeRevisionId: studioProject?.active_asset_id ?? selectedCreativeAssetId,

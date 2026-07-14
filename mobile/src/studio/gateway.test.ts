@@ -6,6 +6,7 @@ import type {
   ApiErrorCategory, ApiResult, CatalogPreviewResult, ProjectDetail, StudioJobRecord,
 } from '../trusted/types';
 import { createStudioGateway } from './gateway';
+import { createStudioJobTestHarness } from './studioJobTestHarness';
 
 const ok = <T>(data: T, status = 200): ApiResult<T> => ({ data, error: null, status });
 const unavailable = <T>(): ApiResult<T> => ({
@@ -77,6 +78,7 @@ const project = (assetId = 'asset_1', designVersion = 1): ProjectDetail => {
 type GatewayClient = Parameters<typeof createStudioGateway>[0];
 
 function fakeClient(overrides: Partial<GatewayClient> = {}): GatewayClient {
+  const jobs = createStudioJobTestHarness('studio_job_catalog');
   const unsupported = async () => {
     throw new Error('Unexpected client method');
   };
@@ -87,15 +89,14 @@ function fakeClient(overrides: Partial<GatewayClient> = {}): GatewayClient {
     acceptCatalogPreview: unsupported,
     discardCatalogPreview: unsupported,
     applyMarkup: unsupported,
-    discardWarningCandidate: unsupported,
     createLineArt: unsupported,
     createStudioBeautyRender: unsupported,
     createStudioProductPhoto: unsupported,
     createMarketingPack: unsupported,
-    acceptWarningCandidate: unsupported,
     recordImageRunFeedback: unsupported,
     getProject: unsupported,
     getFactoryPack: unsupported,
+    ...jobs.client,
     getStudioCapabilities: async () => ok({
       factory_review: { enabled: false, scope: 'principal' as const },
       workspace_entitlements_available: false as const,
@@ -164,6 +165,7 @@ const catalogPreview = (): CatalogPreviewResult => ({
     discard_url: 'https://example.test/discard',
     save_as_variation_url: 'https://example.test/save-as-variation',
     verdict: 'pass',
+    studio_job_id: 'studio_job_catalog',
     expires_in_seconds: 600,
   },
 });
@@ -366,7 +368,7 @@ test('instant catalog refine creates a temporary candidate without a Studio job'
         candidate: { ...catalogPreview().candidate, studio_job_id: null },
       }, 201);
     },
-  }), { trackJobs: true });
+  }));
 
   const preview = await gateway.previewCatalogRefine({
     projectId: 'project_1', sourceAssetId: 'asset_1', sourceDesignVersion: 1,
@@ -414,7 +416,7 @@ test('only deployment skew may fall back from instant to a tracked provider prev
         },
       }, 201);
     },
-  }), { trackJobs: true });
+  }));
 
   const preview = await gateway.previewCatalogRefine({
     projectId: 'project_1', sourceAssetId: 'asset_1', sourceDesignVersion: 1,
@@ -469,7 +471,7 @@ test('instant safety, lineage, authorization, and integrity errors never start p
           status: item.status,
         };
       },
-    }), { trackJobs: true });
+    }));
 
     const result = await gateway.previewCatalogRefine({
       projectId: 'project_1', sourceAssetId: 'asset_1', sourceDesignVersion: 1,
@@ -492,6 +494,7 @@ test('resumes the latest exact-lineage catalog preview and hydrates Apply', asyn
         accept_url: 'https://example.test/resume/accept',
         discard_url: 'https://example.test/resume', verdict: 'pass', expires_in_seconds: 3600,
         save_as_variation_url: 'https://example.test/resume/save-as-variation',
+        studio_job_id: 'studio_job_catalog',
       },
       source_asset_id: 'asset_1', component_path: 'metal.color', option_id: 'rose',
       requested_change: 'Apply rose gold', next_spec: {}, spec_change: [],
@@ -503,6 +506,7 @@ test('resumes the latest exact-lineage catalog preview and hydrates Apply', asyn
       routing: { attempt_count: 1, used_retry: false, used_fallback: false, cache_hit: false, run_id: 'run_resume' },
       expires_at: '2099-01-01T00:00:00Z',
     }] }),
+    listStudioJobs: async () => ok({ jobs: [catalogStudioJob('reviewing')] }),
     acceptCatalogPreview: async (candidate) => {
       acceptedCandidate = candidate.candidate_id;
       return ok({
@@ -626,6 +630,19 @@ test('Factory remains disabled until server-entitled and backend-eligible', asyn
   assert.equal(eligibility.data?.eligible, false);
   assert.equal(projectReads, 0);
 
+  const reviewable = createStudioGateway(fakeClient({
+    getStudioCapabilities: async () => ok({
+      factory_review: { enabled: true, scope: 'principal' as const },
+      workspace_entitlements_available: false as const,
+    }),
+    getProject: async () => ok(project()),
+  }));
+  const reviewableResult = await reviewable.getFactoryEligibility('project_1');
+  assert.equal(reviewableResult.data?.reviewEligible, true);
+  assert.equal(reviewableResult.data?.packReady, false);
+  assert.equal(reviewableResult.data?.activeAssetId, 'asset_1');
+  assert.equal(reviewableResult.data?.pinnedAssetId, null);
+
   const eligibleProject = project();
   eligibleProject.state = 'factory_ready';
   eligibleProject.factory_ready = true;
@@ -639,6 +656,8 @@ test('Factory remains disabled until server-entitled and backend-eligible', asyn
   }));
   const enabledResult = await enabled.getFactoryEligibility('project_1');
   assert.equal(enabledResult.data?.eligible, true);
+  assert.equal(enabledResult.data?.reviewEligible, true);
+  assert.equal(enabledResult.data?.packReady, true);
   assert.equal(enabledResult.data?.pinnedAssetId, 'asset_1');
 });
 
@@ -835,6 +854,7 @@ test('Create forwards prompt advisory references through the typed gateway seam'
       image_base64: 'YnJhbmQ=',
       media_type: 'image/png',
     }],
+    studio_job_id: 'studio_job_catalog',
   });
 });
 
@@ -903,7 +923,7 @@ test('Views fail closed when fidelity checks reject a candidate', async () => {
         operation: 'VISUAL_ONLY_EDIT' as const, requested_change: 'Side line art', asset_capability: 'LINE_ART',
       }, next: 'Do not accept',
     }, 202),
-    acceptWarningCandidate: async () => { accepted = true; return ok(project(), 201); },
+    acceptStudioViewCandidate: async () => { accepted = true; return ok({} as never, 201); },
   }));
   await gateway.previewLineArtView({
     projectId: 'project_1', sourceAssetId: 'asset_1', sourceDesignVersion: 1,

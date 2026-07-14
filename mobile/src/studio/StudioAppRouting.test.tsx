@@ -959,7 +959,7 @@ test('Collections sends the exact active revision to Present', async () => {
   expect(await view.findByText('Present route reached for asset_1')).toBeTruthy();
 });
 
-test('Collections keeps Factory absent before authoritative pack eligibility', async () => {
+test('Collections opens optional Factory readiness before the review pack is ready', async () => {
   authenticate();
   const view = await render(<App />);
 
@@ -971,7 +971,9 @@ test('Collections keeps Factory absent before authoritative pack eligibility', a
   expect(await view.findByText('Refine route reached')).toBeTruthy();
 
   fireEvent.press(view.getByRole('tab', { name: 'Collections' }));
-  expect(view.queryByText('Review optional Factory readiness')).toBeNull();
+  fireEvent.press(await view.findByText('Review optional Factory readiness'));
+  expect(await view.findByText('Factory route reached for asset_exact_1')).toBeTruthy();
+  expect(mockGetStudioCapabilities).toHaveBeenCalled();
   expect(mockGetProject).not.toHaveBeenCalled();
 });
 

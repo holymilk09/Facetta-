@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { createStudioGateway } from './gateway';
+import { createStudioJobTestHarness } from './studioJobTestHarness';
 import type { ProjectDetail } from '../trusted/types';
 
 const ok = <T>(data: T, status = 200) => ({ data, error: null, status } as const);
@@ -45,7 +46,22 @@ const quality = {
   }],
 };
 
+const durableMarkup = (
+  candidateId: string, runId: string, requestedChange: string, regionDescription: string,
+) => ({
+  candidate_id: candidateId, image_run_id: runId, project_root_id: 'project_1',
+  source_asset_id: 'asset_1', expected_active_asset_id: 'asset_1', design_version: 1,
+  operation: 'LOCAL_EDIT', requested_change: requestedChange,
+  region_description: regionDescription, qa: quality, status: 'reviewing' as const,
+  studio_job_id: 'job_refine_1', expires_at: '2099-01-01T00:00:00Z',
+  preview_url: `https://test/studio/markup-candidates/${runId}/${candidateId}/image`,
+  accept_url: `/studio/markup-candidates/${runId}/${candidateId}/accept`,
+  discard_url: `/studio/markup-candidates/${runId}/${candidateId}/discard`,
+  save_as_variation_url: `/studio/markup-candidates/${runId}/${candidateId}/save-as-variation`,
+});
+
 const baseClient = () => ({
+  ...createStudioJobTestHarness('job_refine_1').client,
   createProjectFromPrompt: async () => { throw new Error('unexpected'); },
   saveAsVariation: async () => { throw new Error('unexpected'); },
   previewCatalogSelection: async () => { throw new Error('unexpected'); },
@@ -66,6 +82,7 @@ test('markup refinement stays temporary until explicit apply', async () => {
     ...baseClient(),
     applyMarkup: async (_assetId: string, request: any) => {
       assert.equal(request.preview_only, true);
+      assert.equal(request.studio_job_id, 'job_refine_1');
       return ok({
         revision: null, spec_version: 1, spec_change: [], ignored_fields: [],
         qa: quality, routing: { attempt_count: 1, used_retry: false, used_fallback: false, cache_hit: false, run_id: 'run_1' },
@@ -75,11 +92,17 @@ test('markup refinement stays temporary until explicit apply', async () => {
         },
       }, 201);
     },
-    acceptWarningCandidate: async () => {
+    listStudioMarkupCandidates: async () => ok({
+      candidates: [durableMarkup('candidate_1', 'run_1', 'make the halo lighter', 'halo')],
+    }),
+    acceptStudioMarkupCandidate: async () => {
       acceptCalls += 1;
-      return ok(project('asset_2'), 201);
+      return ok({
+        status: 'applied' as const, candidate_id: 'candidate_1',
+        asset_id: 'asset_2', project: project('asset_2'),
+      }, 201);
     },
-    discardWarningCandidate: async () => { throw new Error('unexpected'); },
+    discardStudioMarkupCandidate: async () => { throw new Error('unexpected'); },
   };
   const gateway = createStudioGateway(client as any, { now: () => new Date('2026-07-12T00:00:00Z') });
   const preview = await gateway.previewMarkupRefine({
@@ -113,10 +136,13 @@ test('discard makes a markup candidate terminal without changing the project', a
         qa: quality, operation: 'LOCAL_EDIT', requested_change: 'warmer background', asset_capability: 'LOCALIZED_EDIT',
       },
     }, 201),
-    acceptWarningCandidate: async () => { throw new Error('unexpected'); },
-    discardWarningCandidate: async () => {
+    listStudioMarkupCandidates: async () => ok({
+      candidates: [durableMarkup('candidate_2', 'run_2', 'warmer background', 'background')],
+    }),
+    acceptStudioMarkupCandidate: async () => { throw new Error('unexpected'); },
+    discardStudioMarkupCandidate: async () => {
       discarded += 1;
-      return ok({ status: 'discarded' as const, run_id: 'run_2', candidate_id: 'candidate_2' });
+      return ok({ status: 'discarded' as const, candidate_id: 'candidate_2' });
     },
   };
   const gateway = createStudioGateway(client as any);
@@ -186,7 +212,7 @@ test('a fresh gateway resumes durable markup and saves it as a sibling variation
     },
   };
   const gateway = createStudioGateway(client as any, {
-    trackJobs: true, now: () => new Date('2026-07-12T00:00:00Z'),
+    now: () => new Date('2026-07-12T00:00:00Z'),
   });
   const resumed = await gateway.resumeRefine({
     projectId: 'project_1', sourceAssetId: 'asset_1', sourceDesignVersion: 1,

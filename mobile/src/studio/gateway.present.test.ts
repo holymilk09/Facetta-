@@ -4,8 +4,10 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 
 import { createStudioGateway } from './gateway';
+import { createStudioJobTestHarness } from './studioJobTestHarness';
 
 const ok = <T>(data: T, status = 200) => ({ data, error: null, status } as const);
+const trackedJobs = () => createStudioJobTestHarness('job_present').client;
 
 const visualAsset = (id: string, capability = 'CREATIVE_RENDER', parent: string | null = null) => ({
   asset_id: id, root_id: 'project_visual', parent_asset_id: parent, capability,
@@ -30,6 +32,7 @@ const visualProject = (derived: ReturnType<typeof visualAsset>[] = []) => ({
 
 test('Present rejects a response that is not bound to the exact requested revision', async () => {
   const gateway = createStudioGateway({
+    ...trackedJobs(),
     createMarketingPack: async () => ({
       data: {
         status: 'review_required',
@@ -65,6 +68,7 @@ test('pre-spec Client presentation saves only a derived exact-source asset', asy
   const sourceHash = 'a'.repeat(64);
   const candidate = {
     candidate_id: 'candidate_client', image_run_id: 'run_client',
+    studio_job_id: 'job_present',
     preview_url: 'https://test/client.png', capability: 'CLIENT_BEAUTY_RENDER' as const,
     preset: 'luxury_studio' as const, framing: 'portrait' as const,
     qa: { verdict: 'pass' as const, accepted: true, review_required: false,
@@ -72,6 +76,7 @@ test('pre-spec Client presentation saves only a derived exact-source asset', asy
   };
   const savedAsset = visualAsset('asset_client', 'CLIENT_BEAUTY_RENDER', 'asset_visual');
   const gateway = createStudioGateway({
+    ...trackedJobs(),
     createPreSpecPresentation: async () => ok({
       status: 'review_required' as const, project_id: 'project_visual',
       source_asset_id: 'asset_visual', source_sha256: sourceHash,
@@ -109,6 +114,7 @@ test('pre-spec Marketing discard uses source hash and creates no saved output', 
   const sourceHash = 'b'.repeat(64);
   let decision: unknown = null;
   const gateway = createStudioGateway({
+    ...trackedJobs(),
     createPreSpecPresentation: async () => ok({
       status: 'review_required' as const, project_id: 'project_visual',
       source_asset_id: 'asset_visual', source_sha256: sourceHash,
@@ -116,6 +122,7 @@ test('pre-spec Marketing discard uses source hash and creates no saved output', 
       client_format: 'product' as const,
       candidate: {
         candidate_id: 'candidate_marketing', image_run_id: 'run_marketing',
+        studio_job_id: 'job_present',
         preview_url: 'https://test/marketing.png', capability: 'MARKETING_IMAGE' as const,
         preset: 'dark_editorial' as const, framing: 'square' as const,
         qa: { verdict: 'pass' as const, accepted: true, review_required: false,
@@ -150,6 +157,7 @@ test('pre-spec Marketing discard uses source hash and creates no saved output', 
 
 test('pre-spec Present rejects a preview bound to a different active visual', async () => {
   const gateway = createStudioGateway({
+    ...trackedJobs(),
     createPreSpecPresentation: async () => ok({
       status: 'review_required' as const, project_id: 'project_visual',
       source_asset_id: 'different_asset', source_sha256: 'd'.repeat(64),
@@ -157,6 +165,7 @@ test('pre-spec Present rejects a preview bound to a different active visual', as
       client_format: 'product' as const,
       candidate: {
         candidate_id: 'candidate_wrong', image_run_id: 'run_wrong',
+        studio_job_id: 'job_present',
         preview_url: 'https://test/wrong.png', capability: 'CLIENT_PRODUCT_PHOTO' as const,
         preset: 'catalog_white' as const, framing: 'square' as const,
         qa: { verdict: 'pass' as const, accepted: true, review_required: false,
@@ -181,6 +190,7 @@ test('pre-spec Present fails before save when the selected visual changed', asyn
   stale.selected_candidate_asset_id = 'new_visual';
   stale.active_revision = visualAsset('new_visual');
   const gateway = createStudioGateway({
+    ...trackedJobs(),
     createPreSpecPresentation: async () => ok({
       status: 'review_required' as const, project_id: 'project_visual',
       source_asset_id: 'asset_visual', source_sha256: sourceHash,
@@ -188,6 +198,7 @@ test('pre-spec Present fails before save when the selected visual changed', asyn
       client_format: 'product' as const,
       candidate: {
         candidate_id: 'candidate_stale', image_run_id: 'run_stale',
+        studio_job_id: 'job_present',
         preview_url: 'https://test/stale.png', capability: 'CLIENT_PRODUCT_PHOTO' as const,
         preset: 'catalog_white' as const, framing: 'square' as const,
         qa: { verdict: 'pass' as const, accepted: true, review_required: false,
@@ -230,6 +241,15 @@ test('pre-spec Present resumes a durable preview after gateway refresh', async (
         expires_at: '2026-07-13T12:00:00Z',
       }],
     }),
+    listStudioJobs: async () => ok({ jobs: [{
+      job_id: 'job_resumed', owner: 'designer', action_id: 'present' as const,
+      lane: 'fast_visual' as const, status: 'reviewing' as const, progress: 0.9,
+      active_design_id: 'project_visual', source_revision_id: 'asset_visual', error_code: null,
+      created_at: '2026-07-13T00:00:00Z', updated_at: '2026-07-13T00:00:01Z',
+      billing: { requested_outputs: 1, credits_per_output: 18, estimated_credits: 18,
+        completed_outputs: 0, charged_outputs: 0, charged_credits: 0,
+        policy: 'accepted outputs only' },
+    }] }),
     getProject: async () => ok(visualProject()),
     acceptPreSpecPresentation: async (_runId: string, _candidateId: string, request: unknown) => {
       decision = request;
