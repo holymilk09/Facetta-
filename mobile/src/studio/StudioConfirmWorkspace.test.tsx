@@ -33,7 +33,7 @@ function deferred<T>() {
 test('fails closed without an exact selected visual', async () => {
   await render(<StudioConfirmWorkspace gateway={gateway()} lineage={null} createdBy="designer" onSaved={jest.fn()} />);
   expect(screen.getByText('Choose a saved visual first')).toBeTruthy();
-  expect(screen.queryByText('Create Design v1')).toBeNull();
+  expect(screen.queryByText('Save starting facts')).toBeNull();
 });
 
 test('loads projected facts and renders all designer authority labels without internal payloads', async () => {
@@ -55,19 +55,22 @@ test('loads projected facts and renders all designer authority labels without in
   expect(screen.queryByText(/hidden_review|continuation|project_1|asset_7|provider|QA/i)).toBeNull();
 });
 
-test('cannot review or save without explicit acknowledgement of image-derived suggestions', async () => {
+test('cannot audit or save without explicit acknowledgement of image-derived suggestions', async () => {
   const g = gateway();
   await render(<StudioConfirmWorkspace gateway={g} lineage={lineage} createdBy="designer" onSaved={jest.fn()} />);
   await waitFor(() => expect(screen.getByText('Jewelry type')).toBeTruthy());
-  await fireEvent.press(screen.getByText('Review starting design'));
-  await fireEvent.press(screen.getByText('Create Design v1'));
+  expect(screen.getByText('Save starting facts').parent?.props.accessibilityState)
+    .toEqual({ disabled: true });
+  await fireEvent.press(screen.getByText('Save starting facts'));
   expect(g.auditDesignConfirmation).not.toHaveBeenCalled();
   expect(g.saveDesignConfirmation).not.toHaveBeenCalled();
   expect(screen.getByText(/image-derived suggestions/i)).toBeTruthy();
-  expect(screen.getByText(/refine any fact as a new revision/i)).toBeTruthy();
+  expect(screen.getByText(/appends a new immutable revision/i)).toBeTruthy();
+  expect(screen.getByText(/does not make the ring production-ready/i)).toBeTruthy();
+  expect(screen.queryByText(/Design v1|Create Design|Review starting design/i)).toBeNull();
 });
 
-test('failed audit disables Save', async () => {
+test('one save action stops after a failed audit', async () => {
   const save = jest.fn();
   const g = gateway({
     auditDesignConfirmation: jest.fn(async (next) => ({ data: { auditId: 'a', status: 'fail', issues: ['Answer the remaining source questions.'], review: next }, error: null, status: 200 })),
@@ -76,23 +79,47 @@ test('failed audit disables Save', async () => {
   await render(<StudioConfirmWorkspace gateway={g} lineage={lineage} createdBy="designer" onSaved={jest.fn()} />);
   await waitFor(() => expect(screen.getByText('Jewelry type')).toBeTruthy());
   await fireEvent.press(screen.getByLabelText('I reviewed the image-derived suggestions'));
-  await fireEvent.press(screen.getByText('Review starting design'));
+  await fireEvent.press(screen.getByText('Save starting facts'));
   await waitFor(() => expect(screen.getByText(/Answer the remaining/i)).toBeTruthy());
-  await fireEvent.press(screen.getByText('Create Design v1'));
+  expect(g.auditDesignConfirmation).toHaveBeenCalledTimes(1);
   expect(save).not.toHaveBeenCalled();
 });
 
-test('audits the read-only projection, saves, and invokes callback', async () => {
+test('one acknowledgement-gated action audits, saves, and invokes callback in order', async () => {
   const g = gateway(); const onSaved = jest.fn();
   await render(<StudioConfirmWorkspace gateway={g} lineage={lineage} createdBy="designer" onSaved={onSaved} />);
   await waitFor(() => expect(screen.getByText('Jewelry type')).toBeTruthy());
   await fireEvent.press(screen.getByLabelText('I reviewed the image-derived suggestions'));
-  await fireEvent.press(screen.getByText('Review starting design'));
-  await waitFor(() => expect(screen.getByText(/Ready to preserve this direction/i)).toBeTruthy());
-  await fireEvent.press(screen.getByText('Create Design v1'));
+  await fireEvent.press(screen.getByText('Save starting facts'));
   await waitFor(() => expect(onSaved).toHaveBeenCalledWith(expect.objectContaining({ confirmationId: 'confirmation_1' })));
+  expect(g.auditDesignConfirmation).toHaveBeenCalledTimes(1);
+  expect(g.saveDesignConfirmation).toHaveBeenCalledTimes(1);
+  expect(g.auditDesignConfirmation.mock.invocationCallOrder[0])
+    .toBeLessThan(g.saveDesignConfirmation.mock.invocationCallOrder[0]);
   const audited = g.auditDesignConfirmation.mock.calls[0][0];
   expect(audited.factGroups[0].facts[0].authority).toBe('suggested');
+});
+
+test('a save failure stays on Starting facts and does not navigate', async () => {
+  const onSaved = jest.fn();
+  const g = gateway({
+    saveDesignConfirmation: jest.fn(async () => ({
+      data: null,
+      error: {
+        code: 'NETWORK_ERROR', category: 'network', status: 0,
+        message: 'provider detail that must stay hidden', retryable: true,
+      },
+      status: 0,
+    })),
+  });
+  await render(<StudioConfirmWorkspace gateway={g} lineage={lineage} createdBy="designer" onSaved={onSaved} />);
+  await waitFor(() => expect(screen.getByText('Jewelry type')).toBeTruthy());
+  await fireEvent.press(screen.getByLabelText('I reviewed the image-derived suggestions'));
+  await fireEvent.press(screen.getByText('Save starting facts'));
+  await waitFor(() => expect(screen.getByText(/could not connect/i)).toBeTruthy());
+  expect(onSaved).not.toHaveBeenCalled();
+  expect(screen.queryByText(/provider detail/i)).toBeNull();
+  expect(screen.getByText('Save starting facts')).toBeTruthy();
 });
 
 test('switching A to B clears A immediately and ignores a late A load', async () => {
@@ -112,7 +139,7 @@ test('switching A to B clears A immediately and ignores a late A load', async ()
   expect(screen.getByText('B design')).toBeTruthy();
 });
 
-test('switching lineage invalidates a prior audit and ignores its late response', async () => {
+test('switching lineage invalidates a prior audit and cannot save its late response', async () => {
   const lateAudit = deferred<any>();
   const save = jest.fn();
   const g = gateway({
@@ -123,13 +150,29 @@ test('switching lineage invalidates a prior audit and ignores its late response'
   const view = await render(<StudioConfirmWorkspace gateway={g} lineage={{ projectId: 'project_a', sourceAssetId: 'candidate_a' }} createdBy="designer" onSaved={jest.fn()} />);
   await waitFor(() => expect(screen.getByText('Jewelry type')).toBeTruthy());
   await fireEvent.press(screen.getByLabelText('I reviewed the image-derived suggestions'));
-  await fireEvent.press(screen.getByText('Review starting design'));
+  await fireEvent.press(screen.getByText('Save starting facts'));
   await view.rerender(<StudioConfirmWorkspace gateway={g} lineage={{ projectId: 'project_b', sourceAssetId: 'candidate_b' }} createdBy="designer" onSaved={jest.fn()} />);
   await waitFor(() => expect(screen.getByText('Jewelry type')).toBeTruthy());
   await act(async () => lateAudit.resolve({ data: { auditId: 'review_project_a', status: 'pass', issues: [], review: { ...review, reviewId: 'review_project_a' } }, error: null, status: 200 }));
-  expect(screen.queryByText(/Ready to preserve this direction/i)).toBeNull();
-  await fireEvent.press(screen.getByText('Create Design v1'));
   expect(save).not.toHaveBeenCalled();
+});
+
+test('switching lineage after audit prevents a late save from navigating', async () => {
+  const lateSave = deferred<any>();
+  const onSaved = jest.fn();
+  const g = gateway({
+    loadDesignConfirmation: jest.fn(async (request) => ({ data: { ...review, reviewId: `review_${request.projectId}` }, error: null, status: 200 })),
+    saveDesignConfirmation: jest.fn(() => lateSave.promise),
+  });
+  const view = await render(<StudioConfirmWorkspace gateway={g} lineage={{ projectId: 'project_a', sourceAssetId: 'candidate_a' }} createdBy="designer" onSaved={onSaved} />);
+  await waitFor(() => expect(screen.getByText('Jewelry type')).toBeTruthy());
+  await fireEvent.press(screen.getByLabelText('I reviewed the image-derived suggestions'));
+  await fireEvent.press(screen.getByText('Save starting facts'));
+  await waitFor(() => expect(g.saveDesignConfirmation).toHaveBeenCalledTimes(1));
+  await view.rerender(<StudioConfirmWorkspace gateway={g} lineage={{ projectId: 'project_b', sourceAssetId: 'candidate_b' }} createdBy="designer" onSaved={onSaved} />);
+  await waitFor(() => expect(screen.getByText('Jewelry type')).toBeTruthy());
+  await act(async () => lateSave.resolve({ data: { confirmationId: 'confirmation_a' }, error: null, status: 201 }));
+  expect(onSaved).not.toHaveBeenCalled();
 });
 
 test('a failed B load cannot leave A facts or a prior save path visible', async () => {
@@ -145,6 +188,6 @@ test('a failed B load cannot leave A facts or a prior save path visible', async 
   await view.rerender(<StudioConfirmWorkspace gateway={g} lineage={{ projectId: 'project_b', sourceAssetId: 'candidate_b' }} createdBy="designer" onSaved={jest.fn()} />);
   await waitFor(() => expect(screen.getByText(/could not review/i)).toBeTruthy());
   expect(screen.queryByText('Jewelry type')).toBeNull();
-  await fireEvent.press(screen.getByText('Create Design v1'));
+  await fireEvent.press(screen.getByText('Save starting facts'));
   expect(save).not.toHaveBeenCalled();
 });

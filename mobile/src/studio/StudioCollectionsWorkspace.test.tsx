@@ -1,7 +1,7 @@
 /// <reference types="jest" />
 
 import React from 'react';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react-native';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 import { Text } from 'react-native';
 
 import type { ProjectDetail } from '../trusted/types';
@@ -95,6 +95,90 @@ const callbacks = () => ({
 });
 
 describe('StudioCollectionsWorkspace', () => {
+  test('retries an unavailable family index without presenting it as an empty account', async () => {
+    const listDesignFamilies = jest.fn()
+      .mockResolvedValueOnce({
+        data: null,
+        error: {
+          code: 'NETWORK_ERROR', message: 'Collections are unavailable.',
+          category: 'network' as const, status: 503, retryable: true,
+        },
+        status: 503,
+      })
+      .mockResolvedValueOnce({ data: { families: [family] }, error: null, status: 200 });
+    const client = api({ listDesignFamilies });
+
+    await render(
+      <StudioCollectionsWorkspace
+        api={client}
+        project={null}
+        createdBy="usr_designer"
+        {...callbacks()}
+      />,
+    );
+
+    expect(await screen.findByText('Collections are temporarily unavailable')).toBeTruthy();
+    expect(screen.queryByText('No saved families yet')).toBeNull();
+    expect(listDesignFamilies).toHaveBeenCalledTimes(1);
+    expect(listDesignFamilies).toHaveBeenLastCalledWith('usr_designer');
+
+    await fireEvent.press(screen.getByText('Retry'));
+
+    expect(await screen.findByText('Sapphire orbit ring')).toBeTruthy();
+    expect(screen.queryByText('Collections are temporarily unavailable')).toBeNull();
+    expect(listDesignFamilies).toHaveBeenCalledTimes(2);
+    expect(listDesignFamilies).toHaveBeenLastCalledWith('usr_designer');
+  });
+
+  test('ignores a stale family response after the owner scope changes', async () => {
+    const staleResult = {
+      data: null,
+      error: {
+        code: 'NETWORK_ERROR', message: 'Old account request failed.',
+        category: 'network' as const, status: 503, retryable: true,
+      },
+      status: 503,
+    };
+    let resolveStale!: (result: typeof staleResult) => void;
+    const staleRequest = new Promise<typeof staleResult>((resolve) => {
+      resolveStale = resolve;
+    });
+    const listDesignFamilies = jest.fn((owner: string) => (
+      owner === 'usr_previous'
+        ? staleRequest
+        : Promise.resolve({ data: { families: [family] }, error: null, status: 200 })
+    ));
+    const client = api({ listDesignFamilies });
+    const view = await render(
+      <StudioCollectionsWorkspace
+        api={client}
+        project={null}
+        createdBy="usr_previous"
+        {...callbacks()}
+      />,
+    );
+    await waitFor(() => expect(listDesignFamilies).toHaveBeenCalledWith('usr_previous'));
+
+    await view.rerender(
+      <StudioCollectionsWorkspace
+        api={client}
+        project={null}
+        createdBy="usr_designer"
+        {...callbacks()}
+      />,
+    );
+    expect(await screen.findByText('Sapphire orbit ring')).toBeTruthy();
+
+    await act(async () => {
+      resolveStale(staleResult);
+      await staleRequest;
+    });
+
+    expect(screen.getByText('Sapphire orbit ring')).toBeTruthy();
+    expect(screen.queryByText('Collections are temporarily unavailable')).toBeNull();
+    expect(listDesignFamilies).toHaveBeenLastCalledWith('usr_designer');
+  });
+
   test('offers a direct Studio start only after Collections confirms there are no saved families', async () => {
     const client = api({
       listDesignFamilies: jest.fn(async () => ({
@@ -595,7 +679,7 @@ describe('StudioCollectionsWorkspace', () => {
     expect(onPrepareFactoryCurrent).toHaveBeenCalledTimes(1);
   });
 
-  test('does not invent family data when history is unavailable and still routes to Vary', async () => {
+  test('does not invent family data when history is unavailable, then retries the exact project', async () => {
     const unavailable = {
       data: null,
       error: {
@@ -604,8 +688,11 @@ describe('StudioCollectionsWorkspace', () => {
       },
       status: 200,
     };
+    const getStudioProjectHistory = jest.fn()
+      .mockResolvedValueOnce(unavailable)
+      .mockResolvedValueOnce({ data: history, error: null, status: 200 });
     const client = api({
-      getStudioProjectHistory: jest.fn(async () => unavailable),
+      getStudioProjectHistory,
     });
     const handlers = callbacks();
     await render(
@@ -627,6 +714,15 @@ describe('StudioCollectionsWorkspace', () => {
     expect(screen.queryByText('Variation name')).toBeNull();
     await fireEvent.press(screen.getByText('Vary this revision'));
     expect(handlers.onVaryCurrent).toHaveBeenCalledTimes(1);
+
+    await fireEvent.press(screen.getByText('Retry'));
+
+    expect(await screen.findByText('Use this exact revision')).toBeTruthy();
+    expect(screen.queryByText('Saved history is unavailable')).toBeNull();
+    expect(getStudioProjectHistory).toHaveBeenCalledTimes(2);
+    expect(getStudioProjectHistory).toHaveBeenLastCalledWith('project_main');
+    expect(client.getDesignFamily).toHaveBeenCalledTimes(1);
+    expect(client.getDesignFamily).toHaveBeenCalledWith('family_orbit');
   });
 
   test('disables Vary navigation when the selected project has no active revision', async () => {

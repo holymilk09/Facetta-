@@ -341,7 +341,7 @@ def test_terminal_job_lifecycle_is_persistent_and_client_completion_never_charge
     definition = STUDIO_JOB_ACTIONS["factory"]
     job = _create(
         client,
-        outputs=3,
+        outputs=1,
         action_id="factory",
         lane=definition.lane,
         credits=definition.credits_per_output,
@@ -352,9 +352,9 @@ def test_terminal_job_lifecycle_is_persistent_and_client_completion_never_charge
 
     assert job["status"] == "queued"
     assert job["billing"] == {
-        "requested_outputs": 3,
+        "requested_outputs": 1,
         "credits_per_output": 28,
-        "estimated_credits": 84,
+        "estimated_credits": 28,
         "completed_outputs": 0,
         "charged_outputs": 0,
         "charged_credits": 0,
@@ -373,13 +373,13 @@ def test_terminal_job_lifecycle_is_persistent_and_client_completion_never_charge
     assert _transition(client, job_id, "running", 0.25).status_code == 200
     assert _transition(client, job_id, "reviewing", 0.8).status_code == 200
     succeeded = _transition(
-        client, job_id, "succeeded", 0.8, completed_outputs=2,
+        client, job_id, "succeeded", 0.8, completed_outputs=1,
     )
     assert succeeded.status_code == 200
     result = succeeded.json()
     assert result["status"] == "succeeded"
     assert result["progress"] == 1
-    assert result["billing"]["completed_outputs"] == 2
+    assert result["billing"]["completed_outputs"] == 1
     assert result["billing"]["charged_outputs"] == 0
     assert result["billing"]["charged_credits"] == 0
 
@@ -693,6 +693,68 @@ def test_server_registry_is_canonical_for_every_studio_action(client):
         )
 
 
+@pytest.mark.parametrize("action_id", ["create", "present"])
+@pytest.mark.parametrize("outputs", [1, 2, 3, 4])
+def test_multi_output_actions_accept_their_canonical_range(
+    client,
+    action_id,
+    outputs,
+):
+    definition = STUDIO_JOB_ACTIONS[action_id]
+    project_id = None
+    source_id = None
+    if action_id == "present":
+        project_id, source_id = _seed_project(
+            client,
+            project_id=f"project_present_{outputs}",
+        )
+
+    created = _create(
+        client,
+        outputs=outputs,
+        action_id=action_id,
+        lane=definition.lane,
+        credits=definition.credits_per_output,
+        active_design_id=project_id,
+        source_revision_id=source_id,
+    )
+
+    assert created["billing"]["requested_outputs"] == outputs
+    assert created["billing"]["estimated_credits"] == (
+        outputs * definition.credits_per_output
+    )
+
+
+@pytest.mark.parametrize("action_id", ["refine", "views", "factory"])
+def test_single_output_actions_reject_multiple_outputs_before_persistence(
+    client,
+    action_id,
+):
+    definition = STUDIO_JOB_ACTIONS[action_id]
+    project_id, source_id = _seed_project(
+        client,
+        project_id=f"project_single_output_{action_id}",
+        exact_specification=action_id in {"views", "factory"},
+        factory_eligible=action_id == "factory",
+    )
+
+    rejected = client.post("/studio/jobs", json={
+        "owner": "usr_designer",
+        "action_id": action_id,
+        "lane": definition.lane,
+        "active_design_id": project_id,
+        "source_revision_id": source_id,
+        "requested_outputs": 2,
+        "credits_per_output": definition.credits_per_output,
+    })
+
+    assert rejected.status_code == 422
+    assert f"{action_id} requires 1 requested output" in rejected.json()["detail"]
+    listed = client.get("/studio/jobs", params={"owner": "usr_designer"})
+    assert listed.status_code == 200
+    assert listed.json() == {"jobs": []}
+
+
 def test_server_registry_matches_designer_action_contract():
     expected = {
         "create": ("brief_or_reference", "design_revision", "design_record", "candidate_job", "candidate_decision"),
@@ -723,6 +785,20 @@ def test_server_registry_matches_designer_action_contract():
     assert {field.reference_role for field in create.ui_schema} >= {
         "master_geometry", "material_style", "construction_detail",
         "brand_direction",
+    }
+    assert {
+        action_id: (
+            definition.min_requested_outputs,
+            definition.max_requested_outputs,
+        )
+        for action_id, definition in STUDIO_JOB_ACTIONS.items()
+    } == {
+        "create": (1, 4),
+        "vary": (0, 0),
+        "refine": (1, 1),
+        "views": (1, 1),
+        "present": (1, 4),
+        "factory": (1, 1),
     }
 
 

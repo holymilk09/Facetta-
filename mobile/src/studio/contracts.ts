@@ -75,6 +75,11 @@ export type StudioReviewAuthority =
  */
 export type StudioUiSchemaMode = 'declarative_fields' | 'host_rendered';
 
+export interface StudioRequestedOutputRange {
+  min: number;
+  max: number;
+}
+
 export interface StudioActionContext {
   activeDesignId: string | null;
   activeRevisionId: string | null;
@@ -101,6 +106,8 @@ export interface StudioActionDefinition {
   fields: readonly StudioActionFieldDefinition[];
   outputType: StudioOutputType;
   creditEstimate: number | null;
+  /** Canonical requested-output bounds; null for host-only non-job actions. */
+  requestedOutputRange: StudioRequestedOutputRange | null;
   authority: StudioAuthority | null;
   requiresActiveDesign: boolean;
   createsJob: boolean;

@@ -7,6 +7,8 @@ export interface StudioJobActionManifestEntry {
   execution_mode: StudioExecutionMode;
   review_authority: StudioReviewAuthority;
   credits_per_output: number;
+  min_requested_outputs: number;
+  max_requested_outputs: number;
   input_requirements: readonly string[];
   context_requirements: readonly string[];
   output_type: StudioOutputType;
@@ -20,6 +22,8 @@ export const STUDIO_JOB_ACTION_MANIFEST = {
     "execution_mode": "candidate_job",
     "review_authority": "candidate_decision",
     "credits_per_output": 15,
+    "min_requested_outputs": 1,
+    "max_requested_outputs": 4,
     "input_requirements": [
       "brief_or_reference"
     ],
@@ -68,6 +72,8 @@ export const STUDIO_JOB_ACTION_MANIFEST = {
     "execution_mode": "instant_transaction",
     "review_authority": "none",
     "credits_per_output": 0,
+    "min_requested_outputs": 0,
+    "max_requested_outputs": 0,
     "input_requirements": [
       "direction"
     ],
@@ -91,6 +97,8 @@ export const STUDIO_JOB_ACTION_MANIFEST = {
     "execution_mode": "candidate_job",
     "review_authority": "candidate_decision",
     "credits_per_output": 20,
+    "min_requested_outputs": 1,
+    "max_requested_outputs": 1,
     "input_requirements": [
       "instruction"
     ],
@@ -121,6 +129,8 @@ export const STUDIO_JOB_ACTION_MANIFEST = {
     "execution_mode": "candidate_job",
     "review_authority": "candidate_decision",
     "credits_per_output": 15,
+    "min_requested_outputs": 1,
+    "max_requested_outputs": 1,
     "input_requirements": [
       "view_set"
     ],
@@ -145,6 +155,8 @@ export const STUDIO_JOB_ACTION_MANIFEST = {
     "execution_mode": "candidate_job",
     "review_authority": "candidate_decision",
     "credits_per_output": 18,
+    "min_requested_outputs": 1,
+    "max_requested_outputs": 4,
     "input_requirements": [
       "destination"
     ],
@@ -174,6 +186,8 @@ export const STUDIO_JOB_ACTION_MANIFEST = {
     "execution_mode": "terminal_job",
     "review_authority": "generic_transition",
     "credits_per_output": 28,
+    "min_requested_outputs": 1,
+    "max_requested_outputs": 1,
     "input_requirements": [],
     "context_requirements": [
       "active_project",

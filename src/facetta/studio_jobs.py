@@ -60,6 +60,8 @@ class StudioJobActionDefinition:
     execution_mode: StudioExecutionMode
     review_authority: StudioReviewAuthority
     credits_per_output: int
+    min_requested_outputs: int
+    max_requested_outputs: int
     input_requirements: tuple[str, ...]
     context_requirements: tuple[str, ...]
     output_type: str
@@ -92,12 +94,40 @@ def _load_studio_job_actions() -> dict[str, StudioJobActionDefinition]:
                 f"Studio action {action_id!r} execution_mode {execution_mode!r} "
                 f"requires review_authority {expected_authority!r}"
             )
+        minimum = value.get("min_requested_outputs")
+        maximum = value.get("max_requested_outputs")
+        if (
+            not isinstance(minimum, int)
+            or isinstance(minimum, bool)
+            or not isinstance(maximum, int)
+            or isinstance(maximum, bool)
+            or minimum < 0
+            or maximum < minimum
+            or maximum > 4
+        ):
+            raise ValueError(
+                f"Studio action {action_id!r} has invalid requested-output "
+                f"range {minimum!r}..{maximum!r}"
+            )
+        if (
+            execution_mode == "instant_transaction"
+            and (minimum, maximum) != (0, 0)
+        ):
+            raise ValueError(
+                f"Studio instant action {action_id!r} must request zero outputs"
+            )
+        if execution_mode != "instant_transaction" and minimum < 1:
+            raise ValueError(
+                f"Studio job action {action_id!r} must request at least one output"
+            )
     return {
         action_id: StudioJobActionDefinition(
             lane=value["lane"],
             execution_mode=value["execution_mode"],
             review_authority=value["review_authority"],
             credits_per_output=value["credits_per_output"],
+            min_requested_outputs=value["min_requested_outputs"],
+            max_requested_outputs=value["max_requested_outputs"],
             input_requirements=tuple(value["input_requirements"]),
             context_requirements=tuple(value["context_requirements"]),
             output_type=value["output_type"],

@@ -663,6 +663,26 @@ def create_studio_job(
             ),
         )
     _require_studio_job_context(db, request)
+    if not (
+        action.min_requested_outputs
+        <= request.requested_outputs
+        <= action.max_requested_outputs
+    ):
+        expected = (
+            str(action.min_requested_outputs)
+            if action.min_requested_outputs == action.max_requested_outputs
+            else (
+                f"{action.min_requested_outputs} to "
+                f"{action.max_requested_outputs}"
+            )
+        )
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                f"{request.action_id} requires {expected} requested "
+                f"output{'s' if action.max_requested_outputs != 1 else ''}"
+            ),
+        )
     if request.action_id == "factory":
         _factory_job_pre_insert_hook()
         try:

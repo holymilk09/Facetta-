@@ -16,6 +16,10 @@ const jobAction = (id: keyof typeof STUDIO_JOB_ACTION_MANIFEST) => {
     fields: definition.ui_schema,
     outputType: definition.output_type,
     creditEstimate: definition.credits_per_output,
+    requestedOutputRange: {
+      min: definition.min_requested_outputs,
+      max: definition.max_requested_outputs,
+    },
     authority: definition.authority,
     createsJob: definition.execution_mode !== 'instant_transaction',
   };
@@ -80,6 +84,7 @@ export const STUDIO_ACTIONS: readonly StudioActionDefinition[] = [
     fields: [],
     outputType: 'none',
     creditEstimate: 0,
+    requestedOutputRange: null,
     authority: 'design_record',
     requiresActiveDesign: true,
     createsJob: false,
@@ -125,6 +130,7 @@ export const STUDIO_ACTIONS: readonly StudioActionDefinition[] = [
     fields: [],
     outputType: 'none',
     creditEstimate: null,
+    requestedOutputRange: null,
     authority: null,
     requiresActiveDesign: true,
     createsJob: false,
@@ -146,6 +152,7 @@ export const STUDIO_ACTIONS: readonly StudioActionDefinition[] = [
     fields: [],
     outputType: 'none',
     creditEstimate: 0,
+    requestedOutputRange: null,
     authority: 'design_record',
     requiresActiveDesign: true,
     createsJob: false,
@@ -219,7 +226,7 @@ export function getStudioActionUnavailableReason(
   if (action.isAvailable(context)) return null;
   if (action.id === 'views' && activeDesign(context) && !context.hasExactSpecification) {
     return context.hasSelectedPreSpecVisual
-      ? 'Confirm design facts first'
+      ? 'Save starting facts first'
       : 'Choose a confirmable ring direction first';
   }
   return action.requiresActiveDesign ? 'Open a saved revision first' : 'Unavailable';

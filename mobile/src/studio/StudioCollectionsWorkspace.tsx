@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Pressable,
@@ -218,9 +218,63 @@ export function StudioCollectionsWorkspace({
   const [exportError, setExportError] = useState<string | null>(null);
   const [showPresentationImages, setShowPresentationImages] = useState(false);
   const [showRevisionHistory, setShowRevisionHistory] = useState(false);
+  const loadRequestId = useRef(0);
 
-  useEffect(() => {
-    let current = true;
+  const loadFamilyIndex = useCallback(async (requestId: number): Promise<void> => {
+    const result = await api.listDesignFamilies(createdBy);
+    if (loadRequestId.current !== requestId) return;
+    setLoading(false);
+    if (result.error !== null) {
+      setError(designerErrorMessage(result.error, 'collections'));
+      return;
+    }
+    setFamilies(result.data.families);
+  }, [api, createdBy]);
+
+  const loadSelectedProjectHistory = useCallback(async (
+    requestId: number,
+    projectRootId: string,
+    activeAssetId: string | null,
+  ): Promise<void> => {
+    const historyResult = await api.getStudioProjectHistory(projectRootId);
+    if (loadRequestId.current !== requestId) return;
+    if (historyResult.error !== null) {
+      setError(designerErrorMessage(historyResult.error, 'collections'));
+      setLoading(false);
+      return;
+    }
+    if (historyResult.data.project_id !== projectRootId
+      || historyResult.data.active_asset_id !== activeAssetId) {
+      setError('This design changed while its history was opening. Reopen it to continue.');
+      setLoading(false);
+      return;
+    }
+    let family: DesignFamilyDetail | null = null;
+    if (historyResult.data.family_id !== null) {
+      const familyResult = await api.getDesignFamily(historyResult.data.family_id);
+      if (loadRequestId.current !== requestId) return;
+      if (familyResult.error !== null) {
+        setError(designerErrorMessage(familyResult.error, 'collections'));
+        setLoading(false);
+        return;
+      }
+      if (familyResult.data.family_id !== historyResult.data.family_id
+        || !familyResult.data.variations.some((variation) => (
+          variation.root_id === projectRootId
+        ))) {
+        setError('This family no longer contains the selected variation. Return to All families.');
+        setLoading(false);
+        return;
+      }
+      family = familyResult.data;
+    }
+    setData({ history: historyResult.data, family });
+    setLoading(false);
+  }, [api]);
+
+  const loadWorkspace = useCallback((): void => {
+    const requestId = loadRequestId.current + 1;
+    loadRequestId.current = requestId;
     setData(null);
     setError(null);
     setCompareAssetIds([]);
@@ -228,66 +282,32 @@ export function StudioCollectionsWorkspace({
     setExportError(null);
     setShowPresentationImages(false);
     setShowRevisionHistory(false);
-    if (project === null || viewingAllFamilies) {
-      setLoading(true);
-      setFamilies(null);
-      void api.listDesignFamilies(createdBy).then((result) => {
-        if (!current) return;
-        setLoading(false);
-        if (result.error !== null) {
-          setError(designerErrorMessage(result.error, 'collections'));
-          setFamilies([]);
-          return;
-        }
-        setFamilies(result.data.families);
-      });
-      return () => { current = false; };
-    }
+    setFamilies(null);
     setLoading(true);
-    void api.getStudioProjectHistory(project.root_id).then(async (historyResult) => {
-      if (!current) return;
-      if (historyResult.error !== null) {
-        setError(designerErrorMessage(historyResult.error, 'collections'));
-        setLoading(false);
-        return;
-      }
-      if (historyResult.data.project_id !== project.root_id
-        || historyResult.data.active_asset_id !== project.active_asset_id) {
-        setError('This design changed while its history was opening. Reopen it to continue.');
-        setLoading(false);
-        return;
-      }
-      let family: DesignFamilyDetail | null = null;
-      if (historyResult.data.family_id !== null) {
-        const familyResult = await api.getDesignFamily(historyResult.data.family_id);
-        if (!current) return;
-        if (familyResult.error !== null) {
-          setError(designerErrorMessage(familyResult.error, 'collections'));
-          setLoading(false);
-          return;
-        }
-        if (familyResult.data.family_id !== historyResult.data.family_id
-          || !familyResult.data.variations.some((variation) => (
-            variation.root_id === project.root_id
-          ))) {
-          setError('This family no longer contains the selected variation. Return to All families.');
-          setLoading(false);
-          return;
-        }
-        family = familyResult.data;
-      }
-      setData({ history: historyResult.data, family });
-      setLoading(false);
-    });
-    return () => { current = false; };
+    if (project === null || viewingAllFamilies) {
+      void loadFamilyIndex(requestId);
+      return;
+    }
+    void loadSelectedProjectHistory(
+      requestId,
+      project.root_id,
+      project.active_asset_id,
+    );
   }, [
-    api,
-    createdBy,
+    loadFamilyIndex,
+    loadSelectedProjectHistory,
     project?.active_asset_id,
     project?.active_design_version,
     project?.root_id,
     viewingAllFamilies,
   ]);
+
+  useEffect(() => {
+    loadWorkspace();
+    return () => {
+      loadRequestId.current += 1;
+    };
+  }, [loadWorkspace]);
 
   const exportSavedOutput = async (output: AssetSummary): Promise<void> => {
     if (deliverProtectedFile === undefined) return;
@@ -390,6 +410,9 @@ export function StudioCollectionsWorkspace({
           <View style={styles.emptyState}>
             <Text style={styles.emptyTitle}>Collections are temporarily unavailable</Text>
             <Text style={styles.emptyCopy}>Your saved design history is unchanged. Check the connection and try again.</Text>
+            <View style={styles.emptyAction}>
+              <Button title="Retry" onPress={loadWorkspace} />
+            </View>
           </View>
         ) : families?.length === 0 ? (
           <View style={styles.emptyState}>
@@ -451,6 +474,7 @@ export function StudioCollectionsWorkspace({
           <Text style={styles.sectionCopy}>
             Facetta will not guess at missing history. The selected design remains unchanged.
           </Text>
+          <Button title="Retry" onPress={loadWorkspace} />
         </View>
         <View style={styles.section}>
           <Text style={styles.branchTitle}>Explore from the selected active revision</Text>

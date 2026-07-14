@@ -1135,10 +1135,10 @@ export function createStudioGateway(
       ));
       const issues = [
         ...(review.designerAcknowledged ? [] : [
-          'Acknowledge that these are image-derived suggestions before creating Design v1.',
+          'Acknowledge that these are image-derived suggestions before saving the starting facts.',
         ]),
         ...(changedValues.length === 0 ? [] : [
-          'Create Design v1 first, then refine changed facts as a new immutable revision.',
+          'Save the suggested starting facts first, then refine changed facts as a new immutable revision.',
         ]),
       ];
       return {

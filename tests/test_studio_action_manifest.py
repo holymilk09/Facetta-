@@ -36,3 +36,58 @@ def test_manifest_generator_rejects_invalid_orchestration(action):
 
     with pytest.raises(ValueError):
         module._validate_orchestration("invalid", action)
+
+
+@pytest.mark.parametrize("minimum,maximum", [
+    (None, 1),
+    (1, None),
+    (-1, 1),
+    (2, 1),
+    (1, 5),
+    (True, 1),
+])
+def test_manifest_generator_rejects_invalid_requested_output_ranges(
+    minimum,
+    maximum,
+):
+    spec = importlib.util.spec_from_file_location(
+        "generate_studio_action_manifest_output_range", GENERATOR,
+    )
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    with pytest.raises(ValueError, match="requested-output range"):
+        module._validate_orchestration("invalid", {
+            "execution_mode": "candidate_job",
+            "review_authority": "candidate_decision",
+            "min_requested_outputs": minimum,
+            "max_requested_outputs": maximum,
+        })
+
+
+@pytest.mark.parametrize("execution_mode,review_authority,minimum,maximum", [
+    ("instant_transaction", "none", 1, 1),
+    ("candidate_job", "candidate_decision", 0, 1),
+    ("terminal_job", "generic_transition", 0, 0),
+])
+def test_manifest_generator_enforces_output_range_by_execution_mode(
+    execution_mode,
+    review_authority,
+    minimum,
+    maximum,
+):
+    spec = importlib.util.spec_from_file_location(
+        "generate_studio_action_manifest_execution_range", GENERATOR,
+    )
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    with pytest.raises(ValueError):
+        module._validate_orchestration("invalid", {
+            "execution_mode": execution_mode,
+            "review_authority": review_authority,
+            "min_requested_outputs": minimum,
+            "max_requested_outputs": maximum,
+        })

@@ -62,29 +62,34 @@ export function StudioConfirmWorkspace({ gateway, lineage, createdBy, onSaved }:
     <Text style={styles.body}>Confirm design starts from the exact visual you selected. No dimensions are confirmed from the image.</Text>
   </View>;
 
-  const runReview = async () => {
-    if (currentReview === null || busy) return;
+  const saveStartingFacts = async () => {
+    if (currentReview === null || !currentReview.designerAcknowledged || busy) return;
+    const requestLineageKey = lineageKey;
     setBusy(true); setError(null);
-    const result = await gateway.auditDesignConfirmation(currentReview);
-    if (currentLineageKeyRef.current !== lineageKey) return;
+    setAudit(null);
+    const audited = await gateway.auditDesignConfirmation(currentReview);
+    if (currentLineageKeyRef.current !== requestLineageKey) return;
+    if (audited.error !== null) {
+      setBusy(false);
+      setError(designerErrorMessage(audited.error, 'confirm'));
+      return;
+    }
+    setAudit(audited.data);
+    if (audited.data.status !== 'pass') {
+      setBusy(false);
+      return;
+    }
+    const saved = await gateway.saveDesignConfirmation(audited.data);
+    if (currentLineageKeyRef.current !== requestLineageKey) return;
     setBusy(false);
-    if (result.error !== null) setError(designerErrorMessage(result.error, 'confirm'));
-    else setAudit(result.data);
-  };
-  const save = async () => {
-    if (currentAudit?.status !== 'pass' || busy) return;
-    setBusy(true); setError(null);
-    const result = await gateway.saveDesignConfirmation(currentAudit);
-    if (currentLineageKeyRef.current !== lineageKey) return;
-    setBusy(false);
-    if (result.error !== null) setError(designerErrorMessage(result.error, 'confirm'));
-    else onSaved(result.data);
+    if (saved.error !== null) setError(designerErrorMessage(saved.error, 'confirm'));
+    else onSaved(saved.data);
   };
 
   return <ScrollView style={styles.root} contentContainerStyle={styles.content}>
-    <Text style={styles.eyebrow}>CONFIRM DESIGN</Text>
-    <Text style={styles.title}>Review suggestions derived from this ring image.</Text>
-    <Text style={styles.body}>Facetta estimated these starting facts from the selected visual. They may be wrong. Preserve this direction as Design v1, then refine any fact as a new revision without losing the original. This does not make the ring production-ready.</Text>
+    <Text style={styles.eyebrow}>STARTING FACTS</Text>
+    <Text style={styles.title}>Check what Facetta understood.</Text>
+    <Text style={styles.body}>Facetta estimated these starting facts from the selected ring image. They may be wrong. Saving them appends a new immutable revision and leaves the earlier revision unchanged. This does not make the ring production-ready.</Text>
     <View style={styles.sourceCard}><Text style={styles.sourceLabel}>Starting visual</Text><Text style={styles.sourceValue}>Exact selected visual</Text></View>
     {busy && currentReview === null ? <Text style={styles.body}>Loading design details…</Text> : null}
     {currentReview?.factGroups.map((group, index) => <View key={group.key} style={styles.group}>
@@ -106,21 +111,21 @@ export function StudioConfirmWorkspace({ gateway, lineage, createdBy, onSaved }:
     {currentReview && <Pressable
       accessibilityRole="checkbox"
       accessibilityLabel="I reviewed the image-derived suggestions"
-      accessibilityState={{ checked: currentReview.designerAcknowledged }}
+      accessibilityState={{ checked: currentReview.designerAcknowledged, disabled: busy }}
+      disabled={busy}
       onPress={() => {
+        if (busy) return;
         setAudit(null);
         setReview({ ...currentReview, designerAcknowledged: !currentReview.designerAcknowledged });
       }}
       style={[styles.acknowledgement, currentReview.designerAcknowledged && styles.acknowledgementSelected]}>
       <Text style={styles.ackMark}>{currentReview.designerAcknowledged ? '✓' : '○'}</Text>
-      <Text style={styles.ackText}>I reviewed these image-derived suggestions and accept them as the starting facts for Design v1.</Text>
+      <Text style={styles.ackText}>I reviewed these image-derived suggestions and accept them as the starting facts for this design.</Text>
     </Pressable>}
     {currentAudit?.status === 'fail' && <Notice kind="error" text={currentAudit.issues.join(' ')} />}
-    {currentAudit?.status === 'pass' && <Notice kind="ok" text="Ready to preserve this direction as Design v1. You can refine it next without overwriting the original." />}
     {error && <Notice kind="error" text={error} />}
     <View style={styles.actions}>
-      <Button title={busy ? 'Checking…' : 'Review starting design'} kind="ghost" disabled={busy || currentReview === null || !currentReview.designerAcknowledged} onPress={() => void runReview()} />
-      <Button title={busy ? 'Creating…' : 'Create Design v1'} disabled={busy || currentAudit?.status !== 'pass'} onPress={() => void save()} />
+      <Button title={busy ? 'Saving starting facts…' : 'Save starting facts'} disabled={busy || currentReview === null || !currentReview.designerAcknowledged} onPress={() => void saveStartingFacts()} />
     </View>
   </ScrollView>;
 }

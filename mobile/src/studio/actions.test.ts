@@ -105,7 +105,7 @@ test('Views stay visible with an explicit prerequisite until design facts are ex
   );
   assert.equal(
     getStudioActionUnavailableReason(getStudioAction('views'), selectedCreativeDirection),
-    'Confirm design facts first',
+    'Save starting facts first',
   );
   assert.equal(
     getStudioActionPrerequisite(getStudioAction('views'), selectedCreativeDirection)?.id,
@@ -243,7 +243,21 @@ test('every action exposes typed input, context, authority, pricing, and UI sche
       assert.deepEqual(action.fields, [], `${id} host-rendered actions do not advertise fake fields`);
     }
     assert.ok('creditEstimate' in action, `${id} credit estimate`);
+    assert.ok('requestedOutputRange' in action, `${id} requested output range`);
     assert.ok('authority' in action, `${id} authority`);
+  }
+});
+
+test('job actions expose canonical requested-output ranges', () => {
+  assert.deepEqual(getStudioAction('create').requestedOutputRange, { min: 1, max: 4 });
+  assert.deepEqual(getStudioAction('vary').requestedOutputRange, { min: 0, max: 0 });
+  assert.deepEqual(getStudioAction('refine').requestedOutputRange, { min: 1, max: 1 });
+  assert.deepEqual(getStudioAction('views').requestedOutputRange, { min: 1, max: 1 });
+  assert.deepEqual(getStudioAction('present').requestedOutputRange, { min: 1, max: 4 });
+  assert.deepEqual(getStudioAction('factory').requestedOutputRange, { min: 1, max: 1 });
+
+  for (const id of ['confirm', 'more', 'specifications'] as const) {
+    assert.equal(getStudioAction(id).requestedOutputRange, null);
   }
 });
 

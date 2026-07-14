@@ -43,6 +43,32 @@ def _validate_orchestration(action_id: str, action: dict) -> None:
             f"Studio action {action_id!r} execution_mode {execution_mode!r} "
             f"requires review_authority {expected_authority!r}"
         )
+    minimum = action.get("min_requested_outputs")
+    maximum = action.get("max_requested_outputs")
+    if (
+        not isinstance(minimum, int)
+        or isinstance(minimum, bool)
+        or not isinstance(maximum, int)
+        or isinstance(maximum, bool)
+        or minimum < 0
+        or maximum < minimum
+        or maximum > 4
+    ):
+        raise ValueError(
+            f"Studio action {action_id!r} has invalid requested-output "
+            f"range {minimum!r}..{maximum!r}"
+        )
+    if (
+        execution_mode == "instant_transaction"
+        and (minimum, maximum) != (0, 0)
+    ):
+        raise ValueError(
+            f"Studio instant action {action_id!r} must request zero outputs"
+        )
+    if execution_mode != "instant_transaction" and minimum < 1:
+        raise ValueError(
+            f"Studio job action {action_id!r} must request at least one output"
+        )
 
 
 def render() -> str:
@@ -64,6 +90,8 @@ def render() -> str:
         "  execution_mode: StudioExecutionMode;\n"
         "  review_authority: StudioReviewAuthority;\n"
         "  credits_per_output: number;\n"
+        "  min_requested_outputs: number;\n"
+        "  max_requested_outputs: number;\n"
         "  input_requirements: readonly string[];\n"
         "  context_requirements: readonly string[];\n"
         "  output_type: StudioOutputType;\n"

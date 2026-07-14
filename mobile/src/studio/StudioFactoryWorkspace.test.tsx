@@ -180,6 +180,7 @@ describe('StudioFactoryWorkspace', () => {
     expect(await screen.findByText('Review material prepared')).toBeTruthy();
     expect(createStudioJob).toHaveBeenCalledWith(expect.objectContaining({
       active_design_id: 'project_1', source_revision_id: 'asset_7',
+      requested_outputs: 1,
     }));
     expect(prepareFactoryPack).toHaveBeenCalledWith('project_1', {
       studio_job_id: 'job_1', owner: 'designer',

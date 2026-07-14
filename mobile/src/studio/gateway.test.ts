@@ -711,7 +711,7 @@ test('Confirm keeps the opaque token private and separates duplicate project rev
   assert.equal(Object.keys(promoteRequest).sort().join(','), 'confirmation_token,created_by');
 });
 
-test('Confirm preserves Factory source questions without blocking Studio Design v1', async () => {
+test('Starting facts preserve Factory source questions without blocking Studio', async () => {
   let promoted = false;
   const gateway = createStudioGateway(fakeClient({
     confirmCreativeCandidateDesign: async () => ({

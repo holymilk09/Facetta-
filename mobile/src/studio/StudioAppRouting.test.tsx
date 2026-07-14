@@ -361,7 +361,7 @@ jest.mock('./StudioConfirmWorkspace', () => {
           primary_revision_count: 2, has_factory_drawing: false,
           cover_asset_id: 'asset_exact_1', created_at: null, updated_at: null,
         },
-      }) }, ReactLocal.createElement(Text, null, 'Confirm mocked design'))
+      }) }, ReactLocal.createElement(Text, null, 'Save starting facts'))
     ),
   };
 });
@@ -574,6 +574,22 @@ test('global navigation is exactly four named destinations and each opens its ro
   expect(view.queryByText(/Builder|Share design|Factory/i)).toBeNull();
 });
 
+test('the account menu opens without replacing the active routed workspace', async () => {
+  authenticate();
+  const view = await render(<App />);
+
+  await waitFor(() => expect(view.getByText('Start from an idea or reference')).toBeTruthy());
+  fireEvent.press(view.getByRole('tab', { name: 'Activity' }));
+  expect(await view.findByText('Review create')).toBeTruthy();
+
+  await fireEvent.press(view.getByLabelText('Account menu'));
+
+  expect(view.getByText('designer@example.com')).toBeTruthy();
+  expect(view.getByText('Review create')).toBeTruthy();
+  expect(view.getByRole('tab', { name: 'Activity' }).props.accessibilityState)
+    .toEqual({ selected: true });
+});
+
 test('Create restores its full draft after leaving for every global destination', async () => {
   authenticate();
   const view = await render(<App />);
@@ -650,7 +666,7 @@ test('a direct authenticated account switch clears the previous designer Create 
   expect(view.getByLabelText('Mock draft sentence').props.value).toBe('');
   expect(view.getByText('Mock draft count: 2')).toBeTruthy();
   expect(view.getByText('Mock master source: none')).toBeTruthy();
-  await fireEvent.press(view.getByLabelText('Account and settings'));
+  await fireEvent.press(view.getByLabelText('Account menu'));
   expect(view.getByText('designer-b@example.com')).toBeTruthy();
 });
 
@@ -681,7 +697,7 @@ test('a stale bootstrap restore cannot overwrite a newer signed-in account', asy
     await pendingRestore.promise;
   });
 
-  await fireEvent.press(view.getByLabelText('Account and settings'));
+  await fireEvent.press(view.getByLabelText('Account menu'));
   expect(view.getByText('signed-in-b@example.com')).toBeTruthy();
   expect(view.queryByText('restored-a@example.com')).toBeNull();
 });
@@ -758,7 +774,7 @@ test('active design actions keep the exact saved revision visible and link to Hi
   }
 
   fireEvent.press(await view.findByText('Review starting design'));
-  fireEvent.press(await view.findByText('Confirm mocked design'));
+  fireEvent.press(await view.findByText('Save starting facts'));
   expect(await view.findByText('Confirmed direction')).toBeTruthy();
   expect(view.getByText('Current saved revision · Revision 2')).toBeTruthy();
 
@@ -967,7 +983,7 @@ test('Collections opens optional Factory readiness before the review pack is rea
   fireEvent.press(view.getByText('Start from an idea or reference'));
   fireEvent.press(await view.findByText('Save mocked direction'));
   fireEvent.press(await view.findByText('Review starting design'));
-  fireEvent.press(await view.findByText('Confirm mocked design'));
+  fireEvent.press(await view.findByText('Save starting facts'));
   expect(await view.findByText('Refine route reached')).toBeTruthy();
 
   fireEvent.press(view.getByRole('tab', { name: 'Collections' }));
@@ -987,7 +1003,7 @@ test('Collections retains Factory readiness access for an exact ring that is alr
   fireEvent.press(view.getByText('Start from an idea or reference'));
   fireEvent.press(await view.findByText('Save mocked direction'));
   fireEvent.press(await view.findByText('Review starting design'));
-  fireEvent.press(await view.findByText('Confirm mocked design'));
+  fireEvent.press(await view.findByText('Save starting facts'));
   expect(await view.findByText('Refine route reached')).toBeTruthy();
 
   fireEvent.press(view.getByRole('tab', { name: 'Collections' }));
@@ -1004,7 +1020,7 @@ test('Collections hides Factory readiness for an exact non-ring revision', async
   fireEvent.press(view.getByText('Start from an idea or reference'));
   fireEvent.press(await view.findByText('Save mocked direction'));
   fireEvent.press(await view.findByText('Review starting design'));
-  fireEvent.press(await view.findByText('Confirm mocked design'));
+  fireEvent.press(await view.findByText('Save starting facts'));
   expect(await view.findByText('Refine route reached')).toBeTruthy();
   expect(mockGetStudioCapabilities).not.toHaveBeenCalled();
 
@@ -1022,7 +1038,7 @@ test('Collections hides Factory readiness when the account lacks entitlement', a
   fireEvent.press(view.getByText('Start from an idea or reference'));
   fireEvent.press(await view.findByText('Save mocked direction'));
   fireEvent.press(await view.findByText('Review starting design'));
-  fireEvent.press(await view.findByText('Confirm mocked design'));
+  fireEvent.press(await view.findByText('Save starting facts'));
   expect(await view.findByText('Refine route reached')).toBeTruthy();
   await waitFor(() => expect(mockGetStudioCapabilities).toHaveBeenCalled());
 
@@ -1030,7 +1046,7 @@ test('Collections hides Factory readiness when the account lacks entitlement', a
   expect(view.queryByText('Review optional Factory readiness')).toBeNull();
 });
 
-test('Views opens its starting-facts prerequisite and resumes automatically after confirmation', async () => {
+test('Views opens its starting-facts prerequisite and resumes after one save action', async () => {
   mockConfirmedFactoryReady = true;
   mockGetProject.mockResolvedValue({ data: eligibleFactoryProject(), error: null, status: 200 });
   markOnboarded();
@@ -1046,19 +1062,19 @@ test('Views opens its starting-facts prerequisite and resumes automatically afte
   fireEvent.press(await view.findByText('Save mocked direction'));
   expect(await view.findByText('Refine route reached')).toBeTruthy();
   const prerequisiteViews = view.getByLabelText(
-    'Generate technical views; Confirm design facts first',
+    'Generate technical views; Save starting facts first',
   );
   expect(prerequisiteViews.props.accessibilityState).toEqual({ disabled: false });
-  expect(view.getByText('Confirm design facts first')).toBeTruthy();
+  expect(view.getByText('Save starting facts first')).toBeTruthy();
   expect(view.queryByText('Views route reached')).toBeNull();
   fireEvent.press(prerequisiteViews);
-  expect(await view.findByText('Confirm mocked design')).toBeTruthy();
+  expect(await view.findByText('Save starting facts')).toBeTruthy();
   expect(view.queryByText('Views route reached')).toBeNull();
 
-  fireEvent.press(await view.findByText('Confirm mocked design'));
+  fireEvent.press(await view.findByText('Save starting facts'));
 
   expect(await view.findByText('Views route reached')).toBeTruthy();
-  expect(view.queryByText('Confirm mocked design')).toBeNull();
+  expect(view.queryByText('Save starting facts')).toBeNull();
   expect(view.queryByText('Your design families')).toBeNull();
   expect(view.queryByText(/Factory/i)).toBeNull();
   expect(view.getByLabelText('Generate technical views').props.accessibilityState).toEqual({
@@ -1148,7 +1164,7 @@ test('Activity Refine does not offer design-fact review for a non-confirmable pr
     'Choose a confirmable ring direction first',
   );
   fireEvent.press(unavailableViews);
-  expect(view.queryByText('Confirm mocked design')).toBeNull();
+  expect(view.queryByText('Save starting facts')).toBeNull();
   expect(view.queryByText('Views route reached')).toBeNull();
 });
 

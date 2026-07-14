@@ -526,7 +526,7 @@ export default function App() {
           </Text>
         </View>
         <Pressable
-          accessibilityLabel="Account and settings"
+          accessibilityLabel="Account menu"
           style={[styles.utilityButton, isStudioHome && styles.utilityButtonDark]}
           onPress={() => setShowUtilityMenu(!showUtilityMenu)}>
           <Text style={[styles.utilityIcon, isStudioHome && styles.utilityIconDark]}>•••</Text>
