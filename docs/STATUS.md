@@ -5,6 +5,45 @@ Read `CLAUDE.md` (constitution — binding), `README.md` (endpoints/layout),
 `docs/DATA_WANTED.md` (open research asks). This file is the delta: what is
 DONE beyond the original TASKS.md build order, and what is next.
 
+## 2026-07-14 Studio draft continuity, exact Refine lineage, and signed-capture replay checkpoint
+
+Studio Create now keeps the full sentence, role-labeled references, master
+source kind, and requested direction count while the designer visits Studio,
+Collections, Activity, or Learn. A successful generation clears only the exact
+draft that produced it; a newer draft, a failed request, navigation, unmount,
+or an authenticated account change cannot be overwritten by a late response.
+Direction review uses separate accessible select and keep controls, and the
+canonical saved project remains the only post-generation provenance source.
+
+Production markup refinement now requires one instruction, `preview_only`, an
+exact design version, a linked design, and the durable Refine job. It locks the
+project and rechecks the active visual revision before planning or provider
+work, so an appearance-only revision advance fails with
+`stale_active_revision` before any temporary candidate is generated. Historical
+no-version and unlinked compatibility remains explicitly non-production-only.
+
+The frozen corpus now has an exact hash-pinned routing contract: attempts one
+and two use xAI `grok-imagine-image-quality` through the `grok_direct` adapter,
+and attempt three uses OpenAI `gpt-image-2` only after a fallback reason derived
+from signed prior outcomes. Task and image-operation applicability, endpoint,
+provider operation, adapter, model, finite 0–100 machine scores, and attempt
+outcomes all fail closed. The enrolled executor signature is an assertion
+boundary, not a provider receipt. Offline replay reopens the indexed capture
+and enrolled key, revalidates the signature provider-free, and requires exact
+agreement for attempts, applicability, persistence bindings, and persistence
+observations before release recomputation.
+
+Local validation is green: 1,822 backend tests; all 36 mobile Jest suites (317
+tests); 78 Studio contract tests; TypeScript; Ruff; Expo web export; diff
+hygiene; and the complete ten-project production TypeScript-client -> HTTP ->
+FastAPI acceptance run with ten Library reopens, five Client saves, five
+Marketing saves, zero Factory use, and zero canonical state or charges from
+failed QA. The provider-free frozen definition passes for 144 integrity
+sources, 58 quality sources, and 1,044 planned sequences with zero provider
+calls. The signed live corpus, independent designer/GIA review, founder
+approval, authority enrollment, immutable provider receipts if claimed, and
+live two-principal HTTPS staging evidence remain unmet external-beta gates.
+
 ## 2026-07-14 Studio Create isolation, billing authority, and reachable Factory readiness checkpoint
 
 Starting a new design now creates a clean Studio context even when another

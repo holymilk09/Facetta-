@@ -17,8 +17,10 @@ from facetta.blind_jewelry_review import (
     validate_blind_review_packet,
 )
 from facetta.frozen_capture_workload import (
+    FROZEN_ROUTING_LABEL,
     build_provider_call_plan,
     canonical_capture_payload,
+    expected_attempt_routing,
     not_applicable_assignment_rows,
 )
 from facetta.frozen_corpus_packet import (
@@ -41,6 +43,16 @@ def _json(path: Path, value: object) -> None:
 
 def _sha(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _install_routing_contract(root: Path) -> Path:
+    source = (
+        Path(__file__).resolve().parents[1]
+        / "docs/evals/frozen-founder-corpus-v1/routing-contract.v1.json"
+    )
+    destination = root / "routing-contract.v1.json"
+    destination.write_bytes(source.read_bytes())
+    return destination
 
 
 def _binding(evaluation_id: str, kind: str) -> dict[str, object]:
@@ -188,6 +200,7 @@ def _fixture(
         format=serialization.PublicFormat.Raw,
     ))
     config = root / "config.json"
+    routing_contract = _install_routing_contract(root)
     _json(config, {
         "config_id": "fixture-config-v1",
         "manifest_sha256": _sha(manifest),
@@ -206,7 +219,10 @@ def _fixture(
             "ring_contract": "fixture-ring-contract@sha256:" + "1" * 64,
             "prompt_bundle": "fixture-prompt-bundle@sha256:" + "2" * 64,
             "evaluator_bundle": "fixture-evaluator-bundle@sha256:" + "3" * 64,
-            "routing": "fixture-provider-free-routing.v1",
+            "routing": FROZEN_ROUTING_LABEL,
+            "routing_contract": (
+                f"{routing_contract.name}@sha256:{_sha(routing_contract)}"
+            ),
         },
         "executor_trust": {
             "schema_version": "facetta-frozen-executor-trust.v1",
@@ -235,7 +251,11 @@ def _fixture(
             "source_sha256": planned["source_sha256"],
             "resolved_inputs_sha256": planned["resolved_inputs_sha256"],
             "attempt": 1,
+            **expected_attempt_routing(planned, 1),
             "accepted": True,
+            "attempt_outcome": "accepted",
+            "provider_error_code": None,
+            "qa_outcome": "pass",
             "candidate_image": candidate.name,
             "candidate_image_sha256": _sha(candidate),
         }
@@ -471,6 +491,8 @@ def test_blind_v2_rejects_ambiguous_or_missing_machine_selection(tmp_path: Path)
     capture_path = fixture["capture"]
     capture = json.loads(capture_path.read_text())  # type: ignore[union-attr]
     capture["attempts"][0]["accepted"] = False
+    capture["attempts"][0]["attempt_outcome"] = "qa_failed"
+    capture["attempts"][0]["qa_outcome"] = "fail"
     capture["signature"] = {
         "algorithm": "Ed25519",
         "key_id": fixture["key_id"],

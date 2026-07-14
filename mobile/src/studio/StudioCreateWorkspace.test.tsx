@@ -1,10 +1,15 @@
 /// <reference types="jest" />
 
 import React from 'react';
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
+import {
+  act, fireEvent, render, screen, waitFor, within,
+} from '@testing-library/react-native';
 
 import type { StudioGateway } from './gateway';
-import { StudioCreateReference, StudioCreateWorkspace } from './StudioCreateWorkspace';
+import {
+  EMPTY_STUDIO_CREATE_DRAFT, StudioCreateWorkspace, type StudioCreateDraft,
+  type StudioCreateReference,
+} from './StudioCreateWorkspace';
 import type { AssetSummary, ProjectDetail } from '../trusted/types';
 import { AuthenticatedImageProvider } from '../AuthenticatedImage';
 
@@ -63,6 +68,43 @@ type CreateGateway = Pick<StudioGateway,
   'createFromPrompt' | 'createFromDrawing' | 'completeCreativeDirectionReview'
 >;
 
+const deferred = <T,>() => {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
+};
+
+function DraftClearingCreate({
+  gateway, onSave, onGenerationSucceeded,
+}: {
+  gateway: CreateGateway;
+  onSave: React.ComponentProps<typeof StudioCreateWorkspace>['onSave'];
+  onGenerationSucceeded: NonNullable<React.ComponentProps<
+    typeof StudioCreateWorkspace
+  >['onGenerationSucceeded']>;
+}) {
+  const [draft, setDraft] = React.useState<StudioCreateDraft>(EMPTY_STUDIO_CREATE_DRAFT);
+  return (
+    <StudioCreateWorkspace
+      gateway={gateway}
+      owner="designer_1"
+      draft={draft}
+      onDraftChange={setDraft}
+      onGenerationSucceeded={(success) => {
+        setDraft((current) => (
+          current === success.submittedDraft ? EMPTY_STUDIO_CREATE_DRAFT : current
+        ));
+        onGenerationSucceeded(success);
+      }}
+      onSave={onSave}
+    />
+  );
+}
+
 const renderCreate = (ui: React.ReactElement) => render(
   <AuthenticatedImageProvider
     allowedOrigin="https://facetta.test"
@@ -100,15 +142,16 @@ test('stages sibling variations locally and commits them only with the explicit 
     status: 200,
   }));
   const onSave = jest.fn();
+  const onGenerationSucceeded = jest.fn();
   await renderCreate(
     <AuthenticatedImageProvider
       allowedOrigin="https://facetta.test"
       headers={{ Authorization: 'Bearer first-party-token' }}>
-      <StudioCreateWorkspace
+      <DraftClearingCreate
         gateway={{
           createFromPrompt, createFromDrawing: jest.fn(), completeCreativeDirectionReview,
         } as CreateGateway}
-        owner="designer_1"
+        onGenerationSucceeded={onGenerationSucceeded}
         onSave={onSave}
       />
     </AuthenticatedImageProvider>,
@@ -131,6 +174,7 @@ test('stages sibling variations locally and commits them only with the explicit 
     title: 'A sculptural aquamarine collar.',
   }));
   expect(await screen.findByText('Which direction do you want to refine?')).toBeTruthy();
+  expect(onGenerationSucceeded).toHaveBeenCalledTimes(1);
   expect(screen.getByText(/Your choice becomes the Original/i)).toBeTruthy();
   expect(screen.getByText(/keep as a sibling variation/i)).toBeTruthy();
   expect(screen.getByText('Leave in Activity & start another')).toBeTruthy();
@@ -141,6 +185,8 @@ test('stages sibling variations locally and commits them only with the explicit 
   await loadDirection(1);
   await loadDirection(2);
   await loadDirection(3);
+  expect(within(screen.getByLabelText('Direction 2')).queryByText('Keep as variation')).toBeNull();
+  expect(within(screen.getByLabelText('Direction 2')).queryByText('Inspect detail')).toBeNull();
   await fireEvent.press(screen.getAllByText('Keep as variation')[0]);
   expect(completeCreativeDirectionReview).not.toHaveBeenCalled();
   expect(onSave).not.toHaveBeenCalled();
@@ -162,11 +208,156 @@ test('stages sibling variations locally and commits them only with the explicit 
   });
   expect(onSave).toHaveBeenCalledWith(expect.objectContaining({
     selectedAssetId: 'candidate_3',
-    sentence: 'A sculptural aquamarine collar.',
   }));
+  expect(onSave.mock.calls[0][0]).not.toHaveProperty('sentence');
+  expect(onSave.mock.calls[0][0]).not.toHaveProperty('references');
 });
 
-test('reopens a durable reviewing Create job and settles that exact job on selection', async () => {
+test('a deferred generation clears only its exact submitted draft', async () => {
+  const pending = deferred<any>();
+  const onGenerationSucceeded = jest.fn();
+  await renderCreate(<DraftClearingCreate
+    gateway={{
+      createFromPrompt: jest.fn(() => pending.promise),
+      createFromDrawing: jest.fn(),
+      completeCreativeDirectionReview: jest.fn(),
+    } as CreateGateway}
+    onGenerationSucceeded={onGenerationSucceeded}
+    onSave={jest.fn()}
+  />);
+
+  await fireEvent.changeText(screen.getByLabelText('Design sentence'), 'First submitted direction.');
+  let createCompletion!: Promise<void>;
+  await act(() => {
+    createCompletion = fireEvent.press(screen.getByText('Create 2 directions'));
+  });
+  await fireEvent.changeText(screen.getByLabelText('Design sentence'), 'A newer unsent direction.');
+  await act(async () => {
+    pending.resolve({ data: creativeProject(2), error: null, status: 201 });
+    await createCompletion;
+  });
+
+  expect(await screen.findByText('Which direction do you want to refine?')).toBeTruthy();
+  expect(onGenerationSucceeded).toHaveBeenCalledWith(expect.objectContaining({
+    owner: 'designer_1',
+    projectId: 'project_1',
+    submittedDraft: expect.objectContaining({ sentence: 'First submitted direction.' }),
+  }));
+  await fireEvent.press(screen.getByText('Leave in Activity & start another'));
+  expect(screen.getByLabelText('Design sentence').props.value).toBe('A newer unsent direction.');
+});
+
+test('a generation resolving after unmount cannot reset parent Create state', async () => {
+  const pending = deferred<any>();
+  const onGenerationSucceeded = jest.fn();
+  const view = await renderCreate(<StudioCreateWorkspace
+    gateway={{
+      createFromPrompt: jest.fn(() => pending.promise),
+      createFromDrawing: jest.fn(),
+      completeCreativeDirectionReview: jest.fn(),
+    } as CreateGateway}
+    owner="designer_1"
+    onGenerationSucceeded={onGenerationSucceeded}
+    onSave={jest.fn()}
+  />);
+
+  await fireEvent.changeText(screen.getByLabelText('Design sentence'), 'Direction before navigation.');
+  let createCompletion!: Promise<void>;
+  await act(() => {
+    createCompletion = fireEvent.press(screen.getByText('Create 2 directions'));
+  });
+  await view.unmount();
+  await act(async () => {
+    pending.resolve({ data: creativeProject(2), error: null, status: 201 });
+    await createCompletion;
+  });
+
+  expect(onGenerationSucceeded).not.toHaveBeenCalled();
+});
+
+test('a deferred direction commit cannot navigate after its review unmounts', async () => {
+  const pending = deferred<any>();
+  const onSave = jest.fn();
+  const view = await renderCreate(<StudioCreateWorkspace
+    gateway={{
+      createFromPrompt: jest.fn(),
+      createFromDrawing: jest.fn(),
+      completeCreativeDirectionReview: jest.fn(() => pending.promise),
+    } as CreateGateway}
+    owner="designer_1"
+    resumeProject={creativeProject(1)}
+    onSave={onSave}
+  />);
+
+  await loadDirection(1);
+  let commitCompletion!: Promise<void>;
+  await act(() => {
+    commitCompletion = fireEvent.press(screen.getByText('Continue with Direction 1'));
+  });
+  expect(screen.getByText('Leave in Activity & start another').parent?.props.accessibilityState)
+    .toEqual({ disabled: true });
+  expect(screen.getByLabelText('Direction 1').props.accessibilityState)
+    .toEqual({ checked: true, disabled: true });
+  await view.unmount();
+  await act(async () => {
+    pending.resolve({
+      data: {
+        project: { ...creativeProject(1), active_asset_id: 'candidate_1' },
+        retained_variations: [],
+      },
+      error: null,
+      status: 200,
+    });
+    await commitCompletion;
+  });
+
+  expect(onSave).not.toHaveBeenCalled();
+});
+
+test('a deferred direction commit cannot save into a new owner session', async () => {
+  const pending = deferred<any>();
+  const onSave = jest.fn();
+  const gateway = {
+    createFromPrompt: jest.fn(),
+    createFromDrawing: jest.fn(),
+    completeCreativeDirectionReview: jest.fn(() => pending.promise),
+  } as CreateGateway;
+  const review = (owner: string) => (
+    <AuthenticatedImageProvider
+      allowedOrigin="https://facetta.test"
+      headers={{ Authorization: 'Bearer first-party-token' }}>
+      <StudioCreateWorkspace
+        gateway={gateway}
+        owner={owner}
+        resumeProject={creativeProject(1)}
+        onSave={onSave}
+      />
+    </AuthenticatedImageProvider>
+  );
+  const view = await render(review('designer_1'));
+
+  await loadDirection(1);
+  let commitCompletion!: Promise<void>;
+  await act(() => {
+    commitCompletion = fireEvent.press(screen.getByText('Continue with Direction 1'));
+  });
+  await view.rerender(review('designer_2'));
+  await act(async () => {
+    pending.resolve({
+      data: {
+        project: { ...creativeProject(1), active_asset_id: 'candidate_1' },
+        retained_variations: [],
+      },
+      error: null,
+      status: 200,
+    });
+    await commitCompletion;
+  });
+
+  expect(onSave).not.toHaveBeenCalled();
+});
+
+test('reopens a durable reviewing Create job and returns only its canonical committed project', async () => {
   const createFromPrompt = jest.fn();
   const createFromDrawing = jest.fn();
   const completeCreativeDirectionReview = jest.fn(async ({ selectedCandidateId }) => ({
@@ -207,6 +398,8 @@ test('reopens a durable reviewing Create job and settles that exact job on selec
   expect(onSave).toHaveBeenCalledWith(expect.objectContaining({
     selectedAssetId: 'candidate_2',
   }));
+  expect(Object.keys(onSave.mock.calls[0][0]).sort()).toEqual(['project', 'selectedAssetId']);
+  expect(onSave.mock.calls[0][0].project.active_asset_id).toBe('candidate_2');
 });
 
 test('does not create an immutable Original until its selected preview renders', async () => {
@@ -297,6 +490,44 @@ test('keeps the complete review staged after an atomic commit error and retries 
     project: completedProject,
     selectedAssetId: 'candidate_3',
   }));
+});
+
+test('starting another brief clears the previous review error and collapses advanced setup', async () => {
+  const createFromPrompt = jest.fn(async () => ({
+    data: creativeProject(1), error: null, status: 201,
+  }));
+  const completeCreativeDirectionReview = jest.fn(async () => ({
+    data: null,
+    error: {
+      code: 'NETWORK_ERROR', category: 'network', status: 0,
+      message: 'Connection lost before the response.', retryable: true,
+    },
+    status: 0,
+  }));
+  await renderCreate(<StudioCreateWorkspace
+    gateway={{
+      createFromPrompt, createFromDrawing: jest.fn(), completeCreativeDirectionReview,
+    } as CreateGateway}
+    owner="designer_1"
+    initialSentence="First direction"
+    onSave={jest.fn()}
+  />);
+
+  await fireEvent.press(screen.getByLabelText('References and output options'));
+  expect(screen.getByText('Optional references')).toBeTruthy();
+  await fireEvent.press(screen.getByText('Create 2 directions'));
+  await loadDirection(1);
+  await fireEvent.press(screen.getByText('Continue with Direction 1'));
+  expect(await screen.findByText('Facetta could not connect. Check your connection and try again.'))
+    .toBeTruthy();
+
+  await fireEvent.press(screen.getByText('Leave in Activity & start another'));
+
+  expect(screen.queryByText('Facetta could not connect. Check your connection and try again.'))
+    .toBeNull();
+  expect(screen.queryByText('Optional references')).toBeNull();
+  expect(screen.getByLabelText('References and output options').props.accessibilityState)
+    .toEqual({ expanded: false });
 });
 
 test('keeps an already-created direction set when the designer starts another brief', async () => {
@@ -572,7 +803,92 @@ test('surfaces picker failures instead of leaving Add as a silent dead end', asy
   expect(onRequestReference).toHaveBeenCalledWith('master_geometry');
 });
 
+test('the latest deferred picker merges into the current controlled draft', async () => {
+  const first = deferred<StudioCreateReference | null>();
+  const second = deferred<StudioCreateReference | null>();
+  const onRequestReference = jest.fn()
+    .mockImplementationOnce(() => first.promise)
+    .mockImplementationOnce(() => second.promise);
+  function ControlledPickerCreate() {
+    const [draft, setDraft] = React.useState<StudioCreateDraft>(EMPTY_STUDIO_CREATE_DRAFT);
+    return <StudioCreateWorkspace
+      gateway={{
+        createFromPrompt: jest.fn(),
+        createFromDrawing: jest.fn(),
+        completeCreativeDirectionReview: jest.fn(),
+      } as unknown as CreateGateway}
+      owner="designer_1"
+      draft={draft}
+      onDraftChange={setDraft}
+      onRequestReference={onRequestReference}
+      onSave={jest.fn()}
+    />;
+  }
+  await renderCreate(<ControlledPickerCreate />);
+
+  await fireEvent.changeText(screen.getByLabelText('Design sentence'), 'Original sentence.');
+  let firstCompletion!: Promise<void>;
+  let secondCompletion!: Promise<void>;
+  await act(() => {
+    firstCompletion = fireEvent.press(screen.getByText('Add a drawing, photo, or render'));
+  });
+  await act(() => {
+    secondCompletion = fireEvent.press(screen.getByText('Add a drawing, photo, or render'));
+  });
+  await fireEvent.changeText(screen.getByLabelText('Design sentence'), 'Newer sentence.');
+  await act(async () => {
+    first.resolve({
+      id: 'stale', role: 'master_geometry', label: 'Stale sketch.png',
+      imageBase64: 'c3RhbGU=', mediaType: 'image/png', sourceKind: 'drawing',
+    });
+    await firstCompletion;
+  });
+  expect(screen.queryByText('Stale sketch.png')).toBeNull();
+
+  await act(async () => {
+    second.resolve({
+      id: 'current', role: 'master_geometry', label: 'Current sketch.png',
+      imageBase64: 'Y3VycmVudA==', mediaType: 'image/png', sourceKind: 'drawing',
+    });
+    await secondCompletion;
+  });
+  expect(screen.getByText('Current sketch.png')).toBeTruthy();
+  expect(screen.getByLabelText('Design sentence').props.value).toBe('Newer sentence.');
+});
+
+test('a picker resolving after unmount cannot write to its former controlled owner', async () => {
+  const pending = deferred<StudioCreateReference | null>();
+  const onDraftChange = jest.fn();
+  const view = await renderCreate(<StudioCreateWorkspace
+    gateway={{
+      createFromPrompt: jest.fn(),
+      createFromDrawing: jest.fn(),
+      completeCreativeDirectionReview: jest.fn(),
+    } as unknown as CreateGateway}
+    owner="designer_1"
+    draft={EMPTY_STUDIO_CREATE_DRAFT}
+    onDraftChange={onDraftChange}
+    onRequestReference={() => pending.promise}
+    onSave={jest.fn()}
+  />);
+
+  let pickerCompletion!: Promise<void>;
+  await act(() => {
+    pickerCompletion = fireEvent.press(screen.getByText('Add a drawing, photo, or render'));
+  });
+  await view.unmount();
+  await act(async () => {
+    pending.resolve({
+      id: 'late', role: 'master_geometry', label: 'Late sketch.png',
+      imageBase64: 'bGF0ZQ==', mediaType: 'image/png', sourceKind: 'drawing',
+    });
+    await pickerCompletion;
+  });
+  expect(onDraftChange).not.toHaveBeenCalled();
+});
+
 test('does not expose backend diagnostics when generation fails', async () => {
+  const onGenerationSucceeded = jest.fn();
   await renderCreate(React.createElement(StudioCreateWorkspace, {
     gateway: {
       createFromPrompt: jest.fn(async () => ({
@@ -587,13 +903,52 @@ test('does not expose backend diagnostics when generation fails', async () => {
       completeCreativeDirectionReview: jest.fn(),
     } as unknown as CreateGateway,
     owner: 'designer_1',
+    onGenerationSucceeded,
     onSave: jest.fn(),
   }));
 
   await fireEvent.changeText(screen.getByLabelText('Design sentence'), 'A quiet gold ring.');
-  await fireEvent.press(screen.getByText('Create 2 directions'));
+  await fireEvent.press(screen.getByLabelText('References and output options'));
+  await fireEvent.press(screen.getByLabelText('4 creative directions'));
+  await fireEvent.press(screen.getByText('Create 4 directions'));
   expect(await screen.findByText('Facetta could not create those directions. Try again.')).toBeTruthy();
   expect(screen.queryByText(/grok|base64|asset_id|run_id|design_version/i)).toBeNull();
+  expect(screen.getByLabelText('Design sentence').props.value).toBe('A quiet gold ring.');
+  expect(screen.getByLabelText('4 creative directions').props.accessibilityState).toEqual({
+    checked: true,
+  });
+  expect(onGenerationSucceeded).not.toHaveBeenCalled();
+});
+
+test('hydrates a controlled draft with its master source truth and output count', async () => {
+  const masterReference: StudioCreateReference = {
+    id: 'master_restored',
+    role: 'master_geometry',
+    label: 'Restored sketch.png',
+    imageBase64: 'cmVzdG9yZWQ=',
+    mediaType: 'image/png',
+    sourceKind: 'drawing',
+  };
+  await renderCreate(<StudioCreateWorkspace
+    gateway={{
+      createFromPrompt: jest.fn(), createFromDrawing: jest.fn(),
+      completeCreativeDirectionReview: jest.fn(),
+    } as CreateGateway}
+    owner="designer_1"
+    draft={{
+      sentence: 'A restored sapphire direction.',
+      references: [masterReference],
+      candidateCount: 4,
+    }}
+    onDraftChange={jest.fn()}
+    onSave={jest.fn()}
+  />);
+
+  expect(screen.getByLabelText('Design sentence').props.value)
+    .toBe('A restored sapphire direction.');
+  expect(screen.getByText('Restored sketch.png')).toBeTruthy();
+  expect(screen.getByText('4 directions · No supporting references')).toBeTruthy();
+  expect(screen.getByText('Drawing').parent?.props.accessibilityState).toEqual({ checked: true });
 });
 
 test('explains when image selection is unavailable instead of silently ignoring Add', async () => {

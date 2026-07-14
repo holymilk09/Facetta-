@@ -1,4 +1,6 @@
-import React, { useMemo, useState } from 'react';
+import React, {
+  type Dispatch, type SetStateAction, useCallback, useEffect, useMemo, useRef, useState,
+} from 'react';
 import {
   Pressable, ScrollView, StyleSheet, Text, TextInput, View,
 } from 'react-native';
@@ -34,8 +36,30 @@ export interface StudioCreateReference {
 export interface StudioCreateSelection {
   project: ProjectDetail;
   selectedAssetId: string;
+}
+
+export type StudioCreateCandidateCount = 1 | 2 | 3 | 4;
+
+/**
+ * The complete pre-generation Create setup. The master reference owns its
+ * explicit sourceKind so source truth cannot drift from a parallel field.
+ */
+export interface StudioCreateDraft {
   sentence: string;
   references: readonly StudioCreateReference[];
+  candidateCount: StudioCreateCandidateCount;
+}
+
+export const EMPTY_STUDIO_CREATE_DRAFT: StudioCreateDraft = {
+  sentence: '',
+  references: [],
+  candidateCount: 2,
+};
+
+export interface StudioCreateGenerationSuccess {
+  owner: string;
+  projectId: string;
+  submittedDraft: StudioCreateDraft;
 }
 
 export interface StudioCreateWorkspaceProps {
@@ -43,6 +67,11 @@ export interface StudioCreateWorkspaceProps {
     'createFromPrompt' | 'createFromDrawing' | 'completeCreativeDirectionReview'
   >;
   owner: string;
+  /** Controlled draft used by App so setup survives workspace navigation. */
+  draft?: StudioCreateDraft;
+  onDraftChange?: Dispatch<SetStateAction<StudioCreateDraft>>;
+  /** Called only after a request returns reviewable directions. */
+  onGenerationSucceeded?: (success: StudioCreateGenerationSuccess) => void;
   initialSentence?: string;
   initialReferences?: readonly StudioCreateReference[];
   /** Durable review state reopened from a reviewing Create Activity job. */
@@ -75,6 +104,9 @@ export function creativeCandidates(project: ProjectDetail): readonly AssetSummar
 export function StudioCreateWorkspace({
   gateway,
   owner,
+  draft: controlledDraft,
+  onDraftChange,
+  onGenerationSucceeded,
   initialSentence = '',
   initialReferences = [],
   resumeProject = null,
@@ -82,13 +114,49 @@ export function StudioCreateWorkspace({
   onRequestReference,
   onSave,
 }: StudioCreateWorkspaceProps) {
-  const [sentence, setSentence] = useState(initialSentence);
-  const [references, setReferences] = useState<StudioCreateReference[]>([...initialReferences]);
-  const [sourceKind, setSourceKind] = useState<CreativeSourceKind | null>(() => (
-    initialReferences.find((reference) => reference.role === 'master_geometry')?.sourceKind ?? null
-  ));
-  const [candidateCount, setCandidateCount] = useState<1 | 2 | 3 | 4>(2);
-  const [setupOpen, setSetupOpen] = useState(initialReferences.length > 0);
+  const [localDraft, setLocalDraft] = useState<StudioCreateDraft>(() => ({
+    sentence: initialSentence,
+    references: [...initialReferences],
+    candidateCount: 2,
+  }));
+  const createDraft = controlledDraft ?? localDraft;
+  const { sentence, references, candidateCount } = createDraft;
+  const controlledDraftRef = useRef(controlledDraft);
+  controlledDraftRef.current = controlledDraft;
+  const onDraftChangeRef = useRef(onDraftChange);
+  onDraftChangeRef.current = onDraftChange;
+  const updateDraft = useCallback((
+    update: (current: StudioCreateDraft) => StudioCreateDraft,
+  ): void => {
+    if (controlledDraftRef.current === undefined) {
+      setLocalDraft(update);
+      return;
+    }
+    onDraftChangeRef.current?.(update);
+  }, []);
+  const mountedRef = useRef(true);
+  const ownerRef = useRef(owner);
+  const generationRequestIdRef = useRef(0);
+  const referenceRequestIdRef = useRef(0);
+  const selectionRequestIdRef = useRef(0);
+  if (ownerRef.current !== owner) {
+    ownerRef.current = owner;
+    generationRequestIdRef.current += 1;
+    referenceRequestIdRef.current += 1;
+    selectionRequestIdRef.current += 1;
+  }
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      generationRequestIdRef.current += 1;
+      referenceRequestIdRef.current += 1;
+      selectionRequestIdRef.current += 1;
+    };
+  }, []);
+  const [setupOpen, setSetupOpen] = useState(
+    (controlledDraft?.references.length ?? initialReferences.length) > 0,
+  );
   const [project, setProject] = useState<ProjectDetail | null>(resumeProject);
   const resumedCandidates = resumeProject === null ? [] : creativeCandidates(resumeProject);
   const resumedSelection = resumeProject?.selected_candidate_asset_id;
@@ -122,6 +190,7 @@ export function StudioCreateWorkspace({
     && decisionVisualKeys.length === stagedCandidateIds.size + 1
     && visualReview.allReady(decisionVisualKeys);
   const masterReference = references.find((reference) => reference.role === 'master_geometry') ?? null;
+  const sourceKind: CreativeSourceKind | null = masterReference?.sourceKind ?? null;
   const secondaryReferences = references.filter(
     (reference): reference is StudioCreateReference & { role: SecondaryCreateReferenceRole } => (
       reference.role !== 'master_geometry'
@@ -136,6 +205,9 @@ export function StudioCreateWorkspace({
     && referenceVisualsReady;
 
   const requestReference = async (role: CreateReferenceRole) => {
+    const requestId = referenceRequestIdRef.current + 1;
+    referenceRequestIdRef.current = requestId;
+    const requestOwner = owner;
     setError(null);
     if (onRequestReference === undefined) {
       setError('Image selection is unavailable here. You can continue with a sentence or try again on a supported device.');
@@ -143,13 +215,21 @@ export function StudioCreateWorkspace({
     }
     try {
       const reference = await onRequestReference(role);
+      if (!mountedRef.current
+        || referenceRequestIdRef.current !== requestId
+        || ownerRef.current !== requestOwner) return;
       if (reference === null) return;
-      setReferences((current) => [
-        ...current.filter((item) => item.role !== role),
-        { ...reference, role },
-      ]);
-      if (role === 'master_geometry') setSourceKind(reference.sourceKind ?? null);
+      updateDraft((current) => ({
+        ...current,
+        references: [
+          ...current.references.filter((item) => item.role !== role),
+          { ...reference, role },
+        ],
+      }));
     } catch (cause) {
+      if (!mountedRef.current
+        || referenceRequestIdRef.current !== requestId
+        || ownerRef.current !== requestOwner) return;
       setError(cause instanceof Error
         ? cause.message
         : 'The selected image could not be added. Choose another file and try again.');
@@ -157,43 +237,60 @@ export function StudioCreateWorkspace({
   };
 
   const create = async () => {
-    const prompt = sentence.trim();
-    if ((!prompt && masterReference === null) || busy) return;
+    const submittedDraft = createDraft;
+    const submittedReferences = submittedDraft.references;
+    const submittedMaster = submittedReferences.find(
+      (reference) => reference.role === 'master_geometry',
+    ) ?? null;
+    const submittedSecondary = submittedReferences.filter(
+      (reference): reference is StudioCreateReference & { role: SecondaryCreateReferenceRole } => (
+        reference.role !== 'master_geometry'
+      ),
+    );
+    const submittedSourceKind = submittedMaster?.sourceKind ?? null;
+    const prompt = submittedDraft.sentence.trim();
+    if ((!prompt && submittedMaster === null) || busy) return;
+    const requestId = generationRequestIdRef.current + 1;
+    generationRequestIdRef.current = requestId;
+    const requestOwner = owner;
     setBusy(true);
     setError(null);
     setProject(null);
     setSelectedAssetId(null);
     setSelectionStudioJobId(null);
-    const sourceTitle = prompt || masterReference?.label || 'Untitled reference study';
+    const sourceTitle = prompt || submittedMaster?.label || 'Untitled reference study';
     const title = sourceTitle.length > 64 ? `${sourceTitle.slice(0, 61)}…` : sourceTitle;
-    const result = masterReference === null
+    const result = submittedMaster === null
       ? await gateway.createFromPrompt({
           prompt,
-          ...(secondaryReferences.length === 0 ? {} : {
-            references: secondaryReferences.map((reference) => ({
+          ...(submittedSecondary.length === 0 ? {} : {
+            references: submittedSecondary.map((reference) => ({
               role: reference.role,
               image_base64: reference.imageBase64,
               media_type: reference.mediaType,
             })),
           }),
-          variation_count: candidateCount,
-          owner,
+          variation_count: submittedDraft.candidateCount,
+          owner: requestOwner,
           title,
         })
       : await gateway.createFromDrawing({
-          image_base64: masterReference.imageBase64,
-          source_kind: sourceKind!,
-          media_type: masterReference.mediaType,
+          image_base64: submittedMaster.imageBase64,
+          source_kind: submittedSourceKind!,
+          media_type: submittedMaster.mediaType,
           ...(prompt.length === 0 ? {} : { instruction: prompt }),
-          references: secondaryReferences.map((reference) => ({
+          references: submittedSecondary.map((reference) => ({
             role: reference.role,
             image_base64: reference.imageBase64,
             media_type: reference.mediaType,
           })),
-          variation_count: candidateCount,
-          owner,
+          variation_count: submittedDraft.candidateCount,
+          owner: requestOwner,
           title,
         });
+    if (!mountedRef.current
+      || generationRequestIdRef.current !== requestId
+      || ownerRef.current !== requestOwner) return;
     setBusy(false);
     if (result.error !== null) {
       setError(designerErrorMessage(result.error, 'create'));
@@ -206,6 +303,11 @@ export function StudioCreateWorkspace({
     }
     setProject(result.data);
     setSelectedAssetId(nextCandidates[0].asset_id);
+    onGenerationSucceeded?.({
+      owner: requestOwner,
+      projectId: result.data.root_id,
+      submittedDraft,
+    });
   };
 
   const toggleDirectionToKeep = (candidateId: string, visualKey: string | null): void => {
@@ -221,6 +323,11 @@ export function StudioCreateWorkspace({
   const continueWithSelection = async (): Promise<void> => {
     if (project === null || selectedAssetId === null || busy || !decisionVisualsReady) return;
 
+    const requestId = selectionRequestIdRef.current + 1;
+    selectionRequestIdRef.current = requestId;
+    const requestOwner = owner;
+    const requestProjectId = project.root_id;
+    const requestSelectedAssetId = selectedAssetId;
     setBusy(true);
     setError(null);
     const retained = candidates.filter((candidate) => (
@@ -233,12 +340,15 @@ export function StudioCreateWorkspace({
       };
     });
     const committed = await gateway.completeCreativeDirectionReview({
-      projectId: project.root_id,
-      selectedCandidateId: selectedAssetId,
+      projectId: requestProjectId,
+      selectedCandidateId: requestSelectedAssetId,
       retained,
-      createdBy: owner,
+      createdBy: requestOwner,
       ...(selectionStudioJobId === null ? {} : { studioJobId: selectionStudioJobId }),
     });
+    if (!mountedRef.current
+      || selectionRequestIdRef.current !== requestId
+      || ownerRef.current !== requestOwner) return;
     if (committed.error !== null) {
       setBusy(false);
       setError(designerErrorMessage(committed.error, 'create'));
@@ -250,10 +360,19 @@ export function StudioCreateWorkspace({
     setSelectionStudioJobId(null);
     onSave({
       project: committed.data.project,
-      selectedAssetId,
-      sentence: sentence.trim(),
-      references,
+      selectedAssetId: requestSelectedAssetId,
     });
+  };
+
+  const leaveReviewAndStartAnother = (): void => {
+    if (busy) return;
+    selectionRequestIdRef.current += 1;
+    setError(null);
+    setSetupOpen(false);
+    setProject(null);
+    setSelectedAssetId(null);
+    setSelectionStudioJobId(null);
+    setStagedCandidateIds(new Set());
   };
 
   if (project !== null) {
@@ -275,22 +394,9 @@ export function StudioCreateWorkspace({
             const visualReady = visualReview.isReady(visualKey);
             const candidateDisabled = busy;
             return (
-              <Pressable
+              <View
                 key={candidate.asset_id}
-                accessibilityRole="radio"
-                accessibilityState={{ checked: selected, disabled: candidateDisabled }}
-                accessibilityLabel={`Direction ${index + 1}`}
-                disabled={candidateDisabled}
-                style={[styles.candidateCard, selected && styles.candidateCardSelected]}
-                onPress={() => {
-                  if (candidateDisabled) return;
-                  setSelectedAssetId(candidate.asset_id);
-                  setStagedCandidateIds((current) => {
-                    const next = new Set(current);
-                    next.delete(candidate.asset_id);
-                    return next;
-                  });
-                }}>
+                style={[styles.candidateCard, selected && styles.candidateCardSelected]}>
                 {candidate.image_url === null ? (
                   <View style={styles.imageFallback}><Text style={styles.imageFallbackText}>Preview unavailable</Text></View>
                 ) : (
@@ -303,12 +409,30 @@ export function StudioCreateWorkspace({
                     style={styles.candidateImage}
                   />
                 )}
-                <View style={styles.candidateCopy}>
-                  <Text style={styles.candidateTitle}>Direction {index + 1}</Text>
-                  <Text style={styles.candidateMeta}>{selected
-                    ? 'Selected as Original'
-                    : stagedToKeep ? 'Will be kept as a variation' : 'Tap to choose'}</Text>
-                  {!selected && (
+                <Pressable
+                  accessibilityRole="radio"
+                  accessibilityState={{ checked: selected, disabled: candidateDisabled }}
+                  accessibilityLabel={`Direction ${index + 1}`}
+                  disabled={candidateDisabled}
+                  style={styles.candidateSelect}
+                  onPress={() => {
+                    if (candidateDisabled) return;
+                    setSelectedAssetId(candidate.asset_id);
+                    setStagedCandidateIds((current) => {
+                      const next = new Set(current);
+                      next.delete(candidate.asset_id);
+                      return next;
+                    });
+                  }}>
+                  <View style={styles.candidateCopy}>
+                    <Text style={styles.candidateTitle}>Direction {index + 1}</Text>
+                    <Text style={styles.candidateMeta}>{selected
+                      ? 'Selected as Original'
+                      : stagedToKeep ? 'Will be kept as a variation' : 'Tap to choose'}</Text>
+                  </View>
+                </Pressable>
+                {!selected && (
+                  <View style={styles.candidateAction}>
                     <Pressable
                       accessibilityRole="button"
                       accessibilityLabel={`${stagedToKeep ? 'Remove' : 'Keep'} Direction ${index + 1} ${stagedToKeep ? 'from' : 'as'} variations`}
@@ -318,17 +442,14 @@ export function StudioCreateWorkspace({
                       }}
                       disabled={candidateDisabled || (!visualReady && !stagedToKeep)}
                       style={styles.keepButton}
-                      onPress={(event) => {
-                        event.stopPropagation();
-                        toggleDirectionToKeep(candidate.asset_id, visualKey);
-                      }}>
+                      onPress={() => toggleDirectionToKeep(candidate.asset_id, visualKey)}>
                       <Text style={styles.keepButtonText}>
                         {stagedToKeep ? 'Remove from kept variations' : 'Keep as variation'}
                       </Text>
                     </Pressable>
-                  )}
-                </View>
-              </Pressable>
+                  </View>
+                )}
+              </View>
             );
           })}
         </View>
@@ -341,12 +462,12 @@ export function StudioCreateWorkspace({
         )}
         {error !== null && <Text style={styles.error}>{error}</Text>}
         <View style={styles.footerActions}>
-          <Pressable style={styles.secondaryButton} onPress={() => {
-            setProject(null);
-            setSelectedAssetId(null);
-            setSelectionStudioJobId(null);
-            setStagedCandidateIds(new Set());
-          }}>
+          <Pressable
+            accessibilityRole="button"
+            accessibilityState={{ disabled: busy }}
+            disabled={busy}
+            style={[styles.secondaryButton, busy && styles.buttonDisabled]}
+            onPress={leaveReviewAndStartAnother}>
             <Text style={styles.secondaryButtonText}>Leave in Activity &amp; start another</Text>
           </Pressable>
           <Pressable
@@ -379,7 +500,10 @@ export function StudioCreateWorkspace({
         placeholderTextColor={theme.faint}
         multiline
         value={sentence}
-        onChangeText={setSentence}
+        onChangeText={(nextSentence) => updateDraft((current) => ({
+          ...current,
+          sentence: nextSentence,
+        }))}
         style={styles.prompt}
       />
 
@@ -420,12 +544,12 @@ export function StudioCreateWorkspace({
               accessibilityRole="button"
               accessibilityLabel="Remove visual source"
               style={styles.referenceButton}
-              onPress={() => {
-                setReferences((current) => current.filter(
+              onPress={() => updateDraft((current) => ({
+                ...current,
+                references: current.references.filter(
                   (item) => item.role !== 'master_geometry',
-                ));
-                setSourceKind(null);
-              }}>
+                ),
+              }))}>
               <Text style={styles.referenceButtonText}>Remove</Text>
             </Pressable>
           </View>
@@ -445,7 +569,14 @@ export function StudioCreateWorkspace({
                 accessibilityRole="radio"
                 accessibilityState={{ checked: sourceKind === kind }}
                 style={[styles.sourceKindChip, sourceKind === kind && styles.sourceKindChipSelected]}
-                onPress={() => setSourceKind(kind)}>
+                onPress={() => updateDraft((current) => ({
+                  ...current,
+                  references: current.references.map((reference) => (
+                    reference.role === 'master_geometry'
+                      ? { ...reference, sourceKind: kind }
+                      : reference
+                  )),
+                }))}>
                 <Text style={[
                   styles.sourceKindText,
                   sourceKind === kind && styles.sourceKindTextSelected,
@@ -487,7 +618,10 @@ export function StudioCreateWorkspace({
                 accessibilityLabel={`${count} creative direction${count === 1 ? '' : 's'}`}
                 accessibilityState={{ checked: candidateCount === count }}
                 style={[styles.countChip, candidateCount === count && styles.countChipSelected]}
-                onPress={() => setCandidateCount(count)}>
+                onPress={() => updateDraft((current) => ({
+                  ...current,
+                  candidateCount: count,
+                }))}>
                 <Text style={[styles.countText, candidateCount === count && styles.countTextSelected]}>{count}</Text>
               </Pressable>
             ))}
@@ -548,7 +682,10 @@ export function StudioCreateWorkspace({
                         accessibilityRole="button"
                         accessibilityLabel={`Remove ${label} reference`}
                         style={styles.referenceButton}
-                        onPress={() => setReferences((current) => current.filter((item) => item.id !== reference.id))}>
+                        onPress={() => updateDraft((current) => ({
+                          ...current,
+                          references: current.references.filter((item) => item.id !== reference.id),
+                        }))}>
                         <Text style={styles.referenceButtonText}>Remove</Text>
                       </Pressable>
                     </View>
@@ -652,14 +789,16 @@ const styles = StyleSheet.create({
   candidateGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 22 },
   candidateCard: { width: '48%', borderRadius: radius.lg, borderWidth: 1, borderColor: theme.line, backgroundColor: theme.card, overflow: 'hidden' },
   candidateCardSelected: { borderColor: '#6f52d9', borderWidth: 2 },
+  candidateSelect: { width: '100%' },
   candidateImage: { width: '100%', aspectRatio: 1, backgroundColor: '#ebe7ef' },
   imageFallback: { width: '100%', aspectRatio: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#ebe7ef' },
   imageFallbackText: { color: theme.faint, fontSize: 11 },
   reviewReadiness: { color: '#745513', fontSize: 11, lineHeight: 17, marginTop: 12 },
   candidateCopy: { padding: 12 },
+  candidateAction: { paddingHorizontal: 12, paddingBottom: 12 },
   candidateTitle: { color: theme.ink, fontSize: 13, fontWeight: '700' },
   candidateMeta: { color: theme.faint, fontSize: 10, marginTop: 3 },
-  keepButton: { minHeight: 44, justifyContent: 'center', alignSelf: 'flex-start', borderWidth: 1, borderColor: theme.line, borderRadius: radius.pill, paddingHorizontal: 10, paddingVertical: 6, marginTop: 10 },
+  keepButton: { minHeight: 44, justifyContent: 'center', alignSelf: 'flex-start', borderWidth: 1, borderColor: theme.line, borderRadius: radius.pill, paddingHorizontal: 10, paddingVertical: 6 },
   keepButtonText: { color: theme.ink, fontSize: 10, fontWeight: '700' },
   footerActions: { gap: 0 },
 });

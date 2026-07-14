@@ -17,8 +17,10 @@ from facetta.frozen_capture_producer import (
     FrozenCaptureProducer,
 )
 from facetta.frozen_capture_workload import (
+    FROZEN_ROUTING_LABEL,
     build_provider_call_plan,
     canonical_object_sha256,
+    expected_attempt_routing,
     validate_capture_envelope,
 )
 from facetta.frozen_persistence_attestation import (
@@ -41,6 +43,16 @@ def _write(path: Path, value: object) -> None:
 
 def _sha(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _install_routing_contract(root: Path) -> Path:
+    source = (
+        Path(__file__).resolve().parents[1]
+        / "docs/evals/frozen-founder-corpus-v1/routing-contract.v1.json"
+    )
+    destination = root / "routing-contract.v1.json"
+    destination.write_bytes(source.read_bytes())
+    return destination
 
 
 def _public_bytes(key: Ed25519PrivateKey) -> bytes:
@@ -186,13 +198,17 @@ def _fixture(
         component = component_dir / f"{name}.py"
         component.write_text(f"# frozen {name} fixture\n")
         component_files[name] = component
+    routing_contract = _install_routing_contract(repository)
     frozen_components: dict[str, str] = {
         "capture_workload": f"workload.json@sha256:{_sha(workload)}",
         **{
             name: f"components/{path.name}@sha256:{_sha(path)}"
             for name, path in component_files.items()
         },
-        "routing": "provider-free-fixture.v1",
+        "routing": FROZEN_ROUTING_LABEL,
+        "routing_contract": (
+            f"{routing_contract.name}@sha256:{_sha(routing_contract)}"
+        ),
     }
     if resolved:
         frozen_components["resolved_assignment_bundle"] = (
@@ -264,9 +280,18 @@ class _FakeExecutor:
         rows = []
         for index in range(1, self.attempt_count + 1):
             accepted = index == self.attempt_count
+            routing = expected_attempt_routing(
+                item,
+                min(index, 3),
+                fallback_reason=("grok_qa_failed" if index >= 3 else None),
+            )
             if item["kind"] == "render":
                 rows.append({
                     "accepted": accepted,
+                    "attempt_outcome": "accepted" if accepted else "qa_failed",
+                    "provider_error_code": None,
+                    "qa_outcome": "pass" if accepted else "fail",
+                    **routing,
                     "candidate_image": self.render,
                     "candidate_image_sha256": _sha(self.render),
                     "render_conformance_score": 96,
@@ -275,6 +300,10 @@ class _FakeExecutor:
             else:
                 rows.append({
                     "accepted": accepted,
+                    "attempt_outcome": "accepted" if accepted else "qa_failed",
+                    "provider_error_code": None,
+                    "qa_outcome": "pass" if accepted else "fail",
+                    **routing,
                     "candidate_image": self.edit,
                     "candidate_image_sha256": _sha(self.edit),
                     "mask_image": self.mask,
@@ -284,6 +313,215 @@ class _FakeExecutor:
                     "change_applied": True,
                 })
         return rows
+
+
+class _RoutingSubstitutionExecutor(_FakeExecutor):
+    def __init__(
+        self,
+        evidence: Path,
+        *,
+        field: str,
+        value: object,
+        attempt_count: int = 1,
+        attempt_index: int = 0,
+    ):
+        super().__init__(evidence, attempt_count=attempt_count)
+        self.field = field
+        self.value = value
+        self.attempt_index = attempt_index
+
+    def execute(self, item: dict[str, object]) -> list[dict[str, object]]:
+        rows = super().execute(item)
+        rows[self.attempt_index][self.field] = self.value
+        return rows
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    (
+        ("routing_contract_sha256", None),
+        ("route", "flux_kontext_edit"),
+        ("provider", "fal"),
+        ("model", "grok_direct"),
+        ("model", "flux_kontext"),
+        ("endpoint", "https://fal.run/xai/grok-imagine-image/edit"),
+    ),
+)
+def test_producer_rejects_missing_or_substituted_attempt_routing(
+    tmp_path: Path,
+    field: str,
+    value: object,
+):
+    fixture = _fixture(tmp_path)
+    executor = _RoutingSubstitutionExecutor(
+        fixture["evidence"],  # type: ignore[arg-type]
+        field=field,
+        value=value,
+    )
+    producer = _producer(
+        fixture,
+        executor=executor,
+        persistence_runner=_FakePersistenceRunner(),
+    )
+
+    with pytest.raises(ValueError, match="route/provider/model differs"):
+        producer.produce()
+
+    assert not (fixture["evidence"] / "capture").exists()  # type: ignore[operator]
+
+
+@pytest.mark.parametrize("fallback_reason", (None, "credential_missing"))
+def test_producer_rejects_missing_or_undeclared_fallback_reason(
+    tmp_path: Path,
+    fallback_reason: object,
+):
+    fixture = _fixture(tmp_path)
+    executor = _RoutingSubstitutionExecutor(
+        fixture["evidence"],  # type: ignore[arg-type]
+        field="fallback_reason",
+        value=fallback_reason,
+        attempt_count=3,
+        attempt_index=2,
+    )
+    producer = _producer(
+        fixture,
+        executor=executor,
+        persistence_runner=_FakePersistenceRunner(),
+    )
+
+    with pytest.raises(ValueError, match="requires a declared fallback reason"):
+        producer.produce()
+
+    assert not (fixture["evidence"] / "capture").exists()  # type: ignore[operator]
+
+
+def test_producer_rejects_fallback_reason_on_primary_attempt(tmp_path: Path):
+    fixture = _fixture(tmp_path)
+    executor = _RoutingSubstitutionExecutor(
+        fixture["evidence"],  # type: ignore[arg-type]
+        field="fallback_reason",
+        value="grok_qa_failed",
+    )
+    producer = _producer(
+        fixture,
+        executor=executor,
+        persistence_runner=_FakePersistenceRunner(),
+    )
+
+    with pytest.raises(ValueError, match="cannot declare a fallback reason"):
+        producer.produce()
+
+    assert not (fixture["evidence"] / "capture").exists()  # type: ignore[operator]
+
+
+def test_producer_rejects_allowed_but_false_fallback_reason(tmp_path: Path):
+    fixture = _fixture(tmp_path)
+    executor = _RoutingSubstitutionExecutor(
+        fixture["evidence"],  # type: ignore[arg-type]
+        field="fallback_reason",
+        value="grok_provider_failed",
+        attempt_count=3,
+        attempt_index=2,
+    )
+    producer = _producer(
+        fixture,
+        executor=executor,
+        persistence_runner=_FakePersistenceRunner(),
+    )
+
+    with pytest.raises(ValueError, match="prior signed outcomes"):
+        producer.produce()
+
+    assert not (fixture["evidence"] / "capture").exists()  # type: ignore[operator]
+
+
+def test_producer_accepts_causally_proven_provider_fallback(tmp_path: Path):
+    fixture = _fixture(tmp_path)
+
+    class ProviderFailureExecutor(_FakeExecutor):
+        def execute(self, item: dict[str, object]) -> list[dict[str, object]]:
+            rows = super().execute(item)
+            failed = rows[1]
+            failed.update({
+                "attempt_outcome": "provider_failed",
+                "provider_error_code": "provider_timeout",
+                "qa_outcome": None,
+                "candidate_image": None,
+                "candidate_image_sha256": None,
+                "mask_image": None,
+                "mask_image_sha256": None,
+            })
+            for field in (
+                "render_conformance_score",
+                "hard_gate_pass",
+                "edit_fidelity_score",
+                "severity",
+                "change_applied",
+            ):
+                failed.pop(field, None)
+            rows[2].update(expected_attempt_routing(
+                item,
+                3,
+                fallback_reason="grok_provider_failed_after_qa_failure",
+            ))
+            return rows
+
+    executor = ProviderFailureExecutor(
+        fixture["evidence"],  # type: ignore[arg-type]
+        attempt_count=3,
+    )
+    producer = _producer(
+        fixture,
+        executor=executor,
+        persistence_runner=_FakePersistenceRunner(),
+    )
+
+    result = producer.produce()
+
+    assert result["captured_attempt_count"] == 6
+
+
+@pytest.mark.parametrize("invalid_score", (-1, 101, float("nan"), float("inf")))
+@pytest.mark.parametrize(
+    ("kind", "score_field", "message"),
+    (
+        (
+            "render",
+            "render_conformance_score",
+            "render attempt 1 lacks machine scores",
+        ),
+        ("edit", "edit_fidelity_score", "edit attempt 1 lacks machine scores"),
+    ),
+)
+def test_producer_rejects_non_finite_or_out_of_range_machine_scores(
+    tmp_path: Path,
+    invalid_score: float,
+    kind: str,
+    score_field: str,
+    message: str,
+):
+    fixture = _fixture(tmp_path)
+
+    class InvalidScoreExecutor(_FakeExecutor):
+        def execute(self, item: dict[str, object]) -> list[dict[str, object]]:
+            rows = super().execute(item)
+            if item["kind"] == kind:
+                rows[0][score_field] = invalid_score
+            return rows
+
+    executor = InvalidScoreExecutor(
+        fixture["evidence"],  # type: ignore[arg-type]
+    )
+    producer = _producer(
+        fixture,
+        executor=executor,
+        persistence_runner=_FakePersistenceRunner(),
+    )
+
+    with pytest.raises(ValueError, match=message):
+        producer.produce()
+
+    assert not (fixture["evidence"] / "capture").exists()  # type: ignore[operator]
 
 
 def test_preflight_rejects_frozen_capture_producer_drift_before_execution(
@@ -427,6 +665,8 @@ def test_terminal_unaccepted_render_and_edit_capture_final_attempt(
             rows = super().execute(item)
             for row in rows:
                 row["accepted"] = False
+                row["attempt_outcome"] = "qa_failed"
+                row["qa_outcome"] = "fail"
                 if item["kind"] == "render":
                     row["hard_gate_pass"] = False
                 else:
@@ -607,6 +847,10 @@ def test_bundle_preflight_rejects_path_escape_and_hash_drift(
         candidate_hash = "0" * 64 if unsafe == "hash" else _sha(candidate)
         attempt: dict[str, object] = {
             "accepted": True,
+            "attempt_outcome": "accepted",
+            "provider_error_code": None,
+            "qa_outcome": "pass",
+            **expected_attempt_routing(item, 1),
             "candidate_image": candidate_ref,
             "candidate_image_sha256": candidate_hash,
         }
@@ -667,6 +911,10 @@ def _bundle_inputs(
     for item in plan["items"]:
         attempt: dict[str, object] = {
             "accepted": True,
+            "attempt_outcome": "accepted",
+            "provider_error_code": None,
+            "qa_outcome": "pass",
+            **expected_attempt_routing(item, 1),
             "candidate_image": candidate.relative_to(evidence).as_posix(),
             "candidate_image_sha256": _sha(candidate),
         }

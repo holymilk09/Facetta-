@@ -10,6 +10,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import math
 from collections import defaultdict
 from dataclasses import asdict
 from pathlib import Path
@@ -19,7 +20,7 @@ from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 from cryptography.hazmat.primitives.serialization import load_pem_public_key
 
-from facetta.image_agent.contracts import ImageOperation
+from facetta.image_agent.contracts import ImageOperation, ImageRoute
 from facetta.image_agent.prompts import PROMPT_VERSIONS
 from facetta.ring_evals import (
     CANONICAL_RING_EDITS,
@@ -36,6 +37,106 @@ CAPTURE_SCHEMA = "facetta-frozen-capture.v2"
 RESOLVED_ASSIGNMENT_SCHEMA = "facetta-frozen-resolved-assignment.v1"
 ASSIGNMENT_BUNDLE_SCHEMA = "facetta-frozen-assignment-bundle.v1"
 EXECUTOR_TRUST_SCHEMA = "facetta-frozen-executor-trust.v1"
+ROUTING_CONTRACT_SCHEMA = "facetta-frozen-routing-contract.v1"
+FROZEN_ROUTING_LABEL = "grok-primary-openai-fallback.v1"
+
+_ROUTING_CONTRACT_KEYS = {
+    "schema_version",
+    "routing_label",
+    "route_entries",
+    "selection_policy",
+}
+_ROUTE_ENTRY_KEYS = {
+    "adapter_key",
+    "order",
+    "role",
+    "route",
+    "provider",
+    "model",
+    "model_revision",
+    "model_revision_status",
+    "applicable_task_classes",
+    "applicable_image_operations",
+    "attempt_numbers",
+    "fallback_conditions",
+    "endpoint",
+    "provider_operation",
+}
+_APPLICABLE_TASK_CLASSES = [
+    "quick_appearance",
+    "render_conformance",
+    "structural",
+]
+_APPLICABLE_IMAGE_OPERATIONS = [
+    ImageOperation.LOCAL_EDIT.value,
+    ImageOperation.SPEC_RENDER.value,
+    ImageOperation.VISUAL_ONLY_EDIT.value,
+]
+_FALLBACK_CONDITIONS = [
+    "grok_provider_failed",
+    "grok_provider_failed_after_qa_failure",
+    "grok_qa_failed",
+]
+_SELECTION_POLICY = {
+    "credential_based_substitution_allowed": False,
+    "source_image_required": True,
+    "stop_after_acceptance": True,
+    "undeclared_route_allowed": False,
+}
+_EXPECTED_ROUTE_ENTRIES = (
+    {
+        "adapter_key": "grok_direct",
+        "order": 1,
+        "role": "primary",
+        "route": ImageRoute.GROK_EDIT.value,
+        "provider": "xai",
+        "model": "grok-imagine-image-quality",
+        "model_revision": None,
+        "model_revision_status": "provider_alias_unversioned",
+        "endpoint": "https://api.x.ai/v1/images/edits",
+        "provider_operation": "images.edits",
+        "applicable_task_classes": _APPLICABLE_TASK_CLASSES,
+        "applicable_image_operations": _APPLICABLE_IMAGE_OPERATIONS,
+        "attempt_numbers": [1, 2],
+        "fallback_conditions": [],
+    },
+    {
+        "adapter_key": "openai_image_provider",
+        "order": 2,
+        "role": "fallback",
+        "route": ImageRoute.OPENAI_EDIT.value,
+        "provider": "openai",
+        "model": "gpt-image-2",
+        "model_revision": None,
+        "model_revision_status": "provider_alias_unversioned",
+        "endpoint": "https://api.openai.com/v1/images/edits",
+        "provider_operation": "images.edits",
+        "applicable_task_classes": _APPLICABLE_TASK_CLASSES,
+        "applicable_image_operations": _APPLICABLE_IMAGE_OPERATIONS,
+        "attempt_numbers": [3],
+        "fallback_conditions": _FALLBACK_CONDITIONS,
+    },
+)
+ATTEMPT_ROUTING_FIELDS = (
+    "routing_contract_sha256",
+    "routing_label",
+    "route_role",
+    "route",
+    "adapter_key",
+    "provider",
+    "model",
+    "model_revision",
+    "model_revision_status",
+    "endpoint",
+    "provider_operation",
+    "fallback_reason",
+)
+_ATTEMPT_ROUTE_IDENTITY_FIELDS = ATTEMPT_ROUTING_FIELDS[:-1]
+ATTEMPT_OUTCOME_FIELDS = (
+    "attempt_outcome",
+    "provider_error_code",
+    "qa_outcome",
+)
 
 
 def file_sha256(path: Path) -> str:
@@ -69,6 +170,16 @@ def canonical_object_sha256(value: object) -> str:
     return hashlib.sha256(encoded).hexdigest()
 
 
+def valid_machine_score(value: object) -> bool:
+    """Return whether a machine score is a finite numeric value in 0..100."""
+
+    return (
+        type(value) in {int, float}
+        and math.isfinite(float(value))
+        and 0 <= float(value) <= 100
+    )
+
+
 def _duplicates(values: list[str]) -> list[str]:
     seen: set[str] = set()
     duplicates: set[str] = set()
@@ -96,6 +207,293 @@ def _pinned_path(config: Json, key: str, root: Path) -> tuple[Path, str]:
     if not _hex_digest(expected_hash) or file_sha256(candidate) != expected_hash:
         raise ValueError(f"config frozen component {key} implementation drifted")
     return candidate, expected_hash
+
+
+def _load_routing_contract(config: Json, root: Path) -> tuple[Json, str]:
+    """Load and strictly validate the only route schedule allowed for capture.
+
+    The frozen corpus is intentionally provider-free until secured execution,
+    but its route semantics cannot be.  This contract prevents a live executor
+    from treating a human-readable routing label as permission to select a
+    credential-dependent provider or model.
+    """
+
+    contract_path, contract_sha256 = _pinned_path(
+        config,
+        "routing_contract",
+        root,
+    )
+    contract = _load_object(contract_path)
+    errors: list[str] = []
+    if set(contract) != _ROUTING_CONTRACT_KEYS:
+        errors.append("routing contract top-level fields differ")
+    if contract.get("schema_version") != ROUTING_CONTRACT_SCHEMA:
+        errors.append("routing contract schema_version is unsupported")
+    components = config.get("frozen_components")
+    routing_label = components.get("routing") if isinstance(components, dict) else None
+    if routing_label != FROZEN_ROUTING_LABEL:
+        errors.append("config frozen routing label is unsupported")
+    if contract.get("routing_label") != routing_label:
+        errors.append("routing contract label differs from config")
+    if contract.get("selection_policy") != _SELECTION_POLICY:
+        errors.append("routing contract selection policy differs")
+    entries = contract.get("route_entries")
+    if not isinstance(entries, list) or len(entries) != len(_EXPECTED_ROUTE_ENTRIES):
+        errors.append("routing contract route entries are incomplete")
+        entries = []
+    for index, expected in enumerate(_EXPECTED_ROUTE_ENTRIES, 1):
+        if index > len(entries):
+            break
+        entry = entries[index - 1]
+        if not isinstance(entry, dict):
+            errors.append(f"routing contract route entry {index} is not an object")
+            continue
+        if set(entry) != _ROUTE_ENTRY_KEYS:
+            errors.append(f"routing contract route entry {index} fields differ")
+            continue
+        if entry != expected:
+            errors.append(f"routing contract route entry {index} differs")
+    thresholds = config.get("thresholds")
+    max_attempts = (
+        thresholds.get("max_attempts")
+        if isinstance(thresholds, dict)
+        else None
+    )
+    assigned_attempts = [
+        attempt
+        for entry in entries
+        if isinstance(entry, dict)
+        for attempt in (
+            entry.get("attempt_numbers", [])
+            if isinstance(entry.get("attempt_numbers"), list)
+            else []
+        )
+        if type(attempt) is int
+    ]
+    if type(max_attempts) is not int or sorted(assigned_attempts) != list(
+        range(1, max_attempts + 1)
+    ):
+        errors.append("routing contract attempt schedule differs from config")
+    if errors:
+        raise ValueError("invalid frozen routing contract: " + "; ".join(errors))
+    return contract, contract_sha256
+
+
+def _routing_attempt_assignments(
+    contract: Json,
+    contract_sha256: str,
+    *,
+    operation_class: str,
+    image_operation: str,
+) -> list[Json]:
+    assignments: list[Json] = []
+    for entry in contract["route_entries"]:
+        if operation_class not in entry["applicable_task_classes"]:
+            raise ValueError(
+                "routing contract does not allow operation class "
+                f"{operation_class}"
+            )
+        if image_operation not in entry["applicable_image_operations"]:
+            raise ValueError(
+                "routing contract does not allow image operation "
+                f"{image_operation}"
+            )
+        for attempt in entry["attempt_numbers"]:
+            assignments.append({
+                "attempt": attempt,
+                "routing_contract_sha256": contract_sha256,
+                "routing_label": contract["routing_label"],
+                "route_role": entry["role"],
+                "route": entry["route"],
+                "adapter_key": entry["adapter_key"],
+                "provider": entry["provider"],
+                "model": entry["model"],
+                "model_revision": entry["model_revision"],
+                "model_revision_status": entry["model_revision_status"],
+                "endpoint": entry["endpoint"],
+                "provider_operation": entry["provider_operation"],
+                "allowed_fallback_reasons": entry["fallback_conditions"],
+            })
+    return sorted(assignments, key=lambda row: int(row["attempt"]))
+
+
+def expected_attempt_routing(
+    planned: Json,
+    attempt: int,
+    *,
+    fallback_reason: str | None = None,
+) -> Json:
+    """Return the exact signed route identity assigned to one attempt."""
+
+    resolved = planned.get("resolved_inputs")
+    execution = resolved.get("execution") if isinstance(resolved, dict) else None
+    routing = execution.get("routing") if isinstance(execution, dict) else None
+    assignments = routing.get("attempts") if isinstance(routing, dict) else None
+    if not isinstance(assignments, list):
+        raise ValueError("planned execution routing assignments are unavailable")
+    matches = [
+        row
+        for row in assignments
+        if isinstance(row, dict) and row.get("attempt") == attempt
+    ]
+    if len(matches) != 1:
+        raise ValueError(f"planned execution attempt {attempt} routing is unavailable")
+    assignment = matches[0]
+    allowed_reasons = assignment.get("allowed_fallback_reasons")
+    if assignment.get("route_role") == "primary":
+        if fallback_reason is not None:
+            raise ValueError(
+                f"primary attempt {attempt} cannot declare a fallback reason"
+            )
+    elif (
+        not isinstance(allowed_reasons, list)
+        or fallback_reason not in allowed_reasons
+    ):
+        raise ValueError(
+            f"fallback attempt {attempt} requires a declared fallback reason"
+        )
+    expected = {
+        field: matches[0].get(field)
+        for field in _ATTEMPT_ROUTE_IDENTITY_FIELDS
+    }
+    expected["fallback_reason"] = fallback_reason
+    return expected
+
+
+def attempt_sequence_errors(
+    attempts: list[Json],
+    planned: Json,
+    *,
+    label: str,
+) -> list[str]:
+    """Validate signed attempt routing, outcomes, and fallback causality."""
+
+    errors: list[str] = []
+    maximum = planned.get("maximum_attempts")
+    if type(maximum) is not int or not attempts or len(attempts) > maximum:
+        return [f"{label} attempt count is out of bounds"]
+    accepted: list[int] = []
+    prior_outcomes: list[str] = []
+    for index, attempt in enumerate(attempts, 1):
+        fallback_reason = attempt.get("fallback_reason")
+        try:
+            expected_routing = expected_attempt_routing(
+                planned,
+                index,
+                fallback_reason=fallback_reason,
+            )
+        except ValueError as exc:
+            errors.append(f"{label} {exc}")
+        else:
+            actual_routing = {
+                field: attempt.get(field)
+                for field in ATTEMPT_ROUTING_FIELDS
+            }
+            if actual_routing != expected_routing:
+                errors.append(
+                    f"{label} attempt {index} route/provider/model differs"
+                )
+
+        accepted_value = attempt.get("accepted")
+        outcome = attempt.get("attempt_outcome")
+        provider_error = attempt.get("provider_error_code")
+        qa_outcome = attempt.get("qa_outcome")
+        if type(accepted_value) is not bool:
+            errors.append(f"{label} attempt {index} accepted must be boolean")
+        elif accepted_value:
+            accepted.append(index)
+        if outcome == "accepted":
+            if accepted_value is not True or qa_outcome != "pass":
+                errors.append(
+                    f"{label} attempt {index} accepted outcome is inconsistent"
+                )
+            if provider_error is not None:
+                errors.append(
+                    f"{label} attempt {index} accepted outcome has provider error"
+                )
+        elif outcome == "qa_failed":
+            if accepted_value is not False or qa_outcome != "fail":
+                errors.append(
+                    f"{label} attempt {index} QA-failed outcome is inconsistent"
+                )
+            if provider_error is not None:
+                errors.append(
+                    f"{label} attempt {index} QA-failed outcome has provider error"
+                )
+        elif outcome == "provider_failed":
+            if accepted_value is not False or qa_outcome is not None:
+                errors.append(
+                    f"{label} attempt {index} provider-failed outcome is inconsistent"
+                )
+            if not isinstance(provider_error, str) or not provider_error.strip():
+                errors.append(
+                    f"{label} attempt {index} provider failure lacks an error code"
+                )
+        else:
+            errors.append(f"{label} attempt {index} outcome is unsupported")
+
+        if index == 3:
+            expected_reason = (
+                "grok_provider_failed_after_qa_failure"
+                if prior_outcomes[-1:] == ["provider_failed"]
+                and "qa_failed" in prior_outcomes[:-1]
+                else "grok_provider_failed"
+                if prior_outcomes[-1:] == ["provider_failed"]
+                else "grok_qa_failed"
+                if prior_outcomes[-1:] == ["qa_failed"]
+                else None
+            )
+            if fallback_reason != expected_reason:
+                errors.append(
+                    f"{label} attempt 3 fallback reason does not match prior "
+                    "signed outcomes"
+                )
+        prior_outcomes.append(str(outcome or ""))
+
+        provider_failed = outcome == "provider_failed"
+        candidate_fields = (
+            attempt.get("candidate_image"),
+            attempt.get("candidate_image_sha256"),
+        )
+        if provider_failed:
+            if any(value is not None for value in candidate_fields):
+                errors.append(
+                    f"{label} attempt {index} provider failure declares a candidate"
+                )
+            if any(attempt.get(field) is not None for field in (
+                "mask_image",
+                "mask_image_sha256",
+                "render_conformance_score",
+                "hard_gate_pass",
+                "edit_fidelity_score",
+                "severity",
+                "change_applied",
+            )):
+                errors.append(
+                    f"{label} attempt {index} provider failure declares QA evidence"
+                )
+        elif planned.get("kind") == "render":
+            if (
+                not valid_machine_score(attempt.get("render_conformance_score"))
+                or type(attempt.get("hard_gate_pass")) is not bool
+            ):
+                errors.append(f"{label} render attempt {index} lacks machine scores")
+            if attempt.get("mask_image") is not None:
+                errors.append(f"{label} render attempt {index} declares a mask")
+        elif (
+            not valid_machine_score(attempt.get("edit_fidelity_score"))
+            or attempt.get("severity") not in {"none", "minor", "major"}
+            or type(attempt.get("change_applied")) is not bool
+        ):
+            errors.append(f"{label} edit attempt {index} lacks machine scores")
+
+    if len(accepted) > 1:
+        errors.append(f"{label} sequence has multiple accepted attempts")
+    elif accepted and accepted[0] != len(attempts):
+        errors.append(f"{label} accepted attempt must be final")
+    if attempts[-1].get("attempt_outcome") == "provider_failed":
+        errors.append(f"{label} final attempt cannot be a provider failure")
+    return errors
 
 
 def _executor_trust(config: Json, root: Path) -> tuple[Path, str, str]:
@@ -142,6 +540,8 @@ def _resolved_assignment(
     evaluation: Json,
     config: Json,
     binding: Json | None,
+    routing_contract: Json,
+    routing_contract_sha256: str,
 ) -> Json:
     """Resolve one provider-free execution and scoring contract.
 
@@ -161,7 +561,13 @@ def _resolved_assignment(
         raise ValueError("frozen config components are unavailable")
     component_binding = {
         key: components.get(key)
-        for key in ("ring_contract", "prompt_bundle", "evaluator_bundle", "routing")
+        for key in (
+            "ring_contract",
+            "prompt_bundle",
+            "evaluator_bundle",
+            "routing",
+            "routing_contract",
+        )
     }
     if any(not isinstance(value, str) or not value for value in component_binding.values()):
         raise ValueError("resolved assignment requires frozen execution components")
@@ -264,6 +670,7 @@ def _resolved_assignment(
                 },
                 "execution": None,
                 "scoring": scoring,
+                "routing_contract_sha256": routing_contract_sha256,
                 "frozen_component_bindings": component_binding,
             }
 
@@ -344,6 +751,16 @@ def _resolved_assignment(
             "variant": 0,
             "fallback_allowed": True,
             "maximum_attempts": int(thresholds["max_attempts"]),
+            "routing": {
+                "routing_contract_sha256": routing_contract_sha256,
+                "routing_label": routing_contract["routing_label"],
+                "attempts": _routing_attempt_assignments(
+                    routing_contract,
+                    routing_contract_sha256,
+                    operation_class=operation_class,
+                    image_operation=operation.value,
+                ),
+            },
             "review_evidence_sha256": binding["review_evidence_sha256"],
             "source_spec_evidence_sha256": binding["source_spec_evidence_sha256"],
             "component_map_sha256": binding["component_map_sha256"],
@@ -363,6 +780,7 @@ def _resolved_assignment(
         "evaluation_contract": evaluation_contract,
         "execution": execution,
         "scoring": scoring,
+        "routing_contract_sha256": routing_contract_sha256,
         "frozen_component_bindings": component_binding,
     }
 
@@ -433,6 +851,8 @@ def validate_workload_definition(
     config = _load_object(config_path)
     workload = _load_object(workload_path)
     errors: list[str] = []
+    routing_contract: Json | None = None
+    routing_contract_sha256: str | None = None
 
     if workload.get("schema_version") != WORKLOAD_SCHEMA:
         errors.append("unsupported workload schema_version")
@@ -448,6 +868,13 @@ def validate_workload_definition(
         pinned_workload, _ = _pinned_path(config, "capture_workload", root)
         if pinned_workload != workload_path.resolve():
             errors.append("validated workload path differs from config pin")
+    except ValueError as exc:
+        errors.append(str(exc))
+    try:
+        routing_contract, routing_contract_sha256 = _load_routing_contract(
+            config,
+            root,
+        )
     except ValueError as exc:
         errors.append(str(exc))
 
@@ -570,6 +997,12 @@ def validate_workload_definition(
         "manifest_sha256": file_sha256(manifest_path),
         "config_sha256": file_sha256(config_path),
         "workload_sha256": file_sha256(workload_path),
+        "routing_contract_sha256": routing_contract_sha256,
+        "routing_label": (
+            routing_contract.get("routing_label")
+            if isinstance(routing_contract, dict)
+            else None
+        ),
         "integrity_source_count": len(manifest_sources),
         "quality_source_count": len(quality_names),
         "quality_evaluations_per_source": len(declared_evaluations),
@@ -603,6 +1036,7 @@ def build_provider_call_plan(
     workload = _load_object(workload_path)
     config = _load_object(config_path)
     root = (repository_root or Path(__file__).resolve().parents[2]).resolve()
+    routing_contract, routing_contract_sha256 = _load_routing_contract(config, root)
     assignment_bindings, assignment_bundle = _assignment_bindings(
         config, workload_path, root,
     )
@@ -643,7 +1077,12 @@ def build_provider_call_plan(
                 str(source["filename"]), kind, evaluation_id,
             ))
             resolved_inputs = _resolved_assignment(
-                source, evaluation, config, binding,
+                source,
+                evaluation,
+                config,
+                binding,
+                routing_contract,
+                routing_contract_sha256,
             )
             items.append({
                 "source_filename": source["filename"],
@@ -681,6 +1120,8 @@ def build_provider_call_plan(
         "manifest_sha256": validation["manifest_sha256"],
         "config_sha256": validation["config_sha256"],
         "workload_sha256": validation["workload_sha256"],
+        "routing_contract_sha256": routing_contract_sha256,
+        "routing_label": routing_contract["routing_label"],
         "provider_calls_executed": 0,
         "integrity_source_count": validation["integrity_source_count"],
         "quality_source_count": validation["quality_source_count"],
@@ -870,21 +1311,9 @@ def validate_capture_envelope(
             errors.append(f"capture source hash differs for attempt {index}")
         if row.get("resolved_inputs_sha256") != planned["resolved_inputs_sha256"]:
             errors.append(f"capture resolved inputs hash differs for attempt {index}")
-        if type(row.get("accepted")) is not bool:
-            errors.append(f"capture attempt {index} accepted must be boolean")
-        if key[0] == "render":
-            if (
-                type(row.get("render_conformance_score")) not in {int, float}
-                or type(row.get("hard_gate_pass")) is not bool
-            ):
-                errors.append(f"capture render attempt {index} lacks machine scores")
-        elif (
-            type(row.get("edit_fidelity_score")) not in {int, float}
-            or row.get("severity") not in {"none", "minor", "major"}
-            or type(row.get("change_applied")) is not bool
-        ):
-            errors.append(f"capture edit attempt {index} lacks machine scores")
         grouped[key].append(row)
+        if row.get("attempt_outcome") == "provider_failed":
+            continue
         for field in ("candidate_image", "mask_image"):
             if field == "mask_image" and key[0] != "edit":
                 if row.get(field) is not None:
@@ -916,16 +1345,21 @@ def validate_capture_envelope(
             or len(rows) > max_attempts
         ):
             errors.append("capture attempts are not contiguous/in-bounds: " + ":".join(key))
-        accepted_indexes = [
-            row.get("attempt") for row in rows if row.get("accepted") is True
-        ]
-        valid_indexes = [index for index in indexes if type(index) is int]
-        if len(accepted_indexes) > 1 or (
-            accepted_indexes
-            and valid_indexes
-            and accepted_indexes[0] != max(valid_indexes)
-        ):
-            errors.append("capture acceptance sequence is invalid: " + ":".join(key))
+        planned = expected.get(key)
+        if planned is not None:
+            ordered_rows = sorted(
+                rows,
+                key=lambda row: (
+                    row.get("attempt")
+                    if type(row.get("attempt")) is int
+                    else max_attempts + 1
+                ),
+            )
+            errors.extend(attempt_sequence_errors(
+                ordered_rows,
+                planned,
+                label="capture " + ":".join(key),
+            ))
 
     persistence = capture.get("persistence_evidence_ref")
     if not isinstance(persistence, dict):
@@ -1017,16 +1451,23 @@ def validate_capture_envelope(
 
 __all__ = [
     "ASSIGNMENT_BUNDLE_SCHEMA",
+    "ATTEMPT_OUTCOME_FIELDS",
+    "ATTEMPT_ROUTING_FIELDS",
     "CAPTURE_SCHEMA",
     "EXECUTOR_TRUST_SCHEMA",
+    "FROZEN_ROUTING_LABEL",
     "PLAN_SCHEMA",
     "RESOLVED_ASSIGNMENT_SCHEMA",
+    "ROUTING_CONTRACT_SCHEMA",
     "WORKLOAD_SCHEMA",
     "build_provider_call_plan",
+    "attempt_sequence_errors",
     "canonical_capture_payload",
     "canonical_object_sha256",
+    "expected_attempt_routing",
     "file_sha256",
     "not_applicable_assignment_rows",
     "validate_capture_envelope",
+    "valid_machine_score",
     "validate_workload_definition",
 ]

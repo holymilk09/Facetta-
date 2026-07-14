@@ -689,17 +689,17 @@ class MarkupApplyRequest(BaseModel):
     markup_asset_id: str | None = None   # phase-1 upload, for mask derivation
     kind: Literal["render", "technical"] = "render"
     update_spec: bool = True
-    # Optimistic concurrency guard for the trusted workspace.  Optional only
-    # for the deprecated compatibility caller; the new client always sends it.
+    # Optimistic concurrency guard for the trusted workspace. Optional only for
+    # deprecated non-production compatibility callers; production requires it.
     expected_design_version: Annotated[int, Field(ge=1)] | None = None
     created_by: str = "usr_pending"
     variant: int = 0  # regenerate: fresh takes on the SAME marks, not the cache
     # Studio holds even QA-passed edits outside canonical history until the
     # designer explicitly applies the temporary candidate.
     preview_only: bool = False
-    # Optional durable Studio lifecycle binding. Compatibility callers may
-    # omit it; Studio passes it so Apply/Discard/Variation settles Activity in
-    # the same transaction as the terminal candidate decision.
+    # Optional only for deprecated non-production compatibility callers.
+    # Production requires the durable Refine job so Apply/Discard/Variation
+    # settles Activity in the same transaction as the terminal decision.
     studio_job_id: Annotated[str, Field(min_length=1, max_length=32)] | None = None
 
 
@@ -712,21 +712,19 @@ def markup_apply(
 ):
     """Phase 2: execute confirmed annotations.
 
-    Trusted-workspace requests carry ``expected_design_version`` and execute
-    exactly one confirmed instruction.  The older no-version compatibility
-    path may still process a list until its callers are migrated.  For each
-    annotation, the linked design's spec moves first through the scoped edit;
-    a physically impossible change skips the image edit so image and spec
-    remain in lockstep.  The accepted image and immutable DesignVersion then
-    commit atomically.
+    Production requests carry a durable Refine Studio job, an exact expected
+    design version, and exactly one confirmed instruction. The older no-version
+    or unlinked compatibility path is available only outside production until
+    its historical callers are migrated. For each annotation, the linked
+    design's spec moves first through the scoped edit; a physically impossible
+    change skips the image edit so image and spec remain in lockstep. The
+    accepted image and immutable DesignVersion then commit atomically.
     """
     actor = principal_actor(principal, request.created_by)
     request = request.model_copy(update={"created_by": actor})
-    if (
-        (env_value("FACETTA_ENV") or "production").strip().lower()
-        == "production"
-        and request.preview_only is not True
-    ):
+    environment = (env_value("FACETTA_ENV") or "production").strip().lower()
+    production = environment == "production"
+    if production and request.preview_only is not True:
         return JSONResponse(status_code=409, content={
             "detail": (
                 "production refinements must remain temporary until explicit "
@@ -735,11 +733,20 @@ def markup_apply(
             "code": "studio_preview_required",
             "category": "conflict",
         })
+    if production and request.expected_design_version is None:
+        return JSONResponse(status_code=422, content={
+            "detail": (
+                "production refinements require the exact expected design "
+                "version"
+            ),
+            "code": "expected_design_version_required",
+            "category": "validation",
+        })
 
     from facetta.agent import Annotation, AnnotationUnresolved
     from facetta.grokedit import GrokEditUnavailable, grok_plan_scoped_edit
 
-    if (request.expected_design_version is not None
+    if ((production or request.expected_design_version is not None)
             and len(request.annotations) != 1):
         return JSONResponse(status_code=422, content={
             "detail": ("trusted markup applies exactly one confirmed "
@@ -769,12 +776,14 @@ def markup_apply(
     current_design_version = linked[1] if linked else asset.design_version
     current_spec = linked[2] if linked and request.update_spec else None
 
+    if linked is None and (production
+                           or request.expected_design_version is not None):
+        return JSONResponse(status_code=409, content={
+            "detail": "the asset is not linked to a validated design",
+            "code": "design_not_linked",
+            "category": "validation"})
     if request.expected_design_version is not None:
-        if linked is None:
-            return JSONResponse(status_code=409, content={
-                "detail": "the asset is not linked to a validated design",
-                "code": "design_not_linked",
-                "category": "validation"})
+        assert linked is not None
         if request.expected_design_version != linked[1]:
             return JSONResponse(status_code=409, content={
                 "detail": ("the design changed while this revision was open; "
@@ -796,6 +805,35 @@ def markup_apply(
         )
     except ProviderStudioJobError as exc:
         return provider_studio_job_error_response(exc)
+
+    if production:
+        # Serialize against every canonical Studio revision writer, then
+        # recompute active visual truth while that project lock is held.  A
+        # design-version check alone cannot detect an appearance-only revision
+        # that advanced after this Refine job was opened.
+        from facetta.api.projects import project_detail
+        from facetta.studio_jobs import lock_project_approval_generation
+
+        project = lock_project_approval_generation(
+            db,
+            project_root_id=asset.root_id,
+            owner=actor,
+        )
+        active_asset_id = (
+            project_detail(db, project)["active_asset_id"]
+            if project is not None else None
+        )
+        if active_asset_id != asset.id:
+            return JSONResponse(status_code=409, content={
+                "detail": (
+                    "the active visual revision changed while this refinement "
+                    "was open; reopen the design before creating a preview"
+                ),
+                "code": "stale_active_revision",
+                "category": "stale_version",
+                "expected_active_asset_id": asset.id,
+                "current_active_asset_id": active_asset_id,
+            })
 
     current = asset
     steps: list[dict] = []

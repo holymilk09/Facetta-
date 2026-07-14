@@ -109,6 +109,35 @@ def _linked_asset(
     return r.json()["asset_id"], design_id
 
 
+def _running_refine_job(
+    client,
+    *,
+    job_id: str,
+    owner: str,
+    asset_id: str,
+) -> None:
+    Session = client._facetta_session_factory
+    now = utcnow()
+    with Session() as db:
+        db.add(StudioJobRecord(
+            id=job_id,
+            owner=owner,
+            action_id="refine",
+            lane="trusted_structural",
+            status="running",
+            progress=0.05,
+            active_design_id=asset_id,
+            source_revision_id=asset_id,
+            requested_outputs=1,
+            credits_per_output=20,
+            completed_outputs=0,
+            charged_outputs=0,
+            created_at=now,
+            updated_at=now,
+        ))
+        db.commit()
+
+
 class TestReadMarkup:
     def test_reader_normalizes_and_gates_confidence(self, monkeypatch):
         monkeypatch.setattr(agent, "_vision_json_2img",
@@ -150,6 +179,7 @@ class TestMarkupEndpoints:
         asset_id, _design_id = _linked_asset(client)
 
         response = client.post(f"/assets/{asset_id}/markup/apply", json={
+            "expected_design_version": 1,
             "annotations": [{
                 "region_description": "the background",
                 "change_instruction": "make the background warmer",
@@ -162,6 +192,192 @@ class TestMarkupEndpoints:
         assert response.status_code == 422, response.text
         assert response.json()["code"] == "studio_job_required"
         assert calls == []
+
+    @pytest.mark.parametrize(
+        ("job_id", "request_changes", "expected_code"),
+        [
+            ("job_missing_version", {}, "expected_design_version_required"),
+            ("job_many_annotations", {
+                "expected_design_version": 1,
+                "annotations": [
+                    {
+                        "region_description": "the background",
+                        "change_instruction": "make the background warmer",
+                    },
+                    {
+                        "region_description": "the background",
+                        "change_instruction": "soften the shadow",
+                    },
+                ],
+            }, "single_instruction_required"),
+        ],
+    )
+    def test_production_preview_rejects_noncanonical_request_before_planning(
+        self,
+        client,
+        monkeypatch,
+        job_id,
+        request_changes,
+        expected_code,
+    ):
+        planner_calls: list[bool] = []
+        provider_calls: list[bool] = []
+        monkeypatch.setattr(
+            "facetta.grokedit.grok_plan_scoped_edit",
+            lambda *_args, **_kwargs: planner_calls.append(True),
+        )
+        monkeypatch.setattr(
+            assets_mod,
+            "_trusted_image_agent",
+            lambda: provider_calls.append(True),
+        )
+        monkeypatch.setenv("FACETTA_ENV", "production")
+        asset_id, _design_id = _linked_asset(client, created_by="usr_ana")
+        _running_refine_job(
+            client,
+            job_id=job_id,
+            owner="usr_ana",
+            asset_id=asset_id,
+        )
+        request = {
+            "annotations": [{
+                "region_description": "the background",
+                "change_instruction": "make the background warmer",
+            }],
+            "created_by": "usr_ana",
+            "preview_only": True,
+            "update_spec": False,
+            "studio_job_id": job_id,
+            **request_changes,
+        }
+
+        response = client.post(f"/assets/{asset_id}/markup/apply", json=request)
+
+        assert response.status_code == 422, response.text
+        assert response.json()["code"] == expected_code
+        assert planner_calls == []
+        assert provider_calls == []
+        Session = client._facetta_session_factory
+        with Session() as db:
+            job = db.get(StudioJobRecord, job_id)
+            assert job is not None and job.status == "running"
+
+    def test_production_preview_requires_linked_exact_design_before_planning(
+        self,
+        client,
+        monkeypatch,
+    ):
+        planner_calls: list[bool] = []
+        provider_calls: list[bool] = []
+        monkeypatch.setattr(
+            "facetta.grokedit.grok_plan_scoped_edit",
+            lambda *_args, **_kwargs: planner_calls.append(True),
+        )
+        monkeypatch.setattr(
+            assets_mod,
+            "_trusted_image_agent",
+            lambda: provider_calls.append(True),
+        )
+        monkeypatch.setenv("FACETTA_ENV", "production")
+        rendered = client.post("/assets/render", json={
+            "piece_description": "an unlinked halo ring",
+            "created_by": "usr_ana",
+        })
+        assert rendered.status_code == 201, rendered.text
+        asset_id = rendered.json()["asset_id"]
+        _running_refine_job(
+            client,
+            job_id="job_unlinked_design",
+            owner="usr_ana",
+            asset_id=asset_id,
+        )
+
+        response = client.post(f"/assets/{asset_id}/markup/apply", json={
+            "expected_design_version": 1,
+            "annotations": [{
+                "region_description": "the halo",
+                "change_instruction": "raise the melee to 1.3 mm",
+                "target_section": "side_stones",
+                "index": 0,
+            }],
+            "created_by": "usr_ana",
+            "preview_only": True,
+            "studio_job_id": "job_unlinked_design",
+        })
+
+        assert response.status_code == 409, response.text
+        assert response.json()["code"] == "design_not_linked"
+        assert planner_calls == []
+        assert provider_calls == []
+        Session = client._facetta_session_factory
+        with Session() as db:
+            job = db.get(StudioJobRecord, "job_unlinked_design")
+            assert job is not None and job.status == "running"
+
+    def test_production_preview_rejects_stale_active_visual_before_provider(
+        self,
+        client,
+        monkeypatch,
+    ):
+        self._mock_apply(monkeypatch)
+        monkeypatch.setenv("FACETTA_ENV", "test")
+        asset_id, _design_id = _linked_asset(client, created_by="usr_ana")
+        _running_refine_job(
+            client,
+            job_id="job_stale_visual_source",
+            owner="usr_ana",
+            asset_id=asset_id,
+        )
+
+        advanced = client.post(f"/assets/{asset_id}/markup/apply", json={
+            "annotations": [{
+                "region_description": "the background",
+                "change_instruction": "make the background warmer",
+            }],
+            "created_by": "usr_ana",
+            "update_spec": False,
+        })
+        assert advanced.status_code == 201, advanced.text
+        advanced_step = advanced.json()["steps"][0]
+        assert advanced_step["asset_id"] != asset_id
+        assert advanced_step["design_version"] == 1
+
+        planner_calls: list[bool] = []
+        provider_calls: list[bool] = []
+        monkeypatch.setattr(
+            "facetta.grokedit.grok_plan_scoped_edit",
+            lambda *_args, **_kwargs: planner_calls.append(True),
+        )
+        monkeypatch.setattr(
+            assets_mod,
+            "_trusted_image_agent",
+            lambda: provider_calls.append(True),
+        )
+        monkeypatch.setenv("FACETTA_ENV", "production")
+
+        response = client.post(f"/assets/{asset_id}/markup/apply", json={
+            "expected_design_version": 1,
+            "annotations": [{
+                "region_description": "the background",
+                "change_instruction": "soften the shadow",
+            }],
+            "created_by": "usr_ana",
+            "preview_only": True,
+            "update_spec": False,
+            "studio_job_id": "job_stale_visual_source",
+        })
+
+        assert response.status_code == 409, response.text
+        body = response.json()
+        assert body["code"] == "stale_active_revision"
+        assert body["expected_active_asset_id"] == asset_id
+        assert body["current_active_asset_id"] == advanced_step["asset_id"]
+        assert planner_calls == []
+        assert provider_calls == []
+        Session = client._facetta_session_factory
+        with Session() as db:
+            job = db.get(StudioJobRecord, "job_stale_visual_source")
+            assert job is not None and job.status == "running"
 
     def test_studio_preview_run_candidate_and_job_commit_atomically(
         self,
@@ -209,25 +425,12 @@ class TestMarkupEndpoints:
         monkeypatch.setenv("FACETTA_ENV", "production")
         asset_id, _design_id = _linked_asset(client, created_by="usr_ana")
         Session = client._facetta_session_factory
-        now = utcnow()
-        with Session() as db:
-            db.add(StudioJobRecord(
-                id="job_markup_atomic",
-                owner="usr_ana",
-                action_id="refine",
-                lane="trusted_structural",
-                status="running",
-                progress=0.05,
-                active_design_id=asset_id,
-                source_revision_id=asset_id,
-                requested_outputs=1,
-                credits_per_output=20,
-                completed_outputs=0,
-                charged_outputs=0,
-                created_at=now,
-                updated_at=now,
-            ))
-            db.commit()
+        _running_refine_job(
+            client,
+            job_id="job_markup_atomic",
+            owner="usr_ana",
+            asset_id=asset_id,
+        )
 
         request = {
             "expected_design_version": 1,
@@ -709,7 +912,12 @@ class TestMarkupEndpoints:
             f"/assets/{aid}/history").json()["history"]) == 1
         assert len(client.get(f"/designs/{design_id}").json()["versions"]) == 1
 
-    def test_unlinked_chain_is_image_only(self, client, monkeypatch):
+    def test_development_unlinked_chain_uses_compatibility_image_only(
+        self,
+        client,
+        monkeypatch,
+    ):
+        monkeypatch.setenv("FACETTA_ENV", "test")
         self._mock_apply(monkeypatch)
         r = client.post("/assets/render", json={"piece_description": "a ring"})
         aid = r.json()["asset_id"]

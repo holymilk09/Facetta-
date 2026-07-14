@@ -6,6 +6,24 @@ import { StyleSheet } from 'react-native';
 import { clearSession, markOnboarded, saveSession } from '../auth';
 import { theme } from '../theme';
 
+let mockAuthStateListener: ((event: any, session: any) => void) | null = null;
+let mockRestoreAuthenticatedSession: (() => Promise<any>) | null = null;
+jest.mock('../auth', () => {
+  const actual = jest.requireActual('../auth');
+  return {
+    ...actual,
+    subscribeToAuthStateChange: (listener: (event: any, session: any) => void) => {
+      mockAuthStateListener = listener;
+      return () => {
+        if (mockAuthStateListener === listener) mockAuthStateListener = null;
+      };
+    },
+    restoreAuthenticatedSession: () => (
+      mockRestoreAuthenticatedSession?.() ?? actual.restoreAuthenticatedSession()
+    ),
+  };
+});
+
 const mockGetProject = jest.fn();
 let mockFactoryReviewEnabled = true;
 let mockConfirmedJewelryType = 'ring';
@@ -55,49 +73,107 @@ jest.mock('../trusted/client', () => ({
 
 jest.mock('./StudioCreateWorkspace', () => {
   const ReactLocal = require('react');
-  const { Pressable, Text } = require('react-native');
+  const { Pressable, Text, TextInput, View } = require('react-native');
   const { DEFAULT_API_URL } = require('../config');
   return {
-    StudioCreateWorkspace: ({ onSave, resumeProject, resumeStudioJobId }: {
+    StudioCreateWorkspace: ({
+      onSave, resumeProject, resumeStudioJobId, draft, onDraftChange, onGenerationSucceeded,
+    }: {
       onSave: (selection: any) => void;
       resumeProject?: any;
       resumeStudioJobId?: string | null;
+      draft?: any;
+      onDraftChange?: (draft: any) => void;
+      onGenerationSucceeded?: (success: any) => void;
     }) => resumeProject ? ReactLocal.createElement(
       Text,
       null,
       `Create review reached for ${resumeProject.root_id} via ${resumeStudioJobId}`,
     ) : (
-      ReactLocal.createElement(Pressable, { accessibilityRole: 'button', onPress: () => onSave({
-      project: {
-        id: 'project_1', root_id: 'project_1', title: 'Saved direction',
-        collection: null, tags: [], owner: 'usr_designer', state: 'refining',
-        design_id: null, spec: null, active_asset_id: 'asset_1',
-        confirmable_pre_spec: true,
-        active_design_version: null, selected_candidate_asset_id: 'asset_1',
-        active_revision: {
-          asset_id: 'asset_1', root_id: 'project_1', parent_asset_id: null,
-          capability: 'CREATIVE_RENDER', provenance: 'pre_spec_creative_candidate',
-          revision: 1, design_id: null, design_version: null, region: null,
-          instruction: 'Saved direction', drift: null, pinned: false,
-          media_type: 'image/png',
-          image_url: `${DEFAULT_API_URL.replace(/\/$/, '')}/assets/asset_1/image`,
-          created_by: 'usr_designer', created_at: null, legacy_provenance: false,
-        },
-        pinned_revision: null, revisions: [], assets: [{
-          asset_id: 'asset_1', root_id: 'project_1', parent_asset_id: null,
-          capability: 'CREATIVE_RENDER', provenance: 'pre_spec_creative_candidate',
-          revision: 1, design_id: null, design_version: null, region: null,
-          instruction: 'Saved direction', drift: null, pinned: false,
-          media_type: 'image/png',
-          image_url: `${DEFAULT_API_URL.replace(/\/$/, '')}/assets/asset_1/image`,
-          created_by: 'usr_designer', created_at: null, legacy_provenance: false,
-        }], derived_assets: [],
-        approval: null, factory_ready: false, factory_blockers: [],
-        primary_revision_count: 1, has_factory_drawing: false,
-        cover_asset_id: 'asset_1', created_at: null, updated_at: null,
-      },
-      selectedAssetId: 'asset_1', sentence: 'Saved direction', references: [],
-      }) }, ReactLocal.createElement(Text, null, 'Save mocked direction'))
+      ReactLocal.createElement(
+        View,
+        null,
+        ReactLocal.createElement(TextInput, {
+          accessibilityLabel: 'Mock draft sentence',
+          value: draft?.sentence ?? '',
+          onChangeText: (sentence: string) => onDraftChange?.({ ...draft, sentence }),
+        }),
+        ReactLocal.createElement(
+          Text,
+          null,
+          `Mock draft count: ${draft?.candidateCount ?? 2}`,
+        ),
+        ReactLocal.createElement(
+          Text,
+          null,
+          `Mock master source: ${draft?.references?.find((reference: any) => (
+            reference.role === 'master_geometry'
+          ))?.sourceKind ?? 'none'}`,
+        ),
+        ReactLocal.createElement(
+          Pressable,
+          {
+            accessibilityRole: 'button',
+            onPress: () => onDraftChange?.({ ...draft, candidateCount: 4 }),
+          },
+          ReactLocal.createElement(Text, null, 'Mock four directions'),
+        ),
+        ReactLocal.createElement(
+          Pressable,
+          {
+            accessibilityRole: 'button',
+            onPress: () => onDraftChange?.({
+              ...draft,
+              references: [{
+                id: 'mock_master', role: 'master_geometry', label: 'Sketch.png',
+                imageBase64: 'bW9jaw==', mediaType: 'image/png', sourceKind: 'drawing',
+              }],
+            }),
+          },
+          ReactLocal.createElement(Text, null, 'Mock add drawing reference'),
+        ),
+        ReactLocal.createElement(
+          Pressable,
+          {
+            accessibilityRole: 'button',
+            onPress: () => onGenerationSucceeded?.({
+              owner: 'usr_designer', projectId: 'project_1', submittedDraft: draft,
+            }),
+          },
+          ReactLocal.createElement(Text, null, 'Mock generation succeeded'),
+        ),
+        ReactLocal.createElement(Pressable, { accessibilityRole: 'button', onPress: () => onSave({
+          project: {
+            id: 'project_1', root_id: 'project_1', title: 'Saved direction',
+            collection: null, tags: [], owner: 'usr_designer', state: 'refining',
+            design_id: null, spec: null, active_asset_id: 'asset_1',
+            confirmable_pre_spec: true,
+            active_design_version: null, selected_candidate_asset_id: 'asset_1',
+            active_revision: {
+              asset_id: 'asset_1', root_id: 'project_1', parent_asset_id: null,
+              capability: 'CREATIVE_RENDER', provenance: 'pre_spec_creative_candidate',
+              revision: 1, design_id: null, design_version: null, region: null,
+              instruction: 'Saved direction', drift: null, pinned: false,
+              media_type: 'image/png',
+              image_url: `${DEFAULT_API_URL.replace(/\/$/, '')}/assets/asset_1/image`,
+              created_by: 'usr_designer', created_at: null, legacy_provenance: false,
+            },
+            pinned_revision: null, revisions: [], assets: [{
+              asset_id: 'asset_1', root_id: 'project_1', parent_asset_id: null,
+              capability: 'CREATIVE_RENDER', provenance: 'pre_spec_creative_candidate',
+              revision: 1, design_id: null, design_version: null, region: null,
+              instruction: 'Saved direction', drift: null, pinned: false,
+              media_type: 'image/png',
+              image_url: `${DEFAULT_API_URL.replace(/\/$/, '')}/assets/asset_1/image`,
+              created_by: 'usr_designer', created_at: null, legacy_provenance: false,
+            }], derived_assets: [],
+            approval: null, factory_ready: false, factory_blockers: [],
+            primary_revision_count: 1, has_factory_drawing: false,
+            cover_asset_id: 'asset_1', created_at: null, updated_at: null,
+          },
+          selectedAssetId: 'asset_1',
+        }) }, ReactLocal.createElement(Text, null, 'Save mocked direction')),
+      )
     ),
   };
 });
@@ -297,6 +373,8 @@ import App from '../../App';
 
 afterEach(() => {
   clearSession();
+  mockAuthStateListener = null;
+  mockRestoreAuthenticatedSession = null;
   mockFactoryReviewEnabled = true;
   mockConfirmedJewelryType = 'ring';
   mockConfirmedFactoryReady = false;
@@ -470,6 +548,118 @@ test('global navigation is exactly four named destinations and each opens its ro
   expect(await view.findByText('Start from an idea or reference')).toBeTruthy();
   expect(view.getByRole('tab', { name: 'Studio' }).props.accessibilityState).toEqual({ selected: true });
   expect(view.queryByText(/Builder|Share design|Factory/i)).toBeNull();
+});
+
+test('Create restores its full draft after leaving for every global destination', async () => {
+  authenticate();
+  const view = await render(<App />);
+
+  await waitFor(() => expect(view.getByText('Start from an idea or reference')).toBeTruthy());
+  await fireEvent.press(view.getByText('Start from an idea or reference'));
+  await fireEvent.changeText(
+    await view.findByLabelText('Mock draft sentence'),
+    'An architectural sapphire ring.',
+  );
+  await fireEvent.press(view.getByText('Mock four directions'));
+  await fireEvent.press(view.getByText('Mock add drawing reference'));
+
+  const expectRestoredDraft = () => {
+    expect(view.getByLabelText('Mock draft sentence').props.value)
+      .toBe('An architectural sapphire ring.');
+    expect(view.getByText('Mock draft count: 4')).toBeTruthy();
+    expect(view.getByText('Mock master source: drawing')).toBeTruthy();
+  };
+  expectRestoredDraft();
+
+  for (const destination of ['Studio', 'Collections', 'Activity', 'Learn'] as const) {
+    await fireEvent.press(view.getByRole('tab', { name: destination }));
+    if (destination !== 'Studio') {
+      await fireEvent.press(view.getByRole('tab', { name: 'Studio' }));
+    }
+    await fireEvent.press(await view.findByText('Start from an idea or reference'));
+    expectRestoredDraft();
+  }
+});
+
+test('a successful Create generation clears the setup before the next Create session', async () => {
+  authenticate();
+  const view = await render(<App />);
+
+  await waitFor(() => expect(view.getByText('Start from an idea or reference')).toBeTruthy());
+  await fireEvent.press(view.getByText('Start from an idea or reference'));
+  await fireEvent.changeText(view.getByLabelText('Mock draft sentence'), 'A quiet gold ring.');
+  await fireEvent.press(view.getByText('Mock four directions'));
+  await fireEvent.press(view.getByText('Mock add drawing reference'));
+  await fireEvent.press(view.getByText('Mock generation succeeded'));
+
+  expect(view.getByLabelText('Mock draft sentence').props.value).toBe('');
+  expect(view.getByText('Mock draft count: 2')).toBeTruthy();
+  expect(view.getByText('Mock master source: none')).toBeTruthy();
+
+  await fireEvent.press(view.getByRole('tab', { name: 'Studio' }));
+  await fireEvent.press(await view.findByText('Start from an idea or reference'));
+  expect(view.getByLabelText('Mock draft sentence').props.value).toBe('');
+  expect(view.getByText('Mock draft count: 2')).toBeTruthy();
+  expect(view.getByText('Mock master source: none')).toBeTruthy();
+});
+
+test('a direct authenticated account switch clears the previous designer Create state', async () => {
+  authenticate();
+  const view = await render(<App />);
+
+  await waitFor(() => expect(view.getByText('Start from an idea or reference')).toBeTruthy());
+  await fireEvent.press(view.getByText('Start from an idea or reference'));
+  await fireEvent.changeText(view.getByLabelText('Mock draft sentence'), 'Designer A private direction.');
+  await fireEvent.press(view.getByText('Mock four directions'));
+  await fireEvent.press(view.getByText('Mock add drawing reference'));
+
+  await act(async () => {
+    mockAuthStateListener?.('SIGNED_IN', {
+      provider: 'email', email: 'designer-b@example.com', name: 'Designer B',
+      designerId: 'usr_designer_b', accessToken: 'server-issued-b-token',
+      accessTokenExpiresAt: '2099-01-01T00:00:00Z',
+    });
+  });
+
+  expect(await view.findByText('Start from an idea or reference')).toBeTruthy();
+  await fireEvent.press(view.getByText('Start from an idea or reference'));
+  expect(view.getByLabelText('Mock draft sentence').props.value).toBe('');
+  expect(view.getByText('Mock draft count: 2')).toBeTruthy();
+  expect(view.getByText('Mock master source: none')).toBeTruthy();
+  await fireEvent.press(view.getByLabelText('Account and settings'));
+  expect(view.getByText('designer-b@example.com')).toBeTruthy();
+});
+
+test('a stale bootstrap restore cannot overwrite a newer signed-in account', async () => {
+  const pendingRestore = deferred<any>();
+  const restoredAccount = {
+    provider: 'email' as const, email: 'restored-a@example.com', name: 'Restored A',
+    designerId: 'usr_restored_a', accessToken: 'restored-a-token',
+    accessTokenExpiresAt: '2099-01-01T00:00:00Z',
+  };
+  const signedInAccount = {
+    provider: 'email' as const, email: 'signed-in-b@example.com', name: 'Signed In B',
+    designerId: 'usr_signed_in_b', accessToken: 'signed-in-b-token',
+    accessTokenExpiresAt: '2099-01-01T00:00:00Z',
+  };
+  markOnboarded();
+  saveSession(restoredAccount);
+  mockRestoreAuthenticatedSession = () => pendingRestore.promise;
+  const view = await render(<App />);
+
+  await act(async () => {
+    mockAuthStateListener?.('SIGNED_IN', signedInAccount);
+  });
+  expect(await view.findByText('Start from an idea or reference')).toBeTruthy();
+
+  await act(async () => {
+    pendingRestore.resolve(restoredAccount);
+    await pendingRestore.promise;
+  });
+
+  await fireEvent.press(view.getByLabelText('Account and settings'));
+  expect(view.getByText('signed-in-b@example.com')).toBeTruthy();
+  expect(view.queryByText('restored-a@example.com')).toBeNull();
 });
 
 test('authenticated shell fills short workspaces with the routed surface while Studio home stays dark', async () => {

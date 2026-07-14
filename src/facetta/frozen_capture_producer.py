@@ -11,7 +11,6 @@ from __future__ import annotations
 
 import base64
 import json
-import math
 import shutil
 import tempfile
 from dataclasses import dataclass
@@ -28,10 +27,13 @@ from cryptography.hazmat.primitives.serialization import (
 )
 
 from facetta.frozen_capture_workload import (
+    ATTEMPT_OUTCOME_FIELDS,
+    ATTEMPT_ROUTING_FIELDS,
     CAPTURE_SCHEMA,
     build_provider_call_plan,
     canonical_capture_payload,
     canonical_object_sha256,
+    attempt_sequence_errors,
     file_sha256,
     not_applicable_assignment_rows,
     validate_capture_envelope,
@@ -83,14 +85,6 @@ def _git_sha(value: object) -> bool:
         isinstance(value, str)
         and len(value) in {40, 64}
         and all(character in "0123456789abcdef" for character in value)
-    )
-
-
-def _score(value: object) -> bool:
-    return (
-        type(value) in {int, float}
-        and math.isfinite(float(value))
-        and 0 <= float(value) <= 100
     )
 
 
@@ -271,6 +265,8 @@ class BundleCaptureExecutor:
                     + ":".join(key)
                 )
             for attempt_index, attempt in enumerate(attempts, 1):
+                if attempt.get("attempt_outcome") == "provider_failed":
+                    continue
                 for field in ("candidate_image", "mask_image"):
                     if field == "mask_image" and key[0] != "edit":
                         if attempt.get(field) is not None:
@@ -298,6 +294,7 @@ class BundleCaptureExecutor:
                             f"execution bundle {':'.join(key)} attempt "
                             f"{attempt_index} {field} hash differs"
                         )
+            errors.extend(_attempt_errors(attempts, planned))
             rows[key] = row
         missing = sorted(set(expected) - set(rows))
         if missing:
@@ -411,44 +408,12 @@ def _challenge_signer(signer: CaptureSigner, enrolled: EnrolledKey) -> None:
 
 
 def _attempt_errors(attempts: list[Json], planned: Json) -> list[str]:
-    errors: list[str] = []
     key = ":".join((
         str(planned["kind"]),
         str(planned["evaluation_id"]),
         str(planned["source_filename"]),
     ))
-    if not attempts or len(attempts) > int(planned["maximum_attempts"]):
-        return [f"executor attempt count is out of bounds: {key}"]
-    accepted: list[int] = []
-    for index, attempt in enumerate(attempts, 1):
-        if type(attempt.get("accepted")) is not bool:
-            errors.append(f"executor attempt {index} accepted must be boolean: {key}")
-        elif attempt["accepted"]:
-            accepted.append(index)
-        if planned["kind"] == "render":
-            if (
-                not _score(attempt.get("render_conformance_score"))
-                or type(attempt.get("hard_gate_pass")) is not bool
-            ):
-                errors.append(f"executor render attempt {index} lacks scores: {key}")
-            if attempt.get("mask_image") is not None:
-                errors.append(f"executor render attempt {index} declares a mask: {key}")
-        elif (
-            not _score(attempt.get("edit_fidelity_score"))
-            or attempt.get("severity") not in {"none", "minor", "major"}
-            or type(attempt.get("change_applied")) is not bool
-        ):
-            errors.append(f"executor edit attempt {index} lacks scores: {key}")
-    if len(accepted) > 1:
-        errors.append(
-            "executor sequence has multiple accepted attempts: "
-            + key
-        )
-    elif accepted and accepted[0] != len(attempts):
-        errors.append(
-            "executor accepted attempt must be final: " + key
-        )
-    return errors
+    return attempt_sequence_errors(attempts, planned, label="executor " + key)
 
 
 def _copy_verified_artifact(
@@ -647,6 +612,37 @@ class FrozenCaptureProducer:
                 key_stem = str(planned["candidate_artifact_stem"])
                 sequence_attempts: list[Json] = []
                 for index, raw in enumerate(raw_attempts, 1):
+                    if raw.get("attempt_outcome") == "provider_failed":
+                        failed_row: Json = {
+                            "kind": planned["kind"],
+                            "evaluation_id": planned["evaluation_id"],
+                            "operation_class": planned["operation_class"],
+                            "source_filename": planned["source_filename"],
+                            "source_sha256": planned["source_sha256"],
+                            "source_image": (
+                                Path("sources")
+                                / str(planned["source_filename"])
+                            ).as_posix(),
+                            "source_image_sha256": planned["source_sha256"],
+                            "resolved_inputs_sha256": planned[
+                                "resolved_inputs_sha256"
+                            ],
+                            "attempt": index,
+                            "accepted": False,
+                            "candidate_image": None,
+                            "candidate_image_sha256": None,
+                            "mask_image": None,
+                            "mask_image_sha256": None,
+                        }
+                        failed_row.update({
+                            field: raw[field]
+                            for field in (
+                                *ATTEMPT_ROUTING_FIELDS,
+                                *ATTEMPT_OUTCOME_FIELDS,
+                            )
+                        })
+                        sequence_attempts.append(failed_row)
+                        continue
                     candidate_relative = Path("artifacts") / (
                         f"{key_stem}--attempt-{index}"
                         + _artifact_suffix(raw.get("candidate_image"))
@@ -688,6 +684,13 @@ class FrozenCaptureProducer:
                         "mask_image": None,
                         "mask_image_sha256": None,
                     }
+                    row.update({
+                        field: raw[field]
+                        for field in (
+                            *ATTEMPT_ROUTING_FIELDS,
+                            *ATTEMPT_OUTCOME_FIELDS,
+                        )
+                    })
                     if planned["kind"] == "render":
                         row.update(
                             render_conformance_score=raw["render_conformance_score"],

@@ -14,6 +14,7 @@ from facetta.frozen_corpus_release import (
     canonical_founder_approval_payload,
     verify_frozen_corpus_release,
 )
+from facetta.frozen_capture_workload import FROZEN_ROUTING_LABEL
 
 
 def _json(path: Path, value: object) -> None:
@@ -22,6 +23,16 @@ def _json(path: Path, value: object) -> None:
 
 def _sha(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _install_routing_contract(root: Path) -> Path:
+    source = (
+        Path(__file__).resolve().parents[1]
+        / "docs/evals/frozen-founder-corpus-v1/routing-contract.v1.json"
+    )
+    destination = root / "routing-contract.v1.json"
+    destination.write_bytes(source.read_bytes())
+    return destination
 
 
 def _fixture(tmp_path: Path) -> dict[str, Any]:
@@ -93,11 +104,15 @@ def _fixture(tmp_path: Path) -> dict[str, Any]:
             for index in range(144)
         ],
     })
+    routing_contract = _install_routing_contract(tmp_path)
     frozen_components = {
         name: f"components/{path.name}@sha256:{_sha(path)}"
         for name, path in component_files.items()
     } | {
-        "routing": "captured-replay.v1",
+        "routing": FROZEN_ROUTING_LABEL,
+        "routing_contract": (
+            f"{routing_contract.name}@sha256:{_sha(routing_contract)}"
+        ),
         "capture_workload": f"{workload.name}@sha256:{_sha(workload)}",
     }
     manifest_hash = "a" * 64
@@ -422,6 +437,39 @@ def test_invalid_raw_gia_signature_fails_closed(tmp_path: Path, monkeypatch):
     assert result["corpus_gate_ready"] is False
     assert result["evidence_reverification"]["status"] == "fail"
     assert any("replay signature" in error for error in result["errors"])
+
+
+def test_release_revalidation_rejects_forged_executor_capture_claim(
+    tmp_path: Path,
+    monkeypatch,
+):
+    paths = _fixture(tmp_path)
+    recomputed = json.loads(paths["results"].read_text())
+    recomputed["status"] = "incomplete_or_failed"
+    recomputed["corpus_gate_ready"] = False
+    recomputed["quality"]["status"] = "fail"
+    recomputed["quality"]["errors"] = [
+        "reviewer executor-signature status differs from revalidation",
+        "reviewed attempts differ from the executor-signed capture",
+    ]
+    monkeypatch.setattr(
+        frozen_corpus_release,
+        "compile_frozen_corpus_gate",
+        lambda *args, **kwargs: recomputed,
+    )
+
+    result = _run(paths)
+
+    assert result["corpus_gate_ready"] is False
+    assert result["evidence_reverification"]["status"] == "fail"
+    assert any(
+        "executor-signature status differs" in error
+        for error in result["errors"]
+    )
+    assert any(
+        "attempts differ from the executor-signed capture" in error
+        for error in result["errors"]
+    )
 
 
 def test_invalid_raw_persistence_signature_fails_closed(

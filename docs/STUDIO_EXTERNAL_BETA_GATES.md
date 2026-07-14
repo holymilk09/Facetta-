@@ -94,6 +94,39 @@ ceiling. The operator must also review and pin one exact fallback contract;
 the frozen routing label must not be used to infer a different live-runner
 fallback silently.
 
+The exact contract is
+`docs/evals/frozen-founder-corpus-v1/routing-contract.v1.json`, hash-pinned by
+`config.json`. Attempts 1 and 2 use the `grok_edit` route through the
+`grok_direct` adapter, but their signed provider identity is xAI model
+`grok-imagine-image-quality` at `POST /v1/images/edits`; `grok_direct` is not a
+provider model. Attempt 3 uses the `openai_edit` route through the direct
+OpenAI image-provider adapter, model `gpt-image-2` at
+`POST /v1/images/edits`. Both provider model identifiers are mutable aliases
+because no immutable provider revision is available; the contract records that
+limitation explicitly, so a later revision claim requires a new reviewed
+contract and hash. Credential-driven provider substitution is forbidden.
+
+Each execution-bundle attempt binds the contract digest, routing label, route
+role, route, adapter key, provider, actual provider model, revision status,
+endpoint, and provider operation before the producer copies it into the signed
+capture. Route assignment also checks the task class and image operation against
+the contract's applicability lists. Primary attempts must carry no fallback
+reason. Attempt 3 must carry exactly one contract-declared reason:
+`grok_provider_failed`, `grok_provider_failed_after_qa_failure`, or
+`grok_qa_failed`, and that reason is derived from the signed prior attempt
+outcomes rather than accepted as an isolated label. Definition, producer,
+capture, replay, and release validation fail closed on a missing or drifted
+contract, reordered routes, provider/model or endpoint substitution,
+inapplicable assignment, a missing fallback reason, an undeclared reason, or a
+reason contradicted by the prior outcomes. These validations remain
+provider-free.
+
+The enrolled executor's signature is the assertion boundary for provider,
+model, endpoint, error, and QA-attempt identity. It proves who made those
+claims and detects later mutation; it is not an independent provider receipt.
+Do not describe route identity as provider-attested unless immutable provider
+receipts are added to the capture contract and verified separately.
+
 After the secured executor produces the complete execution bundle and the
 canonical API produces persistence observations, the local CLI revalidates and
 signs them without calling an image provider:

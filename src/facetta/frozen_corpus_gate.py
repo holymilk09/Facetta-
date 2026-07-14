@@ -30,13 +30,18 @@ from facetta.blind_jewelry_review import (
 )
 from facetta.image_agent.drift import outside_mask_drift
 from facetta.frozen_capture_workload import (
+    ATTEMPT_ROUTING_FIELDS,
+    CAPTURE_SCHEMA,
     build_provider_call_plan,
+    expected_attempt_routing,
     not_applicable_assignment_rows,
+    validate_capture_envelope,
     validate_workload_definition,
 )
 from facetta.frozen_evidence_paths import (
     confined_path,
     evidence_root as resolve_evidence_root,
+    relative_artifact_path,
     validate_artifact_index,
 )
 from facetta.frozen_persistence_attestation import (
@@ -294,6 +299,7 @@ def _validate_config(
         not isinstance(frozen.get(key), str) or not frozen.get(key)
         for key in (
             "ring_contract", "prompt_bundle", "evaluator_bundle", "routing",
+            "routing_contract",
             "live_runner", "replay_verifier", "replay_runner",
             "release_verifier", "packet_builder", "packet_runner",
             "blind_review_contract", "release_authority_enrollment",
@@ -377,7 +383,7 @@ def validate_frozen_component_pins(
 
     The corpus compiler and founder decision verifier both call this helper so
     a result cannot be approved after any pinned implementation has drifted.
-    The logical routing contract is intentionally not a repository file.
+    The routing label is backed by a separately hash-pinned executable contract.
     """
 
     frozen = config.get("frozen_components")
@@ -386,7 +392,8 @@ def validate_frozen_component_pins(
     errors: list[str] = []
     root = repository_root.resolve()
     for key in (
-        "ring_contract", "prompt_bundle", "evaluator_bundle", "live_runner",
+        "ring_contract", "prompt_bundle", "evaluator_bundle", "routing_contract",
+        "live_runner",
         "replay_verifier", "replay_runner", "release_verifier",
         "packet_builder", "packet_runner",
     ):
@@ -580,6 +587,317 @@ def _artifact_bindings(evidence: Json, evidence_root: Path, errors: list[str]) -
     }
 
 
+def _capture_relative_artifact(
+    capture_path: Path,
+    evidence_root: Path,
+    value: object,
+    *,
+    label: str,
+) -> Path:
+    """Resolve one executor-signed capture artifact without widening its root."""
+
+    if not isinstance(value, str) or not value or Path(value).is_absolute():
+        raise ValueError(f"{label} must be capture-relative")
+    artifact = confined_path(
+        evidence_root,
+        capture_path.parent / value,
+        label=label,
+        kind="file",
+    )
+    if not artifact.is_relative_to(capture_path.parent.resolve()):
+        raise ValueError(f"{label} escapes the signed capture directory")
+    return artifact
+
+
+def _revalidate_signed_capture_projection(
+    evidence: Json,
+    *,
+    manifest_path: Path,
+    config_path: Path,
+    workload_path: Path,
+    repository_root: Path,
+    evidence_root: Path,
+    source_dir: Path,
+    assignment_plan: Json | None,
+) -> Json:
+    """Reopen executor authority and compare its exact reviewer projection.
+
+    Reviewer evidence is not allowed to assert that capture validation happened.
+    The replay compiler independently verifies the enrolled executor signature,
+    then deterministically projects those signed attempts and persistence bytes
+    into the evidence-root paths used by offline replay.  A reviewer may add
+    decisions, but may not substitute any machine or applicability evidence.
+    """
+
+    errors: list[str] = []
+    provenance = evidence.get("capture_provenance")
+    expected_provenance_fields = {
+        "schema_version",
+        "corpus_run_id",
+        "capture_artifact",
+        "capture_sha256",
+        "executor_key_id",
+        "executor_public_key_artifact",
+        "executor_public_key_sha256",
+        "executor_signature",
+        "executor_signature_status",
+        "capture_validation",
+    }
+    if not isinstance(provenance, dict):
+        return {
+            "status": "fail",
+            "errors": ["signed capture provenance is missing"],
+            "validation": None,
+        }
+    if set(provenance) != expected_provenance_fields:
+        errors.append("signed capture provenance fields differ")
+
+    try:
+        capture_path = confined_path(
+            evidence_root,
+            str(provenance.get("capture_artifact") or ""),
+            label="signed capture artifact",
+            kind="file",
+            require_relative=True,
+        )
+        executor_key_path = confined_path(
+            evidence_root,
+            str(provenance.get("executor_public_key_artifact") or ""),
+            label="executor public key artifact",
+            kind="file",
+            require_relative=True,
+        )
+    except ValueError as exc:
+        return {
+            "status": "fail",
+            "errors": errors + [str(exc)],
+            "validation": None,
+        }
+
+    capture_sha256 = file_sha256(capture_path)
+    executor_key_sha256 = file_sha256(executor_key_path)
+    if provenance.get("capture_sha256") != capture_sha256:
+        errors.append("signed capture provenance hash differs")
+    if evidence.get("capture_sha256") != capture_sha256:
+        errors.append("replay capture hash differs from signed capture")
+    if provenance.get("executor_public_key_sha256") != executor_key_sha256:
+        errors.append("executor public key provenance hash differs")
+
+    capture_key_id = provenance.get("executor_key_id")
+    validation: Json | None = None
+    if not isinstance(capture_key_id, str) or not capture_key_id.strip():
+        errors.append("signed capture executor key_id is empty")
+    else:
+        try:
+            validation = validate_capture_envelope(
+                capture_path,
+                manifest_path,
+                config_path,
+                workload_path,
+                capture_public_key_path=executor_key_path,
+                capture_key_id=capture_key_id,
+                repository_root=repository_root,
+            )
+        except (OSError, TypeError, ValueError, json.JSONDecodeError) as exc:
+            errors.append(f"signed capture validation could not run: {exc}")
+        else:
+            if validation.get("status") != "pass":
+                errors.extend(
+                    "signed capture: " + str(error)
+                    for error in validation.get("errors", [])
+                )
+            if validation.get("signature_status") != "verified":
+                errors.append("signed capture executor signature is not verified")
+            if provenance.get("executor_signature_status") != validation.get(
+                "signature_status"
+            ):
+                errors.append("reviewer executor-signature status differs from revalidation")
+            if provenance.get("capture_validation") != validation:
+                errors.append("reviewer capture-validation claim differs from revalidation")
+
+    try:
+        capture = _load_object(capture_path)
+    except (OSError, ValueError, json.JSONDecodeError) as exc:
+        return {
+            "status": "fail",
+            "errors": errors + [f"signed capture is invalid: {exc}"],
+            "validation": validation,
+        }
+
+    if capture.get("schema_version") != CAPTURE_SCHEMA:
+        errors.append("signed capture schema_version is unsupported")
+    if provenance.get("schema_version") != capture.get("schema_version"):
+        errors.append("capture provenance schema differs from signed capture")
+    if provenance.get("corpus_run_id") != capture.get("corpus_run_id"):
+        errors.append("capture provenance corpus_run_id differs from signed capture")
+    if provenance.get("executor_signature") != capture.get("signature"):
+        errors.append("capture provenance signature differs from signed capture")
+
+    if assignment_plan is None:
+        errors.append("signed capture replay requires a frozen assignment plan")
+        planned_execution: dict[tuple[str, str, str], Json] = {}
+        expected_not_applicable: list[Json] = []
+    else:
+        planned_execution = {
+            (row["kind"], row["evaluation_id"], row["source_filename"]): row
+            for row in assignment_plan.get("items", [])
+            if (
+                isinstance(row, dict)
+                and isinstance(row.get("resolved_inputs"), dict)
+                and row["resolved_inputs"].get("execution_ready") is True
+            )
+        }
+        expected_not_applicable = not_applicable_assignment_rows(assignment_plan)
+        if capture.get("assignment_bundle_sha256") != assignment_plan.get(
+            "assignment_bundle", {}
+        ).get("bundle_sha256"):
+            errors.append("signed capture assignment identity differs from frozen plan")
+        for field in ("manifest_sha256", "config_sha256", "workload_sha256"):
+            if capture.get(field) != assignment_plan.get(field):
+                errors.append(f"signed capture {field} differs from frozen plan")
+        if capture.get("corpus_run_id") != assignment_plan.get("corpus_run_id"):
+            errors.append("signed capture corpus_run_id differs from frozen plan")
+
+    if capture.get("not_applicable_assignments") != expected_not_applicable:
+        errors.append("signed capture applicability rows differ from frozen plan")
+    if evidence.get("not_applicable_assignments") != capture.get(
+        "not_applicable_assignments"
+    ):
+        errors.append("reviewed applicability rows differ from signed capture")
+
+    raw_attempts = capture.get("attempts")
+    projected_attempts: list[Json] = []
+    if not isinstance(raw_attempts, list) or any(
+        not isinstance(row, dict) for row in raw_attempts
+    ):
+        errors.append("signed capture attempts are invalid")
+    else:
+        for index, raw in enumerate(raw_attempts, 1):
+            key = (
+                str(raw.get("kind") or ""),
+                str(raw.get("evaluation_id") or ""),
+                str(raw.get("source_filename") or ""),
+            )
+            planned = planned_execution.get(key)
+            if planned is None:
+                errors.append(
+                    f"signed capture attempt {index} has no frozen execution assignment"
+                )
+                continue
+            if raw.get("operation_class") != planned.get("operation_class"):
+                errors.append(
+                    f"signed capture attempt {index} operation_class differs from plan"
+                )
+            projected = dict(raw)
+            projected["operation_class"] = planned.get("operation_class")
+            try:
+                signed_source = _capture_relative_artifact(
+                    capture_path,
+                    evidence_root,
+                    raw.get("source_image"),
+                    label=f"signed capture attempt {index} source image",
+                )
+                if file_sha256(signed_source) != planned.get("source_sha256"):
+                    errors.append(
+                        f"signed capture attempt {index} source image hash differs"
+                    )
+                if raw.get("source_image_sha256") != planned.get("source_sha256"):
+                    errors.append(
+                        f"signed capture attempt {index} source image claim differs"
+                    )
+                replay_source = confined_path(
+                    evidence_root,
+                    source_dir / key[2],
+                    label=f"frozen source {key[2]}",
+                    kind="file",
+                )
+                if not replay_source.is_relative_to(source_dir.resolve()):
+                    raise ValueError(f"frozen source {key[2]} escapes source directory")
+                projected["source_image"] = relative_artifact_path(
+                    evidence_root,
+                    replay_source,
+                    label=f"frozen source {key[2]}",
+                )
+                projected["source_image_sha256"] = planned.get("source_sha256")
+            except ValueError as exc:
+                errors.append(str(exc))
+
+            for field in ("candidate_image", "mask_image"):
+                value = raw.get(field)
+                if value is None:
+                    projected[field] = None
+                    continue
+                try:
+                    artifact = _capture_relative_artifact(
+                        capture_path,
+                        evidence_root,
+                        value,
+                        label=f"signed capture attempt {index} {field}",
+                    )
+                except ValueError as exc:
+                    errors.append(str(exc))
+                    continue
+                projected[field] = relative_artifact_path(
+                    evidence_root,
+                    artifact,
+                    label=f"signed capture attempt {index} {field}",
+                )
+            projected_attempts.append(projected)
+
+    if evidence.get("attempts") != projected_attempts:
+        errors.append("reviewed attempts differ from the executor-signed capture")
+
+    persistence_ref = capture.get("persistence_evidence_ref")
+    if not isinstance(persistence_ref, dict) or set(persistence_ref) != {
+        "relative_path",
+        "sha256",
+    }:
+        errors.append("signed capture persistence reference is invalid")
+    else:
+        try:
+            persistence_path = _capture_relative_artifact(
+                capture_path,
+                evidence_root,
+                persistence_ref.get("relative_path"),
+                label="signed capture persistence evidence",
+            )
+        except ValueError as exc:
+            errors.append(str(exc))
+        else:
+            expected_persistence_binding = {
+                "artifact": relative_artifact_path(
+                    evidence_root,
+                    persistence_path,
+                    label="signed capture persistence evidence",
+                ),
+                "sha256": persistence_ref.get("sha256"),
+                "capture_relative_path": persistence_ref.get("relative_path"),
+            }
+            if file_sha256(persistence_path) != persistence_ref.get("sha256"):
+                errors.append("signed capture persistence evidence hash differs")
+            if evidence.get("persistence_evidence_binding") != (
+                expected_persistence_binding
+            ):
+                errors.append(
+                    "reviewed persistence binding differs from signed capture"
+                )
+            try:
+                signed_persistence = _load_object(persistence_path)
+            except (OSError, ValueError, json.JSONDecodeError) as exc:
+                errors.append(f"signed persistence evidence is invalid: {exc}")
+            else:
+                if evidence.get("persistence_evidence") != signed_persistence:
+                    errors.append(
+                        "reviewed persistence evidence differs from signed capture"
+                    )
+
+    return {
+        "status": "pass" if not errors else "fail",
+        "errors": errors,
+        "validation": validation,
+    }
+
+
 def _source_coverage(
     evidence: Json,
     quality_sources: dict[str, str],
@@ -686,6 +1004,10 @@ def _quality_workload(
 def _replay_quality(
     evidence: Json,
     evidence_path: Path,
+    manifest_path: Path,
+    config_path: Path,
+    workload_path: Path,
+    source_dir: Path,
     manifest: Json,
     config: Json,
     workload: Json,
@@ -708,6 +1030,17 @@ def _replay_quality(
     if evidence.get("workload_sha256") != workload_hash:
         errors.append("replay workload hash differs from frozen workload")
     artifact_bindings = _artifact_bindings(evidence, evidence_root, errors)
+    capture_revalidation = _revalidate_signed_capture_projection(
+        evidence,
+        manifest_path=manifest_path,
+        config_path=config_path,
+        workload_path=workload_path,
+        repository_root=repository_root,
+        evidence_root=evidence_root,
+        source_dir=source_dir,
+        assignment_plan=assignment_plan,
+    )
+    errors.extend(capture_revalidation["errors"])
     capture_provenance = evidence.get("capture_provenance")
     persistence_binding_raw = evidence.get("persistence_evidence_binding")
     indexed_bindings = [
@@ -776,6 +1109,15 @@ def _replay_quality(
         for row in expected_not_applicable_rows
     }
     expected_execution = expected - expected_not_applicable
+    planned_execution = {
+        (row["kind"], row["evaluation_id"], row["source_filename"]): row
+        for row in assignment_plan.get("items", [])
+        if (
+            isinstance(row, dict)
+            and isinstance(row.get("resolved_inputs"), dict)
+            and row["resolved_inputs"].get("execution_ready") is True
+        )
+    } if isinstance(assignment_plan, dict) else {}
     grouped: dict[tuple[str, str, str], list[Json]] = defaultdict(list)
     for row in attempts:
         key = (
@@ -817,12 +1159,53 @@ def _replay_quality(
             f"attempt-{captured.get('attempt')}"
         )
         source_filename = str(captured.get("source_filename") or "")
+        sequence_key = (
+            str(captured.get("kind") or ""),
+            str(captured.get("evaluation_id") or ""),
+            source_filename,
+        )
+        planned = planned_execution.get(sequence_key)
+        if assignment_plan is not None:
+            if planned is None:
+                errors.append(f"{label} has no frozen execution assignment")
+            else:
+                if captured.get("resolved_inputs_sha256") != planned.get(
+                    "resolved_inputs_sha256"
+                ):
+                    errors.append(f"{label} resolved inputs differ from frozen plan")
+                attempt_number = captured.get("attempt")
+                if type(attempt_number) is not int:
+                    errors.append(f"{label} cannot resolve frozen routing identity")
+                else:
+                    try:
+                        expected_routing = expected_attempt_routing(
+                            planned,
+                            attempt_number,
+                            fallback_reason=captured.get("fallback_reason"),
+                        )
+                    except ValueError as exc:
+                        errors.append(f"{label} {exc}")
+                    else:
+                        actual_routing = {
+                            field: captured.get(field)
+                            for field in ATTEMPT_ROUTING_FIELDS
+                        }
+                        if actual_routing != expected_routing:
+                            errors.append(
+                                f"{label} route/provider/model differs from frozen plan"
+                            )
         source_hash = captured.get("source_sha256")
         binding_valid = manifest_sources.get(source_filename) == source_hash
         if not binding_valid:
             errors.append(f"{label} is not bound to a frozen source filename/hash")
         paths: dict[str, Path] = {}
-        for field in ("source_image", "candidate_image"):
+        provider_failed = captured.get("attempt_outcome") == "provider_failed"
+        artifact_fields = (
+            ("source_image",)
+            if provider_failed
+            else ("source_image", "candidate_image")
+        )
+        for field in artifact_fields:
             artifact = _verify_declared_artifact(
                 captured, evidence_root, artifact_bindings, field, errors, label,
             )
@@ -831,7 +1214,7 @@ def _replay_quality(
         if "source_image" in paths and file_sha256(paths["source_image"]) != source_hash:
             errors.append(f"{label} source artifact differs from frozen source hash")
             binding_valid = False
-        if captured.get("kind") == "edit":
+        if captured.get("kind") == "edit" and not provider_failed:
             mask = _verify_declared_artifact(
                 captured,
                 evidence_root,
@@ -843,8 +1226,12 @@ def _replay_quality(
             if mask is not None:
                 paths["mask_image"] = mask
         artifact_paths[id(captured)] = paths
-        required_artifacts = {"source_image", "candidate_image"}
-        if captured.get("kind") == "edit":
+        required_artifacts = (
+            {"source_image"}
+            if provider_failed
+            else {"source_image", "candidate_image"}
+        )
+        if captured.get("kind") == "edit" and not provider_failed:
             required_artifacts.add("mask_image")
         evaluation_pair = (
             str(captured.get("kind") or ""),
@@ -858,6 +1245,7 @@ def _replay_quality(
             and required_artifacts <= set(paths)
             and (*evaluation_pair, source_filename) in expected_execution
             and captured.get("operation_class") == expected_class
+            and not provider_failed
         ):
             verified_source_evaluations[source_filename].add(evaluation_pair)
     for kind, evaluation_id, source_filename in expected_not_applicable:
@@ -1451,8 +1839,17 @@ def compile_frozen_corpus_gate(
         assert evidence is not None
         assert resolved_evidence_path is not None
         assert resolved_evidence_root is not None
+        assert resolved_source_dir is not None
         quality = _replay_quality(
-            evidence, resolved_evidence_path, manifest, config, workload,
+            evidence,
+            resolved_evidence_path,
+            manifest_path,
+            config_path,
+            resolved_workload_path,
+            resolved_source_dir,
+            manifest,
+            config,
+            workload,
             manifest_hash, config_hash, file_sha256(resolved_workload_path),
             resolved_repository_root, resolved_evidence_root,
             review_packet, review_ledger, assignment_plan,

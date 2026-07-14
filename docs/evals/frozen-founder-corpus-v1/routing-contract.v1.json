@@ -1,0 +1,69 @@
+{
+  "route_entries": [
+    {
+      "adapter_key": "grok_direct",
+      "applicable_image_operations": [
+        "LOCAL_EDIT",
+        "SPEC_RENDER",
+        "VISUAL_ONLY_EDIT"
+      ],
+      "applicable_task_classes": [
+        "quick_appearance",
+        "render_conformance",
+        "structural"
+      ],
+      "attempt_numbers": [
+        1,
+        2
+      ],
+      "fallback_conditions": [],
+      "endpoint": "https://api.x.ai/v1/images/edits",
+      "model": "grok-imagine-image-quality",
+      "model_revision": null,
+      "model_revision_status": "provider_alias_unversioned",
+      "provider_operation": "images.edits",
+      "order": 1,
+      "provider": "xai",
+      "role": "primary",
+      "route": "grok_edit"
+    },
+    {
+      "adapter_key": "openai_image_provider",
+      "applicable_image_operations": [
+        "LOCAL_EDIT",
+        "SPEC_RENDER",
+        "VISUAL_ONLY_EDIT"
+      ],
+      "applicable_task_classes": [
+        "quick_appearance",
+        "render_conformance",
+        "structural"
+      ],
+      "attempt_numbers": [
+        3
+      ],
+      "fallback_conditions": [
+        "grok_provider_failed",
+        "grok_provider_failed_after_qa_failure",
+        "grok_qa_failed"
+      ],
+      "endpoint": "https://api.openai.com/v1/images/edits",
+      "model": "gpt-image-2",
+      "model_revision": null,
+      "model_revision_status": "provider_alias_unversioned",
+      "provider_operation": "images.edits",
+      "order": 2,
+      "provider": "openai",
+      "role": "fallback",
+      "route": "openai_edit"
+    }
+  ],
+  "routing_label": "grok-primary-openai-fallback.v1",
+  "schema_version": "facetta-frozen-routing-contract.v1",
+  "selection_policy": {
+    "credential_based_substitution_allowed": false,
+    "source_image_required": true,
+    "stop_after_acceptance": true,
+    "undeclared_route_allowed": false
+  }
+}

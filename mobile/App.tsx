@@ -18,7 +18,10 @@ import {
   StudioActionContext, StudioActionId, StudioWorkspaceActionId,
 } from './src/studio/contracts';
 import { StudioCollectionsWorkspace } from './src/studio/StudioCollectionsWorkspace';
-import { StudioCreateWorkspace } from './src/studio/StudioCreateWorkspace';
+import {
+  EMPTY_STUDIO_CREATE_DRAFT, StudioCreateWorkspace, type StudioCreateDraft,
+  type StudioCreateGenerationSuccess,
+} from './src/studio/StudioCreateWorkspace';
 import { StudioConfirmWorkspace } from './src/studio/StudioConfirmWorkspace';
 import { pickExpoStudioCreateReference } from './src/studio/expoReferencePicker';
 import { StudioRefineWorkspace } from './src/studio/StudioRefineWorkspace';
@@ -113,6 +116,7 @@ export default function App() {
   const [studioProject, setStudioProject] = useState<ProjectDetail | null>(null);
   const [selectedCreativeAssetId, setSelectedCreativeAssetId] = useState<string | null>(null);
   const [createReview, setCreateReview] = useState<CreateReviewState | null>(null);
+  const [createDraft, setCreateDraft] = useState<StudioCreateDraft>(EMPTY_STUDIO_CREATE_DRAFT);
   const [activityReview, setActivityReview] = useState<StudioReviewJobEnvelope | null>(null);
   const [projectHydration, setProjectHydration] = useState<{
     request: ProjectHydrationRequest;
@@ -124,49 +128,73 @@ export default function App() {
   // replace the latest project or surface an error for work the designer no
   // longer intends to open.
   const projectHydrationRequestId = useRef(0);
-  const clearAuthenticatedUi = useCallback(() => {
+  // A subscription event is newer authority than the bootstrap restore that
+  // was already in flight. The epoch prevents that older restore from
+  // re-adopting a stale account after a sign-in, recovery, or sign-out event.
+  const authLifecycleEpoch = useRef(0);
+  const currentDesignerRef = useRef(designer);
+  currentDesignerRef.current = designer;
+  const resetUserScopedUi = useCallback(() => {
     projectHydrationRequestId.current += 1;
     setProjectHydration(null);
-    clearSession();
-    setSession(null);
-    setDesigner('');
+    setTab('studio');
+    setStudioView('home');
+    setSelectedActionId('create');
+    setShowMoreActions(false);
+    setShowUtilityMenu(false);
     setStudioProject(null);
     setSelectedCreativeAssetId(null);
     setCreateReview(null);
+    setCreateDraft(EMPTY_STUDIO_CREATE_DRAFT);
     setActivityReview(null);
     setFactoryEntitled(false);
     setSavedFamiliesState('unknown');
-    setStage('login');
   }, []);
+  const clearAuthenticatedUi = useCallback(() => {
+    resetUserScopedUi();
+    clearSession();
+    currentDesignerRef.current = '';
+    setSession(null);
+    setDesigner('');
+    setStage('login');
+  }, [resetUserScopedUi]);
   const expireAuthenticatedSession = useCallback(() => {
     clearAuthenticatedUi();
     void signOutAuthenticatedSession();
   }, [clearAuthenticatedUi]);
-  const adoptAuthenticatedSession = useCallback((next: Session) => {
+  const adoptAuthenticatedSession = useCallback((
+    next: Session,
+    nextStage: Extract<Stage, 'app' | 'recovery'> = 'app',
+  ) => {
+    if (currentDesignerRef.current !== ''
+      && currentDesignerRef.current !== next.designerId) {
+      resetUserScopedUi();
+    }
+    currentDesignerRef.current = next.designerId;
     saveSession(next);
     setSession(next);
     setDesigner(next.designerId);
-    setStage('app');
-  }, []);
+    setStage(nextStage);
+  }, [resetUserScopedUi]);
 
   useEffect(() => {
     if (!authLifecycleEnabled) return () => {};
     let mounted = true;
+    const restoreEpoch = authLifecycleEpoch.current + 1;
+    authLifecycleEpoch.current = restoreEpoch;
     const unsubscribe = subscribeToAuthStateChange((event, next) => {
       if (!mounted || event === 'INITIAL_SESSION') return;
+      authLifecycleEpoch.current += 1;
       if (next === null) {
         clearAuthenticatedUi();
       } else if (event === 'PASSWORD_RECOVERY') {
-        saveSession(next);
-        setSession(next);
-        setDesigner(next.designerId);
-        setStage('recovery');
+        adoptAuthenticatedSession(next, 'recovery');
       } else {
         adoptAuthenticatedSession(next);
       }
     });
     void restoreAuthenticatedSession().then((next) => {
-      if (!mounted) return;
+      if (!mounted || authLifecycleEpoch.current !== restoreEpoch) return;
       if (next === null) clearAuthenticatedUi();
       else adoptAuthenticatedSession(next);
     });
@@ -659,6 +687,18 @@ export default function App() {
                 : `resume-create:${createReview.project.root_id}:${createReview.studioJobId}`}
               gateway={studioGateway}
               owner={designer}
+              {...(createReview === null ? {
+                draft: createDraft,
+                onDraftChange: setCreateDraft,
+                onGenerationSucceeded: ({
+                  owner: submittedOwner, submittedDraft,
+                }: StudioCreateGenerationSuccess) => {
+                  if (currentDesignerRef.current !== submittedOwner) return;
+                  setCreateDraft((current) => (
+                    current === submittedDraft ? EMPTY_STUDIO_CREATE_DRAFT : current
+                  ));
+                },
+              } : {})}
               resumeProject={createReview?.project ?? null}
               resumeStudioJobId={createReview?.studioJobId ?? null}
               onRequestReference={pickExpoStudioCreateReference}

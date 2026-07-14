@@ -5,13 +5,17 @@ import hashlib
 import json
 from pathlib import Path
 
+import pytest
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 from facetta.frozen_capture_workload import (
+    FROZEN_ROUTING_LABEL,
+    _routing_attempt_assignments,
     build_provider_call_plan,
     canonical_capture_payload,
     canonical_object_sha256,
+    expected_attempt_routing,
     not_applicable_assignment_rows,
     validate_capture_envelope,
     validate_workload_definition,
@@ -31,6 +35,16 @@ def _write(path: Path, value: object) -> None:
 
 def _sha(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _install_routing_contract(root: Path) -> Path:
+    source = (
+        Path(__file__).resolve().parents[1]
+        / "docs/evals/frozen-founder-corpus-v1/routing-contract.v1.json"
+    )
+    destination = root / "routing-contract.v1.json"
+    destination.write_bytes(source.read_bytes())
+    return destination
 
 
 def _executor_key(root: Path, config: Path) -> tuple[Ed25519PrivateKey, Path]:
@@ -165,6 +179,7 @@ def _fixture(tmp_path: Path) -> tuple[Path, Path, Path, Path]:
             )
         ],
     })
+    routing_contract = _install_routing_contract(root)
     _write(config, {
         "config_id": "fixture-config-v1",
         "manifest_sha256": _sha(manifest),
@@ -183,7 +198,10 @@ def _fixture(tmp_path: Path) -> tuple[Path, Path, Path, Path]:
             "ring_contract": "fixture-ring-contract@sha256:" + "1" * 64,
             "prompt_bundle": "fixture-prompt-bundle@sha256:" + "2" * 64,
             "evaluator_bundle": "fixture-evaluator-bundle@sha256:" + "3" * 64,
-            "routing": "fixture-provider-free-routing.v1",
+            "routing": FROZEN_ROUTING_LABEL,
+            "routing_contract": (
+                f"{routing_contract.name}@sha256:{_sha(routing_contract)}"
+            ),
         },
     })
     return root, manifest, config, workload
@@ -243,6 +261,94 @@ def test_definition_rejects_quality_assignment_outside_ring_slice(tmp_path: Path
     assert "non-ring source has a quality assignment: necklace.png" in result["errors"]
 
 
+@pytest.mark.parametrize(
+    ("mutation", "expected_error"),
+    (
+        ("missing", "config frozen component routing_contract is not hash-pinned"),
+        ("drifted", "config frozen component routing_contract implementation drifted"),
+        ("reordered", "routing contract route entry 1 differs"),
+        ("provider_substitution", "routing contract route entry 2 differs"),
+    ),
+)
+def test_definition_rejects_unfrozen_routing_contract(
+    tmp_path: Path,
+    mutation: str,
+    expected_error: str,
+):
+    root, manifest, config, workload = _fixture(tmp_path)
+    config_raw = json.loads(config.read_text())
+    contract = root / "routing-contract.v1.json"
+    contract_raw = json.loads(contract.read_text())
+    if mutation == "missing":
+        del config_raw["frozen_components"]["routing_contract"]
+    elif mutation == "drifted":
+        contract_raw["selection_policy"]["stop_after_acceptance"] = False
+        _write(contract, contract_raw)
+    elif mutation == "reordered":
+        contract_raw["route_entries"].reverse()
+        _write(contract, contract_raw)
+        config_raw["frozen_components"]["routing_contract"] = (
+            f"{contract.name}@sha256:{_sha(contract)}"
+        )
+    else:
+        contract_raw["route_entries"][1]["provider"] = "fal"
+        _write(contract, contract_raw)
+        config_raw["frozen_components"]["routing_contract"] = (
+            f"{contract.name}@sha256:{_sha(contract)}"
+        )
+    _write(config, config_raw)
+
+    result = validate_workload_definition(
+        manifest,
+        config,
+        workload,
+        repository_root=root,
+    )
+
+    assert result["status"] == "fail"
+    assert any(expected_error in error for error in result["errors"])
+
+
+def test_route_assignment_enforces_task_and_image_operation_applicability(
+    tmp_path: Path,
+):
+    root, _, config, _ = _fixture(tmp_path)
+    config_raw = json.loads(config.read_text())
+    _, contract_sha256 = config_raw["frozen_components"][
+        "routing_contract"
+    ].rsplit("@sha256:", 1)
+    contract = json.loads((root / "routing-contract.v1.json").read_text())
+    contract["route_entries"][0]["applicable_task_classes"].remove(
+        "structural"
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="does not allow operation class structural",
+    ):
+        _routing_attempt_assignments(
+            contract,
+            contract_sha256,
+            operation_class="structural",
+            image_operation="LOCAL_EDIT",
+        )
+
+    contract = json.loads((root / "routing-contract.v1.json").read_text())
+    contract["route_entries"][0]["applicable_image_operations"].remove(
+        "LOCAL_EDIT"
+    )
+    with pytest.raises(
+        ValueError,
+        match="does not allow image operation LOCAL_EDIT",
+    ):
+        _routing_attempt_assignments(
+            contract,
+            contract_sha256,
+            operation_class="structural",
+            image_operation="LOCAL_EDIT",
+        )
+
+
 def test_plan_is_deterministic_and_executes_no_provider_calls(tmp_path: Path):
     root, manifest, config, workload = _fixture(tmp_path)
     first = build_provider_call_plan(
@@ -265,6 +371,21 @@ def test_plan_is_deterministic_and_executes_no_provider_calls(tmp_path: Path):
         assert row["resolved_inputs_sha256"] == canonical_object_sha256(
             row["resolved_inputs"]
         )
+        if row["resolved_inputs"]["execution_ready"]:
+            assert expected_attempt_routing(row, 1) == {
+                "routing_contract_sha256": first["routing_contract_sha256"],
+                "routing_label": FROZEN_ROUTING_LABEL,
+                "route_role": "primary",
+                "route": "grok_edit",
+                "adapter_key": "grok_direct",
+                "provider": "xai",
+                "model": "grok-imagine-image-quality",
+                "model_revision": None,
+                "model_revision_status": "provider_alias_unversioned",
+                "endpoint": "https://api.x.ai/v1/images/edits",
+                "provider_operation": "images.edits",
+                "fallback_reason": None,
+            }
 
 
 def test_reviewed_not_applicable_rows_remain_signed_without_provider_calls(
@@ -312,7 +433,11 @@ def test_reviewed_not_applicable_rows_remain_signed_without_provider_calls(
             "source_sha256": planned["source_sha256"],
             "resolved_inputs_sha256": planned["resolved_inputs_sha256"],
             "attempt": 1,
+            **expected_attempt_routing(planned, 1),
             "accepted": True,
+            "attempt_outcome": "accepted",
+            "provider_error_code": None,
+            "qa_outcome": "pass",
             "candidate_image": candidate.name,
             "candidate_image_sha256": _sha(candidate),
             "render_conformance_score": 95,
@@ -349,6 +474,22 @@ def test_reviewed_not_applicable_rows_remain_signed_without_provider_calls(
     assert valid["captured_evaluation_sequence_count"] == 1
     assert valid["not_applicable_evaluation_sequence_count"] == 1
 
+    capture["attempts"][0]["model"] = "grok_direct"
+    sign()
+    _write(capture_path, capture)
+    substituted = validate_capture_envelope(
+        capture_path, manifest, config, workload,
+        capture_public_key_path=public_key_path,
+        capture_key_id="executor-test-v1",
+        repository_root=root,
+    )
+    assert substituted["status"] == "fail"
+    assert any(
+        "route/provider/model differs" in error
+        for error in substituted["errors"]
+    )
+    capture["attempts"][0].update(expected_attempt_routing(planned, 1))
+
     capture["not_applicable_assignments"][0]["reason"] = "tampered reason"
     sign()
     _write(capture_path, capture)
@@ -380,6 +521,9 @@ def test_reviewed_not_applicable_rows_remain_signed_without_provider_calls(
         "resolved_inputs_sha256": reviewed_na["resolved_inputs_sha256"],
         "attempt": 1,
         "accepted": True,
+        "attempt_outcome": "accepted",
+        "provider_error_code": None,
+        "qa_outcome": "pass",
         "candidate_image": edit_candidate.name,
         "candidate_image_sha256": _sha(edit_candidate),
         "mask_image": edit_mask.name,
@@ -474,6 +618,7 @@ def test_provider_free_fake_executor_covers_all_1044_synthetic_assignments(
         "corpus_run_id": "synthetic-complete-1044-v1",
         "assignments": assignments,
     })
+    routing_contract = _install_routing_contract(root)
     _write(config, {
         "config_id": workload_raw["config_id"],
         "manifest_sha256": _sha(manifest),
@@ -492,7 +637,10 @@ def test_provider_free_fake_executor_covers_all_1044_synthetic_assignments(
             "ring_contract": "synthetic-ring-contract@sha256:" + "1" * 64,
             "prompt_bundle": "synthetic-prompt-bundle@sha256:" + "2" * 64,
             "evaluator_bundle": "synthetic-evaluator-bundle@sha256:" + "3" * 64,
-            "routing": "provider-free-fake.v1",
+            "routing": FROZEN_ROUTING_LABEL,
+            "routing_contract": (
+                f"{routing_contract.name}@sha256:{_sha(routing_contract)}"
+            ),
         },
     })
     plan = build_provider_call_plan(
@@ -550,7 +698,11 @@ def test_signed_capture_binds_plan_artifacts_and_persistence(tmp_path: Path):
             "source_sha256": planned["source_sha256"],
             "resolved_inputs_sha256": planned["resolved_inputs_sha256"],
             "attempt": 1,
+            **expected_attempt_routing(planned, 1),
             "accepted": True,
+            "attempt_outcome": "accepted",
+            "provider_error_code": None,
+            "qa_outcome": "pass",
             "candidate_image": candidate,
             "candidate_image_sha256": _sha(capture_dir / candidate),
         }
@@ -682,7 +834,11 @@ def test_signed_capture_rejects_artifact_tampering(tmp_path: Path):
             "source_sha256": planned["source_sha256"],
             "resolved_inputs_sha256": planned["resolved_inputs_sha256"],
             "attempt": 1,
+            **expected_attempt_routing(planned, 1),
             "accepted": True,
+            "attempt_outcome": "accepted",
+            "provider_error_code": None,
+            "qa_outcome": "pass",
             "candidate_image": candidate.name,
             "candidate_image_sha256": _sha(candidate),
         }
