@@ -125,7 +125,7 @@ const loadReferencePreview = async (label: string): Promise<void> => {
   });
 };
 
-test('keeps every other ready direction by default and recomputes siblings when selection changes', async () => {
+test('keeps every other previewed direction automatically and recomputes siblings when selection changes', async () => {
   const createFromPrompt = jest.fn(async () => ({
     data: creativeProject(4), error: null, status: 201,
   }));
@@ -173,33 +173,35 @@ test('keeps every other ready direction by default and recomputes siblings when 
     owner: 'designer_1',
     title: 'A sculptural aquamarine collar.',
   }));
-  expect(await screen.findByText('Which direction do you want to refine?')).toBeTruthy();
+  expect(await screen.findByText('Choose a direction to continue')).toBeTruthy();
   expect(onGenerationSucceeded).toHaveBeenCalledTimes(1);
-  expect(screen.getByText(/Your choice becomes the Original/i)).toBeTruthy();
-  expect(screen.getByText(/Other directions stay in the same family by default/i)).toBeTruthy();
-  expect(screen.getByLabelText('Keep all other directions').props.accessibilityState)
-    .toEqual({ checked: true, disabled: false });
-  expect(screen.getByLabelText('Only keep my Original').props.accessibilityState)
-    .toEqual({ checked: false, disabled: false });
+  expect(screen.getByText(/full generated set stays preserved in this review/i)).toBeTruthy();
+  expect(screen.queryByLabelText('Keep all other directions')).toBeNull();
+  expect(screen.queryByLabelText('Only keep my Original')).toBeNull();
+  expect(screen.queryByLabelText('Choose directions individually')).toBeNull();
   expect(screen.getByText('Leave in Activity & start another')).toBeTruthy();
   expect(screen.getByLabelText('Direction 1 preview').props.source.headers).toEqual({
     Authorization: 'Bearer first-party-token',
   });
   expect(screen.getByText(/visual directions.+not measurements or production instructions/i)).toBeTruthy();
+  expect(screen.getByText('Continue with Direction 1')).toBeTruthy();
+  expect(within(screen.getByLabelText('Direction 2')).queryByText('Inspect detail')).toBeNull();
+  expect(completeCreativeDirectionReview).not.toHaveBeenCalled();
+  expect(onSave).not.toHaveBeenCalled();
   await loadDirection(1);
   await loadDirection(2);
   await loadDirection(3);
   await loadDirection(4);
-  expect(screen.getByText('Continue with Direction 1 · keep 3 variations')).toBeTruthy();
-  expect(screen.queryByText('Exclude from variations')).toBeNull();
-  expect(within(screen.getByLabelText('Direction 2')).queryByText('Inspect detail')).toBeNull();
-  expect(completeCreativeDirectionReview).not.toHaveBeenCalled();
-  expect(onSave).not.toHaveBeenCalled();
   await fireEvent.press(screen.getByLabelText('Direction 3'));
-  expect(screen.getByText('Continue with Direction 3 · keep 3 variations')).toBeTruthy();
-  expect(within(screen.getByLabelText('Direction 1')).getByText('Will be kept as a variation'))
+  expect(screen.getByText('Continue with Direction 3')).toBeTruthy();
+  expect(within(screen.getByLabelText('Direction 1')).getByText('Will save as a variation'))
     .toBeTruthy();
-  await fireEvent.press(screen.getByText('Continue with Direction 3 · keep 3 variations'));
+  expect(screen.getByLabelText('Direction 1').props.accessibilityHint)
+    .toBe('Will save as a variation');
+  expect(within(screen.getByLabelText('Direction 3')).getByText('Selected to refine'))
+    .toBeTruthy();
+  await loadDirection(3);
+  await fireEvent.press(screen.getByText('Continue with Direction 3'));
   await waitFor(() => expect(completeCreativeDirectionReview).toHaveBeenCalledTimes(1));
   expect(completeCreativeDirectionReview).toHaveBeenCalledWith({
     projectId: 'project_1', selectedCandidateId: 'candidate_3',
@@ -217,7 +219,7 @@ test('keeps every other ready direction by default and recomputes siblings when 
   expect(onSave.mock.calls[0][0]).not.toHaveProperty('references');
 });
 
-test('offers an explicit Original-only option that commits no sibling variations', async () => {
+test('does not expose retention administration during direction selection', async () => {
   const completeCreativeDirectionReview = jest.fn(async ({ selectedCandidateId }) => ({
     data: {
       project: {
@@ -240,20 +242,24 @@ test('offers an explicit Original-only option that commits no sibling variations
     onSave={jest.fn()}
   />);
 
-  await fireEvent.press(screen.getByLabelText('Only keep my Original'));
-  expect(screen.getByLabelText('Only keep my Original').props.accessibilityState)
-    .toEqual({ checked: true, disabled: false });
+  expect(screen.queryByLabelText('Keep all other directions')).toBeNull();
+  expect(screen.queryByLabelText('Only keep my Original')).toBeNull();
   expect(screen.queryByLabelText('Choose directions individually')).toBeNull();
   await loadDirection(1);
+  await loadDirection(2);
+  await loadDirection(3);
   await fireEvent.press(screen.getByText('Continue with Direction 1'));
 
   await waitFor(() => expect(completeCreativeDirectionReview).toHaveBeenCalledWith({
-    projectId: 'project_1', selectedCandidateId: 'candidate_1', retained: [],
+    projectId: 'project_1', selectedCandidateId: 'candidate_1', retained: [
+      { candidateId: 'candidate_2', label: 'Direction 2' },
+      { candidateId: 'candidate_3', label: 'Direction 3' },
+    ],
     createdBy: 'designer_1',
   }));
 });
 
-test('fails closed for an unavailable intended preview until it is explicitly excluded', async () => {
+test('an unavailable unselected preview does not block a loaded selected direction', async () => {
   const completeCreativeDirectionReview = jest.fn(async ({ selectedCandidateId }) => ({
     data: {
       project: {
@@ -281,26 +287,58 @@ test('fails closed for an unavailable intended preview until it is explicitly ex
     fireEvent(screen.getByLabelText('Direction 2 preview'), 'error');
   });
   await loadDirection(3);
-  expect(screen.getByText(/direction set to be kept could not be displayed/i)).toBeTruthy();
-  const blockedContinue = screen.getByText('Continue with Direction 1 · keep 2 variations');
-  expect(blockedContinue.parent?.props.accessibilityState.disabled).toBe(true);
-  await fireEvent.press(blockedContinue);
-  expect(completeCreativeDirectionReview).not.toHaveBeenCalled();
-
-  await fireEvent.press(screen.getByLabelText('Choose directions individually'));
-  expect(screen.getByLabelText('Choose directions individually').props.accessibilityState)
-    .toEqual({ expanded: true, disabled: false, selected: false });
-  await fireEvent.press(screen.getByLabelText('Exclude Direction 2 from variations'));
-  expect(screen.getByLabelText('Keep all other directions').props.accessibilityState)
-    .toEqual({ checked: false, disabled: false });
-  expect(screen.getByLabelText('Choose directions individually').props.accessibilityState)
-    .toEqual({ expanded: true, disabled: false, selected: true });
-  expect(screen.queryByText(/direction set to be kept could not be displayed/i)).toBeNull();
-  await fireEvent.press(screen.getByText('Continue with Direction 1 · keep 1 variation'));
+  expect(screen.queryByText(/could not be displayed/i)).toBeNull();
+  const continueButton = screen.getByText('Continue with Direction 1');
+  expect(continueButton.parent?.props.accessibilityState.disabled).toBe(false);
+  await fireEvent.press(continueButton);
 
   await waitFor(() => expect(completeCreativeDirectionReview).toHaveBeenCalledWith({
     projectId: 'project_1', selectedCandidateId: 'candidate_1',
     retained: [{ candidateId: 'candidate_3', label: 'Direction 3' }],
+    createdBy: 'designer_1',
+  }));
+});
+
+test('legacy review sets retain at most three previewed siblings without blocking selection', async () => {
+  const completeCreativeDirectionReview = jest.fn(async ({ selectedCandidateId }) => ({
+    data: {
+      project: {
+        ...creativeProject(6),
+        selected_candidate_asset_id: selectedCandidateId,
+        active_asset_id: selectedCandidateId,
+      },
+      retained_variations: [],
+    },
+    error: null,
+    status: 200,
+  }));
+  await renderCreate(<StudioCreateWorkspace
+    gateway={{
+      createFromPrompt: jest.fn(), createFromDrawing: jest.fn(),
+      completeCreativeDirectionReview,
+    } as CreateGateway}
+    owner="designer_1"
+    resumeProject={creativeProject(6)}
+    onSave={jest.fn()}
+  />);
+
+  for (let index = 1; index <= 6; index += 1) await loadDirection(index);
+  expect(within(screen.getByLabelText('Direction 5')).getByText('Preserved in review set'))
+    .toBeTruthy();
+  expect(within(screen.getByLabelText('Direction 6')).getByText('Preserved in review set'))
+    .toBeTruthy();
+  expect(screen.getByLabelText('Direction 4').props.accessibilityHint)
+    .toBe('Will save as a variation');
+  expect(screen.getByLabelText('Direction 5').props.accessibilityHint)
+    .toBe('Preserved in review set');
+  await fireEvent.press(screen.getByText('Continue with Direction 1'));
+
+  await waitFor(() => expect(completeCreativeDirectionReview).toHaveBeenCalledWith({
+    projectId: 'project_1', selectedCandidateId: 'candidate_1', retained: [
+      { candidateId: 'candidate_2', label: 'Direction 2' },
+      { candidateId: 'candidate_3', label: 'Direction 3' },
+      { candidateId: 'candidate_4', label: 'Direction 4' },
+    ],
     createdBy: 'designer_1',
   }));
 });
@@ -329,7 +367,7 @@ test('a deferred generation clears only its exact submitted draft', async () => 
     await createCompletion;
   });
 
-  expect(await screen.findByText('Which direction do you want to refine?')).toBeTruthy();
+  expect(await screen.findByText('Choose a direction to continue')).toBeTruthy();
   expect(onGenerationSucceeded).toHaveBeenCalledWith(expect.objectContaining({
     owner: 'designer_1',
     projectId: 'project_1',
@@ -449,7 +487,7 @@ test('a deferred direction commit cannot save into a new owner session', async (
   expect(onSave).not.toHaveBeenCalled();
 });
 
-test('reopens a durable reviewing Create job with deterministic default sibling retention', async () => {
+test('reopens a durable reviewing Create job with automatic sibling retention', async () => {
   const createFromPrompt = jest.fn();
   const createFromDrawing = jest.fn();
   const completeCreativeDirectionReview = jest.fn(async ({ selectedCandidateId }) => ({
@@ -477,16 +515,14 @@ test('reopens a durable reviewing Create job with deterministic default sibling 
     />,
   );
 
-  expect(await screen.findByText('Which direction do you want to refine?')).toBeTruthy();
+  expect(await screen.findByText('Choose a direction to continue')).toBeTruthy();
   expect(createFromPrompt).not.toHaveBeenCalled();
   expect(createFromDrawing).not.toHaveBeenCalled();
-  expect(screen.getByLabelText('Keep all other directions').props.accessibilityState)
-    .toEqual({ checked: true, disabled: false });
   await loadDirection(1);
   await loadDirection(2);
   await loadDirection(3);
   await fireEvent.press(screen.getByLabelText('Direction 2'));
-  await fireEvent.press(screen.getByText('Continue with Direction 2 · keep 2 variations'));
+  await fireEvent.press(screen.getByText('Continue with Direction 2'));
   await waitFor(() => expect(completeCreativeDirectionReview).toHaveBeenCalledWith({
     projectId: 'project_1', selectedCandidateId: 'candidate_2', retained: [
       { candidateId: 'candidate_1', label: 'Direction 1' },
@@ -501,7 +537,7 @@ test('reopens a durable reviewing Create job with deterministic default sibling 
   expect(onSave.mock.calls[0][0].project.active_asset_id).toBe('candidate_2');
 });
 
-test('does not create an immutable Original until its selected preview renders', async () => {
+test('does not create an immutable revision until its selected preview renders', async () => {
   const completeCreativeDirectionReview = jest.fn(async () => ({
     data: { project: creativeProject(1), retained_variations: [] },
     error: null,
@@ -525,7 +561,7 @@ test('does not create an immutable Original until its selected preview renders',
   await act(async () => {
     fireEvent(screen.getByLabelText('Direction 1 preview'), 'error');
   });
-  expect(screen.getByText(/selected Original could not be displayed/i)).toBeTruthy();
+  expect(screen.getByText(/selected direction could not be displayed/i)).toBeTruthy();
   fireEvent.press(continueButton);
   expect(completeCreativeDirectionReview).not.toHaveBeenCalled();
 
@@ -568,11 +604,9 @@ test('keeps the complete review staged after an atomic commit error and retries 
     onSave={onSave}
   />);
 
-  await loadDirection(1);
-  await loadDirection(2);
   await loadDirection(3);
   await fireEvent.press(screen.getByLabelText('Direction 3'));
-  const continueLabel = 'Continue with Direction 3 · keep 2 variations';
+  const continueLabel = 'Continue with Direction 3';
   await fireEvent.press(screen.getByText(continueLabel));
 
   await waitFor(() => expect(completeCreativeDirectionReview).toHaveBeenCalledTimes(1));
@@ -643,21 +677,16 @@ test('keeps an already-created direction set when the designer starts another br
   />);
 
   await fireEvent.press(screen.getByText('Create 2 directions'));
-  expect(await screen.findByText(/Your choice becomes the Original/i)).toBeTruthy();
+  expect(await screen.findByText(/full generated set stays preserved in this review/i)).toBeTruthy();
   await loadDirection(1);
-  await loadDirection(2);
-  expect(screen.getByText('Continue with Direction 1 · keep 1 variation')).toBeTruthy();
-  await fireEvent.press(screen.getByLabelText('Only keep my Original'));
   expect(screen.getByText('Continue with Direction 1')).toBeTruthy();
   await fireEvent.press(screen.getByText('Leave in Activity & start another'));
   expect(await screen.findByLabelText('Design sentence')).toBeTruthy();
-  expect(screen.queryByText(/Your choice becomes the Original/i)).toBeNull();
+  expect(screen.queryByText(/full generated set stays preserved in this review/i)).toBeNull();
   await fireEvent.press(screen.getByText('Create 2 directions'));
   await loadDirection(1);
-  await loadDirection(2);
-  expect(await screen.findByText('Continue with Direction 1 · keep 1 variation')).toBeTruthy();
-  expect(screen.getByLabelText('Keep all other directions').props.accessibilityState)
-    .toEqual({ checked: true, disabled: false });
+  expect(await screen.findByText('Continue with Direction 1')).toBeTruthy();
+  expect(screen.queryByLabelText('Keep all other directions')).toBeNull();
 });
 
 test('sends every enabled role with the master geometry input', async () => {

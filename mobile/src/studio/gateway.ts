@@ -693,11 +693,9 @@ export function createStudioGateway(
 
   const transitionJob = async (
     job: ActiveStudioJob | null,
-    status: 'reviewing' | 'succeeded' | 'failed',
+    status: 'failed',
     progress: number,
-    completedOutputs?: number,
     errorCode?: string,
-    binding?: { activeDesignId?: string; sourceRevisionId?: string },
   ): Promise<StudioGatewayResult<StudioJobRecord | null>> => {
     if (job === null) return { data: null, error: null, status: 0 };
     const action = getStudioAction(job.actionId);
@@ -721,12 +719,7 @@ export function createStudioGateway(
         owner: job.owner,
         status,
         progress,
-        ...(completedOutputs === undefined ? {} : { completed_outputs: completedOutputs }),
         ...(errorCode === undefined ? {} : { error_code: errorCode }),
-        ...(binding?.activeDesignId === undefined
-          ? {} : { active_design_id: binding.activeDesignId }),
-        ...(binding?.sourceRevisionId === undefined
-          ? {} : { source_revision_id: binding.sourceRevisionId }),
       });
       if (result.error !== null) {
         return { data: null, error: mapError(result.error), status: result.status };
@@ -747,7 +740,7 @@ export function createStudioGateway(
     // it must never disguise why generation itself failed. A terminal failure
     // uses monotonic completion progress so a job already at review (0.9)
     // cannot get stranded there by a rejected backward progress transition.
-    await transitionJob(job, 'failed', progress, undefined, code);
+    await transitionJob(job, 'failed', progress, code);
   };
 
   const markBackendCandidateReviewing = (job: ActiveStudioJob | null): void => {
@@ -875,6 +868,79 @@ export function createStudioGateway(
       requested,
       Math.max(directions, outputs, project.active_revision === null ? 0 : 1),
     );
+  };
+
+  const reconcileCommittedCreate = async (
+    job: ActiveStudioJob | null,
+    requestedOutputs: number,
+  ): Promise<StudioGatewayResult<ProjectDetail> | null> => {
+    if (job === null) return null;
+    try {
+      const durableJob = await client.getStudioJob(job.jobId, job.owner);
+      if (durableJob.error !== null) return null;
+      const record = durableJob.data;
+      const createAction = getStudioAction('create');
+      if (record.job_id !== job.jobId
+        || record.owner !== job.owner
+        || record.action_id !== 'create'
+        || record.lane !== createAction.lane
+        || record.status !== 'reviewing'
+        || record.active_design_id === null
+        || record.source_revision_id !== null
+        || record.billing.requested_outputs !== requestedOutputs
+        || record.billing.credits_per_output !== createAction.creditEstimate
+        || record.billing.completed_outputs !== 0
+        || record.billing.charged_outputs !== 0) return null;
+
+      const durableProject = await client.getProject(record.active_design_id);
+      if (durableProject.error !== null
+        || durableProject.data.root_id !== record.active_design_id
+        || durableProject.data.owner !== job.owner
+        || creativeOutputCount(durableProject.data, requestedOutputs) !== requestedOutputs) {
+        return null;
+      }
+
+      job.status = 'reviewing';
+      creativeJobs.set(durableProject.data.root_id, job);
+      return durableProject;
+    } catch {
+      return null;
+    }
+  };
+
+  const callTrackedCreate = async (
+    job: ActiveStudioJob | null,
+    requestedOutputs: number,
+    operation: () => Promise<ApiResult<ProjectDetail>>,
+  ): Promise<StudioGatewayResult<ProjectDetail>> => {
+    const unconfirmed = () => gatewayError(
+      'STUDIO_CREATE_STATUS_UNCONFIRMED',
+      'The Create request may still be finishing. Check Activity before starting it again.',
+      'unavailable', 0, true,
+    );
+    try {
+      const result = await operation();
+      if (result.error === null) return result;
+      const ambiguous = result.error.category === 'network'
+        || result.error.category === 'decode'
+        || result.error.category === 'unknown';
+      if (ambiguous) {
+        const recovered = await reconcileCommittedCreate(job, requestedOutputs);
+        if (recovered !== null) return recovered;
+        // A timeout or undecodable response can race a server transaction that
+        // is still committing candidate evidence. Leave the durable job
+        // running for Activity reconciliation instead of fabricating failure.
+        return unconfirmed();
+      }
+      await failJob(job, result.error.code);
+      return { data: null, error: mapError(result.error), status: result.status };
+    } catch {
+      const recovered = await reconcileCommittedCreate(job, requestedOutputs);
+      if (recovered !== null) return recovered;
+      // Thrown transport failures are likewise ambiguous: the server may still
+      // own an in-flight transaction, so only the server may settle it.
+      return unconfirmed();
+    }
   };
 
   const getFactoryEligibility = async (
@@ -1267,7 +1333,7 @@ export function createStudioGateway(
       const requested = request.variation_count ?? 1;
       const started = await startJob('create', request.owner, requested);
       if (started.error !== null) return started;
-      const result = await callTracked(started.data, () => client.createProjectFromPrompt({
+      const result = await callTrackedCreate(started.data, requested, () => client.createProjectFromPrompt({
         ...request,
         ...(started.data === null ? {} : { studio_job_id: started.data.jobId }),
       }));
@@ -1280,11 +1346,10 @@ export function createStudioGateway(
           'quality', result.status,
         );
       }
-      const reviewing = await transitionJob(
-        started.data, 'reviewing', 0.9, undefined, undefined,
-        { activeDesignId: result.data.root_id },
-      );
-      if (reviewing.error !== null) return reviewing;
+      // Project creation persists the candidate set and advances the durable job
+      // to reviewing in one backend transaction. Do not issue a second public
+      // lifecycle report that could fabricate candidate existence.
+      markBackendCandidateReviewing(started.data);
       if (started.data !== null) {
         creativeJobs.set(result.data.root_id, started.data);
       }
@@ -1297,7 +1362,7 @@ export function createStudioGateway(
       const requested = request.variation_count ?? 1;
       const started = await startJob('create', request.owner, requested);
       if (started.error !== null) return started;
-      const result = await callTracked(started.data, () => client.createProjectFromDrawing({
+      const result = await callTrackedCreate(started.data, requested, () => client.createProjectFromDrawing({
         ...request,
         ...(started.data === null ? {} : { studio_job_id: started.data.jobId }),
       }));
@@ -1310,11 +1375,9 @@ export function createStudioGateway(
           'quality', result.status,
         );
       }
-      const reviewing = await transitionJob(
-        started.data, 'reviewing', 0.9, undefined, undefined,
-        { activeDesignId: result.data.root_id },
-      );
-      if (reviewing.error !== null) return reviewing;
+      // Drawing creation has the same backend-owned candidate reservation as
+      // prompt creation; mirror it locally without a client-authored PATCH.
+      markBackendCandidateReviewing(started.data);
       if (started.data !== null) {
         creativeJobs.set(result.data.root_id, started.data);
       }
@@ -2974,7 +3037,7 @@ export function createStudioGateway(
         );
       }
       const activity = result.data.status === 'failed' || result.data.candidate_count === 0
-        ? await transitionJob(started.data, 'failed', 0.9, undefined, 'NO_PRESENTATION_OUTPUTS')
+        ? await transitionJob(started.data, 'failed', 0.9, 'NO_PRESENTATION_OUTPUTS')
         : { data: null, error: null, status: result.status } as const;
       if (activity.error !== null) return activity;
       return result;

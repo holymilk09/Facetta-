@@ -724,14 +724,20 @@ def persist_creative_project(
             if (
                 studio_job.owner != owner
                 or studio_job.action_id != "create"
+                or studio_job.status != "running"
                 or studio_job.active_design_id is not None
                 or studio_job.source_revision_id is not None
                 or studio_job.requested_outputs != len(candidates)
+                or studio_job.completed_outputs != 0
+                or studio_job.charged_outputs != 0
             ):
                 raise ValueError(
                     "Studio Create job is not an unbound canonical request"
                 )
             studio_job.active_design_id = root_id
+            studio_job.status = "reviewing"
+            studio_job.progress = max(studio_job.progress, 0.9)
+            studio_job.error_code = None
             studio_job.updated_at = now
         db.add_all([
             root,
@@ -877,14 +883,20 @@ def persist_prompt_creative_project(
             if (
                 studio_job.owner != owner
                 or studio_job.action_id != "create"
+                or studio_job.status != "running"
                 or studio_job.active_design_id is not None
                 or studio_job.source_revision_id is not None
                 or studio_job.requested_outputs != len(candidates)
+                or studio_job.completed_outputs != 0
+                or studio_job.charged_outputs != 0
             ):
                 raise ValueError(
                     "Studio Create job is not an unbound canonical request"
                 )
             studio_job.active_design_id = root_id
+            studio_job.status = "reviewing"
+            studio_job.progress = max(studio_job.progress, 0.9)
+            studio_job.error_code = None
             studio_job.updated_at = now
         db.add_all([
             *rows,

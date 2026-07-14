@@ -115,6 +115,23 @@ const quality = {
   summary: 'Pass', failed_checks: [], warnings: [], checks: [],
 } as const;
 
+const reviewingCreateJob = (
+  jobId: string,
+  projectId: string,
+  requestedOutputs: number,
+): StudioJobRecord => ({
+  job_id: jobId, owner: 'designer_1', action_id: 'create', lane: 'fast_visual',
+  status: 'reviewing', progress: 0.9, active_design_id: projectId,
+  source_revision_id: null, accepted_output_sha256: null, error_code: null,
+  created_at: '2026-07-12T00:00:00Z', updated_at: '2026-07-12T00:00:01Z',
+  billing: {
+    requested_outputs: requestedOutputs, credits_per_output: 15,
+    estimated_credits: requestedOutputs * 15, completed_outputs: 0,
+    charged_outputs: 0, charged_credits: 0,
+    policy: 'Only accepted outputs are charged.',
+  },
+});
+
 test('job-centric review restores immutable stale source with fail-closed decisions', async () => {
   const staleProject = project(2);
   staleProject.active_asset_id = 'candidate_2';
@@ -178,11 +195,9 @@ test('durable jobs are the default and charge only after direction acceptance', 
     active_design_id: null, source_revision_id: null,
     requested_outputs: 2, credits_per_output: 15,
   });
-  assert.deepEqual(jobs.transitions.slice(0, 2).map((call) => call.request.status), [
-    'running', 'reviewing',
-  ]);
+  assert.deepEqual(jobs.transitions.map((call) => call.request.status), ['running']);
   assert.equal(promptJobId, 'studio_job_1');
-  assert.equal(jobs.transitions[1]?.request.active_design_id, 'project_1');
+  assert.equal(jobs.transitions.some((call) => call.request.status === 'reviewing'), false);
   assert.equal(jobs.transitions.some((call) => call.request.completed_outputs !== undefined), false);
 
   await gateway.completeCreativeDirectionReview({
@@ -190,9 +205,7 @@ test('durable jobs are the default and charge only after direction acceptance', 
     createdBy: 'designer_1',
   });
   assert.deepEqual(commits[0], { projectId: 'project_1', studioJobId: 'studio_job_1' });
-  assert.deepEqual(jobs.transitions.map((call) => call.request.status), [
-    'running', 'reviewing',
-  ]);
+  assert.deepEqual(jobs.transitions.map((call) => call.request.status), ['running']);
 
   const drawing = await gateway.createFromDrawing({
     image_base64: 'c2tldGNo', source_kind: 'drawing', media_type: 'image/png', instruction: 'Preserve it',
@@ -201,7 +214,125 @@ test('durable jobs are the default and charge only after direction acceptance', 
   assert.equal(drawing.error, null);
   assert.equal(drawingCalls, 1);
   assert.equal(jobs.creates[1]?.requested_outputs, 2);
-  assert.equal(jobs.transitions.at(-1)?.request.status, 'reviewing');
+  assert.deepEqual(jobs.transitions.map((call) => call.request.status), [
+    'running', 'running',
+  ]);
+});
+
+test('prompt Create recovers the durable review after a committed response cannot decode', async () => {
+  const jobs = tracking();
+  const durable = unselectedProject(2);
+  const commits: { projectId: string; studioJobId?: string }[] = [];
+  const gateway = createStudioGateway({
+    ...jobs.client,
+    createProjectFromPrompt: async () => ({
+      data: null,
+      error: {
+        code: 'INVALID_RESPONSE', message: 'Response body could not be decoded.',
+        category: 'decode' as const, status: 201, retryable: false,
+      },
+      status: 201,
+    }),
+    getStudioJob: async (jobId: string, owner: string) => {
+      assert.equal(jobId, 'studio_job_1');
+      assert.equal(owner, 'designer_1');
+      return ok(reviewingCreateJob(jobId, durable.root_id, 2));
+    },
+    getProject: async (projectId: string) => {
+      assert.equal(projectId, durable.root_id);
+      return ok(durable);
+    },
+    commitCreativeDirections: async (projectId: string, request: { studio_job_id?: string }) => {
+      commits.push({ projectId, studioJobId: request.studio_job_id });
+      return ok({
+        project: {
+          ...project(2), selected_candidate_asset_id: 'direction_1',
+          active_asset_id: 'direction_1',
+        },
+        retained_variations: [],
+      });
+    },
+  } as any);
+
+  const recovered = await gateway.createFromPrompt({
+    prompt: 'Sapphire orbit', variation_count: 2, owner: 'designer_1', title: 'Orbit',
+  });
+
+  assert.equal(recovered.error, null);
+  assert.equal(recovered.data?.root_id, durable.root_id);
+  assert.deepEqual(jobs.transitions.map((call) => call.request.status), ['running']);
+
+  const committed = await gateway.completeCreativeDirectionReview({
+    projectId: durable.root_id, selectedCandidateId: 'direction_1', retained: [],
+    createdBy: 'designer_1',
+  });
+  assert.equal(committed.error, null);
+  assert.deepEqual(commits, [{ projectId: durable.root_id, studioJobId: 'studio_job_1' }]);
+});
+
+test('drawing Create recovers the durable review after a post-commit transport loss', async () => {
+  const jobs = tracking();
+  const durable = unselectedProject(2);
+  let jobReads = 0;
+  let projectReads = 0;
+  const gateway = createStudioGateway({
+    ...jobs.client,
+    createProjectFromDrawing: async () => {
+      throw new Error('connection closed after commit');
+    },
+    getStudioJob: async (jobId: string, owner: string) => {
+      jobReads += 1;
+      assert.equal(owner, 'designer_1');
+      return ok(reviewingCreateJob(jobId, durable.root_id, 2));
+    },
+    getProject: async (projectId: string) => {
+      projectReads += 1;
+      assert.equal(projectId, durable.root_id);
+      return ok(durable);
+    },
+  } as any);
+
+  const recovered = await gateway.createFromDrawing({
+    image_base64: 'c2tldGNo', source_kind: 'drawing', media_type: 'image/png',
+    instruction: 'Preserve it', variation_count: 2, owner: 'designer_1', title: 'Drawing',
+  });
+
+  assert.equal(recovered.error, null);
+  assert.equal(recovered.data?.root_id, durable.root_id);
+  assert.equal(jobReads, 1);
+  assert.equal(projectReads, 1);
+  assert.deepEqual(jobs.transitions.map((call) => call.request.status), ['running']);
+});
+
+test('ambiguous Create does not recover a noncanonical durable job response', async () => {
+  const jobs = tracking();
+  const durable = unselectedProject(2);
+  const gateway = createStudioGateway({
+    ...jobs.client,
+    createProjectFromPrompt: async () => ({
+      data: null,
+      error: {
+        code: 'NETWORK_LOSS', message: 'Connection closed.',
+        category: 'network' as const, status: 0, retryable: true,
+      },
+      status: 0,
+    }),
+    getStudioJob: async (jobId: string) => ok({
+      ...reviewingCreateJob(jobId, durable.root_id, 2),
+      billing: {
+        ...reviewingCreateJob(jobId, durable.root_id, 2).billing,
+        credits_per_output: 999,
+      },
+    }),
+    getProject: async () => ok(durable),
+  } as any);
+
+  const result = await gateway.createFromPrompt({
+    prompt: 'Sapphire orbit', variation_count: 2, owner: 'designer_1', title: 'Orbit',
+  });
+
+  assert.equal(result.error?.code, 'STUDIO_CREATE_STATUS_UNCONFIRMED');
+  assert.deepEqual(jobs.transitions.map((call) => call.request.status), ['running']);
 });
 
 test('job creation failure is safe and never invokes the provider mutation', async () => {
@@ -374,22 +505,27 @@ test('atomic Create review forwards the same-session durable job exactly once', 
 
   assert.equal(committed.error, null);
   assert.deepEqual(commits, [{ projectId: 'project_1', studioJobId: 'studio_job_1' }]);
-  assert.deepEqual(jobs.transitions.map((call) => call.request.status), [
-    'running', 'reviewing',
-  ]);
+  assert.deepEqual(jobs.transitions.map((call) => call.request.status), ['running']);
 });
 
 test('tracked generation failures close the job without charging output', async () => {
   const jobs = tracking();
   const gateway = createStudioGateway({
     ...jobs.client,
-    createProjectFromPrompt: async () => { throw new Error('generation offline'); },
+    createProjectFromPrompt: async () => ({
+      data: null,
+      error: {
+        code: 'GENERATION_REJECTED', message: 'Generation was rejected.',
+        category: 'quality' as const, status: 422, retryable: false,
+      },
+      status: 422,
+    }),
   } as any);
 
   const result = await gateway.createFromPrompt({
     prompt: 'Orbit', owner: 'designer_1', title: 'Orbit',
   });
-  assert.equal(result.error?.code, 'UNEXPECTED_GENERATION_FAILURE');
+  assert.equal(result.error?.code, 'GENERATION_REJECTED');
   assert.deepEqual(jobs.transitions.map((call) => call.request.status), ['running', 'failed']);
   assert.equal(jobs.transitions[1]?.request.progress, 1);
   assert.equal(jobs.transitions[1]?.request.completed_outputs, undefined);

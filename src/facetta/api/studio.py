@@ -503,10 +503,10 @@ _JOB_TRANSITIONS: dict[str, frozenset[str]] = {
     "canceled": frozenset(),
 }
 
-# Once these actions reach reviewing, a durable candidate exists and its
-# candidate-specific Apply/Save/Discard transaction is the only authority that
-# may settle the job. A generic lifecycle report must not strand that candidate
-# or fabricate a terminal state without the canonical decision.
+# Candidate generation owns the transition into reviewing, and the
+# candidate-specific Apply/Save/Discard transaction owns successful settlement.
+# A public lifecycle report may start work or report a pre-review failure, but it
+# must not fabricate either candidate existence or canonical acceptance.
 _CANDIDATE_OWNED_REVIEW_ACTIONS = frozenset(
     action_id
     for action_id, definition in STUDIO_JOB_ACTIONS.items()
@@ -763,6 +763,18 @@ def transition_studio_job(
             detail=(
                 f"this {job.action_id} job is owned by its backend transaction; "
                 "use its dedicated preparation action"
+            ),
+        )
+    if (
+        job.action_id in _CANDIDATE_OWNED_REVIEW_ACTIONS
+        and request.status not in {"running", "failed"}
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                f"public lifecycle reports for this {job.action_id} job may "
+                "only set running or failed; use its dedicated candidate or "
+                "cancellation action"
             ),
         )
     if request.status not in _JOB_TRANSITIONS[job.status]:

@@ -18,6 +18,7 @@ from sqlalchemy.pool import StaticPool
 
 from conftest import EXAMPLE_SPEC, audited_import_spec
 
+from facetta.api import projects as projects_api
 from facetta.creative_workflow import (
     get_creative_prompt_generator,
     get_creative_render_generator,
@@ -63,6 +64,7 @@ from facetta.main import app
 from facetta.project_backbone import (
     CreativeCandidateInput,
     claim_creative_project_design,
+    persist_creative_project,
     persist_prompt_creative_project,
 )
 from facetta.revision_component_map import (
@@ -174,6 +176,36 @@ def _creative_result(variant: int):
 
     return JewelryImageAgent(Provider(), Evaluator()).run(
         plan, source_image=SOURCE)
+
+
+def _creative_result_for_source(
+    source: bytes,
+    instruction: str,
+    variant: int,
+):
+    plan = build_image_plan(
+        ImageOperation.REFERENCE_RENDER,
+        instruction,
+        source_image=source,
+        variant=variant,
+    )
+
+    class Provider:
+        def execute(self, *_args, **_kwargs):
+            return ProviderImage(image_bytes=_png((70, 50 + variant, 30)))
+
+    class Evaluator:
+        def evaluate(self, *_args, **_kwargs):
+            return ImageQualityReport(
+                verdict=QualityVerdict.WARN,
+                checks=(),
+                score=92,
+            )
+
+    return JewelryImageAgent(Provider(), Evaluator()).run(
+        plan,
+        source_image=source,
+    )
 
 
 def _prompt_creative_result(variant: int):
@@ -561,6 +593,7 @@ def creative_client():
 
     app.dependency_overrides[get_db] = override_db
     client = TestClient(app)
+    client.app_state["session_factory"] = Session
     try:
         yield client, Session
     finally:
@@ -628,13 +661,18 @@ def _reviewing_create_job(
         "progress": 0.05,
     })
     assert running.status_code == 200, running.text
-    reviewing = client.patch(f"/studio/jobs/{job_id}", json={
-        "owner": owner,
-        "status": "reviewing",
-        "progress": 0.9,
-        "active_design_id": project_id,
-    })
-    assert reviewing.status_code == 200, reviewing.text
+    # Candidate persistence owns this reservation in production. These selection
+    # tests seed that already-produced durable state without granting the public
+    # lifecycle endpoint authority to fabricate candidate existence.
+    sessions = client.app_state["session_factory"]
+    with sessions() as db:
+        job = db.get(StudioJobRecord, job_id)
+        assert job is not None and job.status == "running"
+        job.active_design_id = project_id
+        job.status = "reviewing"
+        job.progress = 0.9
+        job.updated_at = utcnow()
+        db.commit()
     return job_id
 
 
@@ -800,11 +838,13 @@ def test_production_create_requires_valid_job_before_provider_cost(
         durable_project = db.get(Project, project_id)
         assert durable_job is not None
         assert durable_project is not None
-        # The provider authorization and project become durable together. The
-        # client may later report reviewing, but replay prevention does not
-        # depend on that second request.
+        # Provider authorization, candidate persistence, and the review
+        # reservation become durable together without a client-authored state.
         assert durable_job.active_design_id == durable_project.root_id
-        assert durable_job.status == "running"
+        assert durable_job.status == "reviewing"
+        assert durable_job.progress == 0.9
+        assert durable_job.completed_outputs == 0
+        assert durable_job.charged_outputs == 0
 
     replay = client.post("/projects/from-prompt", json={
         **_prompt_request(variation_count=1),
@@ -825,6 +865,8 @@ def test_production_create_requires_valid_job_before_provider_cost(
         durable_drawing_job = db.get(StudioJobRecord, drawing_job)
         assert durable_drawing_job is not None
         assert durable_drawing_job.active_design_id == drawing.json()["root_id"]
+        assert durable_drawing_job.status == "reviewing"
+        assert durable_drawing_job.progress == 0.9
 
     drawing_replay = client.post("/projects/from-drawing", json={
         **_request(variation_count=1),
@@ -835,13 +877,19 @@ def test_production_create_requires_valid_job_before_provider_cost(
     assert len(drawing_calls) == 1
 
 
+@pytest.mark.parametrize("source_kind", ["prompt", "drawing"])
 def test_create_job_binding_rolls_back_with_project_persistence(
     creative_client,
     monkeypatch,
+    source_kind,
 ):
     client, Session = creative_client
     job_id = _running_create_job(client, requested_outputs=1)
-    generated = _prompt_creative_result(4)
+    generated = (
+        _prompt_creative_result(4)
+        if source_kind == "prompt"
+        else _creative_result(7)
+    )
 
     def fail_run_persistence(*_args, **_kwargs):
         raise RuntimeError("simulated image-run persistence failure")
@@ -854,22 +902,419 @@ def test_create_job_binding_rolls_back_with_project_persistence(
         job = db.get(StudioJobRecord, job_id)
         assert job is not None and job.active_design_id is None
         with pytest.raises(RuntimeError, match="simulated image-run"):
-            persist_prompt_creative_project(
-                db,
-                candidates=(CreativeCandidateInput(
-                    image=generated.image_bytes,
-                    instruction="Sapphire orbit",
-                    image_run=generated,
-                ),),
-                owner="usr_designer",
-                title="Atomic Create",
-                studio_job=job,
+            candidate = CreativeCandidateInput(
+                image=generated.image_bytes,
+                instruction="Sapphire orbit",
+                image_run=generated,
             )
+            if source_kind == "prompt":
+                persist_prompt_creative_project(
+                    db,
+                    candidates=(candidate,),
+                    owner="usr_designer",
+                    title="Atomic Create",
+                    studio_job=job,
+                )
+            else:
+                persist_creative_project(
+                    db,
+                    source_image=SOURCE,
+                    source_media_type="image/png",
+                    source_kind="drawing",
+                    candidates=(candidate,),
+                    owner="usr_designer",
+                    title="Atomic Create",
+                    studio_job=job,
+                )
 
     with Session() as db:
         durable_job = db.get(StudioJobRecord, job_id)
         assert durable_job is not None
         assert durable_job.active_design_id is None
+        assert durable_job.status == "running"
+        assert durable_job.progress == 0.05
+        assert durable_job.completed_outputs == 0
+        assert durable_job.charged_outputs == 0
+        assert db.scalar(select(func.count()).select_from(Project)) == 0
+
+
+@pytest.mark.parametrize("source_kind", ["prompt", "drawing"])
+def test_create_failure_atomically_persists_evidence_and_zero_charge_job(
+    creative_client,
+    source_kind,
+):
+    client, Session = creative_client
+    job_id = _running_create_job(client, requested_outputs=1)
+    provider_calls = 0
+    plan = build_image_plan(
+        (
+            ImageOperation.CREATIVE_GENERATE
+            if source_kind == "prompt"
+            else ImageOperation.REFERENCE_RENDER
+        ),
+        "fail this candidate deterministically",
+        source_image=None if source_kind == "prompt" else SOURCE,
+        variant=4 if source_kind == "prompt" else 7,
+    )
+    report = ImageQualityReport(
+        verdict=QualityVerdict.FAIL,
+        checks=(QualityCheck(
+            code="requested_direction_applied",
+            passed=False,
+            severity=CheckSeverity.HARD,
+            message="candidate failed frozen QA",
+        ),),
+        score=20,
+    )
+
+    def fail(*_args, **_kwargs):
+        nonlocal provider_calls
+        provider_calls += 1
+        raise ImageQualityFailure(
+            "candidate failed frozen QA",
+            report=report,
+            attempts=[],
+            plan=plan,
+        )
+
+    dependency = (
+        get_creative_prompt_generator
+        if source_kind == "prompt"
+        else get_creative_render_generator
+    )
+    route = (
+        "/projects/from-prompt"
+        if source_kind == "prompt"
+        else "/projects/from-drawing"
+    )
+    payload = (
+        _prompt_request(variation_count=1)
+        if source_kind == "prompt"
+        else _request(variation_count=1)
+    )
+    app.dependency_overrides[dependency] = lambda: fail
+
+    failed = client.post(route, json={**payload, "studio_job_id": job_id})
+    assert failed.status_code == 422, failed.text
+    assert provider_calls == 1
+    with Session() as db:
+        job = db.get(StudioJobRecord, job_id)
+        run = db.scalar(select(ImageRun))
+        assert job is not None
+        assert job.status == "failed"
+        assert job.progress == 1
+        assert job.completed_outputs == 0
+        assert job.charged_outputs == 0
+        assert job.error_code == "image_quality_failed"
+        assert job.active_design_id is None
+        assert job.source_revision_id is None
+        assert run is not None
+        assert run.status == "failed"
+        assert run.error_category == "quality"
+        assert db.scalar(select(func.count()).select_from(ImageRun)) == 1
+        assert db.scalar(select(func.count()).select_from(Project)) == 0
+        assert db.scalar(select(func.count()).select_from(ImageAsset)) == 0
+        assert db.scalar(select(func.count()).select_from(Design)) == 0
+        assert db.scalar(select(func.count()).select_from(DesignVersion)) == 0
+
+    replay = client.post(route, json={**payload, "studio_job_id": job_id})
+    assert replay.status_code == 409, replay.text
+    assert replay.json()["code"] == "studio_job_terminal"
+    assert provider_calls == 1
+    with Session() as db:
+        assert db.scalar(select(func.count()).select_from(ImageRun)) == 1
+
+
+@pytest.mark.parametrize(
+    ("failure_kind", "expected_error_code"),
+    [
+        ("prompt_operation", "create_generator_operation_mismatch"),
+        ("drawing_operation", "create_generator_operation_mismatch"),
+        ("prompt_reference_binding", "create_reference_binding_mismatch"),
+    ],
+)
+def test_create_provider_contract_failure_is_atomic_and_not_reusable(
+    creative_client,
+    failure_kind,
+    expected_error_code,
+):
+    client, Session = creative_client
+    job_id = _running_create_job(client, requested_outputs=1)
+    provider_calls = 0
+
+    def wrong_contract(*_args, **_kwargs):
+        nonlocal provider_calls
+        provider_calls += 1
+        if failure_kind == "prompt_operation":
+            return _creative_result(4)
+        return _prompt_creative_result(7)
+
+    if failure_kind == "drawing_operation":
+        dependency = get_creative_render_generator
+        route = "/projects/from-drawing"
+        payload = _request(variation_count=1)
+    else:
+        dependency = get_creative_prompt_generator
+        route = "/projects/from-prompt"
+        payload = _prompt_request(variation_count=1)
+        if failure_kind == "prompt_reference_binding":
+            payload = {
+                **payload,
+                "references": [
+                    _role_reference("brand_direction", (120, 90, 50))
+                ],
+            }
+    app.dependency_overrides[dependency] = lambda: wrong_contract
+
+    failed = client.post(route, json={**payload, "studio_job_id": job_id})
+    assert failed.status_code == 500, failed.text
+    assert provider_calls == 1
+    with Session() as db:
+        job = db.get(StudioJobRecord, job_id)
+        run = db.scalar(select(ImageRun))
+        assert job is not None
+        assert job.status == "failed"
+        assert job.progress == 1
+        assert job.completed_outputs == 0
+        assert job.charged_outputs == 0
+        assert job.error_code == expected_error_code
+        assert run is not None
+        assert run.status == "failed"
+        assert run.error_category == "evaluation"
+        assert db.scalar(select(func.count()).select_from(ImageRun)) == 1
+        assert db.scalar(select(func.count()).select_from(Project)) == 0
+
+    replay = client.post(route, json={**payload, "studio_job_id": job_id})
+    assert replay.status_code == 409, replay.text
+    assert replay.json()["code"] == "studio_job_terminal"
+    assert provider_calls == 1
+    with Session() as db:
+        assert db.scalar(select(func.count()).select_from(ImageRun)) == 1
+
+
+@pytest.mark.parametrize(
+    ("failure_kind", "expected_error_code"),
+    [
+        ("source_hash", "create_render_source_binding_mismatch"),
+        ("reference_contract", "create_reference_binding_mismatch"),
+    ],
+)
+def test_drawing_create_rejects_unbound_render_plan_atomically(
+    creative_client,
+    failure_kind,
+    expected_error_code,
+):
+    client, Session = creative_client
+    job_id = _running_create_job(client, requested_outputs=1)
+    provider_calls = 0
+
+    def unbound_result(
+        source: bytes,
+        _instruction: str,
+        variant: int,
+        **_kwargs,
+    ):
+        nonlocal provider_calls
+        provider_calls += 1
+        if failure_kind == "source_hash":
+            # The selected crop is the exact provider source, while this
+            # fixture dishonestly binds its evidence to the full upload.
+            return _creative_result(variant)
+        # Keep the exact board source but drop its role-labeled contract.
+        return _creative_result_for_source(
+            source,
+            "Render jewelry while omitting the supplied role contract",
+            variant,
+        )
+
+    payload = _request(variation_count=1)
+    if failure_kind == "source_hash":
+        payload = {
+            **payload,
+            "source_region_description": "Front jewelry elevation",
+            "source_region": {
+                "x": 0.10,
+                "y": 0.10,
+                "width": 0.80,
+                "height": 0.80,
+            },
+        }
+    else:
+        payload = {
+            **payload,
+            "references": [
+                _role_reference("material_style", (160, 120, 60))
+            ],
+        }
+    app.dependency_overrides[get_creative_render_generator] = (
+        lambda: unbound_result
+    )
+
+    failed = client.post(
+        "/projects/from-drawing",
+        json={**payload, "studio_job_id": job_id},
+    )
+    assert failed.status_code == 500, failed.text
+    assert failed.json()["code"] == expected_error_code
+    assert provider_calls == 1
+    with Session() as db:
+        job = db.get(StudioJobRecord, job_id)
+        run = db.scalar(select(ImageRun))
+        assert job is not None
+        assert job.status == "failed"
+        assert job.progress == 1
+        assert job.completed_outputs == 0
+        assert job.charged_outputs == 0
+        assert job.error_code == expected_error_code
+        assert job.active_design_id is None
+        assert job.source_revision_id is None
+        assert run is not None
+        assert run.status == "failed"
+        assert run.error_category == "evaluation"
+        assert db.scalar(select(func.count()).select_from(ImageRun)) == 1
+        assert db.scalar(select(func.count()).select_from(Project)) == 0
+
+    replay = client.post(
+        "/projects/from-drawing",
+        json={**payload, "studio_job_id": job_id},
+    )
+    assert replay.status_code == 409, replay.text
+    assert replay.json()["code"] == "studio_job_terminal"
+    assert provider_calls == 1
+    with Session() as db:
+        assert db.scalar(select(func.count()).select_from(ImageRun)) == 1
+
+
+def test_drawing_source_binding_failure_rolls_back_evidence_and_job(
+    creative_client,
+    monkeypatch,
+):
+    client, Session = creative_client
+    job_id = _running_create_job(client, requested_outputs=1)
+    payload = {
+        **_request(variation_count=1),
+        "source_region_description": "Front jewelry elevation",
+        "source_region": {
+            "x": 0.10,
+            "y": 0.10,
+            "width": 0.80,
+            "height": 0.80,
+        },
+    }
+
+    def wrong_source(*_args, **_kwargs):
+        return _creative_result(7)
+
+    original_settlement = projects_api.record_failed_create_studio_job
+
+    def fail_after_job_flush(*args, **kwargs):
+        original_settlement(*args, **kwargs)
+        raise RuntimeError("simulated drawing binding commit failure")
+
+    monkeypatch.setattr(
+        projects_api,
+        "record_failed_create_studio_job",
+        fail_after_job_flush,
+    )
+    app.dependency_overrides[get_creative_render_generator] = (
+        lambda: wrong_source
+    )
+
+    with pytest.raises(RuntimeError, match="drawing binding commit"):
+        client.post(
+            "/projects/from-drawing",
+            json={**payload, "studio_job_id": job_id},
+        )
+
+    with Session() as db:
+        job = db.get(StudioJobRecord, job_id)
+        assert job is not None
+        assert job.status == "running"
+        assert job.progress == 0.05
+        assert job.completed_outputs == 0
+        assert job.charged_outputs == 0
+        assert job.error_code is None
+        assert db.scalar(select(func.count()).select_from(ImageRun)) == 0
+        assert db.scalar(select(func.count()).select_from(Project)) == 0
+
+
+@pytest.mark.parametrize("source_kind", ["prompt", "drawing"])
+def test_create_failure_rolls_back_evidence_and_job_together(
+    creative_client,
+    monkeypatch,
+    source_kind,
+):
+    client, Session = creative_client
+    job_id = _running_create_job(client, requested_outputs=1)
+    plan = build_image_plan(
+        (
+            ImageOperation.CREATIVE_GENERATE
+            if source_kind == "prompt"
+            else ImageOperation.REFERENCE_RENDER
+        ),
+        "exercise atomic rollback",
+        source_image=None if source_kind == "prompt" else SOURCE,
+        variant=4 if source_kind == "prompt" else 7,
+    )
+    report = ImageQualityReport(
+        verdict=QualityVerdict.FAIL,
+        checks=(QualityCheck(
+            code="atomic_failure_fixture",
+            passed=False,
+            severity=CheckSeverity.HARD,
+            message="fixture failure",
+        ),),
+        score=0,
+    )
+
+    def fail_generation(*_args, **_kwargs):
+        raise ImageQualityFailure(
+            "fixture failure",
+            report=report,
+            attempts=[],
+            plan=plan,
+        )
+
+    original_settlement = projects_api.record_failed_create_studio_job
+
+    def fail_after_job_flush(*args, **kwargs):
+        original_settlement(*args, **kwargs)
+        raise RuntimeError("simulated atomic Create commit failure")
+
+    monkeypatch.setattr(
+        projects_api,
+        "record_failed_create_studio_job",
+        fail_after_job_flush,
+    )
+    dependency = (
+        get_creative_prompt_generator
+        if source_kind == "prompt"
+        else get_creative_render_generator
+    )
+    route = (
+        "/projects/from-prompt"
+        if source_kind == "prompt"
+        else "/projects/from-drawing"
+    )
+    payload = (
+        _prompt_request(variation_count=1)
+        if source_kind == "prompt"
+        else _request(variation_count=1)
+    )
+    app.dependency_overrides[dependency] = lambda: fail_generation
+
+    with pytest.raises(RuntimeError, match="simulated atomic Create"):
+        client.post(route, json={**payload, "studio_job_id": job_id})
+
+    with Session() as db:
+        job = db.get(StudioJobRecord, job_id)
+        assert job is not None
+        assert job.status == "running"
+        assert job.progress == 0.05
+        assert job.completed_outputs == 0
+        assert job.charged_outputs == 0
+        assert job.error_code is None
+        assert db.scalar(select(func.count()).select_from(ImageRun)) == 0
         assert db.scalar(select(func.count()).select_from(Project)) == 0
 
 

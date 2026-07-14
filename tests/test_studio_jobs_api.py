@@ -183,6 +183,53 @@ def _transition(
     })
 
 
+def _mark_job_reviewing_from_candidate(
+    client: TestClient,
+    job_id: str,
+    *,
+    active_design_id: str | None = None,
+) -> None:
+    """Model the server-owned candidate reservation used by focused API tests."""
+
+    sessions = client.app_state["session_factory"]
+    with sessions() as db:
+        job = db.get(StudioJobRecord, job_id)
+        assert job is not None and job.status == "running"
+        if active_design_id is not None:
+            job.active_design_id = active_design_id
+        job.status = "reviewing"
+        job.progress = max(job.progress, 0.9)
+        job.updated_at = utcnow()
+        db.commit()
+
+
+def _create_running_candidate_job(
+    client: TestClient,
+    action_id: str,
+) -> dict:
+    project_id = None
+    source_id = None
+    if action_id != "create":
+        project_id, source_id = _seed_project(
+            client,
+            project_id=f"project_{action_id}_public_lifecycle",
+            exact_specification=action_id == "views",
+        )
+    definition = STUDIO_JOB_ACTIONS[action_id]
+    job = _create(
+        client,
+        outputs=1,
+        action_id=action_id,
+        lane=definition.lane,
+        credits=definition.credits_per_output,
+        active_design_id=project_id,
+        source_revision_id=source_id,
+    )
+    running = _transition(client, job["job_id"], "running", 0.2)
+    assert running.status_code == 200, running.text
+    return running.json()
+
+
 def _seed_expired_activity_candidate(
     client: TestClient,
     *,
@@ -219,11 +266,6 @@ def _seed_expired_activity_candidate(
         "owner": actor, "status": "running", "progress": 0.2,
     })
     assert response.status_code == 200
-    response = client.patch(f"/studio/jobs/{job['job_id']}", json={
-        "owner": actor, "status": "reviewing", "progress": 0.9,
-    })
-    assert response.status_code == 200
-
     now = utcnow()
     image = f"expired-{candidate_kind}".encode()
     source_hash = hashlib.sha256(b"studio-job-test-image").hexdigest()
@@ -232,6 +274,11 @@ def _seed_expired_activity_candidate(
     run_id = f"run_exp_{suffix}"
     sessions = client.app_state["session_factory"]
     with sessions() as db:
+        stored_job = db.get(StudioJobRecord, job["job_id"])
+        assert stored_job is not None and stored_job.status == "running"
+        stored_job.status = "reviewing"
+        stored_job.progress = 0.9
+        stored_job.updated_at = now
         db.add(ImageRun(
             id=run_id,
             project_root_id=project_id,
@@ -425,60 +472,61 @@ def test_instant_transaction_cannot_create_or_orphan_a_studio_job(client):
     assert listed.json() == {"jobs": []}
 
 
-@pytest.mark.parametrize("action_id", [
+_CANDIDATE_DECISION_ACTION_IDS = tuple(
     action_id
     for action_id, definition in STUDIO_JOB_ACTIONS.items()
     if definition.review_authority == "candidate_decision"
-])
-def test_reviewing_candidate_jobs_are_owned_by_their_candidate_decision(
+)
+
+
+@pytest.mark.parametrize("action_id", _CANDIDATE_DECISION_ACTION_IDS)
+@pytest.mark.parametrize(
+    ("reported_status", "extra"),
+    [
+        ("reviewing", {}),
+        ("succeeded", {"completed_outputs": 1}),
+        ("canceled", {}),
+    ],
+)
+def test_public_patch_cannot_author_candidate_review_success_or_cancellation(
     client,
     action_id,
+    reported_status,
+    extra,
 ):
-    project_id = None
-    source_id = None
-    if action_id != "create":
-        project_id, source_id = _seed_project(
-            client,
-            project_id=f"project_{action_id}_candidate_owned",
-            exact_specification=action_id == "views",
-        )
-    definition = STUDIO_JOB_ACTIONS[action_id]
-    job = _create(
-        client,
-        outputs=1,
-        action_id=action_id,
-        lane=definition.lane,
-        credits=definition.credits_per_output,
-        active_design_id=project_id,
-        source_revision_id=source_id,
-    )
-    assert _transition(client, job["job_id"], "running", 0.2).status_code == 200
-    assert _transition(client, job["job_id"], "reviewing", 0.8).status_code == 200
+    running = _create_running_candidate_job(client, action_id)
 
-    for status, extra in (
-        ("succeeded", {"completed_outputs": 1}),
-        ("failed", {"error_code": "client_reported_failure"}),
-    ):
-        blocked = _transition(client, job["job_id"], status, 1, **extra)
-        assert blocked.status_code == 409
-        assert "candidate decision" in blocked.json()["detail"]
+    blocked = _transition(
+        client,
+        running["job_id"],
+        reported_status,
+        1 if reported_status in {"succeeded", "canceled"} else 0.8,
+        **extra,
+    )
+    assert blocked.status_code == 409
+    assert blocked.json()["detail"] == (
+        f"public lifecycle reports for this {action_id} job may only set "
+        "running or failed; use its dedicated candidate or cancellation action"
+    )
 
     persisted = client.get(
-        f"/studio/jobs/{job['job_id']}", params={"owner": "usr_designer"},
+        f"/studio/jobs/{running['job_id']}", params={"owner": "usr_designer"},
     )
     assert persisted.status_code == 200
-    assert persisted.json()["status"] == "reviewing"
-    assert persisted.json()["billing"]["completed_outputs"] == 0
-    assert persisted.json()["billing"]["charged_outputs"] == 0
+    unchanged = persisted.json()
+    assert unchanged["status"] == "running"
+    assert unchanged["progress"] == 0.2
+    assert unchanged["billing"]["completed_outputs"] == 0
+    assert unchanged["billing"]["charged_outputs"] == 0
 
 
-def test_running_candidate_job_can_still_fail_before_review(client):
-    job = _create(client, outputs=1)
-    assert _transition(client, job["job_id"], "running", 0.2).status_code == 200
+@pytest.mark.parametrize("action_id", _CANDIDATE_DECISION_ACTION_IDS)
+def test_running_candidate_job_can_still_fail_before_review(client, action_id):
+    running = _create_running_candidate_job(client, action_id)
 
     failed = _transition(
         client,
-        job["job_id"],
+        running["job_id"],
         "failed",
         1,
         error_code="generation_unavailable",
@@ -490,10 +538,44 @@ def test_running_candidate_job_can_still_fail_before_review(client):
     assert failed.json()["billing"]["charged_outputs"] == 0
 
     persisted = client.get(
-        f"/studio/jobs/{job['job_id']}", params={"owner": "usr_designer"},
+        f"/studio/jobs/{running['job_id']}", params={"owner": "usr_designer"},
     ).json()
     assert persisted["status"] == "failed"
     assert persisted["billing"]["charged_outputs"] == 0
+
+
+@pytest.mark.parametrize("action_id", _CANDIDATE_DECISION_ACTION_IDS)
+def test_reviewing_candidate_job_rejects_generic_failure(client, action_id):
+    running = _create_running_candidate_job(client, action_id)
+    _mark_job_reviewing_from_candidate(
+        client,
+        running["job_id"],
+        active_design_id=running.get("active_design_id"),
+    )
+
+    blocked = _transition(
+        client,
+        running["job_id"],
+        "failed",
+        1,
+        error_code="late_generic_failure",
+    )
+    assert blocked.status_code == 409
+    assert blocked.json()["detail"] == (
+        f"this {action_id} job is owned by its candidate decision; "
+        "use its Apply, Save, or Discard action"
+    )
+
+    persisted = client.get(
+        f"/studio/jobs/{running['job_id']}",
+        params={"owner": "usr_designer"},
+    )
+    assert persisted.status_code == 200
+    unchanged = persisted.json()
+    assert unchanged["status"] == "reviewing"
+    assert unchanged["progress"] == 0.9
+    assert unchanged["billing"]["completed_outputs"] == 0
+    assert unchanged["billing"]["charged_outputs"] == 0
 
 
 def test_activity_read_expires_orphaned_view_reservation_without_charge(client):
@@ -1366,12 +1448,11 @@ def test_creation_job_lineage_can_bind_once_but_never_drift(client):
         "owner": "usr_designer", "status": "running", "progress": 0.2,
     })
     assert running.status_code == 200
-    reviewing = client.patch(f"/studio/jobs/{job_id}", json={
-        "owner": "usr_designer", "status": "reviewing", "progress": 0.9,
-        "active_design_id": "project_created",
-    })
-    assert reviewing.status_code == 200
-    assert reviewing.json()["active_design_id"] == "project_created"
+    _mark_job_reviewing_from_candidate(
+        client,
+        job_id,
+        active_design_id="project_created",
+    )
 
     drift = client.patch(f"/studio/jobs/{job_id}", json={
         "owner": "usr_designer", "status": "succeeded", "progress": 1,
@@ -1430,7 +1511,7 @@ def test_failed_and_canceled_jobs_never_charge(client):
 
     reviewing_id = _create(client)["job_id"]
     assert _transition(client, reviewing_id, "running", 0.1).status_code == 200
-    assert _transition(client, reviewing_id, "reviewing", 0.9).status_code == 200
+    _mark_job_reviewing_from_candidate(client, reviewing_id)
     dismissed = client.post(
         f"/studio/jobs/{reviewing_id}/cancel",
         json={"owner": "usr_designer"},

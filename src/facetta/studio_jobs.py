@@ -395,6 +395,66 @@ def settle_create_studio_job_selection(
     )
 
 
+def record_failed_create_studio_job(
+    db: Session,
+    *,
+    job_id: str,
+    owner: str,
+    error_code: str,
+) -> StudioJobRecord:
+    """Fail one running Create request without committing or charging it.
+
+    Create generation evidence is written before a canonical Project exists.
+    The endpoint therefore owns the surrounding transaction and commits the
+    append-only ImageRun evidence together with this terminal job outcome.  A
+    failed request cannot remain reusable after its provider work is durable.
+    """
+
+    job = db.scalar(select(StudioJobRecord).where(
+        StudioJobRecord.id == job_id,
+        StudioJobRecord.owner == owner,
+    ).with_for_update())
+    if job is None:
+        raise StudioJobAccountingError(f"unknown Studio job '{job_id}'")
+    if job.action_id != "create":
+        raise StudioJobAccountingError("Studio job is not a Create request")
+    if job.status != "running":
+        raise StudioJobAccountingError(
+            f"Create job cannot record failure from {job.status}"
+        )
+    canonical = studio_job_action_definition("create")
+    if (
+        job.lane != canonical.lane
+        or job.credits_per_output != canonical.credits_per_output
+    ):
+        raise StudioJobAccountingError("Studio job pricing is not canonical")
+    if (
+        job.active_design_id is not None
+        or job.source_revision_id is not None
+        or job.completed_outputs != 0
+        or job.charged_outputs != 0
+        or job.accepted_output_sha256 is not None
+    ):
+        raise StudioJobAccountingError(
+            "failed Create job is not an unbound zero-charge request"
+        )
+    if not error_code or len(error_code) > 64:
+        raise StudioJobAccountingError(
+            "Studio job failure requires a bounded error code"
+        )
+
+    job.status = "failed"
+    job.progress = 1
+    job.completed_outputs = 0
+    job.charged_outputs = 0
+    job.accepted_output_sha256 = None
+    job.error_code = error_code
+    job.reservation_kind = None
+    job.updated_at = utcnow()
+    db.flush()
+    return job
+
+
 def record_accepted_studio_job_outputs(
     db: Session,
     *,

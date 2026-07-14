@@ -22,4 +22,8 @@ test('designer errors give specific safe recovery guidance', () => {
   assert.match(designerErrorMessage({ category: 'validation', status: 422 }, 'create'), /reference/);
   assert.match(designerErrorMessage({ category: 'authentication', status: 401 }, 'confirm'), /Sign in again/);
   assert.match(designerErrorMessage({ category: 'authorization', status: 403 }, 'confirm'), /signed-in account/);
+  assert.equal(
+    designerErrorMessage({ code: 'STUDIO_CREATE_STATUS_UNCONFIRMED' }, 'create'),
+    'This request may still be finishing. Check Activity before starting it again.',
+  );
 });

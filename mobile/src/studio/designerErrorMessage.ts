@@ -38,6 +38,9 @@ export function designerErrorMessage(
 ): string {
   const code = (error.code ?? '').toLowerCase();
   const category = (error.category ?? '').toLowerCase();
+  if (code === 'studio_create_status_unconfirmed') {
+    return 'This request may still be finishing. Check Activity before starting it again.';
+  }
   if (category === 'authentication' || error.status === 401) {
     return 'Your Facetta session is missing or expired. Sign in again before continuing.';
   }

@@ -787,6 +787,58 @@ test('active design actions keep the exact saved revision visible and link to Hi
   expect(await view.findByText('Vary exact project_1')).toBeTruthy();
 });
 
+test('every visible active-design rail CTA reaches its named destination', async () => {
+  authenticate();
+  const view = await render(<App />);
+
+  await waitFor(() => expect(view.getByText('Start from an idea or reference')).toBeTruthy());
+  fireEvent.press(view.getByText('Start from an idea or reference'));
+  fireEvent.press(await view.findByText('Save mocked direction'));
+  expect(await view.findByText('Refine route reached')).toBeTruthy();
+
+  for (const [label, destination] of [
+    ['Save as a variation', 'Vary route reached for project_1 via asset_1'],
+    ['Refine this design', 'Refine route reached'],
+    ['Present this design', 'Present route reached for asset_1'],
+  ] as const) {
+    fireEvent.press(view.getByLabelText(label));
+    expect(await view.findByText(destination)).toBeTruthy();
+  }
+
+  fireEvent.press(view.getByLabelText('More actions'));
+  expect(await view.findByText('Starting design facts')).toBeTruthy();
+  fireEvent.press(view.getByLabelText('More actions'));
+  await waitFor(() => expect(view.queryByText('Starting design facts')).toBeNull());
+
+  fireEvent.press(view.getByLabelText(
+    'Generate technical views; Save starting facts first',
+  ));
+  expect(await view.findByText('Review starting design facts')).toBeTruthy();
+  fireEvent.press(await view.findByText('Save starting facts'));
+  expect(await view.findByText('Views route reached')).toBeTruthy();
+
+  fireEvent.press(view.getByLabelText('Create a design'));
+  expect(await view.findByText('Save mocked direction')).toBeTruthy();
+  expect(view.queryByTestId('active-design-context')).toBeNull();
+});
+
+test('More opens Starting design facts in the confirmation workspace', async () => {
+  authenticate();
+  const view = await render(<App />);
+
+  await waitFor(() => expect(view.getByText('Start from an idea or reference')).toBeTruthy());
+  fireEvent.press(view.getByText('Start from an idea or reference'));
+  fireEvent.press(await view.findByText('Save mocked direction'));
+  expect(await view.findByText('Refine route reached')).toBeTruthy();
+
+  fireEvent.press(view.getByLabelText('More actions'));
+  fireEvent.press(await view.findByText('Starting design facts'));
+
+  expect(await view.findByText('Review starting design facts')).toBeTruthy();
+  expect(view.getByText('Save starting facts')).toBeTruthy();
+  expect(view.queryByText('Refine route reached')).toBeNull();
+});
+
 test('Create hides the previous design controls without forgetting the saved design', async () => {
   authenticate();
   const view = await render(<App />);
