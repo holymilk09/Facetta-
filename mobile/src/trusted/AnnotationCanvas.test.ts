@@ -70,6 +70,34 @@ describe('AnnotationCanvas normalized geometry', () => {
 });
 
 describe('AnnotationCanvas interaction', () => {
+  test('places a routed sentence only after the designer taps the intended region', async () => {
+    const changed = jest.fn<void, [AnnotationCanvasSnapshot]>();
+    await render(React.createElement(AnnotationCanvas, {
+      sourceUri: imageUri,
+      imageAspectRatio: 2,
+      initialTool: 'text',
+      initialTextDraft: 'Make the left prong rose gold',
+      onChange: changed,
+    }));
+    const canvas = screen.getByLabelText('Jewelry image annotation canvas');
+    await fireEvent(canvas, 'layout', {
+      nativeEvent: { layout: { x: 0, y: 0, width: 200, height: 100 } },
+    });
+
+    expect(screen.getByLabelText('Annotation text').props.value)
+      .toBe('Make the left prong rose gold');
+    expect(changed).not.toHaveBeenCalled();
+    await draw(canvas, [150, 25], [], [150, 25]);
+
+    expect(changed).toHaveBeenCalledTimes(1);
+    expect(changed.mock.calls[0][0].annotations).toEqual([
+      expect.objectContaining({
+        type: 'text', text: 'Make the left prong rose gold',
+        anchor: { x: 0.75, y: 0.25 },
+      }),
+    ]);
+  });
+
   test('draws circle, rectangle, arrow, freehand, and text into one typed snapshot', async () => {
     const changed = jest.fn<void, [AnnotationCanvasSnapshot]>();
     const exported = jest.fn<void, [AnnotationCanvasSnapshot]>();

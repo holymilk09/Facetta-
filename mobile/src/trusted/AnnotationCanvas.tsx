@@ -91,6 +91,8 @@ export interface AnnotationCanvasProps {
   onExport?: (snapshot: AnnotationCanvasSnapshot) => void;
   drawingEnabled?: boolean;
   initialTool?: AnnotationTool;
+  /** Optional sentence retained when Refine routes a localized request here. */
+  initialTextDraft?: string;
   strokeColor?: string;
   imageAspectRatio?: number;
   testID?: string;
@@ -406,6 +408,7 @@ export function AnnotationCanvas({
   onExport,
   drawingEnabled = true,
   initialTool = 'rectangle',
+  initialTextDraft = '',
   strokeColor = '#b42318',
   imageAspectRatio,
   testID = 'annotation-canvas',
@@ -415,7 +418,7 @@ export function AnnotationCanvas({
   );
   const annotations = value?.annotations ?? internalAnnotations;
   const [tool, setTool] = useState<AnnotationTool>(initialTool);
-  const [textDraft, setTextDraft] = useState('');
+  const [textDraft, setTextDraft] = useState(initialTextDraft);
   const [draft, setDraftState] = useState<CanvasAnnotation | null>(null);
   const draftRef = useRef<CanvasAnnotation | null>(null);
   const [size, setSize] = useState<CanvasSize>({ width: 0, height: 0 });

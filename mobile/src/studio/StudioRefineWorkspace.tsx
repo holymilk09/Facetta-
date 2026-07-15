@@ -29,6 +29,9 @@ import { StudioComparisonInspector } from './StudioComparisonInspector';
 import { StudioReviewImage } from './StudioReviewImage';
 import { StudioDestinationChooser } from './StudioDestinationChooser';
 import type { StudioDestinationContext, StudioDestinationId } from './destinations';
+import {
+  candidateCatalogPaths, routeRefineInstruction,
+} from './refineIntentRouter';
 
 const REFINE_CREDITS_PER_OUTPUT = getStudioAction('refine').creditEstimate ?? 0;
 
@@ -61,7 +64,7 @@ export interface StudioRefineWorkspaceProps {
   createdBy: string;
   sourceImageUrl?: string | null;
   workspaceMode?: StudioRefineWorkspaceMode;
-  onReviewStartingDesign?: () => void;
+  onReviewStartingDesign?: (pendingInstruction: string) => void;
   onApplied: (project: ProjectDetail) => void;
   onVariationCreated?: (project: ProjectDetail) => void;
   destinationContext?: StudioDestinationContext;
@@ -69,6 +72,7 @@ export interface StudioRefineWorkspaceProps {
   imageRequestHeaders?: Readonly<Record<string, string>>;
   resumeReviewJobId?: string;
   reviewSourceIsActive?: boolean;
+  initialInstruction?: string;
 }
 
 interface AcceptedRefineOutcome {
@@ -228,6 +232,7 @@ export function StudioRefineWorkspace({
   onReviewStartingDesign, onApplied, onVariationCreated, destinationContext,
   onSelectDestination,
   imageRequestHeaders, resumeReviewJobId, reviewSourceIsActive = true,
+  initialInstruction = '',
 }: StudioRefineWorkspaceProps) {
   const exactLineage = hasExactSpecification(lineage) ? lineage : null;
   const exactSpecification = exactLineage !== null;
@@ -249,8 +254,10 @@ export function StudioRefineWorkspace({
     executionMode?: 'instant' | 'provider';
     estimatedCredits?: number;
   } | null>(null);
-  const [instruction, setInstruction] = useState('');
+  const [instruction, setInstruction] = useState(initialInstruction);
   const [understoodAs, setUnderstoodAs] = useState<string | null>(null);
+  const [routingGuidance, setRoutingGuidance] = useState<string | null>(null);
+  const [annotationPrefill, setAnnotationPrefill] = useState('');
   const [snapshot, setSnapshot] = useState<AnnotationCanvasSnapshot>({
     schema_version: ANNOTATION_SNAPSHOT_SCHEMA_VERSION,
     coordinate_space: 'normalized_image',
@@ -295,6 +302,8 @@ export function StudioRefineWorkspace({
     setOptionId(null);
     setInstruction('');
     setUnderstoodAs(null);
+    setRoutingGuidance(null);
+    setAnnotationPrefill('');
     setNamingVariation(false);
     setVariationName('');
     setSnapshot((current) => ({ ...current, annotations: [] }));
@@ -503,6 +512,8 @@ export function StudioRefineWorkspace({
     setOptionId(null);
     setInstruction('');
     setUnderstoodAs(null);
+    setRoutingGuidance(null);
+    setAnnotationPrefill('');
     setPreview(null);
     setNamingVariation(false);
     setVariationName('');
@@ -654,21 +665,111 @@ export function StudioRefineWorkspace({
     setBusy(true);
     setError(null);
     setUnderstoodAs(null);
-    if (mode === 'component') {
+    setRoutingGuidance(null);
+    let routedCatalog: {
+      catalog: ComponentCatalog;
+      option: ComponentCatalogOption;
+      path: ComponentCatalogPath;
+    } | null = null;
+    let routedInstruction = instruction.trim();
+    if (mode === 'instruction') {
+      if (routedInstruction.length === 0) { setBusy(false); return; }
+      const likelyPaths = candidateCatalogPaths(routedInstruction);
+      if (exactSpecification && likelyPaths.length > 0 && targetingLoading) {
+        setBusy(false);
+        setRoutingGuidance('Facetta is checking the precise options for this revision. Try Preview change again in a moment; nothing has been generated or charged.');
+        return;
+      }
+      const readyLikelyPaths = exactSpecification
+        ? likelyPaths.filter((candidatePath) => targeting?.catalog_paths.some((candidate) => (
+            candidate.component_path === candidatePath && candidate.status === 'ready'
+          )) ?? false)
+        : [];
+      const routedCatalogs: ComponentCatalog[] = [];
+      for (const candidatePath of readyLikelyPaths) {
+        if (candidatePath === 'stone.color' && exactStoneSpecies === null) continue;
+        const catalogResult = candidatePath === 'stone.color'
+          ? await api.getComponentCatalog(candidatePath, { stoneSpecies: exactStoneSpecies! })
+          : await api.getComponentCatalog(candidatePath);
+        if (!lineageRequestIsCurrent(requestedLineageKey, requestedLineageEpoch)) return;
+        if (catalogResult.error !== null) {
+          setBusy(false);
+          setError('Facetta could not load the authorized choices for that change. Nothing was generated or charged. Try again or mark the exact region.');
+          return;
+        }
+        routedCatalogs.push(catalogResult.data);
+      }
+      const route = routeRefineInstruction({
+        instruction: routedInstruction,
+        exactSpecification,
+        targeting,
+        catalogs: routedCatalogs,
+      });
+      if (route.kind === 'starting_facts_required') {
+        setBusy(false);
+        setRoutingGuidance('This request changes jewelry material or structure. Review the starting design facts first so Facetta can protect the exact geometry. Your sentence will remain here.');
+        return;
+      }
+      if (route.kind === 'markup_required') {
+        setBusy(false);
+        setAnnotationPrefill(route.instruction);
+        setMode('annotation');
+        setRoutingGuidance(route.reason === 'localized'
+          ? 'Tap the exact region you mean. Your sentence is ready as a text mark, and nothing has been generated or charged.'
+          : 'This change needs an exact region so Facetta does not guess. Tap the jewelry once to place your sentence, then preview it.');
+        return;
+      }
+      if (route.kind === 'component_choice') {
+        const nextPath = route.candidatePaths[0];
+        if (nextPath === undefined) {
+          setBusy(false);
+          setError('That controlled change is not mapped on this revision. Mark the exact region instead; Facetta will not guess.');
+          return;
+        }
+        const nextCatalog = routedCatalogs.find(
+          (candidate) => candidate.component_path === nextPath,
+        ) ?? null;
+        setBusy(false);
+        setPath(nextPath);
+        setCatalog(nextCatalog);
+        setOptionId(nextCatalog?.options[0]?.id ?? null);
+        setMode('component');
+        setRoutingGuidance('Facetta recognized a controlled component change. Choose the exact authorized direction below; no preview has been generated or charged yet.');
+        return;
+      }
+      if (route.kind === 'catalog') {
+        routedCatalog = {
+          catalog: route.catalog, option: route.option, path: route.componentPath,
+        };
+        routedInstruction = route.instruction;
+      } else {
+        routedInstruction = route.instruction;
+      }
+    }
+    if (mode === 'component' || routedCatalog !== null) {
       if (!exactSpecification) {
         setBusy(false);
         setError('Confirm design facts before making structural component changes.');
         return;
       }
-      if (!selectedPathReady) {
+      if (routedCatalog === null && !selectedPathReady) {
         setBusy(false);
         setError('Precise targeting is not available for this component on the selected revision.');
         return;
       }
-      if (selected === null) { setBusy(false); return; }
+      const requestedPath = routedCatalog?.path ?? path;
+      const requestedOption = routedCatalog?.option ?? selected;
+      const requestedCatalog = routedCatalog?.catalog ?? catalog;
+      if (requestedOption === null) { setBusy(false); return; }
+      const executionMode = requestedPath === 'metal.color'
+        && targeting?.jewelry_type === 'ring'
+        && requestedCatalog?.component_path === requestedPath
+        && requestedCatalog.preview_execution_modes.includes('instant')
+        ? 'instant' as const
+        : 'provider' as const;
       const result = await gateway.previewCatalogRefine({
-        ...exactLineage, createdBy, componentPath: path, optionId: selected.id,
-        executionMode: catalogPreviewMode,
+        ...exactLineage, createdBy, componentPath: requestedPath, optionId: requestedOption.id,
+        executionMode,
       });
       if (!lineageRequestIsCurrent(requestedLineageKey, requestedLineageEpoch)) return;
       setBusy(false);
@@ -681,7 +782,7 @@ export function StudioRefineWorkspace({
           componentPath: result.data.componentPath,
           optionId: result.data.optionId,
           componentLabel: PATHS.find((candidate) => candidate.id === result.data.componentPath)?.label,
-          optionLabel: selected.display,
+          optionLabel: requestedOption.display,
           requestedChange: `${result.data.componentPath} → ${result.data.optionId}`,
         },
         executionMode: result.data.executionMode,
@@ -691,7 +792,7 @@ export function StudioRefineWorkspace({
     }
     let annotation: ConfirmedMarkupAnnotation = {
       region_description: 'entire visible jewelry presentation',
-      change_instruction: instruction.trim(),
+      change_instruction: routedInstruction,
       impact: 'visual_only' as const,
       target_section: null, target_ref: null, index: null,
       target_component_id: null,
@@ -1087,27 +1188,45 @@ export function StudioRefineWorkspace({
         : 'Change one thing. Keep the rest.'}</Text>
       <Text style={styles.body}>{workspaceMode === 'specifications'
         ? 'Review only the facts that need correction. Saving appends an immutable specification revision without changing image pixels.'
-        : 'Choose how to target one change. Every change creates a temporary candidate before anything enters design history.'}</Text>
+        : 'Describe one change. Facetta routes it to the safest precise tool, then creates a temporary candidate before anything enters design history.'}</Text>
 
       {!reviewSourceIsActive && <Notice kind="info" text="This Activity result was created from an earlier revision. Review the existing preview below; creating or applying another change from this source is unavailable." />}
 
       {workspaceMode === 'refine' && resuming && <Notice kind="info" text="Checking for a pending preview from this exact revision…" />}
 
-      {workspaceMode === 'refine' && <View style={styles.modeRow}>
+      {workspaceMode === 'refine' && <>
+        <View>
+          <Field
+            label="What would you like to change?"
+            value={instruction}
+            onChange={(next) => {
+              setInstruction(next);
+              setMode('instruction');
+              setRoutingGuidance(null);
+              setError(null);
+            }}
+            multiline
+            placeholder="Make the presentation softer, use rose gold, or widen the band…"
+          />
+        </View>
+        <Text style={styles.advancedDisclosureTitle}>Target it more precisely</Text>
+        <View style={styles.modeRow}>
         {([
-          ['component', 'Component', 'Choose a controlled material or construction option.'],
-          ['instruction', 'Describe', 'Describe an appearance-only change in plain language.'],
-          ['annotation', 'Mark up', 'Draw directly on the exact active image.'],
+          ['component', 'Choose component', 'Use a controlled material or construction option.'],
+          ['annotation', 'Mark exact region', 'Draw directly on the exact active image.'],
         ] as const).filter(([id]) => id !== 'component' || componentAvailable)
           .map(([id, label, detail]) => (
             <Pressable
               key={id}
-              accessibilityLabel={`${label} refine mode`}
+              accessibilityLabel={id === 'component'
+                ? 'Component refine mode' : 'Mark up refine mode'}
               accessibilityRole="button"
               accessibilityState={{ selected: mode === id }}
               onPress={() => {
                 setMode(id);
+                if (id === 'annotation') setAnnotationPrefill(instruction);
                 setFactReview(null);
+                setRoutingGuidance(null);
                 setError(null);
               }}
               style={[styles.modeCard, mode === id && styles.selectedCard]}>
@@ -1115,7 +1234,12 @@ export function StudioRefineWorkspace({
               <Text style={styles.pathHelp}>{detail}</Text>
             </Pressable>
           ))}
-      </View>}
+        </View>
+      </>}
+
+      {workspaceMode === 'refine' && routingGuidance !== null && (
+        <Notice kind="info" text={routingGuidance} />
+      )}
 
       {workspaceMode === 'refine'
         && !exactSpecification && onReviewStartingDesign !== undefined && (
@@ -1124,7 +1248,7 @@ export function StudioRefineWorkspace({
             <Text style={styles.advancedDisclosureTitle}>Unlock precise ring edits</Text>
             <Text style={styles.pathHelp}>For a ring direction, review the image-derived starting facts before changing components or construction. Estimates stay clearly separate from facts you confirm. Technical views become available after those facts are recorded; you can keep refining or presenting without them.</Text>
           </View>
-          <Button title="Review starting design" kind="ghost" onPress={onReviewStartingDesign} />
+          <Button title="Review starting design" kind="ghost" onPress={() => onReviewStartingDesign(instruction)} />
         </View>
       )}
 
@@ -1182,18 +1306,22 @@ export function StudioRefineWorkspace({
         )}
       </>}
 
-      {workspaceMode === 'refine' && mode === 'instruction' && <>
-        <Field label="Appearance change" value={instruction} onChange={setInstruction} multiline
-          placeholder="Make the presentation softer and more luminous while keeping every jewelry detail fixed…" />
-        <Notice kind="info" text={exactSpecification
-          ? 'Plain-language mode changes presentation only. Use Component or Mark up for structure, stones, settings, or materials.'
-          : 'Plain-language mode changes appearance only. Structural, stone, setting, and construction changes stay locked until design facts are confirmed.'} />
-      </>}
+      {workspaceMode === 'refine' && mode === 'instruction' && (
+        <Notice kind="info" text="Facetta routes material and structural requests to controlled tools before generation. Only presentation changes proceed directly." />
+      )}
 
       {workspaceMode === 'refine' && mode === 'annotation' && (sourceImageUrl === null ? (
         <Notice kind="error" text="The exact active image is unavailable for annotation. Reopen the design or use Describe." />
       ) : <>
-        <AnnotationCanvas sourceUri={sourceImageUrl} value={snapshot} onChange={setSnapshot} drawingEnabled />
+        <AnnotationCanvas
+          key={`refine-annotation:${lineageKey}:${annotationPrefill}`}
+          sourceUri={sourceImageUrl}
+          value={snapshot}
+          onChange={setSnapshot}
+          drawingEnabled
+          initialTool={annotationPrefill.length > 0 ? 'text' : 'rectangle'}
+          initialTextDraft={annotationPrefill}
+        />
         <Text style={styles.pathHelp}>Mark one region and add text or an arrow describing one change. Facetta will show its interpretation before Apply.</Text>
       </>)}
       {workspaceMode === 'specifications' && mode === 'facts' && <>

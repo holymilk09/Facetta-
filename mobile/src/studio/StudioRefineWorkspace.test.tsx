@@ -413,9 +413,7 @@ describe('StudioRefineWorkspace', () => {
 
     expect(getComponentCatalog).not.toHaveBeenCalled();
     expect(screen.queryByLabelText('Component refine mode')).toBeNull();
-    expect(screen.getByLabelText('Describe refine mode').props.accessibilityState).toEqual({
-      selected: true,
-    });
+    expect(screen.getByLabelText('What would you like to change?')).toBeTruthy();
     expect(screen.getByText('Unlock precise ring edits')).toBeTruthy();
     expect(screen.getByText(/image-derived starting facts/i)).toBeTruthy();
     expect(screen.getByText(/Technical views become available after those facts are recorded/)).toBeTruthy();
@@ -473,6 +471,118 @@ describe('StudioRefineWorkspace', () => {
     expect(screen.queryByText('Unlock precise ring edits')).toBeNull();
     expect(screen.queryByLabelText('Component refine mode')).toBeNull();
     expect(screen.queryByText('Review starting design')).toBeNull();
+  });
+
+  test('routes an exact rose-gold sentence to one authorized component preview', async () => {
+    const previewCatalogRefine = jest.fn(async () => ({
+      data: {
+        lineage: { projectId: 'project_1', sourceAssetId: 'asset_2', sourceDesignVersion: 2 },
+        componentPath: 'metal.color' as const, optionId: 'rose_gold',
+        executionMode: 'instant' as const, estimatedCredits: 0,
+        candidate: {
+          id: 'candidate_routed', jobId: 'run_routed', sourceRevisionId: 'asset_2',
+          assetUrl: 'https://test/routed.png', verdict: 'pass' as const,
+          status: 'pending_review' as const, checks: [], temporary: true,
+          expiresAt: null, decision: null, decidedAt: null, canonicalRevisionId: null,
+        },
+      }, error: null, status: 201,
+    }));
+    const getComponentCatalog = jest.fn(async () => ({ data: catalog, error: null, status: 200 }));
+    await renderWithAuth(
+      <StudioRefineWorkspace
+        api={{ getComponentCatalog, getStudioComponentTargeting: getReadyTargeting, readMarkup: jest.fn() }}
+        gateway={{
+          previewCatalogRefine, applyCatalogRefine: jest.fn(), discardCatalogRefine: jest.fn(),
+          previewMarkupRefine: jest.fn(), applyMarkupRefine: jest.fn(), discardMarkupRefine: jest.fn(),
+          previewVisualRefine: jest.fn(), applyVisualRefine: jest.fn(), discardVisualRefine: jest.fn(),
+        }}
+        lineage={{ projectId: 'project_1', sourceAssetId: 'asset_2', sourceDesignVersion: 2 }}
+        sourceImageUrl="https://test/source.png"
+        createdBy="designer"
+        onApplied={jest.fn()}
+      />,
+    );
+    await waitFor(() => expect(screen.getByLabelText('Component refine mode')).toBeTruthy());
+    await fireEvent.changeText(
+      screen.getByLabelText('What would you like to change?'),
+      'Use rose gold',
+    );
+    await fireEvent.press(screen.getByText('Preview change'));
+    await waitFor(() => expect(getComponentCatalog).toHaveBeenCalledWith('metal.color'));
+    await waitFor(() => expect(previewCatalogRefine).toHaveBeenCalledWith({
+      projectId: 'project_1', sourceAssetId: 'asset_2', sourceDesignVersion: 2,
+      createdBy: 'designer', componentPath: 'metal.color', optionId: 'rose_gold',
+      executionMode: 'instant',
+    }));
+    expect(screen.getByText('Nothing has changed yet.')).toBeTruthy();
+  });
+
+  test('routes a localized structural sentence to markup without generating or charging', async () => {
+    const getComponentCatalog = jest.fn(async () => ({ data: catalog, error: null, status: 200 }));
+    const readMarkup = jest.fn();
+    const previewCatalogRefine = jest.fn();
+    const previewMarkupRefine = jest.fn();
+    const previewVisualRefine = jest.fn();
+    await renderWithAuth(
+      <StudioRefineWorkspace
+        api={{ getComponentCatalog, getStudioComponentTargeting: getReadyTargeting, readMarkup }}
+        gateway={{
+          previewCatalogRefine, applyCatalogRefine: jest.fn(), discardCatalogRefine: jest.fn(),
+          previewMarkupRefine, applyMarkupRefine: jest.fn(), discardMarkupRefine: jest.fn(),
+          previewVisualRefine, applyVisualRefine: jest.fn(), discardVisualRefine: jest.fn(),
+        }}
+        lineage={{ projectId: 'project_1', sourceAssetId: 'asset_2', sourceDesignVersion: 2 }}
+        sourceImageUrl="https://test/source.png"
+        createdBy="designer"
+        onApplied={jest.fn()}
+      />,
+    );
+    await waitFor(() => expect(screen.getByLabelText('Component refine mode')).toBeTruthy());
+    await fireEvent.changeText(
+      screen.getByLabelText('What would you like to change?'),
+      'Make the left prong rose gold',
+    );
+    await fireEvent.press(screen.getByText('Preview change'));
+
+    expect(await screen.findByText(/tap the exact region you mean/i)).toBeTruthy();
+    expect(screen.getByLabelText('Annotation text').props.value).toBe(
+      'Make the left prong rose gold',
+    );
+    expect(readMarkup).not.toHaveBeenCalled();
+    expect(previewCatalogRefine).not.toHaveBeenCalled();
+    expect(previewMarkupRefine).not.toHaveBeenCalled();
+    expect(previewVisualRefine).not.toHaveBeenCalled();
+  });
+
+  test('keeps a pre-spec material sentence and requests facts without generating', async () => {
+    const previewVisualRefine = jest.fn();
+    const getComponentCatalog = jest.fn();
+    const onReviewStartingDesign = jest.fn();
+    await renderWithAuth(
+      <StudioRefineWorkspace
+        api={{ getComponentCatalog, getStudioComponentTargeting: getReadyTargeting, readMarkup: jest.fn() }}
+        gateway={{
+          previewVisualRefine, applyVisualRefine: jest.fn(), discardVisualRefine: jest.fn(),
+          previewCatalogRefine: jest.fn(), applyCatalogRefine: jest.fn(), discardCatalogRefine: jest.fn(),
+          previewMarkupRefine: jest.fn(), applyMarkupRefine: jest.fn(), discardMarkupRefine: jest.fn(),
+        }}
+        lineage={{ projectId: 'project_1', sourceAssetId: 'creative_1' }}
+        sourceImageUrl="https://test/source.png"
+        createdBy="designer"
+        onReviewStartingDesign={onReviewStartingDesign}
+        onApplied={jest.fn()}
+      />,
+    );
+    await fireEvent.changeText(
+      screen.getByLabelText('What would you like to change?'),
+      'Use rose gold',
+    );
+    await fireEvent.press(screen.getByText('Preview change'));
+    expect(await screen.findByText(/review the starting design facts first/i)).toBeTruthy();
+    expect(getComponentCatalog).not.toHaveBeenCalled();
+    expect(previewVisualRefine).not.toHaveBeenCalled();
+    await fireEvent.press(screen.getByText('Review starting design'));
+    expect(onReviewStartingDesign).toHaveBeenCalledWith('Use rose gold');
   });
 
   test('clears a consumed instruction after saving its preview as a variation', async () => {
@@ -653,7 +763,7 @@ describe('StudioRefineWorkspace', () => {
     await fireEvent(screen.getByLabelText('Temporary refinement preview'), 'load');
     await fireEvent.press(screen.getByText('Apply as new revision'));
     await waitFor(() => expect(onApplied).toHaveBeenCalledWith(preSpecProject));
-    expect(screen.getByLabelText('Describe refine mode').props.accessibilityState.selected).toBe(true);
+    expect(screen.getByLabelText('What would you like to change?').props.value).toBe('');
     await fireEvent.press(screen.getByLabelText('Mark up refine mode'));
     expect(screen.getByLabelText('Clear all annotations').props.accessibilityState.disabled).toBe(true);
     expect(screen.getByText('Preview change').parent?.props.accessibilityState.disabled).toBe(true);
@@ -903,8 +1013,7 @@ describe('StudioRefineWorkspace', () => {
         onApplied={jest.fn()}
       />,
     );
-    await fireEvent.press(screen.getByLabelText('Describe refine mode'));
-    expect(await screen.findByText(/changes presentation only/i)).toBeTruthy();
+    expect(await screen.findByText(/only presentation changes proceed directly/i)).toBeTruthy();
     await fireEvent.changeText(
       screen.getByPlaceholderText(/make the presentation softer/i),
       'Make the background warmer',
@@ -1131,7 +1240,7 @@ describe('StudioRefineWorkspace', () => {
       />,
     );
 
-    expect(await screen.findByLabelText('Describe refine mode')).toBeTruthy();
+    expect(await screen.findByLabelText('What would you like to change?')).toBeTruthy();
     expect(screen.queryByLabelText('Advanced design facts')).toBeNull();
     expect(screen.queryByText('Review fact changes')).toBeNull();
     expect(screen.queryByLabelText('Identity fact group')).toBeNull();
@@ -1176,7 +1285,7 @@ describe('StudioRefineWorkspace', () => {
     expect(screen.getByText('Correct the recorded facts for this revision.')).toBeTruthy();
     expect(screen.queryByText('REFINE')).toBeNull();
     expect(screen.queryByLabelText('Component refine mode')).toBeNull();
-    expect(screen.queryByLabelText('Describe refine mode')).toBeNull();
+    expect(screen.queryByLabelText('What would you like to change?')).toBeNull();
     expect(screen.queryByLabelText('Mark up refine mode')).toBeNull();
     expect(screen.queryByText('Preview change')).toBeNull();
     expect(screen.queryByLabelText('Advanced design facts')).toBeNull();
@@ -1365,10 +1474,8 @@ describe('StudioRefineWorkspace', () => {
 
     await waitFor(() => expect(screen.getByText(/will not guess component geometry/i)).toBeTruthy());
     expect(screen.queryByLabelText('Component refine mode')).toBeNull();
-    expect(screen.getByLabelText('Describe refine mode').props.accessibilityState).toEqual({
-      selected: true,
-    });
-    expect(screen.getByText('Appearance change')).toBeTruthy();
+    expect(screen.getByLabelText('What would you like to change?')).toBeTruthy();
+    expect(screen.getByText('What would you like to change?')).toBeTruthy();
     expect(getComponentCatalog).not.toHaveBeenCalled();
     expect(previewCatalogRefine).not.toHaveBeenCalled();
   });
@@ -1443,7 +1550,7 @@ describe('StudioRefineWorkspace', () => {
     expect(screen.getByLabelText('Setting component path').props.accessibilityState.disabled).toBe(true);
     expect(screen.getAllByText(/not ready for that precise component change yet/i).length).toBeGreaterThanOrEqual(2);
     expect(screen.queryByText(/calibrated|structural mapping|component identity/i)).toBeNull();
-    expect(screen.getByText(/Every change creates a temporary candidate/i)).toBeTruthy();
+    expect(screen.getByText(/creates a temporary candidate before anything enters design history/i)).toBeTruthy();
   });
 
   test('loads stone colors only with the exact lineage-checked stone species', async () => {

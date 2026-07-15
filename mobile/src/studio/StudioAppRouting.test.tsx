@@ -188,13 +188,14 @@ jest.mock('./StudioRefineWorkspace', () => {
   return {
     StudioRefineWorkspace: ({
       workspaceMode, lineage, onReviewStartingDesign, destinationContext,
-      onSelectDestination,
+      onSelectDestination, initialInstruction,
     }: {
       workspaceMode?: 'refine' | 'specifications';
       lineage?: { sourceDesignVersion?: number } | null;
-      onReviewStartingDesign?: () => void;
+      onReviewStartingDesign?: (pendingInstruction: string) => void;
       destinationContext?: { activeRevisionId?: string | null };
       onSelectDestination?: (destination: 'library' | 'client') => void;
+      initialInstruction?: string;
     }) => ReactLocal.createElement(
       View,
       null,
@@ -207,9 +208,15 @@ jest.mock('./StudioRefineWorkspace', () => {
         && onReviewStartingDesign !== undefined
         ? ReactLocal.createElement(
           Pressable,
-          { accessibilityRole: 'button', onPress: onReviewStartingDesign },
+          {
+            accessibilityRole: 'button',
+            onPress: () => onReviewStartingDesign('Use rose gold'),
+          },
           ReactLocal.createElement(Text, null, 'Review starting design'),
         )
+        : null,
+      initialInstruction
+        ? ReactLocal.createElement(Text, null, `Pending instruction: ${initialInstruction}`)
         : null,
       !destinationContext?.activeRevisionId
         || onSelectDestination === undefined ? null : ReactLocal.createElement(
@@ -926,6 +933,22 @@ test('More opens Starting design facts in the confirmation workspace', async () 
   expect(await view.findByText('Save starting facts')).toBeTruthy();
   expect(view.getAllByText('Studio').length).toBeGreaterThan(0);
   expect(view.queryByText('Refine route reached')).toBeNull();
+});
+
+test('starting-design review returns the designer to Refine with the pending sentence intact', async () => {
+  authenticate();
+  const view = await render(<App />);
+
+  await waitFor(() => expect(view.getByText('Start from an idea or reference')).toBeTruthy());
+  fireEvent.press(view.getByText('Start from an idea or reference'));
+  fireEvent.press(await view.findByText('Save mocked direction'));
+  expect(await view.findByText('Refine route reached')).toBeTruthy();
+
+  fireEvent.press(await view.findByText('Review starting design'));
+  fireEvent.press(await view.findByText('Save starting facts'));
+
+  expect(await view.findByText('Refine route reached')).toBeTruthy();
+  expect(view.getByText('Pending instruction: Use rose gold')).toBeTruthy();
 });
 
 test('Create hides the previous design controls without forgetting the saved design', async () => {

@@ -73,6 +73,11 @@ interface CreateReviewState {
   studioJobId: string;
 }
 
+interface PendingRefineRequest {
+  projectId: string;
+  instruction: string;
+}
+
 const designImage = require('./assets/studio-asymmetric-paraiba-ring-v1.png');
 
 function StudioCard({
@@ -127,6 +132,7 @@ export default function App() {
   >(undefined);
   const [createReview, setCreateReview] = useState<CreateReviewState | null>(null);
   const [createDraft, setCreateDraft] = useState<StudioCreateDraft>(EMPTY_STUDIO_CREATE_DRAFT);
+  const [pendingRefineRequest, setPendingRefineRequest] = useState<PendingRefineRequest | null>(null);
   const [activityReview, setActivityReview] = useState<StudioReviewJobEnvelope | null>(null);
   const [variationLineage, setVariationLineage] = useState<StudioVariationLineage | null>(null);
   const [projectHydration, setProjectHydration] = useState<{
@@ -778,17 +784,28 @@ export default function App() {
                 ? activityReview.job.job_id : undefined}
               reviewSourceIsActive={activityReview?.job.action_id === 'refine'
                 ? activityReview.sourceIsActive : true}
+              initialInstruction={pendingRefineRequest !== null
+                && pendingRefineRequest.projectId === studioProject?.root_id
+                ? pendingRefineRequest.instruction : ''}
               workspaceMode={selectedActionId === 'specifications'
                 ? 'specifications' : 'refine'}
               onReviewStartingDesign={confirmStudioLineage !== null
-                ? () => openStudioAction('confirm')
+                ? (pendingInstruction) => {
+                    setPendingRefineRequest({
+                      projectId: confirmStudioLineage.projectId,
+                      instruction: pendingInstruction,
+                    });
+                    openStudioAction('confirm');
+                  }
                 : undefined}
               onApplied={(project) => {
+                setPendingRefineRequest(null);
                 setActivityReview(null);
                 setStudioProject(project);
                 setSelectedCreativeAssetId(project.active_asset_id);
               }}
               onVariationCreated={(project) => {
+                setPendingRefineRequest(null);
                 setActivityReview(null);
                 setStudioProject(project);
                 setSelectedCreativeAssetId(project.active_asset_id);
