@@ -73,15 +73,18 @@ zero exit code from one run ID.
   provider calls and cannot enter capture. A reviewed `not_applicable` row
   remains in the logical scope as a signed reason/hash binding, but creates no
   execution-bundle sequence, provider request, candidate, or reviewer item.
-- A signed `facetta-frozen-capture.v2` binds the manifest, config, workload,
-  assignments, source/candidate/mask hashes, selected result set, executor,
-  canonical API persistence attestation, and exact run ID.
-- A complete `facetta-frozen-replay.v1` supplies all raw machine evidence. It
-  remains machine evidence, not human review authority.
+- A signed `facetta-frozen-capture.v3` binds the manifest, config, workload,
+  assignments, source/candidate/mask hashes, one retained evaluator report per
+  candidate-producing attempt, selected result set, executor, canonical API
+  persistence attestation, and exact run ID. Scores, QA outcomes, acceptance,
+  and hard-gate decisions are recomputed from those reports during capture and
+  release replay instead of being trusted as submitted scalars.
+- A complete `facetta-frozen-replay.v2` supplies all raw machine evidence. It
+  remains executor-attested machine observation evidence, not provider
+  attestation or human review authority.
 - A separate GIA `facetta-blind-jewelry-review-packet.v2` and
   `facetta-blind-jewelry-review-ledger.v2` cover the exact selected artifacts.
-  Replay-v1 Boolean review fields remain compatibility data and cannot pass
-  this gate.
+  Legacy replay-v1 packets are unsupported and cannot pass this gate.
 
 ### Plan the signed capture
 
@@ -169,7 +172,7 @@ The replay builder revalidates the capture and makes zero provider calls.
 ```bash
 EVIDENCE_ROOT="${EVIDENCE_ROOT:?set the retained evidence root}"
 CAPTURE_PATH="$EVIDENCE_ROOT/signed-capture/capture.json"
-REPLAY_PATH="$EVIDENCE_ROOT/signed-facetta-frozen-replay.v1.json"
+REPLAY_PATH="$EVIDENCE_ROOT/signed-facetta-frozen-replay.v2.json"
 test -f "$CAPTURE_PATH"
 
 PYTHONPATH=src .venv/bin/python scripts/plan_frozen_corpus_capture.py \
@@ -237,7 +240,7 @@ set +e
 PYTHONPATH=src .venv/bin/python scripts/run_frozen_corpus_gate.py \
   --evidence-root "$EVIDENCE_ROOT" \
   --source-dir "$EVIDENCE_ROOT/founder-reference-directory" \
-  --evidence "$EVIDENCE_ROOT/signed-facetta-frozen-replay.v1.json" \
+  --evidence "$EVIDENCE_ROOT/signed-facetta-frozen-replay.v2.json" \
   --gia-review-packet "$EVIDENCE_ROOT/review/gia-packet.json" \
   --gia-review-ledger "$EVIDENCE_ROOT/review/signed-gia-ledger.json" \
   --outdir "$CORPUS_DIR" > "$CORPUS_DIR/command-result.json"
@@ -262,7 +265,7 @@ PYTHONPATH=src .venv/bin/python scripts/verify_frozen_corpus_release.py \
   --approval "$EVIDENCE_ROOT/review/signed-founder-approval.json" \
   --manifest docs/evals/frozen-founder-corpus-v1/manifest.json \
   --source-dir "$EVIDENCE_ROOT/founder-reference-directory" \
-  --evidence "$EVIDENCE_ROOT/signed-facetta-frozen-replay.v1.json" \
+  --evidence "$EVIDENCE_ROOT/signed-facetta-frozen-replay.v2.json" \
   --evidence-root "$EVIDENCE_ROOT" \
   --workload docs/evals/frozen-founder-corpus-v1/workload.json \
   --gia-review-packet "$EVIDENCE_ROOT/review/gia-packet.json" \
@@ -468,7 +471,7 @@ PYTHONPATH=src .venv/bin/python scripts/verify_external_beta_release.py \
   --corpus-exit-code "$CORPUS_DIR/final-exit-code.txt" \
   --corpus-manifest docs/evals/frozen-founder-corpus-v1/manifest.json \
   --corpus-source-dir "$EVIDENCE_ROOT/founder-reference-directory" \
-  --corpus-evidence "$EVIDENCE_ROOT/signed-facetta-frozen-replay.v1.json" \
+  --corpus-evidence "$EVIDENCE_ROOT/signed-facetta-frozen-replay.v2.json" \
   --corpus-evidence-root "$EVIDENCE_ROOT" \
   --corpus-workload docs/evals/frozen-founder-corpus-v1/workload.json \
   --gia-review-packet "$EVIDENCE_ROOT/review/gia-packet.json" \

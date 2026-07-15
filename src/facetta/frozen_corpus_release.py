@@ -15,6 +15,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 from cryptography.hazmat.primitives.serialization import load_pem_public_key
 
 from facetta.frozen_corpus_gate import (
+    REPLAY_SCHEMA,
     compile_frozen_corpus_gate,
     file_sha256,
     release_authority_key_separation,
@@ -197,7 +198,7 @@ def _validate_compiled_result_internals(
         evidence.get("corpus_run_id") if isinstance(evidence, dict) else None
     )
     if not isinstance(evidence, dict) or not (
-        evidence.get("schema_version") == "facetta-frozen-replay.v1"
+        evidence.get("schema_version") == REPLAY_SCHEMA
         and _sha256_value(evidence.get("sha256"))
         and evidence.get("workload_sha256") == workload_hash
         and _sha256_value(evidence.get("capture_sha256"))

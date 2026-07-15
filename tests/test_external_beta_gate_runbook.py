@@ -147,7 +147,7 @@ def _assert_capture_replay_handoff(text: str) -> None:
     capture_binding = 'CAPTURE_PATH="$EVIDENCE_ROOT/signed-capture/capture.json"'
     replay_binding = (
         'REPLAY_PATH="$EVIDENCE_ROOT/'
-        'signed-facetta-frozen-replay.v1.json"'
+        'signed-facetta-frozen-replay.v2.json"'
     )
     replay_builder = '--packet-format replay-v1'
 

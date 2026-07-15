@@ -21,6 +21,7 @@ from facetta.frozen_assignment_contract import (
     canonical_assignment_bundle_payload,
 )
 from facetta.frozen_corpus_gate import (
+    REPLAY_SCHEMA,
     _replay_quality,
     canonical_evidence_payload,
     compile_frozen_corpus_gate,
@@ -37,6 +38,10 @@ from facetta.frozen_capture_workload import (
 )
 from facetta.frozen_corpus_packet import prepare_frozen_corpus_review_packet
 from facetta.frozen_evidence_paths import build_artifact_index
+from facetta.frozen_evaluator_report import (
+    EVALUATOR_REPORT_SCHEMA,
+    validate_and_replay_evaluator_report,
+)
 from facetta.frozen_persistence_attestation import (
     canonical_attestation_payload,
     result_set_sha256,
@@ -47,6 +52,7 @@ from facetta.ring_evals import (
     apply_canonical_ring_edit,
     build_ring_golden_spec,
 )
+from facetta.spec import Spec
 
 
 def _json(path: Path, value: object) -> None:
@@ -55,6 +61,96 @@ def _json(path: Path, value: object) -> None:
 
 def _sha(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _evaluator_report(
+    planned: dict[str, Any],
+    *,
+    attempt: int,
+    candidate_sha256: str,
+    mask_sha256: str | None,
+    passed: bool = True,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    resolved = planned["resolved_inputs"]
+    frozen = resolved["frozen_component_bindings"]
+    evaluator_hash = frozen["evaluator_bundle"].rsplit("@sha256:", 1)[1]
+    kind = planned["kind"]
+    evaluation_contract = resolved["evaluation_contract"]
+    spec = (
+        Spec.model_validate(evaluation_contract["canonical_target_spec"])
+        if kind == "render"
+        else None
+    )
+    report = {
+        "schema_version": EVALUATOR_REPORT_SCHEMA,
+        "bindings": {
+            "corpus_run_id": planned["corpus_run_id"],
+            "resolved_inputs_sha256": planned["resolved_inputs_sha256"],
+            "kind": kind,
+            "evaluation_id": planned["evaluation_id"],
+            "operation_class": planned["operation_class"],
+            "source_filename": planned["source_filename"],
+            "attempt": attempt,
+            "source_image_sha256": planned["source_sha256"],
+            "candidate_image_sha256": candidate_sha256,
+            "mask_image_sha256": mask_sha256 if kind == "edit" else None,
+            "evaluator_contract_sha256": evaluator_hash,
+        },
+        "observer": {
+            "provider": "fixture",
+            "model": "fixture-vision",
+            "model_revision": "1",
+            "model_revision_status": "pinned",
+            "request_id": f"{kind}:{planned['evaluation_id']}:{attempt}",
+        },
+        "quality_report": {
+            "verdict": "pass" if passed else "fail",
+            "checks": [{
+                "code": "frozen_visual_gate",
+                "passed": passed,
+                "severity": "hard",
+                "message": "retained visual gate",
+                "evidence": {},
+            }],
+            "score": 100.0 if passed else 0.0,
+            "notes": [],
+        },
+        "metric": resolved["scoring"]["metric"],
+        "observation": (
+            {
+                "stones": [{
+                    "qty": 1,
+                    "type": spec.stone.species,
+                    "size_mm": (
+                        f"{spec.stone.dimensions_mm.length} x "
+                        f"{spec.stone.dimensions_mm.width}"
+                    ),
+                    "carat_each": spec.stone.carat,
+                    "confidence": 1.0,
+                }],
+                "metal": spec.metal.material.replace("_", " "),
+                "measurements": [],
+                "scaled": False,
+                "scale_anchor": None,
+            }
+            if kind == "render"
+            else {
+                "change_applied": passed,
+                "change_note": "requested edit applied" if passed else "not applied",
+                "unintended_changes": [] if passed else ["design drift"],
+                "severity": "none" if passed else "major",
+            }
+        ),
+    }
+    identity = {
+        "attempt": attempt,
+        "source_image_sha256": planned["source_sha256"],
+        "candidate_image_sha256": candidate_sha256,
+        "mask_image_sha256": mask_sha256 if kind == "edit" else None,
+    }
+    return report, validate_and_replay_evaluator_report(
+        report, planned, identity,
+    )
 
 
 _ASSIGNMENT_REVIEWER_KEY_ID = "assignment-reviewer-test-v1"
@@ -237,6 +333,12 @@ def _write_signed(paths: dict[str, Any], evidence: dict[str, Any]) -> None:
         if row["kind"] == "edit" and row.get("mask_image") is not None:
             artifact_rows.append((
                 row["mask_image"], row["mask_image_sha256"], f"mask:{identity}",
+            ))
+        if row.get("evaluator_report") is not None:
+            artifact_rows.append((
+                row["evaluator_report"],
+                row["evaluator_report_sha256"],
+                f"evaluator-report:{identity}",
             ))
     evidence["artifact_index"] = build_artifact_index(artifact_rows)
     _sign(paths, evidence)
@@ -507,7 +609,6 @@ def _fixture(
             "mask_image_sha256": None,
         }
         if planned["kind"] == "render":
-            row.update(render_conformance_score=95, hard_gate_pass=True)
             render_candidate = candidate
         else:
             edit_mask_path = capture_dir / f"mask-{index}.png"
@@ -517,13 +618,35 @@ def _fixture(
             row.update(
                 mask_image=edit_mask_path.name,
                 mask_image_sha256=_sha(edit_mask_path),
-                edit_fidelity_score=95,
-                severity="none",
-                change_applied=True,
             )
             if edit_candidate is None:
                 edit_candidate = candidate
                 mask = edit_mask_path
+        report, derived = _evaluator_report(
+            planned,
+            attempt=1,
+            candidate_sha256=row["candidate_image_sha256"],
+            mask_sha256=row["mask_image_sha256"],
+        )
+        report_path = capture_dir / f"evaluator-report-{index}.json"
+        _json(report_path, report)
+        row.update({
+            "evaluator_report": report_path.name,
+            "evaluator_report_sha256": _sha(report_path),
+        })
+        projection_fields = (
+            (
+                "accepted", "attempt_outcome", "provider_error_code",
+                "qa_outcome", "render_conformance_score", "hard_gate_pass",
+            )
+            if planned["kind"] == "render"
+            else (
+                "accepted", "attempt_outcome", "provider_error_code",
+                "qa_outcome", "edit_fidelity_score", "severity",
+                "change_applied",
+            )
+        )
+        row.update({field: derived[field] for field in projection_fields})
         attempts.append(row)
     assert render_candidate is not None
     assert edit_candidate is not None
@@ -768,7 +891,7 @@ def test_complete_offline_replay_can_pass(tmp_path: Path):
     assert result["evidence"] == {
         "path": paths["evidence"].name,
         "sha256": _sha(paths["evidence"]),
-        "schema_version": "facetta-frozen-replay.v1",
+        "schema_version": REPLAY_SCHEMA,
         "workload_sha256": _sha(paths["workload"]),
         "capture_sha256": _sha(paths["capture_artifact"]),
         "corpus_run_id": "corpus-run-test-1",
@@ -1162,7 +1285,7 @@ def test_reviewer_cannot_substitute_signed_attempt_or_applicability_rows(
     paths = _fixture(tmp_path)
     evidence = _refresh_evidence_hashes(paths)
     render = next(row for row in evidence["attempts"] if row["kind"] == "render")
-    render["render_conformance_score"] = 100
+    render["render_conformance_score"] = 1
     evidence["not_applicable_assignments"] = [{
         "kind": "edit",
         "evaluation_id": "invented-omission",
@@ -1179,7 +1302,7 @@ def test_reviewer_cannot_substitute_signed_attempt_or_applicability_rows(
 
     assert result["corpus_gate_ready"] is False
     assert any(
-        "reviewed attempts differ from the executor-signed capture" in error
+        "signed evaluator projection differs from replay" in error
         for error in result["quality"]["errors"]
     )
     assert any(
@@ -1312,14 +1435,20 @@ def test_attempt_indexes_must_be_contiguous_per_source_assignment(tmp_path: Path
     assert result["corpus_gate_ready"] is False
 
 
-def test_metric_failure_fails_release_gate(tmp_path: Path):
+def test_scalar_metric_tampering_cannot_change_replayed_release_metric(
+    tmp_path: Path,
+):
     paths = _fixture(tmp_path)
     evidence = _refresh_evidence_hashes(paths)
     edit = next(row for row in evidence["attempts"] if row["kind"] == "edit")
     edit["edit_fidelity_score"] = 70
     _write_signed(paths, evidence)
     result = _run(paths)
-    assert result["quality"]["release_gates"]["edit_fidelity_pass"] is False
+    assert result["quality"]["release_gates"]["edit_fidelity_pass"] is True
+    assert any(
+        "signed evaluator projection differs from replay" in error
+        for error in result["quality"]["errors"]
+    )
     assert result["quality"]["status"] == "fail"
 
 
@@ -1382,7 +1511,7 @@ def test_quick_appearance_reviewer_acceptance_is_a_release_gate(tmp_path: Path):
     assert result["corpus_gate_ready"] is False
 
 
-def test_structural_fidelity_is_classified_independently(tmp_path: Path):
+def test_structural_scalar_cannot_override_replayed_fidelity(tmp_path: Path):
     paths = _fixture(tmp_path)
     evidence = _refresh_evidence_hashes(paths)
     structural = next(
@@ -1393,8 +1522,12 @@ def test_structural_fidelity_is_classified_independently(tmp_path: Path):
     _write_signed(paths, evidence)
     result = _run(paths)
     gate = result["quality"]["classified_release_gates"]["structural"]
-    assert gate["mean_edit_fidelity"] == 89
-    assert gate["pass"] is False
+    assert gate["mean_edit_fidelity"] == 100
+    assert gate["pass"] is True
+    assert any(
+        "signed evaluator projection differs from replay" in error
+        for error in result["quality"]["errors"]
+    )
     assert result["corpus_gate_ready"] is False
 
 
@@ -1617,7 +1750,9 @@ def test_gia_rejection_of_structural_edit_fails_quality(tmp_path: Path):
     assert result["quality"]["status"] == "fail"
 
 
-def test_rejected_render_attempt_cannot_hard_pass(tmp_path: Path):
+def test_scalar_acceptance_tampering_cannot_change_replayed_hard_pass(
+    tmp_path: Path,
+):
     paths = _fixture(tmp_path)
     evidence = _refresh_evidence_hashes(paths)
     render = next(row for row in evidence["attempts"] if row["kind"] == "render")
@@ -1625,11 +1760,15 @@ def test_rejected_render_attempt_cannot_hard_pass(tmp_path: Path):
     evidence["reviewer_review"]["false_negatives"] = 1
     _write_signed(paths, evidence)
     result = _run(paths)
-    assert result["quality"]["release_gates"]["hard_gate_pass"] is False
+    assert result["quality"]["release_gates"]["hard_gate_pass"] is True
+    assert any(
+        "signed evaluator projection differs from replay" in error
+        for error in result["quality"]["errors"]
+    )
     assert result["quality"]["status"] == "fail"
 
 
-def test_non_finite_score_fails_closed(tmp_path: Path):
+def test_non_finite_stored_score_fails_closed_against_replay(tmp_path: Path):
     paths = _fixture(tmp_path)
     evidence = _refresh_evidence_hashes(paths)
     render = next(row for row in evidence["attempts"] if row["kind"] == "render")
@@ -1637,7 +1776,7 @@ def test_non_finite_score_fails_closed(tmp_path: Path):
     _write_signed(paths, evidence)
     result = _run(paths)
     assert any(
-        "lacks scored capture evidence" in error
+        "signed evaluator projection differs from replay" in error
         for error in result["quality"]["errors"]
     )
     assert result["quality"]["status"] == "fail"
@@ -1654,7 +1793,8 @@ def test_uniform_edit_mask_cannot_claim_zero_drift(tmp_path: Path):
     _write_signed(paths, evidence)
     result = _run(paths)
     assert any(
-        "mask lacks selected/protected regions" in error
+        "evaluator report replay failed: evaluator report bindings differ"
+        in error
         for error in result["quality"]["errors"]
     )
     assert result["quality"]["status"] == "fail"

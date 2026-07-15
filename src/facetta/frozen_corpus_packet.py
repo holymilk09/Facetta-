@@ -33,7 +33,7 @@ from facetta.frozen_evidence_paths import (
 
 
 Json = dict[str, Any]
-PACKET_SCHEMA = "facetta-frozen-replay.v1"
+PACKET_SCHEMA = "facetta-frozen-replay.v2"
 
 
 def _load_object(path: Path, *, label: str | None = None) -> Json:
@@ -181,8 +181,10 @@ def prepare_frozen_corpus_review_packet(
             label=f"quality source {filename}",
         )
         row["source_image_sha256"] = planned["source_sha256"]
-        for field in ("candidate_image", "mask_image"):
+        for field in ("candidate_image", "mask_image", "evaluator_report"):
             if field == "mask_image" and key[0] != "edit":
+                continue
+            if row.get(field) is None:
                 continue
             artifact = _capture_artifact(
                 resolved_capture_path,
@@ -242,12 +244,19 @@ def prepare_frozen_corpus_review_packet(
             f"{row['kind']}:{row['evaluation_id']}:"
             f"{row['source_filename']}:attempt-{row['attempt']}"
         )
-        artifact_rows.append((
-            row["candidate_image"],
-            row["candidate_image_sha256"],
-            f"candidate:{identity}",
-        ))
-        if row["kind"] == "edit":
+        if row.get("candidate_image") is not None:
+            artifact_rows.append((
+                row["candidate_image"],
+                row["candidate_image_sha256"],
+                f"candidate:{identity}",
+            ))
+        if row.get("evaluator_report") is not None:
+            artifact_rows.append((
+                row["evaluator_report"],
+                row["evaluator_report_sha256"],
+                f"evaluator-report:{identity}",
+            ))
+        if row["kind"] == "edit" and row.get("mask_image") is not None:
             artifact_rows.append((
                 row["mask_image"], row["mask_image_sha256"], f"mask:{identity}",
             ))

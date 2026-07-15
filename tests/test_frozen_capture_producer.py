@@ -18,6 +18,7 @@ from facetta.frozen_assignment_contract import (
 from facetta.frozen_capture_producer import (
     BundleCaptureExecutor,
     Ed25519PrivateKeySigner,
+    EXECUTION_BUNDLE_SCHEMA,
     FilePersistenceObservationRunner,
     FrozenCaptureProducer,
 )
@@ -28,6 +29,11 @@ from facetta.frozen_capture_workload import (
     expected_attempt_routing,
     validate_capture_envelope,
 )
+from facetta.frozen_evaluator_report import (
+    EVALUATOR_REPORT_SCHEMA,
+    validate_and_replay_evaluator_report,
+)
+from facetta.spec import Spec
 from facetta.frozen_persistence_attestation import (
     RESULT_SET_SCHEMA,
     result_set_sha256,
@@ -48,6 +54,117 @@ def _write(path: Path, value: object) -> None:
 
 def _sha(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _quality_report(passed: bool) -> dict[str, object]:
+    return {
+        "verdict": "pass" if passed else "fail",
+        "checks": [{
+            "code": "frozen_visual_gate",
+            "passed": passed,
+            "severity": "hard",
+            "message": "retained visual gate",
+            "evidence": {},
+        }],
+        "score": 100.0 if passed else 0.0,
+        "notes": [],
+    }
+
+
+def _write_evaluator_report(
+    evidence: Path,
+    item: dict[str, object],
+    *,
+    attempt_number: int,
+    candidate_sha256: str,
+    mask_sha256: str | None,
+    passed: bool,
+    directory: str = "executor",
+) -> tuple[Path, dict[str, object]]:
+    resolved = item["resolved_inputs"]
+    assert isinstance(resolved, dict)
+    frozen = resolved["frozen_component_bindings"]
+    assert isinstance(frozen, dict)
+    evaluator_pin = frozen["evaluator_bundle"]
+    assert isinstance(evaluator_pin, str)
+    evaluator_hash = evaluator_pin.rsplit("@sha256:", 1)[1]
+    scoring = resolved["scoring"]
+    assert isinstance(scoring, dict)
+    target = resolved["evaluation_contract"]
+    assert isinstance(target, dict)
+    kind = str(item["kind"])
+    spec = (
+        Spec.model_validate(target["canonical_target_spec"])
+        if kind == "render"
+        else None
+    )
+    report = {
+        "schema_version": EVALUATOR_REPORT_SCHEMA,
+        "bindings": {
+            "corpus_run_id": item["corpus_run_id"],
+            "resolved_inputs_sha256": item["resolved_inputs_sha256"],
+            "kind": kind,
+            "evaluation_id": item["evaluation_id"],
+            "operation_class": item["operation_class"],
+            "source_filename": item["source_filename"],
+            "attempt": attempt_number,
+            "source_image_sha256": item["source_sha256"],
+            "candidate_image_sha256": candidate_sha256,
+            "mask_image_sha256": mask_sha256 if kind == "edit" else None,
+            "evaluator_contract_sha256": evaluator_hash,
+        },
+        "observer": {
+            "provider": "fixture",
+            "model": "fixture-vision",
+            "model_revision": "1",
+            "model_revision_status": "pinned",
+            "request_id": (
+                f"{kind}:{item['evaluation_id']}:{attempt_number}"
+            ),
+        },
+        "quality_report": _quality_report(passed),
+        "metric": scoring["metric"],
+        "observation": (
+            {
+                "stones": [{
+                    "qty": 1,
+                    "type": spec.stone.species,
+                    "size_mm": (
+                        f"{spec.stone.dimensions_mm.length} x "
+                        f"{spec.stone.dimensions_mm.width}"
+                    ),
+                    "carat_each": spec.stone.carat,
+                    "confidence": 1.0,
+                }],
+                "metal": spec.metal.material.replace("_", " "),
+                "measurements": [],
+                "scaled": False,
+                "scale_anchor": None,
+            }
+            if kind == "render"
+            else {
+                "change_applied": passed,
+                "change_note": (
+                    "requested edit applied" if passed else "edit not applied"
+                ),
+                "unintended_changes": [] if passed else ["design drift"],
+                "severity": "none" if passed else "major",
+            }
+        ),
+    }
+    path = evidence / directory / (
+        f"{kind}-{item['evaluation_id']}-attempt-{attempt_number}.json"
+    )
+    _write(path, report)
+    attempt_identity = {
+        "attempt": attempt_number,
+        "source_image_sha256": item["source_sha256"],
+        "candidate_image_sha256": candidate_sha256,
+        "mask_image_sha256": mask_sha256 if kind == "edit" else None,
+    }
+    return path, validate_and_replay_evaluator_report(
+        report, item, attempt_identity,
+    )
 
 
 def _install_routing_contract(root: Path) -> Path:
@@ -343,31 +460,40 @@ class _FakeExecutor:
                 fallback_reason=("grok_qa_failed" if index >= 3 else None),
             )
             if item["kind"] == "render":
+                report, derived = _write_evaluator_report(
+                    self.evidence,
+                    item,
+                    attempt_number=index,
+                    candidate_sha256=_sha(self.render),
+                    mask_sha256=None,
+                    passed=accepted,
+                )
                 rows.append({
-                    "accepted": accepted,
-                    "attempt_outcome": "accepted" if accepted else "qa_failed",
-                    "provider_error_code": None,
-                    "qa_outcome": "pass" if accepted else "fail",
+                    **derived,
                     **routing,
                     "candidate_image": self.render,
                     "candidate_image_sha256": _sha(self.render),
-                    "render_conformance_score": 96,
-                    "hard_gate_pass": True,
+                    "evaluator_report": report.as_posix(),
+                    "evaluator_report_sha256": _sha(report),
                 })
             else:
+                report, derived = _write_evaluator_report(
+                    self.evidence,
+                    item,
+                    attempt_number=index,
+                    candidate_sha256=_sha(self.edit),
+                    mask_sha256=_sha(self.mask),
+                    passed=accepted,
+                )
                 rows.append({
-                    "accepted": accepted,
-                    "attempt_outcome": "accepted" if accepted else "qa_failed",
-                    "provider_error_code": None,
-                    "qa_outcome": "pass" if accepted else "fail",
+                    **derived,
                     **routing,
                     "candidate_image": self.edit,
                     "candidate_image_sha256": _sha(self.edit),
                     "mask_image": self.mask,
                     "mask_image_sha256": _sha(self.mask),
-                    "edit_fidelity_score": 97,
-                    "severity": "none",
-                    "change_applied": True,
+                    "evaluator_report": report.as_posix(),
+                    "evaluator_report_sha256": _sha(report),
                 })
         return rows
 
@@ -514,6 +640,8 @@ def test_producer_accepts_causally_proven_provider_fallback(tmp_path: Path):
                 "edit_fidelity_score",
                 "severity",
                 "change_applied",
+                "evaluator_report",
+                "evaluator_report_sha256",
             ):
                 failed.pop(field, None)
             rows[2].update(expected_attempt_routing(
@@ -777,15 +905,20 @@ def test_terminal_unaccepted_render_and_edit_capture_final_attempt(
     class ExhaustedExecutor(_FakeExecutor):
         def execute(self, item: dict[str, object]) -> list[dict[str, object]]:
             rows = super().execute(item)
-            for row in rows:
-                row["accepted"] = False
-                row["attempt_outcome"] = "qa_failed"
-                row["qa_outcome"] = "fail"
-                if item["kind"] == "render":
-                    row["hard_gate_pass"] = False
-                else:
-                    row["severity"] = "major"
-                    row["change_applied"] = False
+            for index, row in enumerate(rows, 1):
+                candidate = self.render if item["kind"] == "render" else self.edit
+                mask_hash = None if item["kind"] == "render" else _sha(self.mask)
+                report, derived = _write_evaluator_report(
+                    self.evidence,
+                    item,
+                    attempt_number=index,
+                    candidate_sha256=_sha(candidate),
+                    mask_sha256=mask_hash,
+                    passed=False,
+                )
+                row.update(derived)
+                row["evaluator_report"] = report.as_posix()
+                row["evaluator_report_sha256"] = _sha(report)
             return rows
 
     class RecordingPersistenceRunner(_FakePersistenceRunner):
@@ -968,15 +1101,32 @@ def test_bundle_preflight_rejects_path_escape_and_hash_drift(
             "candidate_image": candidate_ref,
             "candidate_image_sha256": candidate_hash,
         }
+        report, derived = _write_evaluator_report(
+            evidence,
+            item,
+            attempt_number=1,
+            candidate_sha256=candidate_hash,
+            mask_sha256=_sha(mask) if item["kind"] == "edit" else None,
+            passed=True,
+            directory="bundle-inputs",
+        )
+        attempt.update(derived)
+        attempt.update({
+            "evaluator_report": report.relative_to(evidence).as_posix(),
+            "evaluator_report_sha256": _sha(report),
+        })
         if item["kind"] == "render":
-            attempt.update(render_conformance_score=95, hard_gate_pass=True)
+            attempt.update(
+                render_conformance_score=derived["render_conformance_score"],
+                hard_gate_pass=True,
+            )
         else:
             attempt.update(
                 mask_image=mask.relative_to(evidence).as_posix(),
                 mask_image_sha256=_sha(mask),
-                edit_fidelity_score=95,
-                severity="none",
-                change_applied=True,
+                edit_fidelity_score=derived["edit_fidelity_score"],
+                severity=derived["severity"],
+                change_applied=derived["change_applied"],
             )
         sequences.append({
             "kind": item["kind"],
@@ -987,7 +1137,7 @@ def test_bundle_preflight_rejects_path_escape_and_hash_drift(
         })
     bundle = evidence / "execution-bundle.json"
     _write(bundle, {
-        "schema_version": "facetta-frozen-execution-bundle.v1",
+        "schema_version": EXECUTION_BUNDLE_SCHEMA,
         "corpus_run_id": plan["corpus_run_id"],
         "plan_sha256": canonical_object_sha256(plan),
         "provider_calls_executed": 0,
@@ -1032,15 +1182,32 @@ def _bundle_inputs(
             "candidate_image": candidate.relative_to(evidence).as_posix(),
             "candidate_image_sha256": _sha(candidate),
         }
+        report, derived = _write_evaluator_report(
+            evidence,
+            item,
+            attempt_number=1,
+            candidate_sha256=_sha(candidate),
+            mask_sha256=_sha(mask) if item["kind"] == "edit" else None,
+            passed=True,
+            directory="bundle-inputs",
+        )
+        attempt.update(derived)
+        attempt.update({
+            "evaluator_report": report.relative_to(evidence).as_posix(),
+            "evaluator_report_sha256": _sha(report),
+        })
         if item["kind"] == "render":
-            attempt.update(render_conformance_score=96, hard_gate_pass=True)
+            attempt.update(
+                render_conformance_score=derived["render_conformance_score"],
+                hard_gate_pass=True,
+            )
         else:
             attempt.update(
                 mask_image=mask.relative_to(evidence).as_posix(),
                 mask_image_sha256=_sha(mask),
-                edit_fidelity_score=97,
-                severity="none",
-                change_applied=True,
+                edit_fidelity_score=derived["edit_fidelity_score"],
+                severity=derived["severity"],
+                change_applied=derived["change_applied"],
             )
         sequences.append({
             "kind": item["kind"],
@@ -1058,7 +1225,7 @@ def _bundle_inputs(
         })
     bundle = evidence / "execution-bundle.json"
     _write(bundle, {
-        "schema_version": "facetta-frozen-execution-bundle.v1",
+        "schema_version": EXECUTION_BUNDLE_SCHEMA,
         "corpus_run_id": plan["corpus_run_id"],
         "plan_sha256": canonical_object_sha256(plan),
         "provider_calls_executed": 0,

@@ -17,6 +17,7 @@ from facetta.frozen_capture_workload import (
     FROZEN_ROUTING_LABEL,
     _resolved_assignment,
     _routing_attempt_assignments,
+    attempt_sequence_errors,
     build_provider_call_plan,
     canonical_capture_payload,
     canonical_object_sha256,
@@ -172,6 +173,78 @@ def _executor_key(root: Path, config: Path) -> tuple[Ed25519PrivateKey, Path]:
     }
     _write(config, raw)
     return private_key, public_key_path
+
+
+def _evaluator_projection(attempt: dict[str, object]) -> dict[str, object]:
+    common = {
+        field: attempt.get(field)
+        for field in (
+            "accepted",
+            "attempt_outcome",
+            "provider_error_code",
+            "qa_outcome",
+        )
+    }
+    if attempt["kind"] == "render":
+        common.update(
+            render_conformance_score=attempt.get("render_conformance_score"),
+            hard_gate_pass=attempt.get("hard_gate_pass"),
+        )
+    else:
+        common.update(
+            edit_fidelity_score=attempt.get("edit_fidelity_score"),
+            severity=attempt.get("severity"),
+            change_applied=attempt.get("change_applied"),
+        )
+    return common
+
+
+def _attach_fixture_evaluator_report(
+    capture_dir: Path,
+    planned: dict[str, object],
+    attempt: dict[str, object],
+) -> Path:
+    report_path = capture_dir / (
+        f"{planned['evaluator_report_artifact_stem']}--attempt-"
+        f"{attempt['attempt']}.json"
+    )
+    _write(report_path, {
+        "schema_version": "facetta-test-evaluator-report.v1",
+        "identity": {
+            "kind": planned["kind"],
+            "evaluation_id": planned["evaluation_id"],
+            "source_filename": planned["source_filename"],
+            "resolved_inputs_sha256": planned["resolved_inputs_sha256"],
+            "attempt": attempt["attempt"],
+        },
+        "projection": _evaluator_projection(attempt),
+    })
+    attempt["evaluator_report"] = report_path.name
+    attempt["evaluator_report_sha256"] = _sha(report_path)
+    return report_path
+
+
+def _replay_fixture_evaluator_report(
+    report: dict[str, object],
+    planned: dict[str, object],
+    attempt: dict[str, object],
+) -> dict[str, object]:
+    if report.get("schema_version") != "facetta-test-evaluator-report.v1":
+        raise ValueError("fixture evaluator report schema is invalid")
+    identity = report.get("identity")
+    expected_identity = {
+        "kind": planned["kind"],
+        "evaluation_id": planned["evaluation_id"],
+        "source_filename": planned["source_filename"],
+        "resolved_inputs_sha256": planned["resolved_inputs_sha256"],
+        "attempt": attempt["attempt"],
+    }
+    if identity != expected_identity:
+        raise ValueError("fixture evaluator report identity differs")
+    projection = report.get("projection")
+    if not isinstance(projection, dict):
+        raise ValueError("fixture evaluator report projection is invalid")
+    return projection
 
 
 def _binding(evaluation_id: str, kind: str) -> dict[str, object]:
@@ -852,7 +925,12 @@ def test_plan_blocks_signed_not_applicable_render_provider_free(tmp_path: Path):
 
 def test_reviewed_not_applicable_rows_remain_signed_without_provider_calls(
     tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ):
+    monkeypatch.setattr(
+        "facetta.frozen_capture_workload.validate_and_replay_evaluator_report",
+        _replay_fixture_evaluator_report,
+    )
     root, manifest, config, workload = _fixture(tmp_path)
     _mark_edit_not_applicable(
         root,
@@ -884,31 +962,33 @@ def test_reviewed_not_applicable_rows_remain_signed_without_provider_calls(
         row for row in plan["items"]
         if row["resolved_inputs"]["execution_ready"] is True
     )
+    render_attempt = {
+        "kind": planned["kind"],
+        "evaluation_id": planned["evaluation_id"],
+        "source_filename": planned["source_filename"],
+        "source_sha256": planned["source_sha256"],
+        "resolved_inputs_sha256": planned["resolved_inputs_sha256"],
+        "attempt": 1,
+        **expected_attempt_routing(planned, 1),
+        "accepted": True,
+        "attempt_outcome": "accepted",
+        "provider_error_code": None,
+        "qa_outcome": "pass",
+        "candidate_image": candidate.name,
+        "candidate_image_sha256": _sha(candidate),
+        "render_conformance_score": 95,
+        "hard_gate_pass": True,
+    }
+    _attach_fixture_evaluator_report(capture_dir, planned, render_attempt)
     capture = {
-        "schema_version": "facetta-frozen-capture.v2",
+        "schema_version": "facetta-frozen-capture.v3",
         "corpus_run_id": plan["corpus_run_id"],
         "manifest_sha256": plan["manifest_sha256"],
         "config_sha256": plan["config_sha256"],
         "workload_sha256": plan["workload_sha256"],
         "assignment_bundle_sha256": plan["assignment_bundle"]["bundle_sha256"],
         "not_applicable_assignments": not_applicable_assignment_rows(plan),
-        "attempts": [{
-            "kind": planned["kind"],
-            "evaluation_id": planned["evaluation_id"],
-            "source_filename": planned["source_filename"],
-            "source_sha256": planned["source_sha256"],
-            "resolved_inputs_sha256": planned["resolved_inputs_sha256"],
-            "attempt": 1,
-            **expected_attempt_routing(planned, 1),
-            "accepted": True,
-            "attempt_outcome": "accepted",
-            "provider_error_code": None,
-            "qa_outcome": "pass",
-            "candidate_image": candidate.name,
-            "candidate_image_sha256": _sha(candidate),
-            "render_conformance_score": 95,
-            "hard_gate_pass": True,
-        }],
+        "attempts": [render_attempt],
         "persistence_evidence_ref": {
             "relative_path": persistence.name,
             "sha256": _sha(persistence),
@@ -1136,7 +1216,14 @@ def test_provider_free_fake_executor_covers_all_1044_synthetic_assignments(
     assert plan["corpus_gate_ready"] is False
 
 
-def test_signed_capture_binds_plan_artifacts_and_persistence(tmp_path: Path):
+def test_signed_capture_binds_plan_artifacts_and_persistence(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setattr(
+        "facetta.frozen_capture_workload.validate_and_replay_evaluator_report",
+        _replay_fixture_evaluator_report,
+    )
     root, manifest, config, workload = _fixture(tmp_path)
     private_key, public_key_path = _executor_key(root, config)
     plan = build_provider_call_plan(
@@ -1181,9 +1268,10 @@ def test_signed_capture_binds_plan_artifacts_and_persistence(tmp_path: Path):
         if mask:
             row["mask_image"] = mask
             row["mask_image_sha256"] = _sha(capture_dir / mask)
+        _attach_fixture_evaluator_report(capture_dir, planned, row)
         attempts.append(row)
     capture = {
-        "schema_version": "facetta-frozen-capture.v2",
+        "schema_version": "facetta-frozen-capture.v3",
         "corpus_run_id": plan["corpus_run_id"],
         "manifest_sha256": plan["manifest_sha256"],
         "config_sha256": plan["config_sha256"],
@@ -1197,13 +1285,18 @@ def test_signed_capture_binds_plan_artifacts_and_persistence(tmp_path: Path):
         },
         "signature": None,
     }
-    signature = private_key.sign(canonical_capture_payload(capture))
-    capture["signature"] = {
-        "algorithm": "Ed25519",
-        "key_id": "executor-test-v1",
-        "public_key_sha256": _sha(public_key_path),
-        "value": base64.b64encode(signature).decode("ascii"),
-    }
+
+    def sign() -> None:
+        capture["signature"] = {
+            "algorithm": "Ed25519",
+            "key_id": "executor-test-v1",
+            "public_key_sha256": _sha(public_key_path),
+            "value": base64.b64encode(
+                private_key.sign(canonical_capture_payload(capture))
+            ).decode("ascii"),
+        }
+
+    sign()
     capture_path = capture_dir / "capture.json"
     _write(capture_path, capture)
 
@@ -1220,7 +1313,116 @@ def test_signed_capture_binds_plan_artifacts_and_persistence(tmp_path: Path):
     assert result["signature_status"] == "verified"
     assert result["corpus_run_id"] == "fixture-corpus-run-v1"
     assert result["captured_evaluation_sequence_count"] == 2
+    assert result["verified_artifact_count"] == 5
     assert result["corpus_gate_ready"] is False
+    assert plan["schema_version"] == "facetta-frozen-provider-call-plan.v3"
+    assert all(
+        item["evaluator_report_artifact_stem"].endswith("--evaluator-report")
+        for item in plan["items"]
+    )
+
+    report_attempt = next(row for row in attempts if row["kind"] == "render")
+    original_report_path = report_attempt.pop("evaluator_report")
+    original_report_hash = report_attempt.pop("evaluator_report_sha256")
+    sign()
+    _write(capture_path, capture)
+    missing_report = validate_capture_envelope(
+        capture_path,
+        manifest,
+        config,
+        workload,
+        capture_public_key_path=public_key_path,
+        capture_key_id="executor-test-v1",
+        repository_root=root,
+    )
+    assert missing_report["status"] == "fail"
+    assert any(
+        "lacks an evaluator report path" in error
+        for error in missing_report["errors"]
+    )
+    report_attempt["evaluator_report"] = original_report_path
+    report_attempt["evaluator_report_sha256"] = original_report_hash
+
+    report_attempt["render_conformance_score"] = 94
+    sign()
+    _write(capture_path, capture)
+    altered_projection = validate_capture_envelope(
+        capture_path,
+        manifest,
+        config,
+        workload,
+        capture_public_key_path=public_key_path,
+        capture_key_id="executor-test-v1",
+        repository_root=root,
+    )
+    assert altered_projection["status"] == "fail"
+    assert any(
+        "signed evaluator projection differs from replay" in error
+        for error in altered_projection["errors"]
+    )
+    report_attempt["render_conformance_score"] = 95
+
+    evaluator_report = capture_dir / str(original_report_path)
+    original_report_bytes = evaluator_report.read_bytes()
+    _write(evaluator_report, {"schema_version": "tampered"})
+    report_attempt["evaluator_report_sha256"] = _sha(evaluator_report)
+    sign()
+    _write(capture_path, capture)
+    invalid_replay = validate_capture_envelope(
+        capture_path,
+        manifest,
+        config,
+        workload,
+        capture_public_key_path=public_key_path,
+        capture_key_id="executor-test-v1",
+        repository_root=root,
+    )
+    assert invalid_replay["status"] == "fail"
+    assert any(
+        "evaluator report is invalid" in error
+        for error in invalid_replay["errors"]
+    )
+    evaluator_report.write_bytes(original_report_bytes)
+    report_attempt["evaluator_report_sha256"] = original_report_hash
+
+    outside_report = root / "outside-report.json"
+    outside_report.write_bytes(original_report_bytes)
+    report_attempt["evaluator_report"] = "../outside-report.json"
+    report_attempt["evaluator_report_sha256"] = _sha(outside_report)
+    sign()
+    _write(capture_path, capture)
+    escaped_report = validate_capture_envelope(
+        capture_path,
+        manifest,
+        config,
+        workload,
+        capture_public_key_path=public_key_path,
+        capture_key_id="executor-test-v1",
+        repository_root=root,
+    )
+    assert escaped_report["status"] == "fail"
+    assert any(
+        "invalid evaluator_report path" in error
+        for error in escaped_report["errors"]
+    )
+    report_attempt["evaluator_report"] = original_report_path
+    report_attempt["evaluator_report_sha256"] = original_report_hash
+
+    capture["schema_version"] = "facetta-frozen-capture.v2"
+    sign()
+    _write(capture_path, capture)
+    legacy_capture = validate_capture_envelope(
+        capture_path,
+        manifest,
+        config,
+        workload,
+        capture_public_key_path=public_key_path,
+        capture_key_id="executor-test-v1",
+        repository_root=root,
+    )
+    assert legacy_capture["status"] == "fail"
+    assert "unsupported capture schema_version" in legacy_capture["errors"]
+    capture["schema_version"] = "facetta-frozen-capture.v3"
 
     capture["corpus_run_id"] = "operator-invented-run"
     capture["signature"] = {
@@ -1275,7 +1477,14 @@ def test_signed_capture_binds_plan_artifacts_and_persistence(tmp_path: Path):
     assert any("config-enrolled executor" in error for error in rejected["errors"])
 
 
-def test_signed_capture_rejects_artifact_tampering(tmp_path: Path):
+def test_signed_capture_rejects_artifact_tampering(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    monkeypatch.setattr(
+        "facetta.frozen_capture_workload.validate_and_replay_evaluator_report",
+        _replay_fixture_evaluator_report,
+    )
     root, manifest, config, workload = _fixture(tmp_path)
     key, public_key_path = _executor_key(root, config)
     plan = build_provider_call_plan(
@@ -1316,9 +1525,10 @@ def test_signed_capture_rejects_artifact_tampering(tmp_path: Path):
             )
         if planned["kind"] == "edit":
             row.update(mask_image=mask.name, mask_image_sha256=_sha(mask))
+        _attach_fixture_evaluator_report(capture_dir, planned, row)
         attempts.append(row)
     capture = {
-        "schema_version": "facetta-frozen-capture.v2",
+        "schema_version": "facetta-frozen-capture.v3",
         "corpus_run_id": plan["corpus_run_id"],
         "manifest_sha256": plan["manifest_sha256"],
         "config_sha256": plan["config_sha256"],
@@ -1354,3 +1564,35 @@ def test_signed_capture_rejects_artifact_tampering(tmp_path: Path):
     )
     assert result["status"] == "fail"
     assert any("candidate_image hash differs" in error for error in result["errors"])
+
+
+def test_provider_failure_forbids_evaluator_report_references(tmp_path: Path):
+    root, manifest, config, workload = _fixture(tmp_path)
+    plan = build_provider_call_plan(
+        manifest, config, workload, repository_root=root,
+    )
+    planned = plan["items"][0]
+    failed_attempt = {
+        "kind": planned["kind"],
+        "evaluation_id": planned["evaluation_id"],
+        "source_filename": planned["source_filename"],
+        "source_sha256": planned["source_sha256"],
+        "resolved_inputs_sha256": planned["resolved_inputs_sha256"],
+        "attempt": 1,
+        **expected_attempt_routing(planned, 1),
+        "accepted": False,
+        "attempt_outcome": "provider_failed",
+        "provider_error_code": "provider_timeout",
+        "qa_outcome": None,
+        "evaluator_report": "provider-failure-report.json",
+        "evaluator_report_sha256": "f" * 64,
+    }
+
+    errors = attempt_sequence_errors(
+        [failed_attempt], planned, label="fixture",
+    )
+
+    assert any(
+        "provider failure declares an evaluator report" in error
+        for error in errors
+    )

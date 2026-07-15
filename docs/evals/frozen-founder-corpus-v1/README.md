@@ -236,7 +236,7 @@ PYTHONPATH=src .venv/bin/python scripts/run_frozen_corpus_capture.py \
   --attestation-id <operator-issued-attestation-id>
 
 CAPTURE_PATH="$EVIDENCE_ROOT/signed-capture/capture.json"
-REPLAY_PATH="$EVIDENCE_ROOT/signed-facetta-frozen-replay.v1.json"
+REPLAY_PATH="$EVIDENCE_ROOT/signed-facetta-frozen-replay.v2.json"
 test -f "$CAPTURE_PATH"
 
 PYTHONPATH=src .venv/bin/python scripts/plan_frozen_corpus_capture.py \
@@ -255,20 +255,25 @@ PYTHONPATH=src .venv/bin/python scripts/prepare_frozen_corpus_review.py \
   --out "$REPLAY_PATH"
 ```
 
-`facetta-frozen-capture.v2` binds the exact plan, run ID, manifest, config,
-workload, assignments, resolved inputs, all source/candidate/mask hashes, and a
-separately signed canonical-persistence attestation. Every sequence has one to
-three attempts; an accepted attempt must be final; exhausted sequences are
+`facetta-frozen-capture.v3` binds the exact plan, run ID, manifest, config,
+workload, assignments, resolved inputs, all source/candidate/mask hashes, one
+retained evaluator report for every candidate-producing attempt, and a
+separately signed canonical-persistence attestation. Capture validation and
+release replay both recompute scores, QA outcomes, acceptance, edit fidelity,
+and hard-gate decisions from the retained observations. Every sequence has one
+to three attempts; an accepted attempt must be final; exhausted sequences are
 retained with zero accepted attempts. Output is staged atomically and every
 reference is root-relative and hash indexed.
 
-Passing capture validation proves provenance and completeness only. It does
-not prove image quality or human acceptance.
+Passing capture validation proves provenance, completeness, and deterministic
+agreement between retained evaluator observations and their machine
+projections. The reports are executor-attested observations, not independent
+provider receipts; capture validation does not prove human acceptance.
 
 ## 3. Prepare blind human-review packets
 
-The compatibility `replay-v1` packet remains available for machine replay,
-but its scores and Boolean review data can never authorize release. External
+Legacy `replay-v1` packets are rejected. The `replay-v2` packet remains machine
+evidence and cannot authorize release through Boolean review data. External
 human authority requires `blind-v2`.
 
 Use separately controlled 32-byte seeds, represented as 64 lowercase hex
@@ -329,7 +334,7 @@ set +e
 PYTHONPATH=src .venv/bin/python scripts/run_frozen_corpus_gate.py \
   --evidence-root "$EVIDENCE_ROOT" \
   --source-dir "$EVIDENCE_ROOT/founder-reference-directory" \
-  --evidence "$EVIDENCE_ROOT/signed-facetta-frozen-replay.v1.json" \
+  --evidence "$EVIDENCE_ROOT/signed-facetta-frozen-replay.v2.json" \
   --gia-review-packet "$EVIDENCE_ROOT/review/gia-packet.json" \
   --gia-review-ledger "$EVIDENCE_ROOT/review/signed-gia-ledger.json" \
   --outdir "$CORPUS_DIR" > "$CORPUS_DIR/command-result.json"
@@ -344,7 +349,7 @@ PYTHONPATH=src .venv/bin/python scripts/verify_frozen_corpus_release.py \
   --approval "$EVIDENCE_ROOT/review/signed-founder-approval.json" \
   --manifest docs/evals/frozen-founder-corpus-v1/manifest.json \
   --source-dir "$EVIDENCE_ROOT/founder-reference-directory" \
-  --evidence "$EVIDENCE_ROOT/signed-facetta-frozen-replay.v1.json" \
+  --evidence "$EVIDENCE_ROOT/signed-facetta-frozen-replay.v2.json" \
   --evidence-root "$EVIDENCE_ROOT" \
   --workload docs/evals/frozen-founder-corpus-v1/workload.json \
   --gia-review-packet "$EVIDENCE_ROOT/review/gia-packet.json" \

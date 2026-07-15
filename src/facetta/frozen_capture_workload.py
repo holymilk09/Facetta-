@@ -28,6 +28,7 @@ from facetta.frozen_assignment_contract import (
     SUPPORTED_NOT_APPLICABLE_REASONS,
     verify_signed_assignment_bundle,
 )
+from facetta.frozen_evaluator_report import validate_and_replay_evaluator_report
 from facetta.image_agent.contracts import ImageOperation, ImageRoute
 from facetta.image_agent.prompts import PROMPT_VERSIONS
 from facetta.ring_evals import (
@@ -49,8 +50,8 @@ _WINDOWS_RESERVED_BASENAME = re.compile(
     re.IGNORECASE,
 )
 WORKLOAD_SCHEMA = "facetta-frozen-capture-workload.v1"
-PLAN_SCHEMA = "facetta-frozen-provider-call-plan.v2"
-CAPTURE_SCHEMA = "facetta-frozen-capture.v2"
+PLAN_SCHEMA = "facetta-frozen-provider-call-plan.v3"
+CAPTURE_SCHEMA = "facetta-frozen-capture.v3"
 RESOLVED_ASSIGNMENT_SCHEMA = "facetta-frozen-resolved-assignment.v1"
 ASSIGNMENT_BUNDLE_SCHEMA = SIGNED_ASSIGNMENT_BUNDLE_SCHEMA
 EXECUTOR_TRUST_SCHEMA = "facetta-frozen-executor-trust.v1"
@@ -154,6 +155,25 @@ ATTEMPT_OUTCOME_FIELDS = (
     "provider_error_code",
     "qa_outcome",
 )
+_EVALUATOR_REPORT_PROJECTION_FIELDS = {
+    "render": (
+        "accepted",
+        "attempt_outcome",
+        "provider_error_code",
+        "qa_outcome",
+        "render_conformance_score",
+        "hard_gate_pass",
+    ),
+    "edit": (
+        "accepted",
+        "attempt_outcome",
+        "provider_error_code",
+        "qa_outcome",
+        "edit_fidelity_score",
+        "severity",
+        "change_applied",
+    ),
+}
 
 
 def file_sha256(path: Path) -> str:
@@ -521,10 +541,22 @@ def attempt_sequence_errors(
             attempt.get("candidate_image"),
             attempt.get("candidate_image_sha256"),
         )
+        evaluator_report_fields = (
+            attempt.get("evaluator_report"),
+            attempt.get("evaluator_report_sha256"),
+        )
         if provider_failed:
             if any(value is not None for value in candidate_fields):
                 errors.append(
                     f"{label} attempt {index} provider failure declares a candidate"
+                )
+            if any(
+                field in attempt
+                for field in ("evaluator_report", "evaluator_report_sha256")
+            ):
+                errors.append(
+                    f"{label} attempt {index} provider failure declares an "
+                    "evaluator report"
                 )
             if any(attempt.get(field) is not None for field in (
                 "mask_image",
@@ -538,7 +570,20 @@ def attempt_sequence_errors(
                 errors.append(
                     f"{label} attempt {index} provider failure declares QA evidence"
                 )
-        elif planned.get("kind") == "render":
+        else:
+            report_path, report_hash = evaluator_report_fields
+            if not isinstance(report_path, str) or not report_path.strip():
+                errors.append(
+                    f"{label} attempt {index} lacks an evaluator report path"
+                )
+            if not _hex_digest(report_hash):
+                errors.append(
+                    f"{label} attempt {index} lacks an evaluator report hash"
+                )
+
+        if provider_failed:
+            continue
+        if planned.get("kind") == "render":
             if (
                 not valid_machine_score(attempt.get("render_conformance_score"))
                 or type(attempt.get("hard_gate_pass")) is not bool
@@ -635,6 +680,10 @@ def _resolved_assignment(
             "routing_contract",
         )
     }
+    if components.get("evaluator_report_contract") is not None:
+        component_binding["evaluator_report_contract"] = components.get(
+            "evaluator_report_contract"
+        )
     if any(not isinstance(value, str) or not value for value in component_binding.values()):
         raise ValueError("resolved assignment requires frozen execution components")
 
@@ -1193,6 +1242,7 @@ def build_provider_call_plan(
             items.append({
                 "source_filename": source["filename"],
                 "source_sha256": source["sha256"],
+                "corpus_run_id": assignment_bundle.get("corpus_run_id"),
                 "quality_slice": "ring",
                 "kind": kind,
                 "evaluation_id": evaluation_id,
@@ -1202,6 +1252,7 @@ def build_provider_call_plan(
                 "maximum_attempts": max_attempts,
                 "candidate_artifact_stem": stem,
                 "mask_artifact_stem": stem + "--mask" if kind == "edit" else None,
+                "evaluator_report_artifact_stem": stem + "--evaluator-report",
             })
     execution_ready_count = sum(
         bool(item["resolved_inputs"]["execution_ready"]) for item in items
@@ -1438,6 +1489,65 @@ def validate_capture_envelope(
                 errors.append(f"capture attempt {index} {field} hash differs")
             else:
                 artifact_count += 1
+
+        report_path = row.get("evaluator_report")
+        evaluator_report = _artifact_path(capture_path, report_path)
+        expected_report_hash = row.get("evaluator_report_sha256")
+        if isinstance(report_path, str) and report_path in artifact_paths_seen:
+            errors.append(f"capture artifact path is reused: {report_path}")
+        elif isinstance(report_path, str):
+            artifact_paths_seen.add(report_path)
+        if evaluator_report is None or not evaluator_report.is_file():
+            errors.append(
+                f"capture attempt {index} has invalid evaluator_report path"
+            )
+            continue
+        if (
+            not _hex_digest(expected_report_hash)
+            or file_sha256(evaluator_report) != expected_report_hash
+        ):
+            errors.append(
+                f"capture attempt {index} evaluator_report hash differs"
+            )
+            continue
+        artifact_count += 1
+        try:
+            report = _load_object(evaluator_report)
+            replay_attempt = {
+                **row,
+                "source_image_sha256": row.get("source_sha256"),
+            }
+            derived = validate_and_replay_evaluator_report(
+                report, planned, replay_attempt,
+            )
+        except (OSError, TypeError, ValueError) as exc:
+            errors.append(
+                f"capture attempt {index} evaluator report is invalid: {exc}"
+            )
+            continue
+        if not isinstance(derived, dict):
+            errors.append(
+                f"capture attempt {index} evaluator replay returned no projection"
+            )
+            continue
+        projection_fields = _EVALUATOR_REPORT_PROJECTION_FIELDS[key[0]]
+        missing_projection_fields = [
+            field for field in projection_fields if field not in derived
+        ]
+        if missing_projection_fields:
+            errors.append(
+                f"capture attempt {index} evaluator replay projection is incomplete"
+            )
+            continue
+        signed_projection = {field: row.get(field) for field in projection_fields}
+        replayed_projection = {field: derived[field] for field in projection_fields}
+        if canonical_object_sha256(signed_projection) != canonical_object_sha256(
+            replayed_projection
+        ):
+            errors.append(
+                f"capture attempt {index} signed evaluator projection differs "
+                "from replay"
+            )
 
     missing = sorted(set(expected) - set(grouped))
     if missing:

@@ -44,6 +44,9 @@ from facetta.frozen_evidence_paths import (
     relative_artifact_path,
     validate_artifact_index,
 )
+from facetta.frozen_evaluator_report import (
+    validate_and_replay_evaluator_report,
+)
 from facetta.frozen_persistence_attestation import (
     verify_persistence_attestation,
 )
@@ -51,6 +54,7 @@ from facetta.ring_evals import evaluate_release_gates
 
 
 Json = dict[str, Any]
+REPLAY_SCHEMA = "facetta-frozen-replay.v2"
 
 _PRODUCTION_FROZEN_CONFIG_ID = "founder-ring-90-85-90-v1"
 _PRODUCTION_FROZEN_CORPUS_ID = "founder-reference-144-v1"
@@ -60,6 +64,7 @@ _PRODUCTION_AUTHORING_PINS = (
     "assignment_bundle_contract",
     "assignment_bundle_authoring",
     "assignment_bundle_authoring_cli",
+    "evaluator_report_contract",
 )
 
 
@@ -505,6 +510,7 @@ def validate_frozen_component_pins(
         "blind_review_ledger_authoring", "blind_review_ledger_authoring_cli",
         "assignment_bundle_contract", "assignment_bundle_authoring",
         "assignment_bundle_authoring_cli",
+        "evaluator_report_contract",
         "blind_review_contract", "release_authority_enrollment",
         "release_authority_bundle",
     ):
@@ -912,10 +918,13 @@ def _revalidate_signed_capture_projection(
             except ValueError as exc:
                 errors.append(str(exc))
 
-            for field in ("candidate_image", "mask_image"):
+            for field in ("candidate_image", "mask_image", "evaluator_report"):
                 value = raw.get(field)
                 if value is None:
-                    projected[field] = None
+                    if field in raw:
+                        projected[field] = None
+                    else:
+                        projected.pop(field, None)
                     continue
                 try:
                     artifact = _capture_relative_artifact(
@@ -1111,7 +1120,7 @@ def _replay_quality(
     assignment_plan: Json | None,
 ) -> Json:
     errors: list[str] = []
-    if evidence.get("schema_version") != "facetta-frozen-replay.v1":
+    if evidence.get("schema_version") != REPLAY_SCHEMA:
         errors.append("unsupported replay schema_version")
     if evidence.get("manifest_sha256") != manifest_hash:
         errors.append("replay manifest hash differs from frozen manifest")
@@ -1238,6 +1247,7 @@ def _replay_quality(
     selected_review_scope: list[Json] = []
     replayed_drift: list[Json] = []
     artifact_paths: dict[int, dict[str, Path]] = {}
+    evaluator_projections: dict[int, Json] = {}
     verified_source_evaluations: dict[str, set[tuple[str, str]]] = defaultdict(set)
     manifest_sources = {
         str(row["filename"]): str(row["sha256"])
@@ -1293,7 +1303,7 @@ def _replay_quality(
         artifact_fields = (
             ("source_image",)
             if provider_failed
-            else ("source_image", "candidate_image")
+            else ("source_image", "candidate_image", "evaluator_report")
         )
         for field in artifact_fields:
             artifact = _verify_declared_artifact(
@@ -1315,11 +1325,57 @@ def _replay_quality(
             )
             if mask is not None:
                 paths["mask_image"] = mask
+        if not provider_failed and planned is not None and "evaluator_report" in paths:
+            try:
+                report = _load_object(paths["evaluator_report"])
+                replay_attempt = {
+                    **captured,
+                    "source_image_sha256": captured.get("source_sha256"),
+                }
+                derived = validate_and_replay_evaluator_report(
+                    report,
+                    planned,
+                    replay_attempt,
+                )
+            except (OSError, TypeError, ValueError, json.JSONDecodeError) as exc:
+                errors.append(f"{label} evaluator report replay failed: {exc}")
+            else:
+                projection_fields = (
+                    (
+                        "accepted",
+                        "attempt_outcome",
+                        "provider_error_code",
+                        "qa_outcome",
+                        "render_conformance_score",
+                        "hard_gate_pass",
+                    )
+                    if captured.get("kind") == "render"
+                    else (
+                        "accepted",
+                        "attempt_outcome",
+                        "provider_error_code",
+                        "qa_outcome",
+                        "edit_fidelity_score",
+                        "severity",
+                        "change_applied",
+                    )
+                )
+                signed_projection = {
+                    field: captured.get(field) for field in projection_fields
+                }
+                replayed_projection = {
+                    field: derived.get(field) for field in projection_fields
+                }
+                if signed_projection != replayed_projection:
+                    errors.append(
+                        f"{label} signed evaluator projection differs from replay"
+                    )
+                evaluator_projections[id(captured)] = derived
         artifact_paths[id(captured)] = paths
         required_artifacts = (
             {"source_image"}
             if provider_failed
-            else {"source_image", "candidate_image"}
+            else {"source_image", "candidate_image", "evaluator_report"}
         )
         if captured.get("kind") == "edit" and not provider_failed:
             required_artifacts.add("mask_image")
@@ -1375,7 +1431,22 @@ def _replay_quality(
                 f"{key[0]}:{key[1]}:{source_filename} exceeded "
                 f"{max_attempts} attempts"
             )
-        accepted = [row for row in captured if row.get("accepted") is True]
+        replayable = [
+            row
+            for row in captured
+            if row.get("attempt_outcome") == "provider_failed"
+            or id(row) in evaluator_projections
+        ]
+        if len(replayable) != len(captured):
+            errors.append(
+                f"{key[0]}:{key[1]}:{source_filename} lacks replayable "
+                "evaluator evidence"
+            )
+        accepted = [
+            row
+            for row in captured
+            if evaluator_projections.get(id(row), {}).get("accepted") is True
+        ]
         if len(accepted) > 1:
             errors.append(
                 f"{key[0]}:{key[1]}:{source_filename} has multiple accepted attempts"
@@ -1386,8 +1457,9 @@ def _replay_quality(
                 f"{key[0]}:{key[1]}:{source_filename} continued after acceptance"
             )
         if key[0] == "render":
-            score = selected.get("render_conformance_score")
-            hard_pass = selected.get("hard_gate_pass")
+            projection = evaluator_projections.get(id(selected), {})
+            score = projection.get("render_conformance_score")
+            hard_pass = projection.get("hard_gate_pass")
             if not _valid_score(score) or type(hard_pass) is not bool:
                 errors.append(f"render:{key[1]} lacks scored capture evidence")
                 continue
@@ -1406,22 +1478,23 @@ def _replay_quality(
                 "source_sha256": selected.get("source_image_sha256"),
                 "candidate_sha256": selected.get("candidate_image_sha256"),
                 "mask_sha256": None,
-                "machine_pass": bool(selected.get("accepted")) and hard_pass,
+                "machine_pass": bool(projection.get("accepted")) and hard_pass,
             })
             rows.append({
                 "kind": "render", "case": f"{key[1]}@{source_filename}",
                 "evaluation_id": key[1], "source_filename": source_filename,
                 "score": score,
                 "hard_gate_pass": (
-                    bool(selected.get("accepted")) and hard_pass
+                    bool(projection.get("accepted")) and hard_pass
                 ),
                 "attempts": attempts_used,
             })
             continue
 
-        score = selected.get("edit_fidelity_score")
-        severity = selected.get("severity")
-        applied = selected.get("change_applied")
+        projection = evaluator_projections.get(id(selected), {})
+        score = projection.get("edit_fidelity_score")
+        severity = projection.get("severity")
+        applied = projection.get("change_applied")
         if (not _valid_score(score)
                 or severity not in {"none", "minor", "major"}
                 or type(applied) is not bool):
@@ -1455,7 +1528,7 @@ def _replay_quality(
             "source_sha256": selected.get("source_image_sha256"),
             "candidate_sha256": selected.get("candidate_image_sha256"),
             "mask_sha256": selected.get("mask_image_sha256"),
-            "machine_pass": bool(selected.get("accepted")) and applied and drift_pass,
+            "machine_pass": bool(projection.get("accepted")) and applied and drift_pass,
         })
         replayed_drift.append({
             "evaluation_id": key[1], "source_filename": source_filename,
@@ -1465,7 +1538,7 @@ def _replay_quality(
         rows.append({
             "kind": "edit", "case": f"{key[1]}@{source_filename}", "score": score,
             "evaluation_id": key[1], "source_filename": source_filename,
-            "applied": bool(selected.get("accepted")) and applied and drift_pass,
+            "applied": bool(projection.get("accepted")) and applied and drift_pass,
             "attempts": attempts_used, "severity": severity,
             "expected_valid": True,
         })

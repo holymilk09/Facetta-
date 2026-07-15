@@ -21,6 +21,7 @@ from facetta.frozen_assignment_contract import (
     canonical_assignment_bundle_payload,
 )
 from facetta.frozen_capture_workload import (
+    CAPTURE_SCHEMA,
     FROZEN_ROUTING_LABEL,
     build_provider_call_plan,
     canonical_capture_payload,
@@ -32,12 +33,17 @@ from facetta.frozen_corpus_packet import (
     prepare_frozen_corpus_review_packet,
 )
 from facetta.frozen_evidence_paths import confined_output_path
+from facetta.frozen_evaluator_report import (
+    EVALUATOR_REPORT_SCHEMA,
+    validate_and_replay_evaluator_report,
+)
 from facetta.ring_evals import (
     CANONICAL_RING_EDITS,
     RING_GOLDEN_CASES,
     apply_canonical_ring_edit,
     build_ring_golden_spec,
 )
+from facetta.spec import Spec
 
 
 def _json(path: Path, value: object) -> None:
@@ -47,6 +53,95 @@ def _json(path: Path, value: object) -> None:
 
 def _sha(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _evaluator_report(
+    planned: dict[str, Any],
+    *,
+    candidate_sha256: str,
+    mask_sha256: str | None,
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    resolved = planned["resolved_inputs"]
+    kind = planned["kind"]
+    target = resolved["evaluation_contract"]
+    spec = (
+        Spec.model_validate(target["canonical_target_spec"])
+        if kind == "render"
+        else None
+    )
+    evaluator_hash = resolved["frozen_component_bindings"][
+        "evaluator_bundle"
+    ].rsplit("@sha256:", 1)[1]
+    report = {
+        "schema_version": EVALUATOR_REPORT_SCHEMA,
+        "bindings": {
+            "corpus_run_id": planned["corpus_run_id"],
+            "resolved_inputs_sha256": planned["resolved_inputs_sha256"],
+            "kind": kind,
+            "evaluation_id": planned["evaluation_id"],
+            "operation_class": planned["operation_class"],
+            "source_filename": planned["source_filename"],
+            "attempt": 1,
+            "source_image_sha256": planned["source_sha256"],
+            "candidate_image_sha256": candidate_sha256,
+            "mask_image_sha256": mask_sha256 if kind == "edit" else None,
+            "evaluator_contract_sha256": evaluator_hash,
+        },
+        "observer": {
+            "provider": "fixture",
+            "model": "fixture-vision",
+            "model_revision": "1",
+            "model_revision_status": "pinned",
+            "request_id": f"{kind}:{planned['evaluation_id']}:1",
+        },
+        "quality_report": {
+            "verdict": "pass",
+            "checks": [{
+                "code": "frozen_visual_gate",
+                "passed": True,
+                "severity": "hard",
+                "message": "retained visual gate",
+                "evidence": {},
+            }],
+            "score": 100.0,
+            "notes": [],
+        },
+        "metric": resolved["scoring"]["metric"],
+        "observation": (
+            {
+                "stones": [{
+                    "qty": 1,
+                    "type": spec.stone.species,
+                    "size_mm": (
+                        f"{spec.stone.dimensions_mm.length} x "
+                        f"{spec.stone.dimensions_mm.width}"
+                    ),
+                    "carat_each": spec.stone.carat,
+                    "confidence": 1.0,
+                }],
+                "metal": spec.metal.material.replace("_", " "),
+                "measurements": [],
+                "scaled": False,
+                "scale_anchor": None,
+            }
+            if kind == "render"
+            else {
+                "change_applied": True,
+                "change_note": "requested edit applied",
+                "unintended_changes": [],
+                "severity": "none",
+            }
+        ),
+    }
+    identity = {
+        "attempt": 1,
+        "source_image_sha256": planned["source_sha256"],
+        "candidate_image_sha256": candidate_sha256,
+        "mask_image_sha256": mask_sha256 if kind == "edit" else None,
+    }
+    return report, validate_and_replay_evaluator_report(
+        report, planned, identity,
+    )
 
 
 def _install_routing_contract(root: Path) -> Path:
@@ -334,6 +429,7 @@ def _fixture(
         row = {
             "kind": planned["kind"],
             "evaluation_id": planned["evaluation_id"],
+            "operation_class": planned["operation_class"],
             "source_filename": planned["source_filename"],
             "source_sha256": planned["source_sha256"],
             "resolved_inputs_sha256": planned["resolved_inputs_sha256"],
@@ -347,17 +443,38 @@ def _fixture(
             "candidate_image_sha256": _sha(candidate),
         }
         if planned["kind"] == "render":
-            row.update(render_conformance_score=95, hard_gate_pass=True)
+            row.update(mask_image=None, mask_image_sha256=None)
         else:
             mask = capture_dir / f"mask-{index}.png"
             Image.new("RGB", (4, 4), "black").save(mask)
             row.update(
                 mask_image=mask.name,
                 mask_image_sha256=_sha(mask),
-                edit_fidelity_score=95,
-                severity="none",
-                change_applied=True,
             )
+        report, derived = _evaluator_report(
+            planned,
+            candidate_sha256=row["candidate_image_sha256"],
+            mask_sha256=row.get("mask_image_sha256"),
+        )
+        report_path = capture_dir / f"evaluator-report-{index}.json"
+        _json(report_path, report)
+        row.update({
+            "evaluator_report": report_path.name,
+            "evaluator_report_sha256": _sha(report_path),
+        })
+        projection_fields = (
+            (
+                "accepted", "attempt_outcome", "provider_error_code",
+                "qa_outcome", "render_conformance_score", "hard_gate_pass",
+            )
+            if planned["kind"] == "render"
+            else (
+                "accepted", "attempt_outcome", "provider_error_code",
+                "qa_outcome", "edit_fidelity_score", "severity",
+                "change_applied",
+            )
+        )
+        row.update({field: derived[field] for field in projection_fields})
         attempts.append(row)
     persistence = capture_dir / "persistence.json"
     _json(persistence, {
@@ -366,7 +483,7 @@ def _fixture(
         "rejected_candidates_became_active_assets": 0,
     })
     capture = {
-        "schema_version": "facetta-frozen-capture.v2",
+        "schema_version": CAPTURE_SCHEMA,
         "corpus_run_id": plan["corpus_run_id"],
         "manifest_sha256": plan["manifest_sha256"],
         "config_sha256": plan["config_sha256"],
@@ -573,7 +690,9 @@ def test_blind_v2_is_deterministic_for_the_same_capture_and_seed(tmp_path: Path)
     assert _prepare_blind_v2(fixture) == _prepare_blind_v2(fixture)
 
 
-def test_blind_v2_rejects_ambiguous_or_missing_machine_selection(tmp_path: Path):
+def test_blind_v2_rejects_machine_selection_that_conflicts_with_report(
+    tmp_path: Path,
+):
     fixture = _fixture(tmp_path)
     capture_path = fixture["capture"]
     capture = json.loads(capture_path.read_text())  # type: ignore[union-attr]
@@ -590,7 +709,10 @@ def test_blind_v2_rejects_ambiguous_or_missing_machine_selection(tmp_path: Path)
     }
     _json(capture_path, capture)  # type: ignore[arg-type]
 
-    with pytest.raises(ValueError, match="exactly one machine-selected candidate"):
+    with pytest.raises(
+        ValueError,
+        match="signed evaluator projection differs from replay",
+    ):
         _prepare_blind_v2(fixture)
 
 

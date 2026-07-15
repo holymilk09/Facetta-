@@ -46,6 +46,7 @@ from facetta.frozen_evidence_paths import (
     validate_artifact_index,
 )
 from facetta.frozen_corpus_gate import validate_frozen_component_pins
+from facetta.frozen_evaluator_report import validate_and_replay_evaluator_report
 from facetta.frozen_persistence_attestation import (
     ATTESTATION_SCHEMA,
     CANONICAL_API_SCHEMA,
@@ -58,7 +59,7 @@ from facetta.frozen_persistence_attestation import (
 
 
 Json = dict[str, Any]
-EXECUTION_BUNDLE_SCHEMA = "facetta-frozen-execution-bundle.v1"
+EXECUTION_BUNDLE_SCHEMA = "facetta-frozen-execution-bundle.v2"
 PERSISTENCE_OBSERVATIONS_SCHEMA = (
     "facetta-canonical-persistence-observations.v1"
 )
@@ -267,7 +268,7 @@ class BundleCaptureExecutor:
             for attempt_index, attempt in enumerate(attempts, 1):
                 if attempt.get("attempt_outcome") == "provider_failed":
                     continue
-                for field in ("candidate_image", "mask_image"):
+                for field in ("candidate_image", "mask_image", "evaluator_report"):
                     if field == "mask_image" and key[0] != "edit":
                         if attempt.get(field) is not None:
                             errors.append(
@@ -678,25 +679,14 @@ class FrozenCaptureProducer:
                         "source_image_sha256": planned["source_sha256"],
                         "resolved_inputs_sha256": planned["resolved_inputs_sha256"],
                         "attempt": index,
-                        "accepted": raw["accepted"],
                         "candidate_image": candidate_path,
                         "candidate_image_sha256": candidate_hash,
                         "mask_image": None,
                         "mask_image_sha256": None,
+                        "evaluator_report": None,
+                        "evaluator_report_sha256": None,
                     }
-                    row.update({
-                        field: raw[field]
-                        for field in (
-                            *ATTEMPT_ROUTING_FIELDS,
-                            *ATTEMPT_OUTCOME_FIELDS,
-                        )
-                    })
-                    if planned["kind"] == "render":
-                        row.update(
-                            render_conformance_score=raw["render_conformance_score"],
-                            hard_gate_pass=raw["hard_gate_pass"],
-                        )
-                    else:
+                    if planned["kind"] == "edit":
                         mask_relative = Path("artifacts") / (
                             f"{planned['mask_artifact_stem']}--attempt-{index}"
                             + _artifact_suffix(raw.get("mask_image"))
@@ -719,10 +709,74 @@ class FrozenCaptureProducer:
                         row.update(
                             mask_image=mask_path,
                             mask_image_sha256=mask_hash,
-                            edit_fidelity_score=raw["edit_fidelity_score"],
-                            severity=raw["severity"],
-                            change_applied=raw["change_applied"],
                         )
+
+                    report_relative = Path("artifacts") / (
+                        f"{planned['evaluator_report_artifact_stem']}"
+                        f"--attempt-{index}.json"
+                    )
+                    if report_relative.as_posix() in artifact_destinations:
+                        raise ValueError("capture evaluator report path collides")
+                    artifact_destinations.add(report_relative.as_posix())
+                    report_path, report_hash = _copy_verified_artifact(
+                        evidence_root=self.evidence_root,
+                        staging_dir=staging_dir,
+                        declared_path=raw.get("evaluator_report"),
+                        declared_sha256=raw.get("evaluator_report_sha256"),
+                        destination=report_relative,
+                        label=(
+                            f"{planned['kind']}:{planned['evaluation_id']}:"
+                            f"{planned['source_filename']} attempt {index} "
+                            "evaluator report"
+                        ),
+                    )
+                    row.update(
+                        evaluator_report=report_path,
+                        evaluator_report_sha256=report_hash,
+                    )
+                    artifact_rows.append((
+                        report_path,
+                        report_hash,
+                        "evaluator-report",
+                    ))
+                    report = _load_object(staging_dir / report_path)
+                    derived = validate_and_replay_evaluator_report(
+                        report,
+                        planned,
+                        row,
+                    )
+                    projection_fields = (
+                        (
+                            "accepted",
+                            *ATTEMPT_OUTCOME_FIELDS,
+                            "render_conformance_score",
+                            "hard_gate_pass",
+                        )
+                        if planned["kind"] == "render"
+                        else (
+                            "accepted",
+                            *ATTEMPT_OUTCOME_FIELDS,
+                            "edit_fidelity_score",
+                            "severity",
+                            "change_applied",
+                        )
+                    )
+                    supplied_projection = {
+                        field: raw.get(field) for field in projection_fields
+                    }
+                    replayed_projection = {
+                        field: derived.get(field) for field in projection_fields
+                    }
+                    if supplied_projection != replayed_projection:
+                        raise ValueError(
+                            f"{planned['kind']}:{planned['evaluation_id']}:"
+                            f"{planned['source_filename']} attempt {index} "
+                            "executor projection differs from evaluator replay"
+                        )
+                    row.update({
+                        field: raw[field] for field in ATTEMPT_ROUTING_FIELDS
+                    })
+                    row.update(replayed_projection)
                     sequence_attempts.append(row)
                 attempts.extend(sequence_attempts)
                 selected = sequence_attempts[-1]

@@ -14,6 +14,7 @@ from facetta.frozen_corpus_release import (
     canonical_founder_approval_payload,
     verify_frozen_corpus_release,
 )
+from facetta.frozen_corpus_gate import REPLAY_SCHEMA
 from facetta.frozen_capture_workload import FROZEN_ROUTING_LABEL
 
 
@@ -183,7 +184,7 @@ def _fixture(tmp_path: Path) -> dict[str, Any]:
         "evidence": {
             "path": "/secure/replay.json",
             "sha256": "b" * 64,
-            "schema_version": "facetta-frozen-replay.v1",
+            "schema_version": REPLAY_SCHEMA,
             "workload_sha256": _sha(workload),
             "capture_sha256": "c" * 64,
             "corpus_run_id": "corpus-run-test-1",
