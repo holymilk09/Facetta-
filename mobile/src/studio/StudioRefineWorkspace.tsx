@@ -269,6 +269,7 @@ export function StudioRefineWorkspace({
     null,
   );
   const [routingGuidance, setRoutingGuidance] = useState<string | null>(null);
+  const [startingFactsRequired, setStartingFactsRequired] = useState(false);
   const [annotationPrefill, setAnnotationPrefill] = useState('');
   const [snapshot, setSnapshot] = useState<AnnotationCanvasSnapshot>({
     schema_version: ANNOTATION_SNAPSHOT_SCHEMA_VERSION,
@@ -316,6 +317,7 @@ export function StudioRefineWorkspace({
     setUnderstoodAs(null);
     setPendingAnnotation(null);
     setRoutingGuidance(null);
+    setStartingFactsRequired(false);
     setAnnotationPrefill('');
     setNamingVariation(false);
     setVariationName('');
@@ -527,6 +529,7 @@ export function StudioRefineWorkspace({
     setUnderstoodAs(null);
     setPendingAnnotation(null);
     setRoutingGuidance(null);
+    setStartingFactsRequired(false);
     setAnnotationPrefill('');
     setPreview(null);
     setNamingVariation(false);
@@ -680,6 +683,7 @@ export function StudioRefineWorkspace({
     setError(null);
     if (mode !== 'annotation') setUnderstoodAs(null);
     setRoutingGuidance(null);
+    setStartingFactsRequired(false);
     let routedCatalog: {
       catalog: ComponentCatalog;
       option: ComponentCatalogOption;
@@ -721,6 +725,7 @@ export function StudioRefineWorkspace({
       });
       if (route.kind === 'starting_facts_required') {
         setBusy(false);
+        setStartingFactsRequired(true);
         setRoutingGuidance('This request changes jewelry material or structure. Review the starting design facts first so Facetta can protect the exact geometry. Your sentence will remain here.');
         return;
       }
@@ -1210,9 +1215,9 @@ export function StudioRefineWorkspace({
     );
   }
 
-  return (
-    <ScrollView contentContainerStyle={styles.workspace}>
-      {workspaceMode === 'refine' && acceptedOutcome !== null && (
+  if (workspaceMode === 'refine' && acceptedOutcome !== null) {
+    return (
+      <ScrollView contentContainerStyle={styles.workspace}>
         <View accessibilityRole="summary" style={styles.acceptedOutcomeCard}>
           <Text style={styles.acceptedOutcomeEyebrow}>SAVED</Text>
           <Text style={styles.acceptedOutcomeTitle}>{acceptedOutcome.kind === 'variation'
@@ -1237,7 +1242,12 @@ export function StudioRefineWorkspace({
             />
           )}
         </View>
-      )}
+      </ScrollView>
+    );
+  }
+
+  return (
+    <ScrollView contentContainerStyle={styles.workspace}>
       <Text style={styles.eyebrow}>{workspaceMode === 'specifications'
         ? 'SPECIFICATIONS' : 'REFINE'}</Text>
       <Text style={styles.title}>{workspaceMode === 'specifications'
@@ -1262,6 +1272,7 @@ export function StudioRefineWorkspace({
               setPendingAnnotation(null);
               setUnderstoodAs(null);
               setRoutingGuidance(null);
+              setStartingFactsRequired(false);
               setError(null);
             }}
             multiline
@@ -1291,6 +1302,7 @@ export function StudioRefineWorkspace({
                 if (id === 'annotation') setAnnotationPrefill(instruction);
                 setFactReview(null);
                 setRoutingGuidance(null);
+                setStartingFactsRequired(false);
                 setError(null);
               }}
               style={[styles.modeCard, mode === id && styles.selectedCard]}>
@@ -1306,6 +1318,7 @@ export function StudioRefineWorkspace({
       )}
 
       {workspaceMode === 'refine'
+        && startingFactsRequired
         && !exactSpecification && onReviewStartingDesign !== undefined && (
         <View style={styles.startingFactsCard}>
           <View style={styles.startingFactsCopy}>
