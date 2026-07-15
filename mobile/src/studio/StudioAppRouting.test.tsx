@@ -1,7 +1,9 @@
 /// <reference types="jest" />
 
 import React from 'react';
-import { act, fireEvent, render, waitFor } from '@testing-library/react-native';
+import {
+  act, fireEvent, render, userEvent, waitFor,
+} from '@testing-library/react-native';
 import { StyleSheet } from 'react-native';
 import { clearSession, markOnboarded, saveSession } from '../auth';
 import { theme } from '../theme';
@@ -439,6 +441,25 @@ const hydratedProject = {
   has_factory_drawing: false, cover_asset_id: 'asset_hydrated', created_at: null, updated_at: null,
 };
 
+const staleActivitySourceProject = {
+  ...hydratedProject,
+  revisions: [
+    {
+      ...hydratedProject.revisions[0],
+      revision: 1,
+      asset: {
+        ...hydratedProject.revisions[0].asset,
+        asset_id: 'asset_stale',
+        revision: 1,
+        design_version: 1,
+        instruction: 'Earlier saved direction',
+      },
+      spec_version: 1,
+    },
+    hydratedProject.revisions[0],
+  ],
+};
+
 const nonConfirmablePreSpecProject = {
   ...hydratedProject,
   design_id: null,
@@ -561,6 +582,22 @@ const authenticate = () => {
     designerId: 'usr_designer', accessToken: 'server-issued-test-token',
     accessTokenExpiresAt: '2099-01-01T00:00:00Z',
   });
+};
+
+type AppRenderResult = Awaited<ReturnType<typeof render>>;
+
+const openStudioActionMenu = async (view: AppRenderResult): Promise<void> => {
+  const user = userEvent.setup();
+  await user.press(view.getByTestId('studio-action-trigger'));
+};
+
+const pressStudioAction = async (
+  view: AppRenderResult,
+  accessibilityLabel: string,
+): Promise<void> => {
+  const user = userEvent.setup();
+  await user.press(view.getByTestId('studio-action-trigger'));
+  await user.press(view.getByLabelText(accessibilityLabel));
 };
 
 test('global navigation is exactly four named destinations and each opens its routed workspace', async () => {
@@ -778,6 +815,7 @@ test('active design actions keep the exact saved revision visible and link to Hi
 
   fireEvent.press(await view.findByText('Save mocked direction'));
   expect(await view.findByTestId('active-design-context')).toBeTruthy();
+  expect(view.getByTestId('screen-title').props.children).toBe('Studio');
   expect(view.getByText('Saved direction')).toBeTruthy();
   expect(view.getByText('Current saved revision · Revision 1')).toBeTruthy();
   expect(view.getByLabelText('Saved direction revision thumbnail').props.source.headers).toEqual({
@@ -785,7 +823,7 @@ test('active design actions keep the exact saved revision visible and link to Hi
   });
 
   for (const action of ['Save as a variation', 'Present this design', 'Refine this design']) {
-    fireEvent.press(view.getByLabelText(action));
+    await pressStudioAction(view, action);
     expect(await view.findByTestId('active-design-context')).toBeTruthy();
     expect(view.getByText('Current saved revision · Revision 1')).toBeTruthy();
   }
@@ -795,7 +833,7 @@ test('active design actions keep the exact saved revision visible and link to Hi
   expect(await view.findByText('Confirmed direction')).toBeTruthy();
   expect(view.getByText('Current saved revision · Revision 2')).toBeTruthy();
 
-  fireEvent.press(view.getByLabelText('Generate technical views'));
+  await pressStudioAction(view, 'Generate technical views');
   expect(await view.findByTestId('active-design-context')).toBeTruthy();
   expect(view.getByText('Current saved revision · Revision 2')).toBeTruthy();
 
@@ -803,7 +841,7 @@ test('active design actions keep the exact saved revision visible and link to Hi
   expect(await view.findByText('Vary exact project_1')).toBeTruthy();
 });
 
-test('every visible active-design rail CTA reaches its named destination', async () => {
+test('every visible contextual action reaches its named destination', async () => {
   authenticate();
   const view = await render(<App />);
 
@@ -817,23 +855,26 @@ test('every visible active-design rail CTA reaches its named destination', async
     ['Refine this design', 'Refine route reached'],
     ['Present this design', 'Present route reached for asset_1'],
   ] as const) {
-    fireEvent.press(view.getByLabelText(label));
+    await pressStudioAction(view, label);
     expect(await view.findByText(destination)).toBeTruthy();
   }
 
-  fireEvent.press(view.getByLabelText('More actions'));
+  const user = userEvent.setup();
+  await openStudioActionMenu(view);
+  await user.press(view.getByLabelText('More actions'));
   expect(await view.findByText('Starting design facts')).toBeTruthy();
-  fireEvent.press(view.getByLabelText('More actions'));
+  await user.press(view.getByLabelText('More actions'));
   await waitFor(() => expect(view.queryByText('Starting design facts')).toBeNull());
 
-  fireEvent.press(view.getByLabelText(
+  await user.press(view.getByLabelText(
     'Generate technical views; Save starting facts first',
   ));
-  expect(await view.findByText('Review starting design facts')).toBeTruthy();
-  fireEvent.press(await view.findByText('Save starting facts'));
+  expect(await view.findByText('Save starting facts')).toBeTruthy();
+  expect(view.getAllByText('Studio').length).toBeGreaterThan(0);
+  fireEvent.press(view.getByText('Save starting facts'));
   expect(await view.findByText('Views route reached')).toBeTruthy();
 
-  fireEvent.press(view.getByLabelText('Create a design'));
+  await pressStudioAction(view, 'Create a design');
   expect(await view.findByText('Save mocked direction')).toBeTruthy();
   expect(view.queryByTestId('active-design-context')).toBeNull();
 });
@@ -847,11 +888,13 @@ test('More opens Starting design facts in the confirmation workspace', async () 
   fireEvent.press(await view.findByText('Save mocked direction'));
   expect(await view.findByText('Refine route reached')).toBeTruthy();
 
-  fireEvent.press(view.getByLabelText('More actions'));
-  fireEvent.press(await view.findByText('Starting design facts'));
+  const user = userEvent.setup();
+  await openStudioActionMenu(view);
+  await user.press(view.getByLabelText('More actions'));
+  await user.press(await view.findByText('Starting design facts'));
 
-  expect(await view.findByText('Review starting design facts')).toBeTruthy();
-  expect(view.getByText('Save starting facts')).toBeTruthy();
+  expect(await view.findByText('Save starting facts')).toBeTruthy();
+  expect(view.getAllByText('Studio').length).toBeGreaterThan(0);
   expect(view.queryByText('Refine route reached')).toBeNull();
 });
 
@@ -864,7 +907,7 @@ test('Create hides the previous design controls without forgetting the saved des
   expect(await view.findByText('Refine route reached')).toBeTruthy();
   expect(view.getByTestId('active-design-context')).toBeTruthy();
 
-  await fireEvent.press(view.getByLabelText('Create a design'));
+  await pressStudioAction(view, 'Create a design');
   expect(await view.findByText('Save mocked direction')).toBeTruthy();
   for (const label of [
     'Save as a variation',
@@ -1050,7 +1093,7 @@ test('Collections sends the exact active revision to Present', async () => {
   expect(await view.findByText('Present destination marketing')).toBeTruthy();
 });
 
-test('Collections opens optional Factory readiness before the review pack is ready', async () => {
+test('Collections keeps optional Factory out of the everyday exact-revision handoff', async () => {
   authenticate();
   const view = await render(<App />);
 
@@ -1062,13 +1105,11 @@ test('Collections opens optional Factory readiness before the review pack is rea
   expect(await view.findByText('Refine route reached')).toBeTruthy();
 
   fireEvent.press(view.getByRole('tab', { name: 'Collections' }));
-  fireEvent.press(await view.findByText('Review optional Factory readiness'));
-  expect(await view.findByText('Factory route reached for asset_exact_1')).toBeTruthy();
-  expect(mockGetStudioCapabilities).toHaveBeenCalled();
-  expect(mockGetProject).not.toHaveBeenCalled();
+  expect(view.queryByText('Review optional Factory readiness')).toBeNull();
+  expect(view.queryByText('Factory')).toBeNull();
 });
 
-test('Collections retains Factory readiness access for an exact ring that is already pack-ready', async () => {
+test('Collections also hides Factory when the exact ring is already pack-ready', async () => {
   mockConfirmedFactoryReady = true;
   mockGetProject.mockResolvedValue({ data: eligibleFactoryProject(), error: null, status: 200 });
   authenticate();
@@ -1082,8 +1123,8 @@ test('Collections retains Factory readiness access for an exact ring that is alr
   expect(await view.findByText('Refine route reached')).toBeTruthy();
 
   fireEvent.press(view.getByRole('tab', { name: 'Collections' }));
-  fireEvent.press(await view.findByText('Review optional Factory readiness'));
-  expect(await view.findByText('Factory route reached for asset_exact_1')).toBeTruthy();
+  expect(view.queryByText('Review optional Factory readiness')).toBeNull();
+  expect(view.queryByText('Factory')).toBeNull();
 });
 
 test('Collections hides Factory readiness for an exact non-ring revision', async () => {
@@ -1136,13 +1177,16 @@ test('Views opens its starting-facts prerequisite and resumes after one save act
   fireEvent.press(view.getByText('Start from an idea or reference'));
   fireEvent.press(await view.findByText('Save mocked direction'));
   expect(await view.findByText('Refine route reached')).toBeTruthy();
+  await openStudioActionMenu(view);
   const prerequisiteViews = view.getByLabelText(
     'Generate technical views; Save starting facts first',
   );
-  expect(prerequisiteViews.props.accessibilityState).toEqual({ disabled: false });
+  expect(prerequisiteViews.props.accessibilityState).toEqual({
+    disabled: false, selected: false,
+  });
   expect(view.getByText('Save starting facts first')).toBeTruthy();
   expect(view.queryByText('Views route reached')).toBeNull();
-  fireEvent.press(prerequisiteViews);
+  await userEvent.setup().press(prerequisiteViews);
   expect(await view.findByText('Save starting facts')).toBeTruthy();
   expect(view.queryByText('Views route reached')).toBeNull();
 
@@ -1152,20 +1196,23 @@ test('Views opens its starting-facts prerequisite and resumes after one save act
   expect(view.queryByText('Save starting facts')).toBeNull();
   expect(view.queryByText('Your design families')).toBeNull();
   expect(view.queryByText(/Factory/i)).toBeNull();
+  await openStudioActionMenu(view);
   expect(view.getByLabelText('Generate technical views').props.accessibilityState).toEqual({
-    disabled: false,
+    disabled: false, selected: true,
   });
-  fireEvent.press(view.getByLabelText('Refine this design'));
+  await userEvent.setup().press(view.getByLabelText('Refine this design'));
   expect(await view.findByText('Refine route reached')).toBeTruthy();
+  await openStudioActionMenu(view);
   expect(view.getByLabelText('More actions')).toBeTruthy();
-  fireEvent.press(view.getByLabelText('More actions'));
+  await userEvent.setup().press(view.getByLabelText('More actions'));
   expect(await view.findByText('Specifications')).toBeTruthy();
   expect(await view.findByText('Factory')).toBeTruthy();
-  fireEvent.press(view.getByText('Specifications'));
+  await userEvent.setup().press(view.getByText('Specifications'));
   expect(await view.findByText('Advanced specifications route reached')).toBeTruthy();
   expect(view.queryByText('Refine route reached')).toBeNull();
-  fireEvent.press(view.getByLabelText('More actions'));
-  fireEvent.press(await view.findByText('Factory'));
+  await openStudioActionMenu(view);
+  await userEvent.setup().press(view.getByLabelText('More actions'));
+  await userEvent.setup().press(await view.findByText('Factory'));
   expect(await view.findByText('Factory route reached for asset_exact_1')).toBeTruthy();
   expect(view.queryByText(/destination will use the exact active revision/i)).toBeNull();
 });
@@ -1221,6 +1268,35 @@ test.each([
   expect(await view.findByText(expected)).toBeTruthy();
 });
 
+test('Activity historical review is read-only until the designer returns to the current revision', async () => {
+  authenticate();
+  mockGetStudioJob.mockResolvedValueOnce({
+    data: {
+      job_id: 'job_refine', owner: 'usr_designer', action_id: 'refine',
+      lane: 'trusted_structural', status: 'reviewing', progress: 0.9,
+      active_design_id: 'project_hydrated', source_revision_id: 'asset_stale',
+      error_code: null, created_at: '2026-07-12T00:00:00Z',
+      updated_at: '2026-07-12T00:00:01Z',
+      billing: { requested_outputs: 1, credits_per_output: 20, estimated_credits: 20,
+        completed_outputs: 0, charged_outputs: 0, charged_credits: 0, policy: 'test' },
+    },
+    error: null,
+    status: 200,
+  });
+  mockGetProject.mockResolvedValue({
+    data: staleActivitySourceProject, error: null, status: 200,
+  });
+  const view = await render(<App />);
+  await waitFor(() => expect(view.getByText('Start from an idea or reference')).toBeTruthy());
+  fireEvent.press(view.getAllByText('Activity').at(-1)!);
+  fireEvent.press(await view.findByText('Review refine'));
+
+  expect(await view.findByText('Refine route reached')).toBeTruthy();
+  expect(view.getByText('Review source · Revision 1')).toBeTruthy();
+  expect(view.queryByTestId('studio-action-trigger')).toBeNull();
+  expect(view.queryByText('Factory')).toBeNull();
+});
+
 test('Activity Refine does not offer design-fact review for a non-confirmable pre-spec source', async () => {
   authenticate();
   mockGetProject.mockResolvedValue({
@@ -1234,12 +1310,13 @@ test('Activity Refine does not offer design-fact review for a non-confirmable pr
 
   expect(await view.findByText('Refine route reached')).toBeTruthy();
   expect(view.queryByText('Review starting design')).toBeNull();
+  await openStudioActionMenu(view);
   const unavailableViews = view.getByLabelText('Generate technical views');
-  expect(unavailableViews.props.accessibilityState).toEqual({ disabled: true });
+  expect(unavailableViews.props.accessibilityState).toEqual({ disabled: true, selected: false });
   expect(unavailableViews.props.accessibilityHint).toBe(
     'Choose a confirmable ring direction first',
   );
-  fireEvent.press(unavailableViews);
+  await userEvent.setup().press(unavailableViews);
   expect(view.queryByText('Save starting facts')).toBeNull();
   expect(view.queryByText('Views route reached')).toBeNull();
 });

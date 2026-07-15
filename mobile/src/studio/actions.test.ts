@@ -4,7 +4,8 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   getStudioAction, getStudioActionPrerequisite, getStudioActionUnavailableReason,
-  getStudioRailActions, getVisibleStudioActions, STUDIO_ACTIONS, transitionStudioJob,
+  getStudioContextActions, getVisibleStudioActions, resolveStudioActionLaunch,
+  STUDIO_ACTIONS, transitionStudioJob,
 } from './actions';
 import {
   decidePreviewCandidate, PreviewCandidate, STUDIO_ACTION_IDS, StudioJob,
@@ -67,7 +68,7 @@ test('Factory remains absent until the backend confirms exact-revision eligibili
   );
 });
 
-test('the active-design rail keeps the same six spatial destinations', () => {
+test('the contextual switcher keeps the same six stable commands', () => {
   const active = {
     ...emptyContext,
     activeDesignId: 'dsn_1',
@@ -75,10 +76,39 @@ test('the active-design rail keeps the same six spatial destinations', () => {
     hasExactSpecification: false,
   };
   const expected = ['create', 'vary', 'refine', 'views', 'present', 'more'];
-  assert.deepEqual(getStudioRailActions(active).map((action) => action.id), expected);
-  assert.deepEqual(getStudioRailActions({
+  assert.deepEqual(getStudioContextActions(active).map((action) => action.id), expected);
+  assert.deepEqual(getStudioContextActions({
     ...active, hasExactSpecification: true,
   }).map((action) => action.id), expected);
+});
+
+test('contextual launch intents preserve prerequisites and optional disclosure', () => {
+  const preSpec = {
+    ...emptyContext,
+    activeDesignId: 'project_1',
+    activeRevisionId: 'asset_1',
+    hasSelectedPreSpecVisual: true,
+  };
+  assert.deepEqual(resolveStudioActionLaunch('views', preSpec), {
+    type: 'open_workspace',
+    actionId: 'confirm',
+    continueTo: 'views',
+  });
+  assert.deepEqual(resolveStudioActionLaunch('more', preSpec), {
+    type: 'toggle_optional',
+  });
+  assert.deepEqual(resolveStudioActionLaunch('views', {
+    ...preSpec,
+    hasSelectedPreSpecVisual: false,
+  }), {
+    type: 'unavailable',
+    reason: 'Choose a confirmable ring direction first',
+  });
+  assert.deepEqual(resolveStudioActionLaunch('refine', preSpec), {
+    type: 'open_workspace',
+    actionId: 'refine',
+    continueTo: null,
+  });
 });
 
 test('Views stay visible with an explicit prerequisite until design facts are exact', () => {
@@ -89,11 +119,11 @@ test('Views stay visible with an explicit prerequisite until design facts are ex
     hasSelectedPreSpecVisual: true,
   };
   assert.deepEqual(
-    getStudioRailActions(selectedCreativeDirection).map((action) => action.id),
+    getStudioContextActions(selectedCreativeDirection).map((action) => action.id),
     ['create', 'vary', 'refine', 'views', 'present', 'more'],
   );
   assert.deepEqual(
-    getStudioRailActions({
+    getStudioContextActions({
       ...selectedCreativeDirection,
       hasExactSpecification: true,
     }).map((action) => action.id),
@@ -148,7 +178,7 @@ test('More exposes starting design facts for a pre-spec visual and never exposes
     activeRevisionId: 'asset_1',
     hasSelectedPreSpecVisual: true,
   };
-  assert.equal(getStudioRailActions(preSpec).some((action) => action.id === 'confirm'), false);
+  assert.equal(getStudioContextActions(preSpec).some((action) => action.id === 'confirm'), false);
   assert.equal(getVisibleStudioActions(preSpec, 'more').some((action) => (
     action.id === 'confirm' || action.shortLabel === 'Starting design facts'
   )), true);

@@ -13,13 +13,11 @@ import {
 } from './src/auth';
 import { LoginScreen, PasswordRecoveryScreen } from './src/LoginScreen';
 import { OnboardingScreen } from './src/OnboardingScreen';
+import type { StudioActionLaunchIntent } from './src/studio/actions';
 import {
-  getStudioAction, getStudioActionPrerequisite, getStudioActionUnavailableReason,
-  getStudioRailActions, getVisibleStudioActions,
-} from './src/studio/actions';
-import {
-  StudioActionContext, StudioActionId, StudioWorkspaceActionId,
+  StudioActionContext, StudioWorkspaceActionId,
 } from './src/studio/contracts';
+import { StudioContextActionSwitcher } from './src/studio/StudioContextActionSwitcher';
 import { StudioCollectionsWorkspace } from './src/studio/StudioCollectionsWorkspace';
 import {
   EMPTY_STUDIO_CREATE_DRAFT, StudioCreateWorkspace, type StudioCreateDraft,
@@ -114,7 +112,6 @@ export default function App() {
   const [tab, setTab] = useState<Tab>('studio');
   const [studioView, setStudioView] = useState<StudioView>('home');
   const [selectedActionId, setSelectedActionId] = useState<StudioWorkspaceActionId>('create');
-  const [showMoreActions, setShowMoreActions] = useState(false);
   const apiUrl = DEFAULT_API_URL;
   const [designer, setDesigner] = useState(session?.designerId ?? '');
   const [showUtilityMenu, setShowUtilityMenu] = useState(false);
@@ -151,7 +148,6 @@ export default function App() {
     setTab('studio');
     setStudioView('home');
     setSelectedActionId('create');
-    setShowMoreActions(false);
     setShowUtilityMenu(false);
     setStudioProject(null);
     setSelectedCreativeAssetId(null);
@@ -359,8 +355,6 @@ export default function App() {
     : actionSourceRevision?.image_url ?? null;
   const actionSourceIsCurrent = actionSourceRevision !== null
     && actionSourceRevision.asset_id === studioProject?.active_asset_id;
-  const studioActions = getStudioRailActions(actionContext);
-  const moreActions = getVisibleStudioActions(actionContext, 'more');
   const isStudioHome = tab === 'studio' && studioView === 'home';
 
   const hydrateProject = useCallback(async (request: ProjectHydrationRequest) => {
@@ -439,23 +433,28 @@ export default function App() {
   }), [apiUrl, session]);
 
   const openStudioAction = (
-    actionId: StudioActionId,
+    actionId: StudioWorkspaceActionId,
     preserveCreateReview = false,
     preserveActivityReview = false,
     afterConfirmation: PostConfirmDestination = 'refine',
   ) => {
-    if (actionId === 'more') {
-      setShowMoreActions((visible) => !visible);
-      return;
-    }
     if (!preserveCreateReview) setCreateReview(null);
     if (!preserveActivityReview) setActivityReview(null);
     if (actionId === 'confirm') setPostConfirmDestination(afterConfirmation);
     if (actionId === 'present') setPresentInitialDestination(undefined);
     setSelectedActionId(actionId);
-    setShowMoreActions(false);
     setStudioView('action');
     setTab('studio');
+  };
+
+  const launchContextAction = (intent: StudioActionLaunchIntent): void => {
+    if (intent.type !== 'open_workspace') return;
+    openStudioAction(
+      intent.actionId,
+      false,
+      false,
+      intent.continueTo ?? 'refine',
+    );
   };
 
   const openStudioDestination = (destinationId: StudioDestinationId): void => {
@@ -541,9 +540,9 @@ export default function App() {
       <View style={[styles.header, isStudioHome && styles.headerDark]}>
         <View>
           <Text style={[styles.logo, isStudioHome && styles.logoDark]}>FACETTA</Text>
-          <Text style={[styles.screenTitle, isStudioHome && styles.screenTitleDark]}>
+          <Text testID="screen-title" style={[styles.screenTitle, isStudioHome && styles.screenTitleDark]}>
             {tab === 'studio'
-              ? studioView === 'home' ? 'Studio' : getStudioAction(selectedActionId).label
+              ? 'Studio'
               : tab === 'collections'
                 ? 'Collections'
                 : tab === 'activity'
@@ -594,66 +593,6 @@ export default function App() {
           )}
         </View>
       )}
-      {tab === 'studio' && studioView === 'action' && !isCreatingNewDesign && (
-        <View style={[styles.actionRail, isStudioHome && styles.actionRailDark]}>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.actionRailContent}>
-            {studioActions.map((action) => {
-              const unavailableReason = getStudioActionUnavailableReason(action, actionContext);
-              const prerequisite = getStudioActionPrerequisite(action, actionContext);
-              const unavailable = unavailableReason !== null && prerequisite === null;
-              const accessibilityLabel = prerequisite === null
-                ? action.label
-                : `${action.label}; ${unavailableReason}`;
-              return (
-                <Pressable
-                  key={action.id}
-                  accessibilityRole="button"
-                  accessibilityLabel={accessibilityLabel}
-                  accessibilityHint={prerequisite === null
-                    ? unavailableReason ?? undefined
-                    : `Opens ${prerequisite.label}, then continues to ${action.shortLabel}.`}
-                  accessibilityState={{ disabled: unavailable }}
-                  disabled={unavailable}
-                  onPress={() => prerequisite === null
-                    ? openStudioAction(action.id)
-                    : openStudioAction(
-                      prerequisite.id,
-                      false,
-                      false,
-                      action.id === 'views' ? 'views' : 'refine',
-                    )}
-                  style={[
-                    styles.actionChip,
-                    isStudioHome && styles.actionChipDark,
-                    unavailable && styles.actionChipDisabled,
-                    studioView === 'action' && selectedActionId === action.id && styles.actionChipActive,
-                  ]}>
-                  <Text style={[
-                    styles.actionChipText,
-                    isStudioHome && styles.actionChipTextDark,
-                    unavailable && styles.actionChipTextDisabled,
-                    studioView === 'action' && selectedActionId === action.id && styles.actionChipTextActive,
-                  ]}>{action.shortLabel}</Text>
-                  {unavailableReason !== null && (
-                    <Text style={styles.actionChipReason}>{unavailableReason}</Text>
-                  )}
-                </Pressable>
-              );
-            })}
-          </ScrollView>
-          {showMoreActions && (
-            <View style={[styles.moreMenu, shadows.lifted]}>
-              {moreActions.map((action) => (
-                <Pressable key={action.id} style={styles.moreMenuRow} onPress={() => openStudioAction(action.id)}>
-                  <Text style={styles.moreMenuTitle}>{action.shortLabel}</Text>
-                  <Text style={styles.moreMenuBody}>{action.description}</Text>
-                </Pressable>
-              ))}
-            </View>
-          )}
-        </View>
-      )}
-
       {isStudioHome && (
         <ScrollView
           style={styles.dashboard}
@@ -721,36 +660,42 @@ export default function App() {
             </Pressable>
             {!isCreatingNewDesign && studioProject !== null && actionSourceRevision !== null && (
               <View testID="active-design-context" style={styles.actionDesignContext}>
-                {actionSourceImageUrl !== null ? (
-                  <Image
-                    accessibilityLabel={`${studioProject.title} revision thumbnail`}
-                    source={{ uri: actionSourceImageUrl }}
-                    style={styles.actionRevisionThumbnail}
-                    resizeMode="cover"
-                  />
-                ) : (
-                  <View style={[styles.actionRevisionThumbnail, styles.actionRevisionPlaceholder]}>
-                    <Text style={styles.actionRevisionPlaceholderText}>
-                      {actionSourceRevision.revision ?? '•'}
-                    </Text>
-                  </View>
-                )}
-                <View style={styles.actionDesignCopy}>
-                  <Text numberOfLines={1} style={styles.actionDesignTitle}>{studioProject.title}</Text>
-                  <Text numberOfLines={1} style={styles.actionRevisionLabel}>
-                    {actionSourceIsCurrent ? 'Current saved revision' : 'Review source'}
-                    {actionSourceRevision.revision === null
-                      ? ''
-                      : ` · Revision ${actionSourceRevision.revision}`}
-                  </Text>
-                </View>
                 <Pressable
                   accessibilityRole="button"
                   accessibilityLabel="Open revision history"
-                  style={styles.actionHistoryButton}
+                  style={styles.actionRevisionIdentity}
                   onPress={() => setTab('collections')}>
-                  <Text style={styles.actionHistoryButtonText}>History</Text>
+                  {actionSourceImageUrl !== null ? (
+                    <Image
+                      accessibilityLabel={`${studioProject.title} revision thumbnail`}
+                      source={{ uri: actionSourceImageUrl }}
+                      style={styles.actionRevisionThumbnail}
+                      resizeMode="cover"
+                    />
+                  ) : (
+                    <View style={[styles.actionRevisionThumbnail, styles.actionRevisionPlaceholder]}>
+                      <Text style={styles.actionRevisionPlaceholderText}>
+                        {actionSourceRevision.revision ?? '•'}
+                      </Text>
+                    </View>
+                  )}
+                  <View style={styles.actionDesignCopy}>
+                    <Text numberOfLines={1} style={styles.actionDesignTitle}>{studioProject.title}</Text>
+                    <Text numberOfLines={1} style={styles.actionRevisionLabel}>
+                      {actionSourceIsCurrent ? 'Current saved revision' : 'Review source'}
+                      {actionSourceRevision.revision === null
+                        ? ''
+                        : ` · Revision ${actionSourceRevision.revision}`}
+                    </Text>
+                  </View>
                 </Pressable>
+                {actionSourceIsCurrent && (
+                  <StudioContextActionSwitcher
+                    context={actionContext}
+                    selectedActionId={selectedActionId}
+                    onLaunch={launchContextAction}
+                  />
+                )}
               </View>
             )}
           </View>
@@ -1057,49 +1002,6 @@ const styles = StyleSheet.create({
   hydrationText: { color: theme.faint, fontSize: 12 },
   hydrationError: { flex: 1, color: theme.danger, fontSize: 12, lineHeight: 17 },
   hydrationRetry: { color: theme.accent, fontSize: 12, fontWeight: '800' },
-  actionRail: {
-    zIndex: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: theme.line,
-    backgroundColor: theme.paper,
-    paddingVertical: 8,
-  },
-  actionRailDark: { backgroundColor: '#15121c', borderBottomColor: '#332b40' },
-  actionRailContent: { gap: 7, paddingHorizontal: 16 },
-  actionChip: {
-    minWidth: 72,
-    alignItems: 'center',
-    borderRadius: radius.pill,
-    borderWidth: 1,
-    borderColor: theme.line,
-    backgroundColor: theme.card,
-    paddingHorizontal: 13,
-    paddingVertical: 8,
-  },
-  actionChipDark: { backgroundColor: '#221d2b', borderColor: '#41364f' },
-  actionChipDisabled: { opacity: 0.62 },
-  actionChipActive: { backgroundColor: '#6f52d9', borderColor: '#896ff0' },
-  actionChipText: { color: theme.faint, fontSize: 11, fontWeight: '600' },
-  actionChipTextDark: { color: '#c8bdcf' },
-  actionChipTextDisabled: { color: theme.faint },
-  actionChipTextActive: { color: '#ffffff' },
-  actionChipReason: { color: theme.faint, fontSize: 10, lineHeight: 13, marginTop: 2 },
-  moreMenu: {
-    position: 'absolute',
-    zIndex: 30,
-    top: 52,
-    right: 16,
-    width: 260,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    borderColor: theme.line,
-    backgroundColor: theme.card,
-    padding: 10,
-  },
-  moreMenuRow: { padding: 10 },
-  moreMenuTitle: { color: theme.ink, fontSize: 13, fontWeight: '700' },
-  moreMenuBody: { color: theme.faint, fontSize: 11, lineHeight: 16, marginTop: 3 },
-  moreMenuEmpty: { color: theme.faint, fontSize: 11, lineHeight: 17, padding: 8 },
   actionWorkspace: { flex: 1 },
   actionContextBanner: {
     flexDirection: 'row',
@@ -1110,6 +1012,7 @@ const styles = StyleSheet.create({
     backgroundColor: theme.card,
     paddingHorizontal: 14,
     paddingVertical: 9,
+    zIndex: 30,
   },
   actionContextBack: {
     paddingVertical: 9,
@@ -1124,6 +1027,13 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: 10,
+  },
+  actionRevisionIdentity: {
+    alignItems: 'center',
+    flex: 1,
+    flexDirection: 'row',
+    gap: 10,
+    minWidth: 0,
   },
   actionRevisionThumbnail: {
     width: 42,
@@ -1143,15 +1053,6 @@ const styles = StyleSheet.create({
   actionDesignCopy: { flex: 1, minWidth: 0 },
   actionDesignTitle: { color: theme.ink, fontSize: 13, fontWeight: '700' },
   actionRevisionLabel: { color: theme.faint, fontSize: 10, marginTop: 3 },
-  actionHistoryButton: {
-    borderRadius: radius.pill,
-    borderWidth: 1,
-    borderColor: theme.line,
-    backgroundColor: theme.paper,
-    paddingHorizontal: 11,
-    paddingVertical: 7,
-  },
-  actionHistoryButtonText: { color: theme.ink, fontSize: 10, fontWeight: '700' },
   dashboard: { flex: 1, backgroundColor: '#15121c' },
   dashboardContent: {
     width: '100%',

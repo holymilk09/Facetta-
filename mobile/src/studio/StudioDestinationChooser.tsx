@@ -7,7 +7,6 @@ import { radius, shadows, theme } from '../theme';
 import {
   STUDIO_DESTINATIONS,
   type StudioDestinationContext,
-  type StudioDestinationDefinition,
   type StudioDestinationId,
 } from './destinations';
 
@@ -21,12 +20,8 @@ export interface StudioDestinationChooserProps {
 }
 
 const availabilityLabel = (
-  destination: StudioDestinationDefinition,
   available: boolean,
 ): string => {
-  if (available && destination.id === 'factory') {
-    return 'Available for this exact revision';
-  }
   if (available) return 'Available now';
   return 'Available after a saved revision is selected';
 };
@@ -34,9 +29,9 @@ const availabilityLabel = (
 /**
  * One product-language handoff for every accepted Studio revision.
  *
- * Library, Client, and Marketing stay in a predictable order. Factory is an
- * optional destination and is omitted until the canonical registry confirms
- * that the exact active revision is eligible.
+ * Library, Client, and Marketing stay in a predictable order. Factory is
+ * intentionally absent from this everyday handoff; an eligible exact revision
+ * exposes it only through the active design's contextual More menu.
  */
 export function StudioDestinationChooser({
   context,
@@ -46,8 +41,8 @@ export function StudioDestinationChooser({
   excludeDestinations = [],
 }: StudioDestinationChooserProps) {
   const destinations = STUDIO_DESTINATIONS.filter((destination) => (
-    !excludeDestinations.includes(destination.id)
-    && (destination.id !== 'factory' || destination.isAvailable(context))
+    destination.id !== 'factory'
+    && !excludeDestinations.includes(destination.id)
   ));
 
   return (
@@ -57,7 +52,7 @@ export function StudioDestinationChooser({
       <View style={styles.destinationList}>
         {destinations.map((destination) => {
           const available = destination.isAvailable(context);
-          const availability = availabilityLabel(destination, available);
+          const availability = availabilityLabel(available);
           return (
             <Pressable
               key={destination.id}

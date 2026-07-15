@@ -34,7 +34,7 @@ test('keeps the three everyday destinations in registry order with their descrip
   expect(onSelect).toHaveBeenCalledWith('marketing');
 });
 
-test('shows Factory only when the exact active revision passes its registry predicate', async () => {
+test('keeps optional Factory out of the everyday chooser even when the revision is eligible', async () => {
   const onSelect = jest.fn();
   const view = await render(
     <StudioDestinationChooser context={savedContext} onSelect={onSelect} />,
@@ -49,13 +49,9 @@ test('shows Factory only when the exact active revision passes its registry pred
 
   expect(screen.getAllByTestId(/studio-destination-card-/).map((card) => (
     card.props.accessibilityLabel
-  ))).toEqual(['Library', 'Client', 'Marketing', 'Factory']);
-  expect(screen.getByText(getStudioDestination('factory').description)).toBeTruthy();
-  expect(screen.getByTestId('studio-destination-availability-factory').props.children)
-    .toBe('Available for this exact revision');
-
-  fireEvent.press(screen.getByLabelText('Factory'));
-  expect(onSelect).toHaveBeenCalledWith('factory');
+  ))).toEqual(['Library', 'Client', 'Marketing']);
+  expect(screen.queryByLabelText('Factory')).toBeNull();
+  expect(onSelect).not.toHaveBeenCalled();
 });
 
 test('omits the destination already being viewed without changing registry order or eligibility', async () => {
@@ -71,13 +67,13 @@ test('omits the destination already being viewed without changing registry order
   expect(screen.queryByLabelText('Library')).toBeNull();
   expect(screen.getAllByTestId(/studio-destination-card-/).map((card) => (
     card.props.accessibilityLabel
-  ))).toEqual(['Client', 'Marketing', 'Factory']);
+  ))).toEqual(['Client', 'Marketing']);
 
   fireEvent.press(screen.getByLabelText('Client'));
   expect(onSelect).toHaveBeenCalledWith('client');
 });
 
-test('does not expose Factory when specification or backend eligibility is missing', async () => {
+test('does not expose Factory from the everyday chooser for any specification state', async () => {
   const view = await render(
     <StudioDestinationChooser
       context={{ ...savedContext, hasExactSpecification: false, factoryEligible: true }}

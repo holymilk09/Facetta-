@@ -677,7 +677,7 @@ describe('StudioCollectionsWorkspace', () => {
     expect(screen.queryByText('Restore revision 1 as new')).toBeNull();
   });
 
-  test('shows Factory in the shared chooser only when the host verifies eligibility', async () => {
+  test('keeps eligible Factory access out of the everyday Collections chooser', async () => {
     const handlers = callbacks();
     await render(
       <StudioCollectionsWorkspace
@@ -691,8 +691,8 @@ describe('StudioCollectionsWorkspace', () => {
 
     expect(await screen.findByText('Use this revision')).toBeTruthy();
     expect(screen.queryByText('Library')).toBeNull();
-    await fireEvent.press(screen.getByText('Factory'));
-    expect(handlers.onSelectDestination).toHaveBeenCalledWith('factory');
+    expect(screen.queryByText('Factory')).toBeNull();
+    expect(handlers.onSelectDestination).not.toHaveBeenCalled();
   });
 
   test('describes pre-spec Collections assets as saved visual directions', async () => {

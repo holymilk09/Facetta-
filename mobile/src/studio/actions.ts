@@ -1,6 +1,6 @@
 import {
   StudioActionContext, StudioActionDefinition, StudioActionId, StudioJob,
-  StudioJobStatus, transitionStudioJobWithAuthority,
+  StudioJobStatus, StudioWorkspaceActionId, transitionStudioJobWithAuthority,
 } from './contracts';
 import { STUDIO_JOB_ACTION_MANIFEST } from './generatedActionManifest';
 
@@ -204,10 +204,11 @@ export function getVisibleStudioActions(
 }
 
 /**
- * Keep the active-design controls spatially stable. Availability determines
- * whether a rail action can run, not whether the designer must rediscover it.
+ * Keep the active-design commands stable inside the contextual switcher.
+ * Availability determines whether a command can run, not whether the
+ * designer must rediscover it.
  */
-export function getStudioRailActions(
+export function getStudioContextActions(
   context: StudioActionContext,
 ): readonly StudioActionDefinition[] {
   if (!activeDesign(context)) return getVisibleStudioActions(context);
@@ -244,4 +245,47 @@ export function getStudioActionPrerequisite(
   if (action.id !== 'views' || action.isAvailable(context)) return null;
   const confirm = getStudioAction('confirm');
   return confirm.isAvailable(context) ? confirm : null;
+}
+
+export type StudioActionLaunchIntent =
+  | {
+    type: 'open_workspace';
+    actionId: StudioWorkspaceActionId;
+    continueTo: Extract<StudioWorkspaceActionId, 'refine' | 'views'> | null;
+  }
+  | { type: 'toggle_optional' }
+  | { type: 'unavailable'; reason: string };
+
+/**
+ * Resolve a contextual command without teaching presentation code about the
+ * host router's continuation flags. The action registry remains the single
+ * source of truth for visibility, prerequisites, and optional destinations.
+ */
+export function resolveStudioActionLaunch(
+  actionId: StudioActionId,
+  context: StudioActionContext,
+): StudioActionLaunchIntent {
+  const action = getStudioAction(actionId);
+  const unavailableReason = getStudioActionUnavailableReason(action, context);
+  const prerequisite = getStudioActionPrerequisite(action, context);
+  if (actionId === 'more') {
+    return unavailableReason === null
+      ? { type: 'toggle_optional' }
+      : { type: 'unavailable', reason: unavailableReason };
+  }
+  if (prerequisite !== null) {
+    return {
+      type: 'open_workspace',
+      actionId: prerequisite.id as StudioWorkspaceActionId,
+      continueTo: actionId === 'views' ? 'views' : 'refine',
+    };
+  }
+  if (unavailableReason !== null) {
+    return { type: 'unavailable', reason: unavailableReason };
+  }
+  return {
+    type: 'open_workspace',
+    actionId,
+    continueTo: null,
+  };
 }
