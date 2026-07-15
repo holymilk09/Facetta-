@@ -600,12 +600,8 @@ def persist_creative_project(
     source_image: bytes,
     source_media_type: str,
     source_kind: CreativeSourceKind,
-    render_source_image: bytes | None = None,
-    render_source_media_type: str | None = None,
-    render_source_instruction: str | None = None,
-    render_source_capability: Literal[
-        "CREATIVE_SOURCE_REGION", "CREATIVE_REFERENCE_BOARD"
-    ] = "CREATIVE_SOURCE_REGION",
+    source_region: SourceAssetInput | None = None,
+    reference_board: SourceAssetInput | None = None,
     reference_sources: tuple[SourceAssetInput, ...] = (),
     candidates: tuple[CreativeCandidateInput, ...],
     owner: str,
@@ -656,27 +652,69 @@ def persist_creative_project(
         created_by=owner,
         created_at=now,
     )
-    render_source = None
-    if render_source_image is not None:
-        if not render_source_image:
-            raise ValueError("creative source region image must not be empty")
-        render_source = ImageAsset(
+    if source_region is not None and (
+        not source_region.image
+        or source_region.capability != "CREATIVE_SOURCE_REGION"
+    ):
+        raise ValueError("creative source region is invalid")
+    if reference_board is not None and (
+        not reference_board.image
+        or reference_board.capability != "CREATIVE_REFERENCE_BOARD"
+    ):
+        raise ValueError("creative reference board is invalid")
+
+    source_region_row = (
+        ImageAsset(
             id=new_id("ast"),
             root_id=root_id,
             parent_asset_id=root_id,
             design_id=None,
             design_version=None,
-            capability=render_source_capability,
+            capability="CREATIVE_SOURCE_REGION",
             source_kind=source_kind,
-            instruction=(render_source_instruction or "Designer-selected source region"),
-            image=render_source_image,
-            media_type=(
-                render_source_media_type or sniff_media_type(render_source_image)
+            instruction=(
+                source_region.instruction or "Designer-selected source region"
+            ),
+            image=source_region.image,
+            media_type=source_region.media_type or sniff_media_type(
+                source_region.image
             ),
             created_by=owner,
             created_at=now,
         )
-    render_source_id = render_source.id if render_source is not None else root_id
+        if source_region is not None else None
+    )
+    reference_board_row = (
+        ImageAsset(
+            id=new_id("ast"),
+            root_id=root_id,
+            parent_asset_id=(
+                source_region_row.id if source_region_row is not None else root_id
+            ),
+            design_id=None,
+            design_version=None,
+            capability="CREATIVE_REFERENCE_BOARD",
+            source_kind=source_kind,
+            instruction=(
+                reference_board.instruction
+                or "Role-labeled advisory reference board"
+            ),
+            image=reference_board.image,
+            media_type=reference_board.media_type or sniff_media_type(
+                reference_board.image
+            ),
+            created_by=owner,
+            created_at=now,
+        )
+        if reference_board is not None else None
+    )
+    generation_source_id = (
+        reference_board_row.id
+        if reference_board_row is not None
+        else source_region_row.id
+        if source_region_row is not None
+        else root_id
+    )
     reference_rows = [
         ImageAsset(
             id=new_id("ast"),
@@ -706,7 +744,7 @@ def persist_creative_project(
         ImageAsset(
             id=new_id("ast"),
             root_id=root_id,
-            parent_asset_id=render_source_id,
+            parent_asset_id=generation_source_id,
             design_id=None,
             design_version=None,
             capability="CREATIVE_RENDER",
@@ -742,7 +780,8 @@ def persist_creative_project(
         db.add_all([
             root,
             project,
-            *([render_source] if render_source is not None else []),
+            *([source_region_row] if source_region_row is not None else []),
+            *([reference_board_row] if reference_board_row is not None else []),
             *reference_rows,
             *candidate_rows,
         ])
@@ -753,7 +792,7 @@ def persist_creative_project(
                 db,
                 candidate.image_run,
                 project_root_id=root_id,
-                source_asset_id=render_source_id,
+                source_asset_id=generation_source_id,
                 accepted_asset_id=row.id,
                 created_by=owner,
                 commit=False,

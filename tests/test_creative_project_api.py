@@ -2644,7 +2644,7 @@ def test_from_drawing_isolates_and_persists_exact_multi_view_source_region(
         assert run.source_hash == hashlib.sha256(expected_crop).hexdigest()
 
 
-def test_role_board_qa_uses_selected_master_crop_not_composite_board(
+def test_role_board_preserves_selected_crop_as_geometry_authority(
     creative_client,
 ):
     client, Session = creative_client
@@ -2712,17 +2712,59 @@ def test_role_board_qa_uses_selected_master_crop_not_composite_board(
     assert response.status_code == 201, response.text
     assert observed["quality"] == expected_crop
     assert observed["provider"] != expected_crop
+    body = response.json()
+    assets = {asset["capability"]: asset for asset in body["assets"]}
+    assert assets["CREATIVE_SOURCE_REGION"]["provenance"] == (
+        "designer_selected_source_region"
+    )
+    assert assets["CREATIVE_REFERENCE_BOARD"]["provenance"] == (
+        "role_labeled_reference_board"
+    )
     with Session() as db:
         run = db.scalar(select(ImageRun))
+        full_source = db.scalar(select(ImageAsset).where(
+            ImageAsset.capability == "CREATIVE_SOURCE"
+        ))
+        crop = db.scalar(select(ImageAsset).where(
+            ImageAsset.capability == "CREATIVE_SOURCE_REGION"
+        ))
         board = db.scalar(select(ImageAsset).where(
             ImageAsset.capability == "CREATIVE_REFERENCE_BOARD"
         ))
+        candidate = db.scalar(select(ImageAsset).where(
+            ImageAsset.capability == "CREATIVE_RENDER"
+        ))
         assert run is not None
+        assert full_source is not None
+        assert crop is not None
         assert board is not None
+        assert candidate is not None
+        assert bytes(crop.image) == expected_crop
+        assert crop.parent_asset_id == full_source.id
+        assert "Front necklace elevation" in (crop.instruction or "")
+        assert "normalized crop x=0.1000" in (crop.instruction or "")
+        assert board.parent_asset_id == crop.id
+        assert candidate.parent_asset_id == board.id
+        assert run.source_asset_id == board.id
         assert run.source_hash == hashlib.sha256(bytes(board.image)).hexdigest()
         assert run.normalized_intent["quality_source"]["sha256"] == (
             hashlib.sha256(expected_crop).hexdigest()
         )
+
+    reopened = client.get(f"/projects/{body['root_id']}")
+    assert reopened.status_code == 200, reopened.text
+    reopened_assets = {
+        asset["capability"]: asset for asset in reopened.json()["assets"]
+    }
+    assert reopened_assets["CREATIVE_SOURCE_REGION"]["asset_id"] == (
+        assets["CREATIVE_SOURCE_REGION"]["asset_id"]
+    )
+    assert reopened_assets["CREATIVE_REFERENCE_BOARD"]["parent_asset_id"] == (
+        assets["CREATIVE_SOURCE_REGION"]["asset_id"]
+    )
+    assert reopened.json()["creative_candidates"][0]["parent_asset_id"] == (
+        assets["CREATIVE_REFERENCE_BOARD"]["asset_id"]
+    )
 
 
 def test_from_drawing_rejects_region_description_without_coordinates(

@@ -122,14 +122,21 @@ export function creativeReviewSource(
   candidate: AssetSummary | null,
 ): AssetSummary | null {
   if (candidate === null) return null;
-  const parent = candidate.parent_asset_id === null
-    ? null
-    : project.assets.find((asset) => asset.asset_id === candidate.parent_asset_id) ?? null;
-  if (parent?.capability === 'CREATIVE_SOURCE_REGION') return parent;
-  if (parent?.capability === 'CREATIVE_SOURCE') return parent;
-  return project.assets.find((asset) => asset.capability === 'CREATIVE_SOURCE_REGION')
-    ?? project.assets.find((asset) => asset.capability === 'CREATIVE_SOURCE')
-    ?? null;
+  if (candidate.root_id !== project.root_id) return null;
+  const assetsById = new Map(project.assets.map((asset) => [asset.asset_id, asset]));
+  const visited = new Set<string>([candidate.asset_id]);
+  let current: AssetSummary = candidate;
+  while (current.parent_asset_id !== null) {
+    if (visited.has(current.parent_asset_id)) return null;
+    visited.add(current.parent_asset_id);
+    const parent = assetsById.get(current.parent_asset_id);
+    if (parent === undefined || parent.root_id !== project.root_id) return null;
+    if (parent.capability === 'CREATIVE_SOURCE_REGION') return parent;
+    if (parent.capability === 'CREATIVE_SOURCE') return parent;
+    if (parent.capability !== 'CREATIVE_REFERENCE_BOARD') return null;
+    current = parent;
+  }
+  return null;
 }
 
 export function creativeCandidates(project: ProjectDetail): readonly AssetSummary[] {
@@ -210,6 +217,7 @@ export function StudioCreateWorkspace({
   const [selectionStudioJobId, setSelectionStudioJobId] = useState<string | null>(
     resumeStudioJobId,
   );
+  const [retainedAssetIds, setRetainedAssetIds] = useState<readonly string[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -222,21 +230,27 @@ export function StudioCreateWorkspace({
     candidates
       .filter((candidate) => (
         candidate.asset_id !== selectedAssetId
+        && retainedAssetIds.includes(candidate.asset_id)
         && visualReview.isReady(candidateVisualKey(candidate))
       ))
       .slice(0, MAX_RETAINED_VARIATIONS)
-  ), [candidates, selectedAssetId, visualReview.isReady]);
+  ), [candidates, retainedAssetIds, selectedAssetId, visualReview.isReady]);
+  const retainedCount = intendedRetainedCandidates.length;
   const selectedCandidate = candidates.find(
     (candidate) => candidate.asset_id === selectedAssetId,
   ) ?? null;
   const selectedVisualKey = selectedCandidate === null ? null : candidateVisualKey(selectedCandidate);
   const reviewSource = project === null ? null : creativeReviewSource(project, selectedCandidate);
+  const sourceLineageUnavailable = selectedCandidate?.source_kind !== undefined
+    && selectedCandidate.source_kind !== null
+    && reviewSource === null;
   const reviewSourceVisualKey = sourceVisualKey(reviewSource);
   const requiredDecisionVisualKeys = reviewSource === null
     ? [selectedVisualKey]
     : [reviewSourceVisualKey, selectedVisualKey];
   const decisionVisualsReady = selectedAssetId !== null
     && selectedCandidate !== null
+    && !sourceLineageUnavailable
     && visualReview.allReady(requiredDecisionVisualKeys);
   const selectedVisualFailed = selectedAssetId !== null
     && visualReview.anyFailed([selectedVisualKey]);
@@ -311,6 +325,7 @@ export function StudioCreateWorkspace({
     setProject(null);
     setSelectedAssetId(null);
     setSelectionStudioJobId(null);
+    setRetainedAssetIds([]);
     const sourceTitle = prompt || submittedMaster?.label || 'Untitled reference study';
     const title = sourceTitle.length > 64 ? `${sourceTitle.slice(0, 61)}…` : sourceTitle;
     const result = submittedMaster === null
@@ -356,6 +371,7 @@ export function StudioCreateWorkspace({
     }
     setProject(result.data);
     setSelectedAssetId(nextCandidates[0].asset_id);
+    setRetainedAssetIds([]);
     onGenerationSucceeded?.({
       owner: requestOwner,
       projectId: result.data.root_id,
@@ -413,6 +429,7 @@ export function StudioCreateWorkspace({
     setProject(null);
     setSelectedAssetId(null);
     setSelectionStudioJobId(null);
+    setRetainedAssetIds([]);
   };
 
   if (project !== null) {
@@ -424,7 +441,7 @@ export function StudioCreateWorkspace({
           These are visual directions—not measurements or production instructions.
         </Text>
         <Text style={styles.retainedCopy}>
-          Choose what to refine now. Up to three other directions you preview will be organized as variations, and the full generated set stays preserved in this review.
+          Choose what to refine now. Keep only the other useful directions you want organized as variations. The full generated set stays preserved in this Activity review.
         </Text>
         {reviewSource !== null && selectedCandidate !== null && (
           <View style={styles.sourceComparisonBlock}>
@@ -477,9 +494,14 @@ export function StudioCreateWorkspace({
               ? 'Selected to refine'
               : willRetain
                 ? 'Will save as a variation'
-                : 'Preserved in review set';
+                : 'Preserved in Activity review';
             const visualKey = candidateVisualKey(candidate);
             const candidateDisabled = busy;
+            const candidateReady = visualReview.isReady(visualKey);
+            const candidateFailed = visualReview.anyFailed([visualKey]);
+            const retainLimitReached = retainedCount >= MAX_RETAINED_VARIATIONS && !willRetain;
+            const retainDisabled = candidateDisabled || selected || !candidateReady
+              || retainLimitReached;
             return (
               <View
                 key={candidate.asset_id}
@@ -492,7 +514,12 @@ export function StudioCreateWorkspace({
                     inspectionLabel={`Direction ${index + 1}`}
                     source={{ uri: candidate.image_url }}
                     onLoad={() => visualReview.markReady(visualKey)}
-                    onError={() => visualReview.markFailed(visualKey)}
+                    onError={() => {
+                      visualReview.markFailed(visualKey);
+                      setRetainedAssetIds((current) => current.filter(
+                        (assetId) => assetId !== candidate.asset_id,
+                      ));
+                    }}
                     style={styles.candidateImage}
                   />
                 )}
@@ -505,6 +532,9 @@ export function StudioCreateWorkspace({
                   style={styles.candidateSelect}
                   onPress={() => {
                     if (candidateDisabled) return;
+                    setRetainedAssetIds((current) => current.filter(
+                      (assetId) => assetId !== candidate.asset_id,
+                    ));
                     setSelectedAssetId(candidate.asset_id);
                   }}>
                   <View style={styles.candidateCopy}>
@@ -512,13 +542,51 @@ export function StudioCreateWorkspace({
                     <Text style={styles.candidateMeta}>{candidateStatus}</Text>
                   </View>
                 </Pressable>
+                {!selected && (
+                  <Pressable
+                    accessibilityRole="checkbox"
+                    accessibilityState={{ checked: willRetain, disabled: retainDisabled }}
+                    accessibilityLabel={`Keep Direction ${index + 1} as variation`}
+                    accessibilityHint={candidateFailed
+                      ? 'This preview is unavailable and cannot be kept.'
+                      : !candidateReady
+                        ? 'Review this preview before keeping it.'
+                        : retainLimitReached
+                          ? 'You can keep at most three variations.'
+                          : willRetain
+                            ? 'Remove this direction from saved variations.'
+                            : 'Save this useful direction as a variation.'}
+                    disabled={retainDisabled}
+                    style={[styles.keepVariation, retainDisabled && styles.keepVariationDisabled]}
+                    onPress={() => {
+                      if (retainDisabled) return;
+                      setRetainedAssetIds((current) => (
+                        current.includes(candidate.asset_id)
+                          ? current.filter((assetId) => assetId !== candidate.asset_id)
+                          : [...current, candidate.asset_id]
+                      ));
+                    }}>
+                    <View style={[styles.keepBox, willRetain && styles.keepBoxChecked]}>
+                      {willRetain && <Text style={styles.keepCheck}>✓</Text>}
+                    </View>
+                    <Text style={[styles.keepText, willRetain && styles.keepTextChecked]}>
+                      {candidateFailed
+                        ? 'Preview unavailable'
+                        : candidateReady
+                          ? 'Keep as variation'
+                          : 'Load preview to keep'}
+                    </Text>
+                  </Pressable>
+                )}
               </View>
             );
           })}
         </View>
         {!decisionVisualsReady && selectedAssetId !== null && (
           <Text style={styles.reviewReadiness}>
-            {sourceVisualFailed
+            {sourceLineageUnavailable
+              ? 'The starting source lineage is unavailable. Reopen this review from Activity before choosing a direction.'
+              : sourceVisualFailed
               ? 'The starting source could not be displayed. Reopen this review from Activity or try loading it again before continuing.'
               : selectedVisualFailed
               ? 'The selected direction could not be displayed. Choose another direction or try loading it again before continuing.'
@@ -545,7 +613,9 @@ export function StudioCreateWorkspace({
             onPress={() => void continueWithSelection()}>
             <Text style={styles.primaryButtonText}>{busy
               ? 'Saving directions…'
-              : `Continue with Direction ${candidates.findIndex((candidate) => candidate.asset_id === selectedAssetId) + 1}`}</Text>
+              : `Continue with Direction ${candidates.findIndex((candidate) => candidate.asset_id === selectedAssetId) + 1}${retainedCount === 0
+                ? ''
+                : ` · keep ${retainedCount} variation${retainedCount === 1 ? '' : 's'}`}`}</Text>
           </Pressable>
         </View>
       </ScrollView>
@@ -868,5 +938,18 @@ const styles = StyleSheet.create({
   candidateCopy: { padding: 12 },
   candidateTitle: { color: theme.ink, fontSize: 13, fontWeight: '700' },
   candidateMeta: { color: theme.faint, fontSize: 10, marginTop: 3 },
+  keepVariation: {
+    minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: 8,
+    borderTopWidth: 1, borderTopColor: theme.line, paddingHorizontal: 12, paddingVertical: 9,
+  },
+  keepVariationDisabled: { opacity: 0.5 },
+  keepBox: {
+    width: 18, height: 18, alignItems: 'center', justifyContent: 'center',
+    borderWidth: 1, borderColor: theme.line, borderRadius: 5, backgroundColor: theme.paper,
+  },
+  keepBoxChecked: { borderColor: '#6f52d9', backgroundColor: '#6f52d9' },
+  keepCheck: { color: '#ffffff', fontSize: 11, fontWeight: '900' },
+  keepText: { color: theme.faint, fontSize: 10, fontWeight: '700' },
+  keepTextChecked: { color: '#5c3fc0' },
   footerActions: { gap: 0 },
 });

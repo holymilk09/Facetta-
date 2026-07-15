@@ -2147,6 +2147,8 @@ def create_project_from_drawing(
     render_source = image
     render_source_media_type: str | None = None
     render_source_instruction: str | None = None
+    source_region_asset: SourceAssetInput | None = None
+    reference_board_asset: SourceAssetInput | None = None
     reference_role_contract: str | None = None
     effective_instruction = request.instruction.strip()
     if request.source_region is not None:
@@ -2176,6 +2178,12 @@ def create_project_from_drawing(
             "Designer-selected jewelry view"
         )
         render_source_instruction = f"{description}; {coordinates}"
+        source_region_asset = SourceAssetInput(
+            image=render_source,
+            media_type=render_source_media_type,
+            capability="CREATIVE_SOURCE_REGION",
+            instruction=render_source_instruction,
+        )
         effective_instruction = (
             f"{effective_instruction}\n\n"
             "SOURCE ISOLATION: Render only the designer-selected source crop "
@@ -2185,9 +2193,6 @@ def create_project_from_drawing(
         )
 
     quality_source = render_source
-    render_source_capability: Literal[
-        "CREATIVE_SOURCE_REGION", "CREATIVE_REFERENCE_BOARD"
-    ] = "CREATIVE_SOURCE_REGION"
     if decoded_references:
         isolated_source_instruction = render_source_instruction
         try:
@@ -2209,7 +2214,12 @@ def create_project_from_drawing(
             else board.instruction
         )
         reference_role_contract = board.instruction
-        render_source_capability = "CREATIVE_REFERENCE_BOARD"
+        reference_board_asset = SourceAssetInput(
+            image=render_source,
+            media_type=render_source_media_type,
+            capability="CREATIVE_REFERENCE_BOARD",
+            instruction=render_source_instruction,
+        )
         effective_instruction = (
             f"{effective_instruction}\n\nREFERENCE ROLE CONTRACT:\n"
             f"{board.instruction}"
@@ -2329,14 +2339,8 @@ def create_project_from_drawing(
         source_image=image,
         source_media_type=detected,
         source_kind=request.source_kind,
-        render_source_image=(
-            render_source
-            if request.source_region is not None or decoded_references
-            else None
-        ),
-        render_source_media_type=render_source_media_type,
-        render_source_instruction=render_source_instruction,
-        render_source_capability=render_source_capability,
+        source_region=source_region_asset,
+        reference_board=reference_board_asset,
         reference_sources=tuple(SourceAssetInput(
             image=reference.image,
             media_type=reference.media_type,
