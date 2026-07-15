@@ -28,6 +28,8 @@ from facetta.db import (
     ImageAsset,
     Project,
     ProjectRevisionRecord,
+    StudioCreateDecisionRecord,
+    StudioJobRecord,
     get_db,
 )
 from facetta.image_agent import (
@@ -88,6 +90,30 @@ def _stored_image(Session, asset_id: str) -> bytes:
         asset = db.get(ImageAsset, asset_id)
         assert asset is not None
         return bytes(asset.image)
+
+
+def _running_create_job(
+    client: TestClient,
+    *,
+    requested_outputs: int,
+    owner: str,
+) -> str:
+    created = client.post("/studio/jobs", json={
+        "owner": owner,
+        "action_id": "create",
+        "lane": "fast_visual",
+        "requested_outputs": requested_outputs,
+        "credits_per_output": 15,
+    })
+    assert created.status_code == 201, created.text
+    job_id = created.json()["job_id"]
+    running = client.patch(f"/studio/jobs/{job_id}", json={
+        "owner": owner,
+        "status": "running",
+        "progress": 0.05,
+    })
+    assert running.status_code == 200, running.text
+    return job_id
 
 
 @pytest.fixture
@@ -156,6 +182,11 @@ def test_complete_prespec_studio_journey_preserves_every_direction(
         lambda: generate_preview
     )
 
+    job_id = _running_create_job(
+        client,
+        requested_outputs=3,
+        owner="usr_journey",
+    )
     created_response = client.post("/projects/from-prompt", json={
         "prompt": "A sculptural botanical signet ring with a quiet leaf rhythm",
         "variation_count": 3,
@@ -163,6 +194,7 @@ def test_complete_prespec_studio_journey_preserves_every_direction(
         "owner": "usr_journey",
         "title": "Botanical signet directions",
         "collection": "Studio acceptance",
+        "studio_job_id": job_id,
     })
     assert created_response.status_code == 201, created_response.text
     created = created_response.json()
@@ -174,6 +206,15 @@ def test_complete_prespec_studio_journey_preserves_every_direction(
     assert "design_id" not in created
     assert "spec" not in created
 
+    with Session() as db:
+        reviewing_job = db.get(StudioJobRecord, job_id)
+        assert reviewing_job is not None
+        assert reviewing_job.status == "reviewing"
+        assert reviewing_job.active_design_id == root_id
+        assert reviewing_job.source_revision_id is None
+        assert reviewing_job.completed_outputs == 0
+        assert reviewing_job.charged_outputs == 0
+
     # Choose the middle displayed direction, proving downstream work does not
     # silently snap to the last generated sibling.
     first_id = created["creative_candidates"][0]["asset_id"]
@@ -183,77 +224,106 @@ def test_complete_prespec_studio_journey_preserves_every_direction(
     selected_image = _stored_image(Session, selected_id)
     last_image = _stored_image(Session, last_id)
     assert selected_image != last_image
-    selected_response = client.post(
-        f"/projects/{root_id}/creative-candidates/{selected_id}/select",
-        json={"created_by": "usr_journey"},
+    draft_path = (
+        f"/projects/{root_id}/creative-directions/review-draft"
+        f"?studio_job_id={job_id}"
     )
-    assert selected_response.status_code == 200, selected_response.text
-    selected = selected_response.json()
+    review = {
+        "studio_job_id": job_id,
+        "expected_version": 0,
+        "selected_candidate_id": selected_id,
+        "retained": [{
+            "candidate_id": last_id,
+            "label": "Third generated direction",
+        }],
+    }
+    saved_review = client.put(draft_path, json=review)
+    assert saved_review.status_code == 200, saved_review.text
+    assert saved_review.json()["version"] == 1
+
+    conflicting_commit = client.post(
+        f"/projects/{root_id}/creative-directions/commit",
+        json={
+            "selected_candidate_id": first_id,
+            "retained": [],
+            "created_by": "usr_journey",
+            "studio_job_id": job_id,
+        },
+    )
+    assert conflicting_commit.status_code == 409, conflicting_commit.text
+    assert "does not match" in conflicting_commit.json()["detail"]
+    assert client.get(draft_path).status_code == 200
+    with Session() as db:
+        uncommitted_project = db.get(Project, root_id)
+        uncommitted_job = db.get(StudioJobRecord, job_id)
+        assert uncommitted_project is not None
+        assert uncommitted_project.selected_candidate_asset_id is None
+        assert db.get(StudioCreateDecisionRecord, root_id) is None
+        assert db.scalar(select(func.count()).select_from(Project)) == 1
+        assert uncommitted_job is not None
+        assert uncommitted_job.status == "reviewing"
+        assert uncommitted_job.completed_outputs == 0
+        assert uncommitted_job.charged_outputs == 0
+
+    commit_payload = {
+        "selected_candidate_id": selected_id,
+        "retained": review["retained"],
+        "created_by": "usr_journey",
+        "studio_job_id": job_id,
+    }
+    committed_response = client.post(
+        f"/projects/{root_id}/creative-directions/commit",
+        json=commit_payload,
+    )
+    assert committed_response.status_code == 200, committed_response.text
+    committed = committed_response.json()
+    selected = committed["project"]
     assert selected["selected_candidate_asset_id"] == selected_id
     assert selected["active_asset_id"] == selected_id
     assert [item["asset_id"] for item in selected["revisions"]] == [selected_id]
-
-    missing_operation = client.post(
-        f"/studio/projects/{root_id}/creative-candidates/{last_id}/variations",
-        json={
-            "created_by": "usr_journey",
-            "expected_active_asset_id": selected_id,
-            "expected_design_version": None,
-            "label": "Third generated direction",
-        },
-    )
-    assert missing_operation.status_code == 422, missing_operation.text
-
-    kept_response = client.post(
-        f"/studio/projects/{root_id}/creative-candidates/{last_id}/variations",
-        json={
-            "created_by": "usr_journey",
-            "expected_active_asset_id": selected_id,
-            "expected_design_version": None,
-            "label": "Third generated direction",
-            "operation_id": "create-direction:journey-third-0001",
-        },
-    )
-    assert kept_response.status_code == 201, kept_response.text
-    kept = kept_response.json()
+    assert len(committed["retained_variations"]) == 1
+    kept = committed["retained_variations"][0]
     assert kept["source_asset_id"] == last_id
     assert _stored_image(Session, kept["project"]["active_asset_id"]) == last_image
 
-    kept_replay = client.post(
-        f"/studio/projects/{root_id}/creative-candidates/{last_id}/variations",
-        json={
-            "created_by": "usr_journey",
-            "expected_active_asset_id": selected_id,
-            "expected_design_version": None,
-            "label": "Third generated direction",
-            "operation_id": "create-direction:journey-third-0001",
-        },
+    # A lost response can be retried without creating or charging another
+    # sibling; a competing decision cannot rewrite the accepted design truth.
+    replay = client.post(
+        f"/projects/{root_id}/creative-directions/commit",
+        json=commit_payload,
     )
-    assert kept_replay.status_code == 201, kept_replay.text
-    assert kept_replay.json() == kept
-
-    kept_conflict = client.post(
-        f"/studio/projects/{root_id}/creative-candidates/{last_id}/variations",
-        json={
-            "created_by": "usr_journey",
-            "expected_active_asset_id": selected_id,
-            "expected_design_version": None,
-            "label": "Renamed after retry",
-            "operation_id": "create-direction:journey-third-0001",
-        },
+    assert replay.status_code == 200, replay.text
+    assert replay.json() == committed
+    conflict = client.post(
+        f"/projects/{root_id}/creative-directions/commit",
+        json={**commit_payload, "selected_candidate_id": first_id},
     )
-    assert kept_conflict.status_code == 409, kept_conflict.text
-    assert kept_conflict.json()["code"] == "variation_operation_conflict"
-
-    reselection = client.post(
-        f"/projects/{root_id}/creative-candidates/{first_id}/select",
-        json={"created_by": "usr_journey"},
-    )
-    assert reselection.status_code == 409, reselection.text
-    assert "Original direction is locked" in reselection.json()["detail"]
+    assert conflict.status_code == 409, conflict.text
+    assert "already committed" in conflict.json()["detail"]
+    assert client.get(draft_path).status_code == 404
     assert client.get(f"/projects/{root_id}").json()[
         "selected_candidate_asset_id"
     ] == selected_id
+
+    with Session() as db:
+        job = db.get(StudioJobRecord, job_id)
+        decision = db.get(StudioCreateDecisionRecord, root_id)
+        kept_project = db.get(Project, kept["project"]["root_id"])
+        assert job is not None
+        assert job.status == "succeeded"
+        assert job.completed_outputs == 3
+        assert job.charged_outputs == 3
+        assert job.source_revision_id == selected_id
+        assert job.charged_outputs * job.credits_per_output == 45
+        assert decision is not None
+        assert decision.selected_candidate_asset_id == selected_id
+        assert kept_project is not None
+        assert kept_project.variation_label == "Third generated direction"
+        selected_project = db.get(Project, root_id)
+        assert selected_project is not None
+        assert selected_project.variation_index == 1
+        assert kept_project.family_id == selected_project.family_id
+        assert kept_project.variation_index == 2
 
     preview_response = client.post(
         f"/studio/projects/{root_id}/visual-previews",
@@ -553,11 +623,17 @@ def test_ten_mixed_source_projects_reopen_branch_compare_and_restore(
     ]
 
     original_project_ids: set[str] = set()
+    retained_project_ids: set[str] = set()
     branch_project_ids: set[str] = set()
     immutable_images: dict[str, bytes] = {}
 
     for index, case in enumerate(corpus):
         starting_variant = 20 + (index * 2)
+        job_id = _running_create_job(
+            client,
+            requested_outputs=2,
+            owner=owner,
+        )
         common = {
             "variation_count": 2,
             "starting_variant": starting_variant,
@@ -565,6 +641,7 @@ def test_ten_mixed_source_projects_reopen_branch_compare_and_restore(
             "title": f"Mixed source study {index + 1}",
             "collection": "Ten-project acceptance",
             "tags": [str(case["kind"]), "no-factory"],
+            "studio_job_id": job_id,
         }
         if case["kind"] in {"brief", "prompt"}:
             response = client.post("/projects/from-prompt", json={
@@ -591,6 +668,14 @@ def test_ten_mixed_source_projects_reopen_branch_compare_and_restore(
         assert created.get("spec") is None
         assert created["revisions"] == []
         assert len(created["creative_candidates"]) == 2
+        with Session() as db:
+            reviewing_job = db.get(StudioJobRecord, job_id)
+            assert reviewing_job is not None
+            assert reviewing_job.status == "reviewing"
+            assert reviewing_job.active_design_id == project_id
+            assert reviewing_job.source_revision_id is None
+            assert reviewing_job.completed_outputs == 0
+            assert reviewing_job.charged_outputs == 0
         capabilities = {asset["capability"] for asset in created["assets"]}
         if "source_kind" in case:
             assert "CREATIVE_SOURCE" in capabilities
@@ -624,12 +709,52 @@ def test_ten_mixed_source_projects_reopen_branch_compare_and_restore(
             created["creative_candidates"][1]["sha256"]
         )
 
-        selected = client.post(
-            f"/projects/{project_id}/creative-candidates/{selected_id}/select",
-            json={"created_by": owner},
+        draft_path = (
+            f"/projects/{project_id}/creative-directions/review-draft"
+            f"?studio_job_id={job_id}"
         )
-        assert selected.status_code == 200, selected.text
-        assert selected.json()["active_asset_id"] == selected_id
+        review = {
+            "studio_job_id": job_id,
+            "expected_version": 0,
+            "selected_candidate_id": selected_id,
+            "retained": [{
+                "candidate_id": first_id,
+                "label": f"Saved source direction {index + 1}",
+            }],
+        }
+        saved_review = client.put(draft_path, json=review)
+        assert saved_review.status_code == 200, saved_review.text
+        commit = client.post(
+            f"/projects/{project_id}/creative-directions/commit",
+            json={
+                "selected_candidate_id": selected_id,
+                "retained": review["retained"],
+                "created_by": owner,
+                "studio_job_id": job_id,
+            },
+        )
+        assert commit.status_code == 200, commit.text
+        committed = commit.json()
+        assert committed["project"]["active_asset_id"] == selected_id
+        retained = committed["retained_variations"]
+        assert len(retained) == 1
+        retained_project = retained[0]["project"]
+        retained_project_ids.add(retained_project["root_id"])
+        assert retained[0]["source_asset_id"] == first_id
+        assert retained_project["factory_ready"] is False
+        assert _stored_image(
+            Session, retained_project["active_asset_id"],
+        ) == first_image
+        assert client.get(draft_path).status_code == 404
+
+        with Session() as db:
+            job = db.get(StudioJobRecord, job_id)
+            assert job is not None
+            assert job.status == "succeeded"
+            assert job.completed_outputs == 2
+            assert job.charged_outputs == 2
+            assert job.source_revision_id == selected_id
+            assert job.charged_outputs * job.credits_per_output == 30
 
         preview_response = client.post(
             f"/studio/projects/{project_id}/visual-previews",
@@ -759,12 +884,26 @@ def test_ten_mixed_source_projects_reopen_branch_compare_and_restore(
         assert _stored_image(Session, applied_id) == applied_image
 
     assert len(original_project_ids) == 10
+    assert len(retained_project_ids) == 10
     assert len(branch_project_ids) == 10
+    assert original_project_ids.isdisjoint(retained_project_ids)
     assert original_project_ids.isdisjoint(branch_project_ids)
+    assert retained_project_ids.isdisjoint(branch_project_ids)
 
     with Session() as db:
         projects = list(db.scalars(select(Project)))
-        assert len(projects) == 20
+        assert len(projects) == 30
+        assert db.scalar(
+            select(func.count()).select_from(StudioCreateDecisionRecord)
+        ) == 10
+        jobs = list(db.scalars(select(StudioJobRecord)))
+        assert len(jobs) == 10
+        assert all(
+            job.status == "succeeded"
+            and job.completed_outputs == 2
+            and job.charged_outputs == 2
+            for job in jobs
+        )
         assert db.scalar(select(func.count()).select_from(Design)) == 0
         assert db.scalar(select(func.count()).select_from(DesignVersion)) == 0
         assert db.scalar(select(func.count()).select_from(ApprovalChecklist)) == 0

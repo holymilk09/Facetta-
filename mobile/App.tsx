@@ -459,6 +459,7 @@ export default function App() {
   const actionSourceIsCurrent = actionSourceRevision !== null
     && actionSourceRevision.asset_id === studioProject?.active_asset_id;
   const isStudioHome = tab === 'studio' && studioView === 'home';
+  const isStudioActionWorkspace = tab === 'studio' && studioView === 'action';
   const createReviewNavigationBlocked = tab === 'studio'
     && studioView === 'action'
     && selectedActionId === 'create'
@@ -1087,7 +1088,10 @@ export default function App() {
       )}
       </View>
 
-      <View style={[styles.bottomNav, isStudioHome && styles.bottomNavDark, shadows.soft]}>
+      {!isStudioActionWorkspace && (
+      <View
+        testID="global-navigation"
+        style={[styles.bottomNav, isStudioHome && styles.bottomNavDark, shadows.soft]}>
         {([
           ['studio', '✦', 'Studio'],
           ['collections', '◇', 'Collections'],
@@ -1120,6 +1124,7 @@ export default function App() {
           </Pressable>
         ))}
       </View>
+      )}
     </SafeAreaView>
     </AuthenticatedImageProvider>
   );

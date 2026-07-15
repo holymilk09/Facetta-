@@ -4320,6 +4320,9 @@ export function createTrustedApiClient(options: TrustedApiClientOptions) {
               }),
           ...(request.collection === undefined ? {} : { collection: request.collection }),
           ...(request.tags === undefined ? {} : { tags: request.tags }),
+          ...(request.creative_intent === undefined
+            ? {}
+            : { creative_intent: { ...request.creative_intent } }),
           ...(request.references === undefined ? {} : {
             references: request.references.map((reference) => ({
               role: reference.role,
@@ -4345,6 +4348,9 @@ export function createTrustedApiClient(options: TrustedApiClientOptions) {
           title: request.title,
           ...(request.collection === undefined ? {} : { collection: request.collection }),
           ...(request.tags === undefined ? {} : { tags: request.tags }),
+          ...(request.creative_intent === undefined
+            ? {}
+            : { creative_intent: { ...request.creative_intent } }),
           ...(request.references === undefined ? {} : {
             references: request.references.map((reference) => ({
               role: reference.role,

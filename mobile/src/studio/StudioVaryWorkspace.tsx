@@ -1,4 +1,6 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, {
+  useEffect, useMemo, useRef, useState,
+} from 'react';
 import {
   Pressable, ScrollView, StyleSheet, Text, TextInput, View,
 } from 'react-native';
@@ -60,20 +62,47 @@ export function StudioVaryWorkspace({
       lineage.expectedActiveDesignVersion ?? 'none',
     ].join(':');
   const operationRef = useRef<{ key: string; id: string } | null>(null);
+  const mountedRef = useRef(true);
+  const lineageIdentityRef = useRef({ key: lineageKey, epoch: 0 });
+  if (lineageIdentityRef.current.key !== lineageKey) {
+    lineageIdentityRef.current = {
+      key: lineageKey,
+      epoch: lineageIdentityRef.current.epoch + 1,
+    };
+  }
+  const lineageStateKey = `${lineageKey}:${lineageIdentityRef.current.epoch}`;
+  const requestAuthorityRef = useRef({ key: lineageKey, epoch: 0 });
+  if (requestAuthorityRef.current.key !== lineageKey) {
+    requestAuthorityRef.current = {
+      key: lineageKey,
+      epoch: requestAuthorityRef.current.epoch + 1,
+    };
+  }
   if (operationRef.current === null) {
     operationRef.current = { key: lineageKey, id: createOperationId() };
   }
   if (operationRef.current.key !== lineageKey) {
     operationRef.current = { key: lineageKey, id: createOperationId() };
   }
-  const [labelState, setLabelState] = useState({ key: lineageKey, value: '' });
+  const [labelState, setLabelState] = useState({ key: lineageStateKey, value: '' });
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [errorState, setErrorState] = useState<{ key: string; message: string } | null>(null);
   const [successState, setSuccessState] = useState<{ key: string; label: string } | null>(null);
-  const label = labelState.key === lineageKey ? labelState.value : '';
-  const busy = busyKey === lineageKey;
-  const error = errorState?.key === lineageKey ? errorState.message : null;
-  const createdLabel = successState?.key === lineageKey ? successState.label : null;
+  const label = labelState.key === lineageStateKey ? labelState.value : '';
+  const busy = busyKey === lineageStateKey;
+  const error = errorState?.key === lineageStateKey ? errorState.message : null;
+  const createdLabel = successState?.key === lineageStateKey ? successState.label : null;
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+      requestAuthorityRef.current = {
+        ...requestAuthorityRef.current,
+        epoch: requestAuthorityRef.current.epoch + 1,
+      };
+    };
+  }, []);
 
   if (lineage === null) {
     return (
@@ -88,8 +117,11 @@ export function StudioVaryWorkspace({
     const nextLabel = label.trim();
     if (!nextLabel || busy) return;
     const requestLineageKey = lineageKey;
+    const requestStateKey = lineageStateKey;
+    const requestEpoch = requestAuthorityRef.current.epoch + 1;
+    requestAuthorityRef.current = { key: requestLineageKey, epoch: requestEpoch };
     const operationId = operationRef.current!.id;
-    setBusyKey(requestLineageKey);
+    setBusyKey(requestStateKey);
     setErrorState(null);
     const result = await gateway.saveRevisionAsVariation({
       projectId: lineage.projectId,
@@ -102,18 +134,21 @@ export function StudioVaryWorkspace({
       label: nextLabel,
       operationId,
     });
-    if (operationRef.current?.key !== requestLineageKey) return;
+    if (!mountedRef.current
+        || requestAuthorityRef.current.key !== requestLineageKey
+        || requestAuthorityRef.current.epoch !== requestEpoch
+        || operationRef.current?.key !== requestLineageKey) return;
     setBusyKey(null);
     if (result.error !== null) {
       setErrorState({
-        key: requestLineageKey,
+        key: requestStateKey,
         message: designerErrorMessage(result.error, 'vary'),
       });
       return;
     }
     operationRef.current = { key: requestLineageKey, id: createOperationId() };
     onCreated(result.data.project);
-    setSuccessState({ key: requestLineageKey, label: nextLabel });
+    setSuccessState({ key: requestStateKey, label: nextLabel });
   };
 
   if (createdLabel !== null) {
@@ -159,7 +194,7 @@ export function StudioVaryWorkspace({
       <TextInput
         accessibilityLabel={varyDirectionLabel}
         value={label}
-        onChangeText={(value) => setLabelState({ key: lineageKey, value })}
+        onChangeText={(value) => setLabelState({ key: lineageStateKey, value })}
         placeholder="Rose gold study"
         placeholderTextColor={theme.faint}
         style={styles.input}

@@ -393,6 +393,69 @@ class CreativeRoleReferenceRequest(BaseModel):
     media_type: Literal["image/png", "image/jpeg", "image/webp"]
 
 
+class CreativeIntentRequest(BaseModel):
+    """Typed visual preferences; advisory only and never specification truth."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    metal_color: Literal["yellow", "white", "rose", "mixed"] | None = None
+    color_accent: Literal[
+        "colorless", "blue", "green", "pink_red", "warm", "multicolor"
+    ] | None = None
+    surface_finish: Literal[
+        "polished", "satin_brushed", "hammered", "frosted", "organic", "mixed"
+    ] | None = None
+    visual_mood: Literal[
+        "minimal", "romantic", "organic", "heritage", "sculptural", "playful"
+    ] | None = None
+
+    @model_validator(mode="after")
+    def contain_one_choice(self) -> "CreativeIntentRequest":
+        if not self.model_dump(exclude_none=True):
+            raise ValueError("creative_intent must contain at least one preference")
+        return self
+
+
+_CREATIVE_INTENT_LABELS: dict[str, dict[str, str]] = {
+    "metal_color": {
+        "yellow": "Yellow gold", "white": "White metal",
+        "rose": "Rose gold", "mixed": "Mixed metal",
+    },
+    "color_accent": {
+        "colorless": "Colorless accents", "blue": "Blue accents",
+        "green": "Green accents", "pink_red": "Pink and red accents",
+        "warm": "Warm-tone accents", "multicolor": "Multicolor accents",
+    },
+    "surface_finish": {
+        "polished": "High-polish surface", "satin_brushed": "Satin or brushed surface",
+        "hammered": "Hammered surface", "frosted": "Frosted surface",
+        "organic": "Organic texture", "mixed": "Mixed surface finishes",
+    },
+    "visual_mood": {
+        "minimal": "Minimal visual mood", "romantic": "Romantic visual mood",
+        "organic": "Organic visual mood", "heritage": "Heritage visual mood",
+        "sculptural": "Sculptural visual mood", "playful": "Playful visual mood",
+    },
+}
+
+
+def _creative_intent_instruction(
+    instruction: str,
+    intent: CreativeIntentRequest | None,
+) -> str:
+    if intent is None:
+        return instruction
+    choices = intent.model_dump(exclude_none=True)
+    lines = [
+        f"- {_CREATIVE_INTENT_LABELS[field][str(value)]}"
+        for field, value in choices.items()
+    ]
+    return (
+        f"{instruction}\n\nDESIGN GUIDANCE (designer-selected; visual intent only, "
+        "not manufacturing fact):\n" + "\n".join(lines)
+    )
+
+
 class ProjectFromDrawingRequest(BaseModel):
     """One media intake with explicit, designer-declared source semantics."""
 
@@ -414,6 +477,7 @@ class ProjectFromDrawingRequest(BaseModel):
     title: Annotated[str, Field(min_length=1, max_length=200)]
     collection: Annotated[str, Field(min_length=1, max_length=80)] | None = None
     tags: Annotated[list[str], Field(max_length=24)] = Field(default_factory=list)
+    creative_intent: CreativeIntentRequest | None = None
     studio_job_id: Annotated[str, Field(min_length=1, max_length=32)] | None = None
 
     # A professional plate often repeats one finished piece as front, side,
@@ -455,6 +519,7 @@ class ProjectFromPromptRequest(BaseModel):
     title: Annotated[str, Field(min_length=1, max_length=200)]
     collection: Annotated[str, Field(min_length=1, max_length=80)] | None = None
     tags: Annotated[list[str], Field(max_length=24)] = Field(default_factory=list)
+    creative_intent: CreativeIntentRequest | None = None
     studio_job_id: Annotated[str, Field(min_length=1, max_length=32)] | None = None
     references: Annotated[
         list[CreativeRoleReferenceRequest], Field(max_length=3)
@@ -2292,6 +2357,9 @@ def create_project_from_prompt(
     if isinstance(decoded, JSONResponse):
         return decoded
     decoded_references = decoded
+    effective_prompt = _creative_intent_instruction(
+        request.prompt, request.creative_intent,
+    )
     advisory_board = None
     if decoded_references:
         try:
@@ -2308,13 +2376,13 @@ def create_project_from_prompt(
         try:
             result = (
                 generate(
-                    request.prompt,
+                    effective_prompt,
                     variant,
                     reference_board=advisory_board.image,
                     reference_instruction=advisory_board.instruction,
                 )
                 if advisory_board is not None
-                else generate(request.prompt, variant)
+                else generate(effective_prompt, variant)
             )
         except ImageAgentError as exc:
             observed_run_ids, failed_run_id = _persist_create_failure_evidence(
@@ -2403,7 +2471,7 @@ def create_project_from_prompt(
         db,
         candidates=tuple(CreativeCandidateInput(
             image=result.image_bytes,
-            instruction=request.prompt,
+            instruction=effective_prompt,
             image_run=result,
         ) for result in generated),
         reference_board=(
@@ -2500,7 +2568,9 @@ def create_project_from_drawing(
     source_region_asset: SourceAssetInput | None = None
     reference_board_asset: SourceAssetInput | None = None
     reference_role_contract: str | None = None
-    effective_instruction = request.instruction.strip()
+    effective_instruction = _creative_intent_instruction(
+        request.instruction.strip(), request.creative_intent,
+    )
     if request.source_region is not None:
         region = request.source_region
         try:

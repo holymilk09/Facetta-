@@ -743,22 +743,19 @@ test('Create keeps the review mounted until its latest Activity draft is durable
       expect.objectContaining({ disabled: true }),
     );
   });
-  for (const tabName of ['Studio', 'Collections', 'Activity', 'Learn']) {
-    expect(view.getByRole('tab', { name: tabName }).props.accessibilityState).toEqual(
-      expect.objectContaining({ disabled: true }),
-    );
-  }
-  fireEvent.press(view.getByRole('tab', { name: 'Learn' }));
+  expect(view.queryByTestId('global-navigation')).toBeNull();
+  expect(view.queryAllByRole('tab')).toHaveLength(0);
   fireEvent.press(view.getByLabelText('Back to Studio'));
   expect(view.getByText('Mock draft saving')).toBeTruthy();
   expect(view.queryByText('Learn the workflow, when you need it.')).toBeNull();
 
   fireEvent.press(view.getByText('Mock draft saved'));
   await waitFor(() => {
-    expect(view.getByRole('tab', { name: 'Learn' }).props.accessibilityState).toEqual({
-      selected: false,
-    });
+    expect(view.getByLabelText('Back to Studio').props.accessibilityState).toEqual({});
   });
+  expect(view.queryByTestId('global-navigation')).toBeNull();
+  fireEvent.press(view.getByLabelText('Back to Studio'));
+  expect(await view.findByTestId('global-navigation')).toBeTruthy();
   fireEvent.press(view.getByRole('tab', { name: 'Learn' }));
   expect(await view.findByText('Learn the workflow, when you need it.')).toBeTruthy();
 });
@@ -801,8 +798,9 @@ test('Create restores its full draft after leaving for every global destination'
   expectRestoredDraft();
 
   for (const destination of ['Studio', 'Collections', 'Activity', 'Learn'] as const) {
-    await fireEvent.press(view.getByRole('tab', { name: destination }));
+    await fireEvent.press(view.getByLabelText('Back to Studio'));
     if (destination !== 'Studio') {
+      await fireEvent.press(view.getByRole('tab', { name: destination }));
       await fireEvent.press(view.getByRole('tab', { name: 'Studio' }));
     }
     await fireEvent.press(await view.findByText('Start from an idea or reference'));
@@ -825,7 +823,7 @@ test('a successful Create generation clears the setup before the next Create ses
   expect(view.getByText('Mock draft count: 2')).toBeTruthy();
   expect(view.getByText('Mock master source: none')).toBeTruthy();
 
-  await fireEvent.press(view.getByRole('tab', { name: 'Studio' }));
+  await fireEvent.press(view.getByLabelText('Back to Studio'));
   await fireEvent.press(await view.findByText('Start from an idea or reference'));
   expect(view.getByLabelText('Mock draft sentence').props.value).toBe('');
   expect(view.getByText('Mock draft count: 2')).toBeTruthy();
@@ -1118,7 +1116,8 @@ test('Collections can return an empty account directly to Create', async () => {
   fireEvent.press(await view.findByText('Start a design from Collections'));
 
   expect(await view.findByText('Save mocked direction')).toBeTruthy();
-  expect(view.getByRole('tab', { name: 'Studio' }).props.accessibilityState).toEqual({ selected: true });
+  expect(view.queryByTestId('global-navigation')).toBeNull();
+  expect(view.getByLabelText('Back to Studio')).toBeTruthy();
 });
 
 test('the latest family selection wins when an older project request resolves last', async () => {
@@ -1232,7 +1231,7 @@ test('Collections delegates variation creation to Studio Vary with the exact act
   fireEvent.press(await view.findByText('Save mocked direction'));
   expect(await view.findByText('Refine route reached')).toBeTruthy();
 
-  fireEvent.press(view.getAllByText('Collections').at(-1)!);
+  fireEvent.press(view.getByLabelText('Open revision history'));
   fireEvent.press(await view.findByText('Vary exact project_1'));
   expect(await view.findByText('Vary route reached for project_1 via asset_1')).toBeTruthy();
   expect((await view.findAllByText('Starting Revision 1')).length).toBeGreaterThanOrEqual(1);
@@ -1244,7 +1243,7 @@ test('Collections routes a historical revision to canonical Vary without restori
 
   await fireEvent.press(await view.findByText('Start from an idea or reference'));
   await fireEvent.press(await view.findByText('Save mocked direction'));
-  fireEvent.press(view.getAllByText('Collections').at(-1)!);
+  fireEvent.press(view.getByLabelText('Open revision history'));
   fireEvent.press(await view.findByText('Vary from mocked Revision 1'));
 
   expect(await view.findByText(
@@ -1262,7 +1261,7 @@ test('Collections returns the selected exact revision to Refine', async () => {
   fireEvent.press(await view.findByText('Save mocked direction'));
   expect(await view.findByText('Refine route reached')).toBeTruthy();
 
-  fireEvent.press(view.getAllByText('Collections').at(-1)!);
+  fireEvent.press(view.getByLabelText('Open revision history'));
   fireEvent.press(await view.findByText('Continue refining exact revision'));
   expect(await view.findByText('Refine route reached')).toBeTruthy();
 });
@@ -1292,14 +1291,14 @@ test('Collections sends the exact active revision to Present', async () => {
   fireEvent.press(view.getByText('Start from an idea or reference'));
   fireEvent.press(await view.findByText('Save mocked direction'));
   expect(await view.findByText('Refine route reached')).toBeTruthy();
-  fireEvent.press(view.getByRole('tab', { name: 'Collections' }));
+  fireEvent.press(view.getByLabelText('Open revision history'));
 
   expect(view.queryByText('Review optional Factory readiness')).toBeNull();
   fireEvent.press(await view.findByText('Present exact current revision'));
   expect(await view.findByText('Present route reached for asset_1')).toBeTruthy();
   expect(await view.findByText('Present destination client')).toBeTruthy();
 
-  fireEvent.press(view.getByRole('tab', { name: 'Collections' }));
+  fireEvent.press(view.getByLabelText('Open revision history'));
   fireEvent.press(await view.findByText('Market exact current revision'));
   expect(await view.findByText('Present route reached for asset_1')).toBeTruthy();
   expect(await view.findByText('Present destination marketing')).toBeTruthy();
@@ -1316,7 +1315,7 @@ test('Collections keeps optional Factory out of the everyday exact-revision hand
   fireEvent.press(await view.findByText('Save starting facts'));
   expect(await view.findByText('Refine route reached')).toBeTruthy();
 
-  fireEvent.press(view.getByRole('tab', { name: 'Collections' }));
+  fireEvent.press(view.getByLabelText('Open revision history'));
   expect(view.queryByText(/Factory/i)).toBeNull();
 });
 
@@ -1333,7 +1332,7 @@ test('Collections also hides Factory when the exact ring is already pack-ready',
   fireEvent.press(await view.findByText('Save starting facts'));
   expect(await view.findByText('Refine route reached')).toBeTruthy();
 
-  fireEvent.press(view.getByRole('tab', { name: 'Collections' }));
+  fireEvent.press(view.getByLabelText('Open revision history'));
   expect(view.queryByText(/Factory/i)).toBeNull();
 });
 
@@ -1350,7 +1349,7 @@ test('Collections hides Factory readiness for an exact non-ring revision', async
   expect(await view.findByText('Refine route reached')).toBeTruthy();
   expect(mockGetStudioCapabilities).not.toHaveBeenCalled();
 
-  fireEvent.press(view.getByRole('tab', { name: 'Collections' }));
+  fireEvent.press(view.getByLabelText('Open revision history'));
   expect(view.queryByText(/Factory/i)).toBeNull();
 });
 
@@ -1368,7 +1367,7 @@ test('Collections hides Factory readiness when the account lacks entitlement', a
   expect(await view.findByText('Refine route reached')).toBeTruthy();
   await waitFor(() => expect(mockGetStudioCapabilities).toHaveBeenCalled());
 
-  fireEvent.press(view.getByRole('tab', { name: 'Collections' }));
+  fireEvent.press(view.getByLabelText('Open revision history'));
   expect(view.queryByText(/Factory/i)).toBeNull();
 });
 

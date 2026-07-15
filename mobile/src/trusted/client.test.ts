@@ -545,6 +545,11 @@ describe('trusted API decoders', () => {
       title: 'Concept',
       source_region_description: 'Front necklace elevation',
       source_region: { x: 0.2, y: 0.1, width: 0.6, height: 0.5 },
+      creative_intent: {
+        metal_color: 'white',
+        surface_finish: 'satin_brushed',
+        visual_mood: 'sculptural',
+      },
       references: [{
         role: 'material_style',
         image_base64: 'bWF0ZXJpYWw=',
@@ -571,6 +576,11 @@ describe('trusted API decoders', () => {
       instruction: 'Preserve every visible element and render in platinum.',
       source_region_description: 'Front necklace elevation',
       source_region: { x: 0.2, y: 0.1, width: 0.6, height: 0.5 },
+      creative_intent: {
+        metal_color: 'white',
+        surface_finish: 'satin_brushed',
+        visual_mood: 'sculptural',
+      },
       references: [{
         role: 'material_style',
         image_base64: 'bWF0ZXJpYWw=',

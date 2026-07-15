@@ -9,7 +9,8 @@ import type {
   StudioCreativeDirectionReviewRequest, StudioGateway, StudioGatewayError,
 } from './gateway';
 import type {
-  AssetSummary, CreativeDirectionReviewDraft, CreativeSourceKind, ProjectDetail,
+  AssetSummary, CreativeDirectionReviewDraft, CreativeIntentRequest, CreativeSourceKind,
+  ProjectDetail,
 } from '../trusted/types';
 import { radius, theme } from '../theme';
 import { designerErrorMessage } from './designerErrorMessage';
@@ -43,6 +44,124 @@ export interface StudioCreateSelection {
 
 export type StudioCreateCandidateCount = 1 | 2 | 3 | 4;
 
+export interface StudioCreateGuidance {
+  metalColor: 'auto' | 'yellow' | 'white' | 'rose' | 'mixed';
+  colorAccent: 'auto' | 'colorless' | 'blue' | 'green' | 'pink_red' | 'warm' | 'multicolor';
+  surfaceFinish: 'auto' | 'polished' | 'satin_brushed' | 'hammered' | 'frosted' | 'organic' | 'mixed';
+  visualMood: 'auto' | 'minimal' | 'romantic' | 'organic' | 'heritage' | 'sculptural' | 'playful';
+}
+
+export const EMPTY_STUDIO_CREATE_GUIDANCE: StudioCreateGuidance = {
+  metalColor: 'auto',
+  colorAccent: 'auto',
+  surfaceFinish: 'auto',
+  visualMood: 'auto',
+};
+
+const guidanceChoices = {
+  metalColor: {
+    title: 'Metal color',
+    help: null,
+    choices: [
+      ['auto', 'Facetta decides'], ['yellow', 'Yellow gold'], ['white', 'White metal'],
+      ['rose', 'Rose gold'], ['mixed', 'Mixed metal'],
+    ],
+  },
+  colorAccent: {
+    title: 'Color accents',
+    help: 'For stones, enamel, or other accents.',
+    choices: [
+      ['auto', 'Facetta decides'], ['colorless', 'Colorless'], ['blue', 'Blue'],
+      ['green', 'Green'], ['pink_red', 'Pink & red'], ['warm', 'Warm tones'],
+      ['multicolor', 'Multicolor'],
+    ],
+  },
+  surfaceFinish: {
+    title: 'Surface & finish',
+    help: null,
+    choices: [
+      ['auto', 'Facetta decides'], ['polished', 'High polish'],
+      ['satin_brushed', 'Satin / brushed'], ['hammered', 'Hammered'],
+      ['frosted', 'Frosted'], ['organic', 'Organic texture'], ['mixed', 'Mixed finish'],
+    ],
+  },
+  visualMood: {
+    title: 'Visual mood',
+    help: 'Choose the feeling you want the design to express. This guides restraint, ornament, and presentation—not logos or another brand’s jewelry shapes.',
+    choices: [
+      ['auto', 'Facetta decides'], ['minimal', 'Minimal'], ['romantic', 'Romantic'],
+      ['organic', 'Organic'], ['heritage', 'Heritage'], ['sculptural', 'Sculptural'],
+      ['playful', 'Playful'],
+    ],
+  },
+} as const;
+
+const guidanceLabels: Record<string, string> = Object.fromEntries(
+  (Object.values(guidanceChoices) as readonly {
+    choices: readonly (readonly [string, string])[];
+  }[]).flatMap(({ choices }) => choices),
+);
+
+const toCreativeIntent = (guidance: StudioCreateGuidance): CreativeIntentRequest | undefined => {
+  const intent: CreativeIntentRequest = {};
+  if (guidance.metalColor !== 'auto') intent.metal_color = guidance.metalColor;
+  if (guidance.colorAccent !== 'auto') intent.color_accent = guidance.colorAccent;
+  if (guidance.surfaceFinish !== 'auto') intent.surface_finish = guidance.surfaceFinish;
+  if (guidance.visualMood !== 'auto') intent.visual_mood = guidance.visualMood;
+  return Object.keys(intent).length === 0 ? undefined : intent;
+};
+
+const selectedGuidanceLabels = (guidance: StudioCreateGuidance): string[] => (
+  Object.values(guidance)
+    .filter((value) => value !== 'auto')
+    .map((value) => guidanceLabels[value] ?? value)
+);
+
+const imageReferencePresentation: Record<SecondaryCreateReferenceRole, {
+  label: string; help: string; action: string;
+}> = {
+  material_style: {
+    label: 'Material & finish image',
+    help: 'Use its metal color, stone palette, texture, or finish—not its jewelry shape.',
+    action: 'Choose material or finish image',
+  },
+  construction_detail: {
+    label: 'Specific jewelry detail image',
+    help: 'A close-up of a setting, gallery, clasp, hinge, chain link, engraving, or edge treatment. It guides appearance only; engineering is reviewed later.',
+    action: 'Choose detail image',
+  },
+  brand_direction: {
+    label: 'Visual mood image',
+    help: 'A moodboard, artwork, interior, packaging, or campaign image. Use its atmosphere—not logos or another jewelry design.',
+    action: 'Choose mood image',
+  },
+};
+
+const outputChoiceCopy: Record<StudioCreateCandidateCount, {
+  title: string; detail: string; example: string;
+}> = {
+  1: {
+    title: '1 · Focus',
+    detail: 'One strong interpretation',
+    example: 'Best when you want one focused proposal, not a range.',
+  },
+  2: {
+    title: '2 · Compare',
+    detail: 'Two distinct approaches · Recommended',
+    example: 'Possible contrast: a restrained reading and a more sculptural reading of the same brief.',
+  },
+  3: {
+    title: '3 · Explore',
+    detail: 'A broader range',
+    example: 'May explore different silhouettes, stone emphasis, or moods.',
+  },
+  4: {
+    title: '4 · Explore wider',
+    detail: 'The most variety',
+    example: 'May span the widest mix of form, setting, surface, and mood.',
+  },
+};
+
 /**
  * The complete pre-generation Create setup. The master reference owns its
  * explicit sourceKind so source truth cannot drift from a parallel field.
@@ -50,12 +169,14 @@ export type StudioCreateCandidateCount = 1 | 2 | 3 | 4;
 export interface StudioCreateDraft {
   sentence: string;
   references: readonly StudioCreateReference[];
+  guidance: StudioCreateGuidance;
   candidateCount: StudioCreateCandidateCount;
 }
 
 export const EMPTY_STUDIO_CREATE_DRAFT: StudioCreateDraft = {
   sentence: '',
   references: [],
+  guidance: EMPTY_STUDIO_CREATE_GUIDANCE,
   candidateCount: 2,
 };
 
@@ -202,10 +323,11 @@ export function StudioCreateWorkspace({
   const [localDraft, setLocalDraft] = useState<StudioCreateDraft>(() => ({
     sentence: initialSentence,
     references: [...initialReferences],
+    guidance: EMPTY_STUDIO_CREATE_GUIDANCE,
     candidateCount: 2,
   }));
   const createDraft = controlledDraft ?? localDraft;
-  const { sentence, references, candidateCount } = createDraft;
+  const { sentence, references, guidance, candidateCount } = createDraft;
   const controlledDraftRef = useRef(controlledDraft);
   controlledDraftRef.current = controlledDraft;
   const onDraftChangeRef = useRef(onDraftChange);
@@ -242,7 +364,13 @@ export function StudioCreateWorkspace({
     };
   }, []);
   const [setupOpen, setSetupOpen] = useState(
-    (controlledDraft?.references.length ?? initialReferences.length) > 0,
+    (controlledDraft?.references.length ?? initialReferences.length) > 0
+      || selectedGuidanceLabels(controlledDraft?.guidance ?? EMPTY_STUDIO_CREATE_GUIDANCE).length > 0,
+  );
+  const [inspirationImagesOpen, setInspirationImagesOpen] = useState(
+    (controlledDraft?.references ?? initialReferences).some(
+      (reference) => reference.role !== 'master_geometry',
+    ),
   );
   const [project, setProject] = useState<ProjectDetail | null>(resumeProject);
   const resumedCandidates = resumeProject === null ? [] : creativeCandidates(resumeProject);
@@ -580,6 +708,7 @@ export function StudioCreateWorkspace({
     );
     const submittedSourceKind = submittedMaster?.sourceKind ?? null;
     const prompt = submittedDraft.sentence.trim();
+    const creativeIntent = toCreativeIntent(submittedDraft.guidance);
     if ((!prompt && submittedMaster === null) || busy) return;
     const requestId = generationRequestIdRef.current + 1;
     generationRequestIdRef.current = requestId;
@@ -611,6 +740,7 @@ export function StudioCreateWorkspace({
     const result = submittedMaster === null
       ? await gateway.createFromPrompt({
           prompt,
+          ...(creativeIntent === undefined ? {} : { creative_intent: creativeIntent }),
           ...(submittedSecondary.length === 0 ? {} : {
             references: submittedSecondary.map((reference) => ({
               role: reference.role,
@@ -627,6 +757,7 @@ export function StudioCreateWorkspace({
           source_kind: submittedSourceKind!,
           media_type: submittedMaster.mediaType,
           ...(prompt.length === 0 ? {} : { instruction: prompt }),
+          ...(creativeIntent === undefined ? {} : { creative_intent: creativeIntent }),
           references: submittedSecondary.map((reference) => ({
             role: reference.role,
             image_base64: reference.imageBase64,
@@ -738,6 +869,7 @@ export function StudioCreateWorkspace({
     };
     setError(null);
     setSetupOpen(false);
+    setInspirationImagesOpen(false);
     setProject(null);
     setSelectedAssetId(null);
     setSelectionStudioJobId(null);
@@ -1157,9 +1289,9 @@ export function StudioCreateWorkspace({
           />
         )}
         <View style={styles.referenceCopy}>
-          <Text style={styles.referenceTitle}>Visual source</Text>
+          <Text style={styles.referenceTitle}>Start from an image (optional)</Text>
           <Text style={styles.referenceHelp}>{masterReference === null
-            ? 'Optional. Add one source design to preserve its visible form.'
+            ? 'Upload one design whose visible form you want to carry forward.'
             : masterReference.label}</Text>
         </View>
         {masterReference === null ? (
@@ -1167,7 +1299,7 @@ export function StudioCreateWorkspace({
             accessibilityRole="button"
             style={styles.addSourceButton}
             onPress={() => requestReference('master_geometry')}>
-            <Text style={styles.addSourceButtonText}>Add a drawing, photo, or render</Text>
+            <Text style={styles.addSourceButtonText}>Upload drawing, photo, or render</Text>
           </Pressable>
         ) : (
           <View style={styles.referenceActions}>
@@ -1230,16 +1362,19 @@ export function StudioCreateWorkspace({
 
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel="References and output options"
+        accessibilityLabel="Guide the look"
         accessibilityState={{ expanded: setupOpen }}
         onPress={() => setSetupOpen((current) => !current)}
         style={[styles.setupDisclosure, setupOpen && styles.setupDisclosureOpen]}>
         <View style={styles.setupDisclosureCopy}>
-          <Text style={styles.setupDisclosureTitle}>References &amp; output options</Text>
+          <Text style={styles.setupDisclosureTitle}>Guide the look (optional)</Text>
           <Text style={styles.setupDisclosureSummary}>
-            {candidateCount} direction{candidateCount === 1 ? '' : 's'} · {secondaryReferences.length === 0
-              ? 'No supporting references'
-              : `${secondaryReferences.length} supporting reference${secondaryReferences.length === 1 ? '' : 's'}`}
+            {selectedGuidanceLabels(guidance).length === 0
+              ? 'Facetta decides the look'
+              : selectedGuidanceLabels(guidance).join(' · ')}
+            {secondaryReferences.length === 0
+              ? ''
+              : ` · ${secondaryReferences.length} inspiration image${secondaryReferences.length === 1 ? '' : 's'}`}
           </Text>
         </View>
         <Text style={styles.disclosureGlyph}>{setupOpen ? '−' : '+'}</Text>
@@ -1247,93 +1382,150 @@ export function StudioCreateWorkspace({
 
       {setupOpen && (
         <View style={styles.setupPanel}>
-          <Text style={styles.sectionTitle}>How many directions?</Text>
-          <View style={styles.countRow}>
-            {createOutputChoices.map((count) => (
-              <Pressable
-                key={count}
-                accessibilityRole="radio"
-                accessibilityLabel={`${count} creative direction${count === 1 ? '' : 's'}`}
-                accessibilityState={{ checked: candidateCount === count }}
-                style={[styles.countChip, candidateCount === count && styles.countChipSelected]}
-                onPress={() => updateDraft((current) => ({
-                  ...current,
-                  candidateCount: count,
-                }))}>
-                <Text style={[styles.countText, candidateCount === count && styles.countTextSelected]}>{count}</Text>
-              </Pressable>
-            ))}
-          </View>
-
-          <Text style={styles.sectionTitle}>Optional references</Text>
-          <Text style={styles.sectionHelp}>Give every image one role so intent stays unambiguous.</Text>
-          <View style={styles.referenceList}>
-            {createReferenceControls.filter(
-              ({ role }) => role !== 'master_geometry',
-            ).map(({ role, label, help }) => {
-              const reference = references.find((item) => item.role === role);
-              const advisoryInputReady = sentence.trim().length > 0 || masterReference !== null;
-              return (
-                <View key={role} style={styles.referenceRow}>
-                  {reference !== undefined && (
-                    <StudioReviewImage
-                      accessibilityLabel={`${label} reference preview`}
-                      inspectionLabel={`${label} · ${reference.label}`}
-                      source={{ uri: referencePreviewUri(reference) }}
-                      onLoad={() => visualReview.markReady(referenceVisualKey(reference))}
-                      onError={() => visualReview.markFailed(referenceVisualKey(reference))}
-                      style={styles.referenceThumbnail}
-                    />
-                  )}
-                  <View style={styles.referenceCopy}>
-                    <Text style={styles.referenceTitle}>{label}</Text>
-                    <Text style={styles.referenceHelp}>{reference?.label ?? help}</Text>
-                  </View>
-                  {reference === undefined ? (
+          <Text style={styles.sectionHelp}>Tap only what matters to you. Leave the rest for Facetta to decide.</Text>
+          {(Object.keys(guidanceChoices) as Array<keyof StudioCreateGuidance>).map((key) => {
+            const group = guidanceChoices[key];
+            return (
+              <View key={key} style={styles.guidanceGroup}>
+                <Text style={styles.sectionTitle}>{group.title}</Text>
+                {group.help !== null && <Text style={styles.sectionHelp}>{group.help}</Text>}
+                <View style={styles.choiceRow}>
+                  {group.choices.map(([value, label]) => (
                     <Pressable
-                      accessibilityRole="button"
-                      accessibilityLabel={`Add ${label} reference`}
-                      accessibilityHint={!advisoryInputReady
-                        ? 'Add a design sentence or visual source before adding this supporting reference.'
-                        : help}
-                      accessibilityState={{ disabled: !advisoryInputReady }}
-                      disabled={!advisoryInputReady}
+                      key={value}
+                      accessibilityRole="radio"
+                      accessibilityLabel={`${group.title}: ${label}`}
+                      accessibilityState={{ checked: guidance[key] === value }}
+                      onPress={() => updateDraft((current) => ({
+                        ...current,
+                        guidance: { ...current.guidance, [key]: value },
+                      }))}
                       style={[
-                        styles.referenceButton,
-                        !advisoryInputReady && styles.buttonDisabled,
-                      ]}
-                      onPress={() => requestReference(role)}>
-                      <Text style={styles.referenceButtonText}>
-                        {!advisoryInputReady ? 'Add an idea first' : 'Add'}
-                      </Text>
+                        styles.choiceChip,
+                        guidance[key] === value && styles.choiceChipSelected,
+                      ]}>
+                      <Text style={[
+                        styles.choiceChipText,
+                        guidance[key] === value && styles.choiceChipTextSelected,
+                      ]}>{label}</Text>
                     </Pressable>
-                  ) : (
-                    <View style={styles.referenceActions}>
-                      <Pressable
-                        accessibilityRole="button"
-                        accessibilityLabel={`Replace ${label} reference`}
-                        style={styles.referenceButton}
-                        onPress={() => requestReference(role)}>
-                        <Text style={styles.referenceButtonText}>Replace</Text>
-                      </Pressable>
-                      <Pressable
-                        accessibilityRole="button"
-                        accessibilityLabel={`Remove ${label} reference`}
-                        style={styles.referenceButton}
-                        onPress={() => updateDraft((current) => ({
-                          ...current,
-                          references: current.references.filter((item) => item.id !== reference.id),
-                        }))}>
-                        <Text style={styles.referenceButtonText}>Remove</Text>
-                      </Pressable>
-                    </View>
-                  )}
+                  ))}
                 </View>
-              );
-            })}
-          </View>
+              </View>
+            );
+          })}
+
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="Add inspiration images"
+            accessibilityState={{ expanded: inspirationImagesOpen }}
+            onPress={() => setInspirationImagesOpen((current) => !current)}
+            style={styles.imageDisclosure}>
+            <View style={styles.setupDisclosureCopy}>
+              <Text style={styles.referenceTitle}>Add inspiration images (optional)</Text>
+              <Text style={styles.referenceHelp}>Use a picture only when it explains the look better than words.</Text>
+            </View>
+            <Text style={styles.disclosureGlyph}>{inspirationImagesOpen ? '−' : '+'}</Text>
+          </Pressable>
+
+          {inspirationImagesOpen && (
+            <View style={styles.referenceList}>
+              {createReferenceControls.filter(
+                (control): control is typeof control & { role: SecondaryCreateReferenceRole } => (
+                  control.role !== 'master_geometry'
+                ),
+              ).map(({ role }) => {
+                const presentation = imageReferencePresentation[role];
+                const reference = references.find((item) => item.role === role);
+                const advisoryInputReady = sentence.trim().length > 0 || masterReference !== null;
+                return (
+                  <View key={role} style={styles.referenceRow}>
+                    {reference !== undefined && (
+                      <StudioReviewImage
+                        accessibilityLabel={`${presentation.label} preview`}
+                        inspectionLabel={`${presentation.label} · ${reference.label}`}
+                        source={{ uri: referencePreviewUri(reference) }}
+                        onLoad={() => visualReview.markReady(referenceVisualKey(reference))}
+                        onError={() => visualReview.markFailed(referenceVisualKey(reference))}
+                        style={styles.referenceThumbnail}
+                      />
+                    )}
+                    <View style={styles.referenceCopy}>
+                      <Text style={styles.referenceTitle}>{presentation.label}</Text>
+                      <Text style={styles.referenceHelp}>{reference?.label ?? presentation.help}</Text>
+                    </View>
+                    {reference === undefined ? (
+                      <Pressable
+                        accessibilityRole="button"
+                        accessibilityLabel={presentation.action}
+                        accessibilityHint={!advisoryInputReady
+                          ? 'Add a design sentence or visual source before choosing an inspiration image.'
+                          : presentation.help}
+                        accessibilityState={{ disabled: !advisoryInputReady }}
+                        disabled={!advisoryInputReady}
+                        style={[styles.referenceButton, !advisoryInputReady && styles.buttonDisabled]}
+                        onPress={() => requestReference(role)}>
+                        <Text style={styles.referenceButtonText}>
+                          {!advisoryInputReady ? 'Add an idea first' : 'Choose image'}
+                        </Text>
+                      </Pressable>
+                    ) : (
+                      <View style={styles.referenceActions}>
+                        <Pressable
+                          accessibilityRole="button"
+                          accessibilityLabel={`Replace ${presentation.label}`}
+                          style={styles.referenceButton}
+                          onPress={() => requestReference(role)}>
+                          <Text style={styles.referenceButtonText}>Replace</Text>
+                        </Pressable>
+                        <Pressable
+                          accessibilityRole="button"
+                          accessibilityLabel={`Remove ${presentation.label}`}
+                          style={styles.referenceButton}
+                          onPress={() => updateDraft((current) => ({
+                            ...current,
+                            references: current.references.filter((item) => item.id !== reference.id),
+                          }))}>
+                          <Text style={styles.referenceButtonText}>Remove</Text>
+                        </Pressable>
+                      </View>
+                    )}
+                  </View>
+                );
+              })}
+            </View>
+          )}
         </View>
       )}
+
+      <Text style={styles.sectionTitle}>How many design options?</Text>
+      <Text style={styles.sectionHelp}>
+        Each option is a different design concept—not another camera angle. You’ll compare them, choose one to refine, and may keep the others as variations.
+      </Text>
+      <View style={styles.outputGrid}>
+        {createOutputChoices.map((count) => (
+          <Pressable
+            key={count}
+            accessibilityRole="radio"
+            accessibilityLabel={`${count} design option${count === 1 ? '' : 's'}: ${outputChoiceCopy[count].detail}. ${outputChoiceCopy[count].example}`}
+            accessibilityState={{ checked: candidateCount === count }}
+            style={[styles.outputCard, candidateCount === count && styles.outputCardSelected]}
+            onPress={() => updateDraft((current) => ({ ...current, candidateCount: count }))}>
+            <Text style={[styles.outputTitle, candidateCount === count && styles.outputTextSelected]}>
+              {outputChoiceCopy[count].title}
+            </Text>
+            <Text style={[styles.outputDetail, candidateCount === count && styles.outputTextSelected]}>
+              {outputChoiceCopy[count].detail}
+            </Text>
+            <Text style={[styles.outputExample, candidateCount === count && styles.outputTextSelected]}>
+              {outputChoiceCopy[count].example}
+            </Text>
+            <Text style={[styles.outputCredits, candidateCount === count && styles.outputTextSelected]}>
+              {createControls.estimateCredits(count)} credits
+            </Text>
+          </Pressable>
+        ))}
+      </View>
 
       {masterReference === null
         && secondaryReferences.length > 0
@@ -1341,7 +1533,7 @@ export function StudioCreateWorkspace({
         <View style={styles.limitNotice}>
           <Text style={styles.limitTitle}>Add a design idea</Text>
           <Text style={styles.limitBody}>
-            Supporting references can guide material, construction, or brand direction after you add a design sentence or one visual source. They do not define the jewelry on their own.
+            Inspiration images can guide material, a specific jewelry detail, or visual mood after you add a design sentence or one source image. They do not define the jewelry on their own.
           </Text>
         </View>
       )}
@@ -1354,15 +1546,16 @@ export function StudioCreateWorkspace({
 
       {error !== null && <Text style={styles.error}>{error}</Text>}
       <Text style={styles.creditEstimate}>
-        {candidateCount} requested output{candidateCount === 1 ? '' : 's'} × {createCreditsPerOutput} credits = estimated {createControls.estimateCredits(candidateCount)} credits
+        {createControls.estimateCredits(candidateCount)} credits total · {createCreditsPerOutput} per delivered option
       </Text>
+      <Text style={styles.creditHelp}>Internal retries and failed quality checks are included.</Text>
       <Pressable
         accessibilityRole="button"
         accessibilityState={{ disabled: !canCreate }}
         disabled={!canCreate}
         style={[styles.primaryButton, !canCreate && styles.buttonDisabled]}
         onPress={create}>
-        <Text style={styles.primaryButtonText}>{busy ? 'Creating…' : `Create ${candidateCount} direction${candidateCount === 1 ? '' : 's'}`}</Text>
+        <Text style={styles.primaryButtonText}>{busy ? 'Creating…' : `Create ${candidateCount} design option${candidateCount === 1 ? '' : 's'}`}</Text>
       </Pressable>
     </ScrollView>
   );
@@ -1405,11 +1598,21 @@ const styles = StyleSheet.create({
   prompt: { minHeight: 112, borderWidth: 1, borderColor: theme.line, borderRadius: radius.lg, backgroundColor: theme.card, color: theme.ink, fontSize: 16, lineHeight: 23, padding: 16, marginTop: 22, textAlignVertical: 'top' },
   sectionTitle: { color: theme.ink, fontSize: 14, fontWeight: '700', marginTop: 22 },
   sectionHelp: { color: theme.faint, fontSize: 11, lineHeight: 16, marginTop: 4 },
-  countRow: { flexDirection: 'row', gap: 8, marginTop: 10 },
-  countChip: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center', borderRadius: radius.pill, borderWidth: 1, borderColor: theme.line, backgroundColor: theme.card },
-  countChipSelected: { backgroundColor: '#6f52d9', borderColor: '#6f52d9' },
-  countText: { color: theme.faint, fontWeight: '700' },
-  countTextSelected: { color: '#ffffff' },
+  choiceRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 7, marginTop: 8 },
+  choiceChip: { minHeight: 44, justifyContent: 'center', borderWidth: 1, borderColor: theme.line, borderRadius: radius.pill, backgroundColor: theme.card, paddingHorizontal: 12, paddingVertical: 8 },
+  choiceChipSelected: { borderColor: '#6f52d9', backgroundColor: '#eee9ff' },
+  choiceChipText: { color: theme.faint, fontSize: 10, fontWeight: '700' },
+  choiceChipTextSelected: { color: '#5c3fc0' },
+  guidanceGroup: { marginTop: 2 },
+  imageDisclosure: { minHeight: 58, flexDirection: 'row', alignItems: 'center', gap: 12, borderWidth: 1, borderColor: theme.line, borderRadius: radius.lg, backgroundColor: theme.card, padding: 14, marginTop: 22 },
+  outputGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 10 },
+  outputCard: { width: '48%', minHeight: 166, borderWidth: 1, borderColor: theme.line, borderRadius: radius.md, backgroundColor: theme.card, padding: 12, justifyContent: 'space-between' },
+  outputCardSelected: { borderColor: '#6f52d9', backgroundColor: '#6f52d9' },
+  outputTitle: { color: theme.ink, fontSize: 12, fontWeight: '800' },
+  outputDetail: { color: theme.faint, fontSize: 10, lineHeight: 15, marginTop: 5 },
+  outputExample: { color: theme.faint, fontSize: 9, lineHeight: 14, marginTop: 6 },
+  outputCredits: { color: '#5c3fc0', fontSize: 10, fontWeight: '800', marginTop: 8 },
+  outputTextSelected: { color: '#ffffff' },
   setupDisclosure: {
     borderWidth: 1, borderColor: theme.line, borderRadius: radius.lg,
     backgroundColor: theme.card, padding: 14, marginTop: 16,
@@ -1446,6 +1649,7 @@ const styles = StyleSheet.create({
   limitBody: { color: '#745513', fontSize: 10, lineHeight: 16, marginTop: 4 },
   error: { color: theme.danger, fontSize: 12, lineHeight: 17, marginTop: 14 },
   creditEstimate: { color: theme.faint, fontSize: 12, lineHeight: 18, marginTop: 18 },
+  creditHelp: { color: theme.faint, fontSize: 10, lineHeight: 15, marginTop: 3 },
   primaryButton: { minHeight: 44, alignItems: 'center', justifyContent: 'center', borderRadius: radius.pill, backgroundColor: '#6f52d9', paddingHorizontal: 18, paddingVertical: 14, marginTop: 20 },
   primaryButtonText: { color: '#ffffff', fontSize: 13, fontWeight: '800' },
   secondaryButton: { minHeight: 44, alignItems: 'center', justifyContent: 'center', borderRadius: radius.pill, borderWidth: 1, borderColor: theme.line, paddingHorizontal: 18, paddingVertical: 13, marginTop: 20 },

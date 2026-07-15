@@ -576,6 +576,7 @@ export interface CreateProjectFromDrawingRequest {
   title: string;
   collection?: string;
   tags?: string[];
+  creative_intent?: CreativeIntentRequest;
   /** Exact view isolated from a multi-view plate; the full source is retained. */
   source_region_description?: string;
   source_region?: NormalizedSourceRegion;
@@ -589,6 +590,14 @@ export interface CreativeRoleReferenceRequest {
   media_type: 'image/png' | 'image/jpeg' | 'image/webp';
 }
 
+/** Designer-selected visual preferences. These guide generation, never factory truth. */
+export interface CreativeIntentRequest {
+  metal_color?: 'yellow' | 'white' | 'rose' | 'mixed';
+  color_accent?: 'colorless' | 'blue' | 'green' | 'pink_red' | 'warm' | 'multicolor';
+  surface_finish?: 'polished' | 'satin_brushed' | 'hammered' | 'frosted' | 'organic' | 'mixed';
+  visual_mood?: 'minimal' | 'romantic' | 'organic' | 'heritage' | 'sculptural' | 'playful';
+}
+
 export interface CreateProjectFromPromptRequest {
   prompt: string;
   variation_count?: 1 | 2 | 3 | 4;
@@ -597,6 +606,7 @@ export interface CreateProjectFromPromptRequest {
   title: string;
   collection?: string;
   tags?: string[];
+  creative_intent?: CreativeIntentRequest;
   references?: CreativeRoleReferenceRequest[];
   studio_job_id?: string;
 }

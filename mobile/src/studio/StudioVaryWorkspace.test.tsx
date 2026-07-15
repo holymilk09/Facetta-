@@ -2,7 +2,7 @@
 
 import React from 'react';
 import {
-  fireEvent, render, screen, waitFor,
+  act, fireEvent, render, screen, waitFor,
 } from '@testing-library/react-native';
 
 import { StudioVaryWorkspace } from './StudioVaryWorkspace';
@@ -12,6 +12,12 @@ const project = {
 } as any;
 
 const CURRENT_SOURCE_SHA256 = '7'.repeat(64);
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((next) => { resolve = next; });
+  return { promise, resolve };
+}
 
 function currentLineage(sourceAssetId = 'asset_7', sourceRevision = 7) {
   return {
@@ -76,6 +82,35 @@ test('branches only the hidden exact source and opens the child variation', asyn
   expect(onSelectDestination).toHaveBeenCalledWith('library');
   expect(saveRevisionAsVariation).toHaveBeenCalledTimes(1);
   expect(createOperationId).toHaveBeenCalledTimes(2);
+});
+
+test('accepts the current response after StrictMode replays effect cleanup and setup', async () => {
+  const onCreated = jest.fn();
+  const saveRevisionAsVariation = jest.fn(async () => ({
+    data: {
+      status: 'variation_created', family_id: 'family_1', variation_index: 2,
+      source_project_id: 'project_1', source_asset_id: 'asset_7', project,
+    },
+    error: null,
+    status: 201,
+  }));
+  await render(
+    <React.StrictMode>
+      <StudioVaryWorkspace
+        gateway={{ saveRevisionAsVariation } as any}
+        lineage={currentLineage()}
+        createdBy="designer_1"
+        onCreated={onCreated}
+        createOperationId={() => 'vary:strict-mode-0001'}
+      />
+    </React.StrictMode>,
+  );
+
+  await fireEvent.changeText(screen.getByLabelText('Variation name'), 'Strict direction');
+  await fireEvent.press(screen.getByText('Create variation'));
+
+  await waitFor(() => expect(onCreated).toHaveBeenCalledWith(project));
+  expect(await screen.findByText('Strict direction is ready.')).toBeTruthy();
 });
 
 test('branches an exact historical revision without restoring over the active source', async () => {
@@ -196,6 +231,79 @@ test('rotates the operation id and clears stale input when source lineage change
   await waitFor(() => expect(saveRevisionAsVariation).toHaveBeenCalledTimes(1));
   expect(saveRevisionAsVariation.mock.calls[0]?.[0].operationId).toBe('vary:source-two-0002');
   await waitFor(() => expect(onCreated).toHaveBeenCalledTimes(1));
+});
+
+test('does not reopen a late variation after the designer leaves the workspace', async () => {
+  const pending = deferred<any>();
+  const onCreated = jest.fn();
+  const view = await render(<StudioVaryWorkspace
+    gateway={{ saveRevisionAsVariation: jest.fn(() => pending.promise) } as any}
+    lineage={currentLineage()}
+    createdBy="designer_1"
+    onCreated={onCreated}
+    createOperationId={() => 'vary:leave-0001'}
+  />);
+
+  await fireEvent.changeText(screen.getByLabelText('Variation name'), 'Late direction');
+  let completion!: Promise<void>;
+  await act(async () => {
+    completion = fireEvent.press(screen.getByText('Create variation'));
+    await Promise.resolve();
+  });
+  await act(async () => { view.unmount(); });
+  await act(async () => {
+    pending.resolve({
+      data: {
+        status: 'variation_created', family_id: 'family_1', variation_index: 2,
+        source_project_id: 'project_1', source_asset_id: 'asset_7', project,
+      },
+      error: null,
+      status: 201,
+    });
+    await completion;
+  });
+
+  expect(onCreated).not.toHaveBeenCalled();
+});
+
+test('rejects an A-to-B-to-A late variation response', async () => {
+  const pending = deferred<any>();
+  const onCreated = jest.fn();
+  const gateway = { saveRevisionAsVariation: jest.fn(() => pending.promise) } as any;
+  const props = (lineage: ReturnType<typeof currentLineage>) => (
+    <StudioVaryWorkspace
+      gateway={gateway}
+      lineage={lineage}
+      createdBy="designer_1"
+      onCreated={onCreated}
+      createOperationId={() => `vary:${lineage.sourceAssetId}`}
+    />
+  );
+  const view = await render(props(currentLineage('asset_a', 1)));
+
+  await fireEvent.changeText(screen.getByLabelText('Variation name'), 'First A request');
+  let completion!: Promise<void>;
+  await act(async () => {
+    completion = fireEvent.press(screen.getByText('Create variation'));
+    await Promise.resolve();
+  });
+  await view.rerender(props(currentLineage('asset_b', 2)));
+  await view.rerender(props(currentLineage('asset_a', 1)));
+  await act(async () => {
+    pending.resolve({
+      data: {
+        status: 'variation_created', family_id: 'family_1', variation_index: 2,
+        source_project_id: 'project_1', source_asset_id: 'asset_a', project,
+      },
+      error: null,
+      status: 201,
+    });
+    await completion;
+  });
+
+  expect(onCreated).not.toHaveBeenCalled();
+  expect(screen.getByLabelText('Variation name').props.value).toBe('');
+  expect(screen.getByText('Create variation')).toBeTruthy();
 });
 
 test('fails closed without a selected revision', async () => {

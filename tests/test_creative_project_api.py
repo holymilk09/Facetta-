@@ -1379,6 +1379,85 @@ def test_from_prompt_persists_independent_candidates_without_source_or_spec(
         assert all(run.source_asset_id is None for run in runs)
 
 
+def test_create_visual_intent_is_typed_compiled_and_persisted_without_factory_authority(
+    creative_client,
+):
+    client, _Session = creative_client
+    instructions: list[str] = []
+
+    def generate(instruction: str, variant: int):
+        instructions.append(instruction)
+        return _prompt_creative_result(variant)
+
+    app.dependency_overrides[get_creative_prompt_generator] = lambda: generate
+    response = client.post("/projects/from-prompt", json={
+        **_prompt_request(variation_count=1),
+        "creative_intent": {
+            "metal_color": "yellow",
+            "color_accent": "green",
+            "surface_finish": "satin_brushed",
+            "visual_mood": "minimal",
+        },
+    })
+    assert response.status_code == 201, response.text
+    assert len(instructions) == 1
+    instruction = instructions[0]
+    assert "DESIGN GUIDANCE (designer-selected; visual intent only" in instruction
+    assert "- Yellow gold" in instruction
+    assert "- Green accents" in instruction
+    assert "- Satin or brushed surface" in instruction
+    assert "- Minimal visual mood" in instruction
+    candidate = response.json()["creative_candidates"][0]
+    assert candidate["instruction"] == instruction
+    assert response.json()["factory_ready"] is False
+    assert "spec" not in response.json()
+
+    invalid = client.post("/projects/from-prompt", json={
+        **_prompt_request(variation_count=1),
+        "creative_intent": {"surface_finish": "mirror_magic"},
+    })
+    assert invalid.status_code == 422
+
+    empty = client.post("/projects/from-prompt", json={
+        **_prompt_request(variation_count=1),
+        "creative_intent": {},
+    })
+    assert empty.status_code == 422
+
+
+def test_drawing_visual_intent_uses_the_same_typed_non_authoritative_contract(
+    creative_client,
+):
+    client, _Session = creative_client
+    instructions: list[str] = []
+
+    def generate(source: bytes, instruction: str, variant: int):
+        assert source == SOURCE
+        instructions.append(instruction)
+        return _creative_result(variant)
+
+    app.dependency_overrides[get_creative_render_generator] = lambda: generate
+    response = client.post("/projects/from-drawing", json={
+        **_request(variation_count=1),
+        "creative_intent": {
+            "metal_color": "white",
+            "surface_finish": "hammered",
+            "visual_mood": "sculptural",
+        },
+    })
+    assert response.status_code == 201, response.text
+    assert len(instructions) == 1
+    instruction = instructions[0]
+    assert "DESIGN GUIDANCE (designer-selected; visual intent only" in instruction
+    assert "- White metal" in instruction
+    assert "- Hammered surface" in instruction
+    assert "- Sculptural visual mood" in instruction
+    candidate = response.json()["creative_candidates"][0]
+    assert candidate["instruction"] == instruction
+    assert response.json()["factory_ready"] is False
+    assert "spec" not in response.json()
+
+
 def test_from_prompt_advisory_references_are_bound_and_persisted_by_role(
     creative_client,
 ):
