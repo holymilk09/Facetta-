@@ -415,6 +415,32 @@ def test_legacy_dual_binding_cannot_settle_or_charge_either_candidate(
             "preview_candidate_job_binding_conflict"
         )
 
+    if decision == "save_as_variation":
+        direct_url = (
+            f"/studio/markup-candidates/{markup.run_id}/"
+            f"{markup.candidate_id}/save-as-variation"
+        )
+        direct_body = {
+            "created_by": OWNER,
+            "label": "Must not be created",
+        }
+        expected_code = "preview_candidate_job_binding_conflict"
+    else:
+        decision_suffix = "accept" if decision == "apply" else "discard"
+        direct_url = (
+            f"/studio/markup-candidates/{markup.run_id}/"
+            f"{markup.candidate_id}/{decision_suffix}"
+        )
+        direct_body = {
+            "created_by": OWNER,
+            "expected_active_asset_id": "ast_markup",
+            "expected_design_version": version,
+        }
+        expected_code = "markup_job_output_conflict"
+    direct_rejected = client.post(direct_url, json=direct_body)
+    assert direct_rejected.status_code == 409, direct_rejected.text
+    assert direct_rejected.json()["code"] == expected_code
+
     with Session() as db:
         durable_markup = db.get(
             StudioMarkupCandidateRecord, markup.candidate_id,

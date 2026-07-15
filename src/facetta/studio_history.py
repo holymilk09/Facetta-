@@ -45,6 +45,10 @@ from facetta.revision_component_map_store import (
 )
 from facetta.specdiff import diff_specs, summarize_changes
 from facetta.studio_visual_candidates import StudioVisualCandidate
+from facetta.studio_preview_job_binding import (
+    StudioPreviewJobBindingConflict,
+    require_single_preview_job_output,
+)
 
 
 class StudioHistoryError(RuntimeError):
@@ -666,6 +670,17 @@ def fork_preview_candidate_variation(
             status_code=410,
         ) from exc
 
+    try:
+        require_single_preview_job_output(
+            db,
+            studio_job_id=getattr(candidate, "studio_job_id", None),
+            expected_candidate_id=candidate_record.id,
+        )
+    except StudioPreviewJobBindingConflict as exc:
+        raise StudioHistoryError(
+            "preview_candidate_job_binding_conflict", str(exc),
+        ) from exc
+
     project = db.scalar(
         select(Project)
         .where(Project.root_id == candidate.project_root_id)
@@ -1066,6 +1081,16 @@ def apply_pre_spec_visual_candidate(
 ) -> ApplyPreSpecVisualResult:
     """Append one accepted visual while preserving an honest null spec."""
 
+    try:
+        require_single_preview_job_output(
+            db,
+            studio_job_id=candidate.studio_job_id,
+            expected_candidate_id=candidate.candidate_id,
+        )
+    except StudioPreviewJobBindingConflict as exc:
+        raise StudioHistoryError(
+            "preview_candidate_job_binding_conflict", str(exc),
+        ) from exc
     project, source, run = _validate_pre_spec_visual_candidate(
         db,
         candidate=candidate,
@@ -1203,6 +1228,16 @@ def discard_pre_spec_visual_candidate(
 ) -> DiscardPreSpecVisualResult:
     """Persist a terminal rejection without creating any project asset."""
 
+    try:
+        require_single_preview_job_output(
+            db,
+            studio_job_id=candidate.studio_job_id,
+            expected_candidate_id=candidate.candidate_id,
+        )
+    except StudioPreviewJobBindingConflict as exc:
+        raise StudioHistoryError(
+            "preview_candidate_job_binding_conflict", str(exc),
+        ) from exc
     project, source, run = _validate_pre_spec_visual_candidate(
         db,
         candidate=candidate,

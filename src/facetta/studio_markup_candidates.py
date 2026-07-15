@@ -35,6 +35,10 @@ from facetta.studio_jobs import (
     record_accepted_studio_job_outputs,
     studio_job_action_definition,
 )
+from facetta.studio_preview_job_binding import (
+    StudioPreviewJobBindingConflict,
+    require_single_preview_job_output,
+)
 from facetta.trusted_revision import (
     WarningRevisionError,
     accept_warning_revision,
@@ -760,6 +764,16 @@ def accept_studio_markup_candidate(
             "markup_candidate_already_resolved",
             f"this Studio refinement was already {record.status}",
         )
+    try:
+        require_single_preview_job_output(
+            db,
+            studio_job_id=record.studio_job_id,
+            expected_candidate_id=record.id,
+        )
+    except StudioPreviewJobBindingConflict as exc:
+        raise StudioMarkupError(
+            "markup_job_output_conflict", str(exc),
+        ) from exc
     candidate = _candidate(record)
     if (
         expected_active_asset_id != candidate.source_asset_id
@@ -866,6 +880,16 @@ def discard_studio_markup_candidate(
             "markup_candidate_already_resolved",
             f"this Studio refinement was already {record.status}",
         )
+    try:
+        require_single_preview_job_output(
+            db,
+            studio_job_id=record.studio_job_id,
+            expected_candidate_id=record.id,
+        )
+    except StudioPreviewJobBindingConflict as exc:
+        raise StudioMarkupError(
+            "markup_job_output_conflict", str(exc),
+        ) from exc
     candidate = _candidate(record)
     if (
         expected_active_asset_id != candidate.source_asset_id

@@ -1966,7 +1966,17 @@ def discard_catalog_preview(
             candidate_id,
             owner=run.created_by,
         )
-    except (CatalogPreviewUnavailable, CatalogPreviewJobError) as exc:
+    except CatalogPreviewJobError as exc:
+        db.rollback()
+        return JSONResponse(
+            status_code=409,
+            content={
+                "code": "catalog_preview_job_conflict",
+                "category": "conflict",
+                "detail": str(exc),
+            },
+        )
+    except CatalogPreviewUnavailable as exc:
         db.rollback()
         return JSONResponse(
             status_code=410,

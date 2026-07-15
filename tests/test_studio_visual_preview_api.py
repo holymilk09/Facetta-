@@ -30,6 +30,7 @@ from facetta.db import (
     Project,
     ProjectRevisionRecord,
     PreviewCandidateRecord,
+    StudioMarkupCandidateRecord,
     get_db,
     StudioJobRecord,
     utcnow,
@@ -755,6 +756,98 @@ def test_normalized_visual_apply_rolls_back_job_credit_and_canonical_rows(
         assert durable.terminal_asset_id is None
         assert job is not None and job.status == "reviewing"
         assert (job.completed_outputs, job.charged_outputs) == (0, 0)
+
+
+@pytest.mark.parametrize("decision", ("apply", "save_as_variation", "discard"))
+def test_direct_visual_terminal_decision_rejects_cross_store_job_binding(
+    studio_preview_client,
+    decision,
+):
+    client, Session = studio_preview_client
+    app.dependency_overrides[get_studio_visual_preview_generator] = (
+        lambda: _generator([])
+    )
+    job_id = _running_refine_job(client)
+    preview = _preview(client, studio_job_id=job_id).json()
+    candidate_id = preview["candidate"]["candidate_id"]
+    run_id = preview["image_run_id"]
+    sibling_bytes = _png((90, 120, 150))
+    sibling_run_id = f"run_legacy_markup_{decision}"
+    sibling_id = f"cand_legacy_markup_{decision}"
+    with Session() as db:
+        db.add(ImageRun(
+            id=sibling_run_id,
+            project_root_id="ast_selected",
+            source_asset_id="ast_selected",
+            operation="VISUAL_ONLY_EDIT",
+            normalized_intent={"change": "legacy dual binding"},
+            prompt_version="test.v1",
+            input_hash=hashlib.sha256(sibling_bytes).hexdigest(),
+            source_hash=hashlib.sha256(SOURCE).hexdigest(),
+            mask_hash=None,
+            spec_visual_hash=None,
+            source_spec_visual_hash=None,
+            variant=0,
+            status="review_required",
+            accepted_asset_id=None,
+            created_by="usr_studio",
+        ))
+        db.flush()
+        db.add(StudioMarkupCandidateRecord(
+            id=sibling_id,
+            image_run_id=sibling_run_id,
+            owner="usr_studio",
+            project_root_id="ast_selected",
+            source_asset_id="ast_selected",
+            expected_active_asset_id="ast_selected",
+            design_version=1,
+            source_sha256=hashlib.sha256(SOURCE).hexdigest(),
+            output_sha256=hashlib.sha256(sibling_bytes).hexdigest(),
+            source_spec_visual_hash="a" * 16,
+            target_spec_visual_hash="a" * 16,
+            image=sibling_bytes,
+            media_type="image/png",
+            operation="VISUAL_ONLY_EDIT",
+            asset_capability="LOCALIZED_EDIT",
+            requested_change="legacy dual binding",
+            region_description="legacy region",
+            payload={"qa": {"verdict": "pass"}},
+            status="reviewing",
+            studio_job_id=job_id,
+            created_at=utcnow(),
+            expires_at=utcnow() + timedelta(hours=2),
+        ))
+        db.commit()
+    before = _counts(Session)
+
+    if decision == "save_as_variation":
+        suffix = "save-as-variation"
+        body = {"created_by": "usr_studio", "label": "Blocked direction"}
+    else:
+        suffix = "accept" if decision == "apply" else "discard"
+        body = {
+            "created_by": "usr_studio",
+            "expected_active_asset_id": "ast_selected",
+        }
+    rejected = client.post(
+        f"/studio/image-runs/{run_id}/visual-candidates/"
+        f"{candidate_id}/{suffix}",
+        json=body,
+    )
+    assert rejected.status_code == 409, rejected.text
+    assert rejected.json()["code"] == "preview_candidate_job_binding_conflict"
+    assert _counts(Session) == before
+    with Session() as db:
+        candidate = db.get(PreviewCandidateRecord, candidate_id)
+        sibling = db.get(StudioMarkupCandidateRecord, sibling_id)
+        job = db.get(StudioJobRecord, job_id)
+        project = db.get(Project, "ast_selected")
+        assert candidate is not None and candidate.status == "reviewing"
+        assert sibling is not None and sibling.status == "reviewing"
+        assert job is not None and job.status == "reviewing"
+        assert (job.completed_outputs, job.charged_outputs) == (0, 0)
+        assert project is not None
+        assert project.selected_candidate_asset_id == "ast_selected"
 
 
 def test_applied_pre_spec_child_is_the_only_confirmable_design_v1_source(

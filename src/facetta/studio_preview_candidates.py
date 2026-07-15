@@ -35,7 +35,6 @@ from facetta.db import (
     ImageAsset,
     PreviewCandidateRecord,
     Project,
-    StudioJobRecord,
     StudioMarkupCandidateRecord,
 )
 from facetta.json_types import JsonObject
@@ -58,6 +57,10 @@ from facetta.studio_visual_candidates import (
     get_studio_visual_candidate,
     invalidate_studio_visual_candidate,
     remove_studio_visual_candidate,
+)
+from facetta.studio_preview_job_binding import (
+    StudioPreviewJobBindingConflict,
+    require_single_preview_job_output,
 )
 from facetta.trusted_revision import (
     WarningRevisionError,
@@ -196,23 +199,17 @@ def _guard_single_job_output(
 ) -> None:
     """Fail closed if one Refine job is linked to multiple candidate stores."""
 
-    if record.studio_job_id is None:
-        return
-    job = db.scalar(select(StudioJobRecord).where(
-        StudioJobRecord.id == record.studio_job_id,
-    ).with_for_update())
-    preview_ids = list(db.scalars(select(PreviewCandidateRecord.id).where(
-        PreviewCandidateRecord.studio_job_id == record.studio_job_id,
-    ).with_for_update()))
-    markup_ids = list(db.scalars(select(StudioMarkupCandidateRecord.id).where(
-        StudioMarkupCandidateRecord.studio_job_id == record.studio_job_id,
-    ).with_for_update()))
-    bound_ids = preview_ids + markup_ids
-    if job is None or bound_ids != [record.id]:
+    try:
+        require_single_preview_job_output(
+            db,
+            studio_job_id=record.studio_job_id,
+            expected_candidate_id=record.id,
+        )
+    except StudioPreviewJobBindingConflict as exc:
         raise StudioPreviewCandidateError(
             "preview_candidate_job_binding_conflict",
-            "the Studio Refine job is ambiguously bound to preview outputs",
-        )
+            str(exc),
+        ) from exc
 
 
 def _load_reviewing_candidate(

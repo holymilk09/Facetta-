@@ -49,6 +49,10 @@ from facetta.studio_jobs import (
     record_accepted_studio_job_outputs,
     studio_job_action_definition,
 )
+from facetta.studio_preview_job_binding import (
+    StudioPreviewJobBindingConflict,
+    require_single_preview_job_output,
+)
 
 
 _TTL_SECONDS = 2 * 60 * 60
@@ -910,6 +914,14 @@ def resolve_catalog_preview_candidate(
     ).with_for_update())
     if record is None:
         raise CatalogPreviewUnavailable("the catalog preview is unavailable")
+    try:
+        require_single_preview_job_output(
+            db,
+            studio_job_id=record.studio_job_id,
+            expected_candidate_id=record.id,
+        )
+    except StudioPreviewJobBindingConflict as exc:
+        raise CatalogPreviewJobError(str(exc)) from exc
     if status in {"applied", "saved_as_variation"} and (
         terminal_asset_id is None or review_id is None
     ):

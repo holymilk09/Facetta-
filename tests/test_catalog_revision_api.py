@@ -6,6 +6,7 @@ import base64
 import hashlib
 import io
 from copy import deepcopy
+from datetime import timedelta
 
 import pytest
 from fastapi.testclient import TestClient
@@ -27,8 +28,10 @@ from facetta.db import (
     ProjectRevisionRecord,
     RevisionComponentMapRecord,
     StudioJobRecord,
+    StudioMarkupCandidateRecord,
     get_db,
     new_id,
+    utcnow,
 )
 from facetta.api.catalog import StudioComponentTargetingResponse
 from facetta.design_form import NormalizedPoint, NormalizedPolygon
@@ -2665,6 +2668,113 @@ def test_catalog_preview_acceptance_atomically_settles_one_refine_output(
         current_job = db.get(StudioJobRecord, job["job_id"])
         assert current_job is not None
         assert current_job.completed_outputs == current_job.charged_outputs == 1
+
+
+@pytest.mark.parametrize("decision", ("apply", "save_as_variation", "discard"))
+def test_direct_catalog_terminal_decision_rejects_cross_store_job_binding(
+    catalog_client,
+    example_spec,
+    monkeypatch,
+    decision,
+):
+    client, SessionFactory = catalog_client
+    project = _create_project(client, example_spec, SessionFactory)
+    job = _studio_job(client, project)
+    monkeypatch.setattr(
+        "facetta.api.catalog._trusted_image_agent",
+        lambda: _ResultAgent(QualityVerdict.PASS),
+    )
+    preview_response = client.post(
+        f"/assets/{project['active_asset_id']}/catalog/preview",
+        json=_request(studio_job_id=job["job_id"]),
+    )
+    assert preview_response.status_code == 201, preview_response.text
+    preview = preview_response.json()
+    candidate_id = preview["candidate"]["candidate_id"]
+    sibling_bytes = _png((85, 115, 145))
+    sibling_run_id = f"run_legacy_markup_catalog_{decision}"
+    sibling_id = f"cand_legacy_markup_catalog_{decision}"
+    with SessionFactory() as db:
+        source = db.get(ImageAsset, project["active_asset_id"])
+        assert source is not None
+        source_bytes = bytes(source.image)
+        db.add(ImageRun(
+            id=sibling_run_id,
+            project_root_id=project["root_id"],
+            source_asset_id=project["active_asset_id"],
+            operation="LOCAL_EDIT",
+            normalized_intent={"change": "legacy dual binding"},
+            prompt_version="test.v1",
+            input_hash=hashlib.sha256(sibling_bytes).hexdigest(),
+            source_hash=hashlib.sha256(source_bytes).hexdigest(),
+            mask_hash=None,
+            spec_visual_hash=None,
+            source_spec_visual_hash=None,
+            variant=0,
+            status="review_required",
+            accepted_asset_id=None,
+            created_by="usr_catalog",
+        ))
+        db.flush()
+        db.add(StudioMarkupCandidateRecord(
+            id=sibling_id,
+            image_run_id=sibling_run_id,
+            owner="usr_catalog",
+            project_root_id=project["root_id"],
+            source_asset_id=project["active_asset_id"],
+            expected_active_asset_id=project["active_asset_id"],
+            design_version=1,
+            source_sha256=hashlib.sha256(source_bytes).hexdigest(),
+            output_sha256=hashlib.sha256(sibling_bytes).hexdigest(),
+            source_spec_visual_hash="a" * 16,
+            target_spec_visual_hash="a" * 16,
+            image=sibling_bytes,
+            media_type="image/png",
+            operation="LOCAL_EDIT",
+            asset_capability="LOCALIZED_EDIT",
+            requested_change="legacy dual binding",
+            region_description="legacy region",
+            payload={"qa": {"verdict": "pass"}},
+            status="reviewing",
+            studio_job_id=job["job_id"],
+            created_at=utcnow(),
+            expires_at=utcnow() + timedelta(hours=2),
+        ))
+        db.commit()
+    before = _counts(SessionFactory)
+
+    if decision == "apply":
+        rejected = client.post(
+            preview["candidate"]["accept_url"],
+            json={"expected_design_version": 1, "created_by": "usr_catalog"},
+        )
+        expected_code = "catalog_preview_job_conflict"
+    elif decision == "save_as_variation":
+        rejected = client.post(
+            preview["candidate"]["save_as_variation_url"],
+            json={"created_by": "usr_catalog", "label": "Blocked direction"},
+        )
+        expected_code = "preview_candidate_job_binding_conflict"
+    else:
+        rejected = client.delete(preview["candidate"]["discard_url"])
+        expected_code = "catalog_preview_job_conflict"
+    assert rejected.status_code == 409, rejected.text
+    assert rejected.json()["code"] == expected_code
+    assert _counts(SessionFactory) == before
+    with SessionFactory() as db:
+        candidate = db.get(PreviewCandidateRecord, candidate_id)
+        sibling = db.get(StudioMarkupCandidateRecord, sibling_id)
+        durable_job = db.get(StudioJobRecord, job["job_id"])
+        durable_project = db.get(Project, project["root_id"])
+        assert candidate is not None and candidate.status == "reviewing"
+        assert sibling is not None and sibling.status == "reviewing"
+        assert durable_job is not None and durable_job.status == "reviewing"
+        assert (durable_job.completed_outputs, durable_job.charged_outputs) == (0, 0)
+        assert durable_project is not None
+        assert durable_project.selected_candidate_asset_id in {
+            None,
+            project["active_asset_id"],
+        }
 
 
 @pytest.mark.parametrize("decision", ("discard", "expire"))
