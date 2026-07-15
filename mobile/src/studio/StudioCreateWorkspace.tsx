@@ -15,6 +15,7 @@ import {
 } from './workspaceControls';
 import { useVisualReviewReadiness } from './useVisualReviewReadiness';
 import { StudioReviewImage } from './StudioReviewImage';
+import { StudioComparisonInspector } from './StudioComparisonInspector';
 
 export { STUDIO_CREATE_REFERENCE_CONTROLS } from './workspaceControls';
 export type { CreateReferenceRole } from './workspaceControls';
@@ -98,6 +99,38 @@ const candidateVisualKey = (candidate: AssetSummary): string | null => (
     ? null
     : `create-candidate:${candidate.asset_id}:${candidate.image_url}`
 );
+
+const sourceVisualKey = (source: AssetSummary | null): string | null => (
+  source?.image_url == null
+    ? null
+    : `create-source:${source.asset_id}:${source.image_url}`
+);
+
+const SOURCE_KIND_LABELS: Readonly<Record<CreativeSourceKind, string>> = {
+  drawing: 'Drawing',
+  photograph: 'Photograph',
+  finished_render: 'Finished render',
+};
+
+/**
+ * Resolve the geometry source that a candidate was derived from. The selected
+ * crop is the most faithful comparison authority; a role-labeled reference
+ * board is advisory and must never be presented as the master geometry.
+ */
+export function creativeReviewSource(
+  project: ProjectDetail,
+  candidate: AssetSummary | null,
+): AssetSummary | null {
+  if (candidate === null) return null;
+  const parent = candidate.parent_asset_id === null
+    ? null
+    : project.assets.find((asset) => asset.asset_id === candidate.parent_asset_id) ?? null;
+  if (parent?.capability === 'CREATIVE_SOURCE_REGION') return parent;
+  if (parent?.capability === 'CREATIVE_SOURCE') return parent;
+  return project.assets.find((asset) => asset.capability === 'CREATIVE_SOURCE_REGION')
+    ?? project.assets.find((asset) => asset.capability === 'CREATIVE_SOURCE')
+    ?? null;
+}
 
 export function creativeCandidates(project: ProjectDetail): readonly AssetSummary[] {
   if ((project.creative_candidates?.length ?? 0) > 0) {
@@ -197,11 +230,18 @@ export function StudioCreateWorkspace({
     (candidate) => candidate.asset_id === selectedAssetId,
   ) ?? null;
   const selectedVisualKey = selectedCandidate === null ? null : candidateVisualKey(selectedCandidate);
+  const reviewSource = project === null ? null : creativeReviewSource(project, selectedCandidate);
+  const reviewSourceVisualKey = sourceVisualKey(reviewSource);
+  const requiredDecisionVisualKeys = reviewSource === null
+    ? [selectedVisualKey]
+    : [reviewSourceVisualKey, selectedVisualKey];
   const decisionVisualsReady = selectedAssetId !== null
     && selectedCandidate !== null
-    && visualReview.allReady([selectedVisualKey]);
+    && visualReview.allReady(requiredDecisionVisualKeys);
   const selectedVisualFailed = selectedAssetId !== null
     && visualReview.anyFailed([selectedVisualKey]);
+  const sourceVisualFailed = reviewSource !== null
+    && visualReview.anyFailed([reviewSourceVisualKey]);
   const masterReference = references.find((reference) => reference.role === 'master_geometry') ?? null;
   const sourceKind: CreativeSourceKind | null = masterReference?.sourceKind ?? null;
   const secondaryReferences = references.filter(
@@ -386,6 +426,47 @@ export function StudioCreateWorkspace({
         <Text style={styles.retainedCopy}>
           Choose what to refine now. Up to three other directions you preview will be organized as variations, and the full generated set stays preserved in this review.
         </Text>
+        {reviewSource !== null && selectedCandidate !== null && (
+          <View style={styles.sourceComparisonBlock}>
+            <Text style={styles.comparisonEyebrow}>SOURCE FIDELITY CHECK</Text>
+            <Text style={styles.comparisonTitle}>Compare before choosing</Text>
+            <Text style={styles.comparisonHelp}>
+              Check silhouette, proportions, setting, and construction against the uploaded source. Supporting style references are advisory only.
+            </Text>
+            {reviewSource.image_url !== null && selectedCandidate.image_url !== null ? (
+              <StudioComparisonInspector
+                before={{
+                  label: reviewSource.source_kind === undefined
+                    || reviewSource.source_kind === null
+                    ? 'Uploaded visual'
+                    : SOURCE_KIND_LABELS[reviewSource.source_kind],
+                  roleLabel: 'Starting source',
+                  accessibilityLabel: 'Create starting source',
+                  source: { uri: reviewSource.image_url },
+                  onLoad: () => visualReview.markReady(reviewSourceVisualKey),
+                  onError: () => visualReview.markFailed(reviewSourceVisualKey),
+                }}
+                after={{
+                  label: `Direction ${candidates.findIndex((candidate) => candidate.asset_id === selectedAssetId) + 1}`,
+                  roleLabel: 'Selected direction',
+                  accessibilityLabel: 'Create selected direction comparison',
+                  source: { uri: selectedCandidate.image_url },
+                  onLoad: () => visualReview.markReady(selectedVisualKey),
+                  onError: () => visualReview.markFailed(selectedVisualKey),
+                }}
+                compactHeight={240}
+                inspectionTitle="Compare source fidelity"
+                inspectionHelp="Inspect the uploaded geometry source and selected visual direction at matching areas before creating the first immutable revision."
+              />
+            ) : (
+              <View style={styles.sourceUnavailable}>
+                <Text style={styles.sourceUnavailableText}>
+                  The starting source is recorded, but its comparison image is unavailable. Reopen this review from Activity or try again before choosing.
+                </Text>
+              </View>
+            )}
+          </View>
+        )}
         <View style={styles.candidateGrid}>
           {candidates.map((candidate, index) => {
             const selected = selectedAssetId === candidate.asset_id;
@@ -437,9 +518,13 @@ export function StudioCreateWorkspace({
         </View>
         {!decisionVisualsReady && selectedAssetId !== null && (
           <Text style={styles.reviewReadiness}>
-            {selectedVisualFailed
+            {sourceVisualFailed
+              ? 'The starting source could not be displayed. Reopen this review from Activity or try loading it again before continuing.'
+              : selectedVisualFailed
               ? 'The selected direction could not be displayed. Choose another direction or try loading it again before continuing.'
-              : 'Wait for the selected direction to finish loading before continuing.'}
+              : reviewSource !== null
+                ? 'Wait for both the starting source and selected direction to finish loading before continuing.'
+                : 'Wait for the selected direction to finish loading before continuing.'}
           </Text>
         )}
         {error !== null && <Text style={styles.error}>{error}</Text>}
@@ -773,6 +858,12 @@ const styles = StyleSheet.create({
   candidateImage: { width: '100%', aspectRatio: 1, backgroundColor: '#ebe7ef' },
   imageFallback: { width: '100%', aspectRatio: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#ebe7ef' },
   imageFallbackText: { color: theme.faint, fontSize: 11 },
+  sourceComparisonBlock: { marginTop: 20 },
+  comparisonEyebrow: { color: '#6f52d9', fontSize: 10, fontWeight: '800', letterSpacing: 1.2 },
+  comparisonTitle: { color: theme.ink, fontSize: 17, fontWeight: '800', marginTop: 5 },
+  comparisonHelp: { color: theme.faint, fontSize: 11, lineHeight: 17, marginTop: 5, marginBottom: 10 },
+  sourceUnavailable: { borderWidth: 1, borderColor: '#c99f48', borderRadius: radius.md, backgroundColor: '#fff9e9', padding: 13 },
+  sourceUnavailableText: { color: '#745513', fontSize: 11, lineHeight: 17 },
   reviewReadiness: { color: '#745513', fontSize: 11, lineHeight: 17, marginTop: 12 },
   candidateCopy: { padding: 12 },
   candidateTitle: { color: theme.ink, fontSize: 13, fontWeight: '700' },

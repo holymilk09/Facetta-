@@ -64,6 +64,64 @@ const creativeProject = (count: number): ProjectDetail => {
   };
 };
 
+const sourceAsset = (
+  capability: 'CREATIVE_SOURCE' | 'CREATIVE_SOURCE_REGION',
+  assetId: string,
+  parentAssetId: string | null,
+  imageUrl: string | null,
+): AssetSummary => ({
+  asset_id: assetId,
+  root_id: 'project_1',
+  parent_asset_id: parentAssetId,
+  capability,
+  source_kind: 'photograph',
+  provenance: capability === 'CREATIVE_SOURCE'
+    ? 'designer_supplied_photograph'
+    : 'designer_selected_source_region',
+  revision: null,
+  design_id: null,
+  design_version: null,
+  region: null,
+  instruction: capability === 'CREATIVE_SOURCE'
+    ? 'Designer-supplied creative source'
+    : 'Designer-selected source region',
+  drift: null,
+  pinned: false,
+  media_type: 'image/png',
+  image_url: imageUrl,
+  created_by: 'designer_1',
+  created_at: null,
+  legacy_provenance: false,
+});
+
+const creativeProjectWithSource = (
+  count: number,
+  options: { region?: boolean; sourceUrl?: string | null } = {},
+): ProjectDetail => {
+  const project = creativeProject(count);
+  const source = sourceAsset(
+    'CREATIVE_SOURCE', 'source_1', null,
+    options.sourceUrl === undefined ? 'https://facetta.test/source.png' : options.sourceUrl,
+  );
+  const region = options.region
+    ? sourceAsset(
+        'CREATIVE_SOURCE_REGION', 'source_region_1', source.asset_id,
+        'https://facetta.test/source-region.png',
+      )
+    : null;
+  const parentAssetId = region?.asset_id ?? source.asset_id;
+  const candidates = (project.creative_candidates ?? []).map((item) => ({
+    ...item,
+    parent_asset_id: parentAssetId,
+    source_kind: 'photograph' as const,
+  }));
+  return {
+    ...project,
+    creative_candidates: candidates,
+    assets: [source, ...(region === null ? [] : [region]), ...candidates],
+  };
+};
+
 type CreateGateway = Pick<StudioGateway,
   'createFromPrompt' | 'createFromDrawing' | 'completeCreativeDirectionReview'
 >;
@@ -124,6 +182,126 @@ const loadReferencePreview = async (label: string): Promise<void> => {
     fireEvent(screen.getByLabelText(label), 'load');
   });
 };
+
+test('reconstructs an uploaded source comparison from the durable project before choosing', async () => {
+  const project = creativeProjectWithSource(2);
+  const completeCreativeDirectionReview = jest.fn(async ({ selectedCandidateId }) => ({
+    data: {
+      project: {
+        ...project,
+        selected_candidate_asset_id: selectedCandidateId,
+        active_asset_id: selectedCandidateId,
+      },
+      retained_variations: [],
+    },
+    error: null,
+    status: 200,
+  }));
+  await renderCreate(<StudioCreateWorkspace
+    gateway={{
+      createFromPrompt: jest.fn(), createFromDrawing: jest.fn(),
+      completeCreativeDirectionReview,
+    } as CreateGateway}
+    owner="designer_1"
+    resumeProject={project}
+    onSave={jest.fn()}
+  />);
+
+  expect(screen.getByText('Compare before choosing')).toBeTruthy();
+  expect(screen.getByText('Starting source: Photograph')).toBeTruthy();
+  expect(screen.getByText('Selected direction: Direction 1')).toBeTruthy();
+  expect(screen.getByLabelText('Create starting source').props.source).toEqual({
+    uri: 'https://facetta.test/source.png',
+    headers: { Authorization: 'Bearer first-party-token' },
+  });
+  expect(screen.getByLabelText('Create selected direction comparison').props.source).toEqual({
+    uri: 'https://facetta.test/candidate-1.png',
+    headers: { Authorization: 'Bearer first-party-token' },
+  });
+
+  const continueButton = screen.getByText('Continue with Direction 1');
+  await loadDirection(1);
+  expect(continueButton.parent?.props.accessibilityState.disabled).toBe(true);
+  expect(screen.getByText(/wait for both the starting source and selected direction/i)).toBeTruthy();
+  await act(async () => {
+    fireEvent(screen.getByLabelText('Create starting source'), 'load');
+  });
+  expect(continueButton.parent?.props.accessibilityState.disabled).toBe(false);
+  await fireEvent.press(continueButton);
+  await waitFor(() => expect(completeCreativeDirectionReview).toHaveBeenCalledTimes(1));
+});
+
+test('prefers the exact selected source region over the uncropped uploaded master', async () => {
+  const project = creativeProjectWithSource(1, { region: true });
+  await renderCreate(<StudioCreateWorkspace
+    gateway={{
+      createFromPrompt: jest.fn(), createFromDrawing: jest.fn(),
+      completeCreativeDirectionReview: jest.fn(),
+    } as CreateGateway}
+    owner="designer_1"
+    resumeProject={project}
+    onSave={jest.fn()}
+  />);
+
+  expect(screen.getByLabelText('Create starting source').props.source.uri)
+    .toBe('https://facetta.test/source-region.png');
+});
+
+test('fails closed when a persisted starting source cannot be reviewed', async () => {
+  const project = creativeProjectWithSource(1);
+  const completeCreativeDirectionReview = jest.fn();
+  await renderCreate(<StudioCreateWorkspace
+    gateway={{
+      createFromPrompt: jest.fn(), createFromDrawing: jest.fn(),
+      completeCreativeDirectionReview,
+    } as CreateGateway}
+    owner="designer_1"
+    resumeProject={project}
+    onSave={jest.fn()}
+  />);
+
+  await loadDirection(1);
+  await act(async () => {
+    fireEvent(screen.getByLabelText('Create starting source'), 'error');
+  });
+  expect(screen.getByText(/starting source could not be displayed/i)).toBeTruthy();
+  const continueButton = screen.getByText('Continue with Direction 1');
+  expect(continueButton.parent?.props.accessibilityState.disabled).toBe(true);
+  await fireEvent.press(continueButton);
+  expect(completeCreativeDirectionReview).not.toHaveBeenCalled();
+});
+
+test('prompt-only direction review does not invent or require a starting source', async () => {
+  const project = creativeProject(1);
+  const completeCreativeDirectionReview = jest.fn(async ({ selectedCandidateId }) => ({
+    data: {
+      project: {
+        ...project,
+        selected_candidate_asset_id: selectedCandidateId,
+        active_asset_id: selectedCandidateId,
+      },
+      retained_variations: [],
+    },
+    error: null,
+    status: 200,
+  }));
+  await renderCreate(<StudioCreateWorkspace
+    gateway={{
+      createFromPrompt: jest.fn(), createFromDrawing: jest.fn(),
+      completeCreativeDirectionReview,
+    } as CreateGateway}
+    owner="designer_1"
+    resumeProject={project}
+    onSave={jest.fn()}
+  />);
+
+  expect(screen.queryByText('Compare before choosing')).toBeNull();
+  await loadDirection(1);
+  const continueButton = screen.getByText('Continue with Direction 1');
+  expect(continueButton.parent?.props.accessibilityState.disabled).toBe(false);
+  await fireEvent.press(continueButton);
+  await waitFor(() => expect(completeCreativeDirectionReview).toHaveBeenCalledTimes(1));
+});
 
 test('keeps every other previewed direction automatically and recomputes siblings when selection changes', async () => {
   const createFromPrompt = jest.fn(async () => ({
