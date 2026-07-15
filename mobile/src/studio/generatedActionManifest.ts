@@ -46,21 +46,21 @@ export const STUDIO_JOB_ACTION_MANIFEST = {
       },
       {
         "id": "style",
-        "label": "Material & style",
+        "label": "Material & finish image",
         "kind": "reference",
         "required": false,
         "referenceRole": "material_style"
       },
       {
         "id": "construction",
-        "label": "Construction detail",
+        "label": "Specific jewelry detail image",
         "kind": "reference",
         "required": false,
         "referenceRole": "construction_detail"
       },
       {
         "id": "brand",
-        "label": "Brand direction",
+        "label": "Visual mood image",
         "kind": "reference",
         "required": false,
         "referenceRole": "brand_direction"

@@ -506,6 +506,8 @@ export interface CreateStudioJobRequest {
   source_revision_id?: string | null;
   requested_outputs: number;
   credits_per_output: number;
+  /** Append-only visual guidance bound before Create generation begins. */
+  creative_intent?: CreativeIntentRequest;
 }
 
 export interface TransitionStudioJobRequest {

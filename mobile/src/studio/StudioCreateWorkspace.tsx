@@ -1548,7 +1548,7 @@ export function StudioCreateWorkspace({
       <Text style={styles.creditEstimate}>
         {createControls.estimateCredits(candidateCount)} credits total · {createCreditsPerOutput} per delivered option
       </Text>
-      <Text style={styles.creditHelp}>Internal retries and failed quality checks are included.</Text>
+      <Text style={styles.creditHelp}>You’re charged only for delivered design options.</Text>
       <Pressable
         accessibilityRole="button"
         accessibilityState={{ disabled: !canCreate }}

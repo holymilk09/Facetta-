@@ -8,6 +8,7 @@ from facetta.db import Base, StudioJobRecord, utcnow
 from facetta.provider_job_gate import (
     ProviderStudioJobError,
     require_provider_studio_job,
+    studio_create_intent_record,
 )
 from facetta.studio_jobs import studio_job_action_definition
 
@@ -21,6 +22,8 @@ def _job(
     requested_outputs: int = 1,
     project_id: str | None = "ast_project",
     source_id: str | None = "ast_source",
+    creative_intent: dict[str, str] | None = None,
+    bind_create_intent: bool = True,
 ) -> StudioJobRecord:
     action = studio_job_action_definition(action_id)
     now = utcnow()
@@ -41,6 +44,13 @@ def _job(
         updated_at=now,
     )
     db.add(record)
+    db.flush()
+    if action_id == "create" and bind_create_intent:
+        db.add(studio_create_intent_record(
+            studio_job_id=job_id,
+            owner=owner,
+            creative_intent=creative_intent,
+        ))
     db.commit()
     return record
 
@@ -200,3 +210,53 @@ def test_job_gate_rejects_unknown_and_already_bound_create_jobs(db, monkeypatch)
             requested_outputs=1,
         )
     assert replay.value.code == "studio_job_terminal"
+
+
+def test_create_gate_requires_exact_bound_visual_intent(db, monkeypatch):
+    monkeypatch.setenv("FACETTA_ENV", "production")
+    intent = {"metal_color": "rose", "visual_mood": "romantic"}
+    create_job = _job(
+        db,
+        job_id="job_create_intent",
+        action_id="create",
+        project_id=None,
+        source_id=None,
+        creative_intent=intent,
+    )
+    assert require_provider_studio_job(
+        db,
+        job_id=create_job.id,
+        owner="usr_designer",
+        action_id="create",
+        requested_outputs=1,
+        creative_intent=intent,
+    ) is create_job
+
+    with pytest.raises(ProviderStudioJobError) as changed:
+        require_provider_studio_job(
+            db,
+            job_id=create_job.id,
+            owner="usr_designer",
+            action_id="create",
+            requested_outputs=1,
+            creative_intent={"visual_mood": "minimal"},
+        )
+    assert changed.value.code == "studio_create_intent_mismatch"
+
+    unbound = _job(
+        db,
+        job_id="job_create_unbound",
+        action_id="create",
+        project_id=None,
+        source_id=None,
+        bind_create_intent=False,
+    )
+    with pytest.raises(ProviderStudioJobError) as missing:
+        require_provider_studio_job(
+            db,
+            job_id=unbound.id,
+            owner="usr_designer",
+            action_id="create",
+            requested_outputs=1,
+        )
+    assert missing.value.code == "studio_create_intent_unbound"

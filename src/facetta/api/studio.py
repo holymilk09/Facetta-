@@ -23,6 +23,7 @@ from facetta.api.error_mapping import (
     provider_studio_job_error_response,
 )
 from facetta.api.projects import (
+    CreativeIntentRequest,
     ProductPhotoRequest,
     ProjectDetail,
     ProjectFromImageRequest,
@@ -81,6 +82,7 @@ from facetta.presentation import (
 from facetta.provider_job_gate import (
     ProviderStudioJobError,
     require_provider_studio_job,
+    studio_create_intent_record,
 )
 from facetta.spec import Spec
 from facetta.specagent import mask_from_markup
@@ -363,6 +365,7 @@ class CreateStudioJobRequest(BaseModel):
     source_revision_id: Annotated[str, Field(min_length=1, max_length=32)] | None = None
     requested_outputs: Annotated[int, Field(ge=1, le=4)]
     credits_per_output: Annotated[int, Field(ge=0, le=100000)]
+    creative_intent: CreativeIntentRequest | None = None
 
 
 class TransitionStudioJobRequest(BaseModel):
@@ -837,6 +840,11 @@ def create_studio_job(
                 f"{request.action_id}"
             ),
         )
+    if request.action_id != "create" and request.creative_intent is not None:
+        raise HTTPException(
+            status_code=422,
+            detail="creative_intent is available only for Studio Create jobs",
+        )
     _require_studio_job_context(db, request)
     if not (
         action.min_requested_outputs
@@ -888,6 +896,19 @@ def create_studio_job(
         updated_at=now,
     )
     db.add(job)
+    # The append-only request row validates the owning job through the same
+    # transaction. Flush the parent first; the later commit remains atomic.
+    db.flush()
+    if request.action_id == "create":
+        db.add(studio_create_intent_record(
+            studio_job_id=job.id,
+            owner=request.owner,
+            creative_intent=(
+                request.creative_intent.model_dump(exclude_none=True)
+                if request.creative_intent is not None
+                else None
+            ),
+        ))
     db.commit()
     return _studio_job(job)
 

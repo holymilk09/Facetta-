@@ -10,6 +10,7 @@ import type {
   CatalogPreviewResult,
   CommitCreativeDirectionsResult,
   ComponentCatalog,
+  CreativeIntentRequest,
   CreativeDirectionReviewDraft,
   CreateLineArtRequest,
   CreateProjectFromDrawingRequest,
@@ -960,6 +961,7 @@ export function createStudioGateway(
     owner: string,
     requestedOutputs: number,
     lineage?: StudioVisualLineage,
+    creativeIntent?: CreativeIntentRequest,
   ): Promise<StudioGatewayResult<ActiveStudioJob | null>> => {
     const action = getStudioAction(actionId);
     if (!action.createsJob
@@ -991,6 +993,9 @@ export function createStudioGateway(
         source_revision_id: lineage?.sourceAssetId ?? null,
         requested_outputs: requestedOutputs,
         credits_per_output: action.creditEstimate,
+        ...(creativeIntent === undefined
+          ? {}
+          : { creative_intent: creativeIntent }),
       });
       if (created.error !== null) {
         return { data: null, error: mapError(created.error), status: created.status };
@@ -1866,7 +1871,9 @@ export function createStudioGateway(
       request: CreateProjectFromPromptRequest,
     ): Promise<StudioGatewayResult<ProjectDetail>> {
       const requested = request.variation_count ?? 1;
-      const started = await startJob('create', request.owner, requested);
+      const started = await startJob(
+        'create', request.owner, requested, undefined, request.creative_intent,
+      );
       if (started.error !== null) return started;
       const result = await callTrackedCreate(started.data, requested, () => client.createProjectFromPrompt({
         ...request,
@@ -1895,7 +1902,9 @@ export function createStudioGateway(
       request: CreateProjectFromDrawingRequest,
     ): Promise<StudioGatewayResult<ProjectDetail>> {
       const requested = request.variation_count ?? 1;
-      const started = await startJob('create', request.owner, requested);
+      const started = await startJob(
+        'create', request.owner, requested, undefined, request.creative_intent,
+      );
       if (started.error !== null) return started;
       const result = await callTrackedCreate(started.data, requested, () => client.createProjectFromDrawing({
         ...request,

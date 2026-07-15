@@ -8,13 +8,18 @@ be tied to one canonical, running Studio job before provider work begins.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Literal
+from typing import Literal, Mapping
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from facetta.config import env_value
-from facetta.db import StudioJobRecord
+from facetta.db import (
+    STUDIO_CREATE_INTENT_SCHEMA_VERSION,
+    StudioCreateIntentRecord,
+    StudioJobRecord,
+    studio_create_intent_sha256,
+)
 from facetta.studio_jobs import studio_job_action_definition
 
 
@@ -33,11 +38,127 @@ class ProviderStudioJobError(ValueError):
         return self.detail
 
 
+@dataclass(frozen=True, slots=True)
+class StudioCreateIntentSnapshot:
+    """Verified append-only visual guidance bound to one Create job."""
+
+    studio_job_id: str
+    owner: str
+    schema_version: str
+    creative_intent: dict[str, str]
+    creative_intent_sha256: str
+
+    def revision_fields(self) -> dict[str, object]:
+        return {
+            "studio_job_id": self.studio_job_id,
+            "creative_intent_schema": self.schema_version,
+            "creative_intent": dict(self.creative_intent),
+            "creative_intent_sha256": self.creative_intent_sha256,
+        }
+
+
+_CREATIVE_INTENT_VALUES: dict[str, frozenset[str]] = {
+    "metal_color": frozenset({"yellow", "white", "rose", "mixed"}),
+    "color_accent": frozenset({
+        "colorless", "blue", "green", "pink_red", "warm", "multicolor",
+    }),
+    "surface_finish": frozenset({
+        "polished", "satin_brushed", "hammered", "frosted", "organic", "mixed",
+    }),
+    "visual_mood": frozenset({
+        "minimal", "romantic", "organic", "heritage", "sculptural", "playful",
+    }),
+}
+
+
 def _error(code: str, detail: str, status_code: int) -> ProviderStudioJobError:
     return ProviderStudioJobError(
         code=code,
         detail=detail,
         status_code=status_code,
+    )
+
+
+def normalize_studio_create_intent(
+    value: Mapping[str, object] | None,
+) -> dict[str, str]:
+    """Return a canonical typed Create intent; an empty object is explicit."""
+
+    if value is None:
+        return {}
+    if not isinstance(value, Mapping) or set(value) - set(_CREATIVE_INTENT_VALUES):
+        raise _error(
+            "studio_create_intent_invalid",
+            "the Studio Create visual guidance is not canonical",
+            422,
+        )
+    normalized: dict[str, str] = {}
+    for key in _CREATIVE_INTENT_VALUES:
+        if key not in value:
+            continue
+        item = value[key]
+        if not isinstance(item, str) or item not in _CREATIVE_INTENT_VALUES[key]:
+            raise _error(
+                "studio_create_intent_invalid",
+                "the Studio Create visual guidance is not canonical",
+                422,
+            )
+        normalized[key] = item
+    return normalized
+
+
+def studio_create_intent_record(
+    *,
+    studio_job_id: str,
+    owner: str,
+    creative_intent: Mapping[str, object] | None,
+) -> StudioCreateIntentRecord:
+    """Build the immutable intent row inserted with a new Create job."""
+
+    normalized = normalize_studio_create_intent(creative_intent)
+    return StudioCreateIntentRecord(
+        studio_job_id=studio_job_id,
+        owner=owner,
+        schema_version=STUDIO_CREATE_INTENT_SCHEMA_VERSION,
+        creative_intent=normalized,
+        creative_intent_sha256=studio_create_intent_sha256(normalized),
+    )
+
+
+def require_studio_create_intent_snapshot(
+    db: Session,
+    *,
+    studio_job_id: str,
+    owner: str,
+) -> StudioCreateIntentSnapshot:
+    """Fail closed unless the exact append-only Create request is intact."""
+
+    record = db.scalar(select(StudioCreateIntentRecord).where(
+        StudioCreateIntentRecord.studio_job_id == studio_job_id,
+    ))
+    if record is None or record.owner != owner:
+        raise _error(
+            "studio_create_intent_unbound",
+            "the Studio Create job has no bound visual guidance",
+            409,
+        )
+    normalized = normalize_studio_create_intent(record.creative_intent)
+    digest = studio_create_intent_sha256(normalized)
+    if (
+        record.schema_version != STUDIO_CREATE_INTENT_SCHEMA_VERSION
+        or record.creative_intent_sha256 != digest
+    ):
+        raise _error(
+            "studio_create_intent_corrupt",
+            "the Studio Create visual guidance failed its integrity check",
+            409,
+        )
+    return StudioCreateIntentSnapshot(
+        studio_job_id=record.studio_job_id,
+        owner=record.owner,
+        schema_version=record.schema_version,
+        creative_intent=normalized,
+        creative_intent_sha256=digest,
     )
 
 
@@ -50,6 +171,7 @@ def require_provider_studio_job(
     requested_outputs: int,
     active_design_id: str | None = None,
     source_revision_id: str | None = None,
+    creative_intent: Mapping[str, object] | None = None,
 ) -> StudioJobRecord | None:
     """Validate the exact job authority before any provider call.
 
@@ -113,6 +235,20 @@ def require_provider_studio_job(
             "the Studio Create job is already bound to generated work",
             409,
         )
+    if action_id == "create":
+        bound_intent = require_studio_create_intent_snapshot(
+            db,
+            studio_job_id=job.id,
+            owner=owner,
+        )
+        if bound_intent.creative_intent != normalize_studio_create_intent(
+            creative_intent
+        ):
+            raise _error(
+                "studio_create_intent_mismatch",
+                "the generation request changed after its Studio job was created",
+                409,
+            )
     for field, expected in (
         ("active_design_id", active_design_id),
         ("source_revision_id", source_revision_id),

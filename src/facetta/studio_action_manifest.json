@@ -13,9 +13,9 @@
     "ui_schema": [
       {"id": "brief", "label": "Design sentence", "kind": "text", "required": false},
       {"id": "master", "label": "Master geometry", "kind": "reference", "required": false, "reference_role": "master_geometry"},
-      {"id": "style", "label": "Material & style", "kind": "reference", "required": false, "reference_role": "material_style"},
-      {"id": "construction", "label": "Construction detail", "kind": "reference", "required": false, "reference_role": "construction_detail"},
-      {"id": "brand", "label": "Brand direction", "kind": "reference", "required": false, "reference_role": "brand_direction"}
+      {"id": "style", "label": "Material & finish image", "kind": "reference", "required": false, "reference_role": "material_style"},
+      {"id": "construction", "label": "Specific jewelry detail image", "kind": "reference", "required": false, "reference_role": "construction_detail"},
+      {"id": "brand", "label": "Visual mood image", "kind": "reference", "required": false, "reference_role": "brand_direction"}
     ]
   },
   "vary": {

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 
 import hashlib
@@ -90,6 +91,46 @@ def _verified_revision_hash(
             status_code=422,
         )
     return actual
+
+
+@dataclass(frozen=True)
+class CreateDirectionProvenance:
+    """Exact Create request and generation evidence for one retained sibling."""
+
+    image_run_id: str
+    generation_input_sha256: str
+    studio_job_id: str | None = None
+    creative_intent_schema: str | None = None
+    creative_intent: Mapping[str, str] | None = None
+    creative_intent_sha256: str | None = None
+
+    def __post_init__(self) -> None:
+        if not self.image_run_id or not self.generation_input_sha256:
+            raise ValueError("Create direction generation provenance is required")
+        bound = (
+            self.studio_job_id,
+            self.creative_intent_schema,
+            self.creative_intent,
+            self.creative_intent_sha256,
+        )
+        if any(value is not None for value in bound) and not all(
+            value is not None for value in bound
+        ):
+            raise ValueError("Create job intent provenance must be complete")
+
+    def revision_fields(self) -> dict[str, object]:
+        fields: dict[str, object] = {
+            "image_run_id": self.image_run_id,
+            "generation_input_sha256": self.generation_input_sha256,
+        }
+        if self.studio_job_id is not None:
+            fields.update({
+                "studio_job_id": self.studio_job_id,
+                "creative_intent_schema": self.creative_intent_schema,
+                "creative_intent": dict(self.creative_intent or {}),
+                "creative_intent_sha256": self.creative_intent_sha256,
+            })
+        return fields
 
 
 @dataclass(frozen=True)
@@ -1378,6 +1419,7 @@ def fork_project_variation(
     created_by: str,
     operation_id: str | None = None,
     allow_unselected_creative_candidate: bool = False,
+    create_direction_provenance: CreateDirectionProvenance | None = None,
     allow_historical_revision: bool = False,
     expected_source_design_version: int | None = None,
     expected_source_sha256: str | None = None,
@@ -1405,6 +1447,15 @@ def fork_project_variation(
         raise StudioHistoryError(
             "variation_operation_id_required",
             "a variation operation id is required",
+            status_code=422,
+        )
+    if (
+        create_direction_provenance is not None
+        and not allow_unselected_creative_candidate
+    ):
+        raise StudioHistoryError(
+            "create_direction_provenance_invalid",
+            "Create provenance is reserved for reviewed direction retention",
             status_code=422,
         )
     if allow_historical_revision:
@@ -1674,19 +1725,22 @@ def fork_project_variation(
         created_at=now,
         updated_at=now,
     )
+    revision_intent: dict[str, object] = {
+        "kind": (
+            "save_historical_revision_as_variation"
+            if allow_historical_revision else "save_as_variation"
+        ),
+        "source_project_id": project.root_id,
+        "source_asset_id": source.id,
+        "label": label,
+    }
+    if create_direction_provenance is not None:
+        revision_intent.update(create_direction_provenance.revision_fields())
     record = ProjectRevisionRecord(
         id=new_id("prr"),
         asset_id=new_asset.id,
         action="created",
-        raw_intent={
-            "kind": (
-                "save_historical_revision_as_variation"
-                if allow_historical_revision else "save_as_variation"
-            ),
-            "source_project_id": project.root_id,
-            "source_asset_id": source.id,
-            "label": label,
-        },
+        raw_intent=revision_intent,
         interpretation={
             "operation": "fork_variation",
             "source_preserved_exactly": True,

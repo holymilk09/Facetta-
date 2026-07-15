@@ -38,6 +38,7 @@ from facetta.db import (
     StudioConfirmationDraft,
     StudioJobRecord,
     get_db,
+    studio_create_intent_sha256,
     utcnow,
 )
 from facetta.design_form import NormalizedPoint, NormalizedPolygon
@@ -646,6 +647,7 @@ def _reviewing_create_job(
     project_id: str,
     requested_outputs: int,
     owner: str = "usr_designer",
+    creative_intent: dict[str, str] | None = None,
 ) -> str:
     created = client.post("/studio/jobs", json={
         "owner": owner,
@@ -653,6 +655,10 @@ def _reviewing_create_job(
         "lane": "fast_visual",
         "requested_outputs": requested_outputs,
         "credits_per_output": 15,
+        **(
+            {"creative_intent": creative_intent}
+            if creative_intent is not None else {}
+        ),
     })
     assert created.status_code == 201, created.text
     job_id = created.json()["job_id"]
@@ -682,6 +688,7 @@ def _running_create_job(
     *,
     requested_outputs: int,
     owner: str = "usr_designer",
+    creative_intent: dict[str, str] | None = None,
 ) -> str:
     created = client.post("/studio/jobs", json={
         "owner": owner,
@@ -689,6 +696,10 @@ def _running_create_job(
         "lane": "fast_visual",
         "requested_outputs": requested_outputs,
         "credits_per_output": 15,
+        **(
+            {"creative_intent": creative_intent}
+            if creative_intent is not None else {}
+        ),
     })
     assert created.status_code == 201, created.text
     job_id = created.json()["job_id"]
@@ -2206,17 +2217,28 @@ def test_creative_direction_commit_is_atomic_billed_once_and_retry_safe(
     app.dependency_overrides[get_creative_prompt_generator] = (
         lambda: (lambda _instruction, variant: _prompt_creative_result(variant))
     )
+    creative_intent = {
+        "metal_color": "white",
+        "surface_finish": "satin_brushed",
+        "visual_mood": "minimal",
+    }
+    job_id = _running_create_job(
+        client,
+        requested_outputs=4,
+        creative_intent=creative_intent,
+    )
     created = client.post(
-        "/projects/from-prompt", json=_prompt_request(variation_count=4)
+        "/projects/from-prompt", json={
+            **_prompt_request(variation_count=4),
+            "creative_intent": creative_intent,
+            "studio_job_id": job_id,
+        },
     )
     assert created.status_code == 201, created.text
     project = created.json()
     candidates = [
         item["asset_id"] for item in project["creative_candidates"]
     ]
-    job_id = _reviewing_create_job(
-        client, project_id=project["root_id"], requested_outputs=4,
-    )
     payload = {
         "selected_candidate_id": candidates[1],
         "retained": [
@@ -2326,7 +2348,13 @@ def test_creative_direction_commit_is_atomic_billed_once_and_retry_safe(
             "selected_candidate_asset_id": candidates[1],
             "source_asset_id": candidates[1],
             "image_run_id": selected_run.id,
+            "generation_input_sha256": selected_run.input_hash,
             "studio_job_id": job_id,
+            "creative_intent_schema": "facetta.creative-intent.v1",
+            "creative_intent": creative_intent,
+            "creative_intent_sha256": studio_create_intent_sha256(
+                creative_intent
+            ),
         }
         assert original_revision.interpretation == {
             "operation": "select_original_direction",
@@ -2345,6 +2373,33 @@ def test_creative_direction_commit_is_atomic_billed_once_and_retry_safe(
             ImageAttempt.output_hash == selected_sha256,
         ))
         assert matching_attempt is not None
+        for branch, source_candidate_id in zip(
+            branches,
+            (candidates[0], candidates[3]),
+            strict=True,
+        ):
+            branch_revision = db.scalar(select(ProjectRevisionRecord).where(
+                ProjectRevisionRecord.asset_id == branch.root_id,
+            ))
+            assert branch_revision is not None
+            branch_run = db.get(
+                ImageRun, branch_revision.raw_intent["image_run_id"]
+            )
+            assert branch_run is not None
+            assert branch_revision.raw_intent == {
+                "kind": "save_as_variation",
+                "source_project_id": project["root_id"],
+                "source_asset_id": source_candidate_id,
+                "label": branch.variation_label,
+                "studio_job_id": job_id,
+                "creative_intent_schema": "facetta.creative-intent.v1",
+                "creative_intent": creative_intent,
+                "creative_intent_sha256": studio_create_intent_sha256(
+                    creative_intent
+                ),
+                "image_run_id": branch_run.id,
+                "generation_input_sha256": branch_run.input_hash,
+            }
         original_revision_id = original_revision.id
 
     history = client.get(f"/studio/projects/{project['root_id']}/history")

@@ -143,11 +143,13 @@ from facetta.presentation import (
 from facetta.provider_job_gate import (
     ProviderStudioJobError,
     require_provider_studio_job,
+    require_studio_create_intent_snapshot,
 )
 from facetta.preliminary_sheet import sheet_readiness_blockers
 from facetta.render import RenderUnavailable
 from facetta.spec import Spec
 from facetta.studio_history import (
+    CreateDirectionProvenance,
     StudioHistoryError,
     ensure_project_family,
     fork_project_variation,
@@ -2042,14 +2044,20 @@ def commit_project_creative_directions(
             ImageAsset.capability == "CREATIVE_RENDER",
             ImageAsset.design_version.is_(None),
         ))))
+        create_intent_snapshot = None
         if request.studio_job_id is not None:
-            settle_create_studio_job_selection(
+            settled_job = settle_create_studio_job_selection(
                 db,
                 job_id=request.studio_job_id,
                 owner=request.created_by,
                 project_root_id=project.root_id,
                 source_revision_id=selected.id,
                 available_outputs=available_outputs,
+            )
+            create_intent_snapshot = require_studio_create_intent_snapshot(
+                db,
+                studio_job_id=settled_job.id,
+                owner=settled_job.owner,
             )
 
         project.selected_candidate_asset_id = selected.id
@@ -2067,18 +2075,21 @@ def commit_project_creative_directions(
             bytes(selected_source.image)
         ).hexdigest()
         selected_output_sha256 = hashlib.sha256(bytes(selected.image)).hexdigest()
+        selected_intent: dict[str, object] = {
+            "kind": "create_direction_commit",
+            "create_decision_project_root_id": project.root_id,
+            "selected_candidate_asset_id": selected.id,
+            "source_asset_id": selected_source_id,
+            "image_run_id": selected_run.id,
+            "generation_input_sha256": selected_run.input_hash,
+        }
+        if create_intent_snapshot is not None:
+            selected_intent.update(create_intent_snapshot.revision_fields())
         selected_revision = ProjectRevisionRecord(
             id=new_id("prr"),
             asset_id=selected.id,
             action="created",
-            raw_intent={
-                "kind": "create_direction_commit",
-                "create_decision_project_root_id": project.root_id,
-                "selected_candidate_asset_id": selected.id,
-                "source_asset_id": selected_source_id,
-                "image_run_id": selected_run.id,
-                "studio_job_id": request.studio_job_id,
-            },
+            raw_intent=selected_intent,
             interpretation={
                 "operation": "select_original_direction",
                 "source_sha256": selected_source_sha256,
@@ -2098,6 +2109,32 @@ def commit_project_creative_directions(
 
         retained_records: list[dict[str, object]] = []
         for retained in retained_request:
+            retained_candidate = by_id[retained["candidate_id"]]
+            retained_run = _creative_candidate_generation_run(
+                db,
+                project=project,
+                candidate=retained_candidate,
+            )
+            create_provenance = CreateDirectionProvenance(
+                image_run_id=retained_run.id,
+                generation_input_sha256=retained_run.input_hash,
+                **(
+                    {
+                        "studio_job_id": create_intent_snapshot.studio_job_id,
+                        "creative_intent_schema": (
+                            create_intent_snapshot.schema_version
+                        ),
+                        "creative_intent": (
+                            create_intent_snapshot.creative_intent
+                        ),
+                        "creative_intent_sha256": (
+                            create_intent_snapshot.creative_intent_sha256
+                        ),
+                    }
+                    if create_intent_snapshot is not None
+                    else {}
+                ),
+            )
             result = fork_project_variation(
                 db,
                 project_root_id=project.root_id,
@@ -2107,6 +2144,7 @@ def commit_project_creative_directions(
                 variation_label=retained["label"],
                 created_by=request.created_by,
                 allow_unselected_creative_candidate=True,
+                create_direction_provenance=create_provenance,
                 commit=False,
             )
             retained_records.append({
@@ -2132,7 +2170,12 @@ def commit_project_creative_directions(
             db.delete(review_draft)
         db.flush()
         db.commit()
-    except (StudioHistoryError, StudioJobAccountingError, IntegrityError) as exc:
+    except (
+        StudioHistoryError,
+        StudioJobAccountingError,
+        ProviderStudioJobError,
+        IntegrityError,
+    ) as exc:
         db.rollback()
         retry = _existing_creative_direction_commit(
             db, project_id=project_id, request=request,
@@ -2145,6 +2188,11 @@ def commit_project_creative_directions(
             ) from exc
         if isinstance(exc, StudioJobAccountingError):
             raise HTTPException(status_code=409, detail=str(exc)) from exc
+        if isinstance(exc, ProviderStudioJobError):
+            raise HTTPException(
+                status_code=exc.status_code,
+                detail=exc.detail,
+            ) from exc
         raise HTTPException(
             status_code=409,
             detail="another Create decision committed first; reload and retry",
@@ -2350,6 +2398,11 @@ def create_project_from_prompt(
             owner=actor,
             action_id="create",
             requested_outputs=request.variation_count,
+            creative_intent=(
+                request.creative_intent.model_dump(exclude_none=True)
+                if request.creative_intent is not None
+                else None
+            ),
         )
     except ProviderStudioJobError as exc:
         return provider_studio_job_error_response(exc)
@@ -2534,6 +2587,11 @@ def create_project_from_drawing(
             owner=actor,
             action_id="create",
             requested_outputs=request.variation_count,
+            creative_intent=(
+                request.creative_intent.model_dump(exclude_none=True)
+                if request.creative_intent is not None
+                else None
+            ),
         )
     except ProviderStudioJobError as exc:
         return provider_studio_job_error_response(exc)

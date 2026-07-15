@@ -188,12 +188,18 @@ test('durable jobs are the default and charge only after direction acceptance', 
 
   const created = await gateway.createFromPrompt({
     prompt: 'Sapphire orbit', variation_count: 2, owner: 'designer_1', title: 'Orbit',
+    creative_intent: {
+      metal_color: 'white', surface_finish: 'satin_brushed', visual_mood: 'minimal',
+    },
   });
   assert.equal(created.error, null);
   assert.deepEqual(jobs.creates[0], {
     owner: 'designer_1', action_id: 'create', lane: 'fast_visual',
     active_design_id: null, source_revision_id: null,
     requested_outputs: 2, credits_per_output: 15,
+    creative_intent: {
+      metal_color: 'white', surface_finish: 'satin_brushed', visual_mood: 'minimal',
+    },
   });
   assert.deepEqual(jobs.transitions.map((call) => call.request.status), ['running']);
   assert.equal(promptJobId, 'studio_job_1');

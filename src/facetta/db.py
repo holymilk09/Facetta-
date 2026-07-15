@@ -14,6 +14,7 @@ the driver this project installs, so it works unchanged. See README → Database
 from __future__ import annotations
 
 import hashlib
+import json
 import secrets
 from datetime import datetime, timezone
 from functools import lru_cache
@@ -35,6 +36,8 @@ DEFAULT_DATABASE_URL = "sqlite:///./facetta.db"
 _engine_initialization_lock = Lock()
 
 SpecJSON = JSON().with_variant(JSONB(), "postgresql")
+
+STUDIO_CREATE_INTENT_SCHEMA_VERSION = "facetta.creative-intent.v1"
 
 MOUNTING_ARTIFACT_SCHEMA_VERSION = "facetta.mounting-view.v1"
 MOUNTING_ARTIFACT_KIND = "mounting_view"
@@ -384,6 +387,102 @@ class StudioJobRecord(Base):
             "length(accepted_output_sha256) = 64)",
             name="ck_studio_job_factory_success_evidence",
         ),
+    )
+
+
+def studio_create_intent_sha256(creative_intent: dict) -> str:
+    """Hash one canonical designer-selected Create intent snapshot."""
+
+    canonical = json.dumps(
+        creative_intent,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+    ).encode("utf-8")
+    return hashlib.sha256(canonical).hexdigest()
+
+
+class StudioCreateIntentRecord(Base):
+    """Append-only request authority for one Studio Create job.
+
+    An empty object means the designer intentionally chose no one-tap visual
+    guidance. A missing row means the job was never bound and therefore may
+    not authorize provider work.
+    """
+
+    __tablename__ = "studio_create_intents"
+
+    studio_job_id: Mapped[str] = mapped_column(
+        String(32), ForeignKey("studio_jobs.id", ondelete="RESTRICT"),
+        primary_key=True,
+    )
+    owner: Mapped[str] = mapped_column(String(32), index=True)
+    schema_version: Mapped[str] = mapped_column(String(40))
+    creative_intent: Mapped[dict] = mapped_column(SpecJSON, nullable=False)
+    creative_intent_sha256: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow,
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "schema_version = 'facetta.creative-intent.v1'",
+            name="ck_studio_create_intent_schema",
+        ),
+        CheckConstraint(
+            "length(creative_intent_sha256) = 64",
+            name="ck_studio_create_intent_sha256",
+        ),
+    )
+
+
+class ImmutableStudioCreateIntentError(RuntimeError):
+    """A canonical Studio Create request snapshot cannot be rewritten."""
+
+
+@event.listens_for(StudioCreateIntentRecord, "before_insert")
+def _validate_studio_create_intent_insert(
+    _mapper, connection, target: StudioCreateIntentRecord,
+) -> None:
+    intent = target.creative_intent
+    if not isinstance(intent, dict):
+        raise ValueError("Studio Create intent must be a JSON object")
+    if target.schema_version != STUDIO_CREATE_INTENT_SCHEMA_VERSION:
+        raise ValueError("Studio Create intent schema is not canonical")
+    if target.creative_intent_sha256 != studio_create_intent_sha256(intent):
+        raise ValueError("Studio Create intent hash does not match its payload")
+    job = connection.execute(
+        text(
+            "SELECT owner, action_id FROM studio_jobs "
+            "WHERE id = :studio_job_id"
+        ),
+        {"studio_job_id": target.studio_job_id},
+    ).mappings().one_or_none()
+    if (
+        job is None
+        or job["owner"] != target.owner
+        or job["action_id"] != "create"
+    ):
+        raise ValueError(
+            "Studio Create intent requires its owner's canonical Create job"
+        )
+
+
+@event.listens_for(StudioCreateIntentRecord, "before_update")
+def _reject_studio_create_intent_update(
+    _mapper, _connection, _target,
+) -> None:
+    raise ImmutableStudioCreateIntentError(
+        "Studio Create intent records are immutable"
+    )
+
+
+@event.listens_for(StudioCreateIntentRecord, "before_delete")
+def _reject_studio_create_intent_delete(
+    _mapper, _connection, _target,
+) -> None:
+    raise ImmutableStudioCreateIntentError(
+        "Studio Create intent records are immutable"
     )
 
 

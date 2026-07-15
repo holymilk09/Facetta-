@@ -59,15 +59,15 @@ const STUDIO_WORKSPACE_EXPECTATIONS = {
         role: 'master_geometry',
       },
       {
-        fieldId: 'style', label: 'Material & style', kind: 'reference', required: false,
+        fieldId: 'style', label: 'Material & finish image', kind: 'reference', required: false,
         role: 'material_style',
       },
       {
-        fieldId: 'construction', label: 'Construction detail', kind: 'reference', required: false,
+        fieldId: 'construction', label: 'Specific jewelry detail image', kind: 'reference', required: false,
         role: 'construction_detail',
       },
       {
-        fieldId: 'brand', label: 'Brand direction', kind: 'reference', required: false,
+        fieldId: 'brand', label: 'Visual mood image', kind: 'reference', required: false,
         role: 'brand_direction',
       },
     ],
@@ -271,9 +271,9 @@ export function getStudioWorkspaceControls(
 
 export const STUDIO_CREATE_REFERENCE_CONTROLS = [
   { fieldId: 'master', role: 'master_geometry', label: 'Master geometry', help: 'The source design whose visible form must be preserved.' },
-  { fieldId: 'style', role: 'material_style', label: 'Material & style', help: 'Surface, color, and finish only—not jewelry geometry.' },
-  { fieldId: 'construction', role: 'construction_detail', label: 'Construction detail', help: 'Visual guidance for one detail, not a confirmed production fact.' },
-  { fieldId: 'brand', role: 'brand_direction', label: 'Brand direction', help: 'Mood and visual language only—not product geometry or branding to copy.' },
+  { fieldId: 'style', role: 'material_style', label: 'Material & finish image', help: 'Optional inspiration for color, surface, or finish. Use Creative guidance when an image is unnecessary.' },
+  { fieldId: 'construction', role: 'construction_detail', label: 'Specific jewelry detail image', help: 'Optional close-up inspiration, such as a clasp, setting, prong, hinge, or engraving.' },
+  { fieldId: 'brand', role: 'brand_direction', label: 'Visual mood image', help: 'Optional atmosphere and visual-language inspiration. It does not copy a logo or product shape.' },
 ] as const satisfies readonly {
   fieldId: string; role: ReferenceRole; label: string; help: string;
 }[];

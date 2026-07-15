@@ -747,6 +747,8 @@ test('keeps only explicitly chosen useful directions as variations', async () =>
     '4 design options: The most variety. May span the widest mix of form, setting, surface, and mood.',
   ));
   expect(screen.getByText('60 credits total · 15 per delivered option')).toBeTruthy();
+  expect(screen.getByText('You’re charged only for delivered design options.')).toBeTruthy();
+  expect(screen.queryByText(/Internal retries/i)).toBeNull();
   await fireEvent.press(screen.getByText('Create 4 design options'));
 
   await waitFor(() => expect(createFromPrompt).toHaveBeenCalledWith({

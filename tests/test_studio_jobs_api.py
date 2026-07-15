@@ -26,14 +26,17 @@ from facetta.db import (
     ImageAsset,
     ImageRun,
     ImageRunReview,
+    ImmutableStudioCreateIntentError,
     PreviewCandidateRecord,
     Project,
     ProjectRevisionRecord,
+    StudioCreateIntentRecord,
     StudioJobRecord,
     StudioMarkupCandidateRecord,
     StudioPresentationCandidateRecord,
     StudioViewCandidateRecord,
     get_db,
+    studio_create_intent_sha256,
     utcnow,
 )
 from facetta.main import app
@@ -79,6 +82,7 @@ def _create(
     lane: str = "fast_visual",
     active_design_id: str | None = None,
     source_revision_id: str | None = None,
+    creative_intent: dict[str, str] | None = None,
 ) -> dict:
     response = client.post("/studio/jobs", json={
         "owner": owner,
@@ -88,6 +92,10 @@ def _create(
         "source_revision_id": source_revision_id,
         "requested_outputs": outputs,
         "credits_per_output": credits,
+        **(
+            {"creative_intent": creative_intent}
+            if creative_intent is not None else {}
+        ),
     })
     assert response.status_code == 201
     return response.json()
@@ -370,6 +378,7 @@ def test_fresh_schema_contains_persistent_studio_jobs():
     inspector = inspect(engine)
 
     assert StudioJobRecord.__tablename__ in inspector.get_table_names()
+    assert StudioCreateIntentRecord.__tablename__ in inspector.get_table_names()
     assert {
         "owner", "action_id", "lane", "status", "progress",
         "requested_outputs", "credits_per_output", "completed_outputs",
@@ -748,6 +757,49 @@ def test_create_rejects_client_authored_lane_or_price(client):
     })
     assert wrong_lane.status_code == 422
     assert "lane" in wrong_lane.json()["detail"]
+
+
+def test_create_job_binds_one_immutable_hashed_visual_intent(client):
+    intent = {
+        "metal_color": "white",
+        "surface_finish": "satin_brushed",
+        "visual_mood": "minimal",
+    }
+    job = _create(client, creative_intent=intent)
+    sessions = client.app_state["session_factory"]
+    with sessions() as db:
+        record = db.get(StudioCreateIntentRecord, job["job_id"])
+        assert record is not None
+        assert record.owner == "usr_designer"
+        assert record.schema_version == "facetta.creative-intent.v1"
+        assert record.creative_intent == intent
+        assert record.creative_intent_sha256 == studio_create_intent_sha256(
+            intent
+        )
+        record.creative_intent = {"visual_mood": "playful"}
+        with pytest.raises(ImmutableStudioCreateIntentError):
+            db.commit()
+        db.rollback()
+
+
+def test_non_create_job_rejects_create_only_visual_intent(client):
+    project_id, source_id = _seed_project(
+        client,
+        project_id="project_refine_intent",
+        exact_specification=True,
+    )
+    response = client.post("/studio/jobs", json={
+        "owner": "usr_designer",
+        "action_id": "refine",
+        "lane": "trusted_structural",
+        "active_design_id": project_id,
+        "source_revision_id": source_id,
+        "requested_outputs": 1,
+        "credits_per_output": 20,
+        "creative_intent": {"visual_mood": "minimal"},
+    })
+    assert response.status_code == 422
+    assert "only for Studio Create" in response.json()["detail"]
 
 
 def test_server_registry_is_canonical_for_every_studio_action(client):

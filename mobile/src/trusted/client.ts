@@ -5560,6 +5560,9 @@ export function createTrustedApiClient(options: TrustedApiClientOptions) {
           source_revision_id: request.source_revision_id ?? null,
           requested_outputs: request.requested_outputs,
           credits_per_output: request.credits_per_output,
+          ...(request.creative_intent === undefined
+            ? {}
+            : { creative_intent: { ...request.creative_intent } }),
         }),
       });
     },
