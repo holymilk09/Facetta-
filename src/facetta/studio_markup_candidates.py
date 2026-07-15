@@ -16,6 +16,7 @@ from facetta.db import (
     DesignVersion,
     ImageAsset,
     ImageRun,
+    PreviewCandidateRecord,
     Project,
     ProjectRevisionRecord,
     StudioJobRecord,
@@ -276,7 +277,9 @@ def _bind_refine_job(
     owner: str,
     project_root_id: str,
     source_asset_id: str,
-) -> StudioJobRecord:
+    candidate_id: str,
+    image_run_id: str,
+) -> tuple[StudioJobRecord, StudioMarkupCandidateRecord | None]:
     job = db.scalar(select(StudioJobRecord).where(
         StudioJobRecord.id == job_id).with_for_update())
     canonical = studio_job_action_definition("refine")
@@ -296,9 +299,38 @@ def _bind_refine_job(
             "this candidate requires a canonical one-output Studio Refine job",
             status_code=422,
         )
-    if job.status not in {"running", "reviewing"}:
+    sibling = db.scalar(select(PreviewCandidateRecord.id).where(
+        PreviewCandidateRecord.studio_job_id == job_id,
+    ))
+    if sibling is not None or job.reservation_kind is not None:
+        raise StudioMarkupError(
+            "markup_job_output_conflict",
+            "the Studio Refine job already owns another preview output",
+        )
+    existing = db.scalar(select(StudioMarkupCandidateRecord).where(
+        StudioMarkupCandidateRecord.studio_job_id == job_id,
+    ))
+    if job.status == "reviewing":
+        if (
+            existing is None
+            or existing.id != candidate_id
+            or existing.image_run_id != image_run_id
+            or existing.owner != owner
+            or existing.project_root_id != project_root_id
+            or existing.source_asset_id != source_asset_id
+        ):
+            raise StudioMarkupError(
+                "markup_job_output_conflict",
+                "the Studio Refine job already owns another preview output",
+            )
+    elif job.status != "running":
         raise StudioMarkupError(
             "markup_job_terminal", f"the Studio Refine job is already {job.status}",
+        )
+    elif existing is not None:
+        raise StudioMarkupError(
+            "markup_job_output_conflict",
+            "the Studio Refine job already owns another preview output",
         )
     for field, expected in (
         ("active_design_id", project_root_id),
@@ -315,7 +347,44 @@ def _bind_refine_job(
     job.status = "reviewing"
     job.progress = max(job.progress, 0.9)
     job.updated_at = utcnow()
-    return job
+    return job, existing
+
+
+def _is_exact_store_replay(
+    record: StudioMarkupCandidateRecord,
+    *,
+    candidate: MarkupWarningCandidate,
+    studio_job_id: str,
+    source_hash: str,
+    output_hash: str,
+    source_spec_hash: str,
+    target_spec_hash: str,
+    payload: dict,
+) -> bool:
+    """Allow only a byte- and evidence-identical retry of one durable output."""
+
+    return (
+        record.status == "reviewing"
+        and record.id == candidate.candidate_id
+        and record.image_run_id == candidate.run_id
+        and record.owner == candidate.created_by
+        and record.project_root_id == candidate.project_root_id
+        and record.source_asset_id == candidate.source_asset_id
+        and record.expected_active_asset_id == candidate.expected_active_asset_id
+        and record.design_version == candidate.expected_design_version
+        and record.source_sha256 == source_hash
+        and record.output_sha256 == output_hash
+        and record.source_spec_visual_hash == source_spec_hash
+        and record.target_spec_visual_hash == target_spec_hash
+        and bytes(record.image) == candidate.image_bytes
+        and record.media_type == candidate.media_type
+        and record.operation == candidate.operation
+        and record.asset_capability == candidate.asset_capability
+        and record.requested_change == candidate.requested_change
+        and record.region_description == candidate.region_description
+        and record.studio_job_id == studio_job_id
+        and record.payload == payload
+    )
 
 
 def store_studio_markup_candidate(
@@ -372,21 +441,56 @@ def store_studio_markup_candidate(
             "the candidate is not bound to the exact source, spec, run, and QA evidence",
             status_code=422,
         )
+    payload = {
+        "drift": candidate.drift,
+        "next_spec": (
+            candidate.next_spec.model_dump(mode="json")
+            if candidate.next_spec is not None else None
+        ),
+        "ignored_fields": list(candidate.ignored_fields),
+        "qa": candidate.qa,
+        "routing": candidate.routing,
+        "reserved_asset_id": candidate.reserved_asset_id,
+        "source_component_map_state": source_map_state,
+        "source_component_map_sha256": source_map_hash,
+        "target_mask_sha256": target_mask_hash,
+    }
+    output_hash = hashlib.sha256(candidate.image_bytes).hexdigest()
     bound_job = None
+    existing = None
     if studio_job_id is not None:
-        bound_job = _bind_refine_job(
+        bound_job, existing = _bind_refine_job(
             db,
             job_id=studio_job_id,
             owner=candidate.created_by,
             project_root_id=project.root_id,
             source_asset_id=source.id,
+            candidate_id=candidate.candidate_id,
+            image_run_id=candidate.run_id,
         )
     if not _reviewable(candidate.qa):
-        _fail_invalid_store_job(db, job=bound_job)
+        if existing is None:
+            _fail_invalid_store_job(db, job=bound_job)
         raise StudioMarkupError(
             "markup_candidate_qa_invalid",
             "the candidate QA evidence is incomplete or not reviewable",
             status_code=422,
+        )
+    if existing is not None:
+        if _is_exact_store_replay(
+            existing,
+            candidate=candidate,
+            studio_job_id=studio_job_id,
+            source_hash=source_hash,
+            output_hash=output_hash,
+            source_spec_hash=source_spec_hash,
+            target_spec_hash=target_spec_hash,
+            payload=payload,
+        ):
+            return _candidate(existing)
+        raise StudioMarkupError(
+            "markup_candidate_conflict",
+            "the existing Studio markup candidate does not match this replay",
         )
     now = utcnow()
     record = StudioMarkupCandidateRecord(
@@ -398,7 +502,7 @@ def store_studio_markup_candidate(
         expected_active_asset_id=candidate.expected_active_asset_id,
         design_version=candidate.expected_design_version,
         source_sha256=source_hash,
-        output_sha256=hashlib.sha256(candidate.image_bytes).hexdigest(),
+        output_sha256=output_hash,
         source_spec_visual_hash=source_spec_hash,
         target_spec_visual_hash=target_spec_hash,
         image=candidate.image_bytes,
@@ -407,20 +511,7 @@ def store_studio_markup_candidate(
         asset_capability=candidate.asset_capability,
         requested_change=candidate.requested_change,
         region_description=candidate.region_description,
-        payload={
-            "drift": candidate.drift,
-            "next_spec": (
-                candidate.next_spec.model_dump(mode="json")
-                if candidate.next_spec is not None else None
-            ),
-            "ignored_fields": list(candidate.ignored_fields),
-            "qa": candidate.qa,
-            "routing": candidate.routing,
-            "reserved_asset_id": candidate.reserved_asset_id,
-            "source_component_map_state": source_map_state,
-            "source_component_map_sha256": source_map_hash,
-            "target_mask_sha256": target_mask_hash,
-        },
+        payload=payload,
         status="reviewing",
         studio_job_id=studio_job_id,
         created_at=now,

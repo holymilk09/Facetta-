@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+from datetime import timedelta
 import hashlib
 import io
 from time import monotonic
@@ -22,11 +23,13 @@ from facetta.db import (
     ImageAsset,
     ImageRun,
     ImageRunReview,
+    PreviewCandidateRecord,
     Project,
     ProjectRevisionRecord,
     StudioJobRecord,
     StudioMarkupCandidateRecord,
     get_db,
+    utcnow,
 )
 from facetta.image_identity import spec_visual_hash
 from facetta.main import app
@@ -108,6 +111,7 @@ def _store(
     with_job: bool = True,
     qa: dict | None = None,
     job_source_asset_id: str = "ast_markup",
+    create_job: bool = True,
 ):
     output = _png(120 + len(suffix))
     source_spec_hash = spec_visual_hash(Spec.model_validate(spec))
@@ -142,7 +146,7 @@ def _store(
             accepted_asset_id=None,
             created_by=OWNER,
         ))
-        if job_id is not None:
+        if job_id is not None and create_job:
             db.add(StudioJobRecord(
                 id=job_id, owner=OWNER, action_id="refine",
                 lane="trusted_structural", status="running", progress=0.2,
@@ -185,6 +189,248 @@ def _store(
         )
         return store_studio_markup_candidate(
             db, compatibility, studio_job_id=job_id)
+
+
+def _seed_preview_sibling(
+    Session,
+    source: bytes,
+    version: int,
+    *,
+    suffix: str,
+    kind: str,
+    reservation_kind: str | None = None,
+) -> tuple[str, str]:
+    job_id = f"job_markup_{suffix}"
+    run_id = f"run_preview_{suffix}"
+    candidate_id = f"cand_preview_{suffix}"
+    output = _png(230 + len(suffix))
+    source_hash = hashlib.sha256(source).hexdigest()
+    with Session() as db:
+        db.add_all([
+            StudioJobRecord(
+                id=job_id, owner=OWNER, action_id="refine",
+                lane="trusted_structural", status="reviewing", progress=0.9,
+                active_design_id="ast_markup",
+                source_revision_id="ast_markup",
+                requested_outputs=1, credits_per_output=20,
+                completed_outputs=0, charged_outputs=0,
+                reservation_kind=reservation_kind,
+            ),
+            ImageRun(
+                id=run_id,
+                project_root_id="ast_markup",
+                source_asset_id="ast_markup",
+                operation=(
+                    "VISUAL_ONLY_EDIT"
+                    if kind == "studio_visual" else "LOCAL_EDIT"
+                ),
+                normalized_intent={"change": suffix},
+                prompt_version="test.v1",
+                input_hash=hashlib.sha256(output).hexdigest(),
+                source_hash=source_hash,
+                mask_hash=None,
+                spec_visual_hash=None,
+                source_spec_visual_hash=None,
+                variant=0,
+                status="review_required",
+                accepted_asset_id=None,
+                created_by=OWNER,
+            ),
+        ])
+        db.flush()
+        db.add(PreviewCandidateRecord(
+            id=candidate_id,
+            image_run_id=run_id,
+            owner=OWNER,
+            project_root_id="ast_markup",
+            source_asset_id="ast_markup",
+            expected_active_asset_id="ast_markup",
+            expected_design_version=(
+                None if kind == "studio_visual" else version
+            ),
+            source_sha256=source_hash,
+            output_sha256=hashlib.sha256(output).hexdigest(),
+            image=output,
+            media_type="image/png",
+            kind=kind,
+            status="reviewing",
+            studio_job_id=job_id,
+            payload={"verdict": "pass", "qa": {"verdict": "pass"}},
+            created_at=utcnow(),
+            expires_at=utcnow() + timedelta(hours=2),
+        ))
+        db.commit()
+    return job_id, candidate_id
+
+
+@pytest.mark.parametrize(
+    ("kind", "reservation_kind"),
+    [
+        ("studio_visual", "studio_visual"),
+        ("catalog_revision", None),
+    ],
+)
+def test_markup_store_rejects_job_owned_by_another_preview_store(
+    markup_candidates,
+    kind: str,
+    reservation_kind: str | None,
+):
+    _client, Session, spec, version, source = markup_candidates
+    suffix = f"cross_store_{kind}"
+    job_id, sibling_id = _seed_preview_sibling(
+        Session,
+        source,
+        version,
+        suffix=suffix,
+        kind=kind,
+        reservation_kind=reservation_kind,
+    )
+
+    with pytest.raises(StudioMarkupError) as rejected:
+        _store(
+            Session,
+            spec,
+            version,
+            source,
+            suffix=suffix,
+            create_job=False,
+        )
+    assert rejected.value.code == "markup_job_output_conflict"
+
+    with Session() as db:
+        job = db.get(StudioJobRecord, job_id)
+        sibling = db.get(PreviewCandidateRecord, sibling_id)
+        assert job is not None and job.status == "reviewing"
+        assert (job.completed_outputs, job.charged_outputs) == (0, 0)
+        assert job.accepted_output_sha256 is None and job.error_code is None
+        assert job.reservation_kind == reservation_kind
+        assert sibling is not None and sibling.status == "reviewing"
+        assert bytes(sibling.image) != b""
+        assert db.scalar(select(func.count()).select_from(
+            StudioMarkupCandidateRecord
+        )) == 0
+        assert db.scalar(select(func.count()).select_from(ImageAsset)) == 1
+        assert db.scalar(select(func.count()).select_from(ImageRunReview)) == 0
+        assert db.scalar(select(func.count()).select_from(
+            ProjectRevisionRecord
+        )) == 0
+
+
+def test_exact_markup_store_replay_reuses_the_one_bound_output(
+    markup_candidates,
+):
+    _client, Session, spec, version, source = markup_candidates
+    candidate = _store(
+        Session, spec, version, source, suffix="exact_store_replay",
+    )
+
+    with Session() as db:
+        replayed = store_studio_markup_candidate(
+            db,
+            candidate.as_warning_candidate(),
+            studio_job_id=candidate.studio_job_id,
+        )
+        job = db.get(StudioJobRecord, candidate.studio_job_id)
+        assert replayed.candidate_id == candidate.candidate_id
+        assert replayed.output_hash == candidate.output_hash
+        assert job is not None and job.status == "reviewing"
+        assert (job.completed_outputs, job.charged_outputs) == (0, 0)
+        assert db.scalar(select(func.count()).select_from(
+            StudioMarkupCandidateRecord
+        )) == 1
+
+
+@pytest.mark.parametrize("decision", ["apply", "save_as_variation", "discard"])
+def test_legacy_dual_binding_cannot_settle_or_charge_either_candidate(
+    markup_candidates,
+    decision: str,
+):
+    client, Session, spec, version, source = markup_candidates
+    markup = _store(
+        Session,
+        spec,
+        version,
+        source,
+        suffix=f"dual_binding_{decision}",
+    )
+    preview_run_id = f"run_preview_dual_binding_{decision}"
+    preview_id = f"cand_preview_dual_binding_{decision}"
+    preview_output = _png(245 + len(decision))
+    source_hash = hashlib.sha256(source).hexdigest()
+    with Session() as db:
+        db.add(ImageRun(
+            id=preview_run_id,
+            project_root_id="ast_markup",
+            source_asset_id="ast_markup",
+            operation="LOCAL_EDIT",
+            normalized_intent={"change": f"dual {decision}"},
+            prompt_version="test.v1",
+            input_hash=hashlib.sha256(preview_output).hexdigest(),
+            source_hash=source_hash,
+            mask_hash=None,
+            spec_visual_hash=None,
+            source_spec_visual_hash=None,
+            variant=0,
+            status="review_required",
+            accepted_asset_id=None,
+            created_by=OWNER,
+        ))
+        db.flush()
+        db.add(PreviewCandidateRecord(
+            id=preview_id,
+            image_run_id=preview_run_id,
+            owner=OWNER,
+            project_root_id="ast_markup",
+            source_asset_id="ast_markup",
+            expected_active_asset_id="ast_markup",
+            expected_design_version=version,
+            source_sha256=source_hash,
+            output_sha256=hashlib.sha256(preview_output).hexdigest(),
+            image=preview_output,
+            media_type="image/png",
+            kind="catalog_revision",
+            status="reviewing",
+            studio_job_id=markup.studio_job_id,
+            payload={"verdict": "pass", "qa": {"verdict": "pass"}},
+            created_at=utcnow(),
+            expires_at=utcnow() + timedelta(hours=2),
+        ))
+        db.commit()
+
+    body = {
+        "created_by": OWNER,
+        "decision": decision,
+        "expected_active_asset_id": "ast_markup",
+        "expected_design_version": version,
+    }
+    if decision == "save_as_variation":
+        body["variation_label"] = "Must not be created"
+    for candidate_id in (markup.candidate_id, preview_id):
+        rejected = client.post(
+            f"/studio/preview-candidates/{candidate_id}/decision",
+            json=body,
+        )
+        assert rejected.status_code == 409, rejected.text
+        assert rejected.json()["code"] == (
+            "preview_candidate_job_binding_conflict"
+        )
+
+    with Session() as db:
+        durable_markup = db.get(
+            StudioMarkupCandidateRecord, markup.candidate_id,
+        )
+        durable_preview = db.get(PreviewCandidateRecord, preview_id)
+        job = db.get(StudioJobRecord, markup.studio_job_id)
+        assert durable_markup is not None and durable_markup.status == "reviewing"
+        assert durable_preview is not None and durable_preview.status == "reviewing"
+        assert job is not None and job.status == "reviewing"
+        assert (job.completed_outputs, job.charged_outputs) == (0, 0)
+        assert job.accepted_output_sha256 is None and job.error_code is None
+        assert db.scalar(select(func.count()).select_from(ImageAsset)) == 1
+        assert db.scalar(select(func.count()).select_from(ImageRunReview)) == 0
+        assert db.scalar(select(func.count()).select_from(
+            ProjectRevisionRecord
+        )) == 0
 
 
 def test_restart_resume_legacy_image_and_atomic_apply(markup_candidates):

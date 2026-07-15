@@ -35,6 +35,7 @@ from facetta.db import (
     ImageAsset,
     PreviewCandidateRecord,
     Project,
+    StudioJobRecord,
     StudioMarkupCandidateRecord,
 )
 from facetta.json_types import JsonObject
@@ -187,6 +188,31 @@ def _record(
             status_code=404,
         )
     return record
+
+
+def _guard_single_job_output(
+    db: Session,
+    record: CandidateRecord,
+) -> None:
+    """Fail closed if one Refine job is linked to multiple candidate stores."""
+
+    if record.studio_job_id is None:
+        return
+    job = db.scalar(select(StudioJobRecord).where(
+        StudioJobRecord.id == record.studio_job_id,
+    ).with_for_update())
+    preview_ids = list(db.scalars(select(PreviewCandidateRecord.id).where(
+        PreviewCandidateRecord.studio_job_id == record.studio_job_id,
+    ).with_for_update()))
+    markup_ids = list(db.scalars(select(StudioMarkupCandidateRecord.id).where(
+        StudioMarkupCandidateRecord.studio_job_id == record.studio_job_id,
+    ).with_for_update()))
+    bound_ids = preview_ids + markup_ids
+    if job is None or bound_ids != [record.id]:
+        raise StudioPreviewCandidateError(
+            "preview_candidate_job_binding_conflict",
+            "the Studio Refine job is ambiguously bound to preview outputs",
+        )
 
 
 def _load_reviewing_candidate(
@@ -605,6 +631,7 @@ def decide_studio_preview_candidate(
                 variation_index=result.variation_index,
             )
         return _terminal_result(db, record, decision=decision)
+    _guard_single_job_output(db, record)
     if decision == "save_as_variation":
         label = _variation_label(variation_label)
         try:
