@@ -220,6 +220,10 @@ test('a fresh gateway resumes durable markup and saves it as a sibling variation
   assert.equal(resumed.error, null);
   assert.equal(resumed.data?.kind, 'markup');
   assert.equal(resumed.data?.candidate.id, 'candidate_durable');
+  assert.deepEqual(resumed.data?.intent, {
+    kind: 'markup', requestedChange: 'soften the halo',
+    regionDescription: 'halo', impact: 'specification',
+  });
 
   const result = await gateway.saveMarkupPreviewAsVariation({
     candidateId: 'candidate_durable', createdBy: 'designer_1', label: ' Soft halo ',

@@ -197,6 +197,11 @@ test('active Studio review uses one normalized seam for visual Apply', async () 
   const gateway = createStudioGateway(client as never);
   const resumed = await gateway.resumeRefine(lineage, 'designer_1');
   assert.equal(resumed.data?.kind, 'visual');
+  assert.deepEqual(resumed.data?.intent, {
+    kind: 'describe',
+    instruction: 'preserve everything outside the selected change',
+    scope: 'appearance',
+  });
   const applied = await gateway.applyVisualRefine({
     candidateId: normalized.candidate_id, createdBy: 'designer_1',
   });
@@ -223,6 +228,10 @@ test('active Studio review uses one normalized seam for catalog Save as Variatio
   const gateway = createStudioGateway(client as never);
   const resumed = await gateway.resumeRefine(lineage, 'designer_1');
   assert.equal(resumed.data?.kind, 'catalog');
+  assert.deepEqual(resumed.data?.intent, {
+    kind: 'component', componentPath: 'metal.material', optionId: 'platinum',
+    requestedChange: 'preserve everything outside the selected change',
+  });
   const saved = await gateway.saveCatalogPreviewAsVariation({
     candidateId: normalized.candidate_id, createdBy: 'designer_1', label: 'Platinum direction',
   });
@@ -249,12 +258,46 @@ test('active Studio review uses one normalized seam for markup Discard', async (
   const gateway = createStudioGateway(client as never);
   const resumed = await gateway.resumeRefine(lineage, 'designer_1');
   assert.equal(resumed.data?.kind, 'markup');
+  assert.deepEqual(resumed.data?.intent, {
+    kind: 'markup', requestedChange: 'preserve everything outside the selected change',
+    regionDescription: 'center setting', impact: 'specification',
+  });
   const discarded = await gateway.discardMarkupRefine({
     candidateId: normalized.candidate_id, createdBy: 'designer_1',
   });
   assert.equal(discarded.error, null);
   assert.equal(discarded.data?.candidate.status, 'discarded');
   assert.equal(discarded.data?.project, null);
+});
+
+test('Activity resume preserves an exact Describe request represented by the markup authority', async () => {
+  const lineage: ExactStudioLineage = {
+    projectId: 'describe_project', sourceAssetId: 'describe_source', sourceDesignVersion: 1,
+  };
+  const normalized = {
+    ...candidate('markup', lineage.projectId, lineage.sourceAssetId, 1),
+    operation: 'VISUAL_ONLY_EDIT' as const,
+    requested_change: 'Warm the metal reflection',
+    region_description: 'entire visible jewelry presentation',
+  };
+  const resolution: StudioPreviewCandidateDecisionResult = {
+    status: 'discarded', candidate_id: normalized.candidate_id, kind: 'markup',
+    source_project_id: lineage.projectId, result_project_id: lineage.projectId,
+    terminal_asset_id: null, studio_job_id: 'job_describe_project',
+    family_id: null, variation_index: null,
+  };
+  const gateway = createStudioGateway(baseClient(
+    lineage,
+    normalized,
+    resolution,
+    async () => { throw new Error('resume must not load a changed project'); },
+  ) as never);
+
+  const resumed = await gateway.resumeRefine(lineage, 'designer_1');
+
+  assert.deepEqual(resumed.data?.intent, {
+    kind: 'describe', instruction: 'Warm the metal reflection', scope: 'appearance',
+  });
 });
 
 test('resume fails closed when one Refine output has multiple exact candidates', async () => {

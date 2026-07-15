@@ -92,6 +92,31 @@ const baseClient = () => ({
   getFactoryPack: async () => { throw new Error('unexpected'); },
 });
 
+test('compatibility resume restores a marked visual request without inventing region detail', async () => {
+  const pendingJob = studioJob('reviewing');
+  const gateway = createStudioGateway({
+    ...baseClient(),
+    listStudioJobs: async () => ok({ jobs: [pendingJob] }),
+    listVisualPreviews: async () => ok({ candidates: [{
+      candidate_id: 'candidate_marked_resume', image_run_id: 'run_marked_resume',
+      source_asset_id: 'asset_source', preview_url: 'https://facetta.test/marked.png',
+      save_as_variation_url: '/save-as-variation', verdict: 'pass' as const,
+      requested_change: 'Warm only the left shoulder', scope: 'marked_region' as const,
+      qa: quality(), expires_at: '2099-01-01T00:00:00Z', studio_job_id: pendingJob.job_id,
+    }] }),
+  } as any);
+
+  const resumed = await gateway.resumeRefine({
+    projectId: 'project_visual', sourceAssetId: 'asset_source',
+  }, 'designer_1');
+
+  assert.equal(resumed.error, null);
+  assert.deepEqual(resumed.data?.intent, {
+    kind: 'markup', requestedChange: 'Warm only the left shoulder',
+    regionDescription: 'Marked region on the selected image', impact: null,
+  });
+});
+
 test('pre-spec visual refinement stays temporary until Apply appends an image-only revision', async () => {
   let accepted = 0;
   const client = {

@@ -656,12 +656,15 @@ describe('StudioCollectionsWorkspace', () => {
     expect(screen.queryByText('No presentation or view images have been saved for this variation.')).toBeNull();
     expect(screen.queryByLabelText('Compare revision 1')).toBeNull();
     expect(screen.queryByText('Restore revision 1 as new')).toBeNull();
+    expect(screen.getByText(
+      'Prepare this exact saved revision for a client or marketing review. Its design history will not change.',
+    )).toBeTruthy();
 
     await fireEvent.press(screen.getByText('Client'));
     expect(handlers.onSelectDestination).toHaveBeenCalledWith('client');
     expect(screen.getByText('Use this revision')).toBeTruthy();
     expect(screen.queryByText('Library')).toBeNull();
-    expect(screen.queryByText('Factory')).toBeNull();
+    expect(screen.queryByText(/Factory/i)).toBeNull();
 
     await fireEvent.press(screen.getByText('Continue refining'));
     expect(handlers.onContinueRefining).toHaveBeenCalledTimes(1);
@@ -691,7 +694,7 @@ describe('StudioCollectionsWorkspace', () => {
 
     expect(await screen.findByText('Use this revision')).toBeTruthy();
     expect(screen.queryByText('Library')).toBeNull();
-    expect(screen.queryByText('Factory')).toBeNull();
+    expect(screen.queryByText(/Factory/i)).toBeNull();
     expect(handlers.onSelectDestination).not.toHaveBeenCalled();
   });
 
@@ -714,7 +717,7 @@ describe('StudioCollectionsWorkspace', () => {
       'Prepare this saved visual direction for a client or marketing. Its design history will not change.',
     )).toBeTruthy();
     expect(screen.queryByText(/exact saved revision/)).toBeNull();
-    expect(screen.queryByText('Factory')).toBeNull();
+    expect(screen.queryByText(/Factory/i)).toBeNull();
   });
 
   test('does not invent family data when history is unavailable, then retries the exact project', async () => {

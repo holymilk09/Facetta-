@@ -15,7 +15,9 @@ import {
   AnnotationCanvas,
   type AnnotationCanvasSnapshot,
 } from '../trusted/AnnotationCanvas';
-import type { ExactStudioLineage, StudioGateway, StudioVisualLineage } from './gateway';
+import type {
+  ExactStudioLineage, RefineReviewIntent, StudioGateway, StudioVisualLineage,
+} from './gateway';
 import type { PreviewCandidate } from './contracts';
 import {
   designerCheckDetail, designerCheckLabel, designerReviewState,
@@ -181,6 +183,46 @@ function friendlyFactOption(value: string): string {
   return value.replaceAll('_', ' ').replace(/\b\w/g, (letter) => letter.toUpperCase());
 }
 
+function fallbackIntentLabel(value: string): string {
+  const words = value.replaceAll('_', ' ').trim().toLowerCase();
+  return words.length === 0 ? value : `${words[0].toUpperCase()}${words.slice(1)}`;
+}
+
+function refineIntentCopy(intent: RefineReviewIntent): {
+  summary: string;
+  detail: string | null;
+  boundary: string;
+} {
+  if (intent.kind === 'component') {
+    const component = intent.componentLabel
+      ?? PATHS.find((candidate) => candidate.id === intent.componentPath)?.label
+      ?? fallbackIntentLabel(intent.componentPath);
+    const option = intent.optionLabel ?? fallbackIntentLabel(intent.optionId);
+    return {
+      summary: `${component} → ${option}`,
+      detail: null,
+      boundary: `Only ${component.toLowerCase()} may change. Inspect every other component, proportion, and material for unintended drift.`,
+    };
+  }
+  if (intent.kind === 'describe') {
+    return {
+      summary: intent.instruction,
+      detail: 'Appearance-only change',
+      boundary: 'The requested appearance may change. Geometry, setting, proportions, and construction should remain unchanged.',
+    };
+  }
+  const impact = intent.impact === 'specification'
+    ? 'Structure or construction may change in this region'
+    : intent.impact === 'visual_only'
+      ? 'Appearance-only change in this region'
+      : 'Change limited to this marked region';
+  return {
+    summary: intent.requestedChange,
+    detail: `Region: ${intent.regionDescription} · ${impact}`,
+    boundary: 'Only the marked region and requested detail may change. Inspect everything outside it for unintended drift.',
+  };
+}
+
 export function StudioRefineWorkspace({
   api, gateway, lineage, createdBy, sourceImageUrl = null, workspaceMode = 'refine',
   onReviewStartingDesign, onApplied, onVariationCreated, destinationContext,
@@ -203,6 +245,7 @@ export function StudioRefineWorkspace({
   const [preview, setPreview] = useState<{
     candidate: PreviewCandidate;
     kind: 'catalog' | 'markup' | 'visual';
+    intent: RefineReviewIntent;
     executionMode?: 'instant' | 'provider';
     estimatedCredits?: number;
   } | null>(null);
@@ -432,7 +475,11 @@ export function StudioRefineWorkspace({
         return;
       }
       if (result.data !== null) {
-        setPreview({ candidate: result.data.candidate, kind: result.data.kind });
+        setPreview({
+          candidate: result.data.candidate,
+          kind: result.data.kind,
+          intent: result.data.intent,
+        });
         setUnderstoodAs(result.data.understoodAs);
       }
     });
@@ -629,6 +676,14 @@ export function StudioRefineWorkspace({
       setPreview({
         candidate: result.data.candidate,
         kind: 'catalog',
+        intent: {
+          kind: 'component',
+          componentPath: result.data.componentPath,
+          optionId: result.data.optionId,
+          componentLabel: PATHS.find((candidate) => candidate.id === result.data.componentPath)?.label,
+          optionLabel: selected.display,
+          requestedChange: `${result.data.componentPath} → ${result.data.optionId}`,
+        },
         executionMode: result.data.executionMode,
         estimatedCredits: result.data.estimatedCredits,
       });
@@ -704,6 +759,18 @@ export function StudioRefineWorkspace({
     setPreview({
       candidate: result.data.candidate,
       kind: exactLineage !== null ? 'markup' : 'visual',
+      intent: mode === 'annotation'
+        ? {
+            kind: 'markup',
+            requestedChange: annotation.change_instruction,
+            regionDescription: annotation.region_description,
+            impact: annotation.impact,
+          }
+        : {
+            kind: 'describe',
+            instruction: annotation.change_instruction,
+            scope: 'appearance',
+          },
     });
   };
 
@@ -844,6 +911,7 @@ export function StudioRefineWorkspace({
 
   if (workspaceMode === 'refine' && preview !== null) {
     const rejected = preview.candidate.verdict === 'reject';
+    const intentCopy = refineIntentCopy(preview.intent);
     const variationSupported = preview.kind === 'catalog'
       ? gateway.saveCatalogPreviewAsVariation !== undefined
       : preview.kind === 'markup'
@@ -866,6 +934,14 @@ export function StudioRefineWorkspace({
           />
         )}
         {understoodAs !== null && <Notice kind="info" text={understoodAs} />}
+        <View accessibilityRole="summary" style={styles.intentCard}>
+          <Text style={styles.intentEyebrow}>REQUESTED CHANGE</Text>
+          <Text style={styles.intentSummary}>{intentCopy.summary}</Text>
+          {intentCopy.detail !== null && (
+            <Text style={styles.intentDetail}>{intentCopy.detail}</Text>
+          )}
+          <Text style={styles.intentBoundary}>{intentCopy.boundary}</Text>
+        </View>
         {!reviewSourceIsActive && (
           <Notice kind="info" text="This result was created from an earlier revision. Apply is unavailable. You can save it as a new variation or discard it without changing the current design." />
         )}
@@ -1281,6 +1357,14 @@ const styles = StyleSheet.create({
   compareLabel: { color: theme.faint, fontSize: 10, fontWeight: '800', letterSpacing: 1.2 },
   preview: { width: '100%', aspectRatio: 1.25, borderRadius: radius.lg, backgroundColor: theme.line },
   reviewCard: { borderWidth: 1, borderColor: theme.line, borderRadius: radius.md, padding: 14, backgroundColor: theme.card, gap: 8 },
+  intentCard: {
+    borderWidth: 1, borderColor: theme.accent, borderRadius: radius.md,
+    padding: 14, backgroundColor: theme.card, gap: 5,
+  },
+  intentEyebrow: { color: theme.accent, fontSize: 10, fontWeight: '800', letterSpacing: 1.3 },
+  intentSummary: { color: theme.ink, fontSize: 17, fontWeight: '800', lineHeight: 23 },
+  intentDetail: { color: theme.ink, fontSize: 12, lineHeight: 18 },
+  intentBoundary: { color: theme.faint, fontSize: 12, lineHeight: 18 },
   variationCard: { borderWidth: 1, borderColor: theme.accent, borderRadius: radius.md, padding: 14, backgroundColor: theme.card, gap: 8 },
   reviewTitle: { color: theme.ink, fontWeight: '800', fontSize: 16 },
   checkRow: { flexDirection: 'row', gap: 10, alignItems: 'flex-start' },

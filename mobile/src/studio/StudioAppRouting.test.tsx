@@ -1105,8 +1105,7 @@ test('Collections keeps optional Factory out of the everyday exact-revision hand
   expect(await view.findByText('Refine route reached')).toBeTruthy();
 
   fireEvent.press(view.getByRole('tab', { name: 'Collections' }));
-  expect(view.queryByText('Review optional Factory readiness')).toBeNull();
-  expect(view.queryByText('Factory')).toBeNull();
+  expect(view.queryByText(/Factory/i)).toBeNull();
 });
 
 test('Collections also hides Factory when the exact ring is already pack-ready', async () => {
@@ -1123,8 +1122,7 @@ test('Collections also hides Factory when the exact ring is already pack-ready',
   expect(await view.findByText('Refine route reached')).toBeTruthy();
 
   fireEvent.press(view.getByRole('tab', { name: 'Collections' }));
-  expect(view.queryByText('Review optional Factory readiness')).toBeNull();
-  expect(view.queryByText('Factory')).toBeNull();
+  expect(view.queryByText(/Factory/i)).toBeNull();
 });
 
 test('Collections hides Factory readiness for an exact non-ring revision', async () => {
@@ -1141,7 +1139,7 @@ test('Collections hides Factory readiness for an exact non-ring revision', async
   expect(mockGetStudioCapabilities).not.toHaveBeenCalled();
 
   fireEvent.press(view.getByRole('tab', { name: 'Collections' }));
-  expect(view.queryByText('Review optional Factory readiness')).toBeNull();
+  expect(view.queryByText(/Factory/i)).toBeNull();
 });
 
 test('Collections hides Factory readiness when the account lacks entitlement', async () => {
@@ -1159,7 +1157,7 @@ test('Collections hides Factory readiness when the account lacks entitlement', a
   await waitFor(() => expect(mockGetStudioCapabilities).toHaveBeenCalled());
 
   fireEvent.press(view.getByRole('tab', { name: 'Collections' }));
-  expect(view.queryByText('Review optional Factory readiness')).toBeNull();
+  expect(view.queryByText(/Factory/i)).toBeNull();
 });
 
 test('Views opens its starting-facts prerequisite and resumes after one save action', async () => {

@@ -349,6 +349,39 @@ test('catalog refine preserves lineage and applies only through an explicit deci
   assert.equal(repeated.error?.code, 'CANDIDATE_NOT_REVIEWABLE');
 });
 
+test('catalog refine rejects a component or option rebound before review', async (context) => {
+  const cases: readonly { name: string; response: CatalogPreviewResult }[] = [
+    {
+      name: 'component path',
+      response: { ...catalogPreview(), component_path: 'stone.cut' },
+    },
+    {
+      name: 'option id',
+      response: { ...catalogPreview(), option_id: 'yellow' },
+    },
+  ];
+
+  for (const testCase of cases) {
+    await context.test(testCase.name, async () => {
+      const gateway = createStudioGateway(fakeClient({
+        previewCatalogSelection: async () => ok(testCase.response, 201),
+      }));
+
+      const preview = await gateway.previewCatalogRefine({
+        projectId: 'project_1',
+        sourceAssetId: 'asset_1',
+        sourceDesignVersion: 1,
+        createdBy: 'designer_1',
+        componentPath: 'metal.color',
+        optionId: 'rose',
+      });
+
+      assert.equal(preview.data, null);
+      assert.equal(preview.error?.code, 'INVALID_PREVIEW_LINEAGE');
+    });
+  }
+});
+
 test('instant catalog refine creates a temporary candidate without a Studio job', async () => {
   let jobCreates = 0;
   const requests: any[] = [];
@@ -411,6 +444,7 @@ test('only deployment skew may fall back from instant to a tracked provider prev
       };
       return ok({
         ...catalogPreview(),
+        option_id: 'future_gold',
         candidate: {
           ...catalogPreview().candidate,
           studio_job_id: 'studio_job_catalog',
@@ -524,6 +558,10 @@ test('resumes the latest exact-lineage catalog preview and hydrates Apply', asyn
   if (resumed.error !== null || resumed.data === null) return;
   assert.equal(resumed.data.kind, 'catalog');
   assert.equal(resumed.data.candidate.id, 'candidate_resume');
+  assert.deepEqual(resumed.data.intent, {
+    kind: 'component', componentPath: 'metal.color', optionId: 'rose',
+    requestedChange: 'Apply rose gold',
+  });
 
   const applied = await gateway.applyCatalogRefine({
     candidateId: 'candidate_resume', createdBy: 'designer_1',

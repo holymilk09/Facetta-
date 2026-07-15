@@ -615,7 +615,7 @@ export function StudioCollectionsWorkspace({
             context={destinationContext}
             title="Use this revision"
             description={destinationContext.hasExactSpecification
-              ? 'Prepare this exact saved revision for a client, marketing, or optional eligible Factory review. Its design history will not change.'
+              ? 'Prepare this exact saved revision for a client or marketing review. Its design history will not change.'
               : 'Prepare this saved visual direction for a client or marketing. Its design history will not change.'}
             excludeDestinations={COLLECTIONS_DESTINATION_EXCLUSIONS}
             onSelect={onSelectDestination}

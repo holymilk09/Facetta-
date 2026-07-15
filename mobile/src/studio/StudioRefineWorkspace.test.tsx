@@ -348,6 +348,9 @@ describe('StudioRefineWorkspace', () => {
       executionMode: 'provider',
     }));
     expect(await screen.findByText('Nothing has changed yet.')).toBeTruthy();
+    expect(screen.getByText('REQUESTED CHANGE')).toBeTruthy();
+    expect(screen.getByText('Stone cut → Emerald cut')).toBeTruthy();
+    expect(screen.getByText(/Only stone cut may change.*every other component/)).toBeTruthy();
     expect(screen.getByText(/Standard preview · estimated 20 credits/)).toBeTruthy();
     expect(screen.queryByText(/provider/i)).toBeNull();
     expect(screen.getByLabelText('Temporary refinement preview')).toBeTruthy();
@@ -429,6 +432,9 @@ describe('StudioRefineWorkspace', () => {
       projectId: 'project_1', sourceAssetId: 'creative_1', createdBy: 'designer',
       instruction: 'Make the lighting warmer', scope: 'appearance',
     }));
+    expect(screen.getByText('REQUESTED CHANGE')).toBeTruthy();
+    expect(screen.getByText('Make the lighting warmer')).toBeTruthy();
+    expect(screen.getByText('Appearance-only change')).toBeTruthy();
     expect(screen.getByLabelText('Exact source revision')).toBeTruthy();
     expect(screen.getByLabelText('Temporary refinement preview')).toBeTruthy();
     await fireEvent(screen.getByLabelText('Exact source revision'), 'load');
@@ -628,6 +634,9 @@ describe('StudioRefineWorkspace', () => {
       instruction: 'Warm only this surface', scope: 'marked_region', markupAssetId: 'markup_exact',
     }));
     expect(screen.getByText(/Warm only the highlighted surface/)).toBeTruthy();
+    expect(screen.getByText('Warm only this surface')).toBeTruthy();
+    expect(screen.getByText(/Region: highlighted upper-left metal/)).toBeTruthy();
+    expect(screen.getByText(/Only the marked region and requested detail may change/)).toBeTruthy();
     expect(screen.getByLabelText('Temporary refinement preview')).toBeTruthy();
 
     await fireEvent.press(screen.getByText('Discard'));
@@ -777,6 +786,8 @@ describe('StudioRefineWorkspace', () => {
     });
 
     expect(rendered.queryByText('Nothing has changed yet.')).toBeNull();
+    expect(rendered.queryByText('REQUESTED CHANGE')).toBeNull();
+    expect(rendered.queryByText('Warm only the shoulders')).toBeNull();
     expect(rendered.queryByLabelText('Temporary refinement preview')).toBeNull();
     expect(rendered.getByPlaceholderText(/make the presentation softer/i).props.value).toBe('');
   });
@@ -918,6 +929,10 @@ describe('StudioRefineWorkspace', () => {
       data: {
         kind: 'catalog' as const,
         understoodAs: 'A pending component preview was restored for review.',
+        intent: {
+          kind: 'component' as const, componentPath: 'stone.cut' as const,
+          optionId: 'emerald_cut', requestedChange: 'Apply emerald cut',
+        },
         candidate: {
           id: 'candidate_resumed', jobId: 'run_resumed', sourceRevisionId: 'asset_2',
           assetUrl: 'https://test/resumed.png', verdict: 'pass' as const,
@@ -955,6 +970,7 @@ describe('StudioRefineWorkspace', () => {
     );
 
     expect(await screen.findByText(/pending component preview was restored/i)).toBeTruthy();
+    expect(screen.getByText('Stone cut → Emerald cut')).toBeTruthy();
     expect(screen.getByLabelText('Exact source revision').props.source.headers).toEqual({
       Authorization: 'Bearer test-session-token',
     });
@@ -975,6 +991,10 @@ describe('StudioRefineWorkspace', () => {
       data: {
         kind: 'catalog' as const,
         understoodAs: 'A pending component preview was restored for review.',
+        intent: {
+          kind: 'component' as const, componentPath: 'stone.cut' as const,
+          optionId: 'emerald_cut', requestedChange: 'Apply emerald cut',
+        },
         candidate: {
           id: 'candidate_stale', jobId: 'run_stale', sourceRevisionId: 'asset_1',
           assetUrl: 'https://test/stale.png', verdict: 'pass' as const,
@@ -1030,6 +1050,10 @@ describe('StudioRefineWorkspace', () => {
       data: {
         kind: 'catalog' as const,
         understoodAs: 'A pending component preview was restored for review.',
+        intent: {
+          kind: 'component' as const, componentPath: 'metal.color' as const,
+          optionId: 'rose', requestedChange: 'Apply rose gold',
+        },
         candidate: {
           id: 'candidate_variation', jobId: 'run_variation', sourceRevisionId: 'asset_2',
           assetUrl: 'https://test/variation-preview.png', verdict: 'pass' as const,

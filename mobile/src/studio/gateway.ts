@@ -182,10 +182,84 @@ export interface StudioMarkupPreview {
   annotation: MarkupApplyRequest['annotation'];
 }
 
+export type RefineReviewIntent =
+  | {
+      kind: 'component';
+      componentPath: CatalogPreviewRequest['component_path'];
+      optionId: string;
+      componentLabel?: string;
+      optionLabel?: string;
+      requestedChange: string;
+    }
+  | {
+      kind: 'describe';
+      instruction: string;
+      scope: 'appearance';
+    }
+  | {
+      kind: 'markup';
+      requestedChange: string;
+      regionDescription: string;
+      impact: 'specification' | 'visual_only' | null;
+    };
+
 export interface StudioResumedRefinePreview {
   candidate: PreviewCandidate;
   kind: 'catalog' | 'markup' | 'visual';
+  intent: RefineReviewIntent;
   understoodAs: string;
+}
+
+function visualRefineReviewIntent(
+  instruction: string,
+  scope: 'appearance' | 'marked_region',
+): RefineReviewIntent {
+  return scope === 'appearance'
+    ? { kind: 'describe', instruction, scope }
+    : {
+        kind: 'markup',
+        requestedChange: instruction,
+        regionDescription: 'Marked region on the selected image',
+        impact: null,
+      };
+}
+
+function markupRefineReviewIntent(
+  requestedChange: string,
+  regionDescription: string,
+  operation: string,
+): RefineReviewIntent {
+  if (
+    operation === 'VISUAL_ONLY_EDIT'
+    && regionDescription.trim().toLowerCase() === 'entire visible jewelry presentation'
+  ) {
+    return { kind: 'describe', instruction: requestedChange, scope: 'appearance' };
+  }
+  return {
+    kind: 'markup',
+    requestedChange,
+    regionDescription,
+    impact: operation === 'VISUAL_ONLY_EDIT' ? 'visual_only' : 'specification',
+  };
+}
+
+function canonicalRefineReviewIntent(
+  candidate: TrustedStudioPreviewCandidate,
+): RefineReviewIntent {
+  if (candidate.kind === 'catalog_revision') {
+    return {
+      kind: 'component',
+      componentPath: candidate.component_path,
+      optionId: candidate.option_id,
+      requestedChange: candidate.requested_change,
+    };
+  }
+  if (candidate.kind === 'markup') {
+    return markupRefineReviewIntent(
+      candidate.requested_change, candidate.region_description, candidate.operation,
+    );
+  }
+  return visualRefineReviewIntent(candidate.requested_change, candidate.scope);
 }
 
 export interface StudioReviewJobEnvelope {
@@ -1755,6 +1829,7 @@ export function createStudioGateway(
           data: {
             candidate,
             kind,
+            intent: canonicalRefineReviewIntent(latest),
             understoodAs: kind === 'visual'
               ? 'A pending visual preview was restored for review.'
               : kind === 'markup'
@@ -1807,6 +1882,11 @@ export function createStudioGateway(
           return {
             data: {
               candidate, kind: 'markup',
+              intent: markupRefineReviewIntent(
+                latestMarkup.requested_change,
+                latestMarkup.region_description,
+                latestMarkup.operation,
+              ),
               understoodAs: 'A pending marked-region preview was restored for review.',
             },
             error: null, status: markupResult?.status ?? 200,
@@ -1872,6 +1952,12 @@ export function createStudioGateway(
         return {
           data: {
             candidate, kind: 'catalog',
+            intent: {
+              kind: 'component',
+              componentPath: latest.component_path,
+              optionId: latest.option_id,
+              requestedChange: latest.requested_change,
+            },
             understoodAs: 'A pending component preview was restored for review.',
           },
           error: null,
@@ -1930,6 +2016,7 @@ export function createStudioGateway(
       return {
         data: {
           candidate, kind: 'visual',
+          intent: visualRefineReviewIntent(latest.requested_change, latest.scope),
           understoodAs: 'A pending visual preview was restored for review.',
         },
         error: null,
@@ -2348,6 +2435,8 @@ export function createStudioGateway(
         result.data.source_asset_id !== request.sourceAssetId
         || result.data.design_version !== request.sourceDesignVersion
         || result.data.project.root_id !== request.projectId
+        || result.data.component_path !== request.componentPath
+        || result.data.option_id !== request.optionId
         || (result.data.candidate.studio_job_id ?? null) !== (studioJob?.jobId ?? null)
       ) {
         await failJob(studioJob, 'INVALID_PREVIEW_LINEAGE', 0.9);
