@@ -30,6 +30,7 @@ const mockGetProject = jest.fn();
 let mockFactoryReviewEnabled = true;
 let mockConfirmedJewelryType = 'ring';
 let mockConfirmedFactoryReady = false;
+let mockSavedPreSpecCapability = 'CREATIVE_RENDER';
 const mockGetStudioCapabilities = jest.fn(async () => ({
   data: {
     factory_review: { enabled: mockFactoryReviewEnabled, scope: 'principal' },
@@ -153,7 +154,8 @@ jest.mock('./StudioCreateWorkspace', () => {
             active_design_version: null, selected_candidate_asset_id: 'asset_1',
             active_revision: {
               asset_id: 'asset_1', root_id: 'project_1', parent_asset_id: null,
-              capability: 'CREATIVE_RENDER', provenance: 'pre_spec_creative_candidate',
+              capability: mockSavedPreSpecCapability,
+              provenance: 'pre_spec_creative_candidate',
               revision: 1, design_id: null, design_version: null, region: null,
               instruction: 'Saved direction', drift: null, pinned: false,
               media_type: 'image/png',
@@ -163,7 +165,8 @@ jest.mock('./StudioCreateWorkspace', () => {
             },
             pinned_revision: null, revisions: [], assets: [{
               asset_id: 'asset_1', root_id: 'project_1', parent_asset_id: null,
-              capability: 'CREATIVE_RENDER', provenance: 'pre_spec_creative_candidate',
+              capability: mockSavedPreSpecCapability,
+              provenance: 'pre_spec_creative_candidate',
               revision: 1, design_id: null, design_version: null, region: null,
               instruction: 'Saved direction', drift: null, pinned: false,
               media_type: 'image/png',
@@ -439,6 +442,7 @@ afterEach(() => {
   mockFactoryReviewEnabled = true;
   mockConfirmedJewelryType = 'ring';
   mockConfirmedFactoryReady = false;
+  mockSavedPreSpecCapability = 'CREATIVE_RENDER';
   mockGetProject.mockReset();
   mockGetStudioCapabilities.mockClear();
   mockListDesignFamilies.mockClear();
@@ -934,6 +938,25 @@ test('More opens Starting design facts in the confirmation workspace', async () 
   expect(view.getAllByText('Studio').length).toBeGreaterThan(0);
   expect(view.queryByText('Refine route reached')).toBeNull();
 });
+
+test.each(['VARIATION_BRANCH', 'RESTORED_REVISION'])(
+  '%s keeps Starting design facts available when the backend confirms its lineage',
+  async (capability) => {
+    mockSavedPreSpecCapability = capability;
+    authenticate();
+    const view = await render(<App />);
+
+    await waitFor(() => expect(
+      view.getByText('Start from an idea or reference'),
+    ).toBeTruthy());
+    fireEvent.press(view.getByText('Start from an idea or reference'));
+    fireEvent.press(await view.findByText('Save mocked direction'));
+    expect(await view.findByText('Refine route reached')).toBeTruthy();
+
+    await openStudioMoreActions(view);
+    expect(await view.findByText('Starting design facts')).toBeTruthy();
+  },
+);
 
 test('starting-design review returns the designer to Refine with the pending sentence intact', async () => {
   authenticate();

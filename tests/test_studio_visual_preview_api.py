@@ -1533,6 +1533,8 @@ def test_visual_preview_saves_directly_as_independent_variation(
     assert body["status"] == "saved_as_variation"
     assert body["source_project_id"] == "ast_selected"
     assert body["source_asset_id"] == "ast_selected"
+    assert body["project"]["confirmable_pre_spec"] is True
+    assert body["project"]["factory_ready"] is False
     sibling_id = body["project"]["root_id"]
     with Session() as db:
         original = db.get(Project, "ast_selected")

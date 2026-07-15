@@ -22,9 +22,11 @@ from facetta.db import (
     ImageAsset,
     ImageRun,
     ImageRunReview,
+    PreviewCandidateRecord,
     Project,
     ProjectRevisionRecord,
     StudioConfirmationDraft,
+    StudioMarkupCandidateRecord,
     new_id,
     utcnow,
 )
@@ -63,6 +65,8 @@ CONFIRMABLE_PRE_SPEC_CAPABILITIES = frozenset({
     "CREATIVE_RENDER",
     "GLOBAL_RESTYLE",
     "LOCALIZED_EDIT",
+    "VARIATION_BRANCH",
+    "RESTORED_REVISION",
 })
 
 PROVENANCE_BY_CAPABILITY = {
@@ -135,7 +139,265 @@ def accepted_creative_candidate(
     return None
 
 
+def _asset_sha256(asset: ImageAsset) -> str:
+    return hashlib.sha256(bytes(asset.image)).hexdigest()
+
+
+def _project_asset_chain(db: Session, root_id: str) -> list[ImageAsset]:
+    chain = list(db.scalars(
+        select(ImageAsset)
+        .where(ImageAsset.root_id == root_id)
+        .order_by(ImageAsset.created_at, ImageAsset.id)
+    ))
+    chain.sort(key=lambda asset: (
+        asset.id != root_id, asset.created_at, asset.id,
+    ))
+    return chain
+
+
+def _revision_record(
+    db: Session, asset_id: str,
+) -> ProjectRevisionRecord | None:
+    return db.scalar(
+        select(ProjectRevisionRecord).where(
+            ProjectRevisionRecord.asset_id == asset_id
+        )
+    )
+
+
+def _verified_restore_source(
+    db: Session,
+    *,
+    project: Project,
+    chain: list[ImageAsset],
+    asset: ImageAsset,
+) -> ImageAsset | None:
+    """Return the exact Restore source without granting it authority."""
+
+    record = _revision_record(db, asset.id)
+    source = (
+        next(
+            (
+                item for item in chain
+                if item.id == getattr(record, "restored_from_asset_id", None)
+            ),
+            None,
+        )
+        if record is not None else None
+    )
+    parent = next(
+        (item for item in chain if item.id == asset.parent_asset_id),
+        None,
+    )
+    interpretation = (
+        record.interpretation
+        if record is not None and isinstance(record.interpretation, dict)
+        else {}
+    )
+    source_sha256 = _asset_sha256(source) if source is not None else None
+    output_sha256 = _asset_sha256(asset)
+    parent_sha256 = _asset_sha256(parent) if parent is not None else None
+    valid = bool(
+        record is not None
+        and record.action == "restore"
+        and record.created_by == project.owner
+        and source is not None
+        and parent is not None
+        and source.id != asset.id
+        and asset.design_id is None
+        and asset.design_version is None
+        and interpretation.get("operation") == "append_historical_copy"
+        and interpretation.get("visual_bytes_restored_exactly") is True
+        and interpretation.get("specification_restored") is False
+        and source_sha256 == output_sha256
+        and interpretation.get("source_sha256") == source_sha256
+        and interpretation.get("output_sha256") == output_sha256
+        and interpretation.get("parent_sha256") == parent_sha256
+    )
+    return source if valid else None
+
+
+def _reviewed_preview_branch_evidence(
+    db: Session,
+    *,
+    project: Project,
+    root: ImageAsset,
+    source: ImageAsset,
+    record: ProjectRevisionRecord,
+) -> bool:
+    raw_intent = record.raw_intent if isinstance(record.raw_intent, dict) else {}
+    interpretation = (
+        record.interpretation
+        if isinstance(record.interpretation, dict) else {}
+    )
+    run_id = raw_intent.get("image_run_id")
+    if not isinstance(run_id, str):
+        return False
+    run = db.get(ImageRun, run_id)
+    review = db.scalar(
+        select(ImageRunReview).where(ImageRunReview.run_id == run_id)
+    )
+    candidate = db.scalar(
+        select(PreviewCandidateRecord).where(
+            PreviewCandidateRecord.image_run_id == run_id,
+            PreviewCandidateRecord.status == "saved_as_variation",
+            PreviewCandidateRecord.terminal_asset_id == root.id,
+        )
+    )
+    if candidate is None:
+        candidate = db.scalar(
+            select(StudioMarkupCandidateRecord).where(
+                StudioMarkupCandidateRecord.image_run_id == run_id,
+                StudioMarkupCandidateRecord.status == "saved_as_variation",
+                StudioMarkupCandidateRecord.terminal_asset_id == root.id,
+            )
+        )
+    return bool(
+        run is not None
+        and review is not None
+        and candidate is not None
+        and run.project_root_id == source.root_id
+        and run.source_asset_id == source.id
+        and run.created_by == project.owner
+        and review.decision == "accepted"
+        and review.accepted_asset_id == root.id
+        and review.created_by == project.owner
+        and candidate.owner == project.owner
+        and candidate.project_root_id == source.root_id
+        and candidate.source_asset_id == source.id
+        and candidate.review_id == review.id
+        and interpretation.get("specification_created") is False
+    )
+
+
+def _verified_variation_branch_origin(
+    db: Session,
+    *,
+    project: Project,
+    chain: list[ImageAsset],
+    root: ImageAsset,
+    seen_roots: frozenset[str],
+) -> bool:
+    source_project_id = project.branched_from_project_root_id
+    source_asset_id = project.branched_from_asset_id
+    if source_project_id is None or source_asset_id is None:
+        return False
+    source_project = db.get(Project, source_project_id)
+    source = db.get(ImageAsset, source_asset_id)
+    record = _revision_record(db, root.id)
+    if source_project is None or source is None or record is None:
+        return False
+    raw_intent = record.raw_intent if isinstance(record.raw_intent, dict) else {}
+    interpretation = (
+        record.interpretation
+        if isinstance(record.interpretation, dict) else {}
+    )
+    operation = interpretation.get("operation")
+    source_sha256 = _asset_sha256(source)
+    output_sha256 = _asset_sha256(root)
+    if not (
+        root.id == project.root_id
+        and root.root_id == project.root_id
+        and root.parent_asset_id is None
+        and root.capability == "VARIATION_BRANCH"
+        and root.design_id is None
+        and root.design_version is None
+        and root.created_by == project.owner
+        and record.action == "created"
+        and record.created_by == project.owner
+        and source.root_id == source_project.root_id
+        and source.design_version is None
+        and source_project.owner == project.owner
+        and project.family_id is not None
+        and source_project.family_id == project.family_id
+        and raw_intent.get("source_project_id") == source_project.root_id
+        and raw_intent.get("source_asset_id") == source.id
+        and interpretation.get("source_sha256") == source_sha256
+        and interpretation.get("output_sha256") == output_sha256
+        and interpretation.get("independent_revision_history") is True
+    ):
+        return False
+    if operation == "fork_variation":
+        if not (
+            source_sha256 == output_sha256
+            and interpretation.get("source_preserved_exactly") is True
+        ):
+            return False
+    elif operation == "fork_reviewed_preview":
+        if not _reviewed_preview_branch_evidence(
+            db,
+            project=project,
+            root=root,
+            source=source,
+            record=record,
+        ):
+            return False
+    else:
+        return False
+    source_chain = _project_asset_chain(db, source_project.root_id)
+    return _verified_pre_spec_origin(
+        db,
+        project=source_project,
+        chain=source_chain,
+        asset=source,
+        seen_roots=seen_roots | {project.root_id},
+    )
+
+
+def _verified_pre_spec_origin(
+    db: Session,
+    *,
+    project: Project,
+    chain: list[ImageAsset],
+    asset: ImageAsset,
+    seen_roots: frozenset[str] = frozenset(),
+    seen_asset_ids: frozenset[str] = frozenset(),
+) -> bool:
+    """Prove a current visual reaches a creative origin across Variations."""
+
+    if project.root_id in seen_roots or asset.root_id != project.root_id:
+        return False
+    by_id = {item.id: item for item in chain}
+    cursor = by_id.get(asset.id)
+    seen_assets = set(seen_asset_ids)
+    while cursor is not None and cursor.id not in seen_assets:
+        seen_assets.add(cursor.id)
+        if (
+            cursor.capability not in CONFIRMABLE_PRE_SPEC_CAPABILITIES
+            or cursor.design_id is not None
+            or cursor.design_version is not None
+        ):
+            return False
+        if cursor.capability == "RESTORED_REVISION":
+            restore_source = _verified_restore_source(
+                db, project=project, chain=chain, asset=cursor,
+            )
+            if restore_source is None or not _verified_pre_spec_origin(
+                db,
+                project=project,
+                chain=chain,
+                asset=restore_source,
+                seen_roots=seen_roots,
+                seen_asset_ids=frozenset(seen_assets),
+            ):
+                return False
+        if cursor.capability == "CREATIVE_RENDER":
+            return True
+        if cursor.parent_asset_id is None:
+            return _verified_variation_branch_origin(
+                db,
+                project=project,
+                chain=chain,
+                root=cursor,
+                seen_roots=seen_roots,
+            )
+        cursor = by_id.get(cursor.parent_asset_id)
+    return False
+
+
 def confirmable_pre_spec_asset(
+    db: Session,
+    project: Project,
     chain: list[ImageAsset],
     selected_asset_id: str | None,
 ) -> ImageAsset | None:
@@ -169,7 +431,9 @@ def confirmable_pre_spec_asset(
         )
     ):
         return None
-    if accepted_creative_candidate(chain, selected.id) is None:
+    if not _verified_pre_spec_origin(
+        db, project=project, chain=chain, asset=selected,
+    ):
         return None
 
     canonical = [asset for asset in chain if is_canonical_revision(asset)]
@@ -1046,6 +1310,8 @@ def promote_creative_candidate(
     chain.sort(key=lambda asset: (
         asset.id != root_id, asset.created_at, asset.id))
     confirmable = confirmable_pre_spec_asset(
+        db,
+        project,
         chain,
         project.selected_candidate_asset_id,
     )
@@ -1163,7 +1429,6 @@ def promote_creative_candidate(
         created_by=created_by,
         created_at=now,
     )
-    project.updated_at = now
     draft.consumed_at = now
     try:
         # Insert the target design first so databases with immediate foreign
@@ -1172,6 +1437,20 @@ def promote_creative_candidate(
         # protects SQLite where ``FOR UPDATE`` is ignored.
         db.add_all([design, version])
         db.flush()
+        selection_claim = db.execute(
+            update(Project)
+            .where(
+                Project.root_id == root_id,
+                Project.owner == created_by,
+                Project.selected_candidate_asset_id == candidate.id,
+            )
+            .values(updated_at=now)
+            .execution_options(synchronize_session=False)
+        )
+        if selection_claim.rowcount != 1:
+            raise ValueError(
+                "the selected pre-spec revision changed before confirmation"
+            )
         if not claim_creative_project_design(
             db, root_id=root_id, design_id=design_id
         ):

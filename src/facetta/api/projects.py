@@ -1081,6 +1081,8 @@ def project_detail(db: Session, project: Project,
               if pinned_candidates else None)
     design_id = _linked_design_id(db, project, chain)
     confirmable = confirmable_pre_spec_asset(
+        db,
+        project,
         chain,
         project.selected_candidate_asset_id,
     )
@@ -1327,6 +1329,8 @@ def _owned_current_confirmable_pre_spec_asset(
             detail="only the project owner may review a creative candidate",
         )
     current = confirmable_pre_spec_asset(
+        db,
+        project,
         project_chain(db, project.root_id),
         project.selected_candidate_asset_id,
     )

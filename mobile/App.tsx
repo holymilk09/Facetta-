@@ -314,9 +314,6 @@ export default function App() {
     const activeAsset = studioProject.assets.find((asset) => asset.asset_id === activeAssetId)
       ?? studioProject.active_revision;
     if (activeAsset === null || activeAsset.asset_id !== activeAssetId) return null;
-    if (!(['CREATIVE_RENDER', 'GLOBAL_RESTYLE', 'LOCALIZED_EDIT'] as const).includes(
-      activeAsset.capability as 'CREATIVE_RENDER' | 'GLOBAL_RESTYLE' | 'LOCALIZED_EDIT',
-    )) return null;
     if (activeAsset.design_version !== null) return null;
     return { projectId: studioProject.root_id, sourceAssetId: activeAssetId };
   }, [studioProject]);

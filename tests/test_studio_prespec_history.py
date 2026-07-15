@@ -17,6 +17,7 @@ from facetta.db import (
     StudioVariationDecisionRecord,
 )
 from facetta.api.studio import studio_history
+from facetta.project_backbone import confirmable_pre_spec_asset
 from facetta.studio_history import (
     StudioHistoryError,
     ensure_project_family,
@@ -216,6 +217,60 @@ def test_variation_branches_the_selected_creative_candidate_not_last_generated()
         assert branch_record is not None
         assert branch_record.interpretation["source_sha256"] == selected_hash
         assert branch_record.interpretation["output_sha256"] == selected_hash
+        branch_chain = list(db.scalars(
+            select(ImageAsset).where(ImageAsset.root_id == branch_project.root_id)
+        ))
+        assert confirmable_pre_spec_asset(
+            db,
+            branch_project,
+            branch_chain,
+            branch_project.selected_candidate_asset_id,
+        ) == branched
+
+        nested_result = fork_project_variation(
+            db,
+            project_root_id=branch_project.root_id,
+            source_asset_id=branched.id,
+            expected_active_asset_id=branched.id,
+            expected_design_version=None,
+            variation_label="Nested direction",
+            created_by="designer",
+        )
+        nested_project = db.get(Project, nested_result.project_root_id)
+        nested_asset = db.get(ImageAsset, nested_result.asset_id)
+        nested_chain = list(db.scalars(
+            select(ImageAsset).where(
+                ImageAsset.root_id == nested_result.project_root_id
+            )
+        ))
+        assert nested_project is not None and nested_asset is not None
+        assert confirmable_pre_spec_asset(
+            db,
+            nested_project,
+            nested_chain,
+            nested_project.selected_candidate_asset_id,
+        ) == nested_asset
+
+        refined_branch = ImageAsset(
+            id="ast_nested_refinement",
+            root_id=nested_project.root_id,
+            parent_asset_id=nested_asset.id,
+            design_version=None,
+            capability="LOCALIZED_EDIT",
+            image=b"nested refinement",
+            media_type="image/png",
+            created_by="designer",
+        )
+        nested_project.selected_candidate_asset_id = refined_branch.id
+        db.add_all([refined_branch, _record(refined_branch.id)])
+        db.commit()
+        nested_chain.append(refined_branch)
+        assert confirmable_pre_spec_asset(
+            db,
+            nested_project,
+            nested_chain,
+            nested_project.selected_candidate_asset_id,
+        ) == refined_branch
 
         with pytest.raises(StudioHistoryError) as error:
             restore_project_revision(
@@ -289,6 +344,98 @@ def test_pre_spec_branch_and_restore_require_the_project_owner():
         assert restore_error.value.status_code == 404
         assert db.query(Project).count() == 1
         assert db.query(ImageAsset).count() == 2
+
+
+def test_unproven_pre_spec_branch_fails_closed():
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    with Session(engine) as db:
+        branch = ImageAsset(
+            id="ast_unproven_branch",
+            root_id="ast_unproven_branch",
+            parent_asset_id=None,
+            design_version=None,
+            capability="VARIATION_BRANCH",
+            image=b"unproven branch",
+            media_type="image/png",
+            created_by="designer",
+        )
+        project = Project(
+            root_id=branch.id,
+            owner="designer",
+            title="Unproven branch",
+            tags=[],
+            selected_candidate_asset_id=branch.id,
+        )
+        db.add_all([branch, project])
+        db.commit()
+
+        assert confirmable_pre_spec_asset(
+            db,
+            project,
+            [branch],
+            project.selected_candidate_asset_id,
+        ) is None
+
+
+def test_derived_product_photo_branch_cannot_gain_confirmation_authority():
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    with Session(engine) as db:
+        creative = ImageAsset(
+            id="ast_derived_branch_origin",
+            root_id="ast_derived_branch_origin",
+            parent_asset_id=None,
+            design_version=None,
+            capability="CREATIVE_RENDER",
+            image=b"creative origin",
+            media_type="image/png",
+            created_by="designer",
+        )
+        product_photo = ImageAsset(
+            id="ast_derived_branch_photo",
+            root_id=creative.id,
+            parent_asset_id=creative.id,
+            design_version=None,
+            capability="PRODUCT_PHOTO",
+            image=b"commerce derivative",
+            media_type="image/png",
+            created_by="designer",
+        )
+        project = Project(
+            root_id=creative.id,
+            owner="designer",
+            title="Derived branch",
+            tags=[],
+            selected_candidate_asset_id=product_photo.id,
+        )
+        db.add_all([
+            creative,
+            product_photo,
+            project,
+            _record(creative.id),
+            _record(product_photo.id),
+        ])
+        db.commit()
+
+        result = fork_project_variation(
+            db,
+            project_root_id=project.root_id,
+            source_asset_id=product_photo.id,
+            expected_active_asset_id=product_photo.id,
+            expected_design_version=None,
+            variation_label="Commerce derivative",
+            created_by="designer",
+        )
+        branch_project = db.get(Project, result.project_root_id)
+        branch = db.get(ImageAsset, result.asset_id)
+        assert branch_project is not None and branch is not None
+        assert confirmable_pre_spec_asset(
+            db,
+            branch_project,
+            [branch],
+            branch_project.selected_candidate_asset_id,
+        ) is None
 
 
 def test_branch_rejects_source_bytes_that_drift_from_recorded_hash():
@@ -366,6 +513,147 @@ def test_restore_rejects_source_bytes_that_drift_from_recorded_hash():
                 expected_design_version=None, created_by="designer",
             )
         assert error.value.code == "restore_source_hash_mismatch"
+
+
+def test_pre_spec_restore_remains_confirmable_from_its_creative_origin():
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    with Session(engine) as db:
+        original = ImageAsset(
+            id="ast_restore_origin",
+            root_id="ast_restore_origin",
+            parent_asset_id=None,
+            design_version=None,
+            capability="CREATIVE_RENDER",
+            image=b"original direction",
+            media_type="image/png",
+            created_by="designer",
+        )
+        refined = ImageAsset(
+            id="ast_restore_refined",
+            root_id=original.id,
+            parent_asset_id=original.id,
+            design_version=None,
+            capability="LOCALIZED_EDIT",
+            image=b"refined direction",
+            media_type="image/png",
+            created_by="designer",
+        )
+        project = Project(
+            root_id=original.id,
+            owner="designer",
+            title="Restorable direction",
+            tags=[],
+            selected_candidate_asset_id=refined.id,
+        )
+        db.add_all([
+            original,
+            refined,
+            project,
+            _record(original.id),
+            _record(refined.id),
+        ])
+        db.commit()
+
+        result = restore_project_revision(
+            db,
+            project_root_id=project.root_id,
+            restore_asset_id=original.id,
+            expected_active_asset_id=refined.id,
+            expected_design_version=None,
+            created_by="designer",
+        )
+        db.refresh(project)
+        restored = db.get(ImageAsset, result.asset_id)
+        chain = list(db.scalars(
+            select(ImageAsset).where(ImageAsset.root_id == project.root_id)
+        ))
+
+        assert restored is not None
+        assert restored.capability == "RESTORED_REVISION"
+        assert restored.parent_asset_id == refined.id
+        assert bytes(restored.image) == bytes(original.image)
+        assert project.selected_candidate_asset_id == restored.id
+        assert confirmable_pre_spec_asset(
+            db,
+            project,
+            chain,
+            project.selected_candidate_asset_id,
+        ) == restored
+
+
+def test_restore_of_derived_product_photo_cannot_gain_confirmation_authority():
+    engine = create_engine("sqlite://")
+    Base.metadata.create_all(engine)
+    with Session(engine) as db:
+        creative = ImageAsset(
+            id="ast_restore_derived_origin",
+            root_id="ast_restore_derived_origin",
+            parent_asset_id=None,
+            design_version=None,
+            capability="CREATIVE_RENDER",
+            image=b"creative origin",
+            media_type="image/png",
+            created_by="designer",
+        )
+        product_photo = ImageAsset(
+            id="ast_restore_derived_photo",
+            root_id=creative.id,
+            parent_asset_id=creative.id,
+            design_version=None,
+            capability="PRODUCT_PHOTO",
+            image=b"commerce derivative",
+            media_type="image/png",
+            created_by="designer",
+        )
+        refined = ImageAsset(
+            id="ast_restore_derived_refined",
+            root_id=creative.id,
+            parent_asset_id=product_photo.id,
+            design_version=None,
+            capability="LOCALIZED_EDIT",
+            image=b"later refinement",
+            media_type="image/png",
+            created_by="designer",
+        )
+        project = Project(
+            root_id=creative.id,
+            owner="designer",
+            title="Derived restore",
+            tags=[],
+            selected_candidate_asset_id=refined.id,
+        )
+        db.add_all([
+            creative,
+            product_photo,
+            refined,
+            project,
+            _record(creative.id),
+            _record(product_photo.id),
+            _record(refined.id),
+        ])
+        db.commit()
+
+        result = restore_project_revision(
+            db,
+            project_root_id=project.root_id,
+            restore_asset_id=product_photo.id,
+            expected_active_asset_id=refined.id,
+            expected_design_version=None,
+            created_by="designer",
+        )
+        db.refresh(project)
+        restored = db.get(ImageAsset, result.asset_id)
+        chain = list(db.scalars(
+            select(ImageAsset).where(ImageAsset.root_id == project.root_id)
+        ))
+        assert restored is not None
+        assert confirmable_pre_spec_asset(
+            db,
+            project,
+            chain,
+            project.selected_candidate_asset_id,
+        ) is None
 
 
 def test_pre_spec_restore_cas_rolls_back_a_late_competing_active_revision(

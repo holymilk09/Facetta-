@@ -1842,6 +1842,14 @@ def test_creative_direction_commit_is_atomic_billed_once_and_retry_safe(
     assert [
         item["variation_index"] for item in body["retained_variations"]
     ] == [2, 3]
+    assert all(
+        item["project"]["confirmable_pre_spec"] is True
+        and item["project"].get("active_design_version") is None
+        and item["project"]["active_revision"]["capability"]
+        == "VARIATION_BRANCH"
+        and item["project"]["factory_ready"] is False
+        for item in body["retained_variations"]
+    )
     branch_ids = [
         item["project"]["root_id"] for item in body["retained_variations"]
     ]
@@ -1963,6 +1971,82 @@ def test_creative_direction_commit_is_atomic_billed_once_and_retry_safe(
         assert db.scalar(
             select(func.count()).select_from(ProjectRevisionRecord)
         ) == 3
+
+
+def test_retained_create_variation_can_confirm_exact_starting_facts(
+    creative_client,
+    monkeypatch,
+):
+    client, Session = creative_client
+    app.dependency_overrides[get_creative_prompt_generator] = (
+        lambda: (lambda _instruction, variant: _prompt_creative_result(variant))
+    )
+    created = client.post(
+        "/projects/from-prompt", json=_prompt_request(variation_count=2)
+    ).json()
+    candidates = [
+        item["asset_id"] for item in created["creative_candidates"]
+    ]
+    job_id = _reviewing_create_job(
+        client, project_id=created["root_id"], requested_outputs=2,
+    )
+    committed = client.post(
+        f"/projects/{created['root_id']}/creative-directions/commit",
+        json={
+            "selected_candidate_id": candidates[1],
+            "retained": [{
+                "candidate_id": candidates[0],
+                "label": "Retained direction",
+            }],
+            "created_by": "usr_designer",
+            "studio_job_id": job_id,
+        },
+    )
+    assert committed.status_code == 200, committed.text
+    retained = committed.json()["retained_variations"][0]["project"]
+    branch_id = retained["root_id"]
+    branch_asset_id = retained["active_asset_id"]
+    branch_sha256 = retained["active_revision"]["sha256"]
+    assert retained["confirmable_pre_spec"] is True
+
+    monkeypatch.setattr(
+        "facetta.api.projects.from_photo",
+        lambda _request: Spec.model_validate(audited_import_spec(EXAMPLE_SPEC)),
+    )
+    confirmation = client.post(
+        f"/projects/{branch_id}/creative-candidates/{branch_asset_id}/"
+        "confirm-design",
+        json={"created_by": "usr_designer"},
+    )
+    assert confirmation.status_code == 200, confirmation.text
+    assert confirmation.json()["candidate_sha256"] == branch_sha256
+
+    promoted = client.post(
+        f"/projects/{branch_id}/creative-candidates/{branch_asset_id}/promote",
+        json={
+            "created_by": "usr_designer",
+            "confirmation_token": confirmation.json()["confirmation_token"],
+            "corrections": [],
+        },
+    )
+    assert promoted.status_code == 200, promoted.text
+    exact = promoted.json()
+    assert exact["active_design_version"] == 1
+    assert exact["active_revision"]["parent_asset_id"] == branch_asset_id
+    assert exact["active_revision"]["sha256"] == branch_sha256
+    assert exact["confirmable_pre_spec"] is False
+    assert exact["factory_ready"] is False
+
+    with Session() as db:
+        original = db.get(Project, created["root_id"])
+        source = db.get(ImageAsset, candidates[0])
+        branch = db.get(Project, branch_id)
+        assert original is not None and source is not None and branch is not None
+        assert original.selected_candidate_asset_id == candidates[1]
+        assert source.design_version is None
+        assert db.get(ImageAsset, branch_id).design_id == exact["design_id"]
+        assert db.scalar(select(func.count()).select_from(Design)) == 1
+        assert db.scalar(select(func.count()).select_from(DesignVersion)) == 1
 
 
 @pytest.mark.parametrize("evidence_state", ["missing", "ambiguous"])
