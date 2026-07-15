@@ -1045,7 +1045,7 @@ const styles = StyleSheet.create({
   actionWorkspace: { flex: 1 },
   actionContextBanner: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
     gap: 12,
     borderBottomWidth: 1,
     borderBottomColor: theme.line,
@@ -1064,16 +1064,14 @@ const styles = StyleSheet.create({
   actionDesignContext: {
     flex: 1,
     minWidth: 0,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
+    gap: 6,
   },
   actionRevisionIdentity: {
     alignItems: 'center',
-    flex: 1,
     flexDirection: 'row',
     gap: 10,
     minWidth: 0,
+    width: '100%',
   },
   actionRevisionThumbnail: {
     width: 42,

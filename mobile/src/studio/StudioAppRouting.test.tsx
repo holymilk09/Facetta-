@@ -615,9 +615,9 @@ const authenticate = () => {
 
 type AppRenderResult = Awaited<ReturnType<typeof render>>;
 
-const openStudioActionMenu = async (view: AppRenderResult): Promise<void> => {
+const openStudioMoreActions = async (view: AppRenderResult): Promise<void> => {
   const user = userEvent.setup();
-  await user.press(view.getByTestId('studio-action-trigger'));
+  await user.press(view.getByTestId('studio-action-more'));
 };
 
 const pressStudioAction = async (
@@ -625,7 +625,6 @@ const pressStudioAction = async (
   accessibilityLabel: string,
 ): Promise<void> => {
   const user = userEvent.setup();
-  await user.press(view.getByTestId('studio-action-trigger'));
   await user.press(view.getByLabelText(accessibilityLabel));
 };
 
@@ -893,8 +892,7 @@ test('every visible contextual action reaches its named destination', async () =
   }
 
   const user = userEvent.setup();
-  await openStudioActionMenu(view);
-  await user.press(view.getByLabelText('More actions'));
+  await openStudioMoreActions(view);
   expect(await view.findByText('Starting design facts')).toBeTruthy();
   await user.press(view.getByLabelText('More actions'));
   await waitFor(() => expect(view.queryByText('Starting design facts')).toBeNull());
@@ -922,8 +920,7 @@ test('More opens Starting design facts in the confirmation workspace', async () 
   expect(await view.findByText('Refine route reached')).toBeTruthy();
 
   const user = userEvent.setup();
-  await openStudioActionMenu(view);
-  await user.press(view.getByLabelText('More actions'));
+  await openStudioMoreActions(view);
   await user.press(await view.findByText('Starting design facts'));
 
   expect(await view.findByText('Save starting facts')).toBeTruthy();
@@ -1224,14 +1221,15 @@ test('Views opens its starting-facts prerequisite and resumes after one save act
   fireEvent.press(view.getByText('Start from an idea or reference'));
   fireEvent.press(await view.findByText('Save mocked direction'));
   expect(await view.findByText('Refine route reached')).toBeTruthy();
-  await openStudioActionMenu(view);
   const prerequisiteViews = view.getByLabelText(
     'Generate technical views; Save starting facts first',
   );
   expect(prerequisiteViews.props.accessibilityState).toEqual({
     disabled: false, selected: false,
   });
-  expect(view.getByText('Save starting facts first')).toBeTruthy();
+  expect(prerequisiteViews.props.accessibilityHint).toContain(
+    'Opens Review starting design facts, then continues to Views.',
+  );
   expect(view.queryByText('Views route reached')).toBeNull();
   await userEvent.setup().press(prerequisiteViews);
   expect(await view.findByText('Save starting facts')).toBeTruthy();
@@ -1243,22 +1241,19 @@ test('Views opens its starting-facts prerequisite and resumes after one save act
   expect(view.queryByText('Save starting facts')).toBeNull();
   expect(view.queryByText('Your design families')).toBeNull();
   expect(view.queryByText(/Factory/i)).toBeNull();
-  await openStudioActionMenu(view);
   expect(view.getByLabelText('Generate technical views').props.accessibilityState).toEqual({
     disabled: false, selected: true,
   });
   await userEvent.setup().press(view.getByLabelText('Refine this design'));
   expect(await view.findByText('Refine route reached')).toBeTruthy();
-  await openStudioActionMenu(view);
   expect(view.getByLabelText('More actions')).toBeTruthy();
-  await userEvent.setup().press(view.getByLabelText('More actions'));
+  await openStudioMoreActions(view);
   expect(await view.findByText('Specifications')).toBeTruthy();
   expect(await view.findByText('Factory')).toBeTruthy();
   await userEvent.setup().press(view.getByText('Specifications'));
   expect(await view.findByText('Advanced specifications route reached')).toBeTruthy();
   expect(view.queryByText('Refine route reached')).toBeNull();
-  await openStudioActionMenu(view);
-  await userEvent.setup().press(view.getByLabelText('More actions'));
+  await openStudioMoreActions(view);
   await userEvent.setup().press(await view.findByText('Factory'));
   expect(await view.findByText('Factory route reached for asset_exact_1')).toBeTruthy();
   expect(view.queryByText(/destination will use the exact active revision/i)).toBeNull();
@@ -1340,7 +1335,7 @@ test('Activity historical review is read-only until the designer returns to the 
 
   expect(await view.findByText('Refine route reached')).toBeTruthy();
   expect(view.getByText('Review source · Revision 1')).toBeTruthy();
-  expect(view.queryByTestId('studio-action-trigger')).toBeNull();
+  expect(view.queryByTestId('studio-action-rail')).toBeNull();
   expect(view.queryByText('Factory')).toBeNull();
 });
 
@@ -1357,10 +1352,9 @@ test('Activity Refine does not offer design-fact review for a non-confirmable pr
 
   expect(await view.findByText('Refine route reached')).toBeTruthy();
   expect(view.queryByText('Review starting design')).toBeNull();
-  await openStudioActionMenu(view);
   const unavailableViews = view.getByLabelText('Generate technical views');
   expect(unavailableViews.props.accessibilityState).toEqual({ disabled: true, selected: false });
-  expect(unavailableViews.props.accessibilityHint).toBe(
+  expect(unavailableViews.props.accessibilityHint).toContain(
     'Choose a confirmable ring direction first',
   );
   await userEvent.setup().press(unavailableViews);
