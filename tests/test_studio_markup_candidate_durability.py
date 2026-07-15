@@ -355,6 +355,8 @@ def test_normalized_markup_preview_saves_exact_variation(markup_candidates):
     assert result["source_project_id"] == "ast_markup"
     assert result["result_project_id"] != "ast_markup"
     assert result["terminal_asset_id"] is not None
+    assert result["family_id"] is not None
+    assert result["variation_index"] == 2
     legacy_replay = client.post(
         f"/studio/markup-candidates/{candidate.run_id}/"
         f"{candidate.candidate_id}/save-as-variation",
@@ -383,6 +385,8 @@ def test_normalized_markup_preview_saves_exact_variation(markup_candidates):
             "Satin normalized study"
         )
         assert sibling is not None and sibling.root_id != "ast_markup"
+        assert sibling.family_id == result["family_id"]
+        assert sibling.variation_index == result["variation_index"]
         assert terminal is not None and terminal.root_id == sibling.root_id
         assert job is not None and job.status == "succeeded"
         assert job.charged_outputs == 1

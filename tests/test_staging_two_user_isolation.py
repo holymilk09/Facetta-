@@ -8,6 +8,7 @@ import pytest
 from scripts.run_staging_two_user_isolation import (
     CandidateFixture,
     HttpResult,
+    NormalizedDecisionFixture,
     StagingConfig,
     StagingIdentity,
     load_config,
@@ -112,6 +113,107 @@ def _candidate(kind: str, suffix: str) -> dict[str, object]:
     raise AssertionError(f"unsupported candidate kind: {kind}")
 
 
+def _normalized_candidate(
+    kind: str,
+    suffix: str,
+    *,
+    decision_fixture: bool = False,
+) -> dict[str, object]:
+    legacy_kind = "catalog" if kind == "catalog_revision" else kind
+    legacy = _candidate(legacy_kind, suffix)
+    candidate_id = (
+        f"normalized-decision-candidate-{suffix}"
+        if decision_fixture else str(legacy["candidate_id"])
+    )
+    image_run_id = (
+        f"normalized-decision-run-{suffix}"
+        if decision_fixture else str(legacy["image_run_id"])
+    )
+    studio_job_id = (
+        f"normalized-decision-job-{suffix}"
+        if decision_fixture else str(legacy["studio_job_id"])
+    )
+    actor = suffix * 32
+    status = "discarded" if decision_fixture else "reviewing"
+    row: dict[str, object] = {
+        "candidate_id": candidate_id,
+        "kind": kind,
+        "status": status,
+        "image_run_id": image_run_id,
+        "project_root_id": f"project-{suffix}",
+        "source_asset_id": f"asset-{suffix}",
+        "expected_active_asset_id": f"asset-{suffix}",
+        "expected_design_version": None if kind == "visual" else 1,
+        "source_sha256": suffix * 64,
+        "output_sha256": ("c" if suffix == "a" else "d") * 64,
+        "requested_change": "Refine the selected jewelry component.",
+        "verdict": "pass",
+        "qa": {
+            "verdict": "pass",
+            "accepted": True,
+            "review_required": False,
+        },
+        "studio_job_id": studio_job_id,
+        "terminal_asset_id": None,
+        "created_at": "2026-01-01T00:00:00+00:00",
+        "expires_at": "2099-01-01T00:00:00+00:00",
+        "resolved_at": (
+            "2026-01-01T00:02:00+00:00" if decision_fixture else None
+        ),
+        "available_decisions": (
+            [] if decision_fixture
+            else ["apply", "save_as_variation", "discard"]
+        ),
+        "preview_url": (
+            f"/studio/preview-candidates/{candidate_id}/image?owner={actor}"
+        ),
+        "decision_url": (
+            f"/studio/preview-candidates/{candidate_id}/decision"
+        ),
+    }
+    if kind == "visual":
+        row["scope"] = "appearance"
+    elif kind == "catalog_revision":
+        row.update({
+            "component_path": "metal.color",
+            "option_id": "white-gold",
+            "spec_change": [{
+                "path": "metal.color",
+                "before": "yellow",
+                "after": "white",
+                "label": "Metal color",
+            }],
+            "next_spec": {
+                "schema_version": 1,
+                "design_id": f"design-{suffix}",
+                "version": 2,
+                "created_by": suffix * 32,
+                "created_at": "2026-01-01T00:00:00+00:00",
+                "jewelry_type": "ring",
+                "template": "solitaire",
+                "mode": "basic",
+                "stone": {
+                    "species": "diamond",
+                    "cut": "round",
+                    "carat": 1,
+                    "dimensions_mm": {
+                        "length": 6.5,
+                        "width": 6.5,
+                        "depth": 4,
+                    },
+                    "color": {"trade": "colorless", "gia": "D"},
+                },
+                "metal": {"color": "white"},
+            },
+        })
+    else:
+        row.update({
+            "operation": "LOCAL_EDIT",
+            "region_description": "upper-left prong",
+        })
+    return row
+
+
 def _job(job_id: str, suffix: str) -> dict[str, object]:
     return {
         "job_id": job_id,
@@ -145,6 +247,7 @@ def _jobs(suffix: str) -> list[dict[str, object]]:
             _job(f"{kind}-job-{suffix}", suffix)
             for kind in ("catalog", "visual", "markup", "view", "presentation")
         ],
+        _job(f"normalized-decision-job-{suffix}", suffix),
     ]
 
 
@@ -164,6 +267,17 @@ def _candidate_fixture_json(suffix: str) -> str:
             "studio_job_id": f"{kind}-job-{suffix}",
         }
         for kind in ("catalog", "visual", "markup", "view", "presentation")
+    })
+
+
+def _normalized_decision_fixture_json(suffix: str) -> str:
+    return json.dumps({
+        "kind": "markup",
+        "image_run_id": f"normalized-decision-run-{suffix}",
+        "candidate_id": f"normalized-decision-candidate-{suffix}",
+        "source_asset_id": f"asset-{suffix}",
+        "studio_job_id": f"normalized-decision-job-{suffix}",
+        "expected_design_version": 1,
     })
 
 
@@ -189,6 +303,14 @@ def _config() -> StagingConfig:
                 for kind in (
                     "catalog", "markup", "presentation", "view", "visual",
                 )
+            ),
+            NormalizedDecisionFixture(
+                "markup",
+                f"normalized-decision-run-{suffix}",
+                f"normalized-decision-candidate-{suffix}",
+                f"asset-{suffix}",
+                f"normalized-decision-job-{suffix}",
+                1,
             ),
         )
 
@@ -223,6 +345,10 @@ def test_load_config_requires_and_binds_seeded_jobs_and_candidates(monkeypatch):
             f"{prefix}_CANDIDATE_FIXTURES_JSON",
             _candidate_fixture_json(suffix),
         )
+        monkeypatch.setenv(
+            f"{prefix}_NORMALIZED_DECISION_FIXTURE_JSON",
+            _normalized_decision_fixture_json(suffix),
+        )
 
     config = load_config()
 
@@ -236,6 +362,10 @@ def test_load_config_requires_and_binds_seeded_jobs_and_candidates(monkeypatch):
     assert config.first.candidate("visual").candidate_id == "visual-candidate-a"
     assert config.first.candidate("visual").source_asset_id == "asset-a"
     assert config.first.candidate("visual").studio_job_id == "visual-job-a"
+    assert (
+        config.first.normalized_decision.candidate_id
+        == "normalized-decision-candidate-a"
+    )
 
 
 def test_load_config_rejects_incomplete_candidate_fixture_set(monkeypatch):
@@ -261,6 +391,10 @@ def test_load_config_rejects_incomplete_candidate_fixture_set(monkeypatch):
         monkeypatch.setenv(
             f"{prefix}_CANDIDATE_FIXTURES_JSON",
             json.dumps(fixtures),
+        )
+        monkeypatch.setenv(
+            f"{prefix}_NORMALIZED_DECISION_FIXTURE_JSON",
+            _normalized_decision_fixture_json(suffix),
         )
 
     with pytest.raises(ValueError, match="must exactly cover"):
@@ -314,6 +448,10 @@ def test_load_config_rejects_unbound_candidate_lineage(
             mutate(fixtures)
         monkeypatch.setenv(
             f"{prefix}_CANDIDATE_FIXTURES_JSON", json.dumps(fixtures),
+        )
+        monkeypatch.setenv(
+            f"{prefix}_NORMALIZED_DECISION_FIXTURE_JSON",
+            _normalized_decision_fixture_json(suffix),
         )
 
     with pytest.raises(ValueError, match=message):
@@ -393,6 +531,55 @@ def _transport(method: str, url: str, token: str) -> HttpResult:
             200, "application/json", {"jobs": _jobs(own_suffix)},
         )
 
+    if path == f"/studio/projects/project-{own_suffix}/preview-candidates":
+        return HttpResult(200, "application/json", {
+            "candidates": [
+                _normalized_candidate(kind, own_suffix)
+                for kind in ("catalog_revision", "visual", "markup")
+            ],
+        })
+    if path == f"/studio/projects/project-{other_suffix}/preview-candidates":
+        return HttpResult(404)
+
+    normalized_get_pattern = re.compile(
+        r"^/studio/preview-candidates/((?:catalog|visual|markup)-candidate-"
+        r"([ab])|normalized-decision-candidate-([ab]))$"
+    )
+    normalized_get_match = normalized_get_pattern.fullmatch(path)
+    if normalized_get_match is not None:
+        candidate_id = normalized_get_match.group(1)
+        candidate_suffix = (
+            normalized_get_match.group(2) or normalized_get_match.group(3)
+        )
+        if query.get("owner") not in (None, [actor]):
+            return HttpResult(403)
+        if candidate_suffix != own_suffix:
+            return HttpResult(404)
+        if candidate_id.startswith("normalized-decision"):
+            row = _normalized_candidate(
+                "markup", own_suffix, decision_fixture=True,
+            )
+        else:
+            legacy_kind = candidate_id.split("-", 1)[0]
+            kind = (
+                "catalog_revision" if legacy_kind == "catalog" else legacy_kind
+            )
+            row = _normalized_candidate(kind, own_suffix)
+        return HttpResult(200, "application/json", row)
+
+    normalized_image_pattern = re.compile(
+        r"^/studio/preview-candidates/"
+        r"(catalog|visual|markup)-candidate-([ab])/image$"
+    )
+    normalized_image_match = normalized_image_pattern.fullmatch(path)
+    if normalized_image_match is not None:
+        candidate_suffix = normalized_image_match.group(2)
+        if query.get("owner") not in (None, [actor]):
+            return HttpResult(403)
+        if candidate_suffix != own_suffix:
+            return HttpResult(404)
+        return HttpResult(200, "image/png")
+
     if path == f"/assets/asset-{own_suffix}/catalog/previews":
         return HttpResult(200, "application/json", {
             "candidates": [_candidate("catalog", own_suffix)],
@@ -466,8 +653,49 @@ def _transport(method: str, url: str, token: str) -> HttpResult:
     return HttpResult(404)
 
 
+def _decision_transport(
+    method: str,
+    url: str,
+    token: str,
+    body: dict[str, object],
+) -> HttpResult:
+    assert method == "POST"
+    if token == "":
+        return HttpResult(401)
+    actor = "a" * 32 if token == "secret-a" else "b" * 32
+    own_suffix = "a" if token == "secret-a" else "b"
+    if body.get("created_by") != actor:
+        return HttpResult(403)
+    match = re.fullmatch(
+        r"https://staging\.facetta\.test/studio/preview-candidates/"
+        r"normalized-decision-candidate-([ab])/decision",
+        url,
+    )
+    if match is None or match.group(1) != own_suffix:
+        return HttpResult(404)
+    if body != {
+        "created_by": actor,
+        "decision": "discard",
+        "expected_active_asset_id": f"asset-{own_suffix}",
+        "expected_design_version": 1,
+        "variation_label": None,
+    }:
+        return HttpResult(422)
+    return HttpResult(200, "application/json", {
+        "status": "discarded",
+        "candidate_id": f"normalized-decision-candidate-{own_suffix}",
+        "kind": "markup",
+        "source_project_id": f"project-{own_suffix}",
+        "result_project_id": f"project-{own_suffix}",
+        "terminal_asset_id": None,
+        "studio_job_id": f"normalized-decision-job-{own_suffix}",
+        "family_id": None,
+        "variation_index": None,
+    })
+
+
 def test_read_only_two_user_probe_passes_without_logging_secrets():
-    result = run_probe(_config(), _transport)
+    result = run_probe(_config(), _transport, _decision_transport)
     assert result["passed"] is True
     assert result["provider_calls"] == 0
     assert result["mutations"] == 0
@@ -491,7 +719,7 @@ def test_cross_tenant_project_success_fails_probe():
             return HttpResult(200, "application/json", {"owner": "b" * 32})
         return result
 
-    result = run_probe(_config(), leaky_transport)
+    result = run_probe(_config(), leaky_transport, _decision_transport)
     failed = {check["name"] for check in result["checks"] if not check["passed"]}
     assert "user_A_cannot_read_other_project" in failed
     assert result["passed"] is False
@@ -539,7 +767,7 @@ def test_cross_tenant_canonical_read_leak_fails_probe(
             return HttpResult(200, "application/json", {})
         return _transport(method, url, token)
 
-    result = run_probe(_config(), leaky_transport)
+    result = run_probe(_config(), leaky_transport, _decision_transport)
     failed = {check["name"] for check in result["checks"] if not check["passed"]}
     assert failed == {expected_check}
     assert result["passed"] is False
@@ -582,7 +810,7 @@ def test_cross_tenant_candidate_image_leak_fails_probe(
             return HttpResult(200, "image/png")
         return _transport(method, url, token)
 
-    result = run_probe(_config(), leaky_transport)
+    result = run_probe(_config(), leaky_transport, _decision_transport)
     failed = {check["name"] for check in result["checks"] if not check["passed"]}
     assert failed == {expected_check}
     assert result["passed"] is False
@@ -601,7 +829,7 @@ def test_studio_job_owner_spoof_and_cross_object_leaks_fail_probe():
                 })
         return _transport(method, url, token)
 
-    result = run_probe(_config(), leaky_transport)
+    result = run_probe(_config(), leaky_transport, _decision_transport)
     failed = {check["name"] for check in result["checks"] if not check["passed"]}
     assert failed == {
         "user_A_cannot_read_other_job",
@@ -628,7 +856,7 @@ def test_leaky_own_job_list_fails_tenant_scope_check():
             })
         return _transport(method, url, token)
 
-    result = run_probe(_config(), leaky_transport)
+    result = run_probe(_config(), leaky_transport, _decision_transport)
     failed = {check["name"] for check in result["checks"] if not check["passed"]}
     assert failed == {"user_A_job_results_are_tenant_scoped"}
     assert result["passed"] is False
@@ -658,7 +886,7 @@ def test_job_list_rejects_duplicates_malformed_rows_and_project_mismatches(
             return HttpResult(200, "application/json", {"jobs": jobs})
         return _transport(method, url, token)
 
-    result = run_probe(_config(), invalid_transport)
+    result = run_probe(_config(), invalid_transport, _decision_transport)
     failed = {check["name"] for check in result["checks"] if not check["passed"]}
     assert failed == {"user_A_job_results_are_tenant_scoped"}
     assert result["passed"] is False
@@ -696,7 +924,7 @@ def test_leaky_own_candidate_lists_fail_tenant_scope_check(
             })
         return _transport(method, url, token)
 
-    result = run_probe(_config(), leaky_transport)
+    result = run_probe(_config(), leaky_transport, _decision_transport)
     failed = {check["name"] for check in result["checks"] if not check["passed"]}
     assert failed == {
         f"user_A_{kind}_candidate_results_are_tenant_scoped",
@@ -780,7 +1008,7 @@ def test_candidate_lists_reject_duplicates_malformed_rows_and_lineage_mismatches
             return HttpResult(200, "application/json", body)
         return _transport(method, url, token)
 
-    result = run_probe(_config(), invalid_transport)
+    result = run_probe(_config(), invalid_transport, _decision_transport)
     failed = {check["name"] for check in result["checks"] if not check["passed"]}
     assert failed == {
         f"user_A_{kind}_candidate_results_are_tenant_scoped",
@@ -817,7 +1045,299 @@ def test_candidate_list_owner_spoof_fails_probe(
             return HttpResult(200, "application/json", {"candidates": []})
         return _transport(method, url, token)
 
-    result = run_probe(_config(), leaky_transport)
+    result = run_probe(_config(), leaky_transport, _decision_transport)
+    failed = {check["name"] for check in result["checks"] if not check["passed"]}
+    assert failed == {expected_check}
+    assert result["passed"] is False
+
+
+@pytest.mark.parametrize(
+    ("body", "expected_check"),
+    [
+        (
+            {
+                "candidates": [{
+                    **_normalized_candidate("visual", "a"),
+                    "kind": "presentation",
+                }],
+            },
+            "user_A_normalized_preview_results_are_tenant_scoped",
+        ),
+        (
+            {
+                "candidates": [{
+                    **_normalized_candidate("markup", "a"),
+                    "project_root_id": "project-b",
+                }],
+            },
+            "user_A_normalized_preview_results_are_tenant_scoped",
+        ),
+        (
+            {
+                "candidates": [
+                    _normalized_candidate("catalog_revision", "a"),
+                    _normalized_candidate("catalog_revision", "a"),
+                ],
+            },
+            "user_A_normalized_preview_results_are_tenant_scoped",
+        ),
+    ],
+)
+def test_normalized_preview_list_fails_closed_on_bad_discriminator_or_lineage(
+    body: dict[str, object],
+    expected_check: str,
+):
+    def invalid_transport(method: str, url: str, token: str) -> HttpResult:
+        if (
+            method == "GET"
+            and token == "secret-a"
+            and urlparse(url).path
+            == "/studio/projects/project-a/preview-candidates"
+        ):
+            return HttpResult(200, "application/json", body)
+        return _transport(method, url, token)
+
+    result = run_probe(_config(), invalid_transport, _decision_transport)
+    failed = {check["name"] for check in result["checks"] if not check["passed"]}
+    assert failed == {expected_check}
+    assert result["passed"] is False
+
+
+@pytest.mark.parametrize(
+    ("kind", "mutation"),
+    [
+        (
+            "visual",
+            {"verdict": "warn"},
+        ),
+        (
+            "visual",
+            {"qa": {
+                "verdict": "pass",
+                "accepted": False,
+                "review_required": True,
+            }},
+        ),
+        (
+            "catalog_revision",
+            {"spec_change": []},
+        ),
+        (
+            "catalog_revision",
+            {"spec_change": [{
+                "path": "metal.color",
+                "after": "white",
+                "label": "Metal color",
+            }]},
+        ),
+        (
+            "catalog_revision",
+            {"next_spec": {}},
+        ),
+        (
+            "catalog_revision",
+            {"next_spec": {
+                "version": 4,
+                "metal": {"color": "white"},
+            }},
+        ),
+        (
+            "catalog_revision",
+            {"next_spec": {"metal": {"color": float("nan")}}},
+        ),
+        (
+            "catalog_revision",
+            {"next_spec": {
+                **_normalized_candidate("catalog_revision", "a")["next_spec"],
+                "created_at": "20260101",
+            }},
+        ),
+        (
+            "catalog_revision",
+            {"component_path": "ring.band"},
+        ),
+        (
+            "markup",
+            {"operation": "REFERENCE_RENDER"},
+        ),
+    ],
+)
+def test_normalized_preview_list_matches_mobile_semantic_decoder(
+    kind: str,
+    mutation: dict[str, object],
+):
+    rows = [
+        _normalized_candidate(candidate_kind, "a")
+        for candidate_kind in ("catalog_revision", "visual", "markup")
+    ]
+    target = next(row for row in rows if row["kind"] == kind)
+    target.update(mutation)
+
+    def invalid_transport(method: str, url: str, token: str) -> HttpResult:
+        if (
+            method == "GET"
+            and token == "secret-a"
+            and urlparse(url).path
+            == "/studio/projects/project-a/preview-candidates"
+        ):
+            return HttpResult(200, "application/json", {"candidates": rows})
+        return _transport(method, url, token)
+
+    result = run_probe(_config(), invalid_transport, _decision_transport)
+    failed = {check["name"] for check in result["checks"] if not check["passed"]}
+    assert failed == {"user_A_normalized_preview_results_are_tenant_scoped"}
+    assert result["passed"] is False
+
+
+def test_normalized_preview_list_rejects_shared_single_output_job_binding():
+    rows = [
+        _normalized_candidate(candidate_kind, "a")
+        for candidate_kind in ("catalog_revision", "visual", "markup")
+    ]
+    duplicate_job = _normalized_candidate("visual", "a")
+    duplicate_job.update({
+        "candidate_id": "extra-visual-candidate-a",
+        "image_run_id": "extra-visual-run-a",
+        "preview_url": (
+            "/studio/preview-candidates/extra-visual-candidate-a/image?"
+            f"owner={'a' * 32}"
+        ),
+        "decision_url": (
+            "/studio/preview-candidates/extra-visual-candidate-a/decision"
+        ),
+    })
+    rows.append(duplicate_job)
+
+    def invalid_transport(method: str, url: str, token: str) -> HttpResult:
+        if (
+            method == "GET"
+            and token == "secret-a"
+            and urlparse(url).path
+            == "/studio/projects/project-a/preview-candidates"
+        ):
+            return HttpResult(200, "application/json", {"candidates": rows})
+        return _transport(method, url, token)
+
+    result = run_probe(_config(), invalid_transport, _decision_transport)
+    failed = {check["name"] for check in result["checks"] if not check["passed"]}
+    assert failed == {"user_A_normalized_preview_results_are_tenant_scoped"}
+    assert result["passed"] is False
+
+
+def test_normalized_preview_requires_single_output_refine_job_evidence():
+    def invalid_transport(method: str, url: str, token: str) -> HttpResult:
+        parsed = urlparse(url)
+        query = parse_qs(parsed.query)
+        if (
+            method == "GET"
+            and token == "secret-a"
+            and parsed.path == "/studio/jobs"
+            and query.get("owner") == ["a" * 32]
+        ):
+            jobs = _jobs("a")
+            visual = next(row for row in jobs if row["job_id"] == "visual-job-a")
+            assert isinstance(visual["billing"], dict)
+            visual["billing"].update({
+                "requested_outputs": 2,
+                "estimated_credits": 6,
+            })
+            return HttpResult(200, "application/json", {"jobs": jobs})
+        return _transport(method, url, token)
+
+    result = run_probe(_config(), invalid_transport, _decision_transport)
+    failed = {check["name"] for check in result["checks"] if not check["passed"]}
+    assert failed == {
+        "user_A_normalized_preview_results_are_tenant_scoped",
+        "user_A_normalized_visual_candidate_lineage_is_exact",
+    }
+    assert result["passed"] is False
+
+
+@pytest.mark.parametrize(
+    ("path", "query", "expected_check"),
+    [
+        (
+            "/studio/projects/project-b/preview-candidates",
+            {},
+            "user_A_cannot_list_other_normalized_preview_candidates",
+        ),
+        (
+            "/studio/preview-candidates/visual-candidate-b",
+            {"owner": ["a" * 32]},
+            "user_A_cannot_enumerate_other_normalized_visual_candidate",
+        ),
+        (
+            "/studio/preview-candidates/visual-candidate-b/image",
+            {"owner": ["a" * 32]},
+            "user_A_cannot_read_other_normalized_visual_candidate_image",
+        ),
+        (
+            "/studio/preview-candidates/visual-candidate-a",
+            {"owner": ["b" * 32]},
+            "user_A_cannot_spoof_normalized_visual_owner",
+        ),
+        (
+            "/studio/preview-candidates/visual-candidate-a/image",
+            {"owner": ["b" * 32]},
+            "user_A_cannot_spoof_normalized_visual_image_owner",
+        ),
+    ],
+)
+def test_normalized_preview_cross_tenant_or_spoofed_read_fails_probe(
+    path: str,
+    query: dict[str, list[str]],
+    expected_check: str,
+):
+    def leaky_transport(method: str, url: str, token: str) -> HttpResult:
+        parsed = urlparse(url)
+        if (
+            method == "GET"
+            and token == "secret-a"
+            and parsed.path == path
+            and parse_qs(parsed.query) == query
+        ):
+            content_type = (
+                "image/png" if path.endswith("/image") else "application/json"
+            )
+            return HttpResult(200, content_type, {})
+        return _transport(method, url, token)
+
+    result = run_probe(_config(), leaky_transport, _decision_transport)
+    failed = {check["name"] for check in result["checks"] if not check["passed"]}
+    assert failed == {expected_check}
+    assert result["passed"] is False
+
+
+@pytest.mark.parametrize(
+    ("leak", "expected_check"),
+    [
+        ("cross", "user_A_cannot_resolve_other_normalized_candidate"),
+        ("spoof", "user_A_cannot_spoof_normalized_decision_actor"),
+        ("malformed", "user_A_replays_own_terminal_normalized_decision"),
+    ],
+)
+def test_normalized_decision_proof_fails_closed(leak: str, expected_check: str):
+    def leaky_decision_transport(
+        method: str,
+        url: str,
+        token: str,
+        body: dict[str, object],
+    ) -> HttpResult:
+        is_user_a = token == "secret-a"
+        is_cross = url.endswith("normalized-decision-candidate-b/decision")
+        is_spoof = body.get("created_by") == "b" * 32
+        is_own = url.endswith("normalized-decision-candidate-a/decision")
+        if is_user_a and (
+            (leak == "cross" and is_cross)
+            or (leak == "spoof" and is_spoof)
+        ):
+            return HttpResult(200, "application/json", {})
+        result = _decision_transport(method, url, token, body)
+        if leak == "malformed" and is_user_a and is_own and not is_spoof:
+            return HttpResult(200, "application/json", {"status": "discarded"})
+        return result
+
+    result = run_probe(_config(), _transport, leaky_decision_transport)
     failed = {check["name"] for check in result["checks"] if not check["passed"]}
     assert failed == {expected_check}
     assert result["passed"] is False
@@ -834,7 +1354,7 @@ def test_operator_cannot_claim_a_revision_the_live_process_does_not_report():
             })
         return _transport(method, url, token)
 
-    result = run_probe(_config(), mismatched_revision)
+    result = run_probe(_config(), mismatched_revision, _decision_transport)
     failed = {check["name"] for check in result["checks"] if not check["passed"]}
     assert failed == {"live_deployment_revision_matches"}
     assert result["passed"] is False
@@ -849,7 +1369,7 @@ def test_missing_live_revision_fails_closed():
             })
         return _transport(method, url, token)
 
-    result = run_probe(_config(), missing_revision)
+    result = run_probe(_config(), missing_revision, _decision_transport)
     failed = {check["name"] for check in result["checks"] if not check["passed"]}
     assert failed == {"live_deployment_revision_matches"}
     assert result["passed"] is False
@@ -866,7 +1386,7 @@ def test_non_postgres_staging_persistence_fails_closed():
             })
         return _transport(method, url, token)
 
-    result = run_probe(_config(), sqlite_backend)
+    result = run_probe(_config(), sqlite_backend, _decision_transport)
     failed = {check["name"] for check in result["checks"] if not check["passed"]}
     assert failed == {"live_persistence_is_postgresql"}
     assert result["passed"] is False
@@ -878,7 +1398,7 @@ def test_mounted_resource_route_cannot_false_pass_as_hidden_404():
             return HttpResult(405)
         return _transport(method, url, token)
 
-    result = run_probe(_config(), mounted_transport)
+    result = run_probe(_config(), mounted_transport, _decision_transport)
     failed = {check["name"] for check in result["checks"] if not check["passed"]}
     assert "production_hides_share_e2e-hidden" in failed
     assert result["passed"] is False
@@ -892,7 +1412,9 @@ def test_mounted_legacy_mutation_cannot_false_pass_as_hidden():
             return HttpResult(405, allowed_methods=frozenset({"GET", "POST"}))
         return _transport(method, url, token)
 
-    result = run_probe(_config(), mounted_legacy_transport)
+    result = run_probe(
+        _config(), mounted_legacy_transport, _decision_transport,
+    )
     failed = {check["name"] for check in result["checks"] if not check["passed"]}
     assert failed == {"production_disallows_project_from_brief"}
     assert result["passed"] is False
@@ -908,7 +1430,9 @@ def test_mounted_raw_prompt_compiler_cannot_escape_release_probe():
             return HttpResult(405, allowed_methods=frozenset({"POST"}))
         return _transport(method, url, token)
 
-    result = run_probe(_config(), mounted_compiler_transport)
+    result = run_probe(
+        _config(), mounted_compiler_transport, _decision_transport,
+    )
     failed = {check["name"] for check in result["checks"] if not check["passed"]}
     assert failed == {"production_disallows_specs_render_prompt"}
     assert result["passed"] is False
@@ -922,7 +1446,9 @@ def test_dynamic_get_collision_does_not_hide_a_safe_production_surface():
             return HttpResult(405, allowed_methods=frozenset({"GET"}))
         return _transport(method, url, token)
 
-    result = run_probe(_config(), production_collision_transport)
+    result = run_probe(
+        _config(), production_collision_transport, _decision_transport,
+    )
     assert result["passed"] is True
 
 
@@ -934,7 +1460,9 @@ def test_method_not_allowed_without_allow_header_fails_closed():
             return HttpResult(405)
         return _transport(method, url, token)
 
-    result = run_probe(_config(), stripped_allow_transport)
+    result = run_probe(
+        _config(), stripped_allow_transport, _decision_transport,
+    )
     failed = {check["name"] for check in result["checks"] if not check["passed"]}
     assert failed == {"production_disallows_project_from_brief"}
     assert result["passed"] is False

@@ -642,6 +642,8 @@ def test_normalized_visual_variation_replay_binds_exact_label(
     )
     assert saved.status_code == 200, saved.text
     assert saved.json()["status"] == "saved_as_variation"
+    assert saved.json()["family_id"] is not None
+    assert saved.json()["variation_index"] == 2
     replay = client.post(
         f"/studio/preview-candidates/{candidate_id}/decision",
         json=request,
@@ -656,6 +658,11 @@ def test_normalized_visual_variation_replay_binds_exact_label(
     assert legacy_replay.json()["project"]["root_id"] == (
         saved.json()["result_project_id"]
     )
+    with Session() as db:
+        sibling = db.get(Project, saved.json()["result_project_id"])
+        assert sibling is not None
+        assert sibling.family_id == saved.json()["family_id"]
+        assert sibling.variation_index == saved.json()["variation_index"]
     legacy_conflict = client.post(
         f"/studio/image-runs/{run_id}/visual-candidates/{candidate_id}/"
         "save-as-variation",

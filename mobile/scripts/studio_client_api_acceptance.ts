@@ -871,7 +871,7 @@ async function runCase(caseDefinition: AcceptanceCase, index: number): Promise<A
     assert.equal(staleApply.data, null, `${label}: stale Apply unexpectedly returned data`);
     assert(staleApply.error, `${label}: stale Apply unexpectedly succeeded`);
     assert.equal(staleApply.status, 410);
-    assert.equal(staleApply.error.code, 'visual_preview_unavailable');
+    assert.equal(staleApply.error.code, 'preview_candidate_unavailable');
     assert.equal(staleApply.error.category, 'conflict');
     assert.equal(staleApply.error.retryable, false);
 

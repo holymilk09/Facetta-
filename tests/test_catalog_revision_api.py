@@ -1311,6 +1311,7 @@ def test_normalized_catalog_preview_projects_and_applies_exact_revision(
     assert normalized[0]["component_path"] == "metal.color"
     assert normalized[0]["option_id"] == "rose"
     assert normalized[0]["expected_design_version"] == 1
+    assert normalized[0]["next_spec"] == preview_payload["next_spec"]
     image = client.get(normalized[0]["preview_url"])
     assert image.status_code == 200, image.text
 
@@ -1327,6 +1328,8 @@ def test_normalized_catalog_preview_projects_and_applies_exact_revision(
     assert applied.json()["kind"] == "catalog_revision"
     assert applied.json()["status"] == "applied"
     assert applied.json()["terminal_asset_id"] is not None
+    assert applied.json()["family_id"] is None
+    assert applied.json()["variation_index"] is None
     assert _counts(SessionFactory) == {
         **before_apply,
         "versions": before_apply["versions"] + 1,
@@ -1370,6 +1373,8 @@ def test_normalized_catalog_preview_saves_exact_variation(
     assert result["source_project_id"] == project["root_id"]
     assert result["result_project_id"] != project["root_id"]
     assert result["terminal_asset_id"] is not None
+    assert result["family_id"] is not None
+    assert result["variation_index"] == 2
     legacy_replay = client.post(
         preview_payload["candidate"]["save_as_variation_url"],
         json={
@@ -1398,6 +1403,8 @@ def test_normalized_catalog_preview_saves_exact_variation(
             "Rose catalog direction"
         )
         assert sibling is not None and sibling.root_id != project["root_id"]
+        assert sibling.family_id == result["family_id"]
+        assert sibling.variation_index == result["variation_index"]
         assert terminal is not None and terminal.root_id == sibling.root_id
 
 
@@ -1441,6 +1448,8 @@ def test_normalized_catalog_stale_discard_preserves_canonical_revision(
     )
     assert discarded.status_code == 200, discarded.text
     assert discarded.json()["status"] == "discarded"
+    assert discarded.json()["family_id"] is None
+    assert discarded.json()["variation_index"] is None
     assert _counts(SessionFactory) == before_discard
     with SessionFactory() as db:
         durable = db.get(PreviewCandidateRecord, candidate_id)
@@ -1448,6 +1457,104 @@ def test_normalized_catalog_stale_discard_preserves_canonical_revision(
         assert durable is not None and durable.status == "discarded"
         assert bytes(durable.image) == b""
         assert active is not None
+
+
+def test_normalized_catalog_decision_is_owner_scoped_and_exact_cas(
+    catalog_client,
+    example_spec,
+):
+    client, SessionFactory = catalog_client
+    project = _create_project(
+        client,
+        example_spec,
+        SessionFactory,
+        image=_textured_rgba_png(),
+    )
+    preview = client.post(
+        f"/assets/{project['active_asset_id']}/catalog/preview",
+        json=_request(execution_mode="instant"),
+    )
+    assert preview.status_code == 201, preview.text
+    candidate_id = preview.json()["candidate"]["candidate_id"]
+    before = _counts(SessionFactory)
+
+    foreign = client.post(
+        f"/studio/preview-candidates/{candidate_id}/decision",
+        json={
+            "created_by": "usr_someone_else",
+            "decision": "apply",
+            "expected_active_asset_id": project["active_asset_id"],
+            "expected_design_version": 1,
+        },
+    )
+    assert foreign.status_code == 404, foreign.text
+    assert foreign.json()["code"] == "preview_candidate_unavailable"
+
+    stale = client.post(
+        f"/studio/preview-candidates/{candidate_id}/decision",
+        json={
+            "created_by": "usr_catalog",
+            "decision": "apply",
+            "expected_active_asset_id": project["active_asset_id"],
+            "expected_design_version": 2,
+        },
+    )
+    assert stale.status_code == 409, stale.text
+    assert stale.json()["code"] == "preview_candidate_lineage_mismatch"
+    assert _counts(SessionFactory) == before
+    with SessionFactory() as db:
+        durable = db.get(PreviewCandidateRecord, candidate_id)
+        assert durable is not None and durable.status == "reviewing"
+        assert durable.terminal_asset_id is None
+
+
+def test_normalized_resolved_catalog_projection_fails_closed_on_invalid_spec(
+    catalog_client,
+    example_spec,
+):
+    client, SessionFactory = catalog_client
+    project = _create_project(
+        client,
+        example_spec,
+        SessionFactory,
+        image=_textured_rgba_png(),
+    )
+    preview = client.post(
+        f"/assets/{project['active_asset_id']}/catalog/preview",
+        json=_request(execution_mode="instant"),
+    )
+    assert preview.status_code == 201, preview.text
+    candidate_id = preview.json()["candidate"]["candidate_id"]
+    discarded = client.post(
+        f"/studio/preview-candidates/{candidate_id}/decision",
+        json={
+            "created_by": "usr_catalog",
+            "decision": "discard",
+            "expected_active_asset_id": project["active_asset_id"],
+            "expected_design_version": 1,
+        },
+    )
+    assert discarded.status_code == 200, discarded.text
+    before = _counts(SessionFactory)
+    with SessionFactory() as db:
+        durable = db.get(PreviewCandidateRecord, candidate_id)
+        assert durable is not None and durable.status == "discarded"
+        durable.payload = {**durable.payload, "next_spec": "not-a-specification"}
+        db.commit()
+
+    detail = client.get(
+        f"/studio/preview-candidates/{candidate_id}",
+        params={"owner": "usr_catalog"},
+    )
+    assert detail.status_code == 422, detail.text
+    assert detail.json()["code"] == "preview_candidate_payload_invalid"
+    listed = client.get(
+        f"/studio/projects/{project['root_id']}/preview-candidates",
+        params={"include_resolved": True},
+    )
+    assert listed.status_code == 200, listed.text
+    assert listed.json()["candidates"] == []
+    assert _counts(SessionFactory) == before
 
 
 @pytest.mark.parametrize("route", ("catalog/preview", "catalog/apply"))

@@ -41,6 +41,7 @@ import type {
   CreateProjectFromImageRequest,
   CreateProjectFromPromptRequest,
   CreateVisualPreviewRequest,
+  DecideStudioPreviewCandidateRequest,
   ExtractImageDraftRequest,
   ExtractCreativeCandidateDraftRequest,
   ExtractPlateDraftRequest,
@@ -134,6 +135,10 @@ import type {
   StudioJobRecord,
   StudioJobStatus,
   StudioProjectHistory,
+  StudioPreviewCandidate,
+  StudioPreviewCandidateDecision,
+  StudioPreviewCandidateDecisionResult,
+  StudioPreviewCandidateListResult,
   StudioCapabilities,
   StudioViewCandidateAcceptResult,
   StudioViewCandidateDecisionRequest,
@@ -1902,6 +1907,261 @@ const decodeCatalogSpecChanges = (value: unknown): SpecChange[] | null => {
   return decoded;
 };
 
+/**
+ * Catalog previews carry the exact canonical Spec that would be persisted on
+ * acceptance. Keep this check deliberately smaller than the backend Pydantic
+ * model, but require its complete identity envelope and the required center
+ * stone facts so an empty/placeholder object can never masquerade as a Spec.
+ */
+const decodeStudioCatalogNextSpec: Decoder<JsonObject> = (value) => {
+  const spec = decodeJsonObject(value);
+  if (spec === null) return null;
+  const version = number(spec.version);
+  const stone = isRecord(spec.stone) ? spec.stone : null;
+  const dimensions = stone !== null && isRecord(stone.dimensions_mm)
+    ? stone.dimensions_mm : null;
+  const color = stone !== null && isRecord(stone.color) ? stone.color : null;
+  const carat = stone === null ? null : number(stone.carat);
+  const length = dimensions === null ? null : number(dimensions.length);
+  const width = dimensions === null ? null : number(dimensions.width);
+  const depth = dimensions === null ? null : number(dimensions.depth);
+  if (
+    spec.schema_version !== 1
+    || nullableText(spec.design_id) === null
+    || version === null || !Number.isInteger(version) || version < 1
+    || nullableText(spec.created_by) === null
+    || nullableText(spec.created_at) === null
+    || Number.isNaN(Date.parse(spec.created_at as string))
+    || nullableText(spec.jewelry_type) === null
+    || nullableText(spec.template) === null
+    || (spec.mode !== 'basic' && spec.mode !== 'pro')
+    || stone === null
+    || nullableText(stone.species) === null
+    || nullableText(stone.cut) === null
+    || carat === null || carat <= 0
+    || dimensions === null
+    || length === null || length <= 0
+    || width === null || width <= 0
+    || depth === null || depth <= 0
+    || color === null
+    || nullableText(color.trade) === null
+    || nullableText(color.gia) === null
+  ) return null;
+  return spec;
+};
+
+const STUDIO_PREVIEW_DECISIONS: StudioPreviewCandidateDecision[] = [
+  'apply', 'save_as_variation', 'discard',
+];
+
+const studioPreviewStatus = (value: unknown): StudioPreviewCandidate['status'] | null => {
+  if (
+    value === 'reviewing' || value === 'applied' || value === 'saved_as_variation'
+    || value === 'discarded' || value === 'expired'
+  ) return value;
+  return null;
+};
+
+const decodeStudioPreviewCandidate = (
+  value: unknown,
+  baseUrl: string,
+  expectedOwner?: string,
+): StudioPreviewCandidate | null => {
+  if (!isRecord(value)) return null;
+  const candidateId = nullableText(value.candidate_id);
+  const status = studioPreviewStatus(value.status);
+  const imageRunId = nullableText(value.image_run_id);
+  const projectRootId = nullableText(value.project_root_id);
+  const sourceAssetId = nullableText(value.source_asset_id);
+  const expectedActiveAssetId = nullableText(value.expected_active_asset_id);
+  const sourceHash = nullableText(value.source_sha256);
+  const outputHash = nullableText(value.output_sha256);
+  const requestedChange = nullableText(value.requested_change);
+  const createdAt = nullableText(value.created_at);
+  const expiresAt = nullableText(value.expires_at);
+  const resolvedAt = value.resolved_at === null ? null : nullableText(value.resolved_at);
+  const studioJobId = value.studio_job_id === null ? null : nullableText(value.studio_job_id);
+  const terminalAssetId = value.terminal_asset_id === null
+    ? null : nullableText(value.terminal_asset_id);
+  const designVersion = value.expected_design_version === null
+    ? null : number(value.expected_design_version);
+  const verdict: 'pass' | 'warn' | null | undefined =
+    value.verdict === 'pass' || value.verdict === 'warn'
+    ? value.verdict : value.verdict === null ? null : undefined;
+  const qaRecord = isRecord(value.qa) ? value.qa : null;
+  const qa = decodeImageQualityReport(value.qa);
+  const previewUrl = nullableText(value.preview_url);
+  const decisionUrl = nullableText(value.decision_url);
+  const availableDecisions = Array.isArray(value.available_decisions)
+    ? value.available_decisions : null;
+  if (
+    candidateId === null || status === null || imageRunId === null || projectRootId === null
+    || sourceAssetId === null || expectedActiveAssetId === null
+    || sourceAssetId !== expectedActiveAssetId
+    || sourceHash === null || outputHash === null
+    || !/^[0-9a-f]{64}$/.test(sourceHash) || !/^[0-9a-f]{64}$/.test(outputHash)
+    || requestedChange === null || createdAt === null || expiresAt === null
+    || Number.isNaN(Date.parse(createdAt)) || Number.isNaN(Date.parse(expiresAt))
+    || (value.resolved_at !== null && (
+      resolvedAt === null || Number.isNaN(Date.parse(resolvedAt))
+    ))
+    || (value.studio_job_id !== null && studioJobId === null)
+    || (value.terminal_asset_id !== null && terminalAssetId === null)
+    || (value.expected_design_version !== null && (
+      designVersion === null || !Number.isInteger(designVersion) || designVersion < 1
+    ))
+    || verdict === undefined || availableDecisions === null
+    || previewUrl === null || decisionUrl === null
+  ) return null;
+
+  const expectedDecisions = status === 'reviewing' ? STUDIO_PREVIEW_DECISIONS : [];
+  const qaMatchesVerdict = verdict === null
+    ? qa === null
+    : qaRecord !== null && typeof qaRecord.accepted === 'boolean'
+      && typeof qaRecord.review_required === 'boolean'
+      && qa !== null && qa.verdict === verdict
+      && (verdict === 'pass'
+        ? qa.accepted && !qa.review_required
+        : !qa.accepted && qa.review_required);
+  if (
+    availableDecisions.length !== expectedDecisions.length
+    || availableDecisions.some((decision, index) => decision !== expectedDecisions[index])
+    || (status === 'reviewing' && (
+      verdict === null || !qaMatchesVerdict || terminalAssetId !== null
+      || resolvedAt !== null
+    ))
+    || (status !== 'reviewing' && (
+      !qaMatchesVerdict
+    ))
+    || ((status === 'applied' || status === 'saved_as_variation') && terminalAssetId === null)
+    || ((status === 'discarded' || status === 'expired') && terminalAssetId !== null)
+  ) return null;
+
+  const urls = normalizeStudioPreviewCandidateUrls(
+    candidateId, previewUrl, decisionUrl, baseUrl, expectedOwner,
+  );
+  if (urls === null) return null;
+  const base = {
+    candidate_id: candidateId,
+    status,
+    image_run_id: imageRunId,
+    project_root_id: projectRootId,
+    source_asset_id: sourceAssetId,
+    expected_active_asset_id: expectedActiveAssetId,
+    source_sha256: sourceHash,
+    output_sha256: outputHash,
+    requested_change: requestedChange,
+    verdict,
+    qa,
+    studio_job_id: studioJobId,
+    terminal_asset_id: terminalAssetId,
+    created_at: createdAt,
+    expires_at: expiresAt,
+    resolved_at: resolvedAt,
+    available_decisions: [...expectedDecisions],
+    preview_url: urls.previewUrl,
+    decision_url: urls.decisionUrl,
+  };
+  if (value.kind === 'visual') {
+    if (
+      designVersion !== null
+      || (value.scope !== 'appearance' && value.scope !== 'marked_region')
+    ) return null;
+    return { ...base, kind: 'visual', expected_design_version: null, scope: value.scope };
+  }
+  if (value.kind === 'catalog_revision') {
+    const componentPath = knownComponentCatalogPath(value.component_path);
+    const optionId = nullableText(value.option_id);
+    const specChange = decodeCatalogSpecChanges(value.spec_change);
+    const nextSpec = decodeStudioCatalogNextSpec(value.next_spec);
+    if (
+      designVersion === null || componentPath === null || optionId === null
+      || specChange === null || nextSpec === null
+    ) return null;
+    return {
+      ...base, kind: 'catalog_revision', expected_design_version: designVersion,
+      component_path: componentPath, option_id: optionId,
+      spec_change: specChange, next_spec: nextSpec,
+    };
+  }
+  if (value.kind === 'markup') {
+    const operation = value.operation === 'LOCAL_EDIT' || value.operation === 'VISUAL_ONLY_EDIT'
+      ? value.operation : null;
+    const regionDescription = nullableText(value.region_description);
+    if (designVersion === null || operation === null || regionDescription === null) return null;
+    return {
+      ...base, kind: 'markup', expected_design_version: designVersion,
+      operation, region_description: regionDescription,
+    };
+  }
+  return null;
+};
+
+const decodeStudioPreviewCandidateList = (
+  value: unknown,
+  baseUrl: string,
+  expectedOwner?: string,
+): StudioPreviewCandidateListResult | null => {
+  if (!isRecord(value) || !Array.isArray(value.candidates)) return null;
+  const candidates = value.candidates.map((candidate) => (
+    decodeStudioPreviewCandidate(candidate, baseUrl, expectedOwner)
+  ));
+  return candidates.every((candidate) => candidate !== null)
+    ? { candidates: candidates as StudioPreviewCandidate[] } : null;
+};
+
+const decodeStudioPreviewCandidateDecisionResult: Decoder<
+StudioPreviewCandidateDecisionResult
+> = (value) => {
+  if (!isRecord(value)) return null;
+  const hasFamilyId = Object.prototype.hasOwnProperty.call(value, 'family_id');
+  const hasVariationIndex = Object.prototype.hasOwnProperty.call(value, 'variation_index');
+  const status = value.status;
+  const candidateId = nullableText(value.candidate_id);
+  const kind = value.kind;
+  const sourceProjectId = nullableText(value.source_project_id);
+  const resultProjectId = nullableText(value.result_project_id);
+  const terminalAssetId = value.terminal_asset_id === null
+    ? null : nullableText(value.terminal_asset_id);
+  const studioJobId = value.studio_job_id === null ? null : nullableText(value.studio_job_id);
+  const familyId = value.family_id === null
+    ? null : nullableText(value.family_id);
+  const variationIndex = value.variation_index === null
+    ? null : number(value.variation_index);
+  if (
+    (status !== 'applied' && status !== 'saved_as_variation' && status !== 'discarded')
+    || candidateId === null
+    || (kind !== 'visual' && kind !== 'catalog_revision' && kind !== 'markup')
+    || sourceProjectId === null || resultProjectId === null
+    || !hasFamilyId || !hasVariationIndex
+    || (value.terminal_asset_id !== null && terminalAssetId === null)
+    || (value.studio_job_id !== null && studioJobId === null)
+    || (value.family_id !== null && familyId === null)
+    || (value.variation_index !== null && variationIndex === null)
+    || (status === 'saved_as_variation' && (
+      sourceProjectId === resultProjectId || terminalAssetId === null || familyId === null
+      || variationIndex === null || !Number.isInteger(variationIndex) || variationIndex < 2
+    ))
+    || (status !== 'saved_as_variation' && (
+      sourceProjectId !== resultProjectId || familyId !== null || variationIndex !== null
+    ))
+    || (status === 'applied' && terminalAssetId === null)
+    || (status === 'discarded' && terminalAssetId !== null)
+  ) return null;
+  if (status === 'saved_as_variation') return {
+    status, candidate_id: candidateId, kind,
+    source_project_id: sourceProjectId, result_project_id: resultProjectId,
+    terminal_asset_id: terminalAssetId as string, studio_job_id: studioJobId,
+    family_id: familyId as string, variation_index: variationIndex as number,
+  };
+  return {
+    status, candidate_id: candidateId, kind,
+    source_project_id: sourceProjectId, result_project_id: resultProjectId,
+    terminal_asset_id: terminalAssetId, studio_job_id: studioJobId,
+    family_id: null, variation_index: null,
+  };
+};
+
 export const decodeDraftCatalogSelectionResult: Decoder<
 DraftCatalogSelectionResult
 > = (value) => {
@@ -3317,6 +3577,40 @@ function resolveUrl(url: string, baseUrl: string): string {
   return /^https?:\/\//i.test(url) || url.startsWith('data:')
     ? url
     : `${baseUrl}${url.startsWith('/') ? '' : '/'}${url}`;
+}
+
+function normalizeStudioPreviewCandidateUrls(
+  candidateId: string,
+  previewUrl: string,
+  decisionUrl: string,
+  baseUrl: string,
+  expectedOwner?: string,
+): { previewUrl: string; decisionUrl: string } | null {
+  try {
+    const base = new URL(baseUrl);
+    const preview = new URL(previewUrl, `${baseUrl}/`);
+    const decision = new URL(decisionUrl, `${baseUrl}/`);
+    const root = `/studio/preview-candidates/${encodeURIComponent(candidateId)}`;
+    const ownerEntries = Array.from(preview.searchParams.entries());
+    const owner = ownerEntries.length === 1 && ownerEntries[0]?.[0] === 'owner'
+      ? ownerEntries[0][1] : null;
+    if (
+      (preview.protocol !== 'http:' && preview.protocol !== 'https:')
+      || preview.origin !== base.origin
+      || preview.username.length > 0 || preview.password.length > 0
+      || preview.hash.length > 0 || preview.pathname !== `${root}/image`
+      || owner === null || owner.length === 0
+      || (expectedOwner !== undefined && owner !== expectedOwner)
+      || (decision.protocol !== 'http:' && decision.protocol !== 'https:')
+      || decision.origin !== base.origin
+      || decision.username.length > 0 || decision.password.length > 0
+      || decision.search.length > 0 || decision.hash.length > 0
+      || decision.pathname !== `${root}/decision`
+    ) return null;
+    return { previewUrl: preview.toString(), decisionUrl: decision.toString() };
+  } catch {
+    return null;
+  }
 }
 
 function catalogApplyBody(request: CatalogApplyRequest): JsonObject {
@@ -5291,6 +5585,140 @@ export function createTrustedApiClient(options: TrustedApiClientOptions) {
               : `${baseUrl}${preview.startsWith('/') ? '' : '/'}${preview}`,
           },
         },
+      };
+    },
+
+    async listStudioPreviewCandidates(
+      projectId: string,
+      owner?: string,
+      includeResolved = false,
+    ): Promise<ApiResult<StudioPreviewCandidateListResult>> {
+      const normalizedProjectId = projectId.trim();
+      const normalizedOwner = owner?.trim();
+      if (
+        normalizedProjectId.length === 0
+        || (owner !== undefined && normalizedOwner?.length === 0)
+      ) return {
+        data: null,
+        error: {
+          code: 'INVALID_STUDIO_PREVIEW_REQUEST',
+          message: 'A project and non-empty owner are required to list Studio previews.',
+          category: 'validation', status: 0, retryable: false,
+        },
+        status: 0,
+      };
+      const query = includeResolved ? '?include_resolved=true' : '';
+      const result = await call(
+        `/studio/projects/${encodeURIComponent(normalizedProjectId)}/preview-candidates${query}`,
+        (value) => decodeStudioPreviewCandidateList(value, baseUrl, normalizedOwner),
+      );
+      if (
+        result.error !== null
+        || result.data.candidates.every((candidate) => (
+          candidate.project_root_id === normalizedProjectId
+          && (includeResolved || candidate.status === 'reviewing')
+        ))
+      ) return result;
+      return {
+        data: null,
+        error: {
+          code: 'INVALID_RESPONSE',
+          message: 'The Studio preview list returned inconsistent project lineage.',
+          category: 'decode', status: result.status, retryable: false,
+        },
+        status: result.status,
+      };
+    },
+
+    async getStudioPreviewCandidate(
+      candidateId: string,
+      owner?: string,
+    ): Promise<ApiResult<StudioPreviewCandidate>> {
+      const normalizedCandidateId = candidateId.trim();
+      const normalizedOwner = owner?.trim();
+      if (
+        normalizedCandidateId.length === 0
+        || (owner !== undefined && normalizedOwner?.length === 0)
+      ) return {
+        data: null,
+        error: {
+          code: 'INVALID_STUDIO_PREVIEW_REQUEST',
+          message: 'A candidate and non-empty owner are required to read a Studio preview.',
+          category: 'validation', status: 0, retryable: false,
+        },
+        status: 0,
+      };
+      const query = normalizedOwner === undefined
+        ? '' : `?owner=${encodeURIComponent(normalizedOwner)}`;
+      const result = await call(
+        `/studio/preview-candidates/${encodeURIComponent(normalizedCandidateId)}${query}`,
+        (value) => decodeStudioPreviewCandidate(value, baseUrl, normalizedOwner),
+      );
+      if (result.error !== null || result.data.candidate_id === normalizedCandidateId) return result;
+      return {
+        data: null,
+        error: {
+          code: 'INVALID_RESPONSE',
+          message: 'The Studio preview endpoint returned a different candidate.',
+          category: 'decode', status: result.status, retryable: false,
+        },
+        status: result.status,
+      };
+    },
+
+    async decideStudioPreviewCandidate(
+      candidateId: string,
+      request: DecideStudioPreviewCandidateRequest,
+    ): Promise<ApiResult<StudioPreviewCandidateDecisionResult>> {
+      const normalizedCandidateId = candidateId.trim();
+      const actor = request.created_by.trim();
+      const expectedAssetId = request.expected_active_asset_id.trim();
+      const label = request.decision === 'save_as_variation'
+        ? request.variation_label.trim() : null;
+      if (
+        normalizedCandidateId.length === 0 || actor.length === 0 || expectedAssetId.length === 0
+        || (request.expected_design_version !== null && (
+          !Number.isInteger(request.expected_design_version)
+          || request.expected_design_version < 1
+        ))
+        || (request.decision === 'save_as_variation' && label?.length === 0)
+        || (request.decision !== 'save_as_variation' && 'variation_label' in request)
+      ) return {
+        data: null,
+        error: {
+          code: 'INVALID_STUDIO_PREVIEW_DECISION',
+          message: 'The Studio preview decision is incomplete or inconsistent.',
+          category: 'validation', status: 0, retryable: false,
+        },
+        status: 0,
+      };
+      const result = await jsonCall(
+        `/studio/preview-candidates/${encodeURIComponent(normalizedCandidateId)}/decision`,
+        'POST', {
+          created_by: actor,
+          decision: request.decision,
+          expected_active_asset_id: expectedAssetId,
+          expected_design_version: request.expected_design_version,
+          ...(label === null ? {} : { variation_label: label }),
+        },
+        decodeStudioPreviewCandidateDecisionResult,
+      );
+      const expectedStatus = request.decision === 'apply'
+        ? 'applied'
+        : request.decision === 'save_as_variation' ? 'saved_as_variation' : 'discarded';
+      if (
+        result.error !== null
+        || (result.status === 200 && result.data.candidate_id === normalizedCandidateId
+          && result.data.status === expectedStatus)
+      ) return result;
+      return {
+        data: null,
+        error: {
+          code: 'INVALID_RESPONSE',
+          message: 'The Studio preview decision returned inconsistent resolution metadata.',
+          category: 'decode', status: result.status, retryable: false,
+        },
+        status: result.status,
       };
     },
 

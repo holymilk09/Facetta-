@@ -32,6 +32,8 @@ import type {
   StudioJobAction,
   StudioJobRecord,
   StudioMarkupResumeCandidate,
+  StudioPreviewCandidate as TrustedStudioPreviewCandidate,
+  StudioPreviewCandidateDecisionResult as TrustedStudioPreviewDecisionResult,
   StudioFactPath,
 } from '../trusted/types';
 import { getStudioAction } from './actions';
@@ -355,7 +357,12 @@ type GatewayTrustedClient = Pick<TrustedApiClient,
   | 'discardPreSpecPresentation'
   | 'confirmCreativeCandidateDesign'
   | 'promoteCreativeCandidate'
-> & Partial<Pick<TrustedApiClient, 'getStudioCapabilities'>>;
+> & Partial<Pick<TrustedApiClient,
+  | 'getStudioCapabilities'
+  | 'listStudioPreviewCandidates'
+  | 'getStudioPreviewCandidate'
+  | 'decideStudioPreviewCandidate'
+>>;
 
 export interface StudioGatewayOptions {
   now?: () => Date;
@@ -514,14 +521,16 @@ export function createStudioGateway(
   // selection endpoint, and Activity supplies it again after a restart.
   const creativeJobs = new Map<string, ActiveStudioJob>();
   const catalogCandidates = new Map<string, {
-    trusted: CatalogPreviewCandidate;
+    trusted: CatalogPreviewCandidate | null;
+    normalized: TrustedStudioPreviewCandidate | null;
     preview: PreviewCandidate;
     lineage: ExactStudioLineage;
     proposedSpec: JsonObject;
     studioJob: ActiveStudioJob | null;
   }>();
   const markupCandidates = new Map<string, {
-    trusted: StudioMarkupResumeCandidate;
+    trusted: StudioMarkupResumeCandidate | null;
+    normalized: TrustedStudioPreviewCandidate | null;
     runId: string;
     candidateId: string;
     preview: PreviewCandidate;
@@ -615,7 +624,8 @@ export function createStudioGateway(
   };
   const visualCandidates = new Map<string, {
     runId: string;
-    saveAsVariationUrl: string;
+    saveAsVariationUrl: string | null;
+    normalized: TrustedStudioPreviewCandidate | null;
     preview: StudioVisualPreview;
     studioJob: ActiveStudioJob | null;
   }>();
@@ -628,6 +638,126 @@ export function createStudioGateway(
     studioJob: ActiveStudioJob | null;
     status: 'pending_review' | 'accepted' | 'discarded';
   }>();
+
+  const decideThroughUnifiedPreviewSeam = async (request: {
+    candidateId: string;
+    kind: TrustedStudioPreviewCandidate['kind'];
+    lineage: ExactStudioLineage | StudioVisualLineage;
+    studioJob: ActiveStudioJob | null;
+    createdBy: string;
+    decision: 'apply' | 'save_as_variation' | 'discard';
+    variationLabel?: string;
+  }): Promise<StudioGatewayResult<{
+    resolution: TrustedStudioPreviewDecisionResult;
+    project: ProjectDetail | null;
+  }> | null> => {
+    if (typeof client.decideStudioPreviewCandidate !== 'function') return null;
+    const expectedDesignVersion = 'sourceDesignVersion' in request.lineage
+      ? request.lineage.sourceDesignVersion : null;
+    const result = request.decision === 'save_as_variation'
+      ? await client.decideStudioPreviewCandidate(request.candidateId, {
+        created_by: request.createdBy,
+        decision: 'save_as_variation',
+        expected_active_asset_id: request.lineage.sourceAssetId,
+        expected_design_version: expectedDesignVersion,
+        variation_label: request.variationLabel ?? '',
+      })
+      : await client.decideStudioPreviewCandidate(request.candidateId, {
+        created_by: request.createdBy,
+        decision: request.decision,
+        expected_active_asset_id: request.lineage.sourceAssetId,
+        expected_design_version: expectedDesignVersion,
+      });
+    if (result.error !== null) return {
+      data: null, error: mapError(result.error), status: result.status,
+    };
+    const expectedStatus = request.decision === 'apply'
+      ? 'applied'
+      : request.decision === 'save_as_variation' ? 'saved_as_variation' : 'discarded';
+    const expectedJobId = request.studioJob?.jobId ?? null;
+    const resolution = result.data;
+    if (
+      resolution.status !== expectedStatus
+      || resolution.candidate_id !== request.candidateId
+      || resolution.kind !== request.kind
+      || resolution.source_project_id !== request.lineage.projectId
+      || resolution.studio_job_id !== expectedJobId
+    ) return gatewayError(
+      'INVALID_PREVIEW_DECISION_LINEAGE',
+      'The preview decision returned inconsistent candidate or Activity lineage.',
+      'invalid_response', result.status,
+    );
+    if (request.decision === 'discard') {
+      if (
+        resolution.result_project_id !== request.lineage.projectId
+        || resolution.terminal_asset_id !== null
+      ) return gatewayError(
+        'INVALID_PREVIEW_DISCARD_LINEAGE',
+        'Discarding the preview unexpectedly changed design history.',
+        'invalid_response', result.status,
+      );
+      return { data: { resolution, project: null }, error: null, status: result.status };
+    }
+    if (
+      resolution.terminal_asset_id === null
+      || (request.decision === 'apply'
+        ? resolution.result_project_id !== request.lineage.projectId
+        : resolution.result_project_id === request.lineage.projectId)
+    ) return gatewayError(
+      'INVALID_PREVIEW_DECISION_LINEAGE',
+      'The preview decision did not return the expected immutable result.',
+      'invalid_response', result.status,
+    );
+    const loaded = await client.getProject(resolution.result_project_id);
+    if (loaded.error !== null) return {
+      data: null, error: mapError(loaded.error), status: loaded.status,
+    };
+    const expectedVersion = request.kind === 'visual'
+      ? null
+      : request.decision === 'apply'
+        ? ('sourceDesignVersion' in request.lineage
+          ? request.lineage.sourceDesignVersion + 1 : null)
+        : 1;
+    if (
+      loaded.data.root_id !== resolution.result_project_id
+      || loaded.data.owner !== request.createdBy
+      || loaded.data.active_asset_id !== resolution.terminal_asset_id
+      || loaded.data.active_design_version !== expectedVersion
+    ) return gatewayError(
+      'INVALID_PREVIEW_RESULT_PROJECT',
+      'The resolved preview project does not match its immutable result metadata.',
+      'invalid_response', loaded.status,
+    );
+    if (request.decision === 'save_as_variation') {
+      if (resolution.status !== 'saved_as_variation') return gatewayError(
+        'INVALID_PREVIEW_VARIATION_LINEAGE',
+        'The variation response did not include canonical family membership.',
+        'invalid_response', result.status,
+      );
+      const family = await client.getDesignFamily(resolution.family_id);
+      if (family.error !== null) return {
+        data: null, error: mapError(family.error), status: family.status,
+      };
+      const matchingVariations = family.data.variations.filter((variation) => (
+        variation.root_id === resolution.result_project_id
+        && variation.variation_index === resolution.variation_index
+      ));
+      if (
+        family.data.family_id !== resolution.family_id
+        || family.data.owner !== request.createdBy
+        || matchingVariations.length !== 1
+        || matchingVariations[0].branched_from_project_root_id !== request.lineage.projectId
+        || matchingVariations[0].branched_from_asset_id !== request.lineage.sourceAssetId
+      ) return gatewayError(
+        'INVALID_PREVIEW_VARIATION_LINEAGE',
+        'The variation response did not preserve canonical family and branch lineage.',
+        'invalid_response', family.status,
+      );
+    }
+    return {
+      data: { resolution, project: loaded.data }, error: null, status: result.status,
+    };
+  };
 
   const requireCandidate = (candidateId: string) => catalogCandidates.get(candidateId) ?? null;
 
@@ -1520,6 +1650,122 @@ export function createStudioGateway(
         'conflict', 409,
       );
 
+      // The production client reviews every temporary Refine output through
+      // one discriminated seam. The kind-specific branch below remains only
+      // as a transitional adapter for injected historical clients.
+      if (typeof client.listStudioPreviewCandidates === 'function') {
+        const result = await client.listStudioPreviewCandidates(
+          lineage.projectId, createdBy, false,
+        );
+        if (result.error !== null) return {
+          data: null, error: mapError(result.error), status: result.status,
+        };
+        const matchingLineage = result.data.candidates.filter((item) => (
+          item.status === 'reviewing'
+          && item.project_root_id === lineage.projectId
+          && item.source_asset_id === lineage.sourceAssetId
+          && item.expected_active_asset_id === lineage.sourceAssetId
+          && ('sourceDesignVersion' in lineage
+            ? item.kind !== 'visual'
+              && item.expected_design_version === lineage.sourceDesignVersion
+            : item.kind === 'visual' && item.expected_design_version === null)
+        ));
+        const jobBoundCandidates = matchingLineage.filter((item) => (
+          matchingJob !== null && item.studio_job_id === matchingJob.job_id
+        ));
+        if (
+          matchingJob !== null
+          && matchingJob.billing.requested_outputs === 1
+          && jobBoundCandidates.length > 1
+        ) return gatewayError(
+          'AMBIGUOUS_REFINE_PREVIEW',
+          'This one-output Activity job has multiple exact preview candidates.',
+          'invalid_response', result.status,
+        );
+        const latest = jobBoundCandidates
+          .sort((left, right) => (
+            Date.parse(left.expires_at) - Date.parse(right.expires_at)
+            || left.candidate_id.localeCompare(right.candidate_id)
+          )).at(-1);
+        if (matchingLineage.length > 0 && latest === undefined) return gatewayError(
+          'RESUME_REFINE_JOB_MISMATCH',
+          'This pending preview is not bound to its exact Activity request.',
+          'conflict', 409,
+        );
+        if (latest === undefined) return { data: null, error: null, status: result.status };
+        if (latest.qa === null || latest.verdict === null) return gatewayError(
+          'INVALID_PREVIEW_QUALITY_EVIDENCE',
+          'This pending preview is missing required quality evidence.',
+          'invalid_response', result.status,
+        );
+        const candidate: PreviewCandidate = {
+          id: latest.candidate_id,
+          jobId: latest.image_run_id,
+          sourceRevisionId: lineage.sourceAssetId,
+          assetUrl: latest.preview_url,
+          verdict: latest.verdict,
+          status: 'pending_review',
+          checks: qualityPreviewChecks(latest.qa),
+          temporary: true,
+          expiresAt: latest.expires_at,
+          decision: null,
+          decidedAt: null,
+          canonicalRevisionId: null,
+        };
+        if (latest.kind === 'visual' && !('sourceDesignVersion' in lineage)) {
+          visualCandidates.set(candidate.id, {
+            runId: latest.image_run_id,
+            saveAsVariationUrl: null,
+            normalized: latest,
+            preview: {
+              candidate, lineage,
+              instruction: latest.requested_change,
+              scope: latest.scope,
+            },
+            studioJob,
+          });
+        } else if (latest.kind === 'catalog_revision' && 'sourceDesignVersion' in lineage) {
+          catalogCandidates.set(candidate.id, {
+            trusted: null,
+            normalized: latest,
+            preview: candidate,
+            lineage,
+            proposedSpec: latest.next_spec,
+            studioJob,
+          });
+        } else if (latest.kind === 'markup' && 'sourceDesignVersion' in lineage) {
+          markupCandidates.set(candidate.id, {
+            trusted: null,
+            normalized: latest,
+            runId: latest.image_run_id,
+            candidateId: latest.candidate_id,
+            preview: candidate,
+            lineage,
+            studioJob,
+          });
+        } else {
+          return gatewayError(
+            'RESUME_REFINE_LINEAGE_MISMATCH',
+            'The pending preview does not belong to this revision authority.',
+            'conflict', 409,
+          );
+        }
+        const kind = latest.kind === 'catalog_revision' ? 'catalog' : latest.kind;
+        return {
+          data: {
+            candidate,
+            kind,
+            understoodAs: kind === 'visual'
+              ? 'A pending visual preview was restored for review.'
+              : kind === 'markup'
+                ? 'A pending marked-region preview was restored for review.'
+                : 'A pending component preview was restored for review.',
+          },
+          error: null,
+          status: result.status,
+        };
+      }
+
       if ('sourceDesignVersion' in lineage) {
         const markupResult = typeof client.listStudioMarkupCandidates === 'function'
           ? await client.listStudioMarkupCandidates(lineage.projectId) : null;
@@ -1555,7 +1801,7 @@ export function createStudioGateway(
             decision: null, decidedAt: null, canonicalRevisionId: null,
           };
           markupCandidates.set(candidate.id, {
-            trusted: latestMarkup, runId: latestMarkup.image_run_id,
+            trusted: latestMarkup, normalized: null, runId: latestMarkup.image_run_id,
             candidateId: latestMarkup.candidate_id, preview: candidate, lineage, studioJob,
           });
           return {
@@ -1620,7 +1866,7 @@ export function createStudioGateway(
           decision: null, decidedAt: null, canonicalRevisionId: null,
         };
         catalogCandidates.set(candidate.id, {
-          trusted: latest.candidate, preview: candidate, lineage,
+          trusted: latest.candidate, normalized: null, preview: candidate, lineage,
           proposedSpec: latest.next_spec, studioJob: catalogStudioJob,
         });
         return {
@@ -1673,6 +1919,7 @@ export function createStudioGateway(
       visualCandidates.set(candidate.id, {
         runId: latest.image_run_id,
         saveAsVariationUrl: latest.save_as_variation_url,
+        normalized: null,
         preview: {
           candidate, lineage,
           instruction: latest.requested_change,
@@ -1785,6 +2032,7 @@ export function createStudioGateway(
       visualCandidates.set(candidate.id, {
         runId: result.data.image_run_id,
         saveAsVariationUrl: trustedCandidate.save_as_variation_url,
+        normalized: null,
         preview,
         studioJob: started.data,
       });
@@ -1809,6 +2057,31 @@ export function createStudioGateway(
         'quality', 422,
       );
       const lineage = stored.preview.lineage;
+      const unified = await decideThroughUnifiedPreviewSeam({
+        candidateId: request.candidateId,
+        kind: 'visual',
+        lineage,
+        studioJob: stored.studioJob,
+        createdBy: request.createdBy,
+        decision: 'apply',
+      });
+      if (unified !== null) {
+        if (unified.error !== null) return unified;
+        const project = unified.data.project;
+        const terminalAssetId = unified.data.resolution.terminal_asset_id;
+        if (project === null || terminalAssetId === null || terminalAssetId === lineage.sourceAssetId) {
+          return gatewayError(
+            'INVALID_VISUAL_ACCEPT_LINEAGE',
+            'Applying the preview did not append the expected pre-spec image revision.',
+            'invalid_response', unified.status,
+          );
+        }
+        const candidate = decidePreviewCandidate(
+          stored.preview.candidate, 'apply', now().toISOString(), terminalAssetId,
+        );
+        stored.preview = { ...stored.preview, candidate };
+        return { data: { candidate, project }, error: null, status: unified.status };
+      }
       const result = await callTracked(stored.studioJob, () => client.acceptVisualPreview(
         stored.runId,
         stored.preview.candidate.id,
@@ -1850,6 +2123,22 @@ export function createStudioGateway(
         'CANDIDATE_NOT_REVIEWABLE', 'This visual preview already has a final decision.', 'conflict', 409,
       );
       const lineage = stored.preview.lineage;
+      const unified = await decideThroughUnifiedPreviewSeam({
+        candidateId: request.candidateId,
+        kind: 'visual',
+        lineage,
+        studioJob: stored.studioJob,
+        createdBy: request.createdBy,
+        decision: 'discard',
+      });
+      if (unified !== null) {
+        if (unified.error !== null) return unified;
+        const candidate = decidePreviewCandidate(
+          stored.preview.candidate, 'discard', now().toISOString(),
+        );
+        stored.preview = { ...stored.preview, candidate };
+        return { data: { candidate, project: null }, error: null, status: unified.status };
+      }
       const result = await callTracked(stored.studioJob, () => client.discardVisualPreview(
         stored.runId,
         stored.preview.candidate.id,
@@ -1904,8 +2193,54 @@ export function createStudioGateway(
         'The immutable source revision for this result is unavailable.',
         'conflict', 409,
       );
+      const unified = await decideThroughUnifiedPreviewSeam({
+        candidateId: request.candidateId,
+        kind: 'visual',
+        lineage,
+        studioJob: stored.studioJob,
+        createdBy: request.createdBy,
+        decision: 'save_as_variation',
+        variationLabel: label,
+      });
+      if (unified !== null) {
+        if (unified.error !== null) return unified;
+        const sourceAfter = await client.getProject(lineage.projectId);
+        const resolution = unified.data.resolution;
+        const project = unified.data.project;
+        if (
+          sourceAfter.error !== null
+          || project === null
+          || resolution.status !== 'saved_as_variation'
+          || !sameCanonicalSourceState(sourceBefore.data, sourceAfter.data)
+        ) return gatewayError(
+          'INVALID_VISUAL_VARIATION_LINEAGE',
+          'The saved variation did not preserve the selected source revision.',
+          'invalid_response', unified.status,
+        );
+        const candidate = decidePreviewCandidate(
+          stored.preview.candidate, 'save_as_variation', now().toISOString(),
+          resolution.terminal_asset_id,
+        );
+        visualCandidates.delete(request.candidateId);
+        return {
+          data: {
+            candidate,
+            project,
+            familyId: resolution.family_id,
+            variationIndex: resolution.variation_index,
+          },
+          error: null,
+          status: unified.status,
+        };
+      }
+      const saveAsVariationUrl = stored.saveAsVariationUrl;
+      if (saveAsVariationUrl === null) return gatewayError(
+        'STUDIO_PREVIEW_SEAM_UNAVAILABLE',
+        'This restored preview requires the unified decision service.',
+        'unavailable', 503, true,
+      );
       const result = await callTracked(stored.studioJob, () => client.saveVisualPreviewAsVariation(
-        stored.runId, stored.preview.candidate.id, stored.saveAsVariationUrl,
+        stored.runId, stored.preview.candidate.id, saveAsVariationUrl,
         { created_by: request.createdBy, label },
       ));
       if (result.error !== null) return result;
@@ -2039,6 +2374,7 @@ export function createStudioGateway(
       };
       catalogCandidates.set(candidate.id, {
         trusted: result.data.candidate,
+        normalized: null,
         preview: candidate,
         lineage,
         proposedSpec: result.data.next_spec,
@@ -2068,6 +2404,38 @@ export function createStudioGateway(
       );
       if (stored.preview.status !== 'pending_review') return gatewayError(
         'CANDIDATE_NOT_REVIEWABLE', 'This preview already has a final decision.', 'conflict', 409,
+      );
+      const unified = await decideThroughUnifiedPreviewSeam({
+        candidateId: request.candidateId,
+        kind: 'catalog_revision',
+        lineage: stored.lineage,
+        studioJob: stored.studioJob,
+        createdBy: request.createdBy,
+        decision: 'apply',
+      });
+      if (unified !== null) {
+        if (unified.error !== null) return unified;
+        const project = unified.data.project;
+        const terminalAssetId = unified.data.resolution.terminal_asset_id;
+        if (
+          project === null
+          || terminalAssetId === null
+          || !preservesProposedSpec(project.spec, stored.proposedSpec)
+        ) return gatewayError(
+          'INVALID_ACCEPT_LINEAGE',
+          'The accepted preview did not preserve the proposed specification.',
+          'invalid_response', unified.status,
+        );
+        const candidate = decidePreviewCandidate(
+          stored.preview, 'apply', now().toISOString(), terminalAssetId,
+        );
+        stored.preview = candidate;
+        return { data: { candidate, project }, error: null, status: unified.status };
+      }
+      if (stored.trusted === null) return gatewayError(
+        'STUDIO_PREVIEW_SEAM_UNAVAILABLE',
+        'This restored preview requires the unified decision service.',
+        'unavailable', 503, true,
       );
       const result = await client.acceptCatalogPreview(
         stored.trusted,
@@ -2110,6 +2478,27 @@ export function createStudioGateway(
       if (stored.preview.status !== 'pending_review') return gatewayError(
         'CANDIDATE_NOT_REVIEWABLE', 'This preview already has a final decision.', 'conflict', 409,
       );
+      const unified = await decideThroughUnifiedPreviewSeam({
+        candidateId: request.candidateId,
+        kind: 'catalog_revision',
+        lineage: stored.lineage,
+        studioJob: stored.studioJob,
+        createdBy: request.createdBy,
+        decision: 'discard',
+      });
+      if (unified !== null) {
+        if (unified.error !== null) return unified;
+        const candidate = decidePreviewCandidate(
+          stored.preview, 'discard', now().toISOString(),
+        );
+        stored.preview = candidate;
+        return { data: { candidate, project: null }, error: null, status: unified.status };
+      }
+      if (stored.trusted === null) return gatewayError(
+        'STUDIO_PREVIEW_SEAM_UNAVAILABLE',
+        'This restored preview requires the unified decision service.',
+        'unavailable', 503, true,
+      );
       const result = await client.discardCatalogPreview(stored.trusted);
       if (result.error !== null) return {
         data: null, error: mapError(result.error), status: result.status,
@@ -2141,6 +2530,52 @@ export function createStudioGateway(
         'STUDIO_REVIEW_SOURCE_UNAVAILABLE',
         'The immutable source revision for this result is unavailable.',
         'conflict', 409,
+      );
+      const unified = await decideThroughUnifiedPreviewSeam({
+        candidateId: request.candidateId,
+        kind: 'catalog_revision',
+        lineage: stored.lineage,
+        studioJob: stored.studioJob,
+        createdBy: request.createdBy,
+        decision: 'save_as_variation',
+        variationLabel: label,
+      });
+      if (unified !== null) {
+        if (unified.error !== null) return unified;
+        const sourceAfter = await client.getProject(stored.lineage.projectId);
+        const resolution = unified.data.resolution;
+        const project = unified.data.project;
+        if (
+          sourceAfter.error !== null
+          || project === null
+          || resolution.status !== 'saved_as_variation'
+          || !sameCanonicalSourceState(sourceBefore.data, sourceAfter.data)
+          || !preservesProposedSpec(project.spec, stored.proposedSpec)
+        ) return gatewayError(
+          'INVALID_CATALOG_VARIATION_LINEAGE',
+          'The saved variation did not preserve the proposed specification and source revision.',
+          'invalid_response', unified.status,
+        );
+        const candidate = decidePreviewCandidate(
+          stored.preview, 'save_as_variation', now().toISOString(),
+          resolution.terminal_asset_id,
+        );
+        catalogCandidates.delete(request.candidateId);
+        return {
+          data: {
+            candidate,
+            project,
+            familyId: resolution.family_id,
+            variationIndex: resolution.variation_index,
+          },
+          error: null,
+          status: unified.status,
+        };
+      }
+      if (stored.trusted === null) return gatewayError(
+        'STUDIO_PREVIEW_SEAM_UNAVAILABLE',
+        'This restored preview requires the unified decision service.',
+        'unavailable', 503, true,
       );
       const result = await client.saveCatalogPreviewAsVariation(
         stored.trusted, { created_by: request.createdBy, label },
@@ -2259,6 +2694,7 @@ export function createStudioGateway(
       };
       markupCandidates.set(candidate.id, {
         trusted,
+        normalized: null,
         runId: warning.run_id,
         candidateId: warning.candidate_id,
         preview: candidate,
@@ -2288,6 +2724,34 @@ export function createStudioGateway(
       );
       if (stored.preview.verdict === 'reject') return gatewayError(
         'CANDIDATE_REJECTED', 'A rejected preview cannot become design history.', 'quality', 422,
+      );
+      const unified = await decideThroughUnifiedPreviewSeam({
+        candidateId: request.candidateId,
+        kind: 'markup',
+        lineage: stored.lineage,
+        studioJob: stored.studioJob,
+        createdBy: request.createdBy,
+        decision: 'apply',
+      });
+      if (unified !== null) {
+        if (unified.error !== null) return unified;
+        const project = unified.data.project;
+        const terminalAssetId = unified.data.resolution.terminal_asset_id;
+        if (project === null || terminalAssetId === null) return gatewayError(
+          'INVALID_ACCEPT_LINEAGE',
+          'The accepted preview did not append a new exact revision.',
+          'invalid_response', unified.status,
+        );
+        const candidate = decidePreviewCandidate(
+          stored.preview, 'apply', now().toISOString(), terminalAssetId,
+        );
+        stored.preview = candidate;
+        return { data: { candidate, project }, error: null, status: unified.status };
+      }
+      if (stored.trusted === null) return gatewayError(
+        'STUDIO_PREVIEW_SEAM_UNAVAILABLE',
+        'This restored preview requires the unified decision service.',
+        'unavailable', 503, true,
       );
       const result = await client.acceptStudioMarkupCandidate(stored.trusted, {
         expected_active_asset_id: stored.lineage.sourceAssetId,
@@ -2323,6 +2787,27 @@ export function createStudioGateway(
       );
       if (stored.preview.status !== 'pending_review') return gatewayError(
         'CANDIDATE_NOT_REVIEWABLE', 'This preview already has a final decision.', 'conflict', 409,
+      );
+      const unified = await decideThroughUnifiedPreviewSeam({
+        candidateId: request.candidateId,
+        kind: 'markup',
+        lineage: stored.lineage,
+        studioJob: stored.studioJob,
+        createdBy: request.createdBy,
+        decision: 'discard',
+      });
+      if (unified !== null) {
+        if (unified.error !== null) return unified;
+        const candidate = decidePreviewCandidate(
+          stored.preview, 'discard', now().toISOString(),
+        );
+        stored.preview = candidate;
+        return { data: { candidate, project: null }, error: null, status: unified.status };
+      }
+      if (stored.trusted === null) return gatewayError(
+        'STUDIO_PREVIEW_SEAM_UNAVAILABLE',
+        'This restored preview requires the unified decision service.',
+        'unavailable', 503, true,
       );
       const result = await client.discardStudioMarkupCandidate(stored.trusted, {
         expected_active_asset_id: stored.lineage.sourceAssetId,
@@ -2361,6 +2846,51 @@ export function createStudioGateway(
         'STUDIO_REVIEW_SOURCE_UNAVAILABLE',
         'The immutable source revision for this result is unavailable.',
         'conflict', 409,
+      );
+      const unified = await decideThroughUnifiedPreviewSeam({
+        candidateId: request.candidateId,
+        kind: 'markup',
+        lineage: stored.lineage,
+        studioJob: stored.studioJob,
+        createdBy: request.createdBy,
+        decision: 'save_as_variation',
+        variationLabel: label,
+      });
+      if (unified !== null) {
+        if (unified.error !== null) return unified;
+        const sourceAfter = await client.getProject(stored.lineage.projectId);
+        const resolution = unified.data.resolution;
+        const project = unified.data.project;
+        if (
+          sourceAfter.error !== null
+          || project === null
+          || resolution.status !== 'saved_as_variation'
+          || !sameCanonicalSourceState(sourceBefore.data, sourceAfter.data)
+        ) return gatewayError(
+          'INVALID_MARKUP_VARIATION_LINEAGE',
+          'The saved variation did not preserve the exact source revision.',
+          'invalid_response', unified.status,
+        );
+        const candidate = decidePreviewCandidate(
+          stored.preview, 'save_as_variation', now().toISOString(),
+          resolution.terminal_asset_id,
+        );
+        markupCandidates.delete(request.candidateId);
+        return {
+          data: {
+            candidate,
+            project,
+            familyId: resolution.family_id,
+            variationIndex: resolution.variation_index,
+          },
+          error: null,
+          status: unified.status,
+        };
+      }
+      if (stored.trusted === null) return gatewayError(
+        'STUDIO_PREVIEW_SEAM_UNAVAILABLE',
+        'This restored preview requires the unified decision service.',
+        'unavailable', 503, true,
       );
       const result = await client.saveStudioMarkupPreviewAsVariation(stored.trusted, {
         created_by: request.createdBy, label,

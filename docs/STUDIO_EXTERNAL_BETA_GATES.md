@@ -304,7 +304,12 @@ cannot emit `external_beta_ready`.
 Use two already-seeded, distinct Supabase principals. Each must own a different
 canonical project, Design Family, image asset, Studio job, and one fresh,
 QA-valid reviewing candidate in each of the catalog, visual, markup, view, and
-presentation stores in the deployed production-filtered staging API. Recycle
+presentation stores in the deployed production-filtered staging API. Each
+principal also needs a separate normalized preview candidate that was already
+discarded before the probe, with its exact active-asset and specification
+version guards retained. The probe replays the same terminal `discard`
+decision idempotently; it does not generate, accept, branch, charge, or create
+a new canonical revision. Recycle
 every API replica after seeding, then run the probe read-only. The candidate
 fixtures must remain fresh for the whole probe so no GET performs expiry or
 reconciliation writes.
@@ -322,12 +327,14 @@ FACETTA_STAGING_USER_A_FAMILY_ID
 FACETTA_STAGING_USER_A_ASSET_ID
 FACETTA_STAGING_USER_A_JOB_ID
 FACETTA_STAGING_USER_A_CANDIDATE_FIXTURES_JSON
+FACETTA_STAGING_USER_A_NORMALIZED_DECISION_FIXTURE_JSON
 FACETTA_STAGING_USER_B_ACCESS_TOKEN
 FACETTA_STAGING_USER_B_PROJECT_ID
 FACETTA_STAGING_USER_B_FAMILY_ID
 FACETTA_STAGING_USER_B_ASSET_ID
 FACETTA_STAGING_USER_B_JOB_ID
 FACETTA_STAGING_USER_B_CANDIDATE_FIXTURES_JSON
+FACETTA_STAGING_USER_B_NORMALIZED_DECISION_FIXTURE_JSON
 ```
 
 Each candidate-fixtures value is a JSON object with exactly `catalog`,
@@ -337,6 +344,16 @@ the pre-seeded candidate's `run_id`, `candidate_id`, `source_asset_id`, and
 the five candidate jobs must be distinct and present in the principal's own
 Studio-job list. The probe validates and hash-binds this lineage but never
 prints the JSON or access tokens.
+
+Each normalized-decision fixture is a JSON object containing only `kind`,
+`image_run_id`, `candidate_id`, `source_asset_id`, `studio_job_id`, and
+`expected_design_version`. `kind` is `visual`, `catalog_revision`, or `markup`;
+visual uses a null version while the exact catalog/markup kinds require a
+positive version. The candidate must already be terminal `discarded`, must be
+separate from all five reviewing fixtures, and its job must appear in the
+principal's own Studio-job list. This precondition is an explicit readiness
+blocker: without it the probe exits `77` rather than claiming decision-route
+proof from a read-only or synthetic check.
 
 The base URL must be an exact HTTPS origin. The live `/health` response must
 report the same immutable deployment revision and the initialized PostgreSQL
@@ -367,6 +384,22 @@ The owner reads must succeed, cross-owner reads and enumeration must fail with
 the expected status, unauthenticated reads must return `401`, and every
 legacy/admin/OpenAPI/docs surface in the probe must remain hidden. The v7 probe
 fetches each principal's own Studio-job list plus all five own candidate lists.
+It also exercises the normalized Refine seam: one list, each catalog/visual/
+markup discriminator and exact lineage, owner-bound detail and image reads,
+cross-principal non-enumeration, spoofed-owner rejection, and an idempotent
+terminal decision replay. The replay remains provider-free and leaves the
+result contract at `provider_calls: 0` and `mutations: 0`.
+Normalized candidate evidence is decoded with the same fail-closed semantics
+as the shipped trusted client: reviewing `verdict` and `qa` must agree with
+explicit acceptance flags, catalog revisions require at least one unique,
+labeled specification change plus a valid canonical `next_spec`. That proposed
+Spec must retain schema/design/version/creator/time identity, jewelry type,
+template, mode, and a meaningful center stone with positive carat and three
+dimensions plus trade and GIA color. A non-empty placeholder object is not
+evidence. Markup operations are limited to `LOCAL_EDIT` or
+`VISUAL_ONLY_EDIT`. Each normalized candidate must bind to its own one-output
+`refine` Studio job; a shared job identifier or a multi-output/non-Refine job
+cannot satisfy this evidence lane.
 Each seeded job and candidate fixture must appear exactly once. Duplicate or
 malformed rows, the other principal's identifiers, and mismatched project or
 source-asset or candidate-job lineage fail closed before the evidence can pass.

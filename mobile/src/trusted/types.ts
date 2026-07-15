@@ -597,6 +597,114 @@ export interface VisualPreviewDiscardResult {
   candidate_id: string;
 }
 
+/**
+ * Canonical review seam for every temporary Refine output. These records are
+ * projections over the kind-specific generation authorities; they never make
+ * a candidate canonical before an explicit decision succeeds.
+ */
+export type StudioPreviewCandidateKind = 'visual' | 'catalog_revision' | 'markup';
+export type StudioPreviewCandidateStatus =
+  | 'reviewing'
+  | 'applied'
+  | 'saved_as_variation'
+  | 'discarded'
+  | 'expired';
+export type StudioPreviewCandidateDecision = 'apply' | 'save_as_variation' | 'discard';
+
+interface StudioPreviewCandidateBase {
+  candidate_id: string;
+  status: StudioPreviewCandidateStatus;
+  image_run_id: string;
+  project_root_id: string;
+  source_asset_id: string;
+  expected_active_asset_id: string;
+  expected_design_version: number | null;
+  source_sha256: string;
+  output_sha256: string;
+  requested_change: string;
+  verdict: 'pass' | 'warn' | null;
+  qa: ImageQualityReport | null;
+  studio_job_id: string | null;
+  terminal_asset_id: string | null;
+  created_at: string;
+  expires_at: string;
+  resolved_at: string | null;
+  available_decisions: StudioPreviewCandidateDecision[];
+  preview_url: string;
+  decision_url: string;
+}
+
+export interface StudioVisualPreviewCandidate extends StudioPreviewCandidateBase {
+  kind: 'visual';
+  scope: 'appearance' | 'marked_region';
+  expected_design_version: null;
+}
+
+export interface StudioCatalogRevisionPreviewCandidate extends StudioPreviewCandidateBase {
+  kind: 'catalog_revision';
+  component_path: ComponentCatalogPath;
+  option_id: string;
+  spec_change: SpecChange[];
+  /** Exact proposed specification retained for post-decision lineage checks. */
+  next_spec: JsonObject;
+  expected_design_version: number;
+}
+
+export interface StudioMarkupPreviewCandidate extends StudioPreviewCandidateBase {
+  kind: 'markup';
+  operation: 'LOCAL_EDIT' | 'VISUAL_ONLY_EDIT';
+  region_description: string;
+  expected_design_version: number;
+}
+
+export type StudioPreviewCandidate =
+  | StudioVisualPreviewCandidate
+  | StudioCatalogRevisionPreviewCandidate
+  | StudioMarkupPreviewCandidate;
+
+export interface StudioPreviewCandidateListResult {
+  candidates: StudioPreviewCandidate[];
+}
+
+interface DecideStudioPreviewCandidateRequestBase {
+  created_by: string;
+  expected_active_asset_id: string;
+  expected_design_version: number | null;
+}
+
+export type DecideStudioPreviewCandidateRequest =
+  | (DecideStudioPreviewCandidateRequestBase & {
+      decision: 'apply' | 'discard';
+      variation_label?: never;
+    })
+  | (DecideStudioPreviewCandidateRequestBase & {
+      decision: 'save_as_variation';
+      variation_label: string;
+    });
+
+interface StudioPreviewCandidateDecisionResultBase {
+  candidate_id: string;
+  kind: StudioPreviewCandidateKind;
+  source_project_id: string;
+  result_project_id: string;
+  terminal_asset_id: string | null;
+  studio_job_id: string | null;
+}
+
+export type StudioPreviewCandidateDecisionResult =
+  | (StudioPreviewCandidateDecisionResultBase & {
+      status: 'applied' | 'discarded';
+      family_id: null;
+      variation_index: null;
+    })
+  | (StudioPreviewCandidateDecisionResultBase & {
+      status: 'saved_as_variation';
+      family_id: string;
+      /** Family roots occupy index 1; a saved sibling variation starts at 2. */
+      variation_index: number;
+      terminal_asset_id: string;
+    });
+
 export interface PreviewVariationRequest {
   created_by: string;
   label: string;

@@ -34,9 +34,11 @@ from facetta.catalog_preview_candidates import (
 from facetta.db import (
     ImageAsset,
     PreviewCandidateRecord,
+    Project,
     StudioMarkupCandidateRecord,
 )
 from facetta.json_types import JsonObject
+from facetta.spec import Spec
 from facetta.studio_history import (
     StudioHistoryError,
     apply_pre_spec_visual_candidate,
@@ -128,6 +130,8 @@ class StudioPreviewDecisionResult:
     result_project_id: str
     terminal_asset_id: str | None
     studio_job_id: str | None
+    family_id: str | None
+    variation_index: int | None
 
 
 CandidateRecord = PreviewCandidateRecord | StudioMarkupCandidateRecord
@@ -235,6 +239,34 @@ def _safe_json(value: object) -> JsonObject:
     return value if isinstance(value, dict) else {}
 
 
+def _catalog_next_spec(payload: JsonObject, *, candidate=None) -> JsonObject:
+    """Project exact catalog truth without trusting an unvalidated JSON row.
+
+    Reviewing candidates have already passed the catalog authority's complete
+    durable-payload validation. Resolved candidates cannot be reopened by
+    that authority, so their retained immutable proposal is independently
+    parsed as a ``Spec`` before the normalized read exposes it.
+    """
+
+    raw_spec = (
+        getattr(candidate, "next_spec", None)
+        if candidate is not None else payload.get("next_spec")
+    )
+    try:
+        spec = (
+            raw_spec
+            if isinstance(raw_spec, Spec)
+            else Spec.model_validate(raw_spec)
+        )
+    except (TypeError, ValueError) as exc:
+        raise StudioPreviewCandidateError(
+            "preview_candidate_payload_invalid",
+            "the catalog preview specification is incomplete or invalid",
+            status_code=422,
+        ) from exc
+    return spec.model_dump(mode="json")
+
+
 def _projection(
     record: CandidateRecord,
     *,
@@ -278,6 +310,7 @@ def _projection(
                 getattr(candidate, "option_id", None) or payload.get("option_id")
             ),
             "spec_change": raw_changes if isinstance(raw_changes, list) else [],
+            "next_spec": _catalog_next_spec(payload, candidate=candidate),
         }
         expected_design_version = record.expected_design_version
     else:
@@ -453,6 +486,8 @@ def _terminal_result(
             f"the Studio preview candidate was already {record.status}",
         )
     result_project_id = record.project_root_id
+    family_id: str | None = None
+    variation_index: int | None = None
     if desired == "saved_as_variation" and record.terminal_asset_id is not None:
         terminal = db.get(ImageAsset, record.terminal_asset_id)
         if terminal is None:
@@ -462,6 +497,24 @@ def _terminal_result(
                 status_code=500,
             )
         result_project_id = terminal.root_id
+        project = db.get(Project, result_project_id)
+        if (
+            project is None
+            or project.owner != record.owner
+            or project.root_id != terminal.root_id
+            or project.family_id is None
+            or project.variation_index is None
+            or project.variation_index < 2
+            or project.branched_from_project_root_id != record.project_root_id
+            or project.branched_from_asset_id != record.source_asset_id
+        ):
+            raise StudioPreviewCandidateError(
+                "preview_candidate_variation_corrupt",
+                "the saved variation project lineage is incomplete",
+                status_code=500,
+            )
+        family_id = project.family_id
+        variation_index = project.variation_index
     return StudioPreviewDecisionResult(
         status=desired,
         candidate_id=record.id,
@@ -470,6 +523,8 @@ def _terminal_result(
         result_project_id=result_project_id,
         terminal_asset_id=record.terminal_asset_id,
         studio_job_id=record.studio_job_id,
+        family_id=family_id,
+        variation_index=variation_index,
     )
 
 
@@ -546,6 +601,8 @@ def decide_studio_preview_candidate(
                 result_project_id=result.project_root_id,
                 terminal_asset_id=result.asset_id,
                 studio_job_id=record.studio_job_id,
+                family_id=result.family_id,
+                variation_index=result.variation_index,
             )
         return _terminal_result(db, record, decision=decision)
     if decision == "save_as_variation":
@@ -574,6 +631,8 @@ def decide_studio_preview_candidate(
             result_project_id=result.project_root_id,
             terminal_asset_id=result.asset_id,
             studio_job_id=record.studio_job_id,
+            family_id=result.family_id,
+            variation_index=result.variation_index,
         )
 
     if kind == "visual":
@@ -748,4 +807,6 @@ def decide_studio_preview_candidate(
         result_project_id=record.project_root_id,
         terminal_asset_id=terminal_asset_id,
         studio_job_id=record.studio_job_id,
+        family_id=None,
+        variation_index=None,
     )

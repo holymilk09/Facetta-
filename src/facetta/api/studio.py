@@ -77,6 +77,7 @@ from facetta.provider_job_gate import (
     ProviderStudioJobError,
     require_provider_studio_job,
 )
+from facetta.spec import Spec
 from facetta.specagent import mask_from_markup
 from facetta.studio_history import (
     StudioHistoryError,
@@ -405,6 +406,7 @@ class StudioCatalogPreviewCandidateResponse(StudioPreviewCandidateBase):
     component_path: str
     option_id: str
     spec_change: tuple[dict, ...]
+    next_spec: Spec
 
 
 class StudioMarkupPreviewCandidateResponse(StudioPreviewCandidateBase):
@@ -447,6 +449,8 @@ class StudioPreviewCandidateDecisionResponse(BaseModel):
     result_project_id: str
     terminal_asset_id: str | None
     studio_job_id: str | None
+    family_id: str | None
+    variation_index: int | None
 
 
 class CreatePreSpecPresentationRequest(BaseModel):
@@ -1912,6 +1916,8 @@ def decide_normalized_studio_preview_candidate(
         "result_project_id": result.result_project_id,
         "terminal_asset_id": result.terminal_asset_id,
         "studio_job_id": result.studio_job_id,
+        "family_id": result.family_id,
+        "variation_index": result.variation_index,
     }
 
 

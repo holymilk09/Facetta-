@@ -243,7 +243,32 @@ def required_staging_checks() -> dict[str, object]:
             f"user_{label}_job_results_are_tenant_scoped": True,
             f"user_{label}_cannot_read_other_job": 404,
             f"user_{label}_cannot_spoof_job_owner": 403,
+            f"user_{label}_lists_own_normalized_preview_candidates": 200,
+            f"user_{label}_normalized_preview_results_are_tenant_scoped": True,
+            f"user_{label}_cannot_list_other_normalized_preview_candidates": 404,
+            f"user_{label}_reads_own_discarded_normalized_decision_fixture": 200,
+            f"user_{label}_normalized_decision_fixture_is_terminal_and_exact": True,
+            f"user_{label}_replays_own_terminal_normalized_decision": True,
+            f"user_{label}_cannot_resolve_other_normalized_candidate": 404,
+            f"user_{label}_cannot_spoof_normalized_decision_actor": 403,
         })
+        for kind in ("catalog", "visual", "markup"):
+            checks.update({
+                f"user_{label}_reads_own_normalized_{kind}_candidate": 200,
+                f"user_{label}_normalized_{kind}_candidate_lineage_is_exact": True,
+                f"user_{label}_cannot_spoof_normalized_{kind}_owner": 403,
+                (
+                    f"user_{label}_cannot_enumerate_other_normalized_"
+                    f"{kind}_candidate"
+                ): 404,
+                f"user_{label}_reads_own_normalized_{kind}_candidate_image": 200,
+                f"user_{label}_own_normalized_{kind}_candidate_is_image": True,
+                (
+                    f"user_{label}_cannot_read_other_normalized_"
+                    f"{kind}_candidate_image"
+                ): 404,
+                f"user_{label}_cannot_spoof_normalized_{kind}_image_owner": 403,
+            })
         for kind in (
             "catalog", "visual", "markup", "view", "presentation",
         ):
@@ -270,6 +295,10 @@ def required_staging_checks() -> dict[str, object]:
         "component_targeting_requires_auth": 401,
         "catalog_previews_require_auth": 401,
         "studio_jobs_require_auth": 401,
+        "normalized_preview_lists_require_auth": 401,
+        "normalized_preview_candidates_require_auth": 401,
+        "normalized_preview_images_require_auth": 401,
+        "normalized_preview_decisions_require_auth": 401,
     })
     for name in (
         "designs", "library", "library_collections", "users", "stones",

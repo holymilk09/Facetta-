@@ -3,8 +3,10 @@
 
 The script never prints credentials or response bodies and performs no
 generation or persistence calls. It requires two already-seeded principals,
-projects, image assets, jobs, and fresh review candidates so ownership can be
-checked in both directions without invoking list-time reconciliation.
+projects, image assets, jobs, fresh review candidates, and an already-discarded
+normalized decision candidate so ownership can be checked in both directions
+without generation or a new canonical mutation. Replaying ``discard`` against
+the terminal fixture is deliberately idempotent.
 """
 
 from __future__ import annotations
@@ -12,6 +14,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import math
 import os
 import re
 import sys
@@ -43,6 +46,7 @@ class HttpResult:
 
 
 Transport = Callable[[str, str, str], HttpResult]
+DecisionTransport = Callable[[str, str, str, dict[str, object]], HttpResult]
 
 
 @dataclass(frozen=True)
@@ -55,6 +59,16 @@ class CandidateFixture:
 
 
 @dataclass(frozen=True)
+class NormalizedDecisionFixture:
+    kind: str
+    image_run_id: str
+    candidate_id: str
+    source_asset_id: str
+    studio_job_id: str
+    expected_design_version: int | None
+
+
+@dataclass(frozen=True)
 class StagingIdentity:
     label: str
     token: str
@@ -64,6 +78,7 @@ class StagingIdentity:
     asset_id: str
     job_id: str
     candidates: tuple[CandidateFixture, ...]
+    normalized_decision: NormalizedDecisionFixture
 
     def candidate(self, kind: str) -> CandidateFixture:
         return next(candidate for candidate in self.candidates if candidate.kind == kind)
@@ -125,6 +140,9 @@ def load_config() -> StagingConfig:
             "job_id": _required(f"{prefix}_JOB_ID", missing),
             "candidate_fixtures": _required(
                 f"{prefix}_CANDIDATE_FIXTURES_JSON", missing,
+            ),
+            "normalized_decision_fixture": _required(
+                f"{prefix}_NORMALIZED_DECISION_FIXTURE_JSON", missing,
             ),
         }
     if missing:
@@ -193,6 +211,66 @@ def load_config() -> StagingConfig:
                 source_asset_id,
                 studio_job_id,
             ))
+        try:
+            raw_decision = json.loads(values["normalized_decision_fixture"])
+        except json.JSONDecodeError as exc:
+            raise ValueError(
+                "staging normalized decision fixture is not valid JSON"
+            ) from exc
+        if not isinstance(raw_decision, dict) or set(raw_decision) != {
+            "kind", "image_run_id", "candidate_id", "source_asset_id",
+            "studio_job_id", "expected_design_version",
+        }:
+            raise ValueError("staging normalized decision fixture is invalid")
+        decision_kind = raw_decision.get("kind")
+        image_run_id = raw_decision.get("image_run_id")
+        candidate_id = raw_decision.get("candidate_id")
+        source_asset_id = raw_decision.get("source_asset_id")
+        studio_job_id = raw_decision.get("studio_job_id")
+        expected_design_version = raw_decision.get("expected_design_version")
+        if (
+            decision_kind not in {"visual", "catalog_revision", "markup"}
+            or not isinstance(image_run_id, str)
+            or not isinstance(candidate_id, str)
+            or not isinstance(source_asset_id, str)
+            or not isinstance(studio_job_id, str)
+            or identifier.fullmatch(image_run_id) is None
+            or identifier.fullmatch(candidate_id) is None
+            or identifier.fullmatch(source_asset_id) is None
+            or identifier.fullmatch(studio_job_id) is None
+            or source_asset_id != values["asset_id"]
+            or (
+                expected_design_version is not None
+                and (
+                    not isinstance(expected_design_version, int)
+                    or isinstance(expected_design_version, bool)
+                    or expected_design_version < 1
+                )
+            )
+            or (
+                decision_kind == "visual"
+                and expected_design_version is not None
+            )
+            or (
+                decision_kind != "visual"
+                and expected_design_version is None
+            )
+        ):
+            raise ValueError(
+                "staging normalized decision fixture identifiers are unsafe"
+            )
+        decision_fixture = NormalizedDecisionFixture(
+            decision_kind,
+            image_run_id,
+            candidate_id,
+            source_asset_id,
+            studio_job_id,
+            expected_design_version,
+        )
+        if candidate_id in {candidate.candidate_id for candidate in candidates}:
+            raise ValueError(
+                "staging normalized decision fixture must be a separate record"
+            )
         return StagingIdentity(
             label=label,
             token=token,
@@ -202,6 +280,7 @@ def load_config() -> StagingConfig:
             asset_id=values["asset_id"],
             job_id=values["job_id"],
             candidates=tuple(candidates),
+            normalized_decision=decision_fixture,
         )
 
     first = identity("A")
@@ -231,11 +310,15 @@ def load_config() -> StagingConfig:
     second_candidate_jobs = {
         candidate.studio_job_id for candidate in second.candidates
     }
+    first_candidate_jobs.add(first.normalized_decision.studio_job_id)
+    second_candidate_jobs.add(second.normalized_decision.studio_job_id)
     if (
-        len(first_candidate_jobs) != 5
-        or len(second_candidate_jobs) != 5
+        len(first_candidate_jobs) != 6
+        or len(second_candidate_jobs) != 6
         or ({first.job_id} | first_candidate_jobs)
         & ({second.job_id} | second_candidate_jobs)
+        or first.normalized_decision.candidate_id
+        == second.normalized_decision.candidate_id
     ):
         raise ValueError("staging candidate fixtures must bind distinct Studio jobs")
     return StagingConfig(
@@ -306,11 +389,85 @@ def http_transport(method: str, url: str, token: str) -> HttpResult:
         raise RuntimeError("staging API is unreachable") from exc
 
 
-def run_probe(config: StagingConfig, transport: Transport = http_transport) -> dict:
+def http_decision_transport(
+    method: str,
+    url: str,
+    token: str,
+    json_body: dict[str, object],
+) -> HttpResult:
+    """Send one bounded JSON decision without exposing tokens or payloads."""
+
+    if method != "POST":
+        raise RuntimeError("decision transport only permits POST")
+    encoded = json.dumps(
+        json_body, ensure_ascii=False, separators=(",", ":"), sort_keys=True,
+    ).encode("utf-8")
+    if len(encoded) > 8_192:
+        raise RuntimeError("staging decision request exceeded the safe JSON limit")
+    request = Request(
+        url,
+        method="POST",
+        data=encoded,
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+        },
+    )
+    try:
+        with _OPENER.open(request, timeout=15) as response:
+            content_type = response.headers.get_content_type()
+            content_length = response.headers.get("Content-Length")
+            if (
+                content_type == "application/json"
+                and content_length is not None
+                and int(content_length) > 2_000_000
+            ):
+                raise RuntimeError("staging response exceeded the safe JSON limit")
+            raw = response.read(2_000_001)
+            if len(raw) > 2_000_000:
+                raise RuntimeError("staging response exceeded the safe JSON limit")
+            body = (
+                json.loads(raw)
+                if content_type == "application/json" and raw else None
+            )
+            return HttpResult(response.status, content_type, body)
+    except HTTPError as exc:
+        content_type = exc.headers.get_content_type() if exc.headers else ""
+        return HttpResult(exc.code, content_type)
+    except (URLError, TimeoutError) as exc:
+        raise RuntimeError("staging API is unreachable") from exc
+
+
+def run_probe(
+    config: StagingConfig,
+    transport: Transport = http_transport,
+    decision_transport: DecisionTransport | None = None,
+) -> dict:
     checks: list[dict] = []
+    if decision_transport is None:
+        if transport is not http_transport:
+            raise ValueError(
+                "a custom read transport requires an explicit decision transport"
+            )
+        decision_transport = http_decision_transport
 
     def request(identity: StagingIdentity, path: str) -> HttpResult:
         return transport("GET", f"{config.base_url}{path}", identity.token)
+
+    def decide(
+        identity: StagingIdentity,
+        candidate_id: str,
+        payload: dict[str, object],
+    ) -> HttpResult:
+        assert decision_transport is not None
+        return decision_transport(
+            "POST",
+            f"{config.base_url}/studio/preview-candidates/"
+            f"{quote(candidate_id, safe='')}/decision",
+            identity.token,
+            payload,
+        )
 
     def record(name: str, expected: object, observed: object) -> None:
         checks.append({
@@ -353,6 +510,151 @@ def run_probe(config: StagingConfig, transport: Transport = http_transport) -> d
         return value is None or (
             isinstance(value, str)
             and re.fullmatch(r"[0-9a-f]{64}", value) is not None
+        )
+
+    def json_value_is_valid(value: object) -> bool:
+        """Mirror the trusted client's finite JSON-value decoder."""
+
+        if value is None or isinstance(value, (str, bool)):
+            return True
+        if isinstance(value, (int, float)) and not isinstance(value, bool):
+            return math.isfinite(value)
+        if isinstance(value, list):
+            return all(json_value_is_valid(item) for item in value)
+        if isinstance(value, dict):
+            return all(
+                isinstance(key, str) and json_value_is_valid(item)
+                for key, item in value.items()
+            )
+        return False
+
+    def preview_qa_matches_verdict(verdict: object, qa: object) -> bool:
+        """Match the mobile decoder's explicit QA acceptance semantics."""
+
+        if verdict is None:
+            return qa is None
+        if verdict not in {"pass", "warn"} or not isinstance(qa, dict):
+            return False
+        qa_verdict = qa.get("verdict") if "verdict" in qa else qa.get("status")
+        accepted = qa.get("accepted")
+        review_required = qa.get("review_required")
+        return (
+            qa_verdict == verdict
+            and isinstance(accepted, bool)
+            and isinstance(review_required, bool)
+            and (
+                (verdict == "pass" and accepted and not review_required)
+                or (verdict == "warn" and not accepted and review_required)
+            )
+        )
+
+    def catalog_changes_are_valid(value: object) -> bool:
+        """Require the same non-empty, unique, labeled changes as mobile."""
+
+        if not isinstance(value, list) or not value:
+            return False
+        missing = object()
+        paths: list[str] = []
+        for change in value:
+            if not isinstance(change, dict):
+                return False
+            path = change.get("path", change.get("field"))
+            before = (
+                change["before"] if "before" in change
+                else change.get("old", missing)
+            )
+            after = (
+                change["after"] if "after" in change
+                else change.get("new", missing)
+            )
+            label = change.get("label")
+            if (
+                not isinstance(path, str)
+                or re.fullmatch(
+                    r"[a-z][a-z0-9_]*(?:(?:\.[a-z][a-z0-9_]*)|"
+                    r"(?:\[[0-9]+\]))+",
+                    path,
+                ) is None
+                or not isinstance(label, str)
+                or not label.strip()
+                or before is missing
+                or after is missing
+                or not json_value_is_valid(before)
+                or not json_value_is_valid(after)
+            ):
+                return False
+            paths.append(path)
+        return len(set(paths)) == len(paths)
+
+    def catalog_next_spec_is_valid(value: object) -> bool:
+        """Mirror the mobile catalog preview's canonical Spec envelope."""
+
+        if (
+            not isinstance(value, dict)
+            or not value
+            or not json_value_is_valid(value)
+            or value.get("schema_version") != 1
+            or isinstance(value.get("schema_version"), bool)
+        ):
+            return False
+
+        def nonempty_text(item: object) -> bool:
+            return isinstance(item, str) and len(item) > 0
+
+        def positive_number(item: object) -> bool:
+            return (
+                isinstance(item, (int, float))
+                and not isinstance(item, bool)
+                and math.isfinite(item)
+                and item > 0
+            )
+
+        version = value.get("version")
+        created_at = value.get("created_at")
+        rfc3339 = (
+            isinstance(created_at, str)
+            and re.fullmatch(
+                r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}"
+                r"(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})",
+                created_at,
+            ) is not None
+        )
+        if (
+            not isinstance(version, (int, float))
+            or isinstance(version, bool)
+            or not math.isfinite(version)
+            or int(version) != version
+            or version < 1
+            or not nonempty_text(value.get("design_id"))
+            or not nonempty_text(value.get("created_by"))
+            or not nonempty_text(created_at)
+            or not rfc3339
+            or not nonempty_text(value.get("jewelry_type"))
+            or not nonempty_text(value.get("template"))
+            or value.get("mode") not in ("basic", "pro")
+        ):
+            return False
+        try:
+            datetime.fromisoformat(str(created_at).replace("Z", "+00:00"))
+        except ValueError:
+            return False
+
+        stone = value.get("stone")
+        if not isinstance(stone, dict):
+            return False
+        dimensions = stone.get("dimensions_mm")
+        color = stone.get("color")
+        return (
+            nonempty_text(stone.get("species"))
+            and nonempty_text(stone.get("cut"))
+            and positive_number(stone.get("carat"))
+            and isinstance(dimensions, dict)
+            and positive_number(dimensions.get("length"))
+            and positive_number(dimensions.get("width"))
+            and positive_number(dimensions.get("depth"))
+            and isinstance(color, dict)
+            and nonempty_text(color.get("trade"))
+            and nonempty_text(color.get("gia"))
         )
 
     def studio_job_shape_is_valid(row: dict) -> bool:
@@ -417,6 +719,9 @@ def run_probe(config: StagingConfig, transport: Transport = http_transport) -> d
             candidate.studio_job_id: candidate.source_asset_id
             for candidate in own.candidates
         })
+        expected_sources[
+            own.normalized_decision.studio_job_id
+        ] = own.normalized_decision.source_asset_id
         expected_counts = {job_id: 0 for job_id in expected_sources}
         for row in rows:
             job_id = row.get("job_id")
@@ -443,6 +748,7 @@ def run_probe(config: StagingConfig, transport: Transport = http_transport) -> d
                 or job_id in {
                     candidate.studio_job_id for candidate in other.candidates
                 }
+                or job_id == other.normalized_decision.studio_job_id
                 or active_design_id == other.project_id
                 or source_revision_id == other.asset_id
             ):
@@ -639,6 +945,191 @@ def run_probe(config: StagingConfig, transport: Transport = http_transport) -> d
                 ):
                     return False
         return own_fixture_count == 1
+
+    def normalized_kind(fixture_kind: str) -> str:
+        return "catalog_revision" if fixture_kind == "catalog" else fixture_kind
+
+    def normalized_candidate_shape_is_valid(
+        row: dict,
+        *,
+        own: StagingIdentity,
+        own_single_output_refine_job_ids: set[str],
+        expected_status: str = "reviewing",
+    ) -> bool:
+        kind = row.get("kind")
+        detail_keys = {
+            "visual": {"scope"},
+            "catalog_revision": {
+                "component_path", "option_id", "spec_change", "next_spec",
+            },
+            "markup": {"operation", "region_description"},
+        }
+        if kind not in detail_keys:
+            return False
+        common_keys = {
+            "candidate_id", "kind", "status", "image_run_id",
+            "project_root_id", "source_asset_id", "expected_active_asset_id",
+            "expected_design_version", "source_sha256", "output_sha256",
+            "requested_change", "verdict", "qa", "studio_job_id",
+            "terminal_asset_id", "created_at", "expires_at", "resolved_at",
+            "available_decisions", "preview_url", "decision_url",
+        }
+        if set(row) != common_keys | detail_keys[kind]:
+            return False
+        candidate_id = row.get("candidate_id")
+        image_run_id = row.get("image_run_id")
+        studio_job_id = row.get("studio_job_id")
+        expected_version = row.get("expected_design_version")
+        if not (
+            isinstance(candidate_id, str)
+            and bool(candidate_id)
+            and isinstance(image_run_id, str)
+            and bool(image_run_id)
+            and row.get("status") == expected_status
+            and row.get("project_root_id") == own.project_id
+            and row.get("source_asset_id") == own.asset_id
+            and row.get("expected_active_asset_id") == own.asset_id
+            and sha256_or_none(row.get("source_sha256"))
+            and row.get("source_sha256") is not None
+            and sha256_or_none(row.get("output_sha256"))
+            and row.get("output_sha256") is not None
+            and isinstance(row.get("requested_change"), str)
+            and preview_qa_matches_verdict(row.get("verdict"), row.get("qa"))
+            and isinstance(studio_job_id, str)
+            and studio_job_id in own_single_output_refine_job_ids
+            and aware_timestamp(row.get("created_at"))
+            and aware_timestamp(row.get("expires_at"))
+            and row.get("preview_url")
+            == (
+                f"/studio/preview-candidates/{candidate_id}/image?"
+                + urlencode({"owner": own.actor})
+            )
+            and row.get("decision_url")
+            == f"/studio/preview-candidates/{candidate_id}/decision"
+        ):
+            return False
+        if expected_status == "reviewing":
+            if not (
+                row.get("terminal_asset_id") is None
+                and row.get("resolved_at") is None
+                and row.get("available_decisions")
+                == ["apply", "save_as_variation", "discard"]
+                and aware_timestamp(row.get("expires_at"), future=True)
+            ):
+                return False
+        elif expected_status == "discarded":
+            if not (
+                row.get("terminal_asset_id") is None
+                and aware_timestamp(row.get("resolved_at"))
+                and row.get("available_decisions") == []
+            ):
+                return False
+        else:  # pragma: no cover - helper contract
+            return False
+        if kind == "visual":
+            return expected_version is None and row.get("scope") in {
+                "appearance", "marked_region",
+            }
+        if not (
+            isinstance(expected_version, int)
+            and not isinstance(expected_version, bool)
+            and expected_version >= 1
+        ):
+            return False
+        if kind == "catalog_revision":
+            return (
+                row.get("component_path") in {
+                    "chain.style", "stone.color", "stone.cut",
+                    "metal.material", "metal.color", "setting.style",
+                }
+                and isinstance(row.get("option_id"), str)
+                and bool(row.get("option_id"))
+                and catalog_changes_are_valid(row.get("spec_change"))
+                and catalog_next_spec_is_valid(row.get("next_spec"))
+            )
+        return (
+            row.get("operation") in {"LOCAL_EDIT", "VISUAL_ONLY_EDIT"}
+            and isinstance(row.get("region_description"), str)
+            and bool(row.get("region_description"))
+        )
+
+    def own_normalized_candidates_are_tenant_scoped(
+        result: HttpResult,
+        own: StagingIdentity,
+        other: StagingIdentity,
+        own_single_output_refine_job_ids: set[str],
+    ) -> bool:
+        rows = collection_rows(result, "candidates")
+        if rows is None:
+            return False
+        expected = {
+            fixture.candidate_id: fixture
+            for fixture in own.candidates
+            if fixture.kind in {"catalog", "visual", "markup"}
+        }
+        other_ids = {
+            fixture.candidate_id for fixture in other.candidates
+            if fixture.kind in {"catalog", "visual", "markup"}
+        }
+        seen: set[str] = set()
+        seen_job_ids: set[str] = set()
+        counts = {candidate_id: 0 for candidate_id in expected}
+        for row in rows:
+            candidate_id = row.get("candidate_id")
+            studio_job_id = row.get("studio_job_id")
+            if (
+                not normalized_candidate_shape_is_valid(
+                    row,
+                    own=own,
+                    own_single_output_refine_job_ids=(
+                        own_single_output_refine_job_ids
+                    ),
+                )
+                or not isinstance(candidate_id, str)
+                or candidate_id in seen
+                or candidate_id in other_ids
+                or studio_job_id in seen_job_ids
+            ):
+                return False
+            seen.add(candidate_id)
+            assert isinstance(studio_job_id, str)
+            seen_job_ids.add(studio_job_id)
+            fixture = expected.get(candidate_id)
+            if fixture is not None:
+                counts[candidate_id] += 1
+                if not (
+                    row.get("kind") == normalized_kind(fixture.kind)
+                    and row.get("image_run_id") == fixture.run_id
+                    and row.get("studio_job_id") == fixture.studio_job_id
+                ):
+                    return False
+        return all(count == 1 for count in counts.values())
+
+    def normalized_decision_result_is_valid(
+        result: HttpResult,
+        own: StagingIdentity,
+    ) -> bool:
+        fixture = own.normalized_decision
+        body = result.json_body
+        return (
+            result.status == 200
+            and result.content_type == "application/json"
+            and isinstance(body, dict)
+            and set(body) == {
+                "status", "candidate_id", "kind", "source_project_id",
+                "result_project_id", "terminal_asset_id", "studio_job_id",
+                "family_id", "variation_index",
+            }
+            and body.get("status") == "discarded"
+            and body.get("candidate_id") == fixture.candidate_id
+            and body.get("kind") == fixture.kind
+            and body.get("source_project_id") == own.project_id
+            and body.get("result_project_id") == own.project_id
+            and body.get("terminal_asset_id") is None
+            and body.get("studio_job_id") == fixture.studio_job_id
+            and body.get("family_id") is None
+            and body.get("variation_index") is None
+        )
 
     def candidate_paths(
         kind: str,
@@ -898,6 +1389,17 @@ def run_probe(config: StagingConfig, transport: Transport = http_transport) -> d
             for row in (own_job_rows or [])
             if isinstance(row.get("job_id"), str)
         }
+        own_single_output_refine_job_ids = {
+            row["job_id"]
+            for row in (own_job_rows or [])
+            if (
+                studio_job_shape_is_valid(row)
+                and row.get("action_id") == "refine"
+                and isinstance(row.get("billing"), dict)
+                and row["billing"].get("requested_outputs") == 1
+                and isinstance(row.get("job_id"), str)
+            )
+        }
         cross_job = request(
             own,
             f"/studio/jobs/{quote(other.job_id, safe='')}?"
@@ -911,6 +1413,210 @@ def run_probe(config: StagingConfig, transport: Transport = http_transport) -> d
             f"user_{own.label}_cannot_spoof_job_owner",
             403,
             spoofed_jobs.status,
+        )
+
+        normalized_list_path = (
+            f"/studio/projects/{quote(own.project_id, safe='')}/"
+            "preview-candidates"
+        )
+        own_normalized = request(own, normalized_list_path)
+        record(
+            f"user_{own.label}_lists_own_normalized_preview_candidates",
+            200,
+            own_normalized.status,
+        )
+        record(
+            f"user_{own.label}_normalized_preview_results_are_tenant_scoped",
+            True,
+            own_normalized_candidates_are_tenant_scoped(
+                own_normalized,
+                own,
+                other,
+                own_single_output_refine_job_ids,
+            ),
+        )
+        cross_normalized = request(
+            own,
+            f"/studio/projects/{quote(other.project_id, safe='')}/"
+            "preview-candidates",
+        )
+        record(
+            f"user_{own.label}_cannot_list_other_normalized_preview_candidates",
+            404,
+            cross_normalized.status,
+        )
+
+        for kind in ("catalog", "visual", "markup"):
+            fixture = own.candidate(kind)
+            other_fixture = other.candidate(kind)
+            candidate_query = urlencode({"owner": own.actor})
+            candidate_path = (
+                f"/studio/preview-candidates/"
+                f"{quote(fixture.candidate_id, safe='')}?{candidate_query}"
+            )
+            own_candidate = request(own, candidate_path)
+            record(
+                f"user_{own.label}_reads_own_normalized_{kind}_candidate",
+                200,
+                own_candidate.status,
+            )
+            candidate_body = (
+                own_candidate.json_body
+                if isinstance(own_candidate.json_body, dict) else {}
+            )
+            record(
+                f"user_{own.label}_normalized_{kind}_candidate_lineage_is_exact",
+                True,
+                (
+                    normalized_candidate_shape_is_valid(
+                        candidate_body,
+                        own=own,
+                        own_single_output_refine_job_ids=(
+                            own_single_output_refine_job_ids
+                        ),
+                    )
+                    and candidate_body.get("candidate_id")
+                    == fixture.candidate_id
+                    and candidate_body.get("kind") == normalized_kind(kind)
+                    and candidate_body.get("image_run_id") == fixture.run_id
+                    and candidate_body.get("studio_job_id")
+                    == fixture.studio_job_id
+                ),
+            )
+            spoofed_candidate = request(
+                own,
+                f"/studio/preview-candidates/"
+                f"{quote(fixture.candidate_id, safe='')}?"
+                + urlencode({"owner": other.actor}),
+            )
+            record(
+                f"user_{own.label}_cannot_spoof_normalized_{kind}_owner",
+                403,
+                spoofed_candidate.status,
+            )
+            cross_candidate = request(
+                own,
+                f"/studio/preview-candidates/"
+                f"{quote(other_fixture.candidate_id, safe='')}?{candidate_query}",
+            )
+            record(
+                f"user_{own.label}_cannot_enumerate_other_normalized_{kind}_candidate",
+                404,
+                cross_candidate.status,
+            )
+            image_path = (
+                f"/studio/preview-candidates/"
+                f"{quote(fixture.candidate_id, safe='')}/image?{candidate_query}"
+            )
+            own_candidate_image = request(own, image_path)
+            record(
+                f"user_{own.label}_reads_own_normalized_{kind}_candidate_image",
+                200,
+                own_candidate_image.status,
+            )
+            record(
+                f"user_{own.label}_own_normalized_{kind}_candidate_is_image",
+                True,
+                own_candidate_image.content_type.startswith("image/"),
+            )
+            cross_candidate_image = request(
+                own,
+                f"/studio/preview-candidates/"
+                f"{quote(other_fixture.candidate_id, safe='')}/image?"
+                f"{candidate_query}",
+            )
+            record(
+                f"user_{own.label}_cannot_read_other_normalized_{kind}_candidate_image",
+                404,
+                cross_candidate_image.status,
+            )
+            spoofed_candidate_image = request(
+                own,
+                f"/studio/preview-candidates/"
+                f"{quote(fixture.candidate_id, safe='')}/image?"
+                + urlencode({"owner": other.actor}),
+            )
+            record(
+                f"user_{own.label}_cannot_spoof_normalized_{kind}_image_owner",
+                403,
+                spoofed_candidate_image.status,
+            )
+
+        decision_fixture = own.normalized_decision
+        decision_query = urlencode({"owner": own.actor})
+        decision_candidate = request(
+            own,
+            f"/studio/preview-candidates/"
+            f"{quote(decision_fixture.candidate_id, safe='')}?{decision_query}",
+        )
+        decision_body = (
+            decision_candidate.json_body
+            if isinstance(decision_candidate.json_body, dict) else {}
+        )
+        record(
+            f"user_{own.label}_reads_own_discarded_normalized_decision_fixture",
+            200,
+            decision_candidate.status,
+        )
+        record(
+            f"user_{own.label}_normalized_decision_fixture_is_terminal_and_exact",
+            True,
+            (
+                normalized_candidate_shape_is_valid(
+                    decision_body,
+                    own=own,
+                    own_single_output_refine_job_ids=(
+                        own_single_output_refine_job_ids
+                    ),
+                    expected_status="discarded",
+                )
+                and decision_body.get("candidate_id")
+                == decision_fixture.candidate_id
+                and decision_body.get("kind") == decision_fixture.kind
+                and decision_body.get("image_run_id")
+                == decision_fixture.image_run_id
+                and decision_body.get("studio_job_id")
+                == decision_fixture.studio_job_id
+                and decision_body.get("expected_design_version")
+                == decision_fixture.expected_design_version
+            ),
+        )
+        decision_payload = {
+            "created_by": own.actor,
+            "decision": "discard",
+            "expected_active_asset_id": decision_fixture.source_asset_id,
+            "expected_design_version": decision_fixture.expected_design_version,
+            "variation_label": None,
+        }
+        own_decision = decide(
+            own, decision_fixture.candidate_id, decision_payload,
+        )
+        record(
+            f"user_{own.label}_replays_own_terminal_normalized_decision",
+            True,
+            normalized_decision_result_is_valid(own_decision, own),
+        )
+        other_decision = other.normalized_decision
+        cross_decision = decide(
+            own,
+            other_decision.candidate_id,
+            decision_payload,
+        )
+        record(
+            f"user_{own.label}_cannot_resolve_other_normalized_candidate",
+            404,
+            cross_decision.status,
+        )
+        spoofed_payload = {**decision_payload, "created_by": other.actor}
+        spoofed_decision = decide(
+            own,
+            decision_fixture.candidate_id,
+            spoofed_payload,
+        )
+        record(
+            f"user_{own.label}_cannot_spoof_normalized_decision_actor",
+            403,
+            spoofed_decision.status,
         )
 
         for kind in (
@@ -1024,10 +1730,43 @@ def run_probe(config: StagingConfig, transport: Transport = http_transport) -> d
         "studio_jobs_require_auth": (
             "/studio/jobs?" + urlencode({"owner": config.first.actor})
         ),
+        "normalized_preview_lists_require_auth": (
+            f"/studio/projects/{quote(config.first.project_id, safe='')}/"
+            "preview-candidates"
+        ),
+        "normalized_preview_candidates_require_auth": (
+            "/studio/preview-candidates/"
+            f"{quote(config.first.candidate('visual').candidate_id, safe='')}"
+        ),
+        "normalized_preview_images_require_auth": (
+            "/studio/preview-candidates/"
+            f"{quote(config.first.candidate('visual').candidate_id, safe='')}/image"
+        ),
     }
     for name, path in no_auth_paths.items():
         result = transport("GET", f"{config.base_url}{path}", "")
         record(name, 401, result.status)
+
+    unauthenticated_decision = decision_transport(
+        "POST",
+        f"{config.base_url}/studio/preview-candidates/"
+        f"{quote(config.first.normalized_decision.candidate_id, safe='')}/decision",
+        "",
+        {
+            "created_by": config.first.actor,
+            "decision": "discard",
+            "expected_active_asset_id": config.first.asset_id,
+            "expected_design_version": (
+                config.first.normalized_decision.expected_design_version
+            ),
+            "variation_label": None,
+        },
+    )
+    record(
+        "normalized_preview_decisions_require_auth",
+        401,
+        unauthenticated_decision.status,
+    )
 
     for path in (
         "/designs", "/library", "/library/collections", "/users", "/stones",
@@ -1095,15 +1834,25 @@ def run_probe(config: StagingConfig, transport: Transport = http_transport) -> d
             "family_id": identity.family_id,
             "asset_id": identity.asset_id,
             "job_id": identity.job_id,
-            "candidates": {
+                "candidates": {
                 candidate.kind: {
                     "run_id": candidate.run_id,
                     "candidate_id": candidate.candidate_id,
                     "source_asset_id": candidate.source_asset_id,
                     "studio_job_id": candidate.studio_job_id,
                 }
-                for candidate in identity.candidates
-            },
+                    for candidate in identity.candidates
+                },
+                "normalized_decision": {
+                    "kind": identity.normalized_decision.kind,
+                    "image_run_id": identity.normalized_decision.image_run_id,
+                    "candidate_id": identity.normalized_decision.candidate_id,
+                    "source_asset_id": identity.normalized_decision.source_asset_id,
+                    "studio_job_id": identity.normalized_decision.studio_job_id,
+                    "expected_design_version": (
+                        identity.normalized_decision.expected_design_version
+                    ),
+                },
         }
         for identity in (config.first, config.second)
     }
