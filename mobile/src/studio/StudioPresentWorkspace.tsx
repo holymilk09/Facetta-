@@ -11,7 +11,6 @@ import type {
   BeautyRenderResult, MarketingPackFailure, MarketingPackResult, ProductPhotoFraming, ProductPhotoPreset,
   PreSpecPresentationResult, ProductPhotoResult, ProjectDetail,
 } from '../trusted/types';
-import { getStudioAction } from './actions';
 import {
   getStudioDestination, type StudioDestinationId,
 } from './destinations';
@@ -20,7 +19,7 @@ import type {
   StudioVisualLineage,
 } from './gateway';
 import { designerReviewState } from './designerReviewLanguage';
-import { STUDIO_PRESENT_CONTROLS } from './workspaceControls';
+import { getStudioWorkspaceControls } from './workspaceControls';
 import { useVisualReviewReadiness } from './useVisualReviewReadiness';
 import { StudioComparisonInspector } from './StudioComparisonInspector';
 import { StudioReviewImage } from './StudioReviewImage';
@@ -31,8 +30,6 @@ const PRESETS: readonly ProductPhotoPreset[] = [
   'catalog_white', 'luxury_studio', 'dark_editorial', 'macro_detail',
 ] as const;
 const FRAMINGS: readonly ProductPhotoFraming[] = ['source', 'square', 'portrait'] as const;
-const PRESENT_CREDITS = getStudioAction('present').creditEstimate ?? 0;
-
 const designerPresentationError = (error: StudioGatewayError): string => {
   if (error.category === 'conflict') {
     return 'This preview belongs to an earlier design revision. Generate it again from the selected revision.';
@@ -200,6 +197,7 @@ export function StudioPresentWorkspace({
   onOpenCollections, imageRequestHeaders,
   resumeReviewJobId, reviewSourceIsActive = true,
 }: StudioPresentWorkspaceProps) {
+  const presentControls = useMemo(() => getStudioWorkspaceControls('present'), []);
   const [destination, setDestination] = useState<Destination>(initialDestination ?? 'client');
   const [destinationPickerOpen, setDestinationPickerOpen] = useState(
     initialDestination === undefined,
@@ -235,7 +233,10 @@ export function StudioPresentWorkspace({
 
   const outputCount = destination === 'library'
     ? 0 : destination === 'marketing' ? marketingPresets.length : 1;
-  const creditEstimate = outputCount * PRESENT_CREDITS;
+  const billableOutputCountIsValid = destination !== 'library'
+    && presentControls.acceptsRequestedOutputCount(outputCount);
+  const creditEstimate = billableOutputCountIsValid
+    ? presentControls.estimateCredits(outputCount) : 0;
   const requestLabel = destination === 'marketing'
     ? `Generate ${outputCount} presentation preview${outputCount === 1 ? '' : 's'}`
     : clientFormat === 'beauty' ? 'Create client beauty render' : 'Create client product photo';
@@ -374,7 +375,7 @@ export function StudioPresentWorkspace({
   const generate = async (): Promise<void> => {
     if (lineage === null || destination === 'library'
       || phase !== 'configure' || busy || outputCount === 0
-      || !reviewSourceIsActive) return;
+      || !billableOutputCountIsValid || !reviewSourceIsActive) return;
     const requestedLineageKey = lineageKey;
     setBusy(true);
     setError(null);
@@ -509,31 +510,36 @@ export function StudioPresentWorkspace({
       {!reviewSourceIsActive && <Notice kind="info" text="This result was created from an earlier revision. Saving or generating from it is unavailable. You can discard the pending result without changing or charging the current design." />}
 
       {phase === 'configure' && <>
-        {destinationPickerOpen ? <>
-          <Text style={styles.sectionTitle}>What do you need?</Text>
-          <View style={styles.destinationRow}>
-            {(['library', 'client', 'marketing'] as const).map((item) => {
-              const definition = getStudioDestination(item);
-              return (
-                <Pressable
-                  key={item}
-                  accessibilityRole="radio"
-                  accessibilityLabel={definition.label}
-                  accessibilityState={{ checked: destination === item }}
-                  onPress={() => {
-                    setDestination(item);
-                    setDestinationPickerOpen(false);
-                    setInfo(null);
-                    setStyleAndFramingOpen(false);
-                  }}
-                  style={[styles.destinationCard, destination === item && styles.selectedCard]}>
-                  <Text style={styles.destinationTitle}>{definition.label}</Text>
-                  <Text style={styles.cardCopy}>{definition.description}</Text>
-                </Pressable>
-              );
-            })}
+        {destinationPickerOpen ? (
+          <View
+            accessibilityRole="radiogroup"
+            accessibilityLabel={presentControls.fields[0]!.label}
+            style={styles.destinationGroup}>
+            <Text style={styles.sectionTitle}>What do you need?</Text>
+            <View style={styles.destinationRow}>
+              {(['library', 'client', 'marketing'] as const).map((item) => {
+                const definition = getStudioDestination(item);
+                return (
+                  <Pressable
+                    key={item}
+                    accessibilityRole="radio"
+                    accessibilityLabel={definition.label}
+                    accessibilityState={{ checked: destination === item }}
+                    onPress={() => {
+                      setDestination(item);
+                      setDestinationPickerOpen(false);
+                      setInfo(null);
+                      setStyleAndFramingOpen(false);
+                    }}
+                    style={[styles.destinationCard, destination === item && styles.selectedCard]}>
+                    <Text style={styles.destinationTitle}>{definition.label}</Text>
+                    <Text style={styles.cardCopy}>{definition.description}</Text>
+                  </Pressable>
+                );
+              })}
+            </View>
           </View>
-        </> : (
+        ) : (
           <View style={styles.advancedDisclosure}>
             <View style={styles.disclosureCopy}>
               <Text style={styles.destinationTitle}>
@@ -606,7 +612,7 @@ export function StudioPresentWorkspace({
         ))}
 
         {styleAndFramingOpen && (
-          <Field label={STUDIO_PRESENT_CONTROLS.direction.label} value={direction} onChange={setDirection} multiline
+          <Field label={presentControls.fields[1]!.label} value={direction} onChange={setDirection} multiline
             placeholder="Soft daylight, generous negative space, understated styling…" />
         )}
 
@@ -615,7 +621,8 @@ export function StudioPresentWorkspace({
           <Text style={styles.costCopy}>Generation creates review previews only. You are charged only for the outputs you explicitly save. Discarded, stale, and unusable results cost 0 credits.</Text>
         </View>
         <Button title={busy ? 'Generating and checking…' : requestLabel}
-          disabled={busy || outputCount === 0 || !reviewSourceIsActive} onPress={() => { void generate(); }} />
+          disabled={busy || !billableOutputCountIsValid || !reviewSourceIsActive}
+          onPress={() => { void generate(); }} />
         </>}
       </>}
 
@@ -734,6 +741,7 @@ const styles = StyleSheet.create({
   title: { color: theme.ink, fontFamily: theme.serif, fontSize: 28, lineHeight: 34, maxWidth: 720 },
   body: { color: theme.faint, fontSize: 14, lineHeight: 21, maxWidth: 680 },
   sectionTitle: { color: theme.ink, fontSize: 12, fontWeight: '800', letterSpacing: 1.4, marginTop: 10 },
+  destinationGroup: { gap: 12 },
   lineageCard: { borderLeftWidth: 3, borderLeftColor: theme.gold, backgroundColor: theme.goldSoft, padding: 12, borderRadius: radius.sm },
   lineageLabel: { color: theme.faint, fontSize: 11, fontWeight: '700', textTransform: 'uppercase' },
   lineageValue: { color: theme.ink, fontWeight: '700', marginTop: 3 },

@@ -1,4 +1,6 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, {
+  useCallback, useEffect, useMemo, useState,
+} from 'react';
 import {
   Platform, ScrollView, Share, StyleSheet, Text, View,
 } from 'react-native';
@@ -10,10 +12,58 @@ import type {
   ApprovalSummary, FactoryPackManifest, ProjectDetail,
 } from '../trusted/types';
 import { getStudioAction } from './actions';
+import type { StudioActionDefinition, StudioLane } from './contracts';
 import { designerErrorMessage } from './designerErrorMessage';
 import type { ExactStudioLineage, StudioGateway } from './gateway';
+import {
+  getStudioWorkspaceControls, type StudioManifestWorkspaceControls,
+} from './workspaceControls';
 
-const FACTORY_CREDITS = getStudioAction('factory').creditEstimate ?? 0;
+export interface StudioFactoryPolicy {
+  lane: StudioLane;
+  requestedOutputs: number;
+  creditsPerOutput: number;
+  estimatedCredits: number;
+}
+
+/**
+ * Keep optional Factory work bound to the same manifest contract as every
+ * other billable Studio action. Invalid policy disables Factory only.
+ */
+export function buildStudioFactoryPolicy(
+  action: StudioActionDefinition,
+  controls: StudioManifestWorkspaceControls,
+): StudioFactoryPolicy | null {
+  if (action.id !== 'factory' || !action.createsJob
+    || action.lane !== 'trusted_structural'
+    || action.executionMode !== 'terminal_job'
+    || action.reviewAuthority !== 'backend_transaction'
+    || action.outputType !== 'factory_review_pack'
+    || action.authority !== 'production_review'
+    || controls.actionId !== 'factory'
+    || controls.requestedOutputChoices.length !== 1) return null;
+  const requestedOutputs = controls.requestedOutputChoices[0];
+  if (requestedOutputs === undefined
+    || !controls.acceptsRequestedOutputCount(requestedOutputs)
+    || action.creditEstimate !== controls.creditsPerOutput) return null;
+  return Object.freeze({
+    lane: action.lane,
+    requestedOutputs,
+    creditsPerOutput: controls.creditsPerOutput,
+    estimatedCredits: controls.estimateCredits(requestedOutputs),
+  });
+}
+
+export function resolveStudioFactoryPolicy(): StudioFactoryPolicy | null {
+  try {
+    return buildStudioFactoryPolicy(
+      getStudioAction('factory'),
+      getStudioWorkspaceControls('factory'),
+    );
+  } catch {
+    return null;
+  }
+}
 
 export type StudioFactoryApi = Pick<StudioGateway,
   'createStudioJob' | 'prepareFactoryPack'
@@ -97,6 +147,7 @@ export interface StudioFactoryWorkspaceProps {
 export function StudioFactoryWorkspace({
   api, lineage, createdBy, deliverProtectedFile, onProjectUpdated,
 }: StudioFactoryWorkspaceProps) {
+  const factoryPolicy = useMemo(resolveStudioFactoryPolicy, []);
   const [project, setProject] = useState<ProjectDetail | null>(null);
   const [approval, setApproval] = useState<ApprovalSummary | null>(null);
   const [readinessBusy, setReadinessBusy] = useState(false);
@@ -188,16 +239,20 @@ export function StudioFactoryWorkspace({
 
   const prepare = async (): Promise<void> => {
     if (lineage === null || busy || pack !== null) return;
+    if (factoryPolicy === null) {
+      setError('Factory preparation is temporarily unavailable because its policy could not be verified.');
+      return;
+    }
     setBusy(true);
     setError(null);
     const created = await api.createStudioJob({
       owner: createdBy,
       action_id: 'factory',
-      lane: 'trusted_structural',
+      lane: factoryPolicy.lane,
       active_design_id: lineage.projectId,
       source_revision_id: lineage.sourceAssetId,
-      requested_outputs: 1,
-      credits_per_output: FACTORY_CREDITS,
+      requested_outputs: factoryPolicy.requestedOutputs,
+      credits_per_output: factoryPolicy.creditsPerOutput,
     });
     if (created.error !== null) {
       setBusy(false);
@@ -302,10 +357,12 @@ export function StudioFactoryWorkspace({
         </View>
       )}
       {error !== null && <Notice kind="error" text={error} />}
-      {!factoryReady ? null : pack === null ? (
+      {!factoryReady ? null : factoryPolicy === null ? (
+        <Notice kind="error" text="Factory preparation is temporarily unavailable because its policy could not be verified." />
+      ) : pack === null ? (
         <>
           <Text style={styles.creditEstimate}>
-            1 requested output × {FACTORY_CREDITS} credits = estimated {FACTORY_CREDITS} credits
+            {factoryPolicy.requestedOutputs} requested output × {factoryPolicy.creditsPerOutput} credits = estimated {factoryPolicy.estimatedCredits} credits
           </Text>
           <Text style={styles.small}>
             You pay only for a usable requested output. Unsuccessful results cost 0 credits.

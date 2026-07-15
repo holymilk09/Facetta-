@@ -11,9 +11,9 @@
     "output_type": "design_revision",
     "authority": "design_record",
     "ui_schema": [
-      {"id": "brief", "label": "Design brief", "kind": "text", "required": false},
+      {"id": "brief", "label": "Design sentence", "kind": "text", "required": false},
       {"id": "master", "label": "Master geometry", "kind": "reference", "required": false, "reference_role": "master_geometry"},
-      {"id": "style", "label": "Material or style", "kind": "reference", "required": false, "reference_role": "material_style"},
+      {"id": "style", "label": "Material & style", "kind": "reference", "required": false, "reference_role": "material_style"},
       {"id": "construction", "label": "Construction detail", "kind": "reference", "required": false, "reference_role": "construction_detail"},
       {"id": "brand", "label": "Brand direction", "kind": "reference", "required": false, "reference_role": "brand_direction"}
     ]
@@ -45,7 +45,7 @@
     "output_type": "design_revision",
     "authority": "design_record",
     "ui_schema": [
-      {"id": "instruction", "label": "Change instruction", "kind": "text", "required": true},
+      {"id": "instruction", "label": "What would you like to change?", "kind": "text", "required": true},
       {"id": "mask", "label": "Target region", "kind": "reference", "required": false, "reference_role": "edit_mask"}
     ]
   },

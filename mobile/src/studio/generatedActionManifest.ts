@@ -33,7 +33,7 @@ export const STUDIO_JOB_ACTION_MANIFEST = {
     "ui_schema": [
       {
         "id": "brief",
-        "label": "Design brief",
+        "label": "Design sentence",
         "kind": "text",
         "required": false
       },
@@ -46,7 +46,7 @@ export const STUDIO_JOB_ACTION_MANIFEST = {
       },
       {
         "id": "style",
-        "label": "Material or style",
+        "label": "Material & style",
         "kind": "reference",
         "required": false,
         "referenceRole": "material_style"
@@ -111,7 +111,7 @@ export const STUDIO_JOB_ACTION_MANIFEST = {
     "ui_schema": [
       {
         "id": "instruction",
-        "label": "Change instruction",
+        "label": "What would you like to change?",
         "kind": "text",
         "required": true
       },

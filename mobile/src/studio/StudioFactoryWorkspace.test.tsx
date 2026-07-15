@@ -2,8 +2,10 @@ import React from 'react';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 
 import {
-  deliverAuthenticatedProtectedFile, StudioFactoryWorkspace,
+  buildStudioFactoryPolicy, deliverAuthenticatedProtectedFile, StudioFactoryWorkspace,
 } from './StudioFactoryWorkspace';
+import { getStudioAction } from './actions';
+import { getStudioWorkspaceControls } from './workspaceControls';
 
 const lineage = {
   projectId: 'project_1', sourceAssetId: 'asset_7', sourceDesignVersion: 4,
@@ -57,6 +59,29 @@ const job = (status: string) => ({
 });
 
 describe('StudioFactoryWorkspace', () => {
+  test('derives optional Factory billing and routing only from the canonical manifest', () => {
+    const action = getStudioAction('factory');
+    const controls = getStudioWorkspaceControls('factory');
+    expect(buildStudioFactoryPolicy(action, controls)).toEqual({
+      lane: 'trusted_structural',
+      requestedOutputs: 1,
+      creditsPerOutput: 28,
+      estimatedCredits: 28,
+    });
+    expect(buildStudioFactoryPolicy({ ...action, lane: null }, controls)).toBeNull();
+    expect(buildStudioFactoryPolicy({ ...action, lane: 'fast_visual' }, controls)).toBeNull();
+    expect(buildStudioFactoryPolicy({
+      ...action, executionMode: 'candidate_job', reviewAuthority: 'candidate_decision',
+    }, controls)).toBeNull();
+    expect(buildStudioFactoryPolicy({
+      ...action, authority: 'visual_preview',
+    }, controls)).toBeNull();
+    expect(buildStudioFactoryPolicy(
+      action,
+      { ...controls, requestedOutputChoices: [2] },
+    )).toBeNull();
+  });
+
   test('prepares an exact review pack through a transparently billed Factory job', async () => {
     const createStudioJob = jest.fn(async () => ({ data: job('queued'), error: null, status: 201 }));
     const prepareFactoryPack = jest.fn(async () => ({ data: manifest, error: null, status: 200 }));
@@ -74,7 +99,9 @@ describe('StudioFactoryWorkspace', () => {
     await act(async () => { fireEvent.press(screen.getByText('Prepare factory review material')); });
     await waitFor(() => expect(screen.getByText('Review material prepared')).toBeTruthy());
     expect(createStudioJob).toHaveBeenCalledWith(expect.objectContaining({
-      active_design_id: 'project_1', source_revision_id: 'asset_7', credits_per_output: 28,
+      action_id: 'factory', lane: 'trusted_structural',
+      active_design_id: 'project_1', source_revision_id: 'asset_7',
+      requested_outputs: 1, credits_per_output: 28,
     }));
     expect(prepareFactoryPack).toHaveBeenCalledWith('project_1', {
       studio_job_id: 'job_1', owner: 'designer',

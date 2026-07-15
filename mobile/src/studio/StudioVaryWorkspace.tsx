@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import {
   Pressable, ScrollView, StyleSheet, Text, TextInput, View,
 } from 'react-native';
@@ -10,6 +10,7 @@ import type { StudioGateway } from './gateway';
 import { designerErrorMessage } from './designerErrorMessage';
 import { StudioDestinationChooser } from './StudioDestinationChooser';
 import type { StudioDestinationContext, StudioDestinationId } from './destinations';
+import { getStudioWorkspaceControls } from './workspaceControls';
 
 export interface StudioVariationLineage {
   mode: 'current' | 'saved_revision';
@@ -43,6 +44,8 @@ export function StudioVaryWorkspace({
   onSelectDestination,
   createOperationId = defaultOperationId,
 }: StudioVaryWorkspaceProps) {
+  const varyControls = useMemo(() => getStudioWorkspaceControls('vary'), []);
+  const varyDirectionLabel = varyControls.fields[0]!.label;
   const lineageKey = lineage === null
     ? 'none'
     : [
@@ -152,9 +155,9 @@ export function StudioVaryWorkspace({
             : 'The current saved revision of this Variation.'}
         </Text>
       </View>
-      <Text style={styles.fieldLabel}>Variation name</Text>
+      <Text style={styles.fieldLabel}>{varyDirectionLabel}</Text>
       <TextInput
-        accessibilityLabel="Variation name"
+        accessibilityLabel={varyDirectionLabel}
         value={label}
         onChangeText={(value) => setLabelState({ key: lineageKey, value })}
         placeholder="Rose gold study"

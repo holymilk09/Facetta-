@@ -24,7 +24,6 @@ import {
   designerCheckDetail, designerCheckLabel, designerReviewState,
 } from './designerReviewLanguage';
 import { designerErrorMessage } from './designerErrorMessage';
-import { getStudioAction } from './actions';
 import { useVisualReviewReadiness } from './useVisualReviewReadiness';
 import { StudioComparisonInspector } from './StudioComparisonInspector';
 import { StudioReviewImage } from './StudioReviewImage';
@@ -33,8 +32,7 @@ import type { StudioDestinationContext, StudioDestinationId } from './destinatio
 import {
   candidateCatalogPaths, routeRefineInstruction,
 } from './refineIntentRouter';
-
-const REFINE_CREDITS_PER_OUTPUT = getStudioAction('refine').creditEstimate ?? 0;
+import { getStudioWorkspaceControls } from './workspaceControls';
 
 const PATHS: readonly { id: ComponentCatalogPath; label: string; help: string }[] = [
   { id: 'metal.color', label: 'Metal color', help: 'Change only the visible metal color.' },
@@ -243,6 +241,9 @@ export function StudioRefineWorkspace({
   imageRequestHeaders, resumeReviewJobId, reviewSourceIsActive = true,
   initialInstruction = '',
 }: StudioRefineWorkspaceProps) {
+  const refineControls = useMemo(() => getStudioWorkspaceControls('refine'), []);
+  const refineInstructionLabel = refineControls.fields[0]!.label;
+  const refineCreditsPerOutput = refineControls.creditsPerOutput;
   const exactLineage = hasExactSpecification(lineage) ? lineage : null;
   const exactSpecification = exactLineage !== null;
   const [mode, setMode] = useState<'component' | 'instruction' | 'annotation' | 'facts'>(
@@ -1093,7 +1094,7 @@ export function StudioRefineWorkspace({
             kind="info"
             text={preview.executionMode === 'instant'
               ? 'Quick preview · 0 credits'
-              : `Standard preview · estimated ${preview.estimatedCredits ?? REFINE_CREDITS_PER_OUTPUT} credits if you Apply or Save as Variation`}
+              : `Standard preview · estimated ${preview.estimatedCredits ?? refineCreditsPerOutput} credits if you Apply or Save as Variation`}
           />
         )}
         {understoodAs !== null && <Notice kind="info" text={understoodAs} />}
@@ -1264,7 +1265,7 @@ export function StudioRefineWorkspace({
       {workspaceMode === 'refine' && <>
         <View>
           <Field
-            label="What would you like to change?"
+            label={refineInstructionLabel}
             value={instruction}
             onChange={(next) => {
               setInstruction(next);
@@ -1544,15 +1545,15 @@ export function StudioRefineWorkspace({
       <Text style={styles.creditEstimate}>{workspaceMode === 'specifications'
         ? '0 credits · specification revision only'
         : mode === 'annotation' && pendingAnnotation === null
-          ? `Interpretation review · 0 credits. Preview estimated ${REFINE_CREDITS_PER_OUTPUT} credits after confirmation.`
+          ? `Interpretation review · 0 credits. Preview estimated ${refineCreditsPerOutput} credits after confirmation.`
         : mode === 'component' && catalogPreviewMode === 'instant'
           ? 'Quick preview · 0 credits'
-          : `1 requested output × ${REFINE_CREDITS_PER_OUTPUT} credits = estimated ${REFINE_CREDITS_PER_OUTPUT} credits`}</Text>
+          : `1 requested output × ${refineCreditsPerOutput} credits = estimated ${refineControls.estimateCredits(1)} credits`}</Text>
       {workspaceMode === 'refine' ? (
         <Button title={mode === 'annotation'
           ? pendingAnnotation === null
             ? busy ? 'Reading marks…' : 'Review interpretation · 0 credits'
-            : busy ? 'Creating preview…' : `Confirm & create preview · ${REFINE_CREDITS_PER_OUTPUT} credits`
+            : busy ? 'Creating preview…' : `Confirm & create preview · ${refineCreditsPerOutput} credits`
           : busy ? 'Creating preview…' : 'Preview change'} disabled={busy || !reviewSourceIsActive
           || (mode === 'component' && (selected === null || !selectedPathReady))
           || (mode === 'instruction' && !instruction.trim())

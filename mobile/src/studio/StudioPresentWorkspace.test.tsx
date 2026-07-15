@@ -285,6 +285,8 @@ describe('StudioPresentWorkspace', () => {
       fireEvent.press(screen.getByText('Create another presentation'));
     });
     expect(await screen.findByText('What do you need?')).toBeTruthy();
+    expect(screen.getByLabelText('Presentation destination').props.accessibilityRole)
+      .toBe('radiogroup');
     expect(screen.getByText('Create client beauty render')).toBeTruthy();
   });
 

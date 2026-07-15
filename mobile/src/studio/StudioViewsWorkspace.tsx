@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Pressable, ScrollView, StyleSheet, Text, View,
 } from 'react-native';
@@ -13,11 +13,9 @@ import {
   designerCheckDetail, designerCheckLabel, designerReviewState,
 } from './designerReviewLanguage';
 import { designerErrorMessage } from './designerErrorMessage';
-import { getStudioAction } from './actions';
 import { useVisualReviewReadiness } from './useVisualReviewReadiness';
 import { StudioComparisonInspector } from './StudioComparisonInspector';
-
-const VIEWS_CREDITS_PER_OUTPUT = getStudioAction('views').creditEstimate ?? 0;
+import { getStudioWorkspaceControls } from './workspaceControls';
 
 const VIEWS = [
   { id: 'front', label: 'Front', detail: 'A clear straight-on geometry view.' },
@@ -45,6 +43,9 @@ export function StudioViewsWorkspace({
   gateway, lineage, createdBy, onSaved, onOpenCollections, imageRequestHeaders,
   resumeReviewJobId, reviewSourceIsActive = true,
 }: StudioViewsWorkspaceProps) {
+  const viewsControls = useMemo(() => getStudioWorkspaceControls('views'), []);
+  const viewsFieldLabel = viewsControls.fields[0]!.label;
+  const viewsCreditsPerOutput = viewsControls.creditsPerOutput;
   const [view, setView] = useState<ViewId>('three_quarter');
   const [preview, setPreview] = useState<StudioViewPreview | null>(null);
   const [busy, setBusy] = useState(false);
@@ -267,12 +268,13 @@ export function StudioViewsWorkspace({
         You will review a temporary result before anything is saved.
       </Text>
       {!reviewSourceIsActive && <Notice kind="info" text="This Activity result was created from an earlier revision. Only its existing preview can be reviewed or discarded." />}
+      <Text style={styles.sectionLabel}>{viewsFieldLabel}</Text>
       <View style={styles.viewGrid}>
         {VIEWS.map((item) => (
           <Pressable
             key={item.id}
-            accessibilityRole="button"
-            accessibilityState={{ selected: view === item.id }}
+            accessibilityRole="radio"
+            accessibilityState={{ checked: view === item.id }}
             onPress={() => setView(item.id)}
             style={[styles.viewCard, view === item.id && styles.selectedCard]}
           >
@@ -291,7 +293,7 @@ export function StudioViewsWorkspace({
       )}
       {visibleError !== null && <Notice kind="error" text={visibleError} />}
       <Text style={styles.creditEstimate}>
-        1 requested output × {VIEWS_CREDITS_PER_OUTPUT} credits = estimated {VIEWS_CREDITS_PER_OUTPUT} credits
+        1 requested output × {viewsCreditsPerOutput} credits = estimated {viewsControls.estimateCredits(1)} credits
       </Text>
       <Button title={busy ? 'Creating preview…' : 'Preview view'} disabled={busy || !reviewSourceIsActive} onPress={() => { void createPreview(); }} />
     </ScrollView>
@@ -304,6 +306,7 @@ const styles = StyleSheet.create({
   eyebrow: { color: theme.accent, fontSize: 11, fontWeight: '800', letterSpacing: 2 },
   title: { color: theme.ink, fontFamily: theme.serif, fontSize: 28, lineHeight: 34 },
   body: { color: theme.faint, fontSize: 14, lineHeight: 21, maxWidth: 680 },
+  sectionLabel: { color: theme.ink, fontSize: 12, fontWeight: '800', letterSpacing: 1.2 },
   creditEstimate: { color: theme.faint, fontSize: 12, lineHeight: 18 },
   viewGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
   viewCard: { width: 200, minHeight: 96, borderWidth: 1, borderColor: theme.line, borderRadius: radius.md, padding: 14, backgroundColor: theme.card },

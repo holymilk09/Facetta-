@@ -226,9 +226,11 @@ test('action schemas match the controls rendered by Create and Present', () => {
   assert.deepEqual(create.contextRequirements, []);
   const createReferences = create.fields.filter((field) => field.kind === 'reference');
   assert.deepEqual(
-    createReferences.map((field) => ({ id: field.id, role: field.referenceRole })),
+    createReferences.map((field) => ({
+      id: field.id, label: field.label, role: field.referenceRole,
+    })),
     STUDIO_CREATE_REFERENCE_CONTROLS.map((control) => ({
-      id: control.fieldId, role: control.role,
+      id: control.fieldId, label: control.label, role: control.role,
     })),
   );
   assert.deepEqual(create.referenceRoles, STUDIO_CREATE_REFERENCE_CONTROLS.map(({ role }) => role));
@@ -244,7 +246,7 @@ test('action schemas match the controls rendered by Create and Present', () => {
     [
       {
         id: STUDIO_PRESENT_CONTROLS.destination.fieldId,
-        label: 'Presentation destination',
+        label: STUDIO_PRESENT_CONTROLS.destination.label,
       },
       {
         id: STUDIO_PRESENT_CONTROLS.direction.fieldId,

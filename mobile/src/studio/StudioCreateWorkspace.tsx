@@ -9,9 +9,9 @@ import type { StudioGateway } from './gateway';
 import type { AssetSummary, CreativeSourceKind, ProjectDetail } from '../trusted/types';
 import { radius, theme } from '../theme';
 import { designerErrorMessage } from './designerErrorMessage';
-import { getStudioAction } from './actions';
 import {
-  STUDIO_CREATE_REFERENCE_CONTROLS, type CreateReferenceRole,
+  getStudioWorkspaceControls, STUDIO_CREATE_REFERENCE_CONTROLS,
+  type CreateReferenceRole,
 } from './workspaceControls';
 import { useVisualReviewReadiness } from './useVisualReviewReadiness';
 import { StudioReviewImage } from './StudioReviewImage';
@@ -19,8 +19,6 @@ import { StudioComparisonInspector } from './StudioComparisonInspector';
 
 export { STUDIO_CREATE_REFERENCE_CONTROLS } from './workspaceControls';
 export type { CreateReferenceRole } from './workspaceControls';
-
-const CREATE_CREDITS_PER_OUTPUT = getStudioAction('create').creditEstimate ?? 0;
 
 type SecondaryCreateReferenceRole = Exclude<CreateReferenceRole, 'master_geometry'>;
 
@@ -83,10 +81,6 @@ export interface StudioCreateWorkspaceProps {
   ) => StudioCreateReference | null | Promise<StudioCreateReference | null>;
   onSave: (selection: StudioCreateSelection) => void;
 }
-
-const labelForRole = (role: CreateReferenceRole) => (
-  STUDIO_CREATE_REFERENCE_CONTROLS.find((item) => item.role === role)?.label ?? role
-);
 
 const referencePreviewUri = (reference: StudioCreateReference): string => (
   `data:${reference.mediaType};base64,${reference.imageBase64}`
@@ -162,6 +156,25 @@ export function StudioCreateWorkspace({
   onRequestReference,
   onSave,
 }: StudioCreateWorkspaceProps) {
+  const createControls = useMemo(() => getStudioWorkspaceControls('create'), []);
+  const createBriefLabel = createControls.fields[0]!.label;
+  const createCreditsPerOutput = createControls.creditsPerOutput;
+  const createOutputChoices = (
+    createControls.requestedOutputChoices as readonly StudioCreateCandidateCount[]
+  );
+  const createReferenceControls = useMemo(() => (
+    STUDIO_CREATE_REFERENCE_CONTROLS.map((control) => {
+      const field = createControls.fields.find(({ fieldId }) => fieldId === control.fieldId);
+      if (field === undefined || field.role !== control.role || field.help === null) {
+        throw new Error(`Invalid Create reference control for ${control.fieldId}`);
+      }
+      return Object.freeze({
+        ...control,
+        label: field.label,
+        help: field.help,
+      });
+    })
+  ), [createControls]);
   const [localDraft, setLocalDraft] = useState<StudioCreateDraft>(() => ({
     sentence: initialSentence,
     references: [...initialReferences],
@@ -630,7 +643,7 @@ export function StudioCreateWorkspace({
         Start with one sentence. References are optional, and production details can wait until you choose a direction.
       </Text>
       <TextInput
-        accessibilityLabel="Design sentence"
+        accessibilityLabel={createBriefLabel}
         placeholder="A sculptural aquamarine collar with articulated white-gold links…"
         placeholderTextColor={theme.faint}
         multiline
@@ -746,7 +759,7 @@ export function StudioCreateWorkspace({
         <View style={styles.setupPanel}>
           <Text style={styles.sectionTitle}>How many directions?</Text>
           <View style={styles.countRow}>
-            {([1, 2, 3, 4] as const).map((count) => (
+            {createOutputChoices.map((count) => (
               <Pressable
                 key={count}
                 accessibilityRole="radio"
@@ -765,7 +778,7 @@ export function StudioCreateWorkspace({
           <Text style={styles.sectionTitle}>Optional references</Text>
           <Text style={styles.sectionHelp}>Give every image one role so intent stays unambiguous.</Text>
           <View style={styles.referenceList}>
-            {STUDIO_CREATE_REFERENCE_CONTROLS.filter(
+            {createReferenceControls.filter(
               ({ role }) => role !== 'master_geometry',
             ).map(({ role, label, help }) => {
               const reference = references.find((item) => item.role === role);
@@ -851,7 +864,7 @@ export function StudioCreateWorkspace({
 
       {error !== null && <Text style={styles.error}>{error}</Text>}
       <Text style={styles.creditEstimate}>
-        {candidateCount} requested output{candidateCount === 1 ? '' : 's'} × {CREATE_CREDITS_PER_OUTPUT} credits = estimated {candidateCount * CREATE_CREDITS_PER_OUTPUT} credits
+        {candidateCount} requested output{candidateCount === 1 ? '' : 's'} × {createCreditsPerOutput} credits = estimated {createControls.estimateCredits(candidateCount)} credits
       </Text>
       <Pressable
         accessibilityRole="button"

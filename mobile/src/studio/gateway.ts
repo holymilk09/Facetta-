@@ -950,6 +950,17 @@ export function createStudioGateway(
         'validation', 422,
       );
     }
+    const requestedOutputRange = action.requestedOutputRange;
+    if (requestedOutputRange === null
+      || !Number.isInteger(requestedOutputs)
+      || requestedOutputs < requestedOutputRange.min
+      || requestedOutputs > requestedOutputRange.max) {
+      return gatewayError(
+        'INVALID_REQUESTED_OUTPUT_COUNT',
+        `This action requires ${requestedOutputRange?.min ?? 0}–${requestedOutputRange?.max ?? 0} requested outputs.`,
+        'validation', 422,
+      );
+    }
     try {
       const created = await client.createStudioJob({
         owner,

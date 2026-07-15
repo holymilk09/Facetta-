@@ -1186,6 +1186,35 @@ test('Create forwards prompt advisory references through the typed gateway seam'
   });
 });
 
+test('Create rejects output counts outside the canonical manifest before any mutation', async () => {
+  let createStudioJobCalls = 0;
+  let createProjectCalls = 0;
+  const gateway = createStudioGateway(fakeClient({
+    createStudioJob: async () => {
+      createStudioJobCalls += 1;
+      return unavailable();
+    },
+    createProjectFromPrompt: async () => {
+      createProjectCalls += 1;
+      return unavailable();
+    },
+  }));
+
+  const result = await gateway.createFromPrompt({
+    prompt: 'A minimal gold cuff',
+    owner: 'designer_1',
+    title: 'Gold cuff',
+    // Simulate malformed runtime input that bypassed the compile-time client.
+    variation_count: 5 as unknown as 1,
+  });
+
+  assert.equal(result.status, 422);
+  assert.equal(result.error?.code, 'INVALID_REQUESTED_OUTPUT_COUNT');
+  assert.equal(result.error?.category, 'validation');
+  assert.equal(createStudioJobCalls, 0);
+  assert.equal(createProjectCalls, 0);
+});
+
 test('Views stay temporary, bind to the exact revision, and save only after acceptance', async () => {
   const acceptedProject = project();
   acceptedProject.derived_assets = [{
