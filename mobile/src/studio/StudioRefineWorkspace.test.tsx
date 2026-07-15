@@ -420,10 +420,18 @@ describe('StudioRefineWorkspace', () => {
     );
 
     expect(getComponentCatalog).not.toHaveBeenCalled();
-    expect(screen.queryByLabelText('Component refine mode')).toBeNull();
+    expect(screen.getByLabelText('Component refine mode')).toBeTruthy();
     expect(screen.getByLabelText('What would you like to change?')).toBeTruthy();
     expect(screen.queryByText('Unlock precise ring edits')).toBeNull();
     expect(screen.queryByText('Review starting design')).toBeNull();
+    await fireEvent.press(screen.getByLabelText('Component refine mode'));
+    expect(screen.getByText('Unlock precise ring edits')).toBeTruthy();
+    expect(screen.getByText(/review the starting design first.*no credits/i)).toBeTruthy();
+    expect(screen.queryByText('1 · Component')).toBeNull();
+    await fireEvent.press(screen.getByText('Review starting design'));
+    expect(onReviewStartingDesign).toHaveBeenCalledWith('');
+    expect(getComponentCatalog).not.toHaveBeenCalled();
+    expect(previewVisualRefine).not.toHaveBeenCalled();
     await fireEvent.changeText(
       screen.getByPlaceholderText(/make the presentation softer/i),
       'Make the lighting warmer',
@@ -443,7 +451,7 @@ describe('StudioRefineWorkspace', () => {
     await fireEvent(screen.getByLabelText('Temporary refinement preview'), 'load');
     await fireEvent.press(screen.getByText('Apply as new revision'));
     await waitFor(() => expect(onApplied).toHaveBeenCalledWith(preSpecProject));
-    expect(onReviewStartingDesign).not.toHaveBeenCalled();
+    expect(onReviewStartingDesign).toHaveBeenCalledTimes(1);
     expect(await screen.findByText('Saved as Revision 2.')).toBeTruthy();
     expect(screen.queryByPlaceholderText(/make the presentation softer/i)).toBeNull();
     await fireEvent.press(screen.getByText('Refine another change'));

@@ -389,6 +389,8 @@ export function StudioRefineWorkspace({
       && (candidate.component_path !== 'stone.color' || exactStoneSpecies !== null),
   ) ?? [], [exactStoneSpecies, targeting]);
   const componentAvailable = exactSpecification && !targetingLoading && readyPaths.length > 0;
+  const componentEntryAvailable = componentAvailable
+    || (!exactSpecification && onReviewStartingDesign !== undefined);
   const selectedPathReady = targetability?.status === 'ready'
     && (path !== 'stone.color' || exactStoneSpecies !== null);
 
@@ -398,8 +400,10 @@ export function StudioRefineWorkspace({
   }, [readyPaths, selectedPathReady, targeting, targetingLoading]);
 
   useEffect(() => {
-    if (mode === 'component' && !targetingLoading && !componentAvailable) setMode('instruction');
-  }, [componentAvailable, mode, targetingLoading]);
+    if (mode === 'component' && !targetingLoading && !componentEntryAvailable) {
+      setMode('instruction');
+    }
+  }, [componentEntryAvailable, mode, targetingLoading]);
 
   useEffect(() => {
     let current = true;
@@ -439,8 +443,10 @@ export function StudioRefineWorkspace({
     selectedPathReady, targetingLoading]);
 
   useEffect(() => {
-    if (!exactSpecification && mode === 'component') setMode('instruction');
-  }, [exactSpecification, mode]);
+    if (!exactSpecification && onReviewStartingDesign === undefined && mode === 'component') {
+      setMode('instruction');
+    }
+  }, [exactSpecification, mode, onReviewStartingDesign]);
 
   useEffect(() => {
     let current = true;
@@ -1288,7 +1294,7 @@ export function StudioRefineWorkspace({
         {([
           ['component', 'Choose component', 'Use a controlled material or construction option.'],
           ['annotation', 'Mark exact region', 'Draw directly on the exact active image.'],
-        ] as const).filter(([id]) => id !== 'component' || componentAvailable)
+        ] as const).filter(([id]) => id !== 'component' || componentEntryAvailable)
           .map(([id, label, detail]) => (
             <Pressable
               key={id}
@@ -1306,12 +1312,14 @@ export function StudioRefineWorkspace({
                 if (id === 'annotation') setAnnotationPrefill(instruction);
                 setFactReview(null);
                 setRoutingGuidance(null);
-                setStartingFactsRequired(false);
+                setStartingFactsRequired(id === 'component' && !exactSpecification);
                 setError(null);
               }}
               style={[styles.modeCard, mode === id && styles.selectedCard]}>
               <Text style={styles.pathTitle}>{label}</Text>
-              <Text style={styles.pathHelp}>{detail}</Text>
+              <Text style={styles.pathHelp}>{id === 'component' && !exactSpecification
+                ? 'Review the starting design first, then choose a controlled material or construction option. No credits.'
+                : detail}</Text>
             </Pressable>
           ))}
         </View>
@@ -1341,7 +1349,7 @@ export function StudioRefineWorkspace({
         <Notice kind="info" text="This revision has no precisely mapped component regions yet. Describe an appearance change or use Mark up; Facetta will not guess component geometry." />
       )}
 
-      {workspaceMode === 'refine' && mode === 'component' && <>
+      {workspaceMode === 'refine' && mode === 'component' && exactSpecification && <>
         <Text style={styles.sectionTitle}>1 · Component</Text>
         <View style={styles.pathGrid}>
           {PATHS.map((item) => {

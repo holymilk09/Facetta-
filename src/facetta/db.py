@@ -38,6 +38,7 @@ _engine_initialization_lock = Lock()
 SpecJSON = JSON().with_variant(JSONB(), "postgresql")
 
 STUDIO_CREATE_INTENT_SCHEMA_VERSION = "facetta.creative-intent.v1"
+STUDIO_REFINE_INTENT_SCHEMA_VERSION = "facetta.refine-intent.v1"
 
 MOUNTING_ARTIFACT_SCHEMA_VERSION = "facetta.mounting-view.v1"
 MOUNTING_ARTIFACT_KIND = "mounting_view"
@@ -483,6 +484,103 @@ def _reject_studio_create_intent_delete(
 ) -> None:
     raise ImmutableStudioCreateIntentError(
         "Studio Create intent records are immutable"
+    )
+
+
+def studio_refine_intent_sha256(refine_intent: dict) -> str:
+    """Hash one canonical designer-requested Refine intent snapshot."""
+
+    canonical = json.dumps(
+        refine_intent,
+        sort_keys=True,
+        separators=(",", ":"),
+        ensure_ascii=False,
+        allow_nan=False,
+    ).encode("utf-8")
+    return hashlib.sha256(canonical).hexdigest()
+
+
+class StudioRefineIntentRecord(Base):
+    """Append-only exact edit authority claimed by one Studio Refine job.
+
+    Refine jobs are created before the designer chooses a concrete editing
+    surface. The first provider-backed edit therefore claims the job with its
+    complete canonical request. Replays may proceed only with the same hash.
+    """
+
+    __tablename__ = "studio_refine_intents"
+
+    studio_job_id: Mapped[str] = mapped_column(
+        String(32), ForeignKey("studio_jobs.id", ondelete="RESTRICT"),
+        primary_key=True,
+    )
+    owner: Mapped[str] = mapped_column(String(32), index=True)
+    schema_version: Mapped[str] = mapped_column(String(40))
+    refine_intent: Mapped[dict] = mapped_column(SpecJSON, nullable=False)
+    refine_intent_sha256: Mapped[str] = mapped_column(String(64))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow,
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "schema_version = 'facetta.refine-intent.v1'",
+            name="ck_studio_refine_intent_schema",
+        ),
+        CheckConstraint(
+            "length(refine_intent_sha256) = 64",
+            name="ck_studio_refine_intent_sha256",
+        ),
+    )
+
+
+class ImmutableStudioRefineIntentError(RuntimeError):
+    """A canonical Studio Refine request snapshot cannot be rewritten."""
+
+
+@event.listens_for(StudioRefineIntentRecord, "before_insert")
+def _validate_studio_refine_intent_insert(
+    _mapper, connection, target: StudioRefineIntentRecord,
+) -> None:
+    intent = target.refine_intent
+    if not isinstance(intent, dict):
+        raise ValueError("Studio Refine intent must be a JSON object")
+    if target.schema_version != STUDIO_REFINE_INTENT_SCHEMA_VERSION:
+        raise ValueError("Studio Refine intent schema is not canonical")
+    if target.refine_intent_sha256 != studio_refine_intent_sha256(intent):
+        raise ValueError("Studio Refine intent hash does not match its payload")
+    job = connection.execute(
+        text(
+            "SELECT owner, action_id FROM studio_jobs "
+            "WHERE id = :studio_job_id"
+        ),
+        {"studio_job_id": target.studio_job_id},
+    ).mappings().one_or_none()
+    if (
+        job is None
+        or job["owner"] != target.owner
+        or job["action_id"] != "refine"
+    ):
+        raise ValueError(
+            "Studio Refine intent requires its owner's canonical Refine job"
+        )
+
+
+@event.listens_for(StudioRefineIntentRecord, "before_update")
+def _reject_studio_refine_intent_update(
+    _mapper, _connection, _target,
+) -> None:
+    raise ImmutableStudioRefineIntentError(
+        "Studio Refine intent records are immutable"
+    )
+
+
+@event.listens_for(StudioRefineIntentRecord, "before_delete")
+def _reject_studio_refine_intent_delete(
+    _mapper, _connection, _target,
+) -> None:
+    raise ImmutableStudioRefineIntentError(
+        "Studio Refine intent records are immutable"
     )
 
 

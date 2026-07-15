@@ -29,11 +29,15 @@ from facetta.db import (
     RevisionComponentMapRecord,
     StudioJobRecord,
     StudioMarkupCandidateRecord,
+    StudioRefineIntentRecord,
     get_db,
     new_id,
     utcnow,
 )
-from facetta.api.catalog import StudioComponentTargetingResponse
+from facetta.api.catalog import (
+    CatalogPreviewRequest,
+    StudioComponentTargetingResponse,
+)
 from facetta.design_form import NormalizedPoint, NormalizedPolygon
 from facetta.catalog_preview_candidates import (
     CatalogPreviewJobError,
@@ -56,6 +60,7 @@ from facetta.image_agent import (
     QualityVerdict,
 )
 from facetta.main import app
+from facetta.provider_job_gate import bind_or_require_studio_refine_intent
 from facetta.revision_component_map import (
     RevisionComponent,
     RevisionComponentMap,
@@ -2397,6 +2402,60 @@ def test_catalog_preview_rejects_non_refine_job_before_provider_or_evidence(
         job = db.get(StudioJobRecord, wrong_job["job_id"])
         assert job is not None and job.status == "running"
         assert job.completed_outputs == 0 and job.charged_outputs == 0
+
+
+def test_catalog_preview_rejects_changed_bound_intent_before_provider(
+    catalog_client,
+    example_spec,
+    monkeypatch,
+):
+    client, SessionFactory = catalog_client
+    project = _create_project(client, example_spec, SessionFactory)
+    job = _studio_job(client, project)
+    original_request = CatalogPreviewRequest(**_request(
+        studio_job_id=job["job_id"],
+    ))
+    original_intent = {
+        "intent_kind": "catalog",
+        "request": original_request.model_dump(
+            mode="json",
+            exclude={"studio_job_id"},
+        ),
+    }
+    with SessionFactory() as db:
+        bind_or_require_studio_refine_intent(
+            db,
+            studio_job_id=job["job_id"],
+            owner="usr_catalog",
+            active_design_id=project["root_id"],
+            source_revision_id=project["active_asset_id"],
+            refine_intent=original_intent,
+        )
+        db.commit()
+
+    provider_calls: list[bool] = []
+    monkeypatch.setattr(
+        "facetta.api.catalog._trusted_image_agent",
+        lambda: provider_calls.append(True),
+    )
+    response = client.post(
+        f"/assets/{project['active_asset_id']}/catalog/preview",
+        json=_request(option_id="white", studio_job_id=job["job_id"]),
+    )
+
+    assert response.status_code == 409, response.text
+    assert response.json()["code"] == "catalog_preview_job_invalid"
+    assert provider_calls == []
+    with SessionFactory() as db:
+        durable = db.get(StudioRefineIntentRecord, job["job_id"])
+        current_job = db.get(StudioJobRecord, job["job_id"])
+        assert durable is not None and durable.refine_intent == original_intent
+        assert current_job is not None and current_job.status == "running"
+        assert current_job.completed_outputs == current_job.charged_outputs == 0
+        assert db.scalar(select(func.count()).select_from(ImageRun)) == 0
+        assert db.scalar(select(func.count()).select_from(
+            PreviewCandidateRecord,
+        )) == 0
 
 
 def test_production_catalog_preview_requires_job_before_provider(

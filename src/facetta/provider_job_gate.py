@@ -8,6 +8,7 @@ be tied to one canonical, running Studio job before provider work begins.
 from __future__ import annotations
 
 from dataclasses import dataclass
+import json
 from typing import Literal, Mapping
 
 from sqlalchemy import select
@@ -16,9 +17,12 @@ from sqlalchemy.orm import Session
 from facetta.config import env_value
 from facetta.db import (
     STUDIO_CREATE_INTENT_SCHEMA_VERSION,
+    STUDIO_REFINE_INTENT_SCHEMA_VERSION,
     StudioCreateIntentRecord,
     StudioJobRecord,
+    StudioRefineIntentRecord,
     studio_create_intent_sha256,
+    studio_refine_intent_sha256,
 )
 from facetta.studio_jobs import studio_job_action_definition
 
@@ -55,6 +59,17 @@ class StudioCreateIntentSnapshot:
             "creative_intent": dict(self.creative_intent),
             "creative_intent_sha256": self.creative_intent_sha256,
         }
+
+
+@dataclass(frozen=True, slots=True)
+class StudioRefineIntentSnapshot:
+    """Verified append-only edit request bound to one Refine job."""
+
+    studio_job_id: str
+    owner: str
+    schema_version: str
+    refine_intent: dict[str, object]
+    refine_intent_sha256: str
 
 
 _CREATIVE_INTENT_VALUES: dict[str, frozenset[str]] = {
@@ -104,6 +119,46 @@ def normalize_studio_create_intent(
                 422,
             )
         normalized[key] = item
+    return normalized
+
+
+def normalize_studio_refine_intent(
+    value: Mapping[str, object],
+) -> dict[str, object]:
+    """Return a byte-stable JSON snapshot of one exact Refine request."""
+
+    if (
+        not isinstance(value, Mapping)
+        or set(value) != {"intent_kind", "request"}
+        or not isinstance(value.get("intent_kind"), str)
+        or not str(value["intent_kind"]).strip()
+        or not isinstance(value.get("request"), Mapping)
+    ):
+        raise _error(
+            "studio_refine_intent_invalid",
+            "the Studio Refine request is not canonical",
+            422,
+        )
+    try:
+        normalized = json.loads(json.dumps(
+            dict(value),
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+            allow_nan=False,
+        ))
+    except (TypeError, ValueError):
+        raise _error(
+            "studio_refine_intent_invalid",
+            "the Studio Refine request is not canonical",
+            422,
+        ) from None
+    if not isinstance(normalized, dict):
+        raise _error(
+            "studio_refine_intent_invalid",
+            "the Studio Refine request is not canonical",
+            422,
+        )
     return normalized
 
 
@@ -260,3 +315,83 @@ def require_provider_studio_job(
                 422,
             )
     return job
+
+
+def bind_or_require_studio_refine_intent(
+    db: Session,
+    *,
+    studio_job_id: str,
+    owner: str,
+    active_design_id: str,
+    source_revision_id: str,
+    refine_intent: Mapping[str, object],
+) -> StudioRefineIntentSnapshot:
+    """Claim a running Refine job once, then require exact request equality.
+
+    The job row remains locked for the surrounding provider transaction. This
+    makes the first request the sole authority and rejects a changed component,
+    option, variant, or production detail before provider work begins.
+    """
+
+    require_provider_studio_job(
+        db,
+        job_id=studio_job_id,
+        owner=owner,
+        action_id="refine",
+        requested_outputs=1,
+        active_design_id=active_design_id,
+        source_revision_id=source_revision_id,
+    )
+    normalized = normalize_studio_refine_intent(refine_intent)
+    digest = studio_refine_intent_sha256(normalized)
+    record = db.scalar(select(StudioRefineIntentRecord).where(
+        StudioRefineIntentRecord.studio_job_id == studio_job_id,
+    ).with_for_update())
+    if record is None:
+        record = StudioRefineIntentRecord(
+            studio_job_id=studio_job_id,
+            owner=owner,
+            schema_version=STUDIO_REFINE_INTENT_SCHEMA_VERSION,
+            refine_intent=normalized,
+            refine_intent_sha256=digest,
+        )
+        db.add(record)
+        db.flush()
+    else:
+        if record.owner != owner:
+            raise _error(
+                "studio_refine_intent_unavailable",
+                "the Studio Refine request is unavailable",
+                404,
+            )
+        try:
+            stored = normalize_studio_refine_intent(record.refine_intent)
+        except ProviderStudioJobError:
+            raise _error(
+                "studio_refine_intent_corrupt",
+                "the Studio Refine request failed its integrity check",
+                409,
+            ) from None
+        if (
+            record.schema_version != STUDIO_REFINE_INTENT_SCHEMA_VERSION
+            or record.refine_intent_sha256
+            != studio_refine_intent_sha256(stored)
+        ):
+            raise _error(
+                "studio_refine_intent_corrupt",
+                "the Studio Refine request failed its integrity check",
+                409,
+            )
+        if stored != normalized or record.refine_intent_sha256 != digest:
+            raise _error(
+                "studio_refine_intent_mismatch",
+                "the edit request changed after its Studio job was claimed",
+                409,
+            )
+    return StudioRefineIntentSnapshot(
+        studio_job_id=record.studio_job_id,
+        owner=record.owner,
+        schema_version=record.schema_version,
+        refine_intent=normalized,
+        refine_intent_sha256=digest,
+    )

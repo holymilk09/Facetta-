@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 import hashlib
-from typing import Literal
+from typing import Literal, Mapping
 
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
@@ -30,6 +30,10 @@ from facetta.instant_metal_color import (
 )
 from facetta.json_types import JsonObject
 from facetta.project_backbone import is_primary_revision
+from facetta.provider_job_gate import (
+    ProviderStudioJobError,
+    bind_or_require_studio_refine_intent,
+)
 from facetta.revision_component_map import (
     ComponentMapError,
     RevisionComponentMap,
@@ -294,6 +298,7 @@ def validate_catalog_preview_refine_job(
     owner: str,
     project_root_id: str,
     source_asset_id: str,
+    refine_intent: Mapping[str, object],
 ) -> None:
     """Fail before provider work; store revalidates under lock before binding."""
     job = db.scalar(select(StudioJobRecord).where(
@@ -318,6 +323,17 @@ def validate_catalog_preview_refine_job(
     ):
         raise CatalogPreviewJobError(
             "the Studio Refine job belongs to another exact revision")
+    try:
+        bind_or_require_studio_refine_intent(
+            db,
+            studio_job_id=job_id,
+            owner=owner,
+            active_design_id=project_root_id,
+            source_revision_id=source_asset_id,
+            refine_intent=refine_intent,
+        )
+    except ProviderStudioJobError as exc:
+        raise CatalogPreviewJobError(str(exc)) from exc
 
 
 def _settle_zero_job(

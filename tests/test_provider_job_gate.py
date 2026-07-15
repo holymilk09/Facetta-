@@ -4,9 +4,17 @@ import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 
-from facetta.db import Base, StudioJobRecord, utcnow
+from facetta.db import (
+    Base,
+    STUDIO_REFINE_INTENT_SCHEMA_VERSION,
+    StudioJobRecord,
+    StudioRefineIntentRecord,
+    studio_refine_intent_sha256,
+    utcnow,
+)
 from facetta.provider_job_gate import (
     ProviderStudioJobError,
+    bind_or_require_studio_refine_intent,
     require_provider_studio_job,
     studio_create_intent_record,
 )
@@ -260,3 +268,59 @@ def test_create_gate_requires_exact_bound_visual_intent(db, monkeypatch):
             requested_outputs=1,
         )
     assert missing.value.code == "studio_create_intent_unbound"
+
+
+def test_refine_job_is_claimed_by_one_exact_append_only_request(db):
+    job = _job(db, job_id="job_refine_intent")
+    intent = {
+        "intent_kind": "catalog",
+        "request": {
+            "component_path": "metal.color",
+            "option_id": "rose_gold_18k",
+            "variant": 0,
+            "execution_mode": "provider",
+        },
+    }
+
+    bound = bind_or_require_studio_refine_intent(
+        db,
+        studio_job_id=job.id,
+        owner="usr_designer",
+        active_design_id="ast_project",
+        source_revision_id="ast_source",
+        refine_intent=intent,
+    )
+    db.commit()
+
+    durable = db.get(StudioRefineIntentRecord, job.id)
+    assert durable is not None
+    assert durable.schema_version == STUDIO_REFINE_INTENT_SCHEMA_VERSION
+    assert durable.refine_intent == intent
+    assert durable.refine_intent_sha256 == studio_refine_intent_sha256(intent)
+    assert bound.refine_intent_sha256 == durable.refine_intent_sha256
+
+    replay = bind_or_require_studio_refine_intent(
+        db,
+        studio_job_id=job.id,
+        owner="usr_designer",
+        active_design_id="ast_project",
+        source_revision_id="ast_source",
+        refine_intent=intent,
+    )
+    assert replay.refine_intent == intent
+
+    changed = {
+        **intent,
+        "request": {**intent["request"], "option_id": "white_gold_18k"},
+    }
+    with pytest.raises(ProviderStudioJobError) as mismatch:
+        bind_or_require_studio_refine_intent(
+            db,
+            studio_job_id=job.id,
+            owner="usr_designer",
+            active_design_id="ast_project",
+            source_revision_id="ast_source",
+            refine_intent=changed,
+        )
+    assert mismatch.value.code == "studio_refine_intent_mismatch"
+    assert db.get(StudioRefineIntentRecord, job.id).refine_intent == intent

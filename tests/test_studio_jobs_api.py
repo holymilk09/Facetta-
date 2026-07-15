@@ -32,6 +32,7 @@ from facetta.db import (
     ProjectRevisionRecord,
     StudioCreateIntentRecord,
     StudioJobRecord,
+    StudioRefineIntentRecord,
     StudioMarkupCandidateRecord,
     StudioPresentationCandidateRecord,
     StudioViewCandidateRecord,
@@ -379,6 +380,7 @@ def test_fresh_schema_contains_persistent_studio_jobs():
 
     assert StudioJobRecord.__tablename__ in inspector.get_table_names()
     assert StudioCreateIntentRecord.__tablename__ in inspector.get_table_names()
+    assert StudioRefineIntentRecord.__tablename__ in inspector.get_table_names()
     assert {
         "owner", "action_id", "lane", "status", "progress",
         "requested_outputs", "credits_per_output", "completed_outputs",

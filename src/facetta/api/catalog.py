@@ -1348,6 +1348,13 @@ def preview_catalog_revision(
                 owner=actor,
                 project_root_id=context.project.root_id,
                 source_asset_id=context.asset.id,
+                refine_intent={
+                    "intent_kind": "catalog",
+                    "request": request.model_dump(
+                        mode="json",
+                        exclude={"studio_job_id"},
+                    ),
+                },
             )
         except CatalogPreviewJobError as exc:
             return _error_response(
