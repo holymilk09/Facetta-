@@ -1037,11 +1037,11 @@ export function TrustedWorkflowScreen({
         <Button
           title="Confirm understanding"
           disabled={!confirmedRegion.trim() || !confirmedChange.trim() || state.busy !== null}
-          onPress={() => workflow.confirmMarkup({
+          onPress={() => { void workflow.confirmMarkup({
             target_region: confirmedRegion,
             requested_change: confirmedChange,
             impact: confirmedImpact,
-          })}
+          }); }}
         />
         <Button title="Discard" kind="ghost" onPress={workflow.discardMarkup} />
       </View>

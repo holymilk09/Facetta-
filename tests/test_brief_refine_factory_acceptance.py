@@ -248,6 +248,15 @@ def test_text_brief_scoped_color_refinement_reaches_exact_factory_pack(
         ),
     }
     markup_asset_id = reading["markup_asset_id"]
+    confirmed_interpretation = client.post(
+        f"/assets/{asset_v1}/markup/interpretations/"
+        f"{reading['interpretation_id']}/confirm",
+        json={"created_by": "usr_designer"},
+    )
+    assert confirmed_interpretation.status_code == 200, (
+        confirmed_interpretation.text
+    )
+    confirmed_interpretation_id = reading["interpretation_id"]
 
     # Read is audit-only: the exact approved primary remains active and the
     # immutable spec version has not moved.
@@ -394,6 +403,7 @@ def test_text_brief_scoped_color_refinement_reaches_exact_factory_pack(
     applied_response = client.post(f"/assets/{asset_v1}/markup/apply", json={
         "annotations": [confirmed_annotation],
         "markup_asset_id": markup_asset_id,
+        "confirmed_interpretation_id": confirmed_interpretation_id,
         "expected_design_version": 1,
         "created_by": "usr_designer",
     })

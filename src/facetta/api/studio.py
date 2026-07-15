@@ -62,6 +62,11 @@ from facetta.image_run_store import (
     persist_image_agent_result,
 )
 from facetta.media import sniff_media_type
+from facetta.markup_interpretations import (
+    MarkupInterpretationError,
+    confirmed_annotation,
+    require_confirmed_markup_interpretation,
+)
 from facetta.project_backbone import (
     accepted_creative_candidate,
     is_canonical_revision,
@@ -400,6 +405,9 @@ class CreateVisualPreviewRequest(BaseModel):
     scope: Literal["appearance", "marked_region"]
     mask_base64: Annotated[str, Field(min_length=1, max_length=14_000_000)] | None = None
     markup_asset_id: Annotated[str, Field(min_length=1, max_length=32)] | None = None
+    confirmed_interpretation_id: Annotated[
+        str, Field(min_length=1, max_length=32)
+    ] | None = None
     variant: Annotated[int, Field(ge=0, le=100)] = 0
     studio_job_id: Annotated[str, Field(min_length=1, max_length=32)] | None = None
 
@@ -1204,11 +1212,55 @@ def create_visual_preview(
             expected_active_asset_id=request.expected_active_asset_id,
             created_by=request.created_by,
         )
+        markup_asset_id = request.markup_asset_id
+        if request.scope == "marked_region":
+            if request.mask_base64 is not None:
+                raise StudioHistoryError(
+                    "markup_interpretation_substitution",
+                    "a confirmed marked preview must use its saved markup evidence",
+                    status_code=422,
+                )
+            try:
+                interpretation_record = (
+                    require_confirmed_markup_interpretation(
+                        db,
+                        request.confirmed_interpretation_id,
+                        owner=request.created_by,
+                        project_root_id=project.root_id,
+                        source_asset_id=source.id,
+                        current_design_version=None,
+                        current_spec_visual_hash=None,
+                        supplied_markup_asset_id=request.markup_asset_id,
+                        supplied_instruction=request.instruction,
+                    )
+                )
+                # Validate the canonical provider evidence before using its
+                # exact saved markup parent. Pre-spec visual previews cannot
+                # execute an interpretation classified as specification work;
+                # those facts must go through Starting Facts first.
+                annotation = confirmed_annotation(interpretation_record)
+                if annotation.get("impact") != "visual_only":
+                    raise MarkupInterpretationError(
+                        "markup_interpretation_impact_invalid",
+                        "pre-spec marked previews require a visual-only interpretation",
+                        422,
+                    )
+                markup_asset_id = interpretation_record.markup_asset_id
+            except MarkupInterpretationError as exc:
+                raise StudioHistoryError(
+                    exc.code, exc.detail, status_code=exc.status_code,
+                ) from exc
+        elif request.confirmed_interpretation_id is not None:
+            raise StudioHistoryError(
+                "visual_preview_confirmation_unexpected",
+                "an appearance preview does not use markup confirmation",
+                status_code=422,
+            )
         mask = _decode_visual_mask(
             db,
             request.mask_base64,
             created_by=request.created_by,
-            markup_asset_id=request.markup_asset_id,
+            markup_asset_id=markup_asset_id,
             scope=request.scope,
             source_asset=source,
             source=bytes(source.image),

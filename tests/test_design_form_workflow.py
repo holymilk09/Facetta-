@@ -252,7 +252,7 @@ def _read_shoulder_markup(
     client: TestClient,
     monkeypatch,
     asset_id: str,
-) -> str:
+) -> tuple[str, str]:
     reading = {
         "annotations": [{
             "region_description": "both stepped shoulders",
@@ -280,6 +280,7 @@ def _read_shoulder_markup(
             "marked_image_base64": base64.b64encode(
                 _marked_reference(SOURCE_IMAGE)
             ).decode(),
+            "created_by": "usr_designer",
         },
     )
     assert response.status_code == 200, response.text
@@ -288,7 +289,13 @@ def _read_shoulder_markup(
         "shoulder_architecture"
     )
     assert body["expected_design_version"] == 1
-    return body["markup_asset_id"]
+    confirmed = client.post(
+        f"/assets/{asset_id}/markup/interpretations/"
+        f"{body['interpretation_id']}/confirm",
+        json={"created_by": "usr_designer"},
+    )
+    assert confirmed.status_code == 200, confirmed.text
+    return body["markup_asset_id"], body["interpretation_id"]
 
 
 def _install_scoped_planner(monkeypatch) -> None:
@@ -395,11 +402,13 @@ def _install_image_agent(
     return plans, masks
 
 
-def _apply_body(markup_asset_id: str) -> dict:
+def _apply_body(markup_authority: tuple[str, str]) -> dict:
+    markup_asset_id, interpretation_id = markup_authority
     return {
         "expected_design_version": 1,
         "update_spec": True,
         "markup_asset_id": markup_asset_id,
+        "confirmed_interpretation_id": interpretation_id,
         "created_by": "usr_designer",
         "annotations": [{
             "region_description": "both stepped shoulders",
@@ -479,6 +488,7 @@ def test_art_deco_to_smooth_requires_full_trusted_target_contract(
 
     missing_markup = copy.deepcopy(valid)
     missing_markup.pop("markup_asset_id")
+    missing_markup.pop("confirmed_interpretation_id")
     cases.append(("markup-derived mask", missing_markup, 422))
 
     client_mask_only = copy.deepcopy(missing_markup)

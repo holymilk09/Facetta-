@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import hashlib
 import io
 from datetime import timedelta
@@ -15,6 +16,7 @@ from sqlalchemy.pool import StaticPool
 
 from conftest import EXAMPLE_SPEC, audited_import_spec
 from facetta import studio_preview_candidates as preview_seam
+import facetta.api.assets as assets_api
 from facetta.api import studio as studio_api
 from facetta.api.studio import get_studio_visual_preview_generator
 from facetta.auth import AuthenticatedPrincipal, require_principal_boundary
@@ -167,6 +169,40 @@ def _preview(client: TestClient, **overrides):
     payload.update(overrides)
     return client.post(
         "/studio/projects/ast_selected/visual-previews", json=payload)
+
+
+def _confirmed_pre_spec_markup(
+    client: TestClient,
+    monkeypatch,
+    marked: bytes,
+    *,
+    target_section: str | None = None,
+) -> dict:
+    instruction = "Warm only the highlighted metal surface"
+    monkeypatch.setattr(assets_api, "read_markup", lambda *_args, **_kwargs: {
+        "annotations": [{
+            "region_description": "the highlighted metal surface",
+            "change_instruction": instruction,
+            "confidence": 0.98,
+            "target_section": target_section,
+        }],
+        "understood_as": instruction,
+        "needs_clarification": False,
+        "clarification": "",
+    })
+    read = client.post("/assets/ast_selected/markup/read", json={
+        "marked_image_base64": base64.b64encode(marked).decode(),
+        "created_by": "usr_studio",
+    })
+    assert read.status_code == 200, read.text
+    body = read.json()
+    confirmed = client.post(
+        "/assets/ast_selected/markup/interpretations/"
+        f"{body['interpretation_id']}/confirm",
+        json={"created_by": "usr_studio"},
+    )
+    assert confirmed.status_code == 200, confirmed.text
+    return body
 
 
 def _running_refine_job(client: TestClient) -> str:
@@ -1783,7 +1819,38 @@ def test_owner_and_durable_run_lineage_fail_closed(studio_preview_client):
         assert db.scalar(select(func.count()).select_from(ProjectRevisionRecord)) == 0
 
 
-def test_marked_region_uses_exact_saved_markup_parent(studio_preview_client):
+def test_marked_region_uses_exact_saved_markup_parent(
+    studio_preview_client,
+    monkeypatch,
+):
+    client, Session = studio_preview_client
+    calls: list[dict] = []
+    app.dependency_overrides[get_studio_visual_preview_generator] = (
+        lambda: _generator(calls)
+    )
+    marked = Image.open(io.BytesIO(SOURCE)).convert("RGB")
+    draw = ImageDraw.Draw(marked)
+    draw.rectangle((10, 10, 20, 20), outline=(255, 0, 0), width=3)
+    output = io.BytesIO()
+    marked.save(output, format="PNG")
+    reading = _confirmed_pre_spec_markup(
+        client, monkeypatch, output.getvalue())
+
+    response = _preview(
+        client,
+        scope="marked_region",
+        markup_asset_id=reading["markup_asset_id"],
+        confirmed_interpretation_id=reading["interpretation_id"],
+        instruction="Warm only the highlighted metal surface",
+    )
+    assert response.status_code == 201, response.text
+    assert calls[0]["mask"] is not None
+    assert calls[0]["scope"] == "marked_region"
+
+
+def test_marked_region_requires_confirmed_interpretation_before_generator(
+    studio_preview_client,
+):
     client, Session = studio_preview_client
     calls: list[dict] = []
     app.dependency_overrides[get_studio_visual_preview_generator] = (
@@ -1796,7 +1863,7 @@ def test_marked_region_uses_exact_saved_markup_parent(studio_preview_client):
     marked.save(output, format="PNG")
     with Session() as db:
         db.add(ImageAsset(
-            id="ast_markup",
+            id="ast_unconfirmed_markup",
             root_id="ast_selected",
             parent_asset_id="ast_selected",
             design_version=None,
@@ -1810,12 +1877,47 @@ def test_marked_region_uses_exact_saved_markup_parent(studio_preview_client):
     response = _preview(
         client,
         scope="marked_region",
-        markup_asset_id="ast_markup",
+        markup_asset_id="ast_unconfirmed_markup",
         instruction="Warm only the highlighted metal surface",
     )
-    assert response.status_code == 201, response.text
-    assert calls[0]["mask"] is not None
-    assert calls[0]["scope"] == "marked_region"
+
+    assert response.status_code == 422
+    assert response.json()["code"] == "confirmed_markup_interpretation_required"
+    assert calls == []
+
+
+def test_pre_spec_marked_preview_rejects_specification_impact(
+    studio_preview_client,
+    monkeypatch,
+):
+    client, _Session = studio_preview_client
+    calls: list[dict] = []
+    app.dependency_overrides[get_studio_visual_preview_generator] = (
+        lambda: _generator(calls)
+    )
+    marked = Image.open(io.BytesIO(SOURCE)).convert("RGB")
+    draw = ImageDraw.Draw(marked)
+    draw.rectangle((10, 10, 20, 20), outline=(255, 0, 0), width=3)
+    output = io.BytesIO()
+    marked.save(output, format="PNG")
+    reading = _confirmed_pre_spec_markup(
+        client,
+        monkeypatch,
+        output.getvalue(),
+        target_section="metal",
+    )
+
+    response = _preview(
+        client,
+        scope="marked_region",
+        markup_asset_id=reading["markup_asset_id"],
+        confirmed_interpretation_id=reading["interpretation_id"],
+        instruction="Warm only the highlighted metal surface",
+    )
+
+    assert response.status_code == 422
+    assert response.json()["code"] == "markup_interpretation_impact_invalid"
+    assert calls == []
 
 
 def test_pre_spec_branch_and_restore_assets_cannot_gain_approval_authority(
@@ -1872,7 +1974,10 @@ def test_pre_spec_branch_and_restore_assets_cannot_gain_approval_authority(
         assert db.get(ImageAsset, "ast_prespec_restore").pinned_at is None
 
 
-def test_marked_region_rejects_markup_from_another_actor(studio_preview_client):
+def test_marked_region_rejects_markup_substitution(
+    studio_preview_client,
+    monkeypatch,
+):
     client, Session = studio_preview_client
     calls: list[dict] = []
     app.dependency_overrides[get_studio_visual_preview_generator] = (
@@ -1891,12 +1996,21 @@ def test_marked_region_rejects_markup_from_another_actor(studio_preview_client):
         ))
         db.commit()
 
+    marked = Image.open(io.BytesIO(SOURCE)).convert("RGB")
+    draw = ImageDraw.Draw(marked)
+    draw.rectangle((10, 10, 20, 20), outline=(255, 0, 0), width=3)
+    output = io.BytesIO()
+    marked.save(output, format="PNG")
+    reading = _confirmed_pre_spec_markup(
+        client, monkeypatch, output.getvalue())
+
     response = _preview(
         client,
         scope="marked_region",
         markup_asset_id="ast_intruder_markup",
+        confirmed_interpretation_id=reading["interpretation_id"],
         instruction="Warm only the highlighted metal surface",
     )
     assert response.status_code == 422
-    assert response.json()["code"] == "visual_preview_markup_invalid"
+    assert response.json()["code"] == "markup_interpretation_substitution"
     assert calls == []

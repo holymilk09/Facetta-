@@ -189,7 +189,8 @@ test('discard is terminal and never returns a changed project', async () => {
   const gateway = createStudioGateway(client as any);
   await gateway.previewVisualRefine({
     projectId: 'project_visual', sourceAssetId: 'asset_source', createdBy: 'designer_1',
-    instruction: 'soften the reflection', scope: 'marked_region', maskBase64: 'mask-bytes',
+    instruction: 'soften the reflection', scope: 'marked_region',
+    confirmedInterpretationId: 'interpretation_mask', markupAssetId: 'asset_markup',
   });
   const discarded = await gateway.discardVisualRefine({
     candidateId: 'candidate_discard', createdBy: 'designer_1',
@@ -397,12 +398,13 @@ test('marked-region refinement can reference server-validated markup instead of 
   const result = await gateway.previewVisualRefine({
     projectId: 'project_visual', sourceAssetId: 'asset_source', createdBy: 'designer_1',
     instruction: 'cool the marked stone only', scope: 'marked_region',
-    markupAssetId: 'markup_asset_1',
+    confirmedInterpretationId: 'interpretation_markup', markupAssetId: 'markup_asset_1',
   });
   assert.equal(result.error, null);
   assert.deepEqual(received, {
     created_by: 'designer_1', expected_active_asset_id: 'asset_source',
     instruction: 'cool the marked stone only', scope: 'marked_region',
+    confirmed_interpretation_id: 'interpretation_markup',
     markup_asset_id: 'markup_asset_1',
     studio_job_id: 'job_visual',
   });

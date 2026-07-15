@@ -157,8 +157,10 @@ export type StudioVisualPreviewRequest = StudioVisualLineage & {
   variant?: number;
 } & (
   | { scope: 'appearance'; maskBase64?: never; markupAssetId?: never }
-  | { scope: 'marked_region'; maskBase64: string; markupAssetId?: never }
-  | { scope: 'marked_region'; markupAssetId: string; maskBase64?: never }
+  | {
+      scope: 'marked_region'; confirmedInterpretationId: string;
+      markupAssetId: string; maskBase64?: never;
+    }
 );
 
 export interface StudioVisualPreview {
@@ -313,6 +315,7 @@ export interface StudioMarkupPreviewRequest extends ExactStudioLineage {
   createdBy: string;
   annotation: MarkupApplyRequest['annotation'];
   markupAssetId?: string | null;
+  confirmedInterpretationId?: string;
   variant?: number;
 }
 
@@ -426,6 +429,7 @@ type GatewayTrustedClient = Pick<TrustedApiClient,
   | 'getStudioComponentTargeting'
   | 'prepareStudioComponentMap'
   | 'readMarkup'
+  | 'confirmMarkupInterpretation'
   | 'reviseStudioFacts'
   | 'getDesignFamily'
   | 'listDesignFamilies'
@@ -1341,6 +1345,12 @@ export function createStudioGateway(
       return mapResult(await client.readMarkup(...args));
     },
 
+    async confirmMarkupInterpretation(
+      ...args: Parameters<GatewayTrustedClient['confirmMarkupInterpretation']>
+    ) {
+      return mapResult(await client.confirmMarkupInterpretation(...args));
+    },
+
     async reviseStudioFacts(
       ...args: Parameters<GatewayTrustedClient['reviseStudioFacts']>
     ) {
@@ -2154,8 +2164,7 @@ export function createStudioGateway(
       );
       if (
         request.scope === 'marked_region'
-        && (typeof request.maskBase64 === 'string'
-          ? request.maskBase64 : request.markupAssetId).trim().length === 0
+        && request.markupAssetId.trim().length === 0
       ) {
         return gatewayError(
           'VISUAL_MASK_REQUIRED',
@@ -2178,21 +2187,12 @@ export function createStudioGateway(
             ...(started.data === null ? {} : { studio_job_id: started.data.jobId }),
             ...(request.variant === undefined ? {} : { variant: request.variant }),
           }
-        : typeof request.maskBase64 === 'string'
-          ? {
+        : {
             created_by: request.createdBy,
             expected_active_asset_id: request.sourceAssetId,
             instruction,
             scope: 'marked_region',
-            ...(started.data === null ? {} : { studio_job_id: started.data.jobId }),
-            mask_base64: request.maskBase64,
-            ...(request.variant === undefined ? {} : { variant: request.variant }),
-          }
-          : {
-            created_by: request.createdBy,
-            expected_active_asset_id: request.sourceAssetId,
-            instruction,
-            scope: 'marked_region',
+            confirmed_interpretation_id: request.confirmedInterpretationId,
             ...(started.data === null ? {} : { studio_job_id: started.data.jobId }),
             markup_asset_id: request.markupAssetId,
             ...(request.variant === undefined ? {} : { variant: request.variant }),
@@ -2839,6 +2839,8 @@ export function createStudioGateway(
         {
           annotation: request.annotation,
           markup_asset_id: request.markupAssetId ?? null,
+          ...(request.confirmedInterpretationId === undefined
+            ? {} : { confirmed_interpretation_id: request.confirmedInterpretationId }),
           expected_design_version: request.sourceDesignVersion,
           created_by: request.createdBy,
           ...(request.variant === undefined ? {} : { variant: request.variant }),

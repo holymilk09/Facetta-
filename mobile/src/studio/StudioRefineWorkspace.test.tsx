@@ -679,6 +679,9 @@ describe('StudioRefineWorkspace', () => {
     };
     const readMarkup = jest.fn(async () => ({
       data: {
+        interpretation_id: 'interpretation_exact',
+        interpretation_status: 'awaiting_confirmation' as const,
+        expires_at: '2099-01-01T00:00:00Z',
         markup_asset_id: 'markup_exact', assistant_name: 'Facetta',
         design_id: null, expected_design_version: null,
         interpretation: {
@@ -700,6 +703,20 @@ describe('StudioRefineWorkspace', () => {
         candidate: annotationCandidate,
       }, error: null, status: 201,
     }));
+    const confirmMarkupInterpretation = jest.fn(async () => ({
+      data: {
+        confirmed_interpretation_id: 'interpretation_exact', status: 'confirmed' as const,
+        markup_asset_id: 'markup_exact', expected_design_version: null,
+        expires_at: '2099-01-01T00:00:00Z',
+        annotation: {
+          region_description: 'highlighted upper-left metal',
+          change_instruction: 'Warm only this surface', impact: 'visual_only' as const,
+          target_section: null, target_ref: null, index: null,
+          target_component_id: 'metal.upper-left', target_element_id: null,
+          form_view: 'three_quarter' as const, mask_base64: null,
+        },
+      }, error: null, status: 200,
+    }));
     const discardVisualRefine = jest.fn(async () => ({
       data: {
         candidate: { ...annotationCandidate, status: 'discarded' as const }, project: null,
@@ -713,7 +730,10 @@ describe('StudioRefineWorkspace', () => {
     const onApplied = jest.fn();
     await renderWithAuth(
       <StudioRefineWorkspace
-        api={{ getComponentCatalog: jest.fn(), getStudioComponentTargeting: getReadyTargeting, readMarkup }}
+        api={{
+          getComponentCatalog: jest.fn(), getStudioComponentTargeting: getReadyTargeting,
+          readMarkup, confirmMarkupInterpretation,
+        }}
         gateway={{
           previewVisualRefine, applyVisualRefine, discardVisualRefine,
           previewCatalogRefine: jest.fn(), applyCatalogRefine: jest.fn(), discardCatalogRefine: jest.fn(),
@@ -733,15 +753,27 @@ describe('StudioRefineWorkspace', () => {
     });
     await fireEvent(canvas, 'responderGrant', responderEvent(20, 20));
     await fireEvent(canvas, 'responderRelease', responderEvent(90, 80));
-    await fireEvent.press(screen.getByText('Preview change'));
+    await fireEvent.press(screen.getByText('Review interpretation · 0 credits'));
 
     await waitFor(() => expect(readMarkup).toHaveBeenCalledWith(
       'creative_1',
       expect.objectContaining({ created_by: 'designer' }),
     ));
+    expect(previewVisualRefine).not.toHaveBeenCalled();
+    expect(screen.getByText('Confirm Facetta’s understanding')).toBeTruthy();
+    expect(screen.getByText('Warm only this surface')).toBeTruthy();
+    expect(screen.getByText('highlighted upper-left metal')).toBeTruthy();
+    expect(screen.getByText('Presentation only')).toBeTruthy();
+    expect(screen.getByText('all jewelry geometry')).toBeTruthy();
+
+    await fireEvent.press(screen.getByText('Confirm & create preview · 20 credits'));
+    await waitFor(() => expect(confirmMarkupInterpretation).toHaveBeenCalledWith(
+      'creative_1', 'interpretation_exact', { created_by: 'designer' },
+    ));
     await waitFor(() => expect(previewVisualRefine).toHaveBeenCalledWith({
       projectId: 'project_1', sourceAssetId: 'creative_1', createdBy: 'designer',
       instruction: 'Warm only this surface', scope: 'marked_region', markupAssetId: 'markup_exact',
+      confirmedInterpretationId: 'interpretation_exact',
     }));
     expect(screen.getByText(/Warm only the highlighted surface/)).toBeTruthy();
     expect(screen.getByText('Warm only this surface')).toBeTruthy();
@@ -753,11 +785,10 @@ describe('StudioRefineWorkspace', () => {
     await waitFor(() => expect(discardVisualRefine).toHaveBeenCalledWith({
       candidateId: 'candidate_markup', createdBy: 'designer',
     }));
-    expect(await screen.findByLabelText('Jewelry image annotation canvas')).toBeTruthy();
-    expect(screen.getByLabelText('Clear all annotations').props.accessibilityState.disabled).toBe(false);
-    expect(screen.getByText('Preview change').parent?.props.accessibilityState.disabled).toBe(false);
+    expect(await screen.findByText('Confirm Facetta’s understanding')).toBeTruthy();
+    expect(screen.getByText('Confirm & create preview · 20 credits').parent?.props.accessibilityState.disabled).toBe(false);
 
-    await fireEvent.press(screen.getByText('Preview change'));
+    await fireEvent.press(screen.getByText('Confirm & create preview · 20 credits'));
     expect(await screen.findByText('Nothing has changed yet.')).toBeTruthy();
     await fireEvent(screen.getByLabelText('Exact source revision'), 'load');
     await fireEvent(screen.getByLabelText('Temporary refinement preview'), 'load');
@@ -766,14 +797,118 @@ describe('StudioRefineWorkspace', () => {
     expect(screen.getByLabelText('What would you like to change?').props.value).toBe('');
     await fireEvent.press(screen.getByLabelText('Mark up refine mode'));
     expect(screen.getByLabelText('Clear all annotations').props.accessibilityState.disabled).toBe(true);
-    expect(screen.getByText('Preview change').parent?.props.accessibilityState.disabled).toBe(true);
+    expect(screen.getByText('Review interpretation · 0 credits').parent?.props.accessibilityState.disabled).toBe(true);
+  });
+
+  test('requires a durable confirmed interpretation before exact-lineage markup generation', async () => {
+    const readMarkup = jest.fn(async () => ({
+      data: {
+        interpretation_id: 'interpretation_exact_v2',
+        interpretation_status: 'awaiting_confirmation' as const,
+        expires_at: '2099-01-01T00:00:00Z',
+        markup_asset_id: 'markup_exact_v2', assistant_name: 'Facetta',
+        design_id: 'design_1', expected_design_version: 2,
+        interpretation: {
+          target_region: 'left shoulder', requested_change: 'Narrow only this shoulder',
+          impact: 'specification' as const, target_spec_reference: 'setting.shoulder_profile',
+          target_section: 'setting', target_index: null,
+          target_component_id: 'shoulders.left', target_element_id: null,
+          frozen_elements: ['center stone', 'right shoulder'], confidence: 0.96,
+          clarification_question: null,
+          understood_as: 'Narrow the mapped left shoulder and preserve the rest.',
+        },
+      }, error: null, status: 200,
+    }));
+    const annotation = {
+      region_description: 'left shoulder', change_instruction: 'Narrow only this shoulder',
+      impact: 'specification' as const, target_section: 'setting',
+      target_ref: 'setting.shoulder_profile', index: null,
+      target_component_id: 'shoulders.left', target_element_id: null,
+      form_view: 'three_quarter' as const, mask_base64: null,
+    };
+    const confirmMarkupInterpretation = jest.fn(async () => ({
+      data: {
+        confirmed_interpretation_id: 'interpretation_exact_v2', status: 'confirmed' as const,
+        markup_asset_id: 'markup_exact_v2', annotation, expected_design_version: 2,
+        expires_at: '2099-01-01T00:00:00Z',
+      }, error: null, status: 200,
+    }));
+    const previewMarkupRefine = jest.fn(async () => ({
+      data: {
+        lineage: { projectId: 'project_1', sourceAssetId: 'asset_2', sourceDesignVersion: 2 },
+        annotation,
+        candidate: {
+          id: 'candidate_exact_markup', jobId: 'run_exact_markup', sourceRevisionId: 'asset_2',
+          assetUrl: 'https://test/exact-markup.png', verdict: 'pass' as const,
+          status: 'pending_review' as const, checks: [], temporary: true,
+          expiresAt: null, decision: null, decidedAt: null, canonicalRevisionId: null,
+        },
+      }, error: null, status: 201,
+    }));
+    await renderWithAuth(
+      <StudioRefineWorkspace
+        api={{
+          getComponentCatalog: jest.fn(), getStudioComponentTargeting: getReadyTargeting,
+          readMarkup, confirmMarkupInterpretation,
+        }}
+        gateway={{
+          previewCatalogRefine: jest.fn(), applyCatalogRefine: jest.fn(),
+          discardCatalogRefine: jest.fn(), previewMarkupRefine,
+          applyMarkupRefine: jest.fn(), discardMarkupRefine: jest.fn(),
+        } as any}
+        lineage={{ projectId: 'project_1', sourceAssetId: 'asset_2', sourceDesignVersion: 2 }}
+        sourceImageUrl="https://test/source.png"
+        createdBy="designer"
+        onApplied={jest.fn()}
+      />,
+    );
+
+    await fireEvent.press(screen.getByLabelText('Mark up refine mode'));
+    const canvas = await screen.findByLabelText('Jewelry image annotation canvas');
+    await fireEvent(canvas, 'layout', {
+      nativeEvent: { layout: { x: 0, y: 0, width: 200, height: 160 } },
+    });
+    await fireEvent(canvas, 'responderGrant', responderEvent(20, 20));
+    await fireEvent(canvas, 'responderRelease', responderEvent(90, 80));
+    await fireEvent.press(screen.getByText('Review interpretation · 0 credits'));
+    await waitFor(() => expect(readMarkup).toHaveBeenCalledTimes(1));
+    expect(previewMarkupRefine).not.toHaveBeenCalled();
+
+    await fireEvent.press(screen.getByText('Edit marks'));
+    expect(screen.queryByText('Confirm Facetta’s understanding')).toBeNull();
+    expect(screen.getByLabelText('Jewelry image annotation canvas')).toBeTruthy();
+    await fireEvent.press(screen.getByText('Review interpretation · 0 credits'));
+    await waitFor(() => expect(readMarkup).toHaveBeenCalledTimes(2));
+    expect(previewMarkupRefine).not.toHaveBeenCalled();
+
+    await fireEvent.press(screen.getByText('Confirm & create preview · 20 credits'));
+    await waitFor(() => expect(previewMarkupRefine).toHaveBeenCalledWith({
+      projectId: 'project_1', sourceAssetId: 'asset_2', sourceDesignVersion: 2,
+      createdBy: 'designer', annotation, markupAssetId: 'markup_exact_v2',
+      confirmedInterpretationId: 'interpretation_exact_v2',
+    }));
   });
 
   test('clears markup instead of rebinding it when the exact source revision changes', async () => {
     const api = {
       getComponentCatalog: jest.fn(),
       getStudioComponentTargeting: getReadyTargeting,
-      readMarkup: jest.fn(),
+      readMarkup: jest.fn(async () => ({
+        data: {
+          interpretation_id: 'interpretation_source_1',
+          interpretation_status: 'awaiting_confirmation' as const,
+          expires_at: '2099-01-01T00:00:00Z',
+          markup_asset_id: 'markup_source_1', assistant_name: 'Facetta',
+          design_id: null, expected_design_version: null,
+          interpretation: {
+            target_region: 'left shoulder', requested_change: 'Warm only this region',
+            impact: 'visual_only' as const, target_spec_reference: null,
+            target_section: null, target_index: null, target_component_id: null,
+            target_element_id: null, frozen_elements: ['all geometry'], confidence: 0.9,
+            clarification_question: null, understood_as: 'Warm only the left shoulder.',
+          },
+        }, error: null, status: 200,
+      })),
     };
     const gateway = {
       previewVisualRefine: jest.fn(), applyVisualRefine: jest.fn(),
@@ -808,18 +943,19 @@ describe('StudioRefineWorkspace', () => {
     expect(screen.getByLabelText('Clear all annotations').props.accessibilityState).toEqual({
       disabled: false,
     });
-    expect(screen.getByText('Preview change').parent?.props.accessibilityState.disabled).toBe(false);
+    expect(screen.getByText('Review interpretation · 0 credits').parent?.props.accessibilityState.disabled).toBe(false);
+    await fireEvent.press(screen.getByText('Review interpretation · 0 credits'));
+    expect(await screen.findByText('Confirm Facetta’s understanding')).toBeTruthy();
 
     await rendered.rerender(workspace('creative_1', 'https://test/source-1-refreshed.png'));
-    expect(screen.getByLabelText('Clear all annotations').props.accessibilityState).toEqual({
-      disabled: false,
-    });
+    expect(screen.getByText('Confirm Facetta’s understanding')).toBeTruthy();
 
     await rendered.rerender(workspace('creative_2', 'https://test/source-2.png'));
+    expect(screen.queryByText('Confirm Facetta’s understanding')).toBeNull();
     expect(screen.getByLabelText('Clear all annotations').props.accessibilityState).toEqual({
       disabled: true,
     });
-    expect(screen.getByText('Preview change').parent?.props.accessibilityState.disabled).toBe(true);
+    expect(screen.getByText('Review interpretation · 0 credits').parent?.props.accessibilityState.disabled).toBe(true);
     expect(screen.queryByLabelText('rectangle annotation annotation-1')).toBeNull();
   });
 

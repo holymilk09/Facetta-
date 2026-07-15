@@ -2250,6 +2250,9 @@ test('markup preserves an exact revision component identity from read through ap
           ok: true,
           status: 200,
           text: async () => JSON.stringify({
+            interpretation_id: 'interpretation_1',
+            interpretation_status: 'awaiting_confirmation',
+            expires_at: '2099-01-01T00:00:00Z',
             markup_asset_id: 'markup_1',
             assistant_name: 'Facetta',
             design_id: 'design_1',
@@ -2267,6 +2270,31 @@ test('markup preserves an exact revision component identity from read through ap
               confidence: 0.97,
               clarification_question: null,
               understood_as: 'Soften only the mapped left shoulder.',
+            },
+          }),
+        } as unknown as Response;
+      }
+      if (url.endsWith('/markup/interpretations/interpretation_1/confirm')) {
+        return {
+          ok: true,
+          status: 200,
+          text: async () => JSON.stringify({
+            confirmed_interpretation_id: 'interpretation_1',
+            status: 'confirmed',
+            markup_asset_id: 'markup_1',
+            expected_design_version: 3,
+            expires_at: '2099-01-01T00:00:00Z',
+            annotation: {
+              region_description: 'left shoulder',
+              change_instruction: 'soften this shoulder',
+              impact: 'specification',
+              target_section: 'setting',
+              target_ref: 'setting.shoulder_profile',
+              index: null,
+              target_component_id: 'shoulders.left',
+              target_element_id: null,
+              form_view: 'three_quarter',
+              mask_base64: null,
             },
           }),
         } as unknown as Response;
@@ -2292,26 +2320,22 @@ test('markup preserves an exact revision component identity from read through ap
   expect(reading.error).toBeNull();
   expect(reading.data?.interpretation.target_component_id).toBe('shoulders.left');
 
+  const confirmation = await api.confirmMarkupInterpretation(
+    'asset 1', reading.data!.interpretation_id, { created_by: 'designer' },
+  );
+  expect(confirmation.error).toBeNull();
+
   await api.applyMarkup('asset 1', {
-    annotation: {
-      region_description: reading.data!.interpretation.target_region,
-      change_instruction: reading.data!.interpretation.requested_change,
-      impact: reading.data!.interpretation.impact,
-      target_section: reading.data!.interpretation.target_section,
-      target_ref: reading.data!.interpretation.target_spec_reference,
-      index: reading.data!.interpretation.target_index,
-      target_component_id: reading.data!.interpretation.target_component_id,
-      target_element_id: reading.data!.interpretation.target_element_id,
-      form_view: 'three_quarter',
-      mask_base64: null,
-    },
+    annotation: confirmation.data!.annotation,
     markup_asset_id: 'markup_1',
+    confirmed_interpretation_id: confirmation.data!.confirmed_interpretation_id,
     expected_design_version: 3,
     created_by: 'designer',
   });
 
-  const body = JSON.parse(String(fetcher.mock.calls[1]?.[1]?.body));
+  const body = JSON.parse(String(fetcher.mock.calls[2]?.[1]?.body));
   expect(body.annotations[0].target_component_id).toBe('shoulders.left');
+  expect(body.confirmed_interpretation_id).toBe('interpretation_1');
 });
 
 test('decodes only the designer-safe exact component targeting contract', () => {

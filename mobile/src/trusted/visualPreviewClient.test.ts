@@ -82,7 +82,7 @@ describe('pre-spec visual preview client', () => {
     const preview = await client.createVisualPreview('project visual', {
       created_by: 'designer', expected_active_asset_id: 'asset source',
       instruction: 'warm only the center stone', scope: 'marked_region',
-      mask_base64: 'mask-data', variant: 2,
+      confirmed_interpretation_id: 'interpretation_1', markup_asset_id: 'asset_markup', variant: 2,
     });
     expect(preview.error).toBeNull();
     expect(preview.data?.candidate.preview_url).toBe(
@@ -107,7 +107,7 @@ describe('pre-spec visual preview client', () => {
     expect(JSON.parse(String(calls[0]?.[1]?.body))).toEqual({
       created_by: 'designer', expected_active_asset_id: 'asset source',
       instruction: 'warm only the center stone', scope: 'marked_region',
-      mask_base64: 'mask-data', variant: 2,
+      confirmed_interpretation_id: 'interpretation_1', markup_asset_id: 'asset_markup', variant: 2,
     });
     expect(JSON.parse(String(calls[1]?.[1]?.body))).toEqual({
       created_by: 'designer', expected_active_asset_id: 'asset source',

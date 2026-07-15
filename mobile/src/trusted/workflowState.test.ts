@@ -106,6 +106,9 @@ function project(overrides: Partial<ProjectDetail> = {}): ProjectDetail {
 }
 
 const reading: MarkupReadResponse = {
+  interpretation_id: 'interpretation_1',
+  interpretation_status: 'awaiting_confirmation',
+  expires_at: '2099-01-01T00:00:00Z',
   markup_asset_id: 'ast_markup',
   assistant_name: 'Facetta',
   interpretation: {
@@ -171,6 +174,7 @@ function interpretedState(): TrustedWorkflowState {
   return trustedWorkflowReducer(state, {
     type: 'markup_confirmed',
     annotation: confirmed,
+    confirmed_interpretation_id: 'interpretation_1',
     expected_design_version: 1,
   });
 }

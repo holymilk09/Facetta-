@@ -26,10 +26,12 @@ export type WorkflowOperation =
 
 export interface PendingMarkup {
   base_asset_id: string;
+  interpretation_id: string;
   markup_asset_id: string | null;
   interpretation: MarkupInterpretation;
   expected_design_version: number | null;
   confirmed: ConfirmedMarkupAnnotation | null;
+  confirmed_interpretation_id: string | null;
   requires_reconfirmation: boolean;
 }
 
@@ -61,6 +63,7 @@ export type TrustedWorkflowEvent =
   | {
       type: 'markup_confirmed';
       annotation: ConfirmedMarkupAnnotation;
+      confirmed_interpretation_id: string;
       expected_design_version: number;
     }
   | { type: 'markup_discarded' }
@@ -261,10 +264,12 @@ export function trustedWorkflowReducer(
         error: null,
         pending_markup: {
           base_asset_id: event.base_asset_id,
+          interpretation_id: event.response.interpretation_id,
           markup_asset_id: event.response.markup_asset_id,
           interpretation: event.response.interpretation,
           expected_design_version: event.response.expected_design_version,
           confirmed: null,
+          confirmed_interpretation_id: null,
           requires_reconfirmation: false,
         },
         warning_candidate: null,
@@ -282,6 +287,7 @@ export function trustedWorkflowReducer(
         pending_markup: {
           ...state.pending_markup,
           confirmed: event.annotation,
+          confirmed_interpretation_id: event.confirmed_interpretation_id,
           expected_design_version: event.expected_design_version,
           requires_reconfirmation: false,
         },

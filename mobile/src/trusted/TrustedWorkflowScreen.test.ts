@@ -219,6 +219,7 @@ describe('TrustedWorkflowScreen', () => {
         },
         pending_markup: {
           base_asset_id: 'asset_root',
+          interpretation_id: 'interpretation_phone',
           markup_asset_id: 'asset_markup',
           interpretation: {
             target_region: 'band',
@@ -247,6 +248,7 @@ describe('TrustedWorkflowScreen', () => {
             form_view: 'three_quarter' as const,
             mask_base64: null,
           },
+          confirmed_interpretation_id: 'interpretation_phone',
           requires_reconfirmation: false,
         },
       },

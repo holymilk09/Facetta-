@@ -11,7 +11,6 @@ import type {
   AssetSummary,
   BeautyRenderRequest,
   ChecklistResponseRequest,
-  ConfirmedMarkupAnnotation,
   CreateProjectFromBriefRequest,
   CreateProjectFromDrawingRequest,
   CreateProjectFromImageRequest,
@@ -64,7 +63,7 @@ export interface TrustedWorkflowController {
     markedImage: string | AnnotationCanvasSnapshot,
     assetId?: string,
   ) => Promise<void>;
-  confirmMarkup: (confirmation?: MarkupConfirmation) => void;
+  confirmMarkup: (confirmation?: MarkupConfirmation) => Promise<void>;
   applyConfirmedMarkup: () => Promise<void>;
   createBeautyRender: (
     instruction?: BeautyRenderRequest['instruction'],
@@ -425,7 +424,9 @@ export function useTrustedWorkflow(
     dispatch({ type: 'markup_interpreted', base_asset_id: assetId, response: result.data });
   }, [api, options.designer]);
 
-  const confirmMarkup = useCallback((confirmation: MarkupConfirmation = {}): void => {
+  const confirmMarkup = useCallback(async (
+    confirmation: MarkupConfirmation = {},
+  ): Promise<void> => {
     const current = stateRef.current;
     const pending = current.pending_markup;
     const designVersion = current.project?.active_design_version;
@@ -488,31 +489,67 @@ export function useTrustedWorkflow(
       });
       return;
     }
-    const annotation: ConfirmedMarkupAnnotation = {
-      region_description: region,
-      change_instruction: change,
-      impact,
-      target_section: targetSection,
-      target_ref: targetReference,
-      index: confirmation.target_index === undefined
-        ? source.target_index
-        : confirmation.target_index,
-      target_component_id: targetComponentId,
-      target_element_id: targetElementId,
-      form_view: confirmation.form_view ?? 'three_quarter',
-      mask_base64: confirmation.mask_base64 ?? null,
-    };
+    const targetIndex = confirmation.target_index === undefined
+      ? source.target_index : confirmation.target_index;
+    const changesInterpretation = region !== source.target_region
+      || change !== source.requested_change
+      || impact !== source.impact
+      || targetSection !== source.target_section
+      || targetReference !== source.target_spec_reference
+      || targetIndex !== source.target_index
+      || targetComponentId !== source.target_component_id
+      || targetElementId !== source.target_element_id
+      || (confirmation.form_view !== undefined && confirmation.form_view !== 'three_quarter')
+      || (confirmation.mask_base64 !== undefined && confirmation.mask_base64 !== null);
+    if (changesInterpretation) {
+      dispatch({
+        type: 'operation_failed',
+        operation: 'read_markup',
+        error: localError(
+          'MARKUP_REINTERPRETATION_REQUIRED',
+          'Edit the marks and read them again so the confirmed target remains bound to exact image evidence.',
+          'conflict',
+        ),
+      });
+      return;
+    }
+    dispatch({ type: 'operation_started', operation: 'read_markup' });
+    const result = await api.confirmMarkupInterpretation(
+      pending.base_asset_id,
+      pending.interpretation_id,
+      { created_by: options.designer },
+    );
+    if (result.error !== null) {
+      dispatch({ type: 'operation_failed', operation: 'read_markup', error: result.error });
+      return;
+    }
+    if (result.data.confirmed_interpretation_id !== pending.interpretation_id
+        || result.data.markup_asset_id !== pending.markup_asset_id
+        || result.data.expected_design_version !== designVersion) {
+      dispatch({
+        type: 'operation_failed',
+        operation: 'read_markup',
+        error: localError(
+          'MARKUP_CONFIRMATION_MISMATCH',
+          'The confirmed interpretation no longer matches this exact revision. Read the marks again.',
+          'conflict',
+        ),
+      });
+      return;
+    }
     dispatch({
       type: 'markup_confirmed',
-      annotation,
+      annotation: result.data.annotation,
+      confirmed_interpretation_id: result.data.confirmed_interpretation_id,
       expected_design_version: designVersion,
     });
-  }, []);
+  }, [api, options.designer]);
 
   const runConfirmedMarkup = useCallback(async (variant: number): Promise<void> => {
     const current = stateRef.current;
     const pending = current.pending_markup;
     if (pending?.confirmed === null || pending?.confirmed === undefined
+      || pending.confirmed_interpretation_id === null
       || pending.expected_design_version === null) {
       dispatch({
         type: 'operation_failed',
@@ -529,6 +566,7 @@ export function useTrustedWorkflow(
     const result = await api.applyMarkup(pending.base_asset_id, {
       annotation: pending.confirmed,
       markup_asset_id: pending.markup_asset_id,
+      confirmed_interpretation_id: pending.confirmed_interpretation_id,
       expected_design_version: pending.expected_design_version,
       created_by: options.designer,
       variant,

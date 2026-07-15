@@ -590,8 +590,12 @@ interface CreateVisualPreviewRequestBase {
 
 export type CreateVisualPreviewRequest = CreateVisualPreviewRequestBase & (
   | { scope: 'appearance'; mask_base64?: never; markup_asset_id?: never }
-  | { scope: 'marked_region'; mask_base64: string; markup_asset_id?: never }
-  | { scope: 'marked_region'; markup_asset_id: string; mask_base64?: never }
+  | {
+      scope: 'marked_region';
+      confirmed_interpretation_id: string;
+      markup_asset_id: string;
+      mask_base64?: never;
+    }
 );
 
 export interface VisualPreviewCandidate {
@@ -1646,11 +1650,27 @@ export type MarkupReadRequest = MarkupReadRequestBase & (
 );
 
 export interface MarkupReadResponse {
+  interpretation_id: string;
+  interpretation_status: 'awaiting_confirmation';
+  expires_at: string;
   markup_asset_id: string | null;
   assistant_name: string | null;
   interpretation: MarkupInterpretation;
   design_id: string | null;
   expected_design_version: number | null;
+}
+
+export interface MarkupInterpretationConfirmRequest {
+  created_by: string;
+}
+
+export interface MarkupInterpretationConfirmation {
+  confirmed_interpretation_id: string;
+  status: 'confirmed';
+  markup_asset_id: string;
+  annotation: ConfirmedMarkupAnnotation;
+  expected_design_version: number | null;
+  expires_at: string;
 }
 
 export interface ConfirmedMarkupAnnotation {
@@ -1671,6 +1691,7 @@ export interface ConfirmedMarkupAnnotation {
 export interface MarkupApplyRequest {
   annotation: ConfirmedMarkupAnnotation;
   markup_asset_id: string | null;
+  confirmed_interpretation_id?: string;
   expected_design_version: number;
   created_by: string;
   variant?: number;

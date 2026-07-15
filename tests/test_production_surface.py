@@ -53,6 +53,10 @@ EXPECTED_PRODUCTION_OPERATIONS = (
     | _operations(
         "POST",
         "/assets/{asset_id}/markup/read",
+        (
+            "/assets/{asset_id}/markup/interpretations/"
+            "{interpretation_id}/confirm"
+        ),
         "/assets/{asset_id}/markup/apply",
         "/assets/{asset_id}/studio-component-map",
         "/assets/{asset_id}/checklist",
@@ -233,6 +237,10 @@ def test_production_hides_legacy_admin_and_stateless_spec_adapters(monkeypatch):
             ("get", "/projects/missing"),
             ("get", "/studio/families"),
             ("post", "/assets/known/markup/read"),
+            (
+                "post",
+                "/assets/known/markup/interpretations/known/confirm",
+            ),
             ("post", "/assets/known/markup/apply"),
             ("get", "/assets/known/image"),
             ("get", "/assets/known/studio-component-targeting"),

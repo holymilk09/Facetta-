@@ -90,6 +90,11 @@ PRODUCTION_VOCABULARY_OPERATIONS: frozenset[RouteOperation] = frozenset({
 
 PRODUCTION_ASSET_OPERATIONS: frozenset[RouteOperation] = frozenset({
     ("POST", "/assets/{asset_id}/markup/read"),
+    (
+        "POST",
+        "/assets/{asset_id}/markup/interpretations/"
+        "{interpretation_id}/confirm",
+    ),
     ("POST", "/assets/{asset_id}/markup/apply"),
     ("GET", "/assets/{asset_id}/image"),
     ("POST", "/assets/{asset_id}/checklist"),

@@ -45,6 +45,15 @@ from facetta.markup_snapshot import (
     MarkupSnapshotImageError,
     composite_markup_snapshot,
 )
+from facetta.markup_interpretations import (
+    MarkupInterpretationError,
+    confirm_markup_interpretation,
+    confirmed_annotation,
+    create_markup_interpretation,
+    require_confirmed_markup_interpretation,
+    require_markup_interpretation_source,
+)
+from facetta.image_identity import spec_visual_hash
 from facetta.project_backbone import is_primary_revision
 from facetta.provider_job_gate import (
     ProviderStudioJobError,
@@ -547,6 +556,43 @@ class MarkupReadRequest(BaseModel):
         return self
 
 
+def _markup_interpretation_error(
+    exc: MarkupInterpretationError,
+) -> JSONResponse:
+    return JSONResponse(status_code=exc.status_code, content={
+        "code": exc.code,
+        "category": (
+            "not_found" if exc.status_code == 404
+            else "stale_version" if exc.code.startswith("stale_")
+            else "validation" if exc.status_code == 422
+            else "conflict"
+        ),
+        "detail": exc.detail,
+    })
+
+
+def _confirmed_markup_annotation_payload(first: dict) -> dict:
+    """Reduce provider output to the exact public apply schema."""
+
+    targets_spec = bool(
+        first.get("target_section")
+        or first.get("target_ref")
+        or first.get("target_element_id")
+    )
+    return {
+        "region_description": first["region_description"],
+        "change_instruction": first["change_instruction"],
+        "impact": "specification" if targets_spec else "visual_only",
+        "target_section": first.get("target_section"),
+        "target_ref": first.get("target_ref"),
+        "index": first.get("index"),
+        "target_component_id": first.get("target_component_id"),
+        "target_element_id": first.get("target_element_id"),
+        "form_view": first.get("form_view") or "three_quarter",
+        "mask_base64": None,
+    }
+
+
 @router.post("/{asset_id}/markup/read")
 def markup_read(
     asset_id: str,
@@ -564,6 +610,10 @@ def markup_read(
 
     actor = principal_actor(principal, request.created_by)
     asset = _get_asset(db, asset_id)
+    try:
+        require_markup_interpretation_source(db, asset, owner=actor)
+    except MarkupInterpretationError as exc:
+        return _markup_interpretation_error(exc)
     if request.markup_snapshot is not None:
         try:
             marked = composite_markup_snapshot(
@@ -608,6 +658,18 @@ def markup_read(
             "understood_as": reading["understood_as"],
             "annotations": reading["annotations"],
             "assistant_name": name})
+    if len(reading["annotations"]) != 1:
+        return JSONResponse(status_code=422, content={
+            "detail": (
+                "Review one marked change at a time so Facetta can preserve "
+                "every unrelated part of the design."
+            ),
+            "code": "single_markup_interpretation_required",
+            "category": "validation",
+            "understood_as": reading["understood_as"],
+            "annotations": reading["annotations"],
+            "assistant_name": name,
+        })
 
     known_form_ids = {
         element["element_id"] for element in form_elements
@@ -631,9 +693,13 @@ def markup_read(
     # the marked upload is filed as an audit leaf — never an edit base
     notes = _store_asset(db, marked, "MARKUP_NOTES", asset,
                          instruction=reading["understood_as"],
-                         created_by=actor)
+                         created_by=actor, commit=False)
     first = reading["annotations"][0]
-    targets_spec = bool(first.get("target_section") or first.get("target_ref"))
+    targets_spec = bool(
+        first.get("target_section")
+        or first.get("target_ref")
+        or first.get("target_element_id")
+    )
     interpretation = {
         "target_region": first["region_description"],
         "requested_change": first["change_instruction"],
@@ -654,13 +720,83 @@ def markup_read(
         "clarification_question": None,
         "understood_as": reading["understood_as"],
     }
+    annotation = _confirmed_markup_annotation_payload(first)
+    try:
+        durable = create_markup_interpretation(
+            db,
+            source=asset,
+            markup=notes,
+            owner=actor,
+            annotation=annotation,
+            interpretation=interpretation,
+            provider_evidence={
+                "assistant_name": name,
+                "understood_as": reading["understood_as"],
+                "annotations": reading["annotations"],
+            },
+            source_design_version=(linked[1] if linked else None),
+            source_spec_visual_hash=(
+                spec_visual_hash(linked[2]) if linked else None
+            ),
+        )
+    except MarkupInterpretationError as exc:
+        return _markup_interpretation_error(exc)
     return {"markup_asset_id": notes.id, "assistant_name": name,
+            "interpretation_id": durable.id,
+            "interpretation_status": durable.status,
+            "expires_at": durable.expires_at.isoformat(),
             "understood_as": reading["understood_as"],
             "annotations": reading["annotations"],
             "interpretation": interpretation,
             "design_linked": linked is not None,
             "design_id": linked[0] if linked else None,
             "expected_design_version": linked[1] if linked else None}
+
+
+class ConfirmMarkupInterpretationRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    created_by: str = "usr_pending"
+
+
+@router.post(
+    "/{asset_id}/markup/interpretations/{interpretation_id}/confirm",
+)
+def confirm_markup_interpretation_endpoint(
+    asset_id: str,
+    interpretation_id: str,
+    request: ConfirmMarkupInterpretationRequest,
+    db: DbSession,
+    principal: PrincipalDep,
+):
+    """Confirm the exact server-held reading without resubmitting prose."""
+
+    actor = principal_actor(principal, request.created_by)
+    asset = _get_asset(db, asset_id)
+    linked = _linked_design(db, asset)
+    try:
+        record = confirm_markup_interpretation(
+            db,
+            interpretation_id,
+            owner=actor,
+            project_root_id=asset.root_id,
+            source_asset_id=asset.id,
+            current_design_version=(linked[1] if linked else None),
+            current_spec_visual_hash=(
+                spec_visual_hash(linked[2]) if linked else None
+            ),
+        )
+        annotation = confirmed_annotation(record)
+    except MarkupInterpretationError as exc:
+        return _markup_interpretation_error(exc)
+    return {
+        "confirmed_interpretation_id": record.id,
+        "status": record.status,
+        "markup_asset_id": record.markup_asset_id,
+        "annotation": annotation,
+        "expected_design_version": record.source_design_version,
+        "expires_at": record.expires_at.isoformat(),
+    }
 
 
 class MarkupAnnotation(BaseModel):
@@ -701,6 +837,9 @@ class MarkupApplyRequest(BaseModel):
     # Production requires the durable Refine job so Apply/Discard/Variation
     # settles Activity in the same transaction as the terminal decision.
     studio_job_id: Annotated[str, Field(min_length=1, max_length=32)] | None = None
+    confirmed_interpretation_id: Annotated[
+        str, Field(min_length=1, max_length=32)
+    ] | None = None
 
 
 @router.post("/{asset_id}/markup/apply", status_code=201)
@@ -792,6 +931,56 @@ def markup_apply(
                 "category": "stale_version",
                 "expected_design_version": request.expected_design_version,
                 "current_design_version": linked[1]})
+
+    # The same endpoint also supports typed/component Refine without canvas
+    # marks.  Confirmation is mandatory whenever saved markup evidence is in
+    # play; unmarked component/natural-language requests keep their own gates.
+    confirmation_required = (
+        request.markup_asset_id is not None
+        or request.confirmed_interpretation_id is not None
+        or any(note.mask_base64 is not None for note in request.annotations)
+    )
+    if confirmation_required:
+        supplied_annotation = request.annotations[0].model_dump(mode="json")
+        supplied_annotation["impact"] = (
+            "specification" if request.update_spec else "visual_only"
+        )
+        try:
+            interpretation_record = require_confirmed_markup_interpretation(
+                db,
+                request.confirmed_interpretation_id,
+                owner=actor,
+                project_root_id=asset.root_id,
+                source_asset_id=asset.id,
+                current_design_version=(linked[1] if linked else None),
+                current_spec_visual_hash=(
+                    spec_visual_hash(linked[2]) if linked else None
+                ),
+                supplied_annotation=supplied_annotation,
+                supplied_markup_asset_id=request.markup_asset_id,
+            )
+            authoritative_annotation = confirmed_annotation(
+                interpretation_record)
+        except MarkupInterpretationError as exc:
+            return _markup_interpretation_error(exc)
+        if not markup_notes_valid or derived_mask is None:
+            return JSONResponse(status_code=422, content={
+                "detail": (
+                    "confirmed marked refinement requires a usable "
+                    "same-raster saved markup region"
+                ),
+                "code": "confirmed_markup_mask_required",
+                "category": "validation",
+            })
+        public_annotation = dict(authoritative_annotation)
+        impact = public_annotation.pop("impact")
+        request = request.model_copy(update={
+            "annotations": [
+                MarkupAnnotation.model_validate(public_annotation)
+            ],
+            "markup_asset_id": interpretation_record.markup_asset_id,
+            "update_spec": impact == "specification",
+        })
 
     try:
         require_provider_studio_job(
@@ -1108,8 +1297,15 @@ def markup_apply(
                 persist_image_agent_failure, persist_image_agent_result,
             )
 
-            operation = (ImageOperation.LOCAL_EDIT if scoped is not None
-                         else ImageOperation.VISUAL_ONLY_EDIT)
+            # A confirmed saved markup mask is local editing authority even
+            # when the requested pixel change does not alter the canonical
+            # specification.  Routing by spec delta alone would discard the
+            # marked-region freeze and incorrectly compile a global restyle.
+            operation = (
+                ImageOperation.LOCAL_EDIT
+                if scoped is not None or mask_bytes is not None
+                else ImageOperation.VISUAL_ONLY_EDIT
+            )
             plan_spec = scoped_spec if scoped is not None else linked[2]
             try:
                 plan = build_image_plan(

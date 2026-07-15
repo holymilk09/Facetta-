@@ -29,6 +29,7 @@ import type {
   ConfirmSourceCoverageResult,
   ConfirmCreativeCandidateProfileRequest,
   ConfirmCreativeCandidateProfileResult,
+  ConfirmedMarkupAnnotation,
   CommitCreativeDirectionsRequest,
   CommitCreativeDirectionsResult,
   ComponentCatalog,
@@ -64,6 +65,8 @@ import type {
   MarkupApplyResponse,
   MarkupImpact,
   MarkupInterpretation,
+  MarkupInterpretationConfirmation,
+  MarkupInterpretationConfirmRequest,
   MarkupReadRequest,
   MarkupReadResponse,
   StudioMarkupAcceptResult,
@@ -1569,6 +1572,11 @@ export const decodeMarkupInterpretation: Decoder<MarkupInterpretation> = (value)
 
 export const decodeMarkupReadResponse: Decoder<MarkupReadResponse> = (value) => {
   if (!isRecord(value)) return null;
+  const interpretationId = text(value.interpretation_id);
+  const expiresAt = text(value.expires_at);
+  if (interpretationId.length === 0
+      || value.interpretation_status !== 'awaiting_confirmation'
+      || expiresAt.length === 0) return null;
   let interpretation = decodeMarkupInterpretation(value.interpretation);
   if (interpretation === null && Array.isArray(value.annotations)) {
     interpretation = decodeMarkupInterpretation(value.annotations[0]);
@@ -1579,11 +1587,57 @@ export const decodeMarkupReadResponse: Decoder<MarkupReadResponse> = (value) => 
     interpretation = { ...interpretation, understood_as: text(value.understood_as) };
   }
   return {
+    interpretation_id: interpretationId,
+    interpretation_status: 'awaiting_confirmation',
+    expires_at: expiresAt,
     markup_asset_id: nullableText(value.markup_asset_id),
     assistant_name: nullableText(value.assistant_name),
     interpretation,
     design_id: nullableText(value.design_id),
     expected_design_version: number(pick(value, 'expected_design_version', 'design_version')),
+  };
+};
+
+const decodeConfirmedMarkupAnnotation: Decoder<ConfirmedMarkupAnnotation> = (value) => {
+  if (!isRecord(value)) return null;
+  const regionDescription = nullableText(value.region_description);
+  const changeInstruction = nullableText(value.change_instruction);
+  const impact = value.impact;
+  const formView = value.form_view;
+  if (regionDescription === null || changeInstruction === null
+      || (impact !== 'visual_only' && impact !== 'specification')
+      || (formView !== 'front' && formView !== 'side' && formView !== 'top'
+        && formView !== 'three_quarter')) return null;
+  return {
+    region_description: regionDescription,
+    change_instruction: changeInstruction,
+    impact,
+    target_section: nullableText(value.target_section),
+    target_ref: nullableText(value.target_ref),
+    index: number(value.index),
+    target_component_id: nullableText(value.target_component_id),
+    target_element_id: nullableText(value.target_element_id),
+    form_view: formView,
+    mask_base64: nullableText(value.mask_base64),
+  };
+};
+
+export const decodeMarkupInterpretationConfirmation:
+Decoder<MarkupInterpretationConfirmation> = (value) => {
+  if (!isRecord(value) || value.status !== 'confirmed') return null;
+  const annotation = decodeConfirmedMarkupAnnotation(value.annotation);
+  const confirmedInterpretationId = text(value.confirmed_interpretation_id);
+  const markupAssetId = text(value.markup_asset_id);
+  const expiresAt = text(value.expires_at);
+  if (annotation === null || confirmedInterpretationId.length === 0
+      || markupAssetId.length === 0 || expiresAt.length === 0) return null;
+  return {
+    confirmed_interpretation_id: confirmedInterpretationId,
+    status: 'confirmed',
+    markup_asset_id: markupAssetId,
+    annotation,
+    expected_design_version: number(value.expected_design_version),
+    expires_at: expiresAt,
   };
 };
 
@@ -4321,11 +4375,11 @@ export function createTrustedApiClient(options: TrustedApiClientOptions) {
             expected_active_asset_id: request.expected_active_asset_id,
             instruction: request.instruction,
             scope: request.scope,
-            ...(request.scope === 'marked_region' && 'mask_base64' in request
-              ? { mask_base64: request.mask_base64 }
-              : {}),
-            ...(request.scope === 'marked_region' && 'markup_asset_id' in request
+            ...(request.scope === 'marked_region'
               ? { markup_asset_id: request.markup_asset_id }
+              : {}),
+            ...(request.scope === 'marked_region'
+              ? { confirmed_interpretation_id: request.confirmed_interpretation_id }
               : {}),
             ...(request.variant === undefined ? {} : { variant: request.variant }),
             ...(request.studio_job_id === undefined ? {} : { studio_job_id: request.studio_job_id }),
@@ -5702,6 +5756,19 @@ export function createTrustedApiClient(options: TrustedApiClientOptions) {
       }, decodeMarkupReadResponse);
     },
 
+    confirmMarkupInterpretation(
+      assetId: string,
+      interpretationId: string,
+      request: MarkupInterpretationConfirmRequest,
+    ) {
+      return jsonCall(
+        `/assets/${encodeURIComponent(assetId)}/markup/interpretations/${encodeURIComponent(interpretationId)}/confirm`,
+        'POST',
+        { created_by: request.created_by },
+        decodeMarkupInterpretationConfirmation,
+      );
+    },
+
     async applyMarkup(assetId: string, request: MarkupApplyRequest) {
       const annotation = request.annotation;
       const updateSpec = annotation.impact === 'specification';
@@ -5718,6 +5785,8 @@ export function createTrustedApiClient(options: TrustedApiClientOptions) {
           mask_base64: annotation.mask_base64,
         }],
         markup_asset_id: request.markup_asset_id,
+        ...(request.confirmed_interpretation_id === undefined
+          ? {} : { confirmed_interpretation_id: request.confirmed_interpretation_id }),
         kind: 'render',
         update_spec: updateSpec,
         expected_design_version: request.expected_design_version,

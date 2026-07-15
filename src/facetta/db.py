@@ -691,6 +691,123 @@ class StudioMarkupCandidateRecord(Base):
     )
 
 
+class StudioMarkupInterpretationRecord(Base):
+    """Durable, exact-source authority between markup reading and generation.
+
+    The provider's reading is persisted before the designer confirms it.  A
+    confirmed row can authorize preview generation only while its source
+    image, saved markup, project ownership, design version, and specification
+    hash still match.  The interpretation payload is immutable; confirmation
+    changes lifecycle fields only.
+    """
+
+    __tablename__ = "studio_markup_interpretations"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    owner: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    project_root_id: Mapped[str] = mapped_column(
+        ForeignKey("projects.root_id"), nullable=False, index=True)
+    source_asset_id: Mapped[str] = mapped_column(
+        ForeignKey("image_assets.id"), nullable=False, index=True)
+    source_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    source_design_version: Mapped[int | None] = mapped_column(
+        Integer, nullable=True)
+    source_spec_visual_hash: Mapped[str | None] = mapped_column(
+        String(16), nullable=True)
+    source_component_map_state: Mapped[str] = mapped_column(
+        String(16), nullable=False)
+    source_component_map_sha256: Mapped[str | None] = mapped_column(
+        String(64), nullable=True)
+    markup_asset_id: Mapped[str] = mapped_column(
+        ForeignKey("image_assets.id"), nullable=False, unique=True, index=True)
+    markup_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    interpretation: Mapped[dict] = mapped_column(SpecJSON, nullable=False)
+    interpretation_sha256: Mapped[str] = mapped_column(
+        String(64), nullable=False)
+    provider_evidence: Mapped[dict] = mapped_column(SpecJSON, nullable=False)
+    provider_evidence_sha256: Mapped[str] = mapped_column(
+        String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(24), nullable=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow)
+    expires_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, index=True)
+    confirmed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)
+
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('awaiting_confirmation', 'confirmed', 'expired')",
+            name="ck_studio_markup_interpretation_status",
+        ),
+        CheckConstraint(
+            "length(source_sha256) = 64 AND length(markup_sha256) = 64 "
+            "AND length(interpretation_sha256) = 64 "
+            "AND length(provider_evidence_sha256) = 64",
+            name="ck_studio_markup_interpretation_hashes",
+        ),
+        CheckConstraint(
+            "(source_design_version IS NULL "
+            "AND source_spec_visual_hash IS NULL) OR "
+            "(source_design_version >= 1 "
+            "AND length(source_spec_visual_hash) = 16)",
+            name="ck_studio_markup_interpretation_spec_binding",
+        ),
+        CheckConstraint(
+            "(source_component_map_state = 'unmapped' "
+            "AND source_component_map_sha256 IS NULL) OR "
+            "(source_component_map_state = 'mapped' "
+            "AND length(source_component_map_sha256) = 64)",
+            name="ck_studio_markup_interpretation_component_map_binding",
+        ),
+        CheckConstraint(
+            "(status = 'awaiting_confirmation' AND confirmed_at IS NULL) OR "
+            "(status = 'confirmed' AND confirmed_at IS NOT NULL) OR "
+            "(status = 'expired')",
+            name="ck_studio_markup_interpretation_confirmation",
+        ),
+    )
+
+
+class ImmutableStudioMarkupInterpretationError(RuntimeError):
+    """Raised when confirmed markup authority is rewritten in place."""
+
+
+_STUDIO_MARKUP_INTERPRETATION_CANONICAL_FIELDS = frozenset({
+    "id", "owner", "project_root_id", "source_asset_id", "source_sha256",
+    "source_design_version", "source_spec_visual_hash", "markup_asset_id",
+    "source_component_map_state", "source_component_map_sha256",
+    "markup_sha256", "interpretation", "interpretation_sha256",
+    "provider_evidence", "provider_evidence_sha256", "created_at",
+    "expires_at",
+})
+
+
+@event.listens_for(StudioMarkupInterpretationRecord, "before_update")
+def _reject_markup_interpretation_authority_update(
+    _mapper, _connection, target,
+) -> None:
+    state = inspect(target)
+    changed = sorted(
+        field for field in _STUDIO_MARKUP_INTERPRETATION_CANONICAL_FIELDS
+        if state.attrs[field].history.has_changes()
+    )
+    if changed:
+        raise ImmutableStudioMarkupInterpretationError(
+            "markup interpretation authority is immutable; reread the marks "
+            f"instead of changing {', '.join(changed)}"
+        )
+
+
+@event.listens_for(StudioMarkupInterpretationRecord, "before_delete")
+def _reject_markup_interpretation_authority_delete(
+    _mapper, _connection, _target,
+) -> None:
+    raise ImmutableStudioMarkupInterpretationError(
+        "markup interpretation authority is immutable and cannot be deleted"
+    )
+
+
 class PreviewCandidateRecord(Base):
     """Durable, non-canonical Studio/catalog output awaiting a decision.
 
