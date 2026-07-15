@@ -34,6 +34,7 @@ from facetta.db import (
     ProjectRevisionRecord,
     RevisionComponentMapRecord,
     StudioCreateDecisionRecord,
+    StudioCreateReviewDraftRecord,
     StudioConfirmationDraft,
     StudioJobRecord,
     get_db,
@@ -1792,6 +1793,324 @@ def test_creative_selection_rejects_foreign_create_job_without_partial_writes(
         assert project.selected_candidate_asset_id is None
         assert job is not None
         assert job.owner == "usr_other"
+        assert job.status == "reviewing"
+        assert job.completed_outputs == 0
+        assert job.charged_outputs == 0
+
+
+def test_create_review_draft_round_trips_and_rejects_stale_versions(
+    creative_client,
+):
+    client, Session = creative_client
+    app.dependency_overrides[get_creative_prompt_generator] = (
+        lambda: (lambda _instruction, variant: _prompt_creative_result(variant))
+    )
+    created = client.post(
+        "/projects/from-prompt", json=_prompt_request(variation_count=3)
+    ).json()
+    candidates = [
+        item["asset_id"] for item in created["creative_candidates"]
+    ]
+    job_id = _reviewing_create_job(
+        client, project_id=created["root_id"], requested_outputs=3,
+    )
+    path = (
+        f"/projects/{created['root_id']}/creative-directions/review-draft"
+        f"?studio_job_id={job_id}"
+    )
+    payload = {
+        "studio_job_id": job_id,
+        "expected_version": 0,
+        "selected_candidate_id": candidates[1],
+        "retained": [{
+            "candidate_id": candidates[0],
+            "label": "  Botanical frame  ",
+        }],
+    }
+
+    saved = client.put(path, json=payload)
+    assert saved.status_code == 200, saved.text
+    assert saved.json() == {
+        "project_root_id": created["root_id"],
+        "studio_job_id": job_id,
+        "selected_candidate_id": candidates[1],
+        "retained": [{
+            "candidate_id": candidates[0],
+            "label": "Botanical frame",
+        }],
+        "version": 1,
+        "updated_at": saved.json()["updated_at"],
+    }
+    fetched = client.get(path)
+    assert fetched.status_code == 200, fetched.text
+    assert fetched.json() == saved.json()
+
+    stale = client.put(path, json={
+        **payload,
+        "selected_candidate_id": candidates[2],
+    })
+    assert stale.status_code == 409
+    assert "version is stale" in stale.json()["detail"]
+
+    updated_payload = {
+        **payload,
+        "expected_version": 1,
+        "selected_candidate_id": candidates[2],
+        "retained": [{
+            "candidate_id": candidates[0],
+            "label": "Open frame",
+        }],
+    }
+    updated = client.put(path, json=updated_payload)
+    assert updated.status_code == 200, updated.text
+    assert updated.json()["version"] == 2
+    assert updated.json()["selected_candidate_id"] == candidates[2]
+    assert updated.json()["retained"][0]["label"] == "Open frame"
+
+    with Session() as db:
+        draft = db.get(StudioCreateReviewDraftRecord, created["root_id"])
+        assert draft is not None
+        assert draft.version == 2
+        assert db.get(StudioCreateDecisionRecord, created["root_id"]) is None
+
+
+def test_create_review_draft_rejects_foreign_mixed_and_invalid_state(
+    creative_client,
+):
+    client, Session = creative_client
+    app.dependency_overrides[get_creative_prompt_generator] = (
+        lambda: (lambda _instruction, variant: _prompt_creative_result(variant))
+    )
+    created = client.post(
+        "/projects/from-prompt", json=_prompt_request(variation_count=3)
+    ).json()
+    other_request = _prompt_request(variation_count=1)
+    other_request["title"] = "Other project"
+    other_request["starting_variant"] = 50
+    other = client.post("/projects/from-prompt", json=other_request).json()
+    candidates = [
+        item["asset_id"] for item in created["creative_candidates"]
+    ]
+    foreign_candidate = other["creative_candidates"][0]["asset_id"]
+    foreign_job_id = _reviewing_create_job(
+        client,
+        project_id=created["root_id"],
+        requested_outputs=3,
+        owner="usr_other",
+    )
+    foreign_path = (
+        f"/projects/{created['root_id']}/creative-directions/review-draft"
+        f"?studio_job_id={foreign_job_id}"
+    )
+    foreign = client.put(foreign_path, json={
+        "studio_job_id": foreign_job_id,
+        "expected_version": 0,
+        "selected_candidate_id": candidates[0],
+        "retained": [],
+    })
+    assert foreign.status_code == 404
+
+    job_id = _reviewing_create_job(
+        client, project_id=created["root_id"], requested_outputs=3,
+    )
+    path = (
+        f"/projects/{created['root_id']}/creative-directions/review-draft"
+        f"?studio_job_id={job_id}"
+    )
+    mixed = client.put(path, json={
+        "studio_job_id": job_id,
+        "expected_version": 0,
+        "selected_candidate_id": candidates[0],
+        "retained": [{
+            "candidate_id": foreign_candidate,
+            "label": "Wrong project",
+        }],
+    })
+    assert mixed.status_code == 409
+    assert "exact creative candidate" in mixed.json()["detail"]
+
+    invalid_payloads = [
+        {
+            "studio_job_id": job_id,
+            "expected_version": 0,
+            "selected_candidate_id": candidates[0],
+            "retained": [
+                {"candidate_id": candidates[1], "label": "First"},
+                {"candidate_id": candidates[1], "label": "Duplicate"},
+            ],
+        },
+        {
+            "studio_job_id": job_id,
+            "expected_version": 0,
+            "selected_candidate_id": candidates[0],
+            "retained": [{"candidate_id": candidates[0], "label": "Same"}],
+        },
+        {
+            "studio_job_id": job_id,
+            "expected_version": 0,
+            "selected_candidate_id": candidates[0],
+            "retained": [{"candidate_id": candidates[1], "label": "   "}],
+        },
+        {
+            "studio_job_id": job_id,
+            "expected_version": 0,
+            "selected_candidate_id": candidates[0],
+            "retained": [{
+                "candidate_id": candidates[1],
+                "label": "x" * 121,
+            }],
+        },
+    ]
+    for payload in invalid_payloads:
+        invalid = client.put(path, json=payload)
+        assert invalid.status_code == 422, invalid.text
+
+    mismatched_job = client.put(path, json={
+        "studio_job_id": foreign_job_id,
+        "expected_version": 0,
+        "selected_candidate_id": candidates[0],
+        "retained": [],
+    })
+    assert mismatched_job.status_code == 422
+
+    with Session() as db:
+        assert db.get(
+            StudioCreateReviewDraftRecord, created["root_id"]
+        ) is None
+
+
+def test_create_review_commit_consumes_only_matching_draft(
+    creative_client,
+):
+    client, Session = creative_client
+    app.dependency_overrides[get_creative_prompt_generator] = (
+        lambda: (lambda _instruction, variant: _prompt_creative_result(variant))
+    )
+    created = client.post(
+        "/projects/from-prompt", json=_prompt_request(variation_count=2)
+    ).json()
+    candidates = [
+        item["asset_id"] for item in created["creative_candidates"]
+    ]
+    job_id = _reviewing_create_job(
+        client, project_id=created["root_id"], requested_outputs=2,
+    )
+    draft_path = (
+        f"/projects/{created['root_id']}/creative-directions/review-draft"
+        f"?studio_job_id={job_id}"
+    )
+    draft = {
+        "studio_job_id": job_id,
+        "expected_version": 0,
+        "selected_candidate_id": candidates[1],
+        "retained": [{
+            "candidate_id": candidates[0],
+            "label": "Retained direction",
+        }],
+    }
+    assert client.put(draft_path, json=draft).status_code == 200
+
+    mismatched = client.post(
+        f"/projects/{created['root_id']}/creative-directions/commit",
+        json={
+            "selected_candidate_id": candidates[0],
+            "retained": [],
+            "created_by": "usr_designer",
+            "studio_job_id": job_id,
+        },
+    )
+    assert mismatched.status_code == 409
+    assert "does not match" in mismatched.json()["detail"]
+    assert client.get(draft_path).status_code == 200
+
+    committed = client.post(
+        f"/projects/{created['root_id']}/creative-directions/commit",
+        json={
+            "selected_candidate_id": draft["selected_candidate_id"],
+            "retained": draft["retained"],
+            "created_by": "usr_designer",
+            "studio_job_id": job_id,
+        },
+    )
+    assert committed.status_code == 200, committed.text
+    assert client.get(draft_path).status_code == 404
+    with Session() as db:
+        assert db.get(
+            StudioCreateReviewDraftRecord, created["root_id"]
+        ) is None
+        assert db.get(StudioCreateDecisionRecord, created["root_id"]) is not None
+
+
+def test_create_review_commit_rollback_preserves_draft(
+    creative_client,
+    monkeypatch,
+):
+    client, Session = creative_client
+    app.dependency_overrides[get_creative_prompt_generator] = (
+        lambda: (lambda _instruction, variant: _prompt_creative_result(variant))
+    )
+    created = client.post(
+        "/projects/from-prompt", json=_prompt_request(variation_count=2)
+    ).json()
+    candidates = [
+        item["asset_id"] for item in created["creative_candidates"]
+    ]
+    job_id = _reviewing_create_job(
+        client, project_id=created["root_id"], requested_outputs=2,
+    )
+    draft_path = (
+        f"/projects/{created['root_id']}/creative-directions/review-draft"
+        f"?studio_job_id={job_id}"
+    )
+    retained = [{
+        "candidate_id": candidates[0],
+        "label": "Retained direction",
+    }]
+    saved = client.put(draft_path, json={
+        "studio_job_id": job_id,
+        "expected_version": 0,
+        "selected_candidate_id": candidates[1],
+        "retained": retained,
+    })
+    assert saved.status_code == 200, saved.text
+
+    def fail_variation(*_args, **_kwargs):
+        raise projects_api.StudioHistoryError(
+            "forced_branch_failure", "forced retained-direction failure",
+        )
+
+    monkeypatch.setattr(projects_api, "fork_project_variation", fail_variation)
+    failed = client.post(
+        f"/projects/{created['root_id']}/creative-directions/commit",
+        json={
+            "selected_candidate_id": candidates[1],
+            "retained": retained,
+            "created_by": "usr_designer",
+            "studio_job_id": job_id,
+        },
+    )
+    assert failed.status_code == 409
+    assert failed.json()["detail"] == "forced retained-direction failure"
+    assert client.get(draft_path).json()["version"] == 1
+
+    with Session() as db:
+        project = db.get(Project, created["root_id"])
+        draft = db.get(StudioCreateReviewDraftRecord, created["root_id"])
+        job = db.get(StudioJobRecord, job_id)
+        assert project is not None
+        assert project.selected_candidate_asset_id is None
+        assert project.family_id is None
+        assert draft is not None
+        assert draft.selected_candidate_asset_id == candidates[1]
+        assert draft.retained_directions == retained
+        assert db.get(StudioCreateDecisionRecord, created["root_id"]) is None
+        assert db.scalar(select(func.count()).select_from(Project).where(
+            Project.branched_from_project_root_id == created["root_id"]
+        )) == 0
+        assert db.scalar(
+            select(func.count()).select_from(ProjectRevisionRecord)
+        ) == 0
+        assert job is not None
         assert job.status == "reviewing"
         assert job.completed_outputs == 0
         assert job.charged_outputs == 0

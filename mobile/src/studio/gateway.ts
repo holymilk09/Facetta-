@@ -10,6 +10,7 @@ import type {
   CatalogPreviewResult,
   CommitCreativeDirectionsResult,
   ComponentCatalog,
+  CreativeDirectionReviewDraft,
   CreateLineArtRequest,
   CreateProjectFromDrawingRequest,
   CreateProjectFromPromptRequest,
@@ -84,6 +85,23 @@ export interface StudioCreativeDirectionReviewRequest {
   retained: readonly { candidateId: string; label: string }[];
   createdBy: string;
   studioJobId?: string;
+}
+
+export interface StudioCreateReviewDraftRequest {
+  projectId: string;
+  /** Omitted only for a same-session Create, where the tracked job is authoritative. */
+  studioJobId?: string;
+  owner: string;
+  expectedVersion: number;
+  selectedCandidateId: string;
+  retained: readonly { candidateId: string; label: string }[];
+}
+
+export interface StudioCreateReviewDraftEnvelope {
+  /** Null for valid reviewing Create jobs created before draft persistence existed. */
+  draft: CreativeDirectionReviewDraft | null;
+  job: StudioJobRecord;
+  project: ProjectDetail;
 }
 
 export type StudioDesignFactAuthority = 'suggested' | 'estimated' | 'designer_supplied';
@@ -398,6 +416,8 @@ type GatewayTrustedClient = Pick<TrustedApiClient,
   | 'createProjectFromDrawing'
   | 'createProjectFromPrompt'
   | 'commitCreativeDirections'
+  | 'getCreativeDirectionReviewDraft'
+  | 'putCreativeDirectionReviewDraft'
   | 'saveAsVariation'
   | 'saveRevisionAsVariation'
   | 'saveCreativeCandidateAsVariation'
@@ -1177,6 +1197,136 @@ export function createStudioGateway(
     );
   };
 
+  const validateCreateReviewSelection = (
+    project: ProjectDetail,
+    selectedCandidateId: string,
+    retained: readonly { candidate_id: string; label: string }[],
+  ): boolean => {
+    const retainedCandidateIds = retained.map((direction) => direction.candidate_id);
+    const candidateIds = new Set((project.creative_candidates ?? [])
+      .filter((candidate) => (
+        candidate.capability === 'CREATIVE_RENDER'
+        && candidate.design_version === null
+        && candidate.design_id === null
+        && candidate.revision === null
+        && candidate.root_id === project.root_id
+      ))
+      .map((candidate) => candidate.asset_id));
+    return candidateIds.size > 0
+      && selectedCandidateId.trim().length > 0
+      && selectedCandidateId === selectedCandidateId.trim()
+      && retained.length <= 3
+      && retained.every((direction) => (
+        direction.candidate_id.trim().length > 0
+        && direction.candidate_id === direction.candidate_id.trim()
+        && direction.label.trim().length > 0
+        && direction.label === direction.label.trim()
+        && direction.label.length <= 120
+      ))
+      && !retainedCandidateIds.includes(selectedCandidateId)
+      && new Set(retainedCandidateIds).size === retainedCandidateIds.length
+      && candidateIds.has(selectedCandidateId)
+      && retainedCandidateIds.every((candidateId) => candidateIds.has(candidateId));
+  };
+
+  const validateCreateReviewSelectionShape = (
+    selectedCandidateId: string,
+    retained: readonly { candidate_id: string; label: string }[],
+  ): boolean => {
+    const retainedCandidateIds = retained.map((direction) => direction.candidate_id);
+    return selectedCandidateId.trim().length > 0
+      && selectedCandidateId === selectedCandidateId.trim()
+      && retained.length <= 3
+      && retained.every((direction) => (
+        direction.candidate_id.trim().length > 0
+        && direction.candidate_id === direction.candidate_id.trim()
+        && direction.label.trim().length > 0
+        && direction.label === direction.label.trim()
+        && direction.label.length <= 120
+      ))
+      && !retainedCandidateIds.includes(selectedCandidateId)
+      && new Set(retainedCandidateIds).size === retainedCandidateIds.length;
+  };
+
+  const loadCreateReviewContext = async (
+    projectId: string,
+    studioJobId: string,
+    owner: string,
+  ): Promise<StudioGatewayResult<{ job: StudioJobRecord; project: ProjectDetail }>> => {
+    if (!projectId.trim() || !studioJobId.trim() || !owner.trim()) return gatewayError(
+      'INVALID_CREATE_REVIEW_CONTEXT',
+      'The Create review is missing its project, Activity item, or owner.',
+      'validation', 422,
+    );
+    const tracked = creativeJobs.get(projectId);
+    if (tracked !== undefined && (
+      tracked.jobId !== studioJobId || tracked.owner !== owner || tracked.actionId !== 'create'
+    )) return gatewayError(
+      'STUDIO_CREATE_REVIEW_JOB_MISMATCH',
+      'This Create review does not match the saved Activity item.',
+      'conflict', 409,
+    );
+    const jobResult = await client.getStudioJob(studioJobId, owner);
+    if (jobResult.error !== null) return {
+      data: null, error: mapError(jobResult.error), status: jobResult.status,
+    };
+    const job = jobResult.data;
+    if (
+      job.job_id !== studioJobId || job.owner !== owner || job.action_id !== 'create'
+      || job.status !== 'reviewing' || job.active_design_id !== projectId
+      || job.source_revision_id !== null
+    ) return gatewayError(
+      'STUDIO_CREATE_REVIEW_JOB_MISMATCH',
+      'This Activity item is not a reviewable Create result for the selected project.',
+      'conflict', 409,
+    );
+    const projectResult = await client.getProject(projectId);
+    if (projectResult.error !== null) return {
+      data: null, error: mapError(projectResult.error), status: projectResult.status,
+    };
+    const project = projectResult.data;
+    if (
+      project.root_id !== projectId || project.id !== projectId || project.owner !== owner
+    ) return gatewayError(
+      'STUDIO_CREATE_REVIEW_PROJECT_MISMATCH',
+      'This Create result is not bound to the selected project and owner.',
+      'conflict', 409,
+    );
+    return { data: { job, project }, error: null, status: projectResult.status };
+  };
+
+  const loadCreateReviewDraft = async (
+    projectId: string,
+    studioJobId: string,
+    owner: string,
+  ): Promise<StudioGatewayResult<StudioCreateReviewDraftEnvelope>> => {
+    const context = await loadCreateReviewContext(projectId, studioJobId, owner);
+    if (context.error !== null) return context;
+    const draftResult = await client.getCreativeDirectionReviewDraft(projectId, studioJobId);
+    if (draftResult.error !== null) {
+      if (draftResult.status === 404 || draftResult.error.category === 'not_found') return {
+        data: { draft: null, job: context.data.job, project: context.data.project },
+        error: null,
+        status: context.status,
+      };
+      return { data: null, error: mapError(draftResult.error), status: draftResult.status };
+    }
+    const draft = draftResult.data;
+    if (
+      draft.project_root_id !== projectId || draft.studio_job_id !== studioJobId
+      || !validateCreateReviewSelection(context.data.project, draft.selected_candidate_id, draft.retained)
+    ) return gatewayError(
+      'INVALID_CREATE_REVIEW_DRAFT_RESPONSE',
+      'The saved Create review no longer matches its candidates and Activity item.',
+      'invalid_response', 409,
+    );
+    return {
+      data: { draft, job: context.data.job, project: context.data.project },
+      error: null,
+      status: draftResult.status,
+    };
+  };
+
   const reconcileCommittedCreate = async (
     job: ActiveStudioJob | null,
     requestedOutputs: number,
@@ -1407,6 +1557,78 @@ export function createStudioGateway(
       ...args: Parameters<GatewayTrustedClient['listStudioJobs']>
     ) {
       return mapResult(await client.listStudioJobs(...args));
+    },
+
+    loadCreateReviewDraft,
+
+    /** Activity resume is the same strict durable read, named for UI intent. */
+    async resumeCreateReview(
+      projectId: string,
+      studioJobId: string,
+      owner: string,
+    ): Promise<StudioGatewayResult<StudioCreateReviewDraftEnvelope>> {
+      return loadCreateReviewDraft(projectId, studioJobId, owner);
+    },
+
+    async saveCreateReviewDraft(
+      request: StudioCreateReviewDraftRequest,
+    ): Promise<StudioGatewayResult<CreativeDirectionReviewDraft>> {
+      const tracked = creativeJobs.get(request.projectId);
+      if (
+        request.studioJobId !== undefined && tracked !== undefined
+        && (tracked.jobId !== request.studioJobId || tracked.owner !== request.owner)
+      ) return gatewayError(
+        'STUDIO_CREATE_REVIEW_JOB_MISMATCH',
+        'This Create review does not match the saved Activity item.',
+        'conflict', 409,
+      );
+      const studioJobId = request.studioJobId ?? tracked?.jobId;
+      const retained = request.retained.map((direction) => ({
+        candidate_id: direction.candidateId,
+        label: direction.label.trim(),
+      }));
+      if (
+        !request.projectId.trim() || !request.owner.trim() || studioJobId === undefined
+        || !studioJobId.trim() || !Number.isInteger(request.expectedVersion)
+        || request.expectedVersion < 0
+        || !validateCreateReviewSelectionShape(request.selectedCandidateId, retained)
+      ) return gatewayError(
+        'INVALID_CREATE_REVIEW_DRAFT',
+        'Choose one Original and up to three distinct saved directions from this Create result.',
+        'validation', 422,
+      );
+      if (tracked !== undefined && (
+        tracked.actionId !== 'create' || tracked.status !== 'reviewing'
+      )) return gatewayError(
+        'STUDIO_CREATE_REVIEW_JOB_MISMATCH',
+        'This Activity item is not a reviewable Create result.',
+        'conflict', 409,
+      );
+      // PUT is the write authority: it revalidates authenticated ownership,
+      // reviewing Create state, project/job binding, exact candidate membership,
+      // and expected_version in one transaction. Avoid read-before-write latency.
+      const saved = await client.putCreativeDirectionReviewDraft(request.projectId, {
+        studio_job_id: studioJobId,
+        expected_version: request.expectedVersion,
+        selected_candidate_id: request.selectedCandidateId,
+        retained,
+      });
+      if (saved.error !== null) return {
+        data: null, error: mapError(saved.error), status: saved.status,
+      };
+      const draft = saved.data;
+      if (
+        draft.project_root_id !== request.projectId || draft.studio_job_id !== studioJobId
+        || draft.version !== request.expectedVersion + 1
+        || draft.selected_candidate_id !== request.selectedCandidateId
+        || !sameJson(draft.retained, retained)
+        || !validateCreateReviewSelectionShape(draft.selected_candidate_id, draft.retained)
+      ) return gatewayError(
+        'INVALID_CREATE_REVIEW_DRAFT_RESPONSE',
+        'The saved Create review did not match the requested decision.',
+        'invalid_response', 409,
+      );
+      return saved;
     },
 
     async resumeReviewJob(

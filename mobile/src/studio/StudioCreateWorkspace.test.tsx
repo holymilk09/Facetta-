@@ -370,6 +370,339 @@ test('prompt-only direction review does not invent or require a starting source'
   await waitFor(() => expect(completeCreativeDirectionReview).toHaveBeenCalledTimes(1));
 });
 
+test('rehydrates the exact mutable Create review without rewriting immutable history', async () => {
+  const project = creativeProject(3);
+  const saveCreateReviewDraft = jest.fn();
+  const completeCreativeDirectionReview = jest.fn(async ({ selectedCandidateId }) => ({
+    data: {
+      project: {
+        ...project,
+        selected_candidate_asset_id: selectedCandidateId,
+        active_asset_id: selectedCandidateId,
+      },
+      retained_variations: [],
+    },
+    error: null,
+    status: 200,
+  }));
+  await renderCreate(<StudioCreateWorkspace
+    gateway={{
+      createFromPrompt: jest.fn(), createFromDrawing: jest.fn(),
+      completeCreativeDirectionReview, saveCreateReviewDraft,
+    }}
+    owner="designer_1"
+    resumeProject={project}
+    resumeStudioJobId="studio_job_create"
+    resumeReviewDraft={{
+      project_root_id: 'project_1',
+      studio_job_id: 'studio_job_create',
+      selected_candidate_id: 'candidate_2',
+      retained: [{ candidate_id: 'candidate_3', label: 'Open gallery profile' }],
+      version: 4,
+      updated_at: '2026-07-12T00:00:00Z',
+    }}
+    onSave={jest.fn()}
+  />);
+
+  expect(screen.getByLabelText('Direction 2').props.accessibilityState.checked).toBe(true);
+  await loadDirection(2);
+  await loadDirection(3);
+  expect(screen.getByLabelText('Keep Direction 3 as variation').props.accessibilityState.checked)
+    .toBe(true);
+  expect(screen.getByLabelText('Variation name for Direction 3').props.value)
+    .toBe('Open gallery profile');
+  expect(saveCreateReviewDraft).not.toHaveBeenCalled();
+
+  await fireEvent.press(screen.getByText('Continue with Direction 2 · keep 1 variation'));
+  await waitFor(() => expect(completeCreativeDirectionReview).toHaveBeenCalledWith({
+    projectId: 'project_1',
+    selectedCandidateId: 'candidate_2',
+    retained: [{ candidateId: 'candidate_3', label: 'Open gallery profile' }],
+    createdBy: 'designer_1',
+    studioJobId: 'studio_job_create',
+  }));
+});
+
+test('persists every latest Create review choice through a versioned single-writer queue', async () => {
+  const saveCreateReviewDraft = jest.fn(async (request) => ({
+    data: {
+      project_root_id: request.projectId,
+      studio_job_id: request.studioJobId ?? 'studio_job_create',
+      selected_candidate_id: request.selectedCandidateId,
+      retained: request.retained.map((direction: { candidateId: string; label: string }) => ({
+        candidate_id: direction.candidateId,
+        label: direction.label,
+      })),
+      version: request.expectedVersion + 1,
+      updated_at: '2026-07-12T00:00:00Z',
+    },
+    error: null,
+    status: 200,
+  }));
+  await renderCreate(<StudioCreateWorkspace
+    gateway={{
+      createFromPrompt: jest.fn(), createFromDrawing: jest.fn(),
+      completeCreativeDirectionReview: jest.fn(), saveCreateReviewDraft,
+    }}
+    owner="designer_1"
+    resumeProject={creativeProject(3)}
+    resumeStudioJobId="studio_job_create"
+    onSave={jest.fn()}
+  />);
+
+  await waitFor(() => expect(saveCreateReviewDraft).toHaveBeenCalledTimes(1));
+  await loadDirection(1);
+  await loadDirection(2);
+  await fireEvent.press(screen.getByLabelText('Direction 2'));
+  await waitFor(() => expect(saveCreateReviewDraft).toHaveBeenCalledTimes(2));
+  await fireEvent.press(screen.getByLabelText('Keep Direction 1 as variation'));
+  await fireEvent.changeText(
+    screen.getByLabelText('Variation name for Direction 1'),
+    'Slim gallery',
+  );
+
+  await waitFor(() => {
+    const latest = saveCreateReviewDraft.mock.calls.at(-1)?.[0];
+    expect(latest).toMatchObject({
+      projectId: 'project_1',
+      studioJobId: 'studio_job_create',
+      owner: 'designer_1',
+      selectedCandidateId: 'candidate_2',
+      retained: [{ candidateId: 'candidate_1', label: 'Slim gallery' }],
+    });
+    expect(screen.queryByText('Saving this review to Activity…')).toBeNull();
+  });
+  expect(saveCreateReviewDraft.mock.calls.map(([request]) => request.expectedVersion))
+    .toEqual(saveCreateReviewDraft.mock.calls.map((_, index) => index));
+});
+
+test('fails closed on a draft-save error and resumes only after the designer retries it', async () => {
+  const project = creativeProject(1);
+  const completeCreativeDirectionReview = jest.fn(async ({ selectedCandidateId }) => ({
+    data: {
+      project: {
+        ...project,
+        selected_candidate_asset_id: selectedCandidateId,
+        active_asset_id: selectedCandidateId,
+      },
+      retained_variations: [],
+    },
+    error: null,
+    status: 200,
+  }));
+  const saveCreateReviewDraft = jest.fn()
+    .mockResolvedValueOnce({
+      data: null,
+      error: {
+        code: 'NETWORK_FAILURE', message: 'Connection lost.', category: 'transient',
+        retryable: true,
+      },
+      status: 503,
+    })
+    .mockResolvedValueOnce({
+      data: {
+        project_root_id: 'project_1',
+        studio_job_id: 'studio_job_create',
+        selected_candidate_id: 'candidate_1',
+        retained: [],
+        version: 1,
+        updated_at: '2026-07-12T00:00:00Z',
+      },
+      error: null,
+      status: 200,
+    });
+  await renderCreate(<StudioCreateWorkspace
+    gateway={{
+      createFromPrompt: jest.fn(), createFromDrawing: jest.fn(),
+      completeCreativeDirectionReview, saveCreateReviewDraft,
+    }}
+    owner="designer_1"
+    resumeProject={project}
+    resumeStudioJobId="studio_job_create"
+    onSave={jest.fn()}
+  />);
+
+  await loadDirection(1);
+  expect(await screen.findByText(/latest choice could not be saved to Activity/i)).toBeTruthy();
+  const continueButton = screen.getByText('Continue with Direction 1');
+  expect(continueButton.parent?.props.accessibilityState.disabled).toBe(true);
+  await fireEvent.press(continueButton);
+  expect(completeCreativeDirectionReview).not.toHaveBeenCalled();
+
+  await fireEvent.press(screen.getByLabelText('Retry saving Create review'));
+  await waitFor(() => {
+    expect(saveCreateReviewDraft).toHaveBeenCalledTimes(2);
+    expect(screen.queryByText(/latest choice could not be saved to Activity/i)).toBeNull();
+    expect(continueButton.parent?.props.accessibilityState.disabled).toBe(false);
+  });
+  await fireEvent.press(continueButton);
+  await waitFor(() => expect(completeCreativeDirectionReview).toHaveBeenCalledTimes(1));
+});
+
+test('reloads the authoritative review after a stale-version conflict', async () => {
+  const project = creativeProject(3);
+  const saveCreateReviewDraft = jest.fn(async () => ({
+    data: null,
+    error: {
+      code: 'CREATE_REVIEW_DRAFT_VERSION_CONFLICT',
+      message: 'This review changed elsewhere.',
+      category: 'conflict' as const,
+      status: 409,
+      retryable: false,
+    },
+    status: 409,
+  }));
+  const authoritativeDraft = {
+    project_root_id: 'project_1',
+    studio_job_id: 'studio_job_create',
+    selected_candidate_id: 'candidate_1',
+    retained: [{ candidate_id: 'candidate_3', label: 'Latest saved profile' }],
+    version: 5,
+    updated_at: '2026-07-12T00:00:03Z',
+  };
+  const loadCreateReviewDraft = jest.fn(async () => ({
+    data: {
+      draft: authoritativeDraft,
+      project,
+      job: { job_id: 'studio_job_create' },
+    },
+    error: null,
+    status: 200,
+  }));
+  await renderCreate(<StudioCreateWorkspace
+    gateway={{
+      createFromPrompt: jest.fn(), createFromDrawing: jest.fn(),
+      completeCreativeDirectionReview: jest.fn(),
+      saveCreateReviewDraft,
+      loadCreateReviewDraft,
+    } as any}
+    owner="designer_1"
+    resumeProject={project}
+    resumeStudioJobId="studio_job_create"
+    resumeReviewDraft={{
+      ...authoritativeDraft,
+      selected_candidate_id: 'candidate_2',
+      retained: [],
+      version: 4,
+    }}
+    onSave={jest.fn()}
+  />);
+
+  await loadDirection(1);
+  await loadDirection(2);
+  await loadDirection(3);
+  fireEvent.press(screen.getByLabelText('Direction 1'));
+  expect(await screen.findByText(/latest choice could not be saved to Activity/i)).toBeTruthy();
+
+  fireEvent.press(screen.getByLabelText('Retry saving Create review'));
+  await waitFor(() => {
+    expect(loadCreateReviewDraft).toHaveBeenCalledWith(
+      'project_1', 'studio_job_create', 'designer_1',
+    );
+    expect(screen.getByLabelText('Direction 1').props.accessibilityState.checked).toBe(true);
+    expect(screen.getByLabelText('Keep Direction 3 as variation').props.accessibilityState.checked)
+      .toBe(true);
+    expect(screen.getByLabelText('Variation name for Direction 3').props.value)
+      .toBe('Latest saved profile');
+  });
+  expect(saveCreateReviewDraft).toHaveBeenCalledTimes(1);
+  expect(screen.getByText(/reloaded the latest saved choices/i)).toBeTruthy();
+});
+
+test('keeps direction comparison progressively disclosed and absent for one output', async () => {
+  await renderCreate(<StudioCreateWorkspace
+    gateway={{
+      createFromPrompt: jest.fn(), createFromDrawing: jest.fn(),
+      completeCreativeDirectionReview: jest.fn(),
+    } as CreateGateway}
+    owner="designer_1"
+    resumeProject={creativeProject(1)}
+    onSave={jest.fn()}
+  />);
+
+  expect(screen.queryByLabelText('Compare directions')).toBeNull();
+});
+
+test('compares two prompt directions without changing the saved review decision', async () => {
+  const completeCreativeDirectionReview = jest.fn(async ({ selectedCandidateId }) => ({
+    data: {
+      project: {
+        ...creativeProject(3),
+        selected_candidate_asset_id: selectedCandidateId,
+        active_asset_id: selectedCandidateId,
+      },
+      retained_variations: [],
+    },
+    error: null,
+    status: 200,
+  }));
+  await renderCreate(<StudioCreateWorkspace
+    gateway={{
+      createFromPrompt: jest.fn(), createFromDrawing: jest.fn(),
+      completeCreativeDirectionReview,
+    } as CreateGateway}
+    owner="designer_1"
+    resumeProject={creativeProject(3)}
+    resumeStudioJobId="studio_job_create"
+    onSave={jest.fn()}
+  />);
+
+  await loadDirection(1);
+  await loadDirection(2);
+  await loadDirection(3);
+  await fireEvent.press(screen.getByLabelText('Keep Direction 3 as variation'));
+  await fireEvent.changeText(
+    screen.getByLabelText('Variation name for Direction 3'),
+    'Open gallery profile',
+  );
+  await fireEvent.press(screen.getByLabelText('Compare directions'));
+  await fireEvent.press(screen.getByLabelText('Compare selected direction with Direction 2'));
+
+  expect(screen.getByLabelText('Create selected direction alternative comparison').props.source)
+    .toEqual({
+      uri: 'https://facetta.test/candidate-1.png',
+      headers: { Authorization: 'Bearer first-party-token' },
+    });
+  expect(screen.getByLabelText('Create alternative direction comparison').props.source)
+    .toEqual({
+      uri: 'https://facetta.test/candidate-2.png',
+      headers: { Authorization: 'Bearer first-party-token' },
+    });
+  expect(screen.getByText('Continue with Direction 1 · keep 1 variation')).toBeTruthy();
+
+  await fireEvent.press(screen.getByText('Continue with Direction 1 · keep 1 variation'));
+  await waitFor(() => expect(completeCreativeDirectionReview).toHaveBeenCalledWith({
+    projectId: 'project_1', selectedCandidateId: 'candidate_1',
+    retained: [{ candidateId: 'candidate_3', label: 'Open gallery profile' }],
+    createdBy: 'designer_1', studioJobId: 'studio_job_create',
+  }));
+});
+
+test('clears a colliding comparison alternative when it becomes selected', async () => {
+  await renderCreate(<StudioCreateWorkspace
+    gateway={{
+      createFromPrompt: jest.fn(), createFromDrawing: jest.fn(),
+      completeCreativeDirectionReview: jest.fn(),
+    } as CreateGateway}
+    owner="designer_1"
+    resumeProject={creativeProject(3)}
+    onSave={jest.fn()}
+  />);
+
+  await loadDirection(1);
+  await loadDirection(2);
+  await loadDirection(3);
+  await fireEvent.press(screen.getByLabelText('Compare directions'));
+  await fireEvent.press(screen.getByLabelText('Compare selected direction with Direction 2'));
+  expect(screen.getByTestId('create-direction-comparison')).toBeTruthy();
+
+  await fireEvent.press(screen.getByLabelText('Direction 2'));
+
+  expect(screen.queryByTestId('create-direction-comparison')).toBeNull();
+  expect(screen.getByLabelText('Compare selected direction with Direction 1').props.accessibilityState)
+    .toEqual({ checked: false, disabled: false });
+});
+
 test('keeps only explicitly chosen useful directions as variations', async () => {
   const createFromPrompt = jest.fn(async () => ({
     data: creativeProject(4), error: null, status: 201,

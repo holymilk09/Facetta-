@@ -5,8 +5,12 @@ import {
   Pressable, ScrollView, StyleSheet, Text, TextInput, View,
 } from 'react-native';
 
-import type { StudioCreativeDirectionReviewRequest, StudioGateway } from './gateway';
-import type { AssetSummary, CreativeSourceKind, ProjectDetail } from '../trusted/types';
+import type {
+  StudioCreativeDirectionReviewRequest, StudioGateway, StudioGatewayError,
+} from './gateway';
+import type {
+  AssetSummary, CreativeDirectionReviewDraft, CreativeSourceKind, ProjectDetail,
+} from '../trusted/types';
 import { radius, theme } from '../theme';
 import { designerErrorMessage } from './designerErrorMessage';
 import {
@@ -61,21 +65,27 @@ export interface StudioCreateGenerationSuccess {
   submittedDraft: StudioCreateDraft;
 }
 
+export type StudioCreateReviewPersistenceState = 'saved' | 'saving' | 'error';
+
 export interface StudioCreateWorkspaceProps {
   gateway: Pick<StudioGateway,
     'createFromPrompt' | 'createFromDrawing' | 'completeCreativeDirectionReview'
-  >;
+  > & Partial<Pick<StudioGateway, 'loadCreateReviewDraft' | 'saveCreateReviewDraft'>>;
   owner: string;
   /** Controlled draft used by App so setup survives workspace navigation. */
   draft?: StudioCreateDraft;
   onDraftChange?: Dispatch<SetStateAction<StudioCreateDraft>>;
   /** Called only after a request returns reviewable directions. */
   onGenerationSucceeded?: (success: StudioCreateGenerationSuccess) => void;
+  /** Lets the shell prevent unmount while the latest review intent is not durable. */
+  onReviewDraftStateChange?: (state: StudioCreateReviewPersistenceState) => void;
   initialSentence?: string;
   initialReferences?: readonly StudioCreateReference[];
   /** Durable review state reopened from a reviewing Create Activity job. */
   resumeProject?: ProjectDetail | null;
   resumeStudioJobId?: string | null;
+  /** Mutable review intent is durable but never part of immutable design history. */
+  resumeReviewDraft?: CreativeDirectionReviewDraft | null;
   onRequestReference?: (
     role: CreateReferenceRole,
   ) => StudioCreateReference | null | Promise<StudioCreateReference | null>;
@@ -88,6 +98,17 @@ const referencePreviewUri = (reference: StudioCreateReference): string => (
 
 const MAX_RETAINED_VARIATIONS = 3;
 const MAX_VARIATION_LABEL_LENGTH = 120;
+
+interface CreateReviewDraftIntent {
+  projectId: string;
+  studioJobId: string | null;
+  owner: string;
+  contextSequence: number;
+  selectedAssetId: string;
+  retainedAssetIds: readonly string[];
+  retainedLabelsByAssetId: Readonly<Record<string, string>>;
+  retained: readonly { candidateId: string; label: string }[];
+}
 
 const candidateVisualKey = (candidate: AssetSummary): string | null => (
   candidate.image_url === null
@@ -150,10 +171,12 @@ export function StudioCreateWorkspace({
   draft: controlledDraft,
   onDraftChange,
   onGenerationSucceeded,
+  onReviewDraftStateChange,
   initialSentence = '',
   initialReferences = [],
   resumeProject = null,
   resumeStudioJobId = null,
+  resumeReviewDraft = null,
   onRequestReference,
   onSave,
 }: StudioCreateWorkspaceProps) {
@@ -223,23 +246,73 @@ export function StudioCreateWorkspace({
   );
   const [project, setProject] = useState<ProjectDetail | null>(resumeProject);
   const resumedCandidates = resumeProject === null ? [] : creativeCandidates(resumeProject);
-  const resumedSelection = resumeProject?.selected_candidate_asset_id;
-  const [selectedAssetId, setSelectedAssetId] = useState<string | null>(() => (
-    resumedSelection !== null && resumedSelection !== undefined
-      && resumedCandidates.some((candidate) => candidate.asset_id === resumedSelection)
-      ? resumedSelection
-      : resumedCandidates[0]?.asset_id ?? null
-  ));
+  const draftMatchesResume = resumeProject !== null
+    && resumeStudioJobId !== null
+    && resumeReviewDraft?.project_root_id === resumeProject.root_id
+    && resumeReviewDraft.studio_job_id === resumeStudioJobId;
+  const resumedSelection = draftMatchesResume
+    ? resumeReviewDraft.selected_candidate_id
+    : resumeProject?.selected_candidate_asset_id;
+  const resumedSelectedAssetId = resumedSelection !== null && resumedSelection !== undefined
+    && resumedCandidates.some((candidate) => candidate.asset_id === resumedSelection)
+    ? resumedSelection
+    : resumedCandidates[0]?.asset_id ?? null;
+  const [selectedAssetId, setSelectedAssetId] = useState<string | null>(
+    resumedSelectedAssetId,
+  );
   const [selectionStudioJobId, setSelectionStudioJobId] = useState<string | null>(
     resumeStudioJobId,
   );
-  const [retainedAssetIds, setRetainedAssetIds] = useState<readonly string[]>([]);
+  const resumedRetained = draftMatchesResume ? resumeReviewDraft.retained.filter((direction) => (
+    direction.candidate_id !== resumedSelectedAssetId
+    && resumedCandidates.some((candidate) => candidate.asset_id === direction.candidate_id)
+  )) : [];
+  const [retainedAssetIds, setRetainedAssetIds] = useState<readonly string[]>(
+    resumedRetained.map((direction) => direction.candidate_id),
+  );
   const [retainedLabelsByAssetId, setRetainedLabelsByAssetId] = useState<
     Readonly<Record<string, string>>
-  >({});
+  >(() => Object.fromEntries(resumedRetained.map((direction) => (
+    [direction.candidate_id, direction.label]
+  ))));
+  const reviewDraftVersionRef = useRef(draftMatchesResume ? resumeReviewDraft.version : 0);
+  const reviewDraftContextSequenceRef = useRef(0);
+  const reviewDraftInitialWriteKeyRef = useRef<string | null>(null);
+  const reviewDraftLatestRef = useRef<{
+    selectedAssetId: string | null;
+    retainedAssetIds: readonly string[];
+    retainedLabelsByAssetId: Readonly<Record<string, string>>;
+  }>({
+    selectedAssetId: resumedSelectedAssetId,
+    retainedAssetIds: resumedRetained.map((direction) => direction.candidate_id) as readonly string[],
+    retainedLabelsByAssetId: Object.fromEntries(resumedRetained.map((direction) => (
+      [direction.candidate_id, direction.label]
+    ))) as Readonly<Record<string, string>>,
+  });
+  const reviewDraftPendingRef = useRef<CreateReviewDraftIntent | null>(null);
+  const reviewDraftWriterRunningRef = useRef(false);
+  const reviewDraftWriterPromiseRef = useRef<Promise<boolean>>(Promise.resolve(true));
+  const reviewDraftWriteFailedRef = useRef(false);
+  const reviewDraftLastErrorRef = useRef<StudioGatewayError | null>(null);
+  const [reviewDraftSaveState, setReviewDraftSaveState] = useState<
+    StudioCreateReviewPersistenceState
+  >(
+    resumeProject !== null
+      && !draftMatchesResume
+      && gateway.saveCreateReviewDraft !== undefined
+      ? 'saving'
+      : 'saved',
+  );
+  const [directionCompareOpen, setDirectionCompareOpen] = useState(false);
+  const [comparisonAssetId, setComparisonAssetId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [commitRetryLocked, setCommitRetryLocked] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [reviewDraftRecoveryNotice, setReviewDraftRecoveryNotice] = useState<string | null>(null);
+
+  useEffect(() => {
+    onReviewDraftStateChange?.(reviewDraftSaveState);
+  }, [onReviewDraftStateChange, reviewDraftSaveState]);
 
   const candidates = useMemo(() => project === null ? [] : creativeCandidates(project), [project]);
   const visualReview = useVisualReviewReadiness(project?.root_id ?? 'create-setup');
@@ -259,7 +332,12 @@ export function StudioCreateWorkspace({
   const selectedCandidate = candidates.find(
     (candidate) => candidate.asset_id === selectedAssetId,
   ) ?? null;
+  const comparisonCandidate = candidates.find(
+    (candidate) => candidate.asset_id === comparisonAssetId,
+  ) ?? null;
   const selectedVisualKey = selectedCandidate === null ? null : candidateVisualKey(selectedCandidate);
+  const comparisonVisualKey = comparisonCandidate === null
+    ? null : candidateVisualKey(comparisonCandidate);
   const reviewSource = project === null ? null : creativeReviewSource(project, selectedCandidate);
   const sourceLineageUnavailable = selectedCandidate?.source_kind !== undefined
     && selectedCandidate.source_kind !== null
@@ -290,6 +368,172 @@ export function StudioCreateWorkspace({
   const canCreate = !busy && (sentence.trim().length > 0 || masterReference !== null)
     && (masterReference === null || sourceKind !== null)
     && referenceVisualsReady;
+
+  const queueReviewDraftSave = useCallback((
+    nextSelectedAssetId: string | null,
+    nextRetainedAssetIds: readonly string[],
+    nextRetainedLabelsByAssetId: Readonly<Record<string, string>>,
+  ): Promise<boolean> => {
+    reviewDraftLatestRef.current = {
+      selectedAssetId: nextSelectedAssetId,
+      retainedAssetIds: nextRetainedAssetIds,
+      retainedLabelsByAssetId: nextRetainedLabelsByAssetId,
+    };
+    if (
+      project === null || nextSelectedAssetId === null
+      || gateway.saveCreateReviewDraft === undefined
+    ) return Promise.resolve(true);
+
+    const retained = candidates
+      .filter((candidate) => (
+        candidate.asset_id !== nextSelectedAssetId
+        && nextRetainedAssetIds.includes(candidate.asset_id)
+      ))
+      .slice(0, MAX_RETAINED_VARIATIONS)
+      .map((candidate) => {
+        const index = candidates.findIndex((item) => item.asset_id === candidate.asset_id);
+        return {
+          candidateId: candidate.asset_id,
+          label: nextRetainedLabelsByAssetId[candidate.asset_id]?.trim()
+            || `Direction ${index + 1}`,
+        };
+      });
+    const intent: CreateReviewDraftIntent = {
+      projectId: project.root_id,
+      studioJobId: selectionStudioJobId,
+      owner,
+      contextSequence: reviewDraftContextSequenceRef.current,
+      selectedAssetId: nextSelectedAssetId,
+      retainedAssetIds: nextRetainedAssetIds,
+      retainedLabelsByAssetId: nextRetainedLabelsByAssetId,
+      retained,
+    };
+    reviewDraftPendingRef.current = intent;
+    reviewDraftWriteFailedRef.current = false;
+    reviewDraftLastErrorRef.current = null;
+    if (mountedRef.current) setReviewDraftRecoveryNotice(null);
+    if (mountedRef.current) setReviewDraftSaveState('saving');
+
+    if (reviewDraftWriterRunningRef.current) {
+      return reviewDraftWriterPromiseRef.current;
+    }
+
+    reviewDraftWriterRunningRef.current = true;
+    const writer = async (): Promise<boolean> => {
+      let lastContextSequence: number | null = null;
+      while (reviewDraftPendingRef.current !== null) {
+        const pending = reviewDraftPendingRef.current;
+        reviewDraftPendingRef.current = null;
+        lastContextSequence = pending.contextSequence;
+        const saved = await gateway.saveCreateReviewDraft!({
+          projectId: pending.projectId,
+          ...(pending.studioJobId === null ? {} : { studioJobId: pending.studioJobId }),
+          owner: pending.owner,
+          expectedVersion: reviewDraftVersionRef.current,
+          selectedCandidateId: pending.selectedAssetId,
+          retained: pending.retained,
+        });
+        const stillCurrent = pending.contextSequence === reviewDraftContextSequenceRef.current
+          && ownerRef.current === pending.owner;
+        if (saved.error !== null) {
+          if (stillCurrent) {
+            reviewDraftPendingRef.current = reviewDraftPendingRef.current ?? pending;
+            reviewDraftWriteFailedRef.current = true;
+            reviewDraftLastErrorRef.current = saved.error;
+            if (mountedRef.current) setReviewDraftSaveState('error');
+          }
+          return false;
+        }
+        if (stillCurrent) {
+          reviewDraftVersionRef.current = saved.data.version;
+          reviewDraftLastErrorRef.current = null;
+          if (pending.studioJobId === null && mountedRef.current) {
+            setSelectionStudioJobId(saved.data.studio_job_id);
+          }
+        }
+      }
+      if (lastContextSequence === reviewDraftContextSequenceRef.current) {
+        reviewDraftWriteFailedRef.current = false;
+        if (mountedRef.current) setReviewDraftSaveState('saved');
+      }
+      return true;
+    };
+    reviewDraftWriterPromiseRef.current = writer().finally(() => {
+      reviewDraftWriterRunningRef.current = false;
+    });
+    return reviewDraftWriterPromiseRef.current;
+  }, [candidates, gateway, owner, project, selectionStudioJobId]);
+
+  const retryReviewDraftSave = async (): Promise<void> => {
+    if (
+      reviewDraftLastErrorRef.current?.category === 'conflict'
+      && project !== null
+      && selectionStudioJobId !== null
+      && gateway.loadCreateReviewDraft !== undefined
+    ) {
+      setReviewDraftSaveState('saving');
+      const contextSequence = reviewDraftContextSequenceRef.current;
+      const reloaded = await gateway.loadCreateReviewDraft(
+        project.root_id, selectionStudioJobId, owner,
+      );
+      if (!mountedRef.current || contextSequence !== reviewDraftContextSequenceRef.current) return;
+      if (reloaded.error !== null || reloaded.data.draft === null) {
+        setReviewDraftSaveState('error');
+        return;
+      }
+      const authoritative = reloaded.data.draft;
+      const nextRetainedAssetIds = authoritative.retained.map(
+        (direction) => direction.candidate_id,
+      );
+      const nextLabels = Object.fromEntries(authoritative.retained.map((direction) => (
+        [direction.candidate_id, direction.label]
+      )));
+      reviewDraftVersionRef.current = authoritative.version;
+      reviewDraftPendingRef.current = null;
+      reviewDraftWriteFailedRef.current = false;
+      reviewDraftLastErrorRef.current = null;
+      reviewDraftLatestRef.current = {
+        selectedAssetId: authoritative.selected_candidate_id,
+        retainedAssetIds: nextRetainedAssetIds,
+        retainedLabelsByAssetId: nextLabels,
+      };
+      setSelectedAssetId(authoritative.selected_candidate_id);
+      setRetainedAssetIds(nextRetainedAssetIds);
+      setRetainedLabelsByAssetId(nextLabels);
+      if (comparisonAssetId === authoritative.selected_candidate_id) {
+        setComparisonAssetId(null);
+      }
+      setReviewDraftRecoveryNotice(
+        'This review changed elsewhere. Facetta reloaded the latest saved choices; review them before continuing.',
+      );
+      setReviewDraftSaveState('saved');
+      return;
+    }
+    const latest = reviewDraftLatestRef.current;
+    reviewDraftPendingRef.current = null;
+    await queueReviewDraftSave(
+      latest.selectedAssetId,
+      latest.retainedAssetIds,
+      latest.retainedLabelsByAssetId,
+    );
+  };
+
+  useEffect(() => {
+    if (
+      project === null || selectedAssetId === null
+      || gateway.saveCreateReviewDraft === undefined
+      || reviewDraftVersionRef.current !== 0
+    ) return;
+    const initialWriteKey = `${owner}:${project.root_id}:${selectionStudioJobId ?? 'tracked'}`;
+    if (reviewDraftInitialWriteKeyRef.current === initialWriteKey) return;
+    reviewDraftInitialWriteKeyRef.current = initialWriteKey;
+    void queueReviewDraftSave(
+      selectedAssetId,
+      retainedAssetIds,
+      retainedLabelsByAssetId,
+    );
+  }, [gateway.saveCreateReviewDraft, owner, project, queueReviewDraftSave,
+    retainedAssetIds, retainedLabelsByAssetId, selectedAssetId, selectionStudioJobId]);
 
   const requestReference = async (role: CreateReferenceRole) => {
     const requestId = referenceRequestIdRef.current + 1;
@@ -340,6 +584,17 @@ export function StudioCreateWorkspace({
     const requestId = generationRequestIdRef.current + 1;
     generationRequestIdRef.current = requestId;
     const requestOwner = owner;
+    reviewDraftContextSequenceRef.current += 1;
+    reviewDraftVersionRef.current = 0;
+    reviewDraftInitialWriteKeyRef.current = null;
+    reviewDraftPendingRef.current = null;
+    reviewDraftWriteFailedRef.current = false;
+    reviewDraftLastErrorRef.current = null;
+    reviewDraftLatestRef.current = {
+      selectedAssetId: null, retainedAssetIds: [], retainedLabelsByAssetId: {},
+    };
+    setReviewDraftSaveState('saved');
+    setReviewDraftRecoveryNotice(null);
     setBusy(true);
     setError(null);
     setProject(null);
@@ -347,6 +602,8 @@ export function StudioCreateWorkspace({
     setSelectionStudioJobId(null);
     setRetainedAssetIds([]);
     setRetainedLabelsByAssetId({});
+    setDirectionCompareOpen(false);
+    setComparisonAssetId(null);
     selectionDecisionRef.current = null;
     setCommitRetryLocked(false);
     const sourceTitle = prompt || submittedMaster?.label || 'Untitled reference study';
@@ -396,6 +653,14 @@ export function StudioCreateWorkspace({
     setSelectedAssetId(nextCandidates[0].asset_id);
     setRetainedAssetIds([]);
     setRetainedLabelsByAssetId({});
+    setDirectionCompareOpen(false);
+    setComparisonAssetId(null);
+    reviewDraftLatestRef.current = {
+      selectedAssetId: nextCandidates[0].asset_id,
+      retainedAssetIds: [],
+      retainedLabelsByAssetId: {},
+    };
+    if (gateway.saveCreateReviewDraft !== undefined) setReviewDraftSaveState('saving');
     selectionDecisionRef.current = null;
     setCommitRetryLocked(false);
     onGenerationSucceeded?.({
@@ -406,7 +671,10 @@ export function StudioCreateWorkspace({
   };
 
   const continueWithSelection = async (): Promise<void> => {
-    if (project === null || selectedAssetId === null || busy || !decisionVisualsReady) return;
+    if (
+      project === null || selectedAssetId === null || busy || !decisionVisualsReady
+      || reviewDraftSaveState !== 'saved' || reviewDraftWriteFailedRef.current
+    ) return;
 
     const requestId = selectionRequestIdRef.current + 1;
     selectionRequestIdRef.current = requestId;
@@ -458,8 +726,16 @@ export function StudioCreateWorkspace({
   };
 
   const leaveReviewAndStartAnother = (): void => {
-    if (busy) return;
+    if (busy || reviewDraftSaveState !== 'saved') return;
     selectionRequestIdRef.current += 1;
+    reviewDraftContextSequenceRef.current += 1;
+    reviewDraftVersionRef.current = 0;
+    reviewDraftInitialWriteKeyRef.current = null;
+    reviewDraftPendingRef.current = null;
+    reviewDraftWriteFailedRef.current = false;
+    reviewDraftLatestRef.current = {
+      selectedAssetId: null, retainedAssetIds: [], retainedLabelsByAssetId: {},
+    };
     setError(null);
     setSetupOpen(false);
     setProject(null);
@@ -467,6 +743,8 @@ export function StudioCreateWorkspace({
     setSelectionStudioJobId(null);
     setRetainedAssetIds([]);
     setRetainedLabelsByAssetId({});
+    setDirectionCompareOpen(false);
+    setComparisonAssetId(null);
     selectionDecisionRef.current = null;
     setCommitRetryLocked(false);
   };
@@ -523,7 +801,7 @@ export function StudioCreateWorkspace({
             )}
           </View>
         )}
-        <View style={styles.candidateGrid}>
+        <View accessibilityRole="radiogroup" style={styles.candidateGrid}>
           {candidates.map((candidate, index) => {
             const selected = selectedAssetId === candidate.asset_id;
             const willRetain = intendedRetainedCandidates.some(
@@ -555,9 +833,16 @@ export function StudioCreateWorkspace({
                     onLoad={() => visualReview.markReady(visualKey)}
                     onError={() => {
                       visualReview.markFailed(visualKey);
-                      setRetainedAssetIds((current) => current.filter(
+                      const nextRetainedAssetIds = retainedAssetIds.filter(
                         (assetId) => assetId !== candidate.asset_id,
-                      ));
+                      );
+                      setRetainedAssetIds(nextRetainedAssetIds);
+                      void queueReviewDraftSave(
+                        selectedAssetId, nextRetainedAssetIds, retainedLabelsByAssetId,
+                      );
+                      if (comparisonAssetId === candidate.asset_id) {
+                        setComparisonAssetId(null);
+                      }
                     }}
                     style={styles.candidateImage}
                   />
@@ -571,10 +856,19 @@ export function StudioCreateWorkspace({
                   style={styles.candidateSelect}
                   onPress={() => {
                     if (candidateDisabled) return;
-                    setRetainedAssetIds((current) => current.filter(
+                    const nextRetainedAssetIds = retainedAssetIds.filter(
                       (assetId) => assetId !== candidate.asset_id,
-                    ));
+                    );
+                    setRetainedAssetIds(nextRetainedAssetIds);
+                    if (comparisonAssetId === candidate.asset_id) {
+                      setComparisonAssetId(null);
+                    }
                     setSelectedAssetId(candidate.asset_id);
+                    void queueReviewDraftSave(
+                      candidate.asset_id,
+                      nextRetainedAssetIds,
+                      retainedLabelsByAssetId,
+                    );
                   }}>
                   <View style={styles.candidateCopy}>
                     <Text style={styles.candidateTitle}>Direction {index + 1}</Text>
@@ -600,11 +894,15 @@ export function StudioCreateWorkspace({
                       style={[styles.keepVariation, retainDisabled && styles.keepVariationDisabled]}
                       onPress={() => {
                         if (retainDisabled) return;
-                        setRetainedAssetIds((current) => (
-                          current.includes(candidate.asset_id)
-                            ? current.filter((assetId) => assetId !== candidate.asset_id)
-                            : [...current, candidate.asset_id]
-                        ));
+                        const nextRetainedAssetIds = retainedAssetIds.includes(candidate.asset_id)
+                          ? retainedAssetIds.filter((assetId) => assetId !== candidate.asset_id)
+                          : [...retainedAssetIds, candidate.asset_id];
+                        setRetainedAssetIds(nextRetainedAssetIds);
+                        void queueReviewDraftSave(
+                          selectedAssetId,
+                          nextRetainedAssetIds,
+                          retainedLabelsByAssetId,
+                        );
                       }}>
                       <View style={[styles.keepBox, willRetain && styles.keepBoxChecked]}>
                         {willRetain && <Text style={styles.keepCheck}>✓</Text>}
@@ -631,10 +929,18 @@ export function StudioCreateWorkspace({
                           placeholderTextColor={theme.faint}
                           testID={`create-retained-variation-name-${candidate.asset_id}`}
                           value={retainedLabelsByAssetId[candidate.asset_id] ?? ''}
-                          onChangeText={(label) => setRetainedLabelsByAssetId((current) => ({
-                            ...current,
-                            [candidate.asset_id]: label,
-                          }))}
+                          onChangeText={(label) => {
+                            const nextLabels = {
+                              ...retainedLabelsByAssetId,
+                              [candidate.asset_id]: label,
+                            };
+                            setRetainedLabelsByAssetId(nextLabels);
+                            void queueReviewDraftSave(
+                              selectedAssetId,
+                              retainedAssetIds,
+                              nextLabels,
+                            );
+                          }}
                           style={styles.variationNameInput}
                         />
                         <Text style={styles.variationNameHelp}>
@@ -648,6 +954,99 @@ export function StudioCreateWorkspace({
             );
           })}
         </View>
+        {candidates.length > 1 && (
+          <View style={styles.directionCompareBlock}>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Compare directions"
+              accessibilityState={{ expanded: directionCompareOpen }}
+              testID="create-direction-compare-disclosure"
+              onPress={() => setDirectionCompareOpen((current) => !current)}
+              style={styles.directionCompareDisclosure}>
+              <View style={styles.directionCompareDisclosureCopy}>
+                <Text style={styles.directionCompareTitle}>Compare directions</Text>
+                <Text style={styles.directionCompareHelp}>
+                  Put the selected direction beside one alternative. Comparing does not change what you keep.
+                </Text>
+              </View>
+              <Text style={styles.disclosureGlyph}>{directionCompareOpen ? '−' : '+'}</Text>
+            </Pressable>
+            {directionCompareOpen && (
+              <View testID="create-direction-compare-options">
+                <View accessibilityRole="radiogroup" style={styles.directionCompareOptions}>
+                  {candidates.filter((candidate) => (
+                    candidate.asset_id !== selectedAssetId
+                  )).map((candidate) => {
+                    const index = candidates.findIndex(
+                      (item) => item.asset_id === candidate.asset_id,
+                    );
+                    const visualKey = candidateVisualKey(candidate);
+                    const candidateReady = visualReview.isReady(visualKey);
+                    const candidateFailed = visualReview.anyFailed([visualKey]);
+                    const checked = candidate.asset_id === comparisonAssetId;
+                    const disabled = !candidateReady || candidateFailed;
+                    return (
+                      <Pressable
+                        key={candidate.asset_id}
+                        accessibilityRole="radio"
+                        accessibilityLabel={`Compare selected direction with Direction ${index + 1}`}
+                        accessibilityHint={candidateFailed
+                          ? 'This preview is unavailable and cannot be compared.'
+                          : candidateReady
+                            ? 'Show this alternative beside the selected direction.'
+                            : 'Load this preview before comparing it.'}
+                        accessibilityState={{ checked, disabled }}
+                        disabled={disabled}
+                        onPress={() => setComparisonAssetId(candidate.asset_id)}
+                        style={[
+                          styles.directionCompareOption,
+                          checked && styles.directionCompareOptionSelected,
+                          disabled && styles.keepVariationDisabled,
+                        ]}>
+                        <Text style={[
+                          styles.directionCompareOptionText,
+                          checked && styles.directionCompareOptionTextSelected,
+                        ]}>Direction {index + 1}</Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+                {comparisonCandidate !== null
+                  && selectedCandidate !== null
+                  && selectedCandidate.image_url !== null
+                  && comparisonCandidate.image_url !== null && (
+                  <View testID="create-direction-comparison">
+                    <StudioComparisonInspector
+                      before={{
+                        label: `Direction ${candidates.findIndex((candidate) => (
+                          candidate.asset_id === selectedCandidate.asset_id
+                        )) + 1}`,
+                        roleLabel: 'Selected direction',
+                        accessibilityLabel: 'Create selected direction alternative comparison',
+                        source: { uri: selectedCandidate.image_url },
+                        onLoad: () => visualReview.markReady(selectedVisualKey),
+                        onError: () => visualReview.markFailed(selectedVisualKey),
+                      }}
+                      after={{
+                        label: `Direction ${candidates.findIndex((candidate) => (
+                          candidate.asset_id === comparisonCandidate.asset_id
+                        )) + 1}`,
+                        roleLabel: 'Alternative direction',
+                        accessibilityLabel: 'Create alternative direction comparison',
+                        source: { uri: comparisonCandidate.image_url },
+                        onLoad: () => visualReview.markReady(comparisonVisualKey),
+                        onError: () => visualReview.markFailed(comparisonVisualKey),
+                      }}
+                      compactHeight={240}
+                      inspectionTitle="Compare generated directions"
+                      inspectionHelp="Inspect silhouette, proportions, setting, materials, and construction before choosing what to refine."
+                    />
+                  </View>
+                )}
+              </View>
+            )}
+          </View>
+        )}
         {!decisionVisualsReady && selectedAssetId !== null && (
           <Text style={styles.reviewReadiness}>
             {sourceLineageUnavailable
@@ -662,6 +1061,30 @@ export function StudioCreateWorkspace({
           </Text>
         )}
         {error !== null && <Text style={styles.error}>{error}</Text>}
+        {reviewDraftRecoveryNotice !== null && (
+          <Text accessibilityLiveRegion="polite" style={styles.reviewReadiness}>
+            {reviewDraftRecoveryNotice}
+          </Text>
+        )}
+        {reviewDraftSaveState === 'saving' && (
+          <Text accessibilityLiveRegion="polite" style={styles.reviewReadiness}>
+            Saving this review to Activity…
+          </Text>
+        )}
+        {reviewDraftSaveState === 'error' && (
+          <View accessibilityLiveRegion="assertive" style={styles.reviewDraftError}>
+            <Text style={styles.error}>
+              This review is still open, but its latest choice could not be saved to Activity.
+            </Text>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Retry saving Create review"
+              onPress={() => void retryReviewDraftSave()}
+              style={styles.retryDraftButton}>
+              <Text style={styles.retryDraftButtonText}>Retry saving review</Text>
+            </Pressable>
+          </View>
+        )}
         {commitRetryLocked && (
           <Text style={styles.reviewReadiness}>
             Your reviewed decision is preserved. Retry will submit the same direction and variation names.
@@ -670,17 +1093,26 @@ export function StudioCreateWorkspace({
         <View style={styles.footerActions}>
           <Pressable
             accessibilityRole="button"
-            accessibilityState={{ disabled: busy }}
-            disabled={busy}
-            style={[styles.secondaryButton, busy && styles.buttonDisabled]}
+            accessibilityState={{ disabled: busy || reviewDraftSaveState !== 'saved' }}
+            disabled={busy || reviewDraftSaveState !== 'saved'}
+            style={[
+              styles.secondaryButton,
+              (busy || reviewDraftSaveState !== 'saved') && styles.buttonDisabled,
+            ]}
             onPress={leaveReviewAndStartAnother}>
             <Text style={styles.secondaryButtonText}>Leave in Activity &amp; start another</Text>
           </Pressable>
           <Pressable
             accessibilityRole="button"
-            accessibilityState={{ disabled: busy || !decisionVisualsReady }}
-            style={[styles.primaryButton, (busy || !decisionVisualsReady) && styles.buttonDisabled]}
-            disabled={busy || !decisionVisualsReady}
+            accessibilityState={{
+              disabled: busy || !decisionVisualsReady || reviewDraftSaveState !== 'saved',
+            }}
+            style={[
+              styles.primaryButton,
+              (busy || !decisionVisualsReady || reviewDraftSaveState !== 'saved')
+                && styles.buttonDisabled,
+            ]}
+            disabled={busy || !decisionVisualsReady || reviewDraftSaveState !== 'saved'}
             onPress={() => void continueWithSelection()}>
             <Text style={styles.primaryButtonText}>{busy
               ? 'Saving directions…'
@@ -943,6 +1375,33 @@ const styles = StyleSheet.create({
   title: { color: theme.ink, fontFamily: theme.serif, fontSize: 30, lineHeight: 37, marginTop: 8 },
   body: { color: theme.faint, fontSize: 14, lineHeight: 21, marginTop: 8, maxWidth: 560 },
   retainedCopy: { color: theme.faint, fontSize: 12, lineHeight: 18, marginTop: 10, maxWidth: 560 },
+  directionCompareBlock: {
+    borderWidth: 1, borderColor: theme.line, borderRadius: radius.lg,
+    backgroundColor: theme.card, marginTop: 14, overflow: 'hidden',
+  },
+  directionCompareDisclosure: {
+    minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14,
+  },
+  directionCompareDisclosureCopy: { flex: 1 },
+  directionCompareTitle: { color: theme.ink, fontSize: 13, fontWeight: '800' },
+  directionCompareHelp: { color: theme.faint, fontSize: 11, lineHeight: 16, marginTop: 3 },
+  directionCompareOptions: {
+    flexDirection: 'row', flexWrap: 'wrap', gap: 8,
+    borderTopWidth: 1, borderTopColor: theme.line, padding: 14,
+  },
+  directionCompareOption: {
+    minHeight: 44, justifyContent: 'center', borderWidth: 1, borderColor: theme.line,
+    borderRadius: radius.pill, backgroundColor: theme.paper, paddingHorizontal: 14,
+  },
+  directionCompareOptionSelected: { borderColor: '#6f52d9', backgroundColor: '#eee9ff' },
+  directionCompareOptionText: { color: theme.faint, fontSize: 11, fontWeight: '700' },
+  directionCompareOptionTextSelected: { color: '#5c3fc0' },
+  reviewDraftError: { marginTop: 10, gap: 8, alignItems: 'flex-start' },
+  retryDraftButton: {
+    minHeight: 44, justifyContent: 'center', borderWidth: 1, borderColor: '#b83a4b',
+    borderRadius: radius.pill, backgroundColor: '#fff5f6', paddingHorizontal: 14,
+  },
+  retryDraftButtonText: { color: '#9b2437', fontSize: 11, fontWeight: '800' },
   prompt: { minHeight: 112, borderWidth: 1, borderColor: theme.line, borderRadius: radius.lg, backgroundColor: theme.card, color: theme.ink, fontSize: 16, lineHeight: 23, padding: 16, marginTop: 22, textAlignVertical: 'top' },
   sectionTitle: { color: theme.ink, fontSize: 14, fontWeight: '700', marginTop: 22 },
   sectionHelp: { color: theme.faint, fontSize: 11, lineHeight: 16, marginTop: 4 },

@@ -970,6 +970,39 @@ class StudioCreateDecisionRecord(Base):
         DateTime(timezone=True), default=utcnow)
 
 
+class StudioCreateReviewDraftRecord(Base):
+    """Mutable, owner-scoped intent while a Create job awaits review.
+
+    This is deliberately separate from :class:`StudioCreateDecisionRecord`.
+    A review draft is replaceable optimistic state and has no design-history
+    authority; the decision record is the immutable, atomic acceptance fact.
+    """
+
+    __tablename__ = "studio_create_review_drafts"
+
+    project_root_id: Mapped[str] = mapped_column(
+        ForeignKey("projects.root_id"), primary_key=True)
+    studio_job_id: Mapped[str] = mapped_column(
+        ForeignKey("studio_jobs.id"), nullable=False, unique=True, index=True)
+    owner: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    selected_candidate_asset_id: Mapped[str] = mapped_column(
+        ForeignKey("image_assets.id"), nullable=False)
+    retained_directions: Mapped[list] = mapped_column(
+        SpecJSON, nullable=False, default=list)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow)
+
+    __table_args__ = (
+        CheckConstraint(
+            "version >= 1",
+            name="ck_studio_create_review_draft_version",
+        ),
+    )
+
+
 class StudioVariationDecisionRecord(Base):
     """Durable idempotency boundary for one direct Studio Vary command.
 

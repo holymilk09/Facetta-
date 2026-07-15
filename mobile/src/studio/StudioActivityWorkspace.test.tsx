@@ -34,6 +34,12 @@ function api(overrides: Partial<StudioActivityApi> = {}): StudioActivityApi {
   } as StudioActivityApi;
 }
 
+const deferred = <T,>() => {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((resolvePromise) => { resolve = resolvePromise; });
+  return { promise, resolve };
+};
+
 describe('StudioActivityWorkspace', () => {
   afterEach(() => {
     jest.useRealTimers();
@@ -46,6 +52,11 @@ describe('StudioActivityWorkspace', () => {
     expect(await view.findByText('Create directions')).toBeTruthy();
     expect(view.getByText('4 outputs requested · up to 28 credits')).toBeTruthy();
     expect(view.getByText('You pay only for usable requested outputs. Unsuccessful results cost 0 credits.')).toBeTruthy();
+    expect(view.getByLabelText('40% complete').props).toEqual(expect.objectContaining({
+      accessible: true,
+      accessibilityRole: 'progressbar',
+      accessibilityValue: { min: 0, max: 100, now: 40 },
+    }));
     expect(view.queryByText(/Internal retries/i)).toBeNull();
     expect(client.listStudioJobs).toHaveBeenCalledWith('usr_designer');
     expect(view.queryByText(/provider/i)).toBeNull();
@@ -64,6 +75,37 @@ describe('StudioActivityWorkspace', () => {
     ));
     expect(await view.findByText('Canceled')).toBeTruthy();
     expect(view.getByText('0 credits charged · 4 outputs requested')).toBeTruthy();
+  });
+
+  test('suppresses stale Activity reads while cancellation is pending', async () => {
+    const cancellation = deferred<any>();
+    const listStudioJobs = jest.fn(async () => ({
+      data: { jobs: [running] }, error: null, status: 200,
+    }));
+    const cancelStudioJob = jest.fn(() => cancellation.promise);
+    const view = await render(<StudioActivityWorkspace
+      api={api({ listStudioJobs, cancelStudioJob })}
+      owner="usr_designer"
+    />);
+
+    fireEvent.press(await view.findByText('Cancel request'));
+    await waitFor(() => {
+      expect(cancelStudioJob).toHaveBeenCalledWith('job_create', 'usr_designer');
+      expect(view.getByText('Refresh').parent?.props.accessibilityState).toEqual(
+        expect.objectContaining({ disabled: true }),
+      );
+    });
+    fireEvent.press(view.getByText('Refresh'));
+    expect(listStudioJobs).toHaveBeenCalledTimes(1);
+
+    await act(async () => {
+      cancellation.resolve({
+        data: { ...running, status: 'canceled' as const }, error: null, status: 200,
+      });
+      await cancellation.promise;
+    });
+    expect(await view.findByText('Canceled')).toBeTruthy();
+    expect(listStudioJobs).toHaveBeenCalledTimes(1);
   });
 
   test('keeps a failed job honest and leaves saved work unchanged', async () => {
@@ -136,6 +178,48 @@ describe('StudioActivityWorkspace', () => {
       await Promise.resolve();
     });
     expect(listStudioJobs).toHaveBeenCalledTimes(2);
+  });
+
+  test('keeps the newest Activity refresh when older requests finish later', async () => {
+    const older = deferred<any>();
+    const latest = deferred<any>();
+    const settled: StudioJobRecord = {
+      ...running,
+      status: 'succeeded',
+      progress: 1,
+      billing: {
+        ...running.billing,
+        completed_outputs: 4,
+        charged_outputs: 4,
+        charged_credits: 28,
+      },
+    };
+    const staleFailure: StudioJobRecord = {
+      ...running,
+      status: 'failed',
+      progress: 1,
+    };
+    const listStudioJobs = jest.fn()
+      .mockResolvedValueOnce({ data: { jobs: [running] }, error: null, status: 200 })
+      .mockReturnValueOnce(older.promise)
+      .mockReturnValueOnce(latest.promise);
+    const view = await render(<StudioActivityWorkspace
+      api={api({ listStudioJobs })}
+      owner="usr_designer"
+    />);
+
+    expect(await view.findByText('Creating')).toBeTruthy();
+    await act(async () => {
+      fireEvent.press(view.getByText('Refresh'));
+      fireEvent.press(view.getByText('Refresh'));
+      latest.resolve({ data: { jobs: [settled] }, error: null, status: 200 });
+      await latest.promise;
+      older.resolve({ data: { jobs: [staleFailure] }, error: null, status: 200 });
+      await older.promise;
+      await Promise.resolve();
+    });
+    expect(view.getByText('Ready')).toBeTruthy();
+    expect(view.queryByText('Did not finish')).toBeNull();
   });
 
   test('empty state names only actions that create Activity jobs', async () => {

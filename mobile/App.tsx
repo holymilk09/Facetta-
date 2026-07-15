@@ -23,7 +23,7 @@ import { StudioContextActionSwitcher } from './src/studio/StudioContextActionSwi
 import { StudioCollectionsWorkspace } from './src/studio/StudioCollectionsWorkspace';
 import {
   EMPTY_STUDIO_CREATE_DRAFT, StudioCreateWorkspace, type StudioCreateDraft,
-  type StudioCreateGenerationSuccess,
+  type StudioCreateGenerationSuccess, type StudioCreateReviewPersistenceState,
 } from './src/studio/StudioCreateWorkspace';
 import { StudioConfirmWorkspace } from './src/studio/StudioConfirmWorkspace';
 import { pickExpoStudioCreateReference } from './src/studio/expoReferencePicker';
@@ -43,7 +43,7 @@ import {
   StudioVisualLineage,
 } from './src/studio/gateway';
 import { radius, shadows, theme } from './src/theme';
-import type { ProjectDetail } from './src/trusted/types';
+import type { CreativeDirectionReviewDraft, ProjectDetail } from './src/trusted/types';
 import { WorkflowShowcase } from './src/WorkflowShowcase';
 import { designerErrorMessage } from './src/studio/designerErrorMessage';
 import {
@@ -57,6 +57,20 @@ type SavedFamiliesState = 'unknown' | 'available' | 'empty' | 'unavailable';
 type PostConfirmDestination = Extract<StudioWorkspaceActionId, 'refine' | 'views'>;
 type ProjectHydrationDestination = 'collections' | 'create' | 'refine' | 'views' | 'present'
   | 'specifications';
+type FactoryEligibilityState =
+  | { status: 'idle'; revisionKey: null }
+  | { status: 'checking'; revisionKey: string; retainEligible: boolean }
+  | { status: 'eligible'; revisionKey: string }
+  | { status: 'ineligible' | 'error'; revisionKey: string };
+
+function factoryEligibilityAllows(
+  state: FactoryEligibilityState,
+  revisionKey: string | null,
+): boolean {
+  if (revisionKey === null || state.revisionKey !== revisionKey) return false;
+  return state.status === 'eligible'
+    || (state.status === 'checking' && state.retainEligible);
+}
 
 function assertNeverStudioAction(actionId: never): never {
   throw new Error(`Unhandled Studio action workspace: ${String(actionId)}`);
@@ -73,6 +87,7 @@ interface ProjectHydrationRequest {
 interface CreateReviewState {
   project: ProjectDetail;
   studioJobId: string;
+  reviewDraft: CreativeDirectionReviewDraft | null;
 }
 
 interface PendingRefineRequest {
@@ -124,7 +139,10 @@ export default function App() {
   const apiUrl = DEFAULT_API_URL;
   const [designer, setDesigner] = useState(session?.designerId ?? '');
   const [showUtilityMenu, setShowUtilityMenu] = useState(false);
-  const [factoryEligibleRevisionKey, setFactoryEligibleRevisionKey] = useState<string | null>(null);
+  const [factoryEligibility, setFactoryEligibility] = useState<FactoryEligibilityState>({
+    status: 'idle', revisionKey: null,
+  });
+  const [mountedFactoryRevisionKey, setMountedFactoryRevisionKey] = useState<string | null>(null);
   const [savedFamiliesState, setSavedFamiliesState] = useState<SavedFamiliesState>('unknown');
   const [studioProject, setStudioProject] = useState<ProjectDetail | null>(null);
   const [selectedCreativeAssetId, setSelectedCreativeAssetId] = useState<string | null>(null);
@@ -133,6 +151,9 @@ export default function App() {
     'client' | 'marketing' | undefined
   >(undefined);
   const [createReview, setCreateReview] = useState<CreateReviewState | null>(null);
+  const [createReviewPersistenceState, setCreateReviewPersistenceState] = useState<
+    StudioCreateReviewPersistenceState
+  >('saved');
   const [createDraft, setCreateDraft] = useState<StudioCreateDraft>(EMPTY_STUDIO_CREATE_DRAFT);
   const [pendingRefineRequest, setPendingRefineRequest] = useState<PendingRefineRequest | null>(null);
   const [activityReview, setActivityReview] = useState<StudioReviewJobEnvelope | null>(null);
@@ -165,10 +186,12 @@ export default function App() {
     setPostConfirmDestination('refine');
     setPresentInitialDestination(undefined);
     setCreateReview(null);
+    setCreateReviewPersistenceState('saved');
     setCreateDraft(EMPTY_STUDIO_CREATE_DRAFT);
     setActivityReview(null);
     setVariationLineage(null);
-    setFactoryEligibleRevisionKey(null);
+    setFactoryEligibility({ status: 'idle', revisionKey: null });
+    setMountedFactoryRevisionKey(null);
     setSavedFamiliesState('unknown');
   }, []);
   const clearAuthenticatedUi = useCallback(() => {
@@ -331,20 +354,48 @@ export default function App() {
     : `${factoryEligibilityCandidate.projectId}:${factoryEligibilityCandidate.sourceAssetId}:${factoryEligibilityCandidate.sourceDesignVersion}`;
   useEffect(() => {
     let active = true;
-    setFactoryEligibleRevisionKey(null);
     if (factoryEligibilityCandidate === null
       || factoryEligibilityCandidateKey === null
-      || sessionAccessToken(session) === null) return () => { active = false; };
+      || sessionAccessToken(session) === null) {
+      setFactoryEligibility({ status: 'idle', revisionKey: null });
+      return () => { active = false; };
+    }
+    setFactoryEligibility((previous) => ({
+      status: 'checking',
+      revisionKey: factoryEligibilityCandidateKey,
+      // A same-revision refresh is common while the Factory workspace reloads
+      // readiness. Preserve the already verified disclosure until that check
+      // resolves so the route does not flicker or evict on a transient null.
+      retainEligible: previous.revisionKey === factoryEligibilityCandidateKey
+        && (previous.status === 'eligible'
+          || (previous.status === 'checking' && previous.retainEligible)),
+    }));
     void studioGateway.getFactoryEligibility(
       factoryEligibilityCandidate.projectId, studioProject ?? undefined,
     ).then((result) => {
-      if (!active || result.error !== null) return;
+      if (!active) return;
+      if (result.error !== null) {
+        setFactoryEligibility({
+          status: 'error', revisionKey: factoryEligibilityCandidateKey,
+        });
+        return;
+      }
       const eligibility = result.data;
       if (eligibility.reviewEligible
         && eligibility.activeAssetId === factoryEligibilityCandidate.sourceAssetId
         && eligibility.designVersion === factoryEligibilityCandidate.sourceDesignVersion) {
-        setFactoryEligibleRevisionKey(factoryEligibilityCandidateKey);
+        setFactoryEligibility({
+          status: 'eligible', revisionKey: factoryEligibilityCandidateKey,
+        });
+      } else {
+        setFactoryEligibility({
+          status: 'ineligible', revisionKey: factoryEligibilityCandidateKey,
+        });
       }
+    }).catch(() => {
+      if (active) setFactoryEligibility({
+        status: 'error', revisionKey: factoryEligibilityCandidateKey,
+      });
     });
     return () => { active = false; };
   }, [factoryEligibilityCandidate, factoryEligibilityCandidateKey, session, studioGateway,
@@ -354,11 +405,26 @@ export default function App() {
     activeRevisionId: studioProject?.active_asset_id ?? selectedCreativeAssetId,
     hasExactSpecification: exactStudioLineage !== null,
     hasSelectedPreSpecVisual: confirmStudioLineage !== null && exactStudioLineage === null,
-    factoryEligible: factoryEligibilityCandidateKey !== null
-      && factoryEligibleRevisionKey === factoryEligibilityCandidateKey,
+    factoryEligible: factoryEligibilityAllows(factoryEligibility, factoryEligibilityCandidateKey),
   }), [activeDesignId, confirmStudioLineage, exactStudioLineage,
-    factoryEligibilityCandidateKey, factoryEligibleRevisionKey,
+    factoryEligibility, factoryEligibilityCandidateKey,
     selectedCreativeAssetId, studioProject]);
+  useEffect(() => {
+    if (selectedActionId !== 'factory' || studioView !== 'action') return;
+    const exactRevisionChanged = mountedFactoryRevisionKey === null
+      || factoryEligibilityCandidateKey !== mountedFactoryRevisionKey;
+    const eligibilityResolvedAgainstFactory = factoryEligibility.revisionKey
+      === mountedFactoryRevisionKey
+      && (factoryEligibility.status === 'ineligible' || factoryEligibility.status === 'error');
+    if (!exactRevisionChanged && !eligibilityResolvedAgainstFactory) return;
+
+    // Factory is an optional, eligibility-gated destination. If its exact
+    // revision changes or the backend revokes/cannot verify access, leave the
+    // protected route instead of allowing a stale mounted workspace to remain.
+    setMountedFactoryRevisionKey(null);
+    setSelectedActionId(activeDesignId === null ? 'create' : 'refine');
+  }, [activeDesignId, factoryEligibility, factoryEligibilityCandidateKey,
+    mountedFactoryRevisionKey, selectedActionId, studioView]);
   const destinationContext = useMemo<StudioDestinationContext>(() => ({
     activeProjectId: actionContext.activeDesignId,
     activeRevisionId: actionContext.activeRevisionId,
@@ -393,6 +459,10 @@ export default function App() {
   const actionSourceIsCurrent = actionSourceRevision !== null
     && actionSourceRevision.asset_id === studioProject?.active_asset_id;
   const isStudioHome = tab === 'studio' && studioView === 'home';
+  const createReviewNavigationBlocked = tab === 'studio'
+    && studioView === 'action'
+    && selectedActionId === 'create'
+    && createReviewPersistenceState !== 'saved';
 
   const hydrateProject = useCallback(async (request: ProjectHydrationRequest) => {
     const requestId = projectHydrationRequestId.current + 1;
@@ -418,6 +488,36 @@ export default function App() {
       openStudioAction(request.destination as 'refine' | 'views' | 'present', false, true);
       return;
     }
+    if (request.destination === 'create') {
+      if (request.studioJobId === undefined) {
+        setProjectHydration({
+          request,
+          loading: false,
+          error: 'Facetta could not verify the Create review in Activity. Your saved directions are unchanged.',
+        });
+        return;
+      }
+      const resumed = await studioGateway.resumeCreateReview(
+        request.projectId, request.studioJobId, designer,
+      );
+      if (!isCurrentRequest()) return;
+      if (resumed.error !== null) {
+        setProjectHydration({
+          request,
+          loading: false,
+          error: designerErrorMessage(resumed.error, 'collections'),
+        });
+        return;
+      }
+      setCreateReview({
+        project: resumed.data.project,
+        studioJobId: resumed.data.job.job_id,
+        reviewDraft: resumed.data.draft,
+      });
+      setProjectHydration(null);
+      openStudioAction('create', true);
+      return;
+    }
     const result = await studioGateway.getProject(request.projectId);
     if (!isCurrentRequest()) return;
     if (result.error !== null) {
@@ -438,20 +538,6 @@ export default function App() {
       });
       return;
     }
-    if (request.destination === 'create') {
-      if (request.studioJobId === undefined) {
-        setProjectHydration({
-          request,
-          loading: false,
-          error: 'Facetta could not verify the Create review in Activity. Your saved directions are unchanged.',
-        });
-        return;
-      }
-      setCreateReview({ project: result.data, studioJobId: request.studioJobId });
-      setProjectHydration(null);
-      openStudioAction('create', true);
-      return;
-    }
     setStudioProject(result.data);
     setSelectedCreativeAssetId(result.data.active_asset_id);
     setProjectHydration(null);
@@ -469,6 +555,16 @@ export default function App() {
     accessToken: sessionAccessToken(session),
   }), [apiUrl, session]);
 
+  const navigateToTab = useCallback((destination: Tab): void => {
+    if (createReviewNavigationBlocked) return;
+    // A deliberate navigation choice is newer authority than any project
+    // hydration still in flight from Activity or Collections.
+    projectHydrationRequestId.current += 1;
+    setProjectHydration(null);
+    setTab(destination);
+    if (destination === 'studio') setStudioView('home');
+  }, [createReviewNavigationBlocked]);
+
   const openStudioAction = (
     actionId: StudioWorkspaceActionId,
     preserveCreateReview = false,
@@ -476,6 +572,20 @@ export default function App() {
     afterConfirmation: PostConfirmDestination = 'refine',
   ) => {
     if (!canMountStudioWorkspace(actionId, actionContext)) return;
+    // An accepted contextual action is a newer designer intent than any
+    // project opened earlier from Collections or Activity. Invalidate that
+    // request before changing the route so a late response cannot pull the
+    // designer away from the chosen action.
+    projectHydrationRequestId.current += 1;
+    setProjectHydration(null);
+    if (actionId === 'factory') {
+      // canMountStudioWorkspace already requires a verified exact revision;
+      // retain that key so later rechecks cannot authorize a different one.
+      if (factoryEligibilityCandidateKey === null) return;
+      setMountedFactoryRevisionKey(factoryEligibilityCandidateKey);
+    } else {
+      setMountedFactoryRevisionKey(null);
+    }
     if (!preserveCreateReview) setCreateReview(null);
     if (!preserveActivityReview) setActivityReview(null);
     if (actionId === 'confirm') setPostConfirmDestination(afterConfirmation);
@@ -499,7 +609,7 @@ export default function App() {
   const openStudioDestination = (destinationId: StudioDestinationId): void => {
     if (!getStudioDestination(destinationId).isAvailable(destinationContext)) return;
     if (destinationId === 'library') {
-      setTab('collections');
+      navigateToTab('collections');
       return;
     }
     if (destinationId === 'factory') {
@@ -664,7 +774,7 @@ export default function App() {
               accessibilityRole="button"
               accessibilityLabel="Continue saved work"
               style={styles.savedWorkCard}
-              onPress={() => setTab('collections')}>
+              onPress={() => navigateToTab('collections')}>
               <View style={styles.savedWorkCopy}>
                 <Text style={styles.savedWorkEyebrow}>SAVED WORK</Text>
                 <Text style={styles.savedWorkTitle}>Continue saved work</Text>
@@ -693,8 +803,10 @@ export default function App() {
             <Pressable
               accessibilityRole="button"
               accessibilityLabel="Back to Studio"
+              accessibilityState={createReviewNavigationBlocked ? { disabled: true } : {}}
               style={styles.actionContextBack}
-              onPress={() => setStudioView('home')}>
+              {...(createReviewNavigationBlocked ? { disabled: true } : {})}
+              onPress={() => navigateToTab('studio')}>
               <Text style={styles.actionContextBackText}>← Studio</Text>
             </Pressable>
             {!isCreatingNewDesign && studioProject !== null && actionSourceRevision !== null && (
@@ -703,7 +815,7 @@ export default function App() {
                   accessibilityRole="button"
                   accessibilityLabel="Open revision history"
                   style={styles.actionRevisionIdentity}
-                  onPress={() => setTab('collections')}>
+                  onPress={() => navigateToTab('collections')}>
                   {actionSourceImageUrl !== null ? (
                     <Image
                       accessibilityLabel={`${studioProject.title} revision thumbnail`}
@@ -762,6 +874,8 @@ export default function App() {
               } : {})}
               resumeProject={createReview?.project ?? null}
               resumeStudioJobId={createReview?.studioJobId ?? null}
+              resumeReviewDraft={createReview?.reviewDraft ?? null}
+              onReviewDraftStateChange={setCreateReviewPersistenceState}
               onRequestReference={pickExpoStudioCreateReference}
               onSave={(selection) => {
                 setCreateReview(null);
@@ -825,7 +939,7 @@ export default function App() {
                 setActivityReview(null);
                 setStudioProject(project);
               }}
-              onOpenCollections={() => setTab('collections')}
+              onOpenCollections={() => navigateToTab('collections')}
               imageRequestHeaders={authenticatedImageHeaders}
               resumeReviewJobId={activityReview?.job.action_id === 'views'
                 ? activityReview.job.job_id : undefined}
@@ -854,7 +968,7 @@ export default function App() {
                 setActivityReview(null);
                 setStudioProject(project);
               }}
-              onOpenCollections={() => setTab('collections')}
+              onOpenCollections={() => navigateToTab('collections')}
               imageRequestHeaders={authenticatedImageHeaders}
               resumeReviewJobId={activityReview?.job.action_id === 'present'
                 ? activityReview.job.job_id : undefined}
@@ -875,13 +989,23 @@ export default function App() {
               onSelectDestination={openStudioDestination}
             />
           ) : selectedActionId === 'factory' ? (
-            <StudioFactoryWorkspace
-              api={studioGateway}
-              lineage={exactStudioLineage}
-              createdBy={designer}
-              deliverProtectedFile={deliverProtectedFile}
-              onProjectUpdated={setStudioProject}
-            />
+            mountedFactoryRevisionKey !== null
+              && mountedFactoryRevisionKey === factoryEligibilityCandidateKey
+              && factoryEligibilityAllows(factoryEligibility, mountedFactoryRevisionKey)
+              && exactStudioLineage !== null ? (
+                <StudioFactoryWorkspace
+                  api={studioGateway}
+                  lineage={exactStudioLineage}
+                  createdBy={designer}
+                  deliverProtectedFile={deliverProtectedFile}
+                  onProjectUpdated={setStudioProject}
+                />
+              ) : (
+                <View accessibilityLiveRegion="polite" style={styles.hydrationBanner}>
+                  <ActivityIndicator color={theme.accent} />
+                  <Text style={styles.hydrationText}>Verifying Factory access…</Text>
+                </View>
+              )
           ) : assertNeverStudioAction(selectedActionId)}
         </View>
       )}
@@ -974,12 +1098,13 @@ export default function App() {
             key={destination}
             accessibilityRole="tab"
             accessibilityLabel={label}
-            accessibilityState={{ selected: tab === destination }}
+            accessibilityState={{
+              selected: tab === destination,
+              ...(createReviewNavigationBlocked ? { disabled: true } : {}),
+            }}
+            {...(createReviewNavigationBlocked ? { disabled: true } : {})}
             style={styles.navItem}
-            onPress={() => {
-              setTab(destination);
-              if (destination === 'studio') setStudioView('home');
-            }}>
+            onPress={() => navigateToTab(destination)}>
             <Text style={[
               styles.navIcon,
               isStudioHome && styles.navIconDark,

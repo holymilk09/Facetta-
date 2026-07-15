@@ -346,6 +346,27 @@ export interface RetainedCreativeDirectionRequest {
 }
 
 /**
+ * Durable, mutable Create-review state. This is intentionally separate from
+ * immutable revision history until the designer commits a direction.
+ */
+export interface CreativeDirectionReviewDraft {
+  project_root_id: string;
+  studio_job_id: string;
+  selected_candidate_id: string;
+  retained: RetainedCreativeDirectionRequest[];
+  version: number;
+  updated_at: string;
+}
+
+/** Optimistic-concurrency write for a Create-review draft. */
+export interface PutCreativeDirectionReviewDraftRequest {
+  studio_job_id: string;
+  expected_version: number;
+  selected_candidate_id: string;
+  retained: RetainedCreativeDirectionRequest[];
+}
+
+/**
  * Commits the complete Create review as one server transaction. The selected
  * direction and every retained sibling are decided together so a retry can
  * never expose a partially saved direction set.

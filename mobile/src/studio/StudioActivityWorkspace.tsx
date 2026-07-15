@@ -1,4 +1,6 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, {
+  useCallback, useEffect, useRef, useState,
+} from 'react';
 import {
   ActivityIndicator,
   Pressable,
@@ -68,10 +70,29 @@ export function StudioActivityWorkspace({
   const [jobs, setJobs] = useState<StudioJobRecord[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [cancelingId, setCancelingId] = useState<string | null>(null);
+  const loadRequestIdRef = useRef(0);
+  const mountedRef = useRef(true);
+  const ownerRef = useRef(owner);
+  const cancelingIdRef = useRef<string | null>(null);
+  ownerRef.current = owner;
+
+  useEffect(() => () => {
+    mountedRef.current = false;
+    loadRequestIdRef.current += 1;
+  }, []);
 
   const load = useCallback(async () => {
+    // Cancellation is the newer mutation authority. Do not start a read that
+    // could capture the pre-cancel snapshot and settle after it.
+    if (cancelingIdRef.current !== null) return;
+    const requestId = loadRequestIdRef.current + 1;
+    loadRequestIdRef.current = requestId;
+    const requestOwner = owner;
     setError(null);
-    const response = await api.listStudioJobs(owner);
+    const response = await api.listStudioJobs(requestOwner);
+    if (!mountedRef.current
+      || loadRequestIdRef.current !== requestId
+      || requestOwner !== ownerRef.current) return;
     if (response.error !== null) {
       setError(designerErrorMessage(response.error, 'activity'));
       setJobs((current) => current ?? []);
@@ -84,7 +105,7 @@ export function StudioActivityWorkspace({
     void load();
   }, [load]);
 
-  const hasActiveJob = jobs?.some((job) => (
+  const hasActiveJob = cancelingId === null && jobs?.some((job) => (
     job.status === 'queued' || job.status === 'running'
   )) === true;
 
@@ -95,10 +116,20 @@ export function StudioActivityWorkspace({
   }, [hasActiveJob, jobs, load]);
 
   const cancel = async (job: StudioJobRecord) => {
+    // Cancellation is newer authority than an earlier poll or manual refresh.
+    // Invalidate those reads before the mutation can settle.
+    loadRequestIdRef.current += 1;
+    cancelingIdRef.current = job.job_id;
     setCancelingId(job.job_id);
     setError(null);
-    const response = await api.cancelStudioJob(job.job_id, owner);
+    const requestOwner = owner;
+    const response = await api.cancelStudioJob(job.job_id, requestOwner);
+    if (!mountedRef.current) return;
+    // Also invalidate any read that raced with the state transition itself.
+    loadRequestIdRef.current += 1;
+    cancelingIdRef.current = null;
     setCancelingId(null);
+    if (ownerRef.current !== requestOwner) return;
     if (response.error !== null) {
       setError(designerErrorMessage(response.error, 'activity'));
       return;
@@ -125,7 +156,12 @@ export function StudioActivityWorkspace({
           <Text style={styles.title}>Your work, in one place</Text>
           <Text style={styles.subtitle}>Follow each request from waiting to ready. Leaving this screen will not stop it.</Text>
         </View>
-        <Button title="Refresh" kind="ghost" onPress={() => void load()} />
+        <Button
+          title="Refresh"
+          kind="ghost"
+          disabled={cancelingId !== null}
+          onPress={() => void load()}
+        />
       </View>
 
       {error !== null && <Notice kind="error" text={error} />}
@@ -158,7 +194,16 @@ export function StudioActivityWorkspace({
               </View>
             </View>
 
-            <View style={styles.progressTrack} accessibilityLabel={`${Math.round(job.progress * 100)}% complete`}>
+            <View
+              accessible
+              accessibilityRole="progressbar"
+              accessibilityLabel={`${Math.round(job.progress * 100)}% complete`}
+              accessibilityValue={{
+                min: 0,
+                max: 100,
+                now: Math.round(job.progress * 100),
+              }}
+              style={styles.progressTrack}>
               <View style={[styles.progressFill, { width: `${Math.round(job.progress * 100)}%` }]} />
             </View>
             <Text style={styles.billing}>{billingLine(job)}</Text>

@@ -27,10 +27,19 @@ jest.mock('../auth', () => {
 });
 
 const mockGetProject = jest.fn();
+const mockGetCreativeDirectionReviewDraft: jest.Mock = jest.fn(async () => ({
+  data: null,
+  error: {
+    code: 'NOT_FOUND', message: 'No saved Create review draft.', category: 'not_found',
+    retryable: false,
+  },
+  status: 404,
+}));
 let mockFactoryReviewEnabled = true;
 let mockConfirmedJewelryType = 'ring';
 let mockConfirmedFactoryReady = false;
 let mockSavedPreSpecCapability = 'CREATIVE_RENDER';
+let mockFactoryProjectUpdate: any = null;
 const mockGetStudioCapabilities = jest.fn(async () => ({
   data: {
     factory_review: { enabled: mockFactoryReviewEnabled, scope: 'principal' },
@@ -48,7 +57,8 @@ const mockGetStudioJob = jest.fn(async (jobId: string) => ({
   data: {
     job_id: jobId, owner: 'usr_designer', action_id: jobId.replace('job_', ''),
     lane: 'trusted_structural', status: 'reviewing', progress: 0.9,
-    active_design_id: 'project_hydrated', source_revision_id: 'asset_hydrated',
+    active_design_id: 'project_hydrated',
+    source_revision_id: jobId === 'job_create' ? null : 'asset_hydrated',
     error_code: null, created_at: '2026-07-12T00:00:00Z', updated_at: '2026-07-12T00:00:01Z',
     billing: { requested_outputs: 1, credits_per_output: 20, estimated_credits: 20,
       completed_outputs: 0, charged_outputs: 0, charged_credits: 0, policy: 'test' },
@@ -68,6 +78,7 @@ const deferred = <T,>() => {
 jest.mock('../trusted/client', () => ({
   createTrustedApiClient: () => ({
     getProject: mockGetProject,
+    getCreativeDirectionReviewDraft: mockGetCreativeDirectionReviewDraft,
     listDesignFamilies: mockListDesignFamilies,
     getStudioJob: mockGetStudioJob,
     getStudioCapabilities: mockGetStudioCapabilities,
@@ -80,18 +91,30 @@ jest.mock('./StudioCreateWorkspace', () => {
   const { DEFAULT_API_URL } = require('../config');
   return {
     StudioCreateWorkspace: ({
-      onSave, resumeProject, resumeStudioJobId, draft, onDraftChange, onGenerationSucceeded,
+      onSave, resumeProject, resumeStudioJobId, resumeReviewDraft, draft, onDraftChange,
+      onGenerationSucceeded, onReviewDraftStateChange,
     }: {
       onSave: (selection: any) => void;
       resumeProject?: any;
       resumeStudioJobId?: string | null;
+      resumeReviewDraft?: any;
       draft?: any;
       onDraftChange?: (draft: any) => void;
       onGenerationSucceeded?: (success: any) => void;
+      onReviewDraftStateChange?: (state: 'saved' | 'saving' | 'error') => void;
     }) => resumeProject ? ReactLocal.createElement(
-      Text,
+      View,
       null,
-      `Create review reached for ${resumeProject.root_id} via ${resumeStudioJobId}`,
+      ReactLocal.createElement(
+        Text,
+        null,
+        `Create review reached for ${resumeProject.root_id} via ${resumeStudioJobId}`,
+      ),
+      ReactLocal.createElement(
+        Text,
+        null,
+        `Create review selection: ${resumeReviewDraft?.selected_candidate_id ?? 'default'}`,
+      ),
     ) : (
       ReactLocal.createElement(
         View,
@@ -144,6 +167,22 @@ jest.mock('./StudioCreateWorkspace', () => {
             }),
           },
           ReactLocal.createElement(Text, null, 'Mock generation succeeded'),
+        ),
+        ReactLocal.createElement(
+          Pressable,
+          {
+            accessibilityRole: 'button',
+            onPress: () => onReviewDraftStateChange?.('saving'),
+          },
+          ReactLocal.createElement(Text, null, 'Mock draft saving'),
+        ),
+        ReactLocal.createElement(
+          Pressable,
+          {
+            accessibilityRole: 'button',
+            onPress: () => onReviewDraftStateChange?.('saved'),
+          },
+          ReactLocal.createElement(Text, null, 'Mock draft saved'),
         ),
         ReactLocal.createElement(Pressable, { accessibilityRole: 'button', onPress: () => onSave({
           project: {
@@ -425,10 +464,25 @@ jest.mock('./StudioConfirmWorkspace', () => {
 
 jest.mock('./StudioFactoryWorkspace', () => {
   const ReactLocal = require('react');
-  const { Text } = require('react-native');
+  const { Pressable, Text, View } = require('react-native');
   return {
-    StudioFactoryWorkspace: ({ lineage }: { lineage: any }) => ReactLocal.createElement(
-      Text, null, `Factory route reached for ${lineage?.sourceAssetId ?? 'none'}`,
+    StudioFactoryWorkspace: ({ lineage, onProjectUpdated }: {
+      lineage: any;
+      onProjectUpdated?: (project: any) => void;
+    }) => ReactLocal.createElement(
+      View,
+      null,
+      ReactLocal.createElement(
+        Text, null, `Factory route reached for ${lineage?.sourceAssetId ?? 'none'}`,
+      ),
+      mockFactoryProjectUpdate === null ? null : ReactLocal.createElement(
+        Pressable,
+        {
+          accessibilityRole: 'button',
+          onPress: () => onProjectUpdated?.(mockFactoryProjectUpdate),
+        },
+        ReactLocal.createElement(Text, null, 'Refresh mocked Factory project'),
+      ),
     ),
   };
 });
@@ -443,7 +497,17 @@ afterEach(() => {
   mockConfirmedJewelryType = 'ring';
   mockConfirmedFactoryReady = false;
   mockSavedPreSpecCapability = 'CREATIVE_RENDER';
+  mockFactoryProjectUpdate = null;
   mockGetProject.mockReset();
+  mockGetCreativeDirectionReviewDraft.mockReset();
+  mockGetCreativeDirectionReviewDraft.mockResolvedValue({
+    data: null,
+    error: {
+      code: 'NOT_FOUND', message: 'No saved Create review draft.', category: 'not_found',
+      retryable: false,
+    },
+    status: 404,
+  });
   mockGetStudioCapabilities.mockClear();
   mockListDesignFamilies.mockClear();
   mockGetStudioJob.mockClear();
@@ -665,6 +729,38 @@ test('global navigation is exactly four named destinations and each opens its ro
   expect(await view.findByText('Start from an idea or reference')).toBeTruthy();
   expect(view.getByRole('tab', { name: 'Studio' }).props.accessibilityState).toEqual({ selected: true });
   expect(view.queryByText(/Builder|Share design|Factory/i)).toBeNull();
+});
+
+test('Create keeps the review mounted until its latest Activity draft is durable', async () => {
+  authenticate();
+  const view = await render(<App />);
+
+  fireEvent.press(await view.findByText('Start from an idea or reference'));
+  fireEvent.press(await view.findByText('Mock draft saving'));
+
+  await waitFor(() => {
+    expect(view.getByLabelText('Back to Studio').props.accessibilityState).toEqual(
+      expect.objectContaining({ disabled: true }),
+    );
+  });
+  for (const tabName of ['Studio', 'Collections', 'Activity', 'Learn']) {
+    expect(view.getByRole('tab', { name: tabName }).props.accessibilityState).toEqual(
+      expect.objectContaining({ disabled: true }),
+    );
+  }
+  fireEvent.press(view.getByRole('tab', { name: 'Learn' }));
+  fireEvent.press(view.getByLabelText('Back to Studio'));
+  expect(view.getByText('Mock draft saving')).toBeTruthy();
+  expect(view.queryByText('Learn the workflow, when you need it.')).toBeNull();
+
+  fireEvent.press(view.getByText('Mock draft saved'));
+  await waitFor(() => {
+    expect(view.getByRole('tab', { name: 'Learn' }).props.accessibilityState).toEqual({
+      selected: false,
+    });
+  });
+  fireEvent.press(view.getByRole('tab', { name: 'Learn' }));
+  expect(await view.findByText('Learn the workflow, when you need it.')).toBeTruthy();
 });
 
 test('the account menu opens without replacing the active routed workspace', async () => {
@@ -1060,6 +1156,30 @@ test('the latest family selection wins when an older project request resolves la
   });
 });
 
+test('a newer Collections action cannot be overridden by an older project hydration', async () => {
+  authenticate();
+  const hydration = deferred<any>();
+  mockGetProject.mockReturnValue(hydration.promise);
+  const view = await render(<App />);
+
+  fireEvent.press(await view.findByRole('tab', { name: 'Collections' }));
+  fireEvent.press(await view.findByText('Open project A'));
+  await waitFor(() => expect(mockGetProject).toHaveBeenCalledWith('project_a'));
+  fireEvent.press(view.getByText('Start a design from Collections'));
+  expect(await view.findByText('Save mocked direction')).toBeTruthy();
+
+  await act(async () => {
+    hydration.resolve({
+      data: hydratedProjectFor('project_a', 'asset_a'), error: null, status: 200,
+    });
+    await hydration.promise;
+    await Promise.resolve();
+  });
+
+  expect(view.getByText('Save mocked direction')).toBeTruthy();
+  expect(view.queryByText('Vary exact project_a')).toBeNull();
+});
+
 test('an older family request cannot surface a stale error over the latest selection', async () => {
   authenticate();
   const older = deferred<any>();
@@ -1252,7 +1372,7 @@ test('Collections hides Factory readiness when the account lacks entitlement', a
   expect(view.queryByText(/Factory/i)).toBeNull();
 });
 
-test('Views opens its starting-facts prerequisite and resumes after one save action', async () => {
+test('Views resumes after starting facts and an open Factory fails closed after revocation', async () => {
   mockConfirmedFactoryReady = true;
   mockGetProject.mockResolvedValue({ data: eligibleFactoryProject(), error: null, status: 200 });
   markOnboarded();
@@ -1300,9 +1420,92 @@ test('Views opens its starting-facts prerequisite and resumes after one save act
   expect(await view.findByText('Advanced specifications route reached')).toBeTruthy();
   expect(view.queryByText('Refine route reached')).toBeNull();
   await openStudioMoreActions(view);
+  mockFactoryProjectUpdate = {
+    ...eligibleFactoryProject(),
+    factory_ready: false,
+    factory_blockers: [{
+      code: 'source_component_unresolved',
+      subject_kind: 'source_component',
+      subject_id: 'setting.shoulder',
+      element_id: 'setting.shoulder',
+      component_id: 'setting.shoulder',
+      role: 'shoulder',
+      label: 'Shoulder',
+      detail: 'The shoulder still needs an exact construction decision.',
+      required_resolution: 'Resolve the shoulder before Factory review.',
+    }],
+  };
   await userEvent.setup().press(await view.findByText('Factory'));
   expect(await view.findByText('Factory route reached for asset_exact_1')).toBeTruthy();
   expect(view.queryByText(/destination will use the exact active revision/i)).toBeNull();
+
+  const recheck = deferred<any>();
+  mockGetStudioCapabilities.mockImplementationOnce(() => recheck.promise);
+  const capabilityCallsBeforeRefresh = mockGetStudioCapabilities.mock.calls.length;
+  await userEvent.setup().press(view.getByText('Refresh mocked Factory project'));
+  await waitFor(() => expect(mockGetStudioCapabilities).toHaveBeenCalledTimes(
+    capabilityCallsBeforeRefresh + 1,
+  ));
+  // The same exact revision remains mounted while its backend recheck is in
+  // flight, avoiding a transient eligibility-null redirect or route flicker.
+  expect(view.getByText('Factory route reached for asset_exact_1')).toBeTruthy();
+
+  await act(async () => {
+    recheck.resolve({
+      data: {
+        factory_review: { enabled: true, scope: 'principal' },
+        workspace_entitlements_available: false,
+      },
+      error: null,
+      status: 200,
+    });
+  });
+
+  expect(await view.findByText('Refine route reached')).toBeTruthy();
+  expect(view.queryByText('Factory route reached for asset_exact_1')).toBeNull();
+  await openStudioMoreActions(view);
+  expect(view.queryByText('Factory')).toBeNull();
+});
+
+test('Factory never renders a newly changed exact revision under the prior authorization', async () => {
+  mockConfirmedFactoryReady = true;
+  mockGetProject.mockResolvedValue({ data: eligibleFactoryProject(), error: null, status: 200 });
+  authenticate();
+  const view = await render(<App />);
+
+  fireEvent.press(await view.findByText('Start from an idea or reference'));
+  fireEvent.press(await view.findByText('Save mocked direction'));
+  fireEvent.press(await view.findByText('Review starting design'));
+  fireEvent.press(await view.findByText('Save starting facts'));
+  expect(await view.findByText('Refine route reached')).toBeTruthy();
+  await openStudioMoreActions(view);
+
+  const prior = eligibleFactoryProject();
+  const nextRevision = {
+    ...prior.active_revision,
+    asset_id: 'asset_exact_2',
+    revision: 3,
+    design_version: 2,
+    sha256: '3'.repeat(64),
+  };
+  mockFactoryProjectUpdate = {
+    ...prior,
+    active_asset_id: 'asset_exact_2',
+    active_design_version: 2,
+    active_revision: nextRevision,
+    pinned_revision: { ...nextRevision, pinned: true },
+    cover_asset_id: 'asset_exact_2',
+  };
+  fireEvent.press(await view.findByText('Factory'));
+  expect(await view.findByText('Factory route reached for asset_exact_1')).toBeTruthy();
+
+  fireEvent.press(view.getByText('Refresh mocked Factory project'));
+
+  await waitFor(() => {
+    expect(view.queryByText('Factory route reached for asset_exact_1')).toBeNull();
+    expect(view.queryByText('Factory route reached for asset_exact_2')).toBeNull();
+    expect(view.getByText('Refine route reached')).toBeTruthy();
+  });
 });
 
 test.each([
@@ -1452,7 +1655,80 @@ test('Activity reviewing Create rehydrates the saved candidate chooser and durab
   expect(await view.findByText(
     'Create review reached for project_hydrated via job_create',
   )).toBeTruthy();
+  expect(view.getByText('Create review selection: default')).toBeTruthy();
   expect(mockGetProject).toHaveBeenCalledWith('project_hydrated');
+});
+
+test('a pending Activity Create hydration cannot override newer global navigation', async () => {
+  authenticate();
+  const hydration = deferred<any>();
+  mockGetProject.mockReturnValue(hydration.promise);
+  const view = await render(<App />);
+
+  fireEvent.press(await view.findByRole('tab', { name: 'Activity' }));
+  fireEvent.press(await view.findByText('Review create'));
+  await waitFor(() => expect(mockGetProject).toHaveBeenCalledWith('project_hydrated'));
+
+  fireEvent.press(view.getByRole('tab', { name: 'Learn' }));
+  expect(await view.findByText('Learn the workflow, when you need it.')).toBeTruthy();
+  await act(async () => {
+    hydration.resolve({ data: hydratedProject, error: null, status: 200 });
+    await hydration.promise;
+    await Promise.resolve();
+  });
+
+  expect(view.getByText('Learn the workflow, when you need it.')).toBeTruthy();
+  expect(view.queryByText(/Create review reached for project_hydrated/)).toBeNull();
+});
+
+test('Activity reviewing Create restores the exact mutable review draft separately from history', async () => {
+  authenticate();
+  const creativeDirection = (assetId: string) => ({
+    ...hydratedProject.active_revision,
+    asset_id: assetId,
+    root_id: 'project_hydrated',
+    capability: 'CREATIVE_RENDER',
+    provenance: 'pre_spec_creative_candidate',
+    revision: null,
+    design_id: null,
+    design_version: null,
+  });
+  const directionOne = creativeDirection('candidate_direction_1');
+  const directionTwo = creativeDirection('candidate_direction_2');
+  mockGetProject.mockResolvedValue({
+    data: {
+      ...hydratedProject,
+      active_asset_id: null,
+      active_revision: null,
+      selected_candidate_asset_id: null,
+      creative_candidates: [directionOne, directionTwo],
+      assets: [directionOne, directionTwo],
+    },
+    error: null,
+    status: 200,
+  });
+  mockGetCreativeDirectionReviewDraft.mockResolvedValueOnce({
+    data: {
+      project_root_id: 'project_hydrated',
+      studio_job_id: 'job_create',
+      selected_candidate_id: 'candidate_direction_2',
+      retained: [{ candidate_id: 'candidate_direction_1', label: 'Slim gallery' }],
+      version: 4,
+      updated_at: '2026-07-12T00:00:02Z',
+    },
+    error: null,
+    status: 200,
+  });
+
+  const view = await render(<App />);
+  await waitFor(() => expect(view.getByText('Start from an idea or reference')).toBeTruthy());
+  fireEvent.press(view.getAllByText('Activity').at(-1)!);
+  fireEvent.press(await view.findByText('Review create'));
+
+  expect(await view.findByText('Create review selection: candidate_direction_2')).toBeTruthy();
+  expect(mockGetCreativeDirectionReviewDraft).toHaveBeenCalledWith(
+    'project_hydrated', 'job_create',
+  );
 });
 
 test('Activity generated-direction archive opens the completed Create project in Collections', async () => {

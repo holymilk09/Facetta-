@@ -16,10 +16,10 @@ from collections.abc import Callable
 from datetime import datetime, timedelta
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, ConfigDict, Field, model_validator
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -74,6 +74,7 @@ from facetta.db import (
     Project,
     ProjectRevisionRecord,
     StudioCreateDecisionRecord,
+    StudioCreateReviewDraftRecord,
     StudioConfirmationDraft,
     StudioJobRecord,
     get_db,
@@ -503,6 +504,42 @@ class RetainedCreativeDirectionRequest(BaseModel):
 
     candidate_id: Annotated[str, Field(min_length=1, max_length=32)]
     label: Annotated[str, Field(min_length=1, max_length=120)]
+
+
+class StudioCreateReviewDraftRequest(BaseModel):
+    """Complete replaceable intent for one pending Create review."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    studio_job_id: Annotated[str, Field(min_length=1, max_length=32)]
+    expected_version: Annotated[int, Field(ge=0)]
+    selected_candidate_id: Annotated[str, Field(min_length=1, max_length=32)]
+    retained: Annotated[
+        list[RetainedCreativeDirectionRequest], Field(max_length=3)
+    ] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def validate_candidate_set(self):
+        retained_ids = [item.candidate_id for item in self.retained]
+        if len(set(retained_ids)) != len(retained_ids):
+            raise ValueError("each retained creative direction must be unique")
+        if self.selected_candidate_id in retained_ids:
+            raise ValueError(
+                "the selected Original cannot also be retained as a sibling"
+            )
+        normalized_labels = [item.label.strip() for item in self.retained]
+        if any(not label for label in normalized_labels):
+            raise ValueError("each retained creative direction requires a label")
+        return self
+
+
+class StudioCreateReviewDraftResponse(BaseModel):
+    project_root_id: str
+    studio_job_id: str
+    selected_candidate_id: str
+    retained: list[RetainedCreativeDirectionRequest]
+    version: int
+    updated_at: datetime
 
 
 class CreativeDirectionCommitRequest(BaseModel):
@@ -1354,6 +1391,287 @@ def _normalized_retained_directions(
     ]
 
 
+def _normalized_review_draft_directions(
+    request: StudioCreateReviewDraftRequest,
+) -> list[dict[str, str]]:
+    return [
+        {"candidate_id": item.candidate_id, "label": item.label.strip()}
+        for item in request.retained
+    ]
+
+
+def _create_review_draft_response(
+    draft: StudioCreateReviewDraftRecord,
+) -> StudioCreateReviewDraftResponse:
+    retained = [
+        RetainedCreativeDirectionRequest(
+            candidate_id=str(item.get("candidate_id", "")),
+            label=str(item.get("label", "")),
+        )
+        for item in list(draft.retained_directions or [])
+    ]
+    return StudioCreateReviewDraftResponse(
+        project_root_id=draft.project_root_id,
+        studio_job_id=draft.studio_job_id,
+        selected_candidate_id=draft.selected_candidate_asset_id,
+        retained=retained,
+        version=draft.version,
+        updated_at=draft.updated_at,
+    )
+
+
+def _owned_create_review_project(
+    db: Session,
+    *,
+    project_id: str,
+    principal: AuthenticatedPrincipal,
+    for_update: bool,
+) -> Project:
+    query = select(Project).where(Project.root_id == project_id)
+    if for_update:
+        query = query.with_for_update()
+    project = db.scalar(query)
+    if project is None:
+        raise HTTPException(status_code=404, detail="Create review draft not found")
+    if not principal.local_unbound and project.owner != principal.subject:
+        # Draft discovery is owner-safe: a foreign project is indistinguishable
+        # from a missing one.
+        raise HTTPException(status_code=404, detail="Create review draft not found")
+    return project
+
+
+def _validate_create_review_draft_context(
+    db: Session,
+    *,
+    project: Project,
+    studio_job_id: str,
+    selected_candidate_id: str,
+    retained_directions: list[dict[str, str]],
+    for_update: bool,
+) -> StudioJobRecord:
+    job_query = select(StudioJobRecord).where(
+        StudioJobRecord.id == studio_job_id,
+        StudioJobRecord.owner == project.owner,
+    )
+    if for_update:
+        job_query = job_query.with_for_update()
+    job = db.scalar(job_query)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Create review draft not found")
+    if (
+        job.action_id != "create"
+        or job.status != "reviewing"
+        or job.active_design_id != project.root_id
+        or job.source_revision_id is not None
+        or job.completed_outputs != 0
+        or job.charged_outputs != 0
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail="the Studio Create job is not awaiting review for this project",
+        )
+    if (
+        project.selected_candidate_asset_id is not None
+        or db.get(StudioCreateDecisionRecord, project.root_id) is not None
+    ):
+        raise HTTPException(
+            status_code=409,
+            detail="the Create review has already been committed",
+        )
+
+    candidates_query = select(ImageAsset).where(
+        ImageAsset.root_id == project.root_id,
+        ImageAsset.capability == "CREATIVE_RENDER",
+        ImageAsset.design_version.is_(None),
+        ImageAsset.design_id.is_(None),
+    ).order_by(ImageAsset.id)
+    if for_update:
+        candidates_query = candidates_query.with_for_update()
+    candidates = [
+        candidate for candidate in db.scalars(candidates_query)
+        if is_primary_revision(candidate)
+    ]
+    if len(candidates) != job.requested_outputs:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "the Studio Create job no longer has its exact candidate set "
+                "available for review"
+            ),
+        )
+    candidate_ids = {candidate.id for candidate in candidates}
+    requested_ids = {
+        selected_candidate_id,
+        *(item["candidate_id"] for item in retained_directions),
+    }
+    if not requested_ids.issubset(candidate_ids):
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "every draft direction must be an exact creative candidate "
+                "from this Studio Create job"
+            ),
+        )
+    return job
+
+
+@router.get(
+    "/{project_id}/creative-directions/review-draft",
+    response_model=StudioCreateReviewDraftResponse,
+)
+def get_project_create_review_draft(
+    project_id: str,
+    studio_job_id: Annotated[str, Query(min_length=1, max_length=32)],
+    db: DbSession,
+    principal: PrincipalDep,
+):
+    """Return mutable Create-review intent without exposing foreign drafts."""
+
+    project = _owned_create_review_project(
+        db,
+        project_id=project_id,
+        principal=principal,
+        for_update=False,
+    )
+    draft = db.scalar(select(StudioCreateReviewDraftRecord).where(
+        StudioCreateReviewDraftRecord.project_root_id == project.root_id,
+        StudioCreateReviewDraftRecord.studio_job_id == studio_job_id,
+        StudioCreateReviewDraftRecord.owner == project.owner,
+    ))
+    if draft is None:
+        raise HTTPException(status_code=404, detail="Create review draft not found")
+    retained = [
+        {
+            "candidate_id": str(item.get("candidate_id", "")),
+            "label": str(item.get("label", "")),
+        }
+        for item in list(draft.retained_directions or [])
+    ]
+    _validate_create_review_draft_context(
+        db,
+        project=project,
+        studio_job_id=studio_job_id,
+        selected_candidate_id=draft.selected_candidate_asset_id,
+        retained_directions=retained,
+        for_update=False,
+    )
+    return _create_review_draft_response(draft)
+
+
+@router.put(
+    "/{project_id}/creative-directions/review-draft",
+    response_model=StudioCreateReviewDraftResponse,
+)
+def put_project_create_review_draft(
+    project_id: str,
+    request: StudioCreateReviewDraftRequest,
+    db: DbSession,
+    principal: PrincipalDep,
+    studio_job_id: Annotated[str, Query(min_length=1, max_length=32)],
+):
+    """Create or replace pending Create-review intent with optimistic CAS."""
+
+    if studio_job_id != request.studio_job_id:
+        raise HTTPException(
+            status_code=422,
+            detail="query and body studio_job_id values must match",
+        )
+    project = _owned_create_review_project(
+        db,
+        project_id=project_id,
+        principal=principal,
+        for_update=True,
+    )
+    retained = _normalized_review_draft_directions(request)
+    _validate_create_review_draft_context(
+        db,
+        project=project,
+        studio_job_id=studio_job_id,
+        selected_candidate_id=request.selected_candidate_id,
+        retained_directions=retained,
+        for_update=True,
+    )
+    draft = db.scalar(select(StudioCreateReviewDraftRecord).where(
+        StudioCreateReviewDraftRecord.project_root_id == project.root_id,
+    ).with_for_update())
+    now = utcnow()
+    if draft is None:
+        if request.expected_version != 0:
+            raise HTTPException(
+                status_code=409,
+                detail="the Create review draft version is stale",
+            )
+        draft = StudioCreateReviewDraftRecord(
+            project_root_id=project.root_id,
+            studio_job_id=studio_job_id,
+            owner=project.owner,
+            selected_candidate_asset_id=request.selected_candidate_id,
+            retained_directions=retained,
+            version=1,
+            created_at=now,
+            updated_at=now,
+        )
+        db.add(draft)
+    else:
+        if (
+            draft.owner != project.owner
+            or draft.studio_job_id != studio_job_id
+        ):
+            raise HTTPException(
+                status_code=409,
+                detail="another Studio Create job owns this review draft",
+            )
+        if draft.version != request.expected_version:
+            raise HTTPException(
+                status_code=409,
+                detail="the Create review draft version is stale",
+            )
+        # ``SELECT .. FOR UPDATE`` serializes this path on PostgreSQL, but the
+        # default local SQLite backend ignores row locks. The version predicate
+        # makes optimistic concurrency an actual compare-and-set everywhere:
+        # exactly one writer may advance N -> N+1.
+        updated = db.execute(
+            update(StudioCreateReviewDraftRecord)
+            .where(
+                StudioCreateReviewDraftRecord.project_root_id
+                == project.root_id,
+                StudioCreateReviewDraftRecord.studio_job_id == studio_job_id,
+                StudioCreateReviewDraftRecord.owner == project.owner,
+                StudioCreateReviewDraftRecord.version
+                == request.expected_version,
+            )
+            .values(
+                selected_candidate_asset_id=request.selected_candidate_id,
+                retained_directions=retained,
+                version=request.expected_version + 1,
+                updated_at=now,
+            )
+            .execution_options(synchronize_session=False)
+        )
+        if updated.rowcount != 1:
+            db.rollback()
+            raise HTTPException(
+                status_code=409,
+                detail="the Create review draft version is stale",
+            )
+    try:
+        db.commit()
+    except IntegrityError as exc:
+        db.rollback()
+        raise HTTPException(
+            status_code=409,
+            detail="the Create review draft changed concurrently; reload and retry",
+        ) from exc
+    db.expire_all()
+    persisted = db.get(StudioCreateReviewDraftRecord, project.root_id)
+    if persisted is None:  # defensive: the committed write must be readable
+        raise HTTPException(
+            status_code=409,
+            detail="the Create review draft changed concurrently; reload and retry",
+        )
+    return _create_review_draft_response(persisted)
+
+
 def _creative_candidate_generation_run(
     db: Session,
     *,
@@ -1564,6 +1882,32 @@ def commit_project_creative_directions(
             db, project=project, decision=existing, request=request,
         )
 
+    review_draft = db.scalar(select(StudioCreateReviewDraftRecord).where(
+        StudioCreateReviewDraftRecord.project_root_id == project_id,
+    ).with_for_update())
+    if review_draft is not None:
+        stored_draft_retained = [
+            {
+                "candidate_id": str(item.get("candidate_id", "")),
+                "label": str(item.get("label", "")),
+            }
+            for item in list(review_draft.retained_directions or [])
+        ]
+        if (
+            review_draft.owner != request.created_by
+            or review_draft.studio_job_id != request.studio_job_id
+            or review_draft.selected_candidate_asset_id
+            != request.selected_candidate_id
+            or stored_draft_retained != _normalized_retained_directions(request)
+        ):
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "the Create commit does not match the pending review draft; "
+                    "save or reload the draft before committing"
+                ),
+            )
+
     root = db.scalar(select(ImageAsset).where(
         ImageAsset.id == project.root_id,
     ).with_for_update())
@@ -1719,6 +2063,8 @@ def commit_project_creative_directions(
             committed_at=utcnow(),
         )
         db.add(decision)
+        if review_draft is not None:
+            db.delete(review_draft)
         db.flush()
         db.commit()
     except (StudioHistoryError, StudioJobAccountingError, IntegrityError) as exc:

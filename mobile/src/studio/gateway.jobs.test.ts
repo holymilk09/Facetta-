@@ -219,6 +219,173 @@ test('durable jobs are the default and charge only after direction acceptance', 
   ]);
 });
 
+test('same-session Create review saves a versioned draft using the tracked Activity job', async () => {
+  const jobs = tracking();
+  const durable = unselectedProject(3);
+  let savedRequest: any = null;
+  const gateway = createStudioGateway({
+    ...jobs.client,
+    createProjectFromPrompt: async () => ok(durable, 201),
+    getStudioJob: async () => { throw new Error('save must not preflight Activity'); },
+    getProject: async () => { throw new Error('save must not preflight Project'); },
+    putCreativeDirectionReviewDraft: async (projectId: string, request: any) => {
+      savedRequest = { projectId, request };
+      return ok({
+        project_root_id: projectId,
+        studio_job_id: request.studio_job_id,
+        selected_candidate_id: request.selected_candidate_id,
+        retained: request.retained,
+        version: request.expected_version + 1,
+        updated_at: '2026-07-15T01:02:03Z',
+      });
+    },
+  } as any);
+
+  const created = await gateway.createFromPrompt({
+    prompt: 'Three sapphire directions', variation_count: 3,
+    owner: 'designer_1', title: 'Orbit',
+  });
+  assert.equal(created.error, null);
+
+  const saved = await gateway.saveCreateReviewDraft({
+    projectId: durable.root_id,
+    owner: 'designer_1',
+    expectedVersion: 0,
+    selectedCandidateId: 'direction_1',
+    retained: [{ candidateId: 'direction_2', label: '  Direction 2  ' }],
+  });
+
+  assert.equal(saved.error, null);
+  assert.equal(saved.data?.version, 1);
+  assert.deepEqual(savedRequest, {
+    projectId: 'project_1',
+    request: {
+      studio_job_id: 'studio_job_1', expected_version: 0,
+      selected_candidate_id: 'direction_1',
+      retained: [{ candidate_id: 'direction_2', label: 'Direction 2' }],
+    },
+  });
+});
+
+test('Activity resume loads only an owned reviewing Create draft with exact candidate membership', async () => {
+  const durable = unselectedProject(3);
+  const reviewing = reviewingCreateJob('studio_job_resume', durable.root_id, 3);
+  const canonicalDraft = {
+    project_root_id: durable.root_id,
+    studio_job_id: reviewing.job_id,
+    selected_candidate_id: 'direction_2',
+    retained: [{ candidate_id: 'direction_3', label: 'Direction 3' }],
+    version: 4,
+    updated_at: '2026-07-15T01:02:03Z',
+  };
+  const gateway = createStudioGateway({
+    getStudioJob: async () => ok(reviewing),
+    getProject: async () => ok(durable),
+    getCreativeDirectionReviewDraft: async () => ok(canonicalDraft),
+  } as any);
+
+  const resumed = await gateway.resumeCreateReview(
+    durable.root_id, reviewing.job_id, reviewing.owner,
+  );
+
+  assert.equal(resumed.error, null);
+  assert.deepEqual(resumed.data?.draft, canonicalDraft);
+  assert.equal(resumed.data?.job.action_id, 'create');
+  assert.equal(resumed.data?.project.root_id, durable.root_id);
+});
+
+test('Activity resume gives legacy reviewing Create jobs a safe empty draft default', async () => {
+  const durable = unselectedProject(2);
+  const reviewing = reviewingCreateJob('studio_job_legacy', durable.root_id, 2);
+  const gateway = createStudioGateway({
+    getStudioJob: async () => ok(reviewing),
+    getProject: async () => ok(durable),
+    getCreativeDirectionReviewDraft: async () => ({
+      data: null,
+      error: {
+        code: 'CREATE_REVIEW_DRAFT_NOT_FOUND', message: 'No draft exists.',
+        category: 'not_found' as const, status: 404, retryable: false,
+      },
+      status: 404,
+    }),
+  } as any);
+
+  const resumed = await gateway.resumeCreateReview(
+    durable.root_id, reviewing.job_id, reviewing.owner,
+  );
+
+  assert.equal(resumed.error, null);
+  assert.equal(resumed.data?.draft, null);
+  assert.equal(resumed.data?.job.job_id, reviewing.job_id);
+  assert.equal(resumed.data?.project.root_id, durable.root_id);
+});
+
+test('Create review fails closed on missing owner and server-rejected candidate drift', async () => {
+  const durable = unselectedProject(2);
+  const reviewing = reviewingCreateJob('studio_job_resume', durable.root_id, 2);
+  let putCalls = 0;
+  const gateway = createStudioGateway({
+    putCreativeDirectionReviewDraft: async () => {
+      putCalls += 1;
+      return ok({});
+    },
+  } as any);
+
+  const missingOwner = await gateway.saveCreateReviewDraft({
+    projectId: durable.root_id, studioJobId: reviewing.job_id, owner: '', expectedVersion: 1,
+    selectedCandidateId: 'direction_1', retained: [],
+  });
+  assert.equal(missingOwner.error?.code, 'INVALID_CREATE_REVIEW_DRAFT');
+
+  const invalidCandidateGateway = createStudioGateway({
+    putCreativeDirectionReviewDraft: async () => {
+      putCalls += 1;
+      return {
+        data: null,
+        error: {
+          code: 'CREATE_REVIEW_CANDIDATE_MISMATCH', message: 'Candidate is not part of this Create result.',
+          category: 'validation' as const, status: 422, retryable: false,
+        },
+        status: 422,
+      };
+    },
+  } as any);
+  const invalidCandidate = await invalidCandidateGateway.saveCreateReviewDraft({
+    projectId: durable.root_id, studioJobId: reviewing.job_id,
+    owner: 'designer_1', expectedVersion: 1,
+    selectedCandidateId: 'not_from_this_job', retained: [],
+  });
+  assert.equal(invalidCandidate.error?.code, 'CREATE_REVIEW_CANDIDATE_MISMATCH');
+  assert.equal(putCalls, 1);
+});
+
+test('Create review maps stale optimistic writes to a recoverable conflict', async () => {
+  const durable = unselectedProject(2);
+  const reviewing = reviewingCreateJob('studio_job_resume', durable.root_id, 2);
+  const gateway = createStudioGateway({
+    getStudioJob: async () => ok(reviewing),
+    getProject: async () => ok(durable),
+    putCreativeDirectionReviewDraft: async () => ({
+      data: null,
+      error: {
+        code: 'STALE_CREATE_REVIEW_DRAFT', message: 'Reload the latest review.',
+        category: 'stale_version' as const, status: 409, retryable: false,
+      },
+      status: 409,
+    }),
+  } as any);
+
+  const stale = await gateway.saveCreateReviewDraft({
+    projectId: durable.root_id, studioJobId: reviewing.job_id,
+    owner: 'designer_1', expectedVersion: 1,
+    selectedCandidateId: 'direction_1', retained: [],
+  });
+
+  assert.equal(stale.error?.code, 'STALE_CREATE_REVIEW_DRAFT');
+  assert.equal(stale.error?.category, 'conflict');
+  assert.equal(stale.status, 409);
+});
+
 test('prompt Create recovers the durable review after a committed response cannot decode', async () => {
   const jobs = tracking();
   const durable = unselectedProject(2);

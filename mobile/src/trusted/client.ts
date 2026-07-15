@@ -32,6 +32,7 @@ import type {
   ConfirmedMarkupAnnotation,
   CommitCreativeDirectionsRequest,
   CommitCreativeDirectionsResult,
+  CreativeDirectionReviewDraft,
   ComponentCatalog,
   ComponentCatalogOption,
   ComponentCatalogPath,
@@ -112,6 +113,7 @@ import type {
   ProductPhotoRequest,
   ProductPhotoResult,
   PromoteCreativeCandidateRequest,
+  PutCreativeDirectionReviewDraftRequest,
   ResolveSourceCoverageRequest,
   ReviseStudioFactsRequest,
   ReviseStudioFactsResult,
@@ -902,6 +904,45 @@ export const decodeCommitCreativeDirectionsResult: Decoder<CommitCreativeDirecti
   return {
     project,
     retained_variations: retainedVariations as SaveAsVariationResult[],
+  };
+};
+
+export const decodeCreativeDirectionReviewDraft: Decoder<CreativeDirectionReviewDraft> = (value) => {
+  if (!isRecord(value) || !Array.isArray(value.retained)) return null;
+  const projectRootId = nullableText(value.project_root_id);
+  const studioJobId = nullableText(value.studio_job_id);
+  const selectedCandidateId = nullableText(value.selected_candidate_id);
+  const version = number(value.version);
+  const updatedAt = nullableText(value.updated_at);
+  const retained = value.retained.map((item) => {
+    if (!isRecord(item)) return null;
+    const candidateId = nullableText(item.candidate_id);
+    const label = nullableText(item.label);
+    if (
+      candidateId === null || candidateId !== candidateId.trim()
+      || label === null || label !== label.trim()
+      || label.length > 120
+    ) return null;
+    return { candidate_id: candidateId, label };
+  });
+  const retainedCandidateIds = retained.map((item) => item?.candidate_id);
+  if (
+    projectRootId === null || projectRootId !== projectRootId.trim()
+    || studioJobId === null || studioJobId !== studioJobId.trim()
+    || selectedCandidateId === null || selectedCandidateId !== selectedCandidateId.trim()
+    || version === null || !Number.isInteger(version) || version < 1
+    || updatedAt === null || Number.isNaN(Date.parse(updatedAt)) || retained.length > 3
+    || retained.some((item) => item === null)
+    || retainedCandidateIds.includes(selectedCandidateId)
+    || new Set(retainedCandidateIds).size !== retainedCandidateIds.length
+  ) return null;
+  return {
+    project_root_id: projectRootId,
+    studio_job_id: studioJobId,
+    selected_candidate_id: selectedCandidateId,
+    retained: retained as CreativeDirectionReviewDraft['retained'],
+    version,
+    updated_at: updatedAt,
   };
 };
 
@@ -4369,6 +4410,40 @@ export function createTrustedApiClient(options: TrustedApiClientOptions) {
           })),
         },
       };
+    },
+
+    getCreativeDirectionReviewDraft(
+      projectId: string,
+      studioJobId: string,
+    ): Promise<ApiResult<CreativeDirectionReviewDraft>> {
+      const query = new URLSearchParams({ studio_job_id: studioJobId });
+      return call(
+        `/projects/${encodeURIComponent(projectId)}/creative-directions/review-draft?${query.toString()}`,
+        decodeCreativeDirectionReviewDraft,
+      );
+    },
+
+    putCreativeDirectionReviewDraft(
+      projectId: string,
+      request: PutCreativeDirectionReviewDraftRequest,
+    ): Promise<ApiResult<CreativeDirectionReviewDraft>> {
+      const query = new URLSearchParams({ studio_job_id: request.studio_job_id });
+      return call(
+        `/projects/${encodeURIComponent(projectId)}/creative-directions/review-draft?${query.toString()}`,
+        decodeCreativeDirectionReviewDraft,
+        {
+          method: 'PUT',
+          body: encodeBody({
+            studio_job_id: request.studio_job_id,
+            expected_version: request.expected_version,
+            selected_candidate_id: request.selected_candidate_id,
+            retained: request.retained.map((direction) => ({
+              candidate_id: direction.candidate_id,
+              label: direction.label,
+            })),
+          }),
+        },
+      );
     },
 
     async createVisualPreview(projectId: string, request: CreateVisualPreviewRequest) {
