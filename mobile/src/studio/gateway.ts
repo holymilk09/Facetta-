@@ -29,6 +29,7 @@ import type {
   ProductPhotoResult,
   ProjectDetail,
   SaveAsVariationResult,
+  SaveRevisionAsVariationResult,
   StudioJobAction,
   StudioJobRecord,
   StudioMarkupResumeCandidate,
@@ -282,6 +283,21 @@ export interface StudioVariationRequest extends StudioVisualLineage {
   operationId: string;
 }
 
+/**
+ * Historical Vary keeps the immutable source binding separate from the
+ * current active-revision CAS. This allows an older saved revision to start a
+ * sibling without first restoring it over the source Variation.
+ */
+export interface StudioRevisionVariationRequest extends StudioVisualLineage {
+  sourceDesignVersion: number | null;
+  sourceSha256: string;
+  expectedActiveAssetId: string;
+  expectedActiveDesignVersion: number | null;
+  createdBy: string;
+  label: string;
+  operationId: string;
+}
+
 export interface StudioCatalogPreviewRequest extends ExactStudioLineage {
   createdBy: string;
   componentPath: CatalogPreviewRequest['component_path'];
@@ -379,6 +395,7 @@ type GatewayTrustedClient = Pick<TrustedApiClient,
   | 'createProjectFromPrompt'
   | 'commitCreativeDirections'
   | 'saveAsVariation'
+  | 'saveRevisionAsVariation'
   | 'saveCreativeCandidateAsVariation'
   | 'previewCatalogSelection'
   | 'listCatalogPreviews'
@@ -539,6 +556,76 @@ function sameCanonicalSourceState(before: ProjectDetail, after: ProjectDetail): 
         && revision.asset.asset_id === compared.asset.asset_id
         && revision.asset.design_version === compared.asset.design_version;
     });
+}
+
+function validRevisionVariationLineage(
+  request: StudioRevisionVariationRequest,
+  result: SaveRevisionAsVariationResult,
+): boolean {
+  const child = result.project;
+  const active = child.active_revision;
+  const canonicalRevision = child.revisions.length === 1 ? child.revisions[0] : null;
+  const member = result.variation;
+  const expectedChildDesignVersion = request.sourceDesignVersion === null ? null : 1;
+  const expectedChildDesignIdIsPresent = request.sourceDesignVersion !== null;
+  const componentMapProofIsConsistent = result.component_map_status === 'mapped'
+    ? result.component_map_sha256 !== null
+      && member.component_map_status === 'mapped'
+      && member.component_map_sha256 === result.component_map_sha256
+    : result.component_map_sha256 === null
+      && member.component_map_status === 'unmapped'
+      && member.component_map_sha256 === null;
+  return result.source_project_id === request.projectId
+    && result.source_asset_id === request.sourceAssetId
+    && result.source_design_version === request.sourceDesignVersion
+    && result.source_sha256 === request.sourceSha256
+    && result.child_sha256 === request.sourceSha256
+    && result.guarded_active_asset_id === request.expectedActiveAssetId
+    && result.guarded_active_design_version === request.expectedActiveDesignVersion
+    && result.child_project_root_id !== request.projectId
+    && result.child_project_root_id === child.root_id
+    && result.child_project_root_id === child.id
+    && result.child_asset_id === result.child_project_root_id
+    && result.child_family_id === result.family_id
+    && result.child_variation_index === result.variation_index
+    && Number.isInteger(result.child_variation_index)
+    && result.child_variation_index >= 2
+    && result.child_branched_from_project_root_id === request.projectId
+    && result.child_branched_from_asset_id === request.sourceAssetId
+    && result.child_design_id === child.design_id
+    && result.child_design_version === expectedChildDesignVersion
+    && result.child_design_version === child.active_design_version
+    && (expectedChildDesignIdIsPresent
+      ? result.child_design_id !== null
+      : result.child_design_id === null)
+    && child.owner === request.createdBy
+    && child.active_asset_id === result.child_asset_id
+    && child.primary_revision_count === 1
+    && active !== null
+    && active.asset_id === result.child_asset_id
+    && active.root_id === result.child_project_root_id
+    && active.parent_asset_id === null
+    && active.revision === 1
+    && active.capability === 'VARIATION_BRANCH'
+    && active.design_id === result.child_design_id
+    && active.design_version === result.child_design_version
+    && active.sha256 === result.child_sha256
+    && canonicalRevision !== null
+    && canonicalRevision.revision === 1
+    && canonicalRevision.spec_version === result.child_design_version
+    && canonicalRevision.asset.asset_id === result.child_asset_id
+    && canonicalRevision.asset.design_id === result.child_design_id
+    && canonicalRevision.asset.design_version === result.child_design_version
+    && canonicalRevision.asset.sha256 === result.child_sha256
+    && member.project_root_id === result.child_project_root_id
+    && member.asset_id === result.child_asset_id
+    && member.design_id === result.child_design_id
+    && member.design_version === result.child_design_version
+    && member.family_id === result.child_family_id
+    && member.variation_index === result.child_variation_index
+    && member.branched_from_project_root_id === request.projectId
+    && member.branched_from_asset_id === request.sourceAssetId
+    && componentMapProofIsConsistent;
 }
 
 function previewChecks(result: CatalogPreviewResult): readonly PreviewCheck[] {
@@ -1664,6 +1751,38 @@ export function createStudioGateway(
           result.status,
         );
       }
+      return result;
+    },
+
+    async saveRevisionAsVariation(
+      request: StudioRevisionVariationRequest,
+    ): Promise<StudioGatewayResult<SaveRevisionAsVariationResult>> {
+      if (!/^[0-9a-f]{64}$/.test(request.sourceSha256)) return gatewayError(
+        'INVALID_VARIATION_SOURCE_HASH',
+        'The selected saved revision does not have a verifiable image binding.',
+        'validation', 422,
+      );
+      const result = await client.saveRevisionAsVariation(
+        request.projectId,
+        request.sourceAssetId,
+        {
+          created_by: request.createdBy,
+          expected_active_asset_id: request.expectedActiveAssetId,
+          expected_active_design_version: request.expectedActiveDesignVersion,
+          expected_source_design_version: request.sourceDesignVersion,
+          expected_source_sha256: request.sourceSha256,
+          label: request.label,
+          operation_id: request.operationId,
+        },
+      );
+      if (result.error !== null) return {
+        data: null, error: mapError(result.error), status: result.status,
+      };
+      if (!validRevisionVariationLineage(request, result.data)) return gatewayError(
+        'INVALID_VARIATION_LINEAGE',
+        'The variation response did not preserve the selected saved revision and family lineage.',
+        'invalid_response', result.status,
+      );
       return result;
     },
 

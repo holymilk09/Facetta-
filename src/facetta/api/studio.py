@@ -84,6 +84,7 @@ from facetta.studio_history import (
     apply_pre_spec_visual_candidate,
     discard_pre_spec_visual_candidate,
     fork_preview_candidate_variation,
+    fork_project_revision_variation,
     fork_project_variation,
     restore_project_revision,
 )
@@ -256,6 +257,62 @@ class SaveCurrentVariationRequest(SaveVariationRequest):
         str,
         Field(min_length=8, max_length=64, pattern=r"^[A-Za-z0-9][A-Za-z0-9._:-]*$"),
     ]
+
+
+class SaveRevisionVariationRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    created_by: Annotated[str, Field(min_length=1, max_length=32)]
+    expected_active_asset_id: Annotated[str, Field(min_length=1, max_length=32)]
+    expected_active_design_version: Annotated[int, Field(ge=1)] | None
+    expected_source_design_version: Annotated[int, Field(ge=1)] | None
+    expected_source_sha256: Annotated[
+        str,
+        Field(pattern=r"^[0-9a-f]{64}$"),
+    ]
+    label: Annotated[str, Field(min_length=1, max_length=120)]
+    operation_id: Annotated[
+        str,
+        Field(min_length=8, max_length=64, pattern=r"^[A-Za-z0-9][A-Za-z0-9._:-]*$"),
+    ]
+
+
+class RevisionVariationMember(BaseModel):
+    project_root_id: str
+    asset_id: str
+    design_id: str | None
+    design_version: int | None
+    family_id: str
+    variation_index: int
+    branched_from_project_root_id: str
+    branched_from_asset_id: str
+    component_map_status: Literal["mapped", "unmapped"]
+    component_map_sha256: str | None
+
+
+class RevisionVariationResponse(BaseModel):
+    status: Literal["variation_created"]
+    family_id: str
+    variation_index: int
+    source_project_id: str
+    source_asset_id: str
+    source_design_version: int | None
+    source_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    guarded_active_asset_id: str
+    guarded_active_design_version: int | None
+    child_project_root_id: str
+    child_asset_id: str
+    child_design_id: str | None
+    child_design_version: int | None
+    child_sha256: Annotated[str, Field(pattern=r"^[0-9a-f]{64}$")]
+    child_family_id: str
+    child_variation_index: int
+    child_branched_from_project_root_id: str
+    child_branched_from_asset_id: str
+    component_map_status: Literal["mapped", "unmapped"]
+    component_map_sha256: str | None
+    variation: RevisionVariationMember
+    project: ProjectDetail
 
 
 class SavePreviewVariationRequest(BaseModel):
@@ -2687,7 +2744,9 @@ def save_as_variation(
     project_root_id: str,
     request: SaveCurrentVariationRequest,
     db: DbSession,
+    principal: PrincipalDep,
 ):
+    actor = principal_actor(principal, request.created_by)
     try:
         result = fork_project_variation(
             db,
@@ -2696,7 +2755,7 @@ def save_as_variation(
             expected_active_asset_id=request.expected_active_asset_id,
             expected_design_version=request.expected_design_version,
             variation_label=request.label,
-            created_by=request.created_by,
+            created_by=actor,
             operation_id=request.operation_id,
         )
     except StudioHistoryError as exc:
@@ -2723,9 +2782,11 @@ def save_creative_candidate_as_variation(
     candidate_id: str,
     request: SaveVariationRequest,
     db: DbSession,
+    principal: PrincipalDep,
 ):
     """Keep an unselected Create direction as a named sibling Variation."""
 
+    actor = principal_actor(principal, request.created_by)
     try:
         result = fork_project_variation(
             db,
@@ -2734,7 +2795,7 @@ def save_creative_candidate_as_variation(
             expected_active_asset_id=request.expected_active_asset_id,
             expected_design_version=request.expected_design_version,
             variation_label=request.label,
-            created_by=request.created_by,
+            created_by=actor,
             allow_unselected_creative_candidate=True,
         )
     except StudioHistoryError as exc:
@@ -2748,6 +2809,86 @@ def save_creative_candidate_as_variation(
         "variation_index": result.variation_index,
         "source_project_id": project.branched_from_project_root_id,
         "source_asset_id": project.branched_from_asset_id,
+        "project": project_detail(db, project),
+    }
+
+
+@router.post(
+    "/projects/{project_root_id}/revisions/{asset_id}/variations",
+    status_code=201,
+    response_model=RevisionVariationResponse,
+)
+def save_revision_as_variation(
+    project_root_id: str,
+    asset_id: str,
+    request: SaveRevisionVariationRequest,
+    db: DbSession,
+    principal: PrincipalDep,
+):
+    """Branch any exact saved Revision without restoring or mutating it."""
+
+    actor = principal_actor(principal, request.created_by)
+    try:
+        result = fork_project_revision_variation(
+            db,
+            project_root_id=project_root_id,
+            source_asset_id=asset_id,
+            expected_source_design_version=request.expected_source_design_version,
+            expected_source_sha256=request.expected_source_sha256,
+            expected_active_asset_id=request.expected_active_asset_id,
+            expected_active_design_version=(
+                request.expected_active_design_version
+            ),
+            variation_label=request.label,
+            created_by=actor,
+            operation_id=request.operation_id,
+        )
+    except StudioHistoryError as exc:
+        return _error(exc)
+    project = db.get(Project, result.project_root_id)
+    if (
+        project is None
+        or result.source_sha256 is None
+        or result.guarded_active_asset_id is None
+        or result.output_sha256 is None
+    ):  # pragma: no cover - transaction invariant
+        raise HTTPException(status_code=500, detail="variation project not found")
+    member = {
+        "project_root_id": result.project_root_id,
+        "asset_id": result.asset_id,
+        "design_id": result.design_id,
+        "design_version": result.design_version,
+        "family_id": result.family_id,
+        "variation_index": result.variation_index,
+        "branched_from_project_root_id": result.source_project_id,
+        "branched_from_asset_id": result.source_asset_id,
+        "component_map_status": result.component_map_status,
+        "component_map_sha256": result.component_map_sha256,
+    }
+    return {
+        "status": "variation_created",
+        "family_id": result.family_id,
+        "variation_index": result.variation_index,
+        "source_project_id": result.source_project_id,
+        "source_asset_id": result.source_asset_id,
+        "source_design_version": result.source_design_version,
+        "source_sha256": result.source_sha256,
+        "guarded_active_asset_id": result.guarded_active_asset_id,
+        "guarded_active_design_version": (
+            result.guarded_active_design_version
+        ),
+        "child_project_root_id": result.project_root_id,
+        "child_asset_id": result.asset_id,
+        "child_design_id": result.design_id,
+        "child_design_version": result.design_version,
+        "child_sha256": result.output_sha256,
+        "child_family_id": result.family_id,
+        "child_variation_index": result.variation_index,
+        "child_branched_from_project_root_id": result.source_project_id,
+        "child_branched_from_asset_id": result.source_asset_id,
+        "component_map_status": result.component_map_status,
+        "component_map_sha256": result.component_map_sha256,
+        "variation": member,
         "project": project_detail(db, project),
     }
 
@@ -2839,6 +2980,7 @@ def studio_history(project_root_id: str, db: DbSession):
             "parent_asset_id": asset.parent_asset_id,
             "design_version": asset.design_version,
             "capability": asset.capability,
+            "sha256": hashlib.sha256(bytes(asset.image)).hexdigest(),
             "image_url": f"/assets/{asset.id}/image",
             "pinned": asset.pinned_at is not None,
             "action": (

@@ -3,7 +3,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import type {
-  ApiErrorCategory, ApiResult, CatalogPreviewResult, ProjectDetail, StudioJobRecord,
+  ApiErrorCategory, ApiResult, CatalogPreviewResult, ProjectDetail,
+  SaveRevisionAsVariationResult, StudioJobRecord,
 } from '../trusted/types';
 import { createStudioGateway } from './gateway';
 import { createStudioJobTestHarness } from './studioJobTestHarness';
@@ -74,6 +75,66 @@ const project = (assetId = 'asset_1', designVersion = 1): ProjectDetail => {
     updated_at: '2026-07-12T00:00:00Z',
   };
 };
+
+const HISTORICAL_SOURCE_SHA256 = 'a'.repeat(64);
+
+const historicalVariationRequest = {
+  projectId: 'project_1',
+  sourceAssetId: 'asset_1',
+  sourceDesignVersion: 1,
+  sourceSha256: HISTORICAL_SOURCE_SHA256,
+  expectedActiveAssetId: 'asset_2',
+  expectedActiveDesignVersion: 2,
+  createdBy: 'designer_1',
+  label: 'Earlier geometry study',
+  operationId: 'vary:history-0001',
+};
+
+function historicalVariationResult(): SaveRevisionAsVariationResult {
+  const active = {
+    ...asset('variation_2', 1),
+    root_id: 'variation_2',
+    parent_asset_id: null,
+    capability: 'VARIATION_BRANCH',
+    provenance: 'studio_variation_branch',
+    design_id: 'child_design',
+    sha256: HISTORICAL_SOURCE_SHA256,
+  };
+  const child: ProjectDetail = {
+    id: 'variation_2', root_id: 'variation_2', title: 'Earlier geometry study',
+    collection: null, tags: [], owner: 'designer_1', state: 'refining',
+    design_id: 'child_design', spec: {}, active_asset_id: 'variation_2',
+    active_design_version: 1, active_revision: active, pinned_revision: null,
+    revisions: [{
+      revision: 1, asset: active, spec_version: 1, spec_change: [], ignored_fields: [],
+      qa: null, routing: null, created_at: null,
+    }],
+    assets: [active], derived_assets: [], approval: null, factory_ready: false,
+    factory_blockers: [], primary_revision_count: 1, has_factory_drawing: false,
+    cover_asset_id: 'variation_2', created_at: '2026-07-15T00:00:00Z',
+    updated_at: '2026-07-15T00:00:00Z',
+  };
+  return {
+    status: 'variation_created', family_id: 'family_1', variation_index: 2,
+    source_project_id: 'project_1', source_asset_id: 'asset_1',
+    source_design_version: 1, source_sha256: HISTORICAL_SOURCE_SHA256,
+    guarded_active_asset_id: 'asset_2', guarded_active_design_version: 2,
+    child_project_root_id: 'variation_2', child_family_id: 'family_1',
+    child_variation_index: 2, child_branched_from_project_root_id: 'project_1',
+    child_branched_from_asset_id: 'asset_1', child_asset_id: 'variation_2',
+    child_design_id: 'child_design', child_design_version: 1,
+    child_sha256: HISTORICAL_SOURCE_SHA256,
+    component_map_status: 'unmapped', component_map_sha256: null,
+    variation: {
+      project_root_id: 'variation_2', asset_id: 'variation_2',
+      design_id: 'child_design', design_version: 1, family_id: 'family_1',
+      variation_index: 2, branched_from_project_root_id: 'project_1',
+      branched_from_asset_id: 'asset_1', component_map_status: 'unmapped',
+      component_map_sha256: null,
+    },
+    project: child,
+  };
+}
 
 type GatewayClient = Parameters<typeof createStudioGateway>[0];
 
@@ -619,6 +680,151 @@ test('variation source mismatch is rejected instead of silently branching latest
   });
   assert.equal(receivedOperationId, 'vary:request-0001');
   assert.equal(result.error?.code, 'INVALID_VARIATION_LINEAGE');
+});
+
+test('branches a saved revision with one mutation and independent source and active guards', async () => {
+  const calls: unknown[][] = [];
+  let projectReads = 0;
+  const gateway = createStudioGateway(fakeClient({
+    saveRevisionAsVariation: async (...args) => {
+      calls.push(args);
+      return ok(historicalVariationResult(), 201);
+    },
+    getProject: async () => {
+      projectReads += 1;
+      return ok(project());
+    },
+  }));
+
+  const result = await gateway.saveRevisionAsVariation(historicalVariationRequest);
+
+  assert.equal(result.error, null);
+  assert.equal(projectReads, 0);
+  assert.deepEqual(calls, [[
+    'project_1',
+    'asset_1',
+    {
+      created_by: 'designer_1', expected_active_asset_id: 'asset_2',
+      expected_active_design_version: 2, expected_source_design_version: 1,
+      expected_source_sha256: HISTORICAL_SOURCE_SHA256,
+      label: 'Earlier geometry study', operation_id: 'vary:history-0001',
+    },
+  ]]);
+  assert.equal(result.data?.project.root_id, 'variation_2');
+  assert.equal(result.data?.child_sha256, HISTORICAL_SOURCE_SHA256);
+});
+
+test('fails closed when any returned saved-revision lineage proof is rebound', async () => {
+  const cases: Array<{
+    name: string;
+    mutate: (value: SaveRevisionAsVariationResult) => void;
+  }> = [
+    { name: 'source project', mutate: (value) => { value.source_project_id = 'other_project'; } },
+    { name: 'source asset', mutate: (value) => { value.source_asset_id = 'other_asset'; } },
+    { name: 'source version', mutate: (value) => { value.source_design_version = 9; } },
+    { name: 'source hash', mutate: (value) => { value.source_sha256 = 'b'.repeat(64); } },
+    { name: 'active asset guard', mutate: (value) => { value.guarded_active_asset_id = 'asset_1'; } },
+    { name: 'active version guard', mutate: (value) => { value.guarded_active_design_version = 1; } },
+    { name: 'child root', mutate: (value) => { value.child_project_root_id = 'other_child'; } },
+    { name: 'child asset', mutate: (value) => { value.child_asset_id = 'other_asset'; } },
+    { name: 'family', mutate: (value) => { value.child_family_id = 'other_family'; } },
+    { name: 'variation index', mutate: (value) => { value.child_variation_index = 3; } },
+    {
+      name: 'branch source',
+      mutate: (value) => { value.child_branched_from_asset_id = 'asset_2'; },
+    },
+    { name: 'child design version', mutate: (value) => { value.child_design_version = 2; } },
+    { name: 'child byte hash', mutate: (value) => { value.child_sha256 = 'c'.repeat(64); } },
+    {
+      name: 'active revision hash',
+      mutate: (value) => { value.project.active_revision!.sha256 = 'd'.repeat(64); },
+    },
+    {
+      name: 'extra child revision',
+      mutate: (value) => { value.project.revisions.push(value.project.revisions[0]!); },
+    },
+    {
+      name: 'nested member branch',
+      mutate: (value) => { value.variation.branched_from_project_root_id = 'other_project'; },
+    },
+    {
+      name: 'component map proof',
+      mutate: (value) => {
+        value.component_map_status = 'mapped';
+        value.component_map_sha256 = 'e'.repeat(64);
+      },
+    },
+  ];
+
+  for (const scenario of cases) {
+    const response = JSON.parse(JSON.stringify(
+      historicalVariationResult(),
+    )) as SaveRevisionAsVariationResult;
+    scenario.mutate(response);
+    const gateway = createStudioGateway(fakeClient({
+      saveRevisionAsVariation: async () => ok(response, 201),
+    }));
+    const result = await gateway.saveRevisionAsVariation(historicalVariationRequest);
+    assert.equal(
+      result.error?.code,
+      'INVALID_VARIATION_LINEAGE',
+      `${scenario.name} must fail closed`,
+    );
+  }
+});
+
+test('rejects an unverifiable revision hash locally and preserves stale conflicts', async () => {
+  let calls = 0;
+  const gateway = createStudioGateway(fakeClient({
+    saveRevisionAsVariation: async () => {
+      calls += 1;
+      return {
+        data: null,
+        error: {
+          code: 'stale_active_asset', message: 'The source Variation changed.',
+          category: 'stale_version', status: 409, retryable: false,
+        },
+        status: 409,
+      };
+    },
+  }));
+
+  const invalid = await gateway.saveRevisionAsVariation({
+    ...historicalVariationRequest, sourceSha256: 'not-a-hash',
+  });
+  assert.equal(invalid.error?.code, 'INVALID_VARIATION_SOURCE_HASH');
+  assert.equal(calls, 0);
+
+  const stale = await gateway.saveRevisionAsVariation(historicalVariationRequest);
+  assert.equal(stale.error?.code, 'stale_active_asset');
+  assert.equal(stale.error?.category, 'conflict');
+  assert.equal(calls, 1);
+});
+
+test('accepts an exact pre-spec saved revision without inventing a design version', async () => {
+  const response = historicalVariationResult();
+  response.source_design_version = null;
+  response.child_design_id = null;
+  response.child_design_version = null;
+  response.project.design_id = null;
+  response.project.active_design_version = null;
+  response.project.active_revision!.design_id = null;
+  response.project.active_revision!.design_version = null;
+  response.project.revisions[0]!.asset.design_id = null;
+  response.project.revisions[0]!.asset.design_version = null;
+  response.project.revisions[0]!.spec_version = null;
+  response.variation.design_id = null;
+  response.variation.design_version = null;
+  const gateway = createStudioGateway(fakeClient({
+    saveRevisionAsVariation: async () => ok(response, 201),
+  }));
+
+  const result = await gateway.saveRevisionAsVariation({
+    ...historicalVariationRequest, sourceDesignVersion: null,
+  });
+
+  assert.equal(result.error, null);
+  assert.equal(result.data?.child_design_version, null);
 });
 
 test('keeps an explicit Create candidate as a sibling and verifies its exact source', async () => {

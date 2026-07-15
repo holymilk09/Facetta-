@@ -28,7 +28,9 @@ import { pickExpoStudioCreateReference } from './src/studio/expoReferencePicker'
 import { StudioRefineWorkspace } from './src/studio/StudioRefineWorkspace';
 import { StudioViewsWorkspace } from './src/studio/StudioViewsWorkspace';
 import { StudioPresentWorkspace } from './src/studio/StudioPresentWorkspace';
-import { StudioVaryWorkspace } from './src/studio/StudioVaryWorkspace';
+import {
+  StudioVaryWorkspace, type StudioVariationLineage,
+} from './src/studio/StudioVaryWorkspace';
 import {
   deliverAuthenticatedProtectedFile, StudioFactoryWorkspace,
   StudioProtectedFileRequest,
@@ -126,6 +128,7 @@ export default function App() {
   const [createReview, setCreateReview] = useState<CreateReviewState | null>(null);
   const [createDraft, setCreateDraft] = useState<StudioCreateDraft>(EMPTY_STUDIO_CREATE_DRAFT);
   const [activityReview, setActivityReview] = useState<StudioReviewJobEnvelope | null>(null);
+  const [variationLineage, setVariationLineage] = useState<StudioVariationLineage | null>(null);
   const [projectHydration, setProjectHydration] = useState<{
     request: ProjectHydrationRequest;
     loading: boolean;
@@ -156,6 +159,7 @@ export default function App() {
     setCreateReview(null);
     setCreateDraft(EMPTY_STUDIO_CREATE_DRAFT);
     setActivityReview(null);
+    setVariationLineage(null);
     setFactoryEligibleRevisionKey(null);
     setSavedFamiliesState('unknown');
   }, []);
@@ -269,6 +273,29 @@ export default function App() {
       sourceAssetId: studioProject.active_asset_id,
     };
   }, [studioProject]);
+  const currentVariationLineage = useMemo<StudioVariationLineage | null>(() => {
+    if (studioProject?.active_asset_id === null || studioProject?.active_asset_id === undefined) {
+      return null;
+    }
+    const active = studioProject.active_revision?.asset_id === studioProject.active_asset_id
+      ? studioProject.active_revision
+      : studioProject.revisions.find((revision) => (
+        revision.asset.asset_id === studioProject.active_asset_id
+      ))?.asset ?? null;
+    if (active?.revision === null || active?.revision === undefined
+      || active.sha256 === null || active.sha256 === undefined
+      || !/^[0-9a-f]{64}$/.test(active.sha256)) return null;
+    return {
+      mode: 'current',
+      projectId: studioProject.root_id,
+      sourceAssetId: studioProject.active_asset_id,
+      sourceDesignVersion: studioProject.active_design_version,
+      sourceSha256: active.sha256,
+      sourceRevision: active.revision,
+      expectedActiveAssetId: studioProject.active_asset_id,
+      expectedActiveDesignVersion: studioProject.active_design_version,
+    };
+  }, [studioProject]);
   const confirmStudioLineage = useMemo<StudioVisualLineage | null>(() => {
     if (studioProject === null || studioProject.design_id !== null) return null;
     if (studioProject.confirmable_pre_spec !== true) return null;
@@ -340,7 +367,12 @@ export default function App() {
       && activityReview.job.action_id === selectedActionId
       ? activityReview.lineage.sourceAssetId
       : null;
-    const sourceAssetId = reviewSourceAssetId ?? studioProject.active_asset_id;
+    const variationSourceAssetId = selectedActionId === 'vary'
+      ? variationLineage?.sourceAssetId ?? null
+      : null;
+    const sourceAssetId = reviewSourceAssetId
+      ?? variationSourceAssetId
+      ?? studioProject.active_asset_id;
     if (sourceAssetId === null) return null;
     return [
       studioProject.active_revision,
@@ -348,7 +380,7 @@ export default function App() {
       ...studioProject.assets,
       ...(studioProject.creative_candidates ?? []),
     ].find((asset) => asset?.asset_id === sourceAssetId) ?? null;
-  }, [activityReview, isCreatingNewDesign, selectedActionId, studioProject]);
+  }, [activityReview, isCreatingNewDesign, selectedActionId, studioProject, variationLineage]);
   const actionSourceImageUrl = activityReview !== null
     && activityReview.job.action_id === selectedActionId
     ? activityReview.sourceImageUrl ?? actionSourceRevision?.image_url ?? null
@@ -449,6 +481,7 @@ export default function App() {
 
   const launchContextAction = (intent: StudioActionLaunchIntent): void => {
     if (intent.type !== 'open_workspace') return;
+    if (intent.actionId === 'vary') setVariationLineage(currentVariationLineage);
     openStudioAction(
       intent.actionId,
       false,
@@ -682,10 +715,13 @@ export default function App() {
                   <View style={styles.actionDesignCopy}>
                     <Text numberOfLines={1} style={styles.actionDesignTitle}>{studioProject.title}</Text>
                     <Text numberOfLines={1} style={styles.actionRevisionLabel}>
-                      {actionSourceIsCurrent ? 'Current saved revision' : 'Review source'}
-                      {actionSourceRevision.revision === null
-                        ? ''
-                        : ` · Revision ${actionSourceRevision.revision}`}
+                      {selectedActionId === 'vary' && variationLineage !== null
+                        ? `Starting Revision ${variationLineage.sourceRevision}`
+                        : `${actionSourceIsCurrent ? 'Current saved revision' : 'Review source'}${
+                          actionSourceRevision.revision === null
+                            ? ''
+                            : ` · Revision ${actionSourceRevision.revision}`
+                        }`}
                     </Text>
                   </View>
                 </Pressable>
@@ -811,10 +847,7 @@ export default function App() {
           ) : selectedActionId === 'vary' ? (
             <StudioVaryWorkspace
               gateway={studioGateway}
-              lineage={visualStudioLineage === null ? null : {
-                ...visualStudioLineage,
-                sourceDesignVersion: exactStudioLineage?.sourceDesignVersion ?? null,
-              }}
+              lineage={variationLineage}
               createdBy={designer}
               onCreated={(project) => {
                 setStudioProject(project);
@@ -849,7 +882,14 @@ export default function App() {
             setSelectedCreativeAssetId(project.active_asset_id);
           }}
           onStartDesign={() => openStudioAction('create')}
-          onVaryCurrent={() => openStudioAction('vary')}
+          onVaryCurrent={() => {
+            setVariationLineage(currentVariationLineage);
+            openStudioAction('vary');
+          }}
+          onVaryRevision={(lineage) => {
+            setVariationLineage(lineage);
+            openStudioAction('vary');
+          }}
           onContinueRefining={() => openStudioAction('refine')}
           destinationContext={destinationContext}
           onSelectDestination={openStudioDestination}

@@ -17,6 +17,7 @@ import {
   decodeProjectCreationResult,
   decodeProjectDetail,
   decodeSaveAsVariationResult,
+  decodeSaveRevisionAsVariationResult,
   decodeStudioJobList,
   decodeStudioJobRecord,
   decodeStudioComponentTargeting,
@@ -862,6 +863,77 @@ describe('trusted API decoders', () => {
     });
   });
 
+  test('branches an exact saved revision through the typed atomic lineage seam', async () => {
+    const sourceSha256 = 'a'.repeat(64);
+    const payload = {
+      status: 'variation_created', family_id: 'fam_ring', variation_index: 2,
+      source_project_id: 'ast root', source_asset_id: 'ast source',
+      source_design_version: 1, source_sha256: sourceSha256,
+      guarded_active_asset_id: 'ast current', guarded_active_design_version: 3,
+      child_project_root_id: 'ast variation', child_family_id: 'fam_ring',
+      child_variation_index: 2, child_branched_from_project_root_id: 'ast root',
+      child_branched_from_asset_id: 'ast source', child_asset_id: 'ast variation',
+      child_design_id: 'dsn_child', child_design_version: 1, child_sha256: sourceSha256,
+      component_map_status: 'unmapped', component_map_sha256: null,
+      variation: {
+        project_root_id: 'ast variation', asset_id: 'ast variation',
+        design_id: 'dsn_child', design_version: 1, family_id: 'fam_ring',
+        variation_index: 2, branched_from_project_root_id: 'ast root',
+        branched_from_asset_id: 'ast source', component_map_status: 'unmapped',
+        component_map_sha256: null,
+      },
+      project: {
+        id: 'ast variation', root_id: 'ast variation', title: 'Earlier geometry study',
+        owner: 'usr_designer', state: 'refining', design_id: 'dsn_child',
+        active_asset_id: 'ast variation', active_design_version: 1,
+        active_revision: {
+          asset_id: 'ast variation', root_id: 'ast variation', parent_asset_id: null,
+          capability: 'VARIATION_BRANCH', provenance: 'studio_variation_branch',
+          revision: 1, design_id: 'dsn_child', design_version: 1,
+          sha256: sourceSha256, image_url: '/assets/ast variation/image',
+        },
+        revisions: [], assets: [], derived_assets: [], factory_ready: false,
+        factory_blockers: [], primary_revision_count: 1, has_factory_drawing: false,
+      },
+    };
+    const fetcher = jest.fn(async (
+      _input: RequestInfo | URL,
+      _init?: RequestInit,
+    ) => ({
+      ok: true, status: 201, text: async () => JSON.stringify(payload),
+    } as unknown as Response));
+    const api = createTrustedApiClient({ baseUrl: 'https://facetta.test', fetcher });
+
+    const result = await api.saveRevisionAsVariation('ast root', 'ast source', {
+      created_by: 'usr_designer', expected_active_asset_id: 'ast current',
+      expected_active_design_version: 3, expected_source_design_version: 1,
+      expected_source_sha256: sourceSha256, label: 'Earlier geometry study',
+      operation_id: 'vary:history-0001',
+    });
+
+    expect(fetcher.mock.calls[0]?.[0]).toBe(
+      'https://facetta.test/studio/projects/ast%20root/revisions/ast%20source/variations',
+    );
+    expect(JSON.parse(String(fetcher.mock.calls[0]?.[1]?.body))).toEqual({
+      created_by: 'usr_designer', expected_active_asset_id: 'ast current',
+      expected_active_design_version: 3, expected_source_design_version: 1,
+      expected_source_sha256: sourceSha256, label: 'Earlier geometry study',
+      operation_id: 'vary:history-0001',
+    });
+    expect(result.error).toBeNull();
+    expect(result.data).toMatchObject({
+      source_asset_id: 'ast source', source_sha256: sourceSha256,
+      guarded_active_asset_id: 'ast current', child_sha256: sourceSha256,
+      project: {
+        root_id: 'ast variation',
+        active_revision: {
+          image_url: 'https://facetta.test/assets/ast variation/image',
+        },
+      },
+    });
+    expect(decodeSaveRevisionAsVariationResult({ ...payload, variation: undefined })).toBeNull();
+  });
+
   test('keeps an unselected Create candidate through the dedicated variation route', async () => {
     const fetcher = jest.fn(async (
       _input: RequestInfo | URL,
@@ -1050,6 +1122,7 @@ describe('trusted API decoders', () => {
         design_version: 3,
         capability: 'RESTORED_REVISION',
         image_url: '/assets/ast_3/image',
+        sha256: '3'.repeat(64),
         pinned: false,
         action: 'restore',
         raw_intent: { kind: 'restore_revision', selected_asset_id: 'ast_1' },
@@ -1072,6 +1145,9 @@ describe('trusted API decoders', () => {
     });
     expect(decodeStudioProjectHistory({ ...payload, revisions: [{
       ...payload.revisions[0], raw_intent: null,
+    }] })).toBeNull();
+    expect(decodeStudioProjectHistory({ ...payload, revisions: [{
+      ...payload.revisions[0], sha256: 'not-a-digest',
     }] })).toBeNull();
     const fetcher = jest.fn(async (
       _input: RequestInfo | URL,

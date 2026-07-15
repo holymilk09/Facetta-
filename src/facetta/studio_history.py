@@ -21,6 +21,7 @@ from facetta.db import (
     PreviewCandidateRecord,
     Project,
     ProjectRevisionRecord,
+    RevisionComponentMapRecord,
     StudioMarkupCandidateRecord,
     StudioVariationDecisionRecord,
     new_id,
@@ -40,6 +41,7 @@ from facetta.revision_component_map import ComponentMapError
 from facetta.revision_component_map_store import add_revision_component_map
 from facetta.revision_component_map_store import (
     copy_revision_component_map_for_identical_raster,
+    load_revision_component_map,
 )
 from facetta.specdiff import diff_specs, summarize_changes
 from facetta.studio_visual_candidates import StudioVisualCandidate
@@ -96,6 +98,13 @@ class VariationBranchResult:
     design_id: str | None
     design_version: int | None
     variation_index: int
+    source_design_version: int | None = None
+    source_sha256: str | None = None
+    guarded_active_asset_id: str | None = None
+    guarded_active_design_version: int | None = None
+    output_sha256: str | None = None
+    component_map_status: str = "unmapped"
+    component_map_sha256: str | None = None
 
 
 def _variation_request_fingerprint(
@@ -119,6 +128,143 @@ def _variation_request_fingerprint(
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
+def _historical_variation_request_fingerprint(
+    *,
+    project_root_id: str,
+    source_asset_id: str,
+    expected_source_design_version: int | None,
+    expected_source_sha256: str,
+    expected_active_asset_id: str,
+    expected_active_design_version: int | None,
+    variation_label: str,
+    created_by: str,
+) -> str:
+    """Bind a historical branch without changing legacy replay hashes."""
+
+    payload = {
+        "created_by": created_by,
+        "expected_active_asset_id": expected_active_asset_id,
+        "expected_active_design_version": expected_active_design_version,
+        "expected_source_design_version": expected_source_design_version,
+        "expected_source_sha256": expected_source_sha256,
+        "operation": "fork_historical_revision_variation",
+        "project_root_id": project_root_id,
+        "source_asset_id": source_asset_id,
+        "variation_label": variation_label,
+    }
+    canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def _spec_truth(spec: dict) -> dict:
+    """Compare design truth without child-specific identity metadata."""
+
+    return {
+        key: value
+        for key, value in spec.items()
+        if key not in {"design_id", "version", "created_by", "created_at"}
+    }
+
+
+def _variation_component_map_proof(
+    db: Session,
+    *,
+    source_asset_id: str,
+    child_asset_id: str,
+    corrupt_status_code: int,
+) -> tuple[str, str | None]:
+    """Prove an exact map copy or explicit fail-closed map absence."""
+
+    try:
+        source_map = load_revision_component_map(db, source_asset_id)
+        child_map = load_revision_component_map(db, child_asset_id)
+    except ComponentMapError as exc:
+        raise StudioHistoryError(
+            "variation_component_map_invalid",
+            f"component-map evidence is invalid: {exc.detail}",
+            status_code=corrupt_status_code,
+        ) from exc
+    if source_map is None:
+        if child_map is not None:
+            raise StudioHistoryError(
+                "variation_component_map_invalid",
+                "an unmapped source cannot produce mapped variation evidence",
+                status_code=corrupt_status_code,
+            )
+        return "unmapped", None
+    if (
+        source_map.asset_id != source_asset_id
+        or child_map is not None
+        and child_map.asset_id != child_asset_id
+    ):
+        raise StudioHistoryError(
+            "variation_component_map_invalid",
+            "the component-map payload is bound to an unexpected asset",
+            status_code=corrupt_status_code,
+        )
+    if child_map is None:
+        raise StudioHistoryError(
+            "variation_component_map_invalid",
+            "the variation dropped the source revision's component map",
+            status_code=corrupt_status_code,
+        )
+    if (
+        source_map.asset_sha256 != child_map.asset_sha256
+        or source_map.raster_width != child_map.raster_width
+        or source_map.raster_height != child_map.raster_height
+        or source_map.jewelry_type != child_map.jewelry_type
+        or source_map.calibration_evidence_sha256
+        != child_map.calibration_evidence_sha256
+        or child_map.mapper_contract != "facetta.byte-identical-map-copy.v1"
+    ):
+        raise StudioHistoryError(
+            "variation_component_map_invalid",
+            "the variation component map does not preserve source evidence",
+            status_code=corrupt_status_code,
+        )
+    source_components = {
+        item.component_id: item.model_dump(mode="json")
+        for item in source_map.components
+    }
+    child_components = {
+        item.component_id: item.model_dump(mode="json")
+        for item in child_map.components
+    }
+    if set(source_components) != set(child_components):
+        raise StudioHistoryError(
+            "variation_component_map_invalid",
+            "the variation component inventory differs from its source",
+            status_code=corrupt_status_code,
+        )
+    for component_id, source_component in source_components.items():
+        child_component = dict(child_components[component_id])
+        if child_component.pop("parent_component_id") != component_id:
+            raise StudioHistoryError(
+                "variation_component_map_invalid",
+                "the variation component identity is not source-bound",
+                status_code=corrupt_status_code,
+            )
+        source_component = dict(source_component)
+        source_component.pop("parent_component_id")
+        if child_component != source_component:
+            raise StudioHistoryError(
+                "variation_component_map_invalid",
+                "the variation component geometry differs from its source",
+                status_code=corrupt_status_code,
+            )
+    record = db.get(RevisionComponentMapRecord, child_asset_id)
+    if (
+        record is None
+        or record.parent_asset_id != source_asset_id
+    ):
+        raise StudioHistoryError(
+            "variation_component_map_invalid",
+            "the variation component map parent lineage is invalid",
+            status_code=corrupt_status_code,
+        )
+    return "mapped", record.map_sha256
+
+
 def _replay_variation_decision(
     db: Session,
     decision: StudioVariationDecisionRecord,
@@ -132,20 +278,121 @@ def _replay_variation_decision(
         )
     project = db.get(Project, decision.result_project_root_id)
     asset = db.get(ImageAsset, decision.result_asset_id)
+    source_project = db.get(Project, decision.source_project_root_id)
+    source = db.get(ImageAsset, decision.source_asset_id)
+    guarded_active = db.get(ImageAsset, decision.expected_active_asset_id)
     if (
         project is None
         or asset is None
+        or source_project is None
+        or source is None
+        or guarded_active is None
+        or source.root_id != source_project.root_id
+        or guarded_active.root_id != source_project.root_id
+        or guarded_active.design_version != decision.expected_design_version
+        or source_project.owner != decision.owner
+        or source_project.family_id != decision.family_id
         or project.root_id != asset.root_id
+        or asset.id != project.root_id
+        or asset.parent_asset_id is not None
+        or project.owner != decision.owner
         or project.family_id != decision.family_id
         or project.variation_index != decision.variation_index
         or project.branched_from_project_root_id != decision.source_project_root_id
         or project.branched_from_asset_id != decision.source_asset_id
+        or asset.capability != "VARIATION_BRANCH"
     ):
         raise StudioHistoryError(
             "variation_decision_corrupt",
             "the recorded variation result is incomplete",
             status_code=500,
         )
+    source_chain = _project_chain(db, source_project.root_id)
+    eligible_revision_ids = {
+        row.id for row in source_chain if is_canonical_revision(row)
+    }
+    selected_source = accepted_creative_candidate(
+        source_chain,
+        source_project.selected_candidate_asset_id,
+    )
+    if selected_source is not None:
+        eligible_revision_ids.add(selected_source.id)
+    if source.id not in eligible_revision_ids:
+        raise StudioHistoryError(
+            "variation_decision_corrupt",
+            "the recorded variation source is not saved revision history",
+            status_code=500,
+        )
+    source_sha256 = _verified_revision_hash(
+        db,
+        source,
+        mismatch_code="variation_source_hash_mismatch",
+    )
+    output_sha256 = _verified_revision_hash(
+        db,
+        asset,
+        mismatch_code="variation_result_hash_mismatch",
+    )
+    revision = db.scalar(
+        select(ProjectRevisionRecord).where(
+            ProjectRevisionRecord.asset_id == asset.id
+        )
+    )
+    if (
+        source_sha256 != output_sha256
+        or revision is None
+        or revision.action != "created"
+        or revision.raw_intent.get("source_project_id") != source_project.root_id
+        or revision.raw_intent.get("source_asset_id") != source.id
+        or revision.interpretation.get("source_sha256") != source_sha256
+        or revision.interpretation.get("output_sha256") != output_sha256
+    ):
+        raise StudioHistoryError(
+            "variation_decision_corrupt",
+            "the recorded variation bytes or revision evidence are incomplete",
+            status_code=500,
+        )
+    source_root = db.get(ImageAsset, source_project.root_id)
+    if source.design_version is None:
+        if asset.design_id is not None or asset.design_version is not None:
+            raise StudioHistoryError(
+                "variation_decision_corrupt",
+                "a pre-spec source produced an unexpected specification",
+                status_code=500,
+            )
+    else:
+        if (
+            source_root is None
+            or source_root.design_id is None
+            or asset.design_id is None
+            or asset.design_version != 1
+        ):
+            raise StudioHistoryError(
+                "variation_decision_corrupt",
+                "the variation's exact specification binding is incomplete",
+                status_code=500,
+            )
+        source_spec = db.get(
+            DesignVersion,
+            (source_root.design_id, source.design_version),
+        )
+        child_spec = db.get(DesignVersion, (asset.design_id, asset.design_version))
+        if (
+            source_spec is None
+            or child_spec is None
+            or _spec_truth(source_spec.spec) != _spec_truth(child_spec.spec)
+        ):
+            raise StudioHistoryError(
+                "variation_decision_corrupt",
+                "the variation does not preserve the source specification",
+                status_code=500,
+            )
+    map_status, map_sha256 = _variation_component_map_proof(
+        db,
+        source_asset_id=source.id,
+        child_asset_id=asset.id,
+        corrupt_status_code=500,
+    )
     return VariationBranchResult(
         family_id=decision.family_id,
         project_root_id=project.root_id,
@@ -155,6 +402,13 @@ def _replay_variation_decision(
         design_id=asset.design_id,
         design_version=asset.design_version,
         variation_index=decision.variation_index,
+        source_design_version=source.design_version,
+        source_sha256=source_sha256,
+        guarded_active_asset_id=decision.expected_active_asset_id,
+        guarded_active_design_version=decision.expected_design_version,
+        output_sha256=output_sha256,
+        component_map_status=map_status,
+        component_map_sha256=map_sha256,
     )
 
 
@@ -1083,6 +1337,9 @@ def fork_project_variation(
     created_by: str,
     operation_id: str | None = None,
     allow_unselected_creative_candidate: bool = False,
+    allow_historical_revision: bool = False,
+    expected_source_design_version: int | None = None,
+    expected_source_sha256: str | None = None,
     commit: bool = True,
 ) -> VariationBranchResult:
     """Copy one exact revision into an independent sibling project.
@@ -1109,14 +1366,40 @@ def fork_project_variation(
             "a variation operation id is required",
             status_code=422,
         )
-    request_fingerprint = _variation_request_fingerprint(
-        project_root_id=project_root_id,
-        source_asset_id=source_asset_id,
-        expected_active_asset_id=expected_active_asset_id,
-        expected_design_version=expected_design_version,
-        variation_label=label,
-        created_by=created_by,
-    )
+    if allow_historical_revision:
+        if normalized_operation_id is None:
+            raise StudioHistoryError(
+                "variation_operation_id_required",
+                "a historical variation operation id is required",
+                status_code=422,
+            )
+        if expected_source_sha256 is None:
+            raise StudioHistoryError(
+                "variation_source_hash_required",
+                "the selected revision hash is required",
+                status_code=422,
+            )
+        request_fingerprint = _historical_variation_request_fingerprint(
+            project_root_id=project_root_id,
+            source_asset_id=source_asset_id,
+            expected_source_design_version=expected_source_design_version,
+            expected_source_sha256=expected_source_sha256,
+            expected_active_asset_id=expected_active_asset_id,
+            expected_active_design_version=expected_design_version,
+            variation_label=label,
+            created_by=created_by,
+        )
+    else:
+        # This payload is intentionally unchanged. Persisted direct-Vary
+        # operation hashes must continue replaying across the rollout.
+        request_fingerprint = _variation_request_fingerprint(
+            project_root_id=project_root_id,
+            source_asset_id=source_asset_id,
+            expected_active_asset_id=expected_active_asset_id,
+            expected_design_version=expected_design_version,
+            variation_label=label,
+            created_by=created_by,
+        )
     if normalized_operation_id is not None:
         existing_decision = db.get(
             StudioVariationDecisionRecord,
@@ -1148,7 +1431,24 @@ def fork_project_variation(
             "the selected variation source is not in this project",
             status_code=404,
         )
-    if not is_primary_revision(source):
+    if allow_historical_revision:
+        chain = _project_chain(db, project_root_id)
+        eligible_revision_ids = {
+            asset.id for asset in chain if is_canonical_revision(asset)
+        }
+        accepted = accepted_creative_candidate(
+            chain,
+            project.selected_candidate_asset_id,
+        )
+        if accepted is not None:
+            eligible_revision_ids.add(accepted.id)
+        if source.id not in eligible_revision_ids:
+            raise StudioHistoryError(
+                "variation_source_not_revision",
+                "only a saved Studio history revision can start a variation",
+                status_code=422,
+            )
+    elif not is_primary_revision(source):
         raise StudioHistoryError(
             "variation_source_not_revision",
             "only a primary visual revision can start a variation",
@@ -1164,7 +1464,11 @@ def fork_project_variation(
         and source.capability == "CREATIVE_RENDER"
         and source.design_version is None
     )
-    if source.id != active.id and not is_unselected_creative_candidate:
+    if (
+        not allow_historical_revision
+        and source.id != active.id
+        and not is_unselected_creative_candidate
+    ):
         raise StudioHistoryError(
             "variation_source_not_active",
             "restore an older revision first or branch from the active design",
@@ -1175,11 +1479,60 @@ def fork_project_variation(
             "stale_design_version",
             "the specification changed before the variation could be saved",
         )
+    if (
+        allow_historical_revision
+        and source.design_version != expected_source_design_version
+    ):
+        raise StudioHistoryError(
+            "stale_source_design_version",
+            "the selected historical revision's specification binding changed",
+        )
     source_sha256 = _verified_revision_hash(
         db,
         source,
         mismatch_code="variation_source_hash_mismatch",
     )
+    if (
+        allow_historical_revision
+        and source_sha256 != expected_source_sha256
+    ):
+        raise StudioHistoryError(
+            "stale_source_revision",
+            "the selected historical revision bytes changed before branching",
+        )
+
+    root = db.get(ImageAsset, project_root_id)
+    source_version: DesignVersion | None = None
+    if source.design_version is not None:
+        if root is None or root.design_id is None:
+            raise StudioHistoryError(
+                "variation_spec_binding_unknown",
+                "the selected visual has no exact specification binding",
+                status_code=422,
+            )
+        source_version = db.get(
+            DesignVersion,
+            (root.design_id, source.design_version),
+        )
+        if source_version is None:
+            raise StudioHistoryError(
+                "variation_spec_unavailable",
+                "the selected revision's exact specification is unavailable",
+                status_code=404,
+            )
+    elif (
+        not allow_historical_revision
+        and root is not None
+        and root.design_id is not None
+    ):
+        # Preserve the legacy active-Vary trust gate. Historical Vary can copy
+        # a saved pre-spec revision without pretending it has specification
+        # authority, even when a later revision linked the project to a spec.
+        raise StudioHistoryError(
+            "variation_spec_binding_unknown",
+            "the selected visual has no exact specification binding",
+            status_code=422,
+        )
 
     family = ensure_project_family(db, project)
     if family.owner != project.owner:
@@ -1201,21 +1554,7 @@ def fork_project_variation(
     new_root_id = new_id("ast")
     new_design_id: str | None = None
     new_design_version: int | None = None
-    root = db.get(ImageAsset, project_root_id)
-    if root is not None and root.design_id is not None:
-        if source.design_version is None:
-            raise StudioHistoryError(
-                "variation_spec_binding_unknown",
-                "the selected visual has no exact specification binding",
-                status_code=422,
-            )
-        source_version = db.get(DesignVersion, (root.design_id, source.design_version))
-        if source_version is None:
-            raise StudioHistoryError(
-                "variation_spec_unavailable",
-                "the selected revision's exact specification is unavailable",
-                status_code=404,
-            )
+    if source_version is not None:
         new_design_id = new_id("dsn")
         new_design_version = 1
         stored_spec = dict(source_version.spec)
@@ -1282,7 +1621,10 @@ def fork_project_variation(
         asset_id=new_asset.id,
         action="created",
         raw_intent={
-            "kind": "save_as_variation",
+            "kind": (
+                "save_historical_revision_as_variation"
+                if allow_historical_revision else "save_as_variation"
+            ),
             "source_project_id": project.root_id,
             "source_asset_id": source.id,
             "label": label,
@@ -1299,7 +1641,8 @@ def fork_project_variation(
         created_at=now,
     )
     family.updated_at = now
-    project.updated_at = now
+    if not allow_historical_revision:
+        project.updated_at = now
     db.add_all([new_asset, new_project, record])
     if normalized_operation_id is not None:
         db.add(StudioVariationDecisionRecord(
@@ -1318,6 +1661,8 @@ def fork_project_variation(
             created_by=created_by,
             committed_at=now,
         ))
+    map_status = "unmapped"
+    map_sha256: str | None = None
     try:
         db.flush()
         copy_revision_component_map_for_identical_raster(
@@ -1326,8 +1671,21 @@ def fork_project_variation(
             child_asset_id=new_asset.id,
             child_image_bytes=bytes(new_asset.image),
         )
+        map_status, map_sha256 = _variation_component_map_proof(
+            db,
+            source_asset_id=source.id,
+            child_asset_id=new_asset.id,
+            corrupt_status_code=422,
+        )
         if commit:
             db.commit()
+    except ComponentMapError as exc:
+        db.rollback()
+        raise StudioHistoryError(
+            "variation_component_map_invalid",
+            f"component-map evidence is invalid: {exc.detail}",
+            status_code=422,
+        ) from exc
     except IntegrityError as exc:
         db.rollback()
         if normalized_operation_id is not None:
@@ -1357,6 +1715,45 @@ def fork_project_variation(
         design_id=new_design_id,
         design_version=new_design_version,
         variation_index=variation_index,
+        source_design_version=source.design_version,
+        source_sha256=source_sha256,
+        guarded_active_asset_id=expected_active_asset_id,
+        guarded_active_design_version=expected_design_version,
+        output_sha256=source_sha256,
+        component_map_status=map_status,
+        component_map_sha256=map_sha256,
+    )
+
+
+def fork_project_revision_variation(
+    db: Session,
+    *,
+    project_root_id: str,
+    source_asset_id: str,
+    expected_source_design_version: int | None,
+    expected_source_sha256: str,
+    expected_active_asset_id: str,
+    expected_active_design_version: int | None,
+    variation_label: str,
+    created_by: str,
+    operation_id: str,
+    commit: bool = True,
+) -> VariationBranchResult:
+    """Create a sibling from any exact revision exposed by Studio history."""
+
+    return fork_project_variation(
+        db,
+        project_root_id=project_root_id,
+        source_asset_id=source_asset_id,
+        expected_active_asset_id=expected_active_asset_id,
+        expected_design_version=expected_active_design_version,
+        expected_source_design_version=expected_source_design_version,
+        expected_source_sha256=expected_source_sha256,
+        variation_label=variation_label,
+        created_by=created_by,
+        operation_id=operation_id,
+        allow_historical_revision=True,
+        commit=commit,
     )
 
 

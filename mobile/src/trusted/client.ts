@@ -115,6 +115,8 @@ import type {
   SaveAsVariationRequest,
   SaveCurrentAsVariationRequest,
   SaveAsVariationResult,
+  SaveRevisionAsVariationRequest,
+  SaveRevisionAsVariationResult,
   RestoreStudioRevisionRequest,
   RestoreStudioRevisionResult,
   SourceComponentIndependentAudit,
@@ -766,6 +768,128 @@ export const decodeSaveAsVariationResult: Decoder<SaveAsVariationResult> = (valu
   };
 };
 
+const requiredNullablePositiveInteger = (
+  value: UnknownRecord,
+  key: string,
+): number | null | undefined => {
+  if (!Object.prototype.hasOwnProperty.call(value, key)) return undefined;
+  if (value[key] === null) return null;
+  const decoded = number(value[key]);
+  return decoded !== null && Number.isInteger(decoded) && decoded >= 1
+    ? decoded : undefined;
+};
+
+const requiredNullableText = (
+  value: UnknownRecord,
+  key: string,
+): string | null | undefined => {
+  if (!Object.prototype.hasOwnProperty.call(value, key)) return undefined;
+  return value[key] === null ? null : nullableText(value[key]) ?? undefined;
+};
+
+/**
+ * Decode the server's one-response proof for historical-revision Vary. This
+ * decoder requires every source, guard, child, family-member, and byte-hash
+ * field so the Studio gateway never has to infer a successful branch from a
+ * later read.
+ */
+export const decodeSaveRevisionAsVariationResult: Decoder<SaveRevisionAsVariationResult> = (
+  value,
+) => {
+  if (!isRecord(value)) return null;
+  const base = decodeSaveAsVariationResult(value);
+  const sourceDesignVersion = requiredNullablePositiveInteger(value, 'source_design_version');
+  const guardedActiveDesignVersion = requiredNullablePositiveInteger(
+    value, 'guarded_active_design_version',
+  );
+  const childDesignVersion = requiredNullablePositiveInteger(value, 'child_design_version');
+  const childDesignId = requiredNullableText(value, 'child_design_id');
+  const componentMapSha256 = requiredNullableText(value, 'component_map_sha256');
+  const sourceSha256 = nullableText(value.source_sha256);
+  const guardedActiveAssetId = nullableText(value.guarded_active_asset_id);
+  const childProjectRootId = nullableText(value.child_project_root_id);
+  const childFamilyId = nullableText(value.child_family_id);
+  const childVariationIndex = number(value.child_variation_index);
+  const childBranchedFromProjectRootId = nullableText(
+    value.child_branched_from_project_root_id,
+  );
+  const childBranchedFromAssetId = nullableText(value.child_branched_from_asset_id);
+  const childAssetId = nullableText(value.child_asset_id);
+  const childSha256 = nullableText(value.child_sha256);
+  const componentMapStatus = value.component_map_status === 'mapped'
+    || value.component_map_status === 'unmapped'
+    ? value.component_map_status : null;
+  const rawVariation = isRecord(value.variation) ? value.variation : null;
+  const variationProjectRootId = rawVariation === null
+    ? null : nullableText(rawVariation.project_root_id);
+  const variationAssetId = rawVariation === null ? null : nullableText(rawVariation.asset_id);
+  const variationDesignId = rawVariation === null
+    ? undefined : requiredNullableText(rawVariation, 'design_id');
+  const variationDesignVersion = rawVariation === null
+    ? undefined : requiredNullablePositiveInteger(rawVariation, 'design_version');
+  const variationFamilyId = rawVariation === null ? null : nullableText(rawVariation.family_id);
+  const variationIndex = rawVariation === null ? null : number(rawVariation.variation_index);
+  const variationBranchedFromProjectRootId = rawVariation === null
+    ? null : nullableText(rawVariation.branched_from_project_root_id);
+  const variationBranchedFromAssetId = rawVariation === null
+    ? null : nullableText(rawVariation.branched_from_asset_id);
+  const variationMapStatus = rawVariation?.component_map_status === 'mapped'
+    || rawVariation?.component_map_status === 'unmapped'
+    ? rawVariation.component_map_status : null;
+  const variationMapSha256 = rawVariation === null
+    ? undefined : requiredNullableText(rawVariation, 'component_map_sha256');
+  if (
+    base === null || sourceDesignVersion === undefined || sourceSha256 === null
+    || !/^[0-9a-f]{64}$/.test(sourceSha256)
+    || guardedActiveAssetId === null || guardedActiveDesignVersion === undefined
+    || childProjectRootId === null || childFamilyId === null
+    || childVariationIndex === null || !Number.isInteger(childVariationIndex)
+    || childVariationIndex < 2
+    || childBranchedFromProjectRootId === null || childBranchedFromAssetId === null
+    || childAssetId === null || childDesignId === undefined || childDesignVersion === undefined
+    || childSha256 === null || !/^[0-9a-f]{64}$/.test(childSha256)
+    || componentMapStatus === null
+    || componentMapSha256 === undefined || variationProjectRootId === null
+    || variationAssetId === null || variationDesignId === undefined
+    || variationDesignVersion === undefined || variationFamilyId === null
+    || variationIndex === null || !Number.isInteger(variationIndex) || variationIndex < 2
+    || variationBranchedFromProjectRootId === null || variationBranchedFromAssetId === null
+    || variationMapStatus === null || variationMapSha256 === undefined
+    || (componentMapSha256 !== null && !/^[0-9a-f]{64}$/.test(componentMapSha256))
+    || (variationMapSha256 !== null && !/^[0-9a-f]{64}$/.test(variationMapSha256))
+  ) return null;
+  return {
+    ...base,
+    source_design_version: sourceDesignVersion,
+    source_sha256: sourceSha256,
+    guarded_active_asset_id: guardedActiveAssetId,
+    guarded_active_design_version: guardedActiveDesignVersion,
+    child_project_root_id: childProjectRootId,
+    child_family_id: childFamilyId,
+    child_variation_index: childVariationIndex,
+    child_branched_from_project_root_id: childBranchedFromProjectRootId,
+    child_branched_from_asset_id: childBranchedFromAssetId,
+    child_asset_id: childAssetId,
+    child_design_id: childDesignId,
+    child_design_version: childDesignVersion,
+    child_sha256: childSha256,
+    component_map_status: componentMapStatus,
+    component_map_sha256: componentMapSha256,
+    variation: {
+      project_root_id: variationProjectRootId,
+      asset_id: variationAssetId,
+      design_id: variationDesignId,
+      design_version: variationDesignVersion,
+      family_id: variationFamilyId,
+      variation_index: variationIndex,
+      branched_from_project_root_id: variationBranchedFromProjectRootId,
+      branched_from_asset_id: variationBranchedFromAssetId,
+      component_map_status: variationMapStatus,
+      component_map_sha256: variationMapSha256,
+    },
+  };
+};
+
 export const decodeCommitCreativeDirectionsResult: Decoder<CommitCreativeDirectionsResult> = (value) => {
   if (!isRecord(value) || !Array.isArray(value.retained_variations)) return null;
   const project = decodeProjectDetail(value.project);
@@ -1157,6 +1281,7 @@ export const decodeStudioHistoryRevision: Decoder<StudioHistoryRevision> = (valu
   const revision = number(value.revision);
   const assetId = nullableText(value.asset_id);
   const imageUrl = nullableText(value.image_url);
+  const sha256 = nullableText(value.sha256);
   const capability = nullableText(value.capability);
   const action = value.action === 'created' || value.action === 'edit' || value.action === 'restore'
     ? value.action
@@ -1167,6 +1292,7 @@ export const decodeStudioHistoryRevision: Decoder<StudioHistoryRevision> = (valu
   const createdAt = nullableText(value.created_at);
   if (
     revision === null || revision < 1 || assetId === null || imageUrl === null
+    || sha256 === null || !/^[0-9a-f]{64}$/.test(sha256)
     || capability === null || action === null || rawIntent === null
     || interpretation === null || changeSummary === null || createdAt === null
   ) return null;
@@ -1177,6 +1303,7 @@ export const decodeStudioHistoryRevision: Decoder<StudioHistoryRevision> = (valu
     design_version: number(value.design_version),
     capability,
     image_url: imageUrl,
+    sha256,
     pinned: boolean(value.pinned),
     action,
     raw_intent: rawIntent,
@@ -5191,6 +5318,37 @@ export function createTrustedApiClient(options: TrustedApiClientOptions) {
             created_by: request.created_by,
             expected_active_asset_id: request.expected_active_asset_id,
             expected_design_version: request.expected_design_version ?? null,
+            label: request.label,
+            operation_id: request.operation_id,
+          }),
+        },
+      );
+      if (result.error !== null) return result;
+      return {
+        ...result,
+        data: {
+          ...result.data,
+          project: projectWithUrls(result.data.project, baseUrl),
+        },
+      };
+    },
+
+    async saveRevisionAsVariation(
+      projectRootId: string,
+      sourceAssetId: string,
+      request: SaveRevisionAsVariationRequest,
+    ): Promise<ApiResult<SaveRevisionAsVariationResult>> {
+      const result = await call(
+        `/studio/projects/${encodeURIComponent(projectRootId)}/revisions/${encodeURIComponent(sourceAssetId)}/variations`,
+        decodeSaveRevisionAsVariationResult,
+        {
+          method: 'POST',
+          body: encodeBody({
+            created_by: request.created_by,
+            expected_active_asset_id: request.expected_active_asset_id,
+            expected_active_design_version: request.expected_active_design_version,
+            expected_source_design_version: request.expected_source_design_version,
+            expected_source_sha256: request.expected_source_sha256,
             label: request.label,
             operation_id: request.operation_id,
           }),

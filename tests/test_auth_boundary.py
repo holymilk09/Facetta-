@@ -21,7 +21,8 @@ from sqlalchemy.pool import StaticPool
 from conftest import HALO_SPEC
 from facetta.db import (
     ApprovalChecklist, ApprovalResponse, Base, Design, DesignFamily,
-    FeedbackEvent, ImageAsset, ImageRun, Project, get_db, utcnow,
+    FeedbackEvent, ImageAsset, ImageRun, Project,
+    StudioVariationDecisionRecord, get_db, utcnow,
 )
 from facetta.auth import validate_auth_configuration
 from facetta.creative_workflow import get_creative_prompt_generator
@@ -252,6 +253,73 @@ def test_cross_owner_project_read_is_denied(auth_client):
     )
     assert response.status_code == 403
     assert response.json()["detail"]["code"] == "project_access_denied"
+
+
+def test_vary_routes_reject_foreign_principal_or_actor_without_rows(auth_client):
+    client, Session = auth_client
+    with Session() as db:
+        before = (
+            db.scalar(select(func.count()).select_from(Project)),
+            db.scalar(select(func.count()).select_from(ImageAsset)),
+            db.scalar(select(func.count()).select_from(
+                StudioVariationDecisionRecord
+            )),
+        )
+    body = {
+        "created_by": "usr_owner",
+        "expected_active_asset_id": "ast_auth_root",
+        "expected_design_version": None,
+        "label": "Unauthorized sibling",
+        "operation_id": "vary:auth-boundary-0001",
+    }
+    foreign = client.post(
+        "/studio/projects/ast_auth_root/variations",
+        headers={"Authorization": f"Bearer {OTHER_TOKEN}"},
+        json=body,
+    )
+    assert foreign.status_code == 403
+    assert foreign.json()["detail"]["code"] == "project_access_denied"
+    spoofed = client.post(
+        "/studio/projects/ast_auth_root/variations",
+        headers={"Authorization": f"Bearer {OWNER_TOKEN}"},
+        json={**body, "created_by": "usr_other"},
+    )
+    assert spoofed.status_code == 403
+    assert spoofed.json()["detail"]["code"] == "principal_actor_mismatch"
+    revision_body = {
+        "created_by": "usr_owner",
+        "expected_active_asset_id": "ast_auth_root",
+        "expected_active_design_version": None,
+        "expected_source_design_version": None,
+        "expected_source_sha256": hashlib.sha256(b"auth-image").hexdigest(),
+        "label": "Unauthorized historical sibling",
+        "operation_id": "vary:auth-revision-0001",
+    }
+    foreign_revision = client.post(
+        "/studio/projects/ast_auth_root/revisions/ast_auth_root/variations",
+        headers={"Authorization": f"Bearer {OTHER_TOKEN}"},
+        json=revision_body,
+    )
+    assert foreign_revision.status_code == 403
+    assert foreign_revision.json()["detail"]["code"] == "project_access_denied"
+    spoofed_revision = client.post(
+        "/studio/projects/ast_auth_root/revisions/ast_auth_root/variations",
+        headers={"Authorization": f"Bearer {OWNER_TOKEN}"},
+        json={**revision_body, "created_by": "usr_other"},
+    )
+    assert spoofed_revision.status_code == 403
+    assert spoofed_revision.json()["detail"]["code"] == (
+        "principal_actor_mismatch"
+    )
+    with Session() as db:
+        after = (
+            db.scalar(select(func.count()).select_from(Project)),
+            db.scalar(select(func.count()).select_from(ImageAsset)),
+            db.scalar(select(func.count()).select_from(
+                StudioVariationDecisionRecord
+            )),
+        )
+    assert after == before
 
 
 @pytest.mark.parametrize(

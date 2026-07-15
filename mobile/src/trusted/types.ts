@@ -274,6 +274,23 @@ export interface SaveCurrentAsVariationRequest extends SaveAsVariationRequest {
   operation_id: string;
 }
 
+/**
+ * Fork one canonical saved revision without first restoring it over the
+ * source Variation's active revision. The two expected bindings are
+ * intentionally independent: the active pair is the source-Variation CAS,
+ * while the source version and hash identify the immutable revision copied
+ * into the child.
+ */
+export interface SaveRevisionAsVariationRequest {
+  created_by: string;
+  expected_active_asset_id: string;
+  expected_active_design_version: number | null;
+  expected_source_design_version: number | null;
+  expected_source_sha256: string;
+  label: string;
+  operation_id: string;
+}
+
 /** The canonical Studio response after an immutable variation branch is made. */
 export interface SaveAsVariationResult {
   status: 'variation_created';
@@ -282,6 +299,39 @@ export interface SaveAsVariationResult {
   source_project_id: string;
   source_asset_id: string;
   project: ProjectDetail;
+}
+
+/** Atomic lineage proof returned when any exact saved revision is varied. */
+export interface RevisionVariationMemberProof {
+  project_root_id: string;
+  asset_id: string;
+  design_id: string | null;
+  design_version: number | null;
+  family_id: string;
+  variation_index: number;
+  branched_from_project_root_id: string;
+  branched_from_asset_id: string;
+  component_map_status: 'mapped' | 'unmapped';
+  component_map_sha256: string | null;
+}
+
+export interface SaveRevisionAsVariationResult extends SaveAsVariationResult {
+  source_design_version: number | null;
+  source_sha256: string;
+  guarded_active_asset_id: string;
+  guarded_active_design_version: number | null;
+  child_project_root_id: string;
+  child_family_id: string;
+  child_variation_index: number;
+  child_branched_from_project_root_id: string;
+  child_branched_from_asset_id: string;
+  child_asset_id: string;
+  child_design_id: string | null;
+  child_design_version: number | null;
+  child_sha256: string;
+  component_map_status: 'mapped' | 'unmapped';
+  component_map_sha256: string | null;
+  variation: RevisionVariationMemberProof;
 }
 
 /** One additional Create direction retained beside the selected Original. */
@@ -317,6 +367,8 @@ export interface StudioHistoryRevision {
   design_version: number | null;
   capability: string;
   image_url: string;
+  /** Digest of the immutable source bytes used by exact-revision actions. */
+  sha256: string;
   pinned: boolean;
   action: StudioRevisionAction;
   /** Exact designer input or catalog action that caused this revision. */

@@ -10,6 +10,12 @@ import {
   type StudioCollectionsApi,
 } from './StudioCollectionsWorkspace';
 import { AuthenticatedImageProvider } from '../AuthenticatedImage';
+import {
+  StudioVaryWorkspace, type StudioVariationLineage,
+} from './StudioVaryWorkspace';
+
+const REVISION_1_SHA256 = '1'.repeat(64);
+const REVISION_2_SHA256 = '2'.repeat(64);
 
 const project: ProjectDetail = {
   id: 'project_main', root_id: 'project_main', title: 'Sapphire orbit ring',
@@ -28,6 +34,7 @@ const history = {
     {
       revision: 1, asset_id: 'asset_1', parent_asset_id: null,
       design_version: 1, capability: 'SPEC_RENDER', image_url: 'https://test/revision-1.png',
+      sha256: REVISION_1_SHA256,
       pinned: false, action: 'created' as const, raw_intent: {}, interpretation: {},
       change_summary: 'Created the original direction.', restored_from_asset_id: null,
       created_by: 'usr_designer', created_at: '2026-07-12T01:00:00Z',
@@ -35,6 +42,7 @@ const history = {
     {
       revision: 2, asset_id: 'asset_2', parent_asset_id: 'asset_1',
       design_version: 2, capability: 'LOCALIZED_EDIT', image_url: 'https://test/revision-2.png',
+      sha256: REVISION_2_SHA256,
       pinned: false, action: 'edit' as const, raw_intent: {}, interpretation: {},
       change_summary: 'Changed the metal to rose gold.', restored_from_asset_id: null,
       created_by: 'usr_designer', created_at: '2026-07-12T02:00:00Z',
@@ -90,6 +98,7 @@ const callbacks = () => ({
   onProjectChanged: jest.fn(),
   onStartDesign: jest.fn(),
   onVaryCurrent: jest.fn(),
+  onVaryRevision: jest.fn(),
   onContinueRefining: jest.fn(),
   destinationContext: {
     activeProjectId: project.root_id,
@@ -325,7 +334,135 @@ describe('StudioCollectionsWorkspace', () => {
     expect(screen.getAllByText('Original direction · Design facts confirmed').length).toBeGreaterThan(0);
     expect(screen.getAllByText('Refined from Revision 1 · Design facts confirmed').length).toBeGreaterThan(0);
     expect(screen.getAllByText('Jul 12, 2026').length).toBeGreaterThan(0);
+    expect(screen.queryByText('Vary from Revision 2')).toBeNull();
+    await fireEvent.press(screen.getByText('Vary from Revision 1'));
+    expect(handlers.onVaryRevision).toHaveBeenCalledWith({
+      mode: 'saved_revision',
+      projectId: 'project_main',
+      sourceAssetId: 'asset_1',
+      sourceDesignVersion: 1,
+      sourceSha256: REVISION_1_SHA256,
+      sourceRevision: 1,
+      expectedActiveAssetId: 'asset_2',
+      expectedActiveDesignVersion: 2,
+    });
+    expect(client.restoreStudioRevision).not.toHaveBeenCalled();
     expect(screen.queryByText(/project_main|project_white|asset_1|asset_2|family_orbit|design_ring/i)).toBeNull();
+  });
+
+  test('compares, varies Revision 1, names the child, and reloads family lineage without Restore', async () => {
+    const childAsset = {
+      asset_id: 'asset_history_branch', root_id: 'project_history_branch',
+      parent_asset_id: null, capability: 'VARIATION_BRANCH',
+      provenance: 'studio_variation_branch', revision: 1, design_id: 'design_child',
+      design_version: 1, region: null, instruction: null, drift: null, pinned: false,
+      media_type: 'image/png', sha256: REVISION_1_SHA256,
+      image_url: 'https://test/branch.png', created_by: 'usr_designer',
+      created_at: '2026-07-12T04:00:00Z', legacy_provenance: false,
+    };
+    const childProject: ProjectDetail = {
+      ...project,
+      id: 'project_history_branch', root_id: 'project_history_branch',
+      title: 'Earlier geometry study', design_id: 'design_child',
+      active_asset_id: childAsset.asset_id, active_design_version: 1,
+      active_revision: childAsset, revisions: [{
+        revision: 1, asset: childAsset, spec_version: 1, spec_change: [],
+        ignored_fields: [], qa: null, routing: null, created_at: childAsset.created_at,
+      }],
+      assets: [childAsset], primary_revision_count: 1, cover_asset_id: childAsset.asset_id,
+    };
+    const childHistory = {
+      project_id: childProject.root_id, family_id: 'family_orbit', variation_index: 3,
+      variation_label: 'Earlier geometry study', active_asset_id: childAsset.asset_id,
+      revisions: [{
+        revision: 1, asset_id: childAsset.asset_id, parent_asset_id: null,
+        design_version: 1, capability: 'VARIATION_BRANCH',
+        image_url: childAsset.image_url!, sha256: REVISION_1_SHA256,
+        pinned: false, action: 'created' as const, raw_intent: {}, interpretation: {},
+        change_summary: 'Varied directly from Revision 1.', restored_from_asset_id: null,
+        created_by: 'usr_designer', created_at: childAsset.created_at!,
+      }],
+    };
+    const familyWithChild = {
+      ...family,
+      variations: [...family.variations, {
+        ...family.variations[1], root_id: childProject.root_id,
+        title: childProject.title, cover_asset_id: childAsset.asset_id,
+        variation_index: 3, variation_label: 'Earlier geometry study',
+        branched_from_project_root_id: project.root_id,
+        branched_from_asset_id: 'asset_1',
+      }],
+    };
+    const getStudioProjectHistory = jest.fn(async (projectId: string) => ({
+      data: projectId === childProject.root_id ? childHistory : history,
+      error: null,
+      status: 200,
+    }));
+    const getDesignFamily = jest.fn(async () => ({
+      data: familyWithChild, error: null, status: 200,
+    }));
+    const restoreStudioRevision = jest.fn();
+    const collectionsApi = api({
+      getStudioProjectHistory, getDesignFamily, restoreStudioRevision,
+    });
+    const saveRevisionAsVariation = jest.fn(async () => ({
+      data: { project: childProject }, error: null, status: 201,
+    }));
+
+    function HistoricalVaryHarness() {
+      const [selectedProject, setSelectedProject] = React.useState(project);
+      const [lineage, setLineage] = React.useState<StudioVariationLineage | null>(null);
+      if (lineage !== null) {
+        return (
+          <StudioVaryWorkspace
+            gateway={{ saveRevisionAsVariation } as any}
+            lineage={lineage}
+            createdBy="usr_designer"
+            onCreated={(created) => {
+              setSelectedProject(created);
+              setLineage(null);
+            }}
+            createOperationId={() => 'vary:history-flow-0001'}
+          />
+        );
+      }
+      return (
+        <StudioCollectionsWorkspace
+          api={collectionsApi}
+          project={selectedProject}
+          createdBy="usr_designer"
+          onOpenProject={jest.fn()}
+          onProjectChanged={setSelectedProject}
+          onStartDesign={jest.fn()}
+          onVaryCurrent={jest.fn()}
+          onVaryRevision={setLineage}
+        />
+      );
+    }
+
+    await render(<HistoricalVaryHarness />);
+    await fireEvent.press(await screen.findByLabelText('Show revision history (2)'));
+    await fireEvent.press(screen.getByLabelText('Compare revision 1'));
+    await fireEvent.press(screen.getByLabelText('Compare revision 2'));
+    expect(screen.getByText('Comparing revision 1 and revision 2')).toBeTruthy();
+
+    await fireEvent.press(screen.getByText('Vary from Revision 1'));
+    expect(screen.getByText('Revision 1')).toBeTruthy();
+    await fireEvent.changeText(screen.getByLabelText('Variation name'), 'Earlier geometry study');
+    await fireEvent.press(screen.getByText('Create variation'));
+
+    await waitFor(() => expect(saveRevisionAsVariation).toHaveBeenCalledWith({
+      projectId: project.root_id, sourceAssetId: 'asset_1', sourceDesignVersion: 1,
+      sourceSha256: REVISION_1_SHA256, expectedActiveAssetId: 'asset_2',
+      expectedActiveDesignVersion: 2, createdBy: 'usr_designer',
+      label: 'Earlier geometry study', operationId: 'vary:history-flow-0001',
+    }));
+    expect(restoreStudioRevision).not.toHaveBeenCalled();
+    await waitFor(() => expect(getStudioProjectHistory).toHaveBeenCalledWith(
+      childProject.root_id,
+    ));
+    await waitFor(() => expect(getDesignFamily).toHaveBeenCalledTimes(2));
+    expect(await screen.findByLabelText('Open Earlier geometry study')).toBeTruthy();
   });
 
   test('keeps saved client, marketing, and view outputs discoverable beside their exact revision', async () => {
@@ -608,6 +745,7 @@ describe('StudioCollectionsWorkspace', () => {
             onProjectChanged={setCurrentProject}
             onStartDesign={jest.fn()}
             onVaryCurrent={jest.fn()}
+            onVaryRevision={jest.fn()}
             onContinueRefining={jest.fn()}
             destinationContext={{
               activeProjectId: currentProject.root_id,

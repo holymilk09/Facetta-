@@ -24,6 +24,7 @@ import type { StudioGateway } from './gateway';
 import { StudioComparisonInspector } from './StudioComparisonInspector';
 import { StudioDestinationChooser } from './StudioDestinationChooser';
 import type { StudioDestinationContext, StudioDestinationId } from './destinations';
+import type { StudioVariationLineage } from './StudioVaryWorkspace';
 
 export type StudioCollectionsApi = Pick<StudioGateway,
   | 'getDesignFamily'
@@ -43,6 +44,8 @@ export interface StudioCollectionsWorkspaceProps {
   onStartDesign: () => void;
   /** Opens the canonical Vary workspace for the currently active project. */
   onVaryCurrent: () => void;
+  /** Opens Vary with an exact saved-history source and an independent active CAS. */
+  onVaryRevision: (lineage: StudioVariationLineage) => void;
   /** Returns the selected exact variation to the canonical Refine workspace. */
   onContinueRefining?: () => void;
   /** One registry-driven handoff for the currently active immutable revision. */
@@ -204,6 +207,7 @@ export function StudioCollectionsWorkspace({
   onProjectChanged,
   onStartDesign,
   onVaryCurrent,
+  onVaryRevision,
   onContinueRefining,
   destinationContext,
   onSelectDestination,
@@ -767,14 +771,34 @@ export function StudioCollectionsWorkspace({
                       </Text>
                     </Pressable>
                     {!active && (
-                      <Button
-                        title={restoringAssetId === revision.asset_id
-                          ? 'Restoring…'
-                          : `Restore revision ${revision.revision} as new`}
-                        kind="ghost"
-                        disabled={restoringAssetId !== null || project.active_asset_id === null}
-                        onPress={() => { void restoreRevision(revision); }}
-                      />
+                      <>
+                        <Button
+                          title={`Vary from Revision ${revision.revision}`}
+                          kind="ghost"
+                          disabled={project.active_asset_id === null}
+                          onPress={() => {
+                            if (project.active_asset_id === null) return;
+                            onVaryRevision({
+                              mode: 'saved_revision',
+                              projectId: project.root_id,
+                              sourceAssetId: revision.asset_id,
+                              sourceDesignVersion: revision.design_version,
+                              sourceSha256: revision.sha256,
+                              sourceRevision: revision.revision,
+                              expectedActiveAssetId: project.active_asset_id,
+                              expectedActiveDesignVersion: project.active_design_version,
+                            });
+                          }}
+                        />
+                        <Button
+                          title={restoringAssetId === revision.asset_id
+                            ? 'Restoring…'
+                            : `Restore revision ${revision.revision} as new`}
+                          kind="ghost"
+                          disabled={restoringAssetId !== null || project.active_asset_id === null}
+                          onPress={() => { void restoreRevision(revision); }}
+                        />
+                      </>
                     )}
                   </View>
                 </View>

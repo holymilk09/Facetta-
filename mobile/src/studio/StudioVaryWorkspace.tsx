@@ -6,16 +6,25 @@ import {
 import { createClientOperationId } from '../operationId';
 import { radius, theme } from '../theme';
 import type { ProjectDetail } from '../trusted/types';
-import type { StudioGateway, StudioVariationRequest } from './gateway';
+import type { StudioGateway } from './gateway';
 import { designerErrorMessage } from './designerErrorMessage';
 import { StudioDestinationChooser } from './StudioDestinationChooser';
 import type { StudioDestinationContext, StudioDestinationId } from './destinations';
 
-export type StudioVariationLineage = Pick<StudioVariationRequest,
-  'projectId' | 'sourceAssetId' | 'sourceDesignVersion'>;
+export interface StudioVariationLineage {
+  mode: 'current' | 'saved_revision';
+  projectId: string;
+  sourceAssetId: string;
+  sourceDesignVersion: number | null;
+  sourceSha256: string;
+  expectedActiveAssetId: string;
+  expectedActiveDesignVersion: number | null;
+  /** Designer-facing immutable history number, never inferred from array order. */
+  sourceRevision: number;
+}
 
 export interface StudioVaryWorkspaceProps {
-  gateway: Pick<StudioGateway, 'saveCurrentAsVariation'>;
+  gateway: Pick<StudioGateway, 'saveRevisionAsVariation'>;
   lineage: StudioVariationLineage | null;
   createdBy: string;
   onCreated: (project: ProjectDetail) => void;
@@ -36,7 +45,17 @@ export function StudioVaryWorkspace({
 }: StudioVaryWorkspaceProps) {
   const lineageKey = lineage === null
     ? 'none'
-    : `${createdBy}:${lineage.projectId}:${lineage.sourceAssetId}:${lineage.sourceDesignVersion ?? 'none'}`;
+    : [
+      createdBy,
+      lineage.mode,
+      lineage.projectId,
+      lineage.sourceAssetId,
+      lineage.sourceDesignVersion ?? 'none',
+      lineage.sourceRevision,
+      lineage.sourceSha256,
+      lineage.expectedActiveAssetId,
+      lineage.expectedActiveDesignVersion ?? 'none',
+    ].join(':');
   const operationRef = useRef<{ key: string; id: string } | null>(null);
   if (operationRef.current === null) {
     operationRef.current = { key: lineageKey, id: createOperationId() };
@@ -69,8 +88,13 @@ export function StudioVaryWorkspace({
     const operationId = operationRef.current!.id;
     setBusyKey(requestLineageKey);
     setErrorState(null);
-    const result = await gateway.saveCurrentAsVariation({
-      ...lineage,
+    const result = await gateway.saveRevisionAsVariation({
+      projectId: lineage.projectId,
+      sourceAssetId: lineage.sourceAssetId,
+      sourceDesignVersion: lineage.sourceDesignVersion,
+      sourceSha256: lineage.sourceSha256,
+      expectedActiveAssetId: lineage.expectedActiveAssetId,
+      expectedActiveDesignVersion: lineage.expectedActiveDesignVersion,
       createdBy,
       label: nextLabel,
       operationId,
@@ -121,7 +145,12 @@ export function StudioVaryWorkspace({
       </Text>
       <View style={styles.sourceCard}>
         <Text style={styles.sourceLabel}>Starting point</Text>
-        <Text style={styles.sourceValue}>Current saved revision</Text>
+        <Text style={styles.sourceValue}>Revision {lineage.sourceRevision}</Text>
+        <Text style={styles.sourceDetail}>
+          {lineage.mode === 'saved_revision'
+            ? 'Copied directly from saved history. The source Variation stays on its current revision.'
+            : 'The current saved revision of this Variation.'}
+        </Text>
       </View>
       <Text style={styles.fieldLabel}>Variation name</Text>
       <TextInput
@@ -157,6 +186,7 @@ const styles = StyleSheet.create({
   sourceCard: { borderWidth: 1, borderColor: theme.line, borderRadius: radius.md, backgroundColor: theme.card, padding: 14, marginTop: 22 },
   sourceLabel: { color: theme.faint, fontSize: 10, fontWeight: '700', letterSpacing: 0.7, textTransform: 'uppercase' },
   sourceValue: { color: theme.ink, fontSize: 14, fontWeight: '700', marginTop: 5 },
+  sourceDetail: { color: theme.faint, fontSize: 12, lineHeight: 17, marginTop: 5 },
   fieldLabel: { color: theme.ink, fontSize: 13, fontWeight: '700', marginTop: 20 },
   input: { borderWidth: 1, borderColor: theme.line, borderRadius: radius.md, backgroundColor: theme.card, color: theme.ink, fontSize: 15, padding: 14, marginTop: 8 },
   error: { color: theme.danger, fontSize: 12, lineHeight: 17, marginTop: 12 },

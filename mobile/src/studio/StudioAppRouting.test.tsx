@@ -157,6 +157,7 @@ jest.mock('./StudioCreateWorkspace', () => {
               revision: 1, design_id: null, design_version: null, region: null,
               instruction: 'Saved direction', drift: null, pinned: false,
               media_type: 'image/png',
+              sha256: '1'.repeat(64),
               image_url: `${DEFAULT_API_URL.replace(/\/$/, '')}/assets/asset_1/image`,
               created_by: 'usr_designer', created_at: null, legacy_provenance: false,
             },
@@ -166,6 +167,7 @@ jest.mock('./StudioCreateWorkspace', () => {
               revision: 1, design_id: null, design_version: null, region: null,
               instruction: 'Saved direction', drift: null, pinned: false,
               media_type: 'image/png',
+              sha256: '1'.repeat(64),
               image_url: `${DEFAULT_API_URL.replace(/\/$/, '')}/assets/asset_1/image`,
               created_by: 'usr_designer', created_at: null, legacy_provenance: false,
             }], derived_assets: [],
@@ -257,6 +259,7 @@ jest.mock('./StudioCollectionsWorkspace', () => {
       onOpenProject,
       onStartDesign,
       onVaryCurrent,
+      onVaryRevision,
       onContinueRefining,
       destinationContext,
       onSelectDestination,
@@ -282,6 +285,20 @@ jest.mock('./StudioCollectionsWorkspace', () => {
         Pressable,
         { accessibilityRole: 'button', onPress: onVaryCurrent },
         ReactLocal.createElement(Text, null, `Vary exact ${project?.root_id ?? 'none'}`),
+      ),
+      project === null ? null : ReactLocal.createElement(
+        Pressable,
+        {
+          accessibilityRole: 'button',
+          onPress: () => onVaryRevision({
+            mode: 'saved_revision', projectId: project.root_id,
+            sourceAssetId: 'asset_history_1', sourceDesignVersion: 1,
+            sourceSha256: '1'.repeat(64), sourceRevision: 1,
+            expectedActiveAssetId: project.active_asset_id,
+            expectedActiveDesignVersion: project.active_design_version,
+          }),
+        },
+        ReactLocal.createElement(Text, null, 'Vary from mocked Revision 1'),
       ),
       ReactLocal.createElement(
         Pressable,
@@ -312,12 +329,21 @@ jest.mock('./StudioCollectionsWorkspace', () => {
 
 jest.mock('./StudioVaryWorkspace', () => {
   const ReactLocal = require('react');
-  const { Text } = require('react-native');
+  const { Text, View } = require('react-native');
   return {
     StudioVaryWorkspace: ({ lineage }: any) => ReactLocal.createElement(
-      Text,
+      View,
       null,
-      `Vary route reached for ${lineage?.projectId ?? 'none'} via ${lineage?.sourceAssetId ?? 'none'}`,
+      ReactLocal.createElement(
+        Text,
+        null,
+        `Vary route reached for ${lineage?.projectId ?? 'none'} via ${lineage?.sourceAssetId ?? 'none'}`,
+      ),
+      ReactLocal.createElement(
+        Text,
+        null,
+        lineage === null ? 'No Vary source' : `Starting Revision ${lineage.sourceRevision}`,
+      ),
     ),
   };
 });
@@ -366,6 +392,7 @@ jest.mock('./StudioConfirmWorkspace', () => {
             design_id: 'design_1', design_version: 1, region: null,
             instruction: 'Confirmed direction', drift: null, pinned: false,
             media_type: 'image/png', image_url: null, created_by: 'usr_designer',
+            sha256: '2'.repeat(64),
             created_at: null, legacy_provenance: false,
           },
           pinned_revision: mockConfirmedFactoryReady ? {
@@ -374,6 +401,7 @@ jest.mock('./StudioConfirmWorkspace', () => {
             design_id: 'design_1', design_version: 1, region: null,
             instruction: 'Confirmed direction', drift: null, pinned: true,
             media_type: 'image/png', image_url: null, created_by: 'usr_designer',
+            sha256: '2'.repeat(64),
             created_at: null, legacy_provenance: false,
           } : null, revisions: [], assets: [], derived_assets: [],
           approval: null, factory_ready: mockConfirmedFactoryReady, factory_blockers: [],
@@ -422,6 +450,7 @@ const hydratedProject = {
     design_id: 'design_hydrated', design_version: 2, region: null,
     instruction: 'Hydrated design', drift: null, pinned: false,
     media_type: 'image/png', image_url: null, created_by: 'usr_designer',
+    sha256: 'a'.repeat(64),
     created_at: null, legacy_provenance: false,
   },
   pinned_revision: null, revisions: [{
@@ -825,7 +854,11 @@ test('active design actions keep the exact saved revision visible and link to Hi
   for (const action of ['Save as a variation', 'Present this design', 'Refine this design']) {
     await pressStudioAction(view, action);
     expect(await view.findByTestId('active-design-context')).toBeTruthy();
-    expect(view.getByText('Current saved revision · Revision 1')).toBeTruthy();
+    if (action === 'Save as a variation') {
+      expect(view.getAllByText('Starting Revision 1').length).toBeGreaterThanOrEqual(1);
+    } else {
+      expect(view.getByText('Current saved revision · Revision 1')).toBeTruthy();
+    }
   }
 
   fireEvent.press(await view.findByText('Review starting design'));
@@ -1039,6 +1072,22 @@ test('Collections delegates variation creation to Studio Vary with the exact act
   fireEvent.press(view.getAllByText('Collections').at(-1)!);
   fireEvent.press(await view.findByText('Vary exact project_1'));
   expect(await view.findByText('Vary route reached for project_1 via asset_1')).toBeTruthy();
+  expect((await view.findAllByText('Starting Revision 1')).length).toBeGreaterThanOrEqual(1);
+});
+
+test('Collections routes a historical revision to canonical Vary without restoring it first', async () => {
+  authenticate();
+  const view = await render(<App />);
+
+  await fireEvent.press(await view.findByText('Start from an idea or reference'));
+  await fireEvent.press(await view.findByText('Save mocked direction'));
+  fireEvent.press(view.getAllByText('Collections').at(-1)!);
+  fireEvent.press(await view.findByText('Vary from mocked Revision 1'));
+
+  expect(await view.findByText(
+    'Vary route reached for project_1 via asset_history_1',
+  )).toBeTruthy();
+  expect(view.getAllByText('Starting Revision 1').length).toBeGreaterThanOrEqual(1);
 });
 
 test('Collections returns the selected exact revision to Refine', async () => {
