@@ -214,6 +214,9 @@ def _fixture(tmp_path: Path) -> dict[str, Any]:
             },
             "captured_attempt_count": 1_044,
             "expected_evaluation_count": 1_044,
+            "execution_ready_evaluation_count": 1_044,
+            "not_applicable_evaluation_count": 0,
+            "not_applicable_assignments": [],
             "completed_evaluation_count": 1_044,
             "integrity_source_count": 144,
             "quality_source_count": 58,
@@ -313,7 +316,21 @@ def _fixture(tmp_path: Path) -> dict[str, Any]:
         "evidence_root": evidence_root,
         "gia_review_packet": gia_review_packet,
         "gia_review_ledger": gia_review_ledger,
+        "founder_private_key": private_key,
     }
+
+
+def _resign_founder_approval(paths: dict[str, Any]) -> None:
+    approval = json.loads(paths["approval"].read_text())
+    approval["results_sha256"] = _sha(paths["results"])
+    approval.pop("signature", None)
+    approval["signature"] = {
+        "algorithm": "Ed25519", "key_id": "founder-v1",
+        "value": base64.b64encode(paths["founder_private_key"].sign(
+            canonical_founder_approval_payload(approval)
+        )).decode("ascii"),
+    }
+    _json(paths["approval"], approval)
 
 
 def _run(
@@ -397,8 +414,100 @@ def test_exact_recomputed_founder_decision_passes_corpus_gate_only(
         "integrity_source_count": 144,
         "quality_source_count": 58,
         "quality_assignment_count": 1_044,
+        "execution_ready_quality_assignment_count": 1_044,
+        "not_applicable_quality_assignment_count": 0,
     }
+    assert result["gate_bindings"]["not_applicable_projection_sha256"] == (
+        hashlib.sha256(b"[]").hexdigest()
+    )
     assert len(result["gate_bindings"]["implementation_pins_sha256"]) == 64
+
+
+def test_release_accepts_selected_review_scope_and_retains_not_applicable_proof(
+    tmp_path: Path,
+    monkeypatch,
+):
+    paths = _fixture(tmp_path)
+    not_applicable = {
+        "kind": "edit",
+        "evaluation_id": "evaluation-18",
+        "operation_class": "structural",
+        "source_filename": "image-57.jpg",
+        "source_sha256": "1" * 64,
+        "resolved_inputs_sha256": "2" * 64,
+        "reason": "reviewed source has no eligible structural target",
+        "review_evidence_sha256": "3" * 64,
+    }
+    results = json.loads(paths["results"].read_text())
+    quality = results["quality"]
+    quality["execution_ready_evaluation_count"] = 1_043
+    quality["not_applicable_evaluation_count"] = 1
+    quality["not_applicable_assignments"] = [not_applicable]
+    quality["blind_review"]["decisions"] = quality["blind_review"][
+        "decisions"
+    ][:1_043]
+    quality["blind_review"]["accepted_count"] = 1_043
+    quality["persistence_attestation"]["bindings"]["result_count"] = 1_043
+    _json(paths["results"], results)
+    _resign_founder_approval(paths)
+
+    monkeypatch.setattr(
+        frozen_corpus_release,
+        "compile_frozen_corpus_gate",
+        lambda *args, **kwargs: json.loads(paths["results"].read_text()),
+    )
+
+    passed = _run(paths)
+    assert passed["corpus_gate_ready"] is True
+    assert passed["gate_bindings"]["derived_scope"] == {
+        "integrity_source_count": 144,
+        "quality_source_count": 58,
+        "quality_assignment_count": 1_044,
+        "execution_ready_quality_assignment_count": 1_043,
+        "not_applicable_quality_assignment_count": 1,
+    }
+    assert passed["gate_bindings"]["not_applicable_projection_sha256"] == (
+        hashlib.sha256(json.dumps(
+            [not_applicable],
+            ensure_ascii=False,
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode("utf-8")).hexdigest()
+    )
+
+    results = json.loads(paths["results"].read_text())
+    results["quality"]["not_applicable_assignments"][0]["kind"] = "render"
+    _json(paths["results"], results)
+    _resign_founder_approval(paths)
+    render_not_applicable = _run(paths)
+    assert render_not_applicable["corpus_gate_ready"] is False
+    assert any(
+        "not-applicable assignment projection is incomplete" in error
+        for error in render_not_applicable["errors"]
+    )
+
+    results = json.loads(paths["results"].read_text())
+    results["quality"]["not_applicable_assignments"] = []
+    _json(paths["results"], results)
+    _resign_founder_approval(paths)
+    missing_not_applicable = _run(paths)
+    assert missing_not_applicable["corpus_gate_ready"] is False
+    assert any(
+        "not-applicable assignment projection is incomplete" in error
+        for error in missing_not_applicable["errors"]
+    )
+
+    results["quality"]["not_applicable_assignments"] = [not_applicable]
+    results["quality"]["blind_review"]["decisions"].pop()
+    results["quality"]["blind_review"]["accepted_count"] = 1_042
+    _json(paths["results"], results)
+    _resign_founder_approval(paths)
+    missing_executed_review = _run(paths)
+    assert missing_executed_review["corpus_gate_ready"] is False
+    assert any(
+        "blind GIA criterion review is not a clean pass" in error
+        for error in missing_executed_review["errors"]
+    )
 
 
 def test_synthetic_verified_summaries_without_raw_evidence_fail_closed(

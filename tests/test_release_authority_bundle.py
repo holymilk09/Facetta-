@@ -282,6 +282,7 @@ def _build_fixture(
     }
     operational_fields = {
         "canonical_api_runner": "canonical_api_runner_public_key",
+        "assignment_reviewer": "assignment_reviewer_public_key",
         "gia_reviewer": "reviewer_public_key",
         "founder": "founder_public_key",
         "jewelry_designer": "designer_reviewer_public_key",
@@ -303,7 +304,7 @@ def _build_fixture(
     return BundleFixture(root=root, config=config, paths=paths)
 
 
-def test_verifies_all_six_roles_and_returns_only_opaque_facts_and_digests(
+def test_verifies_all_seven_roles_and_returns_only_opaque_facts_and_digests(
     tmp_path: Path,
 ) -> None:
     fixture = _build_fixture(tmp_path)
@@ -326,6 +327,40 @@ def test_verifies_all_six_roles_and_returns_only_opaque_facts_and_digests(
         "BEGIN PUBLIC KEY",
     ):
         assert forbidden not in serialized
+
+
+def test_v2_bundle_contract_requires_exact_seven_role_coverage(
+    tmp_path: Path,
+) -> None:
+    fixture = _build_fixture(tmp_path)
+    assert BUNDLE_CONFIG_SCHEMA == "facetta-release-authority-bundle-config.v2"
+    assert BUNDLE_DECISION_SCHEMA == "facetta-release-authority-bundle-decision.v2"
+    assert len(REQUIRED_ROLES) == 7
+    assert "assignment_reviewer" in REQUIRED_ROLES
+
+    legacy = deepcopy(fixture.config)
+    legacy["release_authority_bundle"]["schema_version"] = (
+        "facetta-release-authority-bundle-config.v1"
+    )
+    legacy_result = verify_release_authority_bundle(legacy, fixture.root, NOW)
+    assert legacy_result["status"] == "fail"
+    assert legacy_result["errors"] == [
+        "release authority bundle artifact schema is invalid",
+    ]
+
+    incomplete = deepcopy(fixture.config)
+    incomplete["release_authority_bundle"]["authorities"].pop(
+        "assignment_reviewer",
+    )
+    incomplete_result = verify_release_authority_bundle(
+        incomplete,
+        fixture.root,
+        NOW,
+    )
+    assert incomplete_result["status"] == "fail"
+    assert incomplete_result["errors"] == [
+        "release authority bundle artifact schema is invalid",
+    ]
 
 
 @pytest.mark.parametrize("config", [{}, {"executor_trust": {"status": "enrolled"}}])
@@ -411,6 +446,24 @@ def test_wrong_gia_qualification_code_method_or_policy_is_rejected(
     assert any("qualification" in error for error in result["errors"])
 
 
+def test_assignment_reviewer_requires_frozen_assignment_qualification(
+    tmp_path: Path,
+) -> None:
+    fixture = _build_fixture(
+        tmp_path,
+        wrong_qualification_field=(
+            "assignment_reviewer",
+            "qualification_code",
+            "generic_reviewer",
+        ),
+    )
+
+    result = verify_release_authority_bundle(fixture.config, fixture.root, NOW)
+
+    assert result["status"] == "fail"
+    assert result["errors"] == ["qualification code is not authorized"]
+
+
 def test_status_signer_cannot_reuse_release_authority_key(tmp_path: Path) -> None:
     fixture = _build_fixture(tmp_path, status_signer_collision=True)
     result = verify_release_authority_bundle(fixture.config, fixture.root, NOW)
@@ -446,6 +499,19 @@ def test_missing_operational_signer_fails_closed(tmp_path: Path) -> None:
 
     assert result["status"] == "fail"
     assert result["errors"] == ["founder operational signer config is absent"]
+
+
+def test_assignment_reviewer_operational_signer_is_required(tmp_path: Path) -> None:
+    fixture = _build_fixture(tmp_path)
+    config = deepcopy(fixture.config)
+    config["assignment_reviewer_public_key"] = None
+
+    result = verify_release_authority_bundle(config, fixture.root, NOW)
+
+    assert result["status"] == "fail"
+    assert result["errors"] == [
+        "assignment_reviewer operational signer config is absent",
+    ]
 
 
 def test_status_sequence_below_configured_minimum_is_rollback(tmp_path: Path) -> None:

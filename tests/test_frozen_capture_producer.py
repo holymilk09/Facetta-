@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import hashlib
 import json
 import subprocess
@@ -10,6 +11,10 @@ import pytest
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
+from facetta.frozen_assignment_contract import (
+    SIGNED_ASSIGNMENT_BUNDLE_SCHEMA,
+    canonical_assignment_bundle_payload,
+)
 from facetta.frozen_capture_producer import (
     BundleCaptureExecutor,
     Ed25519PrivateKeySigner,
@@ -60,6 +65,58 @@ def _public_bytes(key: Ed25519PrivateKey) -> bytes:
         encoding=serialization.Encoding.Raw,
         format=serialization.PublicFormat.Raw,
     )
+
+
+_ASSIGNMENT_REVIEWER_KEY_ID = "assignment-reviewer-test-v1"
+_ASSIGNMENT_REVIEWER_PROFILE_SHA256 = "8" * 64
+
+
+def _assignment_reviewer_private_key() -> Ed25519PrivateKey:
+    return Ed25519PrivateKey.from_private_bytes(bytes(range(32)))
+
+
+def _install_assignment_reviewer(root: Path) -> dict[str, str]:
+    public_key = root / "assignment-reviewer.pub"
+    public_key.write_bytes(_public_bytes(_assignment_reviewer_private_key()))
+    return {
+        "key_id": _ASSIGNMENT_REVIEWER_KEY_ID,
+        "path": public_key.name,
+        "sha256": _sha(public_key),
+        "reviewer_profile_sha256": _ASSIGNMENT_REVIEWER_PROFILE_SHA256,
+    }
+
+
+def _sign_assignment_bundle(bundle: dict[str, object]) -> None:
+    bundle["signature"] = {
+        "algorithm": "Ed25519",
+        "key_id": _ASSIGNMENT_REVIEWER_KEY_ID,
+        "value": base64.b64encode(
+            _assignment_reviewer_private_key().sign(
+                canonical_assignment_bundle_payload(bundle)
+            )
+        ).decode("ascii"),
+    }
+
+
+def _signed_assignment_bundle(
+    workload: Path,
+    *,
+    corpus_run_id: str,
+    assignments: list[dict[str, object]],
+) -> dict[str, object]:
+    bundle: dict[str, object] = {
+        "schema_version": SIGNED_ASSIGNMENT_BUNDLE_SCHEMA,
+        "workload_sha256": _sha(workload),
+        "corpus_run_id": corpus_run_id,
+        "reviewer_key_id": _ASSIGNMENT_REVIEWER_KEY_ID,
+        "reviewer_profile_sha256": _ASSIGNMENT_REVIEWER_PROFILE_SHA256,
+        "reviewed_template_sha256": "9" * 64,
+        "release_authority_decision": None,
+        "assignments": assignments,
+        "signature": None,
+    }
+    _sign_assignment_bundle(bundle)
+    return bundle
 
 
 def _binding(evaluation_id: str, kind: str) -> dict[str, object]:
@@ -155,11 +212,10 @@ def _fixture(
     })
     assignments = repository / "assignments.json"
     if resolved:
-        _write(assignments, {
-            "schema_version": "facetta-frozen-assignment-bundle.v1",
-            "workload_sha256": _sha(workload),
-            "corpus_run_id": "capture-producer-run-v1",
-            "assignments": [
+        _write(assignments, _signed_assignment_bundle(
+            workload,
+            corpus_run_id="capture-producer-run-v1",
+            assignments=[
                 {
                     "source_filename": "ring.png",
                     "kind": kind,
@@ -171,7 +227,7 @@ def _fixture(
                     ("edit", "metal-color"),
                 )
             ],
-        })
+        ))
     executor_private = Ed25519PrivateKey.generate()
     api_private = Ed25519PrivateKey.generate()
     executor_public = repository / "executor.pub"
@@ -230,6 +286,7 @@ def _fixture(
             "path": "canonical-api-runner.pub",
             "sha256": _sha(api_public),
         },
+        "assignment_reviewer_public_key": _install_assignment_reviewer(repository),
     }
     if enrolled:
         config_value["executor_trust"] = {
@@ -635,6 +692,63 @@ def test_preflight_refuses_unresolved_or_unenrolled_without_execution(
     )
     with pytest.raises(ValueError, match=message):
         producer.produce()
+    assert executor.preflight_calls == 0
+    assert executor.execute_calls == 0
+    assert persistence.preflight_calls == 0
+    assert not (fixture["evidence"] / "capture").exists()  # type: ignore[operator]
+
+
+def test_preflight_rejects_artifact_stem_collisions_before_executor_hooks(
+    tmp_path: Path,
+):
+    fixture = _fixture(tmp_path)
+    manifest = fixture["manifest"]
+    workload = fixture["workload"]
+    config = fixture["config"]
+    assert isinstance(manifest, Path)
+    assert isinstance(workload, Path)
+    assert isinstance(config, Path)
+
+    manifest_raw = json.loads(manifest.read_text())
+    manifest_raw["expected_source_count"] = 2
+    manifest_raw["sources"] = [
+        {"filename": "ring.jpg", "sha256": "c" * 64},
+        manifest_raw["sources"][0],
+    ]
+    manifest_raw["evaluation_slice"]["ring_source_filenames"] = [
+        "ring.jpg",
+        "ring.png",
+    ]
+    _write(manifest, manifest_raw)
+
+    workload_raw = json.loads(workload.read_text())
+    workload_raw["manifest_sha256"] = _sha(manifest)
+    workload_raw["expected_integrity_source_count"] = 2
+    workload_raw["expected_quality_source_count"] = 2
+    jpg_source = dict(workload_raw["sources"][0])
+    jpg_source.update(filename="ring.jpg", sha256="c" * 64)
+    workload_raw["sources"].insert(0, jpg_source)
+    _write(workload, workload_raw)
+
+    config_raw = json.loads(config.read_text())
+    config_raw["manifest_sha256"] = _sha(manifest)
+    config_raw["frozen_components"]["capture_workload"] = (
+        f"workload.json@sha256:{_sha(workload)}"
+    )
+    _write(config, config_raw)
+
+    executor = _FakeExecutor(fixture["evidence"])  # type: ignore[arg-type]
+    persistence = _FakePersistenceRunner()
+    producer = _producer(
+        fixture,
+        executor=executor,
+        persistence_runner=persistence,
+    )
+
+    with pytest.raises(ValueError, match="provider artifact output stem collisions"):
+        producer.produce()
+
+    assert executor.provider_calls_executed == 0
     assert executor.preflight_calls == 0
     assert executor.execute_calls == 0
     assert persistence.preflight_calls == 0

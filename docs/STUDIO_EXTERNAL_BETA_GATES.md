@@ -13,11 +13,14 @@ code, raw evidence artifact, signed decision, and generated JSON together.
 
 ## Shared release-authority prerequisite
 
-Before capture, enroll six independently controlled roles: secured executor,
-canonical API runner, GIA visual-fidelity reviewer, founder, independent
-jewelry designer, and staging reviewer. The frozen config must contain a
-strict `facetta-release-authority-bundle-config.v1` value that hash-pins, for
-all six roles:
+Before capture, enroll seven independently controlled roles: secured executor,
+canonical API runner, frozen-assignment reviewer, GIA visual-fidelity reviewer,
+founder, independent jewelry designer, and staging reviewer. The assignment
+reviewer signs the exact source-specific execute/not-applicable decisions before
+provider work and must remain distinct from execution and downstream quality
+review. The frozen config must contain a strict
+`facetta-release-authority-bundle-config.v2` value that hash-pins, for all seven
+roles:
 
 - a proof-of-possession enrollment artifact;
 - a separately signed qualification artifact;
@@ -26,7 +29,7 @@ all six roles:
   and rotated state; and
 - distinct qualification-verifier and status-signer public keys.
 
-The combined decision checks all six roles at one UTC decision time. Missing,
+The combined decision checks all seven roles at one UTC decision time. Missing,
 expired, suspended, revoked, or stale records fail closed. Role/key reuse,
 duplicate subjects, invalid qualification scope, status rollback, or
 unacknowledged rotation also fail. Artifacts use opaque tokens and must not
@@ -445,7 +448,7 @@ within three attempts.
 Only the provider-free combined controller may emit
 `external_beta_ready: true`. It requires all raw corpus evidence again,
 recomputes the founder decision, verifies both blind ledgers, validates the
-six-role authority bundle, verifies staging, and binds both retained zero
+seven-role authority bundle, verifies staging, and binds both retained zero
 exit-code files.
 
 ```bash

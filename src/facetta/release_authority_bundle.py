@@ -45,14 +45,15 @@ from facetta.release_authority_enrollment import (
 )
 
 
-BUNDLE_CONFIG_SCHEMA = "facetta-release-authority-bundle-config.v1"
-BUNDLE_DECISION_SCHEMA = "facetta-release-authority-bundle-decision.v1"
+BUNDLE_CONFIG_SCHEMA = "facetta-release-authority-bundle-config.v2"
+BUNDLE_DECISION_SCHEMA = "facetta-release-authority-bundle-decision.v2"
 REQUIRED_VERIFICATION_POLICY = "facetta-release-authority-policy-v1"
 REQUIRED_EXECUTOR_TRUST_SCHEMA = "facetta-frozen-executor-trust.v1"
 
 REQUIRED_ROLES: tuple[ReleaseAuthorityRole, ...] = (
     "executor",
     "canonical_api_runner",
+    "assignment_reviewer",
     "gia_reviewer",
     "founder",
     "jewelry_designer",
@@ -69,6 +70,10 @@ ROLE_QUALIFICATION_REQUIREMENTS: dict[
     ),
     "canonical_api_runner": (
         "canonical_api_runner",
+        frozenset({"signed_attestation", "manual_document_review"}),
+    ),
+    "assignment_reviewer": (
+        "frozen_assignment_reviewer",
         frozenset({"signed_attestation", "manual_document_review"}),
     ),
     "gia_reviewer": (
@@ -91,6 +96,7 @@ ROLE_QUALIFICATION_REQUIREMENTS: dict[
 
 _OPERATIONAL_SIGNER_FIELDS: dict[ReleaseAuthorityRole, str] = {
     "canonical_api_runner": "canonical_api_runner_public_key",
+    "assignment_reviewer": "assignment_reviewer_public_key",
     "gia_reviewer": "reviewer_public_key",
     "founder": "founder_public_key",
     "jewelry_designer": "designer_reviewer_public_key",
@@ -156,7 +162,7 @@ class _BundleConfig(_StrictConfig):
     @model_validator(mode="after")
     def _exact_role_coverage(self) -> Self:
         if set(self.authorities) != set(REQUIRED_ROLES):
-            raise ValueError("authority config must exactly cover all six roles")
+            raise ValueError("authority config must exactly cover all seven roles")
         return self
 
 
@@ -169,7 +175,7 @@ def verify_release_authority_bundle(
     repository_root: Path,
     decision_time: datetime,
 ) -> dict[str, Any]:
-    """Verify the complete six-role authority bundle without raising.
+    """Verify the complete seven-role authority bundle without raising.
 
     The successful result contains only opaque tokens, public identifiers, and
     digests.  It intentionally excludes paths, raw key bytes, credential data,
@@ -293,7 +299,7 @@ def verify_release_authority_bundle(
                 qualification_bytes,
             ).hexdigest()
 
-        # The bundle proves that six people are enrolled and qualified.  The
+        # The bundle proves that seven people are enrolled and qualified.  The
         # release gates use a second set of operational key pointers, so bind
         # those pointers back to the exact enrolled key before any role can
         # contribute authority.  Otherwise an unrelated key could sign a gate

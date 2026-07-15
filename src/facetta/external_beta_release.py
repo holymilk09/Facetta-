@@ -832,7 +832,7 @@ def verify_external_beta_release(
         and isinstance(authority_rows, list)
         and len(authority_rows) == len(REQUIRED_ROLES)
     ):
-        errors.append("complete six-role release authority bundle is not verified")
+        errors.append("complete seven-role release authority bundle is not verified")
         errors.extend(
             f"release authority bundle: {error}"
             for error in authority_bundle.get("errors", [])

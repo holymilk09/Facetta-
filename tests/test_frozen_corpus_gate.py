@@ -16,6 +16,10 @@ from facetta.blind_jewelry_review import (
     build_blind_review_packet,
     canonical_review_ledger_payload,
 )
+from facetta.frozen_assignment_contract import (
+    SIGNED_ASSIGNMENT_BUNDLE_SCHEMA,
+    canonical_assignment_bundle_payload,
+)
 from facetta.frozen_corpus_gate import (
     _replay_quality,
     canonical_evidence_payload,
@@ -27,6 +31,7 @@ from facetta.frozen_capture_workload import (
     FROZEN_ROUTING_LABEL,
     build_provider_call_plan,
     canonical_capture_payload,
+    canonical_object_sha256,
     expected_attempt_routing,
     not_applicable_assignment_rows,
 )
@@ -50,6 +55,57 @@ def _json(path: Path, value: object) -> None:
 
 def _sha(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+_ASSIGNMENT_REVIEWER_KEY_ID = "assignment-reviewer-test-v1"
+_ASSIGNMENT_REVIEWER_PROFILE_SHA256 = "a" * 64
+
+
+def _assignment_reviewer_private_key() -> Ed25519PrivateKey:
+    return Ed25519PrivateKey.from_private_bytes(bytes(range(32)))
+
+
+def _install_assignment_reviewer(root: Path) -> dict[str, str]:
+    public_key = root / "assignment-reviewer-v1.pub"
+    public_key.write_bytes(
+        _assignment_reviewer_private_key().public_key().public_bytes(
+            encoding=serialization.Encoding.Raw,
+            format=serialization.PublicFormat.Raw,
+        )
+    )
+    return {
+        "key_id": _ASSIGNMENT_REVIEWER_KEY_ID,
+        "path": public_key.name,
+        "sha256": _sha(public_key),
+        "reviewer_profile_sha256": _ASSIGNMENT_REVIEWER_PROFILE_SHA256,
+    }
+
+
+def _signed_assignment_bundle(
+    workload: Path,
+    assignments: list[dict[str, object]],
+) -> dict[str, object]:
+    bundle: dict[str, object] = {
+        "schema_version": SIGNED_ASSIGNMENT_BUNDLE_SCHEMA,
+        "workload_sha256": _sha(workload),
+        "corpus_run_id": "corpus-run-test-1",
+        "reviewer_key_id": _ASSIGNMENT_REVIEWER_KEY_ID,
+        "reviewer_profile_sha256": _ASSIGNMENT_REVIEWER_PROFILE_SHA256,
+        "reviewed_template_sha256": "9" * 64,
+        "release_authority_decision": None,
+        "assignments": assignments,
+        "signature": None,
+    }
+    bundle["signature"] = {
+        "algorithm": "Ed25519",
+        "key_id": _ASSIGNMENT_REVIEWER_KEY_ID,
+        "value": base64.b64encode(
+            _assignment_reviewer_private_key().sign(
+                canonical_assignment_bundle_payload(bundle)
+            )
+        ).decode("ascii"),
+    }
+    return bundle
 
 
 def _install_routing_contract(root: Path) -> Path:
@@ -91,6 +147,35 @@ def _binding(evaluation_id: str, kind: str) -> dict[str, object]:
         "instruction": instruction,
         "region_description": region,
         "frozen_facts": frozen,
+    }
+
+
+def _not_applicable_binding(source_sha256: str) -> dict[str, object]:
+    edit = next(
+        candidate for candidate in CANONICAL_RING_EDITS
+        if candidate.id == "impossible-band-width"
+    )
+    case = next(
+        candidate for candidate in RING_GOLDEN_CASES
+        if candidate.id == edit.golden_case_id
+    )
+    source_spec = build_ring_golden_spec(case)
+    target_spec, issues = apply_canonical_ring_edit(source_spec, edit)
+    assert target_spec is None and issues
+    return {
+        "schema_version": "facetta-frozen-source-assignment.v1",
+        "review_status": "approved",
+        "applicability": "not_applicable",
+        "not_applicable_reason": (
+            "canonical_delta_inapplicable/canonical-edit-apply-failed.v1"
+        ),
+        "review_evidence_sha256": "4" * 64,
+        "source_spec_evidence_sha256": "5" * 64,
+        "component_map_sha256": "6" * 64,
+        "region_evidence_sha256": "7" * 64,
+        "source_sha256": source_sha256,
+        "source_spec": source_spec.model_dump(mode="json"),
+        "canonical_edit_issues": issues,
     }
 
 
@@ -192,13 +277,37 @@ def _reject_blind_review_item(
     _write_review_ledger(paths, ledger)
 
 
-def _fixture(tmp_path: Path) -> dict[str, Any]:
+def _fixture(
+    tmp_path: Path, *, not_applicable_edit: bool = False,
+) -> dict[str, Any]:
     source_dir = tmp_path / "sources"
     source_dir.mkdir()
     first = source_dir / "image-1.png"
     second = source_dir / "image-2.png"
     _image(first, "white")
     _image(second, "gray")
+    quick_edit_ids = ["metal-color"]
+    structural_edit_ids = [
+        "band-width",
+        *(["impossible-band-width"] if not_applicable_edit else []),
+    ]
+    evaluation_keys = [
+        ("render", "round-solitaire-yellow-4-narrow"),
+        *(("edit", evaluation_id) for evaluation_id in quick_edit_ids),
+        *(("edit", evaluation_id) for evaluation_id in structural_edit_ids),
+    ]
+    evaluation_rows = [
+        {
+            "kind": kind,
+            "evaluation_id": evaluation_id,
+            "operation_class": (
+                "render_conformance" if kind == "render"
+                else "quick_appearance" if evaluation_id in quick_edit_ids
+                else "structural"
+            ),
+        }
+        for kind, evaluation_id in evaluation_keys
+    ]
     manifest = tmp_path / "manifest.json"
     _json(manifest, {
         "schema_version": "facetta-frozen-corpus.v1",
@@ -213,10 +322,10 @@ def _fixture(tmp_path: Path) -> dict[str, Any]:
             "category": "ring",
             "ring_source_filenames": [first.name],
             "render_case_ids": ["round-solitaire-yellow-4-narrow"],
-            "operation_ids": ["metal-color", "band-width"],
+            "operation_ids": [*quick_edit_ids, *structural_edit_ids],
             "operation_classes": {
-                "quick_appearance": ["metal-color"],
-                "structural": ["band-width"],
+                "quick_appearance": quick_edit_ids,
+                "structural": structural_edit_ids,
             },
         },
     })
@@ -231,23 +340,7 @@ def _fixture(tmp_path: Path) -> dict[str, Any]:
         "expected_quality_source_count": 1,
         "ring_quality_evaluation_set_id": "ring-full-matrix-v1",
         "evaluation_sets": {
-            "ring-full-matrix-v1": [
-                {
-                    "kind": "render",
-                    "evaluation_id": "round-solitaire-yellow-4-narrow",
-                    "operation_class": "render_conformance",
-                },
-                {
-                    "kind": "edit",
-                    "evaluation_id": "metal-color",
-                    "operation_class": "quick_appearance",
-                },
-                {
-                    "kind": "edit",
-                    "evaluation_id": "band-width",
-                    "operation_class": "structural",
-                },
-            ],
+            "ring-full-matrix-v1": evaluation_rows,
         },
         "sources": [
             {
@@ -268,25 +361,25 @@ def _fixture(tmp_path: Path) -> dict[str, Any]:
         ],
     })
     assignment_bundle = tmp_path / "assignments.json"
-    evaluation_keys = (
-        ("render", "round-solitaire-yellow-4-narrow"),
-        ("edit", "metal-color"),
-        ("edit", "band-width"),
-    )
-    _json(assignment_bundle, {
-        "schema_version": "facetta-frozen-assignment-bundle.v1",
-        "workload_sha256": _sha(workload),
-        "corpus_run_id": "corpus-run-test-1",
-        "assignments": [
+    _json(assignment_bundle, _signed_assignment_bundle(
+        workload,
+        assignments=[
             {
                 "source_filename": first.name,
                 "kind": kind,
                 "evaluation_id": evaluation_id,
-                "binding": _binding(evaluation_id, kind),
+                "binding": (
+                    _not_applicable_binding(_sha(first))
+                    if (
+                        not_applicable_edit
+                        and evaluation_id == "impossible-band-width"
+                    )
+                    else _binding(evaluation_id, kind)
+                ),
             }
             for kind, evaluation_id in evaluation_keys
         ],
-    })
+    ))
     config = tmp_path / "config.json"
     components = tmp_path / "components"
     components.mkdir()
@@ -353,6 +446,7 @@ def _fixture(tmp_path: Path) -> dict[str, Any]:
             "sha256": _sha(reviewer_key),
             "reviewer_profile_sha256": "b" * 64,
         },
+        "assignment_reviewer_public_key": _install_assignment_reviewer(tmp_path),
         "canonical_api_runner_public_key": {
             "key_id": "canonical-api-runner-v1",
             "path": runner_key.name,
@@ -385,6 +479,13 @@ def _fixture(tmp_path: Path) -> dict[str, Any]:
     for index, planned in enumerate(execution_items, 1):
         candidate = capture_dir / f"candidate-{index}.png"
         _image(candidate, "white")
+        selected_pixel = ((index - 1) % 4, 0)
+        if planned["kind"] == "edit":
+            candidate_image = Image.open(candidate).convert("RGB")
+            candidate_image.putpixel(
+                selected_pixel, (255 - index, 255 - index, 255 - index),
+            )
+            candidate_image.save(candidate)
         row: dict[str, Any] = {
             "kind": planned["kind"],
             "evaluation_id": planned["evaluation_id"],
@@ -411,7 +512,7 @@ def _fixture(tmp_path: Path) -> dict[str, Any]:
         else:
             edit_mask_path = capture_dir / f"mask-{index}.png"
             edit_mask = Image.new("L", (4, 4), 0)
-            edit_mask.putpixel((0, 0), 255)
+            edit_mask.putpixel(selected_pixel, 255)
             edit_mask.save(edit_mask_path)
             row.update(
                 mask_image=edit_mask_path.name,
@@ -541,6 +642,7 @@ def _fixture(tmp_path: Path) -> dict[str, Any]:
         "evidence": evidence, "first": first, "second": second,
         "prompt_bundle": component_files["prompt_bundle"],
         "capture_producer": component_files["capture_producer"],
+        "release_authority_bundle": component_files["release_authority_bundle"],
         "private_key": private_key, "reviewer_key": reviewer_key,
         "runner_private_key": runner_private_key, "runner_key": runner_key,
         "executor_private_key": executor_private_key, "executor_key": executor_key,
@@ -548,6 +650,7 @@ def _fixture(tmp_path: Path) -> dict[str, Any]:
         "mask": mask,
         "capture_artifact": capture_artifact,
         "persistence_artifact": persistence_artifact,
+        "plan": plan,
     }
     _write_signed(paths, evidence_value)
     selected_items = []
@@ -684,6 +787,59 @@ def test_complete_offline_replay_can_pass(tmp_path: Path):
     ] == 0
 
 
+def test_complete_offline_replay_retains_reviewed_not_applicable_assignment(
+    tmp_path: Path,
+):
+    paths = _fixture(tmp_path, not_applicable_edit=True)
+
+    result = _run(paths)
+
+    assert result["corpus_gate_ready"] is True
+    quality = result["quality"]
+    assert quality["expected_evaluation_count"] == 4
+    assert quality["execution_ready_evaluation_count"] == 3
+    assert quality["not_applicable_evaluation_count"] == 1
+    assert quality["completed_evaluation_count"] == 4
+    assert quality["blind_review"]["accepted_count"] == 3
+    assert quality["persistence_attestation"]["bindings"]["result_count"] == 3
+    actual = quality["not_applicable_assignments"]
+    assert len(actual) == 1
+    assert set(actual[0]) == {
+        "kind",
+        "evaluation_id",
+        "operation_class",
+        "source_filename",
+        "source_sha256",
+        "resolved_inputs_sha256",
+        "reason",
+        "review_evidence_sha256",
+    }
+    expected = [{
+        "kind": "edit",
+        "evaluation_id": "impossible-band-width",
+        "operation_class": "structural",
+        "source_filename": "image-1.png",
+        "source_sha256": _sha(paths["first"]),
+        "resolved_inputs_sha256": next(
+            row["resolved_inputs_sha256"]
+            for row in paths["plan"]["items"]
+            if row["resolved_inputs"]["resolution_status"] == "not_applicable"
+        ),
+        "reason": (
+            "canonical_delta_inapplicable/canonical-edit-apply-failed.v1"
+        ),
+        "review_evidence_sha256": "4" * 64,
+    }]
+    assert actual == expected
+    planned_not_applicable = next(
+        row for row in paths["plan"]["items"]
+        if row["resolved_inputs"]["resolution_status"] == "not_applicable"
+    )
+    assert actual[0]["resolved_inputs_sha256"] == canonical_object_sha256(
+        planned_not_applicable["resolved_inputs"]
+    )
+
+
 def test_release_replay_rejects_xai_adapter_key_as_provider_model(
     tmp_path: Path,
 ):
@@ -810,6 +966,23 @@ def test_pinned_implementation_drift_fails_definition(tmp_path: Path):
                for error in result["definition"]["errors"])
 
 
+def test_pinned_release_authority_contract_drift_fails_definition(
+    tmp_path: Path,
+):
+    paths = _fixture(tmp_path)
+    paths["release_authority_bundle"].write_text(
+        "# changed release-authority contract\n"
+    )
+
+    result = _run(paths, evidence=False)
+
+    assert result["definition"]["status"] == "fail"
+    assert any(
+        "release_authority_bundle implementation drifted" in error
+        for error in result["definition"]["errors"]
+    )
+
+
 def test_release_authorities_cannot_reuse_public_key_bytes(tmp_path: Path):
     paths = _fixture(tmp_path)
     config = json.loads(paths["config"].read_text())
@@ -852,7 +1025,30 @@ def test_release_authorities_cannot_reuse_key_ids(tmp_path: Path):
     assert result["corpus_gate_ready"] is False
 
 
-def test_separation_audit_covers_all_six_release_authorities():
+def test_configured_component_mapper_requires_a_distinct_valid_ed25519_key(
+    tmp_path: Path,
+):
+    paths = _fixture(tmp_path)
+    config = json.loads(paths["config"].read_text())
+    invalid_key = tmp_path / "component-mapper.pub"
+    invalid_key.write_bytes(b"not-an-ed25519-public-key")
+    config["component_mapper_public_key"] = {
+        "key_id": "component-mapper-v1",
+        "path": invalid_key.name,
+        "sha256": _sha(invalid_key),
+    }
+    _json(paths["config"], config)
+
+    result = _run(paths, evidence=False)
+
+    assert result["definition"]["status"] == "fail"
+    assert "component mapper public key is not Ed25519" in result[
+        "definition"
+    ]["errors"]
+    assert result["corpus_gate_ready"] is False
+
+
+def test_separation_audit_covers_all_seven_release_authorities():
     config = {
         "executor_trust": {
             "status": "enrolled",
@@ -861,6 +1057,9 @@ def test_separation_audit_covers_all_six_release_authorities():
         },
         "canonical_api_runner_public_key": {
             "key_id": "runner-v1", "sha256": "2" * 64,
+        },
+        "assignment_reviewer_public_key": {
+            "key_id": "assignment-v1", "sha256": "7" * 64,
         },
         "reviewer_public_key": {
             "key_id": "gia-v1", "sha256": "3" * 64,
@@ -879,6 +1078,7 @@ def test_separation_audit_covers_all_six_release_authorities():
     audit = release_authority_key_separation(config)
     assert audit["status"] == "pass"
     assert audit["configured_roles"] == [
+        "assignment_reviewer",
         "canonical_api_runner",
         "executor",
         "founder",

@@ -11,6 +11,8 @@ import base64
 import hashlib
 import json
 import math
+import re
+import unicodedata
 from collections import defaultdict
 from dataclasses import asdict
 from pathlib import Path
@@ -20,6 +22,12 @@ from cryptography.exceptions import InvalidSignature
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 from cryptography.hazmat.primitives.serialization import load_pem_public_key
 
+from facetta.frozen_assignment_contract import (
+    CANONICAL_DELTA_INAPPLICABLE_REASON,
+    SIGNED_ASSIGNMENT_BUNDLE_SCHEMA,
+    SUPPORTED_NOT_APPLICABLE_REASONS,
+    verify_signed_assignment_bundle,
+)
 from facetta.image_agent.contracts import ImageOperation, ImageRoute
 from facetta.image_agent.prompts import PROMPT_VERSIONS
 from facetta.ring_evals import (
@@ -31,11 +39,20 @@ from facetta.ring_evals import (
 
 
 Json = dict[str, Any]
+_PORTABLE_SOURCE_FILENAME = re.compile(
+    r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}\.(?:jpe?g|png|webp|avif)\Z",
+    re.IGNORECASE,
+)
+_PORTABLE_EVALUATION_ID = re.compile(r"[a-z0-9][a-z0-9-]{0,79}\Z")
+_WINDOWS_RESERVED_BASENAME = re.compile(
+    r"(?:con|prn|aux|nul|com[1-9]|lpt[1-9])\Z",
+    re.IGNORECASE,
+)
 WORKLOAD_SCHEMA = "facetta-frozen-capture-workload.v1"
 PLAN_SCHEMA = "facetta-frozen-provider-call-plan.v2"
 CAPTURE_SCHEMA = "facetta-frozen-capture.v2"
 RESOLVED_ASSIGNMENT_SCHEMA = "facetta-frozen-resolved-assignment.v1"
-ASSIGNMENT_BUNDLE_SCHEMA = "facetta-frozen-assignment-bundle.v1"
+ASSIGNMENT_BUNDLE_SCHEMA = SIGNED_ASSIGNMENT_BUNDLE_SCHEMA
 EXECUTOR_TRUST_SCHEMA = "facetta-frozen-executor-trust.v1"
 ROUTING_CONTRACT_SCHEMA = "facetta-frozen-routing-contract.v1"
 FROZEN_ROUTING_LABEL = "grok-primary-openai-fallback.v1"
@@ -188,6 +205,55 @@ def _duplicates(values: list[str]) -> list[str]:
             duplicates.add(value)
         seen.add(value)
     return sorted(duplicates)
+
+
+def _artifact_stem_collisions(
+    source_filenames: set[str],
+    evaluations: set[tuple[str, str]],
+) -> list[str]:
+    """Return deterministic provider-output stem collisions for a workload.
+
+    The capture producer deliberately removes the source suffix when it names
+    candidate and mask artifacts.  Two distinct sources such as ``ring.jpg``
+    and ``ring.png`` would therefore target the same output after paid provider
+    work.  Validate the complete candidate/mask namespace while planning is
+    still provider-free so execution cannot begin with ambiguous destinations.
+    """
+
+    owners: defaultdict[str, list[str]] = defaultdict(list)
+    for source_filename in sorted(source_filenames):
+        source_stem = unicodedata.normalize(
+            "NFC", Path(source_filename).stem,
+        ).casefold()
+        for kind, evaluation_id in sorted(evaluations):
+            candidate_stem = f"{source_stem}--{kind}--{evaluation_id}"
+            identity = f"{source_filename}:{kind}:{evaluation_id}"
+            owners[candidate_stem].append(f"candidate:{identity}")
+            if kind == "edit":
+                owners[f"{candidate_stem}--mask"].append(f"mask:{identity}")
+    return [
+        f"{stem} ({', '.join(sorted(stem_owners))})"
+        for stem, stem_owners in sorted(owners.items())
+        if len(stem_owners) > 1
+    ]
+
+
+def _portable_source_filename(value: str) -> bool:
+    """Keep provider artifacts addressable across supported filesystems."""
+
+    if (
+        not value.isascii()
+        or unicodedata.normalize("NFC", value) != value
+        or _PORTABLE_SOURCE_FILENAME.fullmatch(value) is None
+    ):
+        return False
+    stem = value.rsplit(".", 1)[0]
+    device_token = stem.split(".", 1)[0]
+    return (
+        ".." not in stem
+        and not stem.endswith(".")
+        and _WINDOWS_RESERVED_BASENAME.fullmatch(device_token) is None
+    )
 
 
 def _pinned_path(config: Json, key: str, root: Path) -> tuple[Path, str]:
@@ -601,7 +667,13 @@ def _resolved_assignment(
         }
     elif kind == "edit":
         edit = edits.get(evaluation_id)
-        if edit is None or not edit.expected_valid:
+        canonical_na = (
+            isinstance(binding, dict)
+            and binding.get("applicability") == "not_applicable"
+            and binding.get("not_applicable_reason")
+            == CANONICAL_DELTA_INAPPLICABLE_REASON
+        )
+        if edit is None or (not edit.expected_valid and not canonical_na):
             raise ValueError(f"unknown or invalid frozen edit evaluation: {evaluation_id}")
         operation = (
             ImageOperation.VISUAL_ONLY_EDIT
@@ -648,9 +720,15 @@ def _resolved_assignment(
     if applicability not in {"execute", "not_applicable"}:
         binding_errors.append("source-specific applicability is not terminal")
     if applicability == "not_applicable":
+        if kind == "render":
+            binding_errors.append("render assignment cannot be not_applicable")
         reason = binding.get("not_applicable_reason")
-        if not isinstance(reason, str) or not reason.strip():
-            binding_errors.append("not-applicable assignment requires a reviewed reason")
+        if reason not in SUPPORTED_NOT_APPLICABLE_REASONS:
+            binding_errors.append("not-applicable assignment reason is unsupported")
+        if binding.get("source_sha256") != source_input["sha256"]:
+            binding_errors.append(
+                "not-applicable assignment source hash differs from workload"
+            )
         if not binding_errors:
             return {
                 "schema_version": RESOLVED_ASSIGNMENT_SCHEMA,
@@ -802,8 +880,11 @@ def _assignment_bindings(
         }
     bundle_path, bundle_hash = _pinned_path(config, "resolved_assignment_bundle", root)
     bundle = _load_object(bundle_path)
-    if bundle.get("schema_version") != ASSIGNMENT_BUNDLE_SCHEMA:
-        raise ValueError("resolved assignment bundle schema is unsupported")
+    reviewer = verify_signed_assignment_bundle(
+        bundle,
+        config,
+        repository_root=root,
+    )
     if bundle.get("workload_sha256") != file_sha256(workload_path):
         raise ValueError("resolved assignment bundle workload hash differs")
     corpus_run_id = bundle.get("corpus_run_id")
@@ -830,6 +911,9 @@ def _assignment_bindings(
         "bundle_sha256": bundle_hash,
         "corpus_run_id": corpus_run_id,
         "assignment_count": len(resolved),
+        "reviewer_key_id": reviewer.key_id,
+        "reviewer_profile_sha256": reviewer.reviewer_profile_sha256,
+        "reviewed_template_sha256": bundle["reviewed_template_sha256"],
     }
 
 
@@ -890,6 +974,15 @@ def validate_workload_definition(
     expected_count = manifest.get("expected_source_count")
     if expected_count != len(manifest_sources):
         errors.append("manifest source count is inconsistent")
+    unsafe_source_names = sorted(
+        filename for filename in manifest_sources
+        if not _portable_source_filename(filename)
+    )
+    if unsafe_source_names:
+        errors.append(
+            "manifest source filenames are not portable artifact identifiers: "
+            + ", ".join(unsafe_source_names)
+        )
 
     matrix = workload.get("sources")
     if not isinstance(matrix, list):
@@ -947,6 +1040,10 @@ def validate_workload_definition(
             errors.append(f"ring evaluation {index} must be an object")
             continue
         key = (str(raw.get("kind") or ""), str(raw.get("evaluation_id") or ""))
+        if _PORTABLE_EVALUATION_ID.fullmatch(key[1]) is None:
+            errors.append(
+                f"ring evaluation {index} has a non-portable evaluation_id"
+            )
         if key in declared_evaluations:
             errors.append("duplicate ring evaluation: " + ":".join(key))
         declared_evaluations.add(key)
@@ -982,6 +1079,15 @@ def validate_workload_definition(
 
     if quality_names != ring_sources:
         errors.append("quality matrix does not exactly cover the declared ring slice")
+    artifact_stem_collisions = _artifact_stem_collisions(
+        quality_names,
+        declared_evaluations,
+    )
+    if artifact_stem_collisions:
+        errors.append(
+            "provider artifact output stem collisions: "
+            + "; ".join(artifact_stem_collisions)
+        )
     declared_integrity_count = workload.get("expected_integrity_source_count")
     declared_quality_count = workload.get("expected_quality_source_count")
     if declared_integrity_count != len(manifest_sources):

@@ -416,7 +416,7 @@ def _verify(
         def authority_verifier(config, repository_root, decision_time):
             return {
                 "schema_version": (
-                    "facetta-release-authority-bundle-decision.v1"
+                    "facetta-release-authority-bundle-decision.v2"
                 ),
                 "status": "pass",
                 "decision_time": decision_time.isoformat(),
@@ -425,8 +425,9 @@ def _verify(
                 "authorities": [
                     {"role": role, "enrollment_artifact_sha256": "d" * 64}
                     for role in (
-                        "executor", "canonical_api_runner", "gia_reviewer",
-                        "founder", "jewelry_designer", "staging_reviewer",
+                        "executor", "canonical_api_runner",
+                        "assignment_reviewer", "gia_reviewer", "founder",
+                        "jewelry_designer", "staging_reviewer",
                     )
                 ],
                 "errors": [],
@@ -481,7 +482,7 @@ def test_exact_reverified_corpus_and_signed_staging_pass_together(tmp_path: Path
         result["release_authority_bundle"]["status_list"]["artifact_sha256"]
         == "e" * 64
     )
-    assert len(result["release_authority_bundle"]["authorities"]) == 6
+    assert len(result["release_authority_bundle"]["authorities"]) == 7
     assert result["independent_designer_review"] == {
         "status": "pass",
         "evaluation_count": 2,
@@ -676,7 +677,7 @@ def test_designer_profile_must_be_hash_enrolled_outside_the_ledger(
     assert any("profile is not hash-enrolled" in error for error in result["errors"])
 
 
-def test_complete_six_role_authority_bundle_is_mandatory(tmp_path: Path):
+def test_complete_seven_role_authority_bundle_is_mandatory(tmp_path: Path):
     paths = _fixture(tmp_path)
     observed_time = None
 
@@ -695,7 +696,7 @@ def test_complete_six_role_authority_bundle_is_mandatory(tmp_path: Path):
     assert observed_time.tzinfo is not None
     assert observed_time.utcoffset().total_seconds() == 0
     assert result["external_beta_ready"] is False
-    assert any("six-role" in error for error in result["errors"])
+    assert any("seven-role" in error for error in result["errors"])
 
 
 def test_staging_result_tamper_breaks_exact_approval_binding(tmp_path: Path):

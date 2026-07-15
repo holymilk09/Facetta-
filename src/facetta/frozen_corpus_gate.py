@@ -57,6 +57,9 @@ _PRODUCTION_FROZEN_CORPUS_ID = "founder-reference-144-v1"
 _PRODUCTION_AUTHORING_PINS = (
     "blind_review_ledger_authoring",
     "blind_review_ledger_authoring_cli",
+    "assignment_bundle_contract",
+    "assignment_bundle_authoring",
+    "assignment_bundle_authoring_cli",
 )
 
 
@@ -70,6 +73,7 @@ def _requires_production_authoring_pins(config: Json) -> bool:
 
 _RELEASE_AUTHORITY_KEY_FIELDS = (
     ("canonical_api_runner", "canonical_api_runner_public_key"),
+    ("assignment_reviewer", "assignment_reviewer_public_key"),
     ("gia_reviewer", "reviewer_public_key"),
     ("founder", "founder_public_key"),
     ("jewelry_designer", "designer_reviewer_public_key"),
@@ -82,9 +86,10 @@ def release_authority_key_separation(config: Json) -> Json:
 
     A signature proves control of a key, not independence between people.  The
     frozen release claims nevertheless require different signing authorities
-    for execution, canonical persistence, GIA review, founder approval,
-    jewelry-designer acceptance, and staging review.  Reusing either a key id
-    or the exact public-key bytes across roles therefore fails closed.
+    for execution, canonical persistence, frozen-assignment review, GIA review,
+    founder approval, jewelry-designer acceptance, and staging review. Reusing
+    either a key id or the exact public-key bytes across roles therefore fails
+    closed.
 
     Missing roles are deliberately reported but are not errors here: each gate
     already requires the authorities it consumes.  This helper owns only the
@@ -389,6 +394,61 @@ def _validate_config(
                 errors.append(
                     "canonical API runner public-key file hash differs from config"
                 )
+    mapper_key = config.get("component_mapper_public_key")
+    if mapper_key is not None:
+        if not isinstance(mapper_key, dict) or set(mapper_key) != {
+            "key_id",
+            "path",
+            "sha256",
+        }:
+            errors.append(
+                "component_mapper_public_key must be null or a complete object"
+            )
+        else:
+            key_id = mapper_key.get("key_id")
+            relative = mapper_key.get("path")
+            expected_hash = mapper_key.get("sha256")
+            root = repository_root.resolve()
+            candidate = (
+                (root / str(relative)).resolve()
+                if isinstance(relative, str)
+                else None
+            )
+            if not isinstance(key_id, str) or not key_id.strip():
+                errors.append("component mapper public key_id is missing")
+            if (
+                candidate is None
+                or not isinstance(relative, str)
+                or Path(relative).is_absolute()
+                or not candidate.is_relative_to(root)
+                or not candidate.is_file()
+            ):
+                errors.append("component mapper public-key file is unavailable")
+            elif file_sha256(candidate) != expected_hash:
+                errors.append(
+                    "component mapper public-key file hash differs from config"
+                )
+            else:
+                content = candidate.read_bytes()
+                try:
+                    mapper_public_key = (
+                        Ed25519PublicKey.from_public_bytes(content)
+                        if len(content) == 32
+                        else load_pem_public_key(content)
+                    )
+                except (TypeError, ValueError):
+                    mapper_public_key = None
+                if not isinstance(mapper_public_key, Ed25519PublicKey):
+                    errors.append("component mapper public key is not Ed25519")
+            assignment_key = config.get("assignment_reviewer_public_key")
+            if isinstance(assignment_key, dict) and (
+                assignment_key.get("key_id") == key_id
+                or assignment_key.get("sha256") == expected_hash
+            ):
+                errors.append(
+                    "component mapper enrollment must be distinct from "
+                    "assignment reviewer"
+                )
     errors.extend(release_authority_key_separation(config)["errors"])
     return errors
 
@@ -443,6 +503,10 @@ def validate_frozen_component_pins(
         "capture_producer", "capture_producer_cli", "persistence_verifier",
         "evidence_path_contract", "release_verifier_cli",
         "blind_review_ledger_authoring", "blind_review_ledger_authoring_cli",
+        "assignment_bundle_contract", "assignment_bundle_authoring",
+        "assignment_bundle_authoring_cli",
+        "blind_review_contract", "release_authority_enrollment",
+        "release_authority_bundle",
     ):
         if key not in frozen:
             if key in production_authoring_pins:
@@ -1657,6 +1721,7 @@ def _replay_quality(
         "expected_evaluation_count": len(expected),
         "execution_ready_evaluation_count": len(expected_execution),
         "not_applicable_evaluation_count": len(expected_not_applicable),
+        "not_applicable_assignments": expected_not_applicable_rows,
         "completed_evaluation_count": len(observed_assignments & expected),
         "integrity_source_count": len(manifest.get("sources", [])),
         "quality_source_count": len(quality_sources),

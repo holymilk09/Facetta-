@@ -266,6 +266,63 @@ def _validate_compiled_result_internals(
         and quality.get("completed_evaluation_count") == assignment_count
     ):
         errors.append("frozen-corpus quality assignment counts do not match pinned scope")
+    execution_count = quality.get("execution_ready_evaluation_count")
+    not_applicable_count = quality.get("not_applicable_evaluation_count")
+    if not (
+        type(execution_count) is int
+        and execution_count >= 0
+        and type(not_applicable_count) is int
+        and not_applicable_count >= 0
+        and execution_count + not_applicable_count == assignment_count
+    ):
+        errors.append(
+            "frozen-corpus execution-ready and not-applicable counts do not "
+            "resolve the pinned scope"
+        )
+        execution_count = -1
+        not_applicable_count = -1
+    not_applicable_rows = quality.get("not_applicable_assignments")
+    expected_not_applicable_fields = {
+        "kind", "evaluation_id", "operation_class", "source_filename",
+        "source_sha256", "resolved_inputs_sha256", "reason",
+        "review_evidence_sha256",
+    }
+    not_applicable_projection_valid = (
+        isinstance(not_applicable_rows, list)
+        and len(not_applicable_rows) == not_applicable_count
+        and all(
+            isinstance(row, dict)
+            and set(row) == expected_not_applicable_fields
+            and row.get("kind") == "edit"
+            and all(
+                isinstance(row.get(field), str) and bool(row[field].strip())
+                for field in (
+                    "evaluation_id", "operation_class", "source_filename",
+                    "reason",
+                )
+            )
+            and all(
+                _sha256_value(row.get(field))
+                for field in (
+                    "source_sha256", "resolved_inputs_sha256",
+                    "review_evidence_sha256",
+                )
+            )
+            for row in not_applicable_rows
+        )
+    )
+    if not_applicable_projection_valid:
+        projection_keys = {
+            (row["kind"], row["evaluation_id"], row["source_filename"])
+            for row in not_applicable_rows
+        }
+        not_applicable_projection_valid = (
+            len(projection_keys) == len(not_applicable_rows)
+        )
+    if not not_applicable_projection_valid:
+        errors.append(
+            "frozen-corpus not-applicable assignment projection is incomplete"
+        )
     if quality.get("reviewer_review_complete") is not True:
         errors.append("frozen-corpus GIA reviewer evidence is incomplete")
     if quality.get("all_reviewer_decisions_accepted") is not True:
@@ -283,10 +340,10 @@ def _validate_compiled_result_internals(
         and blind_review.get("signature_status") == "verified"
         and blind_review.get("reviewer_profile_sha256")
         == reviewer_profile_sha256
-        and blind_review.get("accepted_count") == assignment_count
+        and blind_review.get("accepted_count") == execution_count
         and blind_review.get("accepted_rate") == 1.0
         and isinstance(blind_review.get("decisions"), list)
-        and len(blind_review["decisions"]) == assignment_count
+        and len(blind_review["decisions"]) == execution_count
         and blind_review.get("errors") == []
     ):
         errors.append("frozen-corpus blind GIA criterion review is not a clean pass")
@@ -336,7 +393,7 @@ def _validate_compiled_result_internals(
         == compiled_config_hash
         and persistence_bindings.get("workload_sha256") == workload_hash
         and persistence_bindings.get("corpus_id") == config.get("corpus_id")
-        and persistence_bindings.get("result_count") == assignment_count
+        and persistence_bindings.get("result_count") == execution_count
         and _sha256_value(persistence_bindings.get("result_set_sha256"))
         and isinstance(persistence_bindings.get("corpus_run_id"), str)
         and persistence_bindings.get("corpus_run_id") == evidence_corpus_run_id
@@ -688,6 +745,18 @@ def verify_frozen_corpus_release(
     passed = not errors and signature_status == "verified"
     result_evidence = results.get("evidence")
     result_quality = results.get("quality")
+    execution_ready_count = (
+        result_quality.get("execution_ready_evaluation_count")
+        if isinstance(result_quality, dict) else None
+    )
+    not_applicable_count = (
+        result_quality.get("not_applicable_evaluation_count")
+        if isinstance(result_quality, dict) else None
+    )
+    not_applicable_assignments = (
+        result_quality.get("not_applicable_assignments")
+        if isinstance(result_quality, dict) else None
+    )
     result_persistence = (
         result_quality.get("persistence_attestation")
         if isinstance(result_quality, dict) else None
@@ -731,7 +800,17 @@ def verify_frozen_corpus_release(
                 "integrity_source_count": integrity_count,
                 "quality_source_count": quality_count,
                 "quality_assignment_count": assignment_count,
+                "execution_ready_quality_assignment_count": (
+                    execution_ready_count
+                ),
+                "not_applicable_quality_assignment_count": (
+                    not_applicable_count
+                ),
             },
+            "not_applicable_projection_sha256": (
+                _canonical_sha256(not_applicable_assignments)
+                if isinstance(not_applicable_assignments, list) else None
+            ),
             "persistence_attestation": (
                 persistence_bindings
                 if isinstance(persistence_bindings, dict) else None

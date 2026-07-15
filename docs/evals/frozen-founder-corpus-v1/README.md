@@ -13,10 +13,10 @@ result and contains no release authority.
   blind-review, authority-enrollment, release, and staging implementations.
 
 The production config intentionally has no assignment bundle, executor key,
-canonical API-runner key, GIA key, founder key, independent-designer key,
-staging-reviewer key, or six-role authority bundle. All 1,044 quality rows are
-unresolved, so the executable provider budget is zero and release status is
-`not_run`.
+canonical API-runner key, assignment-reviewer key, GIA key, founder key,
+independent-designer key, staging-reviewer key, or seven-role authority bundle.
+All 1,044 quality rows are unresolved, so the executable provider budget is
+zero and release status is `not_run`.
 
 ## Retained run-directory safety
 
@@ -48,17 +48,170 @@ PYTHONPATH=src .venv/bin/python scripts/plan_frozen_corpus_capture.py \
 
 The 3,132-attempt number is only the logical maximum at three attempts per
 sequence. It is not an executable budget. Independently review and hash-pin a
-source-specific assignment/applicability bundle first. Every row must declare
-`execute` or `not_applicable`, concrete regions/references, a canonical
-`resolved_inputs_sha256`, and the preassigned `corpus_run_id`.
+source-specific assignment/applicability bundle first. The human reviewer does
+not author executable prompts or `resolved_inputs_sha256`; the provider-free
+compiler derives those values from the frozen workload, validated source spec,
+raster-bound component map, and retained review/region evidence. Every edit row
+must end as `execute` or reviewed `not_applicable`. Render coverage is mandatory.
+Reviewer IDs are opaque `rvr_` tokens followed by 64 lowercase hex characters;
+N/A evidence uses versioned reason/detail codes and contains no free prose.
+`source_component_absent` is available only when every required semantic kind
+is unresolved under a repository-pinned mapper contract whose retained
+calibration covers at least 144 sources with zero false-absence results. It
+also requires a separately enrolled Ed25519 mapper key in
+`component_mapper_public_key` and a signed, retained
+`facetta-frozen-component-map-attestation.v1` for the exact map. The
+attestation binds the source SHA-256, canonical component-map SHA-256, mapper
+contract, calibration-evidence SHA-256, frozen corpus run ID, and an opaque
+`maprun_` token. Unsigned, forged, cross-run, or mismatched attestations fail
+before the row can become N/A. The canonical component map and its exact signed
+attestation are embedded in the signed assignment binding; installation and
+planning independently reverify its mapper signature, pinned mapper contract,
+calibration digest, corpus run, component-map hash, and workload source hash.
+Planning also rejects the N/A claim if any semantic kind required by that edit
+is resolved in the embedded map. The mapper key must not reuse the
+assignment reviewer's key ID or public-key bytes; its private key stays outside
+both the repository and retained evidence. The production config intentionally
+leaves this enrollment `null` until a real mapper authority is enrolled, so
+component-absence N/A claims currently fail closed.
+`canonical_delta_inapplicable` embeds the source hash, canonical source spec,
+and deterministic edit issues. Installation recomputes the named canonical
+edit and accepts N/A only when it still produces no target and the exact same
+non-empty issue set. Unknown reason strings and every render N/A fail at the
+signed-contract boundary. Without those proofs the row must remain unresolved
+and provider work stays blocked.
 
-Before capture, enroll six independent authorities—executor, canonical API
-runner, GIA reviewer, founder, jewelry designer, and staging reviewer—and pin a
-`facetta-release-authority-bundle-config.v1`. Each role needs proof-of-key
-control, separately verified qualification, an active signed status entry, and
-unique key material. Private keys remain outside the repository and evidence
-root. Enrollment artifacts use opaque identifiers and exclude raw personal or
-credential data.
+After the assignment reviewer is enrolled in the config, create the locked
+blank workbook inside a fresh retained-evidence directory. The reviewer works
+on a separate private working copy outside both the repository and retained
+evidence root, completes only the exposed review fields and evidence
+references, and never alters frozen bindings or row identities. The completed
+working file is hash-verified, canonically parsed, and atomically submitted as
+a new retained artifact; it is never copied into evidence with a general file
+copy command.
+
+```bash
+set +x
+umask 077
+EVIDENCE_ROOT=/secure/path/to/evidence-root
+CORPUS_RUN_ID=<preassigned-opaque-run-id>
+REVIEW_WORK_ROOT=/separate/private/reviewer-working-directory
+COMPLETED_WORKBOOK="$REVIEW_WORK_ROOT/completed-workbook.json"
+
+PYTHONPATH=src .venv/bin/python scripts/author_frozen_assignment_bundle.py \
+  template \
+  --evidence-root "$EVIDENCE_ROOT" \
+  --corpus-run-id "$CORPUS_RUN_ID" \
+  --out assignment-review/blank-workbook.json
+
+# Copy the trusted blank workbook OUT to the private working directory. The
+# reviewer edits only the working copy and uses Save As for the completed file.
+# Never edit blank-workbook.json or any retained artifact in place.
+test ! -e "$COMPLETED_WORKBOOK"
+cp "$EVIDENCE_ROOT/assignment-review/blank-workbook.json" \
+  "$COMPLETED_WORKBOOK"
+
+# After human completion, calculate the hash from the closed working file and
+# use the provider-free submit command. Submit reads the file once, verifies
+# that exact hash, parses one JSON object, renders canonical JSON, and creates
+# the retained destination atomically without replacement.
+COMPLETED_SHA256=$(shasum -a 256 "$COMPLETED_WORKBOOK" | awk '{print $1}')
+PYTHONPATH=src .venv/bin/python scripts/author_frozen_assignment_bundle.py \
+  submit \
+  --evidence-root "$EVIDENCE_ROOT" \
+  --completed-input "$COMPLETED_WORKBOOK" \
+  --expected-sha256 "$COMPLETED_SHA256" \
+  --out assignment-review/completed-workbook.json
+
+# Validate the newly submitted retained workbook:
+PYTHONPATH=src .venv/bin/python scripts/author_frozen_assignment_bundle.py \
+  validate \
+  --evidence-root "$EVIDENCE_ROOT" \
+  --source-dir founder-reference-directory \
+  --template assignment-review/completed-workbook.json \
+  --out assignment-review/provider-free-validation.json
+```
+
+Before capture, enroll seven independent authorities—executor, canonical API
+runner, frozen-assignment reviewer, GIA reviewer, founder, jewelry designer,
+and staging reviewer—and pin a
+`facetta-release-authority-bundle-config.v2`. The assignment reviewer must hold
+the `frozen_assignment_reviewer` qualification and use the exact operational
+key configured as `assignment_reviewer_public_key`. Each role needs
+proof-of-key control, separately verified qualification, an active signed
+status entry, and unique key material. Private keys remain outside the
+repository and evidence root. Enrollment artifacts use opaque identifiers and
+exclude raw personal or credential data.
+
+Once the active seven-role authority bundle is installed, finalize with the
+assignment reviewer's Ed25519 private key kept outside both the repository and
+evidence root. Finalization reopens and re-hashes every compiled evidence file
+immediately before signing, writes the bundle, validation, and pin proposal as
+one fresh atomic batch, and still makes zero provider calls.
+
+```bash
+PYTHONPATH=src .venv/bin/python scripts/author_frozen_assignment_bundle.py \
+  finalize \
+  --evidence-root "$EVIDENCE_ROOT" \
+  --source-dir founder-reference-directory \
+  --template assignment-review/completed-workbook.json \
+  --private-key /separate/secret/path/assignment-reviewer.key \
+  --decision-time <explicit-ISO-8601-UTC-time> \
+  --bundle-out assignment-review/signed-assignment-bundle.json \
+  --validation-out assignment-review/final-validation.json \
+  --pin-out assignment-review/pin-proposal.json
+```
+
+The finalization pin proposal identifies the retained source artifact and its
+exact file SHA-256, but deliberately does **not** emit a planner pin: the
+planner resolves frozen-component paths relative to the repository, while the
+signed source still lives in external retained evidence. Review the proposal,
+then use the provider-free `install` command to verify the exact source hash,
+canonical JSON encoding, reviewer signature, and authority binding before an
+atomic no-clobber copy into the config-adjacent repository
+`assignment-bundles` directory. Do not manually copy the signed bundle.
+
+```bash
+PIN_PROPOSAL="$EVIDENCE_ROOT/assignment-review/pin-proposal.json"
+BUNDLE_SHA256=$(PYTHONPATH=src .venv/bin/python -c \
+  'import json,sys; print(json.load(open(sys.argv[1]))["source_file_sha256"])' \
+  "$PIN_PROPOSAL")
+INSTALL_DIR=docs/evals/frozen-founder-corpus-v1/assignment-bundles
+test -d "$INSTALL_DIR" || mkdir "$INSTALL_DIR"
+INSTALL_PATH="$INSTALL_DIR/$CORPUS_RUN_ID.json"
+test ! -e "$INSTALL_PATH"
+
+PYTHONPATH=src .venv/bin/python scripts/author_frozen_assignment_bundle.py \
+  install \
+  --evidence-root "$EVIDENCE_ROOT" \
+  --bundle assignment-review/signed-assignment-bundle.json \
+  --expected-sha256 "$BUNDLE_SHA256" \
+  --out "$INSTALL_PATH"
+```
+
+Only the install command emits the planner-installable, repository-relative
+`resolved_assignment_bundle_pin` in exact
+`repository/path.json@sha256:installed_file_sha256` form. Independently review
+that output and set it as `frozen_components.resolved_assignment_bundle` in
+`config.json`; the installer never edits config. Then rerun both definition
+validation and a fresh provider-free plan into a new retained path:
+
+```bash
+PYTHONPATH=src .venv/bin/python scripts/plan_frozen_corpus_capture.py \
+  validate-definition
+
+POST_INSTALL_PLAN="$EVIDENCE_ROOT/provider-plans/$CORPUS_RUN_ID.json"
+test -d "$EVIDENCE_ROOT/provider-plans"
+test ! -e "$POST_INSTALL_PLAN"
+PYTHONPATH=src .venv/bin/python scripts/plan_frozen_corpus_capture.py \
+  --out "$POST_INSTALL_PLAN" plan
+```
+
+Until the explicit config change and successful post-install validation, the
+production plan remains unresolved with a zero provider budget. Submission,
+validation, finalization, installation, and planning make zero provider calls;
+private keys and private reviewer working paths remain outside the repository
+and retained evidence.
 
 ## 2. Produce and validate the signed capture
 
@@ -211,7 +364,7 @@ artifact, or v1 Boolean human review fails closed.
 
 The completed corpus decision may set `corpus_gate_ready: true`; it cannot set
 `external_beta_ready`. The independent-designer ledger, live staging v4
-evidence, staging signature, and complete six-role authority bundle remain
+evidence, staging signature, and complete seven-role authority bundle remain
 separate requirements of `scripts/verify_external_beta_release.py`. See
 `docs/STUDIO_EXTERNAL_BETA_GATES.md` for the exact combined command.
 

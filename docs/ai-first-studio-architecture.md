@@ -245,12 +245,15 @@ must not be presented as the actual design or buildable geometry.
 ## External beta authority boundary
 
 Local test success cannot authorize external beta. The secured executor,
-canonical API runner, GIA reviewer, founder, independent jewelry designer, and
-staging reviewer are six separately enrolled roles. Each operational gate
-signature must use the exact key ID and normalized Ed25519 public-key digest
-qualified for that role; a qualified but unused enrollment key is not release
-authority. Staging approval also binds the exact fixture-set hash, origin, and
-deployment revision that were tested.
+canonical API runner, frozen-assignment reviewer, GIA reviewer, founder,
+independent jewelry designer, and staging reviewer are seven separately
+enrolled roles. The assignment reviewer approves source-specific
+execute/not-applicable decisions before provider work and cannot share custody
+with execution or downstream quality review. Each operational gate signature
+must use the exact key ID and normalized Ed25519 public-key digest qualified for
+that role; a qualified but unused enrollment key is not release authority.
+Staging approval also binds the exact fixture-set hash, origin, and deployment
+revision that were tested.
 
 Paid corpus execution remains outside the repository behind a secured operator
 boundary. The local producer consumes signed execution and persistence

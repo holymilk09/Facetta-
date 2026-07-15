@@ -16,6 +16,10 @@ from facetta.blind_jewelry_review import (
     GIA_VISUAL_FIDELITY_ROLE,
     validate_blind_review_packet,
 )
+from facetta.frozen_assignment_contract import (
+    SIGNED_ASSIGNMENT_BUNDLE_SCHEMA,
+    canonical_assignment_bundle_payload,
+)
 from facetta.frozen_capture_workload import (
     FROZEN_ROUTING_LABEL,
     build_provider_call_plan,
@@ -55,6 +59,63 @@ def _install_routing_contract(root: Path) -> Path:
     return destination
 
 
+_ASSIGNMENT_REVIEWER_KEY_ID = "assignment-reviewer-test-v1"
+_ASSIGNMENT_REVIEWER_PROFILE_SHA256 = "8" * 64
+
+
+def _assignment_reviewer_private_key() -> Ed25519PrivateKey:
+    return Ed25519PrivateKey.from_private_bytes(bytes(range(32)))
+
+
+def _install_assignment_reviewer(root: Path) -> dict[str, str]:
+    public_key = root / "assignment-reviewer.pub"
+    public_key.write_bytes(
+        _assignment_reviewer_private_key().public_key().public_bytes(
+            encoding=serialization.Encoding.Raw,
+            format=serialization.PublicFormat.Raw,
+        )
+    )
+    return {
+        "key_id": _ASSIGNMENT_REVIEWER_KEY_ID,
+        "path": public_key.name,
+        "sha256": _sha(public_key),
+        "reviewer_profile_sha256": _ASSIGNMENT_REVIEWER_PROFILE_SHA256,
+    }
+
+
+def _sign_assignment_bundle(bundle: dict[str, object]) -> None:
+    bundle["signature"] = {
+        "algorithm": "Ed25519",
+        "key_id": _ASSIGNMENT_REVIEWER_KEY_ID,
+        "value": base64.b64encode(
+            _assignment_reviewer_private_key().sign(
+                canonical_assignment_bundle_payload(bundle)
+            )
+        ).decode("ascii"),
+    }
+
+
+def _signed_assignment_bundle(
+    workload: Path,
+    *,
+    corpus_run_id: str,
+    assignments: list[dict[str, object]],
+) -> dict[str, object]:
+    bundle: dict[str, object] = {
+        "schema_version": SIGNED_ASSIGNMENT_BUNDLE_SCHEMA,
+        "workload_sha256": _sha(workload),
+        "corpus_run_id": corpus_run_id,
+        "reviewer_key_id": _ASSIGNMENT_REVIEWER_KEY_ID,
+        "reviewer_profile_sha256": _ASSIGNMENT_REVIEWER_PROFILE_SHA256,
+        "reviewed_template_sha256": "9" * 64,
+        "release_authority_decision": None,
+        "assignments": assignments,
+        "signature": None,
+    }
+    _sign_assignment_bundle(bundle)
+    return bundle
+
+
 def _binding(evaluation_id: str, kind: str) -> dict[str, object]:
     cases = {case.id: case for case in RING_GOLDEN_CASES}
     if kind == "render":
@@ -87,6 +148,35 @@ def _binding(evaluation_id: str, kind: str) -> dict[str, object]:
     }
 
 
+def _canonical_not_applicable_binding(source_sha256: str) -> dict[str, object]:
+    edit = next(
+        candidate for candidate in CANONICAL_RING_EDITS
+        if candidate.id == "impossible-band-width"
+    )
+    case = next(
+        candidate for candidate in RING_GOLDEN_CASES
+        if candidate.id == edit.golden_case_id
+    )
+    source_spec = build_ring_golden_spec(case)
+    target_spec, issues = apply_canonical_ring_edit(source_spec, edit)
+    assert target_spec is None and issues
+    return {
+        "schema_version": "facetta-frozen-source-assignment.v1",
+        "review_status": "approved",
+        "applicability": "not_applicable",
+        "not_applicable_reason": (
+            "canonical_delta_inapplicable/canonical-edit-apply-failed.v1"
+        ),
+        "review_evidence_sha256": "4" * 64,
+        "source_spec_evidence_sha256": "5" * 64,
+        "component_map_sha256": "6" * 64,
+        "region_evidence_sha256": "7" * 64,
+        "source_sha256": source_sha256,
+        "source_spec": source_spec.model_dump(mode="json"),
+        "canonical_edit_issues": issues,
+    }
+
+
 def _fixture(
     tmp_path: Path,
     *,
@@ -99,6 +189,12 @@ def _fixture(
     necklace = sources / "necklace.png"
     Image.new("RGB", (4, 4), "white").save(ring)
     Image.new("RGB", (4, 4), "blue").save(necklace)
+    edit_evaluation_id = (
+        "impossible-band-width" if not_applicable_edit else "metal-color"
+    )
+    edit_operation_class = (
+        "structural" if not_applicable_edit else "quick_appearance"
+    )
 
     manifest = root / "manifest.json"
     _json(manifest, {
@@ -111,10 +207,14 @@ def _fixture(
         "evaluation_slice": {
             "ring_source_filenames": [ring.name],
             "render_case_ids": ["round-solitaire-yellow-4-narrow"],
-            "operation_ids": ["metal-color"],
+            "operation_ids": [edit_evaluation_id],
             "operation_classes": {
-                "quick_appearance": ["metal-color"],
-                "structural": [],
+                "quick_appearance": (
+                    [] if not_applicable_edit else [edit_evaluation_id]
+                ),
+                "structural": (
+                    [edit_evaluation_id] if not_applicable_edit else []
+                ),
             },
         },
     })
@@ -136,8 +236,8 @@ def _fixture(
             },
             {
                 "kind": "edit",
-                "evaluation_id": "metal-color",
-                "operation_class": "quick_appearance",
+                "evaluation_id": edit_evaluation_id,
+                "operation_class": edit_operation_class,
             },
         ]},
         "sources": [
@@ -159,40 +259,26 @@ def _fixture(
         ],
     })
     assignment_bundle = root / "assignments.json"
-    _json(assignment_bundle, {
-        "schema_version": "facetta-frozen-assignment-bundle.v1",
-        "workload_sha256": _sha(workload),
-        "corpus_run_id": "packet-fixture-run-v1",
-        "assignments": [
+    _json(assignment_bundle, _signed_assignment_bundle(
+        workload,
+        corpus_run_id="packet-fixture-run-v1",
+        assignments=[
             {
                 "source_filename": ring.name,
                 "kind": kind,
                 "evaluation_id": evaluation_id,
-                "binding": _binding(evaluation_id, kind),
+                "binding": (
+                    _canonical_not_applicable_binding(_sha(ring))
+                    if not_applicable_edit and kind == "edit"
+                    else _binding(evaluation_id, kind)
+                ),
             }
             for kind, evaluation_id in (
                 ("render", "round-solitaire-yellow-4-narrow"),
-                ("edit", "metal-color"),
+                ("edit", edit_evaluation_id),
             )
         ],
-    })
-    if not_applicable_edit:
-        assignment_raw = json.loads(assignment_bundle.read_text())
-        edit = next(
-            row for row in assignment_raw["assignments"]
-            if row["kind"] == "edit"
-        )
-        edit["binding"] = {
-            "schema_version": "facetta-frozen-source-assignment.v1",
-            "review_status": "approved",
-            "applicability": "not_applicable",
-            "not_applicable_reason": "source contains no eligible metal surface",
-            "review_evidence_sha256": "4" * 64,
-            "source_spec_evidence_sha256": "5" * 64,
-            "component_map_sha256": "6" * 64,
-            "region_evidence_sha256": "7" * 64,
-        }
-        _json(assignment_bundle, assignment_raw)
+    ))
     private_key = Ed25519PrivateKey.generate()
     public_key = root / "executor.pub"
     public_key.write_bytes(private_key.public_key().public_bytes(
@@ -211,6 +297,7 @@ def _fixture(
             "mean_edit_fidelity": 90,
             "max_outside_mask_drift": 0.18,
         },
+        "assignment_reviewer_public_key": _install_assignment_reviewer(root),
         "frozen_components": {
             "capture_workload": f"workload.json@sha256:{_sha(workload)}",
             "resolved_assignment_bundle": (
@@ -399,7 +486,7 @@ def test_reviewed_not_applicable_row_is_replayed_but_not_blind_reviewed(
     assert len(packet["not_applicable_assignments"]) == 1
     assert packet["source_coverage"][0]["filename"] == "ring.png"
     assert packet["source_coverage"][0]["evaluation_ids"] == [
-        "metal-color", "round-solitaire-yellow-4-narrow",
+        "impossible-band-width", "round-solitaire-yellow-4-narrow",
     ]
     assert len(packet["reviewer_review"]["decisions"]) == 1
     assert len(blind["items"]) == 1

@@ -9,8 +9,13 @@ import pytest
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
+from facetta.frozen_assignment_contract import (
+    SIGNED_ASSIGNMENT_BUNDLE_SCHEMA,
+    canonical_assignment_bundle_payload,
+)
 from facetta.frozen_capture_workload import (
     FROZEN_ROUTING_LABEL,
+    _resolved_assignment,
     _routing_attempt_assignments,
     build_provider_call_plan,
     canonical_capture_payload,
@@ -35,6 +40,110 @@ def _write(path: Path, value: object) -> None:
 
 def _sha(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+_ASSIGNMENT_REVIEWER_KEY_ID = "assignment-reviewer-test-v1"
+_ASSIGNMENT_REVIEWER_PROFILE_SHA256 = "8" * 64
+
+
+def _assignment_reviewer_private_key() -> Ed25519PrivateKey:
+    return Ed25519PrivateKey.from_private_bytes(bytes(range(32)))
+
+
+def _install_assignment_reviewer(root: Path) -> dict[str, str]:
+    public_key = root / "assignment-reviewer.pub"
+    public_key.write_bytes(
+        _assignment_reviewer_private_key().public_key().public_bytes(
+            encoding=serialization.Encoding.Raw,
+            format=serialization.PublicFormat.Raw,
+        )
+    )
+    return {
+        "key_id": _ASSIGNMENT_REVIEWER_KEY_ID,
+        "path": public_key.name,
+        "sha256": _sha(public_key),
+        "reviewer_profile_sha256": _ASSIGNMENT_REVIEWER_PROFILE_SHA256,
+    }
+
+
+def _sign_assignment_bundle(bundle: dict[str, object]) -> None:
+    bundle["signature"] = {
+        "algorithm": "Ed25519",
+        "key_id": _ASSIGNMENT_REVIEWER_KEY_ID,
+        "value": base64.b64encode(
+            _assignment_reviewer_private_key().sign(
+                canonical_assignment_bundle_payload(bundle)
+            )
+        ).decode("ascii"),
+    }
+
+
+def test_component_absence_binding_cannot_replay_across_workload_sources():
+    result = _resolved_assignment(
+        {"filename": "ring.png", "sha256": "1" * 64},
+        {
+            "kind": "edit",
+            "evaluation_id": "metal-color",
+            "operation_class": "quick_appearance",
+        },
+        {
+            "thresholds": {
+                "max_attempts": 3,
+                "mean_edit_fidelity": 0.9,
+                "max_outside_mask_drift": 0.05,
+            },
+            "frozen_components": {
+                "ring_contract": "ring",
+                "prompt_bundle": "prompts",
+                "evaluator_bundle": "evals",
+                "routing": "routing",
+                "routing_contract": "contract",
+            },
+        },
+        {
+            "schema_version": "facetta-frozen-source-assignment.v1",
+            "review_status": "approved",
+            "applicability": "not_applicable",
+            "not_applicable_reason": (
+                "source_component_absent/"
+                "component-map-all-required-kinds-absent.v1"
+            ),
+            "review_evidence_sha256": "2" * 64,
+            "source_spec_evidence_sha256": "3" * 64,
+            "component_map_sha256": "4" * 64,
+            "region_evidence_sha256": "5" * 64,
+            "source_sha256": "9" * 64,
+        },
+        {},
+        "6" * 64,
+    )
+
+    assert result["assignment_resolved"] is False
+    assert (
+        "not-applicable assignment source hash differs from workload"
+        in result["resolution_errors"]
+    )
+
+
+def _signed_assignment_bundle(
+    workload: Path,
+    *,
+    corpus_run_id: str,
+    assignments: list[dict[str, object]],
+) -> dict[str, object]:
+    bundle: dict[str, object] = {
+        "schema_version": SIGNED_ASSIGNMENT_BUNDLE_SCHEMA,
+        "workload_sha256": _sha(workload),
+        "corpus_run_id": corpus_run_id,
+        "reviewer_key_id": _ASSIGNMENT_REVIEWER_KEY_ID,
+        "reviewer_profile_sha256": _ASSIGNMENT_REVIEWER_PROFILE_SHA256,
+        "reviewed_template_sha256": "9" * 64,
+        "release_authority_decision": None,
+        "assignments": assignments,
+        "signature": None,
+    }
+    _sign_assignment_bundle(bundle)
+    return bundle
 
 
 def _install_routing_contract(root: Path) -> Path:
@@ -162,11 +271,10 @@ def _fixture(tmp_path: Path) -> tuple[Path, Path, Path, Path]:
         ],
     })
     assignment_bundle = root / "assignments.json"
-    _write(assignment_bundle, {
-        "schema_version": "facetta-frozen-assignment-bundle.v1",
-        "workload_sha256": _sha(workload),
-        "corpus_run_id": "fixture-corpus-run-v1",
-        "assignments": [
+    _write(assignment_bundle, _signed_assignment_bundle(
+        workload,
+        corpus_run_id="fixture-corpus-run-v1",
+        assignments=[
             {
                 "source_filename": "ring.png",
                 "kind": kind,
@@ -178,7 +286,7 @@ def _fixture(tmp_path: Path) -> tuple[Path, Path, Path, Path]:
                 ("edit", "metal-color"),
             )
         ],
-    })
+    ))
     routing_contract = _install_routing_contract(root)
     _write(config, {
         "config_id": "fixture-config-v1",
@@ -190,6 +298,7 @@ def _fixture(tmp_path: Path) -> tuple[Path, Path, Path, Path]:
             "mean_edit_fidelity": 90,
             "max_outside_mask_drift": 0.18,
         },
+        "assignment_reviewer_public_key": _install_assignment_reviewer(root),
         "frozen_components": {
             "capture_workload": f"workload.json@sha256:{_sha(workload)}",
             "resolved_assignment_bundle": (
@@ -208,10 +317,33 @@ def _fixture(tmp_path: Path) -> tuple[Path, Path, Path, Path]:
 
 
 def _mark_edit_not_applicable(root: Path, config: Path, *, reason: str) -> None:
+    canonical_reason = (
+        "canonical_delta_inapplicable/canonical-edit-apply-failed.v1"
+    )
+    if reason == canonical_reason:
+        manifest = root / "manifest.json"
+        manifest_raw = json.loads(manifest.read_text())
+        manifest_raw["evaluation_slice"]["operation_ids"] = [
+            "impossible-band-width"
+        ]
+        manifest_raw["evaluation_slice"]["operation_classes"] = {
+            "quick_appearance": [],
+            "structural": ["impossible-band-width"],
+        }
+        _write(manifest, manifest_raw)
+
+        workload = root / "workload.json"
+        workload_raw = json.loads(workload.read_text())
+        workload_raw["manifest_sha256"] = _sha(manifest)
+        edit_evaluation = workload_raw["evaluation_sets"]["ring-full-v1"][1]
+        edit_evaluation["evaluation_id"] = "impossible-band-width"
+        edit_evaluation["operation_class"] = "structural"
+        _write(workload, workload_raw)
+
     assignments = root / "assignments.json"
     raw = json.loads(assignments.read_text())
     edit = next(row for row in raw["assignments"] if row["kind"] == "edit")
-    edit["binding"] = {
+    binding: dict[str, object] = {
         "schema_version": "facetta-frozen-source-assignment.v1",
         "review_status": "approved",
         "applicability": "not_applicable",
@@ -221,8 +353,38 @@ def _mark_edit_not_applicable(root: Path, config: Path, *, reason: str) -> None:
         "component_map_sha256": "6" * 64,
         "region_evidence_sha256": "7" * 64,
     }
+    if reason == canonical_reason:
+        impossible_edit = next(
+            candidate for candidate in CANONICAL_RING_EDITS
+            if candidate.id == "impossible-band-width"
+        )
+        source_spec = build_ring_golden_spec(
+            next(
+                case for case in RING_GOLDEN_CASES
+                if case.id == impossible_edit.golden_case_id
+            )
+        )
+        target_spec, issues = apply_canonical_ring_edit(
+            source_spec,
+            impossible_edit,
+        )
+        assert target_spec is None and issues
+        edit["evaluation_id"] = impossible_edit.id
+        binding.update({
+            "source_sha256": "a" * 64,
+            "source_spec": source_spec.model_dump(mode="json"),
+            "canonical_edit_issues": issues,
+        })
+        raw["workload_sha256"] = _sha(root / "workload.json")
+    edit["binding"] = binding
+    _sign_assignment_bundle(raw)
     _write(assignments, raw)
     config_raw = json.loads(config.read_text())
+    if reason == canonical_reason:
+        config_raw["manifest_sha256"] = _sha(root / "manifest.json")
+        config_raw["frozen_components"]["capture_workload"] = (
+            f"workload.json@sha256:{_sha(root / 'workload.json')}"
+        )
     config_raw["frozen_components"]["resolved_assignment_bundle"] = (
         f"assignments.json@sha256:{_sha(assignments)}"
     )
@@ -259,6 +421,192 @@ def test_definition_rejects_quality_assignment_outside_ring_slice(tmp_path: Path
     )
     assert result["status"] == "fail"
     assert "non-ring source has a quality assignment: necklace.png" in result["errors"]
+
+
+@pytest.mark.parametrize("second_filename", ("ring.png", "Ring.png"))
+def test_definition_rejects_candidate_and_mask_stem_collisions_provider_free(
+    tmp_path: Path,
+    second_filename: str,
+):
+    root, manifest, config, workload = _fixture(tmp_path)
+    manifest_raw = json.loads(manifest.read_text())
+    manifest_raw["evaluation_slice"]["ring_source_filenames"] = [
+        "ring.jpg",
+        second_filename,
+    ]
+    manifest_raw["sources"][0] = {
+        "filename": "ring.jpg",
+        "sha256": "c" * 64,
+    }
+    manifest_raw["sources"][1] = {
+        "filename": second_filename,
+        "sha256": "a" * 64,
+    }
+    _write(manifest, manifest_raw)
+
+    workload_raw = json.loads(workload.read_text())
+    workload_raw["manifest_sha256"] = _sha(manifest)
+    workload_raw["expected_quality_source_count"] = 2
+    workload_raw["sources"] = [
+        {
+            "filename": "ring.jpg",
+            "sha256": "c" * 64,
+            "integrity_required": True,
+            "quality": {
+                "slice": "ring",
+                "evaluation_set_id": "ring-full-v1",
+            },
+        },
+        {
+            "filename": second_filename,
+            "sha256": "a" * 64,
+            "integrity_required": True,
+            "quality": {
+                "slice": "ring",
+                "evaluation_set_id": "ring-full-v1",
+            },
+        },
+    ]
+    _write(workload, workload_raw)
+
+    config_raw = json.loads(config.read_text())
+    config_raw["manifest_sha256"] = _sha(manifest)
+    config_raw["frozen_components"]["capture_workload"] = (
+        f"workload.json@sha256:{_sha(workload)}"
+    )
+    _write(config, config_raw)
+
+    result = validate_workload_definition(
+        manifest,
+        config,
+        workload,
+        repository_root=root,
+    )
+
+    assert result["status"] == "fail"
+    assert result["provider_calls"] == 0
+    collision_error = next(
+        error for error in result["errors"]
+        if error.startswith("provider artifact output stem collisions:")
+    )
+    assert "ring--render--round-solitaire-yellow-4-narrow" in collision_error
+    assert "candidate:ring.jpg:render:round-solitaire-yellow-4-narrow" in (
+        collision_error
+    )
+    assert f"candidate:{second_filename}:render:round-solitaire-yellow-4-narrow" in (
+        collision_error
+    )
+    assert "ring--edit--metal-color--mask" in collision_error
+    assert "mask:ring.jpg:edit:metal-color" in collision_error
+    assert f"mask:{second_filename}:edit:metal-color" in collision_error
+    with pytest.raises(
+        ValueError,
+        match="invalid workload definition:.*output stem collisions",
+    ):
+        build_provider_call_plan(
+            manifest,
+            config,
+            workload,
+            repository_root=root,
+        )
+
+
+def test_definition_rejects_non_ascii_or_non_nfc_source_names(tmp_path: Path):
+    root, manifest, config, workload = _fixture(tmp_path)
+    unsafe = "e\u0301.png"
+    manifest_raw = json.loads(manifest.read_text())
+    manifest_raw["sources"][0]["filename"] = unsafe
+    manifest_raw["evaluation_slice"]["ring_source_filenames"] = [unsafe]
+    _write(manifest, manifest_raw)
+    workload_raw = json.loads(workload.read_text())
+    workload_raw["manifest_sha256"] = _sha(manifest)
+    workload_raw["sources"][0]["filename"] = unsafe
+    _write(workload, workload_raw)
+    config_raw = json.loads(config.read_text())
+    config_raw["manifest_sha256"] = _sha(manifest)
+    config_raw["frozen_components"]["capture_workload"] = (
+        f"workload.json@sha256:{_sha(workload)}"
+    )
+    _write(config, config_raw)
+
+    result = validate_workload_definition(
+        manifest, config, workload, repository_root=root,
+    )
+
+    assert result["status"] == "fail"
+    assert any(
+        "source filenames are not portable artifact identifiers" in error
+        for error in result["errors"]
+    )
+
+
+@pytest.mark.parametrize(
+    "unsafe",
+    ["CON.png", "aux.jpg", "LPT9.webp", "nul.reference.avif", "ring..v1.png"],
+)
+def test_definition_rejects_windows_reserved_or_ambiguous_source_names(
+    tmp_path: Path,
+    unsafe: str,
+):
+    root, manifest, config, workload = _fixture(tmp_path)
+    manifest_raw = json.loads(manifest.read_text())
+    manifest_raw["sources"][0]["filename"] = unsafe
+    manifest_raw["evaluation_slice"]["ring_source_filenames"] = [unsafe]
+    _write(manifest, manifest_raw)
+    workload_raw = json.loads(workload.read_text())
+    workload_raw["manifest_sha256"] = _sha(manifest)
+    workload_raw["sources"][0]["filename"] = unsafe
+    _write(workload, workload_raw)
+    config_raw = json.loads(config.read_text())
+    config_raw["manifest_sha256"] = _sha(manifest)
+    config_raw["frozen_components"]["capture_workload"] = (
+        f"workload.json@sha256:{_sha(workload)}"
+    )
+    _write(config, config_raw)
+
+    result = validate_workload_definition(
+        manifest, config, workload, repository_root=root,
+    )
+
+    assert result["status"] == "fail"
+    assert any(
+        "source filenames are not portable artifact identifiers" in error
+        for error in result["errors"]
+    )
+
+
+def test_definition_rejects_traversal_like_evaluation_ids(tmp_path: Path):
+    root, manifest, config, workload = _fixture(tmp_path)
+    unsafe = "foo/../bar"
+    manifest_raw = json.loads(manifest.read_text())
+    manifest_raw["evaluation_slice"]["operation_ids"] = [unsafe]
+    manifest_raw["evaluation_slice"]["operation_classes"] = {
+        "quick_appearance": [],
+        "structural": [unsafe],
+    }
+    _write(manifest, manifest_raw)
+    workload_raw = json.loads(workload.read_text())
+    workload_raw["manifest_sha256"] = _sha(manifest)
+    workload_raw["evaluation_sets"]["ring-full-v1"][1]["evaluation_id"] = unsafe
+    workload_raw["evaluation_sets"]["ring-full-v1"][1]["operation_class"] = (
+        "structural"
+    )
+    _write(workload, workload_raw)
+    config_raw = json.loads(config.read_text())
+    config_raw["manifest_sha256"] = _sha(manifest)
+    config_raw["frozen_components"]["capture_workload"] = (
+        f"workload.json@sha256:{_sha(workload)}"
+    )
+    _write(config, config_raw)
+
+    result = validate_workload_definition(
+        manifest, config, workload, repository_root=root,
+    )
+
+    assert result["status"] == "fail"
+    assert any(
+        "non-portable evaluation_id" in error for error in result["errors"]
+    )
 
 
 @pytest.mark.parametrize(
@@ -363,6 +711,10 @@ def test_plan_is_deterministic_and_executes_no_provider_calls(tmp_path: Path):
     assert first["maximum_provider_attempt_count"] == 6
     assert first["logical_scope_maximum_attempt_count"] == 6
     assert first["corpus_run_id"] == "fixture-corpus-run-v1"
+    assert first["assignment_bundle"]["reviewer_key_id"] == (
+        _ASSIGNMENT_REVIEWER_KEY_ID
+    )
+    assert first["assignment_bundle"]["reviewed_template_sha256"] == "9" * 64
     assert {row["source_filename"] for row in first["items"]} == {"ring.png"}
     for row in first["items"]:
         assert row["resolved_inputs"]["schema_version"] == (
@@ -388,12 +740,126 @@ def test_plan_is_deterministic_and_executes_no_provider_calls(tmp_path: Path):
             }
 
 
+def test_plan_rejects_unsigned_v1_assignment_bundle_provider_free(tmp_path: Path):
+    root, manifest, config, workload = _fixture(tmp_path)
+    assignment_bundle = root / "assignments.json"
+    signed = json.loads(assignment_bundle.read_text())
+    legacy = {
+        "schema_version": "facetta-frozen-assignment-bundle.v1",
+        "workload_sha256": signed["workload_sha256"],
+        "corpus_run_id": signed["corpus_run_id"],
+        "assignments": signed["assignments"],
+    }
+    _write(assignment_bundle, legacy)
+    config_raw = json.loads(config.read_text())
+    config_raw["frozen_components"]["resolved_assignment_bundle"] = (
+        f"assignments.json@sha256:{_sha(assignment_bundle)}"
+    )
+    _write(config, config_raw)
+
+    with pytest.raises(ValueError, match="assignment bundle schema is unsupported"):
+        build_provider_call_plan(
+            manifest,
+            config,
+            workload,
+            repository_root=root,
+        )
+
+
+def test_plan_verifies_signature_before_resolving_assignment_rows(
+    tmp_path: Path,
+):
+    root, manifest, config, workload = _fixture(tmp_path)
+    assignment_bundle = root / "assignments.json"
+    raw = json.loads(assignment_bundle.read_text())
+    raw["assignments"][0]["binding"] = {
+        "schema_version": "operator-invented-assignment.v1",
+    }
+    _write(assignment_bundle, raw)
+    config_raw = json.loads(config.read_text())
+    config_raw["frozen_components"]["resolved_assignment_bundle"] = (
+        f"assignments.json@sha256:{_sha(assignment_bundle)}"
+    )
+    _write(config, config_raw)
+
+    with pytest.raises(ValueError, match="assignment bundle signature is invalid"):
+        build_provider_call_plan(
+            manifest,
+            config,
+            workload,
+            repository_root=root,
+        )
+
+
+def test_plan_rejects_signed_shadow_binding_fields_provider_free(tmp_path: Path):
+    root, manifest, config, workload = _fixture(tmp_path)
+    assignment_bundle = root / "assignments.json"
+    raw = json.loads(assignment_bundle.read_text())
+    raw["assignments"][0]["binding"]["provider_override"] = "operator-choice"
+    _sign_assignment_bundle(raw)
+    _write(assignment_bundle, raw)
+    config_raw = json.loads(config.read_text())
+    config_raw["frozen_components"]["resolved_assignment_bundle"] = (
+        f"assignments.json@sha256:{_sha(assignment_bundle)}"
+    )
+    _write(config, config_raw)
+
+    with pytest.raises(
+        ValueError,
+        match="assignment bundle binding has unexpected or missing fields",
+    ):
+        build_provider_call_plan(
+            manifest,
+            config,
+            workload,
+            repository_root=root,
+        )
+
+
+def test_plan_blocks_signed_not_applicable_render_provider_free(tmp_path: Path):
+    root, manifest, config, workload = _fixture(tmp_path)
+    assignment_bundle = root / "assignments.json"
+    raw = json.loads(assignment_bundle.read_text())
+    render = next(row for row in raw["assignments"] if row["kind"] == "render")
+    render["binding"] = {
+        "schema_version": "facetta-frozen-source-assignment.v1",
+        "review_status": "approved",
+        "applicability": "not_applicable",
+        "not_applicable_reason": (
+            "canonical_delta_inapplicable/canonical-edit-apply-failed.v1"
+        ),
+        "review_evidence_sha256": "4" * 64,
+        "source_spec_evidence_sha256": "5" * 64,
+        "component_map_sha256": "6" * 64,
+        "region_evidence_sha256": "7" * 64,
+    }
+    _sign_assignment_bundle(raw)
+    _write(assignment_bundle, raw)
+    config_raw = json.loads(config.read_text())
+    config_raw["frozen_components"]["resolved_assignment_bundle"] = (
+        f"assignments.json@sha256:{_sha(assignment_bundle)}"
+    )
+    _write(config, config_raw)
+
+    with pytest.raises(ValueError, match="render cannot be not_applicable"):
+        build_provider_call_plan(
+            manifest,
+            config,
+            workload,
+            repository_root=root,
+        )
+
+
 def test_reviewed_not_applicable_rows_remain_signed_without_provider_calls(
     tmp_path: Path,
 ):
     root, manifest, config, workload = _fixture(tmp_path)
     _mark_edit_not_applicable(
-        root, config, reason="source has no plated metal surface to recolor",
+        root,
+        config,
+        reason=(
+            "canonical_delta_inapplicable/canonical-edit-apply-failed.v1"
+        ),
     )
     private_key, public_key_path = _executor_key(root, config)
     plan = build_provider_call_plan(
@@ -552,13 +1018,10 @@ def test_malformed_not_applicable_assignment_blocks_without_provider_calls(
 ):
     root, manifest, config, workload = _fixture(tmp_path)
     _mark_edit_not_applicable(root, config, reason="")
-    plan = build_provider_call_plan(
-        manifest, config, workload, repository_root=root,
-    )
-    assert plan["provider_calls_executed"] == 0
-    assert plan["unresolved_sequence_count"] == 1
-    assert plan["not_applicable_sequence_count"] == 0
-    assert plan["capture_status"] == "blocked_unresolved_assignments"
+    with pytest.raises(ValueError, match="not-applicable reason is unsupported"):
+        build_provider_call_plan(
+            manifest, config, workload, repository_root=root,
+        )
 
 
 def test_production_matrix_is_scope_only_until_reviewed_bindings_are_pinned():
@@ -593,6 +1056,7 @@ def test_provider_free_fake_executor_covers_all_1044_synthetic_assignments(
     config = root / "config.json"
     _write(manifest, json.loads((frozen / "manifest.json").read_text()))
     workload_raw = json.loads((frozen / "workload.json").read_text())
+    workload_raw["config_id"] = "synthetic-complete-1044-v1"
     workload_raw["manifest_sha256"] = _sha(manifest)
     _write(workload, workload_raw)
     evaluation_set = workload_raw["evaluation_sets"][
@@ -612,12 +1076,11 @@ def test_provider_free_fake_executor_covers_all_1044_synthetic_assignments(
         for evaluation in evaluation_set
     ]
     assignment_bundle = root / "assignments.json"
-    _write(assignment_bundle, {
-        "schema_version": "facetta-frozen-assignment-bundle.v1",
-        "workload_sha256": _sha(workload),
-        "corpus_run_id": "synthetic-complete-1044-v1",
-        "assignments": assignments,
-    })
+    _write(assignment_bundle, _signed_assignment_bundle(
+        workload,
+        corpus_run_id="synthetic-complete-1044-v1",
+        assignments=assignments,
+    ))
     routing_contract = _install_routing_contract(root)
     _write(config, {
         "config_id": workload_raw["config_id"],
@@ -629,6 +1092,7 @@ def test_provider_free_fake_executor_covers_all_1044_synthetic_assignments(
             "mean_edit_fidelity": 90,
             "max_outside_mask_drift": 0.18,
         },
+        "assignment_reviewer_public_key": _install_assignment_reviewer(root),
         "frozen_components": {
             "capture_workload": f"workload.json@sha256:{_sha(workload)}",
             "resolved_assignment_bundle": (

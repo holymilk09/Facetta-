@@ -59,6 +59,7 @@ DEFAULT_MAX_STATUS_VALIDITY = timedelta(hours=24)
 ReleaseAuthorityRole = Literal[
     "executor",
     "canonical_api_runner",
+    "assignment_reviewer",
     "gia_reviewer",
     "founder",
     "jewelry_designer",
