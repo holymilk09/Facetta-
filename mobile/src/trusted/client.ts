@@ -2252,6 +2252,11 @@ const decodeStudioPreviewCandidate = (
     return { ...base, kind: 'visual', expected_design_version: null, scope: value.scope };
   }
   if (value.kind === 'catalog_revision') {
+    // The backend exposes only execution-authority-consistent catalog rows:
+    // jobless rows are validated instant transforms; job-bound rows are
+    // provider previews. Keep this derived marker on the typed mobile seam
+    // without expanding the frozen normalized HTTP response.
+    const executionMode = studioJobId === null ? 'instant' : 'provider';
     const componentPath = knownComponentCatalogPath(value.component_path);
     const optionId = nullableText(value.option_id);
     const specChange = decodeCatalogSpecChanges(value.spec_change);
@@ -2262,6 +2267,7 @@ const decodeStudioPreviewCandidate = (
     ) return null;
     return {
       ...base, kind: 'catalog_revision', expected_design_version: designVersion,
+      execution_mode: executionMode,
       component_path: componentPath, option_id: optionId,
       spec_change: specChange, next_spec: nextSpec,
     };

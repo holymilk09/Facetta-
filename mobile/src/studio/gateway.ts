@@ -210,6 +210,7 @@ export interface StudioResumedRefinePreview {
   candidate: PreviewCandidate;
   kind: 'catalog' | 'markup' | 'visual';
   intent: RefineReviewIntent;
+  executionMode?: 'instant' | 'provider';
   understoodAs: string;
 }
 
@@ -1890,6 +1891,12 @@ export function createStudioGateway(
         const jobBoundCandidates = matchingLineage.filter((item) => (
           matchingJob !== null && item.studio_job_id === matchingJob.job_id
         ));
+        const joblessInstantCandidates = matchingLineage.filter((item) => (
+          matchingJob === null
+          && item.kind === 'catalog_revision'
+          && item.execution_mode === 'instant'
+          && item.studio_job_id === null
+        ));
         if (
           matchingJob !== null
           && matchingJob.billing.requested_outputs === 1
@@ -1899,7 +1906,17 @@ export function createStudioGateway(
           'This one-output Activity job has multiple exact preview candidates.',
           'invalid_response', result.status,
         );
-        const latest = jobBoundCandidates
+        const eligibleCandidates = matchingJob === null
+          ? joblessInstantCandidates : jobBoundCandidates;
+        if (
+          matchingJob === null
+          && joblessInstantCandidates.length !== matchingLineage.length
+        ) return gatewayError(
+          'RESUME_REFINE_JOB_MISMATCH',
+          'Only a validated instant component preview can resume without an Activity job.',
+          'conflict', 409,
+        );
+        const latest = eligibleCandidates
           .sort((left, right) => (
             Date.parse(left.expires_at) - Date.parse(right.expires_at)
             || left.candidate_id.localeCompare(right.candidate_id)
@@ -1973,6 +1990,9 @@ export function createStudioGateway(
             candidate,
             kind,
             intent: canonicalRefineReviewIntent(latest),
+            ...(latest.kind === 'catalog_revision'
+              ? { executionMode: latest.execution_mode }
+              : {}),
             understoodAs: kind === 'visual'
               ? 'A pending visual preview was restored for review.'
               : kind === 'markup'

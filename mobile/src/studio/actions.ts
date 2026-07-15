@@ -180,6 +180,19 @@ export function getStudioAction(id: StudioActionId): StudioActionDefinition {
   return action;
 }
 
+/**
+ * Fail closed before mounting workspaces whose availability carries backend
+ * eligibility, not just progressive-disclosure state. Other workspaces can be
+ * opened while a newly hydrated project is settling into React state; Factory
+ * must always be rechecked against the current exact-revision context.
+ */
+export function canMountStudioWorkspace(
+  actionId: StudioWorkspaceActionId,
+  context: StudioActionContext,
+): boolean {
+  return actionId !== 'factory' || getStudioAction(actionId).isAvailable(context);
+}
+
 /** Apply the canonical action's review authority to local lifecycle checks. */
 export function transitionStudioJob(
   job: StudioJob,

@@ -13,7 +13,9 @@ import {
 } from './src/auth';
 import { LoginScreen, PasswordRecoveryScreen } from './src/LoginScreen';
 import { OnboardingScreen } from './src/OnboardingScreen';
-import type { StudioActionLaunchIntent } from './src/studio/actions';
+import {
+  canMountStudioWorkspace, type StudioActionLaunchIntent,
+} from './src/studio/actions';
 import {
   StudioActionContext, StudioWorkspaceActionId,
 } from './src/studio/contracts';
@@ -473,6 +475,7 @@ export default function App() {
     preserveActivityReview = false,
     afterConfirmation: PostConfirmDestination = 'refine',
   ) => {
+    if (!canMountStudioWorkspace(actionId, actionContext)) return;
     if (!preserveCreateReview) setCreateReview(null);
     if (!preserveActivityReview) setActivityReview(null);
     if (actionId === 'confirm') setPostConfirmDestination(afterConfirmation);

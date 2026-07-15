@@ -703,6 +703,7 @@ export interface StudioVisualPreviewCandidate extends StudioPreviewCandidateBase
 
 export interface StudioCatalogRevisionPreviewCandidate extends StudioPreviewCandidateBase {
   kind: 'catalog_revision';
+  execution_mode: 'instant' | 'provider';
   component_path: ComponentCatalogPath;
   option_id: string;
   spec_change: SpecChange[];

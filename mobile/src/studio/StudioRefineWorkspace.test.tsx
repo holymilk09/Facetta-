@@ -1367,6 +1367,72 @@ describe('StudioRefineWorkspace', () => {
     expect(onVariationCreated).not.toHaveBeenCalled();
   });
 
+  test('does not remain busy when variation saving becomes unavailable before submission', async () => {
+    const resumeRefine = jest.fn(async () => ({
+      data: {
+        kind: 'catalog' as const,
+        executionMode: 'instant' as const,
+        understoodAs: 'A pending component preview was restored for review.',
+        intent: {
+          kind: 'component' as const, componentPath: 'metal.color' as const,
+          optionId: 'rose', requestedChange: 'Apply rose gold',
+        },
+        candidate: {
+          id: 'candidate_unavailable_variation', jobId: 'run_unavailable_variation',
+          sourceRevisionId: 'asset_2', assetUrl: 'https://test/unavailable-preview.png',
+          verdict: 'pass' as const, status: 'pending_review' as const, checks: [],
+          temporary: true, expiresAt: '2099-01-01T00:00:00Z', decision: null,
+          decidedAt: null, canonicalRevisionId: null,
+        },
+      }, error: null, status: 200,
+    }));
+    let availableSave: jest.Mock | undefined = jest.fn();
+    const gateway = {
+      resumeRefine,
+      previewCatalogRefine: jest.fn(), applyCatalogRefine: jest.fn(),
+      discardCatalogRefine: jest.fn(), previewMarkupRefine: jest.fn(),
+      applyMarkupRefine: jest.fn(), discardMarkupRefine: jest.fn(),
+      previewVisualRefine: jest.fn(), applyVisualRefine: jest.fn(),
+      discardVisualRefine: jest.fn(),
+    } as any;
+    Object.defineProperty(gateway, 'saveCatalogPreviewAsVariation', {
+      configurable: true,
+      get: () => availableSave,
+    });
+    await renderWithAuth(
+      <StudioRefineWorkspace
+        api={{
+          getComponentCatalog: jest.fn(async () => ({ data: catalog, error: null, status: 200 })),
+          getStudioComponentTargeting: getReadyTargeting,
+          readMarkup: jest.fn(),
+        }}
+        gateway={gateway}
+        lineage={{ projectId: 'project_1', sourceAssetId: 'asset_2', sourceDesignVersion: 2 }}
+        createdBy="designer"
+        sourceImageUrl="https://test/source.png"
+        onApplied={jest.fn()}
+      />,
+    );
+
+    expect(await screen.findByText('Save as Variation')).toBeTruthy();
+    await fireEvent(screen.getByLabelText('Exact source revision'), 'load');
+    await fireEvent(screen.getByLabelText('Temporary refinement preview'), 'load');
+    await fireEvent.press(screen.getByText('Save as Variation'));
+    await fireEvent.changeText(
+      screen.getByPlaceholderText('e.g. Rose gold halo'),
+      'Rose direction',
+    );
+    availableSave = undefined;
+    await fireEvent.press(screen.getByText('Save named variation'));
+
+    expect(await screen.findByText(
+      'Saving this preview as a variation is temporarily unavailable.',
+    )).toBeTruthy();
+    expect(screen.getByText('Discard')).toBeTruthy();
+    expect(screen.queryByText('Working…')).toBeNull();
+    expect(screen.queryByText('Saving…')).toBeNull();
+  });
+
   test('keeps Advanced specifications out of the ordinary Refine workspace', async () => {
     const getStudioComponentTargeting = jest.fn(async () => ({
       data: readyTargeting, error: null, status: 200,

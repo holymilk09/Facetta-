@@ -3,7 +3,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
-  getStudioAction, getStudioActionPrerequisite, getStudioActionUnavailableReason,
+  canMountStudioWorkspace, getStudioAction, getStudioActionPrerequisite,
+  getStudioActionUnavailableReason,
   getStudioContextActions, getVisibleStudioActions, resolveStudioActionLaunch,
   STUDIO_ACTIONS, transitionStudioJob,
 } from './actions';
@@ -66,6 +67,23 @@ test('Factory remains absent until the backend confirms exact-revision eligibili
     }, 'more').map((action) => action.id),
     [],
   );
+});
+
+test('the host route fails closed when Factory eligibility is missing or stale', () => {
+  const exact = {
+    ...emptyContext,
+    activeDesignId: 'dsn_1',
+    activeRevisionId: 'rev_1',
+    hasExactSpecification: true,
+  };
+  assert.equal(canMountStudioWorkspace('factory', exact), false);
+  assert.equal(canMountStudioWorkspace('factory', {
+    ...exact, factoryEligible: true,
+  }), true);
+  assert.equal(canMountStudioWorkspace('factory', {
+    ...exact, activeRevisionId: null, factoryEligible: true,
+  }), false);
+  assert.equal(canMountStudioWorkspace('refine', exact), true);
 });
 
 test('the contextual switcher keeps the same six stable commands', () => {

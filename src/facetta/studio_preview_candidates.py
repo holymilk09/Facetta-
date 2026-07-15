@@ -290,6 +290,63 @@ def _catalog_next_spec(payload: JsonObject, *, candidate=None) -> JsonObject:
     return spec.model_dump(mode="json")
 
 
+def _validate_catalog_execution_authority(
+    record: PreviewCandidateRecord,
+    payload: JsonObject,
+    *,
+    candidate=None,
+) -> None:
+    """Fail closed unless durable routing and job authority agree."""
+
+    routing = (
+        getattr(candidate, "routing", None)
+        if candidate is not None
+        else payload.get("routing")
+    )
+    if not isinstance(routing, dict):
+        raise StudioPreviewCandidateError(
+            "preview_candidate_execution_invalid",
+            "the catalog preview routing evidence is incomplete or invalid",
+            status_code=422,
+        )
+    common_routing_valid = (
+        routing.get("run_id") == record.image_run_id
+        and isinstance(routing.get("used_retry"), bool)
+        and isinstance(routing.get("used_fallback"), bool)
+        and isinstance(routing.get("cache_hit"), bool)
+    )
+    raw_mode = routing.get("execution_mode")
+    if raw_mode == "instant_masked_transform":
+        transform_hash = payload.get("transform_contract_sha256")
+        valid = (
+            common_routing_valid
+            and record.studio_job_id is None
+            and routing.get("provider_calls") == 0
+            and routing.get("attempt_count") == 0
+            and isinstance(transform_hash, str)
+            and len(transform_hash) == 64
+            and routing.get("transform_contract_sha256") == transform_hash
+        )
+    elif raw_mode is None:
+        attempt_count = routing.get("attempt_count")
+        valid = (
+            common_routing_valid
+            and record.studio_job_id is not None
+            and isinstance(attempt_count, int)
+            and not isinstance(attempt_count, bool)
+            and attempt_count >= 1
+            and payload.get("transform_contract_sha256") is None
+        )
+    else:
+        valid = False
+    if not valid:
+        raise StudioPreviewCandidateError(
+            "preview_candidate_execution_invalid",
+            "the catalog preview execution mode does not match its routing and job authority",
+            status_code=422,
+        )
+
+
 def _projection(
     record: CandidateRecord,
     *,
@@ -324,6 +381,7 @@ def _projection(
             if candidate is not None
             else payload.get("spec_change", [])
         )
+        _validate_catalog_execution_authority(record, payload, candidate=candidate)
         detail = {
             "component_path": (
                 getattr(candidate, "component_path", None)

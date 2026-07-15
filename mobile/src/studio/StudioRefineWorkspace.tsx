@@ -504,6 +504,9 @@ export function StudioRefineWorkspace({
           candidate: result.data.candidate,
           kind: result.data.kind,
           intent: result.data.intent,
+          executionMode: result.data.executionMode,
+          estimatedCredits: result.data.executionMode === 'instant'
+            ? 0 : result.data.executionMode === 'provider' ? refineCreditsPerOutput : undefined,
         });
         setUnderstoodAs(result.data.understoodAs);
       }
@@ -1011,8 +1014,6 @@ export function StudioRefineWorkspace({
       setError('Give this variation a short name before saving it.');
       return;
     }
-    setBusy(true);
-    setError(null);
     const saveCatalog = gateway.saveCatalogPreviewAsVariation;
     const saveMarkup = gateway.saveMarkupPreviewAsVariation;
     const saveVisual = gateway.saveVisualPreviewAsVariation;
@@ -1022,6 +1023,8 @@ export function StudioRefineWorkspace({
       setError('Saving this preview as a variation is temporarily unavailable.');
       return;
     }
+    setBusy(true);
+    setError(null);
     decisionInFlight.current = true;
     const result = preview.kind === 'catalog'
       ? await saveCatalog!({

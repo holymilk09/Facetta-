@@ -101,6 +101,7 @@ describe('normalized Studio preview-candidate client', () => {
     expect(catalog?.kind === 'catalog_revision' ? catalog.next_spec : null).toEqual(
       catalogCandidate.next_spec,
     );
+    expect(catalog?.kind === 'catalog_revision' ? catalog.execution_mode : null).toBe('provider');
     expect(result.data?.candidates[0]?.preview_url).toBe(
       'https://facetta.test/studio/preview-candidates/candidate%20visual/image?owner=designer',
     );
@@ -111,6 +112,29 @@ describe('normalized Studio preview-candidate client', () => {
       'https://facetta.test/studio/projects/project%20one/preview-candidates',
       expect.objectContaining({ headers: expect.any(Object) }),
     );
+  });
+
+  test('derives instant execution only from a backend-validated jobless catalog row', async () => {
+    const instant = {
+      ...catalogCandidate,
+      candidate_id: 'candidate instant catalog',
+      image_run_id: 'run instant catalog',
+      studio_job_id: null,
+      preview_url: '/studio/preview-candidates/candidate%20instant%20catalog/image?owner=designer',
+      decision_url: '/studio/preview-candidates/candidate%20instant%20catalog/decision',
+    };
+    const fetcher = jest.fn(async () => response({ candidates: [instant] }));
+    const client = createTrustedApiClient({ baseUrl: 'https://facetta.test', fetcher });
+
+    const result = await client.listStudioPreviewCandidates('project one', 'designer');
+
+    expect(result.error).toBeNull();
+    expect(result.data?.candidates[0]).toEqual(expect.objectContaining({
+      candidate_id: 'candidate instant catalog',
+      kind: 'catalog_revision',
+      execution_mode: 'instant',
+      studio_job_id: null,
+    }));
   });
 
   test('gets one candidate with an owner-bound request and lists resolved candidates explicitly', async () => {

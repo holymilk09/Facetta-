@@ -102,7 +102,13 @@ const candidate = (
   ...(kind === 'visual'
     ? { scope: 'appearance' as const }
     : kind === 'catalog_revision'
-      ? { component_path: 'metal.material' as const, option_id: 'platinum', spec_change: [], next_spec: {} }
+      ? {
+          execution_mode: 'provider' as const,
+          component_path: 'metal.material' as const,
+          option_id: 'platinum',
+          spec_change: [],
+          next_spec: {},
+        }
       : { operation: 'change_prongs', region_description: 'center setting' }),
 } as StudioPreviewCandidate);
 
@@ -144,11 +150,14 @@ const baseClient = (
   getProject: (projectId: string) => Promise<ApiResult<ProjectDetail>>,
   options: {
     candidates?: StudioPreviewCandidate[];
+    jobs?: StudioJobRecord[];
     getDesignFamily?: (familyId: string) => Promise<ApiResult<DesignFamilyDetail>>;
     onDecision?: () => void;
   } = {},
 ) => ({
-  listStudioJobs: async () => ok({ jobs: [job(lineage.projectId, lineage.sourceAssetId)] }),
+  listStudioJobs: async () => ok({
+    jobs: options.jobs ?? [job(lineage.projectId, lineage.sourceAssetId)],
+  }),
   listStudioPreviewCandidates: async (projectId: string, owner: string) => {
     assert.equal(projectId, lineage.projectId);
     assert.equal(owner, 'designer_1');
@@ -238,6 +247,117 @@ test('active Studio review uses one normalized seam for catalog Save as Variatio
   assert.equal(saved.error, null);
   assert.equal(saved.data?.familyId, 'family_1');
   assert.equal(saved.data?.variationIndex, 2);
+});
+
+test('jobless instant catalog preview resumes after gateway reconstruction and Applies', async () => {
+  const lineage: ExactStudioLineage = {
+    projectId: 'instant_apply_project', sourceAssetId: 'instant_apply_source',
+    sourceDesignVersion: 1,
+  };
+  const normalized = {
+    ...candidate('catalog_revision', lineage.projectId, lineage.sourceAssetId, 1),
+    execution_mode: 'instant' as const,
+    studio_job_id: null,
+  };
+  const resolution: StudioPreviewCandidateDecisionResult = {
+    status: 'applied', candidate_id: normalized.candidate_id, kind: 'catalog_revision',
+    source_project_id: lineage.projectId, result_project_id: lineage.projectId,
+    terminal_asset_id: 'instant_apply_asset', studio_job_id: null,
+    family_id: null, variation_index: null,
+  };
+  const gateway = createStudioGateway(baseClient(
+    lineage,
+    normalized,
+    resolution,
+    async () => ok(project(
+      lineage.projectId, 'instant_apply_asset', 2, lineage.sourceAssetId,
+    )),
+    { jobs: [] },
+  ) as never);
+
+  const resumed = await gateway.resumeRefine(lineage, 'designer_1');
+  assert.equal(resumed.error, null);
+  assert.equal(resumed.data?.kind, 'catalog');
+  assert.equal(resumed.data?.executionMode, 'instant');
+
+  const applied = await gateway.applyCatalogRefine({
+    candidateId: normalized.candidate_id, createdBy: 'designer_1',
+  });
+  assert.equal(applied.error, null);
+  assert.equal(applied.data?.candidate.canonicalRevisionId, 'instant_apply_asset');
+  assert.equal(applied.data?.project?.active_design_version, 2);
+});
+
+test('jobless instant catalog preview resumes after reconstruction and saves a Variation', async () => {
+  const lineage: ExactStudioLineage = {
+    projectId: 'instant_variation_project', sourceAssetId: 'instant_variation_source',
+    sourceDesignVersion: 1,
+  };
+  const normalized = {
+    ...candidate('catalog_revision', lineage.projectId, lineage.sourceAssetId, 1),
+    execution_mode: 'instant' as const,
+    studio_job_id: null,
+  };
+  const resolution: Extract<
+    StudioPreviewCandidateDecisionResult, { status: 'saved_as_variation' }
+  > = {
+    status: 'saved_as_variation', candidate_id: normalized.candidate_id,
+    kind: 'catalog_revision', source_project_id: lineage.projectId,
+    result_project_id: 'instant_variation', terminal_asset_id: 'instant_variation_asset',
+    studio_job_id: null, family_id: 'instant_family', variation_index: 2,
+  };
+  const sourceProject = project(lineage.projectId, lineage.sourceAssetId, 1);
+  const gateway = createStudioGateway(baseClient(
+    lineage,
+    normalized,
+    resolution,
+    async (projectId: string) => projectId === lineage.projectId
+      ? ok(sourceProject)
+      : ok(project('instant_variation', 'instant_variation_asset', 1)),
+    { jobs: [] },
+  ) as never);
+
+  const resumed = await gateway.resumeRefine(lineage, 'designer_1');
+  assert.equal(resumed.error, null);
+  assert.equal(resumed.data?.executionMode, 'instant');
+
+  const saved = await gateway.saveCatalogPreviewAsVariation({
+    candidateId: normalized.candidate_id,
+    createdBy: 'designer_1',
+    label: 'Instant platinum direction',
+  });
+  assert.equal(saved.error, null);
+  assert.equal(saved.data?.familyId, 'instant_family');
+  assert.equal(saved.data?.variationIndex, 2);
+  assert.equal(saved.data?.project.root_id, 'instant_variation');
+});
+
+test('jobless provider catalog preview remains fail-closed during reconstruction', async () => {
+  const lineage: ExactStudioLineage = {
+    projectId: 'provider_without_job', sourceAssetId: 'provider_source',
+    sourceDesignVersion: 1,
+  };
+  const normalized = {
+    ...candidate('catalog_revision', lineage.projectId, lineage.sourceAssetId, 1),
+    studio_job_id: null,
+  };
+  const resolution: StudioPreviewCandidateDecisionResult = {
+    status: 'discarded', candidate_id: normalized.candidate_id, kind: 'catalog_revision',
+    source_project_id: lineage.projectId, result_project_id: lineage.projectId,
+    terminal_asset_id: null, studio_job_id: null, family_id: null, variation_index: null,
+  };
+  const gateway = createStudioGateway(baseClient(
+    lineage,
+    normalized,
+    resolution,
+    async () => { throw new Error('a rejected resume must not load a project'); },
+    { jobs: [] },
+  ) as never);
+
+  const resumed = await gateway.resumeRefine(lineage, 'designer_1');
+
+  assert.equal(resumed.data, null);
+  assert.equal(resumed.error?.code, 'RESUME_REFINE_JOB_MISMATCH');
 });
 
 test('active Studio review uses one normalized seam for markup Discard', async () => {

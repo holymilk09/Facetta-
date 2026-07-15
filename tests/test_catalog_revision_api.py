@@ -1411,6 +1411,63 @@ def test_normalized_catalog_preview_saves_exact_variation(
         assert terminal is not None and terminal.root_id == sibling.root_id
 
 
+@pytest.mark.parametrize(
+    "corruption",
+    ("unknown_mode", "malformed_routing", "missing_provider_job"),
+)
+def test_normalized_catalog_projection_fails_closed_for_execution_authority(
+    catalog_client,
+    example_spec,
+    monkeypatch,
+    corruption,
+):
+    client, SessionFactory = catalog_client
+    project = _create_project(
+        client,
+        example_spec,
+        SessionFactory,
+        image=_textured_rgba_png(),
+    )
+    job = _studio_job(client, project)
+    monkeypatch.setattr(
+        "facetta.api.catalog._trusted_image_agent",
+        lambda: _ResultAgent(QualityVerdict.PASS),
+    )
+    preview = client.post(
+        f"/assets/{project['active_asset_id']}/catalog/preview",
+        json=_request(studio_job_id=job["job_id"]),
+    )
+    assert preview.status_code == 201, preview.text
+    candidate_id = preview.json()["candidate"]["candidate_id"]
+    with SessionFactory() as db:
+        record = db.get(PreviewCandidateRecord, candidate_id)
+        assert record is not None
+        if corruption == "missing_provider_job":
+            record.studio_job_id = None
+        else:
+            payload = dict(record.payload)
+            routing = dict(payload["routing"])
+            if corruption == "unknown_mode":
+                routing["execution_mode"] = "cached_provider"
+            else:
+                routing["attempt_count"] = "one"
+            payload["routing"] = routing
+            record.payload = payload
+        db.commit()
+
+    detail = client.get(
+        f"/studio/preview-candidates/{candidate_id}",
+        params={"owner": "usr_catalog"},
+    )
+    assert detail.status_code == 422, detail.text
+    assert detail.json()["code"] == "preview_candidate_execution_invalid"
+    listed = client.get(
+        f"/studio/projects/{project['root_id']}/preview-candidates"
+    )
+    assert listed.status_code == 200, listed.text
+    assert listed.json()["candidates"] == []
+
+
 def test_normalized_catalog_stale_discard_preserves_canonical_revision(
     catalog_client,
     example_spec,
