@@ -4,7 +4,7 @@ import React from 'react';
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react-native';
 import { Text } from 'react-native';
 
-import type { ProjectDetail } from '../trusted/types';
+import type { AssetSummary, ProjectDetail } from '../trusted/types';
 import {
   StudioCollectionsWorkspace,
   type StudioCollectionsApi,
@@ -16,6 +16,17 @@ import {
 
 const REVISION_1_SHA256 = '1'.repeat(64);
 const REVISION_2_SHA256 = '2'.repeat(64);
+
+function creativeDirection(assetId: string, createdAt: string): AssetSummary {
+  return {
+    asset_id: assetId, root_id: 'project_main', parent_asset_id: 'source_reference',
+    capability: 'CREATIVE_RENDER', provenance: 'generated', revision: null,
+    design_id: null, design_version: null, region: null, instruction: null, drift: null,
+    pinned: false, media_type: 'image/png', sha256: assetId.padEnd(64, '0').slice(0, 64),
+    image_url: `https://test/${assetId}.png`, created_by: 'usr_designer',
+    created_at: createdAt, legacy_provenance: false,
+  };
+}
 
 const project: ProjectDetail = {
   id: 'project_main', root_id: 'project_main', title: 'Sapphire orbit ring',
@@ -684,6 +695,143 @@ describe('StudioCollectionsWorkspace', () => {
     expect(handlers.onProjectChanged).toHaveBeenCalledWith(expect.objectContaining({
       active_asset_id: 'asset_3',
     }));
+  });
+
+  test('archives every Create direction and retries one save with exact stable lineage', async () => {
+    const directions = [
+      creativeDirection('direction_1', '2026-07-12T00:01:00Z'),
+      creativeDirection('direction_2', '2026-07-12T00:02:00Z'),
+      creativeDirection('direction_3', '2026-07-12T00:03:00Z'),
+    ];
+    const refinedOriginal: AssetSummary = {
+      ...directions[0],
+      asset_id: 'refined_direction_1', parent_asset_id: 'direction_1',
+      capability: 'GLOBAL_RESTYLE', provenance: 'global_restyle',
+      image_url: 'https://test/refined-direction-1.png',
+      created_at: '2026-07-12T00:04:00Z',
+    };
+    const projectWithDirections: ProjectDetail = {
+      ...project,
+      design_id: null, spec: null,
+      active_asset_id: refinedOriginal.asset_id, active_design_version: null,
+      selected_candidate_asset_id: refinedOriginal.asset_id,
+      assets: [...directions, refinedOriginal],
+      creative_candidates: directions,
+    };
+    const familyWithRetainedDirection = {
+      ...family,
+      variations: [
+        ...family.variations,
+        {
+          ...family.variations[1],
+          root_id: 'project_direction_2',
+          cover_asset_id: 'direction_2_branch',
+          variation_index: 3,
+          variation_label: 'Direction 2',
+          branched_from_project_root_id: 'project_main',
+          branched_from_asset_id: 'direction_2',
+        },
+      ],
+    };
+    const saveCreativeDirectionAsVariation = jest.fn()
+      .mockResolvedValueOnce({
+        data: null,
+        error: {
+          code: 'NETWORK_ERROR', message: 'Connection interrupted after sending.',
+          category: 'network' as const, status: 0, retryable: true,
+        },
+        status: 0,
+      })
+      .mockResolvedValueOnce({
+        data: {
+          status: 'variation_created' as const,
+          family_id: 'family_orbit', variation_index: 4,
+          source_project_id: 'project_main', source_asset_id: 'direction_3',
+          project: {
+            ...projectWithDirections,
+            id: 'project_direction_3', root_id: 'project_direction_3',
+            active_asset_id: 'direction_3_branch', active_design_version: null,
+            selected_candidate_asset_id: 'direction_3_branch', creative_candidates: [],
+          },
+        },
+        error: null,
+        status: 201,
+      });
+    const client = api({
+      getStudioProjectHistory: jest.fn(async () => ({
+        data: { ...history, active_asset_id: refinedOriginal.asset_id },
+        error: null,
+        status: 200,
+      })),
+      getDesignFamily: jest.fn(async () => ({
+        data: familyWithRetainedDirection, error: null, status: 200,
+      })),
+      saveCreativeDirectionAsVariation,
+    });
+
+    const firstView = await render(
+      <AuthenticatedImageProvider
+        headers={{ Authorization: 'Bearer test-token' }}
+        allowedOrigin="https://test">
+        <StudioCollectionsWorkspace
+          key="initial-archive-view"
+          api={client}
+          project={projectWithDirections}
+          createdBy="usr_designer"
+          {...callbacks()}
+        />
+      </AuthenticatedImageProvider>,
+    );
+
+    expect(await screen.findByText('Generated directions')).toBeTruthy();
+    expect(screen.getByText('Selected as the Original direction')).toBeTruthy();
+    expect(screen.getByText('Saved as Variation 3')).toBeTruthy();
+    expect(screen.queryByText('Save Direction 1 as variation')).toBeNull();
+    expect(screen.queryByText('Save Direction 2 as variation')).toBeNull();
+
+    const saveDirection3 = screen.getByText('Save Direction 3 as variation');
+    expect(saveDirection3.parent?.props.accessibilityState?.disabled).toBe(true);
+    await act(async () => {
+      fireEvent(screen.getByLabelText('Archived Direction 3 preview'), 'load');
+    });
+    await fireEvent.press(screen.getByText('Save Direction 3 as variation'));
+    await waitFor(() => expect(saveCreativeDirectionAsVariation).toHaveBeenCalledTimes(1));
+    expect(saveCreativeDirectionAsVariation).toHaveBeenLastCalledWith({
+      projectId: 'project_main', candidateId: 'direction_3',
+      activeAssetId: 'refined_direction_1', activeDesignVersion: null,
+      createdBy: 'usr_designer', label: 'Direction 3',
+      operationId: 'create-direction:direction_3',
+    });
+    expect(await screen.findByText('Facetta could not connect. Check your connection and try again.')).toBeTruthy();
+
+    firstView.rerender(
+      <AuthenticatedImageProvider
+        headers={{ Authorization: 'Bearer test-token' }}
+        allowedOrigin="https://test">
+        <StudioCollectionsWorkspace
+          key="reopened-archive-view"
+          api={client}
+          project={projectWithDirections}
+          createdBy="usr_designer"
+          {...callbacks()}
+        />
+      </AuthenticatedImageProvider>,
+    );
+    await screen.findByText('Generated directions');
+    await act(async () => {
+      fireEvent(await screen.findByLabelText('Archived Direction 3 preview'), 'load');
+    });
+    await waitFor(() => expect(
+      screen.getByText('Save Direction 3 as variation')
+        .parent?.props.accessibilityState?.disabled,
+    ).toBe(false));
+    await fireEvent.press(screen.getByText('Save Direction 3 as variation'));
+    await waitFor(() => expect(saveCreativeDirectionAsVariation).toHaveBeenCalledTimes(2));
+    expect(saveCreativeDirectionAsVariation.mock.calls[1][0].operationId).toBe(
+      saveCreativeDirectionAsVariation.mock.calls[0][0].operationId,
+    );
+    expect(await screen.findByText('Saved as Variation 4')).toBeTruthy();
+    expect(screen.queryByText('Save Direction 3 as variation')).toBeNull();
   });
 
   test('refreshes history after Restore and presents the newly active immutable revision', async () => {

@@ -321,10 +321,16 @@ def _replay_variation_decision(
     )
     if selected_source is not None:
         eligible_revision_ids.add(selected_source.id)
+    # A generated Create direction can be intentionally archived after another
+    # direction became the Original, including after that Original later gained
+    # a specification. It is immutable source evidence, but it is deliberately
+    # not canonical revision history until copied into its sibling Variation.
+    if source.capability == "CREATIVE_RENDER" and source.design_version is None:
+        eligible_revision_ids.add(source.id)
     if source.id not in eligible_revision_ids:
         raise StudioHistoryError(
             "variation_decision_corrupt",
-            "the recorded variation source is not saved revision history",
+            "the recorded variation source is not saved revision or Create direction history",
             status_code=500,
         )
     source_sha256 = _verified_revision_hash(
@@ -1494,8 +1500,24 @@ def fork_project_variation(
             "stale_asset_revision",
             "the active design changed before the variation could be saved",
         )
+    accepted_original = accepted_creative_candidate(
+        _project_chain(db, project_root_id),
+        project.selected_candidate_asset_id,
+    )
+    if (
+        allow_unselected_creative_candidate
+        and accepted_original is not None
+        and source.id == accepted_original.id
+    ):
+        raise StudioHistoryError(
+            "variation_source_is_original",
+            "the selected Original is already preserved in this variation",
+            status_code=422,
+        )
     is_unselected_creative_candidate = (
         allow_unselected_creative_candidate
+        and accepted_original is not None
+        and source.id != accepted_original.id
         and source.capability == "CREATIVE_RENDER"
         and source.design_version is None
     )
@@ -1557,6 +1579,7 @@ def fork_project_variation(
             )
     elif (
         not allow_historical_revision
+        and not is_unselected_creative_candidate
         and root is not None
         and root.design_id is not None
     ):

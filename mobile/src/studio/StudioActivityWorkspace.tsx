@@ -141,6 +141,7 @@ export function StudioActivityWorkspace({
         const reviewable = job.status === 'reviewing'
           && ['create', 'refine', 'views', 'present'].includes(job.action_id)
           && job.active_design_id !== null && onOpenReview !== undefined;
+        const archivedCreate = job.status === 'succeeded' && job.action_id === 'create';
         return (
           <View key={job.job_id} style={styles.card}>
             <View style={styles.cardHeader}>
@@ -179,7 +180,9 @@ export function StudioActivityWorkspace({
                   accessibilityRole="button"
                   onPress={() => onOpenDesign?.(job.active_design_id as string)}
                   style={styles.textAction}>
-                  <Text style={styles.textActionLabel}>Open design</Text>
+                  <Text style={styles.textActionLabel}>
+                    {archivedCreate ? 'Review generated directions' : 'Open design'}
+                  </Text>
                 </Pressable>
               )}
               {cancellable && (

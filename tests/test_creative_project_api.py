@@ -3749,6 +3749,150 @@ def test_designer_can_promote_exactly_one_candidate_to_immutable_spec_v1(
         assert record.interpretation["factory_authority"] is False
 
 
+def test_generated_direction_archive_survives_later_spec_promotion_and_retries(
+    creative_client,
+):
+    client, Session = creative_client
+    app.dependency_overrides[get_creative_render_generator] = (
+        lambda: (lambda _source, _instruction, variant: _creative_result(variant))
+    )
+    created = client.post("/projects/from-drawing", json=_request())
+    assert created.status_code == 201, created.text
+    body = created.json()
+    project_id = body["root_id"]
+    selected_id = body["creative_candidates"][1]["asset_id"]
+    archived_direction_id = body["creative_candidates"][0]["asset_id"]
+    selected = client.post(
+        f"/projects/{project_id}/creative-candidates/{selected_id}/select",
+        json={"created_by": "usr_designer"},
+    )
+    assert selected.status_code == 200, selected.text
+
+    confirmed_spec = audited_import_spec(EXAMPLE_SPEC)
+    promoted = client.post(
+        f"/projects/{project_id}/creative-candidates/{selected_id}/promote",
+        json=_promotion_payload(client, project_id, selected_id, confirmed_spec),
+    )
+    assert promoted.status_code == 200, promoted.text
+    exact = promoted.json()
+    assert exact["active_design_version"] == 1
+
+    archive_request = {
+        "created_by": "usr_designer",
+        "expected_active_asset_id": exact["active_asset_id"],
+        "expected_design_version": 1,
+        "label": "Archived first direction",
+        "operation_id": "create-direction:archive-after-promotion-0001",
+    }
+    archived = client.post(
+        f"/studio/projects/{project_id}/creative-candidates/"
+        f"{archived_direction_id}/variations",
+        json=archive_request,
+    )
+    assert archived.status_code == 201, archived.text
+    archive_body = archived.json()
+    assert archive_body["source_asset_id"] == archived_direction_id
+    assert archive_body["project"]["active_design_version"] is None
+    assert archive_body["project"]["confirmable_pre_spec"] is True
+
+    replay = client.post(
+        f"/studio/projects/{project_id}/creative-candidates/"
+        f"{archived_direction_id}/variations",
+        json=archive_request,
+    )
+    assert replay.status_code == 201, replay.text
+    assert replay.json() == archive_body
+
+    conflict = client.post(
+        f"/studio/projects/{project_id}/creative-candidates/"
+        f"{archived_direction_id}/variations",
+        json={**archive_request, "label": "A different archived label"},
+    )
+    assert conflict.status_code == 409, conflict.text
+    assert conflict.json()["code"] == "variation_operation_conflict"
+
+    with Session() as db:
+        archived_projects = list(db.scalars(select(Project).where(
+            Project.branched_from_project_root_id == project_id,
+            Project.branched_from_asset_id == archived_direction_id,
+        )))
+        assert [project.root_id for project in archived_projects] == [
+            archive_body["project"]["root_id"]
+        ]
+
+
+def test_generated_direction_archive_excludes_original_after_visual_refinement(
+    creative_client,
+):
+    client, Session = creative_client
+    app.dependency_overrides[get_creative_render_generator] = (
+        lambda: (lambda _source, _instruction, variant: _creative_result(variant))
+    )
+    created = client.post("/projects/from-drawing", json=_request())
+    assert created.status_code == 201, created.text
+    body = created.json()
+    project_id = body["root_id"]
+    original_id = body["creative_candidates"][0]["asset_id"]
+    alternative_id = body["creative_candidates"][1]["asset_id"]
+    selected = client.post(
+        f"/projects/{project_id}/creative-candidates/{original_id}/select",
+        json={"created_by": "usr_designer"},
+    )
+    assert selected.status_code == 200, selected.text
+
+    refined_id = "ast_refined_original"
+    with Session() as db:
+        original = db.get(ImageAsset, original_id)
+        project = db.get(Project, project_id)
+        assert original is not None and project is not None
+        db.add(ImageAsset(
+            id=refined_id,
+            root_id=project_id,
+            parent_asset_id=original_id,
+            design_id=None,
+            design_version=None,
+            capability="GLOBAL_RESTYLE",
+            source_kind=original.source_kind,
+            instruction="Accepted pre-spec appearance refinement",
+            image=bytes(original.image),
+            media_type=original.media_type,
+            created_by="usr_designer",
+            created_at=utcnow(),
+        ))
+        project.selected_candidate_asset_id = refined_id
+        project.updated_at = utcnow()
+        db.commit()
+
+    rejected_original = client.post(
+        f"/studio/projects/{project_id}/creative-candidates/{original_id}/variations",
+        json={
+            "created_by": "usr_designer",
+            "expected_active_asset_id": refined_id,
+            "expected_design_version": None,
+            "label": "Duplicate Original",
+            "operation_id": "create-direction:reject-refined-original-0001",
+        },
+    )
+    assert rejected_original.status_code == 422, rejected_original.text
+    assert rejected_original.json()["code"] == "variation_source_is_original"
+
+    archived_alternative = client.post(
+        f"/studio/projects/{project_id}/creative-candidates/{alternative_id}/variations",
+        json={
+            "created_by": "usr_designer",
+            "expected_active_asset_id": refined_id,
+            "expected_design_version": None,
+            "label": "Direction 3",
+            "operation_id": "create-direction:archive-after-refine-0001",
+        },
+    )
+    assert archived_alternative.status_code == 201, archived_alternative.text
+    archived = archived_alternative.json()
+    assert archived["source_asset_id"] == alternative_id
+    assert archived["project"]["active_design_version"] is None
+    assert archived["project"]["confirmable_pre_spec"] is True
+
+
 def test_confirm_design_v1_preserves_exact_candidate_component_map(
     creative_client,
 ):

@@ -264,6 +264,15 @@ class SaveCurrentVariationRequest(SaveVariationRequest):
     ]
 
 
+class SaveCreativeVariationRequest(SaveVariationRequest):
+    """Retry-safe request for preserving one generated Create direction."""
+
+    operation_id: Annotated[
+        str,
+        Field(min_length=8, max_length=64, pattern=r"^[A-Za-z0-9][A-Za-z0-9._:-]*$"),
+    ]
+
+
 class SaveRevisionVariationRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -2832,7 +2841,7 @@ def save_as_variation(
 def save_creative_candidate_as_variation(
     project_root_id: str,
     candidate_id: str,
-    request: SaveVariationRequest,
+    request: SaveCreativeVariationRequest,
     db: DbSession,
     principal: PrincipalDep,
 ):
@@ -2848,6 +2857,7 @@ def save_creative_candidate_as_variation(
             expected_design_version=request.expected_design_version,
             variation_label=request.label,
             created_by=actor,
+            operation_id=request.operation_id,
             allow_unselected_creative_candidate=True,
         )
     except StudioHistoryError as exc:

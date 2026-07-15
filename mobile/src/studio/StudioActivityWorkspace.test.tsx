@@ -197,6 +197,35 @@ describe('StudioActivityWorkspace', () => {
     expect(view.queryByText('Open design')).toBeNull();
   });
 
+  test('routes a completed Create job to its durable generated-direction archive', async () => {
+    const completed: StudioJobRecord = {
+      ...running, status: 'succeeded', progress: 1,
+      active_design_id: 'project_creative', source_revision_id: null,
+      billing: {
+        ...running.billing,
+        completed_outputs: 4, charged_outputs: 4, charged_credits: 28,
+      },
+    };
+    const onOpenDesign = jest.fn();
+    const view = await render(<StudioActivityWorkspace
+      api={api({
+        listStudioJobs: jest.fn(async () => ({
+          data: { jobs: [completed] }, error: null, status: 200,
+        })),
+      })}
+      owner="usr_designer"
+      onOpenDesign={onOpenDesign}
+      onOpenReview={jest.fn()}
+    />);
+
+    await act(async () => {
+      fireEvent.press(await view.findByText('Review generated directions'));
+    });
+    expect(onOpenDesign).toHaveBeenCalledWith('project_creative');
+    expect(view.queryByText('Open design')).toBeNull();
+    expect(view.queryByText('Review result')).toBeNull();
+  });
+
   test.each(['views', 'present'] as const)(
     'routes a reviewing %s job through its typed review callback',
     async (actionId) => {

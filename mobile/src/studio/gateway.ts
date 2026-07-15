@@ -1800,8 +1800,10 @@ export function createStudioGateway(
       projectId: string;
       candidateId: string;
       activeAssetId: string;
+      activeDesignVersion: number | null;
       createdBy: string;
       label: string;
+      operationId: string;
     }): Promise<StudioGatewayResult<SaveAsVariationResult>> {
       const result = await client.saveCreativeCandidateAsVariation(
         request.projectId,
@@ -1809,8 +1811,9 @@ export function createStudioGateway(
         {
           created_by: request.createdBy,
           expected_active_asset_id: request.activeAssetId,
-          expected_design_version: null,
+          expected_design_version: request.activeDesignVersion,
           label: request.label,
+          operation_id: request.operationId,
         },
       );
       if (result.error !== null) {

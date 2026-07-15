@@ -116,6 +116,7 @@ import type {
   ReviseStudioFactsRequest,
   ReviseStudioFactsResult,
   SaveAsVariationRequest,
+  SaveCreativeAsVariationRequest,
   SaveCurrentAsVariationRequest,
   SaveAsVariationResult,
   SaveRevisionAsVariationRequest,
@@ -5421,7 +5422,7 @@ export function createTrustedApiClient(options: TrustedApiClientOptions) {
     async saveCreativeCandidateAsVariation(
       projectRootId: string,
       candidateId: string,
-      request: SaveAsVariationRequest,
+      request: SaveCreativeAsVariationRequest,
     ): Promise<ApiResult<SaveAsVariationResult>> {
       const result = await call(
         `/studio/projects/${encodeURIComponent(projectRootId)}/creative-candidates/${encodeURIComponent(candidateId)}/variations`,
@@ -5433,6 +5434,7 @@ export function createTrustedApiClient(options: TrustedApiClientOptions) {
             expected_active_asset_id: request.expected_active_asset_id,
             expected_design_version: request.expected_design_version ?? null,
             label: request.label,
+            operation_id: request.operation_id,
           }),
         },
       );

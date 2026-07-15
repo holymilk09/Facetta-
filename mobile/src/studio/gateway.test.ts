@@ -829,9 +829,11 @@ test('accepts an exact pre-spec saved revision without inventing a design versio
 
 test('keeps an explicit Create candidate as a sibling and verifies its exact source', async () => {
   let receivedCandidate = '';
+  let receivedRequest: unknown = null;
   const gateway = createStudioGateway(fakeClient({
-    saveCreativeCandidateAsVariation: async (_projectId, candidateId) => {
+    saveCreativeCandidateAsVariation: async (_projectId, candidateId, request) => {
       receivedCandidate = candidateId;
+      receivedRequest = request;
       return ok({
         status: 'variation_created',
         family_id: 'family_1', variation_index: 2,
@@ -843,11 +845,17 @@ test('keeps an explicit Create candidate as a sibling and verifies its exact sou
 
   const result = await gateway.saveCreativeDirectionAsVariation({
     projectId: 'project_1', candidateId: 'candidate_2', activeAssetId: 'candidate_1',
-    createdBy: 'designer_1', label: 'Direction 2',
+    activeDesignVersion: 3, createdBy: 'designer_1', label: 'Direction 2',
+    operationId: 'create-direction:direction-2',
   });
 
   assert.equal(result.error, null);
   assert.equal(receivedCandidate, 'candidate_2');
+  assert.deepEqual(receivedRequest, {
+    created_by: 'designer_1', expected_active_asset_id: 'candidate_1',
+    expected_design_version: 3, label: 'Direction 2',
+    operation_id: 'create-direction:direction-2',
+  });
   assert.equal(result.data?.source_asset_id, 'candidate_2');
 });
 
@@ -863,7 +871,8 @@ test('rejects a Create variation response rebound to a different candidate', asy
 
   const result = await gateway.saveCreativeDirectionAsVariation({
     projectId: 'project_1', candidateId: 'candidate_2', activeAssetId: 'candidate_1',
-    createdBy: 'designer_1', label: 'Direction 2',
+    activeDesignVersion: null, createdBy: 'designer_1', label: 'Direction 2',
+    operationId: 'create-direction:direction-2',
   });
   assert.equal(result.error?.code, 'INVALID_VARIATION_LINEAGE');
 });

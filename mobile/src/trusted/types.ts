@@ -274,6 +274,11 @@ export interface SaveCurrentAsVariationRequest extends SaveAsVariationRequest {
   operation_id: string;
 }
 
+/** Archive a generated Create direction without duplicating it on transport retry. */
+export interface SaveCreativeAsVariationRequest extends SaveAsVariationRequest {
+  operation_id: string;
+}
+
 /**
  * Fork one canonical saved revision without first restoring it over the
  * source Variation's active revision. The two expected bindings are

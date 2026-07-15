@@ -965,7 +965,8 @@ describe('trusted API decoders', () => {
     const result = await api.saveCreativeCandidateAsVariation(
       'project original', 'candidate kept', {
         created_by: 'usr_designer', expected_active_asset_id: 'candidate original',
-        expected_design_version: null, label: 'Direction 2',
+        expected_design_version: 4, label: 'Direction 2',
+        operation_id: 'create-direction:kept-0001',
       },
     );
 
@@ -974,7 +975,8 @@ describe('trusted API decoders', () => {
     );
     expect(JSON.parse(String(fetcher.mock.calls[0]?.[1]?.body))).toEqual({
       created_by: 'usr_designer', expected_active_asset_id: 'candidate original',
-      expected_design_version: null, label: 'Direction 2',
+      expected_design_version: 4, label: 'Direction 2',
+      operation_id: 'create-direction:kept-0001',
     });
     expect(result.data?.source_asset_id).toBe('candidate kept');
     expect(result.data?.project.active_revision?.image_url).toBe(

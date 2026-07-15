@@ -1454,3 +1454,21 @@ test('Activity reviewing Create rehydrates the saved candidate chooser and durab
   )).toBeTruthy();
   expect(mockGetProject).toHaveBeenCalledWith('project_hydrated');
 });
+
+test('Activity generated-direction archive opens the completed Create project in Collections', async () => {
+  authenticate();
+  const hydration = deferred<any>();
+  mockGetProject.mockReturnValue(hydration.promise);
+  const view = await render(<App />);
+  await waitFor(() => expect(view.getByText('Start from an idea or reference')).toBeTruthy());
+  fireEvent.press(view.getAllByText('Activity').at(-1)!);
+  const openArchive = await view.findByText('Open hydrated design');
+  await act(async () => {
+    fireEvent.press(openArchive);
+    hydration.resolve({ data: hydratedProject, error: null, status: 200 });
+    await hydration.promise;
+  });
+
+  expect(await view.findByText('Vary exact project_hydrated')).toBeTruthy();
+  expect(mockGetProject).toHaveBeenCalledWith('project_hydrated');
+});

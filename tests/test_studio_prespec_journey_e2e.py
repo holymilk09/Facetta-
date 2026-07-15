@@ -193,7 +193,7 @@ def test_complete_prespec_studio_journey_preserves_every_direction(
     assert selected["active_asset_id"] == selected_id
     assert [item["asset_id"] for item in selected["revisions"]] == [selected_id]
 
-    kept_response = client.post(
+    missing_operation = client.post(
         f"/studio/projects/{root_id}/creative-candidates/{last_id}/variations",
         json={
             "created_by": "usr_journey",
@@ -202,10 +202,48 @@ def test_complete_prespec_studio_journey_preserves_every_direction(
             "label": "Third generated direction",
         },
     )
+    assert missing_operation.status_code == 422, missing_operation.text
+
+    kept_response = client.post(
+        f"/studio/projects/{root_id}/creative-candidates/{last_id}/variations",
+        json={
+            "created_by": "usr_journey",
+            "expected_active_asset_id": selected_id,
+            "expected_design_version": None,
+            "label": "Third generated direction",
+            "operation_id": "create-direction:journey-third-0001",
+        },
+    )
     assert kept_response.status_code == 201, kept_response.text
     kept = kept_response.json()
     assert kept["source_asset_id"] == last_id
     assert _stored_image(Session, kept["project"]["active_asset_id"]) == last_image
+
+    kept_replay = client.post(
+        f"/studio/projects/{root_id}/creative-candidates/{last_id}/variations",
+        json={
+            "created_by": "usr_journey",
+            "expected_active_asset_id": selected_id,
+            "expected_design_version": None,
+            "label": "Third generated direction",
+            "operation_id": "create-direction:journey-third-0001",
+        },
+    )
+    assert kept_replay.status_code == 201, kept_replay.text
+    assert kept_replay.json() == kept
+
+    kept_conflict = client.post(
+        f"/studio/projects/{root_id}/creative-candidates/{last_id}/variations",
+        json={
+            "created_by": "usr_journey",
+            "expected_active_asset_id": selected_id,
+            "expected_design_version": None,
+            "label": "Renamed after retry",
+            "operation_id": "create-direction:journey-third-0001",
+        },
+    )
+    assert kept_conflict.status_code == 409, kept_conflict.text
+    assert kept_conflict.json()["code"] == "variation_operation_conflict"
 
     reselection = client.post(
         f"/projects/{root_id}/creative-candidates/{first_id}/select",

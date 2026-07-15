@@ -31,6 +31,7 @@ export type StudioCollectionsApi = Pick<StudioGateway,
   | 'listDesignFamilies'
   | 'getStudioProjectHistory'
   | 'restoreStudioRevision'
+  | 'saveCreativeDirectionAsVariation'
   | 'assetImageUrl'
 >;
 
@@ -59,6 +60,8 @@ export interface StudioCollectionsWorkspaceProps {
   }) => Promise<void>;
   /** Optional host navigation; the workspace has an internal fallback. */
   onShowAllFamilies?: () => void;
+  /** Test seam for durable, retry-safe generated-direction saves. */
+  createDirectionOperationId?: (candidateId: string) => string;
 }
 
 interface WorkspaceData {
@@ -150,6 +153,31 @@ const SAVED_OUTPUT_CAPABILITIES = new Set([
 
 const COLLECTIONS_DESTINATION_EXCLUSIONS = ['library'] as const;
 
+function defaultDirectionOperationId(candidateId: string): string {
+  // Candidate ids are immutable and globally unique. Deriving this operation
+  // id makes a committed response safe to retry even after a reload/remount.
+  return `create-direction:${candidateId}`;
+}
+
+function originalCreativeDirectionId(project: ProjectDetail): string | null {
+  const assets = new Map(
+    [...project.assets, ...(project.creative_candidates ?? [])]
+      .map((asset) => [asset.asset_id, asset] as const),
+  );
+  let assetId = project.selected_candidate_asset_id ?? project.active_asset_id;
+  const visited = new Set<string>();
+  while (assetId !== null && !visited.has(assetId)) {
+    visited.add(assetId);
+    const asset = assets.get(assetId);
+    if (asset === undefined) return null;
+    if (asset.capability === 'CREATIVE_RENDER' && asset.design_version === null) {
+      return asset.asset_id;
+    }
+    assetId = asset.parent_asset_id;
+  }
+  return null;
+}
+
 const savedOutputLabel = (capability: string): string => ({
   CLIENT_BEAUTY_RENDER: 'Client beauty render',
   CLIENT_PRODUCT_PHOTO: 'Client product photo',
@@ -213,6 +241,7 @@ export function StudioCollectionsWorkspace({
   onSelectDestination,
   onShowAllFamilies,
   deliverProtectedFile,
+  createDirectionOperationId = defaultDirectionOperationId,
 }: StudioCollectionsWorkspaceProps) {
   const [data, setData] = useState<WorkspaceData | null>(null);
   const [loading, setLoading] = useState(project !== null);
@@ -225,7 +254,26 @@ export function StudioCollectionsWorkspace({
   const [exportError, setExportError] = useState<string | null>(null);
   const [showPresentationImages, setShowPresentationImages] = useState(false);
   const [showRevisionHistory, setShowRevisionHistory] = useState(false);
+  const [directionImageState, setDirectionImageState] = useState<Record<
+    string, 'ready' | 'failed'
+  >>({});
+  const [savingDirectionId, setSavingDirectionId] = useState<string | null>(null);
+  const [directionSaveError, setDirectionSaveError] = useState<string | null>(null);
+  const [locallySavedDirections, setLocallySavedDirections] = useState<Record<
+    string, { label: string; variationIndex: number }
+  >>({});
   const loadRequestId = useRef(0);
+  const directionOperationIds = useRef(new Map<string, string>());
+  const directionSaveInFlight = useRef<string | null>(null);
+
+  useEffect(() => {
+    setDirectionImageState({});
+    setSavingDirectionId(null);
+    setDirectionSaveError(null);
+    setLocallySavedDirections({});
+    directionOperationIds.current.clear();
+    directionSaveInFlight.current = null;
+  }, [project?.root_id]);
 
   const loadFamilyIndex = useCallback(async (requestId: number): Promise<void> => {
     const result = await api.listDesignFamilies(createdBy);
@@ -389,6 +437,77 @@ export function StudioCollectionsWorkspace({
     onProjectChanged(result.data.project);
   };
 
+  const saveGeneratedDirection = async (
+    candidate: AssetSummary,
+    directionIndex: number,
+  ): Promise<void> => {
+    if (project === null || data === null || project.active_asset_id === null
+      || project.selected_candidate_asset_id === undefined
+      || project.selected_candidate_asset_id === null
+      || savingDirectionId !== null
+      || directionSaveInFlight.current !== null
+      || directionImageState[candidate.asset_id] !== 'ready') return;
+
+    const label = `Direction ${directionIndex + 1}`;
+    const operationKey = [
+      createdBy,
+      project.root_id,
+      candidate.asset_id,
+      project.active_asset_id,
+      project.active_design_version ?? 'none',
+      label,
+    ].join(':');
+    let operationId = directionOperationIds.current.get(operationKey);
+    if (operationId === undefined) {
+      operationId = createDirectionOperationId(candidate.asset_id);
+      directionOperationIds.current.set(operationKey, operationId);
+    }
+
+    const workspaceRequestId = loadRequestId.current;
+    directionSaveInFlight.current = operationKey;
+    setSavingDirectionId(candidate.asset_id);
+    setDirectionSaveError(null);
+    const result = await api.saveCreativeDirectionAsVariation({
+      projectId: project.root_id,
+      candidateId: candidate.asset_id,
+      activeAssetId: project.active_asset_id,
+      activeDesignVersion: project.active_design_version,
+      createdBy,
+      label,
+      operationId,
+    });
+    if (directionSaveInFlight.current !== operationKey
+      || loadRequestId.current !== workspaceRequestId) {
+      if (directionSaveInFlight.current === operationKey) {
+        directionSaveInFlight.current = null;
+        setSavingDirectionId(null);
+      }
+      return;
+    }
+    directionSaveInFlight.current = null;
+    setSavingDirectionId(null);
+    if (result.error !== null) {
+      setDirectionSaveError(designerErrorMessage(result.error, 'collections'));
+      return;
+    }
+    if (result.data.source_project_id !== project.root_id
+      || result.data.source_asset_id !== candidate.asset_id
+      || (data.family !== null && result.data.family_id !== data.family.family_id)) {
+      setDirectionSaveError(
+        'Facetta could not verify the saved direction against this design family. Nothing else was changed.',
+      );
+      return;
+    }
+    setLocallySavedDirections((current) => ({
+      ...current,
+      [candidate.asset_id]: {
+        label,
+        variationIndex: result.data.variation_index,
+      },
+    }));
+    loadWorkspace();
+  };
+
   if (project === null || viewingAllFamilies) {
     if (loading) {
       return (
@@ -511,6 +630,18 @@ export function StudioCollectionsWorkspace({
   const savedOutputs = [...project.derived_assets]
     .filter((asset) => asset.image_url !== null && SAVED_OUTPUT_CAPABILITIES.has(asset.capability))
     .sort((left, right) => (right.created_at ?? '').localeCompare(left.created_at ?? ''));
+  const generatedDirections = (project.creative_candidates ?? []).filter((candidate) => (
+    candidate.capability === 'CREATIVE_RENDER' && candidate.design_version === null
+  ));
+  const selectedGeneratedDirectionId = originalCreativeDirectionId(project);
+  const retainedDirections = new Map(
+    (family?.variations ?? [])
+      .filter((variation) => (
+        variation.branched_from_project_root_id === project.root_id
+        && variation.branched_from_asset_id !== null
+      ))
+      .map((variation) => [variation.branched_from_asset_id as string, variation] as const),
+  );
 
   return (
     <ScrollView contentContainerStyle={styles.workspace}>
@@ -612,6 +743,84 @@ export function StudioCollectionsWorkspace({
           />
         </View>
       </View>
+
+      {generatedDirections.length > 0 && (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Generated directions</Text>
+          <Text style={styles.sectionCopy}>
+            Every direction from the original Create request stays available here. Saving one
+            makes an independent Variation and never changes the current revision.
+          </Text>
+          {selectedGeneratedDirectionId === null && (
+            <Notice
+              kind="error"
+              text="This older design does not include enough selection lineage to save another generated direction safely. Your saved family is unchanged."
+            />
+          )}
+          {directionSaveError !== null && <Notice kind="error" text={directionSaveError} />}
+          <View style={styles.variationGrid}>
+            {generatedDirections.map((candidate, index) => {
+              const selectedOriginal = candidate.asset_id === selectedGeneratedDirectionId;
+              const retainedVariation = retainedDirections.get(candidate.asset_id);
+              const locallySaved = locallySavedDirections[candidate.asset_id];
+              const savedVariationIndex = retainedVariation?.variation_index
+                ?? locallySaved?.variationIndex ?? null;
+              const imageState = directionImageState[candidate.asset_id];
+              const canSave = !selectedOriginal && savedVariationIndex === null
+                && selectedGeneratedDirectionId !== null && imageState === 'ready';
+              return (
+                <View key={candidate.asset_id} style={styles.variationCard}>
+                  {candidate.image_url === null ? (
+                    <View style={[styles.variationCover, styles.coverPlaceholder]}>
+                      <Text style={styles.coverPlaceholderText}>Preview unavailable</Text>
+                    </View>
+                  ) : (
+                    <Image
+                      accessibilityLabel={`Archived Direction ${index + 1} preview`}
+                      source={{ uri: candidate.image_url }}
+                      resizeMode="cover"
+                      style={styles.variationCover}
+                      onLoad={() => setDirectionImageState((current) => ({
+                        ...current, [candidate.asset_id]: 'ready',
+                      }))}
+                      onError={() => setDirectionImageState((current) => ({
+                        ...current, [candidate.asset_id]: 'failed',
+                      }))}
+                    />
+                  )}
+                  <Text style={styles.variationTitle}>Direction {index + 1}</Text>
+                  <Text style={styles.lineage}>
+                    {selectedOriginal
+                      ? 'Selected as the Original direction'
+                      : savedVariationIndex !== null
+                        ? `Saved as Variation ${savedVariationIndex}`
+                        : 'Available to save as an independent Variation'}
+                  </Text>
+                  {!selectedOriginal && savedVariationIndex === null && (
+                    <>
+                      <Button
+                        title={savingDirectionId === candidate.asset_id
+                          ? `Saving Direction ${index + 1}…`
+                          : `Save Direction ${index + 1} as variation`}
+                        kind="ghost"
+                        disabled={!canSave || savingDirectionId !== null}
+                        onPress={() => { void saveGeneratedDirection(candidate, index); }}
+                      />
+                      {imageState !== 'ready' && (
+                        <Text style={styles.lineage}>
+                          {candidate.image_url === null || imageState === 'failed'
+                            ? 'This preview is unavailable and cannot be saved.'
+                            : 'Load the preview before saving this direction.'}
+                        </Text>
+                      )}
+                    </>
+                  )}
+                </View>
+              );
+            })}
+          </View>
+        </View>
+      )}
 
       {destinationContext !== undefined && onSelectDestination !== undefined && (
         <View style={styles.destinationCard}>
