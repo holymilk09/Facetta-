@@ -5,7 +5,7 @@ import {
   Pressable, ScrollView, StyleSheet, Text, TextInput, View,
 } from 'react-native';
 
-import type { StudioGateway } from './gateway';
+import type { StudioCreativeDirectionReviewRequest, StudioGateway } from './gateway';
 import type { AssetSummary, CreativeSourceKind, ProjectDetail } from '../trusted/types';
 import { radius, theme } from '../theme';
 import { designerErrorMessage } from './designerErrorMessage';
@@ -87,6 +87,7 @@ const referencePreviewUri = (reference: StudioCreateReference): string => (
 );
 
 const MAX_RETAINED_VARIATIONS = 3;
+const MAX_VARIATION_LABEL_LENGTH = 120;
 
 const candidateVisualKey = (candidate: AssetSummary): string | null => (
   candidate.image_url === null
@@ -200,11 +201,13 @@ export function StudioCreateWorkspace({
   const generationRequestIdRef = useRef(0);
   const referenceRequestIdRef = useRef(0);
   const selectionRequestIdRef = useRef(0);
+  const selectionDecisionRef = useRef<StudioCreativeDirectionReviewRequest | null>(null);
   if (ownerRef.current !== owner) {
     ownerRef.current = owner;
     generationRequestIdRef.current += 1;
     referenceRequestIdRef.current += 1;
     selectionRequestIdRef.current += 1;
+    selectionDecisionRef.current = null;
   }
   useEffect(() => {
     mountedRef.current = true;
@@ -231,7 +234,11 @@ export function StudioCreateWorkspace({
     resumeStudioJobId,
   );
   const [retainedAssetIds, setRetainedAssetIds] = useState<readonly string[]>([]);
+  const [retainedLabelsByAssetId, setRetainedLabelsByAssetId] = useState<
+    Readonly<Record<string, string>>
+  >({});
   const [busy, setBusy] = useState(false);
+  const [commitRetryLocked, setCommitRetryLocked] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const candidates = useMemo(() => project === null ? [] : creativeCandidates(project), [project]);
@@ -339,6 +346,9 @@ export function StudioCreateWorkspace({
     setSelectedAssetId(null);
     setSelectionStudioJobId(null);
     setRetainedAssetIds([]);
+    setRetainedLabelsByAssetId({});
+    selectionDecisionRef.current = null;
+    setCommitRetryLocked(false);
     const sourceTitle = prompt || submittedMaster?.label || 'Untitled reference study';
     const title = sourceTitle.length > 64 ? `${sourceTitle.slice(0, 61)}…` : sourceTitle;
     const result = submittedMaster === null
@@ -385,6 +395,9 @@ export function StudioCreateWorkspace({
     setProject(result.data);
     setSelectedAssetId(nextCandidates[0].asset_id);
     setRetainedAssetIds([]);
+    setRetainedLabelsByAssetId({});
+    selectionDecisionRef.current = null;
+    setCommitRetryLocked(false);
     onGenerationSucceeded?.({
       owner: requestOwner,
       projectId: result.data.root_id,
@@ -402,30 +415,40 @@ export function StudioCreateWorkspace({
     const requestSelectedAssetId = selectedAssetId;
     setBusy(true);
     setError(null);
-    const retained = intendedRetainedCandidates.map((candidate) => {
-      const index = candidates.findIndex((item) => item.asset_id === candidate.asset_id);
-      return {
-        candidateId: candidate.asset_id,
-        label: `Direction ${index + 1}`,
-      };
-    });
-    const committed = await gateway.completeCreativeDirectionReview({
+    const decision = selectionDecisionRef.current ?? {
       projectId: requestProjectId,
       selectedCandidateId: requestSelectedAssetId,
-      retained,
+      retained: intendedRetainedCandidates.map((candidate) => {
+        const index = candidates.findIndex((item) => item.asset_id === candidate.asset_id);
+        return {
+          candidateId: candidate.asset_id,
+          label: retainedLabelsByAssetId[candidate.asset_id]?.trim()
+            || `Direction ${index + 1}`,
+        };
+      }),
       createdBy: requestOwner,
       ...(selectionStudioJobId === null ? {} : { studioJobId: selectionStudioJobId }),
-    });
+    };
+    selectionDecisionRef.current = decision;
+    const committed = await gateway.completeCreativeDirectionReview(decision);
     if (!mountedRef.current
       || selectionRequestIdRef.current !== requestId
       || ownerRef.current !== requestOwner) return;
     if (committed.error !== null) {
       setBusy(false);
+      if (committed.error.retryable) {
+        setCommitRetryLocked(true);
+      } else {
+        selectionDecisionRef.current = null;
+        setCommitRetryLocked(false);
+      }
       setError(designerErrorMessage(committed.error, 'create'));
       return;
     }
 
     setBusy(false);
+    selectionDecisionRef.current = null;
+    setCommitRetryLocked(false);
     setProject(committed.data.project);
     setSelectionStudioJobId(null);
     onSave({
@@ -443,6 +466,9 @@ export function StudioCreateWorkspace({
     setSelectedAssetId(null);
     setSelectionStudioJobId(null);
     setRetainedAssetIds([]);
+    setRetainedLabelsByAssetId({});
+    selectionDecisionRef.current = null;
+    setCommitRetryLocked(false);
   };
 
   if (project !== null) {
@@ -509,7 +535,7 @@ export function StudioCreateWorkspace({
                 ? 'Will save as a variation'
                 : 'Preserved in Activity review';
             const visualKey = candidateVisualKey(candidate);
-            const candidateDisabled = busy;
+            const candidateDisabled = busy || commitRetryLocked;
             const candidateReady = visualReview.isReady(visualKey);
             const candidateFailed = visualReview.anyFailed([visualKey]);
             const retainLimitReached = retainedCount >= MAX_RETAINED_VARIATIONS && !willRetain;
@@ -556,40 +582,67 @@ export function StudioCreateWorkspace({
                   </View>
                 </Pressable>
                 {!selected && (
-                  <Pressable
-                    accessibilityRole="checkbox"
-                    accessibilityState={{ checked: willRetain, disabled: retainDisabled }}
-                    accessibilityLabel={`Keep Direction ${index + 1} as variation`}
-                    accessibilityHint={candidateFailed
-                      ? 'This preview is unavailable and cannot be kept.'
-                      : !candidateReady
-                        ? 'Review this preview before keeping it.'
-                        : retainLimitReached
-                          ? 'You can keep at most three variations.'
-                          : willRetain
-                            ? 'Remove this direction from saved variations.'
-                            : 'Save this useful direction as a variation.'}
-                    disabled={retainDisabled}
-                    style={[styles.keepVariation, retainDisabled && styles.keepVariationDisabled]}
-                    onPress={() => {
-                      if (retainDisabled) return;
-                      setRetainedAssetIds((current) => (
-                        current.includes(candidate.asset_id)
-                          ? current.filter((assetId) => assetId !== candidate.asset_id)
-                          : [...current, candidate.asset_id]
-                      ));
-                    }}>
-                    <View style={[styles.keepBox, willRetain && styles.keepBoxChecked]}>
-                      {willRetain && <Text style={styles.keepCheck}>✓</Text>}
-                    </View>
-                    <Text style={[styles.keepText, willRetain && styles.keepTextChecked]}>
-                      {candidateFailed
-                        ? 'Preview unavailable'
-                        : candidateReady
-                          ? 'Keep as variation'
-                          : 'Load preview to keep'}
-                    </Text>
-                  </Pressable>
+                  <>
+                    <Pressable
+                      accessibilityRole="checkbox"
+                      accessibilityState={{ checked: willRetain, disabled: retainDisabled }}
+                      accessibilityLabel={`Keep Direction ${index + 1} as variation`}
+                      accessibilityHint={candidateFailed
+                        ? 'This preview is unavailable and cannot be kept.'
+                        : !candidateReady
+                          ? 'Review this preview before keeping it.'
+                          : retainLimitReached
+                            ? 'You can keep at most three variations.'
+                            : willRetain
+                              ? 'Remove this direction from saved variations.'
+                              : 'Save this useful direction as a variation.'}
+                      disabled={retainDisabled}
+                      style={[styles.keepVariation, retainDisabled && styles.keepVariationDisabled]}
+                      onPress={() => {
+                        if (retainDisabled) return;
+                        setRetainedAssetIds((current) => (
+                          current.includes(candidate.asset_id)
+                            ? current.filter((assetId) => assetId !== candidate.asset_id)
+                            : [...current, candidate.asset_id]
+                        ));
+                      }}>
+                      <View style={[styles.keepBox, willRetain && styles.keepBoxChecked]}>
+                        {willRetain && <Text style={styles.keepCheck}>✓</Text>}
+                      </View>
+                      <Text style={[styles.keepText, willRetain && styles.keepTextChecked]}>
+                        {candidateFailed
+                          ? 'Preview unavailable'
+                          : candidateReady
+                            ? 'Keep as variation'
+                            : 'Load preview to keep'}
+                      </Text>
+                    </Pressable>
+                    {willRetain && (
+                      <View
+                        testID={`create-retained-variation-editor-${candidate.asset_id}`}
+                        style={styles.variationNameBlock}>
+                        <Text style={styles.variationNameLabel}>Name this variation</Text>
+                        <TextInput
+                          accessibilityLabel={`Variation name for Direction ${index + 1}`}
+                          accessibilityHint={`Optional. This name appears in Collections. Leave blank to use Direction ${index + 1}.`}
+                          editable={!busy && !commitRetryLocked}
+                          maxLength={MAX_VARIATION_LABEL_LENGTH}
+                          placeholder="e.g. Rose gold halo"
+                          placeholderTextColor={theme.faint}
+                          testID={`create-retained-variation-name-${candidate.asset_id}`}
+                          value={retainedLabelsByAssetId[candidate.asset_id] ?? ''}
+                          onChangeText={(label) => setRetainedLabelsByAssetId((current) => ({
+                            ...current,
+                            [candidate.asset_id]: label,
+                          }))}
+                          style={styles.variationNameInput}
+                        />
+                        <Text style={styles.variationNameHelp}>
+                          Optional · shown in Collections. Blank uses Direction {index + 1}.
+                        </Text>
+                      </View>
+                    )}
+                  </>
                 )}
               </View>
             );
@@ -609,6 +662,11 @@ export function StudioCreateWorkspace({
           </Text>
         )}
         {error !== null && <Text style={styles.error}>{error}</Text>}
+        {commitRetryLocked && (
+          <Text style={styles.reviewReadiness}>
+            Your reviewed decision is preserved. Retry will submit the same direction and variation names.
+          </Text>
+        )}
         <View style={styles.footerActions}>
           <Pressable
             accessibilityRole="button"
@@ -964,5 +1022,14 @@ const styles = StyleSheet.create({
   keepCheck: { color: '#ffffff', fontSize: 11, fontWeight: '900' },
   keepText: { color: theme.faint, fontSize: 10, fontWeight: '700' },
   keepTextChecked: { color: '#5c3fc0' },
+  variationNameBlock: {
+    borderTopWidth: 1, borderTopColor: theme.line, paddingHorizontal: 12, paddingVertical: 10,
+  },
+  variationNameLabel: { color: theme.faint, fontSize: 10, fontWeight: '700', marginBottom: 6 },
+  variationNameInput: {
+    minHeight: 44, borderWidth: 1, borderColor: theme.line, borderRadius: radius.md,
+    backgroundColor: theme.paper, color: theme.ink, fontSize: 12, paddingHorizontal: 10,
+  },
+  variationNameHelp: { color: theme.faint, fontSize: 9, lineHeight: 14, marginTop: 5 },
   footerActions: { gap: 0 },
 });

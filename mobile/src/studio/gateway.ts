@@ -1706,7 +1706,9 @@ export function createStudioGateway(
         && request.createdBy.trim().length > 0
         && request.retained.length <= 3
         && request.retained.every((direction) => (
-          direction.candidateId.trim().length > 0 && direction.label.trim().length > 0
+          direction.candidateId.trim().length > 0
+          && direction.label.trim().length > 0
+          && direction.label.length <= 120
         ))
         && !retainedCandidateIds.includes(request.selectedCandidateId)
         && new Set(retainedCandidateIds).size === retainedCandidateIds.length;

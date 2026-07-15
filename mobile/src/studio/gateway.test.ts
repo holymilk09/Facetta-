@@ -304,6 +304,25 @@ test('rejects a partial or rebound atomic Create response', async () => {
   assert.equal(result.error?.code, 'INVALID_CREATIVE_DIRECTION_COMMIT');
 });
 
+test('rejects an overlong retained direction label before the atomic Create request', async () => {
+  let commitCalls = 0;
+  const gateway = createStudioGateway(fakeClient({
+    commitCreativeDirections: async () => {
+      commitCalls += 1;
+      return ok({ project: project('candidate_1'), retained_variations: [] }, 200);
+    },
+  }));
+
+  const result = await gateway.completeCreativeDirectionReview({
+    projectId: 'project_1', selectedCandidateId: 'candidate_1',
+    retained: [{ candidateId: 'candidate_2', label: 'x'.repeat(121) }],
+    createdBy: 'designer_1',
+  });
+
+  assert.equal(result.error?.code, 'INVALID_CREATIVE_DIRECTION_REVIEW');
+  assert.equal(commitCalls, 0);
+});
+
 test('saves an exact catalog preview as a named sibling without advancing its source', async () => {
   let saveCalls = 0;
   const source = project('asset_2', 2);

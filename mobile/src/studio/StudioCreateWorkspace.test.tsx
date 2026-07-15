@@ -443,6 +443,15 @@ test('keeps only explicitly chosen useful directions as variations', async () =>
     .toEqual({ checked: false, disabled: false });
   await fireEvent.press(screen.getByLabelText('Keep Direction 2 as variation'));
   await fireEvent.press(screen.getByLabelText('Keep Direction 4 as variation'));
+  expect(screen.getByLabelText('Variation name for Direction 2').props.maxLength).toBe(120);
+  await fireEvent.changeText(
+    screen.getByLabelText('Variation name for Direction 2'),
+    '  Sculptural frame  ',
+  );
+  await fireEvent.changeText(
+    screen.getByLabelText('Variation name for Direction 4'),
+    'Open silhouette',
+  );
   await fireEvent.press(screen.getByLabelText('Direction 3'));
   expect(screen.getByText('Continue with Direction 3 · keep 2 variations')).toBeTruthy();
   expect(within(screen.getByLabelText('Direction 1')).getByText('Preserved in Activity review'))
@@ -459,8 +468,8 @@ test('keeps only explicitly chosen useful directions as variations', async () =>
   expect(completeCreativeDirectionReview).toHaveBeenCalledWith({
     projectId: 'project_1', selectedCandidateId: 'candidate_3',
     retained: [
-      { candidateId: 'candidate_2', label: 'Direction 2' },
-      { candidateId: 'candidate_4', label: 'Direction 4' },
+      { candidateId: 'candidate_2', label: 'Sculptural frame' },
+      { candidateId: 'candidate_4', label: 'Open silhouette' },
     ],
     createdBy: 'designer_1',
   });
@@ -469,6 +478,55 @@ test('keeps only explicitly chosen useful directions as variations', async () =>
   }));
   expect(onSave.mock.calls[0][0]).not.toHaveProperty('sentence');
   expect(onSave.mock.calls[0][0]).not.toHaveProperty('references');
+});
+
+test('excludes stale unretained names and falls back for a blank retained name', async () => {
+  const completeCreativeDirectionReview = jest.fn(async ({ selectedCandidateId }) => ({
+    data: {
+      project: {
+        ...creativeProject(3),
+        selected_candidate_asset_id: selectedCandidateId,
+        active_asset_id: selectedCandidateId,
+      },
+      retained_variations: [],
+    },
+    error: null,
+    status: 200,
+  }));
+  await renderCreate(<StudioCreateWorkspace
+    gateway={{
+      createFromPrompt: jest.fn(), createFromDrawing: jest.fn(),
+      completeCreativeDirectionReview,
+    } as CreateGateway}
+    owner="designer_1"
+    resumeProject={creativeProject(3)}
+    onSave={jest.fn()}
+  />);
+
+  await loadDirection(1);
+  await loadDirection(2);
+  await loadDirection(3);
+  expect(screen.queryByLabelText('Variation name for Direction 2')).toBeNull();
+  await fireEvent.press(screen.getByLabelText('Keep Direction 2 as variation'));
+  await fireEvent.changeText(
+    screen.getByLabelText('Variation name for Direction 2'),
+    'Stale direction name',
+  );
+  await fireEvent.press(screen.getByLabelText('Keep Direction 2 as variation'));
+  expect(screen.queryByLabelText('Variation name for Direction 2')).toBeNull();
+  await fireEvent.press(screen.getByLabelText('Keep Direction 2 as variation'));
+  expect(screen.getByLabelText('Variation name for Direction 2').props.value)
+    .toBe('Stale direction name');
+  await fireEvent.press(screen.getByLabelText('Keep Direction 2 as variation'));
+  await fireEvent.press(screen.getByLabelText('Keep Direction 3 as variation'));
+  await fireEvent.changeText(screen.getByLabelText('Variation name for Direction 3'), '   ');
+  await fireEvent.press(screen.getByText('Continue with Direction 1 · keep 1 variation'));
+
+  await waitFor(() => expect(completeCreativeDirectionReview).toHaveBeenCalledWith({
+    projectId: 'project_1', selectedCandidateId: 'candidate_1',
+    retained: [{ candidateId: 'candidate_3', label: 'Direction 3' }],
+    createdBy: 'designer_1',
+  }));
 });
 
 test('defaults to no retained variations without adding global retention modes', async () => {
@@ -862,18 +920,32 @@ test('keeps the complete review staged after an atomic commit error and retries 
   await fireEvent.press(screen.getByLabelText('Direction 3'));
   await loadDirection(1);
   await fireEvent.press(screen.getByLabelText('Keep Direction 1 as variation'));
+  await fireEvent.changeText(
+    screen.getByLabelText('Variation name for Direction 1'),
+    'Architectural profile',
+  );
   const continueLabel = 'Continue with Direction 3 · keep 1 variation';
   await fireEvent.press(screen.getByText(continueLabel));
 
   await waitFor(() => expect(completeCreativeDirectionReview).toHaveBeenCalledTimes(1));
   expect(onSave).not.toHaveBeenCalled();
   expect(await screen.findByText(continueLabel)).toBeTruthy();
+  expect(screen.getByText(/reviewed decision is preserved/i)).toBeTruthy();
+  expect(screen.getByLabelText('Variation name for Direction 1').props.value)
+    .toBe('Architectural profile');
+  expect(screen.getByLabelText('Variation name for Direction 1').props.editable).toBe(false);
+  expect(screen.getByLabelText('Direction 2').props.accessibilityState.disabled).toBe(true);
 
   await fireEvent.press(screen.getByText(continueLabel));
   await waitFor(() => expect(completeCreativeDirectionReview).toHaveBeenCalledTimes(2));
   expect(completeCreativeDirectionReview.mock.calls[0]).toEqual(
     completeCreativeDirectionReview.mock.calls[1],
   );
+  expect(completeCreativeDirectionReview).toHaveBeenLastCalledWith({
+    projectId: 'project_1', selectedCandidateId: 'candidate_3',
+    retained: [{ candidateId: 'candidate_1', label: 'Architectural profile' }],
+    createdBy: 'designer_1', studioJobId: 'studio_job_create',
+  });
   expect(onSave).toHaveBeenCalledTimes(1);
   expect(onSave).toHaveBeenCalledWith(expect.objectContaining({
     project: completedProject,
