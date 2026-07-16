@@ -67,7 +67,7 @@ test('launches a primary action in one tap through the canonical resolver', asyn
   });
 });
 
-test('routes Views through starting facts while keeping Factory absent before eligibility', async () => {
+test('routes Views through starting facts without exposing that prerequisite under More', async () => {
   const onLaunch = jest.fn();
   const user = userEvent.setup();
   await render(
@@ -88,9 +88,14 @@ test('routes Views through starting facts while keeping Factory absent before el
     type: 'open_workspace', actionId: 'confirm', continueTo: 'views',
   });
 
-  await user.press(screen.getByTestId('studio-action-more'));
-  expect(screen.getByTestId('studio-more-actions')).toBeTruthy();
-  expect(screen.getByTestId('studio-action-confirm')).toBeTruthy();
+  const more = screen.getByTestId('studio-action-more');
+  expect(more.props.accessibilityState).toEqual({
+    disabled: true, selected: false, expanded: false,
+  });
+  expect(more.props.accessibilityHint).toContain('Unavailable: No optional actions yet.');
+  await user.press(more);
+  expect(screen.queryByTestId('studio-more-actions')).toBeNull();
+  expect(screen.queryByTestId('studio-action-confirm')).toBeNull();
   expect(screen.queryByTestId('studio-action-factory')).toBeNull();
 });
 

@@ -50,7 +50,15 @@ export function designerErrorMessage(
   if (code.includes('stale') || error.status === 409) {
     return 'This design changed while you were working. Reopen it before trying again.';
   }
-  if (category === 'network' || category === 'unavailable' || error.status === 0) {
+  if (
+    category === 'unavailable'
+    || code.includes('image_provider')
+    || code.includes('presentation_provider')
+    || code.includes('view_provider')
+  ) {
+    return 'Image generation is temporarily unavailable. Nothing was saved or charged. Try again later.';
+  }
+  if (category === 'network' || error.status === 0) {
     return 'Facetta could not connect. Check your connection and try again.';
   }
   if (category === 'quality') {

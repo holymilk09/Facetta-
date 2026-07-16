@@ -258,6 +258,41 @@ def _load_reviewing_candidate(
         ) from exc
 
 
+def _load_reviewing_candidate_for_read(
+    db: Session,
+    record: CandidateRecord,
+):
+    """Load a normalized preview and terminalize invalid visual evidence.
+
+    Catalog and markup authorities already apply their own fail-closed read
+    policy. Durable visual previews historically only invalidated malformed QA
+    during a terminal decision, which allowed a resume/list read to hide bad
+    bytes while leaving its exact Activity job in ``reviewing``. Reuse the
+    visual authority's owner-scoped invalidation transaction here so every
+    normalized read closes that candidate and its uncharged bound job before
+    returning the original unavailable response.
+    """
+
+    try:
+        return _load_reviewing_candidate(db, record)
+    except StudioPreviewCandidateError as exc:
+        if _kind(record) == "visual":
+            try:
+                invalidate_studio_visual_candidate(
+                    db,
+                    record.image_run_id,
+                    record.id,
+                    owner=record.owner,
+                    error_code=exc.code,
+                )
+            except StudioVisualCandidateUnavailable:
+                # The invalidation service owns the exact candidate/job CAS.
+                # If it cannot settle that pair, discard any partial state and
+                # preserve the original fail-closed read response.
+                db.rollback()
+        raise
+
+
 def _safe_json(value: object) -> JsonObject:
     return value if isinstance(value, dict) else {}
 
@@ -449,7 +484,7 @@ def get_studio_preview_candidate(
 ) -> StudioPreviewCandidate:
     record = _record(db, candidate_id, owner=owner)
     candidate = (
-        _load_reviewing_candidate(db, record)
+        _load_reviewing_candidate_for_read(db, record)
         if record.status == "reviewing" else None
     )
     return _projection(record, candidate=candidate)
@@ -484,14 +519,14 @@ def list_studio_preview_candidates(
     for record in records:
         try:
             candidate = (
-                _load_reviewing_candidate(db, record)
+                _load_reviewing_candidate_for_read(db, record)
                 if record.status == "reviewing" else None
             )
             result.append(_projection(record, candidate=candidate))
         except StudioPreviewCandidateError:
-            # The underlying service has already applied its fail-closed expiry
-            # or invalidation policy where appropriate. Never expose malformed
-            # bytes through the normalized list.
+            # Read authorities apply their fail-closed expiry or invalidation
+            # policy where appropriate. Never expose malformed bytes through
+            # the normalized list.
             continue
     return tuple(result)
 
@@ -509,7 +544,7 @@ def get_studio_preview_image(
             f"the Studio preview candidate was already {record.status}",
             status_code=410,
         )
-    candidate = _load_reviewing_candidate(db, record)
+    candidate = _load_reviewing_candidate_for_read(db, record)
     return StudioPreviewImage(
         image_bytes=bytes(candidate.image_bytes),
         media_type=candidate.media_type,

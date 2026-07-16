@@ -88,7 +88,7 @@ export const STUDIO_ACTIONS: readonly StudioActionDefinition[] = [
     authority: 'design_record',
     requiresActiveDesign: true,
     createsJob: false,
-    placement: 'more',
+    placement: 'internal',
     isAvailable: (context) => activeDesign(context)
       && context.hasSelectedPreSpecVisual
       && !context.hasExactSpecification,

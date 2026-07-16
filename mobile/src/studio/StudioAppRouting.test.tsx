@@ -997,10 +997,10 @@ test('every visible contextual action reaches its named destination', async () =
   }
 
   const user = userEvent.setup();
-  await openStudioMoreActions(view);
-  expect(await view.findByText('Starting design facts')).toBeTruthy();
-  await user.press(view.getByLabelText('More actions'));
-  await waitFor(() => expect(view.queryByText('Starting design facts')).toBeNull());
+  const more = view.getByLabelText('More actions');
+  expect(more.props.accessibilityState.disabled).toBe(true);
+  expect(more.props.accessibilityHint).toContain('Unavailable: No optional actions yet.');
+  expect(view.queryByText('Starting design facts')).toBeNull();
 
   await user.press(view.getByLabelText(
     'Generate technical views; Save starting facts first',
@@ -1015,7 +1015,7 @@ test('every visible contextual action reaches its named destination', async () =
   expect(view.queryByTestId('active-design-context')).toBeNull();
 });
 
-test('More opens Starting design facts in the confirmation workspace', async () => {
+test('starting design facts stay out of More and open only from their Refine context', async () => {
   authenticate();
   const view = await render(<App />);
 
@@ -1024,9 +1024,11 @@ test('More opens Starting design facts in the confirmation workspace', async () 
   fireEvent.press(await view.findByText('Save mocked direction'));
   expect(await view.findByText('Refine route reached')).toBeTruthy();
 
-  const user = userEvent.setup();
-  await openStudioMoreActions(view);
-  await user.press(await view.findByText('Starting design facts'));
+  const more = view.getByLabelText('More actions');
+  expect(more.props.accessibilityState.disabled).toBe(true);
+  expect(view.queryByText('Starting design facts')).toBeNull();
+
+  fireEvent.press(await view.findByText('Review starting design'));
 
   expect(await view.findByText('Save starting facts')).toBeTruthy();
   expect(view.getAllByText('Studio').length).toBeGreaterThan(0);
@@ -1034,7 +1036,7 @@ test('More opens Starting design facts in the confirmation workspace', async () 
 });
 
 test.each(['VARIATION_BRANCH', 'RESTORED_REVISION'])(
-  '%s keeps Starting design facts available when the backend confirms its lineage',
+  '%s keeps Refine-owned starting facts available without adding a More destination',
   async (capability) => {
     mockSavedPreSpecCapability = capability;
     authenticate();
@@ -1047,8 +1049,11 @@ test.each(['VARIATION_BRANCH', 'RESTORED_REVISION'])(
     fireEvent.press(await view.findByText('Save mocked direction'));
     expect(await view.findByText('Refine route reached')).toBeTruthy();
 
-    await openStudioMoreActions(view);
-    expect(await view.findByText('Starting design facts')).toBeTruthy();
+    const more = view.getByLabelText('More actions');
+    expect(more.props.accessibilityState.disabled).toBe(true);
+    expect(view.queryByText('Starting design facts')).toBeNull();
+    fireEvent.press(await view.findByText('Review starting design'));
+    expect(await view.findByText('Save starting facts')).toBeTruthy();
   },
 );
 

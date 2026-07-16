@@ -113,7 +113,8 @@ test('contextual launch intents preserve prerequisites and optional disclosure',
     continueTo: 'views',
   });
   assert.deepEqual(resolveStudioActionLaunch('more', preSpec), {
-    type: 'toggle_optional',
+    type: 'unavailable',
+    reason: 'No optional actions yet',
   });
   assert.deepEqual(resolveStudioActionLaunch('views', {
     ...preSpec,
@@ -189,17 +190,21 @@ test('Views stay visible with an explicit prerequisite until design facts are ex
   );
 });
 
-test('More exposes starting design facts for a pre-spec visual and never exposes Factory', () => {
+test('starting design facts stay internal while Views can still use them as a prerequisite', () => {
   const preSpec = {
     ...emptyContext,
     activeDesignId: 'project_1',
     activeRevisionId: 'asset_1',
     hasSelectedPreSpecVisual: true,
   };
+  const confirm = getStudioAction('confirm');
+  assert.equal(confirm.placement, 'internal');
+  assert.equal(confirm.isAvailable(preSpec), true);
   assert.equal(getStudioContextActions(preSpec).some((action) => action.id === 'confirm'), false);
   assert.equal(getVisibleStudioActions(preSpec, 'more').some((action) => (
     action.id === 'confirm' || action.shortLabel === 'Starting design facts'
-  )), true);
+  )), false);
+  assert.equal(getStudioActionPrerequisite(getStudioAction('views'), preSpec)?.id, 'confirm');
   assert.equal(getVisibleStudioActions(preSpec, 'more').some((action) => action.id === 'factory'), false);
   assert.equal(getVisibleStudioActions({
     ...preSpec, hasSelectedPreSpecVisual: false,

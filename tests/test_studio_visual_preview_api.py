@@ -621,6 +621,120 @@ def test_normalized_visual_preview_rejects_tampered_qa_without_canonical_write(
         assert bytes(durable.image) == b""
 
 
+def _tamper_visual_candidate_qa(Session, candidate_id: str) -> None:
+    with Session() as db:
+        record = db.get(PreviewCandidateRecord, candidate_id)
+        assert record is not None
+        record.payload = {
+            **record.payload,
+            "qa": {
+                "verdict": "fail",
+                "accepted": False,
+                "review_required": False,
+                "checks": [{
+                    "code": "outside_drift",
+                    "passed": False,
+                    "severity": "hard",
+                }],
+            },
+        }
+        db.commit()
+
+
+def _assert_failed_visual_read_is_isolated(
+    Session,
+    *,
+    candidate_id: str,
+    exact_job_id: str,
+    unrelated_job_id: str,
+    expected_counts: dict[str, int],
+) -> None:
+    assert _counts(Session) == expected_counts
+    with Session() as db:
+        candidate = db.get(PreviewCandidateRecord, candidate_id)
+        exact_job = db.get(StudioJobRecord, exact_job_id)
+        unrelated_job = db.get(StudioJobRecord, unrelated_job_id)
+        assert candidate is not None
+        assert candidate.status == "expired"
+        assert bytes(candidate.image) == b""
+        assert candidate.terminal_asset_id is None
+        assert candidate.review_id is None
+        assert exact_job is not None
+        assert exact_job.status == "failed"
+        assert exact_job.progress == 1
+        assert exact_job.error_code == "preview_candidate_unavailable"
+        assert exact_job.reservation_kind is None
+        assert (exact_job.completed_outputs, exact_job.charged_outputs) == (0, 0)
+        assert unrelated_job is not None
+        assert unrelated_job.status == "running"
+        assert unrelated_job.progress == 0.05
+        assert unrelated_job.error_code is None
+        assert (unrelated_job.completed_outputs,
+                unrelated_job.charged_outputs) == (0, 0)
+        assert db.scalar(select(func.count()).select_from(ImageRunReview)) == 0
+        assert db.scalar(select(func.count()).select_from(
+            ProjectRevisionRecord)) == 0
+
+
+def test_normalized_visual_get_invalidates_tampered_qa_and_exact_job_only(
+    studio_preview_client,
+):
+    client, Session = studio_preview_client
+    app.dependency_overrides[get_studio_visual_preview_generator] = (
+        lambda: _generator([])
+    )
+    exact_job_id = _running_refine_job(client)
+    unrelated_job_id = _running_refine_job(client)
+    created = _preview(client, studio_job_id=exact_job_id)
+    assert created.status_code == 201, created.text
+    candidate_id = created.json()["candidate"]["candidate_id"]
+    expected_counts = _counts(Session)
+    _tamper_visual_candidate_qa(Session, candidate_id)
+
+    reopened = client.get(
+        f"/studio/preview-candidates/{candidate_id}",
+        params={"owner": "usr_studio"},
+    )
+
+    assert reopened.status_code == 410, reopened.text
+    assert reopened.json()["code"] == "preview_candidate_unavailable"
+    _assert_failed_visual_read_is_isolated(
+        Session,
+        candidate_id=candidate_id,
+        exact_job_id=exact_job_id,
+        unrelated_job_id=unrelated_job_id,
+        expected_counts=expected_counts,
+    )
+
+
+def test_normalized_visual_list_invalidates_tampered_qa_and_exact_job_only(
+    studio_preview_client,
+):
+    client, Session = studio_preview_client
+    app.dependency_overrides[get_studio_visual_preview_generator] = (
+        lambda: _generator([])
+    )
+    exact_job_id = _running_refine_job(client)
+    unrelated_job_id = _running_refine_job(client)
+    created = _preview(client, studio_job_id=exact_job_id)
+    assert created.status_code == 201, created.text
+    candidate_id = created.json()["candidate"]["candidate_id"]
+    expected_counts = _counts(Session)
+    _tamper_visual_candidate_qa(Session, candidate_id)
+
+    resumed = client.get("/studio/projects/ast_selected/preview-candidates")
+
+    assert resumed.status_code == 200, resumed.text
+    assert resumed.json()["candidates"] == []
+    _assert_failed_visual_read_is_isolated(
+        Session,
+        candidate_id=candidate_id,
+        exact_job_id=exact_job_id,
+        unrelated_job_id=unrelated_job_id,
+        expected_counts=expected_counts,
+    )
+
+
 def test_normalized_visual_stale_discard_is_terminal_without_canonical_write(
     studio_preview_client,
 ):
