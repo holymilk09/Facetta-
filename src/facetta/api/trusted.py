@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+import hashlib
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -606,6 +607,32 @@ def _pack_or_error(db: Session, project_id: str):
         })
 
 
+_FACTORY_ARTIFACT_MEDIA_TYPES = {
+    ".json": "application/json",
+    ".svg": "image/svg+xml",
+    ".dxf": "application/dxf",
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".webp": "image/webp",
+}
+
+
+def _factory_artifact_media_type(name: str) -> str:
+    suffix = "." + name.rsplit(".", 1)[-1].lower() if "." in name else ""
+    return _FACTORY_ARTIFACT_MEDIA_TYPES.get(
+        suffix, "application/octet-stream",
+    )
+
+
+def _factory_artifact_error() -> JSONResponse:
+    return JSONResponse(status_code=404, content={
+        "code": "factory_pack_artifact_not_found",
+        "category": "validation",
+        "detail": "the requested Factory review artifact is unavailable",
+    })
+
+
 @router.get(
     "/projects/{project_id}/factory-pack",
     response_model=FactoryPackManifest,
@@ -618,6 +645,45 @@ def get_factory_pack_manifest(
     if isinstance(pack, JSONResponse):
         return pack
     return pack.manifest
+
+
+@router.get(
+    "/projects/{project_id}/factory-pack/files/{artifact_name:path}",
+)
+def download_factory_pack_artifact(
+    project_id: str,
+    artifact_name: str,
+    db: DbSession,
+    principal: PrincipalDep,
+):
+    """Download one allowlisted artifact from an exact Factory review pack."""
+    require_factory_entitlement(principal)
+    if (
+        not artifact_name
+        or artifact_name in {".", ".."}
+        or "/" in artifact_name
+        or "\\" in artifact_name
+        or "\x00" in artifact_name
+    ):
+        return _factory_artifact_error()
+    pack = _pack_or_error(db, project_id)
+    if isinstance(pack, JSONResponse):
+        return pack
+    content = pack.files.get(artifact_name)
+    if content is None:
+        return _factory_artifact_error()
+    digest = hashlib.sha256(content).hexdigest()
+    return Response(
+        content=content,
+        media_type=_factory_artifact_media_type(artifact_name),
+        headers={
+            "Content-Disposition": f'attachment; filename="{artifact_name}"',
+            "Cache-Control": "private, no-store",
+            "ETag": f'"{digest}"',
+            "X-Content-SHA256": digest,
+            "X-Content-Type-Options": "nosniff",
+        },
+    )
 
 
 class PrepareFactoryPackRequest(BaseModel):

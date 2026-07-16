@@ -454,7 +454,7 @@ def test_factory_job_lifecycle_is_owned_exclusively_by_backend_transaction(
     assert unchanged["billing"]["charged_outputs"] == 0
 
 
-def test_instant_transaction_cannot_create_or_orphan_a_studio_job(client):
+def test_vary_creates_a_durable_candidate_job_for_visual_review(client):
     project_id, source_id = _seed_project(
         client, project_id="project_vary_atomic_only",
     )
@@ -469,11 +469,15 @@ def test_instant_transaction_cannot_create_or_orphan_a_studio_job(client):
         "credits_per_output": definition.credits_per_output,
     })
 
-    assert response.status_code == 422
-    assert "atomic Studio transaction" in response.json()["detail"]
+    assert response.status_code == 201, response.text
+    job = response.json()
+    assert job["action_id"] == "vary"
+    assert job["status"] == "queued"
+    assert job["billing"]["requested_outputs"] == 1
+    assert job["billing"]["credits_per_output"] == 20
     listed = client.get("/studio/jobs", params={"owner": "usr_designer"})
     assert listed.status_code == 200
-    assert listed.json() == {"jobs": []}
+    assert [item["job_id"] for item in listed.json()["jobs"]] == [job["job_id"]]
 
 
 _CANDIDATE_DECISION_ACTION_IDS = tuple(
@@ -789,7 +793,7 @@ def test_server_registry_is_canonical_for_every_studio_action(client):
         )
 
 
-@pytest.mark.parametrize("action_id", ["create", "present"])
+@pytest.mark.parametrize("action_id", ["create", "vary", "present"])
 @pytest.mark.parametrize("outputs", [1, 2, 3, 4])
 def test_multi_output_actions_accept_their_canonical_range(
     client,
@@ -799,10 +803,10 @@ def test_multi_output_actions_accept_their_canonical_range(
     definition = STUDIO_JOB_ACTIONS[action_id]
     project_id = None
     source_id = None
-    if action_id == "present":
+    if action_id in {"vary", "present"}:
         project_id, source_id = _seed_project(
             client,
-            project_id=f"project_present_{outputs}",
+            project_id=f"project_{action_id}_{outputs}",
         )
 
     created = _create(
@@ -886,7 +890,7 @@ def test_single_output_actions_reject_multiple_outputs_before_persistence(
 def test_server_registry_matches_designer_action_contract():
     expected = {
         "create": ("brief_or_reference", "design_revision", "design_record", "candidate_job", "candidate_decision"),
-        "vary": ("direction", "variation_set", "design_record", "instant_transaction", "none"),
+        "vary": ("direction", "variation_set", "design_record", "candidate_job", "candidate_decision"),
         "refine": ("instruction", "design_revision", "design_record", "candidate_job", "candidate_decision"),
         "views": ("view_set", "view_set", "visual_preview", "candidate_job", "candidate_decision"),
         "angles": (
@@ -925,7 +929,7 @@ def test_server_registry_matches_designer_action_contract():
         for action_id, definition in STUDIO_JOB_ACTIONS.items()
     } == {
         "create": (1, 4),
-        "vary": (0, 0),
+        "vary": (1, 4),
         "refine": (1, 1),
         "views": (1, 1),
         "angles": (3, 3),

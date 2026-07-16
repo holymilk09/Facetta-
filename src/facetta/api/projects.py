@@ -104,6 +104,7 @@ from facetta.image_agent import (
     ImageAgentResult,
     ImageOperation,
     JewelryImageAgent,
+    MAX_PROVIDER_CALLS_PER_OUTPUT,
     MountingViewQualityEvaluator,
     build_image_plan,
 )
@@ -1082,6 +1083,8 @@ def project_detail(db: Session, project: Project,
               if pinned_candidates else None)
     design_id = _linked_design_id(db, project, chain)
     confirmable = confirmable_pre_spec_asset(
+        db,
+        project,
         chain,
         project.selected_candidate_asset_id,
     )
@@ -1328,6 +1331,8 @@ def _owned_current_confirmable_pre_spec_asset(
             detail="only the project owner may review a creative candidate",
         )
     current = confirmable_pre_spec_asset(
+        db,
+        project,
         project_chain(db, project.root_id),
         project.selected_candidate_asset_id,
     )
@@ -4140,7 +4145,9 @@ def create_marketing_pack(
         "requested_count": len(request.presets),
         "candidate_count": len(candidates),
         "failed_count": len(failures),
-        "maximum_provider_attempts": len(request.presets) * 3,
+        "maximum_provider_attempts": (
+            len(request.presets) * MAX_PROVIDER_CALLS_PER_OUTPUT
+        ),
         "actual_attempts": actual_attempts,
         "candidates": candidates,
         "failures": failures,
@@ -4297,7 +4304,9 @@ def create_visual_twin_views(
         "requested_count": len(request.views),
         "candidate_count": len(candidates),
         "failed_count": len(failures),
-        "maximum_provider_attempts": len(request.views) * 3,
+        "maximum_provider_attempts": (
+            len(request.views) * MAX_PROVIDER_CALLS_PER_OUTPUT
+        ),
         "actual_attempts": actual_attempts,
         "candidates": candidates,
         "failures": failures,

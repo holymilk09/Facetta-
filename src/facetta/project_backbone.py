@@ -23,6 +23,7 @@ from facetta.db import (
     ImageAsset,
     ImageRun,
     ImageRunReview,
+    PreviewCandidateRecord,
     Project,
     ProjectRevisionRecord,
     StudioConfirmationDraft,
@@ -64,6 +65,7 @@ CONFIRMABLE_PRE_SPEC_CAPABILITIES = frozenset({
     "CREATIVE_RENDER",
     "GLOBAL_RESTYLE",
     "LOCALIZED_EDIT",
+    "VARIATION_BRANCH",
 })
 
 PROVENANCE_BY_CAPABILITY = {
@@ -136,7 +138,127 @@ def accepted_creative_candidate(
     return None
 
 
+def _is_trusted_pre_spec_variation_root(
+    db: Session,
+    *,
+    project: Project,
+    selected: ImageAsset,
+) -> bool:
+    """Verify that a standalone pre-spec variation is a real Studio branch.
+
+    A capability name is not provenance.  A valid branch must retain both
+    foreign-key links to its source, one immutable branch record, and recorded
+    hashes binding the exact source and output pixels. Historical or fabricated
+    rows with only ``VARIATION_BRANCH`` therefore fail closed.
+    """
+
+    source_project_id = project.branched_from_project_root_id
+    source_asset_id = project.branched_from_asset_id
+    if (
+        selected.capability != "VARIATION_BRANCH"
+        or selected.id != selected.root_id
+        or selected.parent_asset_id is not None
+        or project.root_id != selected.id
+        or project.selected_candidate_asset_id != selected.id
+        or not source_project_id
+        or not source_asset_id
+        or source_project_id == project.root_id
+        or source_asset_id == selected.id
+        or project.family_id is None
+        or project.variation_index is None
+        or project.variation_index < 2
+        or not (project.variation_label or "").strip()
+    ):
+        return False
+
+    source_project = db.get(Project, source_project_id)
+    source_asset = db.get(ImageAsset, source_asset_id)
+    if (
+        source_project is None
+        or source_asset is None
+        or source_asset.root_id != source_project.root_id
+        or source_project.owner != project.owner
+        or source_project.family_id != project.family_id
+    ):
+        return False
+
+    records = list(db.scalars(select(ProjectRevisionRecord).where(
+        ProjectRevisionRecord.asset_id == selected.id
+    )))
+    if len(records) != 1:
+        return False
+    record = records[0]
+    raw_intent = record.raw_intent if isinstance(record.raw_intent, dict) else {}
+    interpretation = (
+        record.interpretation if isinstance(record.interpretation, dict) else {}
+    )
+    source_sha256 = hashlib.sha256(bytes(source_asset.image)).hexdigest()
+    output_sha256 = hashlib.sha256(bytes(selected.image)).hexdigest()
+    common_record = (
+        record.action == "created"
+        and record.created_by == project.owner
+        and raw_intent.get("source_project_id") == source_project_id
+        and raw_intent.get("source_asset_id") == source_asset_id
+        and raw_intent.get("label") == project.variation_label
+        and interpretation.get("source_sha256") == source_sha256
+        and interpretation.get("output_sha256") == output_sha256
+    )
+    exact_copy_branch = (
+        raw_intent.get("kind") == "save_as_variation"
+        and interpretation.get("operation") == "fork_variation"
+        and interpretation.get("source_preserved_exactly") is True
+        and source_sha256 == output_sha256
+    )
+    run_id = raw_intent.get("image_run_id")
+    run = db.get(ImageRun, run_id) if isinstance(run_id, str) else None
+    reviews = (
+        list(db.scalars(select(ImageRunReview).where(
+            ImageRunReview.run_id == run_id
+        )))
+        if run is not None else []
+    )
+    preview_candidates = (
+        list(db.scalars(select(PreviewCandidateRecord).where(
+            PreviewCandidateRecord.image_run_id == run_id
+        )))
+        if run is not None else []
+    )
+    preview_candidate = (
+        preview_candidates[0] if len(preview_candidates) == 1 else None
+    )
+    reviewed_preview_branch = (
+        raw_intent.get("kind") == "save_preview_as_variation"
+        and raw_intent.get("preview_kind") == "studio_visual"
+        and interpretation.get("operation") == "fork_reviewed_preview"
+        and interpretation.get("independent_revision_history") is True
+        and interpretation.get("specification_created") is False
+        and interpretation.get("factory_authority") is False
+        and run is not None
+        and run.project_root_id == source_project_id
+        and run.source_asset_id == source_asset_id
+        and run.created_by == project.owner
+        and len(reviews) == 1
+        and reviews[0].decision == "accepted"
+        and reviews[0].accepted_asset_id == selected.id
+        and reviews[0].created_by == project.owner
+        and preview_candidate is not None
+        and preview_candidate.kind == "studio_visual"
+        and preview_candidate.owner == project.owner
+        and preview_candidate.project_root_id == source_project_id
+        and preview_candidate.source_asset_id == source_asset_id
+        and preview_candidate.source_sha256 == source_sha256
+        and preview_candidate.output_sha256 == output_sha256
+        and preview_candidate.status == "saved_as_variation"
+        and preview_candidate.terminal_asset_id == selected.id
+        and preview_candidate.review_id == reviews[0].id
+        and preview_candidate.decided_by == project.owner
+    )
+    return common_record and (exact_copy_branch or reviewed_preview_branch)
+
+
 def confirmable_pre_spec_asset(
+    db: Session,
+    project: Project,
     chain: list[ImageAsset],
     selected_asset_id: str | None,
 ) -> ImageAsset | None:
@@ -148,9 +270,10 @@ def confirmable_pre_spec_asset(
     it fails closed for stale historical rows where a child was appended but
     the selection pointer still names its parent.
 
-    The asset must also descend from a real creative candidate and the entire
-    project must remain pre-spec. A matching ``root_id`` alone is not enough to
-    establish that provenance.
+    The asset must also descend from a real creative candidate, or be the
+    trusted root of a sibling Variation created from a reviewed candidate, and
+    the entire project must remain pre-spec. A matching ``root_id`` alone is
+    not enough to establish that provenance.
     """
     if selected_asset_id is None:
         return None
@@ -170,11 +293,16 @@ def confirmable_pre_spec_asset(
         )
     ):
         return None
-    if accepted_creative_candidate(chain, selected.id) is None:
+    accepted = accepted_creative_candidate(chain, selected.id)
+    trusted_variation_root = _is_trusted_pre_spec_variation_root(
+        db,
+        project=project,
+        selected=selected,
+    )
+    if accepted is None and not trusted_variation_root:
         return None
 
     canonical = [asset for asset in chain if is_canonical_revision(asset)]
-    accepted = accepted_creative_candidate(chain, selected.id)
     if accepted is not None:
         canonical.insert(0, accepted)
     active = canonical[-1] if canonical else None
@@ -1013,6 +1141,8 @@ def promote_creative_candidate(
     chain.sort(key=lambda asset: (
         asset.id != root_id, asset.created_at, asset.id))
     confirmable = confirmable_pre_spec_asset(
+        db,
+        project,
         chain,
         project.selected_candidate_asset_id,
     )

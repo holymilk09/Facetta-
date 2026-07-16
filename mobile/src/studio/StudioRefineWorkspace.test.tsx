@@ -148,6 +148,9 @@ describe('StudioRefineWorkspace', () => {
           }, {
             id: 'provider_trace', label: 'Grok QA model routing', verdict: 'warn' as const,
             detail: 'Internal evaluator trace must remain server-side.',
+          }, {
+            id: 'factory_authority', label: 'Factory authority', verdict: 'reject' as const,
+            detail: 'This preview is not factory authority.',
           }], temporary: true, expiresAt: null, decision: null,
           decidedAt: null, canonicalRevisionId: null,
         },
@@ -208,9 +211,14 @@ describe('StudioRefineWorkspace', () => {
     expect(previewCatalogRefine).toHaveBeenCalledWith(expect.objectContaining({
       executionMode: 'instant',
     }));
-    expect(await screen.findByText('Nothing has changed yet.')).toBeTruthy();
+    expect(await screen.findByText('Your change is ready to review.')).toBeTruthy();
+    expect(screen.queryByText('Nothing has changed yet.')).toBeNull();
     expect(screen.getByText('Quick preview · 0 credits')).toBeTruthy();
     expect(screen.getByText('Visual consistency')).toBeTruthy();
+    expect(screen.getByText('Review-only render')).toBeTruthy();
+    expect(screen.getByText('Not production data')).toBeTruthy();
+    expect(screen.getByText('This visual does not establish dimensions, materials, or factory facts.')).toBeTruthy();
+    expect(screen.queryByText('Could not preserve design')).toBeNull();
     expect(screen.queryByText(/Grok|QA|model routing|evaluator trace/i)).toBeNull();
     expect(onApplied).not.toHaveBeenCalled();
     expect(screen.getByTestId('refine-comparison-inspector')).toBeTruthy();
@@ -347,7 +355,7 @@ describe('StudioRefineWorkspace', () => {
       optionId: 'emerald_cut',
       executionMode: 'provider',
     }));
-    expect(await screen.findByText('Nothing has changed yet.')).toBeTruthy();
+    expect(await screen.findByText('Your change is ready to review.')).toBeTruthy();
     expect(screen.getByText(/Standard preview · estimated 20 credits/)).toBeTruthy();
     expect(screen.queryByText(/provider/i)).toBeNull();
     expect(screen.getByLabelText('Temporary refinement preview')).toBeTruthy();
@@ -524,7 +532,7 @@ describe('StudioRefineWorkspace', () => {
     );
     await waitFor(() => expect(screen.getByDisplayValue('Make the lighting warmer')).toBeTruthy());
     await fireEvent.press(screen.getByText('Preview change'));
-    expect(await screen.findByText('Nothing has changed yet.')).toBeTruthy();
+    expect(await screen.findByText('Your change is ready to review.')).toBeTruthy();
     await fireEvent(screen.getByLabelText('Exact source revision'), 'load');
     await fireEvent(screen.getByLabelText('Temporary refinement preview'), 'load');
     await fireEvent.press(screen.getByText('Save as Variation'));
@@ -648,7 +656,7 @@ describe('StudioRefineWorkspace', () => {
     expect(screen.getByText('Preview change').parent?.props.accessibilityState.disabled).toBe(false);
 
     await fireEvent.press(screen.getByText('Preview change'));
-    expect(await screen.findByText('Nothing has changed yet.')).toBeTruthy();
+    expect(await screen.findByText('Your change is ready to review.')).toBeTruthy();
     await fireEvent(screen.getByLabelText('Exact source revision'), 'load');
     await fireEvent(screen.getByLabelText('Temporary refinement preview'), 'load');
     await fireEvent.press(screen.getByText('Apply as new revision'));
@@ -789,7 +797,7 @@ describe('StudioRefineWorkspace', () => {
       });
     });
 
-    expect(rendered.queryByText('Nothing has changed yet.')).toBeNull();
+    expect(rendered.queryByText('Your change is ready to review.')).toBeNull();
     expect(rendered.queryByLabelText('Temporary refinement preview')).toBeNull();
     expect(rendered.getByPlaceholderText(/make the presentation softer/i).props.value).toBe('');
   });
@@ -851,7 +859,7 @@ describe('StudioRefineWorkspace', () => {
       rendered.getByPlaceholderText(/make the presentation softer/i).props.value,
     ).toBe('Warm the metal'));
     await fireEvent.press(rendered.getByText('Preview change'));
-    expect(await rendered.findByText('Nothing has changed yet.')).toBeTruthy();
+    expect(await rendered.findByText('Your change is ready to review.')).toBeTruthy();
     await fireEvent(rendered.getByLabelText('Exact source revision'), 'load');
     await fireEvent(rendered.getByLabelText('Temporary refinement preview'), 'load');
     await fireEvent.press(rendered.getByText('Apply as new revision'));
@@ -872,7 +880,7 @@ describe('StudioRefineWorkspace', () => {
     });
 
     expect(onApplied).not.toHaveBeenCalled();
-    expect(rendered.queryByText('Nothing has changed yet.')).toBeNull();
+    expect(rendered.queryByText('Your change is ready to review.')).toBeNull();
     expect(rendered.getByPlaceholderText(/make the presentation softer/i).props.value).toBe('');
   });
 
@@ -920,7 +928,7 @@ describe('StudioRefineWorkspace', () => {
         change_instruction: 'Make the background warmer',
       }),
     })));
-    expect(await screen.findByText('Nothing has changed yet.')).toBeTruthy();
+    expect(await screen.findByText('Your change is ready to review.')).toBeTruthy();
     expect(screen.queryByTestId('refine-comparison-inspector')).toBeNull();
     expect(screen.getByLabelText('Temporary refinement preview')).toBeTruthy();
   });

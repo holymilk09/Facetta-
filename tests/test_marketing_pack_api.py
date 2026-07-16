@@ -198,7 +198,7 @@ def test_pack_candidates_are_reviewable_and_accept_as_derived_assets(
     assert body["status"] == "review_required"
     assert body["candidate_count"] == 3
     assert body["failed_count"] == 0
-    assert body["maximum_provider_attempts"] == 9
+    assert body["maximum_provider_attempts"] == 12
     assert body["actual_attempts"] == 3
     assert all(candidate["preview_url"].startswith("/image-runs/")
                for candidate in body["candidates"])

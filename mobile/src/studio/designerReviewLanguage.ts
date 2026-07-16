@@ -2,13 +2,24 @@ import type { PreviewCheck } from './contracts';
 
 export type InternalReviewVerdict = 'pass' | 'warn' | 'reject' | 'fail';
 
-export function designerReviewState(verdict: InternalReviewVerdict): string {
+type ReviewCheckIdentity = Partial<Pick<PreviewCheck, 'id' | 'label'>>;
+
+function isFactoryAuthorityCheck(check: ReviewCheckIdentity): boolean {
+  return check.id === 'factory_authority';
+}
+
+export function designerReviewState(
+  verdict: InternalReviewVerdict,
+  check: ReviewCheckIdentity = {},
+): string {
+  if (isFactoryAuthorityCheck(check)) return 'Review-only render';
   if (verdict === 'pass') return 'Design preserved';
   if (verdict === 'warn') return 'Review recommended';
   return 'Could not preserve design';
 }
 
 export function designerCheckLabel(check: Pick<PreviewCheck, 'id' | 'label'>): string {
+  if (isFactoryAuthorityCheck(check)) return 'Not production data';
   const value = `${check.id} ${check.label}`.toLowerCase();
   if (/(drift|geometry|identity|silhouette|proportion|topology|count|component|placement|shape|form)/.test(value)) {
     return 'Design preservation';
@@ -29,8 +40,11 @@ export function designerCheckLabel(check: Pick<PreviewCheck, 'id' | 'label'>): s
 }
 
 export function designerCheckDetail(
-  check: Pick<PreviewCheck, 'verdict'>,
+  check: Pick<PreviewCheck, 'verdict'> & ReviewCheckIdentity,
 ): string {
+  if (isFactoryAuthorityCheck(check)) {
+    return 'This visual does not establish dimensions, materials, or factory facts.';
+  }
   if (check.verdict === 'pass') {
     return 'No meaningful unintended change was detected.';
   }

@@ -2986,15 +2986,34 @@ const decodeStudioMarkupAcceptResult: Decoder<StudioMarkupAcceptResult> = (value
   if (!isRecord(value) || value.status !== 'applied') return null;
   const candidateId = nullableText(value.candidate_id);
   const assetId = nullableText(value.asset_id);
+  const sourceAssetId = nullableText(value.source_asset_id);
+  const sourceDesignVersion = number(value.source_design_version);
+  const acceptedDesignVersion = number(value.accepted_design_version);
   const project = decodeProjectDetail(value.project);
-  return candidateId === null || assetId === null || project === null
-    ? null : { status: 'applied', candidate_id: candidateId, asset_id: assetId, project };
+  return candidateId === null || assetId === null || sourceAssetId === null
+    || sourceDesignVersion === null || !Number.isInteger(sourceDesignVersion)
+    || sourceDesignVersion < 1
+    || acceptedDesignVersion === null || !Number.isInteger(acceptedDesignVersion)
+    || acceptedDesignVersion < 1 || project === null
+    ? null : {
+      status: 'applied', candidate_id: candidateId, asset_id: assetId,
+      source_asset_id: sourceAssetId, source_design_version: sourceDesignVersion,
+      accepted_design_version: acceptedDesignVersion, project,
+    };
 };
 
 const decodeStudioMarkupDiscardResult: Decoder<StudioMarkupDiscardResult> = (value) => {
   if (!isRecord(value) || value.status !== 'discarded') return null;
   const candidateId = nullableText(value.candidate_id);
-  return candidateId === null ? null : { status: 'discarded', candidate_id: candidateId };
+  const sourceAssetId = nullableText(value.source_asset_id);
+  const sourceDesignVersion = number(value.source_design_version);
+  return candidateId === null || sourceAssetId === null
+    || sourceDesignVersion === null || !Number.isInteger(sourceDesignVersion)
+    || sourceDesignVersion < 1
+    ? null : {
+      status: 'discarded', candidate_id: candidateId,
+      source_asset_id: sourceAssetId, source_design_version: sourceDesignVersion,
+    };
 };
 
 export const decodeMarkupApplyResponse: Decoder<MarkupApplyResponse> = (value) => {
@@ -5716,6 +5735,10 @@ export function createTrustedApiClient(options: TrustedApiClientOptions) {
       if (result.error !== null) return result;
       const bundleUrl = result.data.bundle_url
         || `${baseUrl}/projects/${encodeURIComponent(projectId)}/factory-pack.zip`;
+      const artifactUrl = (name: string): string => (
+        `${baseUrl}/projects/${encodeURIComponent(projectId)}`
+        + `/factory-pack/files/${encodeURIComponent(name)}`
+      );
       return {
         ...result,
         data: {
@@ -5723,7 +5746,7 @@ export function createTrustedApiClient(options: TrustedApiClientOptions) {
           bundle_url: bundleUrl,
           artifacts: result.data.artifacts.map((artifact) => ({
             ...artifact,
-            url: artifact.url || bundleUrl,
+            url: artifact.url || artifactUrl(artifact.name),
           })),
         },
       };
@@ -5740,6 +5763,10 @@ export function createTrustedApiClient(options: TrustedApiClientOptions) {
       if (result.error !== null) return result;
       const bundleUrl = result.data.bundle_url
         || `${baseUrl}/projects/${encodeURIComponent(projectId)}/factory-pack.zip`;
+      const artifactUrl = (name: string): string => (
+        `${baseUrl}/projects/${encodeURIComponent(projectId)}`
+        + `/factory-pack/files/${encodeURIComponent(name)}`
+      );
       return {
         ...result,
         data: {
@@ -5747,7 +5774,7 @@ export function createTrustedApiClient(options: TrustedApiClientOptions) {
           bundle_url: bundleUrl,
           artifacts: result.data.artifacts.map((artifact) => ({
             ...artifact,
-            url: artifact.url || bundleUrl,
+            url: artifact.url || artifactUrl(artifact.name),
           })),
         },
       };

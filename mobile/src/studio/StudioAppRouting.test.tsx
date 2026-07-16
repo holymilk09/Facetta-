@@ -570,6 +570,48 @@ const refinedPreSpecProject = {
   ],
 };
 
+const savedVariationProject = {
+  ...nonConfirmablePreSpecProject,
+  id: 'project_a',
+  root_id: 'project_a',
+  title: 'Saved reviewed variation',
+  confirmable_pre_spec: true,
+  selected_candidate_asset_id: 'variation_asset_1',
+  active_asset_id: 'variation_asset_1',
+  active_revision: {
+    ...nonConfirmablePreSpecProject.active_revision,
+    asset_id: 'variation_asset_1',
+    root_id: 'project_a',
+    parent_asset_id: null,
+    capability: 'VARIATION_BRANCH',
+    provenance: 'studio_variation_branch',
+    revision: 1,
+  },
+  revisions: [{
+    ...nonConfirmablePreSpecProject.revisions[0],
+    revision: 1,
+    asset: {
+      ...nonConfirmablePreSpecProject.revisions[0].asset,
+      asset_id: 'variation_asset_1',
+      root_id: 'project_a',
+      parent_asset_id: null,
+      capability: 'VARIATION_BRANCH',
+      provenance: 'studio_variation_branch',
+      revision: 1,
+    },
+  }],
+  assets: [{
+    ...nonConfirmablePreSpecProject.assets[0],
+    asset_id: 'variation_asset_1',
+    root_id: 'project_a',
+    parent_asset_id: null,
+    capability: 'VARIATION_BRANCH',
+    provenance: 'studio_variation_branch',
+    revision: 1,
+  }],
+  cover_asset_id: 'variation_asset_1',
+};
+
 const authenticate = () => {
   markOnboarded();
   saveSession({
@@ -823,8 +865,7 @@ test('active design actions keep the exact saved revision visible and link to Hi
   expect(await view.findByText('Confirmed direction')).toBeTruthy();
   expect(view.getByText('Current saved revision · Revision 2')).toBeTruthy();
 
-  await fireEvent.press(view.getByLabelText('More actions'));
-  await fireEvent.press(await view.findByRole('button', { name: 'Generate technical views' }));
+  await fireEvent.press(view.getByRole('button', { name: 'View this design' }));
   expect(await view.findByTestId('active-design-context')).toBeTruthy();
   expect(view.getByText('Current saved revision · Revision 2')).toBeTruthy();
 
@@ -843,6 +884,7 @@ test('every visible active-design rail CTA reaches its named destination', async
 
   for (const [label, destination] of [
     ['Refine this design', 'Refine route reached'],
+    ['View this design', 'Angles route reached for asset_1'],
     ['Present this design', 'Present route reached for asset_1'],
   ] as const) {
     fireEvent.press(view.getByLabelText(label));
@@ -851,18 +893,40 @@ test('every visible active-design rail CTA reaches its named destination', async
 
   fireEvent.press(view.getByLabelText('More actions'));
   expect(await view.findByText('Starting design facts')).toBeTruthy();
-  expect(view.queryByText('Views')).toBeNull();
+  expect(view.getAllByText('Views')).toHaveLength(1);
   expect(view.queryByLabelText('Save as a variation')).toBeNull();
   fireEvent.press(view.getByText('Starting design facts'));
   expect(await view.findByText('Review starting design facts')).toBeTruthy();
   await fireEvent.press(await view.findByText('Save starting facts'));
-  await fireEvent.press(view.getByLabelText('More actions'));
-  await fireEvent.press(await view.findByRole('button', { name: 'Generate technical views' }));
+  await fireEvent.press(view.getByRole('button', { name: 'View this design' }));
   expect(await view.findByText('Views route reached')).toBeTruthy();
 
   fireEvent.press(view.getByLabelText('Create a design'));
   expect(await view.findByText('Save mocked direction')).toBeTruthy();
   expect(view.queryByTestId('active-design-context')).toBeNull();
+});
+
+test('a saved reviewed visual variation remains eligible for Vary and visual Views', async () => {
+  mockGetProject.mockResolvedValue({
+    data: savedVariationProject, error: null, status: 200,
+  });
+  authenticate();
+  const view = await render(<App />);
+
+  await waitFor(() => expect(view.getByLabelText('New design inspiration')).toBeTruthy());
+  fireEvent.press(view.getByRole('tab', { name: 'Collections' }));
+  fireEvent.press(await view.findByText('Open project A'));
+  expect(await view.findByText('Collection project project_a')).toBeTruthy();
+  fireEvent.press(view.getByText('Continue refining exact revision'));
+  expect(await view.findByText('Refine route reached')).toBeTruthy();
+
+  const vary = view.getByRole('button', { name: 'Explore variations' });
+  const views = view.getByRole('button', { name: 'View this design' });
+  expect(vary.props.accessibilityState.disabled).toBe(false);
+  expect(views.props.accessibilityState.disabled).toBe(false);
+  fireEvent.press(vary);
+  expect(await view.findByText('What direction should we explore?')).toBeTruthy();
+  expect(view.queryByLabelText('Variation name')).toBeNull();
 });
 
 test('More opens Starting design facts in the confirmation workspace', async () => {
@@ -1155,7 +1219,7 @@ test('Collections hides Factory readiness when the account lacks entitlement', a
   expect(view.queryByText('Review optional Factory readiness')).toBeNull();
 });
 
-test('technical Views appears through More only after starting facts are exact', async () => {
+test('one Views rail action switches from visual set to exact view after starting facts', async () => {
   mockConfirmedFactoryReady = true;
   mockGetProject.mockResolvedValue({ data: eligibleFactoryProject(), error: null, status: 200 });
   markOnboarded();
@@ -1170,10 +1234,10 @@ test('technical Views appears through More only after starting facts are exact',
   fireEvent.press(newDesignCard(view));
   fireEvent.press(await view.findByText('Save mocked direction'));
   await skipOptionalAngles(view);
-  expect(view.queryByLabelText('Generate technical views')).toBeNull();
+  expect(view.getByRole('button', { name: 'View this design' })).toBeTruthy();
   fireEvent.press(view.getByLabelText('More actions'));
   expect(await view.findByText('Starting design facts')).toBeTruthy();
-  expect(view.queryByText('Views')).toBeNull();
+  expect(view.getByText('Views')).toBeTruthy();
   expect(view.queryByText('Views route reached')).toBeNull();
   fireEvent.press(view.getByText('Starting design facts'));
   expect(await view.findByText('Save starting facts')).toBeTruthy();
@@ -1181,15 +1245,13 @@ test('technical Views appears through More only after starting facts are exact',
 
   fireEvent.press(await view.findByText('Save starting facts'));
   expect(await view.findByText('Refine route reached')).toBeTruthy();
-  expect(view.queryByLabelText('Generate technical views')).toBeNull();
-  await fireEvent.press(view.getByLabelText('More actions'));
-  expect(await view.findByText('Views')).toBeTruthy();
-  await fireEvent.press(view.getByRole('button', { name: 'Generate technical views' }));
+  expect(view.getByRole('button', { name: 'View this design' })).toBeTruthy();
+  await fireEvent.press(view.getByRole('button', { name: 'View this design' }));
   expect(await view.findByText('Views route reached')).toBeTruthy();
   expect(view.queryByText('Save starting facts')).toBeNull();
   expect(view.queryByText('Your design families')).toBeNull();
   expect(view.queryByText(/Factory/i)).toBeNull();
-  expect(view.queryByLabelText('Generate technical views')).toBeNull();
+  expect(view.getByRole('button', { name: 'View this design' })).toBeTruthy();
   fireEvent.press(view.getByLabelText('Refine this design'));
   expect(await view.findByText('Refine route reached')).toBeTruthy();
   expect(view.getByLabelText('More actions')).toBeTruthy();
@@ -1273,9 +1335,10 @@ test('Activity Refine does not offer design-fact review for a non-confirmable pr
 
   expect(await view.findByText('Refine route reached')).toBeTruthy();
   expect(view.queryByText('Review starting design')).toBeNull();
-  expect(view.queryByLabelText('Generate technical views')).toBeNull();
+  expect(view.getByRole('button', { name: 'View this design' }).props.accessibilityState)
+    .toEqual({ disabled: true });
   fireEvent.press(view.getByLabelText('More actions'));
-  expect(view.queryByText('Views')).toBeNull();
+  expect(view.getAllByText('Views')).toHaveLength(1);
   expect(view.queryByText('Starting design facts')).toBeNull();
   expect(view.queryByText('Save starting facts')).toBeNull();
   expect(view.queryByText('Views route reached')).toBeNull();

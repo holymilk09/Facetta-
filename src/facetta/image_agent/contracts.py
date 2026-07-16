@@ -115,6 +115,12 @@ class ImageAgentPlan(_Contract):
     spec_visual_hash: str
     region_description: str | None = None
     camera_view: Literal["front", "three_quarter", "side"] | None = None
+    # REFERENCE_RENDER serves three pre-spec use cases.  Keep the operation
+    # stable for persisted lineage while making the provider/QA contract
+    # explicit: an appearance edit is not a drawing-to-render transformation.
+    reference_mode: Literal[
+        "source_render", "appearance_edit", "camera_study"
+    ] | None = None
     mounting_view: Literal["plan", "front", "side", "section"] | None = None
     frozen: tuple[str, ...] = ()
     style_constraints: tuple[str, ...] = ()
@@ -134,6 +140,13 @@ class ImageAgentPlan(_Contract):
             and self.edit_domains == (DesignerEditDomain.CHAIN_STYLE,)
         )
 
+    @property
+    def is_pre_spec_appearance_edit(self) -> bool:
+        return (
+            self.operation is ImageOperation.REFERENCE_RENDER
+            and self.reference_mode == "appearance_edit"
+        )
+
 
 class ProviderImage(_Contract):
     image_bytes: bytes
@@ -151,7 +164,9 @@ class AttemptError(_Contract):
 
 
 class ImageAttemptSummary(_Contract):
-    attempt_number: int = Field(ge=1, le=3)
+    # Three normal route slots plus one narrowly reserved correction on the
+    # successful fallback provider after retryable provider transport errors.
+    attempt_number: int = Field(ge=1, le=4)
     route: ImageRoute
     provider: str
     model: str

@@ -5,6 +5,8 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Sequence
+from typing import Literal
+
 from facetta.image_agent.contracts import (
     DesignerEditDomain,
     ImageAgentPlan,
@@ -106,6 +108,9 @@ def build_image_plan(
     mask_provenance: str | None = None,
     region_description: str | None = None,
     camera_view: str | None = None,
+    reference_mode: Literal[
+        "source_render", "appearance_edit", "camera_study"
+    ] | None = None,
     mounting_view: str | None = None,
     frozen: Sequence[str] = (),
     style_constraints: Sequence[str] = (),
@@ -166,6 +171,37 @@ def build_image_plan(
             raise ImagePlanValidationError(
                 "REFERENCE_RENDER camera_view requires front, three_quarter, or side"
             )
+    normalized_reference_mode = reference_mode
+    if operation is ImageOperation.REFERENCE_RENDER:
+        if normalized_reference_mode not in {
+            None, "source_render", "appearance_edit", "camera_study"
+        }:
+            raise ImagePlanValidationError(
+                "unsupported REFERENCE_RENDER reference_mode"
+            )
+        if normalized_reference_mode is None:
+            normalized_reference_mode = (
+                "camera_study" if normalized_camera_view is not None
+                else "source_render"
+            )
+        if (
+            normalized_reference_mode == "camera_study"
+            and normalized_camera_view is None
+        ):
+            raise ImagePlanValidationError(
+                "camera_study reference mode requires camera_view"
+            )
+        if (
+            normalized_reference_mode != "camera_study"
+            and normalized_camera_view is not None
+        ):
+            raise ImagePlanValidationError(
+                "camera_view requires camera_study reference mode"
+            )
+    elif normalized_reference_mode is not None:
+        raise ImagePlanValidationError(
+            "reference_mode is only valid for REFERENCE_RENDER"
+        )
 
     allowed_mounting_views = {"plan", "front", "side", "section"}
     normalized_mounting_view = (
@@ -406,6 +442,8 @@ def build_image_plan(
         "spec_delta": spec_delta,
         "edit_domains": [domain.value for domain in edit_domains],
     }
+    if normalized_reference_mode is not None:
+        normalized_intent["reference_mode"] = normalized_reference_mode
     if explicit_count_claims:
         normalized_intent["explicit_component_counts"] = [
             dict(claim) for claim in explicit_count_claims
@@ -470,6 +508,7 @@ def build_image_plan(
         spec_visual_hash=visual_hash,
         region_description=region,
         camera_view=normalized_camera_view,  # type: ignore[arg-type]
+        reference_mode=normalized_reference_mode,
         mounting_view=normalized_mounting_view,
         frozen=frozen_values,
         style_constraints=style_values,

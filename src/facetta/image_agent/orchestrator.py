@@ -48,6 +48,9 @@ from facetta.image_agent.providers import (
 from facetta.image_agent.quality import RingQualityEvaluator
 
 
+MAX_PROVIDER_CALLS_PER_OUTPUT = 4
+
+
 def _sha256(value: bytes | str) -> str:
     raw = value if isinstance(value, bytes) else value.encode()
     return hashlib.sha256(raw).hexdigest()
@@ -124,7 +127,13 @@ def _merge_source_precondition_warning(
 
 
 class JewelryImageAgent:
-    """Execute at most Grok, corrected Grok, then a task-safe fallback."""
+    """Execute three normal route slots plus one transport-recovery reserve.
+
+    The fourth call is unavailable during normal QA iteration.  It is opened
+    only when a retryable provider transport failure consumed an earlier slot,
+    the task-safe fallback then produced a quality-gated candidate, and that
+    candidate needs one corrective pass on the same fallback provider.
+    """
 
     def __init__(
         self,
@@ -209,16 +218,21 @@ class JewelryImageAgent:
         prior_report: ImageQualityReport | None = None
         prior_provider_error: ProviderCallError | None = None
 
-        for number in range(1, 4):
-            route = (
-                route_for_attempt(plan, number)
-                if self.attempt_routes is None
-                else (
-                    self.attempt_routes[number - 1]
-                    if number <= len(self.attempt_routes)
-                    else None
+        for number in range(1, MAX_PROVIDER_CALLS_PER_OUTPUT + 1):
+            if number == MAX_PROVIDER_CALLS_PER_OUTPUT:
+                route = self._reserved_fallback_correction_route(
+                    plan, attempts, prior_report,
                 )
-            )
+            else:
+                route = (
+                    route_for_attempt(plan, number)
+                    if self.attempt_routes is None
+                    else (
+                        self.attempt_routes[number - 1]
+                        if number <= len(self.attempt_routes)
+                        else None
+                    )
+                )
             if route is None:
                 break
             if number == 3 and self.use_available_fallback:
@@ -229,7 +243,11 @@ class JewelryImageAgent:
                 and attempts
                 and ROUTE_METADATA[route][0] != attempts[-1].provider
             )
-            if number == 3 and (
+            if number == MAX_PROVIDER_CALLS_PER_OUTPUT:
+                fallback_reason = (
+                    "fallback_quality_correction_after_transport_failure"
+                )
+            elif number == 3 and (
                 self.attempt_routes is None or is_provider_fallback
             ):
                 if prior_provider_error is not None and prior_report is not None:
@@ -413,7 +431,16 @@ class JewelryImageAgent:
                     and check.code in RETRYABLE_VISUAL_WARNING_CODES
                     for check in report.checks
                 )
-                if retryable_visual_warning and number < 3:
+                has_retry_route = (
+                    number < 3
+                    or (
+                        number == 3
+                        and self._reserved_fallback_correction_route(
+                            plan, attempts, report,
+                        ) is not None
+                    )
+                )
+                if retryable_visual_warning and has_retry_route:
                     continue
                 return self._result(
                     plan,
@@ -441,6 +468,33 @@ class JewelryImageAgent:
         message = (prior_provider_error.message if prior_provider_error else
                    "no usable image candidate was produced")
         raise ImageProviderFailure(message, attempts=attempts, plan=plan)
+
+    @staticmethod
+    def _reserved_fallback_correction_route(
+        plan: ImageAgentPlan,
+        attempts: list[ImageAttemptSummary],
+        report: ImageQualityReport | None,
+    ) -> ImageRoute | None:
+        """Return one same-provider correction after lost transport slots.
+
+        This reserve cannot add a second fallback, cannot run without a
+        quality-gated fallback image, and ignores non-retryable provider
+        failures.  Those constraints keep latency and provider cost bounded
+        while preserving every attempt in the canonical run evidence.
+        """
+
+        if report is None or not plan.fallback_allowed or len(attempts) != 3:
+            return None
+        selected = attempts[-1]
+        if selected.qa_verdict is None or not selected.fallback:
+            return None
+        lost_transport_slot = any(
+            attempt.error_category is FailureCategory.PROVIDER
+            and attempt.error is not None
+            and attempt.error.retryable
+            for attempt in attempts[:-1]
+        )
+        return selected.route if lost_transport_slot else None
 
     @staticmethod
     def _verify_inputs(

@@ -187,6 +187,27 @@ def _running_refine_job(client: TestClient) -> str:
     return job_id
 
 
+def _running_vary_job(client: TestClient) -> str:
+    created = client.post("/studio/jobs", json={
+        "owner": "usr_studio",
+        "action_id": "vary",
+        "lane": "trusted_structural",
+        "active_design_id": "ast_selected",
+        "source_revision_id": "ast_selected",
+        "requested_outputs": 1,
+        "credits_per_output": 20,
+    })
+    assert created.status_code == 201, created.text
+    job_id = created.json()["job_id"]
+    running = client.patch(f"/studio/jobs/{job_id}", json={
+        "owner": "usr_studio",
+        "status": "running",
+        "progress": 0.05,
+    })
+    assert running.status_code == 200, running.text
+    return job_id
+
+
 def _counts(Session) -> dict[str, int]:
     with Session() as db:
         return {
@@ -1131,6 +1152,7 @@ def test_visual_preview_saves_directly_as_independent_variation(
     assert saved.status_code == 201, saved.text
     body = saved.json()
     assert body["status"] == "saved_as_variation"
+    assert body["project"]["confirmable_pre_spec"] is True
     assert body["source_project_id"] == "ast_selected"
     assert body["source_asset_id"] == "ast_selected"
     sibling_id = body["project"]["root_id"]
@@ -1160,6 +1182,52 @@ def test_visual_preview_saves_directly_as_independent_variation(
         json={"created_by": "usr_studio", "label": "Duplicate"},
     )
     assert repeated.status_code == 410
+
+
+def test_pre_spec_variation_fails_closed_without_complete_branch_provenance(
+    studio_preview_client,
+):
+    client, Session = studio_preview_client
+    app.dependency_overrides[get_studio_visual_preview_generator] = (
+        lambda: _generator([])
+    )
+    preview = _preview(client).json()
+    candidate_id = preview["candidate"]["candidate_id"]
+    run_id = preview["image_run_id"]
+    saved = client.post(
+        f"/studio/image-runs/{run_id}/visual-candidates/{candidate_id}/"
+        "save-as-variation",
+        json={"created_by": "usr_studio", "label": "Linked branch"},
+    )
+    assert saved.status_code == 201, saved.text
+    branch_id = saved.json()["project"]["root_id"]
+    assert saved.json()["project"]["confirmable_pre_spec"] is True
+
+    with Session() as db:
+        branch = db.get(Project, branch_id)
+        assert branch is not None
+        branch.branched_from_asset_id = None
+        db.commit()
+    unlinked = client.get(f"/projects/{branch_id}")
+    assert unlinked.status_code == 200, unlinked.text
+    assert unlinked.json()["confirmable_pre_spec"] is False
+
+    with Session() as db:
+        branch = db.get(Project, branch_id)
+        candidate = db.get(PreviewCandidateRecord, candidate_id)
+        assert branch is not None and candidate is not None
+        branch.branched_from_asset_id = "ast_selected"
+        db.delete(candidate)
+        db.commit()
+    missing_candidate = client.get(f"/projects/{branch_id}")
+    assert missing_candidate.status_code == 200, missing_candidate.text
+    assert missing_candidate.json()["confirmable_pre_spec"] is False
+    rejected = client.post(
+        f"/projects/{branch_id}/creative-candidates/{branch_id}/confirm-design",
+        json={"created_by": "usr_studio"},
+    )
+    assert rejected.status_code == 409
+    assert "not the current confirmable" in rejected.json()["detail"]
 
 
 def test_bound_visual_save_as_variation_charges_exactly_one_output(
@@ -1195,6 +1263,77 @@ def test_bound_visual_save_as_variation_charges_exactly_one_output(
         assert candidate is not None
         assert candidate.status == "saved_as_variation"
         assert candidate.terminal_asset_id == saved.json()["project"]["root_id"]
+
+
+def test_vary_visual_save_creates_sibling_and_charges_one_accepted_output(
+    studio_preview_client,
+):
+    client, Session = studio_preview_client
+    app.dependency_overrides[get_studio_visual_preview_generator] = (
+        lambda: _generator([])
+    )
+    job_id = _running_vary_job(client)
+    preview = _preview(client, studio_job_id=job_id)
+    assert preview.status_code == 201, preview.text
+    body = preview.json()
+
+    saved = client.post(
+        f"/studio/image-runs/{body['image_run_id']}/visual-candidates/"
+        f"{body['candidate']['candidate_id']}/save-as-variation",
+        json={"created_by": "usr_studio", "label": "Variation 1 · Warm metal"},
+    )
+    assert saved.status_code == 201, saved.text
+    with Session() as db:
+        job = db.get(StudioJobRecord, job_id)
+        source = db.get(Project, "ast_selected")
+        sibling = db.get(Project, saved.json()["project"]["root_id"])
+        candidate = db.get(
+            PreviewCandidateRecord, body["candidate"]["candidate_id"])
+        assert job is not None
+        assert job.action_id == "vary"
+        assert job.status == "succeeded"
+        assert job.completed_outputs == 1
+        assert job.charged_outputs == 1
+        assert source is not None and sibling is not None
+        assert source.selected_candidate_asset_id == "ast_selected"
+        assert sibling.branched_from_project_root_id == source.root_id
+        assert sibling.branched_from_asset_id == "ast_selected"
+        assert candidate is not None
+        assert candidate.status == "saved_as_variation"
+        assert candidate.terminal_asset_id == sibling.root_id
+
+
+def test_vary_visual_discard_is_terminal_and_never_charged(
+    studio_preview_client,
+):
+    client, Session = studio_preview_client
+    app.dependency_overrides[get_studio_visual_preview_generator] = (
+        lambda: _generator([])
+    )
+    job_id = _running_vary_job(client)
+    preview = _preview(client, studio_job_id=job_id)
+    assert preview.status_code == 201, preview.text
+    body = preview.json()
+
+    discarded = client.post(
+        f"/studio/image-runs/{body['image_run_id']}/visual-candidates/"
+        f"{body['candidate']['candidate_id']}/discard",
+        json={
+            "created_by": "usr_studio",
+            "expected_active_asset_id": "ast_selected",
+        },
+    )
+    assert discarded.status_code == 200, discarded.text
+    with Session() as db:
+        job = db.get(StudioJobRecord, job_id)
+        candidate = db.get(
+            PreviewCandidateRecord, body["candidate"]["candidate_id"])
+        assert job is not None
+        assert job.action_id == "vary"
+        assert job.status == "canceled"
+        assert job.completed_outputs == 0
+        assert job.charged_outputs == 0
+        assert candidate is not None and candidate.status == "discarded"
 
 
 def test_visual_apply_resolution_failure_rolls_back_canonical_append(

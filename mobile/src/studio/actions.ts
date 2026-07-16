@@ -21,7 +21,10 @@ const jobAction = (id: keyof typeof STUDIO_JOB_ACTION_MANIFEST) => {
       max: definition.max_requested_outputs,
     },
     authority: definition.authority,
-    createsJob: definition.execution_mode !== 'instant_transaction',
+    // Every action in the generated job manifest now runs as a candidate or
+    // terminal job. Zero-job transactions (Confirm, More, Specifications)
+    // are defined directly below instead of passing through this helper.
+    createsJob: true,
   };
 };
 
@@ -48,13 +51,15 @@ export const STUDIO_ACTIONS: readonly StudioActionDefinition[] = [
   {
     ...jobAction('vary'),
     id: 'vary',
-    label: 'Duplicate direction',
-    shortLabel: 'Duplicate',
-    description: 'Legacy exact-copy operation retained for historical compatibility.',
+    label: 'Explore variations',
+    shortLabel: 'Vary',
+    description: 'Describe one direction and compare up to four source-faithful variations.',
     referenceRoles: ['master_geometry'],
     requiresActiveDesign: true,
-    placement: 'more',
-    isAvailable: () => false,
+    placement: 'primary',
+    isAvailable: (context) => activeDesign(context)
+      && context.hasSelectedPreSpecVisual
+      && !context.hasExactSpecification,
   },
   {
     ...jobAction('refine'),
@@ -94,14 +99,14 @@ export const STUDIO_ACTIONS: readonly StudioActionDefinition[] = [
   {
     ...jobAction('angles'),
     id: 'angles',
-    label: 'Generate visual angle set',
-    shortLabel: 'Angles',
-    description: 'See the selected design from the front, three-quarter, and side before confirming technical facts.',
+    label: 'View this design',
+    shortLabel: 'Views',
+    description: 'See the selected design from the front, three-quarter, and side.',
     referenceRoles: ['master_geometry'],
     uiSchemaMode: 'host_rendered',
     fields: [],
     requiresActiveDesign: true,
-    placement: 'more',
+    placement: 'primary',
     isAvailable: (context) => activeDesign(context)
       && context.hasSelectedPreSpecVisual
       && !context.hasExactSpecification,
@@ -109,12 +114,12 @@ export const STUDIO_ACTIONS: readonly StudioActionDefinition[] = [
   {
     ...jobAction('views'),
     id: 'views',
-    label: 'Generate technical views',
+    label: 'View this design',
     shortLabel: 'Views',
-    description: 'Create consistent line-art angles from this revision and its confirmed design facts.',
+    description: 'Create one exact front, three-quarter, or side view from the saved revision.',
     referenceRoles: ['master_geometry', 'construction_detail'],
     requiresActiveDesign: true,
-    placement: 'more',
+    placement: 'primary',
     isAvailable: exactDesign,
   },
   {
@@ -224,7 +229,18 @@ export function getStudioRailActions(
   context: StudioActionContext,
 ): readonly StudioActionDefinition[] {
   if (!activeDesign(context)) return getVisibleStudioActions(context);
-  return STUDIO_ACTIONS.filter((action) => action.placement === 'primary');
+  // `angles` and `views` remain separate backend contracts because they have
+  // different authority: a selected creative direction gets a matched visual
+  // set, while an exact revision gets one line-art view at a time. Designers
+  // should not need to learn that implementation split, so the rail exposes
+  // one stable Views slot and selects the correct contract for the revision.
+  const visibleViewsAction = context.hasExactSpecification ? 'views' : 'angles';
+  return STUDIO_ACTIONS.filter((action) => (
+    action.placement === 'primary'
+      && (action.id !== 'angles' && action.id !== 'views'
+        ? true
+        : action.id === visibleViewsAction)
+  ));
 }
 
 export function getStudioActionUnavailableReason(
@@ -237,6 +253,9 @@ export function getStudioActionUnavailableReason(
       : 'No optional actions yet';
   }
   if (action.isAvailable(context)) return null;
+  if (action.id === 'angles' && activeDesign(context)) {
+    return 'Choose a generated direction first';
+  }
   if (action.id === 'views' && activeDesign(context) && !context.hasExactSpecification) {
     return context.hasSelectedPreSpecVisual
       ? 'Save starting facts first'

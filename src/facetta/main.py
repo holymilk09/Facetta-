@@ -107,6 +107,10 @@ PRODUCTION_CATALOG_OPERATIONS: frozenset[RouteOperation] = frozenset({
 PRODUCTION_TRUSTED_OPERATIONS: frozenset[RouteOperation] = frozenset({
     ("GET", "/projects/{project_id}/factory-pack"),
     ("POST", "/projects/{project_id}/factory-pack"),
+    (
+        "GET",
+        "/projects/{project_id}/factory-pack/files/{artifact_name:path}",
+    ),
     ("GET", "/projects/{project_id}/factory-pack.zip"),
 })
 

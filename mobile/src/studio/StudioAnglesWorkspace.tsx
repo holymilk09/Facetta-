@@ -167,7 +167,7 @@ export function StudioAnglesWorkspace({
   if (reviewForLineage?.status === 'accepted') {
     return (
       <ScrollView contentContainerStyle={styles.workspace}>
-        <Text style={styles.eyebrow}>ANGLES SAVED</Text>
+        <Text style={styles.eyebrow}>VIEWS SAVED</Text>
         <Text style={styles.title}>Your three views are ready.</Text>
         <Text style={styles.body}>
           Front, three-quarter, and side were saved beside this design. They did not replace it.
@@ -290,11 +290,11 @@ export function StudioAnglesWorkspace({
 
   return (
     <ScrollView contentContainerStyle={styles.workspace}>
-      <Text style={styles.eyebrow}>VISUAL ANGLES</Text>
-      <Text style={styles.title}>See this design from three key angles.</Text>
+      <Text style={styles.eyebrow}>VIEWS</Text>
+      <Text style={styles.title}>Create all three useful views.</Text>
       <Text style={styles.body}>
-        Generate one matched set with a front, three-quarter, and side view. Your selected design
-        {' '}stays unchanged until you save the set.
+        One tap creates a matched front, three-quarter, and side set from your selected direction.
+        {' '}Your design stays unchanged until you review and save the set.
       </Text>
       <View style={styles.includedCard}>
         <Text style={styles.includedTitle}>Included in this set</Text>
@@ -319,7 +319,7 @@ export function StudioAnglesWorkspace({
       <View style={styles.actionRow}>
         <ActionButton
           disabled={busy || !reviewSourceIsActive}
-          label={busy ? 'Generating 3 views…' : 'Generate 3 views'}
+          label={busy ? 'Creating 3 views…' : 'Create all 3 views'}
           onPress={() => { void generate(); }}
         />
         {onContinueRefining !== undefined && (

@@ -379,6 +379,36 @@ def test_factory_pack_routes_enforce_entitlement_before_pack_lookup(
     assert job.json()["detail"]["code"] == "factory_entitlement_required"
 
 
+def test_factory_artifact_download_denies_an_entitled_cross_owner(
+    auth_client, monkeypatch,
+):
+    client, Session = auth_client
+    now = utcnow()
+    with Session() as db:
+        db.add(Project(
+            root_id="ast_other_orphan",
+            owner="usr_other",
+            title="Other private Factory project",
+            tags=[],
+            selected_candidate_asset_id="ast_other_orphan",
+            created_at=now,
+            updated_at=now,
+        ))
+        db.commit()
+    monkeypatch.setenv(
+        "FACETTA_FACTORY_ENTITLED_PRINCIPALS_JSON",
+        json.dumps(["usr_owner", "usr_other"]),
+    )
+
+    response = client.get(
+        "/projects/ast_other_orphan/factory-pack/files/validated-spec.json",
+        headers={"Authorization": f"Bearer {OWNER_TOKEN}"},
+    )
+
+    assert response.status_code == 403
+    assert response.json()["detail"]["code"] == "project_access_denied"
+
+
 def test_owner_and_created_by_fields_cannot_spoof_principal(auth_client):
     client, _Session = auth_client
     response = client.post(

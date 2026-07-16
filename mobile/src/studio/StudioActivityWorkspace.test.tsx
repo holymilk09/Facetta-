@@ -148,8 +148,7 @@ describe('StudioActivityWorkspace', () => {
       owner="usr_designer"
     />);
 
-    expect(await view.findByText(/Generation requests from Create, Angles, Refine, Views, and Present/)).toBeTruthy();
-    expect(view.queryByText(/Vary/)).toBeNull();
+    expect(await view.findByText(/Generation requests from Create, Vary, Refine, Views, and Present/)).toBeTruthy();
   });
 
   test('routes a reviewing Refine job back to its pending decision', async () => {

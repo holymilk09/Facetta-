@@ -330,7 +330,7 @@ Use null only when the candidate truly cannot establish a requested visual fact.
 
 
 _EDIT_QA_SYSTEM = """\
-You compare two images of the same fine-jewelry ring. The FIRST is the source;
+You compare two images of the same fine-jewelry piece. The FIRST is the source;
 the SECOND is a requested edit. Judge whether the requested change happened
 and whether the rest of the jewelry stayed fixed.
 
@@ -1662,6 +1662,32 @@ class RingQualityEvaluator:
         if plan.operation is ImageOperation.REFERENCE_RENDER:
             if not source_image:
                 raise ValueError("reference-render QA requires the source image")
+            if plan.is_pre_spec_appearance_edit:
+                inspection = self.inspector.inspect_edit(
+                    plan, source_image, candidate)
+                cross_inspection: EditCrossInspection | None = None
+                if self._edit_cross_inspector is not None:
+                    try:
+                        cross_inspection = (
+                            self._edit_cross_inspector.inspect_edit(
+                                plan, source_image, candidate)
+                        )
+                    except Exception:
+                        cross_inspection = EditCrossInspection(
+                            checked=False,
+                            notes=(
+                                "independent pre-spec edit audit unavailable",
+                            ),
+                        )
+                return self._edit_report(
+                    plan,
+                    inspection,
+                    cross_inspection=cross_inspection,
+                    target_spec_cross=None,
+                    source_image=source_image,
+                    candidate=candidate,
+                    mask_bytes=mask_bytes,
+                )
             inspection = self._creative_inspector.inspect_render(
                 plan, source_image, candidate)
             if self._creative_cross_inspector is not None:

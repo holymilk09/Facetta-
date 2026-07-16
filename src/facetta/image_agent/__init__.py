@@ -34,7 +34,10 @@ from facetta.image_agent.errors import (
     ImageQualityFailure,
     ProviderCallError,
 )
-from facetta.image_agent.orchestrator import JewelryImageAgent
+from facetta.image_agent.orchestrator import (
+    MAX_PROVIDER_CALLS_PER_OUTPUT,
+    JewelryImageAgent,
+)
 from facetta.image_agent.openai_provider import (
     OPENAI_IMAGE_MODEL,
     OpenAIImageProvider,
@@ -97,6 +100,7 @@ __all__ = [
     "ImageRunStatus",
     "ImageRunSummary",
     "JewelryImageAgent",
+    "MAX_PROVIDER_CALLS_PER_OUTPUT",
     "MaterialIdentityQualityEvaluator",
     "MountingViewQualityEvaluator",
     "ProviderCallError",

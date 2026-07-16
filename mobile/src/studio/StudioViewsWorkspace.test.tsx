@@ -65,14 +65,17 @@ describe('StudioViewsWorkspace', () => {
       </AuthenticatedImageProvider>,
     );
 
-    expect(screen.getByText('TECHNICAL VIEWS')).toBeTruthy();
-    expect(screen.getByText('See the confirmed design from another angle.')).toBeTruthy();
-    expect(screen.getByText(/confirmed design facts/)).toBeTruthy();
-    expect(screen.getByText('Exact saved revision')).toBeTruthy();
+    expect(screen.getByText('EXACT REVISION VIEWS')).toBeTruthy();
+    expect(screen.getByText('Complete the three-view set.')).toBeTruthy();
+    expect(screen.getByText(/creates and checks.*one at a time/i)).toBeTruthy();
+    expect(screen.getByText('Current saved revision')).toBeTruthy();
+    expect(screen.getByText('0 of 3 saved')).toBeTruthy();
     expect(screen.queryByText(/(?:Version|Design v)\s*4/i)).toBeNull();
-    expect(screen.getByText('1 requested output × 15 credits = estimated 15 credits')).toBeTruthy();
-    await act(async () => { fireEvent.press(screen.getByText('Front')); });
-    await act(async () => { fireEvent.press(screen.getByText('Preview view')); });
+    expect(screen.getByText(/Full set: up to 45 credits/)).toBeTruthy();
+    expect(screen.getByText('Create front view →')).toBeTruthy();
+    expect(screen.getByText('Create three-quarter view →')).toBeTruthy();
+    expect(screen.getByText('Create side view →')).toBeTruthy();
+    await act(async () => { fireEvent.press(screen.getByLabelText('Create Front view')); });
     expect(await screen.findByText('Your design is still unchanged.')).toBeTruthy();
     expect(previewLineArtView).toHaveBeenCalledWith({ ...lineage, createdBy: 'designer', view: 'front' });
     expect(assetImageUrl).toHaveBeenCalledWith('asset_7');
@@ -119,9 +122,55 @@ describe('StudioViewsWorkspace', () => {
     });
     await act(async () => { fireEvent.press(screen.getByText('Save view')); });
     await waitFor(() => expect(onSaved).toHaveBeenCalledWith(project));
-    expect(screen.getByText('View saved beside the design. The active design revision did not change.')).toBeTruthy();
+    expect(screen.getByText(/Front view saved\. Create 2 more to complete the set/)).toBeTruthy();
+    expect(screen.getByText('1 of 3 saved')).toBeTruthy();
+    expect(screen.getByLabelText('Front view saved').props.accessibilityState).toEqual({ disabled: true });
     fireEvent.press(screen.getByText('Open in Collections'));
     expect(onOpenCollections).toHaveBeenCalledTimes(1);
+  });
+
+  test('restores completed exact views from the project payload', async () => {
+    const projectWithSavedViews = {
+      ...project,
+      derived_assets: [
+        {
+          asset_id: 'view_front', root_id: 'project_1', parent_asset_id: 'asset_7',
+          capability: 'LINE_ART', provenance: 'studio', revision: null, design_id: null,
+          design_version: 4, region: 'confirmed front Studio View', instruction: null,
+          drift: null, pinned: false, media_type: 'image/png', image_url: '/front.png',
+          created_by: 'designer', created_at: null, legacy_provenance: false,
+        },
+        {
+          asset_id: 'view_side', root_id: 'project_1', parent_asset_id: 'asset_7',
+          capability: 'LINE_ART', provenance: 'studio', revision: null, design_id: null,
+          design_version: 4, region: 'confirmed side Studio View', instruction: null,
+          drift: null, pinned: false, media_type: 'image/png', image_url: '/side.png',
+          created_by: 'designer', created_at: null, legacy_provenance: false,
+        },
+      ],
+    } as ProjectDetail;
+    const previewLineArtView = jest.fn(async () => ({
+      data: { ...preview, view: 'three_quarter' as const }, error: null, status: 202,
+    }));
+    await render(
+      <StudioViewsWorkspace
+        gateway={{
+          previewLineArtView, acceptLineArtView: jest.fn(), discardLineArtView: jest.fn(),
+        } as any}
+        lineage={lineage}
+        project={projectWithSavedViews}
+        createdBy="designer"
+        onSaved={jest.fn()}
+      />,
+    );
+
+    expect(screen.getByText('2 of 3 saved')).toBeTruthy();
+    expect(screen.getByLabelText('Front view saved').props.accessibilityState).toEqual({ disabled: true });
+    expect(screen.getByLabelText('Side view saved').props.accessibilityState).toEqual({ disabled: true });
+    await act(async () => { fireEvent.press(screen.getByLabelText('Create Three-quarter view')); });
+    expect(previewLineArtView).toHaveBeenCalledWith({
+      ...lineage, createdBy: 'designer', view: 'three_quarter',
+    });
   });
 
   test('disables saving when fidelity checks reject the preview', async () => {
@@ -140,7 +189,7 @@ describe('StudioViewsWorkspace', () => {
         onSaved={jest.fn()}
       />,
     );
-    await act(async () => { fireEvent.press(screen.getByText('Preview view')); });
+    await act(async () => { fireEvent.press(screen.getByLabelText('Create Front view')); });
     fireEvent.press(await screen.findByText('Save view'));
     expect(acceptLineArtView).not.toHaveBeenCalled();
     expect(screen.getByText('This view cannot be saved')).toBeTruthy();
@@ -160,7 +209,7 @@ describe('StudioViewsWorkspace', () => {
         onSaved={jest.fn()}
       />,
     );
-    await act(async () => { fireEvent.press(screen.getByText('Preview view')); });
+    await act(async () => { fireEvent.press(screen.getByLabelText('Create Front view')); });
     expect(await screen.findByText(/exact source cannot be displayed/i)).toBeTruthy();
     fireEvent.press(screen.getByText('Save view'));
     expect(acceptLineArtView).not.toHaveBeenCalled();
@@ -210,7 +259,7 @@ describe('StudioViewsWorkspace', () => {
     });
     expect(screen.queryByText('Your design is still unchanged.')).toBeNull();
     expect(screen.queryByText('A saved view preview was resumed for review.')).toBeNull();
-    expect(screen.getByText('Exact saved revision')).toBeTruthy();
+    expect(screen.getByText('Current saved revision')).toBeTruthy();
     expect(screen.queryByText(/(?:Version|Design v)\s*5/i)).toBeNull();
     expect(resumeViews).toHaveBeenLastCalledWith(lineageB, 'designer');
 

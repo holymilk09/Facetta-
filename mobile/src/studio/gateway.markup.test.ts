@@ -16,7 +16,7 @@ const project = (assetId: string): ProjectDetail => {
     created_by: 'designer_1', created_at: null, legacy_provenance: false,
   };
   const active = {
-    asset_id: assetId, root_id: 'project_1', parent_asset_id: null,
+    asset_id: assetId, root_id: 'project_1', parent_asset_id: 'asset_1',
     capability: 'LOCALIZED_EDIT', provenance: 'studio', revision: 2,
     design_id: 'design_1', design_version: 1, region: null, instruction: null,
     drift: null, pinned: false, media_type: 'image/png', image_url: 'https://test/image.png',
@@ -76,6 +76,32 @@ const baseClient = () => ({
   getFactoryPack: async () => { throw new Error('unexpected'); },
 });
 
+const previewExactMarkup = async (
+  gateway: ReturnType<typeof createStudioGateway>,
+  instruction = 'make the halo lighter',
+) => gateway.previewMarkupRefine({
+  projectId: 'project_1', sourceAssetId: 'asset_1', sourceDesignVersion: 1,
+  createdBy: 'designer_1', annotation: {
+    region_description: 'halo', change_instruction: instruction,
+    impact: 'visual_only', target_section: null, target_ref: null, index: null,
+    target_component_id: null, target_element_id: null,
+    form_view: 'three_quarter', mask_base64: null,
+  },
+});
+
+const markupPreviewResponse = (candidateId: string, runId: string, instruction: string) => ({
+  revision: null, spec_version: 1, spec_change: [], ignored_fields: [], qa: quality,
+  routing: {
+    attempt_count: 1, used_retry: false, used_fallback: false,
+    cache_hit: false, run_id: runId,
+  },
+  image_run_id: runId, warning_candidate: {
+    run_id: runId, candidate_id: candidateId, preview_url: 'https://test/preview.png',
+    qa: quality, operation: 'LOCAL_EDIT', requested_change: instruction,
+    asset_capability: 'LOCALIZED_EDIT',
+  },
+});
+
 test('markup refinement stays temporary until explicit apply', async () => {
   let acceptCalls = 0;
   const client = {
@@ -99,7 +125,9 @@ test('markup refinement stays temporary until explicit apply', async () => {
       acceptCalls += 1;
       return ok({
         status: 'applied' as const, candidate_id: 'candidate_1',
-        asset_id: 'asset_2', project: project('asset_2'),
+        asset_id: 'asset_2', source_asset_id: 'asset_1',
+        source_design_version: 1, accepted_design_version: 1,
+        project: project('asset_2'),
       }, 201);
     },
     discardStudioMarkupCandidate: async () => { throw new Error('unexpected'); },
@@ -124,6 +152,52 @@ test('markup refinement stays temporary until explicit apply', async () => {
   assert.equal(acceptCalls, 1);
 });
 
+test('apply fails closed when the accepted response is not bound to the exact candidate lineage', async (t) => {
+  const acceptedProject = project('asset_2');
+  const validResponse = {
+    status: 'applied' as const, candidate_id: 'candidate_bound', asset_id: 'asset_2',
+    source_asset_id: 'asset_1', source_design_version: 1,
+    accepted_design_version: 1, project: acceptedProject,
+  };
+  const wrongParentProject = project('asset_2');
+  wrongParentProject.active_revision = {
+    ...wrongParentProject.active_revision!, parent_asset_id: 'asset_elsewhere',
+  };
+  const cases = [
+    ['candidate id', { ...validResponse, candidate_id: 'candidate_elsewhere' }],
+    ['source asset', { ...validResponse, source_asset_id: 'asset_elsewhere' }],
+    ['source version', { ...validResponse, source_design_version: 2 }],
+    ['accepted asset', { ...validResponse, asset_id: 'asset_elsewhere' }],
+    ['accepted version', { ...validResponse, accepted_design_version: 2 }],
+    ['active revision parent', { ...validResponse, project: wrongParentProject }],
+  ] as const;
+
+  for (const [label, response] of cases) {
+    await t.test(label, async () => {
+      const client = {
+        ...baseClient(),
+        applyMarkup: async () => ok(markupPreviewResponse(
+          'candidate_bound', 'run_bound', 'make the halo lighter',
+        ), 201),
+        listStudioMarkupCandidates: async () => ok({ candidates: [durableMarkup(
+          'candidate_bound', 'run_bound', 'make the halo lighter', 'halo',
+        )] }),
+        acceptStudioMarkupCandidate: async () => ok(response, 201),
+        discardStudioMarkupCandidate: async () => { throw new Error('unexpected'); },
+      };
+      const gateway = createStudioGateway(client as any);
+      const preview = await previewExactMarkup(gateway);
+      assert.equal(preview.error, null);
+
+      const applied = await gateway.applyMarkupRefine({
+        candidateId: 'candidate_bound', createdBy: 'designer_1',
+      });
+      assert.equal(applied.data, null);
+      assert.equal(applied.error?.code, 'INVALID_ACCEPT_LINEAGE');
+    });
+  }
+});
+
 test('discard makes a markup candidate terminal without changing the project', async () => {
   let discarded = 0;
   const client = {
@@ -142,7 +216,10 @@ test('discard makes a markup candidate terminal without changing the project', a
     acceptStudioMarkupCandidate: async () => { throw new Error('unexpected'); },
     discardStudioMarkupCandidate: async () => {
       discarded += 1;
-      return ok({ status: 'discarded' as const, candidate_id: 'candidate_2' });
+      return ok({
+        status: 'discarded' as const, candidate_id: 'candidate_2',
+        source_asset_id: 'asset_1', source_design_version: 1,
+      });
     },
   };
   const gateway = createStudioGateway(client as any);
@@ -161,6 +238,43 @@ test('discard makes a markup candidate terminal without changing the project', a
   assert.equal(discarded, 1);
   const replay = await gateway.applyMarkupRefine({ candidateId: 'candidate_2', createdBy: 'designer_1' });
   assert.equal(replay.error?.code, 'CANDIDATE_NOT_REVIEWABLE');
+});
+
+test('discard fails closed when the response identifies another candidate lineage', async (t) => {
+  const validResponse = {
+    status: 'discarded' as const, candidate_id: 'candidate_discard_bound',
+    source_asset_id: 'asset_1', source_design_version: 1,
+  };
+  const cases = [
+    ['candidate id', { ...validResponse, candidate_id: 'candidate_elsewhere' }],
+    ['source asset', { ...validResponse, source_asset_id: 'asset_elsewhere' }],
+    ['source version', { ...validResponse, source_design_version: 2 }],
+  ] as const;
+
+  for (const [label, response] of cases) {
+    await t.test(label, async () => {
+      const client = {
+        ...baseClient(),
+        applyMarkup: async () => ok(markupPreviewResponse(
+          'candidate_discard_bound', 'run_discard_bound', 'soften the halo',
+        ), 201),
+        listStudioMarkupCandidates: async () => ok({ candidates: [durableMarkup(
+          'candidate_discard_bound', 'run_discard_bound', 'soften the halo', 'halo',
+        )] }),
+        acceptStudioMarkupCandidate: async () => { throw new Error('unexpected'); },
+        discardStudioMarkupCandidate: async () => ok(response),
+      };
+      const gateway = createStudioGateway(client as any);
+      const preview = await previewExactMarkup(gateway, 'soften the halo');
+      assert.equal(preview.error, null);
+
+      const discarded = await gateway.discardMarkupRefine({
+        candidateId: 'candidate_discard_bound', createdBy: 'designer_1',
+      });
+      assert.equal(discarded.data, null);
+      assert.equal(discarded.error?.code, 'INVALID_DISCARD_LINEAGE');
+    });
+  }
 });
 
 test('a fresh gateway resumes durable markup and saves it as a sibling variation', async () => {

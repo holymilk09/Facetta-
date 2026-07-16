@@ -19,6 +19,7 @@ from facetta.image_agent import (
     EditCrossInspection,
     EditInspection,
     EditSideStoneInventoryInspection,
+    FailureCategory,
     GrokSkepticalRenderInspector,
     GrokVisionInspector,
     ImageOperation,
@@ -462,6 +463,41 @@ class TestPlanning:
                 quality_source_image=changed_master,
             )
 
+    def test_pre_spec_appearance_edit_has_a_distinct_in_place_contract(self):
+        from facetta.image_agent.prompts import compile_initial_prompt
+
+        plan = build_image_plan(
+            ImageOperation.REFERENCE_RENDER,
+            "replace only the background with charcoal gray",
+            source_image=b"selected-render",
+            reference_mode="appearance_edit",
+            frozen=("every visible jewelry detail",),
+        )
+        prompt = compile_initial_prompt(plan)
+
+        assert plan.is_pre_spec_appearance_edit is True
+        assert plan.normalized_intent["reference_mode"] == "appearance_edit"
+        assert "Edit the supplied finished jewelry image in place" in prompt
+        assert "sole design-identity authority" in prompt
+        assert "Transform the supplied designer image or drawing" not in prompt
+        assert "Do not beautify, simplify, regularize" in prompt
+
+    def test_reference_mode_is_bound_to_reference_render_semantics(self):
+        with pytest.raises(ImagePlanValidationError, match="reference_mode"):
+            build_image_plan(
+                ImageOperation.CREATIVE_GENERATE,
+                "make one ring",
+                reference_mode="appearance_edit",
+            )
+        with pytest.raises(ImagePlanValidationError, match="camera_view"):
+            build_image_plan(
+                ImageOperation.REFERENCE_RENDER,
+                "edit the background",
+                source_image=b"selected-render",
+                camera_view="side",
+                reference_mode="appearance_edit",
+            )
+
     def test_provider_uses_board_while_preflight_and_corrected_qa_use_master(self):
         board = b"role-labeled-reference-board"
         master = b"exact-master-geometry"
@@ -572,6 +608,27 @@ class TestPlanning:
 
 
 class TestRingQualityGates:
+
+    def test_pre_spec_appearance_edit_uses_edit_not_drawing_render_qa(self):
+        source = png((10, 10, 10))
+        candidate = png((20, 20, 20))
+        evaluator = RingQualityEvaluator(StaticInspector(edit=faithful_edit()))
+        plan = build_image_plan(
+            ImageOperation.REFERENCE_RENDER,
+            "replace only the background with charcoal gray",
+            source_image=source,
+            reference_mode="appearance_edit",
+        )
+
+        result = evaluator.evaluate(
+            plan, candidate, source_image=source, mask_bytes=None)
+
+        checks = {check.code: check for check in result.checks}
+        assert result.verdict is QualityVerdict.PASS
+        assert checks["requested_change"].passed is True
+        assert checks["geometry_preserved"].passed is True
+        assert "source_design_preserved" not in checks
+
     def test_blind_prong_count_overrides_expectation_biased_render_pass(
         self, monkeypatch,
     ):
@@ -1986,6 +2043,91 @@ class TestClosedLoopRouting:
             ImageRoute.OPENAI_GENERATE,
         ]
         assert result.run.attempts[-1].fallback_reason == "grok_provider_failed"
+
+    def test_transport_failures_preserve_one_corrective_fallback_attempt(
+        self, monkeypatch,
+    ):
+        monkeypatch.delenv("FAL_KEY", raising=False)
+        monkeypatch.setenv("OPENAI_API_KEY", "test-only")
+        provider = FakeProvider(failures={
+            1: ProviderCallError("xai transport unavailable"),
+            2: ProviderCallError("xai transport unavailable"),
+        })
+        evaluator = SequenceEvaluator(
+            report(
+                QualityVerdict.FAIL,
+                "source_design_preserved",
+                "the side profile changed the setting silhouette",
+            ),
+            report(QualityVerdict.PASS),
+        )
+        plan = build_image_plan(
+            ImageOperation.REFERENCE_RENDER,
+            "show the exact selected ring from the side",
+            source_image=b"selected-ring",
+            camera_view="side",
+            reference_mode="camera_study",
+        )
+
+        result = JewelryImageAgent(
+            provider,
+            evaluator,
+            use_available_fallback=True,
+        ).run(plan, source_image=b"selected-ring")
+
+        assert result.accepted is True
+        assert [call["route"] for call in provider.calls] == [
+            ImageRoute.GROK_EDIT,
+            ImageRoute.GROK_EDIT,
+            ImageRoute.OPENAI_EDIT,
+            ImageRoute.OPENAI_EDIT,
+        ]
+        assert [attempt.attempt_number for attempt in result.run.attempts] == [
+            1, 2, 3, 4,
+        ]
+        assert all(
+            attempt.error_category is FailureCategory.PROVIDER
+            for attempt in result.run.attempts[:2]
+        )
+        assert result.run.attempts[2].qa_verdict is QualityVerdict.FAIL
+        assert result.run.attempts[3].qa_verdict is QualityVerdict.PASS
+        assert result.run.attempts[3].fallback_reason == (
+            "fallback_quality_correction_after_transport_failure"
+        )
+        assert "source_design_preserved" in provider.calls[3]["prompt"]
+
+    def test_transport_recovery_reserve_is_strictly_bounded_to_four_calls(
+        self, monkeypatch,
+    ):
+        monkeypatch.delenv("FAL_KEY", raising=False)
+        monkeypatch.setenv("OPENAI_API_KEY", "test-only")
+        provider = FakeProvider(failures={
+            1: ProviderCallError("xai transport unavailable"),
+            2: ProviderCallError("xai transport unavailable"),
+        })
+        evaluator = SequenceEvaluator(
+            report(QualityVerdict.FAIL, "source_design_preserved"),
+            report(QualityVerdict.FAIL, "source_design_preserved"),
+        )
+        plan = build_image_plan(
+            ImageOperation.REFERENCE_RENDER,
+            "show the exact selected ring from the side",
+            source_image=b"selected-ring",
+            camera_view="side",
+            reference_mode="camera_study",
+        )
+
+        with pytest.raises(ImageQualityFailure) as caught:
+            JewelryImageAgent(
+                provider,
+                evaluator,
+                use_available_fallback=True,
+            ).run(plan, source_image=b"selected-ring")
+
+        assert len(provider.calls) == 4
+        assert len(caught.value.attempts) == 4
+        assert caught.value.category.value == "quality"
+        assert caught.value.attempts[-1].qa_verdict is QualityVerdict.FAIL
 
     def test_three_failed_candidates_raise_structured_quality_failure(self):
         provider = FakeProvider()

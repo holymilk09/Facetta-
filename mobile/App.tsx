@@ -28,6 +28,7 @@ import {
 import { StudioConfirmWorkspace } from './src/studio/StudioConfirmWorkspace';
 import { pickExpoStudioCreateReference } from './src/studio/expoReferencePicker';
 import { StudioRefineWorkspace } from './src/studio/StudioRefineWorkspace';
+import { StudioVaryWorkspace } from './src/studio/StudioVaryWorkspace';
 import { StudioAnglesWorkspace } from './src/studio/StudioAnglesWorkspace';
 import { StudioViewsWorkspace } from './src/studio/StudioViewsWorkspace';
 import { StudioPresentWorkspace } from './src/studio/StudioPresentWorkspace';
@@ -52,9 +53,8 @@ type Tab = 'studio' | 'collections' | 'activity' | 'learn';
 type StudioView = 'home' | 'action';
 type Stage = 'onboarding' | 'tour' | 'booting' | 'login' | 'recovery' | 'app';
 type SavedFamiliesState = 'unknown' | 'available' | 'empty' | 'unavailable';
-type LiveStudioWorkspaceActionId = Exclude<StudioWorkspaceActionId, 'vary'>;
 type PostConfirmDestination = Extract<StudioWorkspaceActionId, 'refine' | 'views'>;
-type ProjectHydrationDestination = 'collections' | 'create' | 'refine' | 'angles' | 'views' | 'present'
+type ProjectHydrationDestination = 'collections' | 'create' | 'vary' | 'refine' | 'angles' | 'views' | 'present'
   | 'specifications';
 
 function assertNeverStudioAction(actionId: never): never {
@@ -114,7 +114,7 @@ export default function App() {
   const [stage, setStage] = useState<Stage>(() => authLifecycleEnabled ? 'booting' : 'onboarding');
   const [tab, setTab] = useState<Tab>('studio');
   const [studioView, setStudioView] = useState<StudioView>('home');
-  const [selectedActionId, setSelectedActionId] = useState<LiveStudioWorkspaceActionId>('create');
+  const [selectedActionId, setSelectedActionId] = useState<StudioWorkspaceActionId>('create');
   const [showMoreActions, setShowMoreActions] = useState(false);
   const apiUrl = DEFAULT_API_URL;
   const [designer, setDesigner] = useState(session?.designerId ?? '');
@@ -286,8 +286,8 @@ export default function App() {
     const activeAsset = studioProject.assets.find((asset) => asset.asset_id === activeAssetId)
       ?? studioProject.active_revision;
     if (activeAsset === null || activeAsset.asset_id !== activeAssetId) return null;
-    if (!(['CREATIVE_RENDER', 'GLOBAL_RESTYLE', 'LOCALIZED_EDIT'] as const).includes(
-      activeAsset.capability as 'CREATIVE_RENDER' | 'GLOBAL_RESTYLE' | 'LOCALIZED_EDIT',
+    if (!(['CREATIVE_RENDER', 'GLOBAL_RESTYLE', 'LOCALIZED_EDIT', 'VARIATION_BRANCH'] as const).includes(
+      activeAsset.capability as 'CREATIVE_RENDER' | 'GLOBAL_RESTYLE' | 'LOCALIZED_EDIT' | 'VARIATION_BRANCH',
     )) return null;
     if (activeAsset.design_version !== null) return null;
     return { projectId: studioProject.root_id, sourceAssetId: activeAssetId };
@@ -370,7 +370,7 @@ export default function App() {
     const isCurrentRequest = (): boolean => projectHydrationRequestId.current === requestId;
     setProjectHydration({ request, loading: true, error: null });
     if (request.reviewJobId !== undefined
-      && ['refine', 'angles', 'views', 'present'].includes(request.destination)) {
+      && ['vary', 'refine', 'angles', 'views', 'present'].includes(request.destination)) {
       const review = await studioGateway.resumeReviewJob(request.reviewJobId, designer);
       if (!isCurrentRequest()) return;
       if (review.error !== null) {
@@ -386,7 +386,7 @@ export default function App() {
       setActivityReview(review.data);
       setProjectHydration(null);
       openStudioAction(
-        request.destination as 'refine' | 'angles' | 'views' | 'present',
+        request.destination as 'vary' | 'refine' | 'angles' | 'views' | 'present',
         false,
         true,
       );
@@ -453,9 +453,7 @@ export default function App() {
       setShowMoreActions((visible) => !visible);
       return;
     }
-    const liveActionId: LiveStudioWorkspaceActionId = actionId === 'vary'
-      ? studioProject === null ? 'create' : 'refine'
-      : actionId;
+    const liveActionId: StudioWorkspaceActionId = actionId;
     if (!preserveCreateReview) setCreateReview(null);
     if (!preserveActivityReview) setActivityReview(null);
     if (liveActionId === 'confirm') setPostConfirmDestination(afterConfirmation);
@@ -796,6 +794,28 @@ export default function App() {
                 openStudioAction('angles');
               }}
             />
+          ) : selectedActionId === 'vary' ? (
+            <StudioVaryWorkspace
+              key={activityReview?.job.action_id === 'vary'
+                ? `vary:${activityReview.job.job_id}`
+                : `vary:${visualStudioLineage?.sourceAssetId ?? 'none'}`}
+              gateway={studioGateway}
+              lineage={activityReview?.job.action_id === 'vary'
+                && !('sourceDesignVersion' in activityReview.lineage)
+                ? activityReview.lineage : visualStudioLineage}
+              createdBy={designer}
+              sourceImageUrl={activityReview?.job.action_id === 'vary'
+                ? activityReview.sourceImageUrl : actionSourceImageUrl}
+              resumeReviewJobId={activityReview?.job.action_id === 'vary'
+                ? activityReview.job.job_id : undefined}
+              onCreated={(project) => {
+                setActivityReview(null);
+                setStudioProject(project);
+                setSelectedCreativeAssetId(project.active_asset_id);
+                openStudioAction('refine');
+              }}
+              imageRequestHeaders={authenticatedImageHeaders}
+            />
           ) : selectedActionId === 'angles' ? (
             <StudioAnglesWorkspace
               gateway={studioGateway}
@@ -855,6 +875,7 @@ export default function App() {
                 && 'sourceDesignVersion' in activityReview.lineage
                 ? activityReview.lineage : exactStudioLineage}
               createdBy={designer}
+              project={studioProject}
               onSaved={(project) => {
                 setActivityReview(null);
                 setStudioProject(project);
@@ -940,12 +961,12 @@ export default function App() {
               return;
             }
             if (job.source_revision_id === null) return;
-            if (!(['refine', 'angles', 'views', 'present'] as const).includes(
-              job.action_id as 'refine' | 'angles' | 'views' | 'present',
+            if (!(['vary', 'refine', 'angles', 'views', 'present'] as const).includes(
+              job.action_id as 'vary' | 'refine' | 'angles' | 'views' | 'present',
             )) return;
             void hydrateProject({
               projectId: job.active_design_id,
-              destination: job.action_id as 'refine' | 'angles' | 'views' | 'present',
+              destination: job.action_id as 'vary' | 'refine' | 'angles' | 'views' | 'present',
               reviewJobId: job.job_id,
             });
           }}

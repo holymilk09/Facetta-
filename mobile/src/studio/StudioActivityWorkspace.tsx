@@ -27,9 +27,9 @@ export interface StudioActivityWorkspaceProps {
 
 const ACTION_LABELS: Record<StudioJobAction, string> = {
   create: 'Create directions',
-  vary: 'Create variation',
+  vary: 'Explore variations',
   refine: 'Refine design',
-  angles: 'Create angle set',
+  angles: 'Prepare views',
   views: 'Prepare views',
   present: 'Prepare presentation',
   factory: 'Prepare factory review',
@@ -134,13 +134,13 @@ export function StudioActivityWorkspace({
       {jobs.length === 0 && error === null ? (
         <View style={styles.empty}>
           <Text style={styles.emptyTitle}>Nothing is running yet</Text>
-          <Text style={styles.muted}>Generation requests from Create, Angles, Refine, Views, and Present will stay visible here.</Text>
+          <Text style={styles.muted}>Generation requests from Create, Vary, Refine, Views, and Present will stay visible here.</Text>
         </View>
       ) : jobs.map((job) => {
         const cancellable = job.status === 'queued' || job.status === 'running';
         const openable = job.active_design_id !== null && onOpenDesign !== undefined;
         const reviewable = job.status === 'reviewing'
-          && ['create', 'angles', 'refine', 'views', 'present'].includes(job.action_id)
+          && ['create', 'vary', 'angles', 'refine', 'views', 'present'].includes(job.action_id)
           && job.active_design_id !== null && onOpenReview !== undefined;
         return (
           <View key={job.job_id} style={styles.card}>

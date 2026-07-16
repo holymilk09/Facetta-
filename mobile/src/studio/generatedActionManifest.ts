@@ -47,12 +47,12 @@ export const STUDIO_JOB_ACTION_MANIFEST = {
     ]
   },
   "vary": {
-    "lane": "instant",
-    "execution_mode": "instant_transaction",
-    "review_authority": "none",
-    "credits_per_output": 0,
-    "min_requested_outputs": 0,
-    "max_requested_outputs": 0,
+    "lane": "trusted_structural",
+    "execution_mode": "candidate_job",
+    "review_authority": "candidate_decision",
+    "credits_per_output": 20,
+    "min_requested_outputs": 1,
+    "max_requested_outputs": 4,
     "input_requirements": [
       "direction"
     ],
@@ -65,7 +65,7 @@ export const STUDIO_JOB_ACTION_MANIFEST = {
     "ui_schema": [
       {
         "id": "direction",
-        "label": "Variation name",
+        "label": "Variation direction",
         "kind": "text",
         "required": true
       }

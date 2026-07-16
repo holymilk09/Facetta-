@@ -113,6 +113,67 @@ def test_result_flushes_run_before_multiple_attempts_with_foreign_keys():
         assert [attempt.qa_verdict for attempt in attempts] == ["fail", "pass"]
 
 
+def test_transport_recovery_fourth_attempt_is_persisted_as_evidence():
+    engine = create_engine("sqlite://")
+
+    @event.listens_for(engine, "connect")
+    def _enable_foreign_keys(dbapi_connection, _connection_record):
+        dbapi_connection.execute("PRAGMA foreign_keys=ON")
+
+    ImageRun.__table__.create(engine)
+    ImageAttempt.__table__.create(engine)
+    sessions = sessionmaker(bind=engine, expire_on_commit=False)
+    result = _multi_attempt_result()
+    attempts = result.run.attempts + (
+        ImageAttemptSummary(
+            attempt_number=3,
+            route=ImageRoute.OPENAI_GENERATE,
+            provider="openai",
+            model="gpt-image-1.5",
+            latency_ms=410,
+            fallback_reason="grok_provider_failed",
+            qa_verdict=QualityVerdict.FAIL,
+            prompt_hash="3" * 64,
+            cache_key="c" * 64,
+        ),
+        ImageAttemptSummary(
+            attempt_number=4,
+            route=ImageRoute.OPENAI_GENERATE,
+            provider="openai",
+            model="gpt-image-1.5",
+            latency_ms=390,
+            fallback_reason=(
+                "fallback_quality_correction_after_transport_failure"
+            ),
+            qa_verdict=QualityVerdict.PASS,
+            prompt_hash="4" * 64,
+            cache_key="d" * 64,
+        ),
+    )
+    run = result.run.model_copy(update={
+        "attempts": attempts,
+        "selected_attempt": 4,
+    })
+    result = result.model_copy(update={"run": run})
+
+    with sessions() as db:
+        run_id = persist_image_agent_result(db, result, commit=False)
+        db.commit()
+
+    with sessions() as db:
+        persisted = db.scalars(
+            select(ImageAttempt)
+            .where(ImageAttempt.run_id == run_id)
+            .order_by(ImageAttempt.attempt_number)
+        ).all()
+
+        assert [attempt.attempt_number for attempt in persisted] == [1, 2, 3, 4]
+        assert persisted[-1].fallback_reason == (
+            "fallback_quality_correction_after_transport_failure"
+        )
+        assert persisted[-1].qa_verdict == "pass"
+
+
 def test_failure_flushes_run_before_multiple_attempts_with_foreign_keys():
     engine = create_engine("sqlite://")
 

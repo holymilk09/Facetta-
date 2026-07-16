@@ -221,10 +221,50 @@ def test_factory_pack_requires_and_exports_exact_approval(trusted_client):
         stored = json.loads(archive.read("approval-manifest.json"))
         assert stored == manifest
         assert archive.read("approved-reference.png") == source
-        assert "RING" in archive.read("facetta-sheet.svg").decode()
+        sheet_bytes = archive.read("facetta-sheet.svg")
+        assert "RING" in sheet_bytes.decode()
         schedule = archive.read("facetta-schedule-1.svg").decode()
         assert "FACTORY FACT SCHEDULE" in schedule
         assert f"PAGE 1 / {len(schedule_names)}" in schedule
+
+    expected_artifacts = {
+        "validated-spec.json": "application/json",
+        "facetta-sheet.svg": "image/svg+xml",
+        "facetta-sheet.dxf": "application/dxf",
+        "approved-reference.png": "image/png",
+    }
+    with zipfile.ZipFile(io.BytesIO(archive_response.content)) as archive:
+        for artifact_name, media_type in expected_artifacts.items():
+            artifact_response = client.get(
+                f"/projects/{project_id}/factory-pack/files/{artifact_name}",
+            )
+            metadata = next(
+                item for item in manifest["files"]
+                if item["name"] == artifact_name
+            )
+            assert artifact_response.status_code == 200, artifact_response.text
+            assert artifact_response.content == archive.read(artifact_name)
+            assert artifact_response.headers["content-type"].startswith(media_type)
+            assert artifact_response.headers["content-disposition"] == (
+                f'attachment; filename="{artifact_name}"'
+            )
+            assert artifact_response.headers["cache-control"] == "private, no-store"
+            assert artifact_response.headers["x-content-type-options"] == "nosniff"
+            assert artifact_response.headers["x-content-sha256"] == metadata["sha256"]
+            assert artifact_response.headers["etag"] == f'"{metadata["sha256"]}"'
+
+    missing = client.get(
+        f"/projects/{project_id}/factory-pack/files/not-in-this-pack.svg",
+    )
+    assert missing.status_code == 404
+    assert missing.json()["code"] == "factory_pack_artifact_not_found"
+
+    traversal = client.get(
+        f"/projects/{project_id}/factory-pack/files/"
+        "nested%2Ffacetta-sheet.svg",
+    )
+    assert traversal.status_code == 404
+    assert traversal.json()["code"] == "factory_pack_artifact_not_found"
 
 
 def test_exact_checklist_rejects_a_different_valid_spec_atomically(

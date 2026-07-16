@@ -19,8 +19,11 @@ const manifest = {
     confirmed_fact_count: 12, estimated_fact_count: 0, pending_confirmation_count: 1,
     has_estimates: false, estimate_disclaimer: null,
   },
-  artifacts: [{ name: 'review-sheet.svg', media_type: 'image/svg+xml', sha256: 'a'.repeat(64), url: 'https://test/pack', authoritative: false }],
-  bundle_url: 'https://test/pack', manifest_sha256: 'b'.repeat(64),
+  artifacts: [{
+    name: 'review-sheet.svg', media_type: 'image/svg+xml', sha256: 'a'.repeat(64),
+    url: '/projects/project_1/factory-pack/files/review-sheet.svg', authoritative: false,
+  }],
+  bundle_url: '/projects/project_1/factory-pack.zip', manifest_sha256: 'b'.repeat(64),
 };
 
 const approvedChecklist = {
@@ -82,11 +85,13 @@ describe('StudioFactoryWorkspace', () => {
     expect(screen.getByText('review-sheet.svg')).toBeTruthy();
     await act(async () => { fireEvent.press(screen.getByText('Open review-sheet.svg')); });
     expect(deliverProtectedFile).toHaveBeenCalledWith({
-      url: 'https://test/pack', name: 'review-sheet.svg', mediaType: 'image/svg+xml',
+      url: '/projects/project_1/factory-pack/files/review-sheet.svg',
+      name: 'review-sheet.svg', mediaType: 'image/svg+xml',
     });
     await act(async () => { fireEvent.press(screen.getByText('Download complete review pack')); });
     expect(deliverProtectedFile).toHaveBeenCalledWith({
-      url: 'https://test/pack', name: 'facetta-factory-review.zip', mediaType: 'application/zip',
+      url: '/projects/project_1/factory-pack.zip',
+      name: 'facetta-factory-review.zip', mediaType: 'application/zip',
     });
     expect(screen.queryByText(/provider|QA/i)).toBeNull();
   });

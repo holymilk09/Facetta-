@@ -31,6 +31,7 @@ EXPECTED_PRODUCTION_OPERATIONS = (
         "/image-runs/{run_id}/catalog-candidates/{candidate_id}/image",
         "/projects/{root_id}",
         "/projects/{project_id}/factory-pack",
+        "/projects/{project_id}/factory-pack/files/{artifact_name}",
         "/projects/{project_id}/factory-pack.zip",
         "/studio/jobs",
         "/studio/jobs/{job_id}",

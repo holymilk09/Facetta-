@@ -148,6 +148,45 @@ test('visual angles start one first-class three-output Angles job', async () => 
   assert.equal(result.data?.estimatedCredits, 54);
 });
 
+test('a backend-terminal angle failure is not patched into failure twice', async () => {
+  const transitions: string[] = [];
+  let durableReads = 0;
+  const gateway = createStudioGateway({
+    createStudioJob: async (request: any) => ok(jobRecord(request, 'queued'), 201),
+    transitionStudioJob: async (_jobId: string, request: any) => {
+      transitions.push(request.status);
+      return ok(jobRecord(request, request.status));
+    },
+    getStudioJob: async () => {
+      durableReads += 1;
+      return ok(jobRecord({
+        owner: 'designer', action_id: 'angles', active_design_id: 'project_1',
+        source_revision_id: 'asset_selected', requested_outputs: 3,
+        credits_per_output: 18, error_code: 'visual_angle_failed_quality',
+      }, 'failed'));
+    },
+    createVisualAngleSet: async () => ({
+      data: null,
+      error: {
+        code: 'visual_angle_failed_quality',
+        message: 'One angle failed quality checks; no set was created.',
+        category: 'quality' as const,
+        status: 422,
+        retryable: false,
+      },
+      status: 422,
+    }),
+  } as any);
+
+  const result = await gateway.createVisualAngleSet({
+    projectId: 'project_1', sourceAssetId: 'asset_selected',
+  }, 'designer');
+
+  assert.equal(result.error?.code, 'visual_angle_failed_quality');
+  assert.equal(durableReads, 1);
+  assert.deepEqual(transitions, ['running']);
+});
+
 test('an Activity job restores its angle set after a new gateway instance', async () => {
   const reviewingJob = jobRecord({}, 'reviewing');
   const getVisualAngleSetByJobCalls: string[] = [];

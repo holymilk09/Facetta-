@@ -856,7 +856,7 @@ export function StudioRefineWorkspace({
     return (
       <ScrollView contentContainerStyle={styles.workspace}>
         <Text style={styles.eyebrow}>REVIEW PREVIEW</Text>
-        <Text style={styles.title}>Nothing has changed yet.</Text>
+        <Text style={styles.title}>Your change is ready to review.</Text>
         <Text style={styles.body}>
           Compare this temporary candidate with the selected source revision. Apply will append a new revision;
           save as variation will start a sibling direction; discard will leave history untouched.
@@ -925,17 +925,20 @@ export function StudioRefineWorkspace({
         )}
         <View style={styles.reviewCard}>
           <Text style={styles.reviewTitle}>{rejected ? 'Not safe to apply' : 'Ready for your decision'}</Text>
-          {preview.candidate.checks.map((check) => (
-            <View key={check.id} style={styles.checkRow}>
-              <Text style={[styles.checkVerdict, check.verdict === 'reject' && styles.reject]}>
-                {designerReviewState(check.verdict)}
-              </Text>
-              <View style={styles.checkCopy}>
-                <Text style={styles.checkLabel}>{designerCheckLabel(check)}</Text>
-                <Text style={styles.checkDetail}>{designerCheckDetail(check)}</Text>
+          {preview.candidate.checks.map((check) => {
+            const reviewState = designerReviewState(check.verdict, check);
+            return (
+              <View key={check.id} style={styles.checkRow}>
+                <Text style={[styles.checkVerdict, reviewState === 'Could not preserve design' && styles.reject]}>
+                  {reviewState}
+                </Text>
+                <View style={styles.checkCopy}>
+                  <Text style={styles.checkLabel}>{designerCheckLabel(check)}</Text>
+                  <Text style={styles.checkDetail}>{designerCheckDetail(check)}</Text>
+                </View>
               </View>
-            </View>
-          ))}
+            );
+          })}
         </View>
         {error !== null && <Notice kind="error" text={error} />}
         {namingVariation && variationSupported && (

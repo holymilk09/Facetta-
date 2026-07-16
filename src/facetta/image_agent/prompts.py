@@ -23,7 +23,7 @@ from facetta.spec import Spec
 PROMPT_VERSIONS = {
     ImageOperation.CREATIVE_GENERATE: "creative-generate.v4",
     ImageOperation.CONCEPT_GENERATE: "concept-generate.v1",
-    ImageOperation.REFERENCE_RENDER: "reference-render.v2",
+    ImageOperation.REFERENCE_RENDER: "reference-render.v3",
     ImageOperation.SPEC_RENDER: "spec-render.v3",
     ImageOperation.LOCAL_EDIT: "local-edit.v8",
     ImageOperation.VISUAL_ONLY_EDIT: "visual-only-edit.v2",
@@ -495,6 +495,29 @@ def compile_initial_prompt(plan: ImageAgentPlan) -> str:
     elif plan.operation is ImageOperation.REFERENCE_RENDER:
         if plan.camera_view is not None:
             task = _camera_only_reference_task(plan)
+        elif plan.is_pre_spec_appearance_edit:
+            region = (
+                f" inside the designer-marked region '{plan.region_description}'"
+                if plan.region_description else " across the image presentation"
+            )
+            task = (
+                "TASK: Edit the supplied finished jewelry image in place. The "
+                "source image is the sole design-identity authority; this is not "
+                "a redraw, reinterpretation, cleanup, or new jewelry concept.\n"
+                f"AUTHORIZED APPEARANCE CHANGE{region}: {plan.intent}\n"
+                "PRESENTATION-ONLY CONTRACT: Apply the requested background, "
+                "lighting, color, surface, finish, or material-appearance change "
+                "clearly enough to compare before and after. Preserve the exact "
+                "camera, crop, scale, pose, jewelry silhouette, stone outlines "
+                "and facets, prongs, setting, gallery, shoulders, shank, openings, "
+                "component count, topology, proportions, placement, and every "
+                "distinctive visible detail unless the designer explicitly named "
+                "that appearance property. Do not beautify, simplify, regularize, "
+                "repair, resize, rotate, or redesign the jewelry.\n"
+                "Return one comparison-ready edited image only. It remains a "
+                "pre-spec visual preview for explicit designer review and proves "
+                "no hidden geometry, material identity, dimension, or production fact."
+            )
         else:
             drawing_contract = build_drawing_processing_contract(
                 DrawingIntakeFacts())

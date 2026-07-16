@@ -630,7 +630,7 @@ def test_reference_render_plan_uses_neutral_source_contract_and_edit_routes():
     prompt = compile_initial_prompt(plan)
     assert plan.jewelry_type == "jewelry"
     assert plan.spec_facts == {"jewelry_type": "jewelry"}
-    assert plan.prompt_version == "reference-render.v2"
+    assert plan.prompt_version == "reference-render.v3"
     assert route_for_attempt(plan, 1).value == "grok_edit"
     assert route_for_attempt(plan, 2).value == "grok_edit"
     assert route_for_attempt(plan, 3).value == "flux_kontext_edit"

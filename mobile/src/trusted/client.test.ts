@@ -515,6 +515,57 @@ describe('trusted API decoders', () => {
     runTrustedClientDecoderTests();
   });
 
+  test('maps Factory file metadata to protected per-artifact URLs', async () => {
+    const payload = {
+      schema_version: 'facetta.factory-pack.v1',
+      project_id: 'project one', design_id: 'design 1', design_version: 4,
+      asset_id: 'asset 7', visual_revision: 2, approver: 'designer',
+      approved_at: '2026-07-17T00:00:00Z', pinned_at: '2026-07-17T00:00:00Z',
+      checklist: { id: 'check 1', mode: 'auto_pin', status: {}, results: [] },
+      qa_summary: {},
+      dimensions: { has_estimates: false, estimated_fields: [], disclaimer: null },
+      factory_sheet_fact_plan: {
+        schema_version: 'facetta.factory-sheet-plan.v1', jewelry_type: 'ring',
+        template: 'ring', materials: [], stones: [], settings: [],
+        recorded_facts: [], dimensions: [], confirmed_fact_count: 1,
+        estimated_fact_count: 0, pending_confirmation_count: 0,
+        has_estimates: false, estimate_disclaimer: null,
+      },
+      authority: {
+        factory_truth: ['validated-spec.json'], visual_reference_only: [], note: '',
+      },
+      files: [{
+        name: 'facetta-sheet.svg', sha256: 'a'.repeat(64), bytes: 20,
+        authoritative: false,
+      }],
+    };
+    const fetcher = jest.fn<Promise<Response>, [RequestInfo | URL, RequestInit?]>(
+      async () => ({
+        ok: true, status: 200, text: async () => JSON.stringify(payload),
+      } as unknown as Response),
+    );
+    const api = createTrustedApiClient({ baseUrl: 'https://facetta.test', fetcher });
+
+    const read = await api.getFactoryPack('project one');
+    const prepared = await api.prepareFactoryPack('project one', {
+      studio_job_id: 'job 1', owner: 'designer',
+    });
+
+    const expectedArtifactUrl = (
+      'https://facetta.test/projects/project%20one/'
+      + 'factory-pack/files/facetta-sheet.svg'
+    );
+    expect(read.error).toBeNull();
+    expect(read.data?.artifacts[0]).toMatchObject({
+      media_type: 'image/svg+xml', url: expectedArtifactUrl,
+    });
+    expect(prepared.error).toBeNull();
+    expect(prepared.data?.artifacts[0]?.url).toBe(expectedArtifactUrl);
+    expect(read.data?.bundle_url).toBe(
+      'https://facetta.test/projects/project%20one/factory-pack.zip',
+    );
+  });
+
   test('posts neutral drawing variations and explicit candidate promotion', async () => {
     const fetcher = jest.fn(async (
       _input: RequestInfo | URL,
@@ -2126,6 +2177,8 @@ describe('trusted API decoders', () => {
       const url = String(input);
       const payload = url.endsWith('/accept') ? {
         status: 'applied', candidate_id: 'candidate markup', asset_id: 'asset 2',
+        source_asset_id: 'asset 1', source_design_version: 3,
+        accepted_design_version: 4,
         project: {
           id: 'project 1', root_id: 'project 1', title: 'Ring', owner: 'designer',
           state: 'refining', design_id: 'design 1', spec: {}, active_asset_id: 'asset 2',
@@ -2154,6 +2207,11 @@ describe('trusted API decoders', () => {
       },
     );
     expect(accepted.error).toBeNull();
+    expect(accepted.data).toMatchObject({
+      candidate_id: 'candidate markup', asset_id: 'asset 2',
+      source_asset_id: 'asset 1', source_design_version: 3,
+      accepted_design_version: 4,
+    });
     expect(accepted.data?.project.active_asset_id).toBe('asset 2');
     expect(String(fetcher.mock.calls[1]?.[0])).toBe(
       'https://facetta.test/studio/markup-candidates/run%20markup/candidate%20markup/accept',
@@ -2162,6 +2220,35 @@ describe('trusted API decoders', () => {
       expected_active_asset_id: 'asset 1', expected_design_version: 3,
       created_by: 'designer',
     });
+
+    const incompleteAccept = { ...accepted.data } as Record<string, unknown>;
+    delete incompleteAccept.accepted_design_version;
+    fetcher.mockResolvedValueOnce({
+      ok: true, status: 201,
+      text: async () => JSON.stringify(incompleteAccept),
+    } as unknown as Response);
+    const rejectedAccept = await api.acceptStudioMarkupCandidate(
+      listed.data!.candidates[0], {
+        expected_active_asset_id: 'asset 1', expected_design_version: 3,
+        created_by: 'designer',
+      },
+    );
+    expect(rejectedAccept.error?.code).toBe('INVALID_RESPONSE');
+
+    fetcher.mockResolvedValueOnce({
+      ok: true, status: 200,
+      text: async () => JSON.stringify({
+        status: 'discarded', candidate_id: 'candidate markup',
+        source_asset_id: 'asset 1',
+      }),
+    } as unknown as Response);
+    const rejectedDiscard = await api.discardStudioMarkupCandidate(
+      listed.data!.candidates[0], {
+        expected_active_asset_id: 'asset 1', expected_design_version: 3,
+        created_by: 'designer',
+      },
+    );
+    expect(rejectedDiscard.error?.code).toBe('INVALID_RESPONSE');
   });
 });
 

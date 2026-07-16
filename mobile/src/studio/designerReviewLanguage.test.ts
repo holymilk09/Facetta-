@@ -37,3 +37,15 @@ test('technical evaluator details are replaced with decision guidance', () => {
   assert.equal(designerCheckDetail({ verdict: 'warn' }), 'Compare this area carefully with the source before applying.');
   assert.equal(designerCheckDetail({ verdict: 'reject' }), 'This area changed too much from the selected source.');
 });
+
+test('factory authority is presented as review-only status, never as design drift', () => {
+  const check = {
+    id: 'factory_authority', label: 'Factory authority', verdict: 'reject' as const,
+  };
+  assert.equal(designerReviewState(check.verdict, check), 'Review-only render');
+  assert.equal(designerCheckLabel(check), 'Not production data');
+  assert.equal(
+    designerCheckDetail(check),
+    'This visual does not establish dimensions, materials, or factory facts.',
+  );
+});

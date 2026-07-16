@@ -448,6 +448,7 @@ def generate_studio_visual_preview(
         ImageOperation.REFERENCE_RENDER,
         scope_instruction + instruction.strip(),
         source_image=source_image,
+        reference_mode="appearance_edit",
         mask_bytes=mask_bytes,
         mask_provenance=(
             "designer_marked_pre_spec_region" if mask_bytes is not None else None
@@ -1689,11 +1690,24 @@ def accept_exact_markup_candidate(
     project = db.get(Project, candidate.project_root_id)
     if project is None:  # pragma: no cover
         raise HTTPException(status_code=500, detail="accepted project unavailable")
+    detail = project_detail(db, project)
+    accepted_design_version = detail["active_design_version"]
+    if (
+        detail["active_asset_id"] != asset_id
+        or not isinstance(accepted_design_version, int)
+    ):  # pragma: no cover - persistence contract guards this first
+        raise HTTPException(
+            status_code=500,
+            detail="accepted revision lineage is inconsistent",
+        )
     return {
         "status": "applied",
         "candidate_id": candidate_id,
         "asset_id": asset_id,
-        "project": project_detail(db, project),
+        "source_asset_id": candidate.source_asset_id,
+        "source_design_version": candidate.design_version,
+        "accepted_design_version": accepted_design_version,
+        "project": detail,
     }
 
 
@@ -1720,7 +1734,12 @@ def discard_exact_markup_candidate(
         return _markup_candidate_error(exc)
     except WarningRevisionError as exc:
         return _presentation_candidate_error(exc)
-    return {"status": "discarded", "candidate_id": candidate_id}
+    return {
+        "status": "discarded",
+        "candidate_id": candidate_id,
+        "source_asset_id": candidate.source_asset_id,
+        "source_design_version": candidate.design_version,
+    }
 
 
 @router.post(

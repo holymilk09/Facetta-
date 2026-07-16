@@ -33,6 +33,8 @@ export interface StudioViewsWorkspaceProps {
     & Partial<Pick<StudioGateway, 'assetImageUrl'>>;
   lineage: ExactStudioLineage | null;
   createdBy: string;
+  /** Current project payload lets the set remain complete after a refresh. */
+  project?: ProjectDetail | null;
   onSaved: (project: ProjectDetail) => void;
   /** Optional host navigation shown only after a view is saved. */
   onOpenCollections?: () => void;
@@ -42,15 +44,15 @@ export interface StudioViewsWorkspaceProps {
 }
 
 export function StudioViewsWorkspace({
-  gateway, lineage, createdBy, onSaved, onOpenCollections, imageRequestHeaders,
+  gateway, lineage, createdBy, project = null, onSaved, onOpenCollections, imageRequestHeaders,
   resumeReviewJobId, reviewSourceIsActive = true,
 }: StudioViewsWorkspaceProps) {
-  const [view, setView] = useState<ViewId>('three_quarter');
   const [preview, setPreview] = useState<StudioViewPreview | null>(null);
   const [busy, setBusy] = useState(false);
+  const [pendingView, setPendingView] = useState<ViewId | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const [savedForLineage, setSavedForLineage] = useState(false);
+  const [savedViewsForLineage, setSavedViewsForLineage] = useState<readonly ViewId[]>([]);
   const lineageKey = lineage === null ? 'none'
     : `${lineage.projectId}:${lineage.sourceAssetId}:${lineage.sourceDesignVersion}`;
   const lineageKeyRef = useRef(lineageKey);
@@ -74,14 +76,29 @@ export function StudioViewsWorkspace({
     ? null : `views-candidate:${previewForLineage.candidateId}:${previewForLineage.previewUrl}`;
   const comparisonVisualKeys = [sourceVisualKey, candidateVisualKey] as const;
   const comparisonReady = visualReview.allReady(comparisonVisualKeys);
+  const durableSavedViews = project !== null && lineage !== null
+    && project.root_id === lineage.projectId
+    ? project.derived_assets.flatMap((asset): ViewId[] => {
+      if (
+        asset.capability !== 'LINE_ART'
+        || asset.parent_asset_id !== lineage.sourceAssetId
+        || asset.design_version !== lineage.sourceDesignVersion
+      ) return [];
+      const match = /^confirmed (front|three_quarter|side) Studio View$/.exec(asset.region ?? '');
+      return match === null ? [] : [match[1] as ViewId];
+    })
+    : [];
+  const savedViewIds = new Set<ViewId>([...durableSavedViews, ...savedViewsForLineage]);
+  const savedViewCount = savedViewIds.size;
 
   useEffect(() => {
     setUiLineageKey(lineageKey);
     setPreview(null);
     setNotice(null);
-    setSavedForLineage(false);
+    setSavedViewsForLineage([]);
     setError(null);
     setBusy(false);
+    setPendingView(null);
     if (lineage === null || typeof gateway.resumeViews !== 'function') return undefined;
     const requestedLineageKey = lineageKey;
     let active = true;
@@ -101,17 +118,19 @@ export function StudioViewsWorkspace({
     return () => { active = false; };
   }, [createdBy, gateway, lineageKey, resumeReviewJobId]);
 
-  const createPreview = async (): Promise<void> => {
+  const createPreview = async (requestedView: ViewId): Promise<void> => {
     if (lineage === null || busy || !reviewSourceIsActive) return;
     const requestedLineageKey = lineageKey;
     setBusy(true);
+    setPendingView(requestedView);
     setError(null);
     setNotice(null);
     const result = await gateway.previewLineArtView({
-      ...lineage, createdBy, view,
+      ...lineage, createdBy, view: requestedView,
     });
     if (lineageKeyRef.current !== requestedLineageKey) return;
     setBusy(false);
+    setPendingView(null);
     if (result.error !== null) {
       setError(designerErrorMessage(result.error, 'views'));
       return;
@@ -138,9 +157,17 @@ export function StudioViewsWorkspace({
       setError('The view was not saved. Your active revision remains unchanged.');
       return;
     }
+    const savedView = previewForLineage.view;
+    const savedViewLabel = VIEWS.find((item) => item.id === savedView)?.label ?? 'View';
+    const savedAfterDecision = new Set<ViewId>([...savedViewIds, savedView]);
+    const remaining = VIEWS.length - savedAfterDecision.size;
     setPreview(null);
-    setSavedForLineage(true);
-    setNotice('View saved beside the design. The active design revision did not change.');
+    setSavedViewsForLineage((current) => (
+      current.includes(savedView) ? current : [...current, savedView]
+    ));
+    setNotice(remaining === 0
+      ? 'All three views are saved beside the design. The active design revision did not change.'
+      : `${savedViewLabel} view saved. Create ${remaining} more to complete the set. The active design revision did not change.`);
     onSaved(result.data.project);
   };
 
@@ -260,40 +287,67 @@ export function StudioViewsWorkspace({
 
   return (
     <ScrollView contentContainerStyle={styles.workspace}>
-      <Text style={styles.eyebrow}>TECHNICAL VIEWS</Text>
-      <Text style={styles.title}>See the confirmed design from another angle.</Text>
+      <Text style={styles.eyebrow}>EXACT REVISION VIEWS</Text>
+      <Text style={styles.title}>Complete the three-view set.</Text>
       <Text style={styles.body}>
-        Choose one line-art angle generated from this revision and its confirmed design facts.
-        You will review a temporary result before anything is saved.
+        This design now has confirmed starting facts. To protect them, Facetta creates and checks
+        {' '}Front, Three-quarter, and Side one at a time against this exact saved revision. Save
+        {' '}each view, then continue to the next.
       </Text>
       {!reviewSourceIsActive && <Notice kind="info" text="This Activity result was created from an earlier revision. Only its existing preview can be reviewed or discarded." />}
       <View style={styles.viewGrid}>
-        {VIEWS.map((item) => (
-          <Pressable
-            key={item.id}
-            accessibilityRole="button"
-            accessibilityState={{ selected: view === item.id }}
-            onPress={() => setView(item.id)}
-            style={[styles.viewCard, view === item.id && styles.selectedCard]}
-          >
-            <Text style={styles.viewTitle}>{item.label}</Text>
-            <Text style={styles.viewDetail}>{item.detail}</Text>
-          </Pressable>
-        ))}
+        {VIEWS.map((item) => {
+          const isSaved = savedViewIds.has(item.id);
+          const isDisabled = busy || !reviewSourceIsActive || isSaved;
+          return (
+            <Pressable
+              key={item.id}
+              accessibilityRole="button"
+              accessibilityLabel={isSaved
+                ? `${item.label} view saved`
+                : `Create ${item.label} view`}
+              accessibilityState={{ disabled: isDisabled }}
+              disabled={isDisabled}
+              onPress={() => { void createPreview(item.id); }}
+              style={[
+                styles.viewCard,
+                pendingView === item.id && styles.busyCard,
+                isSaved && styles.savedCard,
+                (busy || !reviewSourceIsActive) && styles.disabledCard,
+              ]}
+            >
+              <Text style={styles.viewTitle}>{item.label}</Text>
+              <Text style={styles.viewDetail}>{item.detail}</Text>
+              <Text style={[styles.viewAction, isSaved && styles.savedAction]}>
+                {pendingView === item.id
+                  ? 'Creating preview…'
+                  : isSaved ? 'Saved ✓' : `Create ${item.label.toLowerCase()} view →`}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </View>
+      <View style={styles.setProgressCard}>
+        <View>
+          <Text style={styles.sourceLabel}>Three-view set</Text>
+          <Text style={styles.sourceValue}>Front · Three-quarter · Side</Text>
+        </View>
+        <Text style={styles.setProgress}>{savedViewCount} of 3 saved</Text>
       </View>
       <View style={styles.sourceCard}>
-        <Text style={styles.sourceLabel}>Confirmed saved source</Text>
-        <Text style={styles.sourceValue}>Exact saved revision</Text>
+        <Text style={styles.sourceLabel}>Starting point</Text>
+        <Text style={styles.sourceValue}>Current saved revision</Text>
       </View>
       {visibleNotice !== null && <Notice kind="ok" text={visibleNotice} />}
-      {savedForLineage && onOpenCollections !== undefined && (
+      {savedViewCount > 0 && onOpenCollections !== undefined && (
         <Button title="Open in Collections" kind="ghost" onPress={onOpenCollections} />
       )}
       {visibleError !== null && <Notice kind="error" text={visibleError} />}
       <Text style={styles.creditEstimate}>
-        1 requested output × {VIEWS_CREDITS_PER_OUTPUT} credits = estimated {VIEWS_CREDITS_PER_OUTPUT} credits
+        Full set: up to {VIEWS.length * VIEWS_CREDITS_PER_OUTPUT} credits
+        {' '}({VIEWS_CREDITS_PER_OUTPUT} per saved view). Failed generation, quality retries, and
+        {' '}discarded previews cost 0 credits.
       </Text>
-      <Button title={busy ? 'Creating preview…' : 'Preview view'} disabled={busy || !reviewSourceIsActive} onPress={() => { void createPreview(); }} />
     </ScrollView>
   );
 }
@@ -307,9 +361,25 @@ const styles = StyleSheet.create({
   creditEstimate: { color: theme.faint, fontSize: 12, lineHeight: 18 },
   viewGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
   viewCard: { width: 200, minHeight: 96, borderWidth: 1, borderColor: theme.line, borderRadius: radius.md, padding: 14, backgroundColor: theme.card },
-  selectedCard: { borderColor: theme.accent, borderWidth: 2 },
+  busyCard: { borderColor: theme.accent, borderWidth: 2 },
+  savedCard: { borderColor: theme.ok, backgroundColor: '#f7fbf7' },
+  disabledCard: { opacity: 0.48 },
   viewTitle: { color: theme.ink, fontWeight: '800', fontSize: 16 },
   viewDetail: { color: theme.faint, fontSize: 12, lineHeight: 18, marginTop: 5 },
+  viewAction: { color: theme.accent, fontSize: 12, fontWeight: '800', marginTop: 10 },
+  savedAction: { color: theme.ok },
+  setProgressCard: {
+    borderWidth: 1,
+    borderColor: theme.line,
+    borderRadius: radius.md,
+    padding: 13,
+    backgroundColor: theme.card,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: 12,
+  },
+  setProgress: { color: theme.accent, fontSize: 13, fontWeight: '800' },
   sourceCard: { borderWidth: 1, borderColor: theme.line, borderRadius: radius.md, padding: 13, backgroundColor: theme.card },
   sourceLabel: { color: theme.faint, fontSize: 11, fontWeight: '700', textTransform: 'uppercase', letterSpacing: 1 },
   sourceValue: { color: theme.ink, fontSize: 13, marginTop: 4 },

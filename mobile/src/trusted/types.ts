@@ -1628,12 +1628,17 @@ export interface StudioMarkupAcceptResult {
   status: 'applied';
   candidate_id: string;
   asset_id: string;
+  source_asset_id: string;
+  source_design_version: number;
+  accepted_design_version: number;
   project: ProjectDetail;
 }
 
 export interface StudioMarkupDiscardResult {
   status: 'discarded';
   candidate_id: string;
+  source_asset_id: string;
+  source_design_version: number;
 }
 
 export interface ImageWarningCandidate {

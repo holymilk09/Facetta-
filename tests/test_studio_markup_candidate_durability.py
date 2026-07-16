@@ -215,8 +215,19 @@ def test_restart_resume_legacy_image_and_atomic_apply(markup_candidates):
         },
     )
     assert applied.status_code == 201, applied.text
-    child_id = applied.json()["asset_id"]
+    payload = applied.json()
+    child_id = payload["asset_id"]
     assert child_id != "ast_markup"
+    assert payload["candidate_id"] == candidate.candidate_id
+    assert payload["source_asset_id"] == "ast_markup"
+    assert payload["source_design_version"] == version
+    assert payload["accepted_design_version"] == version
+    assert payload["project"]["root_id"] == "ast_markup"
+    assert payload["project"]["active_asset_id"] == child_id
+    assert payload["project"]["active_design_version"] == version
+    assert payload["project"]["active_revision"]["asset_id"] == child_id
+    assert payload["project"]["active_revision"]["parent_asset_id"] == "ast_markup"
+    assert payload["project"]["active_revision"]["design_version"] == version
 
     with Session() as db:
         durable = db.get(StudioMarkupCandidateRecord, candidate.candidate_id)
@@ -248,7 +259,13 @@ def test_restart_resume_legacy_image_and_atomic_apply(markup_candidates):
         },
     )
     assert repeated.status_code == 201
-    assert repeated.json()["asset_id"] == child_id
+    repeated_payload = repeated.json()
+    assert repeated_payload["candidate_id"] == candidate.candidate_id
+    assert repeated_payload["asset_id"] == child_id
+    assert repeated_payload["source_asset_id"] == "ast_markup"
+    assert repeated_payload["source_design_version"] == version
+    assert repeated_payload["accepted_design_version"] == version
+    assert repeated_payload["project"]["active_asset_id"] == child_id
     conflict = client.post(
         f"/studio/markup-candidates/{candidate.run_id}/"
         f"{candidate.candidate_id}/discard",
@@ -259,6 +276,41 @@ def test_restart_resume_legacy_image_and_atomic_apply(markup_candidates):
         },
     )
     assert conflict.status_code == 409
+
+
+def test_apply_response_binds_a_spec_changing_version(markup_candidates):
+    client, Session, spec, version, source = markup_candidates
+    next_raw = copy.deepcopy(spec)
+    next_raw["metal"]["finish"] = "satin"
+    candidate = _store(
+        Session,
+        spec,
+        version,
+        source,
+        suffix="apply_spec_change",
+        next_spec=Spec.model_validate(next_raw),
+    )
+
+    applied = client.post(
+        f"/studio/markup-candidates/{candidate.run_id}/"
+        f"{candidate.candidate_id}/accept",
+        json={
+            "created_by": OWNER,
+            "expected_active_asset_id": "ast_markup",
+            "expected_design_version": version,
+        },
+    )
+    assert applied.status_code == 201, applied.text
+    payload = applied.json()
+    child_id = payload["asset_id"]
+    assert payload["candidate_id"] == candidate.candidate_id
+    assert payload["source_asset_id"] == "ast_markup"
+    assert payload["source_design_version"] == version
+    assert payload["accepted_design_version"] == version + 1
+    assert payload["project"]["active_asset_id"] == child_id
+    assert payload["project"]["active_design_version"] == version + 1
+    assert payload["project"]["active_revision"]["parent_asset_id"] == "ast_markup"
+    assert payload["project"]["active_revision"]["design_version"] == version + 1
 
 
 def test_save_as_variation_preserves_exact_spec_and_settles_job(markup_candidates):
@@ -504,6 +556,12 @@ def test_stale_active_revision_rejects_without_partial_terminal_rows(
         },
     )
     assert discarded.status_code == 200, discarded.text
+    assert discarded.json() == {
+        "status": "discarded",
+        "candidate_id": candidate.candidate_id,
+        "source_asset_id": "ast_markup",
+        "source_design_version": version,
+    }
     with Session() as db:
         durable = db.get(StudioMarkupCandidateRecord, candidate.candidate_id)
         job = db.get(StudioJobRecord, candidate.studio_job_id)

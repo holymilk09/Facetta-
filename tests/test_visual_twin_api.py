@@ -150,7 +150,7 @@ def test_visual_twin_candidates_wait_for_review_and_accept_as_derived(
     assert body["status"] == "review_required"
     assert body["candidate_count"] == 2
     assert body["failed_count"] == 0
-    assert body["maximum_provider_attempts"] == 6
+    assert body["maximum_provider_attempts"] == 8
     assert all(item["promotion_kind"] == "derived_only"
                for item in body["candidates"])
     assert all(item["authority"] == "factory_discussion_only"

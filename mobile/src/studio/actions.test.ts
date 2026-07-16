@@ -47,13 +47,13 @@ test('Factory remains absent until the backend confirms exact-revision eligibili
   };
   assert.deepEqual(
     getVisibleStudioActions(active, 'more').map((action) => action.id),
-    ['views', 'specifications'],
+    ['specifications'],
   );
   assert.deepEqual(
     getVisibleStudioActions({
       ...active, factoryEligible: true,
     }, 'more').map((action) => action.id),
-    ['views', 'specifications', 'factory'],
+    ['specifications', 'factory'],
   );
   const factory = getStudioAction('factory');
   assert.equal(factory.contextRequirements.includes('factory_eligible'), true);
@@ -67,21 +67,23 @@ test('Factory remains absent until the backend confirms exact-revision eligibili
   );
 });
 
-test('the active-design rail stays focused on four designer destinations', () => {
+test('the active-design rail keeps one stable Views destination', () => {
   const active = {
     ...emptyContext,
     activeDesignId: 'dsn_1',
     activeRevisionId: 'rev_1',
     hasExactSpecification: false,
   };
-  const expected = ['create', 'refine', 'present', 'more'];
-  assert.deepEqual(getStudioRailActions(active).map((action) => action.id), expected);
+  assert.deepEqual(
+    getStudioRailActions(active).map((action) => action.id),
+    ['create', 'vary', 'refine', 'angles', 'present', 'more'],
+  );
   assert.deepEqual(getStudioRailActions({
     ...active, hasExactSpecification: true,
-  }).map((action) => action.id), expected);
+  }).map((action) => action.id), ['create', 'vary', 'refine', 'views', 'present', 'more']);
 });
 
-test('technical Views stay out of the primary rail and appear in More only when exact', () => {
+test('one Views rail slot selects visual sets before facts and exact views after facts', () => {
   const selectedCreativeDirection = {
     ...emptyContext,
     activeDesignId: 'project_1',
@@ -90,14 +92,20 @@ test('technical Views stay out of the primary rail and appear in More only when 
   };
   assert.deepEqual(
     getStudioRailActions(selectedCreativeDirection).map((action) => action.id),
-    ['create', 'refine', 'present', 'more'],
+    ['create', 'vary', 'refine', 'angles', 'present', 'more'],
   );
   assert.deepEqual(
     getStudioRailActions({
       ...selectedCreativeDirection,
       hasExactSpecification: true,
     }).map((action) => action.id),
-    ['create', 'refine', 'present', 'more'],
+    ['create', 'vary', 'refine', 'views', 'present', 'more'],
+  );
+  assert.deepEqual(
+    getStudioRailActions(selectedCreativeDirection)
+      .filter((action) => action.id === 'angles' || action.id === 'views')
+      .map((action) => [action.label, action.shortLabel]),
+    [['View this design', 'Views']],
   );
   assert.equal(
     getVisibleStudioActions(selectedCreativeDirection, 'more').some((action) => action.id === 'views'),
@@ -108,11 +116,11 @@ test('technical Views stay out of the primary rail and appear in More only when 
       ...selectedCreativeDirection,
       hasExactSpecification: true,
     }, 'more').some((action) => action.id === 'views'),
-    true,
+    false,
   );
   assert.deepEqual(
     [getStudioAction('views').label, getStudioAction('views').shortLabel],
-    ['Generate technical views', 'Views'],
+    ['View this design', 'Views'],
   );
   assert.equal(
     getStudioActionUnavailableReason(getStudioAction('views'), selectedCreativeDirection),
@@ -165,7 +173,13 @@ test('More exposes starting design facts for a pre-spec visual and never exposes
   )), true);
   assert.equal(getVisibleStudioActions(preSpec, 'more').some((action) => (
     action.id === 'angles' || action.shortLabel === 'Angles'
-  )), true);
+  )), false);
+  assert.deepEqual(
+    getStudioRailActions(preSpec)
+      .filter((action) => action.id === 'angles' || action.id === 'views')
+      .map((action) => action.shortLabel),
+    ['Views'],
+  );
   assert.equal(getVisibleStudioActions(preSpec, 'more').some((action) => action.id === 'factory'), false);
   assert.equal(getVisibleStudioActions({
     ...preSpec, hasSelectedPreSpecVisual: false,
@@ -175,7 +189,7 @@ test('More exposes starting design facts for a pre-spec visual and never exposes
   }, 'more').some((action) => action.id === 'confirm'), false);
 });
 
-test('the legacy exact-copy action is hidden and remains zero-credit for compatibility', () => {
+test('Vary explores one to four reviewed visual directions from the selected design', () => {
   const branch = getStudioAction('vary');
   assert.deepEqual(
     [
@@ -183,26 +197,36 @@ test('the legacy exact-copy action is hidden and remains zero-credit for compati
       branch.executionMode, branch.reviewAuthority,
     ],
     [
-      'Duplicate direction', 0, false, 'design_record',
-      'instant_transaction', 'none',
+      'Explore variations', 20, true, 'design_record',
+      'candidate_job', 'candidate_decision',
     ],
   );
-  assert.equal(branch.placement, 'more');
+  assert.equal(branch.placement, 'primary');
+  assert.deepEqual(branch.requestedOutputRange, { min: 1, max: 4 });
+  assert.equal(branch.isAvailable({
+    ...emptyContext,
+    activeDesignId: 'dsn_1',
+    activeRevisionId: 'rev_1',
+    hasSelectedPreSpecVisual: true,
+  }), true);
+  assert.equal(getStudioRailActions({
+    ...emptyContext,
+    activeDesignId: 'dsn_1',
+    activeRevisionId: 'rev_1',
+    hasSelectedPreSpecVisual: true,
+  }).some((action) => action.id === 'vary'), true);
   assert.equal(branch.isAvailable({
     ...emptyContext,
     activeDesignId: 'dsn_1',
     activeRevisionId: 'rev_1',
   }), false);
-  assert.equal(getStudioRailActions({
+  assert.equal(branch.isAvailable({
     ...emptyContext,
     activeDesignId: 'dsn_1',
     activeRevisionId: 'rev_1',
-  }).some((action) => action.id === 'vary'), false);
-  assert.equal(getVisibleStudioActions({
-    ...emptyContext,
-    activeDesignId: 'dsn_1',
-    activeRevisionId: 'rev_1',
-  }, 'more').some((action) => action.id === 'vary'), false);
+    hasSelectedPreSpecVisual: true,
+    hasExactSpecification: true,
+  }), false);
 });
 
 test('canonical job behavior is derived from manifest orchestration', () => {
@@ -282,7 +306,7 @@ test('every action exposes typed input, context, authority, pricing, and UI sche
 
 test('job actions expose canonical requested-output ranges', () => {
   assert.deepEqual(getStudioAction('create').requestedOutputRange, { min: 1, max: 4 });
-  assert.deepEqual(getStudioAction('vary').requestedOutputRange, { min: 0, max: 0 });
+  assert.deepEqual(getStudioAction('vary').requestedOutputRange, { min: 1, max: 4 });
   assert.deepEqual(getStudioAction('refine').requestedOutputRange, { min: 1, max: 1 });
   assert.deepEqual(getStudioAction('angles').requestedOutputRange, { min: 3, max: 3 });
   assert.deepEqual(getStudioAction('views').requestedOutputRange, { min: 1, max: 1 });

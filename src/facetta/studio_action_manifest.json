@@ -16,18 +16,18 @@
     ]
   },
   "vary": {
-    "lane": "instant",
-    "execution_mode": "instant_transaction",
-    "review_authority": "none",
-    "credits_per_output": 0,
-    "min_requested_outputs": 0,
-    "max_requested_outputs": 0,
+    "lane": "trusted_structural",
+    "execution_mode": "candidate_job",
+    "review_authority": "candidate_decision",
+    "credits_per_output": 20,
+    "min_requested_outputs": 1,
+    "max_requested_outputs": 4,
     "input_requirements": ["direction"],
     "context_requirements": ["active_project", "active_revision"],
     "output_type": "variation_set",
     "authority": "design_record",
     "ui_schema": [
-      {"id": "direction", "label": "Variation name", "kind": "text", "required": true}
+      {"id": "direction", "label": "Variation direction", "kind": "text", "required": true}
     ]
   },
   "refine": {

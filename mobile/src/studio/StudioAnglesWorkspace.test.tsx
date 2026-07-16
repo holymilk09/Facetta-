@@ -99,7 +99,7 @@ describe('StudioAnglesWorkspace', () => {
       onContinueRefining={onContinueRefining}
     />);
 
-    expect(screen.getByText('See this design from three key angles.')).toBeTruthy();
+    expect(screen.getByText('Create all three useful views.')).toBeTruthy();
     expect(screen.getByText('Front')).toBeTruthy();
     expect(screen.getByText('Three-quarter')).toBeTruthy();
     expect(screen.getByText('Side')).toBeTruthy();
@@ -144,7 +144,7 @@ describe('StudioAnglesWorkspace', () => {
       imageRequestHeaders={{ Authorization: 'Bearer first-party-token' }}
     />);
 
-    await fireEvent.press(screen.getByText('Generate 3 views'));
+    await fireEvent.press(screen.getByText('Create all 3 views'));
     expect(createVisualAngleSet).toHaveBeenCalledWith(lineage, 'designer');
     expect(await screen.findByText('Check the design from three key angles.')).toBeTruthy();
     expect(screen.getByText('3 views × 18 credits = 54 credits when saved')).toBeTruthy();
@@ -202,6 +202,6 @@ describe('StudioAnglesWorkspace', () => {
     await fireEvent.press(screen.getByText('Discard set'));
     expect(discardVisualAngleSet).toHaveBeenCalledWith('angle_set_1', 'designer');
     expect(screen.getByText('Angle set discarded. Nothing was saved or charged.')).toBeTruthy();
-    expect(screen.getByText('See this design from three key angles.')).toBeTruthy();
+    expect(screen.getByText('Create all three useful views.')).toBeTruthy();
   });
 });

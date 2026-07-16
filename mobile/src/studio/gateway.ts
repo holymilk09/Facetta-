@@ -154,6 +154,8 @@ export type StudioVisualPreviewRequest = StudioVisualLineage & {
   createdBy: string;
   instruction: string;
   variant?: number;
+  /** The visible workspace owns the Activity label; Refine remains the default. */
+  jobAction?: Extract<StudioJobAction, 'refine' | 'vary'>;
 } & (
   | { scope: 'appearance'; maskBase64?: never; markupAssetId?: never }
   | { scope: 'marked_region'; maskBase64: string; markupAssetId?: never }
@@ -868,7 +870,22 @@ export function createStudioGateway(
     try {
       const result = await operation();
       if (result.error !== null) {
-        await failJob(job, result.error.code);
+        let backendAlreadyFailed = false;
+        if (job !== null) {
+          try {
+            const durable = await client.getStudioJob(job.jobId, job.owner);
+            backendAlreadyFailed = durable.error === null
+              && durable.data.job_id === job.jobId
+              && durable.data.owner === job.owner
+              && durable.data.action_id === job.actionId
+              && durable.data.status === 'failed';
+            if (backendAlreadyFailed) job.status = 'failed';
+          } catch {
+            // A missing reconciliation response leaves the existing explicit
+            // client failure transition as the safe fallback.
+          }
+        }
+        if (!backendAlreadyFailed) await failJob(job, result.error.code);
         return { data: null, error: mapError(result.error), status: result.status };
       }
       return result;
@@ -1179,7 +1196,7 @@ export function createStudioGateway(
           allowedDecisions: {
             apply: sourceIsActive,
             discard: true,
-            saveAsVariation: job.action_id === 'refine',
+            saveAsVariation: job.action_id === 'refine' || job.action_id === 'vary',
           },
         },
         error: null,
@@ -1544,13 +1561,14 @@ export function createStudioGateway(
       lineage: ExactStudioLineage | StudioVisualLineage,
       createdBy: string,
       reviewJobId?: string,
+      expectedActionId: Extract<StudioJobAction, 'refine' | 'vary'> = 'refine',
     ): Promise<StudioGatewayResult<StudioResumedRefinePreview | null>> {
       const jobs = await client.listStudioJobs(createdBy, 'reviewing');
       if (jobs.error !== null) return {
         data: null, error: mapError(jobs.error), status: jobs.status,
       };
       const matchingJob = [...jobs.data.jobs].reverse().find((job) => (
-        job.action_id === 'refine'
+        job.action_id === expectedActionId
         && (reviewJobId === undefined || job.job_id === reviewJobId)
         && job.active_design_id === lineage.projectId
         && job.source_revision_id === lineage.sourceAssetId
@@ -1761,7 +1779,7 @@ export function createStudioGateway(
         projectId: request.projectId,
         sourceAssetId: request.sourceAssetId,
       };
-      const started = await startJob('refine', request.createdBy, 1, lineage);
+      const started = await startJob(request.jobAction ?? 'refine', request.createdBy, 1, lineage);
       if (started.error !== null) return started;
       const trustedRequest: CreateVisualPreviewRequest = request.scope === 'appearance'
         ? {
@@ -2344,10 +2362,24 @@ export function createStudioGateway(
       if (result.error !== null) return {
         data: null, error: mapError(result.error), status: result.status,
       };
-      const acceptedProject = 'project' in result.data ? result.data.project : result.data;
+      const acceptedProject = result.data.project;
       const lineage = exactLineage(acceptedProject);
-      if (lineage === null || lineage.projectId !== stored.lineage.projectId
-        || lineage.sourceAssetId === stored.lineage.sourceAssetId) {
+      const acceptedVersionDelta = result.data.accepted_design_version
+        - stored.lineage.sourceDesignVersion;
+      if (
+        result.data.candidate_id !== stored.candidateId
+        || result.data.source_asset_id !== stored.lineage.sourceAssetId
+        || result.data.source_design_version !== stored.lineage.sourceDesignVersion
+        || lineage === null
+        || lineage.projectId !== stored.lineage.projectId
+        || lineage.sourceAssetId === stored.lineage.sourceAssetId
+        || result.data.asset_id !== lineage.sourceAssetId
+        || result.data.accepted_design_version !== lineage.sourceDesignVersion
+        || acceptedVersionDelta < 0
+        || acceptedVersionDelta > 1
+        || acceptedProject.active_revision?.parent_asset_id !== stored.lineage.sourceAssetId
+        || !hasImmutableSource(acceptedProject, stored.lineage)
+      ) {
         await failJob(stored.studioJob, 'INVALID_ACCEPT_LINEAGE', 0.95);
         return gatewayError(
           'INVALID_ACCEPT_LINEAGE', 'The accepted preview did not append a new exact revision.',
@@ -2379,6 +2411,14 @@ export function createStudioGateway(
       if (result.error !== null) return {
         data: null, error: mapError(result.error), status: result.status,
       };
+      if (
+        result.data.candidate_id !== stored.candidateId
+        || result.data.source_asset_id !== stored.lineage.sourceAssetId
+        || result.data.source_design_version !== stored.lineage.sourceDesignVersion
+      ) return gatewayError(
+        'INVALID_DISCARD_LINEAGE', 'The discarded preview response identified another revision.',
+        'invalid_response', result.status,
+      );
       const candidate = decidePreviewCandidate(stored.preview, 'discard', now().toISOString());
       stored.preview = candidate;
       return { data: { candidate, project: null }, error: null, status: result.status };
