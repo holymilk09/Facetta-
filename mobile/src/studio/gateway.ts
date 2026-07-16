@@ -1480,6 +1480,15 @@ export function createStudioGateway(
       return mapResult(await client.getProject(...args));
     },
 
+    async getStudioCapabilities(): Promise<StudioGatewayResult<StudioCapabilities>> {
+      if (client.getStudioCapabilities === undefined) return gatewayError(
+        'STUDIO_CAPABILITIES_UNAVAILABLE',
+        'Facetta could not verify which Studio actions are available.',
+        'unavailable', 0, true,
+      );
+      return mapResult(await client.getStudioCapabilities());
+    },
+
     async getComponentCatalog(
       ...args: Parameters<GatewayTrustedClient['getComponentCatalog']>
     ): Promise<StudioGatewayResult<ComponentCatalog>> {

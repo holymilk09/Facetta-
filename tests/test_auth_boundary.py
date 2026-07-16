@@ -400,14 +400,26 @@ def test_factory_capability_is_server_sourced_exact_principal_and_fail_closed(
     client, _Session = auth_client
     owner = {"Authorization": f"Bearer {OWNER_TOKEN}"}
     other = {"Authorization": f"Bearer {OTHER_TOKEN}"}
+    monkeypatch.delenv("XAI_KEY", raising=False)
     monkeypatch.delenv("FACETTA_FACTORY_ENTITLED_PRINCIPALS_JSON", raising=False)
 
     disabled = client.get("/studio/capabilities", headers=owner)
     assert disabled.status_code == 200
     assert disabled.json() == {
+        "image_generation": {"enabled": False},
         "factory_review": {"enabled": False, "scope": "principal"},
         "workspace_entitlements_available": False,
     }
+
+    monkeypatch.setenv("FAL_KEY", "fallback-cannot-complete-default-qa")
+    assert client.get("/studio/capabilities", headers=owner).json()[
+        "image_generation"
+    ]["enabled"] is False
+
+    monkeypatch.setenv("XAI_KEY", "configured-for-capability-test")
+    assert client.get("/studio/capabilities", headers=owner).json()[
+        "image_generation"
+    ]["enabled"] is True
 
     monkeypatch.setenv(
         "FACETTA_FACTORY_ENTITLED_PRINCIPALS_JSON",

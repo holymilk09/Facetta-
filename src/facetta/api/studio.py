@@ -156,6 +156,7 @@ from facetta.trusted_revision import (
     discard_warning_revision,
 )
 from facetta.entitlements import has_factory_entitlement, require_factory_entitlement
+from facetta.image_agent.providers import image_generation_ready
 from facetta.warning_candidates import (
     MarkupWarningCandidate,
     WarningCandidateUnavailable,
@@ -178,7 +179,12 @@ class StudioFactoryCapability(BaseModel):
     scope: Literal["principal"] = "principal"
 
 
+class StudioImageGenerationCapability(BaseModel):
+    enabled: bool
+
+
 class StudioCapabilities(BaseModel):
+    image_generation: StudioImageGenerationCapability
     factory_review: StudioFactoryCapability
     workspace_entitlements_available: Literal[False] = False
 
@@ -217,9 +223,13 @@ def get_studio_capabilities(principal: PrincipalDep) -> StudioCapabilities:
     """Return server-owned capabilities for the authenticated Studio actor.
 
     There is no workspace membership model yet, so this response says so and
-    exposes only an exact principal-scoped Factory capability.
+    exposes generation readiness without provider or credential details plus
+    the exact principal-scoped Factory capability.
     """
     return StudioCapabilities(
+        image_generation=StudioImageGenerationCapability(
+            enabled=image_generation_ready(),
+        ),
         factory_review=StudioFactoryCapability(
             enabled=has_factory_entitlement(principal),
         ),

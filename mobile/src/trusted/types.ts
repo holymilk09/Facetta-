@@ -249,6 +249,10 @@ export interface ProjectDetail {
 }
 
 export interface StudioCapabilities {
+  /** Provider-neutral readiness for the closed-loop image and QA workflow. */
+  image_generation: {
+    enabled: boolean;
+  };
   factory_review: {
     enabled: boolean;
     scope: 'principal';

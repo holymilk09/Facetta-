@@ -156,6 +156,29 @@ test('relative protected image paths retain native trusted-origin resolution and
   });
 });
 
+test('bundled Expo web assets stay on the page origin without private API fetching', async () => {
+  setPlatformOS('web');
+  const bundledSource = {
+    uri: '/assets/?unstable_path=.%2Fassets/studio-ring.png',
+    width: 960,
+    height: 1200,
+  };
+
+  await render(
+    <AuthenticatedImageProvider
+      allowedOrigin="https://facetta.test/api"
+      headers={{ Authorization: 'Bearer runtime-token' }}>
+      <AuthenticatedImage
+        accessibilityLabel="Bundled inspiration"
+        source={bundledSource}
+      />
+    </AuthenticatedImageProvider>,
+  );
+
+  expect(screen.getByLabelText('Bundled inspiration').props.source).toEqual(bundledSource);
+  expect(fetchMock).not.toHaveBeenCalled();
+});
+
 test('off-origin images fail closed without leaking Facetta authorization', async () => {
   await render(
     <AuthenticatedImageProvider

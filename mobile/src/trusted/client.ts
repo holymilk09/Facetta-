@@ -201,12 +201,17 @@ const number = (value: unknown): number | null =>
 const boolean = (value: unknown, fallback = false): boolean =>
   typeof value === 'boolean' ? value : fallback;
 
-const decodeStudioCapabilities: Decoder<StudioCapabilities> = (value) => {
-  if (!isRecord(value) || !isRecord(value.factory_review)) return null;
+export const decodeStudioCapabilities: Decoder<StudioCapabilities> = (value) => {
+  if (!isRecord(value) || !isRecord(value.image_generation)
+    || !isRecord(value.factory_review)) return null;
   if (value.factory_review.scope !== 'principal'
+    || typeof value.image_generation.enabled !== 'boolean'
     || typeof value.factory_review.enabled !== 'boolean'
     || value.workspace_entitlements_available !== false) return null;
   return {
+    image_generation: {
+      enabled: value.image_generation.enabled,
+    },
     factory_review: {
       enabled: value.factory_review.enabled,
       scope: 'principal',

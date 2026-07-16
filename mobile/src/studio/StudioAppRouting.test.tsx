@@ -36,12 +36,14 @@ const mockGetCreativeDirectionReviewDraft: jest.Mock = jest.fn(async () => ({
   status: 404,
 }));
 let mockFactoryReviewEnabled = true;
+let mockImageGenerationEnabled = true;
 let mockConfirmedJewelryType = 'ring';
 let mockConfirmedFactoryReady = false;
 let mockSavedPreSpecCapability = 'CREATIVE_RENDER';
 let mockFactoryProjectUpdate: any = null;
 const mockGetStudioCapabilities = jest.fn(async () => ({
   data: {
+    image_generation: { enabled: mockImageGenerationEnabled },
     factory_review: { enabled: mockFactoryReviewEnabled, scope: 'principal' },
     workspace_entitlements_available: false,
   },
@@ -494,6 +496,7 @@ afterEach(() => {
   mockAuthStateListener = null;
   mockRestoreAuthenticatedSession = null;
   mockFactoryReviewEnabled = true;
+  mockImageGenerationEnabled = true;
   mockConfirmedJewelryType = 'ring';
   mockConfirmedFactoryReady = false;
   mockSavedPreSpecCapability = 'CREATIVE_RENDER';
@@ -729,6 +732,35 @@ test('global navigation is exactly four named destinations and each opens its ro
   expect(await view.findByText('Start from an idea or reference')).toBeTruthy();
   expect(view.getByRole('tab', { name: 'Studio' }).props.accessibilityState).toEqual({ selected: true });
   expect(view.queryByText(/Builder|Share design|Factory/i)).toBeNull();
+});
+
+test('preflights image readiness before mounting fresh generation and recovers on retry', async () => {
+  mockImageGenerationEnabled = false;
+  authenticate();
+  const view = await render(<App />);
+
+  fireEvent.press(await view.findByText('Start from an idea or reference'));
+  expect(await view.findByText('Image generation is unavailable right now.')).toBeTruthy();
+  expect(view.getByText('NO JOB STARTED · NO CREDITS CHARGED')).toBeTruthy();
+  expect(view.queryByLabelText('Mock draft sentence')).toBeNull();
+
+  mockImageGenerationEnabled = true;
+  fireEvent.press(view.getByText('Retry availability'));
+  expect(await view.findByLabelText('Mock draft sentence')).toBeTruthy();
+  expect(view.queryByTestId('studio-image-generation-preflight')).toBeNull();
+});
+
+test('keeps existing generation reviews available when new generation is unavailable', async () => {
+  mockImageGenerationEnabled = false;
+  mockGetProject.mockResolvedValue({ data: hydratedProject, error: null, status: 200 });
+  authenticate();
+  const view = await render(<App />);
+
+  fireEvent.press(await view.findByRole('tab', { name: 'Activity' }));
+  fireEvent.press(await view.findByText('Review create'));
+  expect(await view.findByText('Create review reached for project_hydrated via job_create'))
+    .toBeTruthy();
+  expect(view.queryByTestId('studio-image-generation-preflight')).toBeNull();
 });
 
 test('Create keeps the review mounted until its latest Activity draft is durable', async () => {
@@ -1352,10 +1384,12 @@ test('Collections hides Factory readiness for an exact non-ring revision', async
   fireEvent.press(await view.findByText('Review starting design'));
   fireEvent.press(await view.findByText('Save starting facts'));
   expect(await view.findByText('Refine route reached')).toBeTruthy();
-  expect(mockGetStudioCapabilities).not.toHaveBeenCalled();
+  await waitFor(() => expect(mockGetStudioCapabilities).toHaveBeenCalled());
+  const imageReadinessCallCount = mockGetStudioCapabilities.mock.calls.length;
 
   fireEvent.press(view.getByLabelText('Open revision history'));
   expect(view.queryByText(/Factory/i)).toBeNull();
+  expect(mockGetStudioCapabilities).toHaveBeenCalledTimes(imageReadinessCallCount);
 });
 
 test('Collections hides Factory readiness when the account lacks entitlement', async () => {
@@ -1457,6 +1491,7 @@ test('Views resumes after starting facts and an open Factory fails closed after 
   await act(async () => {
     recheck.resolve({
       data: {
+        image_generation: { enabled: true },
         factory_review: { enabled: true, scope: 'principal' },
         workspace_entitlements_available: false,
       },

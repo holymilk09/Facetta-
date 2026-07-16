@@ -21,6 +21,7 @@ import {
   decodeStudioJobList,
   decodeStudioJobRecord,
   decodeStudioComponentTargeting,
+  decodeStudioCapabilities,
   decodeStudioProjectHistory,
   decodeSourceCoverageResolutionResult,
 } from './client';
@@ -30,6 +31,18 @@ function assert(condition: boolean, message: string): void {
 }
 
 export function runTrustedClientDecoderTests(): void {
+  const capabilities = decodeStudioCapabilities({
+    image_generation: { enabled: true },
+    factory_review: { enabled: false, scope: 'principal' },
+    workspace_entitlements_available: false,
+  });
+  assert(capabilities?.image_generation.enabled === true,
+    'Studio capabilities should decode provider-neutral image readiness');
+  assert(decodeStudioCapabilities({
+    factory_review: { enabled: false, scope: 'principal' },
+    workspace_entitlements_available: false,
+  }) === null, 'Studio capabilities should fail closed without image readiness');
+
   const project = decodeProjectDetail({
     id: 'ast_root',
     root_id: 'ast_root',

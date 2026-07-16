@@ -12,6 +12,7 @@ jest.mock('../trusted/client', () => ({
     listDesignFamilies: mockListDesignFamilies,
     getStudioCapabilities: async () => ({
       data: {
+        image_generation: { enabled: true },
         factory_review: { enabled: false, scope: 'none' },
         workspace_entitlements_available: false,
       },

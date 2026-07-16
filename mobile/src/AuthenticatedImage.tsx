@@ -53,6 +53,15 @@ function protectedUri(source: ImageSourcePropType | undefined): string | null {
   return /^https?:\/\//i.test(source.uri) || source.uri.startsWith('/') ? source.uri : null;
 }
 
+function isBundledWebAsset(source: ImageSourcePropType | undefined): boolean {
+  if (source === undefined || typeof source === 'number' || Array.isArray(source)) return false;
+  if (typeof source.uri !== 'string'
+    || typeof source.width !== 'number'
+    || typeof source.height !== 'number') return false;
+  return source.uri.startsWith('/assets/?unstable_path=')
+    || /^\/assets\/[^?#]+\.(?:avif|gif|jpe?g|png|svg|webp)(?:[?#]|$)/i.test(source.uri);
+}
+
 const MAX_WEB_IMAGE_ATTEMPTS = 3;
 const SAFE_IMAGE_ERROR = 'Image could not be loaded.';
 
@@ -270,7 +279,9 @@ export function AuthenticatedImage({
 }: ImageProps & { imageRequestHeaders?: AuthHeaders }) {
   const context = useContext(AuthenticatedImageHeadersContext);
   const headers = imageRequestHeaders ?? context.headers;
-  const uri = protectedUri(source);
+  // Expo web represents a bundled require(...) as a dimensioned /assets URI.
+  // It belongs to the page/Metro origin, not the private Facetta API origin.
+  const uri = isBundledWebAsset(source) ? null : protectedUri(source);
   const resolvedUri = uri === null ? null : (() => {
     try { return context.allowedOrigin === null ? null : new URL(uri, context.allowedOrigin).toString(); }
     catch { return null; }

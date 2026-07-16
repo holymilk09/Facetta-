@@ -41,6 +41,20 @@ def configured_fallback_provider() -> str | None:
     return None
 
 
+def image_generation_ready() -> bool:
+    """Return whether the trusted image workflow can run end to end.
+
+    The production agent is Grok-primary and its default QA inspectors use the
+    same vision authority. A fallback image key alone can produce pixels but
+    cannot satisfy the closed-loop review contract, so it must not make Studio
+    advertise generation as available. Keep this provider-neutral at the API
+    boundary; callers need only the readiness decision, never key or model
+    details.
+    """
+
+    return bool(env_value("XAI_KEY"))
+
+
 def available_fallback_route(route: ImageRoute) -> ImageRoute:
     """Resolve a nominal FLUX fallback to the provider available locally."""
 

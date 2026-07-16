@@ -62,6 +62,7 @@ type FactoryEligibilityState =
   | { status: 'checking'; revisionKey: string; retainEligible: boolean }
   | { status: 'eligible'; revisionKey: string }
   | { status: 'ineligible' | 'error'; revisionKey: string };
+type ImageGenerationCapabilityState = 'idle' | 'checking' | 'ready' | 'unavailable';
 
 function factoryEligibilityAllows(
   state: FactoryEligibilityState,
@@ -142,6 +143,9 @@ export default function App() {
   const [factoryEligibility, setFactoryEligibility] = useState<FactoryEligibilityState>({
     status: 'idle', revisionKey: null,
   });
+  const [imageGenerationCapability, setImageGenerationCapability] =
+    useState<ImageGenerationCapabilityState>('idle');
+  const [imageGenerationCapabilityAttempt, setImageGenerationCapabilityAttempt] = useState(0);
   const [mountedFactoryRevisionKey, setMountedFactoryRevisionKey] = useState<string | null>(null);
   const [savedFamiliesState, setSavedFamiliesState] = useState<SavedFamiliesState>('unknown');
   const [studioProject, setStudioProject] = useState<ProjectDetail | null>(null);
@@ -191,6 +195,8 @@ export default function App() {
     setActivityReview(null);
     setVariationLineage(null);
     setFactoryEligibility({ status: 'idle', revisionKey: null });
+    setImageGenerationCapability('idle');
+    setImageGenerationCapabilityAttempt(0);
     setMountedFactoryRevisionKey(null);
     setSavedFamiliesState('unknown');
   }, []);
@@ -259,6 +265,25 @@ export default function App() {
     ),
     [apiUrl, expireAuthenticatedSession, session],
   );
+  useEffect(() => {
+    let active = true;
+    if (sessionAccessToken(session) === null) {
+      setImageGenerationCapability('idle');
+      return () => { active = false; };
+    }
+    setImageGenerationCapability('checking');
+    void studioGateway.getStudioCapabilities().then((result) => {
+      if (!active) return;
+      setImageGenerationCapability(
+        result.error === null && result.data.image_generation.enabled
+          ? 'ready'
+          : 'unavailable',
+      );
+    }).catch(() => {
+      if (active) setImageGenerationCapability('unavailable');
+    });
+    return () => { active = false; };
+  }, [imageGenerationCapabilityAttempt, session, studioGateway]);
   useEffect(() => {
     let active = true;
     setSavedFamiliesState('unknown');
@@ -460,6 +485,12 @@ export default function App() {
     && actionSourceRevision.asset_id === studioProject?.active_asset_id;
   const isStudioHome = tab === 'studio' && studioView === 'home';
   const isStudioActionWorkspace = tab === 'studio' && studioView === 'action';
+  const isReviewingSelectedGeneration = selectedActionId === 'create'
+    ? createReview !== null
+    : activityReview?.job.action_id === selectedActionId;
+  const selectedActionNeedsFreshGeneration = (
+    ['create', 'refine', 'views', 'present'] as readonly StudioWorkspaceActionId[]
+  ).includes(selectedActionId) && !isReviewingSelectedGeneration;
   const createReviewNavigationBlocked = tab === 'studio'
     && studioView === 'action'
     && selectedActionId === 'create'
@@ -854,7 +885,49 @@ export default function App() {
               </View>
             )}
           </View>
-          {selectedActionId === 'create' ? (
+          {selectedActionNeedsFreshGeneration && imageGenerationCapability !== 'ready' ? (
+            <View
+              accessibilityLiveRegion="polite"
+              testID="studio-image-generation-preflight"
+              style={styles.generationPreflight}>
+              {imageGenerationCapability === 'checking'
+                || imageGenerationCapability === 'idle' ? (
+                  <>
+                    <ActivityIndicator color={theme.accent} />
+                    <Text style={styles.generationPreflightTitle}>
+                      Checking image generation…
+                    </Text>
+                    <Text style={styles.generationPreflightBody}>
+                      Facetta is confirming that this action can finish before starting a job.
+                    </Text>
+                  </>
+                ) : (
+                  <>
+                    <Text style={styles.generationPreflightEyebrow}>NO JOB STARTED · NO CREDITS CHARGED</Text>
+                    <Text style={styles.generationPreflightTitle}>
+                      Image generation is unavailable right now.
+                    </Text>
+                    <Text style={styles.generationPreflightBody}>
+                      Your saved designs and review work remain available. Retry the check, or continue in Collections without changing this revision.
+                    </Text>
+                    <View style={styles.generationPreflightActions}>
+                      <Pressable
+                        accessibilityRole="button"
+                        style={styles.generationPreflightPrimary}
+                        onPress={() => setImageGenerationCapabilityAttempt((value) => value + 1)}>
+                        <Text style={styles.generationPreflightPrimaryText}>Retry availability</Text>
+                      </Pressable>
+                      <Pressable
+                        accessibilityRole="button"
+                        style={styles.generationPreflightSecondary}
+                        onPress={() => navigateToTab('collections')}>
+                        <Text style={styles.generationPreflightSecondaryText}>Open Collections</Text>
+                      </Pressable>
+                    </View>
+                  </>
+                )}
+            </View>
+          ) : selectedActionId === 'create' ? (
             <StudioCreateWorkspace
               key={createReview === null
                 ? 'new-create'
@@ -1189,6 +1262,29 @@ const styles = StyleSheet.create({
   hydrationText: { color: theme.faint, fontSize: 12 },
   hydrationError: { flex: 1, color: theme.danger, fontSize: 12, lineHeight: 17 },
   hydrationRetry: { color: theme.accent, fontSize: 12, fontWeight: '800' },
+  generationPreflight: {
+    alignSelf: 'center', width: '100%', maxWidth: 620, marginTop: 28,
+    borderWidth: 1, borderColor: theme.line, borderRadius: radius.lg,
+    backgroundColor: theme.card, padding: 22, gap: 10,
+  },
+  generationPreflightEyebrow: {
+    color: theme.accent, fontSize: 10, fontWeight: '800', letterSpacing: 1,
+  },
+  generationPreflightTitle: {
+    color: theme.ink, fontFamily: theme.serif, fontSize: 24, lineHeight: 30,
+  },
+  generationPreflightBody: { color: theme.faint, fontSize: 13, lineHeight: 20 },
+  generationPreflightActions: { flexDirection: 'row', flexWrap: 'wrap', gap: 10, marginTop: 4 },
+  generationPreflightPrimary: {
+    minHeight: 44, justifyContent: 'center', borderRadius: radius.pill,
+    backgroundColor: theme.accent, paddingHorizontal: 18,
+  },
+  generationPreflightPrimaryText: { color: '#ffffff', fontSize: 12, fontWeight: '800' },
+  generationPreflightSecondary: {
+    minHeight: 44, justifyContent: 'center', borderRadius: radius.pill,
+    borderWidth: 1, borderColor: theme.line, paddingHorizontal: 18,
+  },
+  generationPreflightSecondaryText: { color: theme.ink, fontSize: 12, fontWeight: '800' },
   actionWorkspace: { flex: 1 },
   actionContextBanner: {
     flexDirection: 'row',

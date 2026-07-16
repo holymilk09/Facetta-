@@ -159,6 +159,7 @@ function fakeClient(overrides: Partial<GatewayClient> = {}): GatewayClient {
     getFactoryPack: unsupported,
     ...jobs.client,
     getStudioCapabilities: async () => ok({
+      image_generation: { enabled: true },
       factory_review: { enabled: false, scope: 'principal' as const },
       workspace_entitlements_available: false as const,
     }),
@@ -194,6 +195,20 @@ test('Studio facade owns project and Activity reads and normalizes trusted error
   assert.equal(activity.data, null);
   assert.equal(activity.error?.category, 'unavailable');
   assert.equal(activity.error?.retryable, true);
+});
+
+test('Studio facade exposes provider-neutral image readiness and fails closed without it', async () => {
+  const ready = createStudioGateway(fakeClient());
+  const readyResult = await ready.getStudioCapabilities();
+  assert.equal(readyResult.error, null);
+  assert.equal(readyResult.data?.image_generation.enabled, true);
+
+  const unavailable = createStudioGateway(fakeClient({
+    getStudioCapabilities: undefined,
+  }));
+  const unavailableResult = await unavailable.getStudioCapabilities();
+  assert.equal(unavailableResult.data, null);
+  assert.equal(unavailableResult.error?.code, 'STUDIO_CAPABILITIES_UNAVAILABLE');
 });
 
 const catalogPreview = (): CatalogPreviewResult => ({
@@ -910,6 +925,7 @@ test('Factory remains disabled until server-entitled and backend-eligible', asyn
 
   const reviewable = createStudioGateway(fakeClient({
     getStudioCapabilities: async () => ok({
+      image_generation: { enabled: true },
       factory_review: { enabled: true, scope: 'principal' as const },
       workspace_entitlements_available: false as const,
     }),
@@ -927,6 +943,7 @@ test('Factory remains disabled until server-entitled and backend-eligible', asyn
   eligibleProject.pinned_revision = { ...asset('asset_1', 1), pinned: true };
   const enabled = createStudioGateway(fakeClient({
     getStudioCapabilities: async () => ok({
+      image_generation: { enabled: true },
       factory_review: { enabled: true, scope: 'principal' as const },
       workspace_entitlements_available: false as const,
     }),
