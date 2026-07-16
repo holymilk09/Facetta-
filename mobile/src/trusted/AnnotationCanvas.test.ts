@@ -166,6 +166,16 @@ describe('AnnotationCanvas interaction', () => {
     expect(original).toHaveLength(2);
   });
 
+  test('does not show an unusable export action when the parent consumes changes directly', async () => {
+    await render(React.createElement(AnnotationCanvas, {
+      sourceUri: imageUri,
+      onChange: jest.fn(),
+    }));
+
+    expect(screen.queryByLabelText('Export annotation snapshot')).toBeNull();
+    expect(screen.queryByText('Use annotations')).toBeNull();
+  });
+
   test('keeps annotations reviewable while disabling all drawing mutation controls', async () => {
     const initial = createAnnotationSnapshot(imageUri, [{
       id: 'annotation-1',

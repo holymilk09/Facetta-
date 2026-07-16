@@ -648,8 +648,12 @@ export function StudioRefineWorkspace({
       if (snapshot.annotations.length === 0) {
         setBusy(false); setError('Mark one region before creating a preview.'); return;
       }
+      if (!instruction.trim()) {
+        setBusy(false); setError('Describe the change you want in the marked region.'); return;
+      }
       const read = await api.readMarkup(lineage.sourceAssetId, {
         markup_snapshot: snapshot, created_by: createdBy,
+        requested_change: instruction.trim(),
       });
       if (!lineageRequestIsCurrent(requestedLineageKey, requestedLineageEpoch)) return;
       if (read.error !== null) { setBusy(false); setError(designerErrorMessage(read.error, 'refine')); return; }
@@ -1117,8 +1121,15 @@ export function StudioRefineWorkspace({
       {workspaceMode === 'refine' && mode === 'annotation' && (sourceImageUrl === null ? (
         <Notice kind="error" text="The exact active image is unavailable for annotation. Reopen the design or use Describe." />
       ) : <>
+        <Field
+          label="What should change here?"
+          value={instruction}
+          onChange={setInstruction}
+          multiline
+          placeholder="Example: Give this highlighted surface a softer satin finish. Keep the shape unchanged."
+        />
         <AnnotationCanvas sourceUri={sourceImageUrl} value={snapshot} onChange={setSnapshot} drawingEnabled />
-        <Text style={styles.pathHelp}>Mark one region and add text or an arrow describing one change. Facetta will show its interpretation before Apply.</Text>
+        <Text style={styles.pathHelp}>1 · Mark the exact area with a circle, box, or arrow.  2 · Describe one visual change above. For dimensions or construction, use Components or Specifications. Facetta shows its interpretation before anything is applied.</Text>
       </>)}
       {workspaceMode === 'specifications' && mode === 'facts' && <>
         <Notice kind="info" text="Fact corrections cost 0 credits. Image pixels stay unchanged while Facetta appends a new immutable specification revision." />
@@ -1229,7 +1240,8 @@ export function StudioRefineWorkspace({
         <Button title={busy ? 'Creating preview…' : 'Preview change'} disabled={busy || !reviewSourceIsActive
           || (mode === 'component' && (selected === null || !selectedPathReady))
           || (mode === 'instruction' && !instruction.trim())
-          || (mode === 'annotation' && (sourceImageUrl === null || snapshot.annotations.length === 0))}
+          || (mode === 'annotation' && (sourceImageUrl === null
+            || snapshot.annotations.length === 0 || !instruction.trim()))}
           onPress={() => { void makePreview(); }} />
       ) : factReview === null && (
         <Button title="Review fact changes" disabled={busy || !reviewSourceIsActive || factsLoading || editableFacts.length === 0}

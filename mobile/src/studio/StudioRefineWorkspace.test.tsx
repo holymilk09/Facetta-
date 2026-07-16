@@ -617,11 +617,20 @@ describe('StudioRefineWorkspace', () => {
     });
     await fireEvent(canvas, 'responderGrant', responderEvent(20, 20));
     await fireEvent(canvas, 'responderRelease', responderEvent(90, 80));
+    expect(screen.getByText('Preview change').parent?.props.accessibilityState.disabled).toBe(true);
+    await fireEvent.changeText(
+      screen.getByPlaceholderText(/highlighted surface a softer satin finish/i),
+      'Warm only this surface',
+    );
+    expect(screen.getByText('Preview change').parent?.props.accessibilityState.disabled).toBe(false);
     await fireEvent.press(screen.getByText('Preview change'));
 
     await waitFor(() => expect(readMarkup).toHaveBeenCalledWith(
       'creative_1',
-      expect.objectContaining({ created_by: 'designer' }),
+      expect.objectContaining({
+        created_by: 'designer',
+        requested_change: 'Warm only this surface',
+      }),
     ));
     await waitFor(() => expect(previewVisualRefine).toHaveBeenCalledWith({
       projectId: 'project_1', sourceAssetId: 'creative_1', createdBy: 'designer',
@@ -686,6 +695,10 @@ describe('StudioRefineWorkspace', () => {
     });
     await fireEvent(canvas, 'responderGrant', responderEvent(20, 20));
     await fireEvent(canvas, 'responderRelease', responderEvent(90, 80));
+    await fireEvent.changeText(
+      screen.getByPlaceholderText(/highlighted surface a softer satin finish/i),
+      'Satin only this surface',
+    );
     expect(screen.getByLabelText('Clear all annotations').props.accessibilityState).toEqual({
       disabled: false,
     });

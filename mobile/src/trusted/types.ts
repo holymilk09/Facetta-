@@ -1472,6 +1472,8 @@ export interface MarkupInterpretation {
 interface MarkupReadRequestBase {
   created_by: string;
   assistant_name?: string;
+  /** Exact designer-authored intent. The markup identifies where; this says what. */
+  requested_change?: string;
 }
 
 export type MarkupReadRequest = MarkupReadRequestBase & (

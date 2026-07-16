@@ -535,6 +535,10 @@ class MarkupReadRequest(BaseModel):
     markup_snapshot: MarkupSnapshot | None = None
     created_by: str = "usr_pending"
     assistant_name: str | None = None
+    requested_change: Annotated[
+        str,
+        Field(min_length=1, max_length=2000),
+    ] | None = None
 
     @model_validator(mode="after")
     def require_exactly_one_markup_input(self) -> MarkupReadRequest:
@@ -544,6 +548,10 @@ class MarkupReadRequest(BaseModel):
             raise ValueError(
                 "provide exactly one of marked_image_base64 or markup_snapshot"
             )
+        if self.requested_change is not None:
+            self.requested_change = self.requested_change.strip()
+            if not self.requested_change:
+                raise ValueError("requested_change must contain visible text")
         return self
 
 
@@ -591,13 +599,37 @@ def markup_read(
         } for element in linked[2].design_form.elements)
         if linked is not None else ()
     )
-    try:
-        reading = (
-            read_markup(bytes(asset.image), marked, form_elements)
-            if form_elements else read_markup(bytes(asset.image), marked)
-        )
-    except RenderUnavailable as exc:
-        return _provider_error(exc)
+    if request.requested_change is not None:
+        # The canvas already provides the exact same-raster mask. When the
+        # designer also supplies the requested change, preserve that text
+        # verbatim instead of spending time and credits asking vision/OCR to
+        # guess intent from pixels. Structural changes continue through the
+        # explicit Component flow; this path is an appearance-only preview.
+        reading = {
+            "annotations": [{
+                "region_description": "the marked region",
+                "change_instruction": request.requested_change,
+                "target_section": None,
+                "target_element_id": None,
+                "handwriting": "",
+                "confidence": 1.0,
+            }],
+            "understood_as": (
+                "Change only the marked region: "
+                + request.requested_change
+                + " Everything outside the mark stays unchanged."
+            ),
+            "needs_clarification": False,
+            "clarification": "",
+        }
+    else:
+        try:
+            reading = (
+                read_markup(bytes(asset.image), marked, form_elements)
+                if form_elements else read_markup(bytes(asset.image), marked)
+            )
+        except RenderUnavailable as exc:
+            return _provider_error(exc)
 
     name = (request.assistant_name or "").strip() or DEFAULT_ASSISTANT_NAME
     if reading["needs_clarification"] or not reading["annotations"]:

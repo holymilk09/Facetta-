@@ -2212,9 +2212,14 @@ test('markup preserves an exact revision component identity from read through ap
       annotations: [],
     },
     created_by: 'designer',
+    requested_change: 'soften this shoulder',
   });
   expect(reading.error).toBeNull();
   expect(reading.data?.interpretation.target_component_id).toBe('shoulders.left');
+  expect(JSON.parse(String(fetcher.mock.calls[0]?.[1]?.body))).toMatchObject({
+    created_by: 'designer',
+    requested_change: 'soften this shoulder',
+  });
 
   await api.applyMarkup('asset 1', {
     annotation: {

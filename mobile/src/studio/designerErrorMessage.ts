@@ -50,8 +50,11 @@ export function designerErrorMessage(
   if (code.includes('stale') || error.status === 409) {
     return 'This design changed while you were working. Reopen it before trying again.';
   }
-  if (category === 'network' || category === 'unavailable' || error.status === 0) {
+  if (category === 'network' || error.status === 0) {
     return 'Facetta could not connect. Check your connection and try again.';
+  }
+  if (category === 'unavailable') {
+    return 'Facetta’s image service is temporarily unavailable. Your saved design is unchanged and no credits were charged.';
   }
   if (category === 'quality') {
     return 'Facetta could not preserve the design well enough. Nothing was saved or charged.';

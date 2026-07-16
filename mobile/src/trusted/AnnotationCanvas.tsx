@@ -586,15 +586,15 @@ export function AnnotationCanvas({
           ]}>
           <Text style={styles.actionText}>Clear</Text>
         </Pressable>
-        <Pressable
-          accessibilityLabel="Export annotation snapshot"
-          accessibilityRole="button"
-          accessibilityState={{ disabled: onExport === undefined }}
-          disabled={onExport === undefined}
-          onPress={() => onExport?.(snapshot)}
-          style={[styles.exportAction, onExport === undefined && styles.disabled]}>
-          <Text style={styles.exportText}>Use annotations</Text>
-        </Pressable>
+        {onExport !== undefined && (
+          <Pressable
+            accessibilityLabel="Export annotation snapshot"
+            accessibilityRole="button"
+            onPress={() => onExport(snapshot)}
+            style={styles.exportAction}>
+            <Text style={styles.exportText}>Use annotations</Text>
+          </Pressable>
+        )}
       </View>
       {!drawingEnabled && (
         <Text accessibilityLiveRegion="polite" style={styles.viewOnly}>

@@ -270,6 +270,57 @@ def test_endpoint_composites_all_tools_for_reader_without_creating_revision(
     assert client.get(f"/designs/{design_id}").json()["versions"] == versions_before
 
 
+def test_explicit_requested_change_skips_vision_and_preserves_designer_text(
+    client: TestClient,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        assets_mod,
+        "read_markup",
+        lambda *args, **kwargs: pytest.fail(
+            "explicit designer intent must not call the vision reader"
+        ),
+    )
+    asset_id, design_id = _linked_asset(client)
+
+    response = client.post(
+        f"/assets/{asset_id}/markup/read",
+        json={
+            "markup_snapshot": _snapshot(_arrow()),
+            "created_by": "usr_canvas",
+            "requested_change": "  Give this surface a satin finish.  ",
+        },
+    )
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["design_id"] == design_id
+    assert body["expected_design_version"] == 1
+    assert body["interpretation"] == {
+        "target_region": "the marked region",
+        "requested_change": "Give this surface a satin finish.",
+        "impact": "visual_only",
+        "target_spec_reference": None,
+        "target_section": None,
+        "target_index": None,
+        "target_component_id": None,
+        "target_element_id": None,
+        "frozen_elements": [
+            "all jewelry geometry and components",
+            "the current specification version",
+        ],
+        "confidence": 1.0,
+        "clarification_question": None,
+        "understood_as": (
+            "Change only the marked region: Give this surface a satin finish. "
+            "Everything outside the mark stays unchanged."
+        ),
+    }
+    notes = client.get(f"/assets/{body['markup_asset_id']}").json()
+    assert notes["capability"] == "MARKUP_NOTES"
+    assert notes["revision"] is None
+
+
 @pytest.mark.parametrize(
     "body",
     [

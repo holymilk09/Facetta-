@@ -5246,6 +5246,8 @@ export function createTrustedApiClient(options: TrustedApiClientOptions) {
               markup_snapshot: request.markup_snapshot as unknown as JsonObject,
             }),
         created_by: request.created_by,
+        ...(request.requested_change === undefined
+          ? {} : { requested_change: request.requested_change }),
         ...(request.assistant_name === undefined ? {} : { assistant_name: request.assistant_name }),
       }, decodeMarkupReadResponse);
     },

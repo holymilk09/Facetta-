@@ -1,4 +1,9 @@
-"""Focused Grok vision transport and design-consistency normalization."""
+"""Provider-neutral vision transport and design-consistency normalization.
+
+xAI remains the primary visual inspector.  OpenAI is a fail-closed transport
+fallback for the same JSON audit contract; it is not allowed to bypass or
+weaken any downstream jewelry-quality gate.
+"""
 
 from __future__ import annotations
 
@@ -14,44 +19,114 @@ from facetta.provider_errors import RenderUnavailable
 
 PairInspector = Callable[[str, bytes, bytes, str], dict]
 
+_XAI_VISION_URL = "https://api.x.ai/v1/chat/completions"
+_OPENAI_VISION_URL = "https://api.openai.com/v1/chat/completions"
+
 
 def _image_uri(content: bytes) -> str:
     encoded = base64.b64encode(content).decode()
     return f"data:{sniff_media_type(content)};base64,{encoded}"
 
 
-def vision_json(system: str, image_bytes: bytes, user_text: str) -> dict:
-    """Run one Grok vision request and return one JSON object."""
-    key = env_value("XAI_KEY")
-    if not key:
-        raise RenderUnavailable(
-            "no XAI_KEY configured — the spec agent needs a vision key")
+def _json_object(response) -> dict:
+    response.raise_for_status()
+    body = response.json()
+    content = body["choices"][0]["message"]["content"]
+    data = json.loads(content)
+    if not isinstance(data, dict):
+        raise ValueError(f"provider returned non-object JSON: {data!r}")
+    return data
 
+
+def _vision_request(
+    *,
+    url: str,
+    key: str,
+    model: str,
+    system: str,
+    images: tuple[bytes, ...],
+    user_text: str,
+) -> dict:
     import httpx
 
-    try:
-        response = httpx.post(
-            "https://api.x.ai/v1/chat/completions",
-            timeout=120.0,
-            headers={"Authorization": f"Bearer {key}"},
-            json={
-                "model": os.environ.get("FACETTA_XAI_VISION", "grok-4.3"),
-                "messages": [
-                    {"role": "system", "content": system},
-                    {"role": "user", "content": [
-                        {"type": "image_url",
-                         "image_url": {"url": _image_uri(image_bytes)}},
-                        {"type": "text", "text": user_text},
-                    ]},
-                ],
-                "response_format": {"type": "json_object"},
-            },
+    content = [
+        {"type": "image_url", "image_url": {"url": _image_uri(image)}}
+        for image in images
+    ]
+    content.append({"type": "text", "text": user_text})
+    response = httpx.post(
+        url,
+        timeout=120.0,
+        headers={"Authorization": f"Bearer {key}"},
+        json={
+            "model": model,
+            "messages": [
+                {"role": "system", "content": system},
+                {"role": "user", "content": content},
+            ],
+            "response_format": {"type": "json_object"},
+        },
+    )
+    return _json_object(response)
+
+
+def _provider_neutral_vision_json(
+    system: str,
+    images: tuple[bytes, ...],
+    user_text: str,
+) -> dict:
+    """Use xAI first and OpenAI only when the primary transport is unusable."""
+    failures: list[str] = []
+    xai_key = env_value("XAI_KEY")
+    if xai_key:
+        try:
+            return _vision_request(
+                url=_XAI_VISION_URL,
+                key=xai_key,
+                model=os.environ.get("FACETTA_XAI_VISION", "grok-4.3"),
+                system=system,
+                images=images,
+                user_text=user_text,
+            )
+        except Exception as exc:
+            failures.append(f"xAI: {exc}")
+
+    openai_key = env_value("OPENAI_API_KEY")
+    if openai_key:
+        try:
+            return _vision_request(
+                url=_OPENAI_VISION_URL,
+                key=openai_key,
+                model=os.environ.get(
+                    "FACETTA_OPENAI_VISION",
+                    "gpt-4.1-mini-2025-04-14",
+                ),
+                system=system,
+                images=images,
+                user_text=user_text,
+            )
+        except Exception as exc:
+            failures.append(f"OpenAI: {exc}")
+
+    if not failures:
+        raise RenderUnavailable(
+            "no vision provider configured — set XAI_KEY or OPENAI_API_KEY"
         )
-        response.raise_for_status()
-        data = json.loads(response.json()["choices"][0]["message"]["content"])
-        if not isinstance(data, dict):
-            raise ValueError(f"provider returned non-object JSON: {data!r}")
-        return data
+    raise RenderUnavailable(
+        "all configured vision providers failed: " + "; ".join(failures)
+    )
+
+
+def vision_json(system: str, image_bytes: bytes, user_text: str) -> dict:
+    """Run one primary-or-fallback vision request and return a JSON object."""
+    try:
+        return _provider_neutral_vision_json(
+            system,
+            (image_bytes,),
+            user_text,
+        )
+    except RenderUnavailable:
+        raise
     except Exception as exc:
         raise RenderUnavailable(f"vision inspect failed: {exc}") from exc
 
@@ -62,39 +137,15 @@ def vision_json_pair(
     image_b: bytes,
     user_text: str,
 ) -> dict:
-    """Run one Grok vision request over a reference/candidate image pair."""
-    key = env_value("XAI_KEY")
-    if not key:
-        raise RenderUnavailable(
-            "no XAI_KEY configured — validation needs a key")
-
-    import httpx
-
+    """Run one primary-or-fallback audit over an image pair."""
     try:
-        response = httpx.post(
-            "https://api.x.ai/v1/chat/completions",
-            timeout=120.0,
-            headers={"Authorization": f"Bearer {key}"},
-            json={
-                "model": os.environ.get("FACETTA_XAI_VISION", "grok-4.3"),
-                "messages": [
-                    {"role": "system", "content": system},
-                    {"role": "user", "content": [
-                        {"type": "image_url",
-                         "image_url": {"url": _image_uri(image_a)}},
-                        {"type": "image_url",
-                         "image_url": {"url": _image_uri(image_b)}},
-                        {"type": "text", "text": user_text},
-                    ]},
-                ],
-                "response_format": {"type": "json_object"},
-            },
+        return _provider_neutral_vision_json(
+            system,
+            (image_a, image_b),
+            user_text,
         )
-        response.raise_for_status()
-        data = json.loads(response.json()["choices"][0]["message"]["content"])
-        if not isinstance(data, dict):
-            raise ValueError("non-object JSON")
-        return data
+    except RenderUnavailable:
+        raise
     except Exception as exc:
         raise RenderUnavailable(f"consistency check failed: {exc}") from exc
 

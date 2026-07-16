@@ -19,6 +19,10 @@ test('designer errors give specific safe recovery guidance', () => {
   assert.match(designerErrorMessage({ code: 'stale_asset_revision', status: 409 }, 'refine'), /Reopen/);
   assert.match(designerErrorMessage({ category: 'quality', status: 422 }, 'views'), /Nothing was saved or charged/);
   assert.match(designerErrorMessage({ category: 'network', status: 0 }, 'activity'), /connection/);
+  assert.match(
+    designerErrorMessage({ category: 'unavailable', status: 502 }, 'refine'),
+    /image service is temporarily unavailable.*no credits were charged/i,
+  );
   assert.match(designerErrorMessage({ category: 'validation', status: 422 }, 'create'), /reference/);
   assert.match(designerErrorMessage({ category: 'authentication', status: 401 }, 'confirm'), /Sign in again/);
   assert.match(designerErrorMessage({ category: 'authorization', status: 403 }, 'confirm'), /signed-in account/);
