@@ -2,12 +2,13 @@ import { StatusBar } from 'expo-status-bar';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator, Pressable, SafeAreaView, ScrollView, StyleSheet, Text,
-  useWindowDimensions, View,
+  Platform, useWindowDimensions, View,
 } from 'react-native';
 import { DEFAULT_API_URL } from './src/config';
 import { AuthenticatedImage as Image, AuthenticatedImageProvider } from './src/AuthenticatedImage';
 import {
   clearSession, hasOnboarded, loadAuthenticatedSession, markOnboarded,
+  localPreviewClientAllowed, requestLocalPreviewSession,
   restoreAuthenticatedSession, saveSession, sessionAccessToken, Session,
   signOutAuthenticatedSession, subscribeToAuthStateChange,
 } from './src/auth';
@@ -45,6 +46,7 @@ import { radius, shadows, theme } from './src/theme';
 import type { ProjectDetail } from './src/trusted/types';
 import { WorkflowShowcase } from './src/WorkflowShowcase';
 import { designerErrorMessage } from './src/studio/designerErrorMessage';
+import { supabaseConfigurationError } from './src/supabase';
 import {
   getStudioDestination, type StudioDestinationContext, type StudioDestinationId,
 } from './src/studio/destinations';
@@ -117,6 +119,21 @@ export default function App() {
   const [selectedActionId, setSelectedActionId] = useState<StudioWorkspaceActionId>('create');
   const [showMoreActions, setShowMoreActions] = useState(false);
   const apiUrl = DEFAULT_API_URL;
+  const localPreviewEnvironment = useMemo(() => ({
+    development: __DEV__,
+    publicOptIn: process.env.EXPO_PUBLIC_LOCAL_PREVIEW_AUTH === 'true',
+    apiUrl,
+    webHostname: Platform.OS === 'web'
+      ? typeof window === 'undefined' ? '' : window.location.hostname
+      : undefined,
+  }), [apiUrl]);
+  const localPreviewSignIn = useMemo(
+    () => supabaseConfigurationError !== null
+      && localPreviewClientAllowed(localPreviewEnvironment)
+      ? () => requestLocalPreviewSession({ environment: localPreviewEnvironment })
+      : undefined,
+    [localPreviewEnvironment],
+  );
   const [designer, setDesigner] = useState(session?.designerId ?? '');
   const [showUtilityMenu, setShowUtilityMenu] = useState(false);
   const [factoryEligibleRevisionKey, setFactoryEligibleRevisionKey] = useState<string | null>(null);
@@ -517,6 +534,7 @@ export default function App() {
       <SafeAreaView style={styles.root}>
         <StatusBar style="dark" />
         <LoginScreen
+          localPreviewSignIn={localPreviewSignIn}
           onSignIn={(s) => {
             if (sessionAccessToken(s) === null) {
               throw new Error('This sign-in method is not available yet. Please choose another option.');

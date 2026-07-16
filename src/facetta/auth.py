@@ -19,6 +19,7 @@ from sqlalchemy.orm import Session
 
 from facetta.config import env_value
 from facetta.db import ImageAsset, ImageRun, Project, get_db
+from facetta.local_preview_auth import authenticate_local_preview_token
 
 
 @dataclass(frozen=True)
@@ -173,6 +174,9 @@ def _authenticate(request: Request) -> AuthenticatedPrincipal:
     if not header or not header.startswith("Bearer "):
         raise _error(401, "authentication_required", "a bearer session token is required")
     supplied = header.removeprefix("Bearer ").strip()
+    local_preview_subject = authenticate_local_preview_token(request, supplied)
+    if local_preview_subject is not None:
+        return AuthenticatedPrincipal(subject=local_preview_subject)
     supabase_configured = bool((env_value("FACETTA_SUPABASE_URL") or "").strip())
     if mode == "supabase" or (mode == "required" and supabase_configured):
         return _authenticate_supabase(supplied)

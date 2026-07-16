@@ -9,7 +9,7 @@ import {
   getSupabaseClient, passwordResetRedirectUrl, supabaseConfigurationError,
 } from './supabase';
 
-export type AuthProvider = 'apple' | 'google' | 'email';
+export type AuthProvider = 'apple' | 'google' | 'email' | 'local-preview';
 
 export type SignUpResult =
   | { kind: 'signed_in'; session: Session }
@@ -28,6 +28,121 @@ export interface Session {
 export interface SessionCredential {
   accessToken: string;
   expiresAt: string;
+}
+
+export interface LocalPreviewClientEnvironment {
+  development: boolean;
+  publicOptIn: boolean;
+  apiUrl: string;
+  /** Defined only on web, where both page and API must be loopback. */
+  webHostname?: string;
+}
+
+interface LocalPreviewSessionPayload {
+  access_token: string;
+  expires_at: string;
+  token_type: 'bearer';
+  designer_id: string;
+}
+
+// The API issues a two-hour process-ephemeral credential. One minute of clock
+// tolerance keeps validation fail-closed while allowing for request latency.
+const LOCAL_PREVIEW_MAX_SESSION_MS = 121 * 60 * 1000;
+
+type LocalPreviewFetch = (
+  input: string,
+  init: { method: 'POST'; headers: { Accept: 'application/json' } },
+) => Promise<{ ok: boolean; status: number; json: () => Promise<unknown> }>;
+
+export interface LocalPreviewSessionRequestOptions {
+  environment: LocalPreviewClientEnvironment;
+  fetcher?: LocalPreviewFetch;
+  now?: number;
+}
+
+function isLoopbackHostname(value: string): boolean {
+  const hostname = value.trim().toLowerCase().replace(/^\[|\]$/g, '');
+  return hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1';
+}
+
+export function localPreviewClientAllowed(
+  environment: LocalPreviewClientEnvironment,
+): boolean {
+  if (!environment.development || !environment.publicOptIn) return false;
+  try {
+    const api = new URL(environment.apiUrl);
+    if (api.protocol !== 'http:' && api.protocol !== 'https:') return false;
+    if (api.username || api.password || !isLoopbackHostname(api.hostname)) return false;
+  } catch {
+    return false;
+  }
+  return environment.webHostname === undefined
+    || isLoopbackHostname(environment.webHostname);
+}
+
+/**
+ * Exchange an explicit local click for a process-ephemeral Bearer session.
+ * No password is accepted and the returned credential remains runtime-only.
+ */
+export async function requestLocalPreviewSession(
+  options: LocalPreviewSessionRequestOptions,
+): Promise<Session> {
+  if (!localPreviewClientAllowed(options.environment)) {
+    throw new Error('Local preview sign-in is unavailable outside localhost development.');
+  }
+  const fetcher = options.fetcher ?? (globalThis.fetch as LocalPreviewFetch);
+  let response: Awaited<ReturnType<LocalPreviewFetch>>;
+  try {
+    response = await fetcher(
+      `${options.environment.apiUrl.replace(/\/$/, '')}/auth/local-preview-session`,
+      { method: 'POST', headers: { Accept: 'application/json' } },
+    );
+  } catch {
+    throw new Error('Facetta could not reach the local preview API.');
+  }
+  if (!response.ok) {
+    throw new Error(response.status === 404
+      ? 'Local preview sign-in is not enabled on this API.'
+      : 'Facetta could not start a local preview session.');
+  }
+  let payload: unknown;
+  try {
+    payload = await response.json();
+  } catch {
+    throw new Error('The local preview API returned an invalid session.');
+  }
+  if (payload === null || typeof payload !== 'object') {
+    throw new Error('The local preview API returned an invalid session.');
+  }
+  const value = payload as Partial<LocalPreviewSessionPayload>;
+  const now = options.now ?? Date.now();
+  const expiresAt = typeof value.expires_at === 'string'
+    ? Date.parse(value.expires_at) : Number.NaN;
+  const token = typeof value.access_token === 'string' ? value.access_token : '';
+  if (
+    value.token_type !== 'bearer'
+    || !/^[a-z0-9_-]{1,32}$/.test(value.designer_id ?? '')
+    || token.length < 32
+    || token.length > 4096
+    || /\s/.test(token)
+    || !Number.isFinite(expiresAt)
+    || expiresAt <= now + 30_000
+    || expiresAt > now + LOCAL_PREVIEW_MAX_SESSION_MS
+  ) {
+    throw new Error('The local preview API returned an invalid session.');
+  }
+  return attachServerCredential(
+    {
+      provider: 'local-preview',
+      email: 'preview@facetta.local',
+      name: 'Local Preview',
+      designerId: value.designer_id!,
+    },
+    {
+      accessToken: token,
+      expiresAt: new Date(expiresAt).toISOString(),
+    },
+  );
 }
 
 export function sessionAccessToken(

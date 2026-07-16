@@ -82,11 +82,13 @@ export function PasswordRecoveryScreen({ onComplete }: { onComplete: () => void 
 export function LoginScreen({
   onSignIn,
   onShowTour,
+  localPreviewSignIn,
   authService = { requestPasswordReset, signInWithEmail, signUpWithEmail },
   configurationError = supabaseConfigurationError,
 }: {
   onSignIn: (session: Session) => void;
   onShowTour?: () => void;
+  localPreviewSignIn?: () => Promise<Session>;
   authService?: Pick<typeof import('./auth'), 'requestPasswordReset' | 'signInWithEmail' | 'signUpWithEmail'>;
   configurationError?: string | null;
 }) {
@@ -95,7 +97,7 @@ export function LoginScreen({
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [emailExpanded, setEmailExpanded] = useState(true);
-  const [busy, setBusy] = useState<null | 'email'>(null);
+  const [busy, setBusy] = useState<null | 'email' | 'local-preview'>(null);
   const [error, setError] = useState<string | null>(null);
   const [resetSent, setResetSent] = useState(false);
   const [confirmationEmail, setConfirmationEmail] = useState<string | null>(null);
@@ -119,7 +121,7 @@ export function LoginScreen({
     setConfirmationEmail(null);
   };
 
-  const run = async (kind: 'email', task: () => Promise<void>) => {
+  const run = async (kind: 'email' | 'local-preview', task: () => Promise<void>) => {
     if (busy) return;
     setBusy(kind);
     setError(null);
@@ -149,6 +151,13 @@ export function LoginScreen({
         return;
       }
       onSignIn(await authService.signInWithEmail(email, password));
+    });
+  const localPreviewOnly = localPreviewSignIn !== undefined
+    && configurationError !== null && mode === 'signin';
+  const submitLocalPreview = () => localPreviewSignIn === undefined
+    ? undefined
+    : run('local-preview', async () => {
+      onSignIn(await localPreviewSignIn());
     });
 
   return (
@@ -186,17 +195,41 @@ export function LoginScreen({
               {mode === 'signin' ? 'Continue to Facetta' : mode === 'signup' ? 'Create your studio' : 'Reset password'}
             </Text>
             <Text style={styles.cardSubtitle}>
-              {mode === 'signin'
+              {localPreviewOnly
+                ? 'Open this localhost Studio without creating an account.'
+                : mode === 'signin'
                 ? 'Sign in with your studio email.'
                 : mode === 'signup'
                   ? 'A few details and your drawing table is ready.'
                   : 'Enter your email and we will send a reset link.'}
             </Text>
 
-            {(emailExpanded || mode === 'forgot') && mode === 'signup' && (
+            {localPreviewOnly && (
+              <View style={styles.localPreviewBlock}>
+                <Text style={styles.localPreviewTitle}>Local development preview</Text>
+                <Text style={styles.localPreviewBody}>
+                  Uses a temporary session from the API running on this Mac. It is not a production account.
+                </Text>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Open local Studio preview"
+                  testID="local-preview-sign-in"
+                  style={[styles.primaryButton, shadows.soft, busy && { opacity: 0.6 }]}
+                  disabled={busy !== null}
+                  onPress={() => { void submitLocalPreview(); }}>
+                  {busy === 'local-preview' ? (
+                    <ActivityIndicator color={theme.paper} />
+                  ) : (
+                    <Text style={styles.primaryButtonText}>Open local Studio</Text>
+                  )}
+                </Pressable>
+              </View>
+            )}
+
+            {!localPreviewOnly && (emailExpanded || mode === 'forgot') && mode === 'signup' && (
               <RoundedInput label="Name" value={name} onChange={setName} placeholder="Ana Moreau" />
             )}
-            {(emailExpanded || mode === 'forgot') && (
+            {!localPreviewOnly && (emailExpanded || mode === 'forgot') && (
               <>
                 <View style={styles.emailFormHeader}>
                   <Text style={styles.emailFormTitle}>Continue with email</Text>
@@ -220,7 +253,7 @@ export function LoginScreen({
               </>
             )}
 
-            {mode === 'signin' && emailExpanded && (
+            {!localPreviewOnly && mode === 'signin' && emailExpanded && (
               <Pressable onPress={() => switchMode('forgot')} hitSlop={8} style={styles.forgotLink}>
                 <Text style={styles.linkText}>Forgot password?</Text>
               </Pressable>
@@ -231,7 +264,7 @@ export function LoginScreen({
                 <Text style={styles.errorText}>{error}</Text>
               </View>
             )}
-            {configurationError !== null && (
+            {configurationError !== null && !localPreviewOnly && (
               <View style={styles.errorBox}>
                 <Text style={styles.errorText}>{configurationError}</Text>
               </View>
@@ -251,7 +284,7 @@ export function LoginScreen({
               </View>
             )}
 
-            {(emailExpanded || mode === 'forgot') && (
+            {!localPreviewOnly && (emailExpanded || mode === 'forgot') && (
               <Pressable
                 style={[styles.primaryButton, shadows.soft, (busy || configurationError) && { opacity: 0.6 }]}
                 disabled={busy !== null || configurationError !== null}
@@ -266,7 +299,7 @@ export function LoginScreen({
               </Pressable>
             )}
 
-            <View style={styles.switchRow}>
+            {!localPreviewOnly && <View style={styles.switchRow}>
               {mode === 'signin' ? (
                 <>
                   <Text style={styles.switchText}>New to Facetta? </Text>
@@ -284,7 +317,7 @@ export function LoginScreen({
                   </Pressable>
                 </>
               )}
-            </View>
+            </View>}
           </Animated.View>
 
           <Text style={styles.footnote}>Designed for jewelers. Drawn from dimensional truth.</Text>
@@ -321,6 +354,15 @@ const styles = StyleSheet.create({
   },
   cardTitle: { fontFamily: theme.serif, fontSize: 22, color: theme.ink, marginBottom: 4 },
   cardSubtitle: { fontSize: 13, color: theme.faint, marginBottom: 20 },
+  localPreviewBlock: {
+    borderWidth: 1,
+    borderColor: theme.line,
+    borderRadius: radius.md,
+    padding: 14,
+    backgroundColor: theme.paper,
+  },
+  localPreviewTitle: { fontSize: 15, fontWeight: '700', color: theme.ink },
+  localPreviewBody: { fontSize: 12, lineHeight: 18, color: theme.faint, marginTop: 5 },
   emailFormHeader: {
     flexDirection: 'row',
     alignItems: 'center',

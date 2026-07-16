@@ -16,8 +16,8 @@ from facetta.config import env_value, load_env_file
 load_env_file()
 
 from facetta.api import (  # noqa: E402 - env must load before router imports
-    assets, catalog, designs, library, projects, share, specs, stones, studio,
-    studio_facts, trusted, users, vocabulary,
+    assets, catalog, designs, library, local_preview_auth, projects, share,
+    specs, stones, studio, studio_facts, trusted, users, vocabulary,
 )
 from facetta.auth import (  # noqa: E402
     require_authenticated_principal,
@@ -30,6 +30,7 @@ from facetta.catalog_structural_mapper_composition import (  # noqa: E402
     configure_attested_catalog_structural_mapper_from_environment,
 )
 from facetta.db import get_engine  # noqa: E402
+from facetta.local_preview_auth import local_preview_auth_enabled  # noqa: E402
 
 
 @asynccontextmanager
@@ -295,6 +296,11 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    # This route does not exist unless a local operator explicitly opts in.
+    # The handler and verifier independently enforce the socket/Origin boundary.
+    if not production and local_preview_auth_enabled():
+        application.include_router(local_preview_auth.router)
 
     # Production exposes only the canonical Studio control plane. Stateless
     # specification adapters, legacy Builder, design/library/user/stone
