@@ -1,6 +1,7 @@
 import os
 from copy import deepcopy
 from pathlib import Path
+from xml.etree import ElementTree
 
 import pytest
 
@@ -41,10 +42,28 @@ def test_exact_dimension_callouts_present(example_spec):
     svg = render_sheet(Spec.model_validate(example_spec))
     for text in (">8.6 mm<", ">6.4 mm<",      # stone L x W
                  ">1.8 mm<",                   # band width
-                 ">⌀ 16.9 mm<",               # inner diameter
+                 ">DIA 16.9 mm<",             # inner diameter
                  ">4.5 mm gallery<",           # gallery height
                  ">4.1 mm<"):                  # stone depth
         assert text in svg, f"missing callout {text}"
+
+
+def test_dimension_labels_are_visible_in_svg_and_pdf_renderers(example_spec):
+    """Paper-colored glyph strokes can erase measurements in CairoSVG/PDF."""
+    svg = render_sheet(Spec.model_validate(example_spec))
+    root = ElementTree.fromstring(svg)
+    expected = {"8.6 mm", "6.4 mm", "DIA 16.9 mm", "4.5 mm gallery"}
+    labels = {
+        "".join(node.itertext()).strip(): node.attrib
+        for node in root.iter()
+        if node.tag.endswith("text")
+    }
+    assert expected <= labels.keys()
+    for label in expected:
+        assert labels[label].get("fill") == "#3f3f3f"
+        assert "stroke" not in labels[label]
+        assert "paint-order" not in labels[label]
+    assert "⌀" not in svg
 
 
 def test_title_block_contents(example_spec):
@@ -127,11 +146,11 @@ def test_halo_ring_sheet_matches_golden(halo_spec):
     _assert_matches_golden(svg, "halo_ring_sheet.svg")
     for text in (">6.4 mm<", ">8.6 mm<",             # center stone
                  ">15.2 mm halo<", ">17.4 mm halo<",  # halo outer envelope
-                 ">2 mm<", ">⌀ 16.9 mm<",             # band width, inner diameter
+                 ">2 mm<", ">DIA 16.9 mm<",           # band width, inner diameter
                  ">5.8 mm rise<",                     # front view: setting height
                  "FRONT VIEW"):
         assert text in svg, f"missing callout {text}"
-    assert "8 × round brilliant ⌀4.1" in svg
+    assert "8 × round brilliant DIA 4.1" in svg
     assert "EST. 3.1 g" in svg  # cast-weight estimate in the title block
     # 8 melee top view + 2 side profile + 2 front view = 12 melee circles
     assert svg.count('r="6.15"') == 12
@@ -194,12 +213,12 @@ def test_cluster_pendant_sheet_matches_golden(pendant_spec):
     svg = render_sheet(_validated(pendant_spec))
     _assert_matches_golden(svg, "cluster_pendant_sheet.svg")
     for text in (">7 mm<", ">9 mm<",       # emerald center
-                 ">⌀ 5.5 mm<",             # sapphire drop
+                 ">DIA 5.5 mm<",           # sapphire drop
                  ">27.2 mm drop<",         # derived overall drop
                  ">4.5 mm<", ">3.4 mm<"):  # depths in side profile
         assert text in svg, f"missing callout {text}"
-    assert "12 × ⌀2.3 mm diamond" in svg
-    assert "bail ⌀3.5 mm inside" in svg
+    assert "12 × DIA 2.3 mm diamond" in svg
+    assert "bail DIA 3.5 mm inside" in svg
 
 
 def test_new_templates_are_byte_stable(halo_spec, bangle_spec, pendant_spec):
@@ -286,7 +305,7 @@ def test_sunburst_halo_draws_every_stone_cut_true():
     top_view = svg[:svg.index("FRONT VIEW")]
     assert top_view.count("<g transform=\"rotate(") == 8   # marquise petals
     assert top_view.count(f'r="{2.5 / 2 * 3:.2f}"') == 8   # nested rounds
-    assert "14 × ⌀1.1 mm pavé per shoulder" in svg
+    assert "14 × DIA 1.1 mm pavé per shoulder" in svg
     assert svg.count(f'r="{1.15 / 2 * 3:.2f}"') == 14 + 28  # front col + side arcs
     assert "comfort-fit inner profile" in svg
     assert "TOTAL SET WEIGHT" in svg and ">5.33<" in svg

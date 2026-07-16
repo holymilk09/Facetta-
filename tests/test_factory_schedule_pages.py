@@ -48,6 +48,8 @@ def test_dense_schedule_uses_numbered_continuation_pages_without_truncation():
         for index, page in enumerate(pages, start=1)
     )
     combined = "".join(pages)
+    assert "↳" not in combined
+    assert "&gt;" in combined
     for dimension in plan.dimensions:
         assert combined.count(dimension.field_path) == 1
     for stone in plan.stones:

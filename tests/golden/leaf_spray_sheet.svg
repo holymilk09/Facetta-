@@ -969,18 +969,18 @@
 <line x1="20.00" y1="177.00" x2="190.00" y2="177.00" stroke="#8a8a8a" stroke-width="0.15"/>
 <line x1="19.10" y1="177.90" x2="20.90" y2="176.10" stroke="#3f3f3f" stroke-width="0.24"/>
 <line x1="189.10" y1="177.90" x2="190.90" y2="176.10" stroke="#3f3f3f" stroke-width="0.24"/>
-<text x="105.00" y="175.60" font-family="Georgia, 'Times New Roman', serif" font-size="3.2" fill="#3f3f3f" text-anchor="middle" stroke="#fdfdfa" stroke-width="1.0" stroke-linejoin="round" paint-order="stroke">85 mm</text>
+<text x="105.00" y="175.60" font-family="Georgia, 'Times New Roman', serif" font-size="3.2" fill="#3f3f3f" text-anchor="middle">85 mm</text>
 <line x1="33.80" y1="167.00" x2="199.00" y2="167.00" stroke="#8a8a8a" stroke-width="0.15" stroke-dasharray="0.8 0.8"/>
 <line x1="198.00" y1="43.00" x2="198.00" y2="167.00" stroke="#8a8a8a" stroke-width="0.15"/>
 <line x1="197.10" y1="43.90" x2="198.90" y2="42.10" stroke="#3f3f3f" stroke-width="0.24"/>
 <line x1="197.10" y1="167.90" x2="198.90" y2="166.10" stroke="#3f3f3f" stroke-width="0.24"/>
-<text x="199.80" y="106.10" font-family="Georgia, 'Times New Roman', serif" font-size="3.2" fill="#3f3f3f" text-anchor="start" stroke="#fdfdfa" stroke-width="1.0" stroke-linejoin="round" paint-order="stroke">62 mm</text>
+<text x="199.80" y="106.10" font-family="Georgia, 'Times New Roman', serif" font-size="3.2" fill="#3f3f3f" text-anchor="start">62 mm</text>
 <line x1="20.00" y1="153.20" x2="20.00" y2="172.00" stroke="#8a8a8a" stroke-width="0.15" stroke-dasharray="0.8 0.8"/>
 <line x1="47.60" y1="153.20" x2="47.60" y2="172.00" stroke="#8a8a8a" stroke-width="0.15" stroke-dasharray="0.8 0.8"/>
 <line x1="20.00" y1="171.00" x2="47.60" y2="171.00" stroke="#8a8a8a" stroke-width="0.15"/>
 <line x1="19.10" y1="171.90" x2="20.90" y2="170.10" stroke="#3f3f3f" stroke-width="0.24"/>
 <line x1="46.70" y1="171.90" x2="48.50" y2="170.10" stroke="#3f3f3f" stroke-width="0.24"/>
-<text x="33.80" y="169.60" font-family="Georgia, 'Times New Roman', serif" font-size="3.2" fill="#3f3f3f" text-anchor="middle" stroke="#fdfdfa" stroke-width="1.0" stroke-linejoin="round" paint-order="stroke">13.8 mm</text>
+<text x="33.80" y="169.60" font-family="Georgia, 'Times New Roman', serif" font-size="3.2" fill="#3f3f3f" text-anchor="middle">13.8 mm</text>
 <text x="105.00" y="183.00" font-family="Georgia, 'Times New Roman', serif" font-size="3.6" fill="#3f3f3f" text-anchor="middle" letter-spacing="1.2">FACE VIEW</text>
 <text x="105.00" y="187.50" font-family="Georgia, 'Times New Roman', serif" font-size="2.8" fill="#8a8a8a" text-anchor="middle">clusters tip-first: terminal [4 emerald] + 1 × [4 diamond] + 1 × [4 emerald] + 1 × [4 emerald] + 1 × [4 emerald] + 1 × [4 emerald] · 190 pavé stones across 33 leaves</text>
 <rect x="255.20" y="110.80" width="13.60" height="5.60" rx="2.80" fill="url(#hatch)" stroke="#3f3f3f" stroke-width="0.3"/>
@@ -993,13 +993,13 @@
 <line x1="282.20" y1="99.60" x2="282.20" y2="110.40" stroke="#8a8a8a" stroke-width="0.15"/>
 <line x1="281.30" y1="100.50" x2="283.10" y2="98.70" stroke="#3f3f3f" stroke-width="0.24"/>
 <line x1="281.30" y1="111.30" x2="283.10" y2="109.50" stroke="#3f3f3f" stroke-width="0.24"/>
-<text x="284.00" y="106.10" font-family="Georgia, 'Times New Roman', serif" font-size="3.2" fill="#3f3f3f" text-anchor="start" stroke="#fdfdfa" stroke-width="1.0" stroke-linejoin="round" paint-order="stroke">2.7 mm</text>
+<text x="284.00" y="106.10" font-family="Georgia, 'Times New Roman', serif" font-size="3.2" fill="#3f3f3f" text-anchor="start">2.7 mm</text>
 <line x1="249.80" y1="102.16" x2="249.80" y2="124.40" stroke="#8a8a8a" stroke-width="0.15" stroke-dasharray="0.8 0.8"/>
 <line x1="274.20" y1="102.16" x2="274.20" y2="124.40" stroke="#8a8a8a" stroke-width="0.15" stroke-dasharray="0.8 0.8"/>
 <line x1="249.80" y1="123.40" x2="274.20" y2="123.40" stroke="#8a8a8a" stroke-width="0.15"/>
 <line x1="248.90" y1="124.30" x2="250.70" y2="122.50" stroke="#3f3f3f" stroke-width="0.24"/>
 <line x1="273.30" y1="124.30" x2="275.10" y2="122.50" stroke="#3f3f3f" stroke-width="0.24"/>
-<text x="262.00" y="122.00" font-family="Georgia, 'Times New Roman', serif" font-size="3.2" fill="#3f3f3f" text-anchor="middle" stroke="#fdfdfa" stroke-width="1.0" stroke-linejoin="round" paint-order="stroke">6.1 mm</text>
+<text x="262.00" y="122.00" font-family="Georgia, 'Times New Roman', serif" font-size="3.2" fill="#3f3f3f" text-anchor="middle">6.1 mm</text>
 <text x="262.00" y="131.40" font-family="Georgia, 'Times New Roman', serif" font-size="3.6" fill="#3f3f3f" text-anchor="middle" letter-spacing="1.2">END SECTION</text>
 <text x="262.00" y="136.40" font-family="Georgia, 'Times New Roman', serif" font-size="2.8" fill="#8a8a8a" text-anchor="middle">terminal petal on the stem bar</text>
 <text x="185.00" y="24.00" font-family="Georgia, 'Times New Roman', serif" font-size="3.0" fill="#3f3f3f" text-anchor="start" letter-spacing="1.2">GEMSTONE KEY &amp; PRODUCTION NOTES</text>

@@ -106,7 +106,7 @@ def _rows(plan: FactorySheetFactPlan) -> list[_ScheduleRow]:
         part_count = max(len(fact_parts), len(source_parts))
         for index in range(part_count):
             expanded.append(_ScheduleRow(
-                row.section if index == 0 else "↳",
+                row.section if index == 0 else ">",
                 row.item if index == 0 else "continued",
                 fact_parts[index] if index < len(fact_parts) else "",
                 row.status,

@@ -162,11 +162,18 @@ def _tick(x: float, y: float) -> str:
 
 
 def _dim_h(x1: float, x2: float, y: float, label: str) -> list[str]:
-    """Horizontal dimension line with ticks and a centered label above."""
+    """Horizontal dimension line with ticks and a centered label above.
+
+    Dimension labels deliberately have no glyph halo. Some SVG/PDF renderers
+    ignore ``paint-order`` and paint the paper-colored stroke over the dark
+    fill, which makes the measurements disappear in downloaded review sheets.
+    The label is already offset above the dimension line, so a halo is not
+    needed for separation.
+    """
     return [
         _line(x1, y, x2, y, w=STROKE_DIM, color=FAINT),
         _tick(x1, y), _tick(x2, y),
-        _text((x1 + x2) / 2, y - 1.4, label, halo=True),
+        _text((x1 + x2) / 2, y - 1.4, label),
     ]
 
 
@@ -175,7 +182,7 @@ def _dim_v(x: float, y1: float, y2: float, label: str) -> list[str]:
     return [
         _line(x, y1, x, y2, w=STROKE_DIM, color=FAINT),
         _tick(x, y1), _tick(x, y2),
-        _text(x + 1.8, (y1 + y2) / 2 + 1.1, label, anchor="start", halo=True),
+        _text(x + 1.8, (y1 + y2) / 2 + 1.1, label, anchor="start"),
     ]
 
 
@@ -395,7 +402,7 @@ def _side_view(spec: Spec, cx: float, cy: float, *, mode: str = "full") -> list[
         parts += [
             # inner diameter across the hoop
             *_dim_h(cx - inner_r, cx + inner_r, ring_cy,
-                    f"⌀ {dim_id} mm{estimate_marker(spec, 'ring_size.inner_diameter_mm')}"),
+                    f"DIA {dim_id} mm{estimate_marker(spec, 'ring_size.inner_diameter_mm')}"),
             # gallery height on the near right, stone depth further out
             _ext(xr, y_girdle, x_dim + 1, y_girdle),
             _ext(cx, ring_top, x_dim + 1, ring_top),  # anchored on the hoop's top point
@@ -711,7 +718,7 @@ def _front_view(spec: Spec, cx: float, cy: float, melee=None, *,
             parts += _pointer(cx - pr, ref_y, fx, fy)
             parts += _circled_ref(fx - 2.6, fy, _ref_letter(spec, pave))
             parts.append(_text(cx, ring_cy + outer_r + 19,
-                               f"{per_side} × ⌀{_fmt(pave.dimensions_mm.width)} mm "
+                               f"{per_side} × DIA {_fmt(pave.dimensions_mm.width)} mm "
                                "pavé per shoulder", size=2.8, color=FAINT))
 
     if ann:
@@ -1233,7 +1240,7 @@ def _halo_top_view(spec: Spec, melee, cx: float, cy: float, *,
         x_dim2 = x_dim + 18
         note = " + ".join(
             f"{g.count} × {g.cut.replace('_', ' ')} "
-            + (f"⌀{_fmt(g.dimensions_mm.width)}" if g.dimensions_mm.width == g.dimensions_mm.length
+            + (f"DIA {_fmt(g.dimensions_mm.width)}" if g.dimensions_mm.width == g.dimensions_mm.length
                else f"{_fmt(g.dimensions_mm.length)}×{_fmt(g.dimensions_mm.width)}")
             for g in groups)
         parts += [
@@ -1478,13 +1485,13 @@ def _pendant_front_view(spec: Spec, melee, drop_stone, cx: float, ty: float) -> 
         _ext(cx, ty, x_dim2 + 1, ty), _ext(cx, bottom, x_dim2 + 1, bottom),
         *_dim_v(x_dim2, ty, bottom, f"{_fmt(drop_mm)} mm drop"),
         _text(cx + bail_r + 3, bail_cy + 1,
-              f"bail ⌀{_fmt(p.bail_inner_diameter_mm)} mm inside", size=2.8, anchor="start",
+              f"bail DIA {_fmt(p.bail_inner_diameter_mm)} mm inside", size=2.8, anchor="start",
               color=FAINT),
         _text(cx, bottom + 12, "FRONT VIEW", size=3.6, style=' letter-spacing="1.2"'),
     ]
     if melee:
         groups = [s for s in spec.side_stones if s.position in ("halo", "surround")]
-        note = " + ".join(f"{s.count} × ⌀{_fmt(s.dimensions_mm.width)} mm {s.species}"
+        note = " + ".join(f"{s.count} × DIA {_fmt(s.dimensions_mm.width)} mm {s.species}"
                           for s in groups)
         style = "alternating, " if len(groups) > 1 else ""
         parts.append(_text(cx, bottom + 17, f"{style}{note} around center",
@@ -1493,7 +1500,7 @@ def _pendant_front_view(spec: Spec, melee, drop_stone, cx: float, ty: float) -> 
         sw_mm = drop_stone.dimensions_mm.width
         sl_mm = drop_stone.dimensions_mm.length
         sap_cy = cluster_bottom + LINK_GAP_MM * SCALE + sl_mm * SCALE / 2
-        label = (f"⌀ {_fmt(sw_mm)} mm" if sw_mm == sl_mm
+        label = (f"DIA {_fmt(sw_mm)} mm" if sw_mm == sl_mm
                  else f"{_fmt(sw_mm)} × {_fmt(sl_mm)} mm")
         parts += [
             _ext(cx - sw_mm / 2 * SCALE, sap_cy, cx - sw_mm / 2 * SCALE, bottom + 6),
@@ -1693,7 +1700,7 @@ def _chain_callout(spec: Spec, cx: float, bail_top_y: float) -> list[str]:
             marker = estimate_marker(
                 spec, "chain.geometry.strand_wire_diameter_mm")
             detail = (
-                f"{geometry.strand_count} strands · strand wire ⌀ "
+                f"{geometry.strand_count} strands · strand wire DIA "
                 f"{_fmt_chain(geometry.strand_wire_diameter_mm)} mm{marker}"
             )
         elif isinstance(geometry, SmoothChainGeometry):
@@ -2687,7 +2694,7 @@ def _render_drop_earring(spec: Spec, highlight_ref: str | None = None,
     ]
     if halo is not None:
         parts.append(_text(cx, lowest + 10,
-                           f"{halo.count} × ⌀{_fmt(halo.dimensions_mm.width)} mm pavé halo",
+                           f"{halo.count} × DIA {_fmt(halo.dimensions_mm.width)} mm pavé halo",
                            size=2.8, color=FAINT))
     if drop_stone is not None:
         parts.append(_text(cx, lowest + 14,
@@ -2855,7 +2862,7 @@ def _true_ring(spec: Spec) -> list[str]:
     parts += _facet_face_up(hx, cy, spec.stone.cut, stone.width, stone.length,
                             table_ratio=(spec.stone.table_pct or 57) / 100)
     return parts, [
-        f"left outline — the hoop, inside ⌀ {_fmt(spec.ring_size.inner_diameter_mm)} mm;",
+        f"left outline — the hoop, inside DIA {_fmt(spec.ring_size.inner_diameter_mm)} mm;",
         "lay the finished ring flat on the circle",
         f"right outline — the {head_note}, face up",
     ]
@@ -3174,7 +3181,7 @@ def _stack_rings(spec_a: Spec, spec_b: Spec, clearance: NestingClearance,
               size=3.6, style=' letter-spacing="1.2"'),
         _text(cx, cy + r_max + 12, "ON-FINGER PROFILE", size=3.6, style=' letter-spacing="1.2"'),
         _text(cx, cy + r_max + 17,
-              f"inner ⌀ {_fmt(spec_a.ring_size.inner_diameter_mm)} / "
+              f"inner DIA {_fmt(spec_a.ring_size.inner_diameter_mm)} / "
               f"{_fmt(spec_b.ring_size.inner_diameter_mm)} mm — "
               f"Δ {_fmt(clearance.diameter_delta_mm)} mm", size=2.8, color=FAINT),
     ]

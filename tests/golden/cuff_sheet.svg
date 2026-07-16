@@ -17,17 +17,17 @@
 <line x1="37.00" y1="119.00" x2="153.00" y2="119.00" stroke="#8a8a8a" stroke-width="0.15"/>
 <line x1="36.10" y1="119.90" x2="37.90" y2="118.10" stroke="#3f3f3f" stroke-width="0.24"/>
 <line x1="152.10" y1="119.90" x2="153.90" y2="118.10" stroke="#3f3f3f" stroke-width="0.24"/>
-<text x="95.00" y="117.60" font-family="Georgia, 'Times New Roman', serif" font-size="3.2" fill="#3f3f3f" text-anchor="middle" stroke="#fdfdfa" stroke-width="1.0" stroke-linejoin="round" paint-order="stroke">58 mm</text>
+<text x="95.00" y="117.60" font-family="Georgia, 'Times New Roman', serif" font-size="3.2" fill="#3f3f3f" text-anchor="middle">58 mm</text>
 <line x1="95.00" y1="57.00" x2="95.00" y2="153.00" stroke="#8a8a8a" stroke-width="0.15"/>
 <line x1="94.10" y1="57.90" x2="95.90" y2="56.10" stroke="#3f3f3f" stroke-width="0.24"/>
 <line x1="94.10" y1="153.90" x2="95.90" y2="152.10" stroke="#3f3f3f" stroke-width="0.24"/>
-<text x="96.80" y="106.10" font-family="Georgia, 'Times New Roman', serif" font-size="3.2" fill="#3f3f3f" text-anchor="start" stroke="#fdfdfa" stroke-width="1.0" stroke-linejoin="round" paint-order="stroke">48 mm</text>
+<text x="96.80" y="106.10" font-family="Georgia, 'Times New Roman', serif" font-size="3.2" fill="#3f3f3f" text-anchor="start">48 mm</text>
 <line x1="70.00" y1="150.67" x2="70.00" y2="159.67" stroke="#8a8a8a" stroke-width="0.15" stroke-dasharray="0.8 0.8"/>
 <line x1="120.00" y1="150.67" x2="120.00" y2="159.67" stroke="#8a8a8a" stroke-width="0.15" stroke-dasharray="0.8 0.8"/>
 <line x1="70.00" y1="158.67" x2="120.00" y2="158.67" stroke="#8a8a8a" stroke-width="0.15"/>
 <line x1="69.10" y1="159.57" x2="70.90" y2="157.77" stroke="#3f3f3f" stroke-width="0.24"/>
 <line x1="119.10" y1="159.57" x2="120.90" y2="157.77" stroke="#3f3f3f" stroke-width="0.24"/>
-<text x="95.00" y="157.27" font-family="Georgia, 'Times New Roman', serif" font-size="3.2" fill="#3f3f3f" text-anchor="middle" stroke="#fdfdfa" stroke-width="1.0" stroke-linejoin="round" paint-order="stroke">25 mm gap</text>
+<text x="95.00" y="157.27" font-family="Georgia, 'Times New Roman', serif" font-size="3.2" fill="#3f3f3f" text-anchor="middle">25 mm gap</text>
 <text x="95.00" y="173.40" font-family="Georgia, 'Times New Roman', serif" font-size="3.6" fill="#3f3f3f" text-anchor="middle" letter-spacing="1.2">FACE VIEW</text>
 <text x="95.00" y="178.40" font-family="Georgia, 'Times New Roman', serif" font-size="2.8" fill="#8a8a8a" text-anchor="middle">5 × 2.9 mm princess on the arc</text>
 <rect x="217.00" y="98.40" width="30.00" height="13.20" fill="url(#hatch)" stroke="#3f3f3f" stroke-width="0.3"/>
@@ -38,19 +38,19 @@
 <line x1="223.30" y1="89.80" x2="240.70" y2="89.80" stroke="#8a8a8a" stroke-width="0.15"/>
 <line x1="222.40" y1="90.70" x2="224.20" y2="88.90" stroke="#3f3f3f" stroke-width="0.24"/>
 <line x1="239.80" y1="90.70" x2="241.60" y2="88.90" stroke="#3f3f3f" stroke-width="0.24"/>
-<text x="232.00" y="88.40" font-family="Georgia, 'Times New Roman', serif" font-size="3.2" fill="#3f3f3f" text-anchor="middle" stroke="#fdfdfa" stroke-width="1.0" stroke-linejoin="round" paint-order="stroke">2.9 mm</text>
+<text x="232.00" y="88.40" font-family="Georgia, 'Times New Roman', serif" font-size="3.2" fill="#3f3f3f" text-anchor="middle">2.9 mm</text>
 <line x1="217.00" y1="111.60" x2="217.00" y2="118.60" stroke="#8a8a8a" stroke-width="0.15" stroke-dasharray="0.8 0.8"/>
 <line x1="247.00" y1="111.60" x2="247.00" y2="118.60" stroke="#8a8a8a" stroke-width="0.15" stroke-dasharray="0.8 0.8"/>
 <line x1="217.00" y1="117.60" x2="247.00" y2="117.60" stroke="#8a8a8a" stroke-width="0.15"/>
 <line x1="216.10" y1="118.50" x2="217.90" y2="116.70" stroke="#3f3f3f" stroke-width="0.24"/>
 <line x1="246.10" y1="118.50" x2="247.90" y2="116.70" stroke="#3f3f3f" stroke-width="0.24"/>
-<text x="232.00" y="116.20" font-family="Georgia, 'Times New Roman', serif" font-size="3.2" fill="#3f3f3f" text-anchor="middle" stroke="#fdfdfa" stroke-width="1.0" stroke-linejoin="round" paint-order="stroke">5 mm</text>
+<text x="232.00" y="116.20" font-family="Georgia, 'Times New Roman', serif" font-size="3.2" fill="#3f3f3f" text-anchor="middle">5 mm</text>
 <line x1="247.00" y1="98.40" x2="254.00" y2="98.40" stroke="#8a8a8a" stroke-width="0.15" stroke-dasharray="0.8 0.8"/>
 <line x1="247.00" y1="111.60" x2="254.00" y2="111.60" stroke="#8a8a8a" stroke-width="0.15" stroke-dasharray="0.8 0.8"/>
 <line x1="253.00" y1="98.40" x2="253.00" y2="111.60" stroke="#8a8a8a" stroke-width="0.15"/>
 <line x1="252.10" y1="99.30" x2="253.90" y2="97.50" stroke="#3f3f3f" stroke-width="0.24"/>
 <line x1="252.10" y1="112.50" x2="253.90" y2="110.70" stroke="#3f3f3f" stroke-width="0.24"/>
-<text x="254.80" y="106.10" font-family="Georgia, 'Times New Roman', serif" font-size="3.2" fill="#3f3f3f" text-anchor="start" stroke="#fdfdfa" stroke-width="1.0" stroke-linejoin="round" paint-order="stroke">2.2 mm</text>
+<text x="254.80" y="106.10" font-family="Georgia, 'Times New Roman', serif" font-size="3.2" fill="#3f3f3f" text-anchor="start">2.2 mm</text>
 <text x="232.00" y="126.60" font-family="Georgia, 'Times New Roman', serif" font-size="3.6" fill="#3f3f3f" text-anchor="middle" letter-spacing="1.2">SECTION — 6:1</text>
 <rect x="189.00" y="162.00" width="100" height="40" fill="#fdfdfa" stroke="#3f3f3f" stroke-width="0.3"/>
 <line x1="189.00" y1="170.00" x2="289.00" y2="170.00" stroke="#3f3f3f" stroke-width="0.15"/>

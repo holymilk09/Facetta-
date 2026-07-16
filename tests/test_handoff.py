@@ -46,7 +46,7 @@ def test_dxf_converts_all_sheet_entity_kinds(example_spec):
     assert "CIRCLE" in dxf          # hoop, prong tips
     assert "POLYLINE" in dxf        # stone outline, capsules
     assert "ANNOTATION" in dxf      # dimension/witness layer
-    assert "%%c 16.9 mm" in dxf     # diameter symbol translated for CAD text
+    assert "DIA 16.9 mm" in dxf     # portable diameter label survives CAD export
     assert svg_to_dxf(render_sheet(Spec.model_validate(example_spec))) == dxf
 
 

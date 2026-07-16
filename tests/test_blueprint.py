@@ -48,7 +48,7 @@ class TestLayerSplit:
         svg = render_blueprint_frame(_ruby(), img)
         assert img in svg                       # the painted views sit behind
         assert 'fill="url(#grid)"' not in svg   # the painting IS the paper
-        assert ">4.03<" in svg and ">⌀ 16.9 mm<" in svg  # our numbers on top
+        assert ">4.03<" in svg and ">DIA 16.9 mm<" in svg  # portable numbers on top
         assert "GEMSTONE KEY &amp; PRODUCTION NOTES" in svg
         assert ">5.33<" in svg                  # true total set weight
 

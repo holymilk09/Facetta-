@@ -40,16 +40,16 @@
 <line x1="50.75" y1="26.00" x2="50.75" y2="105.96" stroke="#8a8a8a" stroke-width="0.15"/>
 <line x1="49.85" y1="26.90" x2="51.65" y2="25.10" stroke="#3f3f3f" stroke-width="0.24"/>
 <line x1="49.85" y1="106.86" x2="51.65" y2="105.06" stroke="#3f3f3f" stroke-width="0.24"/>
-<text x="52.55" y="67.08" font-family="Georgia, 'Times New Roman', serif" font-size="3.2" fill="#3f3f3f" text-anchor="start" stroke="#fdfdfa" stroke-width="1.0" stroke-linejoin="round" paint-order="stroke">37 mm overall</text>
+<text x="52.55" y="67.08" font-family="Georgia, 'Times New Roman', serif" font-size="3.2" fill="#3f3f3f" text-anchor="start">37 mm overall</text>
 <line x1="88.35" y1="70.86" x2="102.25" y2="70.86" stroke="#8a8a8a" stroke-width="0.15" stroke-dasharray="0.8 0.8"/>
 <line x1="88.35" y1="103.06" x2="102.25" y2="103.06" stroke="#8a8a8a" stroke-width="0.15" stroke-dasharray="0.8 0.8"/>
 <line x1="101.25" y1="70.86" x2="101.25" y2="103.06" stroke="#8a8a8a" stroke-width="0.15"/>
 <line x1="100.35" y1="71.76" x2="102.15" y2="69.96" stroke="#3f3f3f" stroke-width="0.24"/>
 <line x1="100.35" y1="103.96" x2="102.15" y2="102.16" stroke="#3f3f3f" stroke-width="0.24"/>
-<text x="103.05" y="88.06" font-family="Georgia, 'Times New Roman', serif" font-size="3.2" fill="#3f3f3f" text-anchor="start" stroke="#fdfdfa" stroke-width="1.0" stroke-linejoin="round" paint-order="stroke">14 × 9 mm frame</text>
+<text x="103.05" y="88.06" font-family="Georgia, 'Times New Roman', serif" font-size="3.2" fill="#3f3f3f" text-anchor="start">14 × 9 mm frame</text>
 <text x="78.00" y="23.00" font-family="Georgia, 'Times New Roman', serif" font-size="3.6" fill="#3f3f3f" text-anchor="middle" letter-spacing="1.2">FRONT VIEW</text>
 <text x="78.00" y="111.96" font-family="Georgia, 'Times New Roman', serif" font-size="2.8" fill="#8a8a8a" text-anchor="middle">hook 10 mm  ·  3 links @ 2.4 mm</text>
-<text x="78.00" y="115.96" font-family="Georgia, 'Times New Roman', serif" font-size="2.8" fill="#8a8a8a" text-anchor="middle">20 × ⌀1.4 mm pavé halo</text>
+<text x="78.00" y="115.96" font-family="Georgia, 'Times New Roman', serif" font-size="2.8" fill="#8a8a8a" text-anchor="middle">20 × DIA 1.4 mm pavé halo</text>
 <text x="78.00" y="119.96" font-family="Georgia, 'Times New Roman', serif" font-size="2.8" fill="#8a8a8a" text-anchor="middle">pear drop 7 × 5 mm</text>
 <text x="78.00" y="123.96" font-family="Georgia, 'Times New Roman', serif" font-size="2.8" fill="#8a8a8a" text-anchor="middle">wall 0.9 mm  ·  wire 0.8 mm</text>
 <text x="168.00" y="30.00" font-family="Georgia, 'Times New Roman', serif" font-size="3.0" fill="#3f3f3f" text-anchor="start" letter-spacing="1.2">GEMSTONE KEY &amp; PRODUCTION NOTES</text>
