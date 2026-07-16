@@ -21,6 +21,16 @@ export type { CreateReferenceRole } from './workspaceControls';
 
 const CREATE_CREDITS_PER_OUTPUT = getStudioAction('create').creditEstimate ?? 0;
 
+const CREATE_SOURCE_KIND_OPTIONS = [
+  { value: 'drawing', label: 'Drawing' },
+  { value: 'photograph', label: 'Photograph' },
+  { value: 'finished_render', label: 'Finished render' },
+] as const satisfies readonly { value: CreativeSourceKind; label: string }[];
+
+const sourceKindLabel = (kind: CreativeSourceKind | undefined): string => (
+  CREATE_SOURCE_KIND_OPTIONS.find((option) => option.value === kind)?.label ?? 'Drawing'
+);
+
 export interface StudioCreateReference {
   id: string;
   role: CreateReferenceRole;
@@ -267,7 +277,18 @@ export function StudioCreateWorkspace({
         ...current,
         mode: role === 'master_geometry' ? 'drawing' : current.mode,
         references: role === 'master_geometry'
-          ? [{ ...reference, role, sourceKind: 'drawing' }]
+          ? [{
+              ...reference,
+              role,
+              // A picker cannot infer whether pixels are a sketch, a product
+              // photo, or an existing render. Preserve an explicit adapter
+              // value, then the designer's prior one when replacing a file.
+              sourceKind: reference.sourceKind
+                ?? current.references.find(
+                  (item) => item.role === 'master_geometry',
+                )?.sourceKind
+                ?? 'drawing',
+            }]
           : current.references,
       }));
       if (role === 'master_geometry') setCreateMode('drawing');
@@ -300,7 +321,7 @@ export function StudioCreateWorkspace({
     setProject(null);
     setSelectedAssetId(null);
     setSelectionStudioJobId(null);
-    const sourceTitle = prompt || submittedMaster?.label || 'Untitled drawing';
+    const sourceTitle = prompt || submittedMaster?.label || 'Untitled source image';
     const title = sourceTitle.length > 64 ? `${sourceTitle.slice(0, 61)}…` : sourceTitle;
     const result = createMode === 'prompt'
       ? await gateway.createFromPrompt({
@@ -491,7 +512,7 @@ export function StudioCreateWorkspace({
       <Text style={styles.eyebrow}>CREATE</Text>
       <Text style={styles.title}>How would you like to begin?</Text>
       <Text style={styles.body}>
-        Describe the jewelry you want, or upload your own drawing. Both create real visual designs you can compare.
+        Describe the jewelry you want, or upload a drawing, photograph, or existing render. Both create real visual designs you can compare.
       </Text>
       <View style={styles.modeRow}>
         <Pressable
@@ -505,12 +526,12 @@ export function StudioCreateWorkspace({
         </Pressable>
         <Pressable
           accessibilityRole="radio"
-          accessibilityLabel="Upload a drawing"
+          accessibilityLabel="Upload an image"
           accessibilityState={{ checked: createMode === 'drawing' }}
           onPress={() => chooseMode('drawing')}
           style={[styles.modeCard, createMode === 'drawing' && styles.modeCardSelected]}>
-          <Text style={styles.modeTitle}>Upload a drawing</Text>
-          <Text style={styles.modeHelp}>Turn your sketch into visual designs.</Text>
+          <Text style={styles.modeTitle}>Upload an image</Text>
+          <Text style={styles.modeHelp}>Use a drawing, photograph, or existing render.</Text>
         </Pressable>
       </View>
 
@@ -537,8 +558,8 @@ export function StudioCreateWorkspace({
           <View style={styles.masterSourceCard}>
             {masterReference !== null && (
               <StudioReviewImage
-                accessibilityLabel="Drawing preview"
-                inspectionLabel={`Uploaded drawing · ${masterReference.label}`}
+                accessibilityLabel="Source image preview"
+                inspectionLabel={`Uploaded ${sourceKindLabel(masterReference.sourceKind).toLowerCase()} · ${masterReference.label}`}
                 source={{ uri: referencePreviewUri(masterReference) }}
                 onLoad={() => visualReview.markReady(referenceVisualKey(masterReference))}
                 onError={() => visualReview.markFailed(referenceVisualKey(masterReference))}
@@ -546,21 +567,52 @@ export function StudioCreateWorkspace({
               />
             )}
             <View style={styles.referenceCopy}>
-              <Text style={styles.referenceTitle}>Your drawing</Text>
+              <Text style={styles.referenceTitle}>Your source image</Text>
               <Text style={styles.referenceHelp}>{masterReference?.label
                 ?? 'JPG, PNG, or WEBP. Facetta will preserve its visible form.'}</Text>
             </View>
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel={masterReference === null ? 'Choose a drawing' : 'Replace drawing'}
+              accessibilityLabel={masterReference === null ? 'Choose an image' : 'Replace image'}
               style={styles.addSourceButton}
               onPress={() => requestReference('master_geometry')}>
-              <Text style={styles.addSourceButtonText}>{masterReference === null ? 'Choose drawing' : 'Replace'}</Text>
+              <Text style={styles.addSourceButtonText}>{masterReference === null ? 'Choose image' : 'Replace'}</Text>
             </Pressable>
           </View>
+          {masterReference !== null && (
+            <>
+              <Text style={styles.sourceKindLabel}>What did you upload?</Text>
+              <View style={styles.sourceKindRow}>
+                {CREATE_SOURCE_KIND_OPTIONS.map((option) => {
+                  const selected = (masterReference.sourceKind ?? 'drawing') === option.value;
+                  return (
+                    <Pressable
+                      key={option.value}
+                      accessibilityRole="radio"
+                      accessibilityLabel={`Source type: ${option.label.toLowerCase()}`}
+                      accessibilityState={{ checked: selected }}
+                      style={[styles.sourceKindChip, selected && styles.sourceKindChipSelected]}
+                      onPress={() => updateDraft((current) => ({
+                        ...current,
+                        references: current.references.map((reference) => (
+                          reference.role === 'master_geometry'
+                            ? { ...reference, sourceKind: option.value }
+                            : reference
+                        )),
+                      }))}>
+                      <Text style={[
+                        styles.sourceKindText,
+                        selected && styles.sourceKindTextSelected,
+                      ]}>{option.label}</Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            </>
+          )}
           <Text style={styles.inputLabel}>Optional notes</Text>
           <TextInput
-            accessibilityLabel="Drawing notes"
+            accessibilityLabel="Source notes"
             placeholder="For example: make the setting lighter while keeping the silhouette."
             placeholderTextColor={theme.faint}
             multiline
@@ -599,8 +651,8 @@ export function StudioCreateWorkspace({
 
       {activeReferences.length > 0 && !referenceVisualsReady && (
         <Text style={styles.reviewReadiness}>{referenceVisualFailed
-          ? 'Your drawing preview could not be shown. Replace or remove it before generating designs.'
-          : 'Checking your drawing before generation…'}</Text>
+          ? 'Your source image could not be shown. Replace it before generating designs.'
+          : 'Checking your source image before generation…'}</Text>
       )}
 
       {error !== null && <Text style={styles.error}>{error}</Text>}
@@ -648,6 +700,12 @@ const styles = StyleSheet.create({
   referenceCopy: { flex: 1 },
   referenceTitle: { color: theme.ink, fontSize: 13, fontWeight: '700' },
   referenceHelp: { color: theme.faint, fontSize: 10, lineHeight: 15, marginTop: 3 },
+  sourceKindLabel: { color: theme.ink, fontSize: 12, fontWeight: '700', marginTop: 14 },
+  sourceKindRow: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 8 },
+  sourceKindChip: { minHeight: 38, justifyContent: 'center', borderWidth: 1, borderColor: theme.line, borderRadius: radius.pill, backgroundColor: theme.card, paddingHorizontal: 14, paddingVertical: 8 },
+  sourceKindChipSelected: { borderColor: '#6f52d9', backgroundColor: '#eee9ff' },
+  sourceKindText: { color: theme.faint, fontSize: 11, fontWeight: '700' },
+  sourceKindTextSelected: { color: '#5c3fc0' },
   error: { color: theme.danger, fontSize: 12, lineHeight: 17, marginTop: 14 },
   creditEstimate: { color: theme.faint, fontSize: 12, lineHeight: 18, marginTop: 18 },
   primaryButton: { minHeight: 44, alignItems: 'center', justifyContent: 'center', borderRadius: radius.pill, backgroundColor: '#6f52d9', paddingHorizontal: 18, paddingVertical: 14, marginTop: 20 },

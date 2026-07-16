@@ -4,8 +4,8 @@ export const STUDIO_CREATE_REFERENCE_CONTROLS = [
   {
     fieldId: 'master',
     role: 'master_geometry',
-    label: 'Optional drawing',
-    help: 'Upload your own drawing when you want Facetta to visualize it.',
+    label: 'Optional source image',
+    help: 'Upload your own drawing, photograph, or existing render when you want Facetta to visualize it.',
   },
 ] as const satisfies readonly {
   fieldId: string; role: ReferenceRole; label: string; help: string;

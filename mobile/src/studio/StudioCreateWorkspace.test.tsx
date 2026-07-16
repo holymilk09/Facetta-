@@ -690,7 +690,7 @@ test('keeps an already-created direction set when the designer starts another br
   expect(screen.queryByLabelText('Keep all other directions')).toBeNull();
 });
 
-test('upload mode opens the picker only after Choose drawing and sends one unambiguous drawing', async () => {
+test('upload mode opens the picker only after Choose image and sends one unambiguous drawing', async () => {
   const master: StudioCreateReference = {
     id: 'master', role: 'master_geometry', label: 'Front sketch',
     imageBase64: 'bWFzdGVy', mediaType: 'image/png',
@@ -711,20 +711,20 @@ test('upload mode opens the picker only after Choose drawing and sends one unamb
     onSave: jest.fn(),
   }));
 
-  await fireEvent.press(screen.getByLabelText('Upload a drawing'));
+  await fireEvent.press(screen.getByLabelText('Upload an image'));
   expect(onRequestReference).not.toHaveBeenCalled();
-  expect(screen.getByLabelText('Choose a drawing')).toBeTruthy();
-  await fireEvent.press(screen.getByLabelText('Choose a drawing'));
+  expect(screen.getByLabelText('Choose an image')).toBeTruthy();
+  await fireEvent.press(screen.getByLabelText('Choose an image'));
   expect(onRequestReference).toHaveBeenCalledWith('master_geometry');
   await fireEvent.changeText(
-    screen.getByLabelText('Drawing notes'),
+    screen.getByLabelText('Source notes'),
     'Preserve the silhouette and make it feel lighter.',
   );
   await fireEvent.press(screen.getByLabelText('3 designs'));
 
   expect(screen.getByText('Generate 3 designs').parent?.props.accessibilityState).toEqual({ disabled: true });
-  expect(screen.getByText('Checking your drawing before generation…')).toBeTruthy();
-  expect(screen.getByLabelText('Drawing preview').props.source.uri).toBe(
+  expect(screen.getByText('Checking your source image before generation…')).toBeTruthy();
+  expect(screen.getByLabelText('Source image preview').props.source.uri).toBe(
     'data:image/png;base64,bWFzdGVy',
   );
   await fireEvent.press(screen.getByLabelText('Inspect Uploaded drawing · Front sketch in detail'));
@@ -734,7 +734,7 @@ test('upload mode opens the picker only after Choose drawing and sends one unamb
   expect(createProjectFromDrawing).not.toHaveBeenCalled();
   await fireEvent.press(screen.getByLabelText('Close image inspector'));
 
-  await loadReferencePreview('Drawing preview');
+  await loadReferencePreview('Source image preview');
   expect(screen.getByText('Generate 3 designs').parent?.props.accessibilityState).toEqual({ disabled: false });
   await fireEvent.press(screen.getByText('Generate 3 designs'));
 
@@ -754,7 +754,54 @@ test('upload mode opens the picker only after Choose drawing and sends one unamb
   expect(screen.queryByText('Material & style')).toBeNull();
 });
 
-test('keeps prompt text, drawing, and drawing notes when switching starting methods', async () => {
+test.each([
+  ['photograph', 'Source type: photograph', 'photograph'],
+  ['finished render', 'Source type: finished render', 'finished_render'],
+] as const)(
+  'lets the designer declare an uploaded %s before it reaches the image API',
+  async (_description, sourceTypeLabel, expectedSourceKind) => {
+    const createFromDrawing = jest.fn(async () => ({
+      data: creativeProject(1), error: null, status: 201,
+    }));
+    const onRequestReference = jest.fn(async () => ({
+      id: `source-${expectedSourceKind}`,
+      role: 'master_geometry' as const,
+      label: `Source ${expectedSourceKind}.png`,
+      imageBase64: 'c291cmNl',
+      mediaType: 'image/png' as const,
+    }));
+    await renderCreate(<StudioCreateWorkspace
+      gateway={{
+        createFromPrompt: jest.fn(), createFromDrawing,
+        completeCreativeDirectionReview: jest.fn(),
+      } as CreateGateway}
+      owner="designer_1"
+      onRequestReference={onRequestReference}
+      onSave={jest.fn()}
+    />);
+
+    await fireEvent.press(screen.getByLabelText('Upload an image'));
+    await fireEvent.press(screen.getByLabelText('Choose an image'));
+    expect(screen.getByLabelText('Source type: drawing').props.accessibilityState)
+      .toEqual({ checked: true });
+    await fireEvent.press(screen.getByLabelText(sourceTypeLabel));
+    expect(screen.getByLabelText(sourceTypeLabel).props.accessibilityState)
+      .toEqual({ checked: true });
+    await loadReferencePreview('Source image preview');
+    await fireEvent.press(screen.getByLabelText('1 design'));
+    await fireEvent.press(screen.getByText('Generate 1 design'));
+
+    await waitFor(() => expect(createFromDrawing).toHaveBeenCalledWith(
+      expect.objectContaining({
+        image_base64: 'c291cmNl',
+        source_kind: expectedSourceKind,
+        variation_count: 1,
+      }),
+    ));
+  },
+);
+
+test('keeps prompt text, source image, and source notes when switching starting methods', async () => {
   const master: StudioCreateReference = {
     id: 'toggle-master', role: 'master_geometry', label: 'Toggle sketch',
     imageBase64: 'dG9nZ2xl', mediaType: 'image/png',
@@ -777,21 +824,21 @@ test('keeps prompt text, drawing, and drawing notes when switching starting meth
     screen.getByLabelText('Design description'),
     'An emerald ring with a knife-edge band.',
   );
-  await fireEvent.press(screen.getByLabelText('Upload a drawing'));
-  await fireEvent.press(screen.getByLabelText('Choose a drawing'));
+  await fireEvent.press(screen.getByLabelText('Upload an image'));
+  await fireEvent.press(screen.getByLabelText('Choose an image'));
   await fireEvent.changeText(
-    screen.getByLabelText('Drawing notes'),
+    screen.getByLabelText('Source notes'),
     'Keep the silhouette and soften the shoulders.',
   );
-  await loadReferencePreview('Drawing preview');
+  await loadReferencePreview('Source image preview');
 
   await fireEvent.press(screen.getByLabelText('Describe a design'));
   expect(screen.getByLabelText('Design description').props.value)
     .toBe('An emerald ring with a knife-edge band.');
 
-  await fireEvent.press(screen.getByLabelText('Upload a drawing'));
-  expect(screen.getByLabelText('Drawing preview')).toBeTruthy();
-  expect(screen.getByLabelText('Drawing notes').props.value)
+  await fireEvent.press(screen.getByLabelText('Upload an image'));
+  expect(screen.getByLabelText('Source image preview')).toBeTruthy();
+  expect(screen.getByLabelText('Source notes').props.value)
     .toBe('Keep the silhouette and soften the shoulders.');
   expect(onRequestReference).toHaveBeenCalledTimes(1);
 
@@ -803,7 +850,7 @@ test('keeps prompt text, drawing, and drawing notes when switching starting meth
   })));
 });
 
-test('keeps the first screen to prompt or drawing without role taxonomy', async () => {
+test('keeps the first screen to prompt or one source image without role taxonomy', async () => {
   await renderCreate(<StudioCreateWorkspace
     gateway={{
       createFromPrompt: jest.fn(), createFromDrawing: jest.fn(),
@@ -814,7 +861,7 @@ test('keeps the first screen to prompt or drawing without role taxonomy', async 
   />);
 
   expect(screen.getByLabelText('Describe a design').props.accessibilityState).toEqual({ checked: true });
-  expect(screen.getByLabelText('Upload a drawing').props.accessibilityState).toEqual({ checked: false });
+  expect(screen.getByLabelText('Upload an image').props.accessibilityState).toEqual({ checked: false });
   expect(screen.getByText('How many designs would you like to compare?')).toBeTruthy();
   expect(screen.queryByText('Optional references')).toBeNull();
   expect(screen.queryByText('Material & style')).toBeNull();
@@ -822,7 +869,7 @@ test('keeps the first screen to prompt or drawing without role taxonomy', async 
   expect(screen.queryByText('Brand direction')).toBeNull();
 });
 
-test('starts from a drawing without forcing an instruction', async () => {
+test('starts from a source image without forcing an instruction', async () => {
   const master: StudioCreateReference = {
     id: 'master', role: 'master_geometry', label: 'Pendant sketch',
     imageBase64: 'bWFzdGVy', mediaType: 'image/png', sourceKind: 'drawing',
@@ -840,12 +887,12 @@ test('starts from a drawing without forcing an instruction', async () => {
     onSave: jest.fn(),
   }));
 
-  expect(screen.getByLabelText('Drawing preview').props.source.uri).toBe(
+  expect(screen.getByLabelText('Source image preview').props.source.uri).toBe(
     'data:image/png;base64,bWFzdGVy',
   );
-  expect(screen.getByLabelText('Replace drawing')).toBeTruthy();
+  expect(screen.getByLabelText('Replace image')).toBeTruthy();
   expect(screen.getByText('Generate 2 designs').parent?.props.accessibilityState).toEqual({ disabled: true });
-  await loadReferencePreview('Drawing preview');
+  await loadReferencePreview('Source image preview');
   await fireEvent.press(screen.getByText('Generate 2 designs'));
   await waitFor(() => expect(createFromDrawing).toHaveBeenCalledWith({
     image_base64: 'bWFzdGVy',
@@ -875,18 +922,18 @@ test('fails closed when an attached reference cannot render', async () => {
   />);
 
   await act(async () => {
-    fireEvent(screen.getByLabelText('Drawing preview'), 'error');
+    fireEvent(screen.getByLabelText('Source image preview'), 'error');
   });
 
   expect(screen.getByText(
-    'Your drawing preview could not be shown. Replace or remove it before generating designs.',
+    'Your source image could not be shown. Replace it before generating designs.',
   )).toBeTruthy();
   expect(screen.getByText('Generate 2 designs').parent?.props.accessibilityState).toEqual({ disabled: true });
   await fireEvent.press(screen.getByText('Generate 2 designs'));
   expect(createFromDrawing).not.toHaveBeenCalled();
 });
 
-test('surfaces picker failures instead of leaving Choose drawing as a silent dead end', async () => {
+test('surfaces picker failures instead of leaving Choose image as a silent dead end', async () => {
   const onRequestReference = jest.fn(async () => {
     throw new Error('Choose a PNG, JPEG, or WebP image. Other file types are not supported.');
   });
@@ -901,8 +948,8 @@ test('surfaces picker failures instead of leaving Choose drawing as a silent dea
     onSave: jest.fn(),
   }));
 
-  await fireEvent.press(screen.getByLabelText('Upload a drawing'));
-  await fireEvent.press(screen.getByLabelText('Choose a drawing'));
+  await fireEvent.press(screen.getByLabelText('Upload an image'));
+  await fireEvent.press(screen.getByLabelText('Choose an image'));
 
   expect(await screen.findByText(/Choose a PNG, JPEG, or WebP image/)).toBeTruthy();
   expect(onRequestReference).toHaveBeenCalledWith('master_geometry');
@@ -931,17 +978,17 @@ test('the latest deferred picker merges into the current controlled draft', asyn
   }
   await renderCreate(<ControlledPickerCreate />);
 
-  await fireEvent.press(screen.getByLabelText('Upload a drawing'));
-  await fireEvent.changeText(screen.getByLabelText('Drawing notes'), 'Original sentence.');
+  await fireEvent.press(screen.getByLabelText('Upload an image'));
+  await fireEvent.changeText(screen.getByLabelText('Source notes'), 'Original sentence.');
   let firstCompletion!: Promise<void>;
   let secondCompletion!: Promise<void>;
   await act(() => {
-    firstCompletion = fireEvent.press(screen.getByLabelText('Choose a drawing'));
+    firstCompletion = fireEvent.press(screen.getByLabelText('Choose an image'));
   });
   await act(() => {
-    secondCompletion = fireEvent.press(screen.getByLabelText('Choose a drawing'));
+    secondCompletion = fireEvent.press(screen.getByLabelText('Choose an image'));
   });
-  await fireEvent.changeText(screen.getByLabelText('Drawing notes'), 'Newer sentence.');
+  await fireEvent.changeText(screen.getByLabelText('Source notes'), 'Newer sentence.');
   await act(async () => {
     first.resolve({
       id: 'stale', role: 'master_geometry', label: 'Stale sketch.png',
@@ -959,7 +1006,7 @@ test('the latest deferred picker merges into the current controlled draft', asyn
     await secondCompletion;
   });
   expect(screen.getByText('Current sketch.png')).toBeTruthy();
-  expect(screen.getByLabelText('Drawing notes').props.value).toBe('Newer sentence.');
+  expect(screen.getByLabelText('Source notes').props.value).toBe('Newer sentence.');
 });
 
 test('a picker resolving after unmount cannot write to its former controlled owner', async () => {
@@ -979,10 +1026,10 @@ test('a picker resolving after unmount cannot write to its former controlled own
   />);
 
   let pickerCompletion!: Promise<void>;
-  await fireEvent.press(screen.getByLabelText('Upload a drawing'));
+  await fireEvent.press(screen.getByLabelText('Upload an image'));
   onDraftChange.mockClear();
   await act(() => {
-    pickerCompletion = fireEvent.press(screen.getByLabelText('Choose a drawing'));
+    pickerCompletion = fireEvent.press(screen.getByLabelText('Choose an image'));
   });
   await view.unmount();
   await act(async () => {
@@ -1051,11 +1098,11 @@ test('hydrates a controlled draft with its master source truth and output count'
     onSave={jest.fn()}
   />);
 
-  expect(screen.getByLabelText('Drawing notes').props.value)
+  expect(screen.getByLabelText('Source notes').props.value)
     .toBe('A restored sapphire direction.');
   expect(screen.getByText('Restored sketch.png')).toBeTruthy();
   expect(screen.getByLabelText('4 designs').props.accessibilityState).toEqual({ checked: true });
-  expect(screen.getByLabelText('Upload a drawing').props.accessibilityState).toEqual({ checked: true });
+  expect(screen.getByLabelText('Upload an image').props.accessibilityState).toEqual({ checked: true });
 });
 
 test('explains when image selection is unavailable instead of silently ignoring Add', async () => {
@@ -1069,8 +1116,8 @@ test('explains when image selection is unavailable instead of silently ignoring 
     onSave: jest.fn(),
   }));
 
-  await fireEvent.press(screen.getByLabelText('Upload a drawing'));
-  await fireEvent.press(screen.getByLabelText('Choose a drawing'));
+  await fireEvent.press(screen.getByLabelText('Upload an image'));
+  await fireEvent.press(screen.getByLabelText('Choose an image'));
 
   expect(await screen.findByText(/Image selection is unavailable here/)).toBeTruthy();
 });
