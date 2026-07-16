@@ -115,7 +115,7 @@ const renderCreate = (ui: React.ReactElement) => render(
 
 const loadDirection = async (index: number): Promise<void> => {
   await act(async () => {
-    fireEvent(screen.getByLabelText(`Direction ${index} preview`), 'load');
+    fireEvent(screen.getByLabelText(`Design ${index} preview`), 'load');
   });
 };
 
@@ -159,13 +159,12 @@ test('keeps every other previewed direction automatically and recomputes sibling
 
   expect(screen.queryByText(/factory facts/i)).toBeNull();
   expect(screen.queryByText(/structured specification/i)).toBeNull();
-  expect(screen.queryByText('How many directions?')).toBeNull();
+  expect(screen.getByText('How many designs would you like to compare?')).toBeTruthy();
   expect(screen.queryByText('Optional references')).toBeNull();
-  await fireEvent.changeText(screen.getByLabelText('Design sentence'), 'A sculptural aquamarine collar.');
-  await fireEvent.press(screen.getByLabelText('References and output options'));
-  await fireEvent.press(screen.getByLabelText('4 creative directions'));
+  await fireEvent.changeText(screen.getByLabelText('Design description'), 'A sculptural aquamarine collar.');
+  await fireEvent.press(screen.getByLabelText('4 designs'));
   expect(screen.getByText('4 requested outputs × 15 credits = estimated 60 credits')).toBeTruthy();
-  await fireEvent.press(screen.getByText('Create 4 directions'));
+  await fireEvent.press(screen.getByText('Generate 4 designs'));
 
   await waitFor(() => expect(createFromPrompt).toHaveBeenCalledWith({
     prompt: 'A sculptural aquamarine collar.',
@@ -173,42 +172,42 @@ test('keeps every other previewed direction automatically and recomputes sibling
     owner: 'designer_1',
     title: 'A sculptural aquamarine collar.',
   }));
-  expect(await screen.findByText('Choose a direction to continue')).toBeTruthy();
+  expect(await screen.findByText('Choose a design')).toBeTruthy();
   expect(onGenerationSucceeded).toHaveBeenCalledTimes(1);
-  expect(screen.getByText(/full generated set stays preserved in this review/i)).toBeTruthy();
+  expect(screen.getByText(/other generated designs stay saved for comparison/i)).toBeTruthy();
   expect(screen.queryByLabelText('Keep all other directions')).toBeNull();
   expect(screen.queryByLabelText('Only keep my Original')).toBeNull();
   expect(screen.queryByLabelText('Choose directions individually')).toBeNull();
-  expect(screen.getByText('Leave in Activity & start another')).toBeTruthy();
-  expect(screen.getByLabelText('Direction 1 preview').props.source.headers).toEqual({
+  expect(screen.getByText('Start over')).toBeTruthy();
+  expect(screen.getByLabelText('Design 1 preview').props.source.headers).toEqual({
     Authorization: 'Bearer first-party-token',
   });
-  expect(screen.getByText(/visual directions.+not measurements or production instructions/i)).toBeTruthy();
-  expect(screen.getByText('Continue with Direction 1')).toBeTruthy();
-  expect(within(screen.getByLabelText('Direction 2')).queryByText('Inspect detail')).toBeNull();
+  expect(screen.getByText(/visual concepts.+not production measurements/i)).toBeTruthy();
+  expect(screen.getByText('Continue with Design 1')).toBeTruthy();
+  expect(within(screen.getByLabelText('Design 2')).queryByText('Inspect detail')).toBeNull();
   expect(completeCreativeDirectionReview).not.toHaveBeenCalled();
   expect(onSave).not.toHaveBeenCalled();
   await loadDirection(1);
   await loadDirection(2);
   await loadDirection(3);
   await loadDirection(4);
-  await fireEvent.press(screen.getByLabelText('Direction 3'));
-  expect(screen.getByText('Continue with Direction 3')).toBeTruthy();
-  expect(within(screen.getByLabelText('Direction 1')).getByText('Will save as a variation'))
+  await fireEvent.press(screen.getByLabelText('Design 3'));
+  expect(screen.getByText('Continue with Design 3')).toBeTruthy();
+  expect(within(screen.getByLabelText('Design 1')).getByText('Saved as an alternative'))
     .toBeTruthy();
-  expect(screen.getByLabelText('Direction 1').props.accessibilityHint)
-    .toBe('Will save as a variation');
-  expect(within(screen.getByLabelText('Direction 3')).getByText('Selected to refine'))
+  expect(screen.getByLabelText('Design 1').props.accessibilityHint)
+    .toBe('Saved as an alternative');
+  expect(within(screen.getByLabelText('Design 3')).getByText('Selected'))
     .toBeTruthy();
   await loadDirection(3);
-  await fireEvent.press(screen.getByText('Continue with Direction 3'));
+  await fireEvent.press(screen.getByText('Continue with Design 3'));
   await waitFor(() => expect(completeCreativeDirectionReview).toHaveBeenCalledTimes(1));
   expect(completeCreativeDirectionReview).toHaveBeenCalledWith({
     projectId: 'project_1', selectedCandidateId: 'candidate_3',
     retained: [
-      { candidateId: 'candidate_1', label: 'Direction 1' },
-      { candidateId: 'candidate_2', label: 'Direction 2' },
-      { candidateId: 'candidate_4', label: 'Direction 4' },
+      { candidateId: 'candidate_1', label: 'Design 1' },
+      { candidateId: 'candidate_2', label: 'Design 2' },
+      { candidateId: 'candidate_4', label: 'Design 4' },
     ],
     createdBy: 'designer_1',
   });
@@ -248,18 +247,18 @@ test('does not expose retention administration during direction selection', asyn
   await loadDirection(1);
   await loadDirection(2);
   await loadDirection(3);
-  await fireEvent.press(screen.getByText('Continue with Direction 1'));
+  await fireEvent.press(screen.getByText('Continue with Design 1'));
 
   await waitFor(() => expect(completeCreativeDirectionReview).toHaveBeenCalledWith({
     projectId: 'project_1', selectedCandidateId: 'candidate_1', retained: [
-      { candidateId: 'candidate_2', label: 'Direction 2' },
-      { candidateId: 'candidate_3', label: 'Direction 3' },
+      { candidateId: 'candidate_2', label: 'Design 2' },
+      { candidateId: 'candidate_3', label: 'Design 3' },
     ],
     createdBy: 'designer_1',
   }));
 });
 
-test('an unavailable unselected preview does not block a loaded selected direction', async () => {
+test('an unavailable unselected preview remains saved and does not block a loaded selection', async () => {
   const completeCreativeDirectionReview = jest.fn(async ({ selectedCandidateId }) => ({
     data: {
       project: {
@@ -284,17 +283,20 @@ test('an unavailable unselected preview does not block a loaded selected directi
 
   await loadDirection(1);
   await act(async () => {
-    fireEvent(screen.getByLabelText('Direction 2 preview'), 'error');
+    fireEvent(screen.getByLabelText('Design 2 preview'), 'error');
   });
   await loadDirection(3);
   expect(screen.queryByText(/could not be displayed/i)).toBeNull();
-  const continueButton = screen.getByText('Continue with Direction 1');
+  const continueButton = screen.getByText('Continue with Design 1');
   expect(continueButton.parent?.props.accessibilityState.disabled).toBe(false);
   await fireEvent.press(continueButton);
 
   await waitFor(() => expect(completeCreativeDirectionReview).toHaveBeenCalledWith({
     projectId: 'project_1', selectedCandidateId: 'candidate_1',
-    retained: [{ candidateId: 'candidate_3', label: 'Direction 3' }],
+    retained: [
+      { candidateId: 'candidate_2', label: 'Design 2' },
+      { candidateId: 'candidate_3', label: 'Design 3' },
+    ],
     createdBy: 'designer_1',
   }));
 });
@@ -323,21 +325,21 @@ test('legacy review sets retain at most three previewed siblings without blockin
   />);
 
   for (let index = 1; index <= 6; index += 1) await loadDirection(index);
-  expect(within(screen.getByLabelText('Direction 5')).getByText('Preserved in review set'))
+  expect(within(screen.getByLabelText('Design 5')).getByText('Saved for comparison'))
     .toBeTruthy();
-  expect(within(screen.getByLabelText('Direction 6')).getByText('Preserved in review set'))
+  expect(within(screen.getByLabelText('Design 6')).getByText('Saved for comparison'))
     .toBeTruthy();
-  expect(screen.getByLabelText('Direction 4').props.accessibilityHint)
-    .toBe('Will save as a variation');
-  expect(screen.getByLabelText('Direction 5').props.accessibilityHint)
-    .toBe('Preserved in review set');
-  await fireEvent.press(screen.getByText('Continue with Direction 1'));
+  expect(screen.getByLabelText('Design 4').props.accessibilityHint)
+    .toBe('Saved as an alternative');
+  expect(screen.getByLabelText('Design 5').props.accessibilityHint)
+    .toBe('Saved for comparison');
+  await fireEvent.press(screen.getByText('Continue with Design 1'));
 
   await waitFor(() => expect(completeCreativeDirectionReview).toHaveBeenCalledWith({
     projectId: 'project_1', selectedCandidateId: 'candidate_1', retained: [
-      { candidateId: 'candidate_2', label: 'Direction 2' },
-      { candidateId: 'candidate_3', label: 'Direction 3' },
-      { candidateId: 'candidate_4', label: 'Direction 4' },
+      { candidateId: 'candidate_2', label: 'Design 2' },
+      { candidateId: 'candidate_3', label: 'Design 3' },
+      { candidateId: 'candidate_4', label: 'Design 4' },
     ],
     createdBy: 'designer_1',
   }));
@@ -356,25 +358,25 @@ test('a deferred generation clears only its exact submitted draft', async () => 
     onSave={jest.fn()}
   />);
 
-  await fireEvent.changeText(screen.getByLabelText('Design sentence'), 'First submitted direction.');
+  await fireEvent.changeText(screen.getByLabelText('Design description'), 'First submitted direction.');
   let createCompletion!: Promise<void>;
   await act(() => {
-    createCompletion = fireEvent.press(screen.getByText('Create 2 directions'));
+    createCompletion = fireEvent.press(screen.getByText('Generate 2 designs'));
   });
-  await fireEvent.changeText(screen.getByLabelText('Design sentence'), 'A newer unsent direction.');
+  await fireEvent.changeText(screen.getByLabelText('Design description'), 'A newer unsent direction.');
   await act(async () => {
     pending.resolve({ data: creativeProject(2), error: null, status: 201 });
     await createCompletion;
   });
 
-  expect(await screen.findByText('Choose a direction to continue')).toBeTruthy();
+  expect(await screen.findByText('Choose a design')).toBeTruthy();
   expect(onGenerationSucceeded).toHaveBeenCalledWith(expect.objectContaining({
     owner: 'designer_1',
     projectId: 'project_1',
     submittedDraft: expect.objectContaining({ sentence: 'First submitted direction.' }),
   }));
-  await fireEvent.press(screen.getByText('Leave in Activity & start another'));
-  expect(screen.getByLabelText('Design sentence').props.value).toBe('A newer unsent direction.');
+  await fireEvent.press(screen.getByText('Start over'));
+  expect(screen.getByLabelText('Design description').props.value).toBe('A newer unsent direction.');
 });
 
 test('a generation resolving after unmount cannot reset parent Create state', async () => {
@@ -391,10 +393,10 @@ test('a generation resolving after unmount cannot reset parent Create state', as
     onSave={jest.fn()}
   />);
 
-  await fireEvent.changeText(screen.getByLabelText('Design sentence'), 'Direction before navigation.');
+  await fireEvent.changeText(screen.getByLabelText('Design description'), 'Direction before navigation.');
   let createCompletion!: Promise<void>;
   await act(() => {
-    createCompletion = fireEvent.press(screen.getByText('Create 2 directions'));
+    createCompletion = fireEvent.press(screen.getByText('Generate 2 designs'));
   });
   await view.unmount();
   await act(async () => {
@@ -419,14 +421,15 @@ test('a deferred direction commit cannot navigate after its review unmounts', as
     onSave={onSave}
   />);
 
+  expect(screen.queryByText('Your other generated designs stay saved for comparison.')).toBeNull();
   await loadDirection(1);
   let commitCompletion!: Promise<void>;
   await act(() => {
-    commitCompletion = fireEvent.press(screen.getByText('Continue with Direction 1'));
+    commitCompletion = fireEvent.press(screen.getByText('Continue with Design 1'));
   });
-  expect(screen.getByText('Leave in Activity & start another').parent?.props.accessibilityState)
+  expect(screen.getByText('Start over').parent?.props.accessibilityState)
     .toEqual({ disabled: true });
-  expect(screen.getByLabelText('Direction 1').props.accessibilityState)
+  expect(screen.getByLabelText('Design 1').props.accessibilityState)
     .toEqual({ checked: true, disabled: true });
   await view.unmount();
   await act(async () => {
@@ -469,7 +472,7 @@ test('a deferred direction commit cannot save into a new owner session', async (
   await loadDirection(1);
   let commitCompletion!: Promise<void>;
   await act(() => {
-    commitCompletion = fireEvent.press(screen.getByText('Continue with Direction 1'));
+    commitCompletion = fireEvent.press(screen.getByText('Continue with Design 1'));
   });
   await view.rerender(review('designer_2'));
   await act(async () => {
@@ -515,18 +518,18 @@ test('reopens a durable reviewing Create job with automatic sibling retention', 
     />,
   );
 
-  expect(await screen.findByText('Choose a direction to continue')).toBeTruthy();
+  expect(await screen.findByText('Choose a design')).toBeTruthy();
   expect(createFromPrompt).not.toHaveBeenCalled();
   expect(createFromDrawing).not.toHaveBeenCalled();
   await loadDirection(1);
   await loadDirection(2);
   await loadDirection(3);
-  await fireEvent.press(screen.getByLabelText('Direction 2'));
-  await fireEvent.press(screen.getByText('Continue with Direction 2'));
+  await fireEvent.press(screen.getByLabelText('Design 2'));
+  await fireEvent.press(screen.getByText('Continue with Design 2'));
   await waitFor(() => expect(completeCreativeDirectionReview).toHaveBeenCalledWith({
     projectId: 'project_1', selectedCandidateId: 'candidate_2', retained: [
-      { candidateId: 'candidate_1', label: 'Direction 1' },
-      { candidateId: 'candidate_3', label: 'Direction 3' },
+      { candidateId: 'candidate_1', label: 'Design 1' },
+      { candidateId: 'candidate_3', label: 'Design 3' },
     ],
     createdBy: 'designer_1', studioJobId: 'studio_job_create',
   }));
@@ -553,21 +556,21 @@ test('does not create an immutable revision until its selected preview renders',
     onSave={jest.fn()}
   />);
 
-  const continueButton = screen.getByText('Continue with Direction 1');
+  const continueButton = screen.getByText('Continue with Design 1');
   expect(continueButton.parent?.props.accessibilityState.disabled).toBe(true);
   fireEvent.press(continueButton);
   expect(completeCreativeDirectionReview).not.toHaveBeenCalled();
 
   await act(async () => {
-    fireEvent(screen.getByLabelText('Direction 1 preview'), 'error');
+    fireEvent(screen.getByLabelText('Design 1 preview'), 'error');
   });
-  expect(screen.getByText(/selected direction could not be displayed/i)).toBeTruthy();
+  expect(screen.getByText(/selected design could not be displayed/i)).toBeTruthy();
   fireEvent.press(continueButton);
   expect(completeCreativeDirectionReview).not.toHaveBeenCalled();
 
   await loadDirection(1);
   await act(async () => {
-    fireEvent.press(screen.getByText('Continue with Direction 1'));
+    fireEvent.press(screen.getByText('Continue with Design 1'));
   });
   await waitFor(() => expect(completeCreativeDirectionReview).toHaveBeenCalledTimes(1));
 });
@@ -605,8 +608,8 @@ test('keeps the complete review staged after an atomic commit error and retries 
   />);
 
   await loadDirection(3);
-  await fireEvent.press(screen.getByLabelText('Direction 3'));
-  const continueLabel = 'Continue with Direction 3';
+  await fireEvent.press(screen.getByLabelText('Design 3'));
+  const continueLabel = 'Continue with Design 3';
   await fireEvent.press(screen.getByText(continueLabel));
 
   await waitFor(() => expect(completeCreativeDirectionReview).toHaveBeenCalledTimes(1));
@@ -625,7 +628,7 @@ test('keeps the complete review staged after an atomic commit error and retries 
   }));
 });
 
-test('starting another brief clears the previous review error and collapses advanced setup', async () => {
+test('starting another design clears the previous review error without reopening setup clutter', async () => {
   const createFromPrompt = jest.fn(async () => ({
     data: creativeProject(1), error: null, status: 201,
   }));
@@ -646,21 +649,19 @@ test('starting another brief clears the previous review error and collapses adva
     onSave={jest.fn()}
   />);
 
-  await fireEvent.press(screen.getByLabelText('References and output options'));
-  expect(screen.getByText('Optional references')).toBeTruthy();
-  await fireEvent.press(screen.getByText('Create 2 directions'));
+  expect(screen.queryByText('Optional references')).toBeNull();
+  await fireEvent.press(screen.getByText('Generate 2 designs'));
   await loadDirection(1);
-  await fireEvent.press(screen.getByText('Continue with Direction 1'));
+  await fireEvent.press(screen.getByText('Continue with Design 1'));
   expect(await screen.findByText('Facetta could not connect. Check your connection and try again.'))
     .toBeTruthy();
 
-  await fireEvent.press(screen.getByText('Leave in Activity & start another'));
+  await fireEvent.press(screen.getByText('Start over'));
 
   expect(screen.queryByText('Facetta could not connect. Check your connection and try again.'))
     .toBeNull();
   expect(screen.queryByText('Optional references')).toBeNull();
-  expect(screen.getByLabelText('References and output options').props.accessibilityState)
-    .toEqual({ expanded: false });
+  expect(screen.getByLabelText('Design description').props.value).toBe('First direction');
 });
 
 test('keeps an already-created direction set when the designer starts another brief', async () => {
@@ -676,33 +677,29 @@ test('keeps an already-created direction set when the designer starts another br
     onSave={jest.fn()}
   />);
 
-  await fireEvent.press(screen.getByText('Create 2 directions'));
-  expect(await screen.findByText(/full generated set stays preserved in this review/i)).toBeTruthy();
+  await fireEvent.press(screen.getByText('Generate 2 designs'));
+  expect(await screen.findByText(/other generated designs stay saved for comparison/i)).toBeTruthy();
   await loadDirection(1);
-  expect(screen.getByText('Continue with Direction 1')).toBeTruthy();
-  await fireEvent.press(screen.getByText('Leave in Activity & start another'));
-  expect(await screen.findByLabelText('Design sentence')).toBeTruthy();
-  expect(screen.queryByText(/full generated set stays preserved in this review/i)).toBeNull();
-  await fireEvent.press(screen.getByText('Create 2 directions'));
+  expect(screen.getByText('Continue with Design 1')).toBeTruthy();
+  await fireEvent.press(screen.getByText('Start over'));
+  expect(await screen.findByLabelText('Design description')).toBeTruthy();
+  expect(screen.queryByText(/other generated designs stay saved for comparison/i)).toBeNull();
+  await fireEvent.press(screen.getByText('Generate 2 designs'));
   await loadDirection(1);
-  expect(await screen.findByText('Continue with Direction 1')).toBeTruthy();
+  expect(await screen.findByText('Continue with Design 1')).toBeTruthy();
   expect(screen.queryByLabelText('Keep all other directions')).toBeNull();
 });
 
-test('sends every enabled role with the master geometry input', async () => {
+test('upload mode opens the picker only after Choose drawing and sends one unambiguous drawing', async () => {
   const master: StudioCreateReference = {
     id: 'master', role: 'master_geometry', label: 'Front sketch',
     imageBase64: 'bWFzdGVy', mediaType: 'image/png',
   };
-  const material: StudioCreateReference = {
-    id: 'material', role: 'material_style', label: 'Brushed gold reference',
-    imageBase64: 'bWF0ZXJpYWw=', mediaType: 'image/jpeg',
-  };
   const createProjectFromDrawing = jest.fn(async () => ({
-    data: creativeProject(2), error: null, status: 201,
+    data: creativeProject(3), error: null, status: 201,
   }));
   const createFromPrompt = jest.fn();
-  const onRequestReference = jest.fn(async (role) => role === 'master_geometry' ? master : material);
+  const onRequestReference = jest.fn(async () => master);
   await renderCreate(React.createElement(StudioCreateWorkspace, {
     gateway: {
       createFromPrompt,
@@ -714,146 +711,121 @@ test('sends every enabled role with the master geometry input', async () => {
     onSave: jest.fn(),
   }));
 
-  await fireEvent.press(screen.getByText('Add a drawing, photo, or render'));
-  expect(screen.getByText('What did you upload?')).toBeTruthy();
-  await fireEvent.press(screen.getByText('Drawing'));
-  await fireEvent.press(screen.getByLabelText('References and output options'));
-  await fireEvent.press(screen.getByLabelText('Add Material & style reference'));
-  await fireEvent.changeText(screen.getByLabelText('Design sentence'), 'Preserve the silhouette and make it feel lighter.');
+  await fireEvent.press(screen.getByLabelText('Upload a drawing'));
+  expect(onRequestReference).not.toHaveBeenCalled();
+  expect(screen.getByLabelText('Choose a drawing')).toBeTruthy();
+  await fireEvent.press(screen.getByLabelText('Choose a drawing'));
+  expect(onRequestReference).toHaveBeenCalledWith('master_geometry');
+  await fireEvent.changeText(
+    screen.getByLabelText('Drawing notes'),
+    'Preserve the silhouette and make it feel lighter.',
+  );
+  await fireEvent.press(screen.getByLabelText('3 designs'));
 
-  expect(screen.getByText('Create 2 directions').parent?.props.accessibilityState).toEqual({ disabled: true });
-  expect(screen.getByText('Checking attached references before creation…')).toBeTruthy();
-  expect(screen.getByLabelText('Visual source preview').props.source.uri).toBe(
+  expect(screen.getByText('Generate 3 designs').parent?.props.accessibilityState).toEqual({ disabled: true });
+  expect(screen.getByText('Checking your drawing before generation…')).toBeTruthy();
+  expect(screen.getByLabelText('Drawing preview').props.source.uri).toBe(
     'data:image/png;base64,bWFzdGVy',
   );
-  expect(screen.getByLabelText('Material & style reference preview').props.source.uri).toBe(
-    'data:image/jpeg;base64,bWF0ZXJpYWw=',
-  );
-
-  await fireEvent.press(screen.getByLabelText('Inspect Master geometry · Front sketch in detail'));
-  expect(screen.getByText('Master geometry · Front sketch')).toBeTruthy();
+  await fireEvent.press(screen.getByLabelText('Inspect Uploaded drawing · Front sketch in detail'));
+  expect(screen.getByText('Uploaded drawing · Front sketch')).toBeTruthy();
   await fireEvent.press(screen.getByLabelText('Zoom image to 4x'));
   expect(screen.getByLabelText('Zoom image to 4x').props.accessibilityState).toEqual({ selected: true });
   expect(createProjectFromDrawing).not.toHaveBeenCalled();
   await fireEvent.press(screen.getByLabelText('Close image inspector'));
 
-  await fireEvent.press(screen.getByLabelText('Inspect Material & style · Brushed gold reference in detail'));
-  expect(screen.getByText('Material & style · Brushed gold reference')).toBeTruthy();
-  await fireEvent.press(screen.getByLabelText('Close image inspector'));
-  expect(createProjectFromDrawing).not.toHaveBeenCalled();
-
-  await loadReferencePreview('Visual source preview');
-  await loadReferencePreview('Material & style reference preview');
-  expect(screen.getByText('Create 2 directions').parent?.props.accessibilityState).toEqual({ disabled: false });
-  await fireEvent.press(screen.getByText('Create 2 directions'));
+  await loadReferencePreview('Drawing preview');
+  expect(screen.getByText('Generate 3 designs').parent?.props.accessibilityState).toEqual({ disabled: false });
+  await fireEvent.press(screen.getByText('Generate 3 designs'));
 
   await waitFor(() => expect(createProjectFromDrawing).toHaveBeenCalledWith({
     image_base64: 'bWFzdGVy',
     source_kind: 'drawing',
     media_type: 'image/png',
     instruction: 'Preserve the silhouette and make it feel lighter.',
-    references: [{
-      role: 'material_style',
-      image_base64: 'bWF0ZXJpYWw=',
-      media_type: 'image/jpeg',
-    }],
-    variation_count: 2,
+    references: [],
+    variation_count: 3,
     owner: 'designer_1',
     title: 'Preserve the silhouette and make it feel lighter.',
   }));
   expect(createFromPrompt).not.toHaveBeenCalled();
-  expect(screen.queryByText(/Reference limit|cannot send|remain labeled/i)).toBeNull();
+  expect(screen.queryByText('Construction detail')).toBeNull();
+  expect(screen.queryByText('Brand direction')).toBeNull();
+  expect(screen.queryByText('Material & style')).toBeNull();
 });
 
-test('accepts role-labeled advisory guidance after a sentence without requiring a master', async () => {
-  const material: StudioCreateReference = {
-    id: 'material', role: 'material_style', label: 'Hammered gold reference',
-    imageBase64: 'bWF0ZXJpYWw=', mediaType: 'image/jpeg',
+test('keeps prompt text, drawing, and drawing notes when switching starting methods', async () => {
+  const master: StudioCreateReference = {
+    id: 'toggle-master', role: 'master_geometry', label: 'Toggle sketch',
+    imageBase64: 'dG9nZ2xl', mediaType: 'image/png',
   };
-  const createFromPrompt = jest.fn(async () => ({
-    data: creativeProject(2), error: null, status: 201,
+  const createFromDrawing = jest.fn(async () => ({
+    data: creativeProject(1), error: null, status: 201,
   }));
-  const createFromDrawing = jest.fn();
-  const onRequestReference = jest.fn(async () => material);
+  const onRequestReference = jest.fn(async () => master);
   await renderCreate(<StudioCreateWorkspace
     gateway={{
-      createFromPrompt, createFromDrawing, completeCreativeDirectionReview: jest.fn(),
+      createFromPrompt: jest.fn(), createFromDrawing,
+      completeCreativeDirectionReview: jest.fn(),
     } as CreateGateway}
     owner="designer_1"
     onRequestReference={onRequestReference}
     onSave={jest.fn()}
   />);
 
-  await fireEvent.press(screen.getByLabelText('References and output options'));
-  const addMaterial = screen.getByLabelText('Add Material & style reference');
-  expect(addMaterial.props.accessibilityState).toEqual({ disabled: true });
-  expect(screen.getAllByText('Add an idea first')).toHaveLength(3);
-  expect(screen.getByText('2 directions · No supporting references')).toBeTruthy();
-
   await fireEvent.changeText(
-    screen.getByLabelText('Design sentence'),
-    'A broad sculptural gold cuff with one clean opening.',
+    screen.getByLabelText('Design description'),
+    'An emerald ring with a knife-edge band.',
   );
-  expect(screen.getByLabelText('Add Material & style reference').props.accessibilityState).toEqual({
-    disabled: false,
-  });
-  await fireEvent.press(screen.getByLabelText('Add Material & style reference'));
-  expect(onRequestReference).toHaveBeenCalledWith('material_style');
-  expect(screen.getByText('2 directions · 1 supporting reference')).toBeTruthy();
-  expect(screen.queryByText('Master geometry required')).toBeNull();
-  expect(screen.queryByText('Add a design idea')).toBeNull();
-  expect(screen.getByText('Create 2 directions').parent?.props.accessibilityState).toEqual({ disabled: true });
+  await fireEvent.press(screen.getByLabelText('Upload a drawing'));
+  await fireEvent.press(screen.getByLabelText('Choose a drawing'));
+  await fireEvent.changeText(
+    screen.getByLabelText('Drawing notes'),
+    'Keep the silhouette and soften the shoulders.',
+  );
+  await loadReferencePreview('Drawing preview');
 
-  await loadReferencePreview('Material & style reference preview');
-  await fireEvent.press(screen.getByText('Create 2 directions'));
-  await waitFor(() => expect(createFromPrompt).toHaveBeenCalledWith({
-    prompt: 'A broad sculptural gold cuff with one clean opening.',
-    references: [{
-      role: 'material_style',
-      image_base64: 'bWF0ZXJpYWw=',
-      media_type: 'image/jpeg',
-    }],
+  await fireEvent.press(screen.getByLabelText('Describe a design'));
+  expect(screen.getByLabelText('Design description').props.value)
+    .toBe('An emerald ring with a knife-edge band.');
+
+  await fireEvent.press(screen.getByLabelText('Upload a drawing'));
+  expect(screen.getByLabelText('Drawing preview')).toBeTruthy();
+  expect(screen.getByLabelText('Drawing notes').props.value)
+    .toBe('Keep the silhouette and soften the shoulders.');
+  expect(onRequestReference).toHaveBeenCalledTimes(1);
+
+  await fireEvent.press(screen.getByText('Generate 2 designs'));
+  await waitFor(() => expect(createFromDrawing).toHaveBeenCalledWith(expect.objectContaining({
+    image_base64: 'dG9nZ2xl',
+    instruction: 'Keep the silhouette and soften the shoulders.',
     variation_count: 2,
-    owner: 'designer_1',
-    title: 'A broad sculptural gold cuff with one clean opening.',
-  }));
-  expect(createFromDrawing).not.toHaveBeenCalled();
+  })));
 });
 
-test('rejects an advisory-only setup until the designer supplies a sentence or master', async () => {
-  const material: StudioCreateReference = {
-    id: 'material', role: 'material_style', label: 'Hammered gold reference',
-    imageBase64: 'bWF0ZXJpYWw=', mediaType: 'image/jpeg',
-  };
-  const createFromPrompt = jest.fn();
+test('keeps the first screen to prompt or drawing without role taxonomy', async () => {
   await renderCreate(<StudioCreateWorkspace
     gateway={{
-      createFromPrompt, createFromDrawing: jest.fn(),
+      createFromPrompt: jest.fn(), createFromDrawing: jest.fn(),
       completeCreativeDirectionReview: jest.fn(),
     } as CreateGateway}
     owner="designer_1"
-    initialReferences={[material]}
     onSave={jest.fn()}
   />);
 
-  await loadReferencePreview('Material & style reference preview');
-  expect(screen.getByText('2 directions · 1 supporting reference')).toBeTruthy();
-  expect(screen.getByText('Add a design idea')).toBeTruthy();
-  expect(screen.getByText(
-    'Supporting references can guide material, construction, or brand direction after you add a design sentence or one visual source. They do not define the jewelry on their own.',
-  )).toBeTruthy();
-  expect(screen.queryByText('Master geometry required')).toBeNull();
-  expect(screen.getByText('Create 2 directions').parent?.props.accessibilityState).toEqual({
-    disabled: true,
-  });
-  await fireEvent.press(screen.getByText('Create 2 directions'));
-  expect(createFromPrompt).not.toHaveBeenCalled();
+  expect(screen.getByLabelText('Describe a design').props.accessibilityState).toEqual({ checked: true });
+  expect(screen.getByLabelText('Upload a drawing').props.accessibilityState).toEqual({ checked: false });
+  expect(screen.getByText('How many designs would you like to compare?')).toBeTruthy();
+  expect(screen.queryByText('Optional references')).toBeNull();
+  expect(screen.queryByText('Material & style')).toBeNull();
+  expect(screen.queryByText('Construction detail')).toBeNull();
+  expect(screen.queryByText('Brand direction')).toBeNull();
 });
 
-test('starts from a master image without forcing a sentence', async () => {
+test('starts from a drawing without forcing an instruction', async () => {
   const master: StudioCreateReference = {
-    id: 'master', role: 'master_geometry', label: 'Pendant photograph',
-    imageBase64: 'bWFzdGVy', mediaType: 'image/png', sourceKind: 'photograph',
+    id: 'master', role: 'master_geometry', label: 'Pendant sketch',
+    imageBase64: 'bWFzdGVy', mediaType: 'image/png', sourceKind: 'drawing',
   };
   const createFromDrawing = jest.fn(async () => ({
     data: creativeProject(1), error: null, status: 201,
@@ -868,21 +840,21 @@ test('starts from a master image without forcing a sentence', async () => {
     onSave: jest.fn(),
   }));
 
-  expect(screen.getByLabelText('Visual source preview').props.source.uri).toBe(
+  expect(screen.getByLabelText('Drawing preview').props.source.uri).toBe(
     'data:image/png;base64,bWFzdGVy',
   );
-  expect(screen.getByLabelText('Replace visual source')).toBeTruthy();
-  expect(screen.getByText('Create 2 directions').parent?.props.accessibilityState).toEqual({ disabled: true });
-  await loadReferencePreview('Visual source preview');
-  await fireEvent.press(screen.getByText('Create 2 directions'));
+  expect(screen.getByLabelText('Replace drawing')).toBeTruthy();
+  expect(screen.getByText('Generate 2 designs').parent?.props.accessibilityState).toEqual({ disabled: true });
+  await loadReferencePreview('Drawing preview');
+  await fireEvent.press(screen.getByText('Generate 2 designs'));
   await waitFor(() => expect(createFromDrawing).toHaveBeenCalledWith({
     image_base64: 'bWFzdGVy',
-    source_kind: 'photograph',
+    source_kind: 'drawing',
     media_type: 'image/png',
     references: [],
     variation_count: 2,
     owner: 'designer_1',
-    title: 'Pendant photograph',
+    title: 'Pendant sketch',
   }));
 });
 
@@ -903,18 +875,18 @@ test('fails closed when an attached reference cannot render', async () => {
   />);
 
   await act(async () => {
-    fireEvent(screen.getByLabelText('Visual source preview'), 'error');
+    fireEvent(screen.getByLabelText('Drawing preview'), 'error');
   });
 
   expect(screen.getByText(
-    'A reference preview could not be shown. Replace or remove it before creating directions.',
+    'Your drawing preview could not be shown. Replace or remove it before generating designs.',
   )).toBeTruthy();
-  expect(screen.getByText('Create 2 directions').parent?.props.accessibilityState).toEqual({ disabled: true });
-  await fireEvent.press(screen.getByText('Create 2 directions'));
+  expect(screen.getByText('Generate 2 designs').parent?.props.accessibilityState).toEqual({ disabled: true });
+  await fireEvent.press(screen.getByText('Generate 2 designs'));
   expect(createFromDrawing).not.toHaveBeenCalled();
 });
 
-test('surfaces picker failures instead of leaving Add as a silent dead end', async () => {
+test('surfaces picker failures instead of leaving Choose drawing as a silent dead end', async () => {
   const onRequestReference = jest.fn(async () => {
     throw new Error('Choose a PNG, JPEG, or WebP image. Other file types are not supported.');
   });
@@ -929,7 +901,8 @@ test('surfaces picker failures instead of leaving Add as a silent dead end', asy
     onSave: jest.fn(),
   }));
 
-  await fireEvent.press(screen.getByText('Add a drawing, photo, or render'));
+  await fireEvent.press(screen.getByLabelText('Upload a drawing'));
+  await fireEvent.press(screen.getByLabelText('Choose a drawing'));
 
   expect(await screen.findByText(/Choose a PNG, JPEG, or WebP image/)).toBeTruthy();
   expect(onRequestReference).toHaveBeenCalledWith('master_geometry');
@@ -958,16 +931,17 @@ test('the latest deferred picker merges into the current controlled draft', asyn
   }
   await renderCreate(<ControlledPickerCreate />);
 
-  await fireEvent.changeText(screen.getByLabelText('Design sentence'), 'Original sentence.');
+  await fireEvent.press(screen.getByLabelText('Upload a drawing'));
+  await fireEvent.changeText(screen.getByLabelText('Drawing notes'), 'Original sentence.');
   let firstCompletion!: Promise<void>;
   let secondCompletion!: Promise<void>;
   await act(() => {
-    firstCompletion = fireEvent.press(screen.getByText('Add a drawing, photo, or render'));
+    firstCompletion = fireEvent.press(screen.getByLabelText('Choose a drawing'));
   });
   await act(() => {
-    secondCompletion = fireEvent.press(screen.getByText('Add a drawing, photo, or render'));
+    secondCompletion = fireEvent.press(screen.getByLabelText('Choose a drawing'));
   });
-  await fireEvent.changeText(screen.getByLabelText('Design sentence'), 'Newer sentence.');
+  await fireEvent.changeText(screen.getByLabelText('Drawing notes'), 'Newer sentence.');
   await act(async () => {
     first.resolve({
       id: 'stale', role: 'master_geometry', label: 'Stale sketch.png',
@@ -985,7 +959,7 @@ test('the latest deferred picker merges into the current controlled draft', asyn
     await secondCompletion;
   });
   expect(screen.getByText('Current sketch.png')).toBeTruthy();
-  expect(screen.getByLabelText('Design sentence').props.value).toBe('Newer sentence.');
+  expect(screen.getByLabelText('Drawing notes').props.value).toBe('Newer sentence.');
 });
 
 test('a picker resolving after unmount cannot write to its former controlled owner', async () => {
@@ -1005,8 +979,10 @@ test('a picker resolving after unmount cannot write to its former controlled own
   />);
 
   let pickerCompletion!: Promise<void>;
+  await fireEvent.press(screen.getByLabelText('Upload a drawing'));
+  onDraftChange.mockClear();
   await act(() => {
-    pickerCompletion = fireEvent.press(screen.getByText('Add a drawing, photo, or render'));
+    pickerCompletion = fireEvent.press(screen.getByLabelText('Choose a drawing'));
   });
   await view.unmount();
   await act(async () => {
@@ -1039,14 +1015,13 @@ test('does not expose backend diagnostics when generation fails', async () => {
     onSave: jest.fn(),
   }));
 
-  await fireEvent.changeText(screen.getByLabelText('Design sentence'), 'A quiet gold ring.');
-  await fireEvent.press(screen.getByLabelText('References and output options'));
-  await fireEvent.press(screen.getByLabelText('4 creative directions'));
-  await fireEvent.press(screen.getByText('Create 4 directions'));
+  await fireEvent.changeText(screen.getByLabelText('Design description'), 'A quiet gold ring.');
+  await fireEvent.press(screen.getByLabelText('4 designs'));
+  await fireEvent.press(screen.getByText('Generate 4 designs'));
   expect(await screen.findByText('Facetta could not create those directions. Try again.')).toBeTruthy();
   expect(screen.queryByText(/grok|base64|asset_id|run_id|design_version/i)).toBeNull();
-  expect(screen.getByLabelText('Design sentence').props.value).toBe('A quiet gold ring.');
-  expect(screen.getByLabelText('4 creative directions').props.accessibilityState).toEqual({
+  expect(screen.getByLabelText('Design description').props.value).toBe('A quiet gold ring.');
+  expect(screen.getByLabelText('4 designs').props.accessibilityState).toEqual({
     checked: true,
   });
   expect(onGenerationSucceeded).not.toHaveBeenCalled();
@@ -1076,11 +1051,11 @@ test('hydrates a controlled draft with its master source truth and output count'
     onSave={jest.fn()}
   />);
 
-  expect(screen.getByLabelText('Design sentence').props.value)
+  expect(screen.getByLabelText('Drawing notes').props.value)
     .toBe('A restored sapphire direction.');
   expect(screen.getByText('Restored sketch.png')).toBeTruthy();
-  expect(screen.getByText('4 directions · No supporting references')).toBeTruthy();
-  expect(screen.getByText('Drawing').parent?.props.accessibilityState).toEqual({ checked: true });
+  expect(screen.getByLabelText('4 designs').props.accessibilityState).toEqual({ checked: true });
+  expect(screen.getByLabelText('Upload a drawing').props.accessibilityState).toEqual({ checked: true });
 });
 
 test('explains when image selection is unavailable instead of silently ignoring Add', async () => {
@@ -1094,7 +1069,8 @@ test('explains when image selection is unavailable instead of silently ignoring 
     onSave: jest.fn(),
   }));
 
-  await fireEvent.press(screen.getByText('Add a drawing, photo, or render'));
+  await fireEvent.press(screen.getByLabelText('Upload a drawing'));
+  await fireEvent.press(screen.getByLabelText('Choose a drawing'));
 
   expect(await screen.findByText(/Image selection is unavailable here/)).toBeTruthy();
 });

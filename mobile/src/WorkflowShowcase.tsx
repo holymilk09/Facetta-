@@ -18,14 +18,14 @@ const TICK_MS = 60;
 export const WORKFLOW_SLIDES = [
   {
     kicker: 'Create',
-    title: 'Start with what\nyou already have',
-    body: 'Use a sentence, drawing, photograph, render, or master-geometry reference. Ask for one to four visual directions without filling out a production form.',
+    title: 'Prompt it or\ndraw it',
+    body: 'Describe the jewelry you want, or upload your own drawing. Ask for one to four visual designs without filling out a production form.',
     image: promptShot,
   },
   {
     kicker: 'Choose',
     title: 'Keep the direction\nthat feels right',
-    body: 'Compare the candidates, choose the one you want to develop, and mark any other direction you want to keep as a variation.',
+    body: 'Compare the designs and choose the one you want to develop. The other generated directions remain preserved for later.',
     image: adjustShot,
   },
   {

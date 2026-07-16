@@ -39,10 +39,8 @@ export const STUDIO_ACTIONS: readonly StudioActionDefinition[] = [
     id: 'create',
     label: 'Create a design',
     shortLabel: 'Create',
-    description: 'Start from a prompt, sketch, product image, or reference.',
-    referenceRoles: [
-      'master_geometry', 'material_style', 'construction_detail', 'brand_direction',
-    ],
+    description: 'Describe the jewelry you want or upload your own drawing.',
+    referenceRoles: ['master_geometry'],
     requiresActiveDesign: false,
     placement: 'primary',
     isAvailable: () => true,
@@ -50,13 +48,13 @@ export const STUDIO_ACTIONS: readonly StudioActionDefinition[] = [
   {
     ...jobAction('vary'),
     id: 'vary',
-    label: 'Save as a variation',
-    shortLabel: 'Vary',
-    description: 'Copy the exact active revision into a named sibling without replacing it.',
+    label: 'Duplicate direction',
+    shortLabel: 'Duplicate',
+    description: 'Legacy exact-copy operation retained for historical compatibility.',
     referenceRoles: ['master_geometry'],
     requiresActiveDesign: true,
-    placement: 'primary',
-    isAvailable: activeDesign,
+    placement: 'more',
+    isAvailable: () => false,
   },
   {
     ...jobAction('refine'),
@@ -94,6 +92,21 @@ export const STUDIO_ACTIONS: readonly StudioActionDefinition[] = [
       && !context.hasExactSpecification,
   },
   {
+    ...jobAction('angles'),
+    id: 'angles',
+    label: 'Generate visual angle set',
+    shortLabel: 'Angles',
+    description: 'See the selected design from the front, three-quarter, and side before confirming technical facts.',
+    referenceRoles: ['master_geometry'],
+    uiSchemaMode: 'host_rendered',
+    fields: [],
+    requiresActiveDesign: true,
+    placement: 'more',
+    isAvailable: (context) => activeDesign(context)
+      && context.hasSelectedPreSpecVisual
+      && !context.hasExactSpecification,
+  },
+  {
     ...jobAction('views'),
     id: 'views',
     label: 'Generate technical views',
@@ -101,7 +114,7 @@ export const STUDIO_ACTIONS: readonly StudioActionDefinition[] = [
     description: 'Create consistent line-art angles from this revision and its confirmed design facts.',
     referenceRoles: ['master_geometry', 'construction_detail'],
     requiresActiveDesign: true,
-    placement: 'primary',
+    placement: 'more',
     isAvailable: exactDesign,
   },
   {

@@ -79,13 +79,13 @@ export const ONBOARDING_STEPS = [
   {
     kicker: 'Create',
     title: 'Begin from your idea',
-    body: 'Start with a sentence, drawing, photograph, render, or master-geometry reference. Facetta gives you one to four visual directions to consider.',
+    body: 'Describe the jewelry you want, or upload your own drawing. Facetta gives you one to four visual designs to compare.',
     illustration: IllustrationDescribe,
   },
   {
     kicker: 'Choose & refine',
     title: 'Choose before you refine',
-    body: 'Choose and preserve a direction first. Precision refinement appears for revisions with confirmed design facts, and every change stays a preview until you apply it.',
+    body: 'Choose one design, then refine it or create a consistent front, three-quarter, and side view set. Every change stays a preview until you apply it.',
     illustration: IllustrationTruth,
   },
   {

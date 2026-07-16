@@ -383,6 +383,7 @@ export type StudioJobAction =
   | 'vary'
   | 'refine'
   | 'views'
+  | 'angles'
   | 'present'
   | 'factory';
 
@@ -756,6 +757,78 @@ export interface PreSpecPresentationDiscardResult {
   source_sha256: string;
   design_version: null;
   candidate_id: string;
+}
+
+export type VisualAngleView = 'front' | 'three_quarter' | 'side';
+
+export interface CreateVisualAngleSetRequest {
+  created_by: string;
+  expected_active_asset_id: string;
+  studio_job_id: string;
+  variant?: number;
+}
+
+export interface VisualAngleCandidate {
+  candidate_id: string;
+  image_run_id: string;
+  view: VisualAngleView;
+  output_sha256: string;
+  qa: ImageQualityReport;
+  routing: ImageRoutingSummary;
+  status: 'reviewing' | 'accepted' | 'discarded' | 'expired';
+  accepted_asset_id: string | null;
+  preview_url: string;
+}
+
+/** Temporary, review-only visual studies tied to one selected pre-spec source. */
+export interface VisualAngleSet {
+  angle_set_id: string;
+  studio_job_id: string;
+  project_id: string;
+  source_asset_id: string;
+  source_sha256: string;
+  status: 'reviewing' | 'accepted' | 'discarded' | 'expired';
+  expires_at: string;
+  candidates: VisualAngleCandidate[];
+}
+
+export interface VisualAngleSetResult {
+  action_id: 'angles';
+  status: 'review_required';
+  requested_outputs: 3;
+  credits_per_output: number;
+  estimated_credits: number;
+  billing_policy: string;
+  angle_set: VisualAngleSet;
+}
+
+export interface VisualAngleSetLookupResult {
+  action_id: 'angles';
+  angle_set: VisualAngleSet;
+}
+
+export interface VisualAngleSetDecisionRequest {
+  created_by: string;
+  expected_project_id: string;
+  expected_source_asset_id: string;
+  expected_source_sha256: string;
+}
+
+export interface VisualAngleSetAcceptResult {
+  status: 'accepted';
+  angle_set_id: string;
+  source_asset_id: string;
+  asset_ids: string[];
+  capability: 'ANGLE_VIEW';
+  active_revision_unchanged: true;
+  project: ProjectDetail;
+}
+
+export interface VisualAngleSetDiscardResult {
+  status: 'discarded';
+  angle_set_id: string;
+  source_asset_id: string;
+  charged_outputs: 0;
 }
 
 export interface PromoteCreativeCandidateRequest {

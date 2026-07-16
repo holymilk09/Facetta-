@@ -58,8 +58,7 @@ describe('Expo Studio reference picker adapter', () => {
   test('treats cancel as a normal no-selection outcome', async () => {
     mockGetDocumentAsync.mockResolvedValue({ canceled: true, assets: null });
 
-    await expect(pickExpoStudioCreateReference('brand_direction')).resolves.toBeNull();
+    await expect(pickExpoStudioCreateReference('master_geometry')).resolves.toBeNull();
     expect(mockReadBase64).not.toHaveBeenCalled();
   });
 });
-

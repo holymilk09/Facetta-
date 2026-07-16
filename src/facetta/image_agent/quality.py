@@ -15,6 +15,8 @@ from facetta.image_agent.contracts import (
     DesignerEditDomain,
     EditCrossInspection,
     EditInspection,
+    ExplicitComponentCountInspection,
+    ExplicitComponentCountObservation,
     ImageAgentPlan,
     ImageOperation,
     ImageQualityReport,
@@ -84,6 +86,14 @@ class PromptCreativeRenderInspector(Protocol):
         plan: ImageAgentPlan,
         candidate: bytes,
     ) -> CreativeRenderInspection: ...
+
+
+class PromptCreativeCountInspector(Protocol):
+    def inspect_counts(
+        self,
+        plan: ImageAgentPlan,
+        candidate: bytes,
+    ) -> ExplicitComponentCountInspection: ...
 
 
 _RENDER_QA_SYSTEM = """\
@@ -198,6 +208,86 @@ dimensions, hidden geometry, manufacturability, or source skill. Use null only
 for a fact genuinely occluded in the selected source view."""
 
 
+_CAMERA_STUDY_QA_SYSTEM = """\
+You compare a designer-selected jewelry render with a generated camera study of
+the SAME physical piece. The FIRST image is the selected source and identity
+anchor. The SECOND image must show the requested new camera projection. Judge
+design fidelity and view correctness together; attractiveness never excuses
+design drift.
+
+Return JSON only:
+{"coherent_jewelry_render": true|false|null,
+ "complete_piece_visible": true|false|null,
+ "source_design_preserved": true|false|null,
+ "visible_components_preserved": true|false|null,
+ "local_geometry_preserved": true|false|null,
+ "repeated_element_pattern_preserved": true|false|null,
+ "stone_shape_and_cut_family_preserved": true|false|null,
+ "requested_presentation_applied": true|false|null,
+ "text_or_branding_detected": true|false|null,
+ "major_unintended_changes": ["specific assessable difference"],
+ "score": 0-100,
+ "notes": ["brief evidence, including any source-occluded fact"]}
+
+The requested camera movement is the ONLY authorized change. A real viewpoint
+change necessarily changes 2D overlap, apparent contour, foreshortening,
+visibility, and occlusion. Do not require identical pixel positions or the same
+2D silhouette. Instead, match stable physical identity through corresponding
+source-visible evidence: center and side stone shape/cut/color/relative scale,
+setting and prong style, component count and arrangement, topology, distinctive
+motifs, relative proportions, shoulder transitions, gallery members, shank
+profile, metal assignment, and finish.
+
+source_design_preserved is false for any assessable redesign of those stable
+facts. visible_components_preserved is false when a known component is added,
+removed, replaced, or moved beyond legitimate viewpoint occlusion.
+local_geometry_preserved is false only when corresponding geometry visible in
+BOTH images is rounded, simplified, structurally changed, or inconsistent.
+For a surface or component genuinely hidden in the FIRST image, use null rather
+than guessing that it matches or declaring failure merely because it is newly
+visible. State the occlusion in notes. A newly visible decorative element that
+contradicts the source remains false, not null.
+
+requested_presentation_applied is true only when the SECOND image clearly
+achieves the named front, three-quarter, or side projection and shows the whole
+piece. Returning the source viewpoint unchanged is false. Do not claim either
+image proves hidden geometry, dimensions, carat, manufacturability, or factory
+truth."""
+
+
+_SKEPTICAL_CAMERA_STUDY_AUDIT_SYSTEM = """\
+You are the independent skeptical fidelity auditor for a camera-only jewelry
+study. The FIRST image is the selected source design. The SECOND must show the
+same physical piece from the requested new view, never a similar replacement.
+
+Return JSON only:
+{"coherent_jewelry_render": true|false|null,
+ "complete_piece_visible": true|false|null,
+ "source_design_preserved": true|false|null,
+ "visible_components_preserved": true|false|null,
+ "local_geometry_preserved": true|false|null,
+ "repeated_element_pattern_preserved": true|false|null,
+ "stone_shape_and_cut_family_preserved": true|false|null,
+ "requested_presentation_applied": true|false|null,
+ "text_or_branding_detected": true|false|null,
+ "major_unintended_changes": ["specific assessable difference"],
+ "score": 0-100,
+ "notes": ["brief region-specific evidence"]}
+
+First inventory the source-visible center, setting/prongs, surround, shoulders,
+gallery, shank, repeated motifs, stones, and materials. Then compare the stable
+physical facts that remain assessable under the new projection. Ignore only
+legitimate camera projection, occlusion, lighting, and background differences.
+Do not compare raw 2D locations or demand the old silhouette from a new view.
+Any assessable changed stone, setting, component, topology, motif, proportion,
+or material assignment is false and must be listed. If the source truly cannot
+establish a newly revealed surface, use null for that specific preservation
+field and name the occlusion; never promote hidden geometry to truth.
+requested_presentation_applied is true only if the named target view is clearly
+achieved with the complete piece visible. An unchanged source viewpoint fails.
+Do not infer dimensions, hidden construction, CAD, or manufacturing authority."""
+
+
 _PROMPT_CREATIVE_RENDER_QA_SYSTEM = """\
 You inspect one generated fine-jewelry concept against a designer's written
 direction. Do not assume the requested piece is a ring. The candidate may be a
@@ -206,10 +296,11 @@ fine-jewelry piece.
 
 Return JSON only:
 {"coherent_jewelry_render": true|false|null,
+ "complete_piece_visible": true|false|null,
  "source_design_preserved": null,
  "visible_components_preserved": null,
  "requested_presentation_applied": true|false|null,
- "explicit_counts_match": true|false,
+ "explicit_counts_match": true|false|null,
  "explicit_stone_facts_match": true|false,
  "text_or_branding_detected": true|false|null,
  "major_unintended_changes": ["specific contradiction of the direction"],
@@ -449,6 +540,32 @@ stone. If occlusion prevents an exact total, mark the side count incomplete.
 Do not guess a hidden count and do not use a typical jewelry convention."""
 
 
+_BLIND_NAMED_COMPONENT_COUNT_SYSTEM = """\
+You are doing an expectation-free count of named visible groups in one jewelry
+image. The named groups may belong to any jewelry category, not only rings.
+You are deliberately NOT given the requested quantities. Do not infer a normal
+or desirable count from jewelry conventions.
+
+Return JSON only:
+{"observations": [
+  {"claim_id": "count_1",
+   "observed_count": 0|null,
+   "count_complete": true|false|null,
+   "assessable": true|false|null,
+   "notes": ["brief counting evidence"]}
+ ],
+ "notes": ["brief overall evidence"]}
+
+Return exactly one observation for every supplied claim_id. Identify only the
+named group, count distinct physical instances, and ignore reflections,
+highlights, shadows, prongs, beads, or decorations that are not members of that
+group. assessable is true only when the named group can be identified in the
+image. count_complete is true only when the image shows the whole group well
+enough that observed_count is the total, not merely the visible subset. When
+crop, overlap, or viewpoint hides possible members, return the visible count
+with count_complete false. Never guess hidden instances."""
+
+
 class GrokVisionInspector:
     """Default production inspector over the existing Grok vision seams."""
 
@@ -525,11 +642,16 @@ class GrokCreativeRenderInspector:
     ) -> CreativeRenderInspection:
         ask = (
             f"Designer direction: {plan.intent}\n"
+            f"Requested camera view: {plan.camera_view or 'none'}\n"
             "Frozen source facts: " + json.dumps(list(plan.frozen)) + "\n"
             f"Expected output: {plan.expected_output}"
         )
         return CreativeRenderInspection.model_validate(vision_json_pair(
-            _CREATIVE_RENDER_QA_SYSTEM,
+            (
+                _CAMERA_STUDY_QA_SYSTEM
+                if plan.camera_view is not None
+                else _CREATIVE_RENDER_QA_SYSTEM
+            ),
             reference,
             candidate,
             ask,
@@ -547,11 +669,16 @@ class GrokSkepticalCreativeRenderInspector:
     ) -> CreativeRenderInspection:
         ask = (
             f"Designer direction: {plan.intent}\n"
+            f"Requested camera view: {plan.camera_view or 'none'}\n"
             f"Selected source region: {plan.region_description or 'full source'}\n"
             "Frozen source facts: " + json.dumps(list(plan.frozen))
         )
         return CreativeRenderInspection.model_validate(vision_json_pair(
-            _SKEPTICAL_CREATIVE_RENDER_AUDIT_SYSTEM,
+            (
+                _SKEPTICAL_CAMERA_STUDY_AUDIT_SYSTEM
+                if plan.camera_view is not None
+                else _SKEPTICAL_CREATIVE_RENDER_AUDIT_SYSTEM
+            ),
             reference,
             candidate,
             ask,
@@ -629,6 +756,110 @@ class GrokPromptCreativeRenderInspector:
             candidate,
             ask,
         ))
+
+
+def _explicit_count_claims(plan: ImageAgentPlan) -> tuple[dict, ...]:
+    raw = plan.normalized_intent.get("explicit_component_counts", [])
+    if not isinstance(raw, list):
+        return ()
+    return tuple(
+        item for item in raw
+        if (
+            isinstance(item, dict)
+            and isinstance(item.get("claim_id"), str)
+            and isinstance(item.get("component"), str)
+            and isinstance(item.get("expected_count"), int)
+        )
+    )
+
+
+class GrokSkepticalPromptCreativeCountInspector:
+    """Expectation-blind count audit for prompt-only creative candidates.
+
+    Center-setting prongs reuse the focused blind counter already used by the
+    validated-spec gate. Other named groups use a category-neutral blind audit
+    that receives labels and claim ids, but never the expected quantities.
+    """
+
+    def inspect_counts(
+        self,
+        plan: ImageAgentPlan,
+        candidate: bytes,
+    ) -> ExplicitComponentCountInspection:
+        claims = _explicit_count_claims(plan)
+        prong_claims = [
+            claim for claim in claims if claim.get("kind") == "center_prongs"
+        ]
+        named_claims = [
+            claim for claim in claims if claim.get("kind") != "center_prongs"
+        ]
+        observations: list[ExplicitComponentCountObservation] = []
+        notes: list[str] = []
+
+        if prong_claims:
+            focused = crop_chromatic_center_assembly(candidate)
+            blind_candidate = (
+                focused.image_bytes if focused is not None else candidate
+            )
+            try:
+                blind = BlindCountInspection.model_validate(vision_json(
+                    _BLIND_COMPONENT_COUNT_SYSTEM,
+                    blind_candidate,
+                    "Count only what is visibly present. This may be a "
+                    "deterministic crop of the complete center assembly; do not "
+                    "treat crop edges as missing jewelry. You are not given the "
+                    "requested prong count.",
+                ))
+                for claim in prong_claims:
+                    observations.append(ExplicitComponentCountObservation(
+                        claim_id=str(claim["claim_id"]),
+                        observed_count=blind.center_prongs_visible,
+                        count_complete=blind.center_prong_count_complete,
+                        assessable=(
+                            blind.center_prongs_visible is not None
+                            and blind.center_prong_count_complete is not None
+                        ),
+                        notes=blind.notes,
+                    ))
+                if focused is not None:
+                    notes.append(
+                        "center-prong audit used deterministic focused crop: "
+                        + json.dumps(focused.evidence, sort_keys=True)
+                    )
+            except Exception:
+                notes.append("blind center-prong count unavailable")
+
+        if named_claims:
+            blind_contract = [
+                {
+                    "claim_id": claim["claim_id"],
+                    "component": claim["component"],
+                    "kind": claim.get("kind"),
+                }
+                for claim in named_claims
+            ]
+            try:
+                blind = ExplicitComponentCountInspection.model_validate(
+                    vision_json(
+                        _BLIND_NAMED_COMPONENT_COUNT_SYSTEM,
+                        candidate,
+                        "NAMED GROUPS WITHOUT EXPECTED COUNTS: "
+                        + json.dumps(blind_contract, sort_keys=True),
+                    )
+                )
+                allowed = {str(claim["claim_id"]) for claim in named_claims}
+                observations.extend(
+                    item for item in blind.observations
+                    if item.claim_id in allowed
+                )
+                notes.extend(blind.notes)
+            except Exception:
+                notes.append("blind named-component count unavailable")
+
+        return ExplicitComponentCountInspection(
+            observations=tuple(observations),
+            notes=tuple(notes),
+        )
 
 
 class GrokSkepticalEditInspector:
@@ -856,6 +1087,75 @@ def _match_check(code: str, observed: bool | None, mismatch: str,
         severity=CheckSeverity.WARNING,
         message=unknown,
     )
+
+
+def _explicit_component_count_checks(
+    plan: ImageAgentPlan,
+    inspection: ExplicitComponentCountInspection | None,
+) -> tuple[QualityCheck, ...]:
+    """Compare blind observations with plan-bound expected quantities."""
+
+    claims = _explicit_count_claims(plan)
+    observed = inspection.observations if inspection is not None else ()
+    checks: list[QualityCheck] = []
+    for claim in claims:
+        claim_id = str(claim["claim_id"])
+        component = str(claim["component"])
+        expected = int(claim["expected_count"])
+        matches = [item for item in observed if item.claim_id == claim_id]
+        complete = [
+            item for item in matches
+            if (
+                item.assessable is True
+                and item.count_complete is True
+                and item.observed_count is not None
+            )
+        ]
+        evidence = {
+            "claim_id": claim_id,
+            "component": component,
+            "expected_count": expected,
+            "observed_counts": [
+                item.observed_count for item in matches
+                if item.observed_count is not None
+            ],
+            "count_complete": [item.count_complete for item in matches],
+            "assessable": [item.assessable for item in matches],
+            "expectation_blind": True,
+        }
+        if complete and any(item.observed_count != expected for item in complete):
+            checks.append(QualityCheck(
+                code=f"explicit_component_count:{claim_id}",
+                passed=False,
+                severity=CheckSeverity.HARD,
+                message=(
+                    f"candidate has the wrong assessable count for {component}; "
+                    f"expected exactly {expected}"
+                ),
+                evidence=evidence,
+            ))
+        elif complete:
+            checks.append(QualityCheck(
+                code=f"explicit_component_count:{claim_id}",
+                passed=True,
+                severity=CheckSeverity.HARD,
+                message=(
+                    f"candidate visibly contains exactly {expected} {component}"
+                ),
+                evidence=evidence,
+            ))
+        else:
+            checks.append(QualityCheck(
+                code=f"explicit_component_count:{claim_id}",
+                passed=False,
+                severity=CheckSeverity.WARNING,
+                message=(
+                    f"the complete count for {component} is occluded, incomplete, "
+                    "or unavailable; designer count review is required"
+                ),
+                evidence=evidence,
+            ))
+    return tuple(checks)
 
 
 def _necklace_chain_style_checks(
@@ -1211,7 +1511,9 @@ class RingQualityEvaluator:
                  creative_inspector: CreativeRenderInspector | None = None,
                  creative_cross_inspector: CreativeRenderInspector | None = None,
                  require_creative_cross_inspection: bool | None = None,
-                 prompt_creative_inspector: PromptCreativeRenderInspector | None = None) -> None:
+                 prompt_creative_inspector: PromptCreativeRenderInspector | None = None,
+                 prompt_creative_count_inspector: PromptCreativeCountInspector | None = None,
+                 require_prompt_creative_count_inspection: bool | None = None) -> None:
         primary_is_default = inspector is None
         self.inspector = inspector or GrokVisionInspector()
         if require_cross_inspection is None:
@@ -1236,8 +1538,21 @@ class RingQualityEvaluator:
                 and require_creative_cross_inspection):
             self._creative_cross_inspector = (
                 GrokSkepticalCreativeRenderInspector())
+        prompt_creative_primary_is_default = prompt_creative_inspector is None
         self._prompt_creative_inspector = (
             prompt_creative_inspector or GrokPromptCreativeRenderInspector())
+        if require_prompt_creative_count_inspection is None:
+            require_prompt_creative_count_inspection = (
+                prompt_creative_primary_is_default
+            )
+        self._prompt_creative_count_inspector = prompt_creative_count_inspector
+        if (
+            self._prompt_creative_count_inspector is None
+            and require_prompt_creative_count_inspection
+        ):
+            self._prompt_creative_count_inspector = (
+                GrokSkepticalPromptCreativeCountInspector()
+            )
 
     def evaluate_source_precondition(
         self,
@@ -1321,11 +1636,28 @@ class RingQualityEvaluator:
         if plan.operation is ImageOperation.CREATIVE_GENERATE:
             inspection = self._prompt_creative_inspector.inspect_render(
                 plan, candidate)
+            count_inspection: ExplicitComponentCountInspection | None = None
+            if (
+                _explicit_count_claims(plan)
+                and self._prompt_creative_count_inspector is not None
+            ):
+                try:
+                    count_inspection = (
+                        self._prompt_creative_count_inspector.inspect_counts(
+                            plan, candidate
+                        )
+                    )
+                except Exception:
+                    count_inspection = ExplicitComponentCountInspection(
+                        notes=("skeptical explicit-count audit unavailable",),
+                    )
             return self._creative_render_report(
+                plan,
                 inspection,
                 candidate=candidate,
                 source_image=None,
                 enforce_explicit_counts=True,
+                count_inspection=count_inspection,
             )
         if plan.operation is ImageOperation.REFERENCE_RENDER:
             if not source_image:
@@ -1343,10 +1675,12 @@ class RingQualityEvaluator:
                 inspection = _merge_creative_inspections(
                     inspection, skeptical)
             return self._creative_render_report(
+                plan,
                 inspection,
                 candidate=candidate,
                 source_image=source_image,
                 enforce_explicit_counts=False,
+                count_inspection=None,
             )
         if plan.operation in {
             ImageOperation.CONCEPT_GENERATE,
@@ -1410,11 +1744,13 @@ class RingQualityEvaluator:
 
     @staticmethod
     def _creative_render_report(
+        plan: ImageAgentPlan,
         item: CreativeRenderInspection,
         *,
         candidate: bytes,
         source_image: bytes | None,
         enforce_explicit_counts: bool,
+        count_inspection: ExplicitComponentCountInspection | None,
     ) -> ImageQualityReport:
         checks = [
             *_deterministic_checks(candidate, source_image=source_image),
@@ -1455,18 +1791,27 @@ class RingQualityEvaluator:
             ),
         ]
         if enforce_explicit_counts:
-            checks.insert(-2, _match_check(
-                "explicit_counts_match",
-                item.explicit_counts_match,
-                "candidate does not match an explicitly requested component count",
-                "explicit requested counts could not be visually confirmed",
-            ))
+            claims = _explicit_count_claims(plan)
+            # Parsed claims use expectation-blind observations as authority.
+            # The broad, direction-aware boolean remains a compatibility
+            # fallback only when no independent count evidence was requested.
+            if not claims or count_inspection is None:
+                checks.insert(-2, _match_check(
+                    "explicit_counts_match",
+                    item.explicit_counts_match,
+                    "candidate does not match an explicitly requested component count",
+                    "explicit requested counts could not be visually confirmed",
+                ))
             checks.insert(-2, _match_check(
                 "explicit_stone_facts_match",
                 item.explicit_stone_facts_match,
                 "candidate contradicts an explicitly requested gemstone fact",
                 "explicit gemstone facts could not be visually confirmed",
             ))
+            if claims:
+                checks[-2:-2] = _explicit_component_count_checks(
+                    plan, count_inspection
+                )
         if source_image is not None:
             checks[2:2] = [
                 _match_check(
@@ -1503,7 +1848,11 @@ class RingQualityEvaluator:
         return _report(
             checks,
             score=item.score,
-            notes=(*item.notes, *item.major_unintended_changes),
+            notes=(
+                *item.notes,
+                *item.major_unintended_changes,
+                *(count_inspection.notes if count_inspection is not None else ()),
+            ),
         )
 
     def _render_report(self, plan: ImageAgentPlan,

@@ -114,6 +114,7 @@ class ImageAgentPlan(_Contract):
     mask_hash: str | None = None
     spec_visual_hash: str
     region_description: str | None = None
+    camera_view: Literal["front", "three_quarter", "side"] | None = None
     mounting_view: Literal["plan", "front", "side", "section"] | None = None
     frozen: tuple[str, ...] = ()
     style_constraints: tuple[str, ...] = ()
@@ -260,6 +261,23 @@ class CreativeRenderInspection(_Contract):
     text_or_branding_detected: bool | None = None
     major_unintended_changes: tuple[str, ...] = ()
     score: float | None = Field(default=None, ge=0, le=100)
+    notes: tuple[str, ...] = ()
+
+
+class ExplicitComponentCountObservation(_Contract):
+    """Expectation-blind visible count for one written count claim."""
+
+    claim_id: str = Field(min_length=1)
+    observed_count: int | None = Field(default=None, ge=0, le=512)
+    count_complete: bool | None = None
+    assessable: bool | None = None
+    notes: tuple[str, ...] = ()
+
+
+class ExplicitComponentCountInspection(_Contract):
+    """Independent count evidence keyed to claims, never expected values."""
+
+    observations: tuple[ExplicitComponentCountObservation, ...] = ()
     notes: tuple[str, ...] = ()
 
 

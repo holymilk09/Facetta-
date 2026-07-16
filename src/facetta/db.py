@@ -332,7 +332,7 @@ class StudioJobRecord(Base):
     __table_args__ = (
         CheckConstraint(
             "action_id IN ('create', 'vary', 'refine', 'views', "
-            "'present', 'factory')",
+            "'angles', 'present', 'factory')",
             name="ck_studio_job_action",
         ),
         CheckConstraint(
@@ -528,6 +528,116 @@ class StudioPresentationCandidateJobLink(Base):
         CheckConstraint(
             "output_ordinal >= 0 AND output_ordinal <= 3",
             name="ck_studio_presentation_output_ordinal",
+        ),
+    )
+
+
+class StudioVisualAngleSetRecord(Base):
+    """One review-only three-angle pack for an exact pre-spec direction.
+
+    A set is the decision boundary: all three camera angles are accepted or
+    discarded together.  This prevents a partial set from being billed or
+    mistaken for canonical design history when one output is stale or fails
+    its evidence checks.
+    """
+
+    __tablename__ = "studio_visual_angle_sets"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    studio_job_id: Mapped[str] = mapped_column(
+        ForeignKey("studio_jobs.id"), nullable=False, unique=True, index=True)
+    owner: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    project_root_id: Mapped[str] = mapped_column(
+        ForeignKey("projects.root_id"), nullable=False, index=True)
+    source_asset_id: Mapped[str] = mapped_column(
+        ForeignKey("image_assets.id"), nullable=False, index=True)
+    source_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow)
+    expires_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, index=True)
+    resolved_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)
+
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('reviewing', 'accepted', 'discarded', 'expired')",
+            name="ck_studio_visual_angle_set_status",
+        ),
+        CheckConstraint(
+            "length(source_sha256) = 64",
+            name="ck_studio_visual_angle_set_source_hash",
+        ),
+        CheckConstraint(
+            "(status = 'reviewing' AND resolved_at IS NULL) OR "
+            "(status IN ('accepted', 'discarded', 'expired') "
+            "AND resolved_at IS NOT NULL)",
+            name="ck_studio_visual_angle_set_resolution",
+        ),
+    )
+
+
+class StudioVisualAngleCandidateRecord(Base):
+    """One temporary angle inside a :class:`StudioVisualAngleSetRecord`."""
+
+    __tablename__ = "studio_visual_angle_candidates"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True)
+    angle_set_id: Mapped[str] = mapped_column(
+        ForeignKey("studio_visual_angle_sets.id"), nullable=False, index=True)
+    image_run_id: Mapped[str] = mapped_column(
+        ForeignKey("image_runs.id"), nullable=False, unique=True, index=True)
+    owner: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    project_root_id: Mapped[str] = mapped_column(
+        ForeignKey("projects.root_id"), nullable=False, index=True)
+    source_asset_id: Mapped[str] = mapped_column(
+        ForeignKey("image_assets.id"), nullable=False, index=True)
+    source_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    output_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    view: Mapped[str] = mapped_column(String(24), nullable=False)
+    image: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    media_type: Mapped[str] = mapped_column(String(24), nullable=False)
+    requested_change: Mapped[str] = mapped_column(Text, nullable=False)
+    qa: Mapped[dict] = mapped_column(SpecJSON, nullable=False)
+    routing: Mapped[dict] = mapped_column(SpecJSON, nullable=False)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, index=True)
+    accepted_asset_id: Mapped[str | None] = mapped_column(
+        ForeignKey("image_assets.id"), nullable=True)
+    review_id: Mapped[str | None] = mapped_column(
+        ForeignKey("image_run_reviews.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utcnow)
+    resolved_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True)
+
+    __table_args__ = (
+        UniqueConstraint(
+            "angle_set_id", "view",
+            name="uq_studio_visual_angle_set_view",
+        ),
+        CheckConstraint(
+            "view IN ('front', 'three_quarter', 'side')",
+            name="ck_studio_visual_angle_candidate_view",
+        ),
+        CheckConstraint(
+            "status IN ('reviewing', 'accepted', 'discarded', 'expired')",
+            name="ck_studio_visual_angle_candidate_status",
+        ),
+        CheckConstraint(
+            "length(source_sha256) = 64 AND length(output_sha256) = 64",
+            name="ck_studio_visual_angle_candidate_hashes",
+        ),
+        CheckConstraint(
+            "(status = 'accepted' AND accepted_asset_id IS NOT NULL "
+            "AND review_id IS NOT NULL AND resolved_at IS NOT NULL) OR "
+            "(status = 'discarded' AND accepted_asset_id IS NULL "
+            "AND review_id IS NOT NULL AND resolved_at IS NOT NULL) OR "
+            "(status = 'expired' AND accepted_asset_id IS NULL "
+            "AND resolved_at IS NOT NULL) OR "
+            "(status = 'reviewing' AND accepted_asset_id IS NULL "
+            "AND review_id IS NULL AND resolved_at IS NULL)",
+            name="ck_studio_visual_angle_candidate_resolution",
         ),
     )
 
@@ -1436,6 +1546,112 @@ class ApprovalResponse(Base):
         DateTime(timezone=True), default=utcnow)
 
 
+def _migrate_studio_job_action_constraint(engine) -> None:
+    """Allow the first-class ``angles`` action on existing databases.
+
+    New tables receive the current constraint through ``create_all``. Existing
+    PostgreSQL tables can replace the named check directly. SQLite cannot alter
+    a check constraint, so bootstrap rebuilds only ``studio_jobs`` while
+    preserving every row and index. Foreign-key enforcement is disabled only
+    on that startup connection and verified again after the swap.
+    """
+
+    from sqlalchemy import MetaData, inspect, text
+    from sqlalchemy.schema import CreateTable
+
+    inspector = inspect(engine)
+    if not inspector.has_table("studio_jobs"):
+        return
+    checks = inspector.get_check_constraints("studio_jobs")
+    action_check = next((
+        item for item in checks
+        if item.get("name") == "ck_studio_job_action"
+    ), None)
+    if action_check is not None and "'angles'" in (
+        action_check.get("sqltext") or ""
+    ):
+        return
+
+    allowed = (
+        "action_id IN ('create', 'vary', 'refine', 'views', "
+        "'angles', 'present', 'factory')"
+    )
+    if engine.dialect.name == "postgresql":
+        with engine.begin() as conn:
+            conn.execute(text(
+                "ALTER TABLE studio_jobs "
+                "DROP CONSTRAINT IF EXISTS ck_studio_job_action"
+            ))
+            conn.execute(text(
+                "ALTER TABLE studio_jobs "
+                "ADD CONSTRAINT ck_studio_job_action CHECK (" + allowed + ")"
+            ))
+        return
+    if engine.dialect.name != "sqlite":
+        return
+
+    current = inspect(engine)
+    existing_columns = {
+        item["name"] for item in current.get_columns("studio_jobs")
+    }
+    copy_columns = [
+        column.name for column in StudioJobRecord.__table__.columns
+        if column.name in existing_columns
+    ]
+    indexes = current.get_indexes("studio_jobs")
+    temporary_name = "studio_jobs__angles_migration"
+    temporary = StudioJobRecord.__table__.to_metadata(
+        MetaData(), name=temporary_name,
+    )
+    create_sql = str(CreateTable(temporary).compile(dialect=engine.dialect))
+    quote = engine.dialect.identifier_preparer.quote
+    columns_sql = ", ".join(quote(name) for name in copy_columns)
+
+    with engine.connect() as conn:
+        conn.exec_driver_sql("PRAGMA foreign_keys=OFF")
+        conn.commit()
+        try:
+            with conn.begin():
+                conn.exec_driver_sql(
+                    f"DROP TABLE IF EXISTS {quote(temporary_name)}"
+                )
+                conn.exec_driver_sql(create_sql)
+                conn.exec_driver_sql(
+                    f"INSERT INTO {quote(temporary_name)} ({columns_sql}) "
+                    f"SELECT {columns_sql} FROM {quote('studio_jobs')}"
+                )
+                conn.exec_driver_sql(f"DROP TABLE {quote('studio_jobs')}")
+                conn.exec_driver_sql(
+                    f"ALTER TABLE {quote(temporary_name)} "
+                    f"RENAME TO {quote('studio_jobs')}"
+                )
+                for index in indexes:
+                    index_name = index.get("name")
+                    index_columns = index.get("column_names") or []
+                    if not index_name or not index_columns:
+                        continue
+                    unique = "UNIQUE " if index.get("unique") else ""
+                    index_columns_sql = ", ".join(
+                        quote(name) for name in index_columns
+                    )
+                    conn.exec_driver_sql(
+                        f"CREATE {unique}INDEX {quote(index_name)} "
+                        f"ON {quote('studio_jobs')} ({index_columns_sql})"
+                    )
+            conn.exec_driver_sql("PRAGMA foreign_keys=ON")
+            conn.commit()
+            violations = conn.exec_driver_sql(
+                "PRAGMA foreign_key_check"
+            ).fetchall()
+            if violations:
+                raise RuntimeError(
+                    "studio_jobs action migration broke foreign-key integrity"
+                )
+        finally:
+            conn.exec_driver_sql("PRAGMA foreign_keys=ON")
+            conn.commit()
+
+
 def _apply_additive_migrations(engine) -> None:
     """Add columns that newer schema versions introduced (additive only)."""
     from sqlalchemy import inspect, text
@@ -1676,6 +1892,7 @@ def _apply_additive_migrations(engine) -> None:
                     "CREATE INDEX ix_studio_jobs_reservation_kind "
                     "ON studio_jobs (reservation_kind)"
                 ))
+        _migrate_studio_job_action_constraint(engine)
 
 
 def normalize_database_url(url: str) -> str:

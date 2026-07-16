@@ -147,6 +147,14 @@ import type {
   VisualPreviewDiscardResult,
   VisualPreviewResult,
   VisualPreviewListResult,
+  CreateVisualAngleSetRequest,
+  VisualAngleCandidate,
+  VisualAngleSet,
+  VisualAngleSetAcceptResult,
+  VisualAngleSetDecisionRequest,
+  VisualAngleSetDiscardResult,
+  VisualAngleSetLookupResult,
+  VisualAngleSetResult,
 } from './types';
 
 type UnknownRecord = Record<string, unknown>;
@@ -1039,6 +1047,132 @@ const decodePreSpecPresentationDiscardResult: Decoder<PreSpecPresentationDiscard
   };
 };
 
+const VISUAL_ANGLE_VIEWS = ['front', 'three_quarter', 'side'] as const;
+const VISUAL_ANGLE_SET_STATUSES = ['reviewing', 'accepted', 'discarded', 'expired'] as const;
+
+const decodeVisualAngleCandidate: Decoder<VisualAngleCandidate> = (value) => {
+  if (!isRecord(value)) return null;
+  const candidateId = nullableText(value.candidate_id);
+  const imageRunId = nullableText(value.image_run_id);
+  const outputSha256 = nullableText(value.output_sha256);
+  const previewUrl = nullableText(value.preview_url);
+  const qa = decodeImageQualityReport(value.qa);
+  const routing = decodeRouting(value.routing);
+  const view = value.view;
+  const status = value.status;
+  if (
+    candidateId === null || imageRunId === null || outputSha256 === null
+    || !/^[0-9a-f]{64}$/.test(outputSha256) || previewUrl === null
+    || qa === null || routing === null
+    || !VISUAL_ANGLE_VIEWS.includes(view as typeof VISUAL_ANGLE_VIEWS[number])
+    || !VISUAL_ANGLE_SET_STATUSES.includes(
+      status as typeof VISUAL_ANGLE_SET_STATUSES[number],
+    )
+  ) return null;
+  return {
+    candidate_id: candidateId,
+    image_run_id: imageRunId,
+    view: view as VisualAngleCandidate['view'],
+    output_sha256: outputSha256,
+    qa,
+    routing,
+    status: status as VisualAngleCandidate['status'],
+    accepted_asset_id: nullableText(value.accepted_asset_id),
+    preview_url: previewUrl,
+  };
+};
+
+const decodeVisualAngleSet: Decoder<VisualAngleSet> = (value) => {
+  if (!isRecord(value) || !Array.isArray(value.candidates)) return null;
+  const angleSetId = nullableText(value.angle_set_id);
+  const studioJobId = nullableText(value.studio_job_id);
+  const projectId = nullableText(value.project_id);
+  const sourceAssetId = nullableText(value.source_asset_id);
+  const sourceSha256 = nullableText(value.source_sha256);
+  const expiresAt = nullableText(value.expires_at);
+  const status = value.status;
+  const candidates = value.candidates.map(decodeVisualAngleCandidate);
+  if (
+    angleSetId === null || studioJobId === null || projectId === null
+    || sourceAssetId === null || sourceSha256 === null
+    || !/^[0-9a-f]{64}$/.test(sourceSha256) || expiresAt === null
+    || !VISUAL_ANGLE_SET_STATUSES.includes(
+      status as typeof VISUAL_ANGLE_SET_STATUSES[number],
+    )
+    || candidates.some((candidate) => candidate === null)
+    || candidates.length !== VISUAL_ANGLE_VIEWS.length
+    || candidates.some((candidate, index) => candidate?.view !== VISUAL_ANGLE_VIEWS[index])
+  ) return null;
+  return {
+    angle_set_id: angleSetId,
+    studio_job_id: studioJobId,
+    project_id: projectId,
+    source_asset_id: sourceAssetId,
+    source_sha256: sourceSha256,
+    status: status as VisualAngleSet['status'],
+    expires_at: expiresAt,
+    candidates: candidates as VisualAngleCandidate[],
+  };
+};
+
+const decodeVisualAngleSetResult: Decoder<VisualAngleSetResult> = (value) => {
+  if (!isRecord(value) || value.action_id !== 'angles' || value.status !== 'review_required') {
+    return null;
+  }
+  const requestedOutputs = number(value.requested_outputs);
+  const creditsPerOutput = number(value.credits_per_output);
+  const estimatedCredits = number(value.estimated_credits);
+  const billingPolicy = nullableText(value.billing_policy);
+  const angleSet = decodeVisualAngleSet(value.angle_set);
+  if (
+    requestedOutputs !== 3 || creditsPerOutput === null || creditsPerOutput < 0
+    || estimatedCredits !== requestedOutputs * creditsPerOutput
+    || billingPolicy === null || angleSet === null || angleSet.status !== 'reviewing'
+  ) return null;
+  return {
+    action_id: 'angles',
+    status: 'review_required',
+    requested_outputs: 3,
+    credits_per_output: creditsPerOutput,
+    estimated_credits: estimatedCredits,
+    billing_policy: billingPolicy,
+    angle_set: angleSet,
+  };
+};
+
+const decodeVisualAngleSetLookupResult: Decoder<VisualAngleSetLookupResult> = (value) => {
+  if (!isRecord(value) || value.action_id !== 'angles') return null;
+  const angleSet = decodeVisualAngleSet(value.angle_set);
+  return angleSet === null ? null : { action_id: 'angles', angle_set: angleSet };
+};
+
+const decodeVisualAngleSetAcceptResult: Decoder<VisualAngleSetAcceptResult> = (value) => {
+  if (!isRecord(value) || value.status !== 'accepted' || value.capability !== 'ANGLE_VIEW'
+    || value.active_revision_unchanged !== true || !Array.isArray(value.asset_ids)) return null;
+  const angleSetId = nullableText(value.angle_set_id);
+  const sourceAssetId = nullableText(value.source_asset_id);
+  const assetIds = value.asset_ids.map(nullableText);
+  const project = decodeProjectDetail(value.project);
+  if (angleSetId === null || sourceAssetId === null || project === null
+    || assetIds.length !== 3 || assetIds.some((assetId) => assetId === null)
+    || new Set(assetIds).size !== 3) return null;
+  return {
+    status: 'accepted', angle_set_id: angleSetId, source_asset_id: sourceAssetId,
+    asset_ids: assetIds as string[], capability: 'ANGLE_VIEW',
+    active_revision_unchanged: true, project,
+  };
+};
+
+const decodeVisualAngleSetDiscardResult: Decoder<VisualAngleSetDiscardResult> = (value) => {
+  if (!isRecord(value) || value.status !== 'discarded' || value.charged_outputs !== 0) return null;
+  const angleSetId = nullableText(value.angle_set_id);
+  const sourceAssetId = nullableText(value.source_asset_id);
+  return angleSetId === null || sourceAssetId === null ? null : {
+    status: 'discarded', angle_set_id: angleSetId,
+    source_asset_id: sourceAssetId, charged_outputs: 0,
+  };
+};
+
 const decodePreSpecPresentationListResult: Decoder<PreSpecPresentationListResult> = (value) => {
   if (!isRecord(value) || !Array.isArray(value.candidates)) return null;
   const candidates: PreSpecPresentationListResult['candidates'] = [];
@@ -1277,7 +1411,7 @@ const STUDIO_JOB_STATUSES = new Set<StudioJobStatus>([
   'queued', 'running', 'reviewing', 'succeeded', 'failed', 'canceled',
 ]);
 const STUDIO_JOB_ACTIONS = new Set<StudioJobAction>([
-  'create', 'vary', 'refine', 'views', 'present', 'factory',
+  'create', 'vary', 'refine', 'views', 'angles', 'present', 'factory',
 ]);
 const STUDIO_JOB_LANES = new Set<StudioJobLane>([
   'instant', 'fast_visual', 'trusted_structural',
@@ -4181,6 +4315,131 @@ export function createTrustedApiClient(options: TrustedApiClientOptions) {
           },
         },
       };
+    },
+
+    async createVisualAngleSet(
+      projectId: string,
+      request: CreateVisualAngleSetRequest,
+    ): Promise<ApiResult<VisualAngleSetResult>> {
+      const result = await call(
+        `/studio/projects/${encodeURIComponent(projectId)}/visual-angle-sets`,
+        decodeVisualAngleSetResult,
+        {
+          method: 'POST',
+          body: encodeBody({
+            created_by: request.created_by,
+            expected_active_asset_id: request.expected_active_asset_id,
+            studio_job_id: request.studio_job_id,
+            ...(request.variant === undefined ? {} : { variant: request.variant }),
+          }),
+        },
+      );
+      if (result.error !== null) return result;
+      return {
+        ...result,
+        data: {
+          ...result.data,
+          angle_set: {
+            ...result.data.angle_set,
+            candidates: result.data.angle_set.candidates.map((candidate) => ({
+              ...candidate,
+              preview_url: resolveUrl(candidate.preview_url, baseUrl),
+            })),
+          },
+        },
+      };
+    },
+
+    async getVisualAngleSet(
+      angleSetId: string,
+      owner: string,
+    ): Promise<ApiResult<VisualAngleSetLookupResult>> {
+      const query = new URLSearchParams({ owner });
+      const result = await call(
+        `/studio/visual-angle-sets/${encodeURIComponent(angleSetId)}?${query.toString()}`,
+        decodeVisualAngleSetLookupResult,
+      );
+      if (result.error !== null) return result;
+      return {
+        ...result,
+        data: {
+          action_id: 'angles',
+          angle_set: {
+            ...result.data.angle_set,
+            candidates: result.data.angle_set.candidates.map((candidate) => ({
+              ...candidate,
+              preview_url: resolveUrl(candidate.preview_url, baseUrl),
+            })),
+          },
+        },
+      };
+    },
+
+    async getVisualAngleSetByJob(
+      studioJobId: string,
+      owner: string,
+    ): Promise<ApiResult<VisualAngleSetLookupResult>> {
+      const query = new URLSearchParams({ owner });
+      const result = await call(
+        `/studio/visual-angle-sets/by-job/${encodeURIComponent(studioJobId)}?${query.toString()}`,
+        decodeVisualAngleSetLookupResult,
+      );
+      if (result.error !== null) return result;
+      return {
+        ...result,
+        data: {
+          action_id: 'angles',
+          angle_set: {
+            ...result.data.angle_set,
+            candidates: result.data.angle_set.candidates.map((candidate) => ({
+              ...candidate,
+              preview_url: resolveUrl(candidate.preview_url, baseUrl),
+            })),
+          },
+        },
+      };
+    },
+
+    async acceptVisualAngleSet(
+      angleSetId: string,
+      request: VisualAngleSetDecisionRequest,
+    ): Promise<ApiResult<VisualAngleSetAcceptResult>> {
+      const result = await call(
+        `/studio/visual-angle-sets/${encodeURIComponent(angleSetId)}/accept`,
+        decodeVisualAngleSetAcceptResult,
+        {
+          method: 'POST',
+          body: encodeBody({
+            created_by: request.created_by,
+            expected_project_id: request.expected_project_id,
+            expected_source_asset_id: request.expected_source_asset_id,
+            expected_source_sha256: request.expected_source_sha256,
+          }),
+        },
+      );
+      return result.error === null ? {
+        ...result,
+        data: { ...result.data, project: projectWithUrls(result.data.project, baseUrl) },
+      } : result;
+    },
+
+    discardVisualAngleSet(
+      angleSetId: string,
+      request: VisualAngleSetDecisionRequest,
+    ): Promise<ApiResult<VisualAngleSetDiscardResult>> {
+      return call(
+        `/studio/visual-angle-sets/${encodeURIComponent(angleSetId)}/discard`,
+        decodeVisualAngleSetDiscardResult,
+        {
+          method: 'POST',
+          body: encodeBody({
+            created_by: request.created_by,
+            expected_project_id: request.expected_project_id,
+            expected_source_asset_id: request.expected_source_asset_id,
+            expected_source_sha256: request.expected_source_sha256,
+          }),
+        },
+      );
     },
 
     async acceptPreSpecPresentation(

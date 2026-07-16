@@ -148,7 +148,7 @@ describe('StudioActivityWorkspace', () => {
       owner="usr_designer"
     />);
 
-    expect(await view.findByText(/Generation requests from Create, Refine, Views, and Present/)).toBeTruthy();
+    expect(await view.findByText(/Generation requests from Create, Angles, Refine, Views, and Present/)).toBeTruthy();
     expect(view.queryByText(/Vary/)).toBeNull();
   });
 
@@ -197,7 +197,7 @@ describe('StudioActivityWorkspace', () => {
     expect(view.queryByText('Open design')).toBeNull();
   });
 
-  test.each(['views', 'present'] as const)(
+  test.each(['angles', 'views', 'present'] as const)(
     'routes a reviewing %s job through its typed review callback',
     async (actionId) => {
       const reviewing: StudioJobRecord = {

@@ -13,6 +13,7 @@ from facetta.image_agent.contracts import (
 )
 from facetta.image_agent.edit_semantics import classify_spec_delta
 from facetta.image_agent.errors import ImagePlanValidationError
+from facetta.image_agent.explicit_counts import extract_explicit_component_counts
 from facetta.image_agent.prompts import PROMPT_VERSIONS
 from facetta.image_identity import spec_visual_hash
 from facetta.json_types import JsonObject, JsonValue
@@ -104,6 +105,7 @@ def build_image_plan(
     mask_bytes: bytes | None = None,
     mask_provenance: str | None = None,
     region_description: str | None = None,
+    camera_view: str | None = None,
     mounting_view: str | None = None,
     frozen: Sequence[str] = (),
     style_constraints: Sequence[str] = (),
@@ -151,6 +153,20 @@ def build_image_plan(
             "mask provenance requires actual mask bytes")
     if operation is ImageOperation.LOCAL_EDIT and not (region_description or "").strip():
         raise ImagePlanValidationError("LOCAL_EDIT requires a specific highlighted region")
+    allowed_camera_views = {"front", "three_quarter", "side"}
+    normalized_camera_view = (
+        camera_view.strip().lower() if isinstance(camera_view, str) else None
+    )
+    if normalized_camera_view is not None:
+        if operation is not ImageOperation.REFERENCE_RENDER:
+            raise ImagePlanValidationError(
+                "camera_view is only valid for REFERENCE_RENDER"
+            )
+        if normalized_camera_view not in allowed_camera_views:
+            raise ImagePlanValidationError(
+                "REFERENCE_RENDER camera_view requires front, three_quarter, or side"
+            )
+
     allowed_mounting_views = {"plan", "front", "side", "section"}
     normalized_mounting_view = (
         mounting_view.strip().lower() if isinstance(mounting_view, str) else None
@@ -241,6 +257,11 @@ def build_image_plan(
                         ImageOperation.REFERENCE_RENDER,
                     }
                      else "ring"))
+    explicit_count_claims = (
+        extract_explicit_component_counts(intent)
+        if operation is ImageOperation.CREATIVE_GENERATE
+        else ()
+    )
     if jewelry_type == "necklace":
         if operation is not ImageOperation.LOCAL_EDIT:
             raise ImagePlanValidationError(
@@ -342,6 +363,14 @@ def build_image_plan(
         default_frozen = (*default_frozen,
                           "the source concept's unique design identity, major "
                           "proportions, and component arrangement")
+    if explicit_count_claims:
+        default_frozen = (
+            *default_frozen,
+            *(
+                f"exactly {claim['expected_count']} visible {claim['component']}"
+                for claim in explicit_count_claims
+            ),
+        )
     frozen_values = tuple(dict.fromkeys(
         item.strip() for item in (*default_frozen, *frozen) if item.strip()))
     style_values = tuple(item.strip() for item in style_constraints if item.strip())
@@ -377,6 +406,10 @@ def build_image_plan(
         "spec_delta": spec_delta,
         "edit_domains": [domain.value for domain in edit_domains],
     }
+    if explicit_count_claims:
+        normalized_intent["explicit_component_counts"] = [
+            dict(claim) for claim in explicit_count_claims
+        ]
     if quality_source_hash is not None:
         normalized_intent["quality_source"] = {
             "sha256": quality_source_hash,
@@ -391,6 +424,12 @@ def build_image_plan(
             "designer_confirmation_required": True,
             "production_authority": False,
         }
+    elif normalized_camera_view is not None:
+        normalized_intent["requested_projections"] = [normalized_camera_view]
+        normalized_intent["camera_only"] = True
+        normalized_intent["hidden_geometry_authority"] = (
+            "unconfirmed_review_proposal"
+        )
     if DesignerEditDomain.SIDE_STONE_INVENTORY in edit_domains:
         normalized_intent["side_stone_inventory_contract"] = (
             _side_inventory_contract(source_facts, facts)
@@ -430,6 +469,7 @@ def build_image_plan(
         mask_hash=mask_hash,
         spec_visual_hash=visual_hash,
         region_description=region,
+        camera_view=normalized_camera_view,  # type: ignore[arg-type]
         mounting_view=normalized_mounting_view,
         frozen=frozen_values,
         style_constraints=style_values,

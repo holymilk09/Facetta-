@@ -89,7 +89,6 @@ const callbacks = () => ({
   onOpenProject: jest.fn(),
   onProjectChanged: jest.fn(),
   onStartDesign: jest.fn(),
-  onVaryCurrent: jest.fn(),
   onContinueRefining: jest.fn(),
   destinationContext: {
     activeProjectId: project.root_id,
@@ -514,7 +513,7 @@ describe('StudioCollectionsWorkspace', () => {
     expect(handlers.onOpenProject).not.toHaveBeenCalled();
   });
 
-  test('routes variation creation to canonical Vary and restores only against exact active lineage', async () => {
+  test('hides the legacy copy flow and restores only against exact active lineage', async () => {
     const client = api();
     const handlers = callbacks();
     await render(
@@ -529,8 +528,8 @@ describe('StudioCollectionsWorkspace', () => {
 
     expect(screen.queryByText('Variation name')).toBeNull();
     expect(screen.queryByPlaceholderText('Rose gold study')).toBeNull();
-    await fireEvent.press(screen.getByText('Vary this revision'));
-    expect(handlers.onVaryCurrent).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText('Vary this revision')).toBeNull();
+    expect(screen.queryByText('Duplicate direction')).toBeNull();
 
     expect(screen.queryByText('Restore revision 1 as new')).toBeNull();
     await fireEvent.press(screen.getByLabelText('Show revision history (2)'));
@@ -607,7 +606,6 @@ describe('StudioCollectionsWorkspace', () => {
             onOpenProject={jest.fn()}
             onProjectChanged={setCurrentProject}
             onStartDesign={jest.fn()}
-            onVaryCurrent={jest.fn()}
             onContinueRefining={jest.fn()}
             destinationContext={{
               activeProjectId: currentProject.root_id,
@@ -725,8 +723,8 @@ describe('StudioCollectionsWorkspace', () => {
     expect(screen.queryByText(/project_main|asset_2|design_ring/i)).toBeNull();
 
     expect(screen.queryByText('Variation name')).toBeNull();
-    await fireEvent.press(screen.getByText('Vary this revision'));
-    expect(handlers.onVaryCurrent).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText('Vary this revision')).toBeNull();
+    expect(screen.queryByText('Duplicate direction')).toBeNull();
 
     await fireEvent.press(screen.getByText('Retry'));
 
@@ -738,7 +736,7 @@ describe('StudioCollectionsWorkspace', () => {
     expect(client.getDesignFamily).toHaveBeenCalledWith('family_orbit');
   });
 
-  test('disables Vary navigation when the selected project has no active revision', async () => {
+  test('does not surface legacy copy navigation when the selected project has no active revision', async () => {
     const client = api();
     const handlers = callbacks();
     await render(
@@ -750,8 +748,7 @@ describe('StudioCollectionsWorkspace', () => {
       />,
     );
     await screen.findByText('Saved history is unavailable');
-    expect(screen.getByText('Vary this revision').parent?.props.accessibilityState).toEqual({ disabled: true });
-    await fireEvent.press(screen.getByText('Vary this revision'));
-    expect(handlers.onVaryCurrent).not.toHaveBeenCalled();
+    expect(screen.queryByText('Vary this revision')).toBeNull();
+    expect(screen.queryByText('Duplicate direction')).toBeNull();
   });
 });

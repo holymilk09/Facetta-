@@ -28,9 +28,9 @@ import {
 import { StudioConfirmWorkspace } from './src/studio/StudioConfirmWorkspace';
 import { pickExpoStudioCreateReference } from './src/studio/expoReferencePicker';
 import { StudioRefineWorkspace } from './src/studio/StudioRefineWorkspace';
+import { StudioAnglesWorkspace } from './src/studio/StudioAnglesWorkspace';
 import { StudioViewsWorkspace } from './src/studio/StudioViewsWorkspace';
 import { StudioPresentWorkspace } from './src/studio/StudioPresentWorkspace';
-import { StudioVaryWorkspace } from './src/studio/StudioVaryWorkspace';
 import {
   deliverAuthenticatedProtectedFile, StudioFactoryWorkspace,
   StudioProtectedFileRequest,
@@ -52,8 +52,9 @@ type Tab = 'studio' | 'collections' | 'activity' | 'learn';
 type StudioView = 'home' | 'action';
 type Stage = 'onboarding' | 'tour' | 'booting' | 'login' | 'recovery' | 'app';
 type SavedFamiliesState = 'unknown' | 'available' | 'empty' | 'unavailable';
+type LiveStudioWorkspaceActionId = Exclude<StudioWorkspaceActionId, 'vary'>;
 type PostConfirmDestination = Extract<StudioWorkspaceActionId, 'refine' | 'views'>;
-type ProjectHydrationDestination = 'collections' | 'create' | 'refine' | 'views' | 'present'
+type ProjectHydrationDestination = 'collections' | 'create' | 'refine' | 'angles' | 'views' | 'present'
   | 'specifications';
 
 function assertNeverStudioAction(actionId: never): never {
@@ -113,7 +114,7 @@ export default function App() {
   const [stage, setStage] = useState<Stage>(() => authLifecycleEnabled ? 'booting' : 'onboarding');
   const [tab, setTab] = useState<Tab>('studio');
   const [studioView, setStudioView] = useState<StudioView>('home');
-  const [selectedActionId, setSelectedActionId] = useState<StudioWorkspaceActionId>('create');
+  const [selectedActionId, setSelectedActionId] = useState<LiveStudioWorkspaceActionId>('create');
   const [showMoreActions, setShowMoreActions] = useState(false);
   const apiUrl = DEFAULT_API_URL;
   const [designer, setDesigner] = useState(session?.designerId ?? '');
@@ -369,7 +370,7 @@ export default function App() {
     const isCurrentRequest = (): boolean => projectHydrationRequestId.current === requestId;
     setProjectHydration({ request, loading: true, error: null });
     if (request.reviewJobId !== undefined
-      && ['refine', 'views', 'present'].includes(request.destination)) {
+      && ['refine', 'angles', 'views', 'present'].includes(request.destination)) {
       const review = await studioGateway.resumeReviewJob(request.reviewJobId, designer);
       if (!isCurrentRequest()) return;
       if (review.error !== null) {
@@ -384,7 +385,11 @@ export default function App() {
       setSelectedCreativeAssetId(review.data.project.active_asset_id);
       setActivityReview(review.data);
       setProjectHydration(null);
-      openStudioAction(request.destination as 'refine' | 'views' | 'present', false, true);
+      openStudioAction(
+        request.destination as 'refine' | 'angles' | 'views' | 'present',
+        false,
+        true,
+      );
       return;
     }
     const result = await studioGateway.getProject(request.projectId);
@@ -448,11 +453,14 @@ export default function App() {
       setShowMoreActions((visible) => !visible);
       return;
     }
+    const liveActionId: LiveStudioWorkspaceActionId = actionId === 'vary'
+      ? studioProject === null ? 'create' : 'refine'
+      : actionId;
     if (!preserveCreateReview) setCreateReview(null);
     if (!preserveActivityReview) setActivityReview(null);
-    if (actionId === 'confirm') setPostConfirmDestination(afterConfirmation);
-    if (actionId === 'present') setPresentInitialDestination(undefined);
-    setSelectedActionId(actionId);
+    if (liveActionId === 'confirm') setPostConfirmDestination(afterConfirmation);
+    if (liveActionId === 'present') setPresentInitialDestination(undefined);
+    setSelectedActionId(liveActionId);
     setShowMoreActions(false);
     setStudioView('action');
     setTab('studio');
@@ -644,7 +652,12 @@ export default function App() {
           {showMoreActions && (
             <View style={[styles.moreMenu, shadows.lifted]}>
               {moreActions.map((action) => (
-                <Pressable key={action.id} style={styles.moreMenuRow} onPress={() => openStudioAction(action.id)}>
+                <Pressable
+                  key={action.id}
+                  accessibilityRole="button"
+                  accessibilityLabel={action.label}
+                  style={styles.moreMenuRow}
+                  onPress={() => openStudioAction(action.id)}>
                   <Text style={styles.moreMenuTitle}>{action.shortLabel}</Text>
                   <Text style={styles.moreMenuBody}>{action.description}</Text>
                 </Pressable>
@@ -699,8 +712,8 @@ export default function App() {
             image={designImage}
             imageLabel="New design inspiration"
             eyebrow="NEW DESIGN"
-            title="Start from an idea or reference"
-            body="Begin with a sentence, drawing, photograph, render, or master-geometry image."
+            title="Start with a prompt or drawing"
+            body="Describe the jewelry you want, or upload your own drawing. Generate one to four designs to compare."
             accent="#b9a6ff"
             wide
             onPress={() => openStudioAction('create')}
@@ -780,8 +793,27 @@ export default function App() {
                 setCreateReview(null);
                 setStudioProject(selection.project);
                 setSelectedCreativeAssetId(selection.selectedAssetId);
-                openStudioAction('refine');
+                openStudioAction('angles');
               }}
+            />
+          ) : selectedActionId === 'angles' ? (
+            <StudioAnglesWorkspace
+              gateway={studioGateway}
+              lineage={activityReview?.job.action_id === 'angles'
+                ? activityReview.lineage : visualStudioLineage}
+              createdBy={designer}
+              onSaved={(project) => {
+                setActivityReview(null);
+                setStudioProject(project);
+                setSelectedCreativeAssetId(project.active_asset_id);
+              }}
+              onContinueRefining={() => openStudioAction('refine')}
+              onOpenCollections={() => setTab('collections')}
+              imageRequestHeaders={authenticatedImageHeaders}
+              resumeReviewJobId={activityReview?.job.action_id === 'angles'
+                ? activityReview.job.job_id : undefined}
+              reviewSourceIsActive={activityReview?.job.action_id === 'angles'
+                ? activityReview.sourceIsActive : true}
             />
           ) : selectedActionId === 'refine' || selectedActionId === 'specifications' ? (
             <StudioRefineWorkspace
@@ -863,22 +895,6 @@ export default function App() {
               reviewSourceIsActive={activityReview?.job.action_id === 'present'
                 ? activityReview.sourceIsActive : true}
             />
-          ) : selectedActionId === 'vary' ? (
-            <StudioVaryWorkspace
-              gateway={studioGateway}
-              lineage={visualStudioLineage === null ? null : {
-                ...visualStudioLineage,
-                sourceDesignVersion: exactStudioLineage?.sourceDesignVersion ?? null,
-              }}
-              createdBy={designer}
-              onCreated={(project) => {
-                setStudioProject(project);
-                setSelectedCreativeAssetId(project.active_asset_id);
-              }}
-              onContinueRefining={() => openStudioAction('refine')}
-              destinationContext={destinationContext}
-              onSelectDestination={openStudioDestination}
-            />
           ) : selectedActionId === 'factory' ? (
             <StudioFactoryWorkspace
               api={studioGateway}
@@ -904,7 +920,6 @@ export default function App() {
             setSelectedCreativeAssetId(project.active_asset_id);
           }}
           onStartDesign={() => openStudioAction('create')}
-          onVaryCurrent={() => openStudioAction('vary')}
           onContinueRefining={() => openStudioAction('refine')}
           destinationContext={destinationContext}
           onSelectDestination={openStudioDestination}
@@ -925,12 +940,12 @@ export default function App() {
               return;
             }
             if (job.source_revision_id === null) return;
-            if (!(['refine', 'views', 'present'] as const).includes(
-              job.action_id as 'refine' | 'views' | 'present',
+            if (!(['refine', 'angles', 'views', 'present'] as const).includes(
+              job.action_id as 'refine' | 'angles' | 'views' | 'present',
             )) return;
             void hydrateProject({
               projectId: job.active_design_id,
-              destination: job.action_id as 'refine' | 'views' | 'present',
+              destination: job.action_id as 'refine' | 'angles' | 'views' | 'present',
               reviewJobId: job.job_id,
             });
           }}
@@ -948,7 +963,7 @@ export default function App() {
             Short, action-specific guidance keeps education available without crowding the Studio canvas.
           </Text>
           {[
-            ['Start from a useful source', 'Begin with a sentence or add one master-geometry image from a sketch, photograph, or render.'],
+            ['Start with a prompt or drawing', 'Describe the jewelry you want, or upload your own drawing. Facetta can generate one to four designs to compare.'],
             ['Refine without design drift', 'Target one region and keep the saved revision unchanged until you accept a preview.'],
             ['Make a confident decision', 'Compare the exact source and preview, then apply, branch, or discard without losing history.'],
           ].map(([title, body]) => (

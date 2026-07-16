@@ -33,6 +33,7 @@ from facetta.db import (
     StudioMarkupCandidateRecord,
     StudioPresentationCandidateRecord,
     StudioViewCandidateRecord,
+    _migrate_studio_job_action_constraint,
     get_db,
     utcnow,
 )
@@ -142,6 +143,9 @@ def _seed_project(
             owner=owner,
             title="Studio job context",
             tags=[],
+            selected_candidate_asset_id=(
+                asset_id if not exact_specification else None
+            ),
         ))
         if factory_eligible:
             db.add(ApprovalChecklist(
@@ -218,7 +222,7 @@ def _create_running_candidate_job(
     definition = STUDIO_JOB_ACTIONS[action_id]
     job = _create(
         client,
-        outputs=1,
+        outputs=definition.min_requested_outputs,
         action_id=action_id,
         lane=definition.lane,
         credits=definition.credits_per_output,
@@ -772,7 +776,7 @@ def test_server_registry_is_canonical_for_every_studio_action(client):
         )
         created = _create(
             client,
-            outputs=1,
+            outputs=definition.min_requested_outputs,
             action_id=action_id,
             lane=definition.lane,
             credits=definition.credits_per_output,
@@ -817,6 +821,38 @@ def test_multi_output_actions_accept_their_canonical_range(
     )
 
 
+def test_angles_action_requires_exactly_three_requested_outputs(client):
+    definition = STUDIO_JOB_ACTIONS["angles"]
+    project_id, source_id = _seed_project(
+        client, project_id="project_angles_three_outputs",
+    )
+    accepted = _create(
+        client,
+        outputs=3,
+        action_id="angles",
+        lane=definition.lane,
+        credits=definition.credits_per_output,
+        active_design_id=project_id,
+        source_revision_id=source_id,
+    )
+    assert accepted["action_id"] == "angles"
+    assert accepted["billing"]["requested_outputs"] == 3
+    assert accepted["billing"]["estimated_credits"] == 54
+
+    for outputs in (1, 2, 4):
+        rejected = client.post("/studio/jobs", json={
+            "owner": "usr_designer",
+            "action_id": "angles",
+            "lane": definition.lane,
+            "active_design_id": project_id,
+            "source_revision_id": source_id,
+            "requested_outputs": outputs,
+            "credits_per_output": definition.credits_per_output,
+        })
+        assert rejected.status_code == 422
+        assert "angles requires 3 requested outputs" in rejected.json()["detail"]
+
+
 @pytest.mark.parametrize("action_id", ["refine", "views", "factory"])
 def test_single_output_actions_reject_multiple_outputs_before_persistence(
     client,
@@ -853,6 +889,9 @@ def test_server_registry_matches_designer_action_contract():
         "vary": ("direction", "variation_set", "design_record", "instant_transaction", "none"),
         "refine": ("instruction", "design_revision", "design_record", "candidate_job", "candidate_decision"),
         "views": ("view_set", "view_set", "visual_preview", "candidate_job", "candidate_decision"),
+        "angles": (
+            "angle_set", "visual_angle_set", "visual_preview", "candidate_job", "candidate_decision",
+        ),
         "present": (
             "destination", "presentation_pack", "visual_preview", "candidate_job", "candidate_decision",
         ),
@@ -875,9 +914,9 @@ def test_server_registry_matches_designer_action_contract():
     create = STUDIO_JOB_ACTIONS["create"]
     assert create.input_requirements == ("brief_or_reference",)
     assert {field.reference_role for field in create.ui_schema} >= {
-        "master_geometry", "material_style", "construction_detail",
-        "brand_direction",
+        "master_geometry",
     }
+    assert {field.id for field in create.ui_schema} == {"brief", "master"}
     assert {
         action_id: (
             definition.min_requested_outputs,
@@ -889,6 +928,7 @@ def test_server_registry_matches_designer_action_contract():
         "vary": (0, 0),
         "refine": (1, 1),
         "views": (1, 1),
+        "angles": (3, 3),
         "present": (1, 4),
         "factory": (1, 1),
     }
@@ -1440,6 +1480,89 @@ def test_factory_success_requires_backend_pack_evidence_and_exact_charge(client)
     assert unchanged["accepted_output_sha256"] is None
     assert unchanged["billing"]["completed_outputs"] == 0
     assert unchanged["billing"]["charged_outputs"] == 0
+
+
+def test_existing_sqlite_job_ledger_migrates_to_first_class_angles_action():
+    engine = create_engine("sqlite://")
+    with engine.begin() as connection:
+        connection.execute(text("""
+            CREATE TABLE studio_jobs (
+                id VARCHAR(32) PRIMARY KEY,
+                owner VARCHAR(32) NOT NULL,
+                action_id VARCHAR(24) NOT NULL,
+                lane VARCHAR(24) NOT NULL,
+                status VARCHAR(16) NOT NULL,
+                progress FLOAT NOT NULL,
+                active_design_id VARCHAR(32),
+                source_revision_id VARCHAR(32),
+                requested_outputs INTEGER NOT NULL,
+                credits_per_output INTEGER NOT NULL,
+                completed_outputs INTEGER NOT NULL,
+                charged_outputs INTEGER NOT NULL,
+                error_code VARCHAR(64),
+                created_at DATETIME NOT NULL,
+                updated_at DATETIME NOT NULL,
+                CONSTRAINT ck_studio_job_action CHECK (
+                    action_id IN (
+                        'create', 'vary', 'refine', 'views',
+                        'present', 'factory'
+                    )
+                )
+            )
+        """))
+        connection.execute(text(
+            "CREATE INDEX ix_studio_jobs_owner ON studio_jobs (owner)"
+        ))
+        connection.execute(text("""
+            INSERT INTO studio_jobs (
+                id, owner, action_id, lane, status, progress,
+                active_design_id, source_revision_id, requested_outputs,
+                credits_per_output, completed_outputs, charged_outputs,
+                created_at, updated_at
+            ) VALUES (
+                'job_legacy', 'usr_designer', 'present', 'fast_visual',
+                'queued', 0, 'ast_project', 'ast_source', 1, 18, 0, 0,
+                CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+            )
+        """))
+        connection.execute(text("""
+            CREATE TABLE child_job_evidence (
+                id VARCHAR(32) PRIMARY KEY,
+                studio_job_id VARCHAR(32) NOT NULL
+                    REFERENCES studio_jobs(id)
+            )
+        """))
+        connection.execute(text(
+            "INSERT INTO child_job_evidence VALUES "
+            "('evidence_legacy', 'job_legacy')"
+        ))
+
+    _migrate_studio_job_action_constraint(engine)
+
+    with engine.begin() as connection:
+        connection.execute(text("""
+            INSERT INTO studio_jobs (
+                id, owner, action_id, lane, status, progress,
+                active_design_id, source_revision_id, requested_outputs,
+                credits_per_output, completed_outputs, charged_outputs,
+                created_at, updated_at
+            ) VALUES (
+                'job_angles', 'usr_designer', 'angles', 'fast_visual',
+                'queued', 0, 'ast_project', 'ast_source', 3, 18, 0, 0,
+                CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
+            )
+        """))
+        actions = connection.execute(text(
+            "SELECT action_id FROM studio_jobs ORDER BY id"
+        )).scalars().all()
+        violations = connection.execute(text(
+            "PRAGMA foreign_key_check"
+        )).fetchall()
+    assert actions == ["angles", "present"]
+    assert violations == []
+    assert "ix_studio_jobs_owner" in {
+        item["name"] for item in inspect(engine).get_indexes("studio_jobs")
+    }
 
 
 def test_creation_job_lineage_can_bind_once_but_never_drift(client):

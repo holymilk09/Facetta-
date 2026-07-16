@@ -13,6 +13,7 @@ import hashlib
 import secrets
 from collections import Counter
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 from typing import Annotated, Literal
 
@@ -1842,6 +1843,7 @@ def _persist_create_failure_evidence(
     created_by: str,
     error_code: str,
     error: ImageAgentError | None = None,
+    errors: tuple[ImageAgentError, ...] = (),
     rejected_result: ImageAgentResult | None = None,
     rejected_error_category: Literal[
         "validation", "provider", "evaluation", "quality"
@@ -1849,7 +1851,9 @@ def _persist_create_failure_evidence(
 ) -> tuple[tuple[str, ...], str | None]:
     """Commit Create attempt evidence and its zero-charge failure together."""
 
-    if error is not None and rejected_result is not None:
+    if errors and error is not None:
+        raise ValueError("Create failure evidence cannot duplicate errors")
+    if (error is not None or errors) and rejected_result is not None:
         raise ValueError("Create failure evidence must have one terminal cause")
     try:
         observed_run_ids = tuple(
@@ -1862,15 +1866,20 @@ def _persist_create_failure_evidence(
             for result in completed_results
         )
         failed_run_id = None
-        if error is not None and error.plan is not None:
-            failed_run_id = persist_image_agent_failure(
+        terminal_errors = errors or ((error,) if error is not None else ())
+        for index, terminal_error in enumerate(terminal_errors):
+            if terminal_error.plan is None:
+                continue
+            persisted_failure_id = persist_image_agent_failure(
                 db,
-                error.plan,
-                error,
+                terminal_error.plan,
+                terminal_error,
                 created_by=created_by,
                 commit=False,
             )
-        elif rejected_result is not None:
+            if index == 0:
+                failed_run_id = persisted_failure_id
+        if rejected_result is not None:
             failed_run_id = persist_image_agent_result(
                 db,
                 rejected_result,
@@ -1893,6 +1902,82 @@ def _persist_create_failure_evidence(
     return observed_run_ids, failed_run_id
 
 
+def _settle_create_persistence_failure(
+    db: Session,
+    *,
+    studio_job_id: str | None,
+    owner: str,
+) -> None:
+    """Fail a Create job durably after its project transaction rolls back.
+
+    Provider work has already completed at this boundary.  Project/evidence
+    persistence is intentionally atomic, so its failure must roll back before
+    a fresh transaction records the separately created Studio job as a
+    zero-charge failure.  Otherwise Activity would leave a non-reusable
+    request looking permanently ``running`` and a retry could repeat provider
+    cost.
+    """
+
+    bind = db.get_bind()
+    db.rollback()
+    if studio_job_id is None:
+        return
+    with Session(bind=bind, autoflush=False) as settlement_db:
+        try:
+            record_failed_create_studio_job(
+                settlement_db,
+                job_id=studio_job_id,
+                owner=owner,
+                error_code="create_persistence_failed",
+            )
+            settlement_db.commit()
+        except Exception:
+            settlement_db.rollback()
+            raise
+
+
+_CREATE_GENERATION_MAX_WORKERS = 4
+
+
+def _run_create_generation_batch(
+    variants: tuple[int, ...],
+    generate_one: Callable[[int], ImageAgentResult],
+) -> tuple[tuple[ImageAgentResult, ...], tuple[ImageAgentError, ...]]:
+    """Run requested Create outputs concurrently but return variant order.
+
+    Create accepts at most four requested outputs, so the executor is bounded
+    by both that product limit and the actual batch size.  No database session
+    crosses a worker boundary: workers perform provider/QA work only, and the
+    caller retains the existing all-or-nothing persistence transaction.
+
+    Successful results and structured image-agent failures are each returned
+    in requested variant order, regardless of provider completion order.  The
+    caller can therefore preserve deterministic candidate ordering while also
+    recording every completed attempt if any sibling fails.
+    """
+
+    if not variants:
+        return (), ()
+    completed: list[ImageAgentResult] = []
+    failures: list[ImageAgentError] = []
+    with ThreadPoolExecutor(
+        max_workers=min(_CREATE_GENERATION_MAX_WORKERS, len(variants)),
+        thread_name_prefix="facetta-create",
+    ) as executor:
+        futures = tuple(
+            executor.submit(generate_one, variant) for variant in variants
+        )
+        # Future lookup follows request order, not completion order.  The
+        # executor still overlaps the provider calls because every future was
+        # submitted before any result is awaited.
+        for future in futures:
+            try:
+                completed.append(future.result())
+            except ImageAgentError as exc:
+                failures.append(exc)
+    return tuple(completed), tuple(failures)
+
+
 def _json_value_contains_text(value: JsonValue, expected: str) -> bool:
     """Return whether one normalized plan value preserves an exact contract."""
 
@@ -1909,6 +1994,24 @@ def _json_value_contains_text(value: JsonValue, expected: str) -> bool:
             for item in value
         )
     return False
+
+
+def _image_result_binds_exact_instruction(
+    result: ImageAgentResult,
+    expected: str,
+) -> bool:
+    """Require provider evidence to bind the exact normalized Create text.
+
+    The candidate row is labeled with this instruction after generation.  A
+    result whose immutable image-agent plan names different text must never be
+    persisted under the designer's request, even if its operation and source
+    hash otherwise look valid.
+    """
+
+    return (
+        result.plan.intent == expected
+        and result.plan.normalized_intent.get("instruction") == expected
+    )
 
 
 @router.post(
@@ -1938,6 +2041,7 @@ def create_project_from_prompt(
         )
     except ProviderStudioJobError as exc:
         return provider_studio_job_error_response(exc)
+    effective_prompt = request.prompt.strip()
     decoded = _decode_creative_role_references(request.references)
     if isinstance(decoded, JSONResponse):
         return decoded
@@ -1952,35 +2056,46 @@ def create_project_from_prompt(
                 "code": "creative_reference_invalid_image",
                 "detail": f"a role-labeled reference could not be decoded: {exc}",
             })
+    variants = tuple(
+        request.starting_variant + offset
+        for offset in range(request.variation_count)
+    )
+
+    def generate_variant(variant: int) -> ImageAgentResult:
+        return (
+            generate(
+                effective_prompt,
+                variant,
+                reference_board=advisory_board.image,
+                reference_instruction=advisory_board.instruction,
+            )
+            if advisory_board is not None
+            else generate(effective_prompt, variant)
+        )
+
+    batch_results, generation_failures = _run_create_generation_batch(
+        variants,
+        generate_variant,
+    )
+    if generation_failures:
+        primary_failure = generation_failures[0]
+        observed_run_ids, failed_run_id = _persist_create_failure_evidence(
+            db,
+            studio_job=studio_job,
+            completed_results=batch_results,
+            created_by=request.owner,
+            error_code=primary_failure.code,
+            errors=generation_failures,
+        )
+        response = image_agent_error_response(
+            primary_failure, image_run_id=failed_run_id)
+        if observed_run_ids:
+            response.headers["X-Facetta-Completed-Run-Count"] = str(
+                len(observed_run_ids))
+        return response
+
     generated = []
-    for offset in range(request.variation_count):
-        variant = request.starting_variant + offset
-        try:
-            result = (
-                generate(
-                    request.prompt,
-                    variant,
-                    reference_board=advisory_board.image,
-                    reference_instruction=advisory_board.instruction,
-                )
-                if advisory_board is not None
-                else generate(request.prompt, variant)
-            )
-        except ImageAgentError as exc:
-            observed_run_ids, failed_run_id = _persist_create_failure_evidence(
-                db,
-                studio_job=studio_job,
-                completed_results=tuple(generated),
-                created_by=request.owner,
-                error_code=exc.code,
-                error=exc,
-            )
-            response = image_agent_error_response(
-                exc, image_run_id=failed_run_id)
-            if observed_run_ids:
-                response.headers["X-Facetta-Completed-Run-Count"] = str(
-                    len(observed_run_ids))
-            return response
+    for result in batch_results:
         if result.plan.operation.value != "CREATIVE_GENERATE":
             observed_run_ids, _failed_run_id = (
                 _persist_create_failure_evidence(
@@ -1996,6 +2111,30 @@ def create_project_from_prompt(
             response = JSONResponse(status_code=500, content={
                 "error_category": "validation_failure",
                 "detail": "creative prompt generator returned the wrong operation",
+            })
+            if observed_run_ids:
+                response.headers["X-Facetta-Completed-Run-Count"] = str(
+                len(observed_run_ids))
+            return response
+        if not _image_result_binds_exact_instruction(result, effective_prompt):
+            observed_run_ids, _failed_run_id = (
+                _persist_create_failure_evidence(
+                    db,
+                    studio_job=studio_job,
+                    completed_results=tuple(generated),
+                    created_by=request.owner,
+                    error_code="create_instruction_binding_mismatch",
+                    rejected_result=result,
+                    rejected_error_category="evaluation",
+                )
+            )
+            response = JSONResponse(status_code=500, content={
+                "error_category": "validation_failure",
+                "code": "create_instruction_binding_mismatch",
+                "detail": (
+                    "creative generator did not bind the exact designer "
+                    "instruction"
+                ),
             })
             if observed_run_ids:
                 response.headers["X-Facetta-Completed-Run-Count"] = str(
@@ -2049,41 +2188,51 @@ def create_project_from_prompt(
             return response
         generated.append(result)
 
-    persisted = persist_prompt_creative_project(
-        db,
-        candidates=tuple(CreativeCandidateInput(
-            image=result.image_bytes,
-            instruction=request.prompt,
-            image_run=result,
-        ) for result in generated),
-        reference_board=(
-            SourceAssetInput(
-                image=advisory_board.image,
-                media_type="image/png",
-                capability="CREATIVE_REFERENCE_BOARD",
-                instruction=advisory_board.instruction,
-            )
-            if advisory_board is not None else None
-        ),
-        reference_sources=tuple(SourceAssetInput(
-            image=reference.image,
-            media_type=reference.media_type,
-            capability={
-                "material_style": "CREATIVE_REFERENCE_MATERIAL_STYLE",
-                "construction_detail": "CREATIVE_REFERENCE_CONSTRUCTION_DETAIL",
-                "brand_direction": "CREATIVE_REFERENCE_BRAND_DIRECTION",
-            }[reference.role],
-            instruction=(
-                f"Role-labeled {reference.role} reference; SHA-256 "
-                f"{hashlib.sha256(reference.image).hexdigest()}"
+    try:
+        persisted = persist_prompt_creative_project(
+            db,
+            candidates=tuple(CreativeCandidateInput(
+                image=result.image_bytes,
+                instruction=effective_prompt,
+                image_run=result,
+            ) for result in generated),
+            reference_board=(
+                SourceAssetInput(
+                    image=advisory_board.image,
+                    media_type="image/png",
+                    capability="CREATIVE_REFERENCE_BOARD",
+                    instruction=advisory_board.instruction,
+                )
+                if advisory_board is not None else None
             ),
-        ) for reference in decoded_references),
-        owner=request.owner,
-        title=request.title,
-        collection=request.collection,
-        tags=request.tags,
-        studio_job=studio_job,
-    )
+            reference_sources=tuple(SourceAssetInput(
+                image=reference.image,
+                media_type=reference.media_type,
+                capability={
+                    "material_style": "CREATIVE_REFERENCE_MATERIAL_STYLE",
+                    "construction_detail": (
+                        "CREATIVE_REFERENCE_CONSTRUCTION_DETAIL"
+                    ),
+                    "brand_direction": "CREATIVE_REFERENCE_BRAND_DIRECTION",
+                }[reference.role],
+                instruction=(
+                    f"Role-labeled {reference.role} reference; SHA-256 "
+                    f"{hashlib.sha256(reference.image).hexdigest()}"
+                ),
+            ) for reference in decoded_references),
+            owner=request.owner,
+            title=request.title,
+            collection=request.collection,
+            tags=request.tags,
+            studio_job=studio_job,
+        )
+    except Exception:
+        _settle_create_persistence_failure(
+            db,
+            studio_job_id=request.studio_job_id,
+            owner=request.owner,
+        )
+        raise
     project = db.get(Project, persisted.root_id)
     if project is None:  # pragma: no cover - transaction invariant
         raise RuntimeError("persisted prompt project is unavailable")
@@ -2215,35 +2364,45 @@ def create_project_from_drawing(
             f"{board.instruction}"
         )
 
-    generated = []
-    for offset in range(request.variation_count):
-        variant = request.starting_variant + offset
-        try:
-            if decoded_references:
-                result = invoke_creative_render_generator(
-                    generate,
-                    render_source,
-                    effective_instruction,
-                    variant,
-                    quality_source_image=quality_source,
-                )
-            else:
-                result = generate(render_source, effective_instruction, variant)
-        except ImageAgentError as exc:
-            observed_run_ids, failed_run_id = _persist_create_failure_evidence(
-                db,
-                studio_job=studio_job,
-                completed_results=tuple(generated),
-                created_by=request.owner,
-                error_code=exc.code,
-                error=exc,
+    variants = tuple(
+        request.starting_variant + offset
+        for offset in range(request.variation_count)
+    )
+
+    def generate_variant(variant: int) -> ImageAgentResult:
+        if decoded_references:
+            return invoke_creative_render_generator(
+                generate,
+                render_source,
+                effective_instruction,
+                variant,
+                quality_source_image=quality_source,
             )
-            response = image_agent_error_response(
-                exc, image_run_id=failed_run_id)
-            if observed_run_ids:
-                response.headers["X-Facetta-Completed-Run-Count"] = str(
-                    len(observed_run_ids))
-            return response
+        return generate(render_source, effective_instruction, variant)
+
+    batch_results, generation_failures = _run_create_generation_batch(
+        variants,
+        generate_variant,
+    )
+    if generation_failures:
+        primary_failure = generation_failures[0]
+        observed_run_ids, failed_run_id = _persist_create_failure_evidence(
+            db,
+            studio_job=studio_job,
+            completed_results=batch_results,
+            created_by=request.owner,
+            error_code=primary_failure.code,
+            errors=generation_failures,
+        )
+        response = image_agent_error_response(
+            primary_failure, image_run_id=failed_run_id)
+        if observed_run_ids:
+            response.headers["X-Facetta-Completed-Run-Count"] = str(
+                len(observed_run_ids))
+        return response
+
+    generated = []
+    for result in batch_results:
         if result.plan.operation.value != "REFERENCE_RENDER":
             observed_run_ids, _failed_run_id = (
                 _persist_create_failure_evidence(
@@ -2262,7 +2421,7 @@ def create_project_from_drawing(
             })
             if observed_run_ids:
                 response.headers["X-Facetta-Completed-Run-Count"] = str(
-                    len(observed_run_ids))
+                len(observed_run_ids))
             return response
         expected_source_hash = hashlib.sha256(render_source).hexdigest()
         source_binding_matches = result.plan.source_hash == expected_source_hash
@@ -2303,6 +2462,33 @@ def create_project_from_drawing(
                 response.headers["X-Facetta-Completed-Run-Count"] = str(
                     len(observed_run_ids))
             return response
+        if not _image_result_binds_exact_instruction(
+            result,
+            effective_instruction,
+        ):
+            observed_run_ids, _failed_run_id = (
+                _persist_create_failure_evidence(
+                    db,
+                    studio_job=studio_job,
+                    completed_results=tuple(generated),
+                    created_by=request.owner,
+                    error_code="create_instruction_binding_mismatch",
+                    rejected_result=result,
+                    rejected_error_category="evaluation",
+                )
+            )
+            response = JSONResponse(status_code=500, content={
+                "error_category": "validation_failure",
+                "code": "create_instruction_binding_mismatch",
+                "detail": (
+                    "creative generator did not bind the exact designer "
+                    "instruction"
+                ),
+            })
+            if observed_run_ids:
+                response.headers["X-Facetta-Completed-Run-Count"] = str(
+                    len(observed_run_ids))
+            return response
         if _uploaded_media_type(result.image_bytes) is None:
             observed_run_ids, _failed_run_id = (
                 _persist_create_failure_evidence(
@@ -2324,43 +2510,53 @@ def create_project_from_drawing(
             return response
         generated.append(result)
 
-    persisted = persist_creative_project(
-        db,
-        source_image=image,
-        source_media_type=detected,
-        source_kind=request.source_kind,
-        render_source_image=(
-            render_source
-            if request.source_region is not None or decoded_references
-            else None
-        ),
-        render_source_media_type=render_source_media_type,
-        render_source_instruction=render_source_instruction,
-        render_source_capability=render_source_capability,
-        reference_sources=tuple(SourceAssetInput(
-            image=reference.image,
-            media_type=reference.media_type,
-            capability={
-                "material_style": "CREATIVE_REFERENCE_MATERIAL_STYLE",
-                "construction_detail": "CREATIVE_REFERENCE_CONSTRUCTION_DETAIL",
-                "brand_direction": "CREATIVE_REFERENCE_BRAND_DIRECTION",
-            }[reference.role],
-            instruction=(
-                f"Role-labeled {reference.role} reference; SHA-256 "
-                f"{hashlib.sha256(reference.image).hexdigest()}"
+    try:
+        persisted = persist_creative_project(
+            db,
+            source_image=image,
+            source_media_type=detected,
+            source_kind=request.source_kind,
+            render_source_image=(
+                render_source
+                if request.source_region is not None or decoded_references
+                else None
             ),
-        ) for reference in decoded_references),
-        candidates=tuple(CreativeCandidateInput(
-            image=result.image_bytes,
-            instruction=effective_instruction,
-            image_run=result,
-        ) for result in generated),
-        owner=request.owner,
-        title=request.title,
-        collection=request.collection,
-        tags=request.tags,
-        studio_job=studio_job,
-    )
+            render_source_media_type=render_source_media_type,
+            render_source_instruction=render_source_instruction,
+            render_source_capability=render_source_capability,
+            reference_sources=tuple(SourceAssetInput(
+                image=reference.image,
+                media_type=reference.media_type,
+                capability={
+                    "material_style": "CREATIVE_REFERENCE_MATERIAL_STYLE",
+                    "construction_detail": (
+                        "CREATIVE_REFERENCE_CONSTRUCTION_DETAIL"
+                    ),
+                    "brand_direction": "CREATIVE_REFERENCE_BRAND_DIRECTION",
+                }[reference.role],
+                instruction=(
+                    f"Role-labeled {reference.role} reference; SHA-256 "
+                    f"{hashlib.sha256(reference.image).hexdigest()}"
+                ),
+            ) for reference in decoded_references),
+            candidates=tuple(CreativeCandidateInput(
+                image=result.image_bytes,
+                instruction=effective_instruction,
+                image_run=result,
+            ) for result in generated),
+            owner=request.owner,
+            title=request.title,
+            collection=request.collection,
+            tags=request.tags,
+            studio_job=studio_job,
+        )
+    except Exception:
+        _settle_create_persistence_failure(
+            db,
+            studio_job_id=request.studio_job_id,
+            owner=request.owner,
+        )
+        raise
     project = db.get(Project, persisted.root_id)
     if project is None:  # pragma: no cover - transaction invariant
         raise RuntimeError("persisted creative project is unavailable")

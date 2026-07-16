@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import hashlib
 from dataclasses import dataclass, field
+from datetime import timedelta
 from typing import TYPE_CHECKING, Callable, Literal
 
 from sqlalchemy import select, update
@@ -715,9 +716,12 @@ def persist_creative_project(
             image=candidate.image,
             media_type=sniff_media_type(candidate.image),
             created_by=owner,
-            created_at=now,
+            # Candidate order is product-visible (Design 1..4).  Opaque ids
+            # cannot encode that order, so preserve the requested sequence in
+            # the canonical chain timestamp while keeping one transaction.
+            created_at=now + timedelta(microseconds=index + 1),
         )
-        for candidate in candidates
+        for index, candidate in enumerate(candidates)
     ]
     try:
         if studio_job is not None:
@@ -830,7 +834,9 @@ def persist_prompt_creative_project(
             image=candidate.image,
             media_type=sniff_media_type(candidate.image),
             created_by=owner,
-            created_at=now,
+            # Preserve requested variant order even when provider calls finish
+            # out of order and opaque asset ids sort differently.
+            created_at=now + timedelta(microseconds=index),
         )
         for index, candidate in enumerate(candidates)
     ]

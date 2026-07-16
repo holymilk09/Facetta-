@@ -28,6 +28,10 @@ from facetta.studio_visual_candidates import (
     expire_stale_studio_visual_candidates,
     expire_stale_studio_visual_reservations,
 )
+from facetta.studio_visual_angle_sets import (
+    expire_stale_studio_visual_angle_reservations,
+    expire_stale_studio_visual_angle_sets,
+)
 
 
 def reconcile_studio_review_jobs(
@@ -72,6 +76,13 @@ def reconcile_studio_review_jobs(
             db, owner=owner, job_id=job_id,
         )
         reconciled += expire_stale_studio_view_candidates(
+            db, owner=owner, job_id=job_id,
+        )
+    if "angles" in actions:
+        reconciled += expire_stale_studio_visual_angle_reservations(
+            db, owner=owner, job_id=job_id,
+        )
+        reconciled += expire_stale_studio_visual_angle_sets(
             db, owner=owner, job_id=job_id,
         )
     if "present" in actions:

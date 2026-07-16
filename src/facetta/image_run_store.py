@@ -87,7 +87,15 @@ def persist_image_agent_result(
     )
     attempts = [_attempt_row(run_id, attempt)
                 for attempt in result.run.attempts]
-    db.add_all([run, *attempts])
+    # ``ImageAttempt.run_id`` is intentionally a scalar foreign key rather
+    # than an ORM relationship.  Without a relationship SQLAlchemy's unit of
+    # work is free to flush attempt rows before their new parent run, which
+    # fails on databases that enforce foreign keys (including the live SQLite
+    # preview).  Persist the parent first while keeping both writes in the
+    # same transaction.
+    db.add(run)
+    db.flush()
+    db.add_all(attempts)
     if commit:
         db.commit()
     else:
@@ -107,7 +115,7 @@ def persist_image_agent_failure(
 ) -> str:
     """Record a terminal provider/evaluator/quality failure without bytes."""
     run_id = new_id("run")
-    db.add(ImageRun(
+    run = ImageRun(
         id=run_id,
         project_root_id=project_root_id,
         source_asset_id=source_asset_id,
@@ -124,7 +132,9 @@ def persist_image_agent_failure(
         accepted_asset_id=None,
         error_category=error.category.value,
         created_by=created_by,
-    ))
+    )
+    db.add(run)
+    db.flush()
     db.add_all([_attempt_row(run_id, attempt) for attempt in error.attempts])
     if commit:
         db.commit()

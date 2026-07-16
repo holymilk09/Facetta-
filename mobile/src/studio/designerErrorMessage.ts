@@ -3,6 +3,7 @@ export type DesignerErrorAction =
   | 'vary'
   | 'refine'
   | 'views'
+  | 'angles'
   | 'present'
   | 'collections'
   | 'activity'
@@ -21,6 +22,7 @@ const ACTION_FAILURE: Record<DesignerErrorAction, string> = {
   vary: 'The variation could not be created. Reopen the design and try again.',
   refine: 'Facetta could not prepare that change. Your saved design is unchanged.',
   views: 'Facetta could not prepare that view. Your saved design is unchanged.',
+  angles: 'Facetta could not prepare those angle views. Your saved design is unchanged.',
   present: 'Facetta could not prepare that presentation image. Your design is unchanged.',
   collections: 'Facetta could not open that saved work. Try again.',
   activity: 'Facetta could not update Activity. Try again.',

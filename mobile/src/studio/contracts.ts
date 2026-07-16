@@ -3,6 +3,7 @@ export const STUDIO_ACTION_IDS = [
   'vary',
   'refine',
   'confirm',
+  'angles',
   'views',
   'present',
   'more',
@@ -24,13 +25,14 @@ export type ReferenceRole =
   | 'model_reference'
   | 'scene_reference';
 
-export type StudioFieldKind = 'text' | 'select' | 'reference' | 'toggle';
+export type StudioFieldKind = 'text' | 'select' | 'reference' | 'toggle' | 'fixed';
 
 export type StudioInputRequirement =
   | 'brief_or_reference'
   | 'direction'
   | 'instruction'
   | 'view_set'
+  | 'angle_set'
   | 'destination'
   | 'design_facts';
 
@@ -52,6 +54,7 @@ export interface StudioActionFieldDefinition {
 export type StudioOutputType =
   | 'design_revision'
   | 'variation_set'
+  | 'visual_angle_set'
   | 'view_set'
   | 'presentation_pack'
   | 'factory_review_pack'

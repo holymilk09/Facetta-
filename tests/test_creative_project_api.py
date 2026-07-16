@@ -6,6 +6,7 @@ import base64
 import copy
 import hashlib
 import io
+import threading
 from datetime import timedelta
 from unittest.mock import patch
 
@@ -43,6 +44,9 @@ from facetta.design_form import NormalizedPoint, NormalizedPolygon
 from facetta.image_agent import (
     CheckSeverity,
     CreativeRenderInspection,
+    ExplicitComponentCountInspection,
+    ExplicitComponentCountObservation,
+    GrokSkepticalPromptCreativeCountInspector,
     ImageOperation,
     ImageQualityFailure,
     ImageQualityReport,
@@ -149,6 +153,16 @@ class _PromptCreativeInspector:
         return self.inspection
 
 
+class _PromptCountInspector:
+    def __init__(self, inspection: ExplicitComponentCountInspection):
+        self.inspection = inspection
+
+    def inspect_counts(self, plan, candidate):
+        assert plan.operation is ImageOperation.CREATIVE_GENERATE
+        assert candidate
+        return self.inspection
+
+
 def _creative_result(variant: int):
     plan = build_image_plan(
         ImageOperation.REFERENCE_RENDER,
@@ -244,11 +258,44 @@ def test_prompt_creative_plan_is_category_neutral_and_review_only():
     prompt = compile_initial_prompt(plan)
     assert plan.jewelry_type == "jewelry"
     assert plan.spec_facts == {"jewelry_type": "jewelry"}
-    assert plan.prompt_version == "creative-generate.v3"
+    assert plan.prompt_version == "creative-generate.v4"
     assert route_for_attempt(plan, 1).value == "grok_generate"
     assert route_for_attempt(plan, 3).value == "flux_generate"
     assert "do not silently convert it into a ring" in prompt
     assert "not a specification, measured drawing, CAD" in prompt
+
+
+def test_prompt_creative_plan_binds_explicit_component_counts_to_prompt_and_hash():
+    plan = build_image_plan(
+        ImageOperation.CREATIVE_GENERATE,
+        "A pear-cut pink sapphire ring with FOUR minimal prongs",
+    )
+
+    assert plan.normalized_intent["explicit_component_counts"] == [{
+        "claim_id": "count_1",
+        "component": "minimal prongs",
+        "component_head": "prongs",
+        "kind": "center_prongs",
+        "expected_count": 4,
+    }]
+    prompt = compile_initial_prompt(plan)
+    assert "count_1: exactly 4 minimal prongs" in prompt
+    assert "individually visible and countable" in prompt
+
+
+def test_prompt_creative_count_contract_ignores_measurements_and_alloy_marks():
+    plan = build_image_plan(
+        ImageOperation.CREATIVE_GENERATE,
+        "An earring with 18k gold, 2 mm stones, and five pearls",
+    )
+
+    assert plan.normalized_intent["explicit_component_counts"] == [{
+        "claim_id": "count_1",
+        "component": "pearls",
+        "component_head": "pearls",
+        "kind": "named_visible_component",
+        "expected_count": 5,
+    }]
 
 
 def test_prompt_creative_qa_checks_direction_without_source_preservation():
@@ -355,6 +402,189 @@ def test_prompt_creative_qa_hard_fails_an_explicit_count_mismatch():
     assert "factory_authority" not in correction
 
 
+@pytest.mark.parametrize(
+    ("direction", "observed", "component"),
+    [
+        (
+            "A pear-cut pink sapphire ring with four minimal prongs",
+            3,
+            "minimal prongs",
+        ),
+        (
+            "A necklace with exactly five marquise emerald leaves",
+            9,
+            "marquise emerald leaves",
+        ),
+    ],
+)
+def test_prompt_creative_blind_assessable_count_mismatch_hard_fails(
+    direction, observed, component,
+):
+    plan = build_image_plan(ImageOperation.CREATIVE_GENERATE, direction)
+    primary = CreativeRenderInspection(
+        coherent_jewelry_render=True,
+        complete_piece_visible=True,
+        requested_presentation_applied=True,
+        explicit_counts_match=True,  # broad direction-aware audit is biased
+        explicit_stone_facts_match=True,
+        text_or_branding_detected=False,
+        score=94,
+    )
+    blind = ExplicitComponentCountInspection(observations=(
+        ExplicitComponentCountObservation(
+            claim_id="count_1",
+            observed_count=observed,
+            count_complete=True,
+            assessable=True,
+            notes=("whole named group is visible",),
+        ),
+    ))
+
+    report = RingQualityEvaluator(
+        prompt_creative_inspector=_PromptCreativeInspector(primary),
+        prompt_creative_count_inspector=_PromptCountInspector(blind),
+        require_cross_inspection=False,
+        require_render_cross_inspection=False,
+    ).evaluate(
+        plan,
+        _png((40, 100, 55)),
+        source_image=None,
+        mask_bytes=None,
+    )
+
+    assert report.verdict is QualityVerdict.FAIL
+    check = next(
+        item for item in report.checks
+        if item.code == "explicit_component_count:count_1"
+    )
+    assert check.severity is CheckSeverity.HARD
+    assert check.passed is False
+    assert check.evidence["component"] == component
+    assert check.evidence["observed_counts"] == [observed]
+
+
+def test_prompt_creative_prong_counter_is_expectation_blind(monkeypatch):
+    plan = build_image_plan(
+        ImageOperation.CREATIVE_GENERATE,
+        "A pear-cut pink sapphire ring with four minimal prongs",
+    )
+    calls = []
+
+    def inspect(system, candidate, ask):
+        calls.append((system, ask))
+        return {
+            "center_prongs_visible": 3,
+            "center_prong_count_complete": True,
+            "side_stones_visible": 0,
+            "side_stone_count_complete": True,
+            "notes": ["three distinct center-holding claws are visible"],
+        }
+
+    monkeypatch.setattr("facetta.image_agent.quality.vision_json", inspect)
+
+    result = GrokSkepticalPromptCreativeCountInspector().inspect_counts(
+        plan, _png((210, 70, 120))
+    )
+
+    assert len(calls) == 1
+    assert "requested prong count" in calls[0][1]
+    assert "four" not in calls[0][1].lower()
+    assert "exactly 4" not in calls[0][1].lower()
+    assert result.observations[0].observed_count == 3
+    assert result.observations[0].count_complete is True
+
+
+def test_prompt_creative_blind_correct_count_remains_designer_reviewable():
+    plan = build_image_plan(
+        ImageOperation.CREATIVE_GENERATE,
+        "A pendant with three oval sapphires",
+    )
+    primary = CreativeRenderInspection(
+        coherent_jewelry_render=True,
+        complete_piece_visible=True,
+        requested_presentation_applied=True,
+        explicit_counts_match=True,
+        explicit_stone_facts_match=True,
+        text_or_branding_detected=False,
+        score=96,
+    )
+    blind = ExplicitComponentCountInspection(observations=(
+        ExplicitComponentCountObservation(
+            claim_id="count_1",
+            observed_count=3,
+            count_complete=True,
+            assessable=True,
+        ),
+    ))
+
+    report = RingQualityEvaluator(
+        prompt_creative_inspector=_PromptCreativeInspector(primary),
+        prompt_creative_count_inspector=_PromptCountInspector(blind),
+        require_cross_inspection=False,
+        require_render_cross_inspection=False,
+    ).evaluate(
+        plan,
+        _png((40, 100, 55)),
+        source_image=None,
+        mask_bytes=None,
+    )
+
+    assert report.verdict is QualityVerdict.WARN
+    count_check = next(
+        item for item in report.checks
+        if item.code == "explicit_component_count:count_1"
+    )
+    assert count_check.passed is True
+    assert any(item.code == "factory_authority" for item in report.failed_checks)
+
+
+def test_prompt_creative_occluded_count_is_review_warning_not_false_failure():
+    plan = build_image_plan(
+        ImageOperation.CREATIVE_GENERATE,
+        "A brooch with six round diamonds",
+    )
+    primary = CreativeRenderInspection(
+        coherent_jewelry_render=True,
+        complete_piece_visible=True,
+        requested_presentation_applied=True,
+        # The direction-aware pass mistakes the visible subset for a mismatch;
+        # the expectation-blind audit correctly records incomplete visibility.
+        explicit_counts_match=False,
+        explicit_stone_facts_match=True,
+        text_or_branding_detected=False,
+        score=88,
+    )
+    blind = ExplicitComponentCountInspection(observations=(
+        ExplicitComponentCountObservation(
+            claim_id="count_1",
+            observed_count=4,
+            count_complete=False,
+            assessable=True,
+            notes=("two positions may be hidden by overlap",),
+        ),
+    ))
+
+    report = RingQualityEvaluator(
+        prompt_creative_inspector=_PromptCreativeInspector(primary),
+        prompt_creative_count_inspector=_PromptCountInspector(blind),
+        require_cross_inspection=False,
+        require_render_cross_inspection=False,
+    ).evaluate(
+        plan,
+        _png((40, 100, 55)),
+        source_image=None,
+        mask_bytes=None,
+    )
+
+    assert report.verdict is QualityVerdict.WARN
+    count_check = next(
+        item for item in report.checks
+        if item.code == "explicit_component_count:count_1"
+    )
+    assert count_check.severity is CheckSeverity.WARNING
+    assert count_check.passed is False
+
+
 def test_prompt_creative_qa_rejects_cropping_and_wrong_named_stone_shapes():
     plan = build_image_plan(
         ImageOperation.CREATIVE_GENERATE,
@@ -400,7 +630,7 @@ def test_reference_render_plan_uses_neutral_source_contract_and_edit_routes():
     prompt = compile_initial_prompt(plan)
     assert plan.jewelry_type == "jewelry"
     assert plan.spec_facts == {"jewelry_type": "jewelry"}
-    assert plan.prompt_version == "reference-render.v1"
+    assert plan.prompt_version == "reference-render.v2"
     assert route_for_attempt(plan, 1).value == "grok_edit"
     assert route_for_attempt(plan, 2).value == "grok_edit"
     assert route_for_attempt(plan, 3).value == "flux_kontext_edit"
@@ -878,6 +1108,184 @@ def test_production_create_requires_valid_job_before_provider_cost(
 
 
 @pytest.mark.parametrize("source_kind", ["prompt", "drawing"])
+def test_create_variants_overlap_but_persist_in_requested_order(
+    creative_client,
+    source_kind,
+):
+    client, Session = creative_client
+    payload = (
+        _prompt_request(variation_count=4)
+        if source_kind == "prompt"
+        else _request(variation_count=4)
+    )
+    variants = list(range(
+        int(payload["starting_variant"]),
+        int(payload["starting_variant"]) + 4,
+    ))
+    all_started = threading.Barrier(4)
+    completion_gates = {variant: threading.Event() for variant in variants}
+    called: list[int] = []
+    completed: list[int] = []
+    lock = threading.Lock()
+
+    def generate(*args):
+        variant = args[-1]
+        assert isinstance(variant, int)
+        with lock:
+            called.append(variant)
+        # A serial loop cannot cross this barrier.  Once all four calls are
+        # active, gates force the provider completion order to be the reverse
+        # of the requested candidate order.
+        all_started.wait(timeout=3)
+        if variant != variants[-1]:
+            assert completion_gates[variant + 1].wait(timeout=3)
+        result = (
+            _prompt_creative_result(variant)
+            if source_kind == "prompt"
+            else _creative_result(variant)
+        )
+        with lock:
+            completed.append(variant)
+        completion_gates[variant].set()
+        return result
+
+    dependency = (
+        get_creative_prompt_generator
+        if source_kind == "prompt"
+        else get_creative_render_generator
+    )
+    route = (
+        "/projects/from-prompt"
+        if source_kind == "prompt"
+        else "/projects/from-drawing"
+    )
+    app.dependency_overrides[dependency] = lambda: generate
+
+    response = client.post(route, json=payload)
+    assert response.status_code == 201, response.text
+    body = response.json()
+    assert sorted(called) == variants
+    assert completed == list(reversed(variants))
+    expected_images = [
+        (
+            _png((40, 90 + variant, 55))
+            if source_kind == "prompt"
+            else _png((80 + variant, 60, 30))
+        )
+        for variant in variants
+    ]
+    assert [
+        candidate["sha256"] for candidate in body["creative_candidates"]
+    ] == [hashlib.sha256(image).hexdigest() for image in expected_images]
+    with Session() as db:
+        runs = list(db.scalars(select(ImageRun).where(
+            ImageRun.project_root_id == body["root_id"]
+        )))
+        assert sorted(run.variant for run in runs) == variants
+
+
+@pytest.mark.parametrize("source_kind", ["prompt", "drawing"])
+def test_concurrent_create_partial_failure_is_atomic_and_uncharged(
+    creative_client,
+    source_kind,
+):
+    client, Session = creative_client
+    payload = (
+        _prompt_request(variation_count=4)
+        if source_kind == "prompt"
+        else _request(variation_count=4)
+    )
+    variants = list(range(
+        int(payload["starting_variant"]),
+        int(payload["starting_variant"]) + 4,
+    ))
+    failed_variant = variants[1]
+    all_started = threading.Barrier(4)
+    called: list[int] = []
+    lock = threading.Lock()
+    report = ImageQualityReport(
+        verdict=QualityVerdict.FAIL,
+        checks=(QualityCheck(
+            code="requested_direction_applied",
+            passed=False,
+            severity=CheckSeverity.HARD,
+            message="one sibling failed frozen QA",
+        ),),
+        score=20,
+    )
+
+    def generate(*args):
+        variant = args[-1]
+        assert isinstance(variant, int)
+        with lock:
+            called.append(variant)
+        all_started.wait(timeout=3)
+        if variant == failed_variant:
+            plan = build_image_plan(
+                (
+                    ImageOperation.CREATIVE_GENERATE
+                    if source_kind == "prompt"
+                    else ImageOperation.REFERENCE_RENDER
+                ),
+                str(
+                    payload["prompt"]
+                    if source_kind == "prompt"
+                    else payload["instruction"]
+                ),
+                source_image=None if source_kind == "prompt" else SOURCE,
+                variant=variant,
+            )
+            raise ImageQualityFailure(
+                "one sibling failed frozen QA",
+                report=report,
+                attempts=[],
+                plan=plan,
+            )
+        return (
+            _prompt_creative_result(variant)
+            if source_kind == "prompt"
+            else _creative_result(variant)
+        )
+
+    dependency = (
+        get_creative_prompt_generator
+        if source_kind == "prompt"
+        else get_creative_render_generator
+    )
+    route = (
+        "/projects/from-prompt"
+        if source_kind == "prompt"
+        else "/projects/from-drawing"
+    )
+    app.dependency_overrides[dependency] = lambda: generate
+    job_id = _running_create_job(client, requested_outputs=4)
+
+    response = client.post(route, json={**payload, "studio_job_id": job_id})
+    assert response.status_code == 422, response.text
+    assert response.headers["X-Facetta-Completed-Run-Count"] == "3"
+    assert sorted(called) == variants
+    with Session() as db:
+        job = db.get(StudioJobRecord, job_id)
+        runs = list(db.scalars(select(ImageRun).order_by(ImageRun.variant)))
+        assert job is not None
+        assert (job.status, job.completed_outputs, job.charged_outputs) == (
+            "failed", 0, 0,
+        )
+        assert job.error_code == "image_quality_failed"
+        assert job.active_design_id is None
+        assert job.source_revision_id is None
+        assert [run.variant for run in runs] == variants
+        assert [run.variant for run in runs if run.status == "failed"] == [
+            failed_variant
+        ]
+        assert all(run.accepted_asset_id is None for run in runs)
+        assert db.scalar(select(func.count()).select_from(Project)) == 0
+        assert db.scalar(select(func.count()).select_from(ImageAsset)) == 0
+        assert db.scalar(select(func.count()).select_from(Design)) == 0
+        assert db.scalar(select(func.count()).select_from(DesignVersion)) == 0
+
+
+@pytest.mark.parametrize("source_kind", ["prompt", "drawing"])
 def test_create_job_binding_rolls_back_with_project_persistence(
     creative_client,
     monkeypatch,
@@ -936,6 +1344,60 @@ def test_create_job_binding_rolls_back_with_project_persistence(
         assert durable_job.completed_outputs == 0
         assert durable_job.charged_outputs == 0
         assert db.scalar(select(func.count()).select_from(Project)) == 0
+
+
+@pytest.mark.parametrize("source_kind", ["prompt", "drawing"])
+def test_route_persistence_failure_durably_fails_create_job_without_charge(
+    creative_client,
+    monkeypatch,
+    source_kind,
+):
+    client, Session = creative_client
+    job_id = _running_create_job(client, requested_outputs=1)
+    provider_calls = 0
+
+    def generate(*_args, **_kwargs):
+        nonlocal provider_calls
+        provider_calls += 1
+        return (
+            _prompt_creative_result(4)
+            if source_kind == "prompt"
+            else _creative_result(7)
+        )
+
+    def fail_persistence(*_args, **_kwargs):
+        raise RuntimeError("simulated post-provider persistence failure")
+
+    if source_kind == "prompt":
+        dependency = get_creative_prompt_generator
+        route = "/projects/from-prompt"
+        payload = _prompt_request(variation_count=1)
+        persistence_name = "persist_prompt_creative_project"
+    else:
+        dependency = get_creative_render_generator
+        route = "/projects/from-drawing"
+        payload = _request(variation_count=1)
+        persistence_name = "persist_creative_project"
+    app.dependency_overrides[dependency] = lambda: generate
+    monkeypatch.setattr(projects_api, persistence_name, fail_persistence)
+
+    with pytest.raises(RuntimeError, match="post-provider persistence"):
+        client.post(route, json={**payload, "studio_job_id": job_id})
+
+    assert provider_calls == 1
+    with Session() as db:
+        job = db.get(StudioJobRecord, job_id)
+        assert job is not None
+        assert job.status == "failed"
+        assert job.progress == 1
+        assert job.completed_outputs == 0
+        assert job.charged_outputs == 0
+        assert job.error_code == "create_persistence_failed"
+        assert job.active_design_id is None
+        assert job.source_revision_id is None
+        assert db.scalar(select(func.count()).select_from(Project)) == 0
+        assert db.scalar(select(func.count()).select_from(ImageAsset)) == 0
+        assert db.scalar(select(func.count()).select_from(ImageRun)) == 0
 
 
 @pytest.mark.parametrize("source_kind", ["prompt", "drawing"])
@@ -1030,6 +1492,8 @@ def test_create_failure_atomically_persists_evidence_and_zero_charge_job(
     [
         ("prompt_operation", "create_generator_operation_mismatch"),
         ("drawing_operation", "create_generator_operation_mismatch"),
+        ("prompt_instruction", "create_instruction_binding_mismatch"),
+        ("drawing_instruction", "create_instruction_binding_mismatch"),
         ("prompt_reference_binding", "create_reference_binding_mismatch"),
     ],
 )
@@ -1045,11 +1509,26 @@ def test_create_provider_contract_failure_is_atomic_and_not_reusable(
     def wrong_contract(*_args, **_kwargs):
         nonlocal provider_calls
         provider_calls += 1
+        if failure_kind in {"prompt_instruction", "drawing_instruction"}:
+            result = (
+                _prompt_creative_result(4)
+                if failure_kind == "prompt_instruction"
+                else _creative_result(7)
+            )
+            mismatched_instruction = "A different instruction than the designer sent"
+            mismatched_plan = result.plan.model_copy(update={
+                "intent": mismatched_instruction,
+                "normalized_intent": {
+                    **result.plan.normalized_intent,
+                    "instruction": mismatched_instruction,
+                },
+            })
+            return result.model_copy(update={"plan": mismatched_plan})
         if failure_kind == "prompt_operation":
             return _creative_result(4)
         return _prompt_creative_result(7)
 
-    if failure_kind == "drawing_operation":
+    if failure_kind in {"drawing_operation", "drawing_instruction"}:
         dependency = get_creative_render_generator
         route = "/projects/from-drawing"
         payload = _request(variation_count=1)
@@ -1371,11 +1850,21 @@ def test_from_prompt_persists_independent_candidates_without_source_or_spec(
         assert db.scalar(select(func.count()).select_from(Design)) == 0
         assert db.scalar(select(func.count()).select_from(DesignVersion)) == 0
         assert db.scalar(select(func.count()).select_from(ImageAsset)) == 3
+        prompt = str(_prompt_request()["prompt"])
+        candidate_assets = list(db.scalars(select(ImageAsset).where(
+            ImageAsset.capability == "CREATIVE_RENDER"
+        )))
+        assert len(candidate_assets) == 3
+        assert all(asset.instruction == prompt for asset in candidate_assets)
         runs = list(db.scalars(select(ImageRun).order_by(ImageRun.variant)))
         assert [run.operation for run in runs] == [
             "CREATIVE_GENERATE", "CREATIVE_GENERATE", "CREATIVE_GENERATE"]
         assert [run.variant for run in runs] == [4, 5, 6]
         assert all(run.source_asset_id is None for run in runs)
+        assert all(
+            run.normalized_intent.get("instruction") == prompt
+            for run in runs
+        )
 
 
 def test_from_prompt_advisory_references_are_bound_and_persisted_by_role(
@@ -2287,11 +2776,23 @@ def test_from_drawing_persists_variations_without_inventing_a_spec(
         assert db.scalar(select(func.count()).select_from(Design)) == 0
         assert db.scalar(select(func.count()).select_from(DesignVersion)) == 0
         assert db.scalar(select(func.count()).select_from(ImageAsset)) == 3
+        instruction = str(_request()["instruction"])
+        candidates = list(db.scalars(select(ImageAsset).where(
+            ImageAsset.capability == "CREATIVE_RENDER"
+        )))
+        assert len(candidates) == 2
+        assert all(
+            candidate.instruction == instruction for candidate in candidates
+        )
         runs = list(db.scalars(select(ImageRun).order_by(ImageRun.variant)))
         assert [run.operation for run in runs] == [
             "REFERENCE_RENDER", "REFERENCE_RENDER"]
         assert [run.variant for run in runs] == [7, 8]
         assert all(run.status == "review_required" for run in runs)
+        assert all(
+            run.normalized_intent.get("instruction") == instruction
+            for run in runs
+        )
 
 
 @pytest.mark.parametrize(
@@ -4046,7 +4547,9 @@ def test_hard_quality_failure_leaves_no_product_records(creative_client):
         )
 
     app.dependency_overrides[get_creative_render_generator] = lambda: fail
-    response = client.post("/projects/from-drawing", json=_request())
+    response = client.post(
+        "/projects/from-drawing", json=_request(variation_count=1),
+    )
     assert response.status_code == 422
     with Session() as db:
         assert db.scalar(select(func.count()).select_from(Project)) == 0

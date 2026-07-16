@@ -18,7 +18,7 @@ from facetta.db import StudioJobRecord
 from facetta.studio_jobs import studio_job_action_definition
 
 
-ProviderJobAction = Literal["create", "refine", "views", "present"]
+ProviderJobAction = Literal["create", "refine", "views", "angles", "present"]
 
 
 @dataclass(frozen=True, slots=True)

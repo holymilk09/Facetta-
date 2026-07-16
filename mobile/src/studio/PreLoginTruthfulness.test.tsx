@@ -30,8 +30,8 @@ describe('truthful pre-login journey', () => {
   test('keeps onboarding provider-neutral and makes Factory optional and eligibility-gated', async () => {
     const copy = copyOf(ONBOARDING_STEPS);
     expect(copy).not.toMatch(forbiddenClaim);
-    expect(copy).toMatch(/sentence, drawing, photograph, render, or master-geometry reference/i);
-    expect(copy).toMatch(/precision refinement appears for revisions with confirmed design facts/i);
+    expect(copy).toMatch(/describe the jewelry you want, or upload your own drawing/i);
+    expect(copy).toMatch(/front, three-quarter, and side view set/i);
     expect(copy).toMatch(/preview until you apply/i);
     expect(copy).toMatch(/design families, variations, and immutable revisions/i);
     expect(copy).toMatch(/factory review stays optional.+only when a revision is eligible/i);
@@ -61,7 +61,7 @@ describe('truthful pre-login journey', () => {
     expect(copy).toMatch(/Factory review is optional, eligibility-gated, and never a production guarantee/i);
 
     const view = await render(<WorkflowShowcase onDone={jest.fn()} />);
-    expect(view.getByText(/Start with what/)).toBeTruthy();
+    expect(view.getByText(/Prompt it or/)).toBeTruthy();
     for (let index = 1; index < WORKFLOW_SLIDES.length; index += 1) {
       await act(async () => { fireEvent.press(view.getByLabelText('Next step')); });
     }

@@ -35,6 +35,9 @@ EXPECTED_PRODUCTION_OPERATIONS = (
         "/studio/jobs",
         "/studio/jobs/{job_id}",
         "/studio/capabilities",
+        "/studio/visual-angle-sets/by-job/{studio_job_id}",
+        "/studio/visual-angle-sets/{angle_set_id}",
+        "/studio/visual-angle-sets/{angle_set_id}/candidates/{candidate_id}/image",
         "/studio/projects/{project_root_id}/visual-candidates",
         "/studio/projects/{project_root_id}/markup-candidates",
         "/studio/markup-candidates/{run_id}/{candidate_id}/image",
@@ -71,6 +74,9 @@ EXPECTED_PRODUCTION_OPERATIONS = (
         "/studio/projects/{root_id}/beauty-render",
         "/studio/projects/{root_id}/product-photo",
         "/studio/projects/{project_id}/visual-previews",
+        "/studio/projects/{project_id}/visual-angle-sets",
+        "/studio/visual-angle-sets/{angle_set_id}/accept",
+        "/studio/visual-angle-sets/{angle_set_id}/discard",
         "/studio/image-runs/{run_id}/visual-candidates/{candidate_id}/accept",
         "/studio/image-runs/{run_id}/visual-candidates/{candidate_id}/discard",
         "/studio/image-runs/{run_id}/visual-candidates/{candidate_id}/save-as-variation",
@@ -382,3 +388,38 @@ def test_production_rejects_wildcard_cors(monkeypatch):
         assert "cannot use '*'" in str(exc)
     else:  # pragma: no cover - explicit fail-closed contract
         raise AssertionError("production wildcard CORS must fail closed")
+
+
+@pytest.mark.parametrize(
+    "preview_origin",
+    ["http://127.0.0.1:8081", "http://localhost:8081"],
+)
+def test_configured_preview_cors_allows_atomic_create_commit(
+    monkeypatch, preview_origin,
+):
+    """The browser may send the review commit only after this preflight."""
+
+    monkeypatch.setenv("FACETTA_ENV", "development")
+    monkeypatch.setenv(
+        "FACETTA_CORS_ORIGINS",
+        "http://127.0.0.1:8081,http://localhost:8081",
+    )
+    response = TestClient(create_app()).options(
+        "/projects/project-preview/creative-directions/commit",
+        headers={
+            "Origin": preview_origin,
+            "Access-Control-Request-Method": "POST",
+            "Access-Control-Request-Headers": (
+                "accept,authorization,content-type"
+            ),
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == preview_origin
+    assert "POST" in response.headers["access-control-allow-methods"]
+    allowed_headers = {
+        value.strip().lower()
+        for value in response.headers["access-control-allow-headers"].split(",")
+    }
+    assert {"accept", "authorization", "content-type"} <= allowed_headers

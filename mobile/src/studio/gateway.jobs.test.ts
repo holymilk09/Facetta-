@@ -508,6 +508,46 @@ test('atomic Create review forwards the same-session durable job exactly once', 
   assert.deepEqual(jobs.transitions.map((call) => call.request.status), ['running']);
 });
 
+test('atomic Create review retries the same decision once after a lost commit response', async () => {
+  const calls: Array<{
+    projectId: string;
+    request: {
+      created_by: string;
+      selected_candidate_id: string;
+      retained: Array<{ candidate_id: string; label: string }>;
+      studio_job_id?: string;
+    };
+  }> = [];
+  const committedProject = {
+    ...project(2), selected_candidate_asset_id: 'direction_2',
+    active_asset_id: 'direction_2',
+  };
+  const gateway = createStudioGateway({
+    commitCreativeDirections: async (projectId: string, request: any) => {
+      calls.push({ projectId, request });
+      if (calls.length === 1) return {
+        data: null,
+        error: {
+          code: 'NETWORK_ERROR', message: 'Response was lost after commit.',
+          category: 'network' as const, status: 0, retryable: true,
+        },
+        status: 0,
+      };
+      return ok({ project: committedProject, retained_variations: [] });
+    },
+  } as any);
+
+  const result = await gateway.completeCreativeDirectionReview({
+    projectId: 'project_1', selectedCandidateId: 'direction_2', retained: [],
+    createdBy: 'designer_1', studioJobId: 'studio_job_create',
+  });
+
+  assert.equal(result.error, null);
+  assert.equal(result.data?.project.active_asset_id, 'direction_2');
+  assert.equal(calls.length, 2);
+  assert.deepEqual(calls[0], calls[1]);
+});
+
 test('tracked generation failures close the job without charging output', async () => {
   const jobs = tracking();
   const gateway = createStudioGateway({

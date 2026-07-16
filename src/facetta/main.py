@@ -151,6 +151,15 @@ PRODUCTION_STUDIO_OPERATIONS: frozenset[RouteOperation] = frozenset({
     ("POST", "/studio/projects/{root_id}/beauty-render"),
     ("POST", "/studio/projects/{root_id}/product-photo"),
     ("POST", "/studio/projects/{project_id}/visual-previews"),
+    ("POST", "/studio/projects/{project_id}/visual-angle-sets"),
+    ("GET", "/studio/visual-angle-sets/by-job/{studio_job_id}"),
+    ("GET", "/studio/visual-angle-sets/{angle_set_id}"),
+    (
+        "GET",
+        "/studio/visual-angle-sets/{angle_set_id}/candidates/{candidate_id}/image",
+    ),
+    ("POST", "/studio/visual-angle-sets/{angle_set_id}/accept"),
+    ("POST", "/studio/visual-angle-sets/{angle_set_id}/discard"),
     (
         "GET",
         "/studio/image-runs/{run_id}/visual-candidates/{candidate_id}/image",
@@ -274,7 +283,11 @@ def create_app() -> FastAPI:
         raise RuntimeError("production CORS origins must be exact and cannot use '*'")
     application.add_middleware(
         CORSMiddleware,
-        allow_origins=configured_origins if production else ["*"],
+        # Honor an explicit local-preview allowlist in every environment.  A
+        # wildcard is still a convenient development fallback, but returning
+        # an exact ACAO value when the preview origins are known avoids
+        # browser-specific ambiguity around authenticated JSON mutations.
+        allow_origins=configured_origins or (["*"] if not production else []),
         allow_methods=["*"],
         allow_headers=["*"],
     )

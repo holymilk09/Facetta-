@@ -44,7 +44,7 @@ test('signed-in Studio home offers one start decision without a duplicate featur
   });
   const view = await render(<App />);
 
-  await waitFor(() => expect(view.getByText('Start from an idea or reference')).toBeTruthy());
+  await waitFor(() => expect(view.getByText('Start with a prompt or drawing')).toBeTruthy());
   await waitFor(() => expect(mockListDesignFamilies).toHaveBeenCalledWith('usr_designer'));
   expect(view.queryByLabelText('Continue saved work')).toBeNull();
   expect(view.queryByText('Creative studios')).toBeNull();
@@ -86,7 +86,7 @@ test('Studio home makes no saved-work claim when family availability cannot be v
 
   await waitFor(() => expect(mockListDesignFamilies).toHaveBeenCalledWith('usr_designer'));
   expect(view.queryByLabelText('Continue saved work')).toBeNull();
-  expect(view.getByText('Start from an idea or reference')).toBeTruthy();
+  expect(view.getByText('Start with a prompt or drawing')).toBeTruthy();
   view.unmount();
 });
 
@@ -98,7 +98,7 @@ test('a persisted profile without a server credential remains at login', async (
   });
   const view = await render(<App />);
   await waitFor(() => expect(view.getByText('Continue to Facetta')).toBeTruthy());
-  expect(view.queryByText('Start from an idea or reference')).toBeNull();
+  expect(view.queryByText('Start with a prompt or drawing')).toBeNull();
   view.unmount();
 });
 
@@ -111,6 +111,6 @@ test('an expired server credential remains at login', async () => {
   });
   const view = await render(<App />);
   await waitFor(() => expect(view.getByText('Continue to Facetta')).toBeTruthy());
-  expect(view.queryByText('Start from an idea or reference')).toBeNull();
+  expect(view.queryByText('Start with a prompt or drawing')).toBeNull();
   view.unmount();
 });

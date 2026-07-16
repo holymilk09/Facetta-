@@ -41,8 +41,6 @@ export interface StudioCollectionsWorkspaceProps {
   onProjectChanged: (project: ProjectDetail) => void;
   /** Opens Create from a confirmed empty Collections state. */
   onStartDesign: () => void;
-  /** Opens the canonical Vary workspace for the currently active project. */
-  onVaryCurrent: () => void;
   /** Returns the selected exact variation to the canonical Refine workspace. */
   onContinueRefining?: () => void;
   /** One registry-driven handoff for the currently active immutable revision. */
@@ -201,7 +199,6 @@ export function StudioCollectionsWorkspace({
   onOpenProject,
   onProjectChanged,
   onStartDesign,
-  onVaryCurrent,
   onContinueRefining,
   destinationContext,
   onSelectDestination,
@@ -477,18 +474,6 @@ export function StudioCollectionsWorkspace({
           </Text>
           <Button title="Retry" onPress={loadWorkspace} />
         </View>
-        <View style={styles.section}>
-          <Text style={styles.branchTitle}>Explore from the selected active revision</Text>
-          <Text style={styles.meta}>
-            Open Vary to name a sibling from this exact saved revision. Collections stays focused
-            on browsing, comparing, and restoring history.
-          </Text>
-          <Button
-            title="Vary this revision"
-            disabled={project.active_asset_id === null}
-            onPress={onVaryCurrent}
-          />
-        </View>
       </ScrollView>
     );
   }
@@ -531,7 +516,7 @@ export function StudioCollectionsWorkspace({
           <Text style={styles.familyTitle}>{family?.title ?? project.title}</Text>
           <Text style={styles.meta}>
             {family === null
-              ? 'This is the first saved direction. Create a variation to begin its family.'
+              ? 'This is the first saved direction. Generate more designs from Studio to grow its family.'
               : `${family.variations.length} variation${family.variations.length === 1 ? '' : 's'} · every revision preserved`}
           </Text>
           {onContinueRefining !== undefined && (
@@ -600,21 +585,6 @@ export function StudioCollectionsWorkspace({
             })}
           </View>
         )}
-
-        <View style={styles.branchCard}>
-          <Text style={styles.branchTitle}>Explore without changing this direction</Text>
-          <Text style={styles.meta}>
-            Vary starts from the current Revision {data.history.revisions.find((revision) => (
-              revision.asset_id === activeAssetId
-            ))?.revision ?? data.history.revisions.length} in Studio, where you can name the new
-            sibling before creating it.
-          </Text>
-          <Button
-            title="Vary this revision"
-            disabled={project.active_asset_id === null}
-            onPress={onVaryCurrent}
-          />
-        </View>
       </View>
 
       <View style={styles.section}>

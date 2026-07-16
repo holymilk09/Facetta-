@@ -21,9 +21,9 @@ from facetta.spec import Spec
 
 
 PROMPT_VERSIONS = {
-    ImageOperation.CREATIVE_GENERATE: "creative-generate.v3",
+    ImageOperation.CREATIVE_GENERATE: "creative-generate.v4",
     ImageOperation.CONCEPT_GENERATE: "concept-generate.v1",
-    ImageOperation.REFERENCE_RENDER: "reference-render.v1",
+    ImageOperation.REFERENCE_RENDER: "reference-render.v2",
     ImageOperation.SPEC_RENDER: "spec-render.v3",
     ImageOperation.LOCAL_EDIT: "local-edit.v8",
     ImageOperation.VISUAL_ONLY_EDIT: "visual-only-edit.v2",
@@ -152,6 +152,35 @@ def _style(plan: ImageAgentPlan) -> str:
     if not plan.style_constraints:
         return "Fine-jewelry product presentation; physically coherent materials."
     return "\n".join(f"- {item}" for item in plan.style_constraints)
+
+
+def _explicit_count_locks(plan: ImageAgentPlan) -> str:
+    raw = plan.normalized_intent.get("explicit_component_counts", [])
+    if not isinstance(raw, list):
+        return ""
+    lines: list[str] = []
+    for claim in raw:
+        if not isinstance(claim, dict):
+            continue
+        claim_id = claim.get("claim_id")
+        component = claim.get("component")
+        count = claim.get("expected_count")
+        if not (
+            isinstance(claim_id, str)
+            and isinstance(component, str)
+            and isinstance(count, int)
+        ):
+            continue
+        lines.append(f"- {claim_id}: exactly {count} {component}")
+    if not lines:
+        return ""
+    return (
+        "EXPLICIT VISIBLE COUNT LOCKS (hard constraints):\n"
+        + "\n".join(lines)
+        + "\nChoose a complete, useful review angle where every locked group is "
+        "individually visible and countable. Do not hide an extra or missing "
+        "component behind the center stone, another component, or the crop."
+    )
 
 
 def _spec_delta(plan: ImageAgentPlan) -> str:
@@ -368,6 +397,58 @@ def _common_edit_execution(plan: ImageAgentPlan) -> str:
     return "\n\n".join(clause for clause in clauses if clause)
 
 
+_CAMERA_VIEW_DESCRIPTIONS = {
+    "front": (
+        "a straight-on front elevation: camera level with the piece and looking "
+        "horizontally at its front, never top-down; show the complete piece"
+    ),
+    "three_quarter": (
+        "a three-quarter product perspective, camera slightly above and to one "
+        "side, showing both the face and physical depth of the complete piece"
+    ),
+    "side": (
+        "a true side profile: camera level with the piece, showing its complete "
+        "profile and setting height; for a ring, the band remains a complete O"
+    ),
+}
+
+
+def _camera_only_reference_task(plan: ImageAgentPlan) -> str:
+    """Compile a source-locked camera derivation, not a drawing cleanup."""
+
+    if plan.camera_view is None:  # pragma: no cover - caller invariant
+        raise ValueError("camera-only reference task requires a camera view")
+    described = _CAMERA_VIEW_DESCRIPTIONS[plan.camera_view]
+    return (
+        "TASK: CAMERA-ONLY DERIVATION OF THE SUPPLIED SELECTED DESIGN. The "
+        "source is the identity anchor for one already selected jewelry direction; "
+        "do not reinterpret it as a generic sketch or replace it with a similar "
+        "stock design. Render the EXACT SAME physical piece from "
+        f"{described}.\n"
+        "AUTHORIZED CHANGE: move only the virtual camera. The requested view must "
+        "be visibly achieved, so do not return the unchanged source viewpoint.\n"
+        "IDENTITY LOCK: preserve every source-visible center and side stone shape, "
+        "cut family, color, relative scale, setting and prong style, component "
+        "count, topology, placement, shoulder transition, gallery member, shank "
+        "profile, distinctive motif, metal assignment, and finish. Add, remove, "
+        "round, simplify, regularize, or restyle nothing.\n"
+        "PROJECTION RULE: a genuine viewpoint change will alter 2D overlap, "
+        "foreshortening, and occlusion. Change those projection effects only; do "
+        "not change the underlying piece to force the old silhouette into the new "
+        "view.\n"
+        "SOURCE-EVIDENCE LIMIT: one source view cannot prove hidden geometry. For "
+        "a newly revealed surface, use only the minimum physically coherent "
+        "continuation implied by source-visible geometry. Never invent an extra "
+        "stone, support, motif, opening, engraving, or decorative feature. Hidden "
+        "geometry remains an unconfirmed review proposal, not design or factory "
+        "truth.\n"
+        "PRESENTATION: keep the entire piece centered and uncropped on a soft "
+        "neutral studio background with source-consistent lighting and scale. This "
+        "is visual guidance for explicit designer review, not a specification, "
+        "measurement, CAD model, or manufacturing claim."
+    )
+
+
 def compile_initial_prompt(plan: ImageAgentPlan) -> str:
     """Compile the provider-neutral contract for the first Grok attempt."""
 
@@ -402,6 +483,9 @@ def compile_initial_prompt(plan: ImageAgentPlan) -> str:
             "for designer selection, not a specification, measured drawing, CAD "
             "model, or claim of manufacturability."
         )
+        count_locks = _explicit_count_locks(plan)
+        if count_locks:
+            task += "\n" + count_locks
     elif plan.operation is ImageOperation.CONCEPT_GENERATE:
         task = (
             "TASK: Create one coherent, manufacturable-looking fine-jewelry ring "
@@ -409,20 +493,23 @@ def compile_initial_prompt(plan: ImageAgentPlan) -> str:
             "The image is a creative reference, not dimensional proof."
         )
     elif plan.operation is ImageOperation.REFERENCE_RENDER:
-        drawing_contract = build_drawing_processing_contract(
-            DrawingIntakeFacts())
-        task = (
-            "TASK: Transform the supplied designer image or drawing into one "
-            "polished, beautiful, client-reviewable fine-jewelry render. Treat "
-            "the source as the design authority even when it is sparse, highly "
-            "finished, photographed, scanned, annotated, or unconventional. "
-            "Do not classify or grade the source.\n"
-            f"DESIGNER DIRECTION: {plan.intent}\n"
-            "SOURCE-HANDLING CONTRACT:\n- "
-            + "\n- ".join(drawing_contract.prompt_facts)
-            + "\nThis output is a creative candidate for designer review, not a "
-            "specification, measurement, CAD model, or factory drawing."
-        )
+        if plan.camera_view is not None:
+            task = _camera_only_reference_task(plan)
+        else:
+            drawing_contract = build_drawing_processing_contract(
+                DrawingIntakeFacts())
+            task = (
+                "TASK: Transform the supplied designer image or drawing into one "
+                "polished, beautiful, client-reviewable fine-jewelry render. Treat "
+                "the source as the design authority even when it is sparse, highly "
+                "finished, photographed, scanned, annotated, or unconventional. "
+                "Do not classify or grade the source.\n"
+                f"DESIGNER DIRECTION: {plan.intent}\n"
+                "SOURCE-HANDLING CONTRACT:\n- "
+                + "\n- ".join(drawing_contract.prompt_facts)
+                + "\nThis output is a creative candidate for designer review, not a "
+                "specification, measurement, CAD model, or factory drawing."
+            )
     elif plan.operation is ImageOperation.SPEC_RENDER:
         task = (
             "TASK: Render exactly the validated ring facts below. Do not substitute "
@@ -532,11 +619,36 @@ def compile_correction_prompt(
             "with the requested geometry visibly changed inside the edit scope, "
             "using the exact source-to-result specification delta above.\n"
         )
+    camera_reanchor = ""
+    camera_fidelity_codes = {
+        "source_design_preserved",
+        "visible_components_preserved",
+        "local_geometry_preserved",
+        "repeated_element_pattern_preserved",
+        "stone_shape_and_cut_family_preserved",
+        "requested_presentation_applied",
+    }
+    if (
+        plan.operation is ImageOperation.REFERENCE_RENDER
+        and plan.camera_view is not None
+        and any(check.code in camera_fidelity_codes for check in failures)
+    ):
+        camera_reanchor = (
+            "\nCAMERA-STUDY RE-ANCHOR: discard the previous candidate and "
+            "re-read the supplied source as the single design-identity anchor. "
+            f"Reattempt only the requested {plan.camera_view} camera view. Preserve "
+            "every source-visible stone, setting, component, contour, motif, and "
+            "proportion exactly. Do not fix uncertain hidden geometry by changing "
+            "a visible element; keep any newly revealed surface minimal and "
+            "review-only. Achieve the target viewpoint without returning the "
+            "unchanged source composition.\n"
+        )
     prompt = (
         f"{original_prompt}\n\n"
         "TARGETED CORRECTION — CORRECT ONLY THESE OBSERVED QA FAILURES:\n"
         f"{correction}\n"
         f"{unchanged_notice}"
+        f"{camera_reanchor}"
         "Do not compensate by changing another component. Re-apply every FROZEN "
         "constraint above. This is a correction of the same task, not a redesign."
     )

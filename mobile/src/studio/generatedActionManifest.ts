@@ -39,31 +39,10 @@ export const STUDIO_JOB_ACTION_MANIFEST = {
       },
       {
         "id": "master",
-        "label": "Master geometry",
+        "label": "Optional drawing",
         "kind": "reference",
         "required": false,
         "referenceRole": "master_geometry"
-      },
-      {
-        "id": "style",
-        "label": "Material or style",
-        "kind": "reference",
-        "required": false,
-        "referenceRole": "material_style"
-      },
-      {
-        "id": "construction",
-        "label": "Construction detail",
-        "kind": "reference",
-        "required": false,
-        "referenceRole": "construction_detail"
-      },
-      {
-        "id": "brand",
-        "label": "Brand direction",
-        "kind": "reference",
-        "required": false,
-        "referenceRole": "brand_direction"
       }
     ]
   },
@@ -146,6 +125,32 @@ export const STUDIO_JOB_ACTION_MANIFEST = {
         "id": "view_set",
         "label": "Views",
         "kind": "select",
+        "required": true
+      }
+    ]
+  },
+  "angles": {
+    "lane": "fast_visual",
+    "execution_mode": "candidate_job",
+    "review_authority": "candidate_decision",
+    "credits_per_output": 18,
+    "min_requested_outputs": 3,
+    "max_requested_outputs": 3,
+    "input_requirements": [
+      "angle_set"
+    ],
+    "context_requirements": [
+      "active_project",
+      "active_revision",
+      "selected_pre_spec_visual"
+    ],
+    "output_type": "visual_angle_set",
+    "authority": "visual_preview",
+    "ui_schema": [
+      {
+        "id": "angle_set",
+        "label": "Front, three-quarter, and side",
+        "kind": "fixed",
         "required": true
       }
     ]

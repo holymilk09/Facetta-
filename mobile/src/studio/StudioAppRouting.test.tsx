@@ -229,6 +229,34 @@ jest.mock('./StudioViewsWorkspace', () => {
   return { StudioViewsWorkspace: () => ReactLocal.createElement(Text, null, 'Views route reached') };
 });
 
+jest.mock('./StudioAnglesWorkspace', () => {
+  const ReactLocal = require('react');
+  const { Pressable, Text, View } = require('react-native');
+  return {
+    StudioAnglesWorkspace: ({
+      lineage, onContinueRefining, resumeReviewJobId,
+    }: any) => ReactLocal.createElement(
+      View,
+      null,
+      ReactLocal.createElement(
+        Text,
+        null,
+        `Angles route reached for ${lineage?.sourceAssetId ?? 'none'}`,
+      ),
+      ReactLocal.createElement(
+        Text,
+        null,
+        `Angles review job ${resumeReviewJobId ?? 'none'}`,
+      ),
+      ReactLocal.createElement(
+        Pressable,
+        { accessibilityRole: 'button', onPress: onContinueRefining },
+        ReactLocal.createElement(Text, null, 'Skip angle views'),
+      ),
+    ),
+  };
+});
+
 jest.mock('./StudioPresentWorkspace', () => {
   const ReactLocal = require('react');
   const { Text, View } = require('react-native');
@@ -254,13 +282,17 @@ jest.mock('./StudioCollectionsWorkspace', () => {
       project,
       onOpenProject,
       onStartDesign,
-      onVaryCurrent,
       onContinueRefining,
       destinationContext,
       onSelectDestination,
     }: any) => ReactLocal.createElement(
       View,
       null,
+      ReactLocal.createElement(
+        Text,
+        null,
+        `Collection project ${project?.root_id ?? 'none'}`,
+      ),
       ReactLocal.createElement(
         Pressable,
         { accessibilityRole: 'button', onPress: () => onOpenProject('project_a') },
@@ -275,11 +307,6 @@ jest.mock('./StudioCollectionsWorkspace', () => {
         Pressable,
         { accessibilityRole: 'button', onPress: onStartDesign },
         ReactLocal.createElement(Text, null, 'Start a design from Collections'),
-      ),
-      ReactLocal.createElement(
-        Pressable,
-        { accessibilityRole: 'button', onPress: onVaryCurrent },
-        ReactLocal.createElement(Text, null, `Vary exact ${project?.root_id ?? 'none'}`),
       ),
       ReactLocal.createElement(
         Pressable,
@@ -308,18 +335,6 @@ jest.mock('./StudioCollectionsWorkspace', () => {
   };
 });
 
-jest.mock('./StudioVaryWorkspace', () => {
-  const ReactLocal = require('react');
-  const { Text } = require('react-native');
-  return {
-    StudioVaryWorkspace: ({ lineage }: any) => ReactLocal.createElement(
-      Text,
-      null,
-      `Vary route reached for ${lineage?.projectId ?? 'none'} via ${lineage?.sourceAssetId ?? 'none'}`,
-    ),
-  };
-});
-
 jest.mock('./StudioActivityWorkspace', () => {
   const ReactLocal = require('react');
   const { Pressable, Text, View } = require('react-native');
@@ -338,6 +353,7 @@ jest.mock('./StudioActivityWorkspace', () => {
       null,
       review('create', onOpenReview),
       review('refine', onOpenReview),
+      review('angles', onOpenReview),
       review('views', onOpenReview),
       review('present', onOpenReview),
       ReactLocal.createElement(Pressable, { onPress: () => onOpenDesign('project_hydrated') },
@@ -563,18 +579,28 @@ const authenticate = () => {
   });
 };
 
+const newDesignCard = (view: any) => (
+  view.getByLabelText('New design inspiration')
+);
+
+const skipOptionalAngles = async (view: any, sourceAssetId = 'asset_1') => {
+  expect(await view.findByText(`Angles route reached for ${sourceAssetId}`)).toBeTruthy();
+  fireEvent.press(view.getByText('Skip angle views'));
+  expect(await view.findByText('Refine route reached')).toBeTruthy();
+};
+
 test('global navigation is exactly four named destinations and each opens its routed workspace', async () => {
   authenticate();
   const view = await render(<App />);
 
-  await waitFor(() => expect(view.getByText('Start from an idea or reference')).toBeTruthy());
+  await waitFor(() => expect(view.getByLabelText('New design inspiration')).toBeTruthy());
   expect(view.getAllByRole('tab').map((item) => item.props.accessibilityLabel)).toEqual([
     'Studio', 'Collections', 'Activity', 'Learn',
   ]);
   expect(view.getByRole('tab', { name: 'Studio' }).props.accessibilityState).toEqual({ selected: true });
 
   fireEvent.press(view.getByRole('tab', { name: 'Collections' }));
-  expect(await view.findByText('Vary exact none')).toBeTruthy();
+  expect(await view.findByText('Collection project none')).toBeTruthy();
   expect(view.getByRole('tab', { name: 'Collections' }).props.accessibilityState).toEqual({ selected: true });
 
   fireEvent.press(view.getByRole('tab', { name: 'Activity' }));
@@ -586,7 +612,7 @@ test('global navigation is exactly four named destinations and each opens its ro
   expect(view.getByRole('tab', { name: 'Learn' }).props.accessibilityState).toEqual({ selected: true });
 
   fireEvent.press(view.getByRole('tab', { name: 'Studio' }));
-  expect(await view.findByText('Start from an idea or reference')).toBeTruthy();
+  expect(await view.findByLabelText('New design inspiration')).toBeTruthy();
   expect(view.getByRole('tab', { name: 'Studio' }).props.accessibilityState).toEqual({ selected: true });
   expect(view.queryByText(/Builder|Share design|Factory/i)).toBeNull();
 });
@@ -595,7 +621,7 @@ test('the account menu opens without replacing the active routed workspace', asy
   authenticate();
   const view = await render(<App />);
 
-  await waitFor(() => expect(view.getByText('Start from an idea or reference')).toBeTruthy());
+  await waitFor(() => expect(view.getByLabelText('New design inspiration')).toBeTruthy());
   fireEvent.press(view.getByRole('tab', { name: 'Activity' }));
   expect(await view.findByText('Review create')).toBeTruthy();
 
@@ -611,8 +637,8 @@ test('Create restores its full draft after leaving for every global destination'
   authenticate();
   const view = await render(<App />);
 
-  await waitFor(() => expect(view.getByText('Start from an idea or reference')).toBeTruthy());
-  await fireEvent.press(view.getByText('Start from an idea or reference'));
+  await waitFor(() => expect(view.getByLabelText('New design inspiration')).toBeTruthy());
+  await fireEvent.press(newDesignCard(view));
   await fireEvent.changeText(
     await view.findByLabelText('Mock draft sentence'),
     'An architectural sapphire ring.',
@@ -633,7 +659,7 @@ test('Create restores its full draft after leaving for every global destination'
     if (destination !== 'Studio') {
       await fireEvent.press(view.getByRole('tab', { name: 'Studio' }));
     }
-    await fireEvent.press(await view.findByText('Start from an idea or reference'));
+    await fireEvent.press((await view.findByLabelText('New design inspiration')).parent!.parent!);
     expectRestoredDraft();
   }
 });
@@ -642,8 +668,8 @@ test('a successful Create generation clears the setup before the next Create ses
   authenticate();
   const view = await render(<App />);
 
-  await waitFor(() => expect(view.getByText('Start from an idea or reference')).toBeTruthy());
-  await fireEvent.press(view.getByText('Start from an idea or reference'));
+  await waitFor(() => expect(view.getByLabelText('New design inspiration')).toBeTruthy());
+  await fireEvent.press(newDesignCard(view));
   await fireEvent.changeText(view.getByLabelText('Mock draft sentence'), 'A quiet gold ring.');
   await fireEvent.press(view.getByText('Mock four directions'));
   await fireEvent.press(view.getByText('Mock add drawing reference'));
@@ -654,7 +680,7 @@ test('a successful Create generation clears the setup before the next Create ses
   expect(view.getByText('Mock master source: none')).toBeTruthy();
 
   await fireEvent.press(view.getByRole('tab', { name: 'Studio' }));
-  await fireEvent.press(await view.findByText('Start from an idea or reference'));
+  await fireEvent.press((await view.findByLabelText('New design inspiration')).parent!.parent!);
   expect(view.getByLabelText('Mock draft sentence').props.value).toBe('');
   expect(view.getByText('Mock draft count: 2')).toBeTruthy();
   expect(view.getByText('Mock master source: none')).toBeTruthy();
@@ -664,8 +690,8 @@ test('a direct authenticated account switch clears the previous designer Create 
   authenticate();
   const view = await render(<App />);
 
-  await waitFor(() => expect(view.getByText('Start from an idea or reference')).toBeTruthy());
-  await fireEvent.press(view.getByText('Start from an idea or reference'));
+  await waitFor(() => expect(view.getByLabelText('New design inspiration')).toBeTruthy());
+  await fireEvent.press(newDesignCard(view));
   await fireEvent.changeText(view.getByLabelText('Mock draft sentence'), 'Designer A private direction.');
   await fireEvent.press(view.getByText('Mock four directions'));
   await fireEvent.press(view.getByText('Mock add drawing reference'));
@@ -678,8 +704,8 @@ test('a direct authenticated account switch clears the previous designer Create 
     });
   });
 
-  expect(await view.findByText('Start from an idea or reference')).toBeTruthy();
-  await fireEvent.press(view.getByText('Start from an idea or reference'));
+  expect(await view.findByLabelText('New design inspiration')).toBeTruthy();
+  await fireEvent.press(newDesignCard(view));
   expect(view.getByLabelText('Mock draft sentence').props.value).toBe('');
   expect(view.getByText('Mock draft count: 2')).toBeTruthy();
   expect(view.getByText('Mock master source: none')).toBeTruthy();
@@ -707,7 +733,7 @@ test('a stale bootstrap restore cannot overwrite a newer signed-in account', asy
   await act(async () => {
     mockAuthStateListener?.('SIGNED_IN', signedInAccount);
   });
-  expect(await view.findByText('Start from an idea or reference')).toBeTruthy();
+  expect(await view.findByLabelText('New design inspiration')).toBeTruthy();
 
   await act(async () => {
     pendingRestore.resolve(restoredAccount);
@@ -723,7 +749,7 @@ test('authenticated shell fills short workspaces with the routed surface while S
   authenticate();
   const view = await render(<App />);
 
-  await waitFor(() => expect(view.getByText('Start from an idea or reference')).toBeTruthy());
+  await waitFor(() => expect(view.getByLabelText('New design inspiration')).toBeTruthy());
   expect(StyleSheet.flatten(view.getByTestId('authenticated-shell').props.style)).toEqual(
     expect.objectContaining({ flex: 1, minHeight: '100%', backgroundColor: '#15121c' }),
   );
@@ -741,12 +767,12 @@ test('authenticated shell fills short workspaces with the routed surface while S
   );
 
   fireEvent.press(view.getByRole('tab', { name: 'Studio' }));
-  expect(await view.findByText('Start from an idea or reference')).toBeTruthy();
+  expect(await view.findByLabelText('New design inspiration')).toBeTruthy();
   expect(StyleSheet.flatten(view.getByTestId('authenticated-workspace-surface').props.style))
     .toEqual(expect.objectContaining({ flex: 1, backgroundColor: '#15121c' }));
 });
 
-test('saving a selected direction continues to Refine and authenticates its Studio cover', async () => {
+test('saving a selected direction offers optional Angles, then Skip continues to Refine', async () => {
   markOnboarded();
   saveSession({
     provider: 'email', email: 'designer@example.com', name: 'Designer',
@@ -755,10 +781,10 @@ test('saving a selected direction continues to Refine and authenticates its Stud
   });
   const view = await render(<App />);
 
-  await waitFor(() => expect(view.getByText('Start from an idea or reference')).toBeTruthy());
-  await fireEvent.press(view.getByText('Start from an idea or reference'));
+  await waitFor(() => expect(view.getByLabelText('New design inspiration')).toBeTruthy());
+  await fireEvent.press(newDesignCard(view));
   await fireEvent.press(await view.findByText('Save mocked direction'));
-  expect(await view.findByText('Refine route reached')).toBeTruthy();
+  await skipOptionalAngles(view);
   expect(view.queryByText('Your design families')).toBeNull();
 
   fireEvent.press(view.getByLabelText('Back to Studio'));
@@ -772,8 +798,8 @@ test('active design actions keep the exact saved revision visible and link to Hi
   authenticate();
   const view = await render(<App />);
 
-  await waitFor(() => expect(view.getByText('Start from an idea or reference')).toBeTruthy());
-  fireEvent.press(view.getByText('Start from an idea or reference'));
+  await waitFor(() => expect(view.getByLabelText('New design inspiration')).toBeTruthy());
+  fireEvent.press(newDesignCard(view));
   expect(view.queryByTestId('active-design-context')).toBeNull();
 
   fireEvent.press(await view.findByText('Save mocked direction'));
@@ -784,7 +810,9 @@ test('active design actions keep the exact saved revision visible and link to Hi
     Authorization: 'Bearer server-issued-test-token',
   });
 
-  for (const action of ['Save as a variation', 'Present this design', 'Refine this design']) {
+  expect(view.queryByLabelText('Save as a variation')).toBeNull();
+  expect(view.queryByLabelText('Duplicate direction')).toBeNull();
+  for (const action of ['Present this design', 'Refine this design']) {
     fireEvent.press(view.getByLabelText(action));
     expect(await view.findByTestId('active-design-context')).toBeTruthy();
     expect(view.getByText('Current saved revision · Revision 1')).toBeTruthy();
@@ -795,25 +823,25 @@ test('active design actions keep the exact saved revision visible and link to Hi
   expect(await view.findByText('Confirmed direction')).toBeTruthy();
   expect(view.getByText('Current saved revision · Revision 2')).toBeTruthy();
 
-  fireEvent.press(view.getByLabelText('Generate technical views'));
+  await fireEvent.press(view.getByLabelText('More actions'));
+  await fireEvent.press(await view.findByRole('button', { name: 'Generate technical views' }));
   expect(await view.findByTestId('active-design-context')).toBeTruthy();
   expect(view.getByText('Current saved revision · Revision 2')).toBeTruthy();
 
   fireEvent.press(view.getByLabelText('Open revision history'));
-  expect(await view.findByText('Vary exact project_1')).toBeTruthy();
+  expect(await view.findByText('Collection project project_1')).toBeTruthy();
 });
 
 test('every visible active-design rail CTA reaches its named destination', async () => {
   authenticate();
   const view = await render(<App />);
 
-  await waitFor(() => expect(view.getByText('Start from an idea or reference')).toBeTruthy());
-  fireEvent.press(view.getByText('Start from an idea or reference'));
+  await waitFor(() => expect(view.getByLabelText('New design inspiration')).toBeTruthy());
+  fireEvent.press(newDesignCard(view));
   fireEvent.press(await view.findByText('Save mocked direction'));
-  expect(await view.findByText('Refine route reached')).toBeTruthy();
+  await skipOptionalAngles(view);
 
   for (const [label, destination] of [
-    ['Save as a variation', 'Vary route reached for project_1 via asset_1'],
     ['Refine this design', 'Refine route reached'],
     ['Present this design', 'Present route reached for asset_1'],
   ] as const) {
@@ -823,14 +851,13 @@ test('every visible active-design rail CTA reaches its named destination', async
 
   fireEvent.press(view.getByLabelText('More actions'));
   expect(await view.findByText('Starting design facts')).toBeTruthy();
-  fireEvent.press(view.getByLabelText('More actions'));
-  await waitFor(() => expect(view.queryByText('Starting design facts')).toBeNull());
-
-  fireEvent.press(view.getByLabelText(
-    'Generate technical views; Save starting facts first',
-  ));
+  expect(view.queryByText('Views')).toBeNull();
+  expect(view.queryByLabelText('Save as a variation')).toBeNull();
+  fireEvent.press(view.getByText('Starting design facts'));
   expect(await view.findByText('Review starting design facts')).toBeTruthy();
-  fireEvent.press(await view.findByText('Save starting facts'));
+  await fireEvent.press(await view.findByText('Save starting facts'));
+  await fireEvent.press(view.getByLabelText('More actions'));
+  await fireEvent.press(await view.findByRole('button', { name: 'Generate technical views' }));
   expect(await view.findByText('Views route reached')).toBeTruthy();
 
   fireEvent.press(view.getByLabelText('Create a design'));
@@ -842,10 +869,10 @@ test('More opens Starting design facts in the confirmation workspace', async () 
   authenticate();
   const view = await render(<App />);
 
-  await waitFor(() => expect(view.getByText('Start from an idea or reference')).toBeTruthy());
-  fireEvent.press(view.getByText('Start from an idea or reference'));
+  await waitFor(() => expect(view.getByLabelText('New design inspiration')).toBeTruthy());
+  fireEvent.press(newDesignCard(view));
   fireEvent.press(await view.findByText('Save mocked direction'));
-  expect(await view.findByText('Refine route reached')).toBeTruthy();
+  await skipOptionalAngles(view);
 
   fireEvent.press(view.getByLabelText('More actions'));
   fireEvent.press(await view.findByText('Starting design facts'));
@@ -859,15 +886,16 @@ test('Create hides the previous design controls without forgetting the saved des
   authenticate();
   const view = await render(<App />);
 
-  await fireEvent.press(await view.findByText('Start from an idea or reference'));
+  await fireEvent.press((await view.findByLabelText('New design inspiration')).parent!.parent!);
   await fireEvent.press(await view.findByText('Save mocked direction'));
-  expect(await view.findByText('Refine route reached')).toBeTruthy();
+  await skipOptionalAngles(view);
   expect(view.getByTestId('active-design-context')).toBeTruthy();
 
   await fireEvent.press(view.getByLabelText('Create a design'));
   expect(await view.findByText('Save mocked direction')).toBeTruthy();
   for (const label of [
     'Save as a variation',
+    'Duplicate direction',
     'Refine this design',
     'Present this design',
     'More actions',
@@ -892,7 +920,7 @@ test('Studio home opens Collections through the saved-work continuation', async 
 
   const continuation = await view.findByLabelText('Continue saved work');
   fireEvent.press(continuation);
-  expect(await view.findByText('Vary exact none')).toBeTruthy();
+  expect(await view.findByText('Collection project none')).toBeTruthy();
 });
 
 test('Collections can return an empty account directly to Create', async () => {
@@ -928,7 +956,7 @@ test('the latest family selection wins when an older project request resolves la
     await latest.promise;
     await Promise.resolve();
   });
-  expect(await view.findByText('Vary exact project_b')).toBeTruthy();
+  expect(await view.findByText('Collection project project_b')).toBeTruthy();
 
   await act(async () => {
     older.resolve({ data: hydratedProjectFor('project_a', 'asset_a'), error: null, status: 200 });
@@ -936,8 +964,8 @@ test('the latest family selection wins when an older project request resolves la
     await Promise.resolve();
   });
   await waitFor(() => {
-    expect(view.getByText('Vary exact project_b')).toBeTruthy();
-    expect(view.queryByText('Vary exact project_a')).toBeNull();
+    expect(view.getByText('Collection project project_b')).toBeTruthy();
+    expect(view.queryByText('Collection project project_a')).toBeNull();
   });
 });
 
@@ -963,7 +991,7 @@ test('an older family request cannot surface a stale error over the latest selec
     await latest.promise;
     await Promise.resolve();
   });
-  expect(await view.findByText('Vary exact project_b')).toBeTruthy();
+  expect(await view.findByText('Collection project project_b')).toBeTruthy();
 
   await act(async () => {
     older.resolve({
@@ -978,34 +1006,36 @@ test('an older family request cannot surface a stale error over the latest selec
     await Promise.resolve();
   });
   await waitFor(() => {
-    expect(view.getByText('Vary exact project_b')).toBeTruthy();
+    expect(view.getByText('Collection project project_b')).toBeTruthy();
     expect(view.queryByText(/could not connect/i)).toBeNull();
     expect(view.queryByText('Retry')).toBeNull();
   });
 });
 
-test('Collections delegates variation creation to Studio Vary with the exact active project', async () => {
+test('Collections does not expose the legacy exact-copy variation route', async () => {
   authenticate();
   const view = await render(<App />);
 
-  await waitFor(() => expect(view.getByText('Start from an idea or reference')).toBeTruthy());
-  fireEvent.press(view.getByText('Start from an idea or reference'));
+  await waitFor(() => expect(view.getByLabelText('New design inspiration')).toBeTruthy());
+  fireEvent.press(newDesignCard(view));
   fireEvent.press(await view.findByText('Save mocked direction'));
-  expect(await view.findByText('Refine route reached')).toBeTruthy();
+  await skipOptionalAngles(view);
 
   fireEvent.press(view.getAllByText('Collections').at(-1)!);
-  fireEvent.press(await view.findByText('Vary exact project_1'));
-  expect(await view.findByText('Vary route reached for project_1 via asset_1')).toBeTruthy();
+  expect(await view.findByText('Collection project project_1')).toBeTruthy();
+  expect(view.queryByText(/Vary exact/)).toBeNull();
+  expect(view.queryByText(/Vary route reached/)).toBeNull();
+  expect(view.queryByText('Duplicate direction')).toBeNull();
 });
 
 test('Collections returns the selected exact revision to Refine', async () => {
   authenticate();
   const view = await render(<App />);
 
-  await waitFor(() => expect(view.getByText('Start from an idea or reference')).toBeTruthy());
-  fireEvent.press(view.getByText('Start from an idea or reference'));
+  await waitFor(() => expect(view.getByLabelText('New design inspiration')).toBeTruthy());
+  fireEvent.press(newDesignCard(view));
   fireEvent.press(await view.findByText('Save mocked direction'));
-  expect(await view.findByText('Refine route reached')).toBeTruthy();
+  await skipOptionalAngles(view);
 
   fireEvent.press(view.getAllByText('Collections').at(-1)!);
   fireEvent.press(await view.findByText('Continue refining exact revision'));
@@ -1016,13 +1046,13 @@ test('accepted Refine handoff opens Collections and Present for the exact active
   authenticate();
   const view = await render(<App />);
 
-  await waitFor(() => expect(view.getByText('Start from an idea or reference')).toBeTruthy());
-  fireEvent.press(view.getByText('Start from an idea or reference'));
+  await waitFor(() => expect(view.getByLabelText('New design inspiration')).toBeTruthy());
+  fireEvent.press(newDesignCard(view));
   fireEvent.press(await view.findByText('Save mocked direction'));
-  expect(await view.findByText('Refine route reached')).toBeTruthy();
+  await skipOptionalAngles(view);
 
   await fireEvent.press(view.getByText('Refine handoff to Collections'));
-  expect(await view.findByText('Vary exact project_1')).toBeTruthy();
+  expect(await view.findByText('Collection project project_1')).toBeTruthy();
   await fireEvent.press(view.getByText('Continue refining exact revision'));
   expect(await view.findByText('Refine route reached')).toBeTruthy();
   await fireEvent.press(view.getByText('Refine handoff to Present'));
@@ -1033,10 +1063,10 @@ test('Collections sends the exact active revision to Present', async () => {
   authenticate();
   const view = await render(<App />);
 
-  await waitFor(() => expect(view.getByText('Start from an idea or reference')).toBeTruthy());
-  fireEvent.press(view.getByText('Start from an idea or reference'));
+  await waitFor(() => expect(view.getByLabelText('New design inspiration')).toBeTruthy());
+  fireEvent.press(newDesignCard(view));
   fireEvent.press(await view.findByText('Save mocked direction'));
-  expect(await view.findByText('Refine route reached')).toBeTruthy();
+  await skipOptionalAngles(view);
   fireEvent.press(view.getByRole('tab', { name: 'Collections' }));
 
   expect(view.queryByText('Review optional Factory readiness')).toBeNull();
@@ -1054,9 +1084,10 @@ test('Collections opens optional Factory readiness before the review pack is rea
   authenticate();
   const view = await render(<App />);
 
-  await waitFor(() => expect(view.getByText('Start from an idea or reference')).toBeTruthy());
-  fireEvent.press(view.getByText('Start from an idea or reference'));
+  await waitFor(() => expect(view.getByLabelText('New design inspiration')).toBeTruthy());
+  fireEvent.press(newDesignCard(view));
   fireEvent.press(await view.findByText('Save mocked direction'));
+  await skipOptionalAngles(view);
   fireEvent.press(await view.findByText('Review starting design'));
   fireEvent.press(await view.findByText('Save starting facts'));
   expect(await view.findByText('Refine route reached')).toBeTruthy();
@@ -1074,9 +1105,10 @@ test('Collections retains Factory readiness access for an exact ring that is alr
   authenticate();
   const view = await render(<App />);
 
-  await waitFor(() => expect(view.getByText('Start from an idea or reference')).toBeTruthy());
-  fireEvent.press(view.getByText('Start from an idea or reference'));
+  await waitFor(() => expect(view.getByLabelText('New design inspiration')).toBeTruthy());
+  fireEvent.press(newDesignCard(view));
   fireEvent.press(await view.findByText('Save mocked direction'));
+  await skipOptionalAngles(view);
   fireEvent.press(await view.findByText('Review starting design'));
   fireEvent.press(await view.findByText('Save starting facts'));
   expect(await view.findByText('Refine route reached')).toBeTruthy();
@@ -1091,9 +1123,10 @@ test('Collections hides Factory readiness for an exact non-ring revision', async
   authenticate();
   const view = await render(<App />);
 
-  await waitFor(() => expect(view.getByText('Start from an idea or reference')).toBeTruthy());
-  fireEvent.press(view.getByText('Start from an idea or reference'));
+  await waitFor(() => expect(view.getByLabelText('New design inspiration')).toBeTruthy());
+  fireEvent.press(newDesignCard(view));
   fireEvent.press(await view.findByText('Save mocked direction'));
+  await skipOptionalAngles(view);
   fireEvent.press(await view.findByText('Review starting design'));
   fireEvent.press(await view.findByText('Save starting facts'));
   expect(await view.findByText('Refine route reached')).toBeTruthy();
@@ -1109,9 +1142,10 @@ test('Collections hides Factory readiness when the account lacks entitlement', a
   authenticate();
   const view = await render(<App />);
 
-  await waitFor(() => expect(view.getByText('Start from an idea or reference')).toBeTruthy());
-  fireEvent.press(view.getByText('Start from an idea or reference'));
+  await waitFor(() => expect(view.getByLabelText('New design inspiration')).toBeTruthy());
+  fireEvent.press(newDesignCard(view));
   fireEvent.press(await view.findByText('Save mocked direction'));
+  await skipOptionalAngles(view);
   fireEvent.press(await view.findByText('Review starting design'));
   fireEvent.press(await view.findByText('Save starting facts'));
   expect(await view.findByText('Refine route reached')).toBeTruthy();
@@ -1121,7 +1155,7 @@ test('Collections hides Factory readiness when the account lacks entitlement', a
   expect(view.queryByText('Review optional Factory readiness')).toBeNull();
 });
 
-test('Views opens its starting-facts prerequisite and resumes after one save action', async () => {
+test('technical Views appears through More only after starting facts are exact', async () => {
   mockConfirmedFactoryReady = true;
   mockGetProject.mockResolvedValue({ data: eligibleFactoryProject(), error: null, status: 200 });
   markOnboarded();
@@ -1132,29 +1166,30 @@ test('Views opens its starting-facts prerequisite and resumes after one save act
   });
   const view = await render(<App />);
 
-  await waitFor(() => expect(view.getByText('Start from an idea or reference')).toBeTruthy());
-  fireEvent.press(view.getByText('Start from an idea or reference'));
+  await waitFor(() => expect(view.getByLabelText('New design inspiration')).toBeTruthy());
+  fireEvent.press(newDesignCard(view));
   fireEvent.press(await view.findByText('Save mocked direction'));
-  expect(await view.findByText('Refine route reached')).toBeTruthy();
-  const prerequisiteViews = view.getByLabelText(
-    'Generate technical views; Save starting facts first',
-  );
-  expect(prerequisiteViews.props.accessibilityState).toEqual({ disabled: false });
-  expect(view.getByText('Save starting facts first')).toBeTruthy();
+  await skipOptionalAngles(view);
+  expect(view.queryByLabelText('Generate technical views')).toBeNull();
+  fireEvent.press(view.getByLabelText('More actions'));
+  expect(await view.findByText('Starting design facts')).toBeTruthy();
+  expect(view.queryByText('Views')).toBeNull();
   expect(view.queryByText('Views route reached')).toBeNull();
-  fireEvent.press(prerequisiteViews);
+  fireEvent.press(view.getByText('Starting design facts'));
   expect(await view.findByText('Save starting facts')).toBeTruthy();
   expect(view.queryByText('Views route reached')).toBeNull();
 
   fireEvent.press(await view.findByText('Save starting facts'));
-
+  expect(await view.findByText('Refine route reached')).toBeTruthy();
+  expect(view.queryByLabelText('Generate technical views')).toBeNull();
+  await fireEvent.press(view.getByLabelText('More actions'));
+  expect(await view.findByText('Views')).toBeTruthy();
+  await fireEvent.press(view.getByRole('button', { name: 'Generate technical views' }));
   expect(await view.findByText('Views route reached')).toBeTruthy();
   expect(view.queryByText('Save starting facts')).toBeNull();
   expect(view.queryByText('Your design families')).toBeNull();
   expect(view.queryByText(/Factory/i)).toBeNull();
-  expect(view.getByLabelText('Generate technical views').props.accessibilityState).toEqual({
-    disabled: false,
-  });
+  expect(view.queryByLabelText('Generate technical views')).toBeNull();
   fireEvent.press(view.getByLabelText('Refine this design'));
   expect(await view.findByText('Refine route reached')).toBeTruthy();
   expect(view.getByLabelText('More actions')).toBeTruthy();
@@ -1182,7 +1217,7 @@ test.each([
     .mockReturnValueOnce(failedHydration.promise)
     .mockReturnValueOnce(retryHydration.promise);
   const view = await render(<App />);
-  await waitFor(() => expect(view.getByText('Start from an idea or reference')).toBeTruthy());
+  await waitFor(() => expect(view.getByLabelText('New design inspiration')).toBeTruthy());
   fireEvent.press(view.getAllByText('Activity').at(-1)!);
   const review = await view.findByText('Review refine');
   await act(async () => {
@@ -1203,6 +1238,7 @@ test.each([
 
 test.each([
   ['refine', 'Refine route reached'],
+  ['angles', 'Angles route reached for asset_hydrated'],
   ['views', 'Views route reached'],
   ['present', 'Present route reached for asset_hydrated'],
 ] as const)('Activity reviewing %s hydrates exact lineage into the correct destination', async (action, expected) => {
@@ -1210,7 +1246,7 @@ test.each([
   const hydration = deferred<any>();
   mockGetProject.mockReturnValue(hydration.promise);
   const view = await render(<App />);
-  await waitFor(() => expect(view.getByText('Start from an idea or reference')).toBeTruthy());
+  await waitFor(() => expect(view.getByLabelText('New design inspiration')).toBeTruthy());
   fireEvent.press(view.getAllByText('Activity').at(-1)!);
   const review = await view.findByText(`Review ${action}`);
   await act(async () => {
@@ -1219,6 +1255,9 @@ test.each([
     await hydration.promise;
   });
   expect(await view.findByText(expected)).toBeTruthy();
+  if (action === 'angles') {
+    expect(view.getByText('Angles review job job_angles')).toBeTruthy();
+  }
 });
 
 test('Activity Refine does not offer design-fact review for a non-confirmable pre-spec source', async () => {
@@ -1227,19 +1266,17 @@ test('Activity Refine does not offer design-fact review for a non-confirmable pr
     data: nonConfirmablePreSpecProject, error: null, status: 200,
   });
   const view = await render(<App />);
-  await waitFor(() => expect(view.getByText('Start from an idea or reference')).toBeTruthy());
+  await waitFor(() => expect(view.getByLabelText('New design inspiration')).toBeTruthy());
   fireEvent.press(view.getAllByText('Activity').at(-1)!);
   const review = await view.findByText('Review refine');
   await act(async () => { fireEvent.press(review); });
 
   expect(await view.findByText('Refine route reached')).toBeTruthy();
   expect(view.queryByText('Review starting design')).toBeNull();
-  const unavailableViews = view.getByLabelText('Generate technical views');
-  expect(unavailableViews.props.accessibilityState).toEqual({ disabled: true });
-  expect(unavailableViews.props.accessibilityHint).toBe(
-    'Choose a confirmable ring direction first',
-  );
-  fireEvent.press(unavailableViews);
+  expect(view.queryByLabelText('Generate technical views')).toBeNull();
+  fireEvent.press(view.getByLabelText('More actions'));
+  expect(view.queryByText('Views')).toBeNull();
+  expect(view.queryByText('Starting design facts')).toBeNull();
   expect(view.queryByText('Save starting facts')).toBeNull();
   expect(view.queryByText('Views route reached')).toBeNull();
 });
@@ -1263,7 +1300,7 @@ test('Activity Refine keeps design-fact review on the current refined pre-spec c
     data: refinedPreSpecProject, error: null, status: 200,
   });
   const view = await render(<App />);
-  await waitFor(() => expect(view.getByText('Start from an idea or reference')).toBeTruthy());
+  await waitFor(() => expect(view.getByLabelText('New design inspiration')).toBeTruthy());
   fireEvent.press(view.getAllByText('Activity').at(-1)!);
   const review = await view.findByText('Review refine');
   await act(async () => { fireEvent.press(review); });
@@ -1277,7 +1314,7 @@ test('Activity reviewing Create rehydrates the saved candidate chooser and durab
   const hydration = deferred<any>();
   mockGetProject.mockReturnValue(hydration.promise);
   const view = await render(<App />);
-  await waitFor(() => expect(view.getByText('Start from an idea or reference')).toBeTruthy());
+  await waitFor(() => expect(view.getByLabelText('New design inspiration')).toBeTruthy());
   fireEvent.press(view.getAllByText('Activity').at(-1)!);
   const review = await view.findByText('Review create');
   await act(async () => {

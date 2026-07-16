@@ -21,7 +21,7 @@ describe('Studio reference picker', () => {
 
   test('keeps the selected role and accepts web-provided base64', async () => {
     const readBase64 = jest.fn(async () => 'unused');
-    const result = await pickStudioCreateReference('material_style', adapter({
+    const result = await pickStudioCreateReference('master_geometry', adapter({
       name: 'finish.WEBP',
       uri: 'blob:finish',
       mimeType: 'image/webp',
@@ -29,8 +29,8 @@ describe('Studio reference picker', () => {
     }, readBase64));
 
     expect(result).toEqual({
-      id: 'ref:material_style',
-      role: 'material_style',
+      id: 'ref:master_geometry',
+      role: 'master_geometry',
       label: 'finish.WEBP',
       imageBase64: 'd2VicA==',
       mediaType: 'image/webp',
@@ -40,7 +40,7 @@ describe('Studio reference picker', () => {
 
   test('reads native files and infers JPEG from a trustworthy extension', async () => {
     const readBase64 = jest.fn(async () => 'anBlZw==');
-    const result = await pickStudioCreateReference('construction_detail', adapter({
+    const result = await pickStudioCreateReference('master_geometry', adapter({
       name: 'setting.JPEG',
       uri: 'file:///cache/setting.JPEG',
       mimeType: 'application/octet-stream',
@@ -52,7 +52,7 @@ describe('Studio reference picker', () => {
   });
 
   test('rejects unsupported and unreadable files with designer-facing messages', async () => {
-    await expect(pickStudioCreateReference('brand_direction', adapter({
+    await expect(pickStudioCreateReference('master_geometry', adapter({
       name: 'brand.svg', uri: 'file:///brand.svg', mimeType: 'image/svg+xml',
     }))).rejects.toThrow('Choose a PNG, JPEG, or WebP image');
 
@@ -61,4 +61,3 @@ describe('Studio reference picker', () => {
     }, async () => '   '))).rejects.toThrow('could not be read');
   });
 });
-

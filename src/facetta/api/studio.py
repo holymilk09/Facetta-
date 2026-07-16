@@ -6,6 +6,7 @@ import base64
 import binascii
 import hashlib
 import io
+from concurrent.futures import ThreadPoolExecutor
 from collections.abc import Callable
 from datetime import timezone
 from typing import Annotated, Literal
@@ -131,6 +132,19 @@ from facetta.studio_view_candidates import (
     discard_studio_view_candidate,
     get_studio_view_candidate,
     list_studio_view_candidates,
+)
+from facetta.studio_visual_angle_sets import (
+    ANGLE_VIEWS,
+    PendingVisualAngle,
+    StudioVisualAngleSetError,
+    StudioVisualAngleSetUnavailable,
+    accept_studio_visual_angle_set,
+    discard_studio_visual_angle_set,
+    fail_reserved_studio_visual_angle_job,
+    get_studio_visual_angle_set,
+    get_studio_visual_angle_set_by_job,
+    reserve_studio_visual_angle_job,
+    store_studio_visual_angle_set,
 )
 from facetta.trusted_revision import (
     WarningRevisionError,
@@ -267,7 +281,7 @@ StudioJobStatus = Literal[
     "queued", "running", "reviewing", "succeeded", "failed", "canceled",
 ]
 StudioJobAction = Literal[
-    "create", "vary", "refine", "views", "present", "factory",
+    "create", "vary", "refine", "views", "angles", "present", "factory",
 ]
 StudioJobLane = Literal["instant", "fast_visual", "trusted_structural"]
 
@@ -375,6 +389,30 @@ class ReviewPreSpecPresentationRequest(BaseModel):
 
     created_by: Annotated[str, Field(min_length=1, max_length=32)]
     expected_active_asset_id: Annotated[str, Field(min_length=1, max_length=32)]
+    expected_source_sha256: Annotated[
+        str, Field(pattern=r"^[0-9a-f]{64}$")
+    ]
+
+
+class CreateVisualAngleSetRequest(BaseModel):
+    """Three review-only camera studies of one selected creative direction."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    created_by: Annotated[str, Field(min_length=1, max_length=32)]
+    expected_active_asset_id: Annotated[str, Field(min_length=1, max_length=32)]
+    studio_job_id: Annotated[str, Field(min_length=1, max_length=32)]
+    variant: Annotated[int, Field(ge=0, le=97)] = 0
+
+
+class ReviewVisualAngleSetRequest(BaseModel):
+    """Optimistic guards for one atomic three-angle decision."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    created_by: Annotated[str, Field(min_length=1, max_length=32)]
+    expected_project_id: Annotated[str, Field(min_length=1, max_length=32)]
+    expected_source_asset_id: Annotated[str, Field(min_length=1, max_length=32)]
     expected_source_sha256: Annotated[
         str, Field(pattern=r"^[0-9a-f]{64}$")
     ]
@@ -488,6 +526,60 @@ def get_pre_spec_presentation_generator() -> PreSpecPresentationGenerator:
 PreSpecPresentationGeneratorDep = Annotated[
     PreSpecPresentationGenerator,
     Depends(get_pre_spec_presentation_generator),
+]
+
+
+VisualAngleSetGenerator = Callable[
+    [bytes, Literal["front", "three_quarter", "side"], int],
+    ImageAgentResult,
+]
+
+
+def generate_visual_angle(
+    source_image: bytes,
+    view: Literal["front", "three_quarter", "side"],
+    variant: int,
+) -> ImageAgentResult:
+    """Render one camera study while freezing the selected visible design."""
+
+    camera = {
+        "front": "straight-on front elevation",
+        "three_quarter": "three-quarter perspective showing face and depth",
+        "side": "true side profile",
+    }[view]
+    plan = build_image_plan(
+        ImageOperation.REFERENCE_RENDER,
+        (
+            "PRE-SPEC VISUAL ANGLE ONLY. Render this exact selected jewelry "
+            f"direction as a {camera}. Change only the camera position. "
+            "Preserve the exact silhouette, topology, component count, "
+            "proportions, stone shapes, stone placement, setting, material, "
+            "finish, and every visible construction detail. Use a neutral "
+            "studio background and keep the whole piece in frame."
+        ),
+        source_image=source_image,
+        camera_view=view,
+        frozen=(
+            "exact visible jewelry geometry and silhouette",
+            "exact topology, component count, proportions, and placement",
+            "every stone shape, setting, material, finish, and construction detail",
+        ),
+        expected_output=(
+            f"one {view} review image of the exact selected jewelry direction; "
+            "visual guidance only, no manufacturing authority"
+        ),
+        variant=variant,
+    )
+    return JewelryImageAgent().run(plan, source_image=source_image)
+
+
+def get_visual_angle_set_generator() -> VisualAngleSetGenerator:
+    return generate_visual_angle
+
+
+VisualAngleSetGeneratorDep = Annotated[
+    VisualAngleSetGenerator,
+    Depends(get_visual_angle_set_generator),
 ]
 
 
@@ -616,6 +708,25 @@ def _require_studio_job_context(
             status_code=409,
             detail="source_revision_id is not the project's active revision",
         )
+    if "selected_pre_spec_visual" in requirements:
+        source = db.get(ImageAsset, request.source_revision_id)
+        root = db.get(ImageAsset, project.root_id)
+        if (
+            source is None
+            or root is None
+            or root.design_id is not None
+            or source.design_version is not None
+            or source.root_id != project.root_id
+            or not is_primary_revision(source)
+            or project.selected_candidate_asset_id != source.id
+        ):
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"{request.action_id} requires one selected pre-spec "
+                    "visual direction"
+                ),
+            )
     if "exact_specification" not in requirements:
         return
     design_id = detail["design_id"]
@@ -1661,6 +1772,445 @@ def _pre_spec_presentation_error(
         ),
         "detail": exc.detail,
     })
+
+
+def _visual_angle_error(
+    exc: StudioVisualAngleSetError | StudioVisualAngleSetUnavailable,
+) -> JSONResponse:
+    status_code = getattr(exc, "status_code", 410)
+    code = getattr(exc, "code", "visual_angle_set_unavailable")
+    detail = getattr(exc, "detail", str(exc))
+    return JSONResponse(status_code=status_code, content={
+        "code": code,
+        "category": (
+            "stale_version" if code.startswith("stale_")
+            else "validation" if status_code == 422
+            else "authorization" if status_code == 403
+            else "not_found" if status_code == 404
+            else "conflict"
+        ),
+        "detail": detail,
+    })
+
+
+def _forced_visual_angle_qa(result: ImageAgentResult) -> dict:
+    """Keep evaluator truth while requiring one explicit group decision."""
+
+    return {
+        **_visual_preview_qa(result),
+        "accepted": False,
+        "review_required": True,
+        "summary": "Image checks complete; designer review is still required.",
+    }
+
+
+def _visual_angle_routing(result: ImageAgentResult, run_id: str) -> dict:
+    attempts = result.run.attempts
+    return {
+        "run_id": run_id,
+        "attempt_count": len(attempts),
+        "used_retry": len(attempts) > 1,
+        "used_fallback": any(attempt.fallback for attempt in attempts),
+        "cache_hit": any(attempt.cached for attempt in attempts),
+    }
+
+
+def _visual_angle_set_payload(angle_set) -> dict:
+    return {
+        "angle_set_id": angle_set.angle_set_id,
+        "studio_job_id": angle_set.studio_job_id,
+        "project_id": angle_set.project_root_id,
+        "source_asset_id": angle_set.source_asset_id,
+        "source_sha256": angle_set.source_hash,
+        "status": angle_set.status,
+        "expires_at": angle_set.expires_at.isoformat(),
+        "candidates": [{
+            "candidate_id": candidate.candidate_id,
+            "image_run_id": candidate.run_id,
+            "view": candidate.view,
+            "output_sha256": candidate.output_hash,
+            "qa": candidate.qa,
+            "routing": candidate.routing,
+            "status": candidate.status,
+            "accepted_asset_id": candidate.accepted_asset_id,
+            "preview_url": (
+                f"/studio/visual-angle-sets/{angle_set.angle_set_id}/"
+                f"candidates/{candidate.candidate_id}/image"
+                f"?owner={angle_set.created_by}"
+            ),
+        } for candidate in angle_set.candidates],
+    }
+
+
+@router.post(
+    "/projects/{project_id}/visual-angle-sets",
+    status_code=201,
+)
+def create_visual_angle_set(
+    project_id: str,
+    request: CreateVisualAngleSetRequest,
+    db: DbSession,
+    principal: PrincipalDep,
+    generate: VisualAngleSetGeneratorDep,
+):
+    """Create front, three-quarter, and side studies of one selected visual.
+
+    All provider attempts run before a durable review set is exposed.  If any
+    angle has invalid lineage or hard-failing QA, the whole request fails with
+    zero completed and zero charged Studio outputs.
+    """
+
+    principal_actor(principal, request.created_by)
+    try:
+        project, source = _selected_pre_spec_visual(
+            db,
+            project_root_id=project_id,
+            expected_active_asset_id=request.expected_active_asset_id,
+            created_by=request.created_by,
+        )
+        reserve_studio_visual_angle_job(
+            db,
+            job_id=request.studio_job_id,
+            owner=request.created_by,
+            project_root_id=project.root_id,
+            source_asset_id=source.id,
+        )
+    except StudioHistoryError as exc:
+        return _error(exc)
+    except StudioVisualAngleSetError as exc:
+        return _visual_angle_error(exc)
+
+    generated: list[tuple[str, ImageAgentResult]] = []
+    source_bytes = bytes(source.image)
+    source_hash = hashlib.sha256(source_bytes).hexdigest()
+    results: dict[str, ImageAgentResult] = {}
+    failures: list[tuple[str, Exception]] = []
+    # Provider work owns no database session and each call constructs its own
+    # image agent.  Run the fixed three-angle pack concurrently, then restore
+    # canonical angle order before persisting any evidence.  The database
+    # decision remains one fail-closed transaction regardless of completion
+    # order or individual provider retries.
+    with ThreadPoolExecutor(
+        max_workers=len(ANGLE_VIEWS),
+        thread_name_prefix="facetta-visual-angle",
+    ) as executor:
+        futures = {
+            view: executor.submit(
+                generate,
+                source_bytes,
+                view,
+                request.variant + ordinal,
+            )
+            for ordinal, view in enumerate(ANGLE_VIEWS)
+        }
+        for view in ANGLE_VIEWS:
+            try:
+                results[view] = futures[view].result()
+            except Exception as exc:  # noqa: PERF203 - fixed set of three
+                failures.append((view, exc))
+
+    generated = [
+        (view, results[view]) for view in ANGLE_VIEWS if view in results
+    ]
+    if failures:
+        for _generated_view, evidence in generated:
+            persist_image_agent_result(
+                db,
+                evidence,
+                project_root_id=project.root_id,
+                source_asset_id=source.id,
+                created_by=request.created_by,
+                status_override="failed",
+                commit=False,
+            )
+        first_run_id: str | None = None
+        for view, exc in failures:
+            if isinstance(exc, ImageAgentError) and exc.plan is not None:
+                run_id = persist_image_agent_failure(
+                    db,
+                    exc.plan,
+                    exc,
+                    project_root_id=project.root_id,
+                    source_asset_id=source.id,
+                    created_by=request.created_by,
+                    commit=False,
+                )
+                if view == failures[0][0]:
+                    first_run_id = run_id
+        first_view, first_failure = failures[0]
+        error_code = (
+            first_failure.code
+            if isinstance(first_failure, ImageAgentError)
+            else "unexpected_generation_failure"
+        )
+        fail_reserved_studio_visual_angle_job(
+            db,
+            job_id=request.studio_job_id,
+            owner=request.created_by,
+            error_code=error_code,
+        )
+        if isinstance(first_failure, ImageAgentError):
+            return image_agent_error_response(
+                first_failure,
+                image_run_id=first_run_id,
+            )
+        raise first_failure
+
+    failed_evidence = next((
+        (view, result, failed_hard, exact_lineage)
+        for view, result in generated
+        for failed_hard, exact_lineage in [(
+            (
+                result.quality.verdict.value == "fail"
+                or any(
+                    not check.passed and check.severity.value == "hard"
+                    for check in result.quality.checks
+                )
+            ),
+            (
+                result.plan.operation is ImageOperation.REFERENCE_RENDER
+                and result.plan.source_hash == source_hash
+                and result.plan.source_spec_visual_hash is None
+            ),
+        )]
+        if failed_hard or not exact_lineage
+    ), None)
+    if failed_evidence is not None:
+        failed_view, failed_result, failed_hard, _exact_lineage = failed_evidence
+        for _generated_view, evidence in generated:
+            persist_image_agent_result(
+                db,
+                evidence,
+                project_root_id=project.root_id,
+                source_asset_id=source.id,
+                created_by=request.created_by,
+                status_override="failed",
+                commit=False,
+            )
+        error_code = (
+            "visual_angle_failed_quality"
+            if failed_hard else "visual_angle_lineage_incomplete"
+        )
+        fail_reserved_studio_visual_angle_job(
+            db,
+            job_id=request.studio_job_id,
+            owner=request.created_by,
+            error_code=error_code,
+        )
+        return JSONResponse(
+            status_code=422 if failed_hard else 500,
+            content={
+                "code": error_code,
+                "category": "quality" if failed_hard else "internal",
+                "detail": (
+                    "one angle failed quality checks; no set was created"
+                    if failed_hard else
+                    "one angle was not bound to the exact selected source"
+                ),
+                "failed_view": failed_view,
+                "qa": _visual_preview_qa(failed_result),
+            },
+        )
+
+    pending: list[PendingVisualAngle] = []
+    for view, result in generated:
+        run_id = persist_image_agent_result(
+            db,
+            result,
+            project_root_id=project.root_id,
+            source_asset_id=source.id,
+            created_by=request.created_by,
+            status_override="review_required",
+            commit=False,
+        )
+        pending.append(PendingVisualAngle(
+            run_id=run_id,
+            view=view,  # type: ignore[arg-type]
+            image_bytes=result.image_bytes,
+            media_type=sniff_media_type(result.image_bytes),
+            requested_change=(
+                f"{view.replace('_', '-')} visual camera study; "
+                "selected jewelry direction frozen"
+            ),
+            qa=_forced_visual_angle_qa(result),
+            routing=_visual_angle_routing(result, run_id),
+        ))
+    try:
+        angle_set = store_studio_visual_angle_set(
+            db,
+            studio_job_id=request.studio_job_id,
+            project_root_id=project.root_id,
+            source_asset_id=source.id,
+            source_hash=source_hash,
+            candidates=tuple(pending),
+            created_by=request.created_by,
+        )
+    except StudioVisualAngleSetError as exc:
+        db.rollback()
+        for _generated_view, evidence in generated:
+            persist_image_agent_result(
+                db,
+                evidence,
+                project_root_id=project.root_id,
+                source_asset_id=source.id,
+                created_by=request.created_by,
+                status_override="failed",
+                commit=False,
+            )
+        fail_reserved_studio_visual_angle_job(
+            db,
+            job_id=request.studio_job_id,
+            owner=request.created_by,
+            error_code=exc.code,
+        )
+        return _visual_angle_error(exc)
+
+    definition = studio_job_action_definition("angles")
+    return {
+        "status": "review_required",
+        "action_id": "angles",
+        "requested_outputs": len(ANGLE_VIEWS),
+        "credits_per_output": definition.credits_per_output,
+        "estimated_credits": len(ANGLE_VIEWS) * definition.credits_per_output,
+        "billing_policy": (
+            "All three outputs are charged only after accepting the set; "
+            "failed generation, QA retries, and discard remain uncharged."
+        ),
+        "angle_set": _visual_angle_set_payload(angle_set),
+    }
+
+
+@router.get("/visual-angle-sets/by-job/{studio_job_id}")
+def get_visual_angle_set_by_job(
+    studio_job_id: str,
+    db: DbSession,
+    owner: Annotated[str, Query(min_length=1, max_length=32)],
+    principal: PrincipalDep,
+):
+    """Resume one durable angle decision from its Activity job identity."""
+
+    principal_actor(principal, owner)
+    try:
+        angle_set = get_studio_visual_angle_set_by_job(
+            db, studio_job_id, owner=owner)
+    except StudioVisualAngleSetUnavailable as exc:
+        return _visual_angle_error(exc)
+    return {
+        "action_id": "angles",
+        "angle_set": _visual_angle_set_payload(angle_set),
+    }
+
+
+@router.get("/visual-angle-sets/{angle_set_id}")
+def get_visual_angle_set(
+    angle_set_id: str,
+    db: DbSession,
+    owner: Annotated[str, Query(min_length=1, max_length=32)],
+    principal: PrincipalDep,
+):
+    principal_actor(principal, owner)
+    try:
+        angle_set = get_studio_visual_angle_set(
+            db, angle_set_id, owner=owner)
+    except StudioVisualAngleSetUnavailable as exc:
+        return _visual_angle_error(exc)
+    return {
+        "action_id": "angles",
+        "angle_set": _visual_angle_set_payload(angle_set),
+    }
+
+
+@router.get(
+    "/visual-angle-sets/{angle_set_id}/candidates/{candidate_id}/image"
+)
+def get_visual_angle_candidate_image(
+    angle_set_id: str,
+    candidate_id: str,
+    db: DbSession,
+    owner: Annotated[str, Query(min_length=1, max_length=32)],
+    principal: PrincipalDep,
+):
+    principal_actor(principal, owner)
+    try:
+        angle_set = get_studio_visual_angle_set(
+            db, angle_set_id, owner=owner)
+    except StudioVisualAngleSetUnavailable as exc:
+        return _visual_angle_error(exc)
+    candidate = next(
+        (
+            item for item in angle_set.candidates
+            if item.candidate_id == candidate_id
+        ),
+        None,
+    )
+    if candidate is None or candidate.status != "reviewing":
+        return _visual_angle_error(StudioVisualAngleSetUnavailable(
+            "the visual angle candidate is unavailable", status_code=404))
+    return Response(
+        content=candidate.image_bytes,
+        media_type=candidate.media_type,
+        headers={"Cache-Control": "private, no-store"},
+    )
+
+
+@router.post("/visual-angle-sets/{angle_set_id}/accept", status_code=201)
+def accept_visual_angle_set(
+    angle_set_id: str,
+    request: ReviewVisualAngleSetRequest,
+    db: DbSession,
+    principal: PrincipalDep,
+):
+    principal_actor(principal, request.created_by)
+    try:
+        asset_ids = accept_studio_visual_angle_set(
+            db,
+            angle_set_id,
+            expected_project_id=request.expected_project_id,
+            expected_source_asset_id=request.expected_source_asset_id,
+            expected_source_sha256=request.expected_source_sha256,
+            created_by=request.created_by,
+        )
+    except (StudioVisualAngleSetUnavailable, StudioVisualAngleSetError) as exc:
+        return _visual_angle_error(exc)
+    project = db.get(Project, request.expected_project_id)
+    if project is None:  # pragma: no cover - transaction invariant
+        raise HTTPException(status_code=500, detail="accepted project unavailable")
+    return {
+        "status": "accepted",
+        "angle_set_id": angle_set_id,
+        "source_asset_id": request.expected_source_asset_id,
+        "asset_ids": list(asset_ids),
+        "capability": "ANGLE_VIEW",
+        "active_revision_unchanged": True,
+        "project": project_detail(db, project),
+    }
+
+
+@router.post("/visual-angle-sets/{angle_set_id}/discard")
+def discard_visual_angle_set(
+    angle_set_id: str,
+    request: ReviewVisualAngleSetRequest,
+    db: DbSession,
+    principal: PrincipalDep,
+):
+    principal_actor(principal, request.created_by)
+    try:
+        discard_studio_visual_angle_set(
+            db,
+            angle_set_id,
+            expected_project_id=request.expected_project_id,
+            expected_source_asset_id=request.expected_source_asset_id,
+            expected_source_sha256=request.expected_source_sha256,
+            created_by=request.created_by,
+        )
+    except (StudioVisualAngleSetUnavailable, StudioVisualAngleSetError) as exc:
+        return _visual_angle_error(exc)
+    return {
+        "status": "discarded",
+        "angle_set_id": angle_set_id,
+        "source_asset_id": request.expected_source_asset_id,
+        "charged_outputs": 0,
+    }
 
 
 @router.post(

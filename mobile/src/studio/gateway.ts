@@ -33,6 +33,8 @@ import type {
   StudioJobRecord,
   StudioMarkupResumeCandidate,
   StudioFactPath,
+  VisualAngleCandidate,
+  VisualAngleSet,
 } from '../trusted/types';
 import { getStudioAction } from './actions';
 import {
@@ -283,6 +285,25 @@ export interface StudioPreSpecPresentationDecisionResult {
   project: ProjectDetail;
 }
 
+export interface StudioVisualAngleSetReview {
+  angleSetId: string;
+  studioJobId: string;
+  lineage: StudioVisualLineage;
+  sourceSha256: string;
+  status: VisualAngleSet['status'];
+  expiresAt: string;
+  candidates: readonly VisualAngleCandidate[];
+  requestedOutputs: 3;
+  creditsPerOutput: number;
+  estimatedCredits: number;
+  billingPolicy: string;
+}
+
+export interface StudioVisualAngleSetDecisionResult {
+  review: StudioVisualAngleSetReview;
+  project: ProjectDetail | null;
+}
+
 export interface StudioFactoryEligibility {
   enabled: boolean;
   /** May enter the optional readiness review for this exact revision. */
@@ -355,6 +376,11 @@ type GatewayTrustedClient = Pick<TrustedApiClient,
   | 'discardPreSpecPresentation'
   | 'confirmCreativeCandidateDesign'
   | 'promoteCreativeCandidate'
+  | 'createVisualAngleSet'
+  | 'getVisualAngleSet'
+  | 'getVisualAngleSetByJob'
+  | 'acceptVisualAngleSet'
+  | 'discardVisualAngleSet'
 > & Partial<Pick<TrustedApiClient, 'getStudioCapabilities'>>;
 
 export interface StudioGatewayOptions {
@@ -628,6 +654,10 @@ export function createStudioGateway(
     studioJob: ActiveStudioJob | null;
     status: 'pending_review' | 'accepted' | 'discarded';
   }>();
+  const visualAngleSets = new Map<string, {
+    review: StudioVisualAngleSetReview;
+    studioJob: ActiveStudioJob | null;
+  }>();
 
   const requireCandidate = (candidateId: string) => catalogCandidates.get(candidateId) ?? null;
 
@@ -798,7 +828,7 @@ export function createStudioGateway(
   const requireReviewJob = async (
     jobId: string | null,
     owner: string,
-    actionId: 'views' | 'present',
+    actionId: 'angles' | 'views' | 'present',
     lineage: ExactStudioLineage | StudioVisualLineage,
     candidateCount: number,
   ): Promise<StudioGatewayResult<ActiveStudioJob>> => {
@@ -1405,7 +1435,7 @@ export function createStudioGateway(
 
       const tracked = creativeJobs.get(request.projectId) ?? null;
       const studioJobId = request.studioJobId ?? tracked?.jobId;
-      const result = await client.commitCreativeDirections(request.projectId, {
+      const commitRequest = {
         created_by: request.createdBy,
         selected_candidate_id: request.selectedCandidateId,
         retained: request.retained.map((direction) => ({
@@ -1413,7 +1443,24 @@ export function createStudioGateway(
           label: direction.label.trim(),
         })),
         ...(studioJobId === undefined ? {} : { studio_job_id: studioJobId }),
-      });
+      };
+      let result = await client.commitCreativeDirections(
+        request.projectId, commitRequest,
+      );
+      // The commit endpoint is deliberately idempotent: a response can be
+      // lost after the database transaction succeeds, and an exact retry
+      // returns the already-saved decision. Retry once here so the designer
+      // does not see a false connection error for a direction that is already
+      // canonical.
+      if (result.error !== null && (
+        result.error.category === 'network'
+        || result.error.category === 'decode'
+        || result.error.category === 'unknown'
+      )) {
+        result = await client.commitCreativeDirections(
+          request.projectId, commitRequest,
+        );
+      }
       if (result.error !== null) {
         return { data: null, error: mapError(result.error), status: result.status };
       }
@@ -2597,6 +2644,255 @@ export function createStudioGateway(
       stored.status = 'discarded';
       return {
         data: { preview: stored.preview, project: null }, error: null, status: discarded.status,
+      };
+    },
+
+    async createVisualAngleSet(
+      lineage: StudioVisualLineage,
+      createdBy: string,
+      variant = 0,
+    ): Promise<StudioGatewayResult<StudioVisualAngleSetReview>> {
+      const started = await startJob('angles', createdBy, 3, lineage);
+      if (started.error !== null) return started;
+      if (started.data === null) return trackingError();
+      const result = await callTracked(started.data, () => client.createVisualAngleSet(
+        lineage.projectId,
+        {
+          created_by: createdBy,
+          expected_active_asset_id: lineage.sourceAssetId,
+          studio_job_id: started.data!.jobId,
+          variant,
+        },
+      ));
+      if (result.error !== null) return result;
+      markBackendCandidateReviewing(started.data);
+      const angleSet = result.data.angle_set;
+      const expectedViews = ['front', 'three_quarter', 'side'] as const;
+      const validCandidates = angleSet.candidates.length === expectedViews.length
+        && angleSet.candidates.every((candidate, index) => (
+          candidate.view === expectedViews[index]
+          && candidate.status === 'reviewing'
+          && candidate.accepted_asset_id === null
+          && candidate.qa.verdict !== 'fail'
+          && candidate.preview_url.length > 0
+        ))
+        && new Set(angleSet.candidates.map((candidate) => candidate.candidate_id)).size === 3
+        && new Set(angleSet.candidates.map((candidate) => candidate.image_run_id)).size === 3;
+      if (
+        result.data.requested_outputs !== 3
+        || result.data.credits_per_output !== getStudioAction('angles').creditEstimate
+        || result.data.estimated_credits !== 3 * result.data.credits_per_output
+        || angleSet.status !== 'reviewing'
+        || angleSet.studio_job_id !== started.data.jobId
+        || angleSet.project_id !== lineage.projectId
+        || angleSet.source_asset_id !== lineage.sourceAssetId
+        || !validCandidates
+      ) {
+        await failJob(started.data, 'INVALID_VISUAL_ANGLE_SET', 0.95);
+        return gatewayError(
+          'INVALID_VISUAL_ANGLE_SET',
+          'The angle set was not bound to the selected design and review job.',
+          'invalid_response', result.status,
+        );
+      }
+      const review: StudioVisualAngleSetReview = {
+        angleSetId: angleSet.angle_set_id,
+        studioJobId: angleSet.studio_job_id,
+        lineage,
+        sourceSha256: angleSet.source_sha256,
+        status: angleSet.status,
+        expiresAt: angleSet.expires_at,
+        candidates: angleSet.candidates,
+        requestedOutputs: 3,
+        creditsPerOutput: result.data.credits_per_output,
+        estimatedCredits: result.data.estimated_credits,
+        billingPolicy: result.data.billing_policy,
+      };
+      visualAngleSets.set(review.angleSetId, { review, studioJob: started.data });
+      return { data: review, error: null, status: result.status };
+    },
+
+    async resumeVisualAngleSet(
+      lineage: StudioVisualLineage,
+      createdBy: string,
+      reviewJobId?: string,
+    ): Promise<StudioGatewayResult<StudioVisualAngleSetReview | null>> {
+      let stored = [...visualAngleSets.values()].find(({ review }) => (
+        review.status === 'reviewing'
+        && review.lineage.projectId === lineage.projectId
+        && review.lineage.sourceAssetId === lineage.sourceAssetId
+        && (reviewJobId === undefined || review.studioJobId === reviewJobId)
+      ));
+      if (stored === undefined && reviewJobId === undefined) {
+        return { data: null, error: null, status: 0 };
+      }
+      const durable = stored === undefined
+        ? await client.getVisualAngleSetByJob(reviewJobId as string, createdBy)
+        : await client.getVisualAngleSet(stored.review.angleSetId, createdBy);
+      if (durable.error !== null) {
+        return { data: null, error: mapError(durable.error), status: durable.status };
+      }
+      const angleSet = durable.data.angle_set;
+      if (stored === undefined) {
+        const job = await requireReviewJob(
+          reviewJobId as string,
+          createdBy,
+          'angles',
+          lineage,
+          3,
+        );
+        if (job.error !== null) return job;
+        const action = getStudioAction('angles');
+        const creditsPerOutput = action.creditEstimate;
+        if (creditsPerOutput === null) return gatewayError(
+          'INVALID_VISUAL_ANGLE_ACTION',
+          'The visual-angle credit policy is unavailable.',
+          'invalid_response', 500,
+        );
+        const review: StudioVisualAngleSetReview = {
+          angleSetId: angleSet.angle_set_id,
+          studioJobId: angleSet.studio_job_id,
+          lineage,
+          sourceSha256: angleSet.source_sha256,
+          status: angleSet.status,
+          expiresAt: angleSet.expires_at,
+          candidates: angleSet.candidates,
+          requestedOutputs: 3,
+          creditsPerOutput,
+          estimatedCredits: 3 * creditsPerOutput,
+          billingPolicy: 'All three views are charged only after saving the set. Failed generation, quality retries, and discard are uncharged.',
+        };
+        stored = { review, studioJob: job.data };
+        visualAngleSets.set(review.angleSetId, stored);
+      }
+      if (
+        angleSet.status !== 'reviewing'
+        || angleSet.studio_job_id !== stored.review.studioJobId
+        || angleSet.project_id !== lineage.projectId
+        || angleSet.source_asset_id !== lineage.sourceAssetId
+        || angleSet.source_sha256 !== stored.review.sourceSha256
+        || angleSet.candidates.length !== 3
+      ) return gatewayError(
+        'VISUAL_ANGLE_SET_RESUME_MISMATCH',
+        'The saved angle review is not bound to this selected design.',
+        'conflict', 409,
+      );
+      const review: StudioVisualAngleSetReview = {
+        ...stored.review,
+        status: angleSet.status,
+        expiresAt: angleSet.expires_at,
+        candidates: angleSet.candidates,
+      };
+      visualAngleSets.set(review.angleSetId, { ...stored, review });
+      return { data: review, error: null, status: durable.status };
+    },
+
+    async acceptVisualAngleSet(
+      angleSetId: string,
+      createdBy: string,
+    ): Promise<StudioGatewayResult<StudioVisualAngleSetDecisionResult>> {
+      const stored = visualAngleSets.get(angleSetId);
+      if (stored === undefined || stored.review.status !== 'reviewing') return gatewayError(
+        'VISUAL_ANGLE_SET_NOT_REVIEWABLE',
+        'This angle set is no longer available for review.',
+        'conflict', 409,
+      );
+      const before = await client.getProject(stored.review.lineage.projectId);
+      if (before.error !== null) {
+        return { data: null, error: mapError(before.error), status: before.status };
+      }
+      if (before.data.active_asset_id !== stored.review.lineage.sourceAssetId) return gatewayError(
+        'STALE_VISUAL_ANGLE_SOURCE',
+        'The selected design changed after these views were generated.',
+        'conflict', 409,
+      );
+      const accepted = await client.acceptVisualAngleSet(angleSetId, {
+        created_by: createdBy,
+        expected_project_id: stored.review.lineage.projectId,
+        expected_source_asset_id: stored.review.lineage.sourceAssetId,
+        expected_source_sha256: stored.review.sourceSha256,
+      });
+      if (accepted.error !== null) {
+        return { data: null, error: mapError(accepted.error), status: accepted.status };
+      }
+      const assetIds = new Set(accepted.data.asset_ids);
+      const validDerivedAssets = accepted.data.project.derived_assets.filter((asset) => (
+        assetIds.has(asset.asset_id)
+        && asset.parent_asset_id === stored.review.lineage.sourceAssetId
+        && asset.capability === 'ANGLE_VIEW'
+        && asset.design_version === null
+      ));
+      if (
+        accepted.data.angle_set_id !== angleSetId
+        || accepted.data.source_asset_id !== stored.review.lineage.sourceAssetId
+        || accepted.data.project.root_id !== stored.review.lineage.projectId
+        || accepted.data.project.active_asset_id !== stored.review.lineage.sourceAssetId
+        || accepted.data.project.selected_candidate_asset_id
+          !== before.data.selected_candidate_asset_id
+        || accepted.data.project.active_design_version !== before.data.active_design_version
+        || accepted.data.project.primary_revision_count !== before.data.primary_revision_count
+        || assetIds.size !== 3
+        || validDerivedAssets.length !== 3
+      ) return gatewayError(
+        'INVALID_VISUAL_ANGLE_ACCEPT_LINEAGE',
+        'Saving the angle set unexpectedly changed the selected design.',
+        'invalid_response', accepted.status,
+      );
+      const review: StudioVisualAngleSetReview = {
+        ...stored.review,
+        status: 'accepted',
+        candidates: stored.review.candidates.map((candidate, index) => ({
+          ...candidate,
+          status: 'accepted',
+          accepted_asset_id: accepted.data.asset_ids[index] ?? null,
+        })),
+      };
+      visualAngleSets.set(angleSetId, { ...stored, review });
+      return {
+        data: { review, project: accepted.data.project },
+        error: null,
+        status: accepted.status,
+      };
+    },
+
+    async discardVisualAngleSet(
+      angleSetId: string,
+      createdBy: string,
+    ): Promise<StudioGatewayResult<StudioVisualAngleSetDecisionResult>> {
+      const stored = visualAngleSets.get(angleSetId);
+      if (stored === undefined || stored.review.status !== 'reviewing') return gatewayError(
+        'VISUAL_ANGLE_SET_NOT_REVIEWABLE',
+        'This angle set is no longer available for review.',
+        'conflict', 409,
+      );
+      const discarded = await client.discardVisualAngleSet(angleSetId, {
+        created_by: createdBy,
+        expected_project_id: stored.review.lineage.projectId,
+        expected_source_asset_id: stored.review.lineage.sourceAssetId,
+        expected_source_sha256: stored.review.sourceSha256,
+      });
+      if (discarded.error !== null) {
+        return { data: null, error: mapError(discarded.error), status: discarded.status };
+      }
+      if (
+        discarded.data.angle_set_id !== angleSetId
+        || discarded.data.source_asset_id !== stored.review.lineage.sourceAssetId
+        || discarded.data.charged_outputs !== 0
+      ) return gatewayError(
+        'INVALID_VISUAL_ANGLE_DISCARD',
+        'Discarding the angle set could not be verified.',
+        'invalid_response', discarded.status,
+      );
+      const review: StudioVisualAngleSetReview = {
+        ...stored.review,
+        status: 'discarded',
+        candidates: stored.review.candidates.map((candidate) => ({
+          ...candidate, status: 'discarded', accepted_asset_id: null,
+        })),
+      };
+      visualAngleSets.set(angleSetId, { ...stored, review });
+      return {
+        data: { review, project: null }, error: null, status: discarded.status,
       };
     },
 
